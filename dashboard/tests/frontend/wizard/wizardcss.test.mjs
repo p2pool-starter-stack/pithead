@@ -32,6 +32,17 @@ test("wizard.css: a value inside the wizard breaks rather than running past the 
   );
 });
 
+test("wizard.css: the rig control token selects as one value (#1879)", () => {
+  const rule = ruleFor(WIZARD_CSS, /\.wizard-token/);
+  assert.ok(rule, "expected a `.wizard-token` rule in wizard.css");
+  assert.match(rule.body, /user-select:\s*all/);
+  assert.match(
+    WIZARD_MJS,
+    /label === "Control token" \? "wizard-mono wizard-token" : "wizard-mono"/,
+    "only the write-capable token gets whole-value selection",
+  );
+});
+
 test("wizard.css: the break rule is scoped to <code>, so the JSON editor keeps its own wrapping", () => {
   // .wizard-mono is also on three <input> and on the config textarea (wizard.mjs). Breaking JSON
   // mid-token is a change to a surface nobody reported, so the rule names an element, not the class.
@@ -65,4 +76,12 @@ test("wizard.mjs: the handoff values the operator transcribes are still <code> e
       `${label} renders its value outside a <code>, so the wrap rule no longer covers it`,
     );
   }
+});
+
+test("wizard.css: radio answers stack at the full card width", () => {
+  const group = ruleFor(WIZARD_CSS, /\.wizard-choices/);
+  const answer = ruleFor(WIZARD_CSS, /\.wizard-choices\s+label/);
+  assert.match(group.body, /display:\s*grid/);
+  assert.match(answer.body, /display:\s*grid/);
+  assert.match(answer.body, /width:\s*100%/);
 });

@@ -110,7 +110,7 @@ const AccessCard = ({ access, filters, onFilters, pager, onPager }) => {
   if (!access) return null;
   if (!access.available) {
     return html`<div class="card">
-        <h3>Access log</h3>
+        <h2>Access log</h2>
         <p class="text-muted">No access log yet — Caddy writes it from the first request after
         an <code>apply</code>/<code>upgrade</code> on this version.</p>
     </div>`;
@@ -118,7 +118,7 @@ const AccessCard = ({ access, filters, onFilters, pager, onPager }) => {
   const failures = access.failures_24h || 0;
   const pg = pageFor(access.entries || [], pager.page, pager.size);
   return html`<div class="card">
-      <h3>Access log</h3>
+      <h2>Access log</h2>
       <${LogControls} label="Access log filter" filters=${filters} onChange=${onFilters} />
       <p class=${failures > 0 ? "status-warn" : "status-ok"}>
           ${failures} failed login${failures === 1 ? "" : "s"} in the last 24 h${
@@ -193,7 +193,7 @@ const AuditCard = ({ audit, filters, onFilters, pager, onPager }) => {
   if (!audit) return null;
   const pg = pageFor(audit, pager.page, pager.size);
   return html`<div class="card">
-      <h3>Recent config changes</h3>
+      <h2>Recent config changes</h2>
       <${LogControls} label="Config-change filter" filters=${filters} onChange=${onFilters} />
       ${
         pg.total === 0

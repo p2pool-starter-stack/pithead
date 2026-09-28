@@ -38,49 +38,25 @@ So the split is clean:
 The hosted runners catch most regressions before merge. The dedicated server proves what only
 real chains can, and it is the blocking pre-release gate.
 
-## Validating PRs on the dedicated server (possible, but security-loaded)
+## Validating protected updates
 
-You can register the server as a GitHub Actions self-hosted runner so Actions dispatches the
-tier-4 job to it (self-hosted minutes don't count against anything, also free). But there is a
-sharp edge, and it's the single most important thing on this page:
+The dedicated server is not a GitHub Actions self-hosted runner. Tier 4 runs through bench-ci,
+which owns the reservation, runs the full suite against an exact SHA, and publishes
+`bench-ci/tier4` through its dedicated GitHub App. The release lane requires that status from the
+App's numeric id, and the `main` ruleset requires the same context pinned to that App's
+`integration_id`. Both were provisioned under
+[#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237); an identical context from
+any other App does not satisfy a pinned entry.
 
 > NOTE: GitHub explicitly recommends against self-hosted runners on public repositories. Any
 > user can open a pull request, and a malicious PR can run arbitrary code on the runner. The
 > server holds real wallet payout addresses, Tor onion private keys, and RPC credentials, so a
 > compromised runner is a key-theft / persistent-backdoor event, not a flaky build.
 
-The safe rule: the keyed server only ever runs code you trust. Concretely:
-
-- Do not trigger tier-4 on `pull_request` (and never on a fork PR). "Require approval" only
-  gates starting the run; once it starts, the PR's code still executes on the box.
-- Configure a protected `release-server` environment with required maintainers. The workflow
-  must also restrict deployment branches to the protected default branch: that platform check runs
-  before a branch-supplied job can reach the runner. The workflow additionally fails non-default
-  dispatches and checks out the dispatch's immutable SHA, but that in-workflow check is only
-  defense in depth and is not a trust boundary. Without the environment deployment-branch rule,
-  the workflow is unsafe and must not be dispatched. Stage candidate release artifacts
-  separately. Run a pre-merge exact-head gate from the operator shell under the hardware claim/lock
-  protocol, never by executing a PR's workflow on this keyed runner.
-- Set the repository variable `RELEASE_GATE_ACTORS` to a comma-separated maintainer allowlist;
-  both the original dispatch actor and any rerun actor must be listed.
-  Provision `/etc/pithead-release/cosign.pub` as a root-owned, non-symlink copy of the reviewed
-  repository key; the workflow refuses any other trust-root path or content.
-- Register the runner as ephemeral / just-in-time (one job, then auto-removed) in its own runner
-  group, isolated from any private repos.
-- Keep the runner least-privilege: a dedicated unprivileged user, the box runs nothing else
-  sensitive, and ideally the runner reaches the stack only through `pithead`/`docker`, not the
-  raw key files.
-
-This is how the workflow ships.
-[`.github/workflows/release-gate.yml`](../../.github/workflows/release-gate.yml) runs only on
-`workflow_dispatch`, behind the protected `release-server` environment on a
-`[self-hosted, pithead-release]` runner. It fails a non-default ref and checks out the immutable
-default-branch dispatch SHA, verifies the actor allowlist and fixed root-owned release key, and
-never accepts a candidate branch or later-moving branch tip. It never runs automatically on a PR
-or push; a trigger that arrives before its runner is
-how `main` ends up wearing a gate that never ran (#1048). Since releases fast-forward `main`
-at publish time, a `push` trigger would also fire *after* the release it was meant to gate —
-any future automation belongs on the ref being cut, not on `main`.
+The checked-in
+[`release-gate.yml`](../../.github/workflows/release-gate.yml) keeps `workflow_dispatch` as an
+operator tool, but no runner is registered for it. It is not the protected-update gate and never
+runs on pull requests or pushes.
 
 ## Provisioning the server
 
@@ -92,10 +68,15 @@ Target an LTS Ubuntu (22.04 / 24.04). One-time:
 2. Keep the active chain on fast storage (SSD/NVMe). monerod is random-I/O heavy, so the chain
    it runs against must not sit on a spinning HDD; that alone makes every scenario crawl. A
    snapshot/reflink-capable filesystem (btrfs/zfs/xfs reflink) is a bonus for the prune axis: it
-   lets the harness snapshot/restore a chain cheaply. It is, however, a hard REQUIREMENT for
-   `--image-upgrade`, which takes `cp --reflink=always` snapshots of every writable mount while
-   the stack is stopped — on a filesystem without reflink that gate refuses to start. On plain ext4-on-SSD the
-   matrix only edits `config.json` and reuses one chain, with `--safety-backup` isolating
+   lets the harness snapshot/restore a chain cheaply. It is a hard requirement only when this
+   server runs `tests/integration/run.sh --image-upgrade` directly, because that command takes
+   `cp --reflink=always` snapshots of every bind mount (chain, data dirs and the install dir's own
+   `data/`) while the stack is stopped and refuses on a filesystem that cannot clone them, so the
+   install dir and every data dir need one reflink-capable filesystem (only the small named volumes
+   are copied, #2057). The `tier4-kvm` `image-upgrade` phase instead creates and removes a sparse reflink
+   XFS inside its disposable guest; it does not require reflinks on the bench filesystem. On plain
+   ext4-on-SSD
+   the matrix only edits `config.json` and reuses one chain, with `--safety-backup` isolating
    destructive runs. See the recipe below for the prune-axis details.
 3. Disk headroom: enough for the chains plus a snapshot / second DB (budget ≥ ~150 GiB free
    beyond the live chains).
@@ -107,9 +88,12 @@ Check the box is fit at any time, non-destructively:
 tests/integration/run.sh --host you@server --dir pithead --readiness
 ```
 
-It asserts: chains synced (reusable), the prune axis is exercisable (the live chain FS is
-snapshot-capable **or** a pre-built variant chain is supplied), disk headroom, `.env` is
-owner-only, the dashboard is bound to localhost, and the backup/rollback net is usable.
+It asserts: Monero synced and Tari dashboard sync `done` within 240 s (chains reusable),
+`pithead status` healthy within 240 s (a failure lists each service's last verdict), the prune
+axis is exercisable (the live chain FS is snapshot-capable
+**or** a pre-built variant chain is supplied), disk headroom, `.env` is owner-only, the dashboard
+is bound to localhost, and the backup/rollback net is usable. A Tari-only timeout is reported to
+bench-ci as a retryable environment wait after baseline restore.
 
 ### The lint/release toolchain
 
@@ -279,8 +263,9 @@ export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem      # leaf t
 export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
 ```
 
-`mkimage.sh` bakes the keyring cert into slot A; `mkbundle.sh` signs the bundle with the leaf. Both
-refuse to run for a release with these unset — there is no silent fallback to a dev cert.
+`mkimage.sh` bakes the keyring cert into slot A; `mkbundle.sh` signs the bundle with the leaf. A
+release build refuses an unset leaf cert or key, but an unset `PITHEAD_RAUC_KEYRING` defaults to
+the leaf cert. Export the root keyring explicitly for every release cut.
 
 **Rotation.** The constraint that shapes the whole runbook: **RAUC trusts the keyring baked at
 image build time, so a device only ever trusts what shipped in its running slot.** A new trust
@@ -330,14 +315,17 @@ lsblk -d -o NAME,ROTA,SIZE,MODEL   # ROTA=0 is SSD/NVMe, ROTA=1 is a spinning HD
 Keep the chain monerod runs against on an SSD/NVMe. A spare HDD is fine for cold backups and
 `pithead backup` archives, but not for an active test chain.
 
-A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and a REQUIREMENT for
-the `--image-upgrade` gate, which cannot take its rollback snapshots without `cp --reflink=always`.
-On a CoW volume the
-harness can snapshot/restore a chain cheaply for per-scenario isolation, but only if it's on
-fast storage. A loopback btrfs on a spare HDD gives you CoW semantics at HDD speed, which is the
-wrong trade for an active chain. If your root FS is ext4 on an SSD (the common case) you don't
-need CoW at all: the matrix only edits `config.json` and reuses one chain, and `--safety-backup`
-(a `pithead backup` + auto-rollback) isolates the destructive scenarios.
+A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and a requirement for a
+direct `tests/integration/run.sh --image-upgrade` run, which cannot take its rollback snapshots of
+the data-dir bind mounts without `cp --reflink=always` and refuses rather than fully copying a
+chain (#2057). The `tier4-kvm` `image-upgrade` phase supplies its own guest-local reflink XFS and
+does not depend on the bench filesystem. On a CoW
+volume the harness can snapshot/restore a chain cheaply for per-scenario isolation, but only if
+it's on fast storage. A
+loopback btrfs on a spare HDD gives you CoW semantics at HDD speed, which is the wrong trade for an
+active chain. If your root FS is ext4 on an SSD (the common case) you don't need CoW at all: the
+matrix only edits `config.json` and reuses one chain, and `--safety-backup` (a `pithead backup` +
+auto-rollback) isolates the destructive scenarios.
 
 Covering both prune modes. The box mines one mode (its real config). The harness exercises that
 mode against the live chain and skips the other unless you supply a chain for it
@@ -412,7 +400,8 @@ exclude mutators. `tests/integration/run.sh` takes it on the target box (over SS
 `e2e.sh` also takes it on the loaner rig it borrows. A busy box makes the run exit 75
 (`EX_TEMPFAIL`) naming the holder; set `RIG_LOCK_WAIT=1` to queue instead. `/run/rig-e2e.holder`
 is a display-only sidecar naming the holder — the flock is authoritative, and a stale sidecar
-is harmless.
+is harmless. The bench runner sets that wait during its reserved-lock handoff, and the harness
+forwards it to both pre-gates and its detached run; other callers keep the opt-in exit-75 default.
 
 **CHECK** — and **FREE**, which is not a step for anyone. A harness frees the lock by dying:
 it holds it on an inherited descriptor, so the kernel drops it when the run ends, however it
@@ -444,14 +433,15 @@ Treat the box as production-sensitive. It holds keys and it's the thing that sig
   stratum port scoped to the LAN ([workers › firewall](../workers.md#firewall)); the dashboard
   stays on localhost behind Caddy and the monerod RPC on localhost (both asserted by
   `--readiness`). Nothing else should be reachable from the internet.
-- Untrusted code. The runner only runs trusted code (see above). Prefer ephemeral/JIT runners;
-  don't share the runner with private repos.
+- Untrusted code. Keep GitHub Actions off this box. Bench-ci runs only the exact SHA selected for
+  the release gate and owns the reservation and cleanup.
 - Least privilege. A dedicated unprivileged user; the stack already runs least-privilege
   containers (`no-new-privileges`, `cap_drop`, read-only roots, scoped Docker socket proxies,
   regression-guarded in `tests/stack/standalone/test_compose.sh`).
 - Reproducible, clean baseline. The matrix reuses the synced read/write chains, which may advance
   normally; it does not replace them during config-only cases. The image-upgrade gate takes
-  private reflink snapshots of every writable mount and restores them, restores the
+  private reflink snapshots of every writable bind mount (a plain copy of the small named
+  volumes) and restores them, restores the
   original `config.json` at the end, and `--safety-backup` takes a `pithead backup` first and
   rolls the box back (down → restore → up) if anything fails.
 - Build isolation and integrity. Build images in containers with pinned upstream versions and
@@ -491,7 +481,7 @@ compose hardening, config rendering, dashboard tests.
 | Gap (not tested live) | Worth filling before release? |
 |---|---|
 | Full (unpruned) Monero live, which a pruned box can't exercise | Low. Stack paths don't differ by prune mode; fakes/config cover it. A multi-day full sync isn't justified. |
-| Protected pre-release gate: the self-hosted runner is manual/opt-in | Medium-high, high-value. Keep `workflow_dispatch` restricted to the protected default branch and approved actors; it is not a required PR check. |
+| Protected pre-release gate | Wired, not yet exercised: `release.sh` and the `main` ruleset both require `bench-ci/tier4` from the pinned App id (provisioned under [#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237)), but the bench has published no tier-4 status yet, so the gate has not run end to end. |
 | Cross-version self-deploy upgrade | Medium. Run the upgrade proof tracked by [#1997](https://github.com/p2pool-starter-stack/pithead/issues/1997), which is blocked by its runnable-environment issue [#2057](https://github.com/p2pool-starter-stack/pithead/issues/2057). It proves authenticated manifest/image identity, mounts, captured chain anchors, durable state, secrets, workers/mining, derived state, and old-baseline restoration. |
 | Cross-version appliance/RAUC upgrade | Medium. The current KVM update builds both slots from one tree; [#2056](https://github.com/p2pool-starter-stack/pithead/issues/2056) tracks an upgrade from a real previous appliance release with provisioned state. |
 | N-1 encrypted backup restore on the appliance | Medium. Same-version restore is covered; [#2001](https://github.com/p2pool-starter-stack/pithead/issues/2001) tracks restoring a supported prior-release backup through the current wizard without a forced resync. |
@@ -501,5 +491,5 @@ compose hardening, config rendering, dashboard tests.
 | Real Tari merge-mined block acceptance | Low. Probabilistic; rely on template/connectivity checks. |
 | Fault injection over SSH: no recorded live evidence | Low-Medium. The faults already use the shared SSH/local target wrapper; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) tracks the focused remote quoting, cleanup, and restoration proof. |
 
-Recommended before release: record the new combined upgrade/XvB run and wire the protected
-self-hosted gate when a runner exists. The remaining rows are explicit residual gaps.
+Recommended before release: record the new combined upgrade/XvB run. The remaining rows are
+explicit residual gaps.

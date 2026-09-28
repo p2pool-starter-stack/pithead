@@ -171,6 +171,32 @@ run_rigforge_control() {
 
     [ -n "$RIGFORGE_BOOTSTRAP_VERSION" ] || run_rigforge_upgrade "$rig"
 
+    # #1990 release-gate row: everything above just drove a real burst of control requests
+    # (worker-apply, pools, reverse, rollback, upgrade) through the real host-side runner, each
+    # one writing (and control_prune_results pruning) results/ for real. Not a stress test of the
+    # caps themselves — tier 1 already drives control_prune_results directly against synthetic
+    # excess — this proves the routine runs on a real drain without breaking anything it touches.
+    # Defaults mirror lib/pithead/49-control-request-loop.sh and docs/dashboard.md#backup-view;
+    # change all three together.
+    local cdir results_count results_bytes_kb
+    cdir="$(env_on_box CONTROL_DIR)"
+    if [ -n "$cdir" ]; then
+        results_count="$(rx "find $(quote_arg "$cdir/results") -maxdepth 1 -type f 2>/dev/null | wc -l" | tr -d ' ')"
+        results_bytes_kb="$(rx "du -sk $(quote_arg "$cdir/results") 2>/dev/null | cut -f1" | tr -d ' ')"
+        assert_eq "control results/ file count stays within CONTROL_RESULT_MAX_COUNT after repeated control actions (#1990)" \
+            "$([ "${results_count:-0}" -le 200 ] && echo true || echo false)" "true"
+        assert_eq "control results/ total bytes stay within CONTROL_RESULTS_MAX_BYTES after repeated control actions (#1990)" \
+            "$([ "$(((${results_bytes_kb:-0}) * 1024))" -le 536870912 ] && echo true || echo false)" "true"
+    else
+        assert_eq "control result retention requires CONTROL_DIR (#1990)" \
+            "$([ -n "$cdir" ] && echo true || echo false)" "true"
+    fi
+    # Direct rc, not `$(wait_status_ok && echo true || echo false)`: wait_for's own it_step
+    # progress line ("→ waiting for…") goes to stdout, so that form's captured "got" was never
+    # true/false, it was the progress line — a real 60s job 577 failure on read, not on health.
+    wait_status_ok 240
+    assert_rc "stack still healthy after repeated control actions and retention pruning (#1990)" "$?" "0"
+
     control_rc=$((IT_FAIL > fails_before))
     [ "$control_rc" = 0 ] || capture_artifacts "rigforge-control" "$OUT_DIR"
     # Restore: baseline config drops the injected descriptor + turns control back off (the end-of-run

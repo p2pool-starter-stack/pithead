@@ -99,7 +99,8 @@ done
 #   lib.sh                        — a library of fixtures and helpers; it holds no assertions
 #   test_compose.sh               — its cases are jq filters over docker-compose.yml, not sections
 #   test-control-add-only-ssrf.sh — split out of a run.sh section whose header stayed behind
-SECTIONLESS="standalone/test_compose.sh control/test-control-add-only-ssrf.sh test-lifecycle.sh"
+#   test-lifecycle.sh, test-host-firewall.sh — loaders; the files they source carry the sections
+SECTIONLESS="standalone/test_compose.sh control/test-control-add-only-ssrf.sh test-lifecycle.sh test-host-firewall.sh"
 while IFS= read -r f; do
     case " $SECTIONLESS " in *" ${f#tests/stack/} "*) continue ;; esac
     if [ "$(sh_sections "$f" | count)" -eq 0 ]; then
@@ -179,14 +180,16 @@ stack_expected=$(
 stack_expected=$(printf '%s\n' "$stack_expected" | sort)
 check_source_set tests/stack/run.sh "$stack_expected" 50
 
-# live-*-support.sh are excluded for the skip-accounting.sh reason: run.sh sources live-gates.sh,
-# which sources them, so run.sh reaches them transitively and never names them itself.
+# Support modules are excluded for the skip-accounting.sh reason: run.sh reaches them through
+# their owning phase or shared library, rather than sourcing them directly.
 integration_expected=$(
     printf '%s\n' lib.sh scenarios.sh
     find tests/integration/lib -maxdepth 1 -type f -name '*.sh' \
-        ! -name rig-supply.sh ! -name restore-proof.sh ! -name skip-accounting.sh \
+        ! -name rig-supply.sh ! -name restore-proof.sh ! -name chain-keep.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
+        ! -name harness-args.sh ! -name run-lifecycle-wallet-fixture.sh \
         ! -name redact-it-password.sh \
+        ! -name remote-endpoints.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh -print |
         sed 's|^tests/integration/||'
 )
@@ -214,7 +217,7 @@ ${n_scen} live config scenarios (${n_axes} axis values) · ${n_mini} mini-stack 
 | 1 — Unit | dashboard pytest | ${n_py_dash} |
 | 1 — Unit | frontend (node --test) | ${n_node} |
 | 1 — Unit | \`pithead\` shell suite | ${n_stack} sections |
-| 1 — Unit | compose interpolation + hardening (#90) | 1 |
+| 1 — Unit | compose hardening + generated Caddyfile parsing (#90/#1037) | 1 |
 | 2 — Contract | fake-daemon clients | ${n_py_fake} |
 | 3 — Mini-stack | docker control-plane scenarios | ${n_mini} |
 | 4 — Live matrix | config scenarios | ${n_scen} (${n_axes} axis values) |
@@ -256,6 +259,11 @@ cat <<EOF
 - docker-compose.yml \`\${VAR}\` interpolation resolves against a representative .env
 - #90 hardening invariants: no-new-privileges / cap_drop / read-only roots, credential-free
   healthchecks, least-privilege Docker socket proxies, and the pinned \`pithead\` project name
+
+### Generated Caddyfile parser gate (tests/stack/standalone/test_caddyfile.sh)
+- the pinned Caddy image rejects the #1037 bind/basic_auth directive collision
+- every successful Caddyfile from the existing DIY, appliance identity, auth, custom-port and
+  onion render scenarios adapts to non-empty JSON
 
 ### Real-image data-reset repair (tests/stack/standalone/test_data_reset.sh)
 - #1062 on a REAL ext4 image with the system's own e2fsprogs: the superblock-magic damage the

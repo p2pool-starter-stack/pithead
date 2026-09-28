@@ -14,7 +14,7 @@ function Overview({ state }) {
   // shares / target) → routed split → reference (last share / Tari / wallets).
   return html`
     <div class="card card-simple" id="card-overview">
-        <h3>Overview</h3>
+        <h2>Overview</h2>
         <div class="stat-grid">
             <${StatCard} label="Total Hashrate" value=${hr.total} cls="text-accent" />
             <${StatCard} label="Mining Mode" value=${hr.mode_name} cls=${cVar(hr.mode_variant)} />
@@ -41,7 +41,7 @@ function Overview({ state }) {
                 : null
             }
             <${StatCard} label="Last Share" value=${st.last_share} />
-            <div class="stat-card"><h5>Tari Mining</h5><${TariStatus} tari=${t} /></div>
+            <div class="stat-card"><p class="stat-label">Tari Mining</p><${TariStatus} tari=${t} /></div>
             <${StatCard} label="Wallet XMR" value=${st.wallet_short} cls="font-mono text-xs" />
             <${StatCard} label="Wallet TARI" value=${t.wallet_short} cls="font-mono text-xs" />
         </div>
@@ -62,7 +62,7 @@ function NodeStats({ state }) {
             <${StatCard} label="Shares (OK/Err)" value=${st.shares} />`;
   const detail = html`
             <div class="stat-card col-span-2">
-                <h5>Stratum (15m / 1h / 24h)</h5>
+                <p class="stat-label">Stratum (15m / 1h / 24h)</p>
                 <p class="text-small">${st.h15} / ${st.h1h} / ${st.h24h}</p>
             </div>
             <${StatCard} label="Connections" value=${st.conns} />
@@ -73,7 +73,7 @@ function NodeStats({ state }) {
             <${StatCard} label="Total Hashes (Node)" value=${st.total_hashes} span=${true} />`;
   return html`
     <div class="card card-advanced" id="card-mynode">
-        <h3>My P2Pool Node Stats</h3>
+        <h2>My P2Pool Node Stats</h2>
         <${MoreStats} prefKey="dashboardCardNode" headline=${headline} detail=${detail} count=${12} />
         <div class="wallet-text">Wallet: ${st.wallet}</div>
     </div>`;
@@ -86,7 +86,7 @@ function GlobalStats({ state }) {
   const headline = html`
             <${StatCard} label="Pool Hashrate" value=${p.hr} cls="text-accent" />
             <${StatCard} label="Blocks Found" value=${p.blocks} />
-            <div class="stat-card"><h5>Last Block</h5><p class="text-small">${p.last_blk}</p></div>`;
+            <div class="stat-card"><p class="stat-label">Last Block</p><p class="text-small">${p.last_blk}</p></div>`;
   const detail = html`
             <${StatCard} label="Miners" value=${p.miners} />
             <${StatCard} label="Sidechain Height" value=${p.sidechain_height} />
@@ -95,11 +95,11 @@ function GlobalStats({ state }) {
             <${StatCard} label="PPLNS Weight" value=${p.pplns_wgt} />
             <${SharesStat} sw=${state.shares_window} />
             <${StatCard} label="Peers" value=${p.peers} />
-            <div class="stat-card"><h5>Uptime</h5><p class="text-small">${p.uptime}</p></div>
+            <div class="stat-card"><p class="stat-label">Uptime</p><p class="text-small">${p.uptime}</p></div>
             <${StatCard} label="Total Hashes (Pool)" value=${p.total_hashes} />`;
   return html`
     <div class="card card-advanced" id="card-global">
-        <h3>Global P2Pool Stats</h3>
+        <h2>Global P2Pool Stats</h2>
         <${MoreStats} prefKey="dashboardCardGlobal" headline=${headline} detail=${detail} count=${12} />
     </div>`;
 }
@@ -120,7 +120,7 @@ function XvBStats({ state }) {
   const credTitle = hr.xvb_stale ? staleTitle : "";
   return html`
     <div class="card card-advanced" id="card-xvb">
-        <h3>XvB Donation Stats</h3>
+        <h2>XvB Donation Stats</h2>
         <div class="stat-grid">
             <${StatCard} label="Current Tier" value=${hr.tier} />
             <${StatCard} label="Target Tier" value=${hr.target_tier} />
@@ -163,11 +163,11 @@ function NetworkCard({ state }) {
                 title="Whether this stack runs its own monerod or points at somebody else's" />
             <${StatCard} label="Node Mode" value=${m.mode} />
             <${StatCard} label="DB Size" value=${m.db_size} />
-            <div class="stat-card col-span-2"><h5>Current Block Hash</h5><p class="font-mono text-xs">${n.hash}</p></div>
+            <div class="stat-card col-span-2"><p class="stat-label">Current Block Hash</p><p class="font-mono text-xs">${n.hash}</p></div>
             <${StatCard} label="Network Time" value=${n.ts} span=${true} />`;
   return html`
     <div class="card card-advanced" id="card-network">
-        <h3>XMR Network</h3>
+        <h2>XMR Network</h2>
         <${MoreStats} prefKey="dashboardCardNetwork" headline=${headline} detail=${detail} count=${8} />
     </div>`;
 }
@@ -180,7 +180,7 @@ function CadenceCard({ cadence }) {
   if (!cadence) return null;
   return html`
     <div class="card card-advanced" id="card-cadence">
-        <h3>Pool Cadence & Luck</h3>
+        <h2>Pool Cadence & Luck</h2>
         <div class="stat-grid">
             <${StatCard} label="Since Pool's Last Block" value=${cadence.since_block}
                          title=${"Last block the pool found (" + cadence.last_block + ") — pool-wide, not a payout to you."} />
@@ -197,9 +197,9 @@ function CadenceCard({ cadence }) {
 function TariCard({ tari, local }) {
   return html`
     <div class="card card-advanced" id="card-tari">
-        <h3>Tari Merge-Mining</h3>
+        <h2>Tari Merge-Mining</h2>
         <div class="stat-grid">
-            <div class="stat-card"><h5>Status</h5><${TariStatus} tari=${tari} /></div>
+            <div class="stat-card"><p class="stat-label">Status</p><${TariStatus} tari=${tari} /></div>
             <${StatCard} label="Reward" value=${tari.reward} />
             <${StatCard} label="Height" value=${tari.height} />
             <${StatCard} label="Difficulty" value=${tari.diff} />

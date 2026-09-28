@@ -1,4 +1,4 @@
-// The setup wizard's role select (mining_dashboard/web/static/wizard/wizard.mjs): what an unconfigured
+// The setup wizard's role choice (mining_dashboard/web/static/wizard/wizard.mjs): what an unconfigured
 // machine opens on (#1830), and the single fact it shares with the built-in-miner switch
 // (#1831). A sibling of wizard.test.mjs rather than more rows inside it: that file sits at its
 // recorded ceiling in docs/dev/file-budget.tsv, and ceilings only go down.
@@ -40,9 +40,12 @@ function appOn(cfg) {
   return inst;
 }
 
+const checked = (out, name, value) =>
+  new RegExp(`<input type="radio" name="${name}" value="${value}" checked`).test(out);
+
 test("a machine whose config has the miner on opens on Pithead + RigForge (#1830)", () => {
   const out = renderToString(appOn(cfgFor(true)).render());
-  assert.match(out, /<select value="both"/); // the select
+  assert.ok(checked(out, "role", "both"));
   assert.match(out, /Nothing to install/); // the switch's own Yes note — the same fact
 });
 
@@ -51,7 +54,7 @@ test("a machine whose config keeps the miner off opens on Pithead (#1830 control
   // pre-seed, a reinstall pre-fill and a rejected submission all arrive with their own config
   // and win whole over the page's default (tests/web/test_wizard_role.py pins that half).
   const out = renderToString(appOn(cfgFor(false)).render());
-  assert.match(out, /<select value="pithead"/);
+  assert.ok(checked(out, "role", "pithead"));
   assert.doesNotMatch(out, /Nothing to install/);
 });
 
@@ -61,34 +64,23 @@ test("the (default) marker names the option an unconfigured machine opens on (#1
   // wizard.test.mjs asserts option text that survives moving the marker back, so a straight
   // revert of the fix ships green (measured by the non-author reviewer at this head).
   const out = renderToString(appOn(cfgFor(true)).render());
-  // Structure, and keyed by VALUE rather than by prose: scope to this one select, then ask of
-  // each option what its value attribute is. Keying on label literals pinned the marker one
-  // indirection short of the thing — it stayed green when the two options' value attributes were
-  // swapped, and when the select's own binding was inverted, each of which puts the marker on
-  // the option the operator does not get, which is #1830 verbatim.
-  const sel = out.match(
-    /Mine on this machine too\?[\s\S]*?<select value="([^"]*)"([\s\S]*?)<\/select>/,
-  );
-  assert.ok(sel, "the mine-on-this-machine select did not render");
-  const opt = Object.fromEntries(
-    [...sel[2].matchAll(/<option value="([^"]*)"[^>]*>([^<]*)</g)].map((m) => [m[1], m[2]]),
-  );
-  assert.equal(sel[1], "true"); // the option an unconfigured machine actually opens on
-  assert.match(opt.true, /\bdefault\b/);
-  // The load-bearing half: matching on Yes alone still passes if the marker is re-added to No.
-  assert.doesNotMatch(opt.false, /\bdefault\b/);
+  const group = out.match(/Mine on this machine too\?<\/legend>([\s\S]*?)<\/fieldset>/);
+  assert.ok(group, "the mine-on-this-machine choices did not render");
+  assert.ok(checked(out, "local-miner", "true"));
+  assert.match(group[1].match(/value="true"[\s\S]*?<\/label>/)[0], /\bdefault\b/);
+  assert.doesNotMatch(group[1].match(/value="false"[\s\S]*?<\/label>/)[0], /\bdefault\b/);
 });
 
-test("the miner switch moves the role select, and so does the JSON pane (#1831)", () => {
+test("the miner switch moves the role choice, and so does the JSON pane (#1831)", () => {
   const inst = appOn(cfgFor(false));
-  // The switch is the plain field edit the rendered <select> is bound to (FIELDS.localMiner).
+  // The switch is the plain field edit the rendered radio group is bound to (FIELDS.localMiner).
   inst.edit("local_miner.enabled")({ target: { value: "true" } });
-  assert.match(renderToString(inst.render()), /<select value="both"/);
+  assert.ok(checked(renderToString(inst.render()), "role", "both"));
   inst.edit("local_miner.enabled")({ target: { value: "false" } });
-  assert.match(renderToString(inst.render()), /<select value="pithead"/);
+  assert.ok(checked(renderToString(inst.render()), "role", "pithead"));
   // Hand-edited JSON wins the same way, because it is the same one fact.
   inst.editJson({ target: { value: JSON.stringify(cfgFor(true)) } });
-  assert.match(renderToString(inst.render()), /<select value="both"/);
+  assert.ok(checked(renderToString(inst.render()), "role", "both"));
 });
 
 test("picking rig IS stored, and outranks whatever the config's miner switch says (#1831)", () => {
@@ -96,11 +88,11 @@ test("picking rig IS stored, and outranks whatever the config's miner switch say
   const inst = appOn(cfgFor(true));
   inst.setRole({ target: { value: "rig" } });
   assert.equal(inst.state.role, "rig");
-  assert.match(renderToString(inst.render()), /<select value="rig"/);
+  assert.ok(checked(renderToString(inst.render()), "role", "rig"));
   assert.equal(inst.state.cfg.local_miner.enabled, true); // untouched: a rig never edits config
   // Back to a coordinator: nothing is stored, and the config answers again.
   inst.setRole({ target: { value: "pithead" } });
   assert.equal(inst.state.role, "");
   assert.equal(inst.state.cfg.local_miner.enabled, false);
-  assert.match(renderToString(inst.render()), /<select value="pithead"/);
+  assert.ok(checked(renderToString(inst.render()), "role", "pithead"));
 });

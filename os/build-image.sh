@@ -9,9 +9,9 @@
 #                  builds omit it and stay shell-less. Sets the same PITHEAD_TEST_SSH_PUBKEY the
 #                  env path always honored — the flag exists so the bench recipe is one word,
 #                  not a rediscovered env var.
-#   --fresh-index  bust ONLY the rootfs Dockerfile's apt-update layer (#929): a warm builder
-#                  cache reuses that layer's apt index for weeks, and when the mirror rotates a
-#                  package the stale index 404s on install. Later layers still cache normally.
+#   --fresh-index  rebuild the rootfs package layer with a current apt index. The apt update
+#                  and install share one layer; a cache hit reuses both. Later layers rebuild
+#                  from the changed package layer as needed.
 #   --stage-only   stage os/build/stage/ (the compose file and its stamp, see stage_compose) and
 #                  stop before docker: the CI rootfs scan runs the Dockerfile itself and needs
 #                  exactly this step first, since the Dockerfile COPYs from that directory.
@@ -57,11 +57,11 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# apt_fetch_failure_hint (#929): given a build log tail, detect the stale-apt-index 404 signature
-# and print the remedy. Split out so it's testable without docker (tests/stack/run.sh covers it).
+# apt_fetch_failure_hint (#929): detect an apt fetch failure and print a rebuild command.
+# Split out so it's testable without docker (tests/stack/run.sh covers it).
 apt_fetch_failure_hint() {
     if grep -qE '404  Not Found|Unable to fetch some archives' <<<"$1"; then
-        echo "==> looks like a stale apt index (mirror rotated a package since the last build)." >&2
+        echo "==> apt could not fetch a package (the mirror may have changed during this build)." >&2
         echo "==> rerun with: os/build-image.sh --fresh-index" >&2
     fi
 }
@@ -76,6 +76,46 @@ if [ -n "${PITHEAD_RIGFORGE_REF:-}" ]; then
 fi
 
 is_immutable_image_ref() { [[ "$1" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; }
+
+# Resolve each first-party image to the digest the RELEASE SIGNED, and pin the compose to it.
+# The resolution is scripts/release/release.sh's manifest_digest, on purpose and to the letter: the
+# `Digest:` line of `docker buildx imagetools inspect`, which is the manifest-LIST (index) digest,
+# and the index digest is what sign_images hands to `cosign sign`. A multi-arch tag's per-platform
+# children are NOT signed: `docker manifest inspect --verbose` returns those children, so pinning
+# one (`.[0]`) pins bytes no signature covers and verify_release_images then fails closed on every
+# boot — the exact brick #1891 exists to avoid. `^Digest:` is anchored and `exit` takes the first
+# line because the child entries this output also lists are indented beneath `Manifests:`.
+pin_first_party_images() { # <compose-file> <registry> <stack-version>
+    local compose="$1" registry="$2" version="$3" svc digest
+    for svc in tor monero p2pool xmrig-proxy dashboard; do
+        digest="$(docker buildx imagetools inspect "${registry}/pithead-${svc}:${version}" 2>/dev/null |
+            awk '/^Digest:/{print $2; exit}')"
+        [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "build-image: could not resolve an immutable digest for pithead-${svc}:${version}" >&2
+            return 1
+        }
+        awk -v svc="$svc" -v digest="$digest" '
+            $0 ~ ("pithead-" svc ":") { sub("@sha256:[0-9a-f]{64}", ""); sub("pithead-" svc ":[^[:space:]@]+", "&@" digest) }
+            { print }
+        ' "$compose" >"$compose.new" && mv "$compose.new" "$compose" || return 1
+    done
+}
+
+# Harness builds only, fault injection (#2383): force the dashboard's OWN healthcheck to fail,
+# reproducing manual battery M9, a container that starts and answers HTTP while its healthcheck
+# stays failed. The fault goes in the shipped compose file, not the image: the dashboard is pinned
+# to its signed registry digest above, so a layer rebuilt onto the baked archive never runs (#2694).
+# Exactly one dashboard healthcheck must be rewritten, or the bundle would hold no fault at all.
+break_dashboard_healthcheck() { # <compose-file>
+    local compose="$1" probe='^[[:space:]]*test: \["CMD", "/app/healthcheck\.sh"\]$'
+    [ "$(grep -cE "$probe" "$compose")" = 1 ] || {
+        echo "build-image: no single dashboard healthcheck to break in $compose" >&2
+        return 1
+    }
+    # ENVIRON, not -v: awk -v would unescape the regex's \[ into a bracket expression.
+    PROBE="$probe" awk '$0 ~ ENVIRON["PROBE"] { sub(/\[.*\]/, "[\"CMD-SHELL\", \"exit 1\"]") } { print }' \
+        "$compose" >"$compose.new" && mv "$compose.new" "$compose"
+}
 
 # stage_compose (#1215): put the compose file the image will ship, plus a COMPOSE_SOURCE stamp
 # naming where it came from, into <stage-dir>. Every `image:` in docker-compose.yml is pinned by
@@ -94,6 +134,10 @@ stage_compose() { # <version-tag> <stage-dir>  -> prints the COMPOSE_SOURCE line
     mkdir -p "$dir" || return 1
     rm -f "$dir/docker-compose.yml" "$dir/COMPOSE_SOURCE" || return 1
     if [ -n "${PITHEAD_OS_COMPOSE_FILE:-}" ]; then
+        [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" = 1 ] && [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
+            echo "PITHEAD_OS_COMPOSE_FILE is restricted to synthetic debug harness builds" >&2
+            return 1
+        }
         [ -r "$PITHEAD_OS_COMPOSE_FILE" ] && [ -f "$PITHEAD_OS_COMPOSE_FILE" ] && [ ! -L "$PITHEAD_OS_COMPOSE_FILE" ] || {
             echo "PITHEAD_OS_COMPOSE_FILE: $PITHEAD_OS_COMPOSE_FILE is not a readable file" >&2
             return 1
@@ -185,9 +229,15 @@ WIZARD_SOURCE="$WIZARD_IMAGE"
 # registry and first boot re-derives the same name at runtime, so the two must agree, and nothing
 # on the box sets the runtime half otherwise. Release builds never carry either file.
 TEST_REGISTRY=""
+TEST_COSIGN_PUB=""
 if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -n "${PITHEAD_REGISTRY:-}" ] &&
     [ "$PITHEAD_REGISTRY" != "ghcr.io/p2pool-starter-stack" ]; then
     TEST_REGISTRY="$PITHEAD_REGISTRY"
+    TEST_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}"
+    [ -s "$TEST_COSIGN_PUB" ] || {
+        echo "PITHEAD_REGISTRY_COSIGN_PUB: a readable alternate public key is required for a debug registry" >&2
+        exit 1
+    }
     if [ -n "${PITHEAD_REGISTRY_CA:-}" ]; then
         [ -s "$PITHEAD_REGISTRY_CA" ] || {
             echo "PITHEAD_REGISTRY_CA: $PITHEAD_REGISTRY_CA is not a readable file" >&2
@@ -200,6 +250,20 @@ if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -n "${PITHEAD_REGISTRY:-}" ] &&
 fi
 if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -z "$TEST_REGISTRY" ]; then
     require_pullable_services "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
+fi
+# A synthetic-compose build (PITHEAD_OS_SYNTHETIC_COMPOSE, see stage_compose above) stamps a
+# version no registry ever published on purpose — tests/os/data-floor-fallback-leg.sh relies on
+# `pithead up` failing to pull it at guest runtime, not on the build refusing to produce the
+# bundle. Pinning digests here would turn that into a build-time failure instead.
+if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then
+    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
+fi
+if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
+    [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
+        echo "PITHEAD_TEST_BREAK_HEALTHCHECK is restricted to debug harness builds" >&2
+        exit 1
+    }
+    break_dashboard_healthcheck os/build/stage/docker-compose.yml || exit 1
 fi
 mkdir -p os/rootfs/images
 echo "==> staging wizard image $WIZARD_IMAGE"
@@ -252,8 +316,7 @@ echo "==> building from commit ${BUILD_COMMIT}${BUILD_DIRTY}"
 ROOTFS_TAG="${PITHEAD_ROOTFS_TAG:-pithead-os-rootfs}"
 
 echo "==> rootfs: container build + export"
-# --fresh-index (#929) stamps a new value into the Dockerfile's APT_INDEX_STAMP ARG, which busts
-# only the apt-update layer it precedes — every other layer still caches normally.
+# --fresh-index (#929) stamps a new value into APT_INDEX_STAMP, rebuilding the package layer.
 apt_index_stamp=0
 [ "${FRESH_INDEX:-0}" = "1" ] && apt_index_stamp="$(date +%s)"
 build_log="$(mktemp)"
@@ -305,7 +368,10 @@ if [ -n "$TEST_REGISTRY" ]; then
         printf '[[registry]]\nlocation = "%s"\ninsecure = true\n' "${TEST_REGISTRY%%/*}" \
             >"$stage/etc/containers/registries.conf.d/pithead-test-registry.conf"
     fi
-    (cd "$stage" && find etc -type f) |
+    mkdir -p "$stage/opt/pithead"
+    cp "$TEST_COSIGN_PUB" "$stage/opt/pithead/cosign.pub"
+    [ -z "${PITHEAD_REGISTRY_CA:-}" ] || cp "$PITHEAD_REGISTRY_CA" "$stage/opt/pithead/cosign.registry-ca.crt"
+    (cd "$stage" && find etc opt -type f) |
         tar --append -f os/build/pithead-root.tar --owner=0 --group=0 --mode=0644 -C "$stage" -T -
     rm -r "$stage"
 fi

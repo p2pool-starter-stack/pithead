@@ -67,8 +67,15 @@ check_egress_firewall_installed() {
     fi
     tor_egress_enforced || rc=$?
     case "$rc" in
-    0) dr_ok "Tor-only egress firewall is installed — clearnet dials from the stack are fail-closed via $how." ;;
-    1) dr_fail_surface "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a host reboot (the rules are gone but the containers auto-restarted). Run './pithead up' to reinstall them." "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a reboot in which the rules were lost but the containers came back. Restarting this machine reinstalls them." ;;
+    0)
+        dr_ok "Tor-only egress firewall is installed — clearnet dials from the stack are fail-closed via $how."
+        # Live now is not live after the next reboot (#2460): without the boot unit the containers
+        # come back on their own and the rules do not.
+        if tor_egress_boot_unit_applies && ! systemctl is-enabled "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1; then
+            dr_warn_surface "The Tor-egress firewall is live but will NOT survive a reboot — $TOR_EGRESS_BOOT_UNIT is not enabled, so the containers would restart without it. Run './pithead up' to install it." "The Tor-egress firewall is live but will NOT survive a reboot on this machine."
+        fi
+        ;;
+    1) dr_fail_surface "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. On a DIY host $TOR_EGRESS_BOOT_UNIT restores it at boot, ahead of the containers; see 'systemctl status $TOR_EGRESS_BOOT_UNIT'. Run './pithead up' to reinstall the rules and the unit." "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a reboot in which the rules were lost but the containers came back. Restarting this machine reinstalls them." ;;
     2) dr_fail_surface "Tor-only egress CANNOT be enforced — the $how backend's command is not installed on this host, so nothing is dropping clearnet dials from the stack. Install it and run './pithead up', or set network.tor_egress_firewall=false to acknowledge running without it." "Tor-only egress CANNOT be enforced on this machine — the firewall command it needs is missing, so clearnet dials from the stack are not being dropped." ;;
     # #855's own failure mode, and the one a presence-only check cannot see: the rules are there and
     # nothing traverses them. The stack is up by the time this runs, so the engine has had its chance
@@ -139,6 +146,62 @@ check_dashboard_answers() {
     return 0
 }
 
+# Appliance-only counterpart to check_dashboard_answers: the app may answer while Caddy has
+# reopened a wildcard/public socket. Judge the listener the kernel reports, not only the rendered
+# Caddyfile, because a stale running process is the exposure that matters (#1021/#2070).
+dashboard_public_listener_verdict() { # <ss-output> <public-ips> <port>
+    local rows="$1" public_ips="$2" port="$3" line local_addr public_ip seen_expected=0
+    while IFS= read -r line; do
+        case "$line" in *caddy*) ;; *) continue ;; esac
+        local_addr=$(awk '{print $4}' <<<"$line")
+        case "$local_addr" in
+        \*:* | 0.0.0.0:* | "[::]":* | :::*)
+            printf 'fail:wildcard listener\n'
+            return 1
+            ;;
+        esac
+        for public_ip in $public_ips; do
+            case "$local_addr" in "$public_ip":* | "[$public_ip]":*)
+                printf 'fail:public listener\n'
+                return 1
+                ;;
+            esac
+        done
+        case "$local_addr" in *:"$port") seen_expected=1 ;; esac
+    done <<<"$rows"
+    [ "$seen_expected" = 1 ] || {
+        printf 'missing\n'
+        return 2
+    }
+    printf 'ok\n'
+}
+
+check_dashboard_public_listener() {
+    is_appliance || return 0
+    if [ "$(normalize_bool "$(env_get DASHBOARD_EXPOSE_PUBLIC_IP 2>/dev/null)")" = true ]; then
+        dr_info "Dashboard public-listener check skipped — opted in (dashboard.expose_public_ip=true)."
+        return 0
+    fi
+    if ! command -v ip >/dev/null 2>&1 || ! command -v ss >/dev/null 2>&1; then
+        dr_info "Dashboard public-listener check skipped — 'ip' and 'ss' are required (Linux-only)."
+        return 0
+    fi
+    local public_ips port rows verdict
+    public_ips=$(host_public_ips)
+    port=$(env_get HOST_PORT 2>/dev/null)
+    if [ -z "$port" ]; then
+        [ "$(normalize_bool "$(env_get DASHBOARD_SECURE 2>/dev/null)")" = true ] && port=443 || port=80
+    fi
+    rows=$(ss -Hltnp 2>/dev/null)
+    verdict=$(dashboard_public_listener_verdict "$rows" "$public_ips" "$port")
+    case "$verdict" in
+    ok) dr_ok "Dashboard listener excludes every public host address." ;;
+    missing) dr_info "Dashboard public-listener check skipped — no Caddy listener found on :$port." ;;
+    *) dr_fail_surface "Dashboard has a public listener — set dashboard.expose_public_ip=false and run './pithead apply'." "The dashboard has a public listener. This machine is meant to serve it only on LAN and private IPv6 addresses." ;;
+    esac
+    return 0
+}
+
 # The revenue-path containers, split by how they behave during a fresh node's DAYS-LONG initial
 # sync (#35). This split is the whole reason the commit gate can tell "still syncing" (fine, commit)
 # from "crashed" (revert):
@@ -160,32 +223,29 @@ REVENUE_MINER_CONTAINERS="p2pool xmrig-proxy"
 # the rest of doctor covers those, and this must not judge containers outside its remit.
 #
 # chain_hold=1 is the migration hold (#851): pithead-boot deliberately withholds the chain
-# containers until the slot commits, so — exactly like the miners' sync hold — a DOWN chain node
-# is then the expected state, not a crash, and only a running-but-unhealthy one is a fault.
+# containers until the slot commits, so — exactly like the miners' sync hold — a genuinely stopped
+# chain node is expected. Restarting, unhealthy and every other active fault still hold the slot.
 # Without this arm the commit gate would fail on the very hold it is gating, a deadlock.
 revenue_container_verdict() { # <name> <state> <status> [chain_hold]
     local name="$1" state="$2" status="$3" chain_hold="${4:-0}" running=0
+    # Compose recreates a service under "<12-hex id>_<service>" and renames it afterwards; an
+    # interrupted recreate leaves that name in place (#2556). Judged by the literal name, a monerod
+    # left so was invisible here, and doctor passed with the node stopped.
+    [[ "$name" =~ ^[0-9a-f]{12}_(.+)$ ]] && name=${BASH_REMATCH[1]}
     # "running" from EITHER signal: podman and docker both print an "Up …" status for a live
     # container, and `.State` is "running". Reading both is belt-and-suspenders — some docker CLI
     # versions leave the `.State` ps field empty, and a chain node judged down on that alone would
     # wrongly block the commit.
     if [ "$state" = running ]; then
         running=1
-    else
+    elif [ -z "$state" ]; then
         case "$status" in Up*) running=1 ;; esac
     fi
     case " $REVENUE_CHAIN_CONTAINERS " in
     *" $name "*)
-        # Under the migration hold, judge a chain node by the miners' rule: down is deliberate.
-        if [ "$chain_hold" = 1 ]; then
-            case "$status" in
-            *'(unhealthy)'*)
-                if [ "$running" = 1 ]; then
-                    printf 'fail:%s is running but unhealthy (%s)\n' "$name" "$status"
-                else printf 'ok\n'; fi
-                ;;
-            *) printf 'ok\n' ;;
-            esac
+        # Under the migration hold, only the states its explicit stop can produce are deliberate.
+        if [ "$chain_hold" = 1 ] && container_state_is_stopped "$state" "$status"; then
+            printf 'ok\n'
             return
         fi
         # Chain node: it must be running and PAST its healthcheck. "starting"/"unhealthy" and any
@@ -205,16 +265,17 @@ revenue_container_verdict() { # <name> <state> <status> [chain_hold]
     *)
         case " $REVENUE_MINER_CONTAINERS " in
         *" $name "*)
-            # Sync-gated miner: down is the normal sync hold, so only a RUNNING-but-unhealthy miner
-            # is a fault. This is the rule that keeps a days-long initial sync from blocking commit.
-            case "$status" in
-            *'(unhealthy)'*)
-                if [ "$running" = 1 ]; then
-                    printf 'fail:%s is running but unhealthy (%s)\n' "$name" "$status"
-                else printf 'ok\n'; fi
-                ;;
-            *) printf 'ok\n' ;;
-            esac
+            # The sync gate explicitly stops miners. Only those stopped states are the exception;
+            # restarting and other non-running states are faults, as is a failed healthcheck.
+            if container_state_is_stopped "$state" "$status"; then
+                printf 'ok\n'
+            elif [[ "$status" == *'(unhealthy)'* ]]; then
+                printf 'fail:%s is running but unhealthy (%s)\n' "$name" "$status"
+            elif [ "$running" = 1 ]; then
+                printf 'ok\n'
+            else
+                printf 'fail:%s is not stopped for sync and is not running (%s)\n' "$name" "${status:-$state}"
+            fi
             ;;
         *) printf 'ok\n' ;;
         esac

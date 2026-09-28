@@ -279,10 +279,10 @@ class Store:
         assert verdicts["collapse"] == []
 
     def test_a_boolean_failure_return_is_not_read_as_a_numeric_collapse(self):
-        """`False == 0` is true in Python, so an unguarded `0` check reclassifies every boolean
-        return as a collapse. `False` is excluded on measured grounds — five outbound senders where
-        False-on-failure and False-elsewhere mean the same to a caller — and this proves the
-        exclusion is implemented, not just documented."""
+        """`False == 0` in Python, so an unguarded `0` check reclassifies every boolean return
+        as a collapse. `False` is excluded on readings taken one function at a time: senders
+        `notify_sinks._post`, `telegram_notifier.send`, `healthchecks.ping`, `docker_control._post`,
+        and non-sender `config.local_miner_enabled`. This proves the exclusion is implemented."""
         seeded = (
             "class C:\n"
             "    def send(self) -> bool:\n"

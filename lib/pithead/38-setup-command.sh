@@ -32,7 +32,7 @@ setup() {
     check_prerequisites
     ensure_config_exists
     ensure_onion_password # #343: auto-generate a dashboard password if the onion is on without one
-    parse_and_validate_config
+    PITHEAD_CONFIG_SET=1 parse_and_validate_config
     preflight_resources          # WARN-only: low disk/RAM heads-up before committing to a sync (#87)
     check_stratum_exposure setup # WARN-only: public-IP host => unauthenticated stratum :3333 exposed (#113)
     load_preserved_state
@@ -46,9 +46,10 @@ setup() {
     inject_service_configs
     optimize_kernel
     generate_caddyfile
-    provision_control_runner  # #33: install/remove the dashboard-control systemd trigger
-    render_local_miner_config # #796: the appliance's built-in RigForge worker reads a derived config
-    update_current_symlink    # #455: versioned deploy dir -> maintain the `current ->` pointer
+    provision_control_runner     # #33: install/remove the dashboard-control systemd trigger
+    provision_egress_check_units # #2599: the dashboard's egress firewall status
+    render_local_miner_config    # #796: the appliance's built-in RigForge worker reads a derived config
+    update_current_symlink       # #455: versioned deploy dir -> maintain the `current ->` pointer
 
     log "Deployment preparation complete!"
     # Provisioning is done. Everything below is either a message or an interactive "start now?",

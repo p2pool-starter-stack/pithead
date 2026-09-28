@@ -7,6 +7,55 @@
 # elsewhere. Verify them here so a missing tool fails preflight with an actionable message, before any
 # build, instead of mid-gate.
 LINT_TOOLCHAIN=(shellcheck shfmt node npx uv uvx)
+BENCH_TIER4_CONTEXT="bench-ci/tier4"
+
+# Dies on a real cut; on --dry-run prints the verdict and lets the rehearsal continue. A preview that
+# can only ever abort is not a preview — the same call #1108 made for the signing check.
+bench_tier4_reject() {
+    [ "$DRY_RUN" -eq 1 ] || die "$@"
+    warn "$* [--dry-run: continuing]"
+}
+
+require_bench_tier4() {
+    local app_id statuses state slug="${BENCH_CI_APP_SLUG:-}" expected="${BENCH_CI_APP_ID:-}"
+    if ! command -v gh >/dev/null 2>&1; then
+        bench_tier4_reject "gh is required to read the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
+        return 0
+    fi
+    if ! [[ "$expected" =~ ^[1-9][0-9]*$ ]]; then
+        bench_tier4_reject "BENCH_CI_APP_ID must be the numeric id of the installed bench-ci GitHub App."
+        expected="" # dry run only: the id cannot be checked, but the status lookup still previews
+    fi
+    if ! [[ "$slug" =~ ^[a-z0-9-]+$ ]]; then
+        bench_tier4_reject "BENCH_CI_APP_SLUG must be the slug of the installed bench-ci GitHub App (pithead-bench-ci)."
+        return 0 # without a slug there is nothing left to look up
+    fi
+    if ! app_id="$(gh api "apps/$slug" | jq -r '.id // empty')"; then
+        bench_tier4_reject "Could not resolve GitHub App $slug."
+        return 0
+    fi
+    if [ -n "$expected" ] && [ "$app_id" != "$expected" ]; then
+        bench_tier4_reject "GitHub App $slug has id ${app_id:-missing}, expected $expected."
+        return 0
+    fi
+    # ponytail: reads only the first 100 statuses on the commit. A commit carrying more than that,
+    # with the bench-ci entry aged out of the page, reads as missing and REFUSES the release —
+    # it fails closed, never open. Paginate if a release SHA ever collects that many statuses.
+    if ! statuses="$(gh api "repos/p2pool-starter-stack/pithead/commits/$GIT_COMMIT/statuses?per_page=100")"; then
+        bench_tier4_reject "Could not read the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
+        return 0
+    fi
+    if ! state="$(jq -r --arg context "$BENCH_TIER4_CONTEXT" --arg creator "${slug}[bot]" \
+        'map(select(.context == $context and .creator.login == $creator)) | first | .state // empty' <<<"$statuses")"; then
+        bench_tier4_reject "Could not parse the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
+        return 0
+    fi
+    if [ "$state" != success ]; then
+        bench_tier4_reject "Release commit $GIT_COMMIT has no successful $BENCH_TIER4_CONTEXT status from GitHub App ${expected:-unset} (got: ${state:-missing})."
+        return 0
+    fi
+    ok "Bench tier-4 gate passed for $GIT_COMMIT."
+}
 
 check_release_toolchain() {
     local tool missing=()
@@ -17,6 +66,15 @@ check_release_toolchain() {
         die "Missing lint/test tool(s): ${missing[*]} — the release box needs the lint toolchain before the test gate can run. Provision it (apt + the pinned uv installer): see docs/dev/release-server.md § Provisioning the server. (Or --skip-tests to bypass the gate — NOT recommended.)"
     fi
     ok "Lint/test toolchain present (${LINT_TOOLCHAIN[*]})."
+}
+
+require_clean_release_tree() {
+    local tree_status
+    [ "$ALLOW_DIRTY" -eq 0 ] || [ "$DRY_RUN" -eq 1 ] || die "--allow-dirty requires --dry-run."
+    tree_status="$(git status --porcelain)" || die "Could not inspect the working tree at $GIT_COMMIT."
+    [ -z "$tree_status" ] ||
+        { [ "$DRY_RUN" -eq 1 ] && [ "$ALLOW_DIRTY" -eq 1 ]; } ||
+        die "Working tree differs from $GIT_COMMIT. Commit/stash first (or use --allow-dirty with --dry-run)."
 }
 # --- Release signing (#376, #960) -----------------------------------------------------------------
 #
@@ -160,13 +218,16 @@ preflight() {
     # release.sh enables errexit before calling this stage.
     # shellcheck disable=SC2164
     cd "$REPO_ROOT"
+    GIT_COMMIT="$(git rev-parse HEAD)"
+    GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+    require_clean_release_tree
     log "Building the generated pithead CLI"
     bash scripts/build-pithead.sh || die "Could not build the pithead CLI."
     [ -f VERSION ] && [ -f docker-compose.yml ] || die "VERSION / docker-compose.yml not found at the repo root."
     command -v docker >/dev/null 2>&1 || die "docker is required."
     docker buildx version >/dev/null 2>&1 || die "docker buildx is required (for digest-level promotion)."
-    # Only the test gate needs the lint toolchain — skip the check on the paths that don't run it.
-    if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_TESTS" -eq 0 ] && [ "$RESUME_PROMOTE" -eq 0 ]; then
+    # Only the test gate needs the lint toolchain — skip the check when it does not run.
+    if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_TESTS" -eq 0 ]; then
         check_release_toolchain
     fi
     apply_signing_defaults
@@ -180,14 +241,9 @@ preflight() {
     is_semver "$STACK_VERSION" || die "VERSION ('$STACK_VERSION') is not SemVer (expected X.Y.Z)."
     TAG="v$STACK_VERSION"
     STAGING_TAG="${TAG}-rc.${RC}"
-    GIT_COMMIT="$(git rev-parse HEAD)"
-    GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
     # Used by the image labels and bundle manifest in the later release stages.
     # shellcheck disable=SC2034
     BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    if [ "$ALLOW_DIRTY" -eq 0 ] && [ -n "$(git status --porcelain)" ]; then
-        die "Working tree is dirty. Commit/stash first, or pass --allow-dirty."
-    fi
     [ "$GIT_BRANCH" = "develop" ] || warn "Releasing from '$GIT_BRANCH', not develop."
 
     if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then

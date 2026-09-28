@@ -134,6 +134,15 @@ def test_current_names_win_and_unknown_names_are_removed_without_values_in_the_s
     assert not any(value in " ".join(changes) for value in ("credential-value", "do-not-render"))
 
 
+def test_a_numeric_alias_is_not_the_v1_boolean_default():
+    with pytest.raises(ValueError, match="xvb.enabled and xmrig_proxy.enabled"):
+        prepare_config(
+            {"xvb": {"enabled": False}, "xmrig_proxy": {"enabled": 1}},
+            REFERENCE,
+            reject_legacy_conflicts=True,
+        )
+
+
 def test_submission_refuses_conflicting_legacy_and_current_names():
     with pytest.raises(ValueError, match="xvb.enabled and xmrig_proxy.enabled"):
         prepare_config(
@@ -141,6 +150,21 @@ def test_submission_refuses_conflicting_legacy_and_current_names():
             REFERENCE,
             reject_legacy_conflicts=True,
         )
+
+
+def test_editor_saved_v1_alias_defaults_never_conflict_with_customised_xvb():
+    # A v1.20.0 editor save carries xmrig_proxy at its reference defaults (#2690).
+    prepared, _ = prepare_config(
+        {
+            "xvb": {"enabled": False, "url": "eu.xmrvsbeast.com:4247", "donor_id": "mine"},
+            "xmrig_proxy": {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"},
+        },
+        REFERENCE,
+        reject_legacy_conflicts=True,
+    )
+    assert prepared == {
+        "xvb": {"enabled": False, "url": "eu.xmrvsbeast.com:4247", "donor_id": "mine"}
+    }
 
 
 async def test_legacy_reinstall_prefill_is_migrated_before_defaults_are_merged(client, spool):

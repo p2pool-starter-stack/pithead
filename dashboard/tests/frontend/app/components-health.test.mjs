@@ -18,6 +18,27 @@ test('Tari status gates the ✔ on a live gRPC channel, never on active-but-dead
     assert.doesNotMatch(dHtml, /check-inline/); // active-but-dead -> NO ✔ (the invariant)
 });
 
+test('A READY channel on a node off the chain reads amber/red with the reason, never ✔ (#2464)', () => {
+    for (const [level, cls] of [['amber', 'status-warn'], ['red', 'status-bad']]) {
+        const s = clone();
+        // build_tari derives the text (#2464); the panel must print it as it stands, coloured by level.
+        Object.assign(s.tari, {
+            connected: true, active: true,
+            status: 'Not following the chain: tip 342574 unchanged for 31 min. restart the Tari node',
+            health: { level, reasons: ['tip 342574 unchanged for 31 min'], advice: 'restart the Tari node' },
+        });
+        const out = renderApp({ state: s });
+        assert.match(out, new RegExp(`${cls}">Not following the chain: tip 342574 unchanged for 31 min\\. restart the Tari node<`));
+        assert.doesNotMatch(out, /check-inline/);
+    }
+    const green = clone();
+    Object.assign(green.tari, {
+        connected: true, active: true, status: 'Merge mining',
+        health: { level: 'green', reasons: [], advice: '' },
+    });
+    assert.match(renderApp({ state: green }), /status-ok">Merge mining/);
+});
+
 test('Sync gauge shows a ✔ for a done chain and a live percent while syncing', () => {
     const s = clone();
     s.syncing = true;
@@ -55,10 +76,21 @@ test('StackTopology marks live routes with marching ants, never a dashed edge', 
 test('ComponentHealth flips to a warning summary when the posture leaks', () => {
     const s = clone();
     s.topology.summary.level = 'warn';
+    s.topology.summary.leaks = 2;
     s.topology.summary.label = '2 clearnet egress path(s) exposing your IP';
     assert.match(renderApp({ state: s }), /⚠️/);
     assert.match(renderApp({ state: s }), /exposing your IP/);
     assert.match(renderApp({ state: s }), /egress-summary c-bad/);
+});
+
+test('ComponentHealth renders an unverified-only posture as a warning, not a leak', () => {
+    const s = clone();
+    s.topology.summary.level = 'warn';
+    s.topology.summary.leaks = 0;
+    s.topology.summary.label = '2 egress path(s) unverified; Tor-only status cannot be confirmed';
+    const html = renderApp({ state: s });
+    assert.match(html, /egress-summary c-warn/);
+    assert.doesNotMatch(html, /egress-summary c-bad/);
 });
 
 test('ComponentHealth still renders the panel but omits the drawer when egress is absent', () => {
@@ -79,4 +111,11 @@ test('syncing App renders the sync gauges instead of the dashboard', () => {
     assert.match(html, /Monero Sync/);
     assert.match(html, /Tari Sync/);
     assert.doesNotMatch(html, /Workers Alive/);
+});
+
+test('the Tari sync gauge says when it belongs to a remote node', () => {
+    const s = clone();
+    s.syncing = true;
+    s.sync.tari.local = false;
+    assert.match(renderApp({ state: s }), /Remote node/);
 });

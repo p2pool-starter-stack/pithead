@@ -53,14 +53,13 @@ RDH=$(
 )
 assert_eq "no tty + appliance -> <hostname>.local" "$RDH" "$(hostname).local"
 unset RDH
-
-echo "== unit: ssh access is derived — key-only, /run-resident, absent when disabled (#786) =="
 SSHSB="$SANDBOX/sshsb"
 mkdir -p "$SSHSB/bin" "$SSHSB/units" "$SSHSB/run"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$SSHSB/bin/systemctl"
 chmod +x "$SSHSB/bin/systemctl"
-ssh_run() { # <config-json>
-    printf '%s' "$1" >"$SSHSB/config.json"
+ssh_run() {
+    printf '%s' "$1" >"$SSHSB/variant"
+    printf '%s' "$2" >"$SSHSB/config.json"
     (
         cd "$SSHSB" || exit
         PATH="$SSHSB/bin:$PATH"
@@ -70,38 +69,51 @@ ssh_run() { # <config-json>
         log() { :; }
         warn() { :; }
         sudo() { "$@"; }
-        PITHEAD_APPLIANCE=1 PITHEAD_UNIT_DIR="$SSHSB/units" PITHEAD_SSH_RUN_DIR="$SSHSB/run/ssh" \
+        PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$SSHSB/variant" PITHEAD_UNIT_DIR="$SSHSB/units" PITHEAD_SSH_RUN_DIR="$SSHSB/run/ssh" \
             CONFIG_FILE="$SSHSB/config.json" provision_ssh_access
     )
 }
-ssh_run '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
+ssh_run debug '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
 grep -q "ssh-ed25519 AAAATEST" "$SSHSB/run/ssh/authorized_keys" 2>/dev/null &&
     ok "enabled -> the key lands in the runtime dir" || bad "enabled -> the key lands in the runtime dir" "missing"
 grep -q "PasswordAuthentication=no" "$SSHSB/units/ssh.service.d/pithead.conf" 2>/dev/null &&
     ok "password auth is forced OFF in the unit override" || bad "password auth is forced OFF in the unit override" "missing"
-ssh_run '{"ssh":{"enabled":false}}'
+ssh_run debug '{"ssh":{"enabled":false}}'
 [ ! -e "$SSHSB/run/ssh" ] && [ ! -e "$SSHSB/units/ssh.service.d" ] &&
-    ok "disabled -> key and override are REMOVED" || bad "disabled -> key and override are REMOVED" "residue"
+    ok "debug disabled -> runtime SSH access is removed" || bad "debug disabled -> runtime SSH access is removed" "residue"
+ssh_run release '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
+[ ! -e "$SSHSB/run/ssh" ] && [ ! -e "$SSHSB/units/ssh.service.d" ] &&
+    ok "release -> carried SSH config cannot create runtime access" || bad "release -> carried SSH config cannot create runtime access" "residue"
+ssh_run unknown '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
+[ ! -e "$SSHSB/run/ssh" ] && [ ! -e "$SSHSB/units/ssh.service.d" ] &&
+    ok "unknown variant -> carried SSH config cannot create runtime access" || bad "unknown variant -> carried SSH config cannot create runtime access" "residue"
 unset SSHSB ssh_run
-
-echo "== unit: ssh.enabled without a public key is refused at validation =="
 VSB="$SANDBOX/vsb"
 mkdir -p "$VSB"
-printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "ssh":{"enabled":true} }' "$WALLET" >"$VSB/config.json"
+printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST legacy@test"} }' "$WALLET" >"$VSB/config.json"
 vout=$(
     cd "$VSB" || exit
     # shellcheck disable=SC1090
-    source "$STACK"
+    PITHEAD_CONFIG_FILE="$VSB/config.json" source "$STACK"
     set +e
     log() { :; }
-    CONFIG_FILE="$VSB/config.json" parse_and_validate_config 2>&1
+    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" parse_and_validate_config 2>&1
 )
-assert_contains "refusal names the missing key" "$vout" "ssh.authorized_key"
+assert_eq "carried release SSH config does not block boot validation" "$vout" ""
+assert_eq "boot render keeps carried config legacy; apply and setup treat it as new" "$(sed -n '/^render_derived()/,/^}/p' "$STACK" | grep -c PITHEAD_CONFIG_SET) $(sed -n '/^apply()/,/^}/p' "$STACK" | grep -c PITHEAD_CONFIG_SET) $(sed -n '/^setup()/,/^}/p' "$STACK" | grep -c PITHEAD_CONFIG_SET)" "0 1 1"
+printf release >"$VSB/variant"
+vout=$(
+    cd "$VSB" || exit
+    # shellcheck disable=SC1090
+    PITHEAD_CONFIG_FILE="$VSB/config.json" source "$STACK"
+    set +e
+    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_CARRIED_SSH=1 parse_and_validate_config || exit 1
+    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" PITHEAD_CONFIG_SET=1 parse_and_validate_config 2>&1
+)
+assert_contains "only new release SSH config is refused" "$vout" "ssh.enabled is unavailable"
 unset VSB vout
-
 echo "== unit: on the appliance, control-runner units render into /run — root is read-only (#791) =="
-# /etc/systemd/system cannot take a write on the appliance (RO root by design): apply died at
-# 'tee: Read-only file system' on hardware, killing the ONLY post-setup management path. /run is
+# /etc/systemd/system cannot take a write on the appliance (RO root by design); /run is
 # a first-class unit dir, writable, and cleared every boot — fine, because these units are
 # derived and the boot path re-renders them every boot. Enablement must be --runtime for the
 # same reason (no symlinks under /etc either).
@@ -137,7 +149,6 @@ case "$diy_out" in
 *) ok "DIY keeps persistent /etc enablement (no --runtime)" ;;
 esac
 unset PCR791 pcr791_run appl_out diy_out
-
 echo "== unit: the dashboard certificate exists whenever the Caddyfile names it =="
 # A machine that SKIPS the wizard (pre-seeded config, or a reinstall whose preserved /data
 # already held config.json) still gets a certificate: the Caddyfile named a file only the wizard
@@ -155,7 +166,6 @@ assert_eq "an existing certificate is reused, never replaced" "$fp2" "$fp1"
 unset PITHEAD_TLS_DIR
 rm -rf "$TLSSB"
 unset TLSSB fp1 fp2
-
 echo "== unit: the certificate SAN list and Caddy's site list agree, for a given identity (#1132) =="
 # Three named disagreements this closes, all one root cause (two independent copies of the same
 # expansion): (1) the cert always used `hostname` while site_hosts used dashboard.host when
@@ -213,12 +223,10 @@ nl_assert_agreement() { # <scenario-label> — every name appliance_site_names()
         ok "$1: every name is both served and certified"
     fi
 }
-
 # Disagreement #3: auto identity, HOST_IP already the .local form (resolve_dashboard_host's own
 # answer for an appliance on "auto") — both consumers must agree the .local name is IN.
 NL_HOSTNAME="rig1" NL_IPS="192.168.1.20" NL_HOST_IP="rig1.local" NL_DASHBOARD_HOST=""
 nl_assert_agreement "auto identity"
-
 # Disagreements #1 and #2: dashboard.host pinned to a name that is NOT this machine's hostname.
 NL_HOSTNAME="rig1" NL_IPS="192.168.1.20" NL_HOST_IP="panel.example" NL_DASHBOARD_HOST="panel.example"
 nl_assert_agreement "pinned dashboard.host"
@@ -231,11 +239,9 @@ case "$pcf$pcert" in
 *rig1*) bad "pinned dashboard.host: neither consumer names the machine's OTHER identity" "still present: $pcf | $pcert" ;;
 *) ok "pinned dashboard.host: neither consumer names the machine's OTHER identity" ;;
 esac
-
 unset -f nl_render nl_assert_agreement
 rm -rf "$NL"
 unset PITHEAD_TLS_DIR NL NL_HOSTNAME NL_IPS NL_HOST_IP NL_DASHBOARD_HOST pcf pcert
-
 echo "== unit: appliance_site_names stays engine-free — proxy_net's gateway is NOT excluded there (#reboot-leg-fix) =="
 # #1204 already excluded mining_net's gateway here (a known config literal, \${NETWORK_PREFIX}.1).
 # proxy_net's is NOT excluded here on purpose, even though it needs the SAME kind of exclusion —
@@ -273,7 +279,6 @@ assert_contains "the real LAN address is still there" "$ast_out" "192.168.1.50"
 unset -f ast_names
 rm -rf "$AST"
 unset AST ast_out
-
 echo "== unit: check_appliance_cert excludes proxy_net's gateway live, engine reachable (#reboot-leg-fix) =="
 # pithead-boot's real sequence: render (which mints the certificate, appliance_mint_cert) runs
 # BEFORE \`up\` — neither compose bridge exists yet, so the minted certificate never covers either
@@ -331,13 +336,11 @@ out=$(cab_run "192.168.1.20 172.28.0.1 172.19.0.1" doctor)
 assert_contains "doctor after \`up\` still says the cert covers every name" "$out" "covers every name"
 assert_not_contains "doctor after \`up\` does not FAIL a healthy, pre-\`up\`-minted cert" "$out" "FAIL"
 assert_not_contains "the engine answered, so no WARN is owed either" "$out" "WARN"
-
 # A GENUINE mismatch must still FAIL — this fix must not neuter #1141's own coverage check. An
 # address that is neither the base, localhost, nor a confirmed bridge gateway is a real gap.
 out=$(cab_run "192.168.1.20 172.28.0.1 172.19.0.1 10.55.55.55" doctor)
 assert_contains "a genuinely uncovered LAN address still FAILs (#1141 not neutered)" "$out" "FAIL"
 assert_contains "the FAIL names the real gap" "$out" "10.55.55.55"
-
 echo "== unit: check_appliance_cert WARNs (never FAILs) when the engine can't be asked — the security-review blocker =="
 # Demonstrated live by the reviewer with a stubbed daemon-unreachable docker: bridge INTERFACES
 # outlive an engine blip, so hostname -I keeps reporting both gateways whether or not the engine is
@@ -359,7 +362,6 @@ chmod +x "$CAB/bin/docker"
 out=$(cab_run "192.168.1.20 172.28.0.1 172.19.0.1" doctor)
 assert_contains "engine unreachable post-\`up\` -> WARN, naming the tooling gap" "$out" "WARN"
 assert_not_contains "engine unreachable post-\`up\` -> never FAILs a healthy box" "$out" "FAIL"
-
 # The base name is NOT excused by an unreachable engine — it needs no live state to derive, so an
 # uncovered base name is always a real, actionable problem.
 printf 'not a certificate' >"$CAB/tls/wizard.crt"
@@ -369,7 +371,6 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout "$CAB/tls/wizard.ke
 out=$(cab_run "192.168.1.20 172.28.0.1 172.19.0.1" doctor)
 assert_contains "an uncovered BASE name still FAILs even with the engine unreachable" "$out" "FAIL"
 assert_contains "the FAIL names the base" "$out" "rig1.local"
-
 # Nothing extra to explain (dashboard.host pinned collapses the auto-expansion to just the base,
 # per appliance_site_names' own "an explicit pin stays a single name on purpose" rule) -> an
 # unreachable engine is never even consulted, so no spurious WARN either. check_appliance_cert
@@ -406,7 +407,6 @@ assert_not_contains "a pinned dashboard.host that IS covered -> no FAIL" "$out" 
 unset -f cab_run cab_run_pinned
 rm -rf "$CAB"
 unset CAB out
-
 echo "== unit: the certificate re-mints when the served name list changes, not otherwise (#1132) =="
 # Compare, don't date-guess: the minted SAN list is derived from the certificate itself (openssl)
 # and set-compared against the machine's current name list. An operator who has pinned this

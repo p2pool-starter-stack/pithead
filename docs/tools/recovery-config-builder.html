@@ -95,17 +95,6 @@ the machine has applied it.</p>
   </div>
 </div>
 
-<div class="card" id="c-ssh" data-on="0">
-  <h3><label class="inc"><input type="checkbox" id="on-ssh"> SSH access</label></h3>
-  <p class="hint">Key only &mdash; password login never turns on.</p>
-  <div class="body">
-    <label class="sub"><input type="checkbox" id="f-ssh-en"> Turn SSH on</label>
-    <label class="sub" for="f-ssh-key">Public key &mdash; the <code>.pub</code> file, not the private key</label>
-    <textarea id="f-ssh-key" rows="3" autocomplete="off" spellcheck="false" placeholder="ssh-ed25519 AAAA..."></textarea>
-    <div class="msg" id="m-ssh"></div>
-  </div>
-</div>
-
 <h2>The file</h2>
 <pre id="preview">Tick a setting above to start.</pre>
 <div class="row">
@@ -324,14 +313,6 @@ function checkTari(a) {
   }
 }
 
-function checkSsh(enabled, key) {
-  if (!enabled) return ["ok", "SSH will be turned off. The key box is ignored."];
-  if (key === "")
-    return ["warn", "No key here, so the file leaves the machine's existing key alone and only turns SSH on. If the machine has no key, it will refuse the file and say so."];
-  if (/^(ssh-|ecdsa-|sk-)/.test(key)) return ["ok", "Looks like a public key."];
-  return ["err", "Turning SSH on needs a PUBLIC key — one starting with ssh-, ecdsa- or sk-. Paste the contents of a .pub file, never a private key."];
-}
-
 /* ---- wiring ------------------------------------------------------------------------------ */
 function $(id) { return document.getElementById(id); }
 
@@ -376,15 +357,6 @@ function build() {
     setMsg($("m-tari"), vt);
     if (tari === "") omitted++;
     else { if (vt[0] === "err") blocking++; cfg.tari = { wallet_address: tari }; }
-  }
-
-  if (on("ssh")) {
-    var en = $("f-ssh-en").checked, key = $("f-ssh-key").value.trim();
-    var vs = checkSsh(en, key);
-    setMsg($("m-ssh"), vs);
-    if (vs[0] === "err") blocking++;
-    cfg.ssh = { enabled: en };
-    if (en && key !== "") cfg.ssh.authorized_key = key;
   }
 
   var any = Object.keys(cfg).length > 0;
@@ -445,7 +417,7 @@ build();
    lib/pithead/25-address-types.sh, and build()'s output against what the out message promises. */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { moneroAddressType: moneroAddressType, tariAddressType: tariAddressType,
-    checkAuth: checkAuth, checkXmr: checkXmr, checkTari: checkTari, checkSsh: checkSsh, build: build };
+    checkAuth: checkAuth, checkXmr: checkXmr, checkTari: checkTari, build: build };
 }
 </script>
 </body>

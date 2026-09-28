@@ -130,21 +130,30 @@ def test_the_classifier_returns_only_declared_routes():
 
 
 @pytest.mark.parametrize("firewall", [True, False])
-@pytest.mark.parametrize("route", [LAN, UNKNOWN])
-def test_a_lan_or_unknown_node_hop_moves_neither_security_counter(route, firewall, _posture):
+def test_a_lan_node_hop_moves_neither_security_counter(firewall, _posture):
     # `leaks` is defined at its own declaration as "clearnet egress that actually exposes the host
     # IP". A node on your own LAN does not expose it, so counting one would be inventing a leak —
-    # and inventing a leak is as wrong as hiding one. `unknown` must not be counted either: we do
-    # not know that it leaks, and the diagram carries that doubt where the count cannot.
+    # and inventing a leak is as wrong as hiding one.
     #
     # Asserted with the firewall BOTH ways on purpose. `blocked_by_firewall` is the other half of
     # the same branch, so a route that wrongly counted as clearnet would show up in exactly one of
     # these two rows depending on the firewall — one row alone would miss half the mistake.
-    summary = _posture(monero_route=route, firewall=firewall)["summary"]
+    summary = _posture(monero_route=LAN, firewall=firewall)["summary"]
     assert summary["leaks"] == 0
     assert summary["blocked_by_firewall"] == 0
     assert summary["all_tor"] is True
     assert summary["level"] == "ok"
+
+
+@pytest.mark.parametrize("firewall", [True, False])
+def test_an_unknown_node_hop_refuses_to_claim_all_traffic_uses_tor(firewall, _posture):
+    summary = _posture(monero_route=UNKNOWN, firewall=firewall)["summary"]
+    assert summary["leaks"] == 0
+    assert summary["blocked_by_firewall"] == 0
+    assert summary["unverified"] == 2
+    assert summary["all_tor"] is False
+    assert summary["level"] == "warn"
+    assert summary["label"] == "2 egress path(s) unverified; Tor-only status cannot be confirmed"
 
 
 @pytest.mark.parametrize("firewall", [True, False])
@@ -153,7 +162,7 @@ def test_a_clearnet_node_hop_still_moves_a_counter(firewall, _posture):
     # consistent with the monerod hop having stopped reaching the counter at all — which is what
     # a careless edit to the conn at egress.py's p2pool component would actually do.
     summary = _posture(monero_route=CLEARNET, firewall=firewall)["summary"]
-    assert summary["leaks"] == (0 if firewall else 1)
+    assert summary["leaks"] == (1 if firewall else 2)
     assert summary["blocked_by_firewall"] == (1 if firewall else 0)
 
 
@@ -161,7 +170,7 @@ def test_a_lan_node_visibly_changes_the_count_that_used_to_be_charged(monkeypatc
     # The behaviour change this PR ships, stated as a test rather than left for an operator to
     # notice. A remote monerod on a private address was charged to the security summary before
     # this (blocked with the firewall on, a LEAK with it off); it now moves neither counter.
-    assert _posture(monero_route=CLEARNET, firewall=False)["summary"]["leaks"] == 1
+    assert _posture(monero_route=CLEARNET, firewall=False)["summary"]["leaks"] == 2
     assert _posture(monero_route=LAN, firewall=False)["summary"]["leaks"] == 0
 
 
@@ -209,3 +218,64 @@ def test_a_lan_node_still_reads_as_remote_in_the_diagram(_edge, _topo):
     assert nodes["monerod"]["remote"] is True
     assert nodes["tari"]["remote"] is True
     assert _edge(_topo(monero_route=LAN), "p2pool", "monerod")["route"] == LAN
+
+
+@pytest.mark.parametrize("route", [LAN, UNKNOWN])
+@pytest.mark.parametrize("node", ["monerod", "tari"])
+def test_a_remote_node_replaces_its_local_p2p_claim_with_visible_real_hops(
+    node, route, _edge, _topo
+):
+    topo = _topo(monero_route=route, tari_route=route)
+    assert not any(e["from"] == node and e["to"] == "tor" for e in topo["edges"])
+    assert next(n for n in topo["nodes"] if n["id"] == node) == {
+        "id": node,
+        "label": node,
+        "zone": "remote",
+        "remote": True,
+        "route": route,
+    }
+    for source in ("p2pool", "dashboard"):
+        hop = _edge(topo, source, node)
+        assert hop["kind"] == "egress"
+        assert hop["route"] == route
+
+
+def test_remote_tari_egress_describes_the_grpc_hop_not_a_daemon(_posture):
+    posture = _posture(tari_route=LAN)
+    component = next(c for c in posture["components"] if c["name"] == "tari")
+    assert component == {
+        "name": "tari",
+        "conns": [{"to": "remote Tari node (gRPC)", "route": LAN}],
+    }
+    dashboard = next(c for c in posture["components"] if c["name"] == "dashboard")
+    assert {"to": "remote Tari node (sync gRPC)", "route": LAN} in dashboard["conns"]
+    monerod = next(c for c in _posture(monero_route=LAN)["components"] if c["name"] == "monerod")
+    assert monerod == {
+        "name": "monerod",
+        "firewalled": False,
+        "conns": [{"to": "remote Monero node (get_info RPC)", "route": LAN}],
+    }
+
+
+def test_remote_clearnet_node_hops_make_the_shared_summary_warn(_topo):
+    for node in ("monero", "tari"):
+        topo = _topo(firewall=True, **{f"{node}_route": CLEARNET})
+        assert topo["summary"]["leaks"] >= 1
+        assert topo["summary"]["all_tor"] is False
+
+
+def test_remote_nodes_have_no_local_initial_sync_edge(_topo):
+    topo = _topo(
+        monero_route=LAN,
+        tari_route=LAN,
+        monero_clearnet_sync=True,
+        tari_clearnet_sync=True,
+    )
+    assert not any(e["label"] == "clearnet IBD" for e in topo["edges"])
+
+
+def test_tari_off_removes_the_node_edges_and_egress_row(_posture, _topo):
+    topo = _topo(tari_enabled=False)
+    assert "tari" not in {n["id"] for n in topo["nodes"]}
+    assert not any("tari" in (e["from"], e["to"]) for e in topo["edges"])
+    assert "tari" not in {c["name"] for c in _posture(tari_enabled=False)["components"]}

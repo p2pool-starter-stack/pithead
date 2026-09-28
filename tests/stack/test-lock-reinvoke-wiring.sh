@@ -54,7 +54,7 @@ reinvoke_wiring_probe() { # <site: chain|restart|backup> <1=keep marker|0=strip>
         mutation_lock_acquire ancestor
         [ "$keep" = 1 ] || unset PITHEAD_LOCK_HELD
         : >"$RWDOCKER"
-        local applied=no blocked=no err=""
+        local applied=no blocked=no log=""
         case "$site" in
         chain)
             # run_chain's own fail-fast path is `exit "$rc"`, not `return` — run it in its own
@@ -75,11 +75,11 @@ reinvoke_wiring_probe() { # <site: chain|restart|backup> <1=keep marker|0=strip>
             # ever reaches mutation_lock_acquire, so an empty docker log would not discriminate
             # here — that call happens whether the marker is kept or stripped. What is unique to
             # the strip case is the timeout message mutation_lock_acquire itself prints into the
-            # child's captured log, which control_backup carries into the result's error field.
+            # child's captured log, which control_backup carries into the result's log field.
             control_backup "$reqid" tester "$cdir" >/dev/null 2>&1
             [ "$(jq -r .status "$cdir/results/$reqid.json" 2>/dev/null)" = "applied" ] && applied=yes
-            err="$(jq -r '.error // ""' "$cdir/results/$reqid.json" 2>/dev/null)"
-            case "$err" in *"Timed out after"*"waiting for another pithead operation"*) blocked=yes ;; esac
+            log="$(jq -r '.log // ""' "$cdir/results/$reqid.json" 2>/dev/null)"
+            case "$log" in *"Timed out after"*"waiting for another pithead operation"*) blocked=yes ;; esac
             ;;
         esac
         printf '%s|%s\n' "$applied" "$blocked"

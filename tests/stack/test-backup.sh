@@ -159,12 +159,8 @@ assert_not_contains "the archive never carries a \$PWD-doubled override path" "$
 unset CJ CJALT out rc cjarchive cjlist
 
 echo "== black-box: backup -> restore round-trip (#140) =="
-# backup/restore touch irreplaceable state (onion keys, the dashboard DB) and have fiddly logic
-# (leading-'/' strip, the disk pre-check, stop->backup->start). They shell out only to tar/du/df/
-# docker/sudo, so a full round-trip is stubbable: the docker stub reports the stack NOT running, and
-# a smart sudo runs tar/du/df for real (so the archive is genuinely created/extracted) but no-ops
-# chown (we can't chown to 100:101 unprivileged). The archive stores paths relative to '/', and every
-# path is under the sandbox, so `restore`'s `tar -C /` can only write back inside it (asserted below).
+# Stub docker/sudo while exercising a real archive round-trip for keys, dashboard DB, and Tor state.
+# The archive stores paths relative to '/', all confined to the sandbox (asserted below).
 # Use the sandbox's PHYSICAL path (pwd -P): `restore` extracts at '/', and on macOS the /var ->
 # /private/var symlink would otherwise make BSD tar refuse to "extract through symlink" (Linux /tmp
 # isn't symlinked, so this is a no-op there).
@@ -201,6 +197,7 @@ EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$BK/config.json"
 printf 'CADDY-ORIG\n' >"$BK/Caddyfile"
 printf 'ONIONKEY-ORIG\n' >"$BK/data/tor/hs_ed25519_secret_key"
+printf 'CircuitBuildAbandonedCount 1000\n' >"$BK/data/tor/state"
 printf 'DBDATA-ORIG\n' >"$BK/data/dashboard/dashboard.db"
 
 # 1) Backup creates a timestamped archive. --no-encrypt keeps this #140 round-trip on the plaintext
@@ -218,6 +215,7 @@ assert_contains "archive has config.json" "$listing" "config.json"
 assert_contains "archive has .env" "$listing" ".env"
 assert_contains "archive has Caddyfile" "$listing" "Caddyfile"
 assert_contains "archive has the tor onion key" "$listing" "hs_ed25519_secret_key"
+assert_contains "legacy archive carries Tor circuit state" "$listing" "data/tor/state"
 assert_contains "archive has the dashboard db" "$listing" "dashboard.db"
 case "$listing" in
 *data/monero* | *data/p2pool/* | *data/tari*) bad "archive excludes blockchains by default" "chain data present without --with-chains" ;;
@@ -232,12 +230,14 @@ assert_eq "archive paths stay inside the sandbox" "$escaped" ""
 printf 'CORRUPTED\n' >"$BK/Caddyfile"
 printf 'CORRUPTED\n' >"$BK/data/dashboard/dashboard.db"
 rm -f "$BK/data/tor/hs_ed25519_secret_key"
-out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$archive" 2>&1)"
-rc=$?
+printf 'CircuitBuildAbandonedCount 1000\n' >"$BK/data/tor/state"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$archive" 2>&1)" rc=$?
 assert_rc "restore exits 0" "$rc" "0"
 assert_contains "restore regenerates the Caddyfile from config" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_eq "restore brings back the dashboard db" "$(cat "$BK/data/dashboard/dashboard.db")" "DBDATA-ORIG"
+assert_eq "restore leaves no sync-gate marker (#2626 operator ruling: same-box recovery is out of scope)" "$([ -e "$BK/data/dashboard/sync-gate-reset" ] || echo none)" none
 assert_eq "restore brings back the onion key" "$(cat "$BK/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-ORIG"
+assert_eq "restore discards Tor circuit state" "$([ -e "$BK/data/tor/state" ] || echo absent)" absent
 
 # 4) Low-space pre-check (#127): a df reporting almost no free space makes backup prompt; answering
 # "no" cancels and writes nothing, while --yes proceeds with a warning. The check runs BEFORE the

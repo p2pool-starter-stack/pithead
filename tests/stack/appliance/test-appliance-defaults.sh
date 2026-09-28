@@ -73,6 +73,16 @@ out=$(
 )
 assert_contains "a name resolving outside the egress policy -> reason address, not dns" "$out" "|1|address"
 assert_contains "that refusal is the one that names the egress firewall" "$out" "tor_egress_firewall"
+out=$(
+    cd "$PFSB" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    _resolve_host_ips() { printf '169.254.169.254\n'; }
+    remote_node_addresses_allowed "$PFSB/dns.json"
+    printf '|%s|%s' "$?" "$NODE_PROBE_REASON"
+)
+assert_contains "the restore-safe address floor refuses a link-local remote node" "$out" "|1|address"
 # The other rc-2 arm, on the Tari leg: the resolver itself failed or timed out rather than
 # answering NXDOMAIN. Same cause, so it must reach the same word.
 printf '{"monero":{"mode":"local"},"tari":{"mode":"remote","remote":{"host":"tarii.lan","grpc_port":18142}}}' >"$PFSB/dnstari.json"

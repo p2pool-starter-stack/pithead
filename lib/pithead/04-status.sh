@@ -1,33 +1,60 @@
 # Per-chain "is this node EXPOSED on clearnet right now?" (#183/#234): the flag is on AND the
-# dashboard's auto-transition marker is absent (so it hasn't been switched back to Tor yet). Once
-# the marker appears the node is Tor-only again and this reads false — which is why the status/doctor
-# warnings clear on their own. Read-only; safe from status/doctor/up.
+# host's completion result is absent or names a different transition. The earlier .synced
+# marker only requests a refresh; the running daemon can still be on clearnet while it is pending.
 clearnet_state_dir() {
     local sdir
     sdir=$(env_get CLEARNET_STATE_DIR 2>/dev/null)
     [ -n "$sdir" ] && printf '%s' "$sdir" || printf '%s' "$PWD/data/clearnet-state"
 }
 monero_clearnet_exposed() {
-    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = "true" ] && [ ! -f "$(clearnet_state_dir)/monero.synced" ]
+    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = "true" ] && ! clearnet_tor_attested monero
 }
 tari_clearnet_exposed() {
-    [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = "true" ] && [ ! -f "$(clearnet_state_dir)/tari.synced" ]
+    [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = "true" ] && ! clearnet_tor_attested tari
+}
+clearnet_tor_attested() { # <monero|tari>
+    local cdir
+    case "$1" in monero | tari) ;; *) return 1 ;; esac
+    cdir=$(env_get CONTROL_DIR 2>/dev/null)
+    [ -n "$cdir" ] || cdir="$PWD/data/control"
+    python3 - "$(clearnet_state_dir)/$1.synced" "$cdir/results/clearnet-$1-tor.json" <<'PY' >/dev/null 2>&1
+import json, os, stat, sys
+try:
+    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        st = os.fstat(fd)
+        marker = os.read(fd, 38).decode().strip()
+    finally:
+        os.close(fd)
+    with open(sys.argv[2]) as fh:
+        result = json.load(fh)
+    valid = stat.S_ISREG(st.st_mode) and result == {
+        "status": "verified", "marker": marker, "inode": st.st_ino, "ctime_ns": st.st_ctime_ns
+    }
+except (OSError, UnicodeError, ValueError):
+    valid = False
+sys.exit(0 if valid else 1)
+PY
 }
 clearnet_sync_active() { monero_clearnet_exposed || tari_clearnet_exposed; }
 
-# Loud, persistent CLEARNET-SYNC banner (#183). Names exactly which daemon(s) are currently exposed
-# on clearnet so the operator can never forget. Prints nothing once both are back on Tor.
+container_state_is_stopped() { # <state> [status]; the only states a deliberate hold can produce
+    case "$1" in created | exited | stopped) return 0 ;; "") case "${2:-}" in Created* | Exited* | Stopped*) return 0 ;; esac ;; esac
+    return 1
+}
+
+# Loud, persistent CLEARNET-SYNC banner (#183). Names the daemon(s) whose chosen clearnet sync
+# has not yet been attested on Tor. Prints nothing once both have host verification.
 print_clearnet_banner() {
     local who=""
     monero_clearnet_exposed && who="Monero"
     tari_clearnet_exposed && who="${who:+$who + }Tari"
     [ -n "$who" ] || return 0
     echo -e "${C_YELLOW}========================================================================${C_RESET}" >&2
-    echo -e "${C_YELLOW}[!] CLEARNET INITIAL SYNC ACTIVE — node IP exposed${C_RESET}" >&2
-    echo "    $who P2P is running over CLEARNET to sync faster, so this host's IP is" >&2
-    echo "    visible to that P2P network. Monero tx-broadcast stays on Tor; wallets are" >&2
-    echo "    never exposed. The dashboard switches each node back to Tor automatically" >&2
-    echo "    once it finishes syncing — no action needed." >&2
+    echo -e "${C_YELLOW}[!] CLEARNET INITIAL SYNC OR TOR TRANSITION PENDING${C_RESET}" >&2
+    echo "    $who P2P may expose this host's IP until the host verifies the Tor switch." >&2
+    echo "    Monero tx-broadcast stays on Tor; wallets are never exposed." >&2
+    echo "    The dashboard retries the transition automatically after sync." >&2
     echo -e "${C_YELLOW}========================================================================${C_RESET}" >&2
 }
 
@@ -100,7 +127,8 @@ stack_status() {
         return 1
     fi
 
-    local problems=0 proxy_state="" p2pool_state="" node_down=0
+    local problems=0 proxy_state="" p2pool_state="" node_down=0 chain_hold=0
+    os_migration_hold_active && chain_hold=1
     local s cid info state health
     while IFS= read -r s; do
         [ -z "$s" ] && continue
@@ -125,6 +153,19 @@ stack_status() {
             health=${info##* }
         fi
 
+        # A migration marker authorizes only the explicit pre-commit stop of chain services.
+        # Missing/stopped is expected; restarting or running-unhealthy still takes the normal fault path.
+        if [ "$chain_hold" = 1 ]; then
+            case " $REVENUE_CHAIN_CONTAINERS " in
+            *" $s "*)
+                if [ "$state" = missing ] || container_state_is_stopped "$state"; then
+                    printf '  %b⚠%b %-13s %s — intentionally held until this slot commits its data migration\n' "$C_YELLOW" "$C_RESET" "$s" "$state"
+                    continue
+                fi
+                ;;
+            esac
+        fi
+
         # Track required-node health (monerod/tari) to interpret a stopped proxy below.
         if [ "$s" = "monerod" ] || [ "$s" = "tari" ]; then
             if [ "$state" != "running" ] || { [ "$health" != "healthy" ] && [ "$health" != "none" ]; }; then
@@ -134,11 +175,11 @@ stack_status() {
 
         # Defer the verdict for the miner containers until we know whether a node is down /
         # the sync hold is on: a stopped p2pool or xmrig-proxy is often intentional (#31/#35).
-        if [ "$s" = "xmrig-proxy" ] && [ "$state" != "running" ]; then
+        if [ "$s" = "xmrig-proxy" ] && container_state_is_stopped "$state"; then
             proxy_state="$state"
             continue
         fi
-        if [ "$s" = "p2pool" ] && [ "$state" != "running" ]; then
+        if [ "$s" = "p2pool" ] && container_state_is_stopped "$state"; then
             p2pool_state="$state"
             continue
         fi
@@ -164,8 +205,9 @@ stack_status() {
             ;;
         esac
     done <<<"$expected"
+    tari_chain_status_line
 
-    # A stopped p2pool/xmrig-proxy is normally intentional: the dashboard stops xmrig-proxy to
+    # A genuinely stopped p2pool/xmrig-proxy is normally intentional: the dashboard stops it to
     # fail workers over a node-down (#31), and holds the miner until the required chains finish
     # syncing (#35). We can't tell those apart from a genuine fault here (a healthy node can
     # still be syncing), so report it as likely-intentional and point at the dashboard.

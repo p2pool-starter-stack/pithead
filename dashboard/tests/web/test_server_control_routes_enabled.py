@@ -40,6 +40,7 @@ class TestControlRoutesEnabled:
             "/api/control/commit",
             "/api/control/upgrade",
             "/api/control/backup",
+            "/api/control/onion-client-key",
         ):
             resp = await control_client.post(path, json={"config": {}})
             assert resp.status == 403, path
@@ -276,6 +277,28 @@ class TestControlRoutesEnabled:
         req = json.loads((control_spool / "requests" / f"{body['id']}.json").read_text())
         # Closed shape: exactly these keys — no config leg, no passphrase field to smuggle one in.
         assert req == {"id": body["id"], "action": "backup", "actor": "admin"}
+
+    async def test_onion_client_key_submits_bare_intent_and_returns_pending(
+        self, control_client, control_spool
+    ):
+        # #1882: the appliance operator's only route to the credential that opens a client-auth'd
+        # dashboard onion. Bare, like backup: the container names no key, no address and no
+        # window — the host decides whether there is anything to hand over and for how long.
+        resp = await control_client.post(
+            "/api/control/onion-client-key",
+            headers={**CONTROL_HEADERS, "X-Auth-User": "admin"},
+        )
+        assert resp.status == 202
+        body = await resp.json()
+        assert body["status"] == "pending"
+        req = json.loads((control_spool / "requests" / f"{body['id']}.json").read_text())
+        assert req == {"id": body["id"], "action": "onion-client-key", "actor": "admin"}
+
+    async def test_onion_client_key_spool_failure_is_sanitized(self, control_client, monkeypatch):
+        monkeypatch.setattr(control_service.config, "CONTROL_REQUESTS_DIR", "/nonexistent/requests")
+        resp = await control_client.post("/api/control/onion-client-key", headers=CONTROL_HEADERS)
+        assert resp.status == 500
+        assert "nonexistent" not in json.dumps(await resp.json())
 
     async def test_backup_spool_failure_is_sanitized(self, control_client, monkeypatch):
         monkeypatch.setattr(control_service.config, "CONTROL_REQUESTS_DIR", "/nonexistent/requests")

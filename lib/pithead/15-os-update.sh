@@ -145,6 +145,29 @@ os_update_version_guard() { # $1: bundle version, $2: allow_downgrade 0|1 — ec
     return 0
 }
 
+# The room a data-migrating update needs on the Tari data volume (#2645). A data_migration bundle
+# releases the chain services once its slot commits, and a Tari major then migrates the node
+# database by writing a compacted copy beside the old one. On a volume without that room the
+# migration fails part-way, after the update has committed, so the install refuses first. Sized
+# and worded as `pithead upgrade` does it (tari_db_space_shortfall, #2636), and shared by the
+# `os-update` CLI and the dashboard's os-verify/os-install verbs like the floor guard above. It
+# keys on the data_migration flag alone: the Tari image the bundle ships is in its compose file,
+# which cannot be read before the install. A node that is not local runs no migration here; a
+# size or free space that cannot be read is a warning, not a refusal. Echoes the refusal, or
+# nothing.
+os_update_migration_space_guard() { # $1: the bundle's data_migration value
+    local db sizes rc=0
+    [ "$1" = "true" ] || return 0
+    case "$(env_get TARI_MODE)" in off | remote) return 0 ;; esac
+    db=$(tari_local_db_file) || return 0
+    sizes=$(tari_db_space_shortfall "$db") || rc=$?
+    case "$rc" in
+    1) printf '%s' "Refusing: this update declares a chain data migration, which runs once it commits. A Tari major migration writes a compacted copy of the node database beside the old one, and whether this update carries one cannot be read before it installs, so it needs $sizes. Free space there, then retry. Nothing was installed." ;;
+    2) warn "Could not read the size of $db or the free space on its volume, so the space a Tari major migration would need was not checked." ;;
+    esac
+    return 0
+}
+
 os_update_needs_confirmation() { # $1: running variant, $2: bundle variant — rc 0 = confirm first
     # Consent is needed whenever an install flips the box's shell/SSH posture, in EITHER direction,
     # or when the bundle's posture can't be verified. A debug image bakes a standing root
@@ -163,11 +186,12 @@ os_update_needs_confirmation() { # $1: running variant, $2: bundle variant — r
 }
 
 os_update() {
-    local bundle="" assume_yes=0 allow_downgrade=0 arg
+    local bundle="" assume_yes=0 allow_downgrade=0 do_reboot=0 arg
     for arg in "$@"; do
         case "$arg" in
         -y | --yes) assume_yes=1 ;;
         --allow-downgrade) allow_downgrade=1 ;;
+        --reboot) do_reboot=1 ;;
         -*) error "Unknown option for os-update: $arg. Run '$0 help'." ;;
         *)
             [ -z "$bundle" ] || error "os-update takes exactly one bundle path. Run '$0 help'."
@@ -195,13 +219,16 @@ os_update() {
     fi
 
     # Version floor + data-migration guards — the exact refusals the dashboard's os-verify/
-    # os-install verbs run (os_update_version_guard, shared so the two doors never drift).
+    # os-install verbs run (os_update_version_guard and os_update_migration_space_guard, shared
+    # so the two doors never drift).
     local bundle_version bundle_min bundle_migrates running_version guard_reason
     bundle_version=$(os_bundle_meta "$bundle" version)
     bundle_min=$(os_bundle_meta "$bundle" minimum_os_version)
     bundle_migrates=$(os_bundle_meta "$bundle" data_migration)
     running_version=$(os_running_version)
     guard_reason=$(os_update_version_guard "$bundle_version" "$allow_downgrade")
+    [ -z "$guard_reason" ] || error "$guard_reason"
+    guard_reason=$(os_update_migration_space_guard "$bundle_migrates")
     [ -z "$guard_reason" ] || error "$guard_reason"
     if [ "$allow_downgrade" -eq 1 ] && os_semver_ok "$running_version" &&
         { ! os_semver_ok "$bundle_version" || semver_newer "$running_version" "$bundle_version"; }; then
@@ -287,4 +314,22 @@ os_update() {
         rm -f "$marker"
     fi
     mutation_lock_release
+
+    # #2382: 'succeeded' alone left a first-time operator guessing what to do next. The install
+    # only wrote the spare slot — mining keeps running the version it always was — so the state
+    # and the one command that finishes the job need to be said, not implied.
+    log "Installed ${bundle_version:-the bundle} to the spare slot; this machine keeps running ${running_version:-the current version} until it reboots."
+    log "Reboot to boot ${bundle_version:-the new version} and commit it — it stays only if the stack comes up healthy, otherwise the next boot falls back. Run '${PITHEAD_REBOOT_CMD:-systemctl reboot}', or '$0 os-update --reboot'."
+    if [ "$do_reboot" -eq 1 ]; then
+        if [ "$assume_yes" -eq 0 ]; then
+            read -r -p "Reboot now? (y/N): " CONFIRM || true
+            if [[ ! "$CONFIRM" =~ ^[Yy] ]]; then
+                log "Not rebooting. Run '$0 os-update --reboot' or '${PITHEAD_REBOOT_CMD:-systemctl reboot}' when you're ready."
+                return 0
+            fi
+        fi
+        log "Rebooting..."
+        ${PITHEAD_REBOOT_CMD:-systemctl reboot} ||
+            warn "Reboot command failed — reboot the machine by hand to finish the update."
+    fi
 }

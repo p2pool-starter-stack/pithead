@@ -47,8 +47,9 @@ def _clean(value, max_len=200):
 
 
 # The audit row id is the field the #530 writer used to skip while cleaning every other one, and it
-# is the ``audit_events`` PRIMARY KEY on a table with no retention prune (#1561) — so an oversized
-# id is permanent. It goes through ``clean_event_id`` below now. Callers build it from their own
+# is the ``audit_events`` PRIMARY KEY (#1561). The table now ages rows out at 30 days (#1814), so
+# an oversized id is no longer permanent — but a bound that only arrives a month later is not the
+# bound this field wants, so it still goes through ``clean_event_id``. It goes through ``clean_event_id`` below now. Callers build it from their own
 # inputs, and on the rig-edit path that input is an unauthenticated worker's ``change_id``,
 # validated upstream only as a non-empty ``str`` inside a body capped at 1 MiB. The bound clears
 # the id a well-behaved rig produces: ``rig-drift:{worker}:{revision}`` is 9 + 1 + 128 + 1 + 64 =

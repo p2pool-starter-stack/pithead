@@ -98,9 +98,10 @@ def test_pruned_node_is_labelled_pruned(...):
 
 ### A config axis (tier 4)
 
-Add a `NAME<TAB>overrides` row to `scenario_matrix()` in `scenarios.sh`, and the value to
-`axis_coverage()`. The self-test enforces that every axis value appears in some scenario, so a
-half-added axis fails `make test-integration-selftest`. No code changes needed.
+Add a `NAME<TAB>overrides` row to `scenario_matrix()` in `scenarios.sh`, keeping comments outside
+the data-only heredoc, and add the value to `axis_coverage()`. The self-test requires a tab in every
+row and enforces that every axis value appears in some scenario, so malformed rows and half-added
+axes fail `make test-integration-selftest`. No code changes needed.
 
 ### A control-plane scenario (tier 3)
 

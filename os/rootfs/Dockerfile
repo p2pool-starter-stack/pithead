@@ -33,7 +33,7 @@
 # `+dirty` suffix, because raising a module edits go.mod and Go stamps that truthfully. It is also
 # why the tree state below says dirty: this binary IS built from a modified tree, and a build that
 # claimed otherwise would be lying about the provenance this paragraph exists to describe.
-FROM golang:1.26.8-trixie@sha256:771f3162219f7a66bb6be3fea1ba31f418932946a99ad9eac26ffd555dfcf393 AS gobuild
+FROM golang:1.26.8-trixie@sha256:bdca99a00bc16590cb1a0bb4e698f5fc5d6a64e4d5eef13d9f18a0ee08e5fa65 AS gobuild
 
 ARG COMPOSE_VERSION=v5.5.0
 ARG COMPOSE_COMMIT=870908cc8f07f5e90acdf5d34dd1b96a4fe51d16
@@ -115,13 +115,13 @@ RUN /out/docker-compose version && /out/cosign version \
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
 # bump is how base-distro CVE fixes reach the appliance (#833): there is no apt on the running
 # box — every Debian package here is frozen until the next bake.
-FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # The OS: init + kernel + bootloader userland for the generic-grub-efi target, the container
 # engine, pithead's host dependencies, mDNS (pithead.local), and time sync (before Tor — the
-# firstboot ordering rule). openssh-server ships installed but DISABLED: SSH is a wizard opt-in.
+# firstboot ordering rule). openssh-server ships installed but disabled: release SSH is never provisioned.
 # The shell-out set is LOAD-BEARING and debian-slim ships none of it: netavark calls nft to
 # program container networking, and pithead-install calls sgdisk (gdisk), partprobe (parted),
 # jq, lsblk, mkfs and the grub tools ON THE APPLIANCE — a tool the build host happens to have is
@@ -130,34 +130,38 @@ ENV DEBIAN_FRONTEND=noninteractive
 # `rauc info` extracts a bundle's manifest with unsquashfs, and without it `pithead os-update`
 # cannot read any bundle's compatibility metadata — every guard it carries was dead on the
 # appliance (found live on the bench, not by CI, whose stack tests stub rauc).
-# Cache-busts ONLY this layer (#929): a warm builder cache reuses the apt index for weeks, and
-# when the mirror rotates a package between builds the stale index 404s. build-image.sh's
-# --fresh-index flag passes a fresh value here; any other build-arg on a later layer would still
-# hit cache as normal — an ARG only invalidates the RUN steps from its declaration onward.
+# --fresh-index changes this ARG to rebuild the package layer with a current apt index. A cache
+# hit now reuses both update and install together; it cannot run install against an older index.
 ARG APT_INDEX_STAMP=0
-# gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps: pull past the digest pin, openssl's same purpose for CVE-2026-14456 (#1438, #2104).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+ARG PITHEAD_UPDATER=""
+# gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps (#1438, #2104); xxd stays out because the rootfs has no consumer (#1380).
+RUN set -e; \
+    updater_packages=""; \
+    if [ "$PITHEAD_UPDATER" = "rauc" ]; then updater_packages="rauc rauc-service"; fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
         grub-efi-amd64 shim-signed \
         podman podman-docker netavark aardvark-dns catatonit uidmap \
-        jq openssl curl ca-certificates xxd iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
-        fdisk gdisk parted e2fsprogs dosfstools \
+        jq openssl curl ca-certificates iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
+        fdisk gdisk parted e2fsprogs xfsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
         squashfs-tools \
-        openssh-server sudo less nano htpdate
-# NB: the apt lists survive THIS layer on purpose — the later `apt-get install` steps below (the RigForge toolchain, the
-# updater) run without their own `apt-get update` and resolve against these lists. They are deleted after the LAST apt
-# step: nothing at runtime uses apt (no apt on the running box), and the rootfs ships as a flat tarball, so a late
-# deletion genuinely leaves every slot and update bundle smaller.
+        openssh-server sudo less nano htpdate \
+        git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
+        linux-cpupower msr-tools $updater_packages; \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
+# All appliance packages are installed and apt's temporary files removed in one layer. Marker
+# changes reuse this layer; a cold or evicted cache does not retain the apt lists in its snapshot.
 
 # The stack, at the image's exact release state: pithead + schemas + the build/ mount sources
 # services bind-mount. Context = repo root. BUILD_COMMIT: the commit built from — the artifact's own
 # answer to "did my change ship?". os/build/stage/: the compose file + its COMPOSE_SOURCE stamp — the
 # STACK_VERSION tag's copy when that tag exists, else the tree's (#1215, staged by build-image.sh).
 COPY os/rootfs/BUILD_COMMIT os/build/stage/docker-compose.yml os/build/stage/COMPOSE_SOURCE /opt/pithead/
-COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json config.minimal.json /opt/pithead/
+COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json config.minimal.json cosign.pub /opt/pithead/
 # ONLY the build/ paths services bind-mount at runtime (config templates and wrapper entrypoints).
 # dashboard/Dockerfile isn't among them (moved out of build/, #1106; see
 # KNOWN-ISSUES.md) — is_source_checkout() keys off its presence here, so shipping one by accident
@@ -199,16 +203,13 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # The toolchain is RigForge's Debian dependency list, with one naming fix: trixie ships the
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
-# every boot and is the ONLY tool a prebuilt tree strictly needs.
-RUN apt-get install -y --no-install-recommends \
-        git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
-        linux-cpupower msr-tools
+# every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
 ARG RIGFORGE_REF=dcdbc7e47c16779c58163d7b9d8650a1b5ff6854
 RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
     && mkdir -p /opt/rigforge \
     && tar -xzf /tmp/rigforge.tar.gz -C /opt/rigforge --strip-components=1 \
-    && rm /tmp/rigforge.tar.gz \
+    && rm -rf /tmp/rigforge.tar.gz /opt/rigforge/tests \
     && chmod +x /opt/rigforge/rigforge.sh \
     && printf 'ref=%s version=%s\n' "$RIGFORGE_REF" "$(tr -d ' \t\r\n' </opt/rigforge/VERSION)" \
         >/opt/rigforge/RIGFORGE_REF
@@ -292,7 +293,7 @@ COPY os/overlay/pithead-sync /usr/local/sbin/pithead-sync
 COPY os/overlay/pithead-mount-generator /usr/lib/systemd/system-generators/pithead-mount-generator
 COPY os/overlay/pithead-boot.service /etc/systemd/system/pithead-boot.service
 COPY os/overlay/pithead-setup-again.service /etc/systemd/system/pithead-setup-again.service
-COPY os/overlay/pithead-boot os/overlay/pithead-boot-version /usr/local/sbin/
+COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version /usr/local/sbin/
 # Physical-presence configuration channel (#786 sub-issue D): pithead-boot's one stage before render; no unit of its own.
 COPY os/overlay/pithead-media-config /usr/local/sbin/pithead-media-config
 # Hugepages sizing (#977): the sysctl.d reservation above is sized for the supported 16 GB machine;
@@ -339,19 +340,13 @@ RUN mkdir -p /etc/systemd/system-preset \
     && printf 'disable *\n' > /etc/systemd/system-preset/00-pithead.preset \
     && systemctl mask systemd-firstboot.service
 RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
-# The updater is chosen per image. RAUC is a Debian package, so it is installed here when
-# selected; leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
-ARG PITHEAD_UPDATER=""
+# The updater is chosen per image. The package install above includes RAUC only when selected;
+# leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
 # NB: `rauc` is the CLI ONLY. Debian splits the D-Bus daemon into `rauc-service`, which is not even
 # a Recommends of `rauc` — so --no-install-recommends is not what drops it, the package simply has
 # to be named. Install just `rauc` and you get a binary that cannot install anything, failing with
 # "de.pengutronix.rauc was not provided by any .service files" rather than anything that names a
 # missing daemon. Both packages are required.
-RUN if [ "$PITHEAD_UPDATER" = "rauc" ]; then \
-        apt-get install -y --no-install-recommends rauc rauc-service; \
-    fi
-# The last apt step is above — from here the lists are dead weight in every slot and bundle.
-RUN rm -rf /var/lib/apt/lists/*
 # The disk installer and the boot config it writes to a target. No image payload ships with it —
 # it copies the running slot, so the artifact does not carry a compressed copy of itself.
 COPY os/installer/pithead-install /usr/local/sbin/pithead-install

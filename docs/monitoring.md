@@ -201,7 +201,8 @@ Use a **separate** check for the host timer if you want to tell "the host is up"
   `Healthchecks ping rejected: HTTP <code>` once — grep the dashboard log for it before assuming
   the ping is landing.
 - **Test it end to end.** Stop the stack (`./pithead down`) and wait for the period + grace to
-  elapse — you should get the alert. Start it again and the check recovers.
+  elapse — you should get the alert. Start it again and the check recovers. `./pithead test-alert`
+  deliberately excludes Healthchecks because sending a ping would move the dead-man switch.
 - **Too many false alarms.** Increase the **period** and/or **grace** on Healthchecks.io.
 
 ---

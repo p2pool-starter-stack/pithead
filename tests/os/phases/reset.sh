@@ -1,10 +1,12 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/os/phases/reset-config.sh
+source "$SCRIPT_DIR/phases/reset-config.sh" || return $?
 phase_reset() {
     info "phase: reset (factory-reset ESP marker + wedged-/data recovery — opt-in, destructive)"
     local img token tries jar scode names deadline
 
-    info "leg 1 — factory-reset must wipe /data and return a FRESH machine to the wizard"
+    info "provisioning the guest that legs 0 and 1 both run against"
     img=$(_build_image v1) || {
         bad "image build failed (/tmp/os-fault-build.log)"
         return
@@ -84,6 +86,12 @@ phase_reset() {
         ;;
     esac
 
+    # leg 0 (#2347): config-reset must keep chains and the onion address, clear the config, and
+    # re-arm the wizard — on the SAME provisioned guest, before leg 1 wipes it.
+    _phase_reset_config || return
+
+    # ---- leg 1: factory-reset must wipe /data and return a FRESH machine to the wizard ----
+    info "leg 1 — factory-reset must wipe /data and return a FRESH machine to the wizard"
     # Baseline, captured on the machine ABOUT to be wiped.
     local id_before fp_before images_before
     id_before=$(_ssh cat /etc/machine-id)
@@ -158,6 +166,41 @@ phase_reset() {
         ok "SSH host-key fingerprint is FRESH after factory-reset ($fp_before -> $fp_after)"
     else
         bad "SSH host-key fingerprint survived factory-reset (before: $fp_before, after: ${fp_after:-none})"
+    fi
+
+    # ---- one-shot wipe marker (#1208): the note just recorded surfaces once, then stays silent ---
+    info "leg 1 continued — the factory-reset just recorded must surface exactly once"
+    # The wizard that just served the setup page above (the factory-reset leg's own
+    # _wait_setup_page, not leg 0's) is the FIRST surfacing:
+    # stage_wizard_spool ran as part of that very boot and called publish_data_wipe_note, which
+    # reads and consumes the one-shot marker record_wipe armed during the reset. This is a
+    # deliberate factory-reset (the operator asked for it via `pithead factory-reset -y`), so
+    # recovery is false — informational, never a WARN — but it is still a real note that must be
+    # shown exactly once.
+    local wiped_json
+    wiped_json=$(_ssh "cat /data/pithead/data/firstboot/data-wiped.json 2>/dev/null")
+    if printf '%s' "$wiped_json" | grep -q '"reason":"factory-reset requested"' &&
+        printf '%s' "$wiped_json" | grep -q '"recovery":false'; then
+        ok "the wizard's spool carried the factory-reset note (recovery:false) — the first surfacing happened"
+    else
+        bad "the wizard's spool did not carry the factory-reset note after the wipe ($wiped_json)"
+    fi
+    if _ssh "test -f /boot/efi/pithead-data-wiped.pending" 2>/dev/null; then
+        bad "the one-shot marker is still armed after the wizard already surfaced the note — it will re-surface forever (#1208)"
+    else
+        ok "the one-shot marker was consumed by the first surfacing"
+    fi
+    # A same-boot re-run of doctor still shows it: the marker is spent, but the tmpfs cache that
+    # answers repeat reads within one boot session has not been cleared yet (only a reboot clears
+    # it) — an operator running doctor twice in one sitting should see consistent output, not have
+    # it flicker to silence mid-session. leg 2 below reboots the guest for real, which is where
+    # this note finally goes silent for good — checked at the end of that leg.
+    local doctor_out
+    doctor_out=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor 2>&1" 2>/dev/null)
+    if printf '%s' "$doctor_out" | grep -q "Data reset:"; then
+        ok "doctor still shows the note within the SAME boot — consistent, not flickering silent mid-session"
+    else
+        bad "doctor went silent within the SAME boot the wizard just surfaced the note in — the cache is not surviving the subshell it must run in (#1208)"
     fi
 
     # ---- leg 2: a wedged /data must be REPAIRED, not erased --------------------------------
@@ -252,5 +295,18 @@ phase_reset() {
         ok "leg 1's factory reset was recorded on the ESP ($wipes_before line(s))"
     else
         bad "leg 1 reformatted /data and left no record on the ESP — a wiped machine is indistinguishable from a fresh one (#1062)"
+    fi
+
+    # ---- one-shot wipe marker, the other half (#1208): a NEW boot finally goes silent ----------
+    # The corrupt-superblock recovery above powered the guest off and back on for real — tmpfs is
+    # cleared, so the same-boot cache from leg 1 is gone. The .pending marker stayed consumed
+    # (leg 2 repaired /data rather than wiping it, so nothing re-armed it). This boot never ran
+    # doctor or the wizard yet, so this is the FIRST read of a truly new boot: it must be silent.
+    local doctor_out2
+    doctor_out2=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor 2>&1" 2>/dev/null)
+    if printf '%s' "$doctor_out2" | grep -q "Data reset:"; then
+        bad "doctor still reports leg 1's factory-reset note on a genuinely NEW boot — it re-surfaces forever (#1208)"
+    else
+        ok "a genuinely new boot is silent — the historic wipe surfaced once and stays surfaced only within its own boot"
     fi
 }

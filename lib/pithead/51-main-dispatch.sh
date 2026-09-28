@@ -105,6 +105,11 @@ main() {
         require_env
         stack_status || exit 1
         ;;
+    test-alert)
+        _reject_options test-alert "$@"
+        require_env
+        docker exec dashboard python3 -m mining_dashboard.service.notify.test_alert
+        ;;
     doctor)
         case "${1:-}" in
         "") doctor || exit 1 ;;
@@ -141,6 +146,16 @@ main() {
         _reject_options control-run-pending "$@"
         require_deployed
         control_run_pending
+        ;;
+    egress-run-pending)
+        _reject_options egress-run-pending "$@"
+        require_env
+        egress_sync_run_pending
+        ;;
+    egress-status)
+        _reject_options egress-status "$@"
+        require_env
+        egress_status
         ;;
     onion-client-key)
         _reject_options onion-client-key "$@"

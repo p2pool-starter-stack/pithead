@@ -6,6 +6,7 @@
 config.json
 config.json.bak-control
 /pithead
+/.pithead.bundle.*
 /data/
 /build/monero/bitmonero.conf
 /build/tari/config.toml

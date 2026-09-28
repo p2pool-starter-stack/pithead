@@ -197,7 +197,7 @@ smoke_test() {
                 if [[ "$repo" = ghcr.io/* ]]; then
                     got="$(anonymous_ghcr_digest "$repo" "$STAGING_TAG")" || true
                     [ "$got" = "${digest##*@}" ] ||
-                        die "Smoke: $repo:$STAGING_TAG is not anonymously readable at the captured digest. New GHCR packages default to private; make pithead-os-rootfs public, then resume promotion."
+                        die "Smoke: $repo:$STAGING_TAG is not anonymously readable at the captured digest. New GHCR packages default to private; make pithead-os-rootfs public, then start the release again."
                 fi
                 got="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{.Os}}/{{.Architecture}}' "$digest" 2>/dev/null || true)"
                 [ "$got" = "$STACK_VERSION ${PLATFORMS%%,*}" ] ||
@@ -241,7 +241,7 @@ promote() {
     for suffix in "${PUBLISHED_IMAGES[@]}"; do
         repo="$(image_for "$suffix")"
         digest="$(get_digest "$suffix")"
-        is_digest_ref_for "$digest" "$repo" || die "No valid lowercase sha256 digest for $suffix — run without --resume-promote, or stage first."
+        is_digest_ref_for "$digest" "$repo" || die "No valid lowercase sha256 digest for $suffix — stage first."
         log "Promoting $digest -> :$TAG, :latest"
         run docker buildx imagetools create --tag "$repo:$TAG" --tag "$repo:latest" "$digest"
         if [ "$DRY_RUN" -eq 0 ]; then

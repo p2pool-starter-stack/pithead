@@ -12,7 +12,9 @@ from mining_dashboard.config.config import (
 )
 from mining_dashboard.helper.utils import format_hashrate
 from mining_dashboard.service.health.container_health import ContainerHealthMonitor
-from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin
+from mining_dashboard.service.network.egress_status import live_firewall_state
+from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_hhmm
+from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
 from mining_dashboard.service.notify.notify_sinks import config_sinks
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 from mining_dashboard.service.workers.worker_presence import WorkerPresenceMonitor
@@ -35,20 +37,7 @@ def build_default_notifier():
     )
 
 
-def _parse_hhmm(value):
-    """Parse a 'HH:MM' 24-hour string to minutes-since-midnight, or None if malformed (which
-    disables the daily digest rather than guessing a time)."""
-    try:
-        hh, mm = (value or "").strip().split(":")
-        h, m = int(hh), int(mm)
-        if 0 <= h < 24 and 0 <= m < 60:
-            return h * 60 + m
-    except (ValueError, AttributeError):
-        pass
-    return None
-
-
-class AlertService(AlertEdgesMixin):
+class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
     """
     Turns the data loop's per-cycle signals into a small set of debounced operator alerts and
     fans them out to the configured sinks: Telegram (Issue #121) plus any webhook/ntfy sinks
@@ -249,6 +238,7 @@ class AlertService(AlertEdgesMixin):
         xvb_enabled=False,
         shares_in_window=0,
         clearnet_active=False,
+        egress_firewall=None,
         xvb_registration_state="",
         update_available=False,
         low_hr_warning=False,
@@ -333,6 +323,7 @@ class AlertService(AlertEdgesMixin):
         # --- Revenue / privacy: XvB PPLNS-share gate, clearnet-sync exposure ---
         alerts += self._xvb_share_edges(xvb_enabled, shares_in_window)
         alerts += self._clearnet_edges(clearnet_active)
+        alerts += self._egress_firewall_edges(egress_firewall)
 
         # --- XvB auto-registration health, and a new Pithead release being available ---
         alerts += self._registration_edges(xvb_enabled, xvb_registration_state)
@@ -402,6 +393,7 @@ class AlertService(AlertEdgesMixin):
                 except Exception as exc:  # never let a tracker bug break the data loop
                     logger.debug("Container-health update failed (%s)", type(exc).__name__)
             return []
+        signals.setdefault("egress_firewall", live_firewall_state())  # the host's verdict, #2599
         try:
             alerts = self.evaluate(**signals)
         except Exception as exc:  # never let an alerting bug break the data loop
@@ -475,14 +467,18 @@ class AlertService(AlertEdgesMixin):
         """Push the Tor guard self-heal note (#424). Deliberately not behind a per-event toggle:
         it fires at most once per outage, only after a heal restored the very path the alert
         sinks ride (so a broken egress can never even attempt it), and an operator who opted
-        into the heal wants to know it acted. No-op when every sink is off."""
+        into the heal wants to know it acted. No-op when every sink is off.
+
+        Returns the text when at least one sink reported delivery, else None: every sink's
+        ``send`` returns True only on success, so a caller can retry an undelivered alert (#2464)."""
         if not self.enabled:
             return None
         text = self._fmt(text)
+        delivered = False
         for sink in self.sinks:
             if sink.enabled:
-                await asyncio.to_thread(sink.send, text)
-        return text
+                delivered = bool(await asyncio.to_thread(sink.send, text)) or delivered
+        return text if delivered else None
 
     async def maybe_daily_summary(self, now, summary_provider) -> str | None:
         """Push a once-daily status digest at the configured local time.

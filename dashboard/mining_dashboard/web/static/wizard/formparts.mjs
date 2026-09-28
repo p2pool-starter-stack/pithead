@@ -5,7 +5,7 @@ import { Err, Field, Note } from "./wizardparts.mjs";
 
 export function renderRigFields(app) {
   const { rigPool, rigWorker, rigPassword, rigDefaults } = app.state;
-  return html`<h3>Where it mines</h3>
+  return html`<h2>Where it mines</h2>
         <${Field} label="Pool address (host:port)">
             <input class="wizard-mono" value=${rigPool}
                 onInput=${(e) => app.setState({ rigPool: e.target.value })}
@@ -47,7 +47,7 @@ export function renderRestore(app) {
   } = app.state;
   const diskPicked = !installer || Boolean(chosen);
   return html`<div class="card">
-        <p>Upload an encrypted Pithead backup instead of filling in the form below. The machine
+        <p>Upload a Pithead backup instead of filling in the form below. The machine
         decrypts, validates and provisions itself from what it restores.${
           installer && !diskPicked
             ? " Choose the disk first; the upload fields appear once you pick."

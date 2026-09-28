@@ -1,12 +1,44 @@
 import logging
+import os
+
+from mining_dashboard.config.config import DISK_PATH
 
 logger = logging.getLogger("DataService")
+
+# Written by the cross-hardware restore doors — the wizard and carried restores through
+# restore_apply(), never `./pithead restore`'s same-box recovery (#2626 operator ruling: that
+# door's chains never desynced, so it keeps whatever gate state the backup carried) — and by
+# `apply` when a required chain moves to another node (#2763). Either way the snapshot's #35
+# sync-gate latch was earned on other chains, so while this file exists the dashboard ignores
+# the persisted release and re-derives it from the chains it now dials. Removed once the gate
+# releases here.
+SYNC_GATE_RESET_PATH = os.path.join(DISK_PATH, "sync-gate-reset")
 
 
 def _runtime():
     from mining_dashboard.service import data_service
 
     return data_service
+
+
+def chain_synced(sync):
+    """
+    A node's raw "fully synced" verdict for the #35 sync gate and the #234 clearnet transition,
+    both one-way. Only an explicit reading counts: the node answered this cycle
+    (``reachable is True``) and said it isn't syncing (``is_syncing is False``). An empty,
+    partial or unreachable result is not synced (#2472).
+
+    When the reading carries monerod's own ``synchronized`` flag (the local RPC path), that flag
+    must be True too. A monerod that has just restarted and has no peers yet reports
+    ``target_height: 0`` with ``synchronized: false``, which the client maps to "not syncing".
+    Before this check the gate took that as synced and released the miner on a chain that had
+    never synced. A reading without the key (a remote node, Tari) has no such verdict to wait on.
+    """
+    return (
+        sync.get("reachable") is True
+        and sync.get("is_syncing") is False
+        and sync.get("synchronized", True) is True
+    )
 
 
 class DataGateMixin:
@@ -83,6 +115,16 @@ class DataGateMixin:
         if gate_satisfied:
             if await self._start_gate_containers():
                 self.miner_released = True
+                # The release is now earned on the chains this machine dials; the marker (a restore's
+                # or an apply's node change) has done its job.
+                try:
+                    os.remove(_runtime().SYNC_GATE_RESET_PATH)
+                except FileNotFoundError:
+                    pass
+                except OSError as e:
+                    logger.warning(
+                        f"Could not remove the sync-gate marker (restore or node change): {e}"
+                    )
                 self.miner_held = False
                 logger.info(
                     f"Required chain(s) synced — starting {', '.join(_runtime().SYNC_GATE_CONTAINERS)}; mining can begin."

@@ -11,9 +11,10 @@ set -eu
 
 WALLET_DIR="${WALLET_DIR:-/home/ubuntu/wallets}"
 WALLET_FILE="$WALLET_DIR/payout-wallet"
-# Marker (#718): touched when a wallet is first created, cleared by the healthcheck on the first
-# successful RPC. While it exists, an unreachable RPC means "still on the initial scan" — which for
-# the genesis default is HOURS, during which monero-wallet-rpc is single-threaded and won't answer.
+# Marker (#718, #2756, #2720): touched on every start, cleared by the healthcheck once the wallet has
+# scanned to monerod's tip. While it exists, an unreachable RPC means "still scanning": for the
+# genesis default the first scan is HOURS, and a reopened wallet catches up on every block it missed
+# while stopped; monero-wallet-rpc is single-threaded and won't answer during either.
 # It lives in the volume so it persists across container recreates until the scan actually finishes.
 SCAN_MARKER="$WALLET_DIR/.payout-scanning"
 GEN_JSON="${GEN_JSON:-/tmp/gen.json}" # tmpfs; holds the view key for the create-from-keys step only
@@ -64,8 +65,9 @@ mkdir -p "$WALLET_DIR"
 
 # Shared server flags. --rpc-login (dashboard→wallet-rpc) authenticates the loopback-published RPC so
 # even a mining-net peer that reaches the bridge IP can't read payout history; --daemon-login is the
-# monerod RPC cred (same value p2pool already passes on its command line). Bind 0.0.0.0 so the
-# 127.0.0.1:18082 host publish works; the rpc-login + loopback-only publish is the access control.
+# monerod RPC cred (same value p2pool already passes on its command line). The ringdb default is
+# under $HOME on the read-only root (#2720), so it lives in the wallet volume instead. Bind 0.0.0.0
+# so the 127.0.0.1:18082 host publish works; the rpc-login + loopback-only publish is the access control.
 set -- \
     --daemon-address "$DAEMON_ADDRESS" \
     --daemon-login "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
@@ -74,16 +76,22 @@ set -- \
     --rpc-bind-port 18082 \
     --rpc-login "${WALLET_RPC_USERNAME:-wallet}:${WALLET_RPC_PASSWORD:-}" \
     --password "" \
+    --shared-ringdb-dir "$WALLET_DIR/.shared-ringdb" \
     --log-level 0 \
     --non-interactive
+
+# Mark a scan on EVERY start (#718, #2756): a first creation scans from the restore height (genesis
+# is hours); a reopen catches up from the height the wallet last stored, which after a long stop, a
+# remote-node spell or an unsaved scan is just as long. monero-wallet-rpc does not answer while it
+# scans. The healthcheck tolerates an unreachable RPC while this marker exists, within a 24h grace
+# by default, and clears it once the wallet reaches monerod's tip (#2720). An existing marker keeps
+# its mtime, so a wallet that crash-loops without catching up still turns unhealthy after the grace.
+[ -f "$SCAN_MARKER" ] || touch "$SCAN_MARKER" 2>/dev/null || true
 
 if [ ! -f "$WALLET_FILE" ]; then
     height="$(resolve_scan_height)"
     [ -n "$height" ] || height=0
     echo "Creating view-only payout wallet at restore height $height (#381)..."
-    # Mark the initial scan (#718): the healthcheck tolerates an unreachable RPC while this exists
-    # (genesis scan is hours) and clears it on the first successful RPC.
-    touch "$SCAN_MARKER" 2>/dev/null || true
     # The view key lives ONLY in this tmpfs file, never on argv.
     write_gen_json "$height"
     # --generate-from-json creates + opens the wallet, then keeps serving the RPC.

@@ -113,7 +113,7 @@ tari_proto_ref() { # <node image pin> -> upstream tag
     local ref="${1%%@*}"
     ref="${ref##*:}"
     ref="${ref%-mainnet}"
-    printf '%s' "$ref" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || return 1
+    printf '%s' "$ref" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-pre\.[0-9]+)?$' || return 1
     printf '%s' "$ref"
 }
 run_buf() {
@@ -242,24 +242,24 @@ if [ "${1:-}" = "--self-test" ]; then
     # Both sides of that comparison go through norm(), so norm must leave a commit sha untouched.
     st "normalisation leaves a commit sha alone" \
         "$(norm 60aa883901fc74ea39ed2f21962b8ba7f96d73ba)" "60aa883901fc74ea39ed2f21962b8ba7f96d73ba"
-    st "the Tari node pin selects the matching upstream proto tag" \
-        "$(tari_proto_ref 'quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:aaaa')" "v5.3.1"
+    st "a Tari node pin, release or pre-release (#2604), selects the matching upstream proto tag" \
+        "$(tari_proto_ref 'x:v6.0.0-mainnet@sha256:aaaa') $(tari_proto_ref 'x:v6.0.1-pre.0-mainnet@sha256:aaaa')" "v6.0.0 v6.0.1-pre.0"
     st "a malformed Tari pin is refused" \
-        "$(tari_proto_ref 'quay.io/tarilabs/minotari_node:latest' >/dev/null 2>&1 && echo accepted || echo refused)" "refused"
+        "$(tari_proto_ref 'ghcr.io/tari-project/minotari_node:latest' >/dev/null 2>&1 && echo accepted || echo refused)" "refused"
     run_buf() {
         case "$1" in
         build)
             [ "$2" = . ] && return "${ST_LOCAL_BUILD_RC:-0}"
-            [ "$2" = "https://github.com/tari-project/tari.git#tag=v5.3.1,subdir=applications/minotari_app_grpc/proto" ] || return 3
+            [ "$2" = "https://github.com/tari-project/tari.git#tag=v6.0.0,subdir=applications/minotari_app_grpc/proto" ] || return 3
             return "${ST_UPSTREAM_BUILD_RC:-0}"
             ;;
         breaking)
-            [ "$2" = "https://github.com/tari-project/tari.git#tag=v5.3.1,subdir=applications/minotari_app_grpc/proto" ] && [ "$3" = --against ] && [ "$4" = . ] || return 3
+            [ "$2" = "https://github.com/tari-project/tari.git#tag=v6.0.0,subdir=applications/minotari_app_grpc/proto" ] && [ "$3" = --against ] && [ "$4" = . ] || return 3
             return "${ST_BUF_BREAKING_RC:-0}"
             ;;
         esac
     }
-    tree_pin() { printf '%s' 'quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:aaaa'; }
+    tree_pin() { printf '%s' 'ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:aaaa'; }
     row() { ST_ROW="$*"; }
     proto_report() {
         failed=0 stale=0 ST_ROW=""
@@ -267,17 +267,17 @@ if [ "${1:-}" = "--self-test" ]; then
         printf '%s|%s|%s' "$failed" "$stale" "$ST_ROW"
     }
     ST_LOCAL_BUILD_RC=0 ST_UPSTREAM_BUILD_RC=0 ST_BUF_BREAKING_RC=0
-    st "matching Tari protos render current in the weekly report" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` compatible"
+    st "matching Tari protos render current in the weekly report" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` compatible"
     ST_BUF_BREAKING_RC=100
-    st "a node-side deletion renders breaking drift" "$(proto_report)" "0|1|tari gRPC schema \`f42e14d\` \`v5.3.1\` **breaking drift**"
+    st "a node-side deletion renders breaking drift" "$(proto_report)" "0|1|tari gRPC schema \`f42e14d\` \`v6.0.0\` **breaking drift**"
     ST_BUF_BREAKING_RC=0
-    st "a node-side addition stays compatible" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` compatible"
+    st "a node-side addition stays compatible" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` compatible"
     ST_BUF_BREAKING_RC=1
-    st "a failed comparison keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **schema comparison failed — NOT checked**"
+    st "a failed comparison keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **schema comparison failed — NOT checked**"
     ST_UPSTREAM_BUILD_RC=1 ST_BUF_BREAKING_RC=0
-    st "a failed upstream build renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
+    st "a failed upstream build renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **upstream schema fetch/build failed — NOT checked**"
     ST_UPSTREAM_BUILD_RC=0 ST_LOCAL_BUILD_RC=100
-    st "a local parse failure keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **vendored schema build failed — NOT checked**"
+    st "a local parse failure keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **vendored schema build failed — NOT checked**"
     st "the real weekly report invokes the Tari proto row" "$(grep -c '^add_tari_proto_row$' "$0")" "1"
     integration_root=$(mktemp -d)
     trap 'rm -rf "$integration_root"' EXIT

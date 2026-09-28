@@ -34,8 +34,7 @@ MATRIX:
                             host:port (pithead appends the port itself, #1491)
   --remote-monero-rpc-port <p>  that node's RPC port, when it is not the default 18081
   --remote-monero-zmq-port <p>  that node's ZMQ port, when it is not the default 18083
-  --remote-tari-host <h>  external Tari node endpoint for the tari.mode=remote scenario (#103;
-                         e.g. an already-synced Tari node on the LAN)
+  --remote-tari-host <h>  bare host or IPv4 address for an external Tari node (#103)
   --pruned-data-dir <d>  synced PRUNED monero data dir (enables the pruned case when the
                          box's baseline is full)
   --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
@@ -68,11 +67,38 @@ MATRIX:
   --candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>
                          private candidate bundle, detached signature, and external trust root.
                          Required with --image-upgrade; all paths must be absolute local files.
+  --candidate-image-key <trusted-cosign.pub>
+                         optional image trust root; defaults to --candidate-bundle's key.
   --xvb-routing-smoke    establish P2Pool routing, enable XvB at the donor tier, and poll the real
                          controller/proxy/dashboard through one bounded XvB→P2Pool transition,
                          then restore the original config. Requires --safety-backup, miners, a
                          recent PPLNS share, and xvb.enabled=true ALREADY in the box's config —
                          the gate moves an existing donor route, it does not turn XvB on for you.
+  --alert-egress         also run the live alert-egress leg (#2266): drive `pithead test-alert`
+                         through the real Tor SOCKS proxy, one leg per configured sink
+                         (IT_TELEGRAM_BOT_TOKEN + IT_TELEGRAM_CHAT_ID, IT_NTFY_URL,
+                         IT_WEBHOOK_URLS, IT_HEALTHCHECKS_PING_URL), asserting each answered.
+                         An absent credential self-skips that sink (missing); a third party
+                         refusing the dial reports as its own verdict, never a stack failure.
+                         DESTRUCTIVE-then-restored.
+  --mergemine-submit     also run the merge-mining submission leg (#2586, V6 of #1129): a
+                         throwaway peerless P2Pool (IT_MM_P2POOL_VERSION, default v4.18.1) mines
+                         against the box's monerod and a recording Tari node; Tari's own validator
+                         (tests/integration/mergemine, built at the pinned Tari tag) judges each
+                         submission and its legacy/mutated controls at 349,999/350,000/350,001
+                         under mainnet rules. Leaves the live stack alone; needs local Monero.
+  --tari-stranded        also run the stranded-Tari leg (#2464): a DROP rule in tari's own network
+                         namespace (comment pithead-e2e-fault-tari-stranded) cuts it off from tor;
+                         asserts amber from the first 0-peer reading, red + doctor non-zero + alert, no
+                         automatic restart, then green without a restart once the rule is removed (the
+                         dashboard detects and alerts only; remediation is #2827). About an hour; opt-in only.
+                         DESTRUCTIVE-then-restored.
+  --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's
+                         testnet-target build of the pinned release runs LocalNet alone on an
+                         internal docker network; a throwaway P2Pool (IT_MM_P2POOL_VERSION) mines on
+                         it against the box's monerod, and every block P2Pool reports is read back
+                         from the node's main chain with its parent. Leaves the live stack alone;
+                         needs local Monero.
   --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
@@ -162,9 +188,13 @@ parse_args() {
             shift
             ;;
         --remote-monero-host)
+            if ! valid_remote_host "${2:-}"; then
+                it_err "--remote-monero-host contains unsupported characters. Use a hostname or IPv4 address."
+                exit 2
+            fi
             case "${2:-}" in
             *:*)
-                it_err "--remote-monero-host takes a BARE host or IP, not host:port — pithead renders the port separately (--remote-monero-rpc-port). Got \"$2\"."
+                it_err "--remote-monero-host takes a BARE host or IP, not host:port — pithead renders the port separately (--remote-monero-rpc-port)."
                 exit 2
                 ;;
             esac
@@ -172,14 +202,8 @@ parse_args() {
             shift 2
             ;;
         --remote-monero-rpc-port | --remote-monero-zmq-port)
-            case "${2:-}" in
-            "" | *[!0-9]*)
-                it_err "$1 takes a TCP port 1-65535. Got \"${2:-}\"."
-                exit 2
-                ;;
-            esac
-            if [ "$2" -lt 1 ] || [ "$2" -gt 65535 ]; then
-                it_err "$1 takes a TCP port 1-65535. Got \"$2\"."
+            if ! valid_tcp_port "${2:-}"; then
+                it_err "$1 takes a TCP port 1-65535."
                 exit 2
             fi
             if [ "$1" = "--remote-monero-rpc-port" ]; then
@@ -190,6 +214,16 @@ parse_args() {
             shift 2
             ;;
         --remote-tari-host)
+            if ! valid_remote_host "${2:-}"; then
+                it_err "--remote-tari-host contains unsupported characters. Use a bare hostname or IPv4 address."
+                exit 2
+            fi
+            case "$2" in
+            *:*)
+                it_err "--remote-tari-host takes a bare host or IPv4 address; Pithead renders tari.remote.grpc_port separately."
+                exit 2
+                ;;
+            esac
             REMOTE_TARI_HOST="$2"
             shift 2
             ;;
@@ -229,8 +263,32 @@ parse_args() {
             TRUSTED_COSIGN_PUB="$4"
             shift 4
             ;;
+        --candidate-image-key)
+            [ "$#" -ge 2 ] || {
+                it_err "--candidate-image-key requires <trusted-cosign.pub>."
+                exit 2
+            }
+            TRUSTED_IMAGE_COSIGN_PUB="$2"
+            shift 2
+            ;;
         --xvb-routing-smoke)
             RUN_XVB_ROUTING=1
+            shift
+            ;;
+        --alert-egress)
+            RUN_ALERT_EGRESS=1
+            shift
+            ;;
+        --mergemine-submit)
+            RUN_MERGEMINE_SUBMIT=1
+            shift
+            ;;
+        --tari-stranded)
+            RUN_TARI_STRANDED=1
+            shift
+            ;;
+        --mergemine-localnet)
+            RUN_MERGEMINE_LOCALNET=1
             shift
             ;;
         --auth-fail-closed)

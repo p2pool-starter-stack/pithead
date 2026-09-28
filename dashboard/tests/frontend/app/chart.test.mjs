@@ -9,7 +9,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { withAlpha, padYAxis, eventColors, donationSeries, workerMarkerStyle } from '../../../mining_dashboard/web/static/app/chart.mjs';
+import { withAlpha, padYAxis, eventColors, donationSeries, workerMarkerStyle, WorkerChartCard } from '../../../mining_dashboard/web/static/app/chart.mjs';
+import { render } from '../helpers/render.mjs';
 
 test('withAlpha: appends an 8-bit alpha to a #rrggbb hex', () => {
     assert.equal(withAlpha('#58a6ff', '26'), '#58a6ff26');
@@ -103,6 +104,22 @@ test('workerMarkerStyle: a quiet outcome (nothing changed) renders muted, not ac
     ];
     const style = workerMarkerStyle(markers, c);
     assert.deepEqual(style.color, [c.accent, c.ticks]);
+});
+
+test("WorkerChartCard's range row is NOT the phone-select-collapsible variant (#1874)", () => {
+    // The phone CSS rule that swaps ChartCard's Range/Avg buttons for a <select> is scoped to
+    // .chart-controls-collapsible, not the bare .chart-controls class — that class is shared by
+    // this row (and the Security view's log filters), neither of which got a <select> fallback.
+    // Scoping the rule to the bare class would strand this row's buttons hidden with nothing to
+    // replace them below the phone breakpoint.
+    const html = render(WorkerChartCard, {
+        chart: { hashrate: [{ x: 0, y: 1 }], markers: [] },
+        range: '24h',
+        onRange: () => {},
+    });
+    assert.match(html, /class="chart-controls" role="group" aria-label="Hashrate chart range"/);
+    assert.doesNotMatch(html, /chart-controls-collapsible/);
+    assert.doesNotMatch(html, /chart-controls-select/);
 });
 
 test('workerMarkerStyle: tolerates a missing marker list', () => {

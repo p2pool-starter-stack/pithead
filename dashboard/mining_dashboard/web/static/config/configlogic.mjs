@@ -14,13 +14,23 @@
 // preview, and the gate are all untouched by this display-only regroup. A secret left blank keeps
 // its sentinel — the server swaps it for the live value ("unchanged").
 
-import { isHidden } from "./confighidden.mjs";
+import { pathGet } from "./configsync.mjs";
+import { FIELD_WARNINGS } from "./configwarnings.mjs";
 
 export const SECRET_HINT = "set — leave blank to keep";
 
 export function isSecretSentinel(v) {
   return v !== null && typeof v === "object" && !Array.isArray(v) && v.__secret__ === true;
 }
+
+export const editableCandidate = (cfg) =>
+  JSON.parse(
+    JSON.stringify(cfg, (key, value) =>
+      key !== "__secret__" && (key[0] === "_" || ["ssh", "__proto__", "constructor"].includes(key))
+        ? undefined
+        : value,
+    ),
+  );
 
 // Fixed-choice fields; everything else renders from its JSON type.
 const FIELD_OPTIONS = {
@@ -32,17 +42,6 @@ const FIELD_OPTIONS = {
   "p2pool.pool": ["main", "mini", "nano"],
   "workers.api_auth": ["none", "name", "token"],
   "xvb.donation_level": ["auto", "donor", "vip", "whale", "mega"],
-};
-
-// Inline warnings for high-consequence fields, shown before any preview round-trip. The pool
-// text carries describe_change's P2POOL_FLAGS warning; the wallet texts its DEST messages.
-const FIELD_WARNINGS = {
-  "p2pool.pool":
-    "P2Pool sidechain changing — p2pool re-syncs the new sidechain and your PPLNS window resets (XvB shares reset too).",
-  "monero.wallet_address":
-    "Monero payout address is changing — future mining rewards go to the new address.",
-  "tari.wallet_address":
-    "Tari payout address is changing — future merge-mining rewards go to the new address.",
 };
 
 function isPlainObject(v) {
@@ -92,9 +91,7 @@ function walk(node, path, out) {
 // never overlap across groups and first-match is unambiguous; classifyGroup's own test asserts
 // that invariant directly. Any leaf no group claims renders in the catch-all "Other" group below
 // (never silently dropped) — buildSections' own test suite asserts every config.reference.json
-// path resolves to a REAL group, so a new key can't slip into "Other" unnoticed either. The one
-// exception is a HIDDEN path (confighidden.mjs, #1850), dropped below before any of this runs —
-// `ssh.*` has no group entry BECAUSE it can never render, not the other way round.
+// path resolves to a REAL group, so a new key can't slip into "Other" unnoticed either.
 export const OTHER_GROUP = "Other";
 export const LOGICAL_GROUPS = [
   {
@@ -142,14 +139,17 @@ export const LOGICAL_GROUPS = [
     ],
   },
   {
-    // The Tari node's own section (#1887), directly under Monero's. These four lived in "Monero
-    // node" on the reasoning that two chains share one node section; an operator looking for where
-    // their Tari node is configured read the group titles, found no Tari, and concluded it could
-    // not be changed here. Its resource knobs (tari.mem_limit, tari.data_dir) stay in "System /
-    // advanced" beside monero's — the split follows what a field IS, not which chain it names.
+    // The Tari node's own section (#1887), so it is findable by title. Resource knobs (mem_limit,
+    // data_dir) stay in "System / advanced" beside monero's: grouped by what a field IS.
     name: "Tari node",
     description: "Choose the Tari node and how Pithead reaches or exposes it.",
-    prefixes: ["tari.mode", "tari.remote", "tari.grpc_lan_access", "tari.clearnet_initial_sync"],
+    prefixes: [
+      "tari.mode",
+      "tari.remote",
+      "tari.grpc_lan_access",
+      "tari.clearnet_initial_sync",
+      "tari.explorer_url",
+    ],
   },
   {
     name: "Workers",
@@ -228,7 +228,7 @@ export function buildSections(cfg) {
   const byGroup = new Map();
   for (const g of LOGICAL_GROUPS) byGroup.set(g.name, []);
   byGroup.set(OTHER_GROUP, []);
-  for (const f of fields) if (!isHidden(f.key)) byGroup.get(classifyGroup(f.key)).push(f);
+  for (const f of fields) byGroup.get(classifyGroup(f.key)).push(f);
   const sections = [];
   for (const [name, groupFields] of byGroup)
     if (groupFields.length)
@@ -300,17 +300,10 @@ export function nestSection(section) {
   };
 }
 
-// Editable-set membership (#613): the control gate only ever commits a fixed allowlist of config
-// paths (pithead's CONTROL_DASHBOARD_EDITABLE_KEYS, plus the dashboard.energy special-case, #504)
-// — everything else is refused at commit no matter what the form sends. Rather than let an
-// operator edit a host-only field and find out at Save, mark it non-editable up front so the view
-// can grey it out and never wire an onChange for it (belt-and-suspenders: the gate still refuses
-// regardless). `editableKeys` is `_editable_keys` on the fetched config (#613), the same
-// underscore-metadata convention `_core_keys` uses, computed server-side from the SAME allowlist
-// the gate enforces (control_service.EDITABLE_ENV_KEY_PATHS, drift-guarded against pithead's
-// CONTROL_DASHBOARD_EDITABLE_KEYS). A missing/empty set fails CLOSED — nothing is marked
-// editable — rather than defaulting to "everything editable" and silently reintroducing the
-// edit-then-reject problem this feature exists to remove.
+// Editable-set membership (#613): `_editable_keys` contains ordinary direct-commit paths and
+// `_confirm_keys` contains paths that need typed confirmation. Approval paths arrive separately;
+// physical-presence paths are absent from all three. A missing/empty set fails CLOSED — nothing is
+// marked editable — rather than defaulting to "everything editable".
 //
 // `confirmKeys` is `_confirm_keys` (#719): the operationally-disruptive paths the gate WILL commit,
 // but only behind a type-to-confirm. They render editable (not greyed) and carry `confirm: true` so
@@ -351,6 +344,28 @@ export function parseConfigJson(text) {
     return { error: "Enter a JSON object." };
   }
   return { config: cfg };
+}
+
+function removePath(node, [key, ...rest]) {
+  if (!isPlainObject(node)) return;
+  if (rest.length) {
+    removePath(node[key], rest);
+    if (isPlainObject(node[key]) && Object.keys(node[key]).length === 0) delete node[key];
+  } else delete node[key];
+}
+
+// The full candidate the host stages and commits (#2365), minus reference defaults that were
+// absent from config.json and remain untouched. Existing explicit values and secret sentinels must
+// stay: the host replaces config.json with this object, then resolves sentinels from the live file.
+export function explicitCandidate(pristine, candidate, defaultKeys) {
+  const out = JSON.parse(JSON.stringify(candidate));
+  for (const dotted of defaultKeys) {
+    const path = dotted.split(".");
+    if (JSON.stringify(pathGet(pristine, dotted)) === JSON.stringify(pathGet(candidate, dotted))) {
+      removePath(out, path);
+    }
+  }
+  return out;
 }
 
 // Live syntax check for the JSON textarea, surfaced inline as the operator types (not only on

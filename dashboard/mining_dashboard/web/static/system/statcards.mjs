@@ -7,9 +7,12 @@
 import { loadPref, savePref } from "../app/logic.mjs";
 import { Component, html } from "../app/preact.mjs";
 
+// A tile label, not a document section (#1859): every call site sits directly under its card's
+// own heading with nothing in between, so a heading tag here always skips a level. A <p> carries
+// the same visual weight via CSS without joining the heading outline.
 export const StatCard = ({ label, value, cls, span, title }) => html`
     <div class=${"stat-card" + (span ? " col-span-2" : "")} title=${title || ""}>
-        <h5>${label}</h5>
+        <p class="stat-label">${label}</p>
         <p class=${cls || ""}>${value}</p>
     </div>`;
 
@@ -52,11 +55,20 @@ export class MoreStats extends Component {
 // Tari merge-mine status. The ✔ means the gRPC channel is actually up, so it's gated on `connected`
 // (channel_state READY) — NOT on `active` (a chain is merely configured). When configured but the
 // channel is down (e.g. TRANSIENT_FAILURE) we show the raw state in a warn style and no ✔, so a dead
-// channel can never read as "TRANSIENT_FAILURE ✔".
-export const TariStatus = ({ tari }) => html`
+// channel can never read as "TRANSIENT_FAILURE ✔". A READY channel is not a node on the chain
+// (#2464): an amber or red chain verdict colours the line, and the server's status text (its reasons
+// and the next step, derived in build_tari) is printed as it stands.
+export const TariStatus = ({ tari }) => {
+  const h = tari.health;
+  if (h && h.level !== "green") {
+    return html`
+    <p class=${h.level === "red" ? "status-bad" : "status-warn"}>${tari.status}</p>`;
+  }
+  return html`
     <p class=${tari.connected ? "status-ok" : tari.active ? "status-warn" : ""}>
         ${tari.status}${tari.connected ? html` <span class="check-inline">✔</span>` : null}
     </p>`;
+};
 
 // Local vs remote for the two nodes an operator can run somewhere else (#1040). A remote node's
 // health is not theirs to fix, which is the whole reason a card has to say which it is. An absent

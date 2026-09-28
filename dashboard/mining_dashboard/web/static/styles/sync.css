@@ -39,6 +39,17 @@
   color: var(--text-muted);
   text-align: center;
 }
+/* The takeover's chain titles: h2 inside a .card, but a screen heading rather than a card
+ * title, so they opt out of the card-title appearance .card h2 now carries (#1859). */
+#sync-view h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  border-bottom: none;
+  padding-bottom: 0;
+}
 .header-placeholder {
   text-align: center;
   margin: 40px 0;

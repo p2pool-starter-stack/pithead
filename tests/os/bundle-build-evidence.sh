@@ -59,6 +59,7 @@ _bundle_mask() {
     while IFS= read -r line || [ -n "$line" ]; do
         [ -z "${PITHEAD_REGISTRY:-}" ] || line=${line//"$PITHEAD_REGISTRY"/'<registry>'}
         [ -z "${PITHEAD_REGISTRY_CA:-}" ] || line=${line//"$PITHEAD_REGISTRY_CA"/'<registry-ca>'}
+        [ -z "${PITHEAD_REGISTRY_COSIGN_PUB:-}" ] || line=${line//"$PITHEAD_REGISTRY_COSIGN_PUB"/'<registry-cosign-pub>'}
         printf '%s\n' "$line"
     done
 }

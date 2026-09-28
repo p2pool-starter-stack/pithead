@@ -17,6 +17,15 @@ test('WorkersTable renders headers and a row per worker with status classes', ()
     assert.match(html, /badge-ok">P2Pool/); // PoolBadge for a p2pool worker
 });
 
+test('WorkersTable has a visually-hidden caption and scope="col" on every header (#1859)', () => {
+    const html = renderApp();
+    assert.match(html, /<table id="workers-table">\s*<caption class="sr-only">Workers<\/caption>/);
+    const headerRow = html.match(/<table id="workers-table">[\s\S]*?<\/thead>/)[0];
+    const ths = headerRow.match(/<th\b[^>]*>/g);
+    assert.equal(ths.length, WORKER_COLUMNS.length);
+    for (const th of ths) assert.match(th, /scope="col"/, `missing scope="col": ${th}`);
+});
+
 test('WorkersTable marks the sorted column, visibly and via aria-sort (#656)', () => {
     // No sort chosen (server order): no column claims a direction.
     assert.doesNotMatch(renderApp(), /aria-sort/);
@@ -33,20 +42,31 @@ test('WorkersTable sort headers are real buttons, so keyboard can sort (#671)', 
     const html = renderApp();
     const btns = html.match(/<button type="button" class="th-sort-btn" title="Sort by /g) || [];
     assert.equal(btns.length, WORKER_COLUMNS.length);
-    assert.match(html, /<th><button type="button" class="th-sort-btn" title="Sort by Worker">Worker</);
+    assert.match(html, /<th scope="col"><button type="button" class="th-sort-btn" title="Sort by Worker">Worker</);
 });
 
 test('WorkersTable with no workers shows the connect hint instead of a bare table (#385)', () => {
-    // The fixture's host_ip is "Unknown Host" — the hint must fall back to the docs placeholder.
+    // The fixture's host_ip is "Unknown Host" but host_addr carries a real IP — the hint must
+    // fall back to it rather than the docs placeholder (#1873).
     const s = clone();
     s.workers = [];
     const html = renderApp({ state: s });
     assert.match(html, /Workers Alive/);
     assert.match(html, /No workers connected yet/);
-    assert.match(html, /YOUR_STACK_IP:3333/);
+    assert.match(html, new RegExp(`${s.host_addr}:3333`));
+    assert.doesNotMatch(html, /YOUR_STACK_IP/);
     assert.match(html, /docs\/workers\.md/); // links the workers guide
     assert.doesNotMatch(html, /workers-table/); // no empty table skeleton
     assert.doesNotMatch(html, /rig-alpha/);
+});
+
+test('WorkersTable connect hint falls back to the docs placeholder only when host_addr is also unset (#1873)', () => {
+    const s = clone();
+    s.workers = [];
+    s.host_ip = 'Unknown Host';
+    s.host_addr = null;
+    const html = renderApp({ state: s });
+    assert.match(html, /YOUR_STACK_IP:3333/);
 });
 
 test('WorkersTable connect hint uses the real host IP when known (#385)', () => {

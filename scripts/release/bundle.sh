@@ -28,7 +28,7 @@ publish() {
 
     confirm "Create git tag $TAG, push it, fast-forward main to it, and publish the GitHub Release?" ||
         {
-            warn "Publish cancelled. Images are promoted; re-run --resume-promote to finish, or publish by hand."
+            warn "Publish cancelled. Images are promoted; publish by hand."
             return 0
         }
 
@@ -103,11 +103,18 @@ compose_build_mounts() {
 # resolves STACK_VERSION from the bundled VERSION, and pulls the published `:vX.Y.Z` images. Every
 # ./build/* path the compose mounts at runtime (compose_build_mounts) IS shipped, so the pulled
 # containers find the config templates they render at setup.
-make_bundle() {
+make_bundle() (
     # Unpacks to a versionless "pithead/" dir. Ships only the operator docs needed to run the stack.
-    local out="$1" d="$WORKDIR/pithead"
-    mkdir -p "$d"
-    cp pithead pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
+    local out="$1" d="$WORKDIR/pithead" generated
+    generated="$(mktemp "$REPO_ROOT/.pithead.bundle.XXXXXX")" || die "make_bundle: could not create a pithead rebuild."
+    trap 'rm -f "$generated"' EXIT
+    PITHEAD_BUILD_ROOT="$REPO_ROOT" PITHEAD_BUILD_ARTIFACT="$generated" bash "$REPO_ROOT/scripts/build-pithead.sh" >/dev/null ||
+        die "make_bundle: could not rebuild pithead."
+    cmp -s "$generated" "$REPO_ROOT/pithead" ||
+        die "make_bundle: generated pithead differs from the artifact to ship."
+    mkdir -p "$d" || die "make_bundle: could not create the bundle directory."
+    cp "$generated" "$d/pithead" || die "make_bundle: failed to copy required runtime files."
+    cp pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
     [ -e cosign.pub ] || [ "${COSIGN_ENABLED:-0}" -eq 0 ] || die "make_bundle: signing is enabled but cosign.pub is missing."
     [ ! -e cosign.pub ] || cp cosign.pub "$d/" 2>/dev/null || die "make_bundle: failed to copy cosign.pub."
     # The bundle's own provenance anchor: the exact commit these bytes were cut from. The tier-4
@@ -177,7 +184,7 @@ make_bundle() {
         die "Bundle $out carries xattr pax headers (#252) — GNU tar will warn on extract. Does this tar honor --no-xattrs?"
     fi
     log "Wrote install bundle: $out"
-}
+)
 
 # Release notes = the top (newest) section of CHANGELOG.md — the curated, user-facing summary.
 changelog_notes() {

@@ -11,12 +11,15 @@ cat >"$FB/bin/docker" <<'EOF'
 echo "[docker] $*" >>"${DOCKER_LOG:-/dev/null}"
 case "$*" in
   "compose ps --status running -q") echo cid123 ;;
-  "compose down"*) [ "${DOWN_FAIL:-0}" != 1 ] || exit 1 ;;
+  "compose config --services") printf '%s\n' tor monerod tari p2pool dashboard caddy ;;
+  "compose stop"*) [ "${DOWN_FAIL:-0}" != 1 ] || exit 1 ;;
   "compose up"*)
     n=0; [ ! -f "${UP_COUNT:?}" ] || n=$(cat "$UP_COUNT")
     n=$((n + 1)); printf '%s' "$n" >"$UP_COUNT"
-    [ "$n" -gt "${UP_FAILS:-0}" ] || exit 1
+    [ "$n" -gt "${UP_FAILS:-0}" ] || { echo "dependency failed to start: container tor is unhealthy" >&2; exit 1; }
     ;;
+  "inspect"*) echo "{\"Status\":\"unhealthy\",\"Log\":[{\"ExitCode\":1,\"Output\":\"control port refused after attempt $(cat "${UP_COUNT:?}")\"}]}" ;;
+  "logs"*) echo "Bootstrapped 45%: Asking for relay descriptors at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion" ;;
 esac
 exit 0
 EOF
@@ -77,6 +80,17 @@ rc=$?
 assert_rc "backup retries one failed restart (#1965)" "$rc" 0
 assert_contains "restart retry is reported" "$out" "retrying the normal startup path once"
 assert_eq "restart retry makes two up attempts" "$(cat "$FB/up.count")" 2
+assert_contains "failed backup restart retains Tor health" "$out" "unhealthy"
+assert_contains "failed backup restart retains Tor health-check output" "$out" "control port refused"
+assert_contains "failed backup restart retains Tor log" "$out" "Bootstrapped 45%"
+assert_not_contains "failed backup restart redacts onion in Tor log" "$out" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion"
+
+out="$(backup_case env UP_FAILS=99 TAR_FAIL=0)"
+rc=$?
+assert_rc "backup reports two failed normal restarts" "$rc" 1
+assert_eq "failed normal restart makes two up attempts" "$(cat "$FB/up.count")" 2
+assert_contains "failed final restart retains its own Tor health-check output" "$out" "control port refused after attempt 2"
+assert_contains "failed normal restart keeps the original Compose error" "$out" "dependency failed to start: container tor is unhealthy"
 
 out="$(backup_case env PITHEAD_APPLIANCE=1 UP_FAILS=99 TAR_FAIL=0)"
 rc=$?
@@ -88,5 +102,7 @@ out="$(backup_case env PITHEAD_APPLIANCE=1 UP_FAILS=99 BOOT_FAIL=1 TAR_FAIL=0)"
 rc=$?
 assert_rc "backup reports failed compose and boot-path recovery (#1965)" "$rc" 1
 assert_contains "failed restart says the archive remains valid" "$out" "archive is valid"
+assert_contains "failed restart keeps the original Compose error" "$out" "dependency failed to start: container tor is unhealthy"
+assert_contains "failed restart keeps Tor health-check output" "$out" "control port refused"
 assert_eq "valid archive survives restart failure" "$(ls "$FB"/backups/pithead-backup-* 2>/dev/null | wc -l | tr -d ' ')" 1
 unset -f backup_case

@@ -77,6 +77,28 @@
   gap: 12px;
   min-width: 0;
 }
+/* Between the phone breakpoint and ~720px the brand row (name, status badges, version, update,
+ * theme, upgrade control — .flex.items-center, header.mjs) has no room to wrap and stacks
+ * five-plus items deep, pushing the KPI band below the fold (#1870). A horizontally scrollable
+ * strip keeps it one line tall and every item still reachable, instead of a disclosure that
+ * hides status at a glance. Scoped to .brand so the header's OTHER .flex.items-center row (the
+ * disk-usage line, .text-small.mt-2, which is a sibling of .brand, not a child) keeps wrapping
+ * normally. Matches the .hero-value narrow step above. Lower-bounded at 641px: below 640px
+ * .header .items-center already gets its own row-per-item wrap (sync.css's phone breakpoint) —
+ * this selector's higher specificity (three classes vs. two) would otherwise silently override
+ * that instead of layering with it. */
+@media (min-width: 641px) and (max-width: 720px) {
+  .brand .flex.items-center {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  /* Flex items shrink by default; without this the row squeezes each child (e.g. .badge-row's
+   * own flex-wrap) down to its narrowest content instead of overflowing for the scrollbar
+   * above to carry — the exact re-stack this breakpoint exists to avoid. */
+  .brand .flex.items-center > * {
+    flex-shrink: 0;
+  }
+}
 .brand-logo {
   width: 40px;
   height: 40px;
@@ -122,11 +144,22 @@
 .hero-band .hero-kpi:first-child {
   border-top: 2px solid var(--accent);
 }
+/* overflow-wrap:anywhere was borrowed from .brand-host (#81/#83) for a long value here too, but
+ * the values this tile actually holds are short words/units (a mode name, a hashrate) with no
+ * long unbroken token to protect against — "anywhere" only licenses a mid-word break like
+ * "P2POO/L" on a narrow hero column (#1870). Keep the tile itself from forcing that: a smaller
+ * step at the width the hero band's own auto-fit columns get tight (matches the badge-row
+ * breakpoint below) lets the shorter text fit without needing to break mid-word. */
 .hero-value {
   font-size: 1.6rem;
   font-weight: 700;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+}
+@media (max-width: 720px) {
+  .hero-value {
+    font-size: 1.15rem;
+  }
 }
 .hero-label {
   margin-top: 6px;
@@ -154,7 +187,8 @@ h2 {
   font-size: 1.5rem;
   font-weight: 600;
 }
-h3 {
+.wizard-shell h2,
+.card h2 {
   margin: 0 0 15px 0;
   font-size: 0.85rem;
   text-transform: uppercase;
@@ -162,6 +196,22 @@ h3 {
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--border);
   padding-bottom: 10px;
+}
+/* Card titles were h3 until #1859, and an h3 takes the UA's bold; the bare h2 rule above sets
+ * 600, so the weight is restated here rather than left to lighten on promotion. Scoped to the
+ * card because wizard.css already sets 700 on .wizard-shell h2 and loads after this file, so a
+ * shared rule would be a no-op there. */
+.card h2 {
+  font-weight: 700;
+}
+/* Headings one level below a card title (Worker Inspect's sections, a diagnostics service).
+ * They were h4s with no rule of their own, so they rendered as the UA draws an h4; #1859
+ * promoted them to h3 for a contiguous outline, and this keeps that rendering. `.mt-2` still
+ * wins on margin-top — utilities.css loads after this file. */
+.card-subhead {
+  margin: 1.33em 0;
+  font-size: 1em;
+  font-weight: bold;
 }
 .text-muted {
   color: var(--text-muted);

@@ -5,7 +5,8 @@
 # flags + the p2pool entrypoint's word-splitting and Tor-loopback bridge for the Tari gRPC (#165/
 # #278), monero/tari address-type validation including the #829 checksum-vs-shape split (#250/
 # #845), the wallet-entrypoint view-only gen.json + healthcheck (#381/#714/#718), the payout view
-# key on both chains including the Tari birthday/spend-key gating (#381/#462/#523), tari.mode
+# key on both chains including the Tari spend-key gating (#381/#462/#523; the birthday is in
+# test-tari-wallet.sh), tari.mode
 # remote (#103), the profile-deactivation reconcile a monero/tari local<->remote switch drives
 # (#795 — kept here rather than split out: it is the direct consequence of the mode-switch
 # sections right above it, not a separate feature), monero.rpc_lan_access/prep_blocks_threads/
@@ -31,11 +32,11 @@ mkdir -p "$CB"
 build_val_sandbox
 DOCKER_LOG="$V/docker.log"
 
-echo "== unit: p2pool_outbound_flags — Tor-by-default for outbound P2P (#165) =="
-assert_eq "default → Tor SOCKS flags" "$(run_sourced "$SANDBOX" p2pool_outbound_flags false 172.28.0)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor"
-assert_eq "empty arg → Tor (default off)" "$(run_sourced "$SANDBOX" p2pool_outbound_flags '' 172.28.0)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor"
-# clearnet opt-out → no SOCKS flags (p2pool dials peers directly, IP exposed).
-assert_eq "clearnet=true → no SOCKS flags" "$(run_sourced "$SANDBOX" p2pool_outbound_flags true 172.28.0)" ""
+echo "== unit: p2pool_outbound_flags — Tor-by-default for outbound P2P (#165), no seed DNS (#2496) =="
+assert_eq "default → Tor SOCKS flags + no DNS" "$(run_sourced "$SANDBOX" p2pool_outbound_flags false 172.28.0)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns"
+assert_eq "empty arg → Tor (default off)" "$(run_sourced "$SANDBOX" p2pool_outbound_flags '' 172.28.0)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns"
+# clearnet opt-out → no SOCKS flags and seed DNS stays on (p2pool dials peers directly, IP exposed).
+assert_eq "clearnet=true → no SOCKS flags, no --no-dns" "$(run_sourced "$SANDBOX" p2pool_outbound_flags true 172.28.0)" ""
 assert_eq "clearnet=yes (any truthy) → no SOCKS flags" "$(run_sourced "$SANDBOX" p2pool_outbound_flags yes 172.28.0)" ""
 # Honours a custom bridge subnet (#180) — the Tor container is always .25 of the configured /24.
 assert_contains "custom NETWORK_PREFIX points at its Tor (.25)" "$(run_sourced "$SANDBOX" p2pool_outbound_flags false 172.30.5)" "172.30.5.25:9050"
@@ -135,33 +136,32 @@ assert_eq "scan height: auto -> genesis 0 (full payout history)" "$(rsh auto)" "
 assert_eq "scan height: empty -> genesis 0" "$(rsh '')" "0"
 assert_eq "scan height: explicit block kept verbatim" "$(rsh 2500000)" "2500000"
 
-# Wallet healthcheck (#718): during the multi-hour genesis scan monero-wallet-rpc refuses the RPC,
-# so the check must tolerate an unreachable RPC WHILE the initial-scan marker is present, and turn
-# strict once the RPC first answers. Stub `curl` on PATH to be the RPC up/down control.
-HCBIN="$SANDBOX/hc-bin"
-HCDIR="$SANDBOX/hc-wallet"
+# Wallet healthcheck (#718/#2268): stub `curl` on PATH to control RPC up/down.
+HCBIN="$SANDBOX/hc-bin" HCDIR="$SANDBOX/hc-wallet"
 mkdir -p "$HCBIN" "$HCDIR"
-mk_curl() {
-    printf '#!/bin/sh\nexit %s\n' "$1" >"$HCBIN/curl"
-    chmod +x "$HCBIN/curl"
-}
+mk_curl() { printf '#!/bin/sh\nexit %s\n' "$1" >"$HCBIN/curl" && chmod +x "$HCBIN/curl"; }
 run_hc() { (
     PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" sh "$ROOT/build/monero/wallet-healthcheck.sh" >/dev/null 2>&1
     echo $?
 ); }
-# RPC down + marker present (mid initial scan) -> healthy (the whole point of #718).
 mk_curl 7
 : >"$HCDIR/.payout-scanning"
-assert_eq "healthcheck: RPC down but scanning -> healthy (#718)" "$(run_hc)" "0"
-# RPC up -> healthy AND the marker is retired (scan caught up; strict from now on).
+assert_eq "healthcheck: RPC down with fresh scan marker -> healthy (#718)" "$(run_hc)" "0"
+assert_eq "healthcheck: zero scan grace expires immediately (#2268)" "$(PAYOUT_SCAN_GRACE_SEC=0 run_hc)" "1"
+touch -t 200001010000.00 "$HCDIR/.payout-scanning"
+assert_eq "healthcheck: RPC down with expired scan marker -> unhealthy (#2268)" "$(run_hc)" "1"
+: >"$HCDIR/.payout-scanning"
 mk_curl 0
 assert_eq "healthcheck: RPC up -> healthy (#718)" "$(run_hc)" "0"
 if [ -f "$HCDIR/.payout-scanning" ]; then bad "healthcheck: RPC up clears the scan marker (#718)" "marker still present"; else ok "healthcheck: RPC up clears the scan marker (#718)"; fi
-# RPC down + NO marker (scan already finished once) -> unhealthy: a real fault, not scan tolerance.
-mk_curl 7
+mk_curl 7 # RPC down + NO marker (scan already finished once): a real fault, not scan tolerance.
 assert_eq "healthcheck: RPC down after scan done -> unhealthy (#718)" "$(run_hc)" "1"
-# The entrypoint arms the marker on wallet creation so the grace applies from first boot.
-assert_contains "wallet-entrypoint touches the scan marker on create (#718)" "$(cat "$ROOT/build/monero/wallet-entrypoint.sh")" 'touch "$SCAN_MARKER"'
+printf '#!/bin/sh\nexit 0\n' >"$HCBIN/monero-wallet-rpc" && chmod +x "$HCBIN/monero-wallet-rpc"
+run_wep() { rm -f "$HCDIR/.payout-scanning" && PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/wgen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1; } # every start marks a scan (#718): a reopen's catch-up blocks the RPC too (#2756)
+run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on create"; else bad "wallet-entrypoint marks the scan on create" "no marker"; fi
+: >"$HCDIR/payout-wallet" && run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on reopen"; else bad "wallet-entrypoint marks the scan on reopen" "no marker"; fi
 
 echo "== unit: monero_address_type — p2pool needs a PRIMARY address, and a REAL one (#250, #829) =="
 _a93="$(printf 'a%.0s' $(seq 93))"
@@ -332,30 +332,6 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "malformed tari spend key rejected" "$?" "1"
 assert_contains "malformed spend-key message names spend_public_key" "$out" "tari.spend_public_key"
-
-echo "== black-box: tari.payout_scan_birthday validation (#523) =="
-# The restore-point birthday is validated only on the view-key path (it feeds the tari-wallet). It
-# is "auto" or a u16 days-since-epoch (0–65535) — a block height or an out-of-range value is a
-# common mistake that must fail at apply, not silently mis-restore the wallet. Keys are valid so
-# only the birthday is under test.
-# (1) A non-integer birthday (a block height, say) is refused.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"height-3200000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "non-integer birthday rejected" "$?" "1"
-assert_contains "non-integer birthday message names the field" "$out" "tari.payout_scan_birthday"
-# (2) An in-range-looking but too-large birthday (> 65535, e.g. a block height) is refused.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"99999"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "out-of-range birthday rejected" "$?" "1"
-assert_contains "out-of-range birthday message names the u16 ceiling" "$out" "65535"
-# (3) A valid u16 birthday applies and reflects verbatim into .env.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"1000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "valid birthday accepted" "$?" "0"
-assert_eq "valid birthday reflected into .env" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_BIRTHDAY)" "1000"
 
 echo "== black-box: tari.mode remote (#103) =="
 # The Tari sibling of monero.mode remote: mirrors the Monero pattern above (host:port render,
@@ -543,8 +519,7 @@ assert_rc "above-maximum out_peers refused" "$?" "1"
 assert_contains "above-maximum refusal names the bounds" "$out" "between 8 and 1024"
 
 echo "== black-box: local node creds auto-generated + persisted (#50) =="
-# A local node with BLANK creds: apply must generate them, write them into .env AND back into
-# config.json, and keep them stable on a second apply (don't regenerate every run).
+# Blank local credentials are generated, persisted, and stable across apply.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"","node_password":""}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -556,26 +531,26 @@ assert_eq "username persisted to config.json" "$(jq -r '.monero.node_username' "
 assert_eq "password persisted to config.json" "$(jq -r '.monero.node_password' "$V/config.json")" "$env_pass"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "password stable across apply" "$(jq -r '.monero.node_password' "$V/config.json")" "$env_pass"
-
-# A REMOTE node with blank creds means "no auth" — leave it empty, don't invent credentials.
 seed_env
 printf '{ "monero": {"mode":"remote","wallet_address":"%s","node_username":"","node_password":"","remote":{"host":"node.example.com"}}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "remote username left blank" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_NODE_USERNAME)" ""
 assert_eq "remote creds not persisted" "$(jq -r '.monero.node_username' "$V/config.json")" ""
-
-# Custom remote rpc_port/zmq_port propagate to .env (the dashboard + p2pool read these to reach the
-# node); both default to 18081/18083 but an operator can point at a node on non-standard ports.
 seed_env
 printf '{ "monero": {"mode":"remote","wallet_address":"%s","node_username":"","node_password":"","remote":{"host":"node.example.com","rpc_port":28081,"zmq_port":28083}}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "remote rpc_port propagated" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_PORT)" "28081"
+assert_eq "remote RPC URL rendered from the endpoint" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_URL)" "http://node.example.com:28081"
 assert_eq "remote zmq_port propagated" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_ZMQ_PORT)" "28083"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "zmq_port defaults to 18083" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_ZMQ_PORT)" "18083"
-
+assert_eq "local RPC URL renders host loopback" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_URL)" "http://127.0.0.1:18081"
+seed_env
+printf '{ "monero": {"mode":"remote","wallet_address":"%s","remote":{"host":"fd00::10","rpc_port":28081,"zmq_port":28083}}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_eq "IPv6 remote RPC URL brackets the host" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_URL)" "http://[fd00::10]:28081"
 seed_env
 : >"$DOCKER_LOG"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead logs monerod 2>&1)"

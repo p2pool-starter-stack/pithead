@@ -264,6 +264,50 @@ if [ "${1:-}" = "--self-test" ]; then
         st_fail=1
     fi
 
+    : >"$bare/pithead"
+    mkdir -p "$bare/dashboard/mining_dashboard/web/templates"
+    printf '%s\n' 'export const t = "operator sees #4242";' >"$bare/dashboard/mining_dashboard/web/static/untracked module.mjs"
+    printf '%s\n' 'const t = "operator sees #4242";' >"$bare/dashboard/mining_dashboard/web/static/untracked.js"
+    printf '%s\n' '<p>operator sees #4242</p>' >"$bare/dashboard/mining_dashboard/web/templates/untracked.html"
+    bare_out=$(cd "$bare" && bash "$self" 2>&1 </dev/null) && bare_rc=0 || bare_rc=$?
+    if [ "$bare_rc" -ne 0 ] &&
+        printf '%s\n' "$bare_out" | grep -q 'untracked module.mjs:1:' &&
+        printf '%s\n' "$bare_out" | grep -q 'untracked.js:1:' &&
+        printf '%s\n' "$bare_out" | grep -q 'untracked.html:1:'; then
+        echo "  self-test ok: the real invocation scans every untracked frontend file type"
+    else
+        echo "  self-test FAIL: the real invocation missed an untracked frontend file type (rc=$bare_rc)"
+        st_fail=1
+    fi
+
+    printf '%s\n' 'export const t = "clean";' >"$bare/dashboard/mining_dashboard/web/static/untracked module.mjs"
+    printf '%s\n' 'const t = "clean";' >"$bare/dashboard/mining_dashboard/web/static/untracked.js"
+    printf '%s\n' '<p>clean</p>' >"$bare/dashboard/mining_dashboard/web/templates/untracked.html"
+    chmod 000 "$bare/dashboard/mining_dashboard/web/static/untracked module.mjs"
+    if [ -r "$bare/dashboard/mining_dashboard/web/static/untracked module.mjs" ]; then
+        echo "  self-test skipped: this user bypasses file permissions, so a frontend scan failure cannot be staged"
+    else
+        bare_out=$(cd "$bare" && bash "$self" 2>&1 </dev/null) && bare_rc=0 || bare_rc=$?
+        if [ "$bare_rc" -ne 0 ] && printf '%s\n' "$bare_out" | grep -q 'dashboard frontend scan failed'; then
+            echo "  self-test ok: a frontend scan error is refused"
+        else
+            echo "  self-test FAIL: a frontend scan error was accepted (rc=$bare_rc)"
+            st_fail=1
+        fi
+    fi
+    chmod 600 "$bare/dashboard/mining_dashboard/web/static/untracked module.mjs"
+
+    mkdir "$tmp/fakebin"
+    printf '%s\n' '#!/bin/sh' 'exit 1' >"$tmp/fakebin/git"
+    chmod +x "$tmp/fakebin/git"
+    bare_out=$(cd "$bare" && PATH="$tmp/fakebin:$PATH" bash "$self" 2>&1 </dev/null) && bare_rc=0 || bare_rc=$?
+    if [ "$bare_rc" -ne 0 ] && printf '%s\n' "$bare_out" | grep -q 'frontend enumeration failed'; then
+        echo "  self-test ok: a git enumeration error is refused"
+    else
+        echo "  self-test FAIL: a git enumeration error was accepted (rc=$bare_rc)"
+        st_fail=1
+    fi
+
     [ "$st_fail" -eq 0 ] && {
         echo "lint-operator-strings self-test OK"
         exit 0
@@ -302,27 +346,34 @@ fi
 
 # The static frontend, minus the *.min.js bundles.
 #
-# `|| true` is load-bearing and must stay. Under `set -o pipefail` an empty enumeration makes
-# `grep -v` exit 1, which errexit turns into a silent death AT THIS ASSIGNMENT — before the
-# refusal below can run. Swallowing that status is only safe BECAUSE the refusal checks the
-# result; the two are one mechanism. Remove either and a broken enumeration stops explaining
-# itself: without `|| true` the script dies anonymously, without the refusal it reports success.
-files=$(git ls-files 'dashboard/mining_dashboard/web/static/*.mjs' \
+# NUL delimiters preserve valid filenames containing whitespace. Store the enumeration so git's
+# status is checked before reading it; process substitution would discard that status.
+enumeration=$(mktemp)
+trap 'rm -f "$enumeration"' EXIT
+if ! git ls-files --cached --others --exclude-standard -z -- \
+    'dashboard/mining_dashboard/web/static/*.mjs' \
     'dashboard/mining_dashboard/web/static/*.js' \
-    'dashboard/mining_dashboard/web/templates/*.html' | grep -v '\.min\.js$' || true)
+    'dashboard/mining_dashboard/web/templates/*.html' >"$enumeration"; then
+    echo "operator strings: dashboard frontend enumeration failed." >&2
+    exit 1
+fi
+files=()
+while IFS= read -r -d '' file; do
+    [[ $file == *.min.js ]] || files+=("$file")
+done <"$enumeration"
 #
 # THIS REFUSAL MUST STAY ABOVE THE SCAN. `scan_frontend` ends in `awk '...' "$@"`, and awk with zero
 # file arguments reads STDIN — so folding this check into the `if` below, or moving it after the
 # scan, converts the false green into a job that HANGS instead of failing. Measured both ways: with
 # this line here the script refuses in milliseconds; with it deleted and stdin held open, the scan
 # blocks until the runner's timeout.
-enforce_nonempty_frontend "$files" || exit 1
+enforce_nonempty_frontend "${files[*]-}" || exit 1
 
-# shellcheck disable=SC2086
-if
-    hits=$(scan_frontend $files)
-    [ -n "$hits" ]
-then
+if ! hits=$(scan_frontend "${files[@]}"); then
+    echo "operator strings: dashboard frontend scan failed." >&2
+    exit 1
+fi
+if [ -n "$hits" ]; then
     echo "operator strings: issue/PR number in a dashboard frontend user-visible string:"
     echo "$hits"
     fail=1

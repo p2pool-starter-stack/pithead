@@ -31,7 +31,9 @@ config_read_sites() {
     # EMPTY there and every exception is silently ignored. Undetectable while the array was
     # empty (#2082); this is the first entry, and it reddened the #561 row until fixed.
     # A plain assignment, exactly like DRIFT_FOUND and DRIFT_BAD below.
-    DRIFT_EXCEPTIONS=("telegram.control.enabled")
+    # ssh.{enabled,authorized_key}: legacy release configs are read only to ignore their retired
+    # SSH request; the schema must not re-admit either setting.
+    DRIFT_EXCEPTIONS=("telegram.control.enabled" "ssh.enabled" "ssh.authorized_key")
 
     DRIFT_FOUND="" # newline-separated normalized dotted paths (no leading dot), deduped at the end
     DRIFT_BAD=0

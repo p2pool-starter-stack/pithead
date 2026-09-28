@@ -34,6 +34,13 @@ safety_backup() {
     fi
     wait_status_ok 240 || {
         it_fail "stack recovered after safety backup" "pithead status did not become healthy"
+        # This gate fails before any scenario can capture its usual diagnostics. Capture before the
+        # recovery changes the state, but never let diagnostic I/O alter that recovery or its verdict.
+        local recovery_dir="$OUT_DIR/safety-backup-recovery"
+        if mkdir -p "$recovery_dir"; then
+            rx "docker compose ps" 2>&1 | redact >"$recovery_dir/compose-ps.txt" || true
+            rx "$IT_PITHEAD status" 2>&1 | redact >"$recovery_dir/health-check.txt" || true
+        fi
         safety_restore_exact && safety_cleanup || true
         return 1
     }
@@ -50,12 +57,34 @@ safety_backup() {
 # Restore the box to the exact pre-test baseline and VERIFY it landed: config byte-identical and
 # every wallet/proxy/dashboard/RPC/onion secret category unchanged. A rollback that is not
 # verified is not a rollback — on any failure the archive is retained for manual recovery.
+safety_secret_drift_categories() { # <baseline category=hash lines> <actual category=hash lines>
+    local category baseline actual drift=""
+    while IFS='=' read -r category baseline; do
+        [ -n "$category" ] || continue
+        actual="$(sed -n "s/^${category}=//p" <<<"$2")"
+        [ "$actual" = "$baseline" ] || drift="${drift:+$drift,}$category"
+    done <<<"$1"
+    printf '%s' "$drift"
+}
+
 safety_restore_exact() {
+    local restored_secrets
     pithead down >/dev/null 2>&1 || true
-    if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1 ||
-        ! strict_pithead up >/dev/null 2>&1 || ! wait_status_ok 240 ||
-        [ "$(rx 'cat config.json' 2>/dev/null)" != "$BASELINE_CONFIG" ] ||
-        [ "$(upgrade_secret_fingerprints)" != "$BASELINE_EXACT_SECRET_FP" ]; then
+    SAFETY_RESTORE_FAIL_REASON=""
+    if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
+        SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
+    elif ! baseline_up >/dev/null 2>&1; then
+        SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
+    elif ! wait_status_ok 240; then
+        SAFETY_RESTORE_FAIL_REASON="pithead status did not become healthy within 240s"
+    elif [ "$(rx 'cat config.json' 2>/dev/null)" != "$BASELINE_CONFIG" ]; then
+        SAFETY_RESTORE_FAIL_REASON="restored config.json does not match the baseline byte-for-byte"
+    elif ! restored_secrets="$(upgrade_secret_fingerprints)"; then
+        SAFETY_RESTORE_FAIL_REASON="restored secret categories are unreadable"
+    elif [ "$restored_secrets" != "$BASELINE_EXACT_SECRET_FP" ]; then
+        SAFETY_RESTORE_FAIL_REASON="restored secret categories do not match the baseline: $(safety_secret_drift_categories "$BASELINE_EXACT_SECRET_FP" "$restored_secrets")"
+    fi
+    if [ -n "$SAFETY_RESTORE_FAIL_REASON" ]; then
         SAFETY_RESTORE_FAILED=1
         # This function's FIRST act is `pithead down`. A rollback that then fails has stopped the
         # stack and, without this, returns leaving it stopped — strictly worse than never having
@@ -77,7 +106,7 @@ safety_rollback_if_failed() {
     [ "$IT_FAIL" -gt 0 ] || return 0
     it_warn "failures detected — rolling back to the safety backup ($SAFETY_ARCHIVE)…"
     safety_restore_exact || {
-        it_fail "safety rollback restored the exact healthy baseline" "restore/apply/health/config/secret verification failed; archive retained at $SAFETY_ARCHIVE"
+        it_fail "safety rollback restored the exact healthy baseline" "$SAFETY_RESTORE_FAIL_REASON; archive retained at $SAFETY_ARCHIVE"
         return 1
     }
 }
@@ -170,6 +199,10 @@ summary() {
     if [ -n "$IT_SKIPPED_NAMES" ]; then
         it_warn "did NOT run:"
         echo -e "$IT_SKIPPED_NAMES" >&2
+    fi
+    if [ "$IT_ALERT_REFUSED" -gt 0 ]; then
+        it_warn "third-party refusals: $IT_ALERT_REFUSED (an environment fact, not a stack failure — #424)"
+        echo -e "$IT_ALERT_REFUSED_NAMES" >&2
     fi
     if [ "$IT_FAIL" -gt 0 ]; then
         it_err "failed:  $IT_FAIL"

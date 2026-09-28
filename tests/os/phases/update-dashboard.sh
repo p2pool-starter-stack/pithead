@@ -214,6 +214,14 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     else
         bad "leg 4: the persisted state does not say reboot-pending"
     fi
+    # The header badge (#2385) reads reboot-pending + the target version off /api/state, not the
+    # modal — it must say a reboot is owed even with the modal closed, until the reboot happens.
+    if curl -sSk -u "$DASH_USER:$DASH_PASS" "https://$ip/api/state" 2>/dev/null |
+        jq -e --arg v "${tag#v}" '.os_update.step == "reboot-pending" and .os_update.version == $v' >/dev/null 2>&1; then
+        ok "leg 4: /api/state carries reboot-pending + $tag — the header badge would say 'Reboot to finish the update to $tag'"
+    else
+        bad "leg 4: /api/state does not carry reboot-pending + the target version — the header badge would show nothing owed"
+    fi
 
     # The explicit reboot intent — nothing rebooted on its own up to here.
     marker=$(_ssh cat /etc/pithead-test-marker)

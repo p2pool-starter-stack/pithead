@@ -43,7 +43,7 @@ PRIONODES
 # comes back up Tor-only — and stays there across restarts/`apply`, so a node is never silently
 # re-exposed. Kept as a function for direct unit testing.
 clearnet_sync_active() {
-    [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ] && [ ! -f "$CLEARNET_MARKER" ]
+    [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ] && [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]
 }
 
 # When sourced by the test harness (PITHEAD_TEST_SOURCE=1), expose the functions and stop —

@@ -17,15 +17,14 @@ parse_and_validate_config() {
         error "$CONFIG_FILE has a config value containing a control character or newline. That is not allowed — it could inject an extra line into the stack's .env. Remove the newline/control character (check secrets like node_password, bot_token, api_token)."
     fi
 
-    # ssh.enabled without a key is a lockout-shaped mistake: sshd would run with nothing to
-    # accept. Key-only by design — password auth never turns on.
-    if [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE")" = "true" ]; then
+    if is_appliance && [ "$(appliance_variant)" = release ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
+        [ "${PITHEAD_CONFIG_SET:-0}" != 1 ] || [ "${PITHEAD_CONFIG_CARRIED_SSH:-0}" = 1 ] || error "ssh.enabled is unavailable on a release image; build a debug image for SSH."
+    elif [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE")" = "true" ]; then
         case "$(jq -r '.ssh.authorized_key // ""' "$CONFIG_FILE")" in
         ssh-* | ecdsa-* | sk-*) ;;
         *) error "ssh.enabled is true but ssh.authorized_key is not a public key (expected it to start with ssh-, ecdsa- or sk-). Paste the PUBLIC key (e.g. ~/.ssh/id_ed25519.pub)." ;;
         esac
     fi
-
     # tari.mode (#103/#1855): monero.mode's local/remote switch plus "off" — no merge-mining at all.
     # Read BEFORE the required-fields gate below, which depends on it, and ahead of everything else
     # so a bad value fails first. MISSING-KEY DEFAULT STAYS "local": 1.x never wrote it (#1855).
@@ -34,7 +33,6 @@ parse_and_validate_config() {
     local | remote | off) ;;
     *) error "tari.mode must be \"local\", \"remote\" or \"off\" (got \"$TARI_MODE\")." ;;
     esac
-
     # Required fields. "off" needs no Tari address: nothing merge-mines, so nothing is paid (#1855).
     MONERO_WALLET=$(jq -r '.monero.wallet_address // empty' "$CONFIG_FILE")
     TARI_WALLET=$(jq -r '.tari.wallet_address // empty' "$CONFIG_FILE")
@@ -109,13 +107,12 @@ parse_and_validate_config() {
     # operator supplies the PRIVATE VIEW KEY plus the PUBLIC SPEND KEY for the Tari payout address;
     # the stack runs a view-only minotari_console_wallet against the LOCAL Tari node to confirm a
     # merge-mine coinbase actually landed. The view key is a SECRET (reveals all incoming amounts and
-    # timing) — handled like node_password: never logged or echoed, delivered to the container via a
-    # tmpfs-mounted compose secret, never the command line or `docker inspect`. Empty (the default) =
+    # timing) — handled like node_password: never logged or echoed, delivered to the container in a
+    # read-only bind-mounted owner-only file, never the command line or `docker inspect`. Empty =
     # feature off. Phase 1 is LOCAL NODE ONLY: a view key with a remote Tari node (#103) is refused,
     # mirroring monero.mode — scanning through a third-party node changes the trust story.
-    # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE THE UNIX EPOCH (a u16, not a
-    # block height), so a fresh wallet doesn't rescan from genesis. TARI_MODE was already parsed and
-    # validated above.
+    # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE 2022-01-01 (#2731), so a fresh
+    # wallet doesn't rescan from genesis. TARI_MODE was already parsed and validated above.
     TARI_VIEW_KEY=$(jq -r '.tari.view_key // empty' "$CONFIG_FILE")
     TARI_SPEND_PUBLIC_KEY=$(jq -r '.tari.spend_public_key // empty' "$CONFIG_FILE")
     TARI_WALLET_BIRTHDAY=$(jq -r '.tari.payout_scan_birthday // "auto"' "$CONFIG_FILE")
@@ -132,12 +129,12 @@ parse_and_validate_config() {
         if ! printf '%s' "$TARI_SPEND_PUBLIC_KEY" | grep -qE '^[0-9a-f]{64}$'; then
             error "tari.spend_public_key must be the 64-character hex PUBLIC SPEND KEY for the Tari payout address (exported alongside the view key). Set it whenever tari.view_key is set."
         fi
-        # Birthday is "auto" (resolved to today's days-since-epoch at wallet creation) or an explicit
-        # u16 days-since-epoch (0–65535). Reject anything else before it reaches the wallet.
+        # "auto" or a day no later than today: a future day scans from the tip, missing past payouts.
+        local tari_today=$((($(date +%s) - 1640995200) / 86400))
         case "$TARI_WALLET_BIRTHDAY" in
         '' | auto) ;;
-        *[!0-9]*) error "tari.payout_scan_birthday must be \"auto\" or DAYS SINCE THE UNIX EPOCH (an integer 0–65535, NOT a block height). Got \"$TARI_WALLET_BIRTHDAY\"." ;;
-        *) [ "$TARI_WALLET_BIRTHDAY" -le 65535 ] || error "tari.payout_scan_birthday must be ≤ 65535 (days since the Unix epoch, a u16). Got \"$TARI_WALLET_BIRTHDAY\"." ;;
+        *[!0-9]*) error "tari.payout_scan_birthday must be \"auto\" or DAYS SINCE 2022-01-01 (Tari's wallet birthday; Tari Universe's wallet_birthday works as-is), NOT a block height. Got \"$TARI_WALLET_BIRTHDAY\"." ;;
+        *) { [ "${#TARI_WALLET_BIRTHDAY}" -le 5 ] && [ "$((10#$TARI_WALLET_BIRTHDAY))" -le "$tari_today" ]; } || error "tari.payout_scan_birthday must be days since 2022-01-01 (Tari's wallet birthday), no later than today ($tari_today). Got \"$TARI_WALLET_BIRTHDAY\"; a days-since-1970 value is too large." ;;
         esac
         TARI_PAYOUT_CONFIRM_ENABLED=true
     fi
@@ -157,26 +154,11 @@ parse_and_validate_config() {
     # Fail-closed Tor-only egress firewall (#270); default on. Renders to .env so `up` can read it.
     # config_bool (not a plain `// true`) so an explicit false actually disables it — see #294.
     TOR_EGRESS_FIREWALL=$(normalize_bool "$(config_bool '.network.tor_egress_firewall' true)")
-    # Clearnet initial sync vs. the egress firewall: a clearnet_initial_sync flag asks a daemon's
-    # first sync to dial out over clearnet (fast); the egress firewall (default on) DROPs every
-    # non-Tor dial, so that clearnet sync is silently defeated — the daemon just falls back to
-    # syncing over Tor at ordinary speed instead of failing. Nothing leaks (the firewall did its
-    # job), so this is WARN not FAIL — refusing would block a config that is merely slower than
-    # the operator intended, not one that's unsafe. Checked here (not just in render_env, which
-    # only runs for `up`/`apply`) so the contradiction surfaces on every command that validates
-    # config, including `doctor` and `edit`.
-    if [ "$TOR_EGRESS_FIREWALL" = "true" ]; then
-        local _cn_sync=""
-        [ "$(config_bool '.monero.clearnet_initial_sync' false)" = "true" ] && _cn_sync="Monero"
-        [ "$(config_bool '.tari.clearnet_initial_sync' false)" = "true" ] && _cn_sync="${_cn_sync:+$_cn_sync + }Tari"
-        if [ -n "$_cn_sync" ]; then
-            warn "$_cn_sync clearnet_initial_sync is on, but network.tor_egress_firewall is also on — the firewall drops the clearnet dials, so the sync will not actually leave Tor. Either turn off tor_egress_firewall for a real clearnet sync, or turn off clearnet_initial_sync and accept the normal Tor-speed sync."
-        fi
-    fi
     # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits, so the
     # stack never restarts its privacy boundary unbidden. Renders to .env for the dashboard,
     # which owns the probe/restart loop (dashboard .../service/tor_heal.py).
     TOR_AUTO_HEAL=$(normalize_bool "$(config_bool '.tor.auto_heal' false)")
+    TARI_EXPLORER_URL=$(jq -r '.tari.explorer_url // "https://textexplore.tari.com/?json"' "$CONFIG_FILE")
     # Surfaced for the dashboard's egress-posture panel (#170); mirrors what p2pool_outbound_flags reads.
     P2POOL_CLEARNET=$(normalize_bool "$(config_bool '.p2pool.clearnet' false)")
     # Remote-node host/port validation (#103). The central control-char guard above already stops a

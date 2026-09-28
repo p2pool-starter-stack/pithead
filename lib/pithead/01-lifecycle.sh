@@ -77,7 +77,21 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
-    docker compose up "${build_args[@]}" "$@"
+    # Every container (re)start passes here, so the LAN-published node ports get their source rule
+    # (or are held on loopback) before anything listens on them (#2616).
+    apply_lan_guard
+    # LAN guard inserts its RETURN-only jump at the top of DOCKER-USER. Put the Tor DROP back
+    # above it before containers start. A selected clearnet first sync needs a verified firewall;
+    # without an active exception, retain the established warning-only failure behavior.
+    local egress_rc=0
+    apply_tor_egress_firewall refresh >/dev/null || egress_rc=$?
+    [ "$egress_rc" = 0 ] || ! clearnet_sync_active || return 1
+    # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
+    # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
+    local rc=0
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@" || rc=$?
+    restore_recreate_names
+    return "$rc"
 }
 
 # #795: `compose up --remove-orphans` never removes the container of a service whose profile just
@@ -100,19 +114,111 @@ remove_deactivated_profile_containers() {
         warn "Could not remove the deactivated container(s): ${gone[*]} — remove them manually with 'docker rm -f ${gone[*]}'."
 }
 
+# #2595: compose recreates a container by creating its replacement as "<old id[:12]>_<name>",
+# removing the old one, then renaming the replacement. A pass that aborts in between (another
+# service's start failing cancels the rest) leaves the replacement beside the old container, and a
+# later pass removes the old one as surplus but never renames: compose finds the service by label.
+# Bench job 840 ran monerod as "4556c4f42f1d_monerod" from then on, so everything that addresses it
+# by name (exec, stop, the dashboard's control calls) missed it. Rename such a leftover once its
+# name is free; while the old container still holds it, the next pass decides which one survives.
+restore_recreate_names() {
+    local names name
+    names=$(docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.Names}}' 2>/dev/null) || return 0
+    while IFS= read -r name; do
+        [[ "$name" =~ ^[0-9a-f]{12}_(.+)$ ]] || continue
+        grep -qxF -- "${BASH_REMATCH[1]}" <<<"$names" && continue
+        if docker rename "$name" "${BASH_REMATCH[1]}" >/dev/null 2>&1; then
+            log "Renamed $name to ${BASH_REMATCH[1]}, the name an interrupted recreate left unset."
+        else
+            warn "Container $name should be named ${BASH_REMATCH[1]}; rename it with 'docker rename $name ${BASH_REMATCH[1]}'."
+        fi
+    done <<<"$names"
+}
+
+# PITHEAD_KEEP_RUNNING (#2639) is a test-harness knob, never set by pithead itself: a space-separated
+# list of running services the e2e harness proved identical between its two checkouts of the one
+# pinned project. Their checkout-relative bind mounts resolve to different absolute paths per
+# checkout, so a plain up from the other checkout would recreate them; instead the up names every
+# other service with --no-deps, and Compose neither recreates nor restarts the kept ones. A kept
+# service that is not running is refused rather than left down. The callers pass bare flags and
+# service names only. --remove-orphans is dropped: older Compose v2 counts the services left out of
+# a scoped up as orphans. Sets KEEP_SCOPED_ARGS, empty when nothing is left to bring up.
+scope_keep_running() { # <compose up flags and services...>
+    local a svc services=() opts=()
+    for a in "$@"; do
+        case "$a" in
+        --remove-orphans) ;;
+        -*) opts+=("$a") ;;
+        *) services+=("$a") ;;
+        esac
+    done
+    [ "${#services[@]}" -gt 0 ] || mapfile -t services < <(docker compose config --services 2>/dev/null)
+    [ "${#services[@]}" -gt 0 ] || {
+        warn "Could not list compose services to scope PITHEAD_KEEP_RUNNING."
+        return 1
+    }
+    for svc in $PITHEAD_KEEP_RUNNING; do
+        container_is_running "$svc" || {
+            warn "PITHEAD_KEEP_RUNNING names '$svc', which is not running — refusing to leave it down."
+            return 1
+        }
+    done
+    KEEP_SCOPED_ARGS=()
+    for svc in "${services[@]}"; do
+        case " $PITHEAD_KEEP_RUNNING " in *" $svc "*) ;; *) KEEP_SCOPED_ARGS+=("$svc") ;; esac
+    done
+    log "Keeping $PITHEAD_KEEP_RUNNING running as is (PITHEAD_KEEP_RUNNING)."
+    # Every named service kept: an up with no service list would be the whole stack, never that.
+    [ "${#KEEP_SCOPED_ARGS[@]}" -gt 0 ] || return 0
+    KEEP_SCOPED_ARGS=("${opts[@]}" --no-deps "${KEEP_SCOPED_ARGS[@]}")
+}
+
 # Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if
 # that's what Docker rejected. Returns compose's own exit code.
 compose_up_checked() {
-    local tmp out rc
+    local tmp out rc _attempt
+    if [ -n "${PITHEAD_KEEP_RUNNING:-}" ]; then
+        scope_keep_running "$@" || return 1
+        [ "${#KEEP_SCOPED_ARGS[@]}" -gt 0 ] || return 0
+        set -- "${KEEP_SCOPED_ARGS[@]}"
+    fi
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before
     # p2pool (re)starts against the remote one, not linger beside it.
     remove_deactivated_profile_containers
-    tmp="$(mktemp)"
-    compose_up --pull "$(resolve_pull_policy)" "$@" 2>&1 | tee "$tmp"
-    rc=${PIPESTATUS[0]}
-    out="$(<"$tmp")"
-    rm -f "$tmp"
-    [ "$rc" -ne 0 ] && explain_subnet_collision "$out"
+    # #2654: a source checkout's `never` policy builds the first-party `:dev` images, but the
+    # digest-pinned third-party ones (tari, caddy, the socket-proxies) have no build context, so
+    # after `uninstall` or on a fresh host `up` fails on them. Fetch only those that are missing;
+    # a pinned digest bump is a new ref, so this also covers `upgrade`. An explicit PITHEAD_PULL wins.
+    if [ -z "${PITHEAD_PULL:-}" ] && is_source_checkout; then
+        docker compose pull --policy missing --ignore-buildable ||
+            warn "Could not pull the missing third-party images — 'compose up' reports which ones below."
+    fi
+    # One bounded retry (#2293): a container still mid-transition from its own prior start (p2pool's
+    # RandomX/HugePages warm-up is the observed case, seconds after the initial deploy) makes the
+    # engine refuse a concurrent start with a state-conflict error — "must be in Created or Stopped
+    # state to be started" (Docker/Podman both use this shape). That resolves itself once the
+    # in-flight transition finishes, so a short second pass recovers it instead of failing an
+    # otherwise-successful config change; a real failure (bad image, port clash, subnet collision)
+    # repeats identically and stays fatal.
+    for _attempt in 1 2; do
+        tmp="$(mktemp)"
+        compose_up --pull "$(resolve_pull_policy)" "$@" 2>&1 | tee "$tmp"
+        rc=${PIPESTATUS[0]}
+        out="$(<"$tmp")"
+        rm -f "$tmp"
+        [ "$rc" -eq 0 ] && return 0
+        case "$out" in
+        *"must be in Created or Stopped state to be started"*)
+            [ "$_attempt" -eq 1 ] && {
+                warn "Compose hit a container still starting from a prior recreate — retrying once in 3s."
+                sleep 3
+                continue
+            }
+            ;;
+        esac
+        break
+    done
+    explain_subnet_collision "$out"
     return "$rc"
 }
 
@@ -124,9 +230,10 @@ stack_up() {
     # Install the Tor-only egress firewall BEFORE the containers start (#270). DOCKER-USER is a static
     # chain whose rules reference the fixed subnet/Tor IP, so they can go in before the network exists;
     # Docker preserves DOCKER-USER and (re)adds the FORWARD jump when it creates the network. Doing this
-    # first closes the startup window in which a clearnet app (e.g. Tari) could open a connection that
-    # the ESTABLISHED rule would then grandfather past the DROP.
+    # first closes the startup window in which a clearnet app (e.g. Tari) could dial out unfenced; the
+    # firewall resets such a flow once it is in (#2672), but the packets sent before that have leaked.
     apply_tor_egress_firewall
+    provision_egress_check_units # #2599: the dashboard reads the firewall's live state
     # #452: a fresh release install's first `up` pulls the 5 first-party images (pull policy
     # `missing`) — gate that pull on the same cosign check `upgrade` uses, so first install is not
     # the one unverified pull. Same guard: source checkouts skip, a missing cosign.pub warns and
@@ -180,10 +287,42 @@ stack_down() {
     mutation_lock_acquire down
     log "Stopping stack..."
     remove_tor_egress_firewall
+    remove_lan_guard
     if ! docker compose down; then
         error "Stack failed to stop — see the error above."
     fi
     log "Stack stopped."
+    mutation_lock_release
+}
+
+# Stop every service except caddy — the backup window's own stop (#2364). None of caddy's own
+# runtime state (its Caddyfile bind, its internal-CA data volume) is ever part of the backup
+# archive, and caddy is also the one container fronting the dashboard request that triggered this
+# stop in the first place: a `docker compose down` sends caddy its stop signal while that very
+# request can still be in flight, and podman forcing the container to exit before Caddy finishes
+# draining it can leave its read-only rootfs's `/tmp`/`/config` tmpfs submounts un-torn-down —
+# so it then finds caddy's overlay `merged` directory non-empty when it tries to remove it
+# ("directory not empty"), and `down` fails before any archive is written. Backup does not need
+# caddy stopped at all, so the fix is simply to leave it running across the window.
+stack_down_except_caddy() {
+    mutation_lock_acquire down
+    log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
+    remove_tor_egress_firewall
+    remove_lan_guard
+    local services
+    # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
+    # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
+    # takes the shell out before the guard below can run. The guard has to see the FILTERED list —
+    # an empty one must never reach `docker compose stop`, which with no arguments stops every
+    # service, caddy included, and walks straight back into the failure this function exists to avoid.
+    services=$(docker compose config --services 2>/dev/null)
+    services=$(printf '%s\n' "$services" | grep -vxF caddy || true)
+    [ -n "$services" ] || error "Could not list compose services to stop for the backup."
+    # shellcheck disable=SC2086 # word-splitting the service list is the point
+    if ! docker compose stop $services; then
+        error "Stack failed to stop — see the error above."
+    fi
+    log "Stack stopped (caddy left running)."
     mutation_lock_release
 }
 

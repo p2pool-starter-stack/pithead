@@ -26,6 +26,7 @@ def test_safe_config_is_all_tor(_posture):
         "firewall": True,
         "leaks": 0,
         "blocked_by_firewall": 0,
+        "unverified": 0,
         "all_tor": True,
         "level": "ok",
         "label": "All egress via Tor",
@@ -296,7 +297,7 @@ def test_topology_alert_sinks_edge_tracks_the_route(_topo):
 def test_topology_clearnet_sync_adds_bypass_edge(_edge, _topo):
     topo = _topo(monero_clearnet_sync=True, firewall=False)
     edge = _edge(topo, "monerod", "internet")
-    assert edge["route"] == CLEARNET and edge["leak"] is True
+    assert edge["route"] == CLEARNET and edge["chosen_clearnet"] is True
 
 
 def test_tari_clearnet_sync_surfaces_in_egress_and_topology(_edge, _posture, _topo):
@@ -310,11 +311,10 @@ def test_tari_clearnet_sync_surfaces_in_egress_and_topology(_edge, _posture, _to
     assert _conn(p, "tari", "initial sync")["route"] == CLEARNET
     topo = _topo(tari_clearnet_sync=True, firewall=False)
     edge = _edge(topo, "tari", "internet")
-    assert edge["route"] == CLEARNET and edge["leak"] is True
+    assert edge["route"] == CLEARNET and edge["chosen_clearnet"] is True
 
 
 # --- Exhaustive config sweep + frontend contract ---------------------------------------
-# The diagram must hold for ANY operator config, not just the hand-picked cases above.
 
 _KNOBS = (
     "firewall",
@@ -406,16 +406,14 @@ def test_firewall_off_counts_every_clearnet_path_as_a_leak(_posture):
     )
     clearnet = sum(1 for comp in p["components"] for c in comp["conns"] if c["route"] == CLEARNET)
     assert clearnet >= 5  # sidechain, RPC, monero IBD, tari IBD, XvB donation
-    assert p["summary"]["leaks"] == clearnet
+    assert p["summary"]["leaks"] + 1 == clearnet  # Tari IBD is a chosen route
     assert p["summary"]["blocked_by_firewall"] == 0
     assert p["summary"]["all_tor"] is False
     assert "exposing your IP" in p["summary"]["label"]
 
 
-def test_firewall_on_blocks_every_clearnet_path(_posture):
-    # Same clearnet-everywhere config with the firewall ON: every clearnet path belongs to a
-    # container, so all are blocked and nothing leaks — the dashboard's own egress is Tor-only
-    # (#163/#701), so the host-networked firewall bypass has nothing clearnet to expose.
+def test_firewall_does_not_cover_the_dashboard_s_remote_node_hop(_posture):
+    # The container paths are blocked, but the host-networked dashboard's remote-node RPC is not.
     p = _posture(
         firewall=True,
         p2pool_clearnet=True,
@@ -424,10 +422,11 @@ def test_firewall_on_blocks_every_clearnet_path(_posture):
         tari_clearnet_sync=True,
         monero_route=CLEARNET,
     )
-    assert p["summary"]["leaks"] == 0
+    assert p["summary"]["leaks"] == 1
     assert _conn(p, "dashboard", "XvB stats")["route"] == TOR
-    assert p["summary"]["blocked_by_firewall"] >= 5
-    assert p["summary"]["all_tor"] is True
+    assert p["summary"]["blocked_by_firewall"] >= 3
+    assert _conn(p, "tari", "initial sync")["chosen_clearnet"] is True
+    assert p["summary"]["all_tor"] is False
 
 
 # The dashboard clients hard-wired through Tor SOCKS — no knob points any of them at clearnet

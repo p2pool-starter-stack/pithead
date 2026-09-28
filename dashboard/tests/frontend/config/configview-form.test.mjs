@@ -32,6 +32,7 @@ function readyView(cfg = CFG, coreKeys = CORE_KEYS) {
     cfg,
     sections: buildSections(cfg),
     coreKeys,
+    defaultKeys: cfg._default_keys || [],
     candidate,
     pristine: text,
     editText: text,
@@ -186,7 +187,7 @@ test("a field edit lands in the candidate, typed, and rewrites the pane (#785)",
   inst.onFieldEdit(pool, "main");
   const staged = inst.buildProposed();
   assert.equal(staged.config.p2pool.pool, "main");
-  assert.equal(staged.config.monero.wallet_address, "4AAAA"); // untouched fields survive
+  assert.equal(staged.config.monero.mode, "local"); // explicit live values survive the full candidate
   assert.match(inst.state.editText, /"pool": "main"/); // the pane shows the same truth
 });
 
@@ -215,13 +216,13 @@ test("a pane mid-typo keeps the last good candidate and blocks Save with the rea
 
 // --- Masked-secret sentinel semantics survive the candidate model (#508/#440) -----------------
 
-test("an untouched masked secret keeps its sentinel in the staged config", () => {
+test("an untouched masked secret reaches the host as its keep sentinel", () => {
   const inst = readyView();
-  assert.match(inst.state.editText, /__secret__/); // visible in the pane, as a marker
+  assert.match(inst.state.editText, /__secret__/); // still visible in the pane, as a marker
   assert.deepEqual(inst.buildProposed().config.dashboard.auth.password, { __secret__: true });
 });
 
-test("blanking a secret field means KEEP — the sentinel returns, never an empty string", () => {
+test("blanking a secret field means KEEP — a typed-then-reblanked secret restores its sentinel", () => {
   const inst = readyView();
   const pw = { key: "dashboard.auth.password", type: "secret", value: "" };
   inst.onFieldEdit(pw, "hunter2hunter2");
