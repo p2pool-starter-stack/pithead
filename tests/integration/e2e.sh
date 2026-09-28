@@ -489,9 +489,9 @@ provision() {
         ok "config seeded from the canonical checkout (data dirs point at the shared chains)"
     fi
 }
-
 # --- Phase 2: safety backup of the live stack -------------------------------
 backup_stack() {
+    command -v python3 >/dev/null || die "python3 is required before the safety backup can run."
     log "Taking a safety backup of the live stack (the rollback anchor)"
     # ponytail: --no-encrypt, as v1.4 refuses plaintext unattended without PITHEAD_BACKUP_PASSPHRASE; the anchor stays on the bench. Output kept for the die reason (#2757).
     local out rc=0 && out="$(on_bench "cd '$CANONICAL_DIR' && ./pithead backup -y --no-encrypt 2>&1")" || rc=$?

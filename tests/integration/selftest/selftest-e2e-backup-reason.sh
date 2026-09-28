@@ -18,6 +18,29 @@ SRC="$(sed -n '/^backup_stack() {$/,/^}$/p' "$HERE/../e2e.sh")"
 assert_eq "the extraction is the whole function (opens and closes)" \
     "$(printf '%s\n' "$SRC" | sed -n '1p;$p' | tr '\n' ' ')" "backup_stack() { } "
 
+missing_python="$(
+    (
+        command() {
+            if [ "$1" = -v ] && [ "$2" = python3 ]; then return 1; fi
+            builtin command "$@"
+        }
+        log() { :; }
+        die() {
+            echo "DIE $*"
+            exit 1
+        }
+        on_bench() { echo BACKUP_REACHED; }
+        eval "$SRC"
+        backup_stack
+    ) 2>&1
+)"
+assert_contains "missing python stops before the backup" "$missing_python" \
+    "DIE python3 is required before the safety backup can run."
+case "$missing_python" in
+*BACKUP_REACHED*) it_fail "missing python never starts the backup" "[$missing_python]" ;;
+*) it_pass "missing python never starts the backup" ;;
+esac
+
 sandbox="$(mktemp -d)"
 trap 'rm -rf "$sandbox"' EXIT
 # The fake backup fails like a real one would: a line on stdout, the reason on stderr, exit 3.
