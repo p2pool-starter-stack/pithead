@@ -54,7 +54,7 @@ class TestSyncGate:
         ):
             await svc._apply_sync_gate(gate_satisfied=True)
         assert svc.miner_released is True
-        assert "Could not remove the restore's sync-gate marker" in caplog.text
+        assert "Could not remove the sync-gate marker (restore or node change)" in caplog.text
 
     async def test_partial_start_failure_keeps_latch_closed(self):
         # If only one container starts, stay unreleased so the next cycle retries the rest.

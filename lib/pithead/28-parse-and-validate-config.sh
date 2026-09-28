@@ -158,6 +158,7 @@ parse_and_validate_config() {
     # stack never restarts its privacy boundary unbidden. Renders to .env for the dashboard,
     # which owns the probe/restart loop (dashboard .../service/tor_heal.py).
     TOR_AUTO_HEAL=$(normalize_bool "$(config_bool '.tor.auto_heal' false)")
+    TARI_EXPLORER_URL=$(jq -r '.tari.explorer_url // "https://textexplore.tari.com/?json"' "$CONFIG_FILE")
     # Surfaced for the dashboard's egress-posture panel (#170); mirrors what p2pool_outbound_flags reads.
     P2POOL_CLEARNET=$(normalize_bool "$(config_bool '.p2pool.clearnet' false)")
     # Remote-node host/port validation (#103). The central control-char guard above already stops a
