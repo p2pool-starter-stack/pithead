@@ -29,14 +29,8 @@
 # class the sweep itself has. A broken or partial scan means "unknown", never "clean", so this
 # refuses to name ANY mute obsolete off an incomplete run and exits 1 instead.
 #
-# THE PARITY CONTRACT (#1290). TRIVY_VERSION below is the one place that declares which trivy
-# engine this script's own scan uses. `--check-parity` (wired into `make lint-trivy-parity`) holds
-# the gate workflows' `./.github/actions/install-trivy` `version:` input, and the pinned image's own
-# measured version, to that one value. Those literals are read because they are the lines that
-# DECIDE the engine: every trivy-action step there passes `skip-setup-trivy: true`, so it installs
-# nothing and declares no version at all (#2214). Grading a trivy-action `version:` instead would
-# grade a value the action never resolves — the defect #2214's review caught, and the shape
-# scripts/lint/lint-trivy-installer-cache.sh now holds in place.
+# THE PARITY CONTRACT (#1290). `--check-parity` compares TRIVY_VERSION with the gate's
+# `install-trivy` pins and image version; `skip-setup-trivy` makes those pins decisive (#2214).
 #
 # Usage:
 #   scripts/watch/trivyignore-watch.sh              Build + scan every covered image with NO ignore file
@@ -106,7 +100,10 @@ scan_image() {
         image --scanners vuln --severity "$SEVERITY" --ignore-unfixed --format json "$tag" \
         2>/dev/null) || return 1
     printf '%s' "$json" | jq -sr '
-        if length != 1 or (.[0] | type) != "object" or (.[0].Results | type) != "array" then error("invalid report")
+        if length != 1 or (.[0] | type) != "object" or (.[0].Results | type) != "array"
+            or (.[0].Results | length) == 0
+            or any(.[0].Results[]; type != "object" or (.Vulnerabilities | type) != "array")
+        then error("invalid report")
         else .[0].Results[] | (.Vulnerabilities // [])[] | .VulnerabilityID |
             if type == "string" and test("^[^[:space:]]+$") then . else error("invalid finding ID") end end
     ' 2>/dev/null
@@ -320,12 +317,19 @@ if [ "${1:-}" = "--self-test" ]; then
     st "rootfs tag is fetched and inputs staged before docker build" \
         "$(awk '/^[[:space:]]*git -C "\$ROOT" fetch -q --depth=1 origin/{fetch=NR} /^[[:space:]]*bash "\$ROOT\/os\/build-image.sh" --stage-only/{stage=NR} /^[[:space:]]*docker build -f "\$ROOT\/os\/rootfs\/Dockerfile"/{build=NR} END {print (fetch > 0 && stage > fetch && build > stage)}' "$ROOT/scripts/watch/trivyignore-watch.sh")" "1"
 
-    for payload in '{invalid json' '' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":""}]}]}' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":" "}]}]}'; do
+    for payload in '{invalid json' '' '{"Results":[]}' '{"Results":[{}]}' '{"Results":[{"Vulnerabilities":null}]}' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":""}]}]}' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":" "}]}]}'; do
         docker() { printf '%s' "$payload"; }
         scan_rc=0
         scan_image fixture >/dev/null || scan_rc=1
         st "invalid or empty scan data fails closed" "$scan_rc" "1"
     done
+    unset -f docker
+
+    build_image() { printf '%s' "$1"; }
+    docker() { printf '{"Results":[]}'; }
+    scan_rc=0
+    report "$IGNOREFILE" >/dev/null 2>&1 || scan_rc=1
+    st "incomplete scans cannot report obsolete mutes" "$scan_rc" "1"
     unset -f docker
 
     st "ignored_ids strips comments and blank lines" \
@@ -336,11 +340,7 @@ if [ "${1:-}" = "--self-test" ]; then
             rm -f "$f"
         )" "CVE-2026-1 CVE-2026-2 "
 
-    # Fixture per-image findings, keyed by the real image names. CVE-TRAP sits ONLY in the
-    # dashboard image — the shape #1174 found for real: an appliance-only per-image check would
-    # never see it and would call it obsolete. CVE-LIVE-ROOTFS sits only in the appliance rootfs,
-    # the mirror case. CVE-PLANTED sits in NONE of them — the mutation the issue's Verification
-    # section asks for: plant a mute for an ID no image reports and confirm the report names it.
+    # Dashboard-only and rootfs-only IDs stay live; the unreported planted ID is obsolete.
     build_image() { printf '%s' "$1"; } # the "tag" is just the name; no docker involved
     scan_image() {
         case "$1" in
