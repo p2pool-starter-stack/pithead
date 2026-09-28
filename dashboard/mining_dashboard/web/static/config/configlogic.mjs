@@ -15,6 +15,7 @@
 // its sentinel — the server swaps it for the live value ("unchanged").
 
 import { pathGet } from "./configsync.mjs";
+import { FIELD_WARNINGS } from "./configwarnings.mjs";
 
 export const SECRET_HINT = "set — leave blank to keep";
 
@@ -41,17 +42,6 @@ const FIELD_OPTIONS = {
   "p2pool.pool": ["main", "mini", "nano"],
   "workers.api_auth": ["none", "name", "token"],
   "xvb.donation_level": ["auto", "donor", "vip", "whale", "mega"],
-};
-
-// Inline warnings for high-consequence fields, shown before any preview round-trip. The pool
-// text carries describe_change's P2POOL_FLAGS warning; the wallet texts its DEST messages.
-const FIELD_WARNINGS = {
-  "p2pool.pool":
-    "P2Pool sidechain changing — p2pool re-syncs the new sidechain and your PPLNS window resets (XvB shares reset too).",
-  "monero.wallet_address":
-    "Monero payout address is changing — future mining rewards go to the new address.",
-  "tari.wallet_address":
-    "Tari payout address is changing — future merge-mining rewards go to the new address.",
 };
 
 function isPlainObject(v) {
@@ -149,14 +139,17 @@ export const LOGICAL_GROUPS = [
     ],
   },
   {
-    // The Tari node's own section (#1887), directly under Monero's. These four lived in "Monero
-    // node" on the reasoning that two chains share one node section; an operator looking for where
-    // their Tari node is configured read the group titles, found no Tari, and concluded it could
-    // not be changed here. Its resource knobs (tari.mem_limit, tari.data_dir) stay in "System /
-    // advanced" beside monero's — the split follows what a field IS, not which chain it names.
+    // The Tari node's own section (#1887), so it is findable by title. Resource knobs (mem_limit,
+    // data_dir) stay in "System / advanced" beside monero's: grouped by what a field IS.
     name: "Tari node",
     description: "Choose the Tari node and how Pithead reaches or exposes it.",
-    prefixes: ["tari.mode", "tari.remote", "tari.grpc_lan_access", "tari.clearnet_initial_sync"],
+    prefixes: [
+      "tari.mode",
+      "tari.remote",
+      "tari.grpc_lan_access",
+      "tari.clearnet_initial_sync",
+      "tari.explorer_url",
+    ],
   },
   {
     name: "Workers",

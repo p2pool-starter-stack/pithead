@@ -127,6 +127,15 @@ recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-
         warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
 }
 
+rearm_sync_gate_marker() { # <dashboard-dir>: plant sync-gate-reset without following what is there
+    local t
+    t=$(mktemp "$1/.sync-gate-reset.XXXXXX") || return 1
+    mv -f -T "$t" "$1/sync-gate-reset" || {
+        rm -f "$t"
+        return 1
+    }
+}
+
 apply() {
     # apply reaches its mutating window down two different paths (a normal change, and the retry
     # after a previous apply committed the config but did not finish recreating containers), so it
@@ -176,8 +185,10 @@ apply() {
     # committed (#125): the stack then runs OLD containers against NEW config files, and because a
     # re-apply diffs the (already-committed) .env it would see no change and silently no-op. While
     # the marker is present, re-apply re-attempts the recreate even when the rendered config matches.
-    local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0
+    local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
+    # A retried recreate keeps the sync-gate re-arm its first attempt decided on (#2763).
+    grep -qx rearm-sync-gate "$apply_marker" 2>/dev/null && rearm_sync_gate=1
 
     local destructive=0 caddy_changed=0 caddy_before="" caddy_had=0 wallet_keys=() line flag msg old new
     local dashboard_data_dir_old=""
@@ -194,6 +205,9 @@ apply() {
             # #2360: remember the active dashboard.data_dir for the carry before .env publication.
             # The separate historical-default migration runs later, after service configuration.
             [ "$key" == "DASHBOARD_DATA_DIR" ] && dashboard_data_dir_old="$old"
+            # #2763: a required chain now dials another node (remote<->local, a new endpoint)
+            # that may not have synced, so the #35 release earned on the old node no longer holds.
+            case "$key" in MONERO_NODE_HOST | MONERO_RPC_PORT | TARI_MODE | TARI_GRPC_ADDRESS) rearm_sync_gate=1 ;; esac
             line=$(describe_change "$key" "$old" "$new")
             flag=${line%%$'\t'*}
             msg=${line#*$'\t'}
@@ -325,11 +339,26 @@ apply() {
     # Mark the recreate in-flight: cleared only after a SUCCESSFUL `up`, so a failure here (image
     # build error, a port already bound, a failed health/dependency gate, daemon hiccup) leaves the
     # marker for the next apply to retry instead of no-opping on the already-committed config (#125).
-    : >"$apply_marker"
+    if [ "$rearm_sync_gate" -eq 1 ]; then echo rearm-sync-gate >"$apply_marker"; else : >"$apply_marker"; fi
     # One-time move of the dashboard data out of the install dir (#455) — after the confirmed
     # commit above (never before the operator said yes) and under the marker, so a failed move is
     # retried; the recreate below then mounts the migrated directory.
     migrate_dashboard_data
+    # Re-arm the sync gate with the restore's marker (#2626), after the move above so its target
+    # is still empty. Each key that sets rearm_sync_gate reaches the dashboard's environment (the
+    # port via MONERO_RPC_URL), so the up below recreates it and it reads the marker at start. It
+    # holds the miner until the new node syncs (or releases on the first cycle if it already has).
+    # The directory belongs to the dashboard's uid (ensure_directories), hence sudo when the
+    # operator's is another. Whatever that uid left at the path is never opened: mktemp creates a
+    # fresh file (O_EXCL) and `mv -T` renames it over the entry, replacing a planted symlink
+    # instead of following it, and refusing a directory.
+    if [ "$rearm_sync_gate" -eq 1 ]; then
+        rearm_sync_gate_marker "$DASHBOARD_DIR" 2>/dev/null ||
+            sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\"" _ "$DASHBOARD_DIR" || true
+        # Judge the result, not the exit status: only a regular file at the path re-arms the gate.
+        [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
+            error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset); re-run '$0 apply' to retry."
+    fi
     # Compose recreates only the services whose resolved config changed. --remove-orphans covers
     # services that left the compose file entirely; a profile-deactivated service is NOT an orphan
     # to compose, so compose_up_checked removes those containers itself before the up (#795).

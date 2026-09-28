@@ -1,7 +1,7 @@
 # Describe a changed env key for the apply preview. Prints "FLAG\tmessage"; always returns 0.
 describe_change() {
     local key="$1" old="$2" new="$3" flag="INFO" msg
-    if describe_notification_change "$key" "$old" "$new"; then
+    if describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
         printf '%s\t%s' "$flag" "$msg"
         return
     fi
@@ -200,10 +200,10 @@ describe_change() {
             msg="Dashboard login DISABLED — the dashboard is reachable without a password again."
         elif [ -z "$old" ]; then
             flag=DEST
-            msg="Dashboard login ENABLED — Caddy now requires the configured username/password; the caddy container is recreated."
+            msg="Dashboard login ENABLED — Caddy now requires the configured username/password: a mistyped password locks this session out, and on the appliance it is also the console root login; the caddy container is recreated."
         else
             flag=DEST
-            msg="Dashboard login password CHANGED — use the new credentials; the caddy container is recreated."
+            msg="Dashboard login password CHANGED — other signed-in sessions are logged out, a mistyped password locks this session out, and on the appliance it is also the console root login; the caddy container is recreated."
         fi
         ;;
     DASHBOARD_AUTH_USER)
@@ -273,11 +273,11 @@ describe_change() {
         # The ping URL is both the on/off switch and a capability secret — report the change
         # (enable/disable/update) WITHOUT printing the value.
         if [ -z "$new" ]; then
-            msg="Healthchecks.io dead-man's switch DISABLED — ping URL cleared; the dashboard container is recreated."
+            msg="Healthchecks.io dead-man's switch DISABLED — ping URL cleared, so no one is alerted if this machine goes down; the dashboard container is recreated."
         elif [ -z "$old" ]; then
-            msg="Healthchecks.io dead-man's switch ENABLED — ping URL set (pings over Tor); the dashboard container is recreated."
+            msg="Healthchecks.io dead-man's switch ENABLED — ping URL set (pings over Tor); a wrong URL stops the pings or sends them to someone else's check, so an outage here goes unnoticed; the dashboard container is recreated."
         else
-            msg="Healthchecks.io ping URL updated — the dashboard container is recreated."
+            msg="Healthchecks.io ping URL updated — a wrong URL stops the pings or sends them to someone else's check, so an outage here goes unnoticed; the dashboard container is recreated."
         fi
         ;;
     TOR_AUTO_HEAL)

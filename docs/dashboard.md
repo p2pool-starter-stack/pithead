@@ -49,11 +49,14 @@ While the chains sync, the dashboard keeps `p2pool` and `xmrig-proxy` stopped (a
 badge shows next to the hostname) and starts them once the chains are ready. A local Monero node is
 ready when monerod itself reports `synchronized`, so a node that has just restarted and has no peers
 yet keeps the miner held. Running p2pool against an unsynced node does nothing and floods Tari's logs
-with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. A restore at
-setup is the exception: the release belongs to the machine the backup was taken on, so after such a
-restore the dashboard holds the miner again until this machine's chains are ready. `./pithead
-restore`, the same-box recovery command, is not this door — its box's chains never desynced, so it
-keeps whatever gate state the backup carried. By default the stack waits for both Monero and Tari. With
+with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. Two changes
+are exceptions. A restore at setup: the release belongs to the machine the backup was taken on, so
+after such a restore the dashboard holds the miner again until this machine's chains are ready.
+`./pithead restore`, the same-box recovery command, is not this door — its box's chains never
+desynced, so it keeps whatever gate state the backup carried. And an applied change to the node a
+chain uses (`monero.mode` or `tari.mode`, or a remote node's host or port): the release was earned on
+the old node, so the miner holds again until the new one is ready, which is at once when it already
+is. By default the stack waits for both Monero and Tari. With
 [`dashboard.tari_required: false`](configuration.md) it waits only for Monero and mines while Tari
 finishes syncing in the background.
 
@@ -1065,10 +1068,12 @@ signed-in operator, the typed `APPLY` for a disruptive change, and the payout su
 friction and typo protection, not a second identity. A sensitive commit no longer depends on
 Telegram being configured, so it works the same on a stack that never set the bot up.
 
-The existing physical-presence boundary is unchanged: the dashboard password and the two tamper
-alarms cannot be changed from the dashboard at all. The machine refuses them ahead of every other
-check and directs the operator to use a configuration stick. This prevents the configuration
-page from weakening the evidence its own later changes would be judged by.
+Since #2367 no reference field is refused from this page. The dashboard password and the two
+tamper alarms left the physical-presence boundary; only retired SSH settings remain behind it.
+They confirm like a payout change, with typed `APPLY` and the confirmation envelope. The host
+preview names the cost before you confirm: a new password logs other sessions out and is also the
+appliance's console `root` login; switching an alarm off stops it reporting the change it
+watches.
 
 A node-endpoint or RPC-login change has a second gate behind the typed `APPLY`: before a remote-node
 commit is accepted, the host dials the endpoint with the staged login and refuses a pair it cannot

@@ -7,6 +7,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
+bash "$HERE/test_control_audit_order.sh"
+assert_rc "control audit precedes result" "$?" "0"
 # shellcheck source=tests/stack/test-harness-tooling.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran test-harness-tooling.sh "$_d0" "$?" || domain_ran test-harness-tooling.sh "$_d0" "$?"
 # shellcheck source=tests/stack/doctor/test-doctor.sh disable=SC2015
@@ -87,6 +89,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-status-vocabulary.sh" && domain_ran test-control-status-vocabulary.sh "$_d0" "$?" || domain_ran test-control-status-vocabulary.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-monero-tari.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-monero-tari.sh" && domain_ran test-monero-tari.sh "$_d0" "$?" || domain_ran test-monero-tari.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-sync-gate-rearm.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-sync-gate-rearm.sh" && domain_ran test-sync-gate-rearm.sh "$_d0" "$?" || domain_ran test-sync-gate-rearm.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-monero-wallet-scan.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-monero-wallet-scan.sh" && domain_ran test-monero-wallet-scan.sh "$_d0" "$?" || domain_ran test-monero-wallet-scan.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-recovery-address-gates.sh disable=SC2015
@@ -101,10 +105,14 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-tari-lmdb.sh" && domain_ran test-tari
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-wallet.sh" && domain_ran test-tari-wallet.sh "$_d0" "$?" || domain_ran test-tari-wallet.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-xmrig-proxy-entrypoint.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?" || domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-monero-entrypoint.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-monero-entrypoint.sh" && domain_ran test-monero-entrypoint.sh "$_d0" "$?" || domain_ran test-monero-entrypoint.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tari-fork-rewind.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-fork-rewind.sh" && domain_ran test-tari-fork-rewind.sh "$_d0" "$?" || domain_ran test-tari-fork-rewind.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tari-chain.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tari-chain.sh" && domain_ran test-tari-chain.sh "$_d0" "$?" || domain_ran test-tari-chain.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-clearnet-firewall.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-clearnet-firewall.sh" && domain_ran test-clearnet-firewall.sh "$_d0" "$?" || domain_ran test-clearnet-firewall.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-host-firewall.sh disable=SC2015

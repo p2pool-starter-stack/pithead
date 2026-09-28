@@ -320,9 +320,10 @@ can write), `staged/` (host-only), and `results/` + `audit/` + `masked/` (contai
 sentinel ([#440](https://github.com/p2pool-starter-stack/pithead/issues/440)); the Configuration
 form prefills from it, and the raw `config.json` is never mounted into the container. It is
 re-rendered on every `setup`/`apply`/`upgrade` and on every runner pass.
-`audit/control.log` records one JSON line per handled request — timestamp, the logged-in dashboard
-user, action, outcome, and the names of the changed settings (never their values) — and the
-container cannot rewrite it. The writer trims the log to its newest 2000 entries once it passes
+`audit/control.log` records one JSON line per handled request: timestamp, logged-in dashboard
+user, action, outcome, and the names of the changed settings (never their values). A commit's
+audit line is written before its result is published. The container cannot rewrite the log. The
+writer trims it to its newest 2000 entries once it passes
 512 KiB, so it never grows unbounded.
 
 To disable the channel, set `dashboard.control.enabled: false` and run `./pithead apply`: the
@@ -539,7 +540,7 @@ want it gone.
 |---|---|
 | containers + networks | the `pithead` compose project, `mining_net`, `proxy_net` |
 | images | every ref from `docker compose config --images` |
-| named volumes | `caddy_data`, `wallet_data`, `tari_wallet_db` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues. Uninstall removes the Tari wallet volume even when its payout profile is disabled, after checking its Compose ownership labels. If Docker cannot list, inspect, or remove that volume, uninstall stops before deleting `.env` so the operator can retry. |
+| named volumes | `caddy_data`, `wallet_data`, `tari_wallet_db` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues. On startup, `tari-wallet` repairs a root-owned volume before running as uid 1000. Uninstall removes the Tari wallet volume even when its payout profile is disabled, after checking its Compose ownership labels. If Docker cannot list, inspect, or remove that volume, uninstall stops before deleting `.env` so the operator can retry. |
 | systemd units | `pithead-control.path` / `.service`, this checkout's only |
 | firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit |
 | rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
@@ -623,7 +624,8 @@ points; see [Configuration › Data directories](configuration.md#data-directori
   ([#637](https://github.com/p2pool-starter-stack/pithead/issues/637)). The newest three pairs
   are kept; older ones are pruned automatically. The `.env` copies carry secrets — handle them
   like `.env` itself.
-- **`data/tor/`**: onion service keys. Back up to keep the same onion addresses across a rebuild.
+- **`data/tor/`**: onion service keys retain the same addresses across a rebuild. Restore discards
+  Tor's disposable circuit `state`, so it builds fresh circuits on the next start.
 - **`data/monero/`**, **`data/tari/`**: the blockchains. Large; backing them up saves a re-sync,
   but they re-download from the network if lost.
 - **`data/dashboard/`**: the dashboard database (hashrate history and settings). Small and
@@ -701,7 +703,8 @@ otherwise restore hashes the configured password again. An archive is trusted as
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings — including
 the sync gate's own released/held state, since this is the same-box recovery door: the machine's
-chains have not gone anywhere.
+chains have not gone anywhere. Restore discards Tor's circuit `state`, including from older archives;
+Tor rebuilds that history on startup without changing the onion keys.
 
 #### Restore collision rules
 
@@ -853,6 +856,37 @@ restart does the same. (#972)
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
+
+**Tari node stuck or forked.**
+A running Tari node can stop following the chain while every healthcheck stays green: the process
+lives, its gRPC answers and P2Pool's merge-mine channel reads READY, so every merge-mined Tari
+block is built on a stale tip (#2464). The dashboard judges the node on three signals: its tip
+unchanged for 30 minutes, 0 peer connections for 10 minutes, and its height more than 50 blocks
+behind a public explorer fetched through Tor once an hour (`tari.explorer_url`). One signal turns
+the Tari status amber with the reason; two, or explorer lag on its own, turn it red, fail
+`./pithead doctor`, add a line to `./pithead status` and send an alert. The dashboard only reports:
+it restarts nothing and P2Pool keeps merge-mining against the node, so Tari work stays wasted until
+you recover the node. Monero mining is not affected. Recover in this order:
+
+1. **Restart the node.** Do not restart it while it is migrating its database after an upgrade
+   (its gRPC answers only once the migration finishes, #2593):
+
+   ```bash
+   ./pithead restart tari
+   ```
+
+   A restart clears the node's list of rejected blocks. That list is what locked out the canonical
+   chain in #2465: the node banned every peer that served it. Catch-up then takes minutes, and the
+   status returns to green once the tip moves again with peers connected and the explorer lag is gone.
+2. **Still red after a restart or two**: likely a chain fork or an upgrade required. A node on the
+   wrong side of a hard fork rejoins the same dead branch after every
+   restart. Check the Tari release notes for a required upgrade first. A node that followed a dead
+   branch past a fork height has to be rewound below it before it can sync; #2618 covers that
+   rewind for the 350,000 fork.
+3. **Resync from scratch** as the last resort: stop the node, move its chain data away (`tari.data_dir`,
+   `./data/tari` by default) and start it again. Over Tor this takes days. `tari.clearnet_initial_sync:
+   true` cuts it to hours at the cost of exposing the host's IP to Tari peers while it runs (see
+   [Privacy](privacy.md#optional-clearnet-initial-sync-off-by-default)).
 
 **The dashboard data looks broken and you want a clean slate.**
 `./pithead reset-dashboard` wipes and recreates the dashboard and P2Pool data. This is

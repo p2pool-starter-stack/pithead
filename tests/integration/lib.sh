@@ -39,8 +39,8 @@ it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
 # POSITION (#1596); an IP by SCOPE (#1609), its \x01 sentinel an INVARIANT, not an input guess (#1613).
 redact() {
     redact_it_password | sed -E \
-        -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
-        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[a-z2-7]{56}\.onion/<redacted>.onion/g; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
+        -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|EXPLORER_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
+        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|explorer_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[a-z2-7]{56}\.onion/<redacted>.onion/g; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
 }
 
 # --- Assertions -------------------------------------------------------------
@@ -228,9 +228,9 @@ expected_services() {
     [ -n "$(printf '%s' "$config_json" | jq -r '.tari.view_key // empty')" ] && out="tari-wallet $out"
     printf '%s\n' "$out" | tr ' ' '\n' | sort
 }
-
-expected_topology_nodes() { # topology panel's node set (#2303): local-miner only when local_miner.enabled=true
+expected_topology_nodes() { # topology nodes: local-miner when enabled; Tari unless mode=off
     local out="browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
+    [ "$(printf '%s' "$1" | jq -r '.tari.mode // "local"')" = "off" ] && out="${out/tari,/}"
     [ "$(printf '%s' "$1" | jq -r '.local_miner.enabled // false')" = "true" ] && printf '%s' "${out/internet,/internet,local-miner,}" || printf '%s' "$out"
 }
 # Services that must NOT exist here: no bundled node for a chain that is NOT LOCAL (tari.mode has a third value, #1855 — see selftest-tari-mode-off.sh).
