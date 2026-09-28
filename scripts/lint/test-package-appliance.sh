@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-work_dir=$(mktemp -d "${TMPDIR:?}/pithead-package-test.XXXXXX")
+work_dir=$(mktemp -d "${TMPDIR:-/var/tmp}/pithead-package-test.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT
 printf 'bootable image bytes\n' >"$work_dir/system.img"
 printf 'signed bundle bytes\n' >"$work_dir/update.raucb"
