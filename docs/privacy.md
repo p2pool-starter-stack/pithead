@@ -63,6 +63,28 @@ whose engine has no firewall backend installed at all cannot enforce anything, s
 there rather than skipping the check — on the appliance that is what stops a slot with no firewall
 from committing itself as healthy.
 
+The dashboard runs in a container and cannot read host firewall rules, so it does not take the
+firewall's state from `network.tor_egress_firewall` alone. `up`, `apply` and `upgrade` install
+`pithead-egress.timer`, which runs `pithead egress-status` two minutes after boot and every two
+minutes after that. The check is the one `doctor` uses, it is read-only, and it writes its verdict
+to `data/control/results/egress-status.json`. The dashboard reads that file:
+
+- **Enforced:** clearnet routes on the mining subnet show as blocked by the firewall, as before.
+- **Missing** (rules absent, no firewall tool, no jump into the chain, or a foreign rule above the
+  `DROP`): the **Stack Topology & Egress** panel and the header badge warn that the firewall is
+  missing, nothing is shown as blocked, and one `clearnet_exposed` alert goes out. A second alert
+  goes out when the check reads enforced again. Run `./pithead up` to reinstall the rules. The
+  check never reinstalls them itself, so a flush stays visible until you act on it.
+- **Unverified** (no status file yet, an unreadable ruleset, no check for six minutes, or a file
+  whose fields are not a JSON integer `rc` and a finite JSON number `checked_at`): the panel and
+  badge warn that the state is unverified, and no alert goes out. A malformed file never reads as
+  enforced.
+
+Opting out with `network.tor_egress_firewall: false` removes the timer. If a removal step fails
+(stopping the timer, deleting its unit files, or reloading systemd), `apply` names the step and
+does not report the timer removed, and `uninstall` exits non-zero instead of printing
+`Uninstalled.`
+
 The allow-set matches on IPv4 addresses because the mining bridge is IPv4-only by design. On the
 appliance path the firewall also fences IPv6: if the mining network ever gains an IPv6 subnet, an
 address match has nothing to key on (there is no assigned v6 range), so the drop is scoped to the
@@ -161,6 +183,7 @@ What the running stack sends to the internet, connection by connection.
 | Dashboard **Healthchecks** ping (#79) | `hc-ping.com` (or self-hosted) | nothing about you — the endpoint sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | opt-in (set `healthchecks.ping_url`; off until set) | the ping URL must be Tor-reachable (hosted, public, or an onion self-hosted instance) — there is no clearnet mode |
 | Dashboard **price feed** (#520) | `api.coingecko.com` | nothing about you — CoinGecko sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | **off** | opt-in (`dashboard.energy.price_feed: true`); fetches the XMR + XTM spot prices every 15 min; fails silently, static config prices are the fallback |
 | Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` | nothing about you — the endpoint sees a **Tor exit**, not your IP, and a 204 carries no content | ✅ **always** Tor (`socks5h`) | **off** | opt-in (`tor.auto_heal: true`); a reachability check every 5 min that decides whether the Tor guard is stuck. Fifteen minutes of sustained failure restarts the tor container; the probe never falls back to clearnet, so a broken Tor means no probe, not an exposed one |
+| Dashboard **Tari explorer reference** (#2464) | `textexplore.tari.com` (or `tari.explorer_url`) | nothing about you — the explorer sees a **Tor exit**, not your IP, and the request carries no address or height | ✅ **always** Tor (`socks5h`) | **on** while Tari is local or remote | once an hour; the explorer's tip is the one height that is not your node's own opinion, so it is what catches a node on a dead fork. A blank `tari.explorer_url` turns it off; a failed fetch contributes nothing to the verdict |
 | **Webhook / ntfy** alert sinks (#380) | your configured URLs | alert texts; the endpoint sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) by default | opt-in (set `notifications.webhooks` / `notifications.ntfy.url`; off until set) | `notifications.tor: false` is the LAN carve-out (Tor exits can't reach private addresses) — with it, a **clearnet** endpoint sees your host IP on every alert |
 
 `socks5h` (used for the XvB stats fetch) routes DNS resolution through Tor too, so the hostname isn't

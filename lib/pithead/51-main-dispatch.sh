@@ -147,6 +147,11 @@ main() {
         require_deployed
         control_run_pending
         ;;
+    egress-status)
+        _reject_options egress-status "$@"
+        require_env
+        egress_status
+        ;;
     onion-client-key)
         _reject_options onion-client-key "$@"
         onion_client_key

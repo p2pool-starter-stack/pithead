@@ -136,6 +136,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   source that could route to the host. See
   [LAN-only sources](docs/configuration.md#lan-only-sources).
 
+- **The dashboard alerts when the Tor-only egress firewall is missing.** The dashboard took the
+  firewall's state from `network.tor_egress_firewall`, so it reported "blocked by the egress
+  firewall" over an open egress. `pithead-egress.timer` now runs `pithead egress-status` every two
+  minutes and writes the host's live verdict for the dashboard. A missing firewall turns the egress
+  badge and panel into a warning and sends one `clearnet_exposed` alert, with one more when the
+  rules are back. A missing or stale verdict reads as unverified, not as green
+  ([#2599](https://github.com/p2pool-starter-stack/pithead/issues/2599)).
+
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
   [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a
@@ -183,6 +191,18 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   one block. The added time is the number of flushes times the disk's flush time, which was not
   measured: for each millisecond a flush takes, about 10 minutes with full batches and at most
   4.2 hours.
+
+- **Tari payout confirmation now finds payouts
+  ([#2731](https://github.com/p2pool-starter-stack/pithead/issues/2731)).** The view-only wallet's
+  `tari.payout_scan_birthday` counts days since 2022-01-01, Tari's unit (Tari Universe's
+  `wallet_birthday` works as-is). `auto` was computed from 1970, a day in 2078, so the wallet started
+  at the chain tip and missed every earlier payout; a birthday later than today is now refused. The
+  wallet also scans through the local Tari node's wallet HTTP service on the internal network only;
+  it had no working base-node setting and fell back to Tari's public node over clearnet. The wallet
+  also never started. Its volume was mounted where the image's uid-1000 user could not write, so it
+  crash-looped creating its config directory. It now uses a new volume, `tari_wallet_db`, on the
+  image's own `/var/tari/wallet`, so every install creates the wallet fresh and scans from the
+  birthday. The old `tari_wallet_data` volume never held a wallet; `uninstall` removes it.
 
 - **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
   ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With

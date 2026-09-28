@@ -87,6 +87,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-status-vocabulary.sh" && domain_ran test-control-status-vocabulary.sh "$_d0" "$?" || domain_ran test-control-status-vocabulary.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-monero-tari.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-monero-tari.sh" && domain_ran test-monero-tari.sh "$_d0" "$?" || domain_ran test-monero-tari.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-sync-gate-rearm.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-sync-gate-rearm.sh" && domain_ran test-sync-gate-rearm.sh "$_d0" "$?" || domain_ran test-sync-gate-rearm.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-monero-wallet-scan.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-monero-wallet-scan.sh" && domain_ran test-monero-wallet-scan.sh "$_d0" "$?" || domain_ran test-monero-wallet-scan.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-recovery-address-gates.sh disable=SC2015
@@ -97,6 +99,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-p2pool-tari-off.sh" && domain_ran tes
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-mode-off.sh" && domain_ran test-tari-mode-off.sh "$_d0" "$?" || domain_ran test-tari-mode-off.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tari-lmdb.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-lmdb.sh" && domain_ran test-tari-lmdb.sh "$_d0" "$?" || domain_ran test-tari-lmdb.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tari-wallet.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tari-wallet.sh" && domain_ran test-tari-wallet.sh "$_d0" "$?" || domain_ran test-tari-wallet.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-xmrig-proxy-entrypoint.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?" || domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-monero-entrypoint.sh disable=SC2015
@@ -105,6 +109,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-monero-entrypoint.sh" && domain_ran t
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-fork-rewind.sh" && domain_ran test-tari-fork-rewind.sh "$_d0" "$?" || domain_ran test-tari-fork-rewind.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tari-chain.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tari-chain.sh" && domain_ran test-tari-chain.sh "$_d0" "$?" || domain_ran test-tari-chain.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-clearnet-firewall.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-clearnet-firewall.sh" && domain_ran test-clearnet-firewall.sh "$_d0" "$?" || domain_ran test-clearnet-firewall.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-host-firewall.sh disable=SC2015
@@ -113,6 +119,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-host-firewall.sh" && domain_ran test-
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-direction.sh" && domain_ran test-tor-egress-direction.sh "$_d0" "$?" || domain_ran test-tor-egress-direction.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-egress-boot.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-boot.sh" && domain_ran test-tor-egress-boot.sh "$_d0" "$?" || domain_ran test-tor-egress-boot.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tor-egress-check.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-check.sh" && domain_ran test-tor-egress-check.sh "$_d0" "$?" || domain_ran test-tor-egress-check.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-core.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"
@@ -131,8 +139,11 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran tes
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-add-only-ssrf.sh" && domain_ran test-control-add-only-ssrf.sh "$_d0" "$?" || domain_ran test-control-add-only-ssrf.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-perimeter-tier3.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-perimeter-tier3.sh" && domain_ran test-control-perimeter-tier3.sh "$_d0" "$?" || domain_ran test-control-perimeter-tier3.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-control-secret-and-dial-guards.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-secret-and-dial-guards.sh" && domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?" || domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-ssrf-host-local.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-ssrf-host-local.sh" && domain_ran test-control-ssrf-host-local.sh "$_d0" "$?" || domain_ran test-control-ssrf-host-local.sh "$_d0" "$?"
+
 # shellcheck source=tests/stack/control/test-control-editable-allowlist.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh" && domain_ran test-control-editable-allowlist.sh "$_d0" "$?" || domain_ran test-control-editable-allowlist.sh "$_d0" "$?"
 
@@ -234,6 +245,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-os-update-reboot.
 
 # shellcheck source=tests/stack/appliance/test-appliance-kernel-boot.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-kernel-boot.sh" && domain_ran test-appliance-kernel-boot.sh "$_d0" "$?" || domain_ran test-appliance-kernel-boot.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-rootfs-apt.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rootfs-apt.sh" && domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?" || domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/appliance/test-appliance-reset.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-reset.sh" && domain_ran test-appliance-reset.sh "$_d0" "$?" || domain_ran test-appliance-reset.sh "$_d0" "$?"
