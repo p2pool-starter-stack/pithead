@@ -33,8 +33,8 @@ services:
       # when their profile is active, so a remote node leaves no onion pointing at nothing. Passing
       # the profile list itself (rather than a parallel flag) keeps the gate and the containers that
       # actually start reading from one value; a change here also recreates tor, which is required
-      # for the new torrc to take effect.
-      - COMPOSE_PROFILES=${COMPOSE_PROFILES:-}
+      # for the new torrc to take effect. Payout profiles do not change Tor's onion services.
+      - COMPOSE_PROFILES=${TOR_COMPOSE_PROFILES:-}
       # Dashboard onion (#343): opt-in, default off. When true the entrypoint appends a hidden
       # service for the dashboard (fronting Caddy on the bridge gateway, never the LAN).
       - DASHBOARD_ONION_ENABLED=${DASHBOARD_ONION_ENABLED:-false}

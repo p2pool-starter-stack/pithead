@@ -55,6 +55,7 @@ MONERO_ZMQ_PORT=18083
 TARI_GRPC_ADDRESS=172.28.0.27:18142
 TARI_GRPC_BIND=127.0.0.1
 COMPOSE_PROFILES=local_node,local_tari
+TOR_COMPOSE_PROFILES=local_node,local_tari
 DASHBOARD_SECURE=true
 HOST_IP=box.lan
 EOF
@@ -293,6 +294,7 @@ DEPS_ENV="$(mktemp)"
 sed 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node,local_tari,payout_confirm,tari_payout_confirm/' "$ENV_FILE" >"$DEPS_ENV"
 JSON="$(docker compose --env-file "$DEPS_ENV" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
 rm -f "$DEPS_ENV"
+jq_assert "payout profiles keep Tor's node-profile environment (#2859)" '.services.tor.environment.COMPOSE_PROFILES == "local_node,local_tari"'
 for edge in "monerod=tor" "tari=tor" "wallet-rpc=monerod" "tari-wallet=tari"; do
     svc="${edge%%=*}" dep="${edge#*=}"
     jq_assert "$svc waits for $dep to be service_healthy (#565)" \
@@ -389,7 +391,7 @@ JSON="$(docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" conf
 jq_assert "tari service present when local_tari is active (#103)" \
     '.services | has("tari")'
 REMOTE_TARI_ENV="$(mktemp)"
-sed 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node/' "$ENV_FILE" >"$REMOTE_TARI_ENV"
+sed -e 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node/' -e 's/^TOR_COMPOSE_PROFILES=.*/TOR_COMPOSE_PROFILES=local_node/' "$ENV_FILE" >"$REMOTE_TARI_ENV"
 if docker compose --env-file "$REMOTE_TARI_ENV" -f "$ROOT/docker-compose.yml" config -q; then
     echo "  ✓ compose config resolves with local_tari OMITTED (remote tari, #103)"
 else
@@ -404,8 +406,6 @@ else
     echo "  ✗ tari service still present with local_tari omitted (remote tari, #103)"
     fails=$((fails + 1))
 fi
-# The same profile list must reach the tor container, which gates each node's inbound hidden service
-# on it (#103) — without this wiring tor would keep publishing an onion for a node that never starts.
 if jq -e '.services.tor.environment.COMPOSE_PROFILES == "local_node"' <<<"$REMOTE_TARI_JSON" >/dev/null 2>&1; then
     echo "  ✓ tor receives the active profile list, so its onion gate matches the running nodes (#103)"
 else

@@ -30,7 +30,7 @@ render_quadlet_units() {
     # throwaway monero wallet; tari view-only wallet on a canonical scalar). A new profile or
     # service starts life refused here until it has a bench run behind it.
     local profiles
-    profiles=$(_qenv COMPOSE_PROFILES)
+    profiles=$(_qenv TOR_COMPOSE_PROFILES)
 
     local reg ver prefix subnet
     reg=$(_qenv PITHEAD_REGISTRY)

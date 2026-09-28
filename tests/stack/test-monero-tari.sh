@@ -227,16 +227,15 @@ echo "== black-box: payout confirmation view key (#381) =="
 # generated wallet-rpc creds render into .env, and PAYOUT_CONFIRM_ENABLED flips true. The key is a
 # secret: it must never be echoed to stdout by apply (BOTSECRET pattern), only land in the 600 .env.
 VIEWKEY="$(printf 'a%.0s' $(seq 64))" # 64 hex chars — a well-formed private view key
-# (1) OFF by default: no view key -> feature disabled, wallet-rpc profile absent.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "payout confirm off by default" "$(run_sourced "$V" env_get_file "$V/.env" PAYOUT_CONFIRM_ENABLED)" "false"
+tor_profiles_before="$(run_sourced "$V" env_get_file "$V/.env" TOR_COMPOSE_PROFILES)"
 case "$(run_sourced "$V" env_get_file "$V/.env" COMPOSE_PROFILES)" in
 *payout_confirm*) bad "no wallet-rpc profile when view key unset" "payout_confirm leaked into COMPOSE_PROFILES" ;;
 *) ok "no wallet-rpc profile when view key unset" ;;
 esac
-# (2) ON (local node): view key set -> profile added, key + creds rendered, flag true.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","view_key":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$VIEWKEY" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -244,6 +243,7 @@ assert_rc "apply with a view key succeeds" "$?" "0"
 assert_eq "payout confirm enabled renders true" "$(run_sourced "$V" env_get_file "$V/.env" PAYOUT_CONFIRM_ENABLED)" "true"
 assert_eq "view key rendered into .env" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_VIEW_KEY)" "$VIEWKEY"
 assert_contains "wallet-rpc profile added" "$(run_sourced "$V" env_get_file "$V/.env" COMPOSE_PROFILES)" "payout_confirm"
+assert_eq "payout confirmation keeps Tor's profiles (#2859)" "$(run_sourced "$V" env_get_file "$V/.env" TOR_COMPOSE_PROFILES)" "$tor_profiles_before"
 [ -n "$(run_sourced "$V" env_get_file "$V/.env" WALLET_RPC_PASSWORD)" ] && ok "wallet-rpc password generated" || bad "wallet-rpc password generated" "empty"
 # The view key must NEVER be echoed to stdout by apply — only land in the owner-only .env (#90).
 case "$out" in
@@ -280,7 +280,6 @@ echo "== black-box: Tari payout confirmation view key (#462) =="
 # never echoed to stdout. Obvious dummy keys (all-a / all-b) so gitleaks can't mistake them.
 TVIEW="$(printf 'a%.0s' $(seq 64))"  # 64 hex — a well-formed Tari private view key
 TSPEND="$(printf 'b%.0s' $(seq 64))" # 64 hex — a well-formed Tari public spend key
-# (1) OFF by default: no tari view key -> feature disabled, tari_payout_confirm profile absent.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -297,6 +296,7 @@ assert_rc "apply with a tari view key succeeds" "$?" "0"
 assert_eq "tari payout confirm enabled renders true" "$(run_sourced "$V" env_get_file "$V/.env" TARI_PAYOUT_CONFIRM_ENABLED)" "true"
 assert_eq "tari view key rendered into .env" "$(run_sourced "$V" env_get_file "$V/.env" TARI_VIEW_KEY)" "$TVIEW"
 assert_contains "tari-wallet profile added" "$(run_sourced "$V" env_get_file "$V/.env" COMPOSE_PROFILES)" "tari_payout_confirm"
+assert_eq "Tari payout confirmation keeps Tor's profiles (#2859)" "$(run_sourced "$V" env_get_file "$V/.env" TOR_COMPOSE_PROFILES)" "$tor_profiles_before"
 [ -n "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_PASSWORD)" ] && ok "tari wallet password generated" || bad "tari wallet password generated" "empty"
 # The secret file is written owner-only (600) and contains the view key; it is NOT world-readable.
 secret_file="$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_SECRET_FILE)"

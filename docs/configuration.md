@@ -54,6 +54,8 @@ only the keys you want to override.
   `tari.mode` between `local`, `remote` and `off`, toggling pruning, changing a payout address,
   exposing the RPC to your LAN, or moving a data directory.
 - It regenerates the `.env`, Caddy, and Tari configs and recreates only the containers that need it.
+  Enabling or disabling payout confirmation does not restart Tor; its onion services follow the
+  local Monero and Tari node modes.
 - It does not touch GRUB or rotate the proxy token. It re-provisions Tor only when a node switches
   remote→local, to mint the inbound onion that remote mode never provisioned. If nothing changed, it
   does nothing.
