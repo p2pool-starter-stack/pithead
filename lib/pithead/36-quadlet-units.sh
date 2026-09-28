@@ -29,11 +29,10 @@ render_quadlet_units() {
     # spike, the local-node units 2026-07-24, and the payout-wallet units the same day (real
     # throwaway monero wallet; tari view-only wallet on a canonical scalar). A new profile or
     # service starts life refused here until it has a bench run behind it.
-    local profiles tor_profiles
+    local profiles tor_profiles reg ver prefix subnet
     profiles=$(_qenv COMPOSE_PROFILES)
     tor_profiles=$(_qenv TOR_COMPOSE_PROFILES)
 
-    local reg ver prefix subnet
     reg=$(_qenv PITHEAD_REGISTRY)
     ver=$(_qenv STACK_VERSION)
     prefix=$(_qenv NETWORK_PREFIX)
