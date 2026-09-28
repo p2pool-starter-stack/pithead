@@ -9,6 +9,11 @@ arm_inactive_tari_wallet_volume() {
         it_fail "Tari payout profile starts inactive" "tari_payout_confirm is active"
         return 1
     fi
+    if ! has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_tari; then
+        it_skip_leg "Tari wallet volume created through Compose" \
+            "remote Tari mode: tari-wallet depends on the absent local tari service" "by-design"
+        return 0
+    fi
     volumes="$(rx 'docker volume ls -q')" || {
         it_fail "wallet volume precondition readable" "volume listing failed"
         return 1
@@ -59,6 +64,9 @@ arm_inactive_tari_wallet_volume() {
         return 1
     fi
     it_pass "Tari payout profile disabled and wallet volume absent from Compose model"
+}
+
+arm_unrelated_volume() {
     local nonce
     nonce="$(rx 'date +%s%N')"
     if [[ ! "$nonce" =~ ^[0-9]{15,}$ ]]; then
