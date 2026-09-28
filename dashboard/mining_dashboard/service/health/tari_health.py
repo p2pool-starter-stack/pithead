@@ -94,13 +94,14 @@ class TariChainHealth:
         self._explorer_tip = None
         self._explorer_at = None
         self._best = None  # highest height seen: only a rise past it is progress
-        self._was_red = False  # the last alert-relevant level, so each entry into red alerts
+        self._was_red = False  # a red alert was delivered during the current stretch of red
         self.verdict = {"level": "green", "reasons": [], "advice": ""}
 
     def observe(self, sync, connections, now):
         """Fold one cycle's readings (``TariClient.get_sync_status()`` and the peer count, or None
-        when the node did not say) into ``self.verdict``. An unreachable cycle feeds nothing:
-        node-down is NodeHealthMonitor's verdict, and a stall is measured across it."""
+        when the node did not say) into ``self.verdict``. An unreachable cycle feeds no height:
+        node-down is NodeHealthMonitor's verdict, and a stall is measured across it. Zero peers must
+        be sustained, so a cycle without a peer count restarts that clock."""
         if sync.get("reachable") and sync.get("current"):
             height = sync["current"]
             # Forward progress only: a height that falls (a reorg, a rewound or reset node) or
@@ -108,11 +109,10 @@ class TariChainHealth:
             if self._best is None or height > self._best:
                 self._best, self._height_since = height, now
             self._height = height
-        if sync.get("reachable") and connections is not None:
-            if connections:
-                self._zero_since = None
-            elif self._zero_since is None:
-                self._zero_since = now
+        if not sync.get("reachable") or connections is None or connections:
+            self._zero_since = None  # a missing reading is no evidence of zero peers
+        elif self._zero_since is None:
+            self._zero_since = now
 
         syncing = sync.get("is_syncing", False)
         reasons, red = [], False
@@ -146,6 +146,7 @@ class TariChainHealth:
             "advice": "" if level == "green" else RESTART_ADVICE,
             "height": self._height,
             "explorer_tip": self._explorer_tip,
+            "connections": connections if sync.get("reachable") else None,  # this cycle's reading
         }
         return self.verdict
 
@@ -165,25 +166,32 @@ class TariChainHealth:
         return verdict
 
     async def _alert(self, verdict):
-        """One alert on each entry into red, and one recovery note on green after a red alert."""
+        """One red alert per entry into red, retried every cycle while red until a send succeeds;
+        one recovery note on green, and only after a red alert was delivered."""
         if self._notify is None:
             return
         level = verdict["level"]
-        entered = level == "red" and not self._was_red
-        self._was_red = level == "red"
-        if entered:
-            self._alerted = verdict["advice"]
+        if level != "red":
+            self._was_red = False  # the next red is a new entry
+        if level == "red" and not self._was_red:
             text = (
                 "\U0001f534 ⛓️ Tari node is not following the chain — "
                 f"{'; '.join(verdict['reasons'])}. Merge-mined Tari work is wasted until it "
                 f"recovers; Monero mining is unaffected. Next step: {verdict['advice']}."
             )
+            if await self._send(text):
+                self._was_red = True
+                self._alerted = verdict["advice"]
         elif level == "green" and self._alerted is not None:
-            self._alerted = None
-            text = "\U0001f7e2 ⛓️ Tari node is following the chain again."
-        else:
-            return
+            if await self._send("\U0001f7e2 ⛓️ Tari node is following the chain again."):
+                self._alerted = None
+
+    async def _send(self, text) -> bool:
         try:
             await self._notify(text)
+            return True
         except Exception as exc:  # an alert sink must never break the data loop
-            logger.debug("Tari health alert failed (%s)", type(exc).__name__)
+            logger.warning(
+                "Tari health alert not sent (%s); retrying next cycle", type(exc).__name__
+            )
+            return False

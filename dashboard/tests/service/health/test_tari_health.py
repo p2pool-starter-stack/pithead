@@ -1,8 +1,8 @@
-"""Tari chain health (#2464): the stale-tip / zero-peer / explorer-lag verdict and its guarded restart.
+"""Tari chain health (#2464): the stale-tip / zero-peer / explorer-lag verdict and its alerts.
 
 The production incident, replayed on a fake clock: a reachable node, gRPC answering, its tip frozen and
-every peer banned. Each signal alone is amber, two are red, explorer lag alone is red, and the restart
-guards (sustain, cooldown, budget, migration) hold exactly as documented.
+every peer banned. Each signal alone is amber, two are red, explorer lag alone is red, and each entry
+into red alerts once, with the operator's restart as the next step. Detection only: remediation is #2827.
 """
 
 import asyncio
@@ -91,13 +91,16 @@ def test_explorer_lag_during_initial_sync_is_not_counted():
     assert v["level"] == "green"
 
 
-def test_unreachable_cycles_feed_nothing_and_do_not_reset_the_stall():
+def test_unreachable_cycles_keep_the_stall_but_not_the_zero_peer_clock():
+    """A stall is measured across unreachable cycles; sustained zero peers is not, because a
+    missing reading does not show zero peers (#2464 review round 11)."""
     mon = _monitor()
     mon.observe(SYNCED, 0, 0)
     for t in range(1, 30):
         mon.observe({"reachable": False}, None, t * MIN)
     v = mon.observe(SYNCED, 0, 30 * MIN)
-    assert v["level"] == "red"
+    assert v["level"] == "amber" and v["reasons"] == ["tip 342574 unchanged for 30 min"]
+    assert mon.observe(SYNCED, 0, 40 * MIN)["level"] == "red"  # ten observed zero-peer minutes
 
 
 def test_a_missing_peer_count_is_not_a_zero():
@@ -233,3 +236,64 @@ def test_red_amber_red_with_the_same_advice_alerts_on_each_entry_into_red():
     assert mon.verdict["level"] == "red"
     assert notify.await_count == 2
     assert all("not following the chain" in c.args[0] for c in notify.await_args_list)
+
+
+# --- missing peer readings; alert delivery (#2464 review round 11) -----------------------------
+
+
+def test_missing_peer_readings_restart_the_zero_peer_clock():
+    """One zero sample, then ten cycles without a peer count while the tip advances, is no
+    evidence of ten minutes at zero peers."""
+    mon = _monitor()
+    mon.observe({**SYNCED, "current": 100}, 0, 0)
+    for i in range(1, 11):
+        v = mon.observe({**SYNCED, "current": 100 + i}, None, i * MIN)
+    assert v["level"] == "green" and v["reasons"] == []
+    v = mon.observe({**SYNCED, "current": 111}, 0, 11 * MIN)  # zero again: the clock starts now
+    assert v["level"] == "green"
+    assert mon.observe({**SYNCED, "current": 112}, 0, 21 * MIN)["reasons"] == [
+        "0 peer connections for 10 min"
+    ]
+
+
+def test_an_unreachable_cycle_restarts_the_zero_peer_clock():
+    mon = _monitor()
+    mon.observe(SYNCED, 0, 0)
+    mon.observe({"reachable": False}, None, 5 * MIN)
+    assert mon.observe(SYNCED, 0, 10 * MIN)["level"] == "green"
+
+
+def test_a_failed_red_alert_is_retried_while_red_and_counts_once_delivered():
+    clock, notify = (
+        Clock(),
+        AsyncMock(side_effect=[OSError("sink down"), OSError("sink down"), None]),
+    )
+    mon = _monitor(notify=notify, clock=clock)
+    for _ in range(40):
+        asyncio.run(mon.check(SYNCED, 0))
+        clock.t += MIN
+    assert notify.await_count == 3  # two failures retried on the next cycles, then delivered once
+    assert "not following the chain" in notify.await_args_list[-1].args[0]
+    asyncio.run(mon.check({**SYNCED, "current": 342575}, 5))
+    assert notify.await_args_list[-1].args[0].startswith("\U0001f7e2")
+
+
+def test_no_recovery_note_without_a_delivered_red_alert():
+    clock = Clock()
+    notify = AsyncMock(side_effect=OSError("sink down"))
+    mon = _monitor(notify=notify, clock=clock)
+    for _ in range(35):
+        asyncio.run(mon.check(SYNCED, 0))
+        clock.t += MIN
+    failed = notify.await_count
+    notify.side_effect = None
+    asyncio.run(mon.check({**SYNCED, "current": 342575}, 5))  # green before any red got through
+    assert notify.await_count == failed  # nothing to recover from: no note
+
+
+def test_the_verdict_carries_this_cycles_peer_reading():
+    """The stranded leg measures amber from the node's first zero-peer report, so it is served."""
+    mon = _monitor()
+    assert mon.observe(SYNCED, 0, 0)["connections"] == 0
+    assert mon.observe(SYNCED, None, MIN)["connections"] is None
+    assert mon.observe({"reachable": False}, None, 2 * MIN)["connections"] is None

@@ -4,7 +4,8 @@
 # A live Tari node that cannot reach a peer must stop reading healthy. An iptables rule in the tari
 # container's own network namespace drops its traffic to the tor container, so the process, its gRPC
 # and P2Pool's merge-mine channel all stay up while its peers vanish and its tip freezes: the #2465
-# shape. Asserts, on the real clocks (tari_health.py): amber within OFFLINE (10 min) + one poll; red,
+# shape. Asserts, on the real clocks (tari_health.py): the node's first 0-peer reading (latency recorded);
+# amber within OFFLINE (10 min) of it + one poll; red,
 # doctor non-zero, the panel, status and the alert within TIP_STALE (30 min) + one poll; no automatic
 # remediation (neither tari nor p2pool restarts while red: detection only, #2827 has remediation);
 # then, the rule removed, the node rejoins on its own, the verdict returns to green without a
@@ -19,9 +20,10 @@
 
 TARI_STRAND_TAG="pithead-e2e-fault-tari-stranded"
 TARI_POLL_SLACK=120 # one dashboard poll plus the harness's own 10 s sampling, with margin
-# The node reports its dead peers only once their connections time out: job 1324 measured the 0-peer
-# clock starting about 171 s after the rule went in. The 10-minute threshold counts from then.
-TARI_DISCONNECT_GRACE=180
+# The node reports its dead peers only once their connections time out, which varies: about 171 s in
+# job 1324, about 15.5 min in job 1611. So the leg waits (bounded) for the verdict's first zero-peer
+# reading, records that latency on its own row, and measures the 10-minute amber from it.
+TARI_DISCONNECT_MAX=1500
 
 # iptables inside the running tari container's network namespace; prints nothing when tari has no pid.
 tari_ns_ipt() { # <iptables args...>
@@ -72,11 +74,16 @@ tari_strand_abort() {
 
 tari_health_field() { jq_get "$(api_state)" ".tari.health.$1"; }
 _pred_tari_level() { [ "$(tari_health_field level)" = "$1" ]; }
+_pred_tari_at_least_amber() {
+    case "$(tari_health_field level)" in amber | red) return 0 ;; esac
+    return 1
+}
+_pred_tari_zero_peers() { [ "$(tari_health_field connections)" = 0 ]; }
 _pred_tari_alerted() { rx "grep -q 'Tari node is not following the chain' $TARI_HOOK_LOG" >/dev/null 2>&1; }
 _pred_tari_recovery_alerted() { rx "grep -q 'Tari node is following the chain again' $TARI_HOOK_LOG" >/dev/null 2>&1; }
 # A container's last start: unchanged across the leg means nothing restarted it.
 tari_started_at() { rx "docker inspect -f '{{.State.StartedAt}}' $1" 2>/dev/null; }
-tari_strand_state() { echo "verdict '$(tari_health_field level)', height $(tari_health_field height), $(tari_strand_drops) packets dropped by the fault"; }
+tari_strand_state() { echo "verdict '$(tari_health_field level)', height $(tari_health_field height), peers $(tari_health_field connections), $(tari_strand_drops) packets dropped by the fault"; }
 
 run_tari_stranded() {
     # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
@@ -133,15 +140,28 @@ run_tari_stranded() {
         trap - EXIT
         return
     fi
-    if wait_for $((600 + TARI_DISCONNECT_GRACE + TARI_POLL_SLACK)) 10 "Tari verdict amber" _pred_tari_level amber; then
-        it_pass "tari-stranded: amber after $(($(now_s) - t0)) s: $(tari_health_field reasons)"
+    local t_zero="" red_by
+    if wait_for "$TARI_DISCONNECT_MAX" 10 "the node reporting 0 peers" _pred_tari_zero_peers; then
+        t_zero=$(now_s)
+        it_pass "tari-stranded: disconnect latency: the node reported 0 peers $((t_zero - t0)) s after the fault"
     else
-        it_fail "tari-stranded: amber within 10 min of 0 peers (+ disconnect grace + one poll)" "$(tari_strand_state)"
+        it_fail "tari-stranded: the node reports 0 peers within ${TARI_DISCONNECT_MAX} s of the fault" "$(tari_strand_state)"
     fi
-    if wait_for $((1800 + TARI_POLL_SLACK - ($(now_s) - t0))) 10 "Tari verdict red" _pred_tari_level red; then
+    if [ -n "$t_zero" ]; then
+        # OFFLINE (10 min) of observed zero peers, plus one poll. Red counts: it is amber and more.
+        if wait_for $((600 + TARI_POLL_SLACK)) 10 "Tari verdict amber" _pred_tari_at_least_amber; then
+            it_pass "tari-stranded: amber $(($(now_s) - t_zero)) s after the first 0-peer reading: $(tari_health_field reasons)"
+        else
+            it_fail "tari-stranded: amber within 10 min of the first 0-peer reading + one poll" "$(tari_strand_state)"
+        fi
+    fi
+    # Red needs the tip stale 30 min (from the fault) and zero peers 10 min (from their first reading).
+    local zero_off=$((${t_zero:-$t0} - t0))
+    red_by=$((zero_off + 600 > 1800 ? zero_off + 600 : 1800))
+    if wait_for $((red_by + TARI_POLL_SLACK - ($(now_s) - t0))) 10 "Tari verdict red" _pred_tari_level red; then
         it_pass "tari-stranded: red after $(($(now_s) - t0)) s: $(tari_health_field reasons)"
     else
-        it_fail "tari-stranded: red within 30 min + one poll" "$(tari_strand_state)"
+        it_fail "tari-stranded: red within max(30 min, 0-peer reading + 10 min) + one poll" "$(tari_strand_state)"
     fi
     pithead doctor >/dev/null 2>&1
     assert_ne "tari-stranded: doctor exits non-zero on red" "$?" "0"
