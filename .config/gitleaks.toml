@@ -34,7 +34,7 @@ description = "Synthetic generated proxy-token restore fixtures"
 condition = "AND"
 regexTarget = "line"
 paths = [
-  '''^tests/stack/(appliance/test-appliance-(setup|restore)|lifecycle/lock-wiring|test-backup|test-cli-restore-hardening|test-wizard-setup)\.sh$''',
+  '''^tests/stack/(appliance/test-appliance-(setup|restore|restore-commit)|lifecycle/lock-wiring|test-backup|test-cli-restore-hardening|test-wizard-setup)\.sh$''',
 ]
 regexes = [
   '''PROXY_AUTH_TOKEN=(0123456789abcdef01234567|abcdef0123456789abcdef01)[ \t\r\n]*\z''',
@@ -48,3 +48,15 @@ paths = [
   '''^tests/stack/(appliance/test-appliance-(setup|restore)|test-cli-restore-hardening)\.sh$''',
 ]
 regexes = ['''DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ==[ \t\r\n]*\z''']
+
+# The KVM wallet leg uses the public Ristretto255 basepoint as a spend public key (#2731).
+# Limit this exception to that assignment, rule and file, including its squash-merge history.
+[[allowlists]]
+description = "Public Tari wallet test spend point"
+condition = "AND"
+regexTarget = "line"
+targetRules = ["generic-api-key"]
+paths = ['''^tests/os/appliance-tari-wallet-leg\.sh$''']
+regexes = [
+  '''(?m)^TARI_WALLET_TEST_SPEND_KEY=e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76[ \t\r]*$''',
+]

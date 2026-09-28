@@ -16,9 +16,15 @@ assert_scenario() {
 # direct-dial. Reuses bench-verify-egress.sh (the #256 verifier) in its persistent-only mode so
 # post-restart startup transients don't false-positive. Skipped only while a clearnet initial sync
 # is genuinely UNFINISHED (#183): a node is then intentionally on clearnet.
-assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness control (#563)
-    local mc tc sdir prefix out waive=""
+assert_egress_posture() { # [tor-down|node-sync]
+    local mc tc sdir prefix out waive="" arm=tor polls=3 interval=8 row="no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)"
     [ "${1:-}" != "tor-down" ] || waive=" --allow-tor-down"
+    if [ "${1:-}" = node-sync ]; then
+        arm=node-sync
+        polls=6
+        interval=10
+        row="firewall-on clearnet peers and other app isolation (#2678)"
+    fi
     mc="$(env_on_box MONERO_CLEARNET_SYNC)"
     tc="$(env_on_box TARI_CLEARNET_SYNC)"
     # The flag alone is not the exemption — it stays `true` in .env long after the sync finished,
@@ -26,8 +32,10 @@ assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness
     # marker in CLEARNET_STATE_DIR when they are done, so skip only while the marker is ABSENT.
     sdir="$(env_on_box CLEARNET_STATE_DIR)"
     [ -n "$sdir" ] || sdir="$IT_REMOTE_DIR/data/clearnet-state"
-    if { [ "$mc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/monero.synced")"; } ||
-        { [ "$tc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/tari.synced")"; }; then
+    if [ "$arm" = tor ] && {
+        { [ "$mc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/monero.synced")"; } ||
+            { [ "$tc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/tari.synced")"; }
+    }; then
         it_skip_leg "all-Tor live egress (#274/#270)" "clearnet initial sync is explicitly active" "by-design"
         return 0
     fi
@@ -48,11 +56,11 @@ assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness
             return 0
         fi
     fi
-    out="$(rx "bash $(quote_arg "$bench") tor --dir . --prefix '$prefix' --polls 3 --interval 8$waive 2>&1")"
+    out="$(rx "bash $(quote_arg "$bench") $arm --dir . --prefix '$prefix' --polls $polls --interval $interval$waive 2>&1")"
     [ "$IT_MODE" = "local" ] || rx "rm -f $(quote_arg "$bench")" >/dev/null 2>&1
     case "$(egress_verdict "$out")" in
-    ok) it_pass "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" ;;
-    leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$out" ;;
+    ok) it_pass "$row" ;;
+    leak) it_fail "$row" "$out" ;;
     *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s' "$out" | tail -4)" ;;
     esac
 }
@@ -201,6 +209,13 @@ assert_current_state() {
 box_fstype() { rx "df --output=fstype $(quote_arg "$1") 2>/dev/null | tail -n1 | tr -d ' '"; }
 box_avail_gb() { rx "df -BG --output=avail $(quote_arg "$1") 2>/dev/null | tail -n1 | tr -dc '0-9'"; }
 box_mode() { rx "stat -c %a $(quote_arg "$1") 2>/dev/null"; }
+# The readiness health row polls where it once read `pithead status` a single time (#2656): job 949
+# failed it minutes after deploy where 973 passed at the same commit, and discarded the output that
+# would have named the container. The predicate keeps the last read in the caller's
+# `status_out`. Only the per-service verdict lines, warnings and errors leave it: the same
+# output prints the stratum password and the dashboard onion.
+_pred_readiness_status() { status_out="$(pithead status 2>&1)"; }
+status_verdict_lines() { sed -E 's/\x1b\[[0-9;]*m//g' | grep -E '^  (✓|…|⚠|✗) |^\[(WARNING|ERROR)\] ' | redact | tail -n 30; }
 
 assert_release_readiness() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
@@ -212,13 +227,21 @@ assert_release_readiness() {
     if monero_caught_up; then it_pass "Monero is synced (chain reusable by the matrix)"; elif [ $? = 1 ]; then it_fail "Monero is synced" "monerod answered: not caught up — the matrix would have to re-sync"; else it_fail "Monero is synced" "monerod could not be asked — unreachable, refused, timed out or rejected; sync state unknown"; fi
     # Tari is the other chain the matrix reuses; a readiness verdict that only looked at Monero
     # passed boxes whose merge-mining scenarios would start from an incomplete chain.
-    if [ "$(jq_get "$(api_state)" '.sync.tari.state')" = "done" ]; then
+    local tari_bound=240
+    if wait_for "$tari_bound" 5 "Tari sync done" _pred_tari_synced; then
         it_pass "Tari is synced (chain reusable by the matrix)"
     else
-        it_fail "Tari is synced" "dashboard reports Tari is not done — the matrix would start from an incomplete chain"
+        it_fail "Tari is synced" "dashboard did not report Tari done within ${tari_bound}s — the matrix would start from an incomplete chain"
     fi
-    pithead status >/dev/null 2>&1
-    assert_rc "stack is healthy (pithead status)" "$?" "0"
+    local status_out="" status_bound=240
+    if wait_for "$status_bound" 5 "pithead status OK" _pred_readiness_status; then
+        it_pass "stack is healthy (pithead status)"
+    else
+        local verdict
+        verdict="$(status_verdict_lines <<<"$status_out")"
+        it_fail "stack is healthy (pithead status)" "still unhealthy after ${status_bound}s; last pithead status:
+$(sed 's/^/        /' <<<"${verdict:-(no service verdict lines in its output)}")"
+    fi
 
     # 2. The prune axis must vary the DB without re-syncing or mutating the canonical chain. The
     #    OTHER prune mode is unlocked either by (a) a snapshot/reflink-capable live FS (so a
@@ -275,9 +298,10 @@ assert_release_readiness() {
     fi
 
     # The prune axis infers CoW from the fstype above, which is a proxy. --image-upgrade does not
-    # get to infer: it takes `cp --reflink=always` snapshots of every writable mount, so the only
-    # honest check is to ATTEMPT one. A WARN, not a FAIL — a box without reflink is still a fine
-    # release server for everything except that one gate, and saying so here is what stops someone
+    # get to infer: it clones every data-dir bind mount with `cp --reflink=always` (named volumes,
+    # small and on the engine's own root, are the only full copies — #2057), so the only honest
+    # check is to ATTEMPT one. A WARN, not a FAIL — a box without reflink is still a fine release
+    # server for everything except that one gate, and saying so here is what stops someone
     # scheduling a destructive upgrade run that cannot reach its own rollback net.
     if [ -n "$mdir" ]; then
         local probe rc
@@ -286,7 +310,7 @@ assert_release_readiness() {
         rc=$?
         rx "rm -rf $(quote_arg "$probe") $(quote_arg "$probe.copy")" >/dev/null 2>&1 || true
         if [ "$rc" = 0 ]; then
-            it_pass "writable-mount filesystem supports cp --reflink=always (--image-upgrade can snapshot)"
+            it_pass "the chain data dir's filesystem supports cp --reflink=always (every other bind source and its parent must too)"
         else
             it_warn "no reflink on the chain FS (${fstype:-unknown}) — --image-upgrade cannot take its rollback snapshots and will refuse; every other phase is unaffected"
         fi
@@ -331,6 +355,10 @@ assert_release_readiness() {
         it_pass "backup/rollback prerequisites present (writable backups/, tar)"
     else
         it_fail "backup prerequisites present" "backups/ not writable or tar missing — --safety-backup won't work"
+    fi
+    # The runner retries a Tari-only readiness refusal after restoring the baseline.
+    if [ "$IT_FAIL" -eq 1 ] && [ "$IT_FAILED_NAMES" = '\n    - readiness: Tari is synced' ]; then
+        printf 'e2e-env: tari-not-done\n'
     fi
 }
 

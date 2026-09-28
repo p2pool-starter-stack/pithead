@@ -11,8 +11,8 @@
 # boot on reduced -m proves the marker itself; this proves what pithead does once it exists.
 #
 # The math this exists to stop. RigForge's grow-only write is target = current + required - avail,
-# and avail excludes pages the stack already holds. On the REDUCED tier (2560 pages, sized for the
-# stack's own two RandomX datasets with no co-resident miner in the budget) any nonzero extra_mb the
+# and avail excludes pages the stack already holds. On the REDUCED tier (2048 pages, sized for the
+# stack's own RandomX pages with no co-resident miner in the budget) any nonzero extra_mb the
 # render declares is added to required while the same pages are subtracted from avail — counted
 # twice. No declared value bounds it, so the fix refuses co-location on exactly that tier: the
 # RELEASED tier (0 pages) already declares zero headroom and has nothing to double-count, and the
@@ -41,8 +41,8 @@ HG="$SANDBOX/hg"
 mkdir -p "$HG"
 assert_eq "no marker (healthy/DIY) -> not blocked" \
     "$(PITHEAD_HUGEPAGES_MARKER="$HG/no-marker" run_sourced "$HG" local_miner_hugepages_blocked && echo yes || echo no)" "no"
-printf 'reduced\npages=2560\n' >"$HG/reduced-marker"
-assert_eq "reduced tier (2560 pages) -> blocked" \
+printf 'reduced\npages=2048\n' >"$HG/reduced-marker"
+assert_eq "reduced tier (2048 pages) -> blocked" \
     "$(PITHEAD_HUGEPAGES_MARKER="$HG/reduced-marker" run_sourced "$HG" local_miner_hugepages_blocked && echo yes || echo no)" "yes"
 printf 'released\npages=0\n' >"$HG/released-marker"
 assert_eq "released tier (0 pages) -> NOT blocked (nothing left to double-count)" \
@@ -60,7 +60,7 @@ printf '1.16.0\n' >"$LMH/rigforge/VERSION"
 printf '{"local_miner":{"enabled":true}}' >"$LMH/config.json"
 printf 'STRATUM_PORT=3333\n' >"$LMH/.env"
 export PITHEAD_RIGFORGE_DIR="$LMH/rigforge"
-printf 'reduced\npages=2560\n' >"$LMH/reduced-marker"
+printf 'reduced\npages=2048\n' >"$LMH/reduced-marker"
 PITHEAD_APPLIANCE=1 PITHEAD_HUGEPAGES_MARKER="$LMH/reduced-marker" run_sourced "$LMH" render_local_miner_config >/dev/null 2>&1
 [ -f "$LMH/rigforge/config.json" ] && bad "reduced tier -> no derived config (was blocked)" "file exists" ||
     ok "reduced tier -> no derived config (was blocked)"
@@ -253,7 +253,7 @@ exit 0
 EOF
 chmod +x "$LMP/rigforge/rigforge.sh"
 printf '{"local_miner":{"enabled":true}}' >"$LMP/config.json"
-printf 'reduced\npages=2560\n' >"$LMP/reduced-marker"
+printf 'reduced\npages=2048\n' >"$LMP/reduced-marker"
 export PITHEAD_RIGFORGE_DIR="$LMP/rigforge" SYSTEMCTL_LOG="$LMP/systemctl.log" RIGFORGE_LOG="$LMP/rigforge.log"
 lmp_out=$(PITHEAD_APPLIANCE=1 PITHEAD_HUGEPAGES_MARKER="$LMP/reduced-marker" PATH="$LMP/bin:$PATH" \
     run_sourced "$LMP" provision_local_miner 2>&1)
@@ -269,7 +269,7 @@ echo "== unit: announce_local_miner (appliance) states the refusal instead of cl
 LMA="$SANDBOX/lma"
 mkdir -p "$LMA"
 printf '{"local_miner":{"enabled":true}}' >"$LMA/config.json"
-printf 'reduced\npages=2560\n' >"$LMA/reduced-marker"
+printf 'reduced\npages=2048\n' >"$LMA/reduced-marker"
 lma_out=$(PITHEAD_APPLIANCE=1 PITHEAD_HUGEPAGES_MARKER="$LMA/reduced-marker" run_sourced "$LMA" announce_local_miner 2>&1)
 assert_contains "blocked -> announcement names the reduced reservation" "$lma_out" "reduced HugePages reservation"
 assert_not_contains "blocked -> announcement does not claim the worker is on" "$lma_out" "is ON: this machine"
@@ -277,7 +277,7 @@ assert_not_contains "blocked -> announcement does not claim the worker is on" "$
 echo "== unit: doctor's check_local_miner_hugepages_blocked (#1103) =="
 DLB="$SANDBOX/dlb"
 mkdir -p "$DLB"
-printf 'reduced\npages=2560\n' >"$DLB/reduced-marker"
+printf 'reduced\npages=2048\n' >"$DLB/reduced-marker"
 printf '{"local_miner":{"enabled":true}}' >"$DLB/config.json"
 out=$(PITHEAD_APPLIANCE=1 PITHEAD_HUGEPAGES_MARKER="$DLB/reduced-marker" \
     run_sourced "$DLB" check_local_miner_hugepages_blocked 2>&1)

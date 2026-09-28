@@ -154,6 +154,8 @@ chk "data-reset ordered before /data mounts (a mounted partition cannot be refor
     'grep -q "^Before=data.mount local-fs.target" "$ROOT/etc/systemd/system/pithead-data-reset.service"'
 chk "data-reset's repair tools are baked (e2fsck + mkfs.ext4, #1069 W11)" \
     'data_reset_repair_tools_present "$ROOT"'
+chk "image-upgrade gate's guest-local reflink filesystem tool is baked" \
+    'test -x "$ROOT/usr/sbin/mkfs.xfs"'
 # Hugepages: the sysctl the Dockerfile calls load-bearing for the memory caps.
 chk "hugepage reservation baked (RandomX dataset must land in hugetlbfs)" 'grep -q "vm.nr_hugepages=3072" "$ROOT/etc/sysctl.d/99-pithead-hugepages.conf"'
 # The low-RAM sizing that corrects that sysctl at boot: without it a small machine gets the

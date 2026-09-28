@@ -44,6 +44,10 @@ of each product release, not independent releases:
   release: bump the pin → cut a stack patch → re-run the integration gate → ship. The bundle
   ships re-tested.
 
+For Caddy, update the digest in Compose, the Quadlet renderer, and its three fixtures together;
+the render parity test checks that they agree. Release preflight checks the Compose tag against
+the registry index, including on a dry run.
+
 Noticing that a bump is available is a separate job from making one, and nothing did it until
 `scripts/watch/pin-watch.sh`. It runs weekly from `.github/workflows/pin-watch.yml`, compares each pin
 against the component's latest upstream release, checks whether each exact Go module raise still
@@ -200,7 +204,7 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 
    **When the version ships the appliance channel too, pass `--draft`.** Published release
    assets are immutable — v1.18.0 shipped an asset that could not be amended and the whole
-   version had to be withdrawn — and the appliance's `.img`/`.raucb` are built,
+   version had to be withdrawn — and the appliance's `.img.xz`, `.raucb`, and checksum files are built,
    battery-tested and attached by hand *after* this stage (see
    [appliance-release.md](appliance-release.md#cutting-a-release)). Publishing before they
    are attached burns the tag. Draft first, attach both channels' artifacts, publish once.
@@ -544,7 +548,9 @@ What exists today:
 - ✅ Pull-based install: `${STACK_VERSION}` wired through `docker-compose.yml`. Each first-party
   service now carries an `image: ${PITHEAD_REGISTRY:-…}/pithead-<svc>:${STACK_VERSION:-dev}` ref
   alongside its `build:`. pithead picks build-vs-pull automatically: a source checkout (the image
-  Dockerfiles are present) builds locally and tags `:dev` with `--pull never`; a release install
+  Dockerfiles are present) builds locally and tags `:dev` with `--pull never`, after pulling any
+  missing third-party image that has no build context
+  ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)); a release install
   (the bundle ships no Dockerfiles, just `pithead` + `VERSION` + compose + the config templates + the
   `./build` runtime mounts) resolves `STACK_VERSION` to `vX.Y.Z` and pulls the published images
   (`--pull missing`; `upgrade` forces a re-pull). Override with `PITHEAD_REGISTRY` / `PITHEAD_PULL`. So

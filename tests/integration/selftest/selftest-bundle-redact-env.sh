@@ -42,6 +42,7 @@ RENDER="$REPO/lib/pithead/33-render-env.sh"
 # Run the SHIPPED function in a subshell, so sourcing the artifact cannot leak definitions into
 # this harness. `source` reads from /dev/null so it can never consume the payload on stdin.
 bre() { (
+    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     bundle_redact_env
 ); }
@@ -50,6 +51,7 @@ bre() { (
 # Without this, a broken source makes every absence assertion below pass vacuously.
 echo "== unit: support-bundle env redactor is reachable (#1631) =="
 if (
+    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     declare -F bundle_redact_env >/dev/null
 ); then
@@ -115,6 +117,7 @@ second KEY= after a comma|HOST_PORT=80,WALLET_RPC_PASSWORD=OLDSECRET21
 second KEY= glued on|HOST_PORT=80WALLET_RPC_PASSWORD=OLDSECRET22
 second KEY= glued on, in prose|# was HOST_PORT=3333WALLET_RPC_PASSWORD=OLDSECRET23
 second KEY= after a comma, in prose|# was HOST_PORT=3333,WALLET_RPC_PASSWORD=OLDSECRET24
+explorer URL with userinfo and a path token (#2464)|TARI_EXPLORER_URL="https://user:OLDSECRET25@explorer.invalid/OLDSECRET26/?json"
 ROWS
 
 # Fail closed must not become fail useless: the operational keys the bundle exists to carry stay
@@ -163,13 +166,13 @@ fi
 # --- FULL POPULATION SWEEP ----------------------------------------------------------------------
 # Hand-classified against the rendered population, measured 127 keys at the time of this change.
 # A key in neither list fails below BY NAME.
-MUST_REDACT="MONERO_NODE_USERNAME MONERO_NODE_PASSWORD WALLET_RPC_PASSWORD TARI_WALLET_PASSWORD
-PROXY_STRATUM_PASSWORD PROXY_AUTH_TOKEN XMRIG_API_TOKEN TELEGRAM_BOT_TOKEN NTFY_TOKEN
+MUST_REDACT="TARI_EXPLORER_URL MONERO_NODE_USERNAME MONERO_NODE_PASSWORD WALLET_RPC_PASSWORD TARI_WALLET_PASSWORD
+PROXY_STRATUM_PASSWORD PROXY_AUTH_TOKEN WORKER_API_TOKENS XMRIG_API_TOKEN TELEGRAM_BOT_TOKEN NTFY_TOKEN
 DASHBOARD_AUTH_USER DASHBOARD_AUTH_HASH_B64 DASHBOARD_AUTH_PW_FP TARI_SPEND_PUBLIC_KEY
 MONERO_WALLET_ADDRESS MONERO_VIEW_KEY TARI_WALLET_ADDRESS TARI_VIEW_KEY XVB_DONOR_ID
 MONERO_ONION_ADDRESS TARI_ONION_ADDRESS P2POOL_ONION_ADDRESS DASHBOARD_ONION_ADDRESS
 DASHBOARD_ONION_CLIENT_PUBKEY DASHBOARD_ONION_CLIENT_PRIVKEY NTFY_URL NOTIFY_WEBHOOK_URLS
-HEALTHCHECKS_PING_URL XVB_STANDBY_SOURCE TELEGRAM_CHAT_ID MONERO_NODE_HOST TARI_GRPC_ADDRESS HOST_IP"
+HEALTHCHECKS_PING_URL XVB_STANDBY_SOURCE TELEGRAM_CHAT_ID MONERO_NODE_HOST MONERO_RPC_URL TARI_GRPC_ADDRESS HOST_IP"
 
 MUST_SURVIVE="CADDY_LOG_DIR CLEARNET_STATE_DIR COMPOSE_PROFILES CONTROL_DIR
 DASHBOARD_CHECK_UPDATES DASHBOARD_CONTROL_ENABLED DASHBOARD_DATA_DIR DASHBOARD_EXPOSE_PUBLIC_IP

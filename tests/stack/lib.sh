@@ -171,6 +171,9 @@ mk_tmpdir _sbx
 # shellcheck disable=SC2154
 SANDBOX="$(cd "$_sbx" && pwd -P)"
 trap 'rm -rf "$SANDBOX"' EXIT
+# The restore handoff roots default to root-only /run paths; a non-root suite must never reach them.
+export PITHEAD_RESTORE_SUBMISSION_DIR="$SANDBOX/.run/restore-submit" PITHEAD_RESTORE_STAGE_ROOT="$SANDBOX/.run/restore-stage" \
+    PITHEAD_RESTORE_CARRY_DIR="$SANDBOX/.run/restore-carry"
 
 # A fake docker that records calls and answers the few queries setup/apply make.
 make_stubs() {
@@ -189,7 +192,8 @@ case "$*" in
   *hash-password*)
     # Fake `caddy hash-password` (#8): a per-password digest so enable/change paths differ, and it
     # never echoes the plaintext back (real bcrypt doesn't either) — keeps the leak checks honest.
-    _pw="${*##*--plaintext }"
+    [[ "$*" == *"run --rm -i "* && "$*" != *"--plaintext"* ]] || exit 1
+    IFS= read -r _pw || exit 1
     _d="$(printf '%s' "$_pw" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-22)"
     printf '$2y$14$%s\n' "$_d" ;;
 esac
@@ -250,6 +254,7 @@ run)
         esac
     done
     echo "[cosign] $*" >>"${COSIGN_LOG:-/dev/null}"
+    [ -z "${COSIGN_STDERR:-}" ] || printf '%s\n' "$COSIGN_STDERR" >&2
     exit "${COSIGN_RC:-0}"
     ;;
 esac

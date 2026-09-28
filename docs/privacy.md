@@ -31,11 +31,24 @@ public internet is DROPPED. Only the `tor` container reaches the internet. So if
 misconfigured, buggy, or learns a clearnet peer address (as Tari's comms layer does), the connection
 fails closed instead of leaking your IP.
 
+Connection tracking lets replies through, which keeps clients on the published ports working, and
+nothing else. A clearnet connection an app opened while the rules were absent (a host firewall
+reload that flushed them, a `down` followed by a manual container start) does not survive their
+return: the next TCP packet the app sends on it is answered with a reset, and any other packet is
+dropped. What the app sent before the rules went back in has already left the box. A re-install
+never opens such a window itself: `up`, `apply` and `upgrade` replace the rules in one kernel
+transaction (`iptables-restore --noflush` on Docker, one `nft -f` on the appliance), and a load
+the kernel refuses leaves the rules already there in place.
+
 The rules land where the running container engine actually filters forwarded traffic, which differs
 by channel:
 
 - **Docker (DIY channel):** the rules go in Docker's `DOCKER-USER` chain. Docker adds the
   `FORWARD → DOCKER-USER` jump when it creates the network, so the chain is traversed on egress.
+  A reboot empties the chain, and the containers restart on their own when Docker starts, so
+  `pithead` also installs `pithead-egress.service`: a oneshot unit ordered before
+  `docker.service` and pulled in by it, carrying the same rules. It inserts the `DROP` first,
+  so a start that fails halfway blocks more than intended rather than less.
 - **podman + netavark (appliance):** netavark serves the forward hook from its own nftables table and
   never adds a `DOCKER-USER` jump, so the same iptables rules would sit in a chain no packet reaches.
   `pithead` instead installs an independent `inet pithead_egress` nftables table hooked at forward
@@ -50,6 +63,28 @@ whose engine has no firewall backend installed at all cannot enforce anything, s
 there rather than skipping the check — on the appliance that is what stops a slot with no firewall
 from committing itself as healthy.
 
+The dashboard runs in a container and cannot read host firewall rules, so it does not take the
+firewall's state from `network.tor_egress_firewall` alone. `up`, `apply` and `upgrade` install
+`pithead-egress.timer`, which runs `pithead egress-status` two minutes after boot and every two
+minutes after that. The check is the one `doctor` uses, it is read-only, and it writes its verdict
+to `data/control/results/egress-status.json`. The dashboard reads that file:
+
+- **Enforced:** clearnet routes on the mining subnet show as blocked by the firewall, as before.
+- **Missing** (rules absent, no firewall tool, no jump into the chain, or a foreign rule above the
+  `DROP`): the **Stack Topology & Egress** panel and the header badge warn that the firewall is
+  missing, nothing is shown as blocked, and one `clearnet_exposed` alert goes out. A second alert
+  goes out when the check reads enforced again. Run `./pithead up` to reinstall the rules. The
+  check never reinstalls them itself, so a flush stays visible until you act on it.
+- **Unverified** (no status file yet, an unreadable ruleset, no check for six minutes, or a file
+  whose fields are not a JSON integer `rc` and a finite JSON number `checked_at`): the panel and
+  badge warn that the state is unverified, and no alert goes out. A malformed file never reads as
+  enforced.
+
+Opting out with `network.tor_egress_firewall: false` removes the timer. If a removal step fails
+(stopping the timer, deleting its unit files, or reloading systemd), `apply` names the step and
+does not report the timer removed, and `uninstall` exits non-zero instead of printing
+`Uninstalled.`
+
 The allow-set matches on IPv4 addresses because the mining bridge is IPv4-only by design. On the
 appliance path the firewall also fences IPv6: if the mining network ever gains an IPv6 subnet, an
 address match has nothing to key on (there is no assigned v6 range), so the drop is scoped to the
@@ -58,7 +93,8 @@ and everything else the bridge originates is dropped, leaving the host's own IPv
 other interface untouched. If a v6 subnet is present but the bridge interface can't be resolved,
 `pithead` refuses to install a v4-only firewall it would otherwise report as fail-closed.
 
-- Needs root (the firewall rules), like the GRUB/HugePages steps; removed at `pithead down`.
+- Needs root (the firewall rules), like the GRUB/HugePages steps; removed at `pithead down`. The
+  DIY boot unit stays through `down` and is removed by `uninstall` or by opting out.
 - Opt out with `network.tor_egress_firewall: false` (then routing falls back to per-app config only).
 - The accepted destinations are the private ranges only: `10.0.0.0/8`, `172.16.0.0/12`,
   `192.168.0.0/16`, and `100.64.0.0/10` (CGNAT, so Tailscale addresses work). A remote Monero or
@@ -72,7 +108,13 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
 
 On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
 that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
-Compose project. It does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or
+Compose project. Pithead reinstalls the egress rules above its LAN-port guard jumps before starting
+containers, so the guard's return path still reaches the DROP. Until the host attests a selected
+first sync's Tor transition, a failed live firewall readback prevents Compose startup;
+ordinary startup retains the firewall warning. Before Docker creates its first network,
+the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no
+mining container runs; Docker then adds the jump.
+The check does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or
 `RETURN` rule scoped with `-s` to any network that overlaps the mining subnet — a wider supernet
 containing it, or a narrower range inside it, negated (`! -s`) or not — is recognized as shadowing,
 in addition to an unscoped rule or one scoped to exactly the mining subnet
@@ -129,7 +171,7 @@ What the running stack sends to the internet, connection by connection.
 | **monerod** P2P + tx broadcast | Monero network | — | ✅ Tor (`proxy=` / `tx-proxy=`) | on | Tor by default; **P2P** can opt into clearnet for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) — tx broadcast stays on Tor regardless |
 | **monerod** DNS (checkpoints, blocklist, update check, priority-node hostnames) | DNS resolvers | "this IP runs Monero" | ✅ **closed** — `disable-dns-checkpoints`, `check-updates=disabled`, `enable-dns-blocklist=0`, hostname priority-nodes dropped (#161) | n/a | — |
 | **monerod RPC to a remote node** (only if `monero.mode: remote`) | the node you configured | **your real home IP**, to that node's operator | ❌ clearnet | **off** — the bundled local node is the default and has no remote-RPC egress | use a node you run on your LAN or reachable over WireGuard; a `.onion` remote isn't supported — with Tor on, p2pool's socat bridge moves this leg off the SOCKS5 proxy before it could reach Tor |
-| **Tari** P2P | Tari network | — | ✅ Tor (`type = "tor"`) | on | Tor by default; can opt into clearnet (TCP) for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) |
+| **Tari** P2P | Tari network | — | ✅ Tor SOCKS (`type = "socks5"`): onion and `/ip4` peers alike are dialled through the `tor` container, and `use_libtor = false` keeps the node's own in-process Tor off ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)) | on | Tor by default; can opt into clearnet (TCP) for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) |
 | **Tari** DNS seeds + Pulse (`seeds.tari.com`, `checkpoints.tari.com`) | DNS resolvers | "this IP runs Tari" | ✅ **closed** — `dns_seeds = []` and onion `peer_seeds`, so the configured resolvers are never queried (#162) | n/a | clearnet sync ([#183](#optional-clearnet-initial-sync-off-by-default)) re-enables the `seeds.tari.com` DNS seed for the sync window |
 | **P2Pool** merge-mine gRPC to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — same posture as monerod's own remote-node RPC above | **off** — the bundled local Tari node is the default and this leg only exists in remote mode | use a node on your LAN or reachable over WireGuard; a `.onion` remote isn't supported yet (see [Configuration › Remote Tari node](configuration.md#remote-tari-node)) |
 | **Dashboard** sync poll to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — a plaintext gRPC dial, and the host-networked dashboard sits outside the Tor-egress firewall | **off** — only exists in remote mode | same as the p2pool leg above: LAN or WireGuard |
@@ -147,6 +189,7 @@ What the running stack sends to the internet, connection by connection.
 | Dashboard **Healthchecks** ping (#79) | `hc-ping.com` (or self-hosted) | nothing about you — the endpoint sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | opt-in (set `healthchecks.ping_url`; off until set) | the ping URL must be Tor-reachable (hosted, public, or an onion self-hosted instance) — there is no clearnet mode |
 | Dashboard **price feed** (#520) | `api.coingecko.com` | nothing about you — CoinGecko sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | **off** | opt-in (`dashboard.energy.price_feed: true`); fetches the XMR + XTM spot prices every 15 min; fails silently, static config prices are the fallback |
 | Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` | nothing about you — the endpoint sees a **Tor exit**, not your IP, and a 204 carries no content | ✅ **always** Tor (`socks5h`) | **off** | opt-in (`tor.auto_heal: true`); a reachability check every 5 min that decides whether the Tor guard is stuck. Fifteen minutes of sustained failure restarts the tor container; the probe never falls back to clearnet, so a broken Tor means no probe, not an exposed one |
+| Dashboard **Tari explorer reference** (#2464) | `textexplore.tari.com` (or `tari.explorer_url`) | nothing about you — the explorer sees a **Tor exit**, not your IP, and the request carries no address or height | ✅ **always** Tor (`socks5h`) | **on** while Tari is local or remote | once an hour; the explorer's tip is the one height that is not your node's own opinion, so it is what catches a node on a dead fork. A blank `tari.explorer_url` turns it off; a failed fetch contributes nothing to the verdict |
 | **Webhook / ntfy** alert sinks (#380) | your configured URLs | alert texts; the endpoint sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) by default | opt-in (set `notifications.webhooks` / `notifications.ntfy.url`; off until set) | `notifications.tor: false` is the LAN carve-out (Tor exits can't reach private addresses) — with it, a **clearnet** endpoint sees your host IP on every alert |
 
 `socks5h` (used for the XvB stats fetch) routes DNS resolution through Tor too, so the hostname isn't
@@ -280,8 +323,8 @@ Per-component flags in `config.json`, both `false` by default:
 "tari":   { "clearnet_initial_sync": false }
 ```
 
-Set the one(s) you want to `true` and run `./pithead apply`. Monero and Tari sync independently, so
-you can enable either, both, or neither.
+Set the one(s) you want to `true` and run `./pithead apply`. Keep the egress firewall on. Monero and
+Tari sync independently, so you can enable either, both, or neither.
 
 NOTE: both flags act on the bundled daemons only. With `monero.mode` or `tari.mode: remote` there is
 no local daemon here to sync, so the matching flag does nothing — set it back to `false` when you
@@ -293,7 +336,7 @@ switch, or the exposure banner keeps warning about a sync that isn't happening.
 |---|---|---|
 | **Monero** P2P | over Tor (`proxy=172.28.0.25:9050`) | **direct to clearnet seed nodes** (proxy line dropped), `out-peers` 48 → **32** + P2Pool v4.18's recommended **priority nodes** (`p2pmd.xmrvsbeast.com`, `nodes.hashvault.pro`) for fast, reliable sync |
 | **Monero** tx broadcast | over Tor (`tx-proxy=`) | **still over Tor** — unchanged |
-| **Tari** transport | Tor (`type = "tor"`) | **TCP** (`type = "tcp"`) |
+| **Tari** transport | Tor SOCKS (`type = "socks5"`) | **TCP** (`type = "tcp"`) |
 | **Tari** seeds | onion `peer_seeds`, `dns_seeds = []` | **`dns_seeds = ["seeds.tari.com"]`** (onion seeds are unreachable without Tor), onion `public_addresses` dropped |
 
 ### The privacy trade-off (threat model)
@@ -316,30 +359,29 @@ That's the same exposure as running any ordinary (non-Tor) full node, scoped to 
 a privacy-first deployment it's still a real disclosure, which is why it is off by default and must
 be explicitly opted into.
 
-### It needs the egress firewall turned off
+### The egress firewall stays on
 
-The trade-off above only actually happens if the clearnet dials can leave the host. The [fail-closed
-egress firewall](#enforced-fail-closed-not-just-configured-270) is on by default and DROPs any direct
-dial to the public internet from the mining bridge — including the clearnet peers, priority nodes, and
-DNS seeds a clearnet sync needs. With both left at their defaults, the sync falls back to
-whatever it can still reach over Tor: no faster, and no less private, than leaving
-`clearnet_initial_sync` off in the first place. Nothing leaks — the firewall is doing exactly its
-job — but the speed the flag promised never materializes, and nothing said so.
-
-To actually get a clearnet-speed sync, turn the firewall off for the duration:
-`network.tor_egress_firewall: false`. `pithead` warns at `apply`/`doctor` time whenever a
-`clearnet_initial_sync` flag and the egress firewall are both on, naming the choice: turn the firewall
-off for a real clearnet sync, or turn the sync flag off and accept the normal Tor-speed sync. A
-scoped exception that lets only the sync's own dials through without opening the firewall generally is
-a real feature, not yet built — for now it's an explicit either/or.
+The [fail-closed egress firewall](#enforced-fail-closed-not-just-configured-270) admits direct IPv4
+egress only from the selected node's own container during its first sync. Monero and Tari have
+separate exceptions; every other container stays restricted, and the IPv6 backstop remains in place.
+The host checks that the node's live `ACCEPT` is scoped to its address and precedes the subnet's
+blocking `DROP`; a broad or later exception does not count as active. The chosen node gets
+clearnet peers without opening the entire stack's egress.
 
 ### It switches back to Tor automatically (#234)
 
-The dashboard tracks each chain's sync state. The first time a clearnet node reports fully synced, the
-dashboard writes a persistent "sync complete" marker and restarts the daemon, which comes back up
-Tor-only. From then on the node stays on Tor across restarts, `apply`, and reboots (the marker, not
-the flag, is the source of truth, so a restart can never silently re-expose a synced node). Monero and
-Tari transition independently, each as soon as *it* finishes.
+The dashboard tracks each chain's sync state. When a clearnet node reports fully synced, it writes
+that chain's persistent marker and asks the host to remove its firewall exception. The host claims
+the marker so the dashboard cannot delete it to reopen clearnet, then verifies
+the live rules before the dashboard restarts the node on Tor. It then verifies that the running
+daemon's P2P proxy points to this stack's Tor SOCKS endpoint, checks the firewall rules, and writes
+a host-owned completion result for that transition.
+The dashboard keeps the warning until that result matches the current marker. A failed refresh or
+verification leaves the transition pending and retries; it never clears the marker to reopen
+clearnet. A malformed marker path cannot block status or host removal of that chain's exemption. The
+transition stays pending until the host can claim a valid marker, restart the daemon on Tor, and
+verify it. After that, the node stays on Tor across restarts, `apply`, and reboots. Monero and Tari
+transition independently.
 
 You can leave `clearnet_initial_sync: true` in `config.json`; it's effectively spent once the sync
 completes. (To deliberately re-sync over clearnet later, e.g. after wiping a chain, toggle the flag
@@ -351,13 +393,12 @@ The active state is surfaced in four places, so it can't be enabled by accident 
 
 - `./pithead apply` prints a `⚠`-flagged, disruptive-change confirmation describing exactly what
   becomes exposed before it recreates the daemon.
-- `./pithead status` and `./pithead up` print a prominent **"CLEARNET INITIAL SYNC ACTIVE — node IP
-  exposed"** banner the whole time a node is actually on clearnet, and it clears by itself once the
-  auto-transition completes.
+- `./pithead status` and `./pithead up` print a prominent **"CLEARNET INITIAL SYNC OR TOR TRANSITION
+  PENDING"** banner until the host attests the live Tor configuration and closed exception.
 - `./pithead doctor` raises a `⚠ WARN` while a node is exposed and flips back to a green
   `✓ OK "all node P2P is Tor-only"` once it's switched back.
-- The dashboard shows the clearnet state live, and the daemon container logs a matching warning on
-  every start until the transition completes.
+- The dashboard keeps a warning badge for the chosen clearnet sync or pending Tor transition,
+  and the daemon container logs a matching warning on every start until it completes.
 
 If the automatic switch ever fails (e.g. the dashboard couldn't restart the container), it is
 fail-safe: the marker is written before the restart, so any later restart still comes up Tor-only,
@@ -400,7 +441,10 @@ single-purpose appliance. One consequence is worth recording explicitly:
   and/or require a `p2pool.stratum_password` (`pithead doctor` flags public-IP exposure).
 - [ ] Leave `p2pool.clearnet` off (the default) to keep P2Pool outbound peers on Tor (#165).
 - [ ] Set `xvb.enabled: false` if you don't want any XvB egress.
-- [ ] Leave `monero.clearnet_initial_sync` / `tari.clearnet_initial_sync` off (the default) to keep all node P2P on Tor. If you do use a clearnet sync, the dashboard switches each node back to Tor automatically once it's synced; `pithead doctor` flags it while exposed and clears when done.
+- [ ] Leave `monero.clearnet_initial_sync` / `tari.clearnet_initial_sync` off (the default) to keep
+  all node P2P on Tor. If you use clearnet sync, the host removes and verifies that chain's
+  exception before the dashboard restarts it on Tor. `pithead doctor` keeps the warning until the
+  host verifies the live Tor daemon and firewall rules.
 - [ ] Run the initial install/build behind a VPN or `torsocks`.
 - [ ] Telegram (#121) and Healthchecks (#79) both always run over Tor (Telegram sees only a Tor exit, #340), so either is safe to enable — for Healthchecks, make sure its ping URL is Tor-reachable (hosted `hc-ping.com`, or an onion/public self-hosted instance).
 - [ ] Webhook/ntfy alert sinks (#380) ride Tor by default too; leave `notifications.tor` on unless every configured endpoint is on your own network — with it off, clearnet endpoints see your host IP on every alert.

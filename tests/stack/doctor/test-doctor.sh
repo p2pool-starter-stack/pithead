@@ -68,7 +68,7 @@ echo "== unit: doctor runtime checks — egress firewall / stratum listening / d
 # sudo denies via SUDO_DENY or execs through to the iptables stub (tag presence via IPT_TAGGED),
 # ss prints SS_OUT, curl exits CURL_RC.
 DRBIN="$SANDBOX/drbin"
-mkdir -p "$DRBIN"
+mkdir -p "$DRBIN" && cp "$ROOT/tests/stack/fixtures/tor-egress/nft-list-table-2672.json" "$DRBIN/nft-readback.json"
 cat >"$DRBIN/docker" <<'EOF'
 #!/usr/bin/env bash
 name=$(printf '%s' "$*" | sed -n 's/.*name=\^\([a-z0-9-]*\)\$.*/\1/p')
@@ -87,7 +87,7 @@ cat >"$DRBIN/iptables" <<'EOF'
 # so once the check asserted REACHABILITY (#2091) it read a healthy host as an orphaned chain.
 [ "$*" = "-S FORWARD" ] && exec echo '-A FORWARD -j DOCKER-USER'
 [ "${IPT_TAGGED:-0}" = "1" ] || exec echo '-P DOCKER-USER ACCEPT'
-echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT'
+echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT'
 echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
 EOF
 cat >"$DRBIN/ss" <<'EOF'
@@ -109,7 +109,7 @@ case "$*" in
 *"list tables") echo "table inet netavark" ;;
 *"list table inet pithead_egress")
     [ "${NFT_HOOK:-0}" = "1" ] || exit 1
-    printf '%s\n' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}' ;;
+    cat "${0%/*}/nft-readback.json" ;;
 esac
 exit 0
 EOF
