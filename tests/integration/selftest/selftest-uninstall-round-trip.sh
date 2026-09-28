@@ -29,7 +29,7 @@ case "$*" in
     no-wallet-seed)
         printf 'early detail\n'
         printf 'diagnostic %s\n' {1..20}
-        printf 'PROXY_AUTH_TOKEN=leak\n\033[2J\rforged row\nimage unavailable\n' >&2
+        printf 'PROXY_AUTH_TOKEN=leak\nPROXY_AUTH_TO\033[31mKEN=split-leak\nPROXY_AUTH_TO\033]0;title\007KEN=osc-leak\n\033[2J\rforged row\nimage unavailable\n' >&2
         exit 1 ;;
     no-wallet-seed-long)
         printf '%02500d\nfinal diagnostic\n' 0 >&2
@@ -132,9 +132,9 @@ drive() { # <case> -> round-trip-rc|failures
         result=$?
         if [ "$1" = no-wallet-seed ]; then
             grep -q 'image unavailable' "$B/run.log" &&
-                ! grep -q 'early detail\|PROXY_AUTH_TOKEN=leak' "$B/run.log" &&
-                ! grep -q 'diagnostic 8 ' "$B/run.log" &&
-                grep -q 'diagnostic 9 ' "$B/run.log" &&
+                ! grep -q 'early detail\|PROXY_AUTH_TOKEN=leak\|split-leak\|osc-leak' "$B/run.log" &&
+                ! grep -q 'diagnostic 10 ' "$B/run.log" &&
+                grep -q 'diagnostic 11 ' "$B/run.log" &&
                 grep -q 'PROXY_AUTH_TOKEN=<redacted>' "$B/run.log" &&
                 ! LC_ALL=C grep -q '[[:cntrl:]]' "$B/run.log" &&
                 ! grep -q '^forged row' "$B/run.log" ||

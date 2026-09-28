@@ -670,7 +670,8 @@ For one representative config:
   up to 64 MiB are compared by sha256. Larger files (the chains' LMDB) are compared by inode, size,
   mtime and ctime, because any write moves the last two. Uninstall must also remove the three
   named volumes, the derived state dirs and `.env`. The wallet-volume fixture reports the last 15
-  redacted Compose lines as at most 2000 printable characters in one failure-detail line. It creates
+  redacted Compose lines as at most 2000 printable characters in one failure-detail line. Terminal
+  sequences are removed before redaction; lines with other non-printable bytes are dropped. It creates
   that volume only with a local Tari node; remote Tari mode records a `by-design` skip because
   `tari-wallet` depends on the absent local `tari` service. A `setup`
   with the `missing` pull policy must
