@@ -25,7 +25,17 @@ cat >"$T/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
 "compose up --no-deps --no-start tari-wallet")
-    case "$FAKE_CASE" in no-wallet-seed | cleanup-list-error) exit 1 ;; esac
+    case "$FAKE_CASE" in
+    no-wallet-seed)
+        printf 'early detail\n'
+        printf 'diagnostic %s\n' {1..20}
+        printf 'PROXY_AUTH_TOKEN=leak\nPROXY_AUTH_TO\033[31mKEN=split-leak\nPROXY_AUTH_TO\033]0;title\007KEN=osc-leak\n\033[2J\rforged row\nimage unavailable\n' >&2
+        exit 1 ;;
+    no-wallet-seed-long)
+        printf '%02500d\nfinal diagnostic\n' 0 >&2
+        exit 1 ;;
+    cleanup-list-error) exit 1 ;;
+    esac
     grep -q 'tari_payout_confirm' .env || exit 1
     : >.created-volume
     : >.fake-volume
@@ -41,24 +51,24 @@ case "$*" in
     [ "$FAKE_CASE" != cleanup-list-error ] || exit 1
     [ ! -e .fake-container ] || echo tari-wallet ;;
 "compose config --volumes")
-    if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_data; fi ;;
+    if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_db; fi ;;
 "volume create pithead_itest_unrelated_"*)
     : >.unrelated-volume
     printf '%s\n' "$3" >.unrelated-name
     echo "$3" ;;
 "volume rm pithead_itest_unrelated_"*)
     rm -f .unrelated-volume .unrelated-name ;;
-"volume rm pithead_tari_wallet_data")
+"volume rm pithead_tari_wallet_db")
     rm -f .fake-volume ;;
-"volume inspect pithead_tari_wallet_data --format "*)
+"volume inspect pithead_tari_wallet_db --format "*)
     if [ "$FAKE_CASE" = cleanup-inspect-error ] && [ -e .created-volume ]; then exit 1; fi
     [ -e .fake-volume ] || exit 1
     case "$FAKE_CASE" in
     wrong-wallet-label | foreign-preexisting) echo foreign/volume ;;
-    *) echo pithead/tari_wallet_data ;;
+    *) echo pithead/tari_wallet_db ;;
     esac ;;
 "volume ls -q")
-    [ ! -e .fake-volume ] || echo pithead_tari_wallet_data
+    [ ! -e .fake-volume ] || echo pithead_tari_wallet_db
     [ ! -e .unrelated-volume ] || cat .unrelated-name ;;
 esac
 EOF
@@ -102,25 +112,41 @@ drive() { # <case> -> round-trip-rc|failures
         printf '{}' >"$B/config.json"
         : >"$B/data/tari-wallet-secret.env"
         printf '%s\n' "MONERO_DATA_DIR=$B/data/monero" "TOR_DATA_DIR=$B/data/tor" "CONTROL_DIR=$B/data/control" \
-            COMPOSE_PROFILES=local_node MONERO_ONION_ADDRESS=abc.onion PROXY_AUTH_TOKEN=tok \
+            COMPOSE_PROFILES=local_node,local_tari MONERO_ONION_ADDRESS=abc.onion PROXY_AUTH_TOKEN=tok \
             DEPLOYMENT_COMPLETED=true >"$B/.env.fixture"
         cp "$B/.env.fixture" "$B/.env"
         case "$1" in
         owned-preexisting | foreign-preexisting) : >"$B/.fake-volume" ;;
+        remote-tari) sed -i 's/COMPOSE_PROFILES=local_node,local_tari/COMPOSE_PROFILES=local_node/' "$B/.env" ;;
         esac
-        [ "$1" != active-wallet-profile ] || sed -i 's/COMPOSE_PROFILES=local_node/COMPOSE_PROFILES=local_node,tari_payout_confirm/' "$B/.env"
+        [ "$1" != active-wallet-profile ] || sed -i 's/COMPOSE_PROFILES=local_node,local_tari/COMPOSE_PROFILES=local_node,local_tari,tari_payout_confirm/' "$B/.env"
         # shellcheck disable=SC2034 # read by rx and the extracted functions
         IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0
         export FAKE_CASE="$1"
         it_step() { :; }
-        it_skip_leg() { :; }
+        it_skip_leg() { printf '%s|%s|%s' "$1" "$2" "$3" >"$B/skip"; }
         wait_status_ok() { :; }
         env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
         has_compose_profile() { case ",$1," in *",$2,"*) return 0 ;; *) return 1 ;; esac }
-        run_uninstall_round_trip >/dev/null
+        run_uninstall_round_trip >"$B/run.log"
         result=$?
+        if [ "$1" = no-wallet-seed ]; then
+            grep -q 'image unavailable' "$B/run.log" &&
+                ! grep -q 'early detail\|PROXY_AUTH_TOKEN=leak\|split-leak\|osc-leak' "$B/run.log" &&
+                ! grep -q 'diagnostic 10 ' "$B/run.log" &&
+                grep -q 'diagnostic 11 ' "$B/run.log" &&
+                grep -q 'PROXY_AUTH_TOKEN=<redacted>' "$B/run.log" &&
+                ! LC_ALL=C grep -q '[[:cntrl:]]' "$B/run.log" &&
+                ! grep -q '^forged row' "$B/run.log" ||
+                it_fail "Compose failure detail survives in the bounded row" "missing error"
+        fi
+        if [ "$1" = no-wallet-seed-long ]; then
+            detail="$(grep 'compose up --no-start failed:' "$B/run.log")"
+            [ "${#detail}" -le 2050 ] && [[ "$detail" = *'final diagnostic'* ]] ||
+                it_fail "Compose failure detail is capped at 2000 characters" "detail too long or clipped at the wrong end"
+        fi
         case "$1" in
-        no-wallet-seed | partial-wallet-seed | wrong-wallet-label | foreign-preexisting | active-wallet-profile)
+        no-wallet-seed | no-wallet-seed-long | partial-wallet-seed | wrong-wallet-label | foreign-preexisting | active-wallet-profile)
             [ ! -e "$B/.uninstalled" ] || it_fail "bad fixture never reaches uninstall" "uninstall ran"
             [ -e "$B/.restarted" ] || it_fail "bad fixture restarts the stack" "up did not run"
             [ -e "$B/.env" ] || it_fail "bad fixture keeps .env" ".env was removed"
@@ -129,14 +155,20 @@ drive() { # <case> -> round-trip-rc|failures
         [ "$1" != wrong-wallet-label ] || [ -e "$B/.created-volume" ] || it_fail "wrong-label fixture reached Compose create" "create never ran"
         [ "$1" != foreign-preexisting ] || [ ! -e "$B/.created-volume" ] || it_fail "foreign preexisting volume is never recreated" "create ran"
         [ "$1" != owned-preexisting ] || [ -e "$B/.created-volume" ] || it_fail "owned preexisting volume was recreated by Compose" "create never ran"
+        if [ "$1" = remote-tari ]; then
+            [ ! -e "$B/.created-volume" ] && grep -q 'remote Tari mode:.*|by-design$' "$B/skip" ||
+                it_fail "remote Tari mode skips the inapplicable wallet fixture" "wallet created or skip misclassified"
+        fi
         [ "$1" != partial-wallet-seed ] || [ ! -e "$B/.fake-volume" ] || it_fail "partial Compose create cleanup removes its owned volume" "volume remains"
         printf '%s|%s' "$result" "$IT_FAIL"
     )
 }
 
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
+assert_eq "remote Tari mode skips wallet creation and still completes uninstall" "$(drive remote-tari)" "0|0"
 assert_eq "a preexisting owned wallet volume is reset, then Compose creates it" "$(drive owned-preexisting)" "0|0"
 assert_eq "failure to seed a wallet volume fails the pre-uninstall row" "$(drive no-wallet-seed)" "1|1"
+assert_eq "long Compose errors are clipped at the end" "$(drive no-wallet-seed-long)" "1|1"
 assert_eq "partial Compose create failure cleans its owned volume" "$(drive partial-wallet-seed)" "1|1"
 assert_eq "cleanup reports a failed container listing" "$(drive cleanup-list-error)" "1|2"
 assert_eq "cleanup reports a failed volume inspection" "$(drive cleanup-inspect-error)" "1|2"

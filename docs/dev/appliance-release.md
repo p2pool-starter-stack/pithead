@@ -434,7 +434,8 @@ to self-approve disruptive changes.
 The automated battery first keeps the stable `monero.out_peers` `CONFIRM` round trip, then drives
 the sensitive path through the ordinary authenticated control route. It proves a commit without
 the typed confirmation is refused, a confirmed commit applies and audits against the signed-in
-actor without an `approver` field, and a dashboard password remains physical-presence-only. Before
+actor without an `approver` field, and a dashboard-password repoint commits behind typed `APPLY`
+and the envelope, proves the new login, and restores the fixture password (#2367). Before
 each host-side `pithead apply` it drives — the node-config restore and the onion-exposure leg — it
 waits, bounded, for the control spool to hold no queued or claimed request, and reds the row if it
 never drains. That keeps the battery's phase boundary explicit; re-provisioning in `apply` does
@@ -498,11 +499,13 @@ channels share the final cut commit, one version and one GitHub Release.
    The compose file the image ships comes from that tag whenever it already exists and from the tree only while it does not;
    at this step it does not, so the release build bakes the tree's copy, and the tag `release.sh`
    then creates on this commit names those same bytes.
-3. Build the image and bundle with the **release key**, never the throwaway `--dev` chain. Point
-   both `mkimage.sh` and `mkbundle.sh` at it and omit `--dev` — a release build refuses to run
-   without an explicit key, so there is no silent-dev-cert path:
+3. Build the image and bundle with the **release root and signing leaf**, never the throwaway
+   `--dev` chain. Point `PITHEAD_RAUC_KEYRING` at the root baked into the image and
+   `PITHEAD_RAUC_CERT` / `PITHEAD_RAUC_KEY` at the leaf that signs the bundle. Without the
+   keyring export, `populate-slot.sh` defaults to baking the leaf as the trust anchor:
 
    ```bash
+   export PITHEAD_RAUC_KEYRING=~/.config/pithead-release/rauc-root.pem
    export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem
    export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
    os/build-image.sh && sudo -E os/rauc/mkimage.sh && sudo -E os/rauc/mkbundle.sh
@@ -516,12 +519,46 @@ channels share the final cut commit, one version and one GitHub Release.
    PITHEAD_EXPECT_COMMIT=$(git rev-parse HEAD) sudo tests/os/verify-image.sh <image>
    ```
 
-   Run it **from the repo checkout you built**, because it compares the artifact against these
-   files: the shipped `pithead` must match the generated root copy and the config reference must
-   be byte-identical to the tree, the
-   shipped compose file must be byte-identical to the source its own `COMPOSE_SOURCE` stamp names
-   (the tree at a cut; the staged tag's commit in a dev build), and the baked container archive
-   is unpacked to confirm it carries this tree's `wizard/server.py`.
+   Run `verify-image.sh` **from the repo checkout you built**, because it compares the artifact
+   against these files: the shipped `pithead` must match the generated root copy and the config
+   reference must be byte-identical to the tree, the shipped compose file must be byte-identical
+   to the source its own `COMPOSE_SOURCE` stamp names (the tree at a cut; the staged tag's commit
+   in a dev build), and the baked container archive is unpacked to confirm it carries this
+   tree's `wizard/server.py`.
+
+   Before publication, compare the baked keyring's SHA-256 fingerprint with the release root.
+   Check the keyring's complete contents too: the root fingerprint alone would miss an extra
+   certificate after the root. Verify both the release bundle and a throwaway bundle signed by
+   the release leaf against that **baked** keyring. The commands below inspect slot A of the
+   image just built and fail if any check fails:
+
+   ```bash
+   (
+     set -e
+     TMPDIR=${TMPDIR:-/var/tmp}
+     work_dir=$(mktemp -d "${TMPDIR:?}/pithead-keyring.XXXXXX")
+     mkdir "$work_dir/mnt" "$work_dir/probe"
+     trap 'sudo umount "$work_dir/mnt" 2>/dev/null || true; if [ -n "${loop:-}" ]; then sudo losetup -d "$loop"; fi; rm -r "$work_dir"' EXIT
+     loop=$(sudo losetup -Pf --show os/rauc/build/system.img)
+     source os/rauc/loop-wait.sh
+     wait_loop_partitions "$loop"
+     sudo mount -o ro "${loop}p2" "$work_dir/mnt"
+     baked=$(sudo openssl x509 -in "$work_dir/mnt/etc/rauc/keyring.pem" -noout -fingerprint -sha256)
+     root=$(openssl x509 -in "$PITHEAD_RAUC_KEYRING" -noout -fingerprint -sha256)
+     test "$baked" = "$root"
+     sudo cmp -s "$PITHEAD_RAUC_KEYRING" "$work_dir/mnt/etc/rauc/keyring.pem"
+     printf 'Baked keyring matches release root: %s\n' "$baked"
+     sudo rauc info --keyring "$work_dir/mnt/etc/rauc/keyring.pem" os/rauc/build/update.raucb
+     source os/rauc/populate-slot.sh
+     render_bundle_manifest "$(tr -d '[:space:]' <VERSION)" release false "" >"$work_dir/probe/manifest.raucm"
+     printf 'signature probe; never install\n' >"$work_dir/probe/rootfs.ext4"
+     rauc --cert "$PITHEAD_RAUC_CERT" --key "$PITHEAD_RAUC_KEY" bundle "$work_dir/probe" "$work_dir/probe.raucb"
+     sudo rauc info --keyring "$work_dir/mnt/etc/rauc/keyring.pem" "$work_dir/probe.raucb"
+   )
+   ```
+
+   Record the fingerprint and both bundle verification results with the image and release bundle
+   checksums in the release issue. A keyring mismatch or a rejected bundle stops publication.
 
    All of that exists because a release build once shipped a dashboard two commits stale — the
    release clone was pulling from an intermediate clone rather than origin, so `git pull`

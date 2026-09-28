@@ -306,13 +306,12 @@ EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":true,"host":"old-bundle.lan"} }\n' "$WALLET" >"$OLDROOT/config.json"
 printf 'CADDY-OLDROOT\n' >"$OLDROOT/Caddyfile"
 printf 'ONIONKEY-OLDROOT\n' >"$OLDROOT/data/tor/hs_ed25519_secret_key"
+printf 'CircuitBuildAbandonedCount 1000\n' >"$OLDROOT/data/tor/state"
 printf 'DBDATA-OLDROOT\n' >"$OLDROOT/data/dashboard/dashboard.db"
 printf 'MONERO-CHAIN-OLDROOT\n' >"$OLDROOT/data/monero/lmdb-sentinel"
 printf 'TARI-CHAIN-OLDROOT\n' >"$OLDROOT/data/tari/db-sentinel"
 printf 'P2POOL-CHAIN-OLDROOT\n' >"$OLDROOT/data/p2pool/db-sentinel"
-# A SECOND name in each chain dir, the one the target plants too (#2195): the archive therefore
-# ships both a name the target lacks (the sentinels above) and a name it already holds (these), so
-# the merge's two halves — add what is missing, keep what is already there — each get their own row.
+# These names also exist on the target (#2195); test additions and collisions separately.
 printf 'MONERO-CHAIN-OLDROOT\n' >"$OLDROOT/data/monero/chain-state"
 printf 'TARI-CHAIN-OLDROOT\n' >"$OLDROOT/data/tari/chain-state"
 printf 'P2POOL-CHAIN-OLDROOT\n' >"$OLDROOT/data/p2pool/chain-state"
@@ -347,6 +346,7 @@ rc=$?
 assert_rc "cross-root restore with colliding target chain data returns 0 (#2195)" "$rc" "0"
 assert_contains "cross-root restore carries the source box's config" "$(cat "$RS/config.json" 2>/dev/null)" "old-bundle.lan"
 assert_eq "cross-root restore brings back the onion key" "$(cat "$RS/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-OLDROOT"
+assert_eq "cross-root restore discards Tor circuit state" "$([ -e "$RS/data/tor/state" ] || echo absent)" absent
 assert_eq "cross-root restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-OLDROOT"
 assert_eq "cross-root restore brings back the monero chain data" "$(cat "$RS/data/monero/lmdb-sentinel" 2>/dev/null)" "MONERO-CHAIN-OLDROOT"
 assert_eq "cross-root restore brings back the tari chain data" "$(cat "$RS/data/tari/db-sentinel" 2>/dev/null)" "TARI-CHAIN-OLDROOT"
