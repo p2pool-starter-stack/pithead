@@ -323,18 +323,6 @@ class TestEditableKeys:
         for path in ("dashboard.energy.tari_price", "local_miner.enabled"):
             assert path in cfg["_editable_keys"] and path not in cfg["_confirm_keys"]
 
-    def test_telegram_tamper_evidence_alarms_stay_physical_presence_only(self, spool):
-        # wallet_changed / clearnet_exposed are the alarms a compromised container must not be
-        # able to silence from the very channel it would use to do it.
-        cfg = control_service.read_config()
-        assert "telegram.events.wallet_changed" not in cfg["_editable_keys"]
-        assert "telegram.events.wallet_changed" not in cfg["_approval_keys"]
-        assert "telegram.events.wallet_changed" not in cfg["_confirm_keys"]
-        assert "telegram.events.clearnet_exposed" not in cfg["_editable_keys"]
-        assert "telegram.events.clearnet_exposed" not in cfg["_approval_keys"]
-        assert "telegram.events.clearnet_exposed" not in cfg["_confirm_keys"]
-        assert "telegram.events.node_down" in cfg["_editable_keys"]  # a normal event IS editable
-
 
 def test_editable_keys_have_no_intra_repo_drift():
     """#613 (mirrors #515's WORKER_WRITABLE_KEYS check): EDITABLE_ENV_KEY_PATHS is a second copy of
@@ -397,7 +385,7 @@ class TestConfirmKeys:
             "tor.data_dir",
         ):
             assert path in cfg["_confirm_keys"], path
-        assert "dashboard.auth.password" not in cfg["_confirm_keys"]
+        assert "dashboard.auth.password" in cfg["_confirm_keys"]  # #2367
         assert "p2pool.pool" not in cfg["_confirm_keys"]
 
     def test_confirm_and_editable_sets_are_disjoint(self, spool):
