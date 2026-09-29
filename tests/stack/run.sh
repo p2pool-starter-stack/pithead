@@ -166,8 +166,8 @@ jq '.notifications = {
 run_sourced "$C" render_masked_config "$C/data/control" >/dev/null 2>&1
 assert_eq "ntfy url masked to the sentinel" "$(jq -c '.notifications.ntfy.url' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
 assert_eq "ntfy token masked to the sentinel" "$(jq -c '.notifications.ntfy.token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
-assert_eq "first webhook entry masked to the sentinel" "$(jq -c '.notifications.webhooks[0]' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
-assert_eq "third webhook entry masked to the sentinel" "$(jq -c '.notifications.webhooks[2]' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
+assert_eq "first webhook entry masked to the sentinel with its slot (#2373)" "$(jq -c '.notifications.webhooks[0]' "$MASKED" 2>/dev/null)" '{"__secret__":true,"slot":0}'
+assert_eq "third webhook entry masked to the sentinel with its slot (#2373)" "$(jq -c '.notifications.webhooks[2]' "$MASKED" 2>/dev/null)" '{"__secret__":true,"slot":2}'
 assert_eq "a blank webhook entry stays blank in the masked copy" "$(jq -r '.notifications.webhooks[1]' "$MASKED" 2>/dev/null)" ""
 assert_eq "the non-secret notifications.tor flag survives" "$(jq -r '.notifications.tor' "$MASKED" 2>/dev/null)" "true"
 case "$(cat "$MASKED")" in
@@ -249,6 +249,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-os-update-reboot.
 
 # shellcheck source=tests/stack/appliance/test-appliance-kernel-boot.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-kernel-boot.sh" && domain_ran test-appliance-kernel-boot.sh "$_d0" "$?" || domain_ran test-appliance-kernel-boot.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-serial-getty.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-serial-getty.sh" && domain_ran test-appliance-serial-getty.sh "$_d0" "$?" || domain_ran test-appliance-serial-getty.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-rootfs-apt.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rootfs-apt.sh" && domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?" || domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?"
 

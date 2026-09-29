@@ -201,6 +201,9 @@ run_scenario() {
     _pool="$(jq_get "$config" '.p2pool.pool')"
     _pool="${_pool:-main}"
     wait_pool_ready 180 "$(pool_label "$_pool")" || true
+    if [ "$name" = local-pruned-main-p2pool-clearnet ]; then
+        assert_egress_posture p2pool-choice
+    fi
     # End-to-end mining: p2pool's stratum hash counter resets on restart and climbs only once the
     # proxy's upstream reconnects and a share lands — wait for it before asserting hashes>0 (issue #54).
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || true
@@ -212,6 +215,17 @@ run_scenario() {
 
     local fails_before="$IT_FAIL"
     assert_scenario "$name" "$config"
+    if [ "$name" = local-pruned-main-p2pool-clearnet ]; then
+        push_config "$(printf '%s' "$config" | jq '.p2pool.clearnet = false')"
+        if pithead apply -y >"$OUT_DIR/${name}.tor.apply.log" 2>&1 &&
+            rx "sudo -n bash -c 'source ./pithead; tor_egress_enforced'"; then
+            it_pass "turning P2Pool clearnet off removes its live firewall exemption (#2790)"
+            wait_pool_ready 180 "$(pool_label "$_pool")" || true
+            assert_egress_posture
+        else
+            it_fail "turning P2Pool clearnet off removes its live firewall exemption (#2790)" "apply or live readback failed"
+        fi
+    fi
     # If this scenario turned anything red, grab artifacts for it.
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "$name" "$OUT_DIR"
     restore_firewall_after_clearnet "$name" "$config"

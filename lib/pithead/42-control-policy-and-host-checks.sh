@@ -70,11 +70,11 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
 # their direction-specific preview copy. Unlisted schema-backed values receive the same treatment
 # dynamically at preview and commit. Node endpoints and the node RPC login (#2368) also run the
 # host-side reachability/authentication preflight; data
-# directories keep the tighter destination allowlist. COMPOSE_PROFILES rides with tari.mode and the
-# exact rendered token set stays pinned by test-control-editable-allowlist.sh.
+# directories keep the tighter destination allowlist. COMPOSE_PROFILES and its Tor node subset
+# ride with tari.mode; test-control-editable-allowlist.sh pins the rendered token set.
 CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
-    MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES
+    MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES TOR_COMPOSE_PROFILES
     MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS
     MONERO_NODE_USERNAME MONERO_NODE_PASSWORD'
 

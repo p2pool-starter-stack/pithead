@@ -27,7 +27,9 @@ Every per-app Tor setting below is backed by a host firewall, so "behind Tor" is
 stack enforces, not one it merely hopes each daemon is configured for. At `up`/`apply`, `pithead`
 installs a fail-closed rule set on the mining subnet: the mining bridge (monerod, p2pool, tari,
 xmrig-proxy) may reach the LAN, the other containers, and the Tor SOCKS, but any direct dial to the
-public internet is DROPPED. Only the `tor` container reaches the internet. So if a daemon is
+public internet is DROPPED unless its address has an explicit clearnet choice: temporary node
+sync, P2Pool sidechain peers, or enabled XvB donation. Otherwise only the `tor` container reaches
+the internet. So if a daemon is
 misconfigured, buggy, or learns a clearnet peer address (as Tari's comms layer does), the connection
 fails closed instead of leaking your IP.
 
@@ -48,7 +50,10 @@ by channel:
   A reboot empties the chain, and the containers restart on their own when Docker starts, so
   `pithead` also installs `pithead-egress.service`: a oneshot unit ordered before
   `docker.service` and pulled in by it, carrying the same rules. It inserts the `DROP` first,
-  so a start that fails halfway blocks more than intended rather than less.
+  so a start that fails halfway blocks more than intended rather than less. Its P2Pool and XvB
+  accepts check separate current-choice markers at boot. Disabling a choice removes its boot
+  marker before refreshing the live rules; a shared guard still blocks startup until the host
+  verifies that the old live exception is gone.
 - **podman + netavark (appliance):** netavark serves the forward hook from its own nftables table and
   never adds a `DOCKER-USER` jump, so the same iptables rules would sit in a chain no packet reaches.
   `pithead` instead installs an independent `inet pithead_egress` nftables table hooked at forward
@@ -69,7 +74,8 @@ firewall's state from `network.tor_egress_firewall` alone. `up`, `apply` and `up
 minutes after that. The check is the one `doctor` uses, it is read-only, and it writes its verdict
 to `data/control/results/egress-status.json`. The dashboard reads that file:
 
-- **Enforced:** clearnet routes on the mining subnet show as blocked by the firewall, as before.
+- **Enforced:** unselected clearnet routes on the mining subnet show as blocked; selected routes
+  show the operator's choice and IP exposure.
 - **Missing** (rules absent, no firewall tool, no jump into the chain, or a foreign rule above the
   `DROP`): the **Stack Topology & Egress** panel and the header badge warn that the firewall is
   missing, nothing is shown as blocked, and one `clearnet_exposed` alert goes out. A second alert
@@ -104,15 +110,17 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
   over the Tor SOCKS (`socks5h`, [#163](#runtime-egress)/#224) — with one exception. With
   `tari.mode: remote` the dashboard reads that node's state over gRPC directly, un-proxied, the same
   plaintext leg p2pool uses.
-- Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh); it confirms 0 app-container public connections, and names each one it finds as an outbound dial (a leak) or an inbound client on a published port.
+- Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh): the `tor` arm requires zero app-container public connections, while `p2pool-choice` requires P2Pool peers and zero other app dials. It names each connection as an outbound dial or an inbound client on a published port.
 
 On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
 that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
 Compose project. At boot, the LAN guard runs first and Pithead reinstalls the egress rules above
 its LAN-port jumps before starting containers, so the guard's return path still reaches the DROP.
-Until the host attests a selected
-first sync's Tor transition, a failed live firewall readback prevents Compose startup;
-ordinary startup retains the firewall warning. Before Docker creates its first network,
+Until the host attests a selected first sync's Tor transition, a failed live firewall readback
+prevents Compose startup. A selected
+P2Pool or XvB exception also refuses startup on refresh failure; after a choice is disabled, its
+marker keeps that refusal through firewall opt-out until an enabled refresh proves the stale rule
+gone. Ordinary startup retains the firewall warning. Before Docker creates its first network,
 the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no
 mining container runs; Docker then adds the jump.
 The check does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or
@@ -281,15 +289,15 @@ the SOCKS flags, so a clearnet node still bootstraps from the DNS seeds.
 
 Opt out for maximum yield (lower stale/uncle rate plus a larger peer set, at the cost of exposing
 your IP, worse on `--mini`/`--nano`): set `p2pool.clearnet: true` in `config.json` and re-run
-`./pithead apply`. For the strictest posture, refuse clearnet peers entirely (onion-only): P2Pool also
+`./pithead apply`. The default-on egress firewall then exempts only P2Pool's container from its
+IPv4 public-dial block; turning the flag off and applying removes that exemption. P2Pool peers see
+your home IP. For the strictest posture, refuse clearnet peers entirely (onion-only): P2Pool also
 has a `--no-clearnet-p2p` flag, not yet wired to its own config knob.
 
 Trade-off (measured): Tor adds latency to share propagation, costing ~10 % of yield on `mini` (#256,
 the loss is uncles/late shares, not rejects; see the box above), and `--no-clearnet-p2p` shrinks your
 peer set to onion-only. The Tor-by-default flip was gated on that benchmark, which is why it's a v1.1
-change (#165), not a v1.0 default. NOTE: the `p2pool.clearnet: true` opt-out only began working once #294
-fixed a config bug that had silently pinned the egress firewall on; on a current build it takes
-effect after `pithead apply`.
+change (#165), not a v1.0 default. The opt-out works with the default egress firewall on (#2790).
 
 ### XvB donation mining (#166) — ✅ Tor by default
 
@@ -300,7 +308,9 @@ in #163), so donation mining no longer exposes your home IP. No action needed.
 
 Opt out for maximum yield (stratum-over-Tor adds latency that can raise rejected shares, scaling with
 hashrate): set `xvb.tor: false` and re-run `./pithead apply`; the donation connection then dials
-direct. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
+direct. The firewall exempts only xmrig-proxy while XvB is enabled and this choice is active;
+switching Tor back on or disabling XvB removes the exemption at apply. The XvB pool sees your
+home IP while donating. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
 stops the (already Tor-routed, #163) stats fetch.
 
 > NOTE: the xmrig-proxy dev-fee `--donate-level` is pinned to `0` by default (`proxy.donate_level`,
@@ -363,8 +373,9 @@ be explicitly opted into.
 ### The egress firewall stays on
 
 The [fail-closed egress firewall](#enforced-fail-closed-not-just-configured-270) admits direct IPv4
-egress only from the selected node's own container during its first sync. Monero and Tari have
-separate exceptions; every other container stays restricted, and the IPv6 backstop remains in place.
+egress from the selected node's own container during first sync, from P2Pool when
+`p2pool.clearnet` is true, and from xmrig-proxy when XvB is enabled with `xvb.tor` false.
+Every other container stays restricted, and the IPv6 backstop remains in place.
 The host checks that the node's live `ACCEPT` is scoped to its address and precedes the subnet's
 blocking `DROP`; a broad or later exception does not count as active. The chosen node gets
 clearnet peers without opening the entire stack's egress.

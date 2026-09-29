@@ -171,11 +171,10 @@ for name in ("MUST_REDACT", "MUST_SURVIVE", "KNOWN_GAP", "ELEMENT_SHAPE_UNKNOWN"
         sys.exit(0)
     LISTS[name] = set(m.group(1).split())
 
-SECRET = {"__secret__": True}
-
 def walk(node, path, out):
     if isinstance(node, dict):
-        if node == SECRET:
+        # A webhook sentinel also carries its "slot" (#2373), so match the marker, not the dict.
+        if node.get("__secret__") is True:
             out.add(path)
             return
         for k, v in node.items():
