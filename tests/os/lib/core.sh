@@ -344,7 +344,7 @@ cleanup() {
     local approval_cleanup_rc=0
     package_appliance_cleanup || approval_cleanup_rc=$?
     declare -F approval_fixture_cleanup >/dev/null && approval_fixture_cleanup || approval_cleanup_rc=$?
-    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then
+    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then # Preserve the console on failure.
         cp "$SERIAL" "$SERIAL.failed" 2>/dev/null &&
             info "console from the failed run kept at $SERIAL.failed"
     fi

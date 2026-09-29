@@ -24,10 +24,11 @@ package_appliance_cleanup() {
 }
 
 package_appliance_verify() { # image output-dir image-name bundle-name
-    local image=$1 assets=$2 image_name=$3 bundle_name=$4 name bytes
+    local image=$1 assets=$2 image_name=$3 bundle_name=$4 name bytes rc=0
     for name in "$image_name" "$bundle_name"; do
         if [ ! -s "$assets/$name" ]; then
             bad "$name is missing or empty (#2824)"
+            rc=1
             continue
         fi
         bytes=$(wc -c <"$assets/$name")
@@ -35,11 +36,13 @@ package_appliance_verify() { # image output-dir image-name bundle-name
             ok "$name is below 2 GiB ($bytes bytes; #2824)"
         else
             bad "$name is at or above 2 GiB ($bytes bytes; #2824)"
+            rc=1
         fi
         if (cd "$assets" && sha256sum -c "$name.sha256"); then
             ok "$name checksum verifies (#2824)"
         else
             bad "$name checksum failed (#2824)"
+            rc=1
         fi
         cat "$assets/$name.sha256"
     done
@@ -47,12 +50,15 @@ package_appliance_verify() { # image output-dir image-name bundle-name
         ok "packaged image xz stream verifies (#2824)"
     else
         bad "packaged image xz stream failed (#2824)"
+        rc=1
     fi
     if cmp "$image" <(xz -dc "$assets/$image_name"); then
         ok "packaged image decompresses byte-for-byte to system.img (#2824)"
     else
         bad "packaged image differs from system.img (#2824)"
+        rc=1
     fi
+    return "$rc"
 }
 
 if [ "${1:-}" = --self-test ]; then
@@ -63,19 +69,36 @@ if [ "${1:-}" = --self-test ]; then
     printf 'image fixture\n' >"$stage/system.img"
     printf 'dev bundle fixture\n' >"$stage/update.raucb"
     PASS=0 FAIL=0
-    ok() { PASS=$((PASS + 1)); }
-    bad() { FAIL=$((FAIL + 1)); }
+    ok() {
+        PASS=$((PASS + 1))
+        printf '%s\n' "$1"
+    }
+    bad() {
+        FAIL=$((FAIL + 1))
+        printf '%s\n' "$1"
+    }
     package_appliance_verdict "$stage/system.img" "$stage/update.raucb" "$stage" >"$stage/proof.log"
     [ "$PASS" -eq 7 ] && [ "$FAIL" -eq 0 ]
+    grep -q 'release packaging succeeded' "$stage/proof.log"
+    grep -q 'below 2 GiB' "$stage/proof.log"
+    grep -q 'checksum verifies' "$stage/proof.log"
+    grep -q 'xz stream verifies' "$stage/proof.log"
+    grep -q 'byte-for-byte' "$stage/proof.log"
     version=$(tr -d '[:space:]' <VERSION)
     printf 'damage\n' >>"$stage/assets/pithead-os-v${version}.raucb"
     PASS=0 FAIL=0
-    package_appliance_verify "$stage/system.img" "$stage/assets" "pithead-os-v${version}.img.xz" "pithead-os-v${version}.raucb" >"$stage/proof.log"
+    if package_appliance_verify "$stage/system.img" "$stage/assets" "pithead-os-v${version}.img.xz" "pithead-os-v${version}.raucb" >"$stage/proof.log"; then
+        exit 1
+    fi
     [ "$FAIL" -eq 1 ]
     package_appliance_verdict "$stage/system.img" "$stage/update.raucb" "$stage" >"$stage/proof.log"
     printf 'damage\n' >>"$stage/assets/pithead-os-v${version}.img.xz"
     PASS=0 FAIL=0
-    package_appliance_verify "$stage/system.img" "$stage/assets" "pithead-os-v${version}.img.xz" "pithead-os-v${version}.raucb" >"$stage/proof.log"
+    if package_appliance_verify "$stage/system.img" "$stage/assets" "pithead-os-v${version}.img.xz" "pithead-os-v${version}.raucb" >"$stage/proof.log"; then
+        exit 1
+    fi
     [ "$FAIL" -eq 2 ]
+    package_appliance_cleanup
+    [ ! -e "$stage" ]
     echo 'package-appliance-verdict: PASS'
 fi
