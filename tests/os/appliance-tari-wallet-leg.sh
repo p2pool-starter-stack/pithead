@@ -17,16 +17,21 @@ _tari_wallet_state() {
     _ssh "podman inspect tari-wallet --format '{{.State.Running}} {{.RestartCount}}'" 2>/dev/null | tr -d '\r'
 }
 
+# Query the pinned wallet through the dashboard's existing gRPC client. Never print the address.
+_tari_wallet_snapshot() {
+    _ssh "podman exec dashboard python -c 'import hashlib, grpc; from mining_dashboard.client.tari.generated import types_pb2, wallet_pb2, wallet_pb2_grpc; channel=grpc.insecure_channel(\"127.0.0.1:18143\"); wallet=wallet_pb2_grpc.WalletStub(channel); version=wallet.GetVersion(wallet_pb2.GetVersionRequest(), timeout=10).version; address=wallet.GetCompleteAddress(types_pb2.Empty(), timeout=10).one_sided_address_base58; state=wallet.GetState(wallet_pb2.GetStateRequest(), timeout=10); print(version, hashlib.sha256(address.encode()).hexdigest(), state.scanned_height, state.balance.available_balance)'" 2>/dev/null | tr -d '\r'
+}
+
 # #2657: the console wallet must not be PID 1 (a zombie PID 1 cannot be signalled), and a stop must
 # complete: rc 0 and the container down within the timeout plus a margin. How fast the wallet itself
 # shuts down on SIGTERM is the wallet's business, so the exit code is reported, not judged.
 tari_wallet_pid1_is_init() { case "$1" in podman-init | catatonit | docker-init) return 0 ;; *) return 1 ;; esac }
 tari_wallet_stop_ok() { # <stop-rc> <elapsed-s> <running>
-    [ "$1" -eq 0 ] && [ "$2" -lt 45 ] && [ "$3" = false ]
+    [ "$1" -eq 0 ] && [ "$2" -lt 25 ] && [ "$3" = false ]
 }
 
 phase_provision_tari_wallet() { # <phase-rc>
-    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running dispositions
+    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running dispositions before after version identity height balance after_version after_identity after_height after_balance image db_before db_after db_errors
     [ "${1:-0}" -eq 0 ] || unexercised=info
     info "phase: the view-only Tari payout wallet under podman quadlets (#462/#2731)"
     if ! SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh true 2>/dev/null; then
@@ -112,9 +117,23 @@ mv config.json.tari-wallet-test config.json
     fi
     dispositions=$(_ssh "podman exec tari-wallet sh -c 'for s in /proc/[0-9]*/status; do grep -q \"^Name:.*minotari_consol\" \"\$s\" && { printf \"%s \" \"\$s\"; grep -E \"^(SigIgn|SigCgt|SigBlk):\" \"\$s\"; }; done'" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
     if [ -n "$dispositions" ]; then info "Tari wallet: signal dispositions (#2899): $dispositions"; else bad "Tari wallet: could not read the wallet process's signal dispositions (#2899)"; fi
-    # A stop with a 30 s timeout: it must return 0 with the container down, not fail on a stuck PID 1.
+    image=$(_ssh "podman inspect tari-wallet --format '{{.Config.Image}}'" 2>/dev/null | tr -d '\r\n')
+    case "$image" in
+    'ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d') ok "Tari wallet: running the pinned v6.0.1-pre.0 image" ;;
+    *) bad "Tari wallet: running image differs from the pinned v6.0.1-pre.0 image" ;;
+    esac
+    before=$(_tari_wallet_snapshot)
+    read -r version identity height balance <<<"$before"
+    if [ -n "$identity" ] && [[ "$version" = *6.0.1-pre.0* ]] && [[ "$height" =~ ^[0-9]+$ ]] && [[ "$balance" =~ ^[0-9]+$ ]]; then
+        ok "Tari wallet: pinned wallet answers address and state RPCs before stop"
+    else
+        bad "Tari wallet: pinned wallet did not answer address and state RPCs before stop"
+    fi
+    db_before=$(_ssh "podman exec tari-wallet find /var/tari/wallet -name console_wallet.db -type f -exec stat -c %i {} \;" 2>/dev/null | tr -d '\r\n')
+    if [[ "$db_before" =~ ^[0-9]+$ ]]; then ok "Tari wallet: persisted SQLite database exists before stop"; else bad "Tari wallet: persisted SQLite database was not found before stop"; fi
+    # Exercise the configured default timeout, including a possible forced exit.
     t0=$(date +%s)
-    _ssh "podman stop -t 30 tari-wallet" >/dev/null 2>&1
+    _ssh "podman stop tari-wallet" >/dev/null 2>&1
     stop_rc=$?
     stop_s=$(($(date +%s) - t0))
     exit_code=$(_ssh "podman inspect tari-wallet --format '{{.State.ExitCode}}'" 2>/dev/null | tr -d '\r\n')
@@ -134,6 +153,17 @@ mv config.json.tari-wallet-test config.json
         sleep 5
     done
     if [ "$health" = healthy ]; then ok "Tari wallet: the stopped wallet restarted healthy (#2899)"; else bad "Tari wallet: the stopped wallet did not restart healthy (#2899)"; fi
+    after=$(_tari_wallet_snapshot)
+    read -r after_version after_identity after_height after_balance <<<"$after"
+    if [ -n "$identity" ] && [ "$after_version" = "$version" ] && [ "$after_identity" = "$identity" ] && [ "$after_balance" = "$balance" ] && [[ "$height" =~ ^[0-9]+$ ]] && [[ "$after_height" =~ ^[0-9]+$ ]] && [ "$after_height" -ge "$height" ]; then
+        ok "Tari wallet: the restarted wallet preserved its public identity and reported state (#2899)"
+    else
+        bad "Tari wallet: the restarted wallet's identity or reported state changed or its RPC failed (#2899)"
+    fi
+    db_after=$(_ssh "podman exec tari-wallet find /var/tari/wallet -name console_wallet.db -type f -exec stat -c %i {} \;" 2>/dev/null | tr -d '\r\n')
+    if [ -n "$db_before" ] && [ "$db_after" = "$db_before" ]; then ok "Tari wallet: the same persisted SQLite database reopened after restart (#2899)"; else bad "Tari wallet: the persisted SQLite database changed or is missing after restart (#2899)"; fi
+    db_errors=$(_ssh "podman logs --tail 200 tari-wallet 2>&1 | grep -Ei '(database|sqlite).*(error|corrupt|malformed|integrity)|integrity.*(failed|error)'" 2>/dev/null | tr -d '\r')
+    if [ -z "$db_errors" ]; then ok "Tari wallet: no database-integrity error reported after restart (#2899)"; else bad "Tari wallet: database-integrity error reported after restart (#2899)"; fi
     approval_restore_pending || bad "Tari wallet cleanup (restoring the original config) failed"
 }
 _tari_wallet_self_test() {
@@ -142,8 +172,8 @@ _tari_wallet_self_test() {
     tari_wallet_pid1_is_init minotari_console && f=$((f + 1))
     tari_wallet_pid1_is_init '' && f=$((f + 1))
     tari_wallet_stop_ok 0 2 false || f=$((f + 1))
-    tari_wallet_stop_ok 0 31 false || f=$((f + 1))
-    tari_wallet_stop_ok 0 45 false && f=$((f + 1))
+    tari_wallet_stop_ok 0 11 false || f=$((f + 1))
+    tari_wallet_stop_ok 0 25 false && f=$((f + 1))
     tari_wallet_stop_ok 0 2 true && f=$((f + 1))
     tari_wallet_stop_ok 1 2 false && f=$((f + 1))
     tari_wallet_stop_ok 0 2 '' && f=$((f + 1))

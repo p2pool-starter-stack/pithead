@@ -845,8 +845,9 @@ running wallet necessarily receives the key. As an extra safeguard, because Tari
 file, the three wallet secrets are delivered in an owner-only host file bind-mounted read-only into
 the wallet container, so their values never appear in `docker inspect`. The pinned wallet does not
 shut down on SIGTERM or SIGINT ([upstream issue](https://github.com/tari-project/tari/issues/8063)),
-so a container stop kills it after 10 seconds. Its view-only SQLite state is journaled and can be
-rebuilt from the keys and birthday when the wallet restarts.
+so a container stop kills it after 10 seconds. The appliance test requires the pinned wallet to
+reopen the same SQLite database after this stop, retain its public identity and reported state,
+and report no database-integrity errors before the forced stop is accepted.
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
 2022-01-01, as Tari Universe's `wallet_birthday`), not a block height. The wallet scans only through
 the local node's wallet HTTP service on the internal network, never Tari's public fallback node. Leave `tari.view_key` empty and none of the Tari half runs.

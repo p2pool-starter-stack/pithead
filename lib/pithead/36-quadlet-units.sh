@@ -215,8 +215,8 @@ DropCapability=all
 AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID
 NoNewPrivileges=true
 RunInit=true
-# tari#8063: pinned gRPC wallet ignores SIGTERM and SIGINT; more grace only delays restart.
-# Its view-only SQLite state rebuilds from the keys and birthday after a forced stop.
+# tari#8063: pinned gRPC wallet does not shut down on SIGTERM or SIGINT.
+# The appliance test checks the persisted SQLite reopen after a forced stop.
 StopTimeout=10
 PodmanArgs=--memory 512m --memory-swap 512m
 HealthCmd=ps -e | grep '[m]inotari_consol' || exit 1
