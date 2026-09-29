@@ -100,10 +100,12 @@ assert_contains "failed refresh returns failure" "$lg_out" "rc=1"
 lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { echo 172.28.0.28; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d' >/dev/null
 assert_eq "failed refresh stops a newly selected P2Pool choice" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
 : >"$LG_ORDER"
-lg_real 'tor_egress_sync_ips() { echo 172.28.0.28; }; apply_tor_egress_iptables() { :; }; apply_tor_egress_firewall refresh' >/dev/null
+lg_real 'tor_egress_sync_ips() { echo 172.28.0.26; }; apply_tor_egress_iptables() { :; }; apply_tor_egress_firewall refresh' >/dev/null
+assert_eq "node first sync uses its own transition guard, not the P2Pool/XvB marker" "$([ ! -e "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
+lg_real 'tor_egress_choice_active() { return 0; }; tor_egress_sync_ips() { echo 172.28.0.28; }; apply_tor_egress_iptables() { :; }; apply_tor_egress_firewall refresh' >/dev/null
 assert_eq "firewall install arms the choice marker before Compose" "$([ -d "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
 : >"$LG_ORDER"
-lg_out=$(lg_real 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { echo 172.28.0.28; }; apply_tor_egress_iptables() { tor_egress_verify_or_warn ok; }; tor_egress_enforced() { return 5; }; if compose_up -d; then echo rc=0; else echo "rc=$?"; fi')
+lg_out=$(lg_real 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_choice_active() { return 0; }; tor_egress_sync_ips() { echo 172.28.0.28; }; apply_tor_egress_iptables() { tor_egress_verify_or_warn ok; }; tor_egress_enforced() { return 5; }; if compose_up -d; then echo rc=0; else echo "rc=$?"; fi')
 assert_eq "failed live readback of selected exception blocks Compose" "$(cat "$LG_ORDER")" lan
 assert_contains "readback failure propagates through refresh" "$lg_out" "rc=1"
 : >"$LG_ORDER"

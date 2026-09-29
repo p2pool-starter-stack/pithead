@@ -21,6 +21,11 @@ tor_egress_sync_ips() {
 }
 
 tor_egress_choice_marker() { printf '%s.egress-choice-active' "$(mutation_lock_path)"; }
+tor_egress_choice_active() {
+    [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] ||
+        { [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
+            [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ]; }
+}
 
 # A directory is an atomic, no-follow marker. Arm it before a selected ACCEPT can reach the kernel;
 # only compose_up's successful enabled refresh may clear it after the selection goes away.
@@ -102,7 +107,7 @@ apply_tor_egress_firewall() {
     [ -n "$tor_ip" ] || tor_ip="172.28.0"
     tor_ip="${tor_ip}.25"
     mapfile -t sync_ips < <(tor_egress_sync_ips)
-    if [ "${#sync_ips[@]}" -gt 0 ]; then
+    if tor_egress_choice_active; then
         arm_tor_egress_choice_marker || return 1
     fi
     if [ "$(container_engine)" = "podman" ]; then
