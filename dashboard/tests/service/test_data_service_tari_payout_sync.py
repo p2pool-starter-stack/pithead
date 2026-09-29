@@ -5,7 +5,7 @@ from tests.service._data_service_support import *  # noqa: F403
 class TestTariPayoutSync:
     """Tari on-chain payout confirmation poll (#462): persist to the shared table with chain="tari",
     alert once, no replay — the Tari sibling of TestPayoutSync. The Tari client is async, so
-    get_confirmed_payouts is an AsyncMock (awaited directly, not via to_thread)."""
+    scan is an AsyncMock (awaited directly, not via to_thread)."""
 
     def _svc_with_real_storage(self):
         from mining_dashboard.service.storage_service import StateManager
@@ -13,7 +13,7 @@ class TestTariPayoutSync:
         sm = StateManager(db_path=":memory:")
         svc = DataService(sm, MagicMock(), MagicMock())
         svc.tari_wallet_client = MagicMock()
-        svc.tari_wallet_client.get_confirmed_payouts = AsyncMock()
+        svc.tari_wallet_client.scan = AsyncMock()
         svc.alert_service.payout_confirmed_alert = AsyncMock(return_value="sent")
         return svc, sm
 
@@ -21,7 +21,7 @@ class TestTariPayoutSync:
         svc, sm = self._svc_with_real_storage()
         try:
             payout = {"txid": "t1", "height": 100, "ts": 1000.0, "amount_atomic": 250_000}
-            svc.tari_wallet_client.get_confirmed_payouts.return_value = [payout]
+            svc.tari_wallet_client.scan.return_value = ([payout], True)
             asyncio.run(svc._sync_tari_payouts())
             assert len(sm.get_payouts("tari")) == 1
             svc.alert_service.payout_confirmed_alert.assert_awaited_once_with("tari", 250_000, "t1")
@@ -34,7 +34,7 @@ class TestTariPayoutSync:
         svc, sm = self._svc_with_real_storage()
         try:
             payout = {"txid": "t1", "height": 100, "ts": 1000.0, "amount_atomic": 1}
-            svc.tari_wallet_client.get_confirmed_payouts.return_value = [payout]
+            svc.tari_wallet_client.scan.return_value = ([payout], True)
             asyncio.run(svc._sync_tari_payouts())
             asyncio.run(svc._sync_tari_payouts())
             assert svc.alert_service.payout_confirmed_alert.await_count == 1
@@ -46,18 +46,27 @@ class TestTariPayoutSync:
         svc, sm = self._svc_with_real_storage()
         try:
             sm.add_payouts("tari", [{"txid": "old", "height": 500, "ts": 1.0, "amount_atomic": 1}])
-            svc.tari_wallet_client.get_confirmed_payouts.return_value = []
+            svc.tari_wallet_client.scan.return_value = ([], True)
             asyncio.run(svc._sync_tari_payouts())
-            svc.tari_wallet_client.get_confirmed_payouts.assert_awaited_once_with(500)
+            svc.tari_wallet_client.scan.assert_awaited_once_with(500)
         finally:
             sm.close()
 
     def test_empty_poll_is_a_quiet_noop(self):
         svc, sm = self._svc_with_real_storage()
         try:
-            svc.tari_wallet_client.get_confirmed_payouts.return_value = []
-            asyncio.run(svc._sync_tari_payouts())
+            svc.tari_wallet_client.scan.return_value = ([], True)
+            assert asyncio.run(svc._sync_tari_payouts()) is True
             svc.alert_service.payout_confirmed_alert.assert_not_awaited()
+        finally:
+            sm.close()
+
+    def test_unreachable_poll_is_not_an_empty_answer(self):
+        svc, sm = self._svc_with_real_storage()
+        try:
+            svc.tari_wallet_client.scan.return_value = ([], False)
+            assert asyncio.run(svc._sync_tari_payouts()) is False
+            assert sm.get_payouts("tari") == []
         finally:
             sm.close()
 

@@ -62,6 +62,8 @@ mkdir -p "$WALLET_DIR"
 if [ "$(stat -c %u "$WALLET_DIR")" != 1000 ]; then
     chown -R 1000:1000 "$WALLET_DIR"
 fi
+# First-scan grace survives restarts; a crash loop cannot restart its clock.
+[ -e "$WALLET_DIR/.payout-scanning" ] || touch "$WALLET_DIR/.payout-scanning"
 birthday="$(resolve_birthday)"
 echo "Starting view-only Tari payout wallet (birthday $birthday, base node $NODE_URL) (#462)..."
 

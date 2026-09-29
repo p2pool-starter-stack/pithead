@@ -18,7 +18,7 @@ class TestPayoutSync:
         svc, sm = self._svc_with_real_storage()
         try:
             payout = {"txid": "aa", "height": 100, "ts": 1000.0, "amount_atomic": 250_000_000_000}
-            svc.wallet_client.get_confirmed_payouts.return_value = [payout]
+            svc.wallet_client.scan.return_value = ([payout], True)
             asyncio.run(svc._sync_payouts())
             assert len(sm.get_payouts("monero")) == 1
             svc.alert_service.payout_confirmed_alert.assert_awaited_once_with(
@@ -32,7 +32,7 @@ class TestPayoutSync:
         svc, sm = self._svc_with_real_storage()
         try:
             payout = {"txid": "aa", "height": 100, "ts": 1000.0, "amount_atomic": 1}
-            svc.wallet_client.get_confirmed_payouts.return_value = [payout]
+            svc.wallet_client.scan.return_value = ([payout], True)
             asyncio.run(svc._sync_payouts())
             asyncio.run(svc._sync_payouts())
             assert svc.alert_service.payout_confirmed_alert.await_count == 1
@@ -47,18 +47,27 @@ class TestPayoutSync:
             sm.add_payouts(
                 "monero", [{"txid": "old", "height": 500, "ts": 1.0, "amount_atomic": 1}]
             )
-            svc.wallet_client.get_confirmed_payouts.return_value = []
+            svc.wallet_client.scan.return_value = ([], True)
             asyncio.run(svc._sync_payouts())
-            svc.wallet_client.get_confirmed_payouts.assert_called_once_with(500)
+            svc.wallet_client.scan.assert_called_once_with(500)
         finally:
             sm.close()
 
     def test_empty_poll_is_a_quiet_noop(self):
         svc, sm = self._svc_with_real_storage()
         try:
-            svc.wallet_client.get_confirmed_payouts.return_value = []
-            asyncio.run(svc._sync_payouts())
+            svc.wallet_client.scan.return_value = ([], True)
+            assert asyncio.run(svc._sync_payouts()) is True
             svc.alert_service.payout_confirmed_alert.assert_not_awaited()
+        finally:
+            sm.close()
+
+    def test_unreachable_poll_is_not_an_empty_answer(self):
+        svc, sm = self._svc_with_real_storage()
+        try:
+            svc.wallet_client.scan.return_value = ([], False)
+            assert asyncio.run(svc._sync_payouts()) is False
+            assert sm.get_payouts("monero") == []
         finally:
             sm.close()
 

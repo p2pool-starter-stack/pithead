@@ -9,7 +9,7 @@ Network=mining.network
 IP=172.28.0.31
 User=0:0
 Entrypoint=/wallet-config/entrypoint.sh
-Environment="TARI_BASE_NODE_GRPC_ADDRESS=172.28.0.27:18142" "TARI_WALLET_BIRTHDAY=auto" TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/var/tari/wallet
+Environment="TARI_BASE_NODE_GRPC_ADDRESS=172.28.0.27:18142" "TARI_WALLET_BIRTHDAY=auto" "PAYOUT_SCAN_GRACE_SEC=" TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/var/tari/wallet
 Volume=pithead-tari-wallet-db:/var/tari/wallet
 Volume=/home/pithead/build/tari-wallet:/wallet-config:ro
 Volume=/opt/pithead/data/tari-wallet-secret.env:/run/secrets/tari_wallet_secret:ro
@@ -20,7 +20,7 @@ DropCapability=all
 AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID
 NoNewPrivileges=true
 PodmanArgs=--memory 512m --memory-swap 512m
-HealthCmd=ps -e | grep '[m]inotari_consol' || exit 1
+HealthCmd=/wallet-config/wallet-healthcheck.sh
 HealthInterval=30s
 HealthTimeout=5s
 HealthRetries=3

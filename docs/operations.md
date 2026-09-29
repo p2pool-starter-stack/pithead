@@ -204,9 +204,10 @@ starting, which is normal for a minute after a start or upgrade. The Monero payo
 healthy while it scans, on its first run and while it catches up after each restart, but only
 while its scan marker is less than 24 hours old; the marker is cleared once the wallet reaches
 monerod's tip. After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400
-seconds in the wallet-rpc environment. The Tari payout wallet remains process-
-liveness only because its gRPC is a long stream rather than a request/response readiness probe; it
-detects a crashed wallet, not scan progress.
+seconds in the wallet-rpc environment. The Tari payout wallet probes gRPC `GetVersion` instead of
+process liveness. Its first-scan marker survives restarts and allows at most 24 hours of silent
+gRPC (`PAYOUT_SCAN_GRACE_SEC`, default 86400 seconds); a successful probe clears the marker, so
+later silence is unhealthy. This container grace never hides dashboard wallet reachability.
 It exits non-zero when something needs attention, so you can wire it into a cron/monitoring check.
 A stopped `p2pool`/`xmrig-proxy` is reported as intentional, not an error: the dashboard stops it
 either to fail workers over a node-down outage or while the miner is held until the required chains

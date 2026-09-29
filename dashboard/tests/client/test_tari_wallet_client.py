@@ -1,7 +1,45 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import mining_dashboard.client.tari.tari_wallet_client as wallet_mod
+from mining_dashboard.client.tari.address import _EMOJI, address_key, decode_address
 from mining_dashboard.client.tari.tari_wallet_client import TariWalletClient
+
+
+def test_tari_base58_and_emoji_reference_addresses_have_same_keys():
+    base58 = "126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+    emoji = "🐢📟🍼🌈🍓🚓➕🎸🍆🍷🎣🍗📿😂🥊⏰🍯👾🤔👒🍾👀🍼🌊🎷📟😈🚨👙🍈🌈🛵🤢🍔🔋👙🚽🤑🎽🎓🎓🐀🐜🐴🥄🚿📷💰👶👍🎉🍄🎢🔌🐋🚰🚑💅👢🦂🐬🐋🍗🍸🎹🏀🍄"
+    assert address_key(decode_address(base58)) == address_key(decode_address(emoji))
+
+
+async def test_scan_distinguishes_empty_answer_from_unreachable():
+    client = TariWalletClient()
+    client._ensure_channel = MagicMock(return_value=MagicMock())
+    client._scan_completed_transactions = AsyncMock(return_value=[])
+    assert await client.scan() == ([], True)
+    client._scan_completed_transactions.side_effect = RuntimeError("gRPC down")
+    assert await client.scan() == ([], False)
+
+
+async def test_embedded_payment_id_emoji_matches_wallet_raw_keys():
+    key = bytes(range(64))
+    wallet_raw = b"\x00\x02" + key + b"\x00"
+    configured = "".join(_EMOJI[byte] for byte in b"\x00\x06" + key + b"invoice\x00")
+    assert address_key(decode_address(configured)) == b"\x00" + key
+    client = TariWalletClient()
+    client._channel = MagicMock()
+    client._stub = MagicMock()
+    client._stub.GetCompleteAddress = AsyncMock(
+        return_value=SimpleNamespace(
+            interactive_address=wallet_raw,
+            one_sided_address=b"",
+            interactive_address_base58="canonical",
+            one_sided_address_base58="",
+            interactive_address_emoji="",
+            one_sided_address_emoji="",
+        )
+    )
+    assert await client.payout_addresses(configured) == (["canonical"], True)
 
 
 def _tx(

@@ -5,9 +5,11 @@ import grpc
 from mining_dashboard.config.config import TARI_WALLET_GRPC_ADDRESS
 from mining_dashboard.service.xvb.earnings import MICRO_PER_XTM
 
+from .address import address_key, decode_address
+
 logger = logging.getLogger("TariWalletClient")
 
-from .generated import wallet_pb2, wallet_pb2_grpc
+from .generated import types_pb2, wallet_pb2, wallet_pb2_grpc
 
 # A payout is "confirmed" the moment it is mined into a block (mined_in_block_height > 0), NOT when
 # the coinbase matures — mirrors #381's Monero rule so a payout is recorded/alerted exactly once.
@@ -72,22 +74,54 @@ class TariWalletClient:
         self._stub = None
 
     async def get_confirmed_payouts(self, min_height=0) -> list[dict]:
+        return (await self.scan(min_height))[0]
+
+    async def scan(self, min_height=0):
         """Return confirmed incoming payouts at or above ``min_height`` as normalized dicts.
 
         The caller seeds ``min_height`` from the highest stored Tari payout height, so a restart
         re-scans only the tip (idempotent storage drops the overlap). Each row is
         ``{"txid", "height", "ts", "amount_atomic", "amount_xtm"}`` — ``amount_atomic`` is native
         microTari, kept in the shared ``payouts`` table's atomic column and converted to XTM only at
-        the display/alert edge. Returns ``[]`` when the wallet is still scanning, unreachable, or has
-        no payouts — never raises."""
+        the display/alert edge. Returns ``(payouts, answered)``: an empty successful scan has
+        ``answered=True``; an RPC failure has ``answered=False``."""
         try:
             stub = self._ensure_channel()
             transactions = await self._scan_completed_transactions(stub)
         except Exception as e:  # noqa: BLE001 — any gRPC/scan failure degrades to a quiet no-op
             logger.warning(f"Tari wallet gRPC unreachable at {self.grpc_address}: {e}")
             await self._reset_channel()
-            return []
-        return self._normalize(transactions, int(min_height or 0))
+            return [], False
+        return self._normalize(transactions, int(min_height or 0)), True
+
+    async def payout_addresses(self, expected=None):
+        """Return displayed addresses and whether their keys match the payout target."""
+        try:
+            response = await self._ensure_channel().GetCompleteAddress(
+                types_pb2.Empty(), timeout=self.timeout
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Tari wallet address gRPC unavailable: %s", e)
+            await self._reset_channel()
+            return None, None
+        addresses = [
+            response.interactive_address_base58,
+            response.one_sided_address_base58,
+            response.interactive_address_emoji,
+            response.one_sided_address_emoji,
+        ]
+        addresses = [address for address in addresses if address]
+        if not addresses:
+            return None, None
+        expected_raw = decode_address(expected) if expected else None
+        expected_key = address_key(expected_raw) if expected_raw else None
+        wallet_keys = [
+            address_key(raw)
+            for raw in (response.interactive_address, response.one_sided_address)
+            if raw
+        ]
+        match = expected in addresses or (expected_key is not None and expected_key in wallet_keys)
+        return addresses, match
 
     async def _scan_completed_transactions(self, stub):
         """Collect the wallet's completed transactions from the server-streaming RPC.

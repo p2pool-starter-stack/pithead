@@ -104,14 +104,16 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
             )
 
     async def _sync_payouts(self):
-        """Monero on-chain payout confirmation (#381). The body moved to ``payout_sync`` for #1644;
-        this stays as the poll body's call seam, and as the name the tests already reach for."""
-        await payout_sync.sync_monero(self.state_manager, self.wallet_client, self.alert_service)
+        """Monero payout poll; tests and the loop use this seam."""
+        return await payout_sync.sync_monero(
+            self.state_manager, self.wallet_client, self.alert_service
+        )
 
     async def _sync_tari_payouts(self):
-        """Tari on-chain payout confirmation (#462) — the sibling of ``_sync_payouts``, same shape
-        and same reason for staying here while its body lives in ``payout_sync``."""
-        await payout_sync.sync_tari(self.state_manager, self.tari_wallet_client, self.alert_service)
+        """Tari payout poll; the async sibling of ``_sync_payouts``."""
+        return await payout_sync.sync_tari(
+            self.state_manager, self.tari_wallet_client, self.alert_service
+        )
 
     async def run(self):
         """
@@ -521,7 +523,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         window_splits,
                     )
 
-                    # Create a lightweight snapshot (exclude shares entirely as they are safely in DB)
+                    await payout_sync.observe_enabled_wallets(self)
+                    # Snapshot without shares, which already live in the DB.
                     snapshot_data = self.latest_data.copy()
                     snapshot_data.pop("shares", None)
                     await asyncio.to_thread(self.state_manager.save_snapshot, snapshot_data)
@@ -604,9 +607,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         # 30-min wall-clock gate inside (the winners file updates ~hourly).
                         await self._sync_xvb_winners()
 
-                    # 7d. On-chain payout confirmation (#381), every 10th poll (~5 min). Independent
-                    # of XvB — gated on the view-only wallet-rpc being configured (local node + view
-                    # key). Polls get_transfers, persists new confirmed payouts, fires one alert each.
+                    # Confirm payouts every 10th poll; the fast health probe ran above.
                     #
                     # 7d/7e are the only steps in this body wrapped per-step (#1644): both take no
                     # poll local and write no `self` attribute, so a failure in one cannot leave a
@@ -615,8 +616,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     if self.wallet_client is not None and iteration_count % 10 == 0:
                         await payout_sync.run_isolated("Monero payout sync", self._sync_payouts)
 
-                    # 7e. Tari on-chain payout confirmation (#462), same cadence — gated on the
-                    # view-only Tari console wallet being configured (local node + tari view key).
+                    # Tari uses the same cadence.
                     if self.tari_wallet_client is not None and iteration_count % 10 == 0:
                         await payout_sync.run_isolated("Tari payout sync", self._sync_tari_payouts)
 
