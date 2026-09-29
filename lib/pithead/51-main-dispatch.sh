@@ -23,8 +23,9 @@ _reject_options() { # <verb> "$@" — this verb takes no options; error on any l
 main() {
     # Chained subcommands (#94): when every argument is a bare subcommand name, run them
     # left-to-right as a chain. Any other token (a flag, a service name, an archive path) keeps
-    # the invocation on the single-command path below, unchanged.
-    if [ "$#" -ge 2 ]; then
+    # the invocation on the single-command path below, unchanged. `tor-recover` is never chained
+    # and takes a mode word (`apply` is also a command name), so it always stays single-command.
+    if [ "$#" -ge 2 ] && [ "$1" != "tor-recover" ]; then
         local _tok _chain=1
         for _tok in "$@"; do
             if ! is_pithead_command "$_tok"; then

@@ -324,6 +324,8 @@ out="$(cd "$CBX" && PATH="$CBX/bin:$PATH" ./pithead logs monerod 2>&1)"
 assert_rc "'logs <service>' stays single-command" "$?" "1"
 assert_contains "'logs <service>' hits the usual guard" "$out" "setup"
 assert_not_contains "'logs <service>' is not judged as a chain" "$out" "chain"
+out="$(cd "$CBX" && PATH="$CBX/bin:$PATH" ./pithead tor-recover apply 2>&1)"
+assert_not_contains "'tor-recover apply' reaches the dispatcher, not the chain (#2914)" "$out" "chain"
 
 echo "== completion: sources cleanly + no drift from the dispatch (#94) =="
 COMP="$ROOT/pithead-completion.bash"
