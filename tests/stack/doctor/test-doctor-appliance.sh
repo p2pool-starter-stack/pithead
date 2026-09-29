@@ -314,6 +314,7 @@ dac_mint 3650 "DNS:rig1.local" "DNS:localhost" # 192.168.1.20 dropped — the mu
 out="$(dac_run 0)"
 assert_contains "an uncovered name -> FAIL" "$out" "FAIL"
 assert_contains "an uncovered name -> names it" "$out" "192.168.1.20"
+assert_contains "an uncovered name -> tells the operator the address watch re-mints it within minutes (#2463)" "$out" "address watch re-mints the certificate within five minutes"
 
 dac_mint 5 "DNS:rig1.local" "IP:192.168.1.20" "DNS:localhost"
 out="$(dac_run 0)"

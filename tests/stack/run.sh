@@ -226,6 +226,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-setup-again.sh" &
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot.sh" && domain_ran test-appliance-boot.sh "$_d0" "$?" || domain_ran test-appliance-boot.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-boot-remint.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-remint.sh" && domain_ran test-appliance-boot-remint.sh "$_d0" "$?" || domain_ran test-appliance-boot-remint.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-address-watch.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-address-watch.sh" && domain_ran test-appliance-address-watch.sh "$_d0" "$?" || domain_ran test-appliance-address-watch.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-boot-stack-health.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-stack-health.sh" && domain_ran test-appliance-boot-stack-health.sh "$_d0" "$?" || domain_ran test-appliance-boot-stack-health.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-cert-advisory.sh disable=SC2015
