@@ -108,37 +108,33 @@ env_now() { run_sourced "$C" env_get_file "$C/.env" "$1"; }
 
 # TARI_MODE, the #1929 subject: an operator turns merge-mining off and back on from the dashboard.
 # Asserted on the RENDERED .env rather than config.json alone — config.json is what the gate wrote,
-# the .env is what the containers are actually launched from, and only the second can show that the
-# profile and the sync-gate flag followed the mode.
+# .env shows the launched profile and sync-gate flag.
 assert_eq "baseline renders the bundled Tari node" "$(env_now TARI_MODE)" "local"
 tari_data_before="$(ls -A "$C/data/tari" 2>/dev/null | wc -l | tr -d ' ')"
-roundtrip_confirm "TARI_MODE/COMPOSE_PROFILES" '.tari.mode="off"' '.tari.mode' "off"
+roundtrip_confirm "TARI_MODE/COMPOSE_PROFILES/TOR_COMPOSE_PROFILES" '.tari.mode="off"' '.tari.mode' "off"
 assert_eq "off renders TARI_MODE=off" "$(env_now TARI_MODE)" "off"
 assert_not_contains "off drops the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
+assert_not_contains "off drops the Tari onion profile" "$(env_now TOR_COMPOSE_PROFILES)" "local_tari"
 assert_eq "off releases the sync gate — a machine that declined Tari still mines Monero" "$(env_now TARI_REQUIRED)" "false"
-# The operator's own requirement: turning Tari off must not destroy the chain. Nothing in the
-# commit path may touch the data dir — remove_deactivated_profile_containers removes the CONTAINER.
+# Turning Tari off must preserve its chain data; remove_deactivated_profile_containers removes only the container.
 assert_eq "off leaves the Tari data dir untouched" "$(ls -A "$C/data/tari" 2>/dev/null | wc -l | tr -d ' ')" "$tari_data_before"
 assert_eq "off leaves tari.data_dir pointing at the same chain" "$(jq -r '.tari.data_dir // "auto"' "$C/config.json")" "auto"
 # ...and back on, the direction that proves this is a switch and not a one-way door.
 roundtrip_confirm "TARI_MODE" '.tari.mode="local"' '.tari.mode' "local"
 assert_eq "back on renders TARI_MODE=local" "$(env_now TARI_MODE)" "local"
 assert_contains "back on restores the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
+assert_contains "back on restores the Tari onion profile" "$(env_now TOR_COMPOSE_PROFILES)" "local_tari"
 
 # The remaining confirm keys that need no live endpoint. TARI_CLEARNET_SYNC is asserted here as a
 # ROUND TRIP; test-confirm-approval.sh asserts its refusal semantics on the Monero twin.
-# A clearnet flag reaches .env only with the egress firewall off (#2649) and the gate reads the .env
-# diff, so the host (not the gate) turns the firewall off for the two clearnet rows, then back on.
-host_firewall() { # <true|false>
-    jq ".network.tor_egress_firewall=$1" "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
-    (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-}
-host_firewall false
+# This fake host keeps the installed firewall transaction for the live readback required when a
+# confirmed clearnet choice activates its exception.
+# shellcheck source=tests/stack/fixtures/tor-egress/validation-sandbox.sh
+source "$ROOT/tests/stack/fixtures/tor-egress/validation-sandbox.sh" "$C"
 roundtrip_confirm "TARI_CLEARNET_SYNC" '.tari.clearnet_initial_sync=true' '.tari.clearnet_initial_sync' "true"
 roundtrip_confirm "MONERO_CLEARNET_SYNC" '.monero.clearnet_initial_sync=true' '.monero.clearnet_initial_sync' "true"
-host_firewall true
-assert_eq "firewall back on: MONERO_CLEARNET_SYNC ignored (#2649)" "$(env_now MONERO_CLEARNET_SYNC)" "false"
-assert_eq "firewall back on: TARI_CLEARNET_SYNC ignored (#2649)" "$(env_now TARI_CLEARNET_SYNC)" "false"
+assert_eq "firewall on: MONERO_CLEARNET_SYNC remains selected" "$(env_now MONERO_CLEARNET_SYNC)" "true"
+assert_eq "firewall on: TARI_CLEARNET_SYNC remains selected" "$(env_now TARI_CLEARNET_SYNC)" "true"
 roundtrip_confirm "TARI_DATA_DIR" '.tari.data_dir="'"$C"'/data/tari2"' '.tari.data_dir' "$C/data/tari2"
 roundtrip_confirm "MONERO_OUT_PEERS" '.monero.out_peers=24' '.monero.out_peers' "24"
 roundtrip_confirm "MONERO_DATA_DIR" '.monero.data_dir="'"$C"'/data/monero2"' '.monero.data_dir' "$C/data/monero2"

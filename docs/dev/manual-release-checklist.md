@@ -60,7 +60,9 @@ checks remain hands-on until #1022 can collect the scripted and attested results
 
 Needs hands, every time:
 
-- **M1 — flash and boot** from a real stick with Secure Boot disabled in firmware.
+- **M1 — flash and boot** from a real stick with Secure Boot disabled in firmware. Verify
+  the published `.img.xz` checksum, then flash its decompressed bytes using the appliance
+  guide's command. Record the compressed image's byte size and checksum.
 
 M4's mechanics (the wrong-disk guard) now have a KVM analog — see
 [appliance-release.md](appliance-release.md) — so only the real-hardware disk-controller
@@ -179,16 +181,19 @@ what it still leaves out.
 Before publication, the owner confirms that the release root certificate and signing leaf
 exist, and that the root private key has an offline backup. Run the baked-keyring fingerprint
 comparison and both `rauc info --keyring` bundle checks in
-[appliance-release.md](appliance-release.md#cutting-a-release), step 3. Record the fingerprint,
-bundle verification results and image and bundle checksums in the release issue. Stop the cut if
+[appliance-release.md](appliance-release.md#cutting-a-release), step 3. Package the verified
+image and bundle with step 4 there; record both published sizes, checksums, and the fingerprint
+and bundle verification results in the release issue. Flash that `.img.xz` for the hardware
+battery and soak. Stop the cut if either asset is at or above 2 GiB or
 any check fails: the first published image establishes the trust anchor on every fielded box.
 
 1. **Signing must be ON.** Confirm the preflight says so *before* answering the confirmation
    prompt. A release once shipped unsigned because the environment was absent and the script
    only warned; the fix made it refuse, and the check still belongs on this list.
 2. **Two-channel versions publish as a draft.** Published release assets are immutable — a
-   version was burned exactly this way. Cut with `--draft`, attach both channels' artifacts,
-   publish once. Note the git tag is spent at the cut even under `--draft`, so do not start the
+   version was burned exactly this way. Cut with `--draft`, attach the `.img.xz`, `.raucb`, and
+   both `.sha256` files alongside the DIY artifacts, then publish once. Note the git tag is spent
+   at the cut even under `--draft`, so do not start the
    DIY stage until the appliance tree is believed final.
 3. **Never pass `--yes` to `os-update` across a variant flip.** Installing a release bundle onto
    a debug box removes the SSH channel driving the install. The prompt exists for exactly that;

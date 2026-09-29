@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-Pithead's own code is [MIT](./LICENSE). The images it builds and the files it
+Pithead's own code is [MIT](../LICENSE). The images it builds and the files it
 vendors also **redistribute** third-party components, which keep their own licenses:
 
 ## Bundled binaries (in the published `pithead-*` images)

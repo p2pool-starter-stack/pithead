@@ -14,36 +14,36 @@ assert_running_state() {
     tari_req="$(jq_get "$config" '.dashboard.tari_required')"
     xvb="$(jq_get "$config" '.xvb.enabled')"
     rpc_lan="$(jq_get "$config" '.monero.rpc_lan_access')"
-    # Clearnet initial sync (#183): absent => default false; ignored while the firewall is on (#2649).
+    # Clearnet initial sync (#183): absent => default false; a chosen sync keeps the firewall on.
     monero_clearnet="$(clearnet_flag_effective "$config" monero)"
     tari_clearnet="$(clearnet_flag_effective "$config" tari)"
 
     # 0. Clearnet auto-transition settle (#234). Enabling clearnet on an already-synced node makes the
-    # dashboard supervisor flip it back to Tor, which RESTARTS the daemon(s). Wait for that to fully
-    # COMPLETE before the steady-state battery below — otherwise we catch a daemon mid-restart and the
-    # health/sync/proxy assertions fail spuriously. The marker is written BEFORE the restart, so the
-    # marker alone isn't "settled": for Monero we also wait for the Tor `proxy=` to reappear in the
-    # running config (only true once the flip-back re-render + restart finished), then for the whole
-    # stack to report healthy. This block also IS the end-to-end proof the transition fired.
     if [ "$monero_clearnet" = "true" ] || [ "$tari_clearnet" = "true" ]; then
-        local csdir
+        local csdir cdir
         csdir="$(env_on_box CLEARNET_STATE_DIR)"
+        cdir="$(env_on_box CONTROL_DIR)"
         if [ "$monero_clearnet" = "true" ]; then
-            if wait_for 180 10 "monero clearnet→Tor transition marker (#234)" rx "test -f '$csdir/monero.synced'"; then
+            if wait_for 240 10 "host-attested Monero clearnet→Tor transition (#234)" rx \
+                "jq -e --rawfile marker $(quote_arg "$csdir/monero.synced") '.status == \"verified\" and .marker == (\$marker | rtrimstr(\"\\n\")) and (.inode | type == \"number\") and (.ctime_ns | type == \"number\")' $(quote_arg "$cdir/results/clearnet-monero-tor.json") >/dev/null 2>&1"; then
                 it_pass "monero auto-transitioned clearnet→Tor (#234)"
-            else it_fail "monero auto-transitioned clearnet→Tor (#234)" "marker not written within 180s"; fi
+            else it_fail "monero auto-transitioned clearnet→Tor (#234)" "host attestation not written within 240s"; fi
             wait_for 240 10 "monerod restarted back on Tor — proxy restored (#234)" \
                 rx "docker exec monerod grep -qE '^proxy=' /home/ubuntu/.bitmonero/bitmonero.conf 2>/dev/null" || true
         fi
         if [ "$tari_clearnet" = "true" ]; then
-            if wait_for 180 10 "tari clearnet→Tor transition marker (#234)" rx "test -f '$csdir/tari.synced'"; then
+            if wait_for 240 10 "host-attested Tari clearnet→Tor transition (#234)" rx \
+                "jq -e --rawfile marker $(quote_arg "$csdir/tari.synced") '.status == \"verified\" and .marker == (\$marker | rtrimstr(\"\\n\")) and (.inode | type == \"number\") and (.ctime_ns | type == \"number\")' $(quote_arg "$cdir/results/clearnet-tari-tor.json") >/dev/null 2>&1"; then
                 it_pass "tari auto-transitioned clearnet→Tor (#234)"
-            else it_fail "tari auto-transitioned clearnet→Tor (#234)" "marker not written within 180s"; fi
+            else it_fail "tari auto-transitioned clearnet→Tor (#234)" "host attestation not written within 240s"; fi
         fi
+        assert_host_claims_spent_sync "$csdir" "$monero_clearnet" "$tari_clearnet"
         wait_for 240 5 "stack healthy after clearnet→Tor transition (#234)" _pred_status_ok || true
+        assert_contains "firewall on: completed sync exceptions absent from live rules (#2678)" \
+            "$(pithead doctor 2>&1)" "Tor-only egress firewall is installed"
     fi
-
-    # 1. Expected containers up; unexpected ones absent.
+    # 1. Wait for the sync gate to release both miners before sampling live services, UID and TLS.
+    wait_for 1500 5 "p2pool and xmrig-proxy after sync gate" rx 'running=$(docker compose ps --services --status running); grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"' || true
     local running expected svc
     running="$(running_services)"
     expected="$(expected_services "$config")"

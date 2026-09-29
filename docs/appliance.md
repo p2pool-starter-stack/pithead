@@ -44,14 +44,16 @@ outage happened while the machine was already down.
 
 ## 1. Write the image to a USB stick
 
-Download `pithead-os-vX.Y.Z.img` and verify the checksum. Then write it with
-[balenaEtcher](https://etcher.balena.io/), or from a terminal:
+Download `pithead-os-vX.Y.Z.img.xz` and its `.sha256` file from the same release.
+Verify the download, then write the decompressed image to the stick:
 
 ```bash
-sudo dd if=pithead-os-vX.Y.Z.img of=/dev/sdX bs=4M status=progress conv=fsync
+sha256sum -c pithead-os-vX.Y.Z.img.xz.sha256
+xz -dc pithead-os-vX.Y.Z.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 `/dev/sdX` is the USB stick. Check it twice — `dd` will erase whatever you name.
+Keep the `.xz` file intact for checksum verification; the write produces the full 5 GiB image.
 
 ## 2. Boot the machine from the stick
 
@@ -243,7 +245,7 @@ Then a handful of choices, all with sensible defaults:
 | Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
 | Join the XMRvsBeast raffle? | on | Off if you would rather send every hash to your own P2Pool payouts. On, the switching engine donates only enough hashrate to hold your tier and routes the rest to P2Pool; donating past a tier's threshold earns nothing extra, because the raffle picks its winners at random. Changeable later. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
-| First sync | private over Tor | Faster over the open internet if days of syncing is too slow; it uses Tor afterwards either way. While the Tor-only egress firewall is on (the default), the faster sync does not take effect yet and the node syncs over Tor ([#2678](https://github.com/p2pool-starter-stack/pithead/issues/2678)). The firewall and each clearnet option are confirmed settings in the Configuration view. |
+| First sync | private over Tor | Faster over clearnet: hours instead of days. Your IP is visible to that chain's peers during sync. With the firewall on, only the chosen node is exempted. The host closes and verifies its exception before the Tor restart, then verifies the live daemon and rules before clearing the warning. The firewall and each clearnet option are confirmed settings in the Configuration view. |
 | Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything

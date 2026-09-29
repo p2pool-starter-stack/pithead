@@ -157,7 +157,7 @@ rig_setup_again_legs() {
     # miner is up, `journalctl -b -u pithead-setup-again` is empty. journald's own console
     # forward of the entry (`pithead[<pid>]: [pithead] ...`, distinct from _console's bare tty
     # write) is the durable witness that the line reached the journal.
-    tr -d '\r' <"$SERIAL" | grep -qE 'pithead\[[0-9]+\]: \[pithead\] Setup closed: the saved settings are kept' &&
+    serial_has 'pithead\[[0-9]+\]: \[pithead\] Setup closed: the saved settings are kept' &&
         ok "the host logged the keep, by name (the journal entry, via its console forward)" ||
         bad "no 'saved settings are kept' journal entry reached the console"
     _ssh "test ! -e $SA_SPOOL/keep-role" 2>/dev/null && ok "keep-role was consumed" ||
