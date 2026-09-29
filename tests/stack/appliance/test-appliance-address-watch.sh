@@ -96,3 +96,17 @@ assert_eq "nothing renders while pithead-boot is still running" "$(aw_count rend
 aw_run "192.168.1.5 fd1c::a" failed >/dev/null
 assert_eq "a failed pithead-boot (fallback boot) does not disable the watch" "$(aw_count render "$AW/log")" "$((before + 1))"
 unset AW aw_run aw_count out before
+
+echo "== unit: address_watch_verdict — the KVM provision leg's discrimination (#2463) =="
+# shellcheck source=tests/os/appliance-address-watch-leg.sh
+source "$HERE/../os/appliance-address-watch-leg.sh"
+AWV_OK='{"checks":[{"status":"ok","message":"The dashboard certificate covers every name Caddy serves."}]}'
+AWV_BAD='{"checks":[{"status":"fail","message":"The dashboard certificate does not cover: fd00:2463::1 — x"}]}'
+awv() { address_watch_verdict "${1-enabled}" "${2-active}" "${3-$AWV_OK}" "${4-0}" "${5-IP Address:fd00:2463::1, IP:fd00:2463::1}" "fd00:2463::1"; }
+assert_rc "a re-minted certificate with a green row and an enabled, active timer passes" "$(awv >/dev/null; echo $?)" 0
+assert_rc "a disabled timer fails (image wiring)" "$(awv disabled >/dev/null; echo $?)" 1
+assert_rc "an inactive timer fails" "$(awv enabled inactive >/dev/null; echo $?)" 1
+assert_rc "a still-red doctor row fails" "$(awv enabled active "$AWV_BAD" >/dev/null; echo $?)" 1
+assert_rc "a failed service run fails" "$(awv enabled active "$AWV_OK" 1 >/dev/null; echo $?)" 1
+assert_rc "a certificate without the added address fails" "$(awv enabled active "$AWV_OK" 0 "IP:192.168.1.5" >/dev/null; echo $?)" 1
+unset AWV_OK AWV_BAD awv
