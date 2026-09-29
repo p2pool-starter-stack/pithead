@@ -639,7 +639,8 @@ and `--list` prints it).
   ([#2846](https://github.com/p2pool-starter-stack/pithead/issues/2846)). `up` restores the nodes.
   The row then strips the
   rule as a reboot does, checks that the non-private dial now connects, runs
-  `pithead-lan-guard.service` on the bench, and dials again: non-private refused, private through
+  `pithead-lan-guard.service` before `pithead-egress.service` on the bench, verifies the live
+  Tor-egress verdict, and dials again: non-private refused, private through
   ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)). Then it stops the nodes,
   strips the rule, makes the guard's iptables step fail with a runtime drop-in, and applies
   dockerd's boot restore by each node's restart policy: the nodes stay stopped, every non-private
