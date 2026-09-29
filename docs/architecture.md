@@ -132,15 +132,18 @@ isn't started and P2Pool dials your external node's RPC/ZMQ; with `tari.mode: re
 node isn't started and P2Pool merge-mines against your external node's gRPC. Both add a path that
 leaves the box and is deliberately **not** Tor-routed — P2Pool bridges those legs onto direct
 connections, in plaintext — so keep a remote node on your LAN or behind WireGuard. The Tor-only
-egress firewall backs that up for the bridged containers, dropping any destination outside the
-private ranges; the host-networked dashboard, which polls a remote Tari node for sync state, sits
+egress firewall backs that up for remote-node RPC, dropping destinations outside the private
+ranges unless a container has an explicit clearnet exception; the host-networked dashboard,
+which polls a remote Tari node for sync state, sits
 outside those rules.
 
-> The one exception is **optional clearnet initial sync** (`monero.clearnet_initial_sync` /
+> An exception is **optional clearnet initial sync** (`monero.clearnet_initial_sync` /
 > `tari.clearnet_initial_sync`, default **off**): while active, that node's P2P leaves Tor to sync
 > faster through its own temporary firewall exception. Its IP is exposed until the host removes
 > and verifies the exception and the node restarts on Tor automatically (#234/#2678).
 > The Telegram bot alerts you the whole time it's exposed. See [Privacy](privacy.md).
+> P2Pool sidechain peers and enabled XvB donation also have scoped exceptions when their
+> clearnet options are selected; see [Privacy](privacy.md).
 
 ## Privacy by design
 

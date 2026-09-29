@@ -2,7 +2,7 @@
 # The apply and remove halves of the firewall in 02-tor-egress.sh, which owns the rule renderers and
 # the live enforcement readback these call.
 # The entrypoint/status predicate is shared with firewall install and verification. Only the
-# fixed node addresses may bypass the IPv4 DROP, and a marker spends that exemption for good.
+# fixed addresses selected by config may bypass the IPv4 DROP. Sync markers spend node exemptions.
 tor_egress_sync_ips() {
     local prefix
     prefix=$(env_get NETWORK_PREFIX 2>/dev/null)
@@ -14,7 +14,46 @@ tor_egress_sync_ips() {
     marker="$(clearnet_state_dir)/tari.synced"
     [ "${EGRESS_SYNC_CLOSE_CHAIN:-}" != tari ] && [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] &&
         [ ! -e "$marker" ] && [ ! -L "$marker" ] && printf '%s\n' "$prefix.27"
+    [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] && printf '%s\n' "$prefix.28"
+    [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
+        [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ] && printf '%s\n' "$prefix.29"
     return 0
+}
+
+tor_egress_choice_marker() { printf '%s.egress-choice-active' "$(mutation_lock_path)"; }
+tor_egress_choice_active() {
+    case "${1:-}" in
+    p2pool) [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] ;;
+    xvb) [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
+        [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ] ;;
+    *) tor_egress_choice_active p2pool || tor_egress_choice_active xvb ;;
+    esac
+}
+
+# Remove disabled choices before changing live rules: an old boot unit must not restore them if
+# refresh fails or the host loses power. Keep the parent until enabled live removal is proved.
+prune_tor_egress_choice_markers() {
+    local marker choice
+    marker=$(tor_egress_choice_marker)
+    [ ! -L "$marker" ] || return 1
+    for choice in p2pool xvb; do
+        tor_egress_choice_active "$choice" && continue
+        if [ -e "$marker/$choice" ] || [ -L "$marker/$choice" ]; then
+            rmdir "$marker/$choice" || return 1
+        fi
+    done
+}
+
+# A directory is an atomic, no-follow marker. Arm it before a selected ACCEPT can reach the kernel.
+arm_tor_egress_choice_marker() {
+    local marker choice
+    marker=$(tor_egress_choice_marker)
+    [ ! -L "$marker" ] && { mkdir "$marker" 2>/dev/null || [ -d "$marker" ]; } || return 1
+    for choice in p2pool xvb; do
+        tor_egress_choice_active "$choice" || continue
+        [ ! -L "$marker/$choice" ] &&
+            { mkdir "$marker/$choice" 2>/dev/null || [ -d "$marker/$choice" ]; } || return 1
+    done
 }
 
 # Remove every rule we previously installed — idempotent, config-agnostic, engine-agnostic. Clears
@@ -74,6 +113,7 @@ render_tor_egress_restore() { # <subnet> <tor_ip> [sync-ip ...] (stdin: iptables
 apply_tor_egress_firewall() {
     local enabled subnet tor_ip applied=0
     local -a sync_ips=()
+    prune_tor_egress_choice_markers || return 1
     enabled=$(env_get TOR_EGRESS_FIREWALL 2>/dev/null)
     [ -n "$enabled" ] || enabled=true
     if [ "$(normalize_bool "$enabled")" != "true" ]; then
@@ -89,6 +129,9 @@ apply_tor_egress_firewall() {
     [ -n "$tor_ip" ] || tor_ip="172.28.0"
     tor_ip="${tor_ip}.25"
     mapfile -t sync_ips < <(tor_egress_sync_ips)
+    if tor_egress_choice_active; then
+        arm_tor_egress_choice_marker || return 1
+    fi
     if [ "$(container_engine)" = "podman" ]; then
         if apply_tor_egress_nft "$subnet" "$tor_ip" "${sync_ips[@]}"; then
             remove_tor_egress_iptables
@@ -236,7 +279,7 @@ control_egress_sync() { # <id> <chain> <control-dir>
 apply_tor_egress_nft() { # <subnet> <tor_ip> [sync-ip ...]
     local subnet="$1" tor_ip="$2" br rc=0
     if ! command -v nft >/dev/null 2>&1; then
-        warn "egress-apply:nft-missing — nftables not found, cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
+        warn "egress-apply:nft-missing — nftables not found, cannot enforce Tor-only egress. Clearnet egress is NOT provably fail-closed."
         return 1
     fi
     # mining_net is IPv4-only by design, so br is empty and the ruleset stays v4-only. If it ever
@@ -268,7 +311,7 @@ apply_tor_egress_nft() { # <subnet> <tor_ip> [sync-ip ...]
 apply_tor_egress_iptables() { # <subnet> <tor_ip> [sync-ip ...]
     local subnet="$1" tor_ip="$2" saved
     if ! command -v iptables >/dev/null 2>&1 || ! command -v iptables-restore >/dev/null 2>&1; then
-        warn "egress-apply:iptables-missing — iptables/iptables-restore not found, cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
+        warn "egress-apply:iptables-missing — iptables/iptables-restore not found, cannot enforce Tor-only egress. Clearnet egress is NOT provably fail-closed."
         return 1
     fi
     # DOCKER-USER may not exist yet on a first-ever `up` (Docker creates it with its first network).
