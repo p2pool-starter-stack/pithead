@@ -51,15 +51,15 @@ grep -qF 'setpriv --reuid=1000 --regid=1000 --clear-groups minotari_console_wall
 cat >"$WORK/bin/curl" <<'EOF'
 #!/bin/sh
 while [ "$#" -gt 0 ]; do
-    if [ "$1" = -D ]; then shift; headers=$1; fi
+    if [ "$1" = -D ]; then shift; [ "$1" = - ] || exit 8; fi
     shift
 done
 if [ "${FAKE_GRPC_OK:-0}" = 1 ]; then
-    printf 'HTTP/2 200\r\ngrpc-status: 0\r\n' >"$headers"
+    printf 'HTTP/2 200\r\ngrpc-status: 0\r\n'
     exit 0
 fi
 if [ "${FAKE_GRPC_OK:-0}" = 2 ]; then
-    printf 'HTTP/2 200\r\n' >"$headers"
+    printf 'HTTP/2 200\r\n'
     exit 0
 fi
 exit 7

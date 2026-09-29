@@ -91,6 +91,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
     blocked Telegram send never stalls the data loop.
     """
 
+    # Event keys — must match config.json's telegram.events toggles and TELEGRAM_EVENTS.
     EVT_NODE_DOWN = "node_down"
     EVT_NODE_RECOVERED = "node_recovered"
     EVT_WORKER_OFFLINE = "worker_offline"
@@ -116,6 +117,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
     EVT_BLOCK_FOUND = "block_found"
     EVT_PAYOUT_FOUND = "payout_found"
     EVT_PAYOUT_CONFIRMED = "payout_confirmed"
+    # Wallet-down follows the payout feature and alerting, without an event-specific toggle.
     EVT_PAYOUT_WALLET_DOWN = "payout_wallet_down"
     EVT_CONTAINER_UNHEALTHY = "container_unhealthy"
     EVT_RAFFLE_WIN = "raffle_win"
@@ -410,8 +412,14 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         return text
 
     async def payout_confirmed_alert(self, chain, amount_atomic, txid):
-        """Alert for a newly stored payout; the caller's idempotent insert prevents replay.
-        Tari uses microTari, Monero piconero. Returns the sent text or None."""
+        """Push a payout-confirmed alert (#381): the view-only wallet saw an incoming payout land
+        on-chain — the ground truth behind the earnings estimate. "Alert once" is enforced upstream
+        (the caller only invokes this for genuinely-new ``(chain, txid)`` rows the idempotent
+        ``payouts`` table just inserted), so a dashboard restart re-scanning the tip replays nothing.
+        Carries the chain so the shared table/event serves Tari's sibling (#462), and the chain
+        also picks the atomic-unit divisor — Monero stores piconero (1e12/XMR), Tari microTari
+        (1e6/XTM) — so the same alert formats both correctly. No-op when the event is toggled off.
+        Returns the text sent (handy for tests), else ``None``."""
         sinks = self._event_sinks(self.EVT_PAYOUT_CONFIRMED)
         if not sinks:
             return None

@@ -21,6 +21,21 @@ _pred_tari_payouts_found() {
     [ "$(jq_get "$st" '.earnings.tari_confirmed.count')" -gt 0 ] 2>/dev/null
 }
 
+_pred_payout_wallet_ready() { # <confirmed|tari_confirmed>
+    local st
+    st="$(api_state)"
+    [ "$(jq_get "$st" ".earnings.$1.reachable")" = true ] &&
+        [ "$(jq_get "$st" ".earnings.$1.address_match")" = true ]
+}
+
+assert_payout_wallet_ready() { # <confirmed|tari_confirmed> <Monero|Tari>
+    local st
+    wait_for 120 5 "$2 payout wallet reachability and address (#2498)" _pred_payout_wallet_ready "$1" || true
+    st="$(api_state)"
+    assert_eq "$2 payout wallet answers the dashboard (#2498)" "$(jq_get "$st" ".earnings.$1.reachable")" true
+    assert_eq "$2 payout wallet matches the configured address (#2498)" "$(jq_get "$st" ".earnings.$1.address_match")" true
+}
+
 assert_tari_payout_scan() { # <config-json> <state-json>
     local config="$1" st="$2" birthday argv node tcp
     assert_eq "TARI_PAYOUT_CONFIRM_ENABLED matches config (#462/#942)" "$(env_on_box TARI_PAYOUT_CONFIRM_ENABLED)" "true"
@@ -45,6 +60,19 @@ assert_tari_payout_scan() { # <config-json> <state-json>
         else it_fail "Tari wallet found the known past payouts (#2731)" "tari_confirmed.count still 0 after 3600s"; fi
         ;;
     esac
+    assert_payout_wallet_ready tari_confirmed Tari
+    # Zero grace makes a successful invocation proof of the real image's gRPC probe, not the
+    # first-scan allowance. A good probe must also clear the marker permanently.
+    if rx 'docker exec -e PAYOUT_SCAN_GRACE_SEC=0 tari-wallet /wallet-config/wallet-healthcheck.sh' >/dev/null 2>&1; then
+        it_pass "real Tari wallet gRPC health probe succeeds without scan grace (#2498)"
+    else
+        it_fail "real Tari wallet gRPC health probe succeeds without scan grace (#2498)" "healthcheck returned nonzero"
+    fi
+    if rx 'docker exec tari-wallet test ! -e /var/tari/wallet/.payout-scanning' >/dev/null 2>&1; then
+        it_pass "real Tari wallet clears the first-scan marker (#2498)"
+    else
+        it_fail "real Tari wallet clears the first-scan marker (#2498)" "marker remains"
+    fi
     # An unreadable socket table must fail the row, never read as "no public peer".
     if ! tcp="$(rx "docker exec tari-wallet cat /proc/net/tcp" 2>/dev/null)" || [[ "$tcp" != *rem_address* ]]; then
         it_fail "tari-wallet holds no connection to a non-local node (#2731)" "could not read the wallet's /proc/net/tcp"

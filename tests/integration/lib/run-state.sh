@@ -336,16 +336,12 @@ assert_running_state() {
         fi
     fi
 
-    # 8e. Payout confirmation is live (#381/#462/#942) — the flagship feature's live leg. A real
-    # payout landing (and thus a non-empty confirmed total) needs days of chain time no e2e run
-    # has; what IS honestly provable now is that the view-only wallet-rpc/tari-wallet actually
-    # started (expected_services already asserts the container up) and that the dashboard's own
-    # feature flag — the same one build_earnings reads to decide "on, nothing confirmed yet" vs.
-    # "off" — reads ON. .earnings.confirmed.enabled is False only when payouts is None
-    # (service/earnings.py:confirmed_payouts_summary), i.e. exactly PAYOUT_CONFIRM_ENABLED.
+    # 8e. Live payout wallets: enabled, reachable, and matched to the configured address.
+    # A new Monero payout needs days of chain time, so an empty total is valid.
     if [ "$mode" = "local" ] && [ -n "$(jq_get "$config" '.monero.view_key')" ]; then
         assert_eq "PAYOUT_CONFIRM_ENABLED matches config (#381/#942)" "$(env_on_box PAYOUT_CONFIRM_ENABLED)" "true"
         assert_eq "dashboard confirms Monero payout tracking is live (#381/#942)" "$(jq_get "$st" '.earnings.confirmed.enabled')" "true"
+        assert_payout_wallet_ready confirmed Monero
     fi
     if [ "$mode" = "local" ] && [ -n "$(jq_get "$config" '.tari.view_key')" ]; then
         assert_tari_payout_scan "$config" "$st"
