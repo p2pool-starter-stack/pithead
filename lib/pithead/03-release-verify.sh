@@ -131,6 +131,36 @@ verify_release_images() {
     log "All 5 release images verify against their pinned digest (cosign.pub)."
 }
 
+# Compose can report a container "Running" after --build even when its tag now points at a
+# different image. Compare immutable IDs, not tags: source checkouts reuse :dev across upgrades.
+reconcile_source_upgrade_images() {
+    local config services svc image cid declared running
+    config=$(docker compose config --format json) || return 1
+    services=$(docker compose config --services) || return 1
+    while IFS= read -r svc; do
+        [ -n "$svc" ] || continue
+        # The e2e harness deliberately keeps identical chain nodes across checkout changes.
+        case " ${PITHEAD_KEEP_RUNNING:-} " in *" $svc "*) continue ;; esac
+        image=$(jq -r --arg svc "$svc" '.services[$svc].image // empty' <<<"$config") || return 1
+        [ -n "$image" ] || { warn "No declared image for $svc after upgrade."; return 1; }
+        cid=$(docker compose ps -a -q "$svc") || return 1
+        [ -n "$cid" ] || { warn "No container for $svc after upgrade."; return 1; }
+        declared=$(docker image inspect --format '{{.Id}}' "$image") || return 1
+        running=$(docker inspect --format '{{.Image}}' "$cid") || return 1
+        if [ "$running" != "$declared" ]; then
+            log "Recreating $svc: its container still uses the previous image."
+            compose_up_checked -d --no-deps --force-recreate "$svc" || return 1
+            cid=$(docker compose ps -a -q "$svc") || return 1
+            [ -n "$cid" ] || return 1
+            running=$(docker inspect --format '{{.Image}}' "$cid") || return 1
+            [ "$running" = "$declared" ] || {
+                warn "$svc still uses an image other than its Compose declaration after recreation."
+                return 1
+            }
+        fi
+    done <<<"$services"
+}
+
 stack_upgrade() {
     if is_appliance; then
         error "This is a Pithead OS appliance: the program tree is delivered by OS images and resynced from the system slot at every boot, so a tarball upgrade here would silently revert at the next reboot. Updates arrive as signed OS images — see the appliance guide."
@@ -184,6 +214,7 @@ stack_upgrade() {
         # Source checkouts build the first-party images locally (--build); compose_up_checked pulls
         # a bumped third-party digest, a missing image, before its `--pull never` up (#2654).
         compose_up_checked -d --build || error "Upgrade failed during 'docker compose up' — see the error above."
+        reconcile_source_upgrade_images || error "Upgrade failed to recreate a container on its rebuilt image."
     else
         verify_release_images # #376: fail closed BEFORE the pull when a release key is on disk
         PITHEAD_PULL=always compose_up_checked -d || error "Upgrade failed during 'docker compose up' — see the error above."
