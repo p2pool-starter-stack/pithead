@@ -191,6 +191,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **An IPv6 address that arrives after boot no longer leaves a permanent doctor FAIL (#2463).** A new
+  timer checks the machine's addresses every five minutes and, when they changed since the last
+  render, re-renders the dashboard certificate and Caddyfile and restarts Caddy if either changed.
+  The certificate check also compared an IPv6 address's two spellings (openssl's expanded form and
+  `hostname -I`'s compressed one) as different strings, so any IPv6 address was reported uncovered and
+  re-minted the certificate on every render; both sides are now canonicalised.
+
 - **Clearnet initial sync works behind the default egress firewall
   ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649),
   [#2678](https://github.com/p2pool-starter-stack/pithead/issues/2678)).** An opted-in Monero or
