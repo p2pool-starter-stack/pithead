@@ -9,6 +9,7 @@ source "$HERE/lib.sh"
 # shellcheck source=tests/integration/lib/live-gates.sh
 source "$HERE/lib/live-gates.sh"
 
+echo "== image-upgrade accepted worker set =="
 worker_names() { printf '%s\n' pithead; }
 check_capture() {
     local accepted=unset
