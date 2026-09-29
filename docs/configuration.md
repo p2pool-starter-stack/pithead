@@ -308,7 +308,7 @@ runs `pithead up`, which installs the rule first.
 still published by a node container. A failed `apply` that leaves an old LAN bind running keeps the
 timer. If an external firewall reload removes the rule or its jump, the check deletes the node
 start marker and stops the nodes that publish LAN ports. If a stop cannot be verified, it tries to
-restore the rule for every observed port, but keeps the marker invalid and reports failure until
+restore the rule for all three fixed node ports, but keeps the marker invalid and reports failure until
 the node stop is verified. An existing connection can survive a restored rule. When Docker can
 stop the nodes, the ports close by the next check; a start outside
 `pithead` then fails the marker gate. Fix the firewall and run `./pithead up` to restore the rule

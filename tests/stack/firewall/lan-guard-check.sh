@@ -65,10 +65,12 @@ assert_eq "unreadable engine with no firewall cannot claim success" "$lg_rc" 1
 printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
 : >"$LG_RESTORE"
 lg_rc=0
-LG_LIVE=0 lg 'flock() { return 1; }; docker() { case "$1" in ps) [ "$2" = -a ] && echo tari || echo tari ;; port) echo 0.0.0.0:18142 ;; stop) return 1 ;; esac; }; lan_guard_check' >/dev/null 2>&1 || lg_rc=$?
+LG_LIVE=0 lg 'flock() { return 1; }; docker() { case "$1" in ps) [ "$2" = -a ] && echo tari || echo tari ;; port) echo 0.0.0.0:18142 ;; stop) printf "MONERO_RPC_BIND=0.0.0.0\nTARI_GRPC_BIND=127.0.0.1\n" >.env; return 1 ;; esac; }; lan_guard_check' >/dev/null 2>&1 || lg_rc=$?
 assert_eq "the check does not wait for a long mutation lock" "$lg_rc" 1
 assert_contains "failed stop restores the stale published port even after .env switches off" "$(cat "$LG_RESTORE")" "--dport 18142"
+assert_contains "emergency restore also protects a port enabled by concurrent up" "$(cat "$LG_RESTORE")" "--dport 18081"
 assert_eq "failed stop leaves the marker invalid for the next retry" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
+printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
 : >"$LG_STOP"
 lg_rc=0
 LG_LIVE=0 lg 'flock() { return 1; }; lan_guard_enforced() { [ -e rule-restored ] && return 0; touch rule-restored; return 1; }; docker() { case "$1" in ps) [ "$2" = -a ] && echo tari || { touch rule-restored; lan_guard_mark; echo tari; } ;; port) echo 0.0.0.0:18142 ;; stop) echo "$2" >>"$LG_STOP" ;; esac; }; lan_guard_check' >/dev/null 2>&1 || lg_rc=$?

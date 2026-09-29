@@ -295,7 +295,7 @@ lan_guard_check() {
 # Invalidate the marker first so a concurrent explicit start fails its entrypoint gate.
 lan_guard_check_now() {
     local p c seen=" " names rc=0
-    local ports=()
+    local ports=() fixed_ports=()
     for p in $(lan_guard_watched_ports); do ports+=("$p"); done
     [ "${#ports[@]}" -gt 0 ] || return 0
     if lan_guard_enforced "${ports[@]}" && cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then return 0; fi
@@ -318,8 +318,10 @@ lan_guard_check_now() {
     for c in $seen; do grep -qxF "$c" <<<"$names" && rc=1; done
     if [ "$rc" -ne 0 ]; then
         # Restore the rule for NEW connections, but an already-established session survives it.
-        # Keep the marker invalid and retry the stop on the next check; never claim recovery.
-        apply_lan_guard "${ports[@]}" || true
+        # A concurrent up may change the port set: replacing its rule with this check's old
+        # snapshot could expose its new port. Guard every fixed node port in this emergency.
+        for p in $LAN_GUARD_BINDS; do fixed_ports+=("${p#*:}"); done
+        apply_lan_guard "${fixed_ports[@]}" || true
         lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
     fi
     warn "lan-guard:rule-or-marker-lost — LAN-publishing nodes were stopped or a stop could not be verified. Run './pithead up' after fixing the firewall."
