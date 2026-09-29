@@ -18,7 +18,7 @@ _tor_probe_mining_sample() {
 }
 
 fault_tor_probe_egress() {
-    local prefix epoch tor_before monero_before last now logs i rc=0 rule
+    local prefix epoch tor_before monero_before last now logs i rc=0 rule last_progress=0 mining_failure=
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = false ]; then
         it_fail "Tor probe fault requires the egress firewall" "network.tor_egress_firewall=false"
         return
@@ -56,12 +56,22 @@ fault_tor_probe_egress() {
     for ((i = 0; i < 25; i++)); do
         sleep 60
         now=$(_tor_probe_mining_sample) || now=
-        if [ -z "$now" ] || [ "$now" -le "$last" ]; then
-            it_fail "proxy mining continued during Tor clearnet fault" "sample $i did not advance with workers online"
-            break
+        if [ -z "$now" ]; then
+            mining_failure=${mining_failure:-"sample $i had no live proxy worker or accepted-share counter"}
+        elif [ "$now" -lt "$last" ]; then
+            mining_failure=${mining_failure:-"sample $i reset the proxy accepted-share counter"}
+        elif [ "$now" -gt "$last" ]; then
+            last=$now
+            last_progress=$((i + 1))
+        elif [ "$((i + 1 - last_progress))" -ge 5 ]; then
+            mining_failure=${mining_failure:-"no accepted share in five minutes by sample $i"}
         fi
-        last=$now
     done
+    if [ -n "$mining_failure" ]; then
+        it_fail "proxy mining continued during Tor clearnet fault" "$mining_failure"
+    else
+        it_pass "proxy mining continued during Tor clearnet fault"
+    fi
     assert_eq "Tor stayed running during circuit refresh" "$(rx "docker inspect tor --format '{{.State.StartedAt}}'")" "$tor_before"
     assert_eq "Monero was not restarted for circuit refresh" "$(rx "docker inspect monerod --format '{{.State.StartedAt}}'")" "$monero_before"
     logs=$(rx "docker logs --since $epoch dashboard 2>&1")

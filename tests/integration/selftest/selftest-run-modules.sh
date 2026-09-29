@@ -94,6 +94,11 @@ declare -f fault_tor_probe_egress | grep -Fq 'wait_for 180 10 "proxy workers onl
     echo "Tor probe fault startup did not use the proxy mining witness" >&2
     exit 1
 }
+fault_body=$(declare -f fault_tor_probe_egress)
+[[ "$fault_body" == *'i + 1 - last_progress'* ]] && [[ "$fault_body" != *'break'* ]] || {
+    echo "Tor probe fault must tolerate short share gaps and complete the full fault window" >&2
+    exit 1
+}
 
 pithead() {
     printf '%s\n' \
