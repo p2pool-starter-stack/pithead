@@ -53,7 +53,7 @@ lan_guard_check() {
 
 # Invalidate the marker first so a concurrent explicit start fails its entrypoint gate.
 lan_guard_check_now() {
-    local p c name seen=" " names rc=0
+    local p c name seen=" " names published rc=0
     local ports=() fixed_ports=()
     for p in $(lan_guard_watched_ports); do ports+=("$p"); done
     [ "${#ports[@]}" -gt 0 ] || return 0
@@ -71,6 +71,10 @@ lan_guard_check_now() {
         while IFS= read -r name; do
             [ -n "$name" ] || continue
             [[ "$seen" == *" $name "* ]] && continue
+            if published=$(docker port "$name" "$p/tcp" 2>/dev/null); then
+                [ -n "$published" ] || continue
+                grep -qv '^127\.0\.0\.1:' <<<"$published" || continue
+            fi
             seen+="$name "
             # A concurrent up may have restored the rule and marker while the lock was busy.
             if lan_guard_enforced "${ports[@]}" && lan_guard_marker_current; then return 0; fi

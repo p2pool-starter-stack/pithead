@@ -69,14 +69,19 @@ assert_lan_guard_timer_flush() { # <port>...
     assert_eq "control: a non-private source reaches the unguarded port (#2846)" "$(_lan_probe 198.51.100 "$1")" open
     deadline=$((since + 150))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        if [ "$(rx 'test -e data/lan-guard/enforced && echo present')" != present ] &&
-            [ "$(_lan_probe 198.51.100 "$1")" = closed ]; then
+        if [ "$(rx 'test -e data/lan-guard/enforced && echo present')" != present ]; then
             closed=1
-            break
+            for p in "$@"; do
+                [ "$(_lan_probe 198.51.100 "$p")" = closed ] || {
+                    closed=0
+                    break
+                }
+            done
+            [ "$closed" = 0 ] || break
         fi
         sleep 5
     done
-    assert_eq "timer invalidated the marker and closed the first port within its interval (#2846)" "$closed" 1
+    assert_eq "timer invalidated the marker and closed every port within its interval (#2846)" "$closed" 1
     for p in "$@"; do
         assert_eq "LAN port $p is closed after the timer check (#2846)" "$(_lan_probe 198.51.100 "$p")" closed
     done

@@ -315,7 +315,8 @@ still published by a node container. A failed `apply` that leaves an old LAN bin
 timer. `apply` guards the ports in the new configuration and any still published by old containers
 before committing a new `.env`; the old port stays guarded until Compose replaces the container. If an
 external firewall reload removes the rule or its jump, the check deletes the node
-start marker and stops the nodes that publish LAN ports. If a stop cannot be verified, it tries to
+start marker and stops the nodes that publish LAN ports. Nodes Docker reports as published only
+on loopback keep running. If a stop cannot be verified, it tries to
 restore the rule for all three fixed node ports, but keeps the marker invalid and reports failure until
 the node stop is verified. An existing connection can survive a restored rule. When Docker can
 stop the nodes, the ports close by the next check; a start outside

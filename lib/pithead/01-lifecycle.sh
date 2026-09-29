@@ -1,4 +1,5 @@
 # --- Lifecycle Helpers ---
+
 # The Compose project name is pinned to "pithead" (docker-compose.yml `name:`). A stack first
 # deployed under the old directory-derived project name still has containers holding our
 # container_names (tor, monerod, …) under that old project — they'd block `up` with a name
@@ -76,7 +77,6 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
-    # Every container start gets the LAN source rule first, or a loopback fallback (#2616).
     apply_lan_guard
     lan_guard_stop_rebound_nodes || {
         lan_guard_check_now || true

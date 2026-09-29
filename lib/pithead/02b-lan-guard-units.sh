@@ -207,3 +207,9 @@ remove_lan_guard_boot_unit() {
     fi
     return "$rc"
 }
+
+# Egress check only reports dashboard status; a LAN check failure blocks apply.
+provision_firewall_check_units() {
+    provision_egress_check_units || true
+    provision_lan_guard_check_units
+}
