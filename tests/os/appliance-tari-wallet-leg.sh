@@ -26,6 +26,16 @@ tari_wallet_image_is_pinned() { # <image-name> <image-digest> <pinned-ref>
     [ "$2" = "${3##*@}" ] || { [ -z "$2" ] && [ "$1" = "$3" ]; }
 }
 
+# 0: readable and clean; 1: integrity error; 2: logs unavailable.
+tari_wallet_integrity_log_status() {
+    local log grep_rc
+    log=$(_ssh "podman logs --tail 200 tari-wallet" 2>&1) || return 2
+    [ -n "$log" ] || return 2
+    printf '%s\n' "$log" | grep -Eiq '(database|sqlite).*(error|corrupt|malformed|integrity)|integrity.*(failed|error)'
+    grep_rc=${PIPESTATUS[1]}
+    case "$grep_rc" in 0) return 1 ;; 1) return 0 ;; *) return 2 ;; esac
+}
+
 # #2657: the console wallet must not be PID 1 (a zombie PID 1 cannot be signalled), and a stop must
 # complete: rc 0 and the container down within the timeout plus a margin. How fast the wallet itself
 # shuts down on SIGTERM is the wallet's business, so the exit code is reported, not judged.
@@ -35,7 +45,7 @@ tari_wallet_stop_ok() { # <stop-rc> <elapsed-s> <running>
 }
 
 phase_provision_tari_wallet() { # <phase-rc>
-    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running dispositions before after version identity height balance after_version after_identity after_height after_balance image_name image_digest expected_image db_before db_after db_errors
+    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running dispositions before after version identity height balance after_version after_identity after_height after_balance image_name image_digest expected_image db_before db_after log_status
     [ "${1:-0}" -eq 0 ] || unexercised=info
     info "phase: the view-only Tari payout wallet under podman quadlets (#462/#2731)"
     if ! SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh true 2>/dev/null; then
@@ -168,8 +178,13 @@ mv config.json.tari-wallet-test config.json
     fi
     db_after=$(_ssh "podman exec tari-wallet find /var/tari/wallet -name console_wallet.db -type f -exec stat -c %i {} \;" 2>/dev/null | tr -d '\r\n')
     if [ -n "$db_before" ] && [ "$db_after" = "$db_before" ]; then ok "Tari wallet: the same persisted SQLite database reopened after restart (#2899)"; else bad "Tari wallet: the persisted SQLite database changed or is missing after restart (#2899)"; fi
-    db_errors=$(_ssh "podman logs --tail 200 tari-wallet 2>&1 | grep -Ei '(database|sqlite).*(error|corrupt|malformed|integrity)|integrity.*(failed|error)'" 2>/dev/null | tr -d '\r')
-    if [ -z "$db_errors" ]; then ok "Tari wallet: no database-integrity error reported after restart (#2899)"; else bad "Tari wallet: database-integrity error reported after restart (#2899)"; fi
+    tari_wallet_integrity_log_status
+    log_status=$?
+    case "$log_status" in
+    0) ok "Tari wallet: no database-integrity error reported after restart (#2899)" ;;
+    1) bad "Tari wallet: database-integrity error reported after restart (#2899)" ;;
+    *) bad "Tari wallet: could not read the wallet log after restart (#2899)" ;;
+    esac
     approval_restore_pending || bad "Tari wallet cleanup (restoring the original config) failed"
 }
 _tari_wallet_self_test() {
@@ -187,6 +202,20 @@ _tari_wallet_self_test() {
     tari_wallet_image_is_pinned repo/wallet@sha256:good '' repo/wallet@sha256:good || f=$((f + 1))
     tari_wallet_image_is_pinned repo/wallet@sha256:good sha256:wrong repo/wallet@sha256:good && f=$((f + 1))
     tari_wallet_image_is_pinned wrong '' repo/wallet@sha256:good && f=$((f + 1))
+    (
+        _ssh() { return 255; }
+        tari_wallet_integrity_log_status
+    )
+    [ "$?" -eq 2 ] || f=$((f + 1))
+    (
+        _ssh() { printf 'wallet opened\n'; }
+        tari_wallet_integrity_log_status
+    ) || f=$((f + 1))
+    (
+        _ssh() { printf 'SQLite database corrupt\n'; }
+        tari_wallet_integrity_log_status
+    )
+    [ "$?" -eq 1 ] || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-tari-wallet-leg self-test: %s failed\n' "$f" >&2
         return 1
