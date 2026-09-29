@@ -2,7 +2,6 @@
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # LAN-only source rule, loopback fallback, boot hold, marker and doctor checks (#2616/#2749/#2847).
 # Live non-private/private dials are in tests/integration/lib/run-lan-guard.sh.
-
 LGD="$SANDBOX/lan-guard"
 mkdir -p "$LGD/bin"
 cat >"$LGD/bin/sudo" <<'SUDO'
@@ -150,7 +149,8 @@ assert_eq "...first starts on loopback, then recreates with the LAN bind" "$(cat
 assert_eq "...and marks this boot before the LAN pass" "$(cat "$LGD/data/lan-guard/enforced" 2>/dev/null)" "boot-1"
 : >"$LG_COMPOSE"
 rm -f "$LG_JUMP_FILE"
-lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=after LG_LAN_UP_FAIL=1 lg 'compose_up -d')"; lg_rc=$?
+lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=after LG_LAN_UP_FAIL=1 lg 'compose_up -d')"
+lg_rc=$?
 assert_rc "a failed LAN pass returns failure after loopback rollback" "$lg_rc" "1"
 assert_eq "...stops the node and restores the loopback bind" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1\ncompose-bind=0.0.0.0\ndocker-stop=cid123\ncompose-bind=127.0.0.1'
 assert_eq "...and clears the marker" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
