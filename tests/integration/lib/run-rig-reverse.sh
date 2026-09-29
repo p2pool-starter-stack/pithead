@@ -118,6 +118,10 @@ _rig_direct_summary() {
             echo "direct /1/summary read failed"
             return 0
         }
+    [ -n "$body" ] || {
+        echo "direct /1/summary returned an empty body"
+        return 0
+    }
     printf '%s' "$body" | jq -r '"generated_at=\(.generated_at // "absent"), watchdog max_temp_c=\(.rigforge.watchdog.max_temp_c // "absent")"' 2>/dev/null ||
         echo "direct /1/summary unparseable"
 }

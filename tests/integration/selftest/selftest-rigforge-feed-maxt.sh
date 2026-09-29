@@ -59,6 +59,8 @@ rx() {
 assert_eq "the direct read reports the stamp and ceiling" "$(_rig_direct_summary)" "generated_at=2026-09-26T10:00:00Z, watchdog max_temp_c=100"
 RX_BODY='{}'
 assert_eq "an absent stamp and ceiling are explicit" "$(_rig_direct_summary)" "generated_at=absent, watchdog max_temp_c=absent"
+RX_BODY=''
+assert_eq "a successful read with an empty body is named" "$(_rig_direct_summary)" "direct /1/summary returned an empty body"
 RX_BODY='oops'
 assert_eq "an unparseable direct read is named" "$(_rig_direct_summary)" "direct /1/summary unparseable"
 RX_RC=22
