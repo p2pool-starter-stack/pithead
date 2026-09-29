@@ -270,7 +270,7 @@ cat >"$REBIND_DIR/bin/curl" <<'EOF'
 while [ "$#" -gt 0 ]; do
     if [ "$1" = -o ]; then out="$2"; shift 2; else shift; fi
 done
-printf '%s' "${RIG_CHANGE_ID_BODY:?}" >"$out"
+cat "$(dirname "$out")/response.fixture" >"$out"
 printf 202
 EOF
 chmod +x "$REBIND_DIR/bin/curl"
@@ -279,9 +279,9 @@ for body in \
     '{"status":"accepted","change_id":"0123456789abcdef\n"}' \
     '{"status":"accepted","change_id":1234567890123456}' \
     '{"status":"accepted","change_id":"0123456789abcdef"}{"status":"accepted","change_id":"fedcba9876543210"}'; do
+    printf '%s' "$body" >"$REBIND_DIR/staged/response.fixture"
     rm -f "$REBIND_DIR/results/$REBIND_UUID.json"
     PATH="$REBIND_DIR/bin:$PATH" CONTROL_WA_BUDGET=1 PITHEAD_CONFIG_FILE="$REBIND_DIR/config.json" \
-        RIG_CHANGE_ID_BODY="$body" \
         run_sourced_e "$SANDBOX" control_process_request "$REBIND_DIR/req.json" "$REBIND_DIR" >/dev/null 2>&1
     assert_eq "a malformed rig change ID fails before status polling" \
         "$(jq -r '.status + "|" + (.error // "")' "$REBIND_DIR/results/$REBIND_UUID.json")" \
