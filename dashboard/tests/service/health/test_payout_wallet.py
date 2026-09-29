@@ -7,19 +7,25 @@ from mining_dashboard.service.payout_sync import observe_wallet
 
 
 def test_wallet_unreachable_debounces_and_alerts_once():
-    now = [0]
-    monitor = NodeHealthMonitor(down_after=90, recovery_after=0, clock=lambda: now[0], ever_up=True)
-    client = MagicMock()
-    client.payout_addresses.return_value = None
-    alerts = MagicMock(payout_wallet_down_alert=AsyncMock())
+    for chain in ("monero", "tari"):
+        now = [0]
+        monitor = NodeHealthMonitor(down_after=4, recovery_after=0, clock=lambda: now[0], ever_up=True)
+        client = MagicMock()
+        client.payout_addresses.return_value = None
+        if chain == "tari":
+            client.payout_addresses = AsyncMock(return_value=(None, None))
+        alerts = MagicMock(payout_wallet_down_alert=AsyncMock())
 
-    first = asyncio.run(observe_wallet("monero", client, monitor, "expected", None, alerts))
-    assert first["reachable"] is False and first["down"] is False
-    now[0] = 90
-    down = asyncio.run(observe_wallet("monero", client, monitor, "expected", first, alerts))
-    assert down["down"] is True and down["since"] == first["since"]
-    asyncio.run(observe_wallet("monero", client, monitor, "expected", down, alerts))
-    alerts.payout_wallet_down_alert.assert_awaited_once_with("monero", "unreachable")
+        first = asyncio.run(observe_wallet(chain, client, monitor, "expected", None, alerts))
+        assert first["reachable"] is False and first["down"] is False
+        now[0] = 3
+        pending = asyncio.run(observe_wallet(chain, client, monitor, "expected", first, alerts))
+        assert pending["down"] is False
+        now[0] = 4
+        down = asyncio.run(observe_wallet(chain, client, monitor, "expected", pending, alerts))
+        assert down["down"] is True and down["since"] == first["since"]
+        asyncio.run(observe_wallet(chain, client, monitor, "expected", down, alerts))
+        alerts.payout_wallet_down_alert.assert_awaited_once_with(chain, "unreachable")
 
 
 def test_address_mismatch_is_explicit_even_before_debounce():

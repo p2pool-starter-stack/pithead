@@ -172,10 +172,34 @@ PY
     wait_wallet_field monero down false && wait_wallet_field tari down false
     compose stop fake-wallet-rpc >/dev/null
     compose stop fake-tari-wallet >/dev/null
-    # Docker stop and the next wallet RPC timeout can consume a collection cycle. Start the
-    # DOWN wait only after each wallet's own probe has observed the outage.
-    if wait_wallet_field monero reachable false && wait_wallet_field tari reachable false &&
-        wait_wallet_field monero down true && wait_wallet_field tari down true &&
+    # Track each wallet separately after its first unreachable observation. The 4s
+    # debounce can be seen on the next 2s collection cycle; allow one more cycle.
+    outage_state="$(
+        compose exec -T dashboard python3 - <<'PY'
+import json
+import time
+import urllib.request
+
+first_seen = {}
+deadline = time.monotonic() + 20
+while time.monotonic() < deadline:
+    state = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
+    wallets = {"monero": state["earnings"]["confirmed"], "tari": state["earnings"]["tari_confirmed"]}
+    now = time.monotonic()
+    for chain, wallet in wallets.items():
+        if wallet["reachable"] is False:
+            first_seen.setdefault(chain, now)
+        if chain in first_seen and not wallet["down"] and now - first_seen[chain] > 8:
+            raise SystemExit(f"{chain} stayed up over 8s after unreachable")
+    if len(first_seen) == 2 and all(wallet["down"] for wallet in wallets.values()):
+        print("OK")
+        break
+    time.sleep(0.5)
+else:
+    raise SystemExit("both wallets did not become unreachable and down")
+PY
+    )"
+    if [ "$outage_state" = OK ] &&
         [ "$(wallet_down_count monero)" = 3 ] && [ "$(wallet_down_count tari)" = 3 ] &&
         [ "$(wallet_status monero | jq -r .reachable)" = false ] &&
         [ "$(wallet_status tari | jq -r .reachable)" = false ]; then c_ok "stopped wallets turn earnings red"; else c_bad "stopped wallets turn earnings red" "Monero=$(wallet_status monero), Tari=$(wallet_status tari)"; fi
