@@ -91,44 +91,43 @@ lan_guard_watched_ports() {
     done
 }
 
-# Guard old container publishes and newly requested binds before apply commits a staged .env.
-lan_guard_transition_ports() { # <newenv>
-    local kp p ports=()
-    for p in $(lan_guard_watched_ports); do ports+=("$p"); done
-    for kp in $LAN_GUARD_BINDS; do
-        p=${kp#*:}
-        case "$(env_get_file "$1" "${kp%%:*}")" in
-        '' | 127.0.0.1) ;;
-        *) [[ " ${ports[*]} " == *" $p "* ]] || ports+=("$p") ;;
-        esac
+# A bind moving from LAN to loopback still belongs to the old container until Compose recreates
+# it. Stop that container before replacing the firewall rules; a failed Compose must not leave
+# the old all-interface listener running after its jump has been removed.
+lan_guard_stop_rebound_nodes() {
+    local names service name kp bind published stop_node
+    for service in monerod tari; do
+        names=$(docker ps --filter label=com.docker.compose.project=pithead \
+            --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            stop_node=0
+            for kp in $LAN_GUARD_BINDS; do
+                case "$service:${kp%%:*}" in
+                monerod:MONERO_* | tari:TARI_*) ;;
+                *) continue ;;
+                esac
+                bind=$(env_get "${kp%%:*}" 2>/dev/null) || return 1
+                if [ "${LAN_GUARD_FALLBACK:-0}" != 1 ]; then
+                    case "$bind" in '' | 127.0.0.1) ;; *) continue ;; esac
+                fi
+                published=$(docker port "$name" "${kp#*:}/tcp" 2>/dev/null) || {
+                    stop_node=1
+                    break
+                }
+                if [ -n "$published" ] && grep -qv '^127\.0\.0\.1:' <<<"$published"; then
+                    stop_node=1
+                    break
+                fi
+            done
+            [ "$stop_node" = 1 ] || continue
+            docker stop "$name" >/dev/null || return 1
+            names=$(docker ps --filter label=com.docker.compose.project=pithead \
+                --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
+            grep -qxF "$name" <<<"$names" && return 1
+        done <<<"$names"
     done
-    printf '%s\n' "${ports[@]}"
-}
-
-lan_guard_arm_transition() { # <newenv>: before apply commits it
-    local p rc=0 containers networks ports=()
-    for p in $(lan_guard_transition_ports "$1"); do ports+=("$p"); done
-    [ "${#ports[@]}" -gt 0 ] || return 0
-    apply_lan_guard "${ports[@]}"
-    lan_guard_enforced "${ports[@]}" || rc=$?
-    if [ "$rc" = 4 ]; then
-        # Only the first network creation can supply a missing FORWARD jump. A stopped
-        # container or an existing network could still start with the port exposed.
-        if containers=$(docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.Names}}' 2>/dev/null) &&
-            networks=$(docker network ls --format '{{.Name}}' 2>/dev/null); then
-            [ -n "$containers" ] || grep -qxF mining_net <<<"$networks" || rc=0
-        fi
-    fi
-    if [ "$rc" -ne 0 ] || ! lan_guard_marker_current; then
-        if [ "$rc" -ne 0 ]; then
-            warn "lan-guard:transition-not-armed — $(lan_guard_reason "$rc")."
-        else
-            warn "lan-guard:transition-not-armed — the boot marker does not match this boot."
-        fi
-        lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
-        lan_guard_check_now || true
-        return 1
-    fi
+    return 0
 }
 
 # `iptables-restore --noflush` input for <port>...: declaring our chain flushes and refills it, the
@@ -231,6 +230,7 @@ lan_guard_reason() { # <rc>
 # process. Called by compose_up, so it runs before every container (re)start.
 apply_lan_guard() { # [port]...: explicit ports include stale container publishes after .env changes
     local published="" watched kp ports=() old rc=0
+    LAN_GUARD_FALLBACK=0
     # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
     # bind-mount the marker dir, and podman does not create a missing bind source.
     export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
@@ -274,6 +274,7 @@ apply_lan_guard() { # [port]...: explicit ports include stale container publishe
     fi
     lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
+    LAN_GUARD_FALLBACK=1
     warn "lan-guard:not-installed — could not enforce LAN-only sources on port(s) ${ports[*]} ($(lan_guard_reason "$rc")). Holding them on 127.0.0.1 until it can; see './pithead doctor'."
 }
 

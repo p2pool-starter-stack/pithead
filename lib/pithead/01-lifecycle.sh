@@ -1,5 +1,4 @@
 # --- Lifecycle Helpers ---
-
 # The Compose project name is pinned to "pithead" (docker-compose.yml `name:`). A stack first
 # deployed under the old directory-derived project name still has containers holding our
 # container_names (tor, monerod, …) under that old project — they'd block `up` with a name
@@ -77,9 +76,13 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
-    # Every container (re)start passes here, so the LAN-published node ports get their source rule
-    # (or are held on loopback) before anything listens on them (#2616).
+    # Every container start gets the LAN source rule first, or a loopback fallback (#2616).
     apply_lan_guard
+    lan_guard_stop_rebound_nodes || {
+        lan_guard_check_now || true
+        warn "A node with an old published bind could not be stopped; the LAN rule was rechecked."
+        return 1
+    }
     # Reapply egress above the LAN jump; retain choice markers until live removal is proved.
     local egress_rc=0 choice_marker selected_ips firewall_enabled choice_active=0
     choice_marker=$(tor_egress_choice_marker)

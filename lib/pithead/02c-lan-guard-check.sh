@@ -1,3 +1,43 @@
+# Guard old container publishes and newly requested binds before apply commits a staged .env.
+lan_guard_transition_ports() { # <newenv>
+    local kp p ports=()
+    for p in $(lan_guard_watched_ports); do ports+=("$p"); done
+    for kp in $LAN_GUARD_BINDS; do
+        p=${kp#*:}
+        case "$(env_get_file "$1" "${kp%%:*}")" in
+        '' | 127.0.0.1) ;;
+        *) [[ " ${ports[*]} " == *" $p "* ]] || ports+=("$p") ;;
+        esac
+    done
+    printf '%s\n' "${ports[@]}"
+}
+
+lan_guard_arm_transition() { # <newenv>: before apply commits it
+    local p rc=0 containers networks ports=()
+    for p in $(lan_guard_transition_ports "$1"); do ports+=("$p"); done
+    [ "${#ports[@]}" -gt 0 ] || return 0
+    apply_lan_guard "${ports[@]}"
+    lan_guard_enforced "${ports[@]}" || rc=$?
+    if [ "$rc" = 4 ]; then
+        # Only the first network creation can supply a missing FORWARD jump. A stopped
+        # container or an existing network could still start with the port exposed.
+        if containers=$(docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.Names}}' 2>/dev/null) &&
+            networks=$(docker network ls --format '{{.Name}}' 2>/dev/null); then
+            [ -n "$containers" ] || grep -qxF mining_net <<<"$networks" || rc=0
+        fi
+    fi
+    if [ "$rc" -ne 0 ] || ! lan_guard_marker_current; then
+        if [ "$rc" -ne 0 ]; then
+            warn "lan-guard:transition-not-armed — $(lan_guard_reason "$rc")."
+        else
+            warn "lan-guard:transition-not-armed — the boot marker does not match this boot."
+        fi
+        lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
+        lan_guard_check_now || true
+        return 1
+    fi
+}
+
 # Take the mutation lock only if free. A long apply/upgrade must not delay an emergency stop.
 lan_guard_check() {
     local rc

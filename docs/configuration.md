@@ -287,6 +287,9 @@ The rule needs root: `sudo` with `iptables` on the Docker install, `nft` on the 
 `pithead` installs it on every `up`, `apply` and `upgrade` and removes it on `down`. When it cannot
 install the rule, it keeps the ports on `127.0.0.1` for that start instead of publishing them
 without it. `./pithead doctor` then says the ports are held and why.
+When a LAN-access switch turns off, `pithead` stops a still-running node with the old published
+bind before it removes that port's rule. If the following Compose start fails, the old node stays
+stopped instead of listening without the rule. Run `./pithead up` after fixing the failure.
 
 A reboot clears the rule. On the Docker install, `pithead` therefore installs two units.
 `pithead-lan-guard.service` runs before `pithead-egress.service` and `docker.service` and puts the
