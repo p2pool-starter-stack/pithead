@@ -1,0 +1,13 @@
+[Unit]
+Description=Pithead address watch — re-render the dashboard certificate when the machine's addresses change
+ConditionPathIsMountPoint=/data
+ConditionPathExists=/data/pithead/config.json
+After=pithead-boot.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/data/pithead
+Environment=PITHEAD_ENGINE=podman
+Environment=HOME=/root
+Environment=USER=root
+ExecStart=/usr/local/sbin/pithead-address-watch

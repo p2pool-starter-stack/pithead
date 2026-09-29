@@ -1,0 +1,10 @@
+[Unit]
+Description=Pithead address watch — check the machine's addresses every five minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

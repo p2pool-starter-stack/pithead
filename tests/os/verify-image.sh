@@ -163,6 +163,7 @@ chk "hugepage reservation baked (RandomX dataset must land in hugetlbfs)" 'grep 
 # The low-RAM sizing that corrects that sysctl at boot: without it a small machine gets the
 # silent 6 GiB carve-out back.
 chk "hugepages sizing unit enabled (low-RAM boots degrade loudly, not silently)" 'test -L "$ROOT/etc/systemd/system/multi-user.target.wants/pithead-hugepages.service"'
+chk "address watch timer enabled and its script executable (#2463)" 'test -L "$ROOT/etc/systemd/system/timers.target.wants/pithead-address-watch.timer" && test -x "$ROOT/usr/local/sbin/pithead-address-watch"'
 chk "hugepages sizing script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-hugepages"'
 # The pool's second writer (#1724): the miner unit must not be able to grow nr_hugepages through either sysfs subtree xmrig writes. The live unit's readback is the battery's; this pins the ship.
 chk "miner unit drop-in fences BOTH hugepage sysfs subtrees (#1724)" 'grep -qxF "ReadOnlyPaths=/sys/devices/system/node /sys/kernel/mm/hugepages" "$ROOT/etc/systemd/system/xmrig.service.d/pithead-hugepages.conf"'

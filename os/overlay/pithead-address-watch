@@ -1,0 +1,40 @@
+#!/bin/bash
+# Keep the dashboard certificate and Caddy's listeners in step with the machine's addresses (#2463).
+#
+# `pithead render` mints the certificate and writes Caddy's site and bind lists from the addresses
+# the box holds AT THAT MOMENT. pithead-boot re-checks them for the first ~15 minutes of a boot
+# (#1265) and then commits; an IPv6 address that arrives later (a SLAAC or ULA prefix from the
+# router) was never covered, so doctor FAILed on it for as long as the box stayed up. This runs from
+# a timer, notices that `hostname -I` no longer matches what the last render saw, and renders again:
+# the mint is idempotent by SAN set, so an unchanged certificate stays put and only a real change of
+# names replaces it. Caddy is restarted only when the certificate or the Caddyfile changed.
+#
+# Not while pithead-boot is still working (its gate loop owns the render then), and not on a box
+# that has no rendered stack yet. Never fails the unit: the next tick tries again, and a failed
+# render leaves the recorded address set unchanged so it is retried.
+set -u
+cd "${PITHEAD_DIR:-/data/pithead}" 2>/dev/null || exit 0
+STATE="${PITHEAD_ADDRESS_WATCH_STATE:-/run/pithead-address-watch}"
+TLS_DIR="${PITHEAD_TLS_DIR:-data/tls}"
+BOOT_UNIT="${PITHEAD_BOOT_UNIT:-pithead-boot.service}"
+
+[ -x ./pithead ] && [ -s .env ] || exit 0
+[ "$(systemctl is-active "$BOOT_UNIT" 2>/dev/null)" = active ] || exit 0
+
+addrs=$(hostname -I 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' ')
+[ -n "$addrs" ] || exit 0
+[ "$addrs" != "$(cat "$STATE" 2>/dev/null)" ] || exit 0
+
+sig() { sha256sum "$TLS_DIR/wizard.crt" Caddyfile 2>/dev/null | cut -d' ' -f1 | tr '\n' ' '; }
+before=$(sig)
+if ! ./pithead render >/dev/null 2>&1; then
+    echo "pithead-address-watch: render failed after the address set changed; retrying on the next tick"
+    exit 0
+fi
+printf '%s' "$addrs" >"$STATE"
+if [ "$before" != "$(sig)" ]; then
+    echo "pithead-address-watch: the machine's addresses changed — re-rendered the dashboard certificate and Caddyfile, restarting Caddy"
+    ${PITHEAD_CADDY_RESTART_CMD:-docker compose restart caddy} >/dev/null 2>&1 ||
+        echo "pithead-address-watch: Caddy did not restart; it picks the new files up on its next start"
+fi
+exit 0
