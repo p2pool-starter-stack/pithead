@@ -80,3 +80,5 @@ timeout"
 run_case one
 assert_eq "one released miner does not satisfy the wait" "$?" 9
 assert_eq "both miners are required to finish the wait" "$(tail -1 "$WAIT_LOG")" timeout
+
+[ "$IT_FAIL" -eq 0 ]
