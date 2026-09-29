@@ -54,6 +54,8 @@ only the keys you want to override.
   `tari.mode` between `local`, `remote` and `off`, toggling pruning, changing a payout address,
   exposing the RPC to your LAN, or moving a data directory.
 - It regenerates the `.env`, Caddy, and Tari configs and recreates only the containers that need it.
+  Enabling or disabling payout confirmation does not restart Tor; its onion services follow the
+  local Monero and Tari node modes.
 - It does not touch GRUB or rotate the proxy token. It re-provisions Tor only when a node switches
   remote→local, to mint the inbound onion that remote mode never provisioned. If nothing changed, it
   does nothing.
@@ -284,9 +286,34 @@ addresses is not supported.
 The rule needs root: `sudo` with `iptables` on the Docker install, `nft` on the appliance.
 `pithead` installs it on every `up`, `apply` and `upgrade` and removes it on `down`. When it cannot
 install the rule, it keeps the ports on `127.0.0.1` for that start instead of publishing them
-without it. `./pithead doctor` then says the ports are held and why. A doctor FAIL means a port is
-published on every interface while the rule is missing, for example after a reboot restarted the
-containers; `./pithead up` reinstalls it.
+without it. `./pithead doctor` then says the ports are held and why.
+
+A reboot clears the rule. On the Docker install, `pithead` therefore installs two units.
+`pithead-lan-guard.service` runs before `docker.service` and puts the rule back.
+`pithead-lan-hold.service` starts the node containers that publish a LAN port (`monerod` for
+`18081` and `18083`, `tari` for `18142`), and only once the guard has succeeded. Docker itself
+does not start those containers: they run with restart policy `no`. If the guard fails at boot,
+they stay stopped rather than listen with no rule, and the hold also checks that the rule is live
+before it starts anything. `docker.service` depends on neither unit, so other containers on the
+host start as usual. A restart policy does not stop a start by hand, so the node containers check
+for themselves: while the rule is live, `pithead` records the host's boot id in `data/lan-guard/`,
+and a node with a LAN bind exits (code 78) before it listens unless that record matches the
+running boot. That covers `docker start`, `docker compose up` or `start` outside `pithead`, and a
+reboot. `./pithead restart` also refuses while a published port has no live rule, and the
+dashboard's Tor auto-heal never starts a stopped `monerod`. When either unit cannot be installed, `pithead` keeps
+the ports on `127.0.0.1`, as it does when the rule itself fails, and `./pithead doctor` warns while
+the rule is live but the guard is not enabled. `pithead` removes both units when every
+`*_lan_access` switch is off, and `uninstall` removes them. The appliance needs neither: its boot
+runs `pithead up`, which installs the rule first.
+
+Turning a `*_lan_access` switch on has a cost on the Docker install: Docker no longer restarts a
+crashed `monerod` or `tari`. It stays down until `./pithead up` or the next boot. `./pithead doctor`
+reports a node that is down with the reason, either held since boot because the guard failed (see
+`journalctl -u pithead-lan-guard`) or exited with its exit code. It also reports a running node
+whose restart policy would let Docker start it before the rule. The dashboard sends the same
+verdict as a `container_unhealthy` alert after two minutes (see [Telegram](telegram.md)). In
+every case, fix the cause and run `./pithead up`. A doctor FAIL that a port is published on every
+interface while the rule is missing is also fixed by `./pithead up`.
 
 ## Data directories
 

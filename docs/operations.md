@@ -542,7 +542,7 @@ want it gone.
 | images | every ref from `docker compose config --images` |
 | named volumes | `caddy_data`, `wallet_data`, `tari_wallet_db` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues. On startup, `tari-wallet` repairs a root-owned volume before running as uid 1000. Uninstall removes the Tari wallet volume even when its payout profile is disabled, after checking its Compose ownership labels. If Docker cannot list, inspect, or remove that volume, uninstall stops before deleting `.env` so the operator can retry. |
 | systemd units | `pithead-control.path` / `.service`, this checkout's only |
-| firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit |
+| firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit; the LAN-only source rule, its `pithead-lan-guard.service` boot unit and `pithead-lan-hold.service` |
 | rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
 | derived state dirs | `data/control/` (control spool + audit trail), `data/clearnet-state/`, `data/caddy-logs/`, `data/proxy-tls/` (the stratum TLS keypair), and `data/tari-wallet-secret.env` (the Tari view-key secret) — each removed individually by path, never `rm -rf data/` |
 | version symlink | `<parent>/current`, only when it points at this checkout |

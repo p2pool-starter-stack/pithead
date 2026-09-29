@@ -627,7 +627,19 @@ and `--list` prints it).
 - LAN ports take LAN sources only (`local-pruned-main-rpclan` row, which turns on all three
   `*_lan_access` switches). Each published node port is dialled from a network namespace on a veth
   to the host: from `198.51.100.2` the dial must fail, from `10.254.254.2` it must connect
-  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)).
+  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)). The row then strips the
+  rule as a reboot does, checks that the non-private dial now connects, runs
+  `pithead-lan-guard.service` on the bench, and dials again: non-private refused, private through
+  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)). Then it stops the nodes,
+  strips the rule, makes the guard's iptables step fail with a runtime drop-in, and applies
+  dockerd's boot restore by each node's restart policy: the nodes stay stopped, every non-private
+  dial is refused, and doctor names the hold. Then `docker compose start`, `docker compose up
+  --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
+  is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the nodes
+  running, `remove_lan_guard` refuses and the rule stays live. The restore proof records
+  `pithead-lan-guard.service` and `pithead-lan-hold.service` before the run and restores each one
+  as it does the egress units: a unit the run added is removed and checked absent, including from
+  the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
 - Stratum TLS is live (`p2pool.stratum_tls=true` row only). A TLS handshake against the published

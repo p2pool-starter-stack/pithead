@@ -6,8 +6,9 @@ isn't spent. Each guard is pinned separately, so inverting or deleting any of th
 test. The actual container restart against a real stuck guard is tier 4 (the live bench).
 """
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import pytest
 import requests
 
 from mining_dashboard.service.health.tor_heal import (
@@ -56,6 +57,16 @@ class _FailingDocker:
     async def start(self, container, **kwargs):
         self.calls.append(("start", container))
         return False
+
+
+@pytest.fixture(autouse=True)
+def _monerod_running():
+    """The heal cycles monerod only when the read proxy says it runs (#2749); running by default."""
+    with patch(
+        "mining_dashboard.service.health.tor_heal.get_container_health",
+        AsyncMock(return_value={"monerod": {"running": True}}),
+    ):
+        yield
 
 
 def _healer(clock=None, enabled=True, probe=None, notify=None, docker=None, restart_monerod=None):
@@ -239,6 +250,20 @@ class TestCheck:
             ("start", "monerod"),
         ]
         assert any("Restarting the tor container" in r.message for r in caplog.records)
+
+    async def test_a_stopped_monerod_is_not_started(self):
+        # #2749: a held monerod (LAN guard failed at boot) must stay down, or its LAN ports open.
+        clock = _Clock()
+        docker = _FakeDocker()
+        h = _healer(clock, probe=lambda: False, docker=docker)
+        with patch(
+            "mining_dashboard.service.health.tor_heal.get_container_health",
+            AsyncMock(return_value={"monerod": {"running": False}}),
+        ):
+            await h.check()
+            clock.t += BROKEN_AFTER_SEC
+            await h.check()
+        assert docker.calls == [("stop", "tor"), ("start", "tor")]
 
     async def test_remote_node_heal_touches_only_tor(self):
         # A remote monerod has no container here — the heal must stay tor-scoped.
