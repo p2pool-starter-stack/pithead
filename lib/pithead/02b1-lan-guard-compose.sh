@@ -1,3 +1,18 @@
+# The e2e keep-running promise cannot survive a stopped LAN node. Refuse rather than silently
+# recreate one that the harness said must continue uninterrupted.
+lan_guard_check_keep_running() {
+    local stopped
+    [ -n "${PITHEAD_KEEP_RUNNING:-}" ] || return 0
+    for stopped in "${LAN_GUARD_STOPPED_SERVICES[@]}" "${LAN_GUARD_REBOUND_SERVICES[@]}"; do
+        case " $PITHEAD_KEEP_RUNNING " in
+        *" $stopped "*)
+            warn "Cannot keep $stopped running: its LAN rule is unavailable; it was stopped for safety."
+            return 1
+            ;;
+        esac
+    done
+}
+
 # Compose names a scope only when a service is positional. The other bare values are option values.
 lan_guard_scoped_up() {
     while [ "$#" -gt 0 ]; do
@@ -24,7 +39,7 @@ lan_guard_restore_stopped() {
 # Recreate stopped LAN nodes even when the caller names only another service.
 lan_guard_compose_up() { # <compose up arguments>
     local rc=0 up_args=("$@")
-    if lan_guard_scoped_up "$@"; then up_args+=("${LAN_GUARD_STOPPED_SERVICES[@]}"); fi
+    if lan_guard_scoped_up "$@"; then up_args+=("${LAN_GUARD_STOPPED_SERVICES[@]}" "${LAN_GUARD_REBOUND_SERVICES[@]}"); fi
     # The dashboard bind-mounts this exact lock inode across versioned installs.
     PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}" || rc=$?
     if [ "$rc" = 0 ]; then
@@ -39,7 +54,7 @@ lan_guard_compose_up() { # <compose up arguments>
 # a successful readback gets a marker and a second pass with the configured LAN binds.
 finish_lan_guard_after_up() { # <original compose up arguments>
     [ "${LAN_GUARD_STAGED:-0}" = 1 ] || return 0
-    local kp check_rc=0 ports=()
+    local kp check_rc=0 ports=() up_args=("$@") i
     for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
     lan_guard_enforced "${ports[@]}" || check_rc=$?
     if [ "$check_rc" != 0 ]; then
@@ -51,7 +66,11 @@ finish_lan_guard_after_up() { # <original compose up arguments>
         return 0
     }
     for kp in $(lan_guard_published); do export "${kp%%:*}=$(env_get "${kp%%:*}")"; done
-    if PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "$@"; then
+    # Images were already pulled by the successful loopback pass; do not fetch them again.
+    for ((i = 0; i + 1 < ${#up_args[@]}; i++)); do
+        [ "${up_args[$i]}" = --pull ] && up_args[$((i + 1))]=never
+    done
+    if PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}"; then
         log "LAN-only sources enforced on port(s) ${ports[*]} after Docker created its network."
         return 0
     fi

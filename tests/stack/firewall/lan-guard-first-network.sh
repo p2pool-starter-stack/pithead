@@ -39,6 +39,7 @@ assert_not_contains "...and cannot start compose" "$(cat "$LG_COMPOSE")" "compos
 : >"$LG_COMPOSE"
 lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=never lg 'lan_guard_unmark() { return 1; }; compose_up -d')"
 assert_contains "a marker that cannot be cleared refuses startup" "$lg_out" "could not delete"
+assert_contains "...but the old publisher was stopped first" "$(cat "$LG_COMPOSE")" "docker-stop=cid123"
 assert_not_contains "...and cannot start compose" "$(cat "$LG_COMPOSE")" "compose-bind="
 
 : >"$LG_COMPOSE"
@@ -64,6 +65,17 @@ lg_out="$(lg 'lan_guard_scoped_up --attach tari -d && echo scoped || echo full')
 assert_eq "an option value is not a Compose service scope" "$lg_out" "full"
 lg_out="$(lg 'lan_guard_scoped_up --menu tor && echo scoped || echo full')"
 assert_eq "a boolean option still leaves the named service in scope" "$lg_out" "scoped"
+: >"$LG_COMPOSE"
+lg_out="$(PITHEAD_KEEP_RUNNING=tari LG_LIVE=0 lg 'compose_up -d tor')"
+lg_rc=$?
+assert_rc "a required LAN stop refuses the keep-running promise" "$lg_rc" "1"
+assert_contains "...names the stopped service" "$lg_out" "Cannot keep tari running"
+assert_not_contains "...and never restarts it as a kept node" "$(cat "$LG_COMPOSE")" "compose-bind="
+: >"$LG_ARGS_LOG"
+rm -f "$LG_JUMP_FILE"
+LG_LIVE=1 LG_FORWARD_JUMP=after lg 'compose_up --pull always -d' >/dev/null
+assert_contains "the loopback pass honors the requested pull" "$(head -n 1 "$LG_ARGS_LOG")" "--pull always"
+assert_contains "the LAN pass reuses pulled images" "$(tail -n 1 "$LG_ARGS_LOG")" "--pull never"
 : >"$LG_COMPOSE"
 lg_out="$(LG_LIVE=0 lg 'apply_tor_egress_firewall() { return 1; }; clearnet_sync_active() { return 0; }; compose_up -d tor')"
 lg_rc=$?

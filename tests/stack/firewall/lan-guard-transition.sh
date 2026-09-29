@@ -53,5 +53,16 @@ assert_eq "Tari switch-off reaches Compose after stopping Tari" "$lg_rc" "1"
 assert_eq "Tari is stopped when its old gRPC bind is withdrawn" "$(cat "$LG_RUNNING_FILE")" ""
 assert_eq "Tari stop precedes firewall replacement and failed Compose" \
     "$(cat "$LG_ORDER")" $'stop:tari\nrestore\ncompose'
+printf 'tari\n' >"$LG_RUNNING_FILE"
+: >"$LG_ARGS_LOG"
+LG_LIVE=1 lg 'compose_up -d tor' >/dev/null
+assert_contains "a scoped up restarts a node switched to loopback" "$(cat "$LG_ARGS_LOG")" " tor tari"
+printf 'tari\n' >"$LG_RUNNING_FILE"
+: >"$LG_ARGS_LOG"
+lg_out="$(PITHEAD_KEEP_RUNNING=tari LG_LIVE=1 lg 'compose_up -d tor')"
+lg_rc=$?
+assert_eq "a switch-off stop refuses the keep-running promise" "$lg_rc" "1"
+assert_contains "the stopped node is named" "$lg_out" "Cannot keep tari running"
+assert_eq "a kept node is not silently restarted" "$(cat "$LG_ARGS_LOG")" ""
 mv "$LGD/.env.transition-original" "$LGD/.env"
 unset LG_RUNNING_FILE

@@ -53,6 +53,7 @@ lan_guard_published() {
 # the old all-interface listener running after its jump has been removed.
 lan_guard_stop_rebound_nodes() {
     local names service name kp bind published stop_node
+    LAN_GUARD_REBOUND_SERVICES=()
     for service in monerod tari; do
         names=$(docker ps --filter label=com.docker.compose.project=pithead \
             --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
@@ -77,6 +78,7 @@ lan_guard_stop_rebound_nodes() {
             done
             [ "$stop_node" = 1 ] || continue
             docker stop "$name" >/dev/null || return 1
+            [[ " ${LAN_GUARD_REBOUND_SERVICES[*]} " == *" $service "* ]] || LAN_GUARD_REBOUND_SERVICES+=("$service")
             names=$(docker ps --filter label=com.docker.compose.project=pithead \
                 --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
             grep -qxF "$name" <<<"$names" && return 1
@@ -217,11 +219,11 @@ apply_lan_guard() {
     [ "$rc" = 0 ] && [ "$LAN_GUARD_STAGED" = 0 ] && ! lan_guard_mark 2>/dev/null && rc=7
     if [ "$rc" = 0 ]; then
         if [ "$LAN_GUARD_STAGED" = 1 ]; then
+            lan_guard_stop_published || return 1
             lan_guard_unmark || {
                 warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
                 return 1
             }
-            lan_guard_stop_published || return 1
             for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
             log "LAN-only rules staged until Docker creates its network; starting the node ports on 127.0.0.1."
             return 0
@@ -230,11 +232,11 @@ apply_lan_guard() {
         return 0
     fi
     LAN_GUARD_STAGED=0
+    lan_guard_stop_published || return 1
     lan_guard_unmark || {
         warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
         return 1
     }
-    lan_guard_stop_published || return 1
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
     warn "lan-guard:not-installed — could not enforce LAN-only sources on port(s) ${ports[*]} ($(lan_guard_reason "$rc")). Holding them on 127.0.0.1 until it can; see './pithead doctor'."
 }

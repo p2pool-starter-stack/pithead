@@ -84,6 +84,7 @@ compose_up() {
         return 1
     }
     apply_lan_guard || return 1
+    lan_guard_check_keep_running || return 1
     # Reapply egress above the LAN jump; retain choice markers until live removal is proved.
     local egress_rc=0 choice_marker selected_ips firewall_enabled choice_active=0
     choice_marker=$(tor_egress_choice_marker)
