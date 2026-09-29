@@ -4,8 +4,9 @@
 # any bench work, exactly like the --scenario mode restriction next to its call site: --mode check
 # runs nothing but --check, so a destructive addition here would join a run the mode promises never
 # touches anything.
-validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS
+validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS and HARNESS_SCENARIO_ARGS
     HARNESS_PHASE_ARGS=""
+    HARNESS_SCENARIO_ARGS=""
     [ "${#HARNESS_ARGS[@]}" -eq 0 ] && return 0
     [ "$MODE" != "check" ] || die "--harness-arg is not supported with --mode check."
     local i=0 arg next
@@ -19,7 +20,7 @@ validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS
         --scenario)
             next="${HARNESS_ARGS[$((i + 1))]:-}"
             [[ "$next" =~ ^[a-z0-9-]+$ ]] || die "--harness-arg --scenario needs a name matching ^[a-z0-9-]+\$ as the NEXT --harness-arg (got '$next')."
-            HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS --scenario $(quote_arg "$next")"
+            HARNESS_SCENARIO_ARGS="$HARNESS_SCENARIO_ARGS --scenario $(quote_arg "$next")"
             i=$((i + 2))
             ;;
         *)

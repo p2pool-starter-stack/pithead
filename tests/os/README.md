@@ -77,7 +77,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd
   banner reaches the serial console, the first-boot wizard announces its URL + one-time token,
-  and the token gate answers. Also asserts machine-id is stable across a plain reboot (#895) —
+  and the token gate answers. Assert serial getty is active on the guest's UART; give its installed
+  condition a type-0 port for five minutes and require an inactive unit with no restarts or terminal
+  errors, then restore the UART, require the unit active again and check a clean hangup respawns
+  the login prompt. Also assert
+  machine-id is stable across a plain reboot (#895) —
   the empty-baked image with no restore mechanism would regenerate a new one every boot — and,
   across that same reboot, that journald follows the restored id (#1659) and writes the one
   persistent journal home, the `/data/pithead/journal` bind, with the boot list intact (#1791:
