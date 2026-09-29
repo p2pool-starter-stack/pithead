@@ -203,6 +203,7 @@ proof_probe() { # <baseline-census> <live-census> [fail-census] -> verify_restor
         chain_restore_proof() { return 0; }
         restore_egress_boot_unit() { return 0; }
         restore_egress_check_units() { return 0; }
+        restore_lan_unit() { return 0; }
         ok() { :; }
         warn() { :; }
         on_bench() {
@@ -344,6 +345,9 @@ assert_eq "a unit that survives the removal fails the restore proof" "$(egress_r
 assert_eq "an unrecorded baseline fails closed and removes nothing" "$(egress_restore "" present)" "1 present 0"
 assert_contains "verify_restore_proof runs the egress unit restore" "$(declare -f verify_restore_proof)" "restore_egress_boot_unit"
 assert_contains "e2e.sh records the unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"'
+
+# shellcheck source=tests/integration/tools/restore-lan-unit-proof-cases.sh
+source "$HERE/../tools/restore-lan-unit-proof-cases.sh"
 
 # --- #2599: the egress check pair goes back the same way ------------------------------------------
 check_restore() { # <before> <units now> [sticky] -> "<rc> <units after> <removal commands sent>"
