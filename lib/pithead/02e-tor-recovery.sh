@@ -69,6 +69,13 @@ tor_recovery_stop_changed_identity() {
     warn "Tor identity changed; Tor is stopped. Restore the identity before starting Tor."
 }
 
+tor_recovery_redial_monerod() {
+    # A real Tor restart can leave a local node holding dead SOCKS peers.
+    if docker inspect monerod --format '{{.State.Running}}' 2>/dev/null | grep -qx true; then
+        docker compose restart monerod || warn "Monero re-dial failed; restart monerod manually."
+    fi
+}
+
 tor_recovery_restore_start() { # <data dir> <original identity hashes>; recover after failed state operation
     local dir="$1" identities="$2"
     if [ "$(tor_recovery_identities "$dir")" != "$identities" ]; then
@@ -84,6 +91,7 @@ tor_recovery_restore_start() { # <data dir> <original identity hashes>; recover 
         tor_recovery_stop_changed_identity || true
         return 1
     fi
+    tor_recovery_redial_monerod
 }
 
 tor_recover() { # check | apply; explicit operator action only
@@ -207,10 +215,7 @@ tor_recover() { # check | apply; explicit operator action only
         mutation_lock_release
         return 1
     fi
-    # A real Tor restart can leave monerod holding dead SOCKS peers. Only local Monero is cycled.
-    if docker inspect monerod --format '{{.State.Running}}' 2>/dev/null | grep -qx true; then
-        docker compose restart monerod || warn "Monero re-dial failed; restart monerod manually."
-    fi
+    tor_recovery_redial_monerod
     for ((i = 0; i < 60; i++)); do
         if [ "$(docker inspect tor --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ]; then
             info=$(tor_recovery_info) || info='{}'
