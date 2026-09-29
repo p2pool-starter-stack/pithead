@@ -4,7 +4,7 @@
 # A live monerod with no peers must stop reading healthy on every layer. Like the Tari leg (#2464), an
 # iptables rule in monerod's own network namespace drops its traffic to the tor container, so the RPC
 # keeps answering and the process stays up while its outgoing peers die. Asserts, on the real clocks
-# (monero_health.py, build/monero/healthcheck.sh): the node's first 0-outgoing-peer reading (latency
+# (monero_health.py, build/monero/healthcheck.sh, peers read from the in-container helper, #2921): the first 0-outgoing-peer reading (latency
 # recorded); then within the 10-minute bound plus a poll, the verdict red with the numbers, the
 # container's docker health unhealthy, doctor non-zero, status naming it, the card's payload red, and
 # the alert at a loopback webhook; no automatic restart; then, the rule removed, the operator's fix
@@ -54,11 +54,12 @@ monero_strand_abort() {
 
 monero_health_field() { jq_get "$(api_state)" ".monero.health.$1"; }
 _pred_monero_level() { [ "$(monero_health_field level)" = "$1" ]; }
-# monerod's own outgoing count, the field the dashboard and healthcheck both read.
-monero_out_peers() {
-    rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env | cut -d= -f2-); p=$(grep -E "^MONERO_NODE_PASSWORD=" .env | cut -d= -f2-);
-        curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info | jq -r .outgoing_connections_count' 2>/dev/null
-}
+# monerod's real peer counts (#2921), from the fixed in-container helper that reads the admin RPC on the
+# container's loopback: the published RPC is restricted and answers 0 for every count. Empty when the
+# helper gives no reading, which no predicate below reads as zero or as peers.
+monero_peer_counts() { rx "docker exec monerod /usr/local/bin/monerod-peers.sh" 2>/dev/null; }
+# The outgoing count the dashboard's verdict and the healthcheck both act on.
+monero_out_peers() { monero_peer_counts | jq -r '.outgoing // empty' 2>/dev/null; }
 _pred_monero_zero_out() { [ "$(monero_out_peers)" = 0 ]; }
 _pred_monero_has_peers() { [ "$(monero_out_peers)" -gt 0 ] 2>/dev/null; }
 _pred_monerod_docker_health() { [ "$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)" = "$1" ]; }
@@ -68,13 +69,14 @@ _pred_monero_recovery_alerted() { rx "grep -q 'Monero node has outgoing peers ag
 # recreate compare, and a block at the timeout, taken before the restore replaces the containers.
 monero_peer_sample() {
     local i t
-    # shellcheck disable=SC2016  # the snippet expands on the box
-    i="$(rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env | cut -d= -f2-); p=$(grep -E "^MONERO_NODE_PASSWORD=" .env | cut -d= -f2-);
-        curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info | jq -c "{out: .outgoing_connections_count, in: .incoming_connections_count, white: .white_peerlist_size, grey: .grey_peerlist_size, height, synchronized}"' 2>/dev/null)"
+    i="$(monero_peer_counts)"
     t="$(rx "docker logs --since 60s tor 2>&1 | grep -E 'Bootstrapped|Retrying on a new circuit|resolve failed' | cut -c17- | sort | uniq -c | sort -rn | head -3 | tr -s ' ' | tr '\n' ';'" 2>/dev/null)"
     it_log "peer sample: monerod ${i:-unreadable}; tor 60s: ${t:-quiet}; tor $(rx "docker inspect -f '{{.State.Health.Status}} since {{.State.StartedAt}}' tor" 2>/dev/null); monerod since $(monero_started_at)"
 }
-_pred_monero_has_peers_sampled() { monero_peer_sample; _pred_monero_has_peers; }
+_pred_monero_has_peers_sampled() {
+    monero_peer_sample
+    _pred_monero_has_peers
+}
 monero_peer_wait_diagnostics() {
     local l
     it_log "peer wait diagnostics (read-only): tor-recover check, then the log tails"
@@ -84,8 +86,30 @@ monero_peer_wait_diagnostics() {
         rx "docker logs --tail 60 monerod 2>&1" 2>&1 | sed 's/^/monerod: /'
     } | while IFS= read -r l; do it_log "  $(printf '%s' "$l" | redact)"; done
 }
+# The RPC boundary (#2921): the admin listener answers only inside monerod's container, with the login; the
+# published listener stays restricted and authenticated. A refused connection is curl's code 000.
+_monero_http_code() { rx "curl -s --max-time 5 -o /dev/null -w '%{http_code}' $*" 2>/dev/null; }
+assert_monero_rpc_boundary() {
+    local ip
+    ip="$(rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' monerod" 2>/dev/null | head -n1)"
+    assert_contains "monero-stranded: the in-container helper reads real counts from the admin listener" "$(monero_peer_counts)" '"outgoing":'
+    assert_eq "monero-stranded: the admin listener rejects an unauthenticated request inside the container" \
+        "$(rx "docker exec monerod curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18085/get_info" 2>/dev/null)" "401"
+    assert_eq "monero-stranded: the admin listener is not published on the host's loopback" "$(_monero_http_code http://127.0.0.1:18085/get_info)" "000"
+    assert_eq "monero-stranded: the admin listener is not open on the host's IPv6 loopback" "$(_monero_http_code -g 'http://[::1]:18085/get_info')" "000"
+    assert_eq "monero-stranded: the admin listener is not reachable at monerod's bridge address" "$(_monero_http_code "http://${ip:-0.0.0.0}:18085/get_info")" "000"
+    if rx "docker exec dashboard python3 -c \"import socket,sys; socket.create_connection(('${ip:-0.0.0.0}', 18085), 4)\"" >/dev/null 2>&1; then
+        it_fail "monero-stranded: another container cannot reach the admin listener" "connected from the dashboard container"
+    else
+        it_pass "monero-stranded: another container cannot reach the admin listener"
+    fi
+    assert_eq "monero-stranded: the published listener still rejects an unauthenticated request" "$(_monero_http_code http://127.0.0.1:18081/get_info)" "401"
+    assert_contains "monero-stranded: the published listener is restricted (its counts are redacted, so no verdict may read them)" \
+        "$(rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env | cut -d= -f2-); p=$(grep -E "^MONERO_NODE_PASSWORD=" .env | cut -d= -f2-);
+            curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info | jq -c "{restricted, o: .outgoing_connections_count}"' 2>/dev/null)" '"restricted":true'
+}
 monero_started_at() { rx "docker inspect -f '{{.State.StartedAt}}' monerod" 2>/dev/null; }
-monero_strand_state() { echo "verdict '$(monero_health_field level)', peers $(monero_health_field peers), docker health '$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)'"; }
+monero_strand_state() { echo "verdict '$(monero_health_field level)', peers $(monero_health_field peers_out) out / $(monero_health_field peers_in) in, docker health '$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)'"; }
 
 run_monero_stranded() {
     # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
@@ -102,6 +126,7 @@ run_monero_stranded() {
         it_fail "monero-stranded: tor address" "empty — fault not injected"
         return
     fi
+    assert_monero_rpc_boundary
     monero_hook_start
     if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq --arg u "http://127.0.0.1:$MONERO_HOOK_PORT/monero" '.notifications.webhooks=[$u] | .notifications.tor=false')" ||
         ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then

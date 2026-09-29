@@ -21,11 +21,11 @@ def _health(health):
     """Display fields for the node verdict; ``level`` is green/red/unknown."""
     health = health or {}
     level = health.get("level", "unknown")
-    if not health.get("peers_visible", True) or level == "unknown":
+    if level == "unknown":
         why = (
             "Node not answering — see its down status"
             if health.get("reachable") is False
-            else "Peers not visible — no health verdict for this node"
+            else "Peers not visible right now — no health verdict"
         )
         return {
             "level": "unknown",

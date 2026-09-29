@@ -13,13 +13,6 @@ from mining_dashboard.helper.http import bounded_get
 logger = logging.getLogger("MoneroClient")
 
 
-def _count(value):
-    """A connection count from get_info, or None when the key is absent or not a number."""
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return max(value, 0)
-
-
 class MoneroClient:
     """
     Reads monerod state from its `get_info` RPC instead of scraping docker logs.
@@ -111,11 +104,10 @@ class MoneroClient:
         target = int(info.get("target_height", 0) or 0)
         db_size = int(info.get("database_size", 0) or 0)
         synchronized = bool(info.get("synchronized", False))
-        # Peer counts (#2499): the same get_info payload carries them. A payload without the keys
-        # (an older monerod, a restricted proxy) reads as None — no verdict — never as 0 peers.
-        peers_in = _count(info.get("incoming_connections_count"))
-        peers_out = _count(info.get("outgoing_connections_count"))
-        health = {"height": height, "peers_in": peers_in, "peers_out": peers_out}
+        # Peer counts are NOT read here (#2921): this endpoint is restricted, and a restricted
+        # get_info answers 0 for them. They come from the healthcheck's observation
+        # (collector.containers.get_monero_peers), attached by the caller.
+        health = {"height": height}
 
         # `synchronized` is monerod's authoritative "caught up" flag; once synced it also
         # reports target_height: 0. Trust it over the height comparison (mirrors how the

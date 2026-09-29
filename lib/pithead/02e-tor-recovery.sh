@@ -1,18 +1,27 @@
 # Explicit recovery for saturated Tor circuit history. Never called by clearnet probing.
 TOR_RECOVERY_COOLDOWN_SEC=21600
 
+# monerod's get_info with the REAL outgoing count (#2921). The published RPC is restricted and answers 0
+# for the connection counts, so the count is taken from the in-container helper (which reads the admin
+# listener on the container's loopback, with the login from the container's environment) and replaces
+# the redacted field. When the helper gives no reading the field is null: neither the "0 outgoing" of the
+# signature nor the "> 0" of the verification is then true, so an unavailable count never reads as either.
 tor_recovery_info() {
-    local user pass url
+    local user pass url body peers out
     user=$(env_get MONERO_NODE_USERNAME) || return 1
     pass=$(env_get MONERO_NODE_PASSWORD) || return 1
     url=$(env_get MONERO_RPC_URL) || return 1
     [ -n "$url" ] || url=http://127.0.0.1:18081
     if [ -n "$user" ]; then
-        printf 'user = %s\n' "$(printf '%s:%s' "$user" "$pass" | jq -Rs .)" |
-            curl -fsS --max-time 8 --max-filesize 65536 --digest --config - "$url/get_info"
+        body=$(printf 'user = %s\n' "$(printf '%s:%s' "$user" "$pass" | jq -Rs .)" |
+            curl -fsS --max-time 8 --max-filesize 65536 --digest --config - "$url/get_info") || return 1
     else
-        curl -fsS --max-time 8 --max-filesize 65536 "$url/get_info"
+        body=$(curl -fsS --max-time 8 --max-filesize 65536 "$url/get_info") || return 1
     fi
+    peers=$(docker exec monerod /usr/local/bin/monerod-peers.sh 2>/dev/null) || peers=
+    out=$(printf '%s' "$peers" | jq -c 'if (.outgoing | type) == "number" and .outgoing >= 0 then .outgoing else null end' 2>/dev/null) || out=null
+    [ -n "$out" ] || out=null
+    printf '%s' "$body" | jq -c --argjson out "$out" '.outgoing_connections_count = $out'
 }
 
 tor_recovery_state_saturated() { # <state file>

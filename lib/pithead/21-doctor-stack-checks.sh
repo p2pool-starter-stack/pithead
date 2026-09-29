@@ -375,7 +375,7 @@ check_monerod_synchronized() {
         dr_info "Monero sync check skipped — monerod's RPC did not answer (the container table above shows whether it is still starting)."
         return 0
     fi
-    monerod_peers_and_tip "$body" "$user" "$pass" "$url"
+    monerod_peers_and_tip "$user" "$pass" "$url"
     if printf '%s' "$body" | jq -e '(.status == "OK") and (.synchronized == true)' >/dev/null 2>&1; then
         dr_ok "monerod reports synchronized with the Monero network."
     else

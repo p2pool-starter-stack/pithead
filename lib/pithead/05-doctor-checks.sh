@@ -270,25 +270,41 @@ monero_chain_status_line() {
     return 0
 }
 
-# doctor (#2499): the peers and the tip's age next to the sync flag, from the same get_info body plus
-# the last block header. A point-in-time reading, so zero outgoing peers or a tip older than 30
-# minutes is a WARN here; the dashboard's verdict (check_monero_chain) is the sustained one.
-monerod_peers_and_tip() { # <get_info body> <user> <pass> <url>
-    local out inn ts age note="" hdr
-    out=$(printf '%s' "$1" | jq -r '.outgoing_connections_count // empty' 2>/dev/null)
-    inn=$(printf '%s' "$1" | jq -r '.incoming_connections_count // empty' 2>/dev/null)
-    [ -n "$out" ] || return 0
-    if [ -n "$2" ]; then
-        hdr=$(curl -fsS --max-time 8 --digest -u "$2:$3" -H 'Content-Type: application/json' \
-            -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$4/json_rpc" 2>/dev/null)
+# doctor (#2499): the peers and the tip's age next to the sync flag. The published RPC is restricted and
+# answers 0 for the peer counts (#2921), so they come from the fixed helper inside the container, which
+# reads the admin listener on its loopback (`docker exec`; the helper takes its login from the container's
+# environment, so none is passed here). No reading (helper missing, listener down, restricted body) is
+# reported as such and never as zero peers. A point-in-time reading, so zero outgoing peers or a tip older
+# than 30 minutes is a WARN here; the dashboard's verdict (check_monero_chain) is the sustained one.
+monerod_peer_counts() { # print "<out> <in>", or nothing when there is no reading
+    local body out inn
+    body=$(docker exec monerod /usr/local/bin/monerod-peers.sh 2>/dev/null) || return 0
+    out=$(printf '%s' "$body" | jq -r 'if (.outgoing | type) == "number" and .outgoing >= 0 then .outgoing else empty end' 2>/dev/null)
+    inn=$(printf '%s' "$body" | jq -r 'if (.incoming | type) == "number" and .incoming >= 0 then .incoming else empty end' 2>/dev/null)
+    [ -n "$out" ] && [ -n "$inn" ] && printf '%s %s\n' "$out" "$inn"
+    return 0
+}
+monerod_peers_and_tip() { # <user> <pass> <url>
+    local counts out="" inn="" ts age note="" hdr
+    counts=$(monerod_peer_counts)
+    [ -z "$counts" ] || read -r out inn <<<"$counts"
+    if [ -n "$1" ]; then
+        hdr=$(curl -fsS --max-time 8 --digest -u "$1:$2" -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)
     else
         hdr=$(curl -fsS --max-time 8 -H 'Content-Type: application/json' \
-            -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$4/json_rpc" 2>/dev/null)
+            -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)
     fi
     ts=$(printf '%s' "$hdr" | jq -r '.result.block_header.timestamp // empty' 2>/dev/null)
     if [ -n "$ts" ]; then
         age=$(($(date +%s) - ts))
         note=", last block ${age}s ago"
+    fi
+    if [ -z "$out" ]; then
+        dr_info "monerod peers: no reading (the in-container helper gave none)${note}."
+        [ -z "$ts" ] || [ "$age" -le 1800 ] ||
+            dr_warn "monerod's last block is ${age}s old — a stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials."
+        return 0
     fi
     if [ "$out" -eq 0 ] || { [ -n "$ts" ] && [ "$age" -gt 1800 ]; }; then
         dr_warn "monerod peers: ${out} out / ${inn:-?} in${note} — an isolated or stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials."

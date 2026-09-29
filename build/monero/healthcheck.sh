@@ -7,23 +7,35 @@
 # digest auth when MONERO_NODE_USERNAME/MONERO_NODE_PASSWORD are set.
 #
 # Also fails a node with no outgoing peers for MONERO_HEALTH_PEERLESS_SEC (#2499): the RPC answers
-# and `synchronized` stays true on an isolated node, so liveness alone reads green. The peer count
-# comes from the get_info body already fetched; the first zero reading is stamped in /tmp (tmpfs)
-# and any peer clears it. A body without the count (an older monerod) is never a failure.
+# and `synchronized` stays true on an isolated node, so liveness alone reads green. The liveness call
+# is the published, restricted listener; the peer counts are NOT read from it, because a restricted
+# get_info answers 0 for them (#2921). They come from monerod-peers.sh, which reads the admin listener
+# on this container's loopback. The first real zero is stamped in /tmp (tmpfs) and any peer clears it.
+# A helper that gives no reading (listener down, restricted body, missing count) is "unavailable": no
+# stamp, no failure, and no zero. Every run prints one bounded line, which docker keeps in
+# State.Health.Log for the dashboard: `pithead-monero-peers {"outgoing":N,...}` or
+# `pithead-monero-peers unavailable`. No credential or raw response is printed.
 set -eu
 
 stamp=${MONERO_HEALTH_STAMP:-/tmp/monerod-peerless-since}
 # An RPC that does not answer is unhealthy on its own, and ends any zero-peer stretch: the next
 # zero reading starts a fresh bound instead of inheriting a stamp from before a restart.
-body=$(curl -fsS --digest \
+curl -fsS --digest \
     -u "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
-    http://localhost:18081/get_info) || {
+    http://localhost:18081/get_info >/dev/null || {
     rm -f "$stamp"
     exit 1
 }
 
-out=$(printf '%s' "$body" | sed -n 's/.*"outgoing_connections_count": *\([0-9][0-9]*\).*/\1/p' | head -n 1)
-if [ -z "$out" ] || [ "$out" -gt 0 ]; then
+peers=$("${MONERO_PEERS_HELPER:-/usr/local/bin/monerod-peers.sh}" 2>/dev/null) || peers=
+out=$(printf '%s' "$peers" | sed -n 's/.*"outgoing": *\([0-9][0-9]*\).*/\1/p' | head -n 1)
+if [ -z "$out" ]; then
+    echo "pithead-monero-peers unavailable"
+    rm -f "$stamp"
+    exit 0
+fi
+echo "pithead-monero-peers $peers"
+if [ "$out" -gt 0 ]; then
     rm -f "$stamp"
     exit 0
 fi

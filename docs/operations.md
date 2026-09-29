@@ -847,7 +847,7 @@ monitor warns until egress recovers. The feature remains off by default.
 clearnet probe alone cannot authorize a state reset. If Tor repeatedly reports invalid circuit
 build timing and local Monero is peerless and stalled, run `./pithead tor-recover check`. This
 read-only check validates the live Tor data mount and the saturated history signature, then
-compares Monero height, sync and outgoing peers over three minutes. It uses sudo for read-only
+compares Monero height, sync and outgoing peers (from the in-container admin reading above) over three minutes. It uses sudo for read-only
 access to Tor-owned state and identity keys. `./pithead tor-recover apply`
 rechecks the same evidence under the mutation lock, verifies onion identity keys, backs up only
 Tor's `state`, and restarts Tor. It re-dials local Monero after the actual restart, verifies Tor
@@ -880,7 +880,14 @@ Monero sync check skips, so a stranded node is the remote host's problem to dete
 A local monerod can keep `synchronized: true` and a green RPC healthcheck while it has no outgoing
 peers, or while its tip stops moving because every peer sits on the same stale block (#2499). The
 XMR Network card shows **Node Health**, **Peers** and **Height Moved**; the tick means the node is
-at the tip with peers. It turns red, with the numbers, when monerod has had 0 outgoing peers for 10
+at the tip with peers. The published RPC is restricted, and a restricted `get_info` answers 0 for
+every peer count, so the counts come from a second, unrestricted RPC that monerod binds to its own
+container's loopback on an unpublished port (it needs the same login and is not reachable from the
+host, the LAN or other containers). The container's healthcheck reads it and prints one line that
+the dashboard reads from `docker inspect` (`State.Health.Log`); `./pithead doctor` and
+`./pithead tor-recover` read it with `docker exec`. A reading that is missing, older than 90 seconds,
+from before the container's current start or malformed shows as "peers not visible", never as 0
+peers and never as green; a stalled height still turns the card red without it. It turns red, with the numbers, when monerod has had 0 outgoing peers for 10
 minutes (`NODE_STALE_AFTER_SEC`) or its height has not moved for 30 minutes (Monero blocks arrive
 about every 2). A red verdict also fails `./pithead doctor` (doctor's Monero sync check prints the
 peer counts and the last block's age too), adds a `monero chain` line to `./pithead status`, sends a

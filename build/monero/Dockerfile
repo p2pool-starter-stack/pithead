@@ -37,6 +37,11 @@ RUN chmod +x /usr/local/bin/wallet-entrypoint.sh /usr/local/bin/wallet-healthche
 COPY healthcheck.sh /usr/local/bin/monerod-healthcheck.sh
 RUN chmod +x /usr/local/bin/monerod-healthcheck.sh
 
+# The peer counts (#2921): the published RPC is restricted and hides them, so this fixed helper reads the
+# admin RPC on the container's own loopback. The healthcheck and host tools (docker exec) call it.
+COPY peers.sh /usr/local/bin/monerod-peers.sh
+RUN chmod +x /usr/local/bin/monerod-peers.sh
+
 # Run non-root (#255). Reuse ubuntu:24.04's built-in 'ubuntu' user (uid 1000) and keep monerod's
 # data under that user's home — /home/ubuntu/.bitmonero, which is also monerod's native
 # $HOME/.bitmonero default. pithead chowns the blockchain bind-mount to match. The wallets dir

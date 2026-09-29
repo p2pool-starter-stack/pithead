@@ -114,3 +114,29 @@ def test_a_payload_without_counts_is_no_verdict_and_forgets_old_clocks():
     v = mon.observe({"reachable": True, "is_syncing": False})  # log-scrape / older monerod
     assert v["level"] == "unknown"
     assert mon.observe(_sync(out=0))["level"] == "green"  # the earlier zero was not carried over
+
+
+# --- unavailable peer readings (#2921) ---------------------------------------------------------
+def test_unavailable_peers_are_not_green_and_not_zero():
+    mon, _ = _mon()
+    v = mon.observe(_sync(out=None, inn=None))
+    assert v["level"] == "unknown" and v["peers_visible"] is False
+    assert v["peers_out"] is None and v["reasons"] == []
+
+
+def test_a_reading_gap_does_not_count_as_time_without_peers():
+    mon, clock = _mon()
+    mon.observe(_sync(out=0))
+    clock.t += PEERLESS_SEC - 1
+    assert mon.observe(_sync(height=101, out=None))["level"] == "unknown"
+    clock.t += 5  # past the bound since the first zero, but the clock restarted in the gap
+    v = mon.observe(_sync(height=102, out=0))
+    assert v["level"] == "green" and not v["peerless"]
+
+
+def test_a_stalled_height_is_still_red_when_peers_are_unavailable():
+    mon, clock = _mon()
+    mon.observe(_sync(out=None, inn=None))
+    clock.t += STALLED_SEC
+    v = mon.observe(_sync(out=None, inn=None))
+    assert v["level"] == "red" and v["stalled"] and v["peers_visible"] is False

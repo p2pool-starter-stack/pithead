@@ -51,11 +51,10 @@ class MoneroChainHealth:
         now = self._clock()
         peers_out = sync.get("peers_out") if local else None
         reachable = sync.get("reachable", True) is not False
-        if not local or not reachable or peers_out is None:
-            # No verdict: a remote node, a log-scrape fallback or a payload without the counts
-            # (peers not visible), or a node that did not answer (node-down is another monitor's
-            # call). Nothing measured is carried across the gap, so a restart never reads as a
-            # stall and a returning node earns its clocks afresh.
+        if not local or not reachable:
+            # No verdict: a remote node, a log-scrape fallback, or a node that did not answer
+            # (node-down is another monitor's call). Nothing measured is carried across the gap,
+            # so a restart never reads as a stall and a returning node earns its clocks afresh.
             self._best = self._advanced_at = self._zero_since = None
             self.verdict = {
                 "level": "unknown",
@@ -68,7 +67,11 @@ class MoneroChainHealth:
         height = sync.get("height")
         if height and (self._best is None or height > self._best or self._advanced_at is None):
             self._best, self._advanced_at = max(height, self._best or 0), now
-        if peers_out:
+        # Peers are read from the healthcheck's observation (#2921). Missing, stale or malformed
+        # is None: never a zero and never a green. The peerless clock is dropped (a reading gap
+        # must not be counted as time without peers); the height clock keeps running, because
+        # the stalled rule needs no peer counts.
+        if peers_out is None or peers_out:
             self._zero_since = None
         elif self._zero_since is None:
             self._zero_since = now
@@ -82,10 +85,10 @@ class MoneroChainHealth:
         if stalled:
             reasons.append(f"height {self._best} has not moved for {_minutes(age)} min")
         self.verdict = {
-            "level": "red" if reasons else "green",
+            "level": "red" if reasons else ("green" if peers_out is not None else "unknown"),
             "reasons": reasons,
             "advice": RESTART_ADVICE if reasons else "",
-            "peers_visible": True,
+            "peers_visible": peers_out is not None,
             "peerless": peerless,
             "stalled": stalled,
             "height": self._best,
