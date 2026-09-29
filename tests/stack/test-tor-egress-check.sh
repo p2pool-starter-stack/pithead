@@ -77,7 +77,7 @@ SYSTEMCTL_ACTIVE=0 ec_run provision_egress_check_units >/dev/null 2>&1
 assert_not_contains "a re-run with the same units and the timer active does not reload systemd" \
     "$(cat "$EC/systemctl.log")" "daemon-reload"
 assert_contains "up provisions the pair" "$(run_sourced "$SANDBOX" type stack_up)" "provision_egress_check_units"
-assert_contains "render (every appliance boot) provisions the pair" "$(run_sourced "$SANDBOX" type render_derived)" "provision_egress_check_units"
+assert_contains "render (every appliance boot) provisions both firewall check pairs" "$(run_sourced "$SANDBOX" type render_derived)" "provision_firewall_check_units"
 
 echo "== provision: another live install's pair is left alone unless stolen (#2599) =="
 mkdir -p "$EC/other"

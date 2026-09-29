@@ -487,7 +487,7 @@ assert_eq "zmq_lan_access default binds monerod ZMQ to localhost" "$(run_sourced
 assert_eq "grpc_lan_access default binds tari gRPC to localhost" "$(run_sourced "$V" env_get_file "$V/.env" TARI_GRPC_BIND)" "127.0.0.1"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","rpc_lan_access":true,"zmq_lan_access":true,"prep_blocks_threads":6}, "tari":{"wallet_address":"'"$VALID_TARI"'","grpc_lan_access":true}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)" || bad "LAN bind apply succeeds in the fake stack" "$(printf '%s\n' "$out" | tail -n 6)"
 assert_eq "rpc_lan_access true binds monerod RPC to all interfaces" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_BIND)" "0.0.0.0"
 assert_eq "zmq_lan_access true binds monerod ZMQ to all interfaces" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_ZMQ_BIND)" "0.0.0.0"
 assert_eq "grpc_lan_access true binds tari gRPC to all interfaces" "$(run_sourced "$V" env_get_file "$V/.env" TARI_GRPC_BIND)" "0.0.0.0"

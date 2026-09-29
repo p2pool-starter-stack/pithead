@@ -27,11 +27,27 @@ LAN_GUARD_SOURCES="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.
 LAN_GUARD_BINDS="MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:18142"
 # The host's boot id, kept only while the rule is live (#2749). The node entrypoints (./data/lan-guard,
 # read-only) refuse a LAN bind unless it matches the running boot, so a reboot invalidates it. The
-# boot unit's copy is root's, hence rm before the write.
+# boot unit's copy is root's; replace it through a sibling temp file so a timer never sees a gap.
 LAN_GUARD_MARKER="data/lan-guard/enforced"
 BOOT_ID_FILE="${PITHEAD_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
-lan_guard_mark() { mkdir -p "${LAN_GUARD_MARKER%/*}" && rm -f "$LAN_GUARD_MARKER" && cat "$BOOT_ID_FILE" >"$LAN_GUARD_MARKER"; }
+lan_guard_mark() {
+    local tmp
+    mkdir -p "${LAN_GUARD_MARKER%/*}" || return 1
+    tmp=$(mktemp "${LAN_GUARD_MARKER}.XXXXXX") || return 1
+    if ! cat "$BOOT_ID_FILE" >"$tmp" || ! chmod 644 "$tmp" || ! mv -f "$tmp" "$LAN_GUARD_MARKER"; then
+        rm -f "$tmp"
+        return 1
+    fi
+}
 lan_guard_unmark() { rm -f "$LAN_GUARD_MARKER" 2>/dev/null || sudo -n rm -f "$LAN_GUARD_MARKER" 2>/dev/null; } # 1: still there
+# Pipe /proc's boot_id: its reported size is zero even when its contents match the marker.
+lan_guard_marker_current() {
+    local -a status
+    [ -s "$LAN_GUARD_MARKER" ] || return 1
+    cat "$BOOT_ID_FILE" 2>/dev/null | cmp -s - "$LAN_GUARD_MARKER"
+    status=("${PIPESTATUS[@]}")
+    [ "${status[0]}" -eq 0 ] && [ "${status[1]}" -eq 0 ]
+}
 # A verb's teardown of the rule (#2749): remove_lan_guard, or stop the verb with the rule kept.
 lan_guard_teardown() { # <verb>
     local rc=0 why="$LAN_GUARD_MARKER could not be deleted"
@@ -45,6 +61,33 @@ lan_guard_published() {
     local kp
     for kp in $LAN_GUARD_BINDS; do
         case "$(env_get "${kp%%:*}" 2>/dev/null)" in '' | 127.0.0.1) ;; *) printf '%s\n' "$kp" ;; esac
+    done
+}
+
+# Include ports still published by running containers after .env changed but Compose did not
+# converge. If the engine cannot be read, watch all fixed ports rather than dropping the timer.
+lan_guard_watched_ports() {
+    local kp p c containers name bind
+    for kp in $LAN_GUARD_BINDS; do
+        p=${kp#*:}
+        c=$(lan_guard_container "$p")
+        case "$(env_get "${kp%%:*}" 2>/dev/null)" in
+        '' | 127.0.0.1)
+            containers=$(docker ps -a --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" --format '{{.Names}}' 2>/dev/null) || {
+                printf '%s\n' "$p"
+                continue
+            }
+            while IFS= read -r name; do
+                [ -n "$name" ] || continue
+                bind=$(docker port "$name" "$p/tcp" 2>/dev/null) || break
+                [ -n "$bind" ] || break
+                grep -qv '^127\.0\.0\.1:' <<<"$bind" && break
+            done <<<"$containers"
+            [ -n "$name" ] || continue
+            [ -n "$bind" ] && ! grep -qv '^127\.0\.0\.1:' <<<"$bind" && continue
+            ;;
+        esac
+        printf '%s\n' "$p"
     done
 }
 
@@ -65,7 +108,9 @@ lan_guard_stop_rebound_nodes() {
                 *) continue ;;
                 esac
                 bind=$(env_get "${kp%%:*}" 2>/dev/null) || return 1
-                case "$bind" in '' | 127.0.0.1) ;; *) continue ;; esac
+                if [ "${LAN_GUARD_FALLBACK:-0}" != 1 ]; then
+                    case "$bind" in '' | 127.0.0.1) ;; *) continue ;; esac
+                fi
                 published=$(docker port "$name" "${kp#*:}/tcp" 2>/dev/null) || {
                     stop_node=1
                     break
@@ -126,7 +171,7 @@ render_lan_guard_nft() { # <port>...
 # the ruleset, 2 the backend's tool is missing, 3 unreadable (no passwordless sudo), 4 installed in
 # DOCKER-USER but nothing jumps there, 5 a foreign ACCEPT/RETURN sits above our jumps.
 lan_guard_enforced() { # <port>...
-    local out p line
+    local out p line seen=" "
     if [ "$(container_engine)" = "podman" ]; then
         command -v nft >/dev/null 2>&1 || return 2
         command -v jq >/dev/null 2>&1 || return 3
@@ -153,9 +198,13 @@ lan_guard_enforced() { # <port>...
     # above them never match a NEW inbound connection from outside the mining subnet.
     while IFS= read -r line; do
         case "$line" in
-        *"$LAN_GUARD_TAG"*) break ;;
+        *"$LAN_GUARD_TAG"*)
+            [[ "$line" =~ --dport[[:space:]]+([0-9]+) ]] && seen+="${BASH_REMATCH[1]} "
+            ;;
         -N* | -P* | *"$TOR_EGRESS_TAG"*) ;;
-        *" -j ACCEPT"* | *" -j RETURN"*) return 5 ;;
+        *" -j ACCEPT"* | *" -j RETURN"*)
+            for p in "$@"; do [[ "$seen" == *" $p "* ]] || return 5; done
+            ;;
         esac
     done <<<"$out"
     out=$(sudo -n iptables -S FORWARD 2>/dev/null) || return 4
@@ -179,13 +228,22 @@ lan_guard_reason() { # <rc>
 
 # Install the rule for every published node port, or hold those ports on loopback for this
 # process. Called by compose_up, so it runs before every container (re)start.
-apply_lan_guard() {
-    local published kp ports=() old rc=0
+apply_lan_guard() { # [port]...: explicit ports include stale container publishes after .env changes
+    local published="" watched kp ports=() old rc=0
+    LAN_GUARD_FALLBACK=0
     # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
     # bind-mount the marker dir, and podman does not create a missing bind source.
     export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
     mkdir -p "${LAN_GUARD_MARKER%/*}" 2>/dev/null || true
-    published=$(lan_guard_published)
+    if [ "$#" -gt 0 ]; then
+        watched=$(printf '%s\n' "$@")
+    else
+        # Keep old container publishes guarded until Compose has converged the new binds.
+        watched=$(lan_guard_watched_ports)
+    fi
+    for kp in $LAN_GUARD_BINDS; do
+        grep -qxF "${kp#*:}" <<<"$watched" && published+="$kp "
+    done
     if [ -z "$published" ]; then
         remove_lan_guard_boot_unit || warn "lan-guard:boot-unit-left — could not remove $LAN_GUARD_BOOT_UNIT/$LAN_GUARD_HOLD_UNIT; they keep the nodes held at boot until they are."
         return 0
@@ -216,6 +274,7 @@ apply_lan_guard() {
     fi
     lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
+    LAN_GUARD_FALLBACK=1
     warn "lan-guard:not-installed — could not enforce LAN-only sources on port(s) ${ports[*]} ($(lan_guard_reason "$rc")). Holding them on 127.0.0.1 until it can; see './pithead doctor'."
 }
 

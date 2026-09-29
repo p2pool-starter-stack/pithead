@@ -240,6 +240,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `control-run-pending` | covered | DIY bench |
 | `egress-run-pending` | covered | firewall-on clearnet sync on the DIY bench |
 | `egress-status` | covered | DIY bench (fault-injection leg, #2599) |
+| `lan-guard-check` | covered | DIY bench (LAN rule flush leg, #2846) |
 | `onion-client-key` | covered | DIY bench (partly, via the control legs) |
 | `uninstall` | covered | DIY bench (`--lifecycle`'s uninstall→setup round trip, #2379) verifies ownership and resets a preexisting Pithead wallet volume if present. With local Tari it activates `tari_payout_confirm`, creates the Tari wallet service and its owned volume through Compose, removes the container, disables the profile, and verifies the inactive model excludes the volume. With remote Tari it records that creation leg as `by-design` because the local `tari` dependency is absent. It checks uninstall removes any owned wallet volume, preserves a separately named unrelated volume, and setup recovers from kept data. Tier-1 stubs prove both modes, the local profile transition, preexisting owned and foreign cases, and refusal to finish on volume inspection failure. The dedicated `--uninstall` destructive phase is #2343, blocked on bench-ci#347 |
 | `rotate-secrets` | missing | #2344, blocked on bench-ci#347 |
