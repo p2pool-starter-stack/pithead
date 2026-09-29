@@ -135,7 +135,11 @@ control_worker_apply() { # <claimed-file> <id> <actor> <control-dir>
         return 0
     fi
     local change_id
-    change_id=$(jq -r '.change_id // ""' "$bodyf" 2>/dev/null | head -c 64)
+    if ! change_id=$(jq -ser 'select(length == 1) | .[0].change_id | strings | select(length == 16 and test("^[0-9a-f]{16}$"))' "$bodyf" 2>/dev/null); then
+        rm -f "$bodyf"
+        _wa_fail "worker '$worker' returned a malformed change ID; outcome unknown."
+        return 0
+    fi
     rm -f "$bodyf"
     # Poll the rig's /status for THIS change_id's terminal outcome. The rig stages → validates →
     # applies → liveness-checks → rolls back if the miner doesn't return live, seconds later. The 20s

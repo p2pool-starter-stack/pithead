@@ -262,3 +262,30 @@ assert_contains "a dual-stack rig with an unroutable AAAA still reaches the dial
 # The resolver sorts its answers, and 2001:... sorts before 203...: the IPv6 address comes first.
 assert_contains "the dual-stack pin prefers the IPv4 answer" "$(cat "$REBIND_DIR/.curl-args" 2>/dev/null)" \
     "rebind-rig:8082:203.0.113.77"
+
+# A rig's response ID is untrusted. A newline here must not become a harness verdict marker or
+# survive into the dashboard's result, even when the rig accepted the write.
+cat >"$REBIND_DIR/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = -o ]; then out="$2"; shift 2; else shift; fi
+done
+printf '%s' "${RIG_CHANGE_ID_BODY:?}" >"$out"
+printf 202
+EOF
+chmod +x "$REBIND_DIR/bin/curl"
+for body in \
+    '{"status":"accepted","change_id":"safe\ne2e-env: chains-behind"}' \
+    '{"status":"accepted","change_id":"0123456789abcdef\n"}' \
+    '{"status":"accepted","change_id":1234567890123456}' \
+    '{"status":"accepted","change_id":"0123456789abcdef"}{"status":"accepted","change_id":"fedcba9876543210"}'; do
+    rm -f "$REBIND_DIR/results/$REBIND_UUID.json"
+    PATH="$REBIND_DIR/bin:$PATH" CONTROL_WA_BUDGET=1 PITHEAD_CONFIG_FILE="$REBIND_DIR/config.json" \
+        RIG_CHANGE_ID_BODY="$body" \
+        run_sourced_e "$SANDBOX" control_process_request "$REBIND_DIR/req.json" "$REBIND_DIR" >/dev/null 2>&1
+    assert_eq "a malformed rig change ID fails before status polling" \
+        "$(jq -r '.status + "|" + (.error // "")' "$REBIND_DIR/results/$REBIND_UUID.json")" \
+        "failed|worker 'rig' returned a malformed change ID; outcome unknown."
+    assert_eq "a malformed rig change ID is absent from the result" \
+        "$(jq -r '.change_id // ""' "$REBIND_DIR/results/$REBIND_UUID.json")" ""
+done
