@@ -26,13 +26,18 @@ def address(chain):
 
 
 chain, expected, verdict = sys.argv[1:]
-for _ in range(40):
+for _ in range(10 if verdict == "unavailable" else 40):
     try:
         actual = address(chain)
+        if verdict == "unavailable":
+            sys.exit(f"{chain} wallet answered despite the rejected view key")
         break
     except (requests.RequestException, grpc.RpcError, KeyError):
         time.sleep(2)
 else:
+    if verdict == "unavailable":
+        print(f"{chain} wallet address RPC stayed unavailable after the rejected view key")
+        sys.exit(0)
     sys.exit(f"{chain} wallet did not answer its address RPC within 80 seconds")
 
 if verdict == "match" and actual == expected:
