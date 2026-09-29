@@ -784,6 +784,9 @@ first hardware run to exercise the wait hit precisely that
 `DONATION` changes applied, eighteen seconds apart, while the gate reported four failures. The
 self-test that covers the settle now runs the real wait rather than a silent stub, because a stub
 that prints nothing cannot see this class at all.
+The progress line names the accepted request's `change_id`, so a timed-out readback can be matched
+to that request's rig-side status and journal rather than a nearby change. The host CLI rejects a
+rig response whose change ID is not 16 lowercase hex digits before returning it to the dashboard.
 
 The same leg then asserts that the change reached the dashboard's `#185` per-worker history, and
 that readback needed a settle of its own
