@@ -154,8 +154,15 @@ cert_san_string() { # <cert-file>
 # that is not a plain IPv6 literal comes back unchanged.
 ipv6_canonical() { # <literal>
     local a="${1,,}" left right fill i out=() l=() r=()
-    case "$a" in *:*) ;; *) printf '%s' "$1"; return 0 ;; esac
-    [[ "$a" =~ ^[0-9a-f:]+$ ]] || { printf '%s' "$1"; return 0; }
+    case "$a" in *:*) ;; *)
+        printf '%s' "$1"
+        return 0
+        ;;
+    esac
+    [[ "$a" =~ ^[0-9a-f:]+$ ]] || {
+        printf '%s' "$1"
+        return 0
+    }
     if [[ "$a" == *::* ]]; then
         left="${a%%::*}"
         right="${a#*::}"
@@ -174,7 +181,10 @@ ipv6_canonical() { # <literal>
     for i in "${l[@]}"; do out+=("$(printf '%x' "$((16#${i:-0}))")"); done
     for ((i = 0; i < fill; i++)); do out+=(0); done
     for i in "${r[@]}"; do out+=("$(printf '%x' "$((16#${i:-0}))")"); done
-    (IFS=:; printf '%s' "${out[*]}")
+    (
+        IFS=:
+        printf '%s' "${out[*]}"
+    )
 }
 
 # Rewrites every IP:<ipv6> entry of a "DNS:a,IP:b" SAN string (argument or stdin) canonically, so

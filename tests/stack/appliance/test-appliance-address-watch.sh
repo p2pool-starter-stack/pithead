@@ -44,7 +44,11 @@ aw_run() { # <addresses> [boot-state] -> script output; render calls in $AW/log,
         PITHEAD_TLS_DIR=data/tls AW_RESTARTS="$AW/restarts" PITHEAD_CADDY_RESTART_CMD="$AW/bin/restart-caddy" \
         bash "$HERE/../../os/overlay/pithead-address-watch" 2>&1
 }
-aw_count() { local n; n=$(grep -c "$1" "$2" 2>/dev/null); echo "${n:-0}"; }
+aw_count() {
+    local n
+    n=$(grep -c "$1" "$2" 2>/dev/null)
+    echo "${n:-0}"
+}
 
 aw_run "192.168.1.5" >/dev/null
 assert_eq "the first tick records the address set and renders once" "$(aw_count render "$AW/log")" "1"
@@ -71,7 +75,10 @@ echo render >>"$AW_LOG"
 echo minted >data/tls/wizard.crt
 exit 1
 STUB
-out=$(aw_run "192.168.1.5 fd1c::9"; echo "rc=$?")
+out=$(
+    aw_run "192.168.1.5 fd1c::9"
+    echo "rc=$?"
+)
 assert_contains "a failed render leaves the unit successful" "$out" "rc=0"
 assert_contains "…and names the retry" "$out" "retrying on the next tick"
 assert_eq "…yet Caddy is restarted onto the files it left" "$(aw_count restart "$AW/restarts")" "3"
@@ -85,7 +92,11 @@ cat >"$AW/dir/pithead" <<'STUB'
 echo render >>"$AW_LOG"
 STUB
 before=$(aw_count render "$AW/log")
-out=$(flock -n "$AW/lock" true && (exec 8>>"$AW/lock"; flock 8; aw_run "192.168.1.5 fd1c::b"))
+out=$(flock -n "$AW/lock" true && (
+    exec 8>>"$AW/lock"
+    flock 8
+    aw_run "192.168.1.5 fd1c::b"
+))
 assert_eq "a held mutation lock defers the render" "$(aw_count render "$AW/log")" "$before"
 assert_contains "…and says it will retry" "$out" "retrying on the next tick"
 aw_run "192.168.1.5 fd1c::b" >/dev/null
@@ -103,12 +114,30 @@ source "$HERE/../os/appliance-address-watch-leg.sh"
 AWV_OK='{"checks":[{"status":"ok","message":"The dashboard certificate covers every name Caddy serves."}]}'
 AWV_BAD='{"checks":[{"status":"fail","message":"The dashboard certificate does not cover: fd00:2463::1 — x"}]}'
 awv() { address_watch_verdict "${1-enabled}" "${2-active}" "${3-$AWV_OK}" "${4-0}" "${5-DNS:x, IP Address:FD00:2463:0:0:0:0:0:1}" "fd00:2463::1" "IP Address:FD00:2463:0:0:0:0:0:1"; }
-assert_rc "a re-minted certificate with a green row and an enabled, active timer passes" "$(awv >/dev/null; echo $?)" 0
-assert_rc "a disabled timer fails (image wiring)" "$(awv disabled >/dev/null; echo $?)" 1
-assert_rc "an inactive timer fails" "$(awv enabled inactive >/dev/null; echo $?)" 1
-assert_rc "a still-red doctor row fails" "$(awv enabled active "$AWV_BAD" >/dev/null; echo $?)" 1
-assert_rc "a failed service run fails" "$(awv enabled active "$AWV_OK" 1 >/dev/null; echo $?)" 1
-assert_rc "a certificate without the added address fails" "$(awv enabled active "$AWV_OK" 0 "IP:192.168.1.5" >/dev/null; echo $?)" 1
+assert_rc "a re-minted certificate with a green row and an enabled, active timer passes" "$(
+    awv >/dev/null
+    echo $?
+)" 0
+assert_rc "a disabled timer fails (image wiring)" "$(
+    awv disabled >/dev/null
+    echo $?
+)" 1
+assert_rc "an inactive timer fails" "$(
+    awv enabled inactive >/dev/null
+    echo $?
+)" 1
+assert_rc "a still-red doctor row fails" "$(
+    awv enabled active "$AWV_BAD" >/dev/null
+    echo $?
+)" 1
+assert_rc "a failed service run fails" "$(
+    awv enabled active "$AWV_OK" 1 >/dev/null
+    echo $?
+)" 1
+assert_rc "a certificate without the added address fails" "$(
+    awv enabled active "$AWV_OK" 0 "IP:192.168.1.5" >/dev/null
+    echo $?
+)" 1
 unset AWV_OK AWV_BAD awv
 
 echo "== unit: appliance_mint_cert keeps a certificate that already carries an IPv6 address (#2463) =="
@@ -140,7 +169,10 @@ unset AWM awm_out
 
 echo "== unit: ipv6_canonical (#2463) =="
 # shellcheck disable=SC1090
-canon() { (source "$STACK" 2>/dev/null; ipv6_canonical "$1"); }
+canon() { (
+    source "$STACK" 2>/dev/null
+    ipv6_canonical "$1"
+); }
 assert_eq "ipv6_canonical expands a compressed ULA" "$(canon fd00:2463::1)" "fd00:2463:0:0:0:0:0:1"
 assert_eq "ipv6_canonical lower-cases and strips leading zeros as openssl prints" "$(canon FD00:2463:0000:0:0:0:0:0001)" "fd00:2463:0:0:0:0:0:1"
 assert_eq "ipv6_canonical handles a leading ::" "$(canon ::1)" "0:0:0:0:0:0:0:1"
