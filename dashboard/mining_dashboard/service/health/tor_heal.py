@@ -14,6 +14,7 @@ import uuid
 
 import requests
 
+from mining_dashboard.collector.containers import get_container_health
 from mining_dashboard.config.config import (
     LOCAL_MONERO_HOST,
     MONERO_NODE_HOST,
@@ -153,6 +154,12 @@ class TorEgressHealer:
             self._attempts -= 1
         self._last_attempt = None
 
+    async def _monerod_running(self) -> bool:
+        """Only a running monerod is cycled (#2749). A stopped one stays stopped: with LAN access on
+        a DIY Docker host it may be held because its LAN-only source rule is missing, and a start
+        would publish its ports on 0.0.0.0 without it."""
+        return bool((await get_container_health()).get(self.MONEROD, {}).get("running"))
+
     async def check(self) -> None:
         """Probe (throttled) and act. Called every data-loop cycle; never raises."""
         if not self.enabled:
@@ -226,7 +233,7 @@ class TorEgressHealer:
                     )
                 else:
                     self._recovery_step = "Tor restart"
-                if stopped and started and self._restart_monerod:
+                if stopped and started and self._restart_monerod and await self._monerod_running():
                     # The tor restart just killed every SOCKS connection; monerod holds its
                     # dead peer sockets and can sit at 0 in / 0 out peers for hours while
                     # looking healthy (#972). Cycle it so it re-dials through the fresh tor.

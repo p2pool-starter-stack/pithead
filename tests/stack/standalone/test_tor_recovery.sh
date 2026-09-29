@@ -67,8 +67,15 @@ docker() {
     'compose stop tor')
         printf 'stop\n' >>"$WORK/actions"
         if [ "${STOP_FAIL:-0}" = 1 ]; then return 1; fi
-        if [ "${STOP_FAIL:-0}" = 3 ]; then : >"$WORK/restarted"; return 1; fi
-        if [ "${STOP_FAIL:-0}" = 4 ]; then STOP_FAIL=0; printf 'changed identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"; return 1; fi
+        if [ "${STOP_FAIL:-0}" = 3 ]; then
+            : >"$WORK/restarted"
+            return 1
+        fi
+        if [ "${STOP_FAIL:-0}" = 4 ]; then
+            STOP_FAIL=0
+            printf 'changed identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"
+            return 1
+        fi
         : >"$WORK/stopped"
         if [ "${STOP_FAIL:-0}" = 2 ]; then return 1; fi
         ;;

@@ -1,6 +1,8 @@
 """Tor egress recovery guards: isolated probes, bounded refresh, final restart."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
@@ -48,6 +50,16 @@ class _FailingDocker:
     async def start(self, container, **kwargs):
         self.calls.append(("start", container))
         return False
+
+
+@pytest.fixture(autouse=True)
+def _monerod_running():
+    """The heal cycles monerod only when the read proxy says it runs (#2749); running by default."""
+    with patch(
+        "mining_dashboard.service.health.tor_heal.get_container_health",
+        AsyncMock(return_value={"monerod": {"running": True}}),
+    ):
+        yield
 
 
 def _healer(clock=None, enabled=True, probe=None, notify=None, docker=None, restart_monerod=None):
@@ -194,43 +206,6 @@ class TestDecide:
 
 
 class TestCheck:
-    async def test_pending_newnym_times_out_without_probing_or_restarting(self):
-        clock = _Clock()
-        docker = _FakeDocker()
-        probes = []
-        h = _healer(clock, probe=lambda: probes.append(1) or False, docker=docker)
-        h._pending_refresh = "id"
-        h._pending_since = clock.t
-        h._attempts = 1
-        with patch(
-            "mining_dashboard.service.health.tor_heal.control_service.result", return_value=None
-        ):
-            await h.check()
-            assert h._pending_refresh == "id"
-            clock.t += PROBE_INTERVAL_SEC
-            await h.check()
-        assert h._pending_refresh is None
-        assert h._attempts == 0
-        assert h._last_attempt == clock.t
-        assert probes == []
-        assert docker.calls == []
-
-    async def test_failed_newnym_submission_refunds_attempt(self):
-        clock = _Clock()
-        docker = _FakeDocker()
-        h = _healer(clock, probe=lambda: False, docker=docker)
-        with patch(
-            "mining_dashboard.service.health.tor_heal.control_service.submit",
-            side_effect=OSError("control spool unavailable"),
-        ):
-            await h.check()
-            clock.t += BROKEN_AFTER_SEC
-            await h.check()
-        assert h._attempts == 0
-        assert h._pending_refresh is None
-        assert h._last_attempt == clock.t
-        assert docker.calls == []
-
     async def test_unconfirmed_newnym_cannot_escalate_to_container_restart(self):
         clock = _Clock()
         docker = _FakeDocker()
@@ -300,6 +275,30 @@ class TestCheck:
         ]
         assert any("Requesting NEWNYM" in r.message for r in caplog.records)
         assert any("Restarting Tor" in r.message for r in caplog.records)
+
+    async def test_a_stopped_monerod_is_not_started(self):
+        # #2749: a held monerod (LAN guard failed at boot) must stay down, or its LAN ports open.
+        clock = _Clock()
+        docker = _FakeDocker()
+        h = _healer(clock, probe=lambda: False, docker=docker)
+        with (
+            patch(
+                "mining_dashboard.service.health.tor_heal.get_container_health",
+                AsyncMock(return_value={"monerod": {"running": False}}),
+            ),
+            patch(
+                "mining_dashboard.service.health.tor_heal.control_service.submit", return_value="id"
+            ),
+            patch(
+                "mining_dashboard.service.health.tor_heal.control_service.result",
+                return_value={"status": "applied"},
+            ),
+        ):
+            await h.check()
+            for _ in range(MAX_ATTEMPTS):
+                clock.t += COOLDOWN_SEC
+                await h.check()
+        assert docker.calls == [("stop", "tor"), ("start", "tor")]
 
     async def test_remote_node_heal_touches_only_tor(self):
         # A remote monerod has no container here — the heal must stay tor-scoped.

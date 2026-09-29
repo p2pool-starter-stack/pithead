@@ -220,11 +220,12 @@ CONFIRM_ENV_KEY_PATHS = {
     "MONERO_RPC_PORT": ("monero.remote.rpc_port",),
     "MONERO_ZMQ_PORT": ("monero.remote.zmq_port",),
     "TARI_GRPC_ADDRESS": ("tari.remote.host", "tari.remote.grpc_port"),
-    # Whether this host merge-mines at all (#1929), and COMPOSE_PROFILES the PROFILE HALF of the
-    # same switch. Mapped to tari.mode ALONE, narrower than its real derivation on
+    # Whether this host merge-mines at all (#1929), plus the full and Tor-only node profiles.
+    # Mapped to tari.mode ALONE, narrower than their real derivation on
     # purpose: monero.mode and the view keys also move it and keep their own classification.
     "TARI_MODE": ("tari.mode",),
     "COMPOSE_PROFILES": ("tari.mode",),
+    "TOR_COMPOSE_PROFILES": ("tari.mode",),
     # Reserved-node RPC login (#2333/#2367 ruling): confirm-gated like the endpoints above, never refused.
     "MONERO_NODE_USERNAME": ("monero.node_username",),
     "MONERO_NODE_PASSWORD": ("monero.node_password",),

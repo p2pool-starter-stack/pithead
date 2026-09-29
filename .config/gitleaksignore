@@ -21,3 +21,5 @@ ec572a4034faa029839a6a29d616718d1513cef8:tests/stack/test-cli-restore-hardening.
 # The Ristretto255 basepoint, a public curve constant used as a spend key that belongs to no wallet
 # in the KVM Tari payout-wallet leg (#2731). Not a credential.
 270c4d4ffd6fb73feecc5d459e38d0c6afa94166:tests/os/appliance-tari-wallet-leg.sh:generic-api-key:13
+# The same public constant after #2734 was squash-merged onto develop.
+c79b0581536b5f059fca1c643a93333f6b928965:tests/os/appliance-tari-wallet-leg.sh:generic-api-key:13

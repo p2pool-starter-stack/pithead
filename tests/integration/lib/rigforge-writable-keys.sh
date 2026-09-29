@@ -74,7 +74,11 @@ _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
     local rig="$1" key="$2" orig="$3" probe="$4" res status ckeys change_id
     it_step "Worker Inspect edit: $key $orig -> $probe via /api/control/worker-apply…"
     # On the books BEFORE the write goes out — the window #1379 covers includes the apply itself.
-    rig_key_mark dash "$rig" "$key" "$orig"
+    # A refused mark means an abort could not restore this key, so the write is not sent (#2668).
+    rig_key_mark dash "$rig" "$key" "$orig" || {
+        it_skip_leg "$key write (#1236)" "the original $key on rig '$rig' cannot be recorded for the abort-safe unwind, so no write is sent"
+        return 0
+    }
     res="$(_worker_apply "$rig" "$(jq -nc --arg k "$key" --argjson v "$probe" '{($k): $v}')")"
     IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_key "$rig" "$key" "$probe" "$res")"
     assert_eq "$key edit applied on the rig (#1236)" "$status" "applied"
@@ -222,7 +226,10 @@ run_rigforge_pools() { # <rig>
     # `rejected`/`rolled_back`, at the dial or on the row, leave it on its own previous config,
     # which the EXIT unwind must not overwrite with a value the rig just refused. `failed` (the
     # resulting config varies), a change still `accepted` and no answer stay on the books.
-    rig_key_mark dash "$rig" pools "$probe"
+    rig_key_mark dash "$rig" pools "$probe" || {
+        it_skip_leg "pools write (#1002b)" "the original pools on rig '$rig' cannot be recorded for the abort-safe unwind (not one JSON value), so no write is sent (#2668)"
+        return 0
+    }
     res="$(_worker_apply "$rig" "{\"pools\":$probe}")"
     # Settled, never read at dial time (#2407): the rig answers "accepted" and applies async
     # (RigForge #344, #1309), exactly as it does for the #1236 keys above.

@@ -46,12 +46,16 @@ class _FakeResp:
         return self._payload
 
 
-def _inspect(running=True, restarting=False, restart_count=0, health=None):
+def _inspect(running=True, restarting=False, restart_count=0, health=None, **extra):
     """A trimmed `GET /containers/<id>/json` payload — the fields the collector reads."""
     state = {"Running": running, "Restarting": restarting}
     if health is not None:
         state["Health"] = {"Status": health}
-    return {"State": state, "RestartCount": restart_count}
+    payload = {"State": state, "RestartCount": restart_count}
+    if "policy" in extra:
+        payload["HostConfig"] = {"RestartPolicy": {"Name": extra["policy"]}}
+    state.update({k: v for k, v in extra.items() if k in ("StartedAt", "ExitCode")})
+    return payload
 
 
 def _session(responses):
@@ -77,8 +81,62 @@ class TestGetContainerHealth:
                 "restarting": False,
                 "restart_count": 2,
                 "health": "unhealthy",
+                "unsupervised": False,
+                "exit_code": None,
+                "held_since_boot": False,
             }
         }
+
+    async def _one(self, payload, boot=1_790_000_000):
+        responses = [_FakeResp(200, payload)] + [_FakeResp(404)] * (
+            len(containers.MONITORED_CONTAINERS) - 1
+        )
+        with (
+            patch.object(
+                containers.aiohttp, "ClientSession", return_value=_AsyncCM(_session(responses))
+            ),
+            patch.object(containers, "_host_boot_epoch", return_value=boot),
+        ):
+            return (await containers.get_container_health())["tor"]
+
+    async def test_restart_policy_no_is_unsupervised_and_held_when_not_started_since_boot(self):
+        # #2749: StartedAt before the host booted = it has not run since boot (the LAN-guard hold).
+        out = await self._one(
+            _inspect(
+                running=False, policy="no", StartedAt="2026-09-20T10:00:00.123456789Z", ExitCode=255
+            )
+        )
+        assert out["unsupervised"] is True
+        assert out["held_since_boot"] is True
+        assert out["exit_code"] == 255
+
+    async def test_started_since_boot_is_not_held(self):
+        out = await self._one(
+            _inspect(running=False, policy="no", StartedAt="2026-09-27T10:00:00Z", ExitCode=139)
+        )
+        assert out["held_since_boot"] is False
+        assert out["exit_code"] == 139
+
+    async def test_other_policies_are_supervised_and_unknown_boot_is_not_held(self):
+        out = await self._one(
+            _inspect(policy="unless-stopped", StartedAt="2026-09-20T10:00:00Z"), boot=None
+        )
+        assert out["unsupervised"] is False
+        assert out["held_since_boot"] is False
+
+    def test_boot_and_timestamp_parsing(self, tmp_path):
+        assert containers._epoch("1970-01-01T00:01:40.5Z") == 100.5
+        assert containers._epoch(None) is None
+        assert containers._epoch("garbage") is None
+        stat = tmp_path / "stat"
+        stat.write_text("cpu 1 2 3\nbtime 1790000000\n")
+        real_open = open
+        with patch(
+            "builtins.open", lambda p, *a, **k: real_open(stat if p == "/proc/stat" else p, *a, **k)
+        ):
+            assert containers._host_boot_epoch() == 1790000000
+        with patch("builtins.open", side_effect=OSError):
+            assert containers._host_boot_epoch() is None
 
     async def test_no_healthcheck_maps_to_none(self):
         # State.Health absent (no healthcheck) => health None — "no signal", never "unhealthy".
