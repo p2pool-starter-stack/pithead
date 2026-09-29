@@ -910,8 +910,10 @@ containers are attached — so this phase does a full down → up on `10.84.0.0/
 bind-mounted by path, never on the docker network, so they are untouched), asserts the moved prefix
 reached the live `.env`, the docker bridge, Tor's rendered torrc, monerod's envsubst'd proxy IP, the
 dashboard's SSRF CIDR + Tor SOCKS, `P2POOL_URL`, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344)
-onion vhost gateway, runs the standard running-state battery, then brings the box back to its
-baseline subnet. The matrix carries a `local-pruned-main-subnet` row for axis bookkeeping; the
+onion vhost gateway, waits up to 1500 seconds for the sync gate to release p2pool and xmrig-proxy,
+runs the standard running-state battery including live UID and TLS checks, then brings the box back
+to its baseline subnet. A release timeout leaves those checks binding and records the wait timeout.
+The matrix carries a `local-pruned-main-subnet` row for axis bookkeeping; the
 hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it for real.
 
 ---
