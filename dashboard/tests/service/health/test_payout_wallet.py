@@ -9,7 +9,9 @@ from mining_dashboard.service.payout_sync import observe_wallet
 def test_wallet_unreachable_debounces_and_alerts_once():
     for chain in ("monero", "tari"):
         now = [0]
-        monitor = NodeHealthMonitor(down_after=4, recovery_after=0, clock=lambda: now[0], ever_up=True)
+        monitor = NodeHealthMonitor(
+            down_after=4, recovery_after=0, clock=lambda now=now: now[0], ever_up=True
+        )
         client = MagicMock()
         client.payout_addresses.return_value = None
         if chain == "tari":

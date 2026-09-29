@@ -174,6 +174,7 @@ PY
     compose stop fake-tari-wallet >/dev/null
     # Track each wallet separately after its first unreachable observation. The 4s
     # debounce can be seen on the next 2s collection cycle; allow one more cycle.
+    # The overall window also covers serial wallet RPC timeouts before both are observed.
     outage_state="$(
         compose exec -T dashboard python3 - <<'PY'
 import json
@@ -181,7 +182,7 @@ import time
 import urllib.request
 
 first_seen = {}
-deadline = time.monotonic() + 20
+deadline = time.monotonic() + 45
 while time.monotonic() < deadline:
     state = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
     wallets = {"monero": state["earnings"]["confirmed"], "tari": state["earnings"]["tari_confirmed"]}
