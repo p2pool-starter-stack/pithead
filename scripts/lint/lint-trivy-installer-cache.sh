@@ -83,15 +83,19 @@ check_installer_cache() {
         n_trivy=$(grep -c 'uses:.*aquasecurity/trivy-action@' "$f" || true)
         n_install=$(grep -c 'uses:[[:space:]]*\./.github/actions/install-trivy' "$f" || true)
         n_skip=$(grep -c 'skip-setup-trivy:[[:space:]]*true' "$f" || true)
-        # a version: in a trivy-action step is inert under skip-setup-trivy — install_versions()
-        # only ever attributes one to an install-trivy step, so any surplus lives in a scan step.
-        n_inert=$(($(grep -c '^[[:space:]]*version:[[:space:]]' "$f" || true) - $(install_versions "$f" | wc -l | tr -d ' ')))
+        # Only a version: in a trivy-action step is inert; other actions may pin their own tools.
+        n_inert=$(awk '
+            /^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*aquasecurity\/trivy-action@/ { scan = 1; next }
+            scan && /^[[:space:]]*-[[:space:]]/ { scan = 0 }
+            scan && /^[[:space:]]*version:[[:space:]]*/ { n++ }
+            END { print n + 0 }
+        ' "$f")
         engine="$(resolve_engine "$f")"
         if [ "$n_trivy" -eq 0 ] || [ "$n_trivy" -ne "$n_install" ] || [ "$n_trivy" -ne "$n_skip" ]; then
             echo "$base: MISMATCH — $n_trivy trivy-action step(s), $n_install install-trivy step(s), $n_skip skip-setup-trivy: true line(s)"
             fail=1
         elif [ "$n_inert" -ne 0 ]; then
-            echo "$base: INERT PIN — $n_inert version: line(s) outside an install-trivy step; with skip-setup-trivy nothing resolves them"
+            echo "$base: INERT PIN — $n_inert version: line(s) inside a trivy-action step; with skip-setup-trivy nothing resolves them"
             fail=1
         elif [ "${engine#REFUSED}" != "$engine" ]; then
             echo "$base: $engine"
@@ -176,6 +180,16 @@ if [ "${1:-}" = "--self-test" ]; then
     st "whole chain intact -> rc 0" "$rc" "0"
     st "names the engine the gated literal decides" \
         "$(printf '%s\n' "$out" | grep -c 'ci.yml: 1 scan step(s), engine v0.73.0')" "1"
+
+    cat >>"$ok_a" <<'EOF'
+      - uses: astral-sh/setup-uv@0000000000000000000000000000000000000000
+        with:
+          version: "0.12.13"
+EOF
+    rc=0
+    check_installer_cache >/dev/null || rc=$?
+    st "another action's version: is not an inert Trivy pin" "$rc" "0"
+    write_file "$ok_a" 1 1 v0.73.0
 
     # THE bump test: follow the gate's own Fix: hint on the gated line, and the engine that is
     # actually installed moves with it. That is the property three review rounds were about.
