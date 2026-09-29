@@ -1,11 +1,8 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# LAN-only sources for the node ports the *_lan_access switches publish (#2616): the rule is rendered
-# with the LAN set only, compose never publishes on 0.0.0.0 unless the rule is live (the loopback
-# fallback), doctor tells exposed from held, and every publish of the three ports stays an explicit
-# IPv4 bind, so the IPv4-only rule covers it, and the boot unit that restores the rule before
-# docker.service starts, plus the hold that starts the LAN-access containers only after it (#2749). The live half, a non-private source refused on the
-# bench before and after the rule is stripped and the unit re-run, is tests/integration/lib/run-lan-guard.sh.
+# LAN-only source rules, loopback fallback, doctor verdicts and boot hold for the three published
+# node ports (#2616/#2749). The transition fragment tests switch-off during a failed Compose run
+# (#2902). The live dial and boot restore tests are in tests/integration/lib/run-lan-guard.sh.
 # Sourced by tests/stack/run.sh.
 
 LGD="$SANDBOX/lan-guard"
@@ -67,13 +64,27 @@ case "$1 ${2:-}" in
     exit "${LG_COMPOSE_RC:-0}"
     ;;
 "ps "*)
-    if [ "${2:-}" = --format ] && [ -n "${LG_RUNNING_FILE:-}" ]; then cat "$LG_RUNNING_FILE"
+    if [[ " $* " == *"label=com.docker.compose.project=pithead"* ]] && [ -n "${LG_RUNNING_FILE:-}" ]; then
+        service=""
+        [[ " $* " == *"label=com.docker.compose.service=monerod"* ]] && service=monerod
+        [[ " $* " == *"label=com.docker.compose.service=tari"* ]] && service=tari
+        while IFS= read -r name; do
+            case "$service:$name" in
+            monerod:monerod | monerod:*_monerod | tari:tari | tari:*_tari) echo "$name" ;;
+            esac
+        done <"$LG_RUNNING_FILE"
+    elif [[ " $* " == *"label=com.docker.compose.project=pithead"* ]]; then
+        :
+    elif [ -n "${LG_RUNNING_FILE:-}" ]; then
+        cat "$LG_RUNNING_FILE"
+        [ -z "${LG_FOREIGN_FILE:-}" ] || cat "$LG_FOREIGN_FILE"
     elif [ "${LG_RUNNING:-1}" = 1 ]; then echo cid123; fi
     ;;
 "stop "*)
     [ -z "${LG_ORDER:-}" ] || echo "stop:$2" >>"$LG_ORDER"
     [ "${LG_STOP_FAIL:-0}" = 0 ] || exit 1
     sed -i "/^$2$/d" "$LG_RUNNING_FILE"
+    [ -z "${LG_FOREIGN_FILE:-}" ] || sed -i "/^$2$/d" "$LG_FOREIGN_FILE"
     ;;
 "inspect -f")
     [ "${LG_EXISTS:-1}" = 1 ] || exit 1
@@ -81,8 +92,8 @@ case "$1 ${2:-}" in
     ;;
 "port "*)
     case "$2:$3" in
-    monerod:18081/tcp) echo "${LG_OLD_MONERO_RPC:-127.0.0.1}:18081" ;;
-    monerod:18083/tcp) echo "${LG_OLD_MONERO_ZMQ:-127.0.0.1}:18083" ;;
+    monerod:18081/tcp | *_monerod:18081/tcp) echo "${LG_OLD_MONERO_RPC:-127.0.0.1}:18081" ;;
+    monerod:18083/tcp | *_monerod:18083/tcp) echo "${LG_OLD_MONERO_ZMQ:-127.0.0.1}:18083" ;;
     *) echo "${LG_PUBLISHED:-0.0.0.0}:18142" ;;
     esac
     ;;
@@ -126,7 +137,6 @@ lg_out="$(run_sourced "$LGD" render_lan_guard_nft 18081 18142)"
 assert_contains "nft: drop NEW connections to the ports from outside the LAN set" "$lg_out" \
     "tcp dport { 18081, 18142 } ct state new ip saddr != { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 } drop"
 assert_contains "nft: its own table, hooked at forward" "$lg_out" "type filter hook forward priority -5"
-
 echo "== compose never publishes on 0.0.0.0 unless the rule is live (#2616) =="
 LG_ORDER="$LGD/order.log"
 export LG_ORDER
@@ -140,7 +150,6 @@ assert_eq "failed egress refresh prevents container startup" "$(cat "$LG_ORDER")
 : >"$LG_ORDER"
 lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; clearnet_sync_active() { return 1; }; compose_up -d' >/dev/null
 assert_eq "ordinary startup keeps its warning-only firewall failure behavior" "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
-
 source "$ROOT/tests/stack/firewall/lan-guard-transition.sh"
 lg_out="$(lg 'tor_egress_enforced() { return 5; }; tor_egress_verify_or_warn ok >/dev/null 2>&1 && echo allowed || echo refused')"
 assert_eq "shadowed egress readback refuses compose startup" "$lg_out" "refused"
