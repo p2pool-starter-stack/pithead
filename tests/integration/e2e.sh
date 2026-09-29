@@ -611,7 +611,6 @@ run_harness() {
     [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
     # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
     # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
-    # supplies its host + token (#1378) and ALWAYS returns rc 0, so this && cannot drop the flags.
     if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ]; then
         rig_supply
         [ -n "$RIG_NAME" ] || die "Borrowed rig NAME unavailable from $RIGFORGE_CONFIG."
