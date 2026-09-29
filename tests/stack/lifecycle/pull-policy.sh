@@ -17,6 +17,7 @@ pp_up() {
         source "$STACK" 2>/dev/null
         set +eu
         docker() {
+            [ "$1" != ps ] || return 0 # no running node in this pull-policy fixture
             echo "docker $*"
             [ "$PP_FAIL" != fail ] || [ "$2" != pull ]
         }

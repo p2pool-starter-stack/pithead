@@ -23,10 +23,53 @@ wizard_spool_private() { # <spool-dir> -> private directory
 }
 
 # Cleanup never recursively follows an untrusted submission (a directory is not an input).
-wizard_spool_clean() { # <private-dir>
-    rm -f -- "$1/input" "$1/value" 2>/dev/null || true
-    rmdir -- "$1/input" 2>/dev/null || true
-    rmdir -- "$1" 2>/dev/null || true
+wizard_spool_clean_checked() { # <private-dir>
+    local rc=0
+    rm -f -- "$1/input" "$1/value" || rc=1
+    rmdir -- "$1/input" 2>/dev/null || true # an unsafe submitted directory, never recursive
+    rmdir -- "$1" || rc=1
+    return "$rc"
+}
+wizard_spool_clean() { # <private-dir> — ordinary callers deliberately keep best-effort cleanup
+    wizard_spool_clean_checked "$1" >/dev/null 2>&1 || true
+}
+
+prepare_restore_stage_root() { # <volatile-root>
+    [ ! -L "$1" ] || return 1
+    (umask 077 && mkdir -p "$1") || return 1
+    [ "$(stat -c '%u' "$1")" = "$(id -u)" ] && chmod 700 "$1"
+}
+
+clear_restore_stages() { # [<volatile-root>]
+    local root="${1:-$(restore_stage_root)}" dir rc=0
+    [ -e "$root" ] || [ -L "$root" ] || return 0
+    prepare_restore_stage_root "$root" || rc=1
+    if [ "$rc" = 0 ]; then
+        for dir in "$root"/.restore.*; do
+            { [ -e "$dir" ] || [ -L "$dir" ]; } || continue
+            if [ -L "$dir" ] || [ ! -d "$dir" ] || [ "$(stat -c '%u' "$dir")" != "$(id -u)" ]; then
+                rc=1
+                continue
+            fi
+            clear_restore_stage "$dir" || rc=1
+        done
+    fi
+    [ "$rc" = 0 ] || warn "Could not clear temporary restore staging safely — reboot before continuing."
+    return "$rc"
+}
+
+# Older restore snapshots lived in the persistent spool. Only clean host-owned private dirs;
+# a page-owned lookalike must never redirect cleanup outside the spool.
+clear_legacy_wizard_snapshots() { # <spool-dir>
+    local dir rc=0
+    [ ! -L "$1" ] || return 1
+    for dir in "$1"/.host.*; do
+        { [ -e "$dir" ] || [ -L "$dir" ]; } || continue
+        [ ! -L "$dir" ] && [ -d "$dir" ] && [ "$(stat -c '%u' "$dir")" = "$(id -u)" ] || continue
+        wizard_spool_clean_checked "$dir" || rc=1
+    done
+    [ "$rc" = 0 ] || warn "Could not clear every legacy private wizard snapshot — do not leave the machine unattended."
+    return "$rc"
 }
 
 wizard_spool_publish() ( # <spool-dir> <name> <producer> [args...]
@@ -59,7 +102,7 @@ wizard_spool_snapshot() ( # <spool-dir> <name> [max-bytes] -> private snapshot p
     case "$name" in '' | */* | . | ..) return 1 ;; esac
     [ -e "$spool/$name" ] || [ -L "$spool/$name" ] || return 2
     tmp=$(wizard_spool_private "$spool") || return 1
-    trap 'wizard_spool_clean "$tmp"' EXIT
+    trap 'wizard_spool_clean_checked "$tmp" >/dev/null 2>&1 || warn "Could not clear a failed private wizard snapshot."' EXIT
     ln -P -- "$spool/$name" "$tmp/input" 2>/dev/null || return 1
     [ ! -L "$tmp/input" ] && [ -f "$tmp/input" ] || return 1
     [ "$(stat -c '%h' "$tmp/input")" = 2 ] || return 1
@@ -70,7 +113,7 @@ wizard_spool_snapshot() ( # <spool-dir> <name> [max-bytes] -> private snapshot p
     umask 077
     head -c "$((limit + 1))" -- "$tmp/input" >"$tmp/value" || return 1
     [ "$(stat -c '%s' "$tmp/value")" -le "$limit" ] || return 3
-    rm -f -- "$tmp/input"
+    rm -f -- "$tmp/input" || return 1
     trap - EXIT
     printf '%s\n' "$tmp/value"
 )
@@ -84,6 +127,21 @@ wizard_spool_read() ( # <spool-dir> <name> -> bounded text snapshot
 )
 
 wizard_spool_has() { wizard_spool_read "$1" "$2" >/dev/null 2>&1; }
+
+wizard_submission_ready() { # <spool-dir>
+    ! wizard_spool_has "$1" submission-staging || wizard_spool_has "$1" submission-active
+}
+
+wizard_clear_submission_transaction() { # <spool-dir>
+    if wizard_spool_has "$1" submission-staging &&
+        ! wizard_spool_has "$1" submission-active; then
+        rm -f -- "$1/config.json" || return 1
+    fi
+    rm -f -- "$1/submission-staging" "$1/submission-active" || {
+        warn "Could not clear the active setup transaction — reboot before submitting again."
+        return 1
+    }
+}
 
 write_handoff_card() { wizard_spool_publish "$1" handoff.json cat; }
 
@@ -105,4 +163,37 @@ wizard_spool_request() { # <spool-dir> <name> [max-bytes] -> snapshot
     else
         return "$rc"
     fi
+}
+
+# Everything the wizard container needs in its spool, staged fresh for EVERY wizard start.
+#
+# It used to run once, before the loop — and the accept path removes the whole spool before
+# provisioning. So a provisioning failure re-entered the loop with the certificate, the reference
+# schema and the rig pre-fill all gone, and `wizard.py` gates TLS on the cert FILE existing: the
+# retry served the setup page — payout address, dashboard password, node secrets — in CLEARTEXT,
+# while the console still advertised HTTPS and a fingerprint minted before the loop (#1063).
+#
+# Prints the certificate fingerprint, empty when one could not be minted, so the caller can say
+# so honestly instead of promising a scheme it is not serving.
+stage_wizard_spool() { # <spool-dir> -> fingerprint on stdout
+    local spool="$1"
+    prepare_wizard_spool "$spool" || return 1
+    # The wizard renders the EXACT config that will be written, defaults included, so it needs
+    # the reference. It is a read-only schema, not a secret.
+    local ref=/opt/pithead/config.reference.json
+    [ -f "$ref" ] || ref="$PWD/config.reference.json"
+    wizard_spool_publish "$spool" config.reference.json cat "$ref" || return 1
+    # The rig pre-fill and (#1318) the saved role ride beside the reference — derived fresh each
+    # boot, like the disk inventory, so machine 2 on a fleet stick never opens on machine 1's.
+    publish_rig_defaults "$spool" || return 1
+    publish_saved_role "$spool" || return 1
+    # The data-wipe note (#1121): same "derived fresh every boot" rule, for the same fleet-stick
+    # reason — see publish_data_wipe_note.
+    publish_data_wipe_note "$spool" || return 1
+    # Installer mode reads the disk list from here too; a retry with no list is the same dead end
+    # in a different shape.
+    if installer_mode_available; then publish_disk_inventory "$spool" || return 1; fi
+    # Copies the canonical pair off /data — minting only happens the first time, so the
+    # fingerprint the console prints stays the machine's one certificate across retries.
+    wizard_mint_cert "$spool" 2>/dev/null || true
 }

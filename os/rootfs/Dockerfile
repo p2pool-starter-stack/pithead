@@ -35,28 +35,25 @@
 # claimed otherwise would be lying about the provenance this paragraph exists to describe.
 FROM golang:1.26.8-trixie@sha256:bdca99a00bc16590cb1a0bb4e698f5fc5d6a64e4d5eef13d9f18a0ee08e5fa65 AS gobuild
 
-ARG COMPOSE_VERSION=v5.5.0
-ARG COMPOSE_COMMIT=870908cc8f07f5e90acdf5d34dd1b96a4fe51d16
+ARG COMPOSE_VERSION=v5.5.1
+ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
 ARG COSIGN_VERSION=v3.1.3
 ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
-# Modules raised above what each project's own go.sum asks for, because upstream has not cut a
-# release carrying the fix and the CVE gate is not optional (#1153). Same reasoning as the patched
+# Security floors for each project's resolved Go module graph; upstream has not cut a
+# cosign release carrying these fixes and the CVE gate is not optional (#1153). Same reasoning as the patched
 # toolchain above, one level down: we compile from source, so the module graph is ours, and raising
 # the module beats muting the scanner. Per-binary because the findings differ, and EXACT versions
 # because `go get` will happily DOWNGRADE a module that is already newer.
 #
 #   golang.org/x/mod       v0.40.0   CVE-2026-56864 / CVE-2026-56865. Indirect in both: cosign
-#                                    v3.1.3 pins v0.37.0; compose v5.4.0 and v5.5.0 both pin
-#                                    v0.38.0; cosign's own main is still v0.38.0.
-#   golang.org/x/crypto    v0.55.0   CVE-2026-56854 (CRITICAL). COMPOSE ONLY: compose reaches v0.54.0
-#                                    indirectly; cosign's x/mod raise already seats v0.55.0 (#1649).
+#                                    v3.1.3 pins v0.37.0; compose v5.5.1 selects v0.40.0.
 #   google.golang.org/grpc v1.83.2   CVE-2026-84445 (HIGH), both binaries. Third trip down this
 #                                    ladder: #1153's v1.82.1 (GHSA-hrxh-6v49-42gf) aged into
 #                                    CVE-2026-84304, whose v1.83.1 aged into this. #1655.
 #
 # WHAT A RAISE ACTUALLY MOVES: `go get X@v Y@v` upgrades the whole closure minimum-version
-# selection needs to satisfy X and Y, not just X and Y — here compose moves 4 modules and cosign 9
-# (x/mod pulls x/tools, x/net, x/crypto...). When you add one, read Go's own upgrade list, not this.
+# selection needs to satisfy X and Y, not just X and Y. Compose v5.5.1 already selects
+# x/crypto v0.56.0; retaining its former v0.55.0 raise would downgrade it.
 #
 # Every entry here is debt, not a feature: drop it the moment an upstream release makes it a no-op,
 # and delete its .config/trivyignore mute in the SAME change — a mute left over a finding you have just
@@ -64,7 +61,7 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # survived in that file until #1153. Verify by re-running the scan against the built binaries with
 # NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
 # left two other HIGH findings standing.
-ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 golang.org/x/crypto@v0.55.0 google.golang.org/grpc@v1.83.2"
+ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
 ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
 ENV CGO_ENABLED=0
 
@@ -130,27 +127,31 @@ ENV DEBIAN_FRONTEND=noninteractive
 # `rauc info` extracts a bundle's manifest with unsquashfs, and without it `pithead os-update`
 # cannot read any bundle's compatibility metadata — every guard it carries was dead on the
 # appliance (found live on the bench, not by CI, whose stack tests stub rauc).
-# Cache-busts ONLY this layer (#929): a warm builder cache reuses the apt index for weeks, and
-# when the mirror rotates a package between builds the stale index 404s. build-image.sh's
-# --fresh-index flag passes a fresh value here; any other build-arg on a later layer would still
-# hit cache as normal — an ARG only invalidates the RUN steps from its declaration onward.
+# --fresh-index changes this ARG to rebuild the package layer with a current apt index. A cache
+# hit now reuses both update and install together; it cannot run install against an older index.
 ARG APT_INDEX_STAMP=0
+ARG PITHEAD_UPDATER=""
 # gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps (#1438, #2104); xxd stays out because the rootfs has no consumer (#1380).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN set -e; \
+    updater_packages=""; \
+    if [ "$PITHEAD_UPDATER" = "rauc" ]; then updater_packages="rauc rauc-service"; fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
         grub-efi-amd64 shim-signed \
         podman podman-docker netavark aardvark-dns catatonit uidmap \
         jq openssl curl ca-certificates iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
-        fdisk gdisk parted e2fsprogs dosfstools \
+        fdisk gdisk parted e2fsprogs xfsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
         squashfs-tools \
-        openssh-server sudo less nano htpdate
-# NB: the apt lists survive THIS layer on purpose — the later `apt-get install` steps below (the RigForge toolchain, the
-# updater) run without their own `apt-get update` and resolve against these lists. They are deleted after the LAST apt
-# step: nothing at runtime uses apt (no apt on the running box), and the rootfs ships as a flat tarball, so a late
-# deletion genuinely leaves every slot and update bundle smaller.
+        openssh-server sudo less nano htpdate \
+        git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
+        linux-cpupower msr-tools $updater_packages; \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
+# All appliance packages are installed and apt's temporary files removed in one layer. Marker
+# changes reuse this layer; a cold or evicted cache does not retain the apt lists in its snapshot.
 
 # The stack, at the image's exact release state: pithead + schemas + the build/ mount sources
 # services bind-mount. Context = repo root. BUILD_COMMIT: the commit built from — the artifact's own
@@ -200,9 +201,6 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
-RUN apt-get install -y --no-install-recommends \
-        git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
-        linux-cpupower msr-tools
 ARG RIGFORGE_REF=dcdbc7e47c16779c58163d7b9d8650a1b5ff6854
 RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
@@ -290,9 +288,8 @@ COPY os/overlay/pithead-sync.service /etc/systemd/system/pithead-sync.service
 COPY os/overlay/pithead-sync /usr/local/sbin/pithead-sync
 # State mounts derive from the boot disk every boot, never labels: every pithead disk carries the same labels, and two at once made LABEL= mount the wrong /data.
 COPY os/overlay/pithead-mount-generator /usr/lib/systemd/system-generators/pithead-mount-generator
-COPY os/overlay/pithead-boot.service /etc/systemd/system/pithead-boot.service
-COPY os/overlay/pithead-setup-again.service /etc/systemd/system/pithead-setup-again.service
-COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version /usr/local/sbin/
+COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/overlay/pithead-address-watch.service os/overlay/pithead-address-watch.timer /etc/systemd/system/
+COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch /usr/local/sbin/
 # Physical-presence configuration channel (#786 sub-issue D): pithead-boot's one stage before render; no unit of its own.
 COPY os/overlay/pithead-media-config /usr/local/sbin/pithead-media-config
 # Hugepages sizing (#977): the sysctl.d reservation above is sized for the supported 16 GB machine;
@@ -302,6 +299,9 @@ COPY os/overlay/pithead-hugepages.service /etc/systemd/system/pithead-hugepages.
 COPY os/overlay/pithead-hugepages /usr/local/sbin/pithead-hugepages
 # The pool's SECOND writer (#1724): xmrig runs as root and grows nr_hugepages through sysfs; this drop-in fences the miner unit off both subtrees.
 COPY os/overlay/pithead-xmrig-hugepages.conf /etc/systemd/system/xmrig.service.d/pithead-hugepages.conf
+COPY os/overlay/pithead-serial-port-present /usr/local/sbin/pithead-serial-port-present
+ARG SERIAL_GETTY_UNIT_PREFIX=serial-getty
+COPY os/overlay/pithead-serial-getty.conf /etc/systemd/system/${SERIAL_GETTY_UNIT_PREFIX}@ttyS0.service.d/override.conf
 # The two-tier reset's deep tier and the wedged-/data recovery path: reformats /data before it
 # mounts, on a `pithead factory-reset` request (ESP marker) or a genuinely unmountable partition.
 # Ordered before data.mount by its unit; fail-safe — a healthy, unmarked partition is never touched.
@@ -338,20 +338,14 @@ RUN mkdir -p /etc/ssh/sshd_config.d \
 RUN mkdir -p /etc/systemd/system-preset \
     && printf 'disable *\n' > /etc/systemd/system-preset/00-pithead.preset \
     && systemctl mask systemd-firstboot.service
-RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
-# The updater is chosen per image. RAUC is a Debian package, so it is installed here when
-# selected; leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
-ARG PITHEAD_UPDATER=""
+RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
+# The updater is chosen per image. The package install above includes RAUC only when selected;
+# leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
 # NB: `rauc` is the CLI ONLY. Debian splits the D-Bus daemon into `rauc-service`, which is not even
 # a Recommends of `rauc` — so --no-install-recommends is not what drops it, the package simply has
 # to be named. Install just `rauc` and you get a binary that cannot install anything, failing with
 # "de.pengutronix.rauc was not provided by any .service files" rather than anything that names a
 # missing daemon. Both packages are required.
-RUN if [ "$PITHEAD_UPDATER" = "rauc" ]; then \
-        apt-get install -y --no-install-recommends rauc rauc-service; \
-    fi
-# The last apt step is above — from here the lists are dead weight in every slot and bundle.
-RUN rm -rf /var/lib/apt/lists/*
 # The disk installer and the boot config it writes to a target. No image payload ships with it —
 # it copies the running slot, so the artifact does not carry a compressed copy of itself.
 COPY os/installer/pithead-install /usr/local/sbin/pithead-install
@@ -375,6 +369,7 @@ RUN systemctl enable podman.socket pithead-boot.service pithead-cpu-governor.ser
         systemd-networkd systemd-networkd-wait-online pithead-sync.service pithead-firstboot.service \
         pithead-data-reset.service pithead-machine-id.service pithead-hugepages.service \
         pithead-journal-persist.service pithead-setup-again.service pithead-boot-version.service \
+        pithead-address-watch.timer \
     && systemctl disable ssh
 # systemd-repart.service is static — it is pulled in by sysinit.target, and `systemctl enable` on a
 # static unit is an error that would fail the build. Assert it is present instead.

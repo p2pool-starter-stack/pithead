@@ -52,7 +52,10 @@ run_rigforge_reverse() { # <rig-name> <orig-max_temp_c-or-empty>
     fi
     local reflect=$((orig_maxt + 2)) change_id
     it_step "rig-side edit (direct control API): max_temp_c -> $reflect on $RIG_HOST:${RIG_CONTROL_PORT}…"
-    rig_key_mark rig "$rig" max_temp_c "$orig_maxt" # abort-safe unwind, rig route (#1379)
+    rig_key_mark rig "$rig" max_temp_c "$orig_maxt" || { # abort-safe unwind, rig route (#1379)
+        it_skip_leg "enriched-feed reflection (#516)" "the original max_temp_c cannot be recorded for the abort-safe unwind, so no write is sent (#2668)"
+        return 0
+    }
     change_id="$(_rig_control_apply "{\"max_temp_c\":$reflect}")"
     if [ -z "$change_id" ]; then
         it_fail "direct rig control apply accepted (#516)" "the rig's /apply did not return a change_id"

@@ -12,18 +12,67 @@
 # that worked — that is the #971 incident, and the image check below is the same shape one layer
 # further in.
 
-# What the live stack was RUNNING, by service, before this run touched anything, and what
-# deploy_branch then built. Both are image IDs, not tags: the defect they exist to catch is a tag
-# that MOVED, so the tag cannot be the instrument. Empty means "not captured" — a skip, never a pass.
+# What the live stack was RUNNING, by service, before this run touched anything. Image IDs, not
+# tags: the defect this catches is a tag that MOVED. Empty is never a restore pass.
 BASELINE_IMAGES=""
-BRANCH_IMAGES=""
 # Was pithead-egress.service (#2460) on the bench before this run? `up`/`upgrade` install it on any
 # DIY host, the bench included, so a run that found none must leave none: the bench is shared, and
 # an unrecorded unit is drift. present | absent; empty = never read, which the restore refuses.
 EGRESS_UNIT_BEFORE=""
+# The same record for pithead-egress.timer and its pithead-egress-check.service (#2599).
+EGRESS_CHECK_BEFORE=""
 
-egress_boot_unit_state() { # -> present | absent | "" (the bench could not be asked)
-    on_bench "if systemctl cat pithead-egress.service >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
+# absent only when systemd itself answers not-found: a failed lookup is "" (unknown), never absent.
+egress_boot_unit_state() { # [unit] -> present | absent | "" (the bench could not be asked)
+    local u="${1:-pithead-egress.service}"
+    on_bench "if systemctl cat $u >/dev/null 2>&1; then echo present; elif [ \"\$(systemctl show -p LoadState --value $u 2>/dev/null)\" = not-found ]; then echo absent; fi" 2>/dev/null || true
+}
+
+# The egress check pair (#2599), restored on the same rule as the boot unit below.
+restore_egress_check_units() {
+    case "$EGRESS_CHECK_BEFORE" in
+    present) return 0 ;;
+    absent) ;;
+    *)
+        warn "restore proof: whether pithead-egress.timer predates this run was never recorded, so the restore cannot say it left the bench as found (#2599)."
+        return 1
+        ;;
+    esac
+    on_bench "sudo systemctl disable --now pithead-egress.timer >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-egress.timer /etc/systemd/system/pithead-egress-check.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state pithead-egress.timer)" = absent ] &&
+        [ "$(egress_boot_unit_state pithead-egress-check.service)" = absent ]; then
+        ok "restore proof: pithead-egress.timer and its check removed — no trace of this run's egress check on the bench (#2599)"
+        return 0
+    fi
+    warn "restore proof: pithead-egress.timer or pithead-egress-check.service is still on the bench after the restore, and neither was there before this run (#2599)."
+    return 1
+}
+
+# pithead-lan-guard.service and pithead-lan-hold.service (#2749), recorded and restored one by one on
+# the egress unit's rule: a unit the run added is removed and proved gone, wants included; one the
+# bench already had stays. present | absent; empty = never read, which the restore refuses.
+LAN_UNIT_BEFORE=""
+HOLD_UNIT_BEFORE=""
+restore_lan_unit() { # <unit> <state before the run>
+    case "$2" in
+    present)
+        step "restore proof: $1 was already on the bench before this run — left in place, not removed (#2749)"
+        return 0
+        ;;
+    absent) ;;
+    *)
+        warn "restore proof: whether $1 predates this run was never recorded, so the restore cannot say it left the bench as found (#2749)."
+        return 1
+        ;;
+    esac
+    on_bench "sudo systemctl disable --now $1 >/dev/null 2>&1; sudo rm -f /etc/systemd/system/$1; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state "$1")" = absent ] &&
+        on_bench "w=\$(systemctl show -p Wants --value docker.service multi-user.target) && ! grep -qw $1 <<<\"\$w\"" >/dev/null 2>&1; then
+        ok "restore proof: $1 removed — no trace of this run's boot unit on the bench (#2749)"
+        return 0
+    fi
+    warn "restore proof: $1 is still on the bench after the restore, and it was not there before this run (#2749)."
+    return 1
 }
 
 # Put the boot unit back the way the run found it and prove it. A unit that predates the run is the
@@ -57,53 +106,115 @@ restore_egress_boot_unit() {
 # project, so this reads the live stack whichever checkout last drove it. A re-tag does not move an
 # image ID; only a rebuild or a different image does.
 stack_image_census() { # -> sorted "<service>=<image-id>" lines; empty when no stack is running
-    on_bench "docker ps -q --filter label=com.docker.compose.project=pithead 2>/dev/null |
-        xargs -r docker inspect --format '{{index .Config.Labels \"com.docker.compose.service\"}}={{.Image}}' 2>/dev/null |
-        sort" 2>/dev/null || true
+    local live line
+    live="$(stack_restore_census)" || return 1
+    while IFS= read -r line; do
+        case "$line" in *'|running') printf '%s\n' "${line%%|*}" ;; esac
+    done <<<"$live" | sort
+}
+
+# Read every container, including stopped services, duplicates and late scenario recreations.
+stack_restore_census() {
+    on_bench "bash -s" <<'PROBE'
+ids=$(docker ps -aq --filter label=com.docker.compose.project=pithead) || { echo 'docker ps failed during census' >&2; exit 1; }
+while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id" && printf '.') || { echo "docker inspect service failed for $id" >&2; exit 1; }
+    service=${service%$'\n'.}
+    image=$(docker inspect --format '{{.Image}}' "$id") || { echo "docker inspect image failed for $id" >&2; exit 1; }
+    owner=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$id" && printf '.') || { echo "docker inspect owner failed for $id" >&2; exit 1; }
+    owner=${owner%$'\n'.}
+    state=$(docker inspect --format '{{.State.Status}}' "$id") || { echo "docker inspect state failed for $id" >&2; exit 1; }
+    [[ "$service" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ && "$image" =~ ^sha256:[a-f0-9]{64}$ && "$state" =~ ^[a-z]+$ ]] || { echo "invalid Compose identity on $id" >&2; exit 1; }
+    case "$owner" in *'|'*|*$'\n'*) echo "invalid Compose owner on $id" >&2; exit 1 ;; esac
+    printf '%s=%s|%s|%s\n' "$service" "$image" "$owner" "$state"
+done <<<"$ids"
+PROBE
+}
+
+# Resolve the baseline checkout's Compose image references to image objects, not moving tags.
+declared_image_census() {
+    on_bench "cd '$RESTORE_DIR' && bash -s" <<'PROBE'
+set -o pipefail
+docker compose config --format json | jq -r '.services | to_entries[] | [.key, .value.image] | @tsv' |
+while IFS="$(printf '\t')" read -r service image; do
+    id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null) || id=missing
+    printf '%s=%s\n' "$service" "$id"
+done
+PROBE
+}
+
+# A different image ID is not evidence of a baseline rebuild: the branch can recreate a
+# container after its first census. Check the actual baseline declaration and Compose owner.
+grade_restore_identity() { # <baseline> <live-container-census> <declared> <test-dir>
+    local svc image expected owner state entry seen
+    while IFS= read -r svc; do
+        [ -n "$svc" ] || continue
+        svc="${svc%%=*}"
+        expected="$(census_get "$3" "$svc")"
+        seen=0
+        while IFS= read -r entry; do
+            case "$entry" in "$svc="*) ;; *) continue ;; esac
+            seen=$((seen + 1))
+            image="${entry#*=}"
+            state="${image##*|}"
+            owner="${image#*|}"
+            owner="${owner%|*}"
+            image="${image%%|*}"
+            if [ "$state" != running ]; then
+                printf 'not-running %s (%s)\n' "$svc" "$state"
+            elif [ -z "$image" ] || [ -z "$expected" ] || [ -z "$owner" ] || [ "$owner" = '<no value>' ]; then
+                printf 'unproved %s\n' "$svc"
+            elif [ "$owner" = "$4" ]; then
+                printf 'test-checkout %s\n' "$svc"
+            elif [ "$image" != "$expected" ]; then
+                printf 'wrong-image %s\n' "$svc"
+            else
+                printf 'verified %s\n' "$svc"
+            fi
+        done <<<"$2"
+        [ "$seen" -gt 0 ] || printf 'unproved %s\n' "$svc"
+        [ "$seen" -le 1 ] || printf 'duplicate %s\n' "$svc"
+    done <<<"$1"
+    while IFS= read -r entry; do
+        svc="${entry%%=*}"
+        [ -n "$svc" ] || continue
+        printf '%s\n' "$1" | cut -d= -f1 | grep -qxF -- "$svc" && continue
+        printf 'unexpected-service %s\n' "$svc"
+    done <<<"$2"
+}
+
+# Recreate only containers that still belong to the test checkout; the kept chain nodes
+# retain their container IDs when they already belong to the baseline (#2639).
+recreate_test_checkout_containers() {
+    on_bench "cd '$RESTORE_DIR' && E2E_DIR='$E2E_DIR' bash -s" <<'PROBE'
+ids=$(docker ps -aq --filter label=com.docker.compose.project=pithead) || { echo 'docker ps failed during restore' >&2; exit 1; }
+allowed=$(docker compose config --services) || { echo 'docker compose config --services failed during restore' >&2; exit 1; }
+services=()
+while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    label=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$id") || { echo "docker inspect failed for $id" >&2; exit 1; }
+    service="${label%%|*}"
+    [ "${label#*|}" = "$E2E_DIR" ] || continue
+    if [[ "$service" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] && grep -qxF -- "$service" <<<"$allowed"; then
+        services+=("$service")
+    else
+        echo "Removing test-checkout-only container $id ($service)"
+        docker rm -f "$id" || { echo "docker rm -f failed for $id ($service)" >&2; exit 1; }
+    fi
+done <<<"$ids"
+[ "${#services[@]}" -gt 0 ] || exit 0
+printf 'Recreating test-checkout services from baseline: %s\n' "${services[*]}"
+docker compose up -d --no-deps --force-recreate "${services[@]}" || {
+    printf 'docker compose up --force-recreate failed for %s\n' "${services[*]}" >&2
+    exit 1
+}
+PROBE
 }
 
 # One service's image ID out of a census. Empty when the census does not carry that service.
 census_get() { # <census> <service>
     printf '%s\n' "$1" | sed -n "s/^$2=//p" | head -n1
-}
-
-# Which services came back on what. Pure — three strings in, one verdict per baseline service out,
-# no ssh and no docker — so the mutation proof for it runs with no bench
-# (selftest-e2e-restore-proof.sh). Graded per service because a partial overlap is the realistic
-# case: a branch that changes two Dockerfiles rebuilds two images, and the other services
-# legitimately carry an image ID that matches the baseline AND the branch.
-#   kept     the same image object it ran before the run
-#   rebuilt  different from both censuses — built from RESTORE_DIR's own tree by the restore
-#   stale    the image THIS RUN built for the branch, now running under the baseline's name
-#   gone     ran before the run, not running now
-# `stale` is graded before `rebuilt` on purpose: an image that equals the branch's is never
-# evidence of a rebuild, however different it is from the baseline.
-# No `[ -n "$branch" ]` guard on the stale arm, deliberately: reaching it already requires a
-# non-empty $now, so an absent branch census (a --mode check run, where deploy_branch never ran)
-# fails the equality on its own. The guard was there in the first draft; it could not change any
-# outcome, and the mutation battery is what showed that — an unkillable mutant is a claim about the
-# code, not about the test.
-# It walks the BASELINE, so a service that only exists in the after-census is not graded: the
-# question here is whether what was running came back, not whether something new appeared. A new
-# service is a compose-file change, which the deploy phase already exercises.
-grade_image_census() { # <baseline> <now> <branch> -> "<verdict> <service>" lines
-    local svc now base branch
-    while IFS= read -r svc; do
-        [ -n "$svc" ] || continue
-        svc="${svc%%=*}"
-        base="$(census_get "$1" "$svc")"
-        now="$(census_get "$2" "$svc")"
-        branch="$(census_get "$3" "$svc")"
-        if [ -z "$now" ]; then
-            printf 'gone %s\n' "$svc"
-        elif [ "$now" = "$base" ]; then
-            printf 'kept %s\n' "$svc"
-        elif [ "$now" = "$branch" ]; then
-            printf 'stale %s\n' "$svc"
-        else
-            printf 'rebuilt %s\n' "$svc"
-        fi
-    done <<<"$1"
 }
 
 # Restore proof (#971): after the restore brings the baseline back up, prove the LIVE stack
@@ -127,8 +238,7 @@ grade_image_census() { # <baseline> <now> <branch> -> "<verdict> <service>" line
 #      BRANCH's copy would compare against E2E_DIR and print the OK verdict on exactly the
 #      stranded box this check exists to catch. It needs RESTORE_DIR on v1.19.2+, the release that
 #      added the check; anything older classifies as no-check and FAILS rather than passing quietly.
-#   4. The live containers are on the images the baseline ran, or on ones rebuilt from RESTORE_DIR
-#      — never on the ones this run built for the branch. Spelled out at the check itself.
+#   4. Every live container runs the baseline-declared image and none names the test checkout.
 #   5. monerod and tari are the same containers they were before the deploy, when the branch left
 #      them unchanged (#2639, chain-keep.sh). Recorded per node; red only when the restore itself
 #      recreated or restarted a node that the deploy kept and the harness left as the baseline's.
@@ -224,63 +334,41 @@ PROBE
         ;;
     esac
 
-    # 4. WHAT CODE IS ACTUALLY RUNNING. Checks 1-3 are all green on a stack running the BRANCH's
-    #    images under the baseline's name: the creds are read from the on-disk .env at runtime, so
-    #    the bake matches; monerod answers with them; and the control units name RESTORE_DIR either
-    #    way. Not one of them ever looked at the image. The restore comment at #454 already warned
-    #    that restoring from the wrong dir "hands the pithead project locally-built :dev images" —
-    #    this is the same hazard reached from the RIGHT dir, when that dir is a source checkout and
-    #    therefore shares `:dev` with the branch under test.
-    #    Graded per service against two censuses, because a partial overlap is the realistic case —
-    #    a branch that only changes two Dockerfiles rebuilds only two images, and the other three
-    #    legitimately match both sides:
-    #      same as baseline          -> restored (or never rebuilt). Fine.
-    #      differs, EQUALS the branch-> the branch's image is live under the baseline's name. RED.
-    #      differs from both         -> rebuilt from RESTORE_DIR's own tree. Reported, not asserted:
-    #                                   "not the branch's" is a weaker claim than "built from
-    #                                   RESTORE_DIR". Settling that would need the image's own build
-    #                                   provenance, and the dashboard's ships empty (#1449).
-    # Where a false RED would come from, named rather than discovered later: 'gone' turns a service
-    # that is not running into a proof failure, and wait_bench_healthy above only WARNS on a timeout.
-    # So a stack that is genuinely still coming up after its 300s poll now fails the restore instead
-    # of passing with a warning. That is the intended reading — a service that ran before the run and
-    # does not run after it is a failed restore, whatever the reason — but it is a behaviour change on
-    # a slow box, and it is the first thing to look at if a restore starts failing here.
-    local now_images verdicts line stale=0 rebuilt=0 kept=0 gone=0
-    now_images="$(stack_image_census)"
+    # Compare every live container with the baseline declaration and reject checkout residue.
+    local line identity declared live residue
+    live="$(stack_restore_census)" || {
+        warn "restore proof: docker ps/inspect failed during final container census"
+        prc=1
+        live=""
+    }
     if [ -z "$BASELINE_IMAGES" ]; then
         warn "restore proof: image identity NOT CHECKED — no baseline census was taken (nothing was running at preflight)."
-    elif [ -z "$now_images" ]; then
-        warn "restore proof: image identity NOT CHECKED — no stack is running to census now."
         prc=1
     else
-        verdicts="$(grade_image_census "$BASELINE_IMAGES" "$now_images" "$BRANCH_IMAGES")"
+        declared="$(declared_image_census)" || declared=""
+        identity="$(grade_restore_identity "$BASELINE_IMAGES" "$live" "$declared" "$E2E_DIR")"
         while IFS= read -r line; do
             case "$line" in
-            kept\ *) kept=$((kept + 1)) ;;
-            rebuilt\ *) rebuilt=$((rebuilt + 1)) ;;
-            stale\ *)
-                warn "restore proof: '${line#stale }' is still on the image THIS RUN BUILT for the branch — the baseline was renamed, not restored."
-                stale=$((stale + 1))
-                ;;
-            gone\ *)
-                warn "restore proof: service '${line#gone }' ran before this run and is NOT running now."
-                gone=$((gone + 1))
+            verified\ *) ;;
+            *)
+                warn "restore proof: $line; baseline image or Compose owner not proved"
+                prc=1
                 ;;
             esac
-        done <<<"$verdicts"
-        if [ "$stale" -gt 0 ] || [ "$gone" -gt 0 ]; then prc=1; fi
-        if [ "$stale" -gt 0 ]; then
-            warn "  $stale service(s) are running the branch under test. Rebuild the baseline by hand: cd $RESTORE_DIR && ./pithead upgrade"
-        elif [ "$gone" -gt 0 ]; then
-            warn "  the restore did not bring the whole baseline back — check 'pithead status' in $RESTORE_DIR."
-        elif [ "$rebuilt" -gt 0 ]; then
-            ok "restore proof: $kept service(s) back on their pre-run images, $rebuilt rebuilt from $RESTORE_DIR (not the branch's)"
-        else
-            ok "restore proof: all $kept service(s) are back on the exact images they ran before this run"
+        done <<<"$identity"
+        residue="$(on_bench "docker ps -a --filter label=com.docker.compose.project=pithead --filter label=com.docker.compose.project.working_dir='$E2E_DIR' --format '{{.Label \"com.docker.compose.service\"}}'")" || {
+            warn "restore proof: could not inspect stopped test-checkout containers"
+            prc=1
+        }
+        if [ -n "$residue" ]; then
+            warn "restore proof: test-checkout containers remain (including stopped): $residue"
+            prc=1
         fi
     fi
     chain_restore_proof || prc=1
     restore_egress_boot_unit || prc=1
+    restore_egress_check_units || prc=1
+    restore_lan_unit pithead-lan-guard.service "$LAN_UNIT_BEFORE" || prc=1
+    restore_lan_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE" || prc=1
     return "$prc"
 }

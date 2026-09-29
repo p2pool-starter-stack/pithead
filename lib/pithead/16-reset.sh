@@ -127,6 +127,7 @@ config_reset() {
     docker compose down --remove-orphans 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with the config wipe."
     remove_tor_egress_firewall 2>/dev/null || true
+    lan_guard_teardown config-reset # only once the engine shows both nodes stopped (#2749)
     # machine-role rides along with config.json: pithead-boot's condition is the two paths OR'd,
     # so leaving the role marker behind would keep it armed and the wizard would never re-open.
     rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role

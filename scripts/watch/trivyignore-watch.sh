@@ -2,36 +2,25 @@
 #
 # .config/trivyignore obsolete-mute watch (#1174).
 #
-# Nothing today checks whether a `.config/trivyignore` entry's finding still exists anywhere. Two
-# sentences in the file itself used to claim the weekly CVE sweep (#833) does — it does not: the
-# sweep passes `trivyignores: .config/trivyignore` to trivy (os-rootfs.yml, ci.yml), and trivy's ignore
-# file filters matching findings OUT of the report before the sweep ever sees them. A muted finding
-# is invisible to the sweep by construction, so a mute that outlives the finding it was written for
-# rots silently — which is exactly how the two mutes #1153 found stale survived until someone
-# checked by hand.
+# The weekly CVE sweep (#833) applies `.config/trivyignore`, hiding muted findings. This watch
+# scans without that file so stale mutes cannot survive unseen, as two did in #1153.
 #
 # REPORT-ONLY. The `pin-watch.sh` posture: never a gate, because a cleared mute is housekeeping, not
 # a build failure. It never edits `.config/trivyignore` and never opens a PR.
 #
-# THE TRAP, found while writing #1174: `.config/trivyignore` is SHARED across both lanes and covers
-# SEVERAL images. A per-image "does this ID still show up" check is worse than no check, because it
-# produces a confident, WRONG deletion list — seven IDs looked dead scanning the appliance rootfs
-# alone, and some of those were live dashboard-image mutes. An entry is obsolete only when it is
-# absent from EVERY covered image's own scan, so this script builds and scans all of them with no
-# ignore file and only reports an ID that no covered image reports.
+# `.config/trivyignore` covers several images. Seven IDs looked dead in a rootfs-only scan,
+# but some were live in the dashboard. An ID is obsolete only if absent from every image.
 #
 # The covered images, enumerated from the real build/scan setup rather than guessed (ci.yml's
 # build-images matrix + os-rootfs.yml, both cited below):
 #   pithead-os-rootfs    os/rootfs/Dockerfile   (debian:trixie-slim + the golang builder stage)
-#   pithead-dashboard    dashboard              (python:3.11-slim, the `production` stage — the
-#                                                 same default target ci.yml's untargeted build uses)
+#   pithead-dashboard    dashboard              (python:3.11-slim, default production stage)
 #   pithead-monero       build/monero           (ubuntu:24.04)
 #   pithead-p2pool       build/p2pool           (ubuntu:24.04)
 #   pithead-xmrig-proxy  build/xmrig-proxy      (ubuntu:24.04)
 #   pithead-tor          build/tor              (alpine:3.24)
 #
-# Each is built EXACTLY the way the gate builds it (same Dockerfile, same context, same required
-# build args) — scanning an image built any other way proves nothing about what the gate sees.
+# Build each image as the gate does; other build inputs would prove nothing about the gate.
 #
 # FAIL LOUDLY ON A BROKEN RUN. An empty image list, a build that cannot run, or a scan that cannot
 # run (trivy/docker missing, a pull failure, an unparseable report) must never fall through to "0
@@ -39,14 +28,7 @@
 # class the sweep itself has. A broken or partial scan means "unknown", never "clean", so this
 # refuses to name ANY mute obsolete off an incomplete run and exits 1 instead.
 #
-# THE PARITY CONTRACT (#1290). TRIVY_VERSION below is the one place that declares which trivy
-# engine this script's own scan uses. `--check-parity` (wired into `make lint-trivy-parity`) holds
-# the gate workflows' `./.github/actions/install-trivy` `version:` input, and the pinned image's own
-# measured version, to that one value. Those literals are read because they are the lines that
-# DECIDE the engine: every trivy-action step there passes `skip-setup-trivy: true`, so it installs
-# nothing and declares no version at all (#2214). Grading a trivy-action `version:` instead would
-# grade a value the action never resolves — the defect #2214's review caught, and the shape
-# scripts/lint/lint-trivy-installer-cache.sh now holds in place.
+# `--check-parity` compares TRIVY_VERSION with gate installer pins and image version (#1290, #2214).
 #
 # Usage:
 #   scripts/watch/trivyignore-watch.sh              Build + scan every covered image with NO ignore file
@@ -69,15 +51,11 @@ IGNOREFILE="$ROOT/.config/trivyignore"
 # Overridable so --self-test can point this at fixture files instead.
 GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml"
 
-# The ONE source of truth for the scanning engine (#1290) — the parity contract is in the header.
-# Digest-pinned (repo convention, #135/#373) rather than `:latest`, so a run today and a run next
-# month scan with the same trivy and the same vulnerability-DB client.
+# The parity contract's pinned scanning engine (#1290); do not use `:latest`.
 TRIVY_VERSION="0.73.0"
 TRIVY_IMAGE="aquasec/trivy@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c" # TRIVY_VERSION above
 
-# Same severity/fixability scope as the gate (ci.yml, os-rootfs.yml): .config/trivyignore only ever holds
-# entries that would otherwise block on THAT scope, so scanning any wider scope here would report
-# an ID as "still live" off a finding the gate itself would never have seen in the first place.
+# Match the gate's severity/fixability scope so unrelated findings do not keep mutes live.
 SEVERITY="HIGH,CRITICAL"
 
 IMAGES="pithead-os-rootfs pithead-dashboard pithead-monero pithead-p2pool pithead-xmrig-proxy pithead-tor"
@@ -90,10 +68,14 @@ build_image() {
     local name="$1" tag="pithead-mutewatch-$1:latest"
     case "$name" in
     pithead-os-rootfs)
-        # Same two steps os-rootfs.yml runs: stamp BUILD_COMMIT (the Dockerfile COPYs it), then
-        # build with the release variant's updater. Heavy — the rootfs COMPILES docker-compose and
+        # Match os-rootfs.yml: fetch the VERSION tag, stage the generated CLI and compose inputs,
+        # then build with the release variant's updater. Heavy — the rootfs COMPILES docker-compose and
         # cosign from source on a pinned Go toolchain (scripts/watch/pin-watch.sh carries the same note).
         git -C "$ROOT" rev-parse HEAD >"$ROOT/os/rootfs/BUILD_COMMIT" || return 1
+        local version_tag
+        version_tag="v$(tr -d ' \t\r\n' <"$ROOT/VERSION")"
+        git -C "$ROOT" fetch -q --depth=1 origin "+refs/tags/$version_tag:refs/tags/$version_tag" 2>/dev/null || true
+        bash "$ROOT/os/build-image.sh" --stage-only >&2 || return 1
         docker build -f "$ROOT/os/rootfs/Dockerfile" -t "$tag" \
             --build-arg PITHEAD_UPDATER=rauc "$ROOT" >&2 || return 1
         ;;
@@ -107,24 +89,24 @@ build_image() {
     printf '%s' "$tag"
 }
 
-# <tag> -> one vulnerability ID per line on stdout, rc 1 on any failure to run or parse the scan.
-# NO trivyignores flag — that is the entire point: an ignored finding must still show up here so an
-# obsolete mute can be told apart from a live one.
+# <tag> -> finding IDs; a clean Trivy target can omit Vulnerabilities (shipped-image-sweep-report.sh).
 scan_image() {
     local tag="$1" json
     json=$(docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" \
         image --scanners vuln --severity "$SEVERITY" --ignore-unfixed --format json "$tag" \
         2>/dev/null) || return 1
-    printf '%s' "$json" | jq -er '(.Results // [])[] | (.Vulnerabilities // [])[] | .VulnerabilityID' \
-        2>/dev/null
-    # jq exits 1 when it produces no output at all (a clean scan) — that is success here, not a
-    # scan failure, so the pipeline's rc is deliberately not propagated past this point.
-    return 0
+    printf '%s' "$json" | jq -sr '
+        if length != 1 or (.[0] | type) != "object" or (.[0].Results | type) != "array"
+            or (.[0].Results | length) == 0
+            or any(.[0].Results[]; (.Target | type) != "string" or (.Target | length) == 0
+                or (has("Vulnerabilities") and (.Vulnerabilities | type) != "array"))
+        then error("invalid report")
+        else .[0].Results[] | (.Vulnerabilities // [])[] | .VulnerabilityID |
+            if type == "string" and test("^[^[:space:]]+$") then . else error("invalid finding ID") end end
+    ' 2>/dev/null
 }
 
-# <ignorefile> -> one finding ID per line, comments and blank lines stripped. `.config/trivyignore`'s
-# entries are bare IDs (CVE-.../GHSA-...) one per line; an inline note, if one is ever added, would
-# be a second whitespace-separated field, so only the first field is taken.
+# <ignorefile> -> one ID per line; ignore comments and any future inline notes.
 ignored_ids() {
     grep -vE '^[[:space:]]*(#|$)' "$1" | awk '{print $1}'
 }
@@ -327,6 +309,28 @@ if [ "${1:-}" = "--self-test" ]; then
 
     st "shipped sweep keeps released-main root fallback" "$(grep -Fc 'git show origin/main:.config/trivyignore >main.trivyignore 2>/dev/null || git show origin/main:.trivyignore >main.trivyignore' "$ROOT/.github/workflows/ci.yml")" "1"
     st "weekly workflow keeps tracker #1382 exact title" "$(grep -Fc 'TITLE: "Obsolete .trivyignore mutes (weekly report)"' "$ROOT/.github/workflows/trivyignore-watch.yml")" "1"
+    st "rootfs tag is fetched and inputs staged before docker build" \
+        "$(awk '/^[[:space:]]*git -C "\$ROOT" fetch -q --depth=1 origin/{fetch=NR} /^[[:space:]]*bash "\$ROOT\/os\/build-image.sh" --stage-only/{stage=NR} /^[[:space:]]*docker build -f "\$ROOT\/os\/rootfs\/Dockerfile"/{build=NR} END {print (fetch > 0 && stage > fetch && build > stage)}' "$ROOT/scripts/watch/trivyignore-watch.sh")" "1"
+
+    for payload in '{invalid json' '' '{"Results":[]}' '{"Results":[{}]}' '{"Results":[{"Target":"t","Vulnerabilities":null}]}' '{"Results":[{"Target":"t","Vulnerabilities":[{"VulnerabilityID":""}]}]}' '{"Results":[{"Target":"t","Vulnerabilities":[{"VulnerabilityID":" "}]}]}'; do
+        docker() { printf '%s' "$payload"; }
+        scan_rc=0
+        scan_image fixture >/dev/null || scan_rc=1
+        st "invalid or empty scan data fails closed" "$scan_rc" "1"
+    done
+    for payload in '{"Results":[{"Target":"t"}]}' '{"Results":[{"Target":"t","Vulnerabilities":[{"VulnerabilityID":"CVE-1"}]}]}'; do
+        scan_rc=0
+        scan_image fixture >/dev/null || scan_rc=1
+        st "valid clean or populated target is accepted" "$scan_rc" "0"
+    done
+    unset -f docker
+
+    build_image() { printf '%s' "$1"; }
+    docker() { printf '{"Results":[]}'; }
+    scan_rc=0
+    report "$IGNOREFILE" >/dev/null 2>&1 || scan_rc=1
+    st "incomplete scans cannot report obsolete mutes" "$scan_rc" "1"
+    unset -f docker
 
     st "ignored_ids strips comments and blank lines" \
         "$(
@@ -336,11 +340,7 @@ if [ "${1:-}" = "--self-test" ]; then
             rm -f "$f"
         )" "CVE-2026-1 CVE-2026-2 "
 
-    # Fixture per-image findings, keyed by the real image names. CVE-TRAP sits ONLY in the
-    # dashboard image — the shape #1174 found for real: an appliance-only per-image check would
-    # never see it and would call it obsolete. CVE-LIVE-ROOTFS sits only in the appliance rootfs,
-    # the mirror case. CVE-PLANTED sits in NONE of them — the mutation the issue's Verification
-    # section asks for: plant a mute for an ID no image reports and confirm the report names it.
+    # Dashboard-only and rootfs-only IDs stay live; the unreported planted ID is obsolete.
     build_image() { printf '%s' "$1"; } # the "tag" is just the name; no docker involved
     scan_image() {
         case "$1" in

@@ -5,7 +5,7 @@
 # written (wallet address forms and their checksums, the two worker shapes, energy, the /24 subnet
 # rule), the closed-schema invariant keeping config.reference.json a superset of every path pithead
 # reads plus the core-key shortlist that must stay inside it (#561/#502/#529), describe_change's
-# per-key classification of an apply into INFO / CONFIRM / host-only DEST rows and its rule that no
+# per-key classification of an apply into INFO / CONFIRM / destructive DEST rows and its rule that no
 # secret value ever reaches the preview (#719/#152/#121/#380), `pithead render` rebuilding the whole
 # derived layer in place (#790), and the subnet-collision diagnosis a failed compose network is
 # translated into (#180).
@@ -20,8 +20,8 @@
 # test-control-editable-allowlist.sh by #1105 R14); and render-quadlet parity, an appliance test.
 
 echo "== unit: describe_change =="
-# Monero prune (#719): DISABLE (on → off) forces a full re-sync, host-only DEST; ENABLE (off → on)
-# reclaims disk, an operator-intent op — now confirm-gated (CONFIRM), not a flat host-only refuse.
+# Monero prune (#719): DISABLE (on → off) forces a full re-sync (DEST); ENABLE (off → on)
+# reclaims disk (CONFIRM). Both require confirmation from the dashboard.
 assert_contains "prune disable is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_PRUNE 1 0)" "DEST"
 assert_contains "prune enable is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_PRUNE 0 1)" "CONFIRM"
 assert_contains "rpc lan is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_RPC_BIND 127.0.0.1 0.0.0.0)" "DEST"
@@ -70,9 +70,10 @@ case "$(run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD oldpw newp
 *DEST*) ok "stratum pw change hides the secret (DEST, no value shown)" ;;
 *) bad "stratum pw change hides the secret" "expected DEST" ;;
 esac
-# Tor guard self-heal toggle (#424): INFO either way, and the enable warns about circuits dropping.
+# Tor auto-heal toggle (#424): INFO either way, and the enable names circuit refresh and restart costs.
 assert_contains "tor auto-heal enable is INFO" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL false true)" "INFO"
-assert_contains "tor auto-heal enable names the cost" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL false true)" "drops ALL Tor circuits"
+assert_contains "tor auto-heal enable names the refresh" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL false true)" "NEWNYM"
+assert_contains "tor auto-heal enable names the restart cost" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL false true)" "restart drops mining connections"
 assert_contains "tor auto-heal disable names the manual fix" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL true false)" "restart tor"
 # Appliance (#1139): 'doctor' and a scoped tor restart are both CLI-only, and no dashboard control
 # restarts tor alone — the appliance-lane message states the fact instead of naming a remedy that
@@ -109,11 +110,10 @@ assert_contains "empty to local_node is a LOCAL switch" "$(run_sourced "$SANDBOX
 assert_contains "local_node to empty is a REMOTE switch" "$(run_sourced "$SANDBOX" describe_change COMPOSE_PROFILES local_node "")" "REMOTE Monero node"
 assert_contains "wallet is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_WALLET_ADDRESS a b)" "DEST"
 assert_contains "xvb url is INFO" "$(run_sourced "$SANDBOX" describe_change XVB_POOL_URL a b)" "INFO"
-# Data-dir moves (#719): the four service dirs are confirm-gated (an expensive re-sync, not a
-# breach); every OTHER data dir (e.g. TOR_DATA_DIR) stays host-only DEST.
+# Data-dir moves (#719/#1959) are confirm-gated.
 assert_contains "monero data_dir is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_DATA_DIR /a /b)" "CONFIRM"
 assert_contains "dashboard data_dir is CONFIRM" "$(run_sourced "$SANDBOX" describe_change DASHBOARD_DATA_DIR /a /b)" "CONFIRM"
-assert_contains "tor data_dir stays DEST" "$(run_sourced "$SANDBOX" describe_change TOR_DATA_DIR /a /b)" "DEST"
+assert_contains "tor data_dir is CONFIRM" "$(run_sourced "$SANDBOX" describe_change TOR_DATA_DIR /a /b)" "CONFIRM"
 assert_contains "tari mem is INFO" "$(run_sourced "$SANDBOX" describe_change TARI_MEM_LIMIT 2048m 4g)" "INFO"
 # Healthchecks.io (#79): the ping URL is the on/off switch AND a capability secret. Setting it says
 # ENABLED, clearing it says DISABLED — and the value must NEVER be echoed into the apply preview.
@@ -172,13 +172,13 @@ assert_contains "tari clearnet enable warns exposure" "$(run_sourced "$SANDBOX" 
 # restore points and proxy.donate_level host-only — a future-dated restore point silently defeats
 # payout-confirmation tamper evidence, and donate traffic bypasses the Tor socks5.
 assert_contains "monero outbound-peer change is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_OUT_PEERS 12 64)" "CONFIRM"
-# 2026-09 operator ruling (#1888): the remote node endpoints joined that tier — they move TRUST, not
-# disk — while the RPC LOGIN CREDENTIALS for the same node did NOT. That row is the control: it is what makes this set able to say NO.
+# #1888 put the remote node endpoints on this tier; #2333/#2367 moved the RPC login on too.
 node_ep="$(run_sourced "$SANDBOX" describe_change MONERO_NODE_HOST 10.0.0.9 10.0.0.11)"
 assert_contains "monero node endpoint is CONFIRM (#1888)" "$node_ep" "CONFIRM"
 assert_contains "monero node endpoint preview names old -> new" "$node_ep" "10.0.0.9 → 10.0.0.11"
 assert_contains "tari node endpoint is CONFIRM (#1888)" "$(run_sourced "$SANDBOX" describe_change TARI_GRPC_ADDRESS a.lan:18142 b.lan:18142)" "CONFIRM"
-assert_not_contains "a remote node's RPC password is NOT confirm-gated" "$(run_sourced "$SANDBOX" describe_change MONERO_NODE_PASSWORD old new)" "CONFIRM"
+assert_contains "RPC password is confirm-gated, not refused (#2333/#2367)" "$(run_sourced "$SANDBOX" describe_change MONERO_NODE_PASSWORD os2333-oldpw os2333-newpw)" "CONFIRM"
+assert_not_contains "RPC password warning never echoes the value" "$(run_sourced "$SANDBOX" describe_change MONERO_NODE_PASSWORD os2333-oldpw os2333-newpw)" "os2333-oldpw"
 
 echo "== unit: explain_subnet_collision (#180) =="
 ov="$(run_sourced "$SANDBOX" explain_subnet_collision "invalid pool request: Pool overlaps with other one on this address space" 2>&1)"
@@ -268,13 +268,10 @@ rc=$?
 assert_rc "valid dashboard.workers applies" "$rc" "0"
 assert_contains "duplicate worker names are warned" "$out" "first-declared"
 assert_contains "a 1.x dashboard.workers[] list is migrated on apply (#1832)" "$out" "Migrated the 1.x config keys"
-# Nothing from the list reaches .env: the dashboard reads it from its config.json mount, and the
-# per-worker token must not leak into a second secrets file.
-if grep -q 'tok_abc123' "$V/.env"; then bad "worker token stays out of .env" "token landed in .env"; else ok "worker token stays out of .env"; fi
+# The write-capable control token stays host-only, not in the dashboard environment (R15).
+if ! grep -q 'WORKER_API_TOKENS=.*tok_abc123' "$V/.env"; then ok "legacy worker control token stays out of .env"; else bad "legacy worker control token stays out of .env" "write credential leaked"; fi
 
-# workers.list[] is the only worker key 2.0.0 reads (#506/#1832), so this is the authoritative
-# per-field enumeration; the block above keeps only enough 1.x cases to prove the migrate-then-
-# validate order. The path label is built from the entry name in validate_worker_endpoints.
+# workers.list[] is the 2.0.0 key; legacy cases above prove migrate-then-validate order.
 wl_case() { # <workers-json> <label> <expected-msg-fragment>
     seed_env
     printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":%s} }\n' "$WALLET" "$1" >"$V/config.json"
@@ -283,24 +280,26 @@ wl_case() { # <workers-json> <label> <expected-msg-fragment>
     assert_rc "$2 rejected" "$rc" "1"
     assert_contains "$2 message" "$out" "$3"
 }
-wl_case '{"name":"rig1"}' "non-array workers.list" "must be an array"
+wl_case '{"name":"rig1"}' "non-array workers.list" "{name, host?, port?, token?, api_token?}"
 wl_case '[{"host":"10.0.0.5"}]' "workers.list entry without a name" "name"
 wl_case '[{"name":"rig1","host":"10.0.0.5/path"}]' "workers.list host with URL structure" "workers.list[rig1].host"
 wl_case '[{"name":"rig1","host":"attacker:8080"}]' "workers.list host smuggling a port" "workers.list[rig1].host"
 wl_case '[{"name":"rig1","port":65536}]' "out-of-range workers.list port" "workers.list[rig1].port"
 wl_case '[{"name":"rig1","port":"8080"}]' "string workers.list port" "workers.list[rig1].port"
 wl_case '[{"name":"rig1","token":"has space"}]' "unsafe workers.list token" "workers.list[rig1].token"
+wl_case '[{"name":"rig1","api_token":"probe-only"}]' "unpinned worker probe token" "workers.list[rig1].api_token"
+wl_case '[{"name":"rig1","host":"rig.lan","api_token":"has space"}]' "unsafe worker probe token" "workers.list[rig1].api_token"
 wl_case '[{"name":"rig1","watts":0}]' "non-positive workers.list watts (#260)" "workers.list[rig1].watts"
 wl_case '[{"name":"rig1","watts":"142"}]' "string workers.list watts (#260)" "workers.list[rig1].watts"
 
 # A valid workers.list[] applies cleanly, leaves the 1.x migration inert, and — like the 1.x shape
-# — never leaks a per-worker token into .env.
+# — carries only its explicitly read-only, endpoint-bound api_token through .env (R15).
 seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":[{"name":"rig1","host":"worker-lan.local","token":"tok_xyz789"}]} }\n' "$WALLET" >"$V/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":[{"name":"rig1","host":"worker-lan.local","token":"tok_first","api_token":"probe_first"},{"name":"rig1","host":"other.lan","token":"tok_second","api_token":"probe_second"}]} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "valid workers.list applies" "$?" "0"
 assert_not_contains "a canonical workers.list[] config triggers no 1.x migration" "$out" "Migrated the 1.x config keys"
-if grep -q 'tok_xyz789' "$V/.env"; then bad "workers.list token stays out of .env" "token landed in .env"; else ok "workers.list token stays out of .env"; fi
+if grep -q 'WORKER_API_TOKENS=.*probe_first' "$V/.env" && ! grep -q 'WORKER_API_TOKENS=.*probe_second\|WORKER_API_TOKENS=.*tok_first\|WORKER_API_TOKENS=.*tok_second' "$V/.env"; then ok "only first endpoint-bound read token reaches .env"; else bad "only first endpoint-bound read token reaches .env" "wrong credential in .env"; fi
 
 # Setting BOTH workers.list[] and the removed dashboard.workers[] to DIFFERENT values is a hard
 # error (#506/#1832) — migrating over the new key, or silently picking one, would leave the other a

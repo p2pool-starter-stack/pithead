@@ -5,12 +5,13 @@ from mining_dashboard.config.config import DISK_PATH
 
 logger = logging.getLogger("DataService")
 
-# Written by the cross-hardware restore doors only — the wizard and carried restores through
+# Written by the cross-hardware restore doors — the wizard and carried restores through
 # restore_apply(), never `./pithead restore`'s same-box recovery (#2626 operator ruling: that
-# door's chains never desynced, so it keeps whatever gate state the backup carried). The
-# snapshot's #35 sync-gate latch came from the machine the backup was taken on, so while this
-# file exists the dashboard ignores the persisted release and re-derives it from this machine's
-# chains. Removed once the gate releases here.
+# door's chains never desynced, so it keeps whatever gate state the backup carried) — and by
+# `apply` when a required chain moves to another node (#2763). Either way the snapshot's #35
+# sync-gate latch was earned on other chains, so while this file exists the dashboard ignores
+# the persisted release and re-derives it from the chains it now dials. Removed once the gate
+# releases here.
 SYNC_GATE_RESET_PATH = os.path.join(DISK_PATH, "sync-gate-reset")
 
 
@@ -114,13 +115,16 @@ class DataGateMixin:
         if gate_satisfied:
             if await self._start_gate_containers():
                 self.miner_released = True
-                # The release is now this machine's own; a restore's marker has done its job.
+                # The release is now earned on the chains this machine dials; the marker (a restore's
+                # or an apply's node change) has done its job.
                 try:
                     os.remove(_runtime().SYNC_GATE_RESET_PATH)
                 except FileNotFoundError:
                     pass
                 except OSError as e:
-                    logger.warning(f"Could not remove the restore's sync-gate marker: {e}")
+                    logger.warning(
+                        f"Could not remove the sync-gate marker (restore or node change): {e}"
+                    )
                 self.miner_held = False
                 logger.info(
                     f"Required chain(s) synced — starting {', '.join(_runtime().SYNC_GATE_CONTAINERS)}; mining can begin."

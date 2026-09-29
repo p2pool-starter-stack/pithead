@@ -29,8 +29,8 @@ Lifecycle:
                             hand after replacing the program under an existing config.
   up                        Start the stack.
   down                      Stop the stack.
-  restart [tor|monerod]     Restart the stack — or one container: 'tor' picks fresh
-                            guards when Tor clearnet egress is stuck (drops and rebuilds
+  restart [tor|monerod]     Restart the stack — or one container: 'tor' rebuilds
+                            circuits when Tor clearnet egress is stuck (drops and rebuilds
                             all Tor circuits; a local monerod restarts alongside);
                             'monerod' re-dials peers when the node reports not
                             synchronized after a Tor restart.
@@ -46,6 +46,9 @@ Inspection:
                             webhook, and ntfy sink. Reports each result without printing its
                             URL or token; Healthchecks is excluded because a ping moves its
                             dead-man switch.
+  tor-recover check|apply   Check saturated Tor circuit history with stalled local Monero;
+                            apply backs up only circuit state and restarts Tor after a
+                            persistent cooldown. Requires explicit operator action.
   doctor [--json]           Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk,
                             .env/onion state, and container status — a paste-able health report.
                               --json           machine-readable report on stdout (the human
@@ -100,7 +103,7 @@ Maintenance:
 
   uninstall [-y|--yes]      DESTRUCTIVE: the clean exit. Removes everything pithead put on
                             this host — containers, images, the caddy_data/wallet_data/
-                            tari_wallet_data volumes, this checkout's control-runner units, the
+                            tari_wallet_db volumes, this checkout's control-runner units, the
                             egress firewall rules, .env, Caddyfile, and every other pithead-
                             derived file and directory — and deletes NO data, on any flag.
                             Keeps what is yours: config.json, backups/, and the data dirs
@@ -108,6 +111,8 @@ Maintenance:
                             (removed / kept / left behind for the machine) and the exact
                             command to delete the rest, if you want it gone. Type-to-confirm
                             unless -y.
+                            Refuses in a pithead-vX.Y.Z dir that 'current' does not point
+                            at: it would stop the live stack. Run it in the live dir.
                               -y, --yes        skip the confirmation prompt.
 
   firstboot-wizard [--cli]  Browser-first setup for an unconfigured checkout: serves a
@@ -161,6 +166,12 @@ Maintenance:
                             or a release upgrade (target verified against the GitHub
                             release API host-side). Normally fired by the pithead-control
                             systemd path unit when dashboard.control.enabled is true.
+
+  egress-run-pending        Close completed clearnet-sync firewall exemptions when dashboard
+                            control is off. Normally fired by pithead-egress-sync.path.
+  egress-status             Check the Tor-only egress firewall and write the verdict to
+                            the dashboard (control results dir). Read-only. Normally
+                            fired every 2 minutes by the pithead-egress timer.
 
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a

@@ -67,6 +67,8 @@ MATRIX:
   --candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>
                          private candidate bundle, detached signature, and external trust root.
                          Required with --image-upgrade; all paths must be absolute local files.
+  --candidate-image-key <trusted-cosign.pub>
+                         optional image trust root; defaults to --candidate-bundle's key.
   --xvb-routing-smoke    establish P2Pool routing, enable XvB at the donor tier, and poll the real
                          controller/proxy/dashboard through one bounded XvB→P2Pool transition,
                          then restore the original config. Requires --safety-backup, miners, a
@@ -85,6 +87,12 @@ MATRIX:
                          (tests/integration/mergemine, built at the pinned Tari tag) judges each
                          submission and its legacy/mutated controls at 349,999/350,000/350,001
                          under mainnet rules. Leaves the live stack alone; needs local Monero.
+  --tari-stranded        also run the stranded-Tari leg (#2464): a DROP rule in tari's own network
+                         namespace (comment pithead-e2e-fault-tari-stranded) cuts it off from tor;
+                         asserts amber from the first 0-peer reading, red + doctor non-zero + alert, no
+                         automatic restart, then green without a restart once the rule is removed (the
+                         dashboard detects and alerts only; remediation is #2827). About an hour; opt-in only.
+                         DESTRUCTIVE-then-restored.
   --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's
                          testnet-target build of the pinned release runs LocalNet alone on an
                          internal docker network; a throwaway P2Pool (IT_MM_P2POOL_VERSION) mines on
@@ -255,6 +263,14 @@ parse_args() {
             TRUSTED_COSIGN_PUB="$4"
             shift 4
             ;;
+        --candidate-image-key)
+            [ "$#" -ge 2 ] || {
+                it_err "--candidate-image-key requires <trusted-cosign.pub>."
+                exit 2
+            }
+            TRUSTED_IMAGE_COSIGN_PUB="$2"
+            shift 2
+            ;;
         --xvb-routing-smoke)
             RUN_XVB_ROUTING=1
             shift
@@ -265,6 +281,10 @@ parse_args() {
             ;;
         --mergemine-submit)
             RUN_MERGEMINE_SUBMIT=1
+            shift
+            ;;
+        --tari-stranded)
+            RUN_TARI_STRANDED=1
             shift
             ;;
         --mergemine-localnet)

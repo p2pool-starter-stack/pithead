@@ -113,6 +113,49 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   `pithead-egress.service`, ordered before `docker.service`, which restores the rules before any
   container starts; `doctor` warns when it is not enabled
   ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
+- **The Tari node no longer runs its own Tor
+  ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)).** The upstream
+  `minotari_node` image is built with Tari's `libtor` feature, and `use_libtor` defaults to on.
+  Under the `tor` transport the node therefore started an in-process Tor, gave it its control port
+  and hidden service, and let it dial Tor relays straight from the tari container rather than
+  through the stack's `tor` container. Tari's source shows the same default in the released 5.3.1
+  pin. The egress firewall drops those dials. A tier-4 run found one still open after a fault test
+  briefly removed and reinstalled the rules; the firewall's established-flow accept kept it
+  ([#2672](https://github.com/p2pool-starter-stack/pithead/issues/2672)). With the firewall off,
+  nothing stopped them. Tari now uses the `socks5` transport through the stack's Tor SOCKS port
+  with `use_libtor = false`. Onion and `/ip4` peers are both dialled through Tor, and inbound peers
+  reach the node through the stack Tor's Tari onion, which now has a listener behind it. A node
+  upgraded from the `tor` transport keeps its old onion in `config/base_node_id.json` under the
+  Tari data dir, next to the stack's one. Nothing serves the old onion any more. That is harmless:
+  peers still reach the node through the stack's onion.
+
+- **The LAN switches now enforce LAN sources**
+  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)).
+  `monero.rpc_lan_access`, `monero.zmq_lan_access` and `tari.grpc_lan_access` accept connections
+  only from loopback, private and CGNAT (`100.64.0.0/10`) addresses; before, their ports took any
+  source that could route to the host. See
+  [LAN-only sources](docs/configuration.md#lan-only-sources).
+
+- **The LAN-only source rule now survives a DIY host reboot.** A reboot cleared the rule while
+  Docker restarted the node containers still published on every interface, so `18081`, `18083`
+  and `18142` took any source until `./pithead up`. `pithead-lan-guard.service`, ordered before
+  `docker.service`, now restores the rule. The node containers that publish a LAN port run with
+  restart policy `no`, and `pithead-lan-hold.service` starts them only after the guard succeeds, so
+  a guard that fails at boot leaves them stopped instead of exposed. While the rule is missing, the
+  nodes refuse to start with a LAN bind however they are started (`docker start`, a compose run
+  outside pithead), and `./pithead restart` and the Tor auto-heal do not try. Docker no longer restarts a
+  crashed `monerod` or `tari` on such a host; `./pithead doctor` and a `container_unhealthy` alert
+  name the node and the reason, and `./pithead up` recovers. The first `up` after upgrading
+  recreates those containers once. If either unit cannot be installed, the ports stay on `127.0.0.1`
+  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)).
+
+- **The dashboard alerts when the Tor-only egress firewall is missing.** The dashboard took the
+  firewall's state from `network.tor_egress_firewall`, so it reported "blocked by the egress
+  firewall" over an open egress. `pithead-egress.timer` now runs `pithead egress-status` every two
+  minutes and writes the host's live verdict for the dashboard. A missing firewall turns the egress
+  badge and panel into a warning and sends one `clearnet_exposed` alert, with one more when the
+  rules are back. A missing or stale verdict reads as unverified, not as green
+  ([#2599](https://github.com/p2pool-starter-stack/pithead/issues/2599)).
 
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
@@ -136,9 +179,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   stratum password, the Telegram bot token and chat id, the XvB pool URL and donor id, the
   Healthchecks ping URL, the ntfy URL and token, `notifications.webhooks`, the onion toggles, the
   Tor egress firewall, the RPC/gRPC LAN-access and bind settings, `dashboard.control.enabled`, and
-  the per-rig worker descriptors (`workers.list[]`) — an added, repointed, or removed rig host and
-  API token is a credential change, closed in the same round-2 pass after an initial review found
-  it still routed through the self-written approval envelope.
+  repointing or removing a per-rig worker descriptor (`workers.list[]`). Adopting a new rig was
+  closed in the same round-2 pass and reopened, behind the typed confirmation, by
+  [#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641) (see Fixed).
 - The Telegram tap was the only second identity on a sensitive configuration commit, and nothing
   replaces it in this release. What still gates such a change is the signed-in dashboard operator,
   the default-deny env allowlist, the typed `APPLY`, and the payout-suffix check — deliberate
@@ -147,6 +190,80 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **An IPv6 address that arrives after boot no longer leaves a permanent doctor FAIL (#2463).** A new
+  timer checks the machine's addresses every five minutes and, when they changed since the last
+  render, re-renders the dashboard certificate and Caddyfile and restarts Caddy if either changed.
+  The certificate check also compared an IPv6 address's two spellings (openssl's expanded form and
+  `hostname -I`'s compressed one) as different strings, so any IPv6 address was reported uncovered and
+  re-minted the certificate on every render; both sides are now canonicalised.
+
+- **Clearnet initial sync works behind the default egress firewall
+  ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649),
+  [#2678](https://github.com/p2pool-starter-stack/pithead/issues/2678)).** An opted-in Monero or
+  Tari node gets its own temporary direct-dial exception while other containers stay restricted.
+  On sync, the host closes and verifies that exception before the node restarts on Tor; the
+  dashboard keeps the transition warning until the host verifies the live Tor daemon and rules.
+  A completed sync stays on Tor across apply and reboot.
+- **monerod flushes every chain-database commit to disk
+  ([#2471](https://github.com/p2pool-starter-stack/pithead/issues/2471)).** monerod's default
+  database mode, `fast:async`, opens LMDB with `MDB_NOSYNC` while the node is syncing and only
+  syncs its commits once it reaches the chain tip, so a power cut during the initial sync or a
+  catch-up could lose commits the node had already made. The bundled node now runs with
+  `db-sync-mode=safe`, which syncs every commit, so a power cut can no longer take the chain back
+  below a height it had already committed. At the tip nothing changes. While syncing, each commit
+  now waits for two disk flushes, and the bytes written are the same. Counted from the monerod
+  0.18.5.1 source, a full pruned mainnet sync to height 3.77 million makes at most about 295,000
+  commits when every download batch is full, and at most about 7.56 million if every batch holds
+  one block. The added time is the number of flushes times the disk's flush time, which was not
+  measured: for each millisecond a flush takes, about 10 minutes with full batches and at most
+  4.2 hours.
+
+- **Tari payout confirmation now finds payouts
+  ([#2731](https://github.com/p2pool-starter-stack/pithead/issues/2731)).** The view-only wallet's
+  `tari.payout_scan_birthday` counts days since 2022-01-01, Tari's unit (Tari Universe's
+  `wallet_birthday` works as-is). `auto` was computed from 1970, a day in 2078, so the wallet started
+  at the chain tip and missed every earlier payout; a birthday later than today is now refused. The
+  wallet also scans through the local Tari node's wallet HTTP service on the internal network only;
+  it had no working base-node setting and fell back to Tari's public node over clearnet. The wallet
+  also never started. Its volume was mounted where the image's uid-1000 user could not write, so it
+  crash-looped creating its config directory. It now uses a new volume, `tari_wallet_db`, on the
+  image's own `/var/tari/wallet`, so every install creates the wallet fresh and scans from the
+  birthday. The old `tari_wallet_data` volume never held a wallet; `uninstall` removes it.
+
+- **A slow first Tor bootstrap no longer fails provisioning
+  ([#2648](https://github.com/p2pool-starter-stack/pithead/issues/2648)).** monerod and tari wait
+  for Tor's healthcheck, and the healthcheck marked Tor unhealthy about 3.5 minutes after it
+  started. A cold bootstrap on a fresh Tor data directory has taken 5 minutes. When it ran that
+  long, `docker compose up` stopped with `dependency tor failed to start` and never started the
+  nodes. On the appliance, the setup wizard reopened with the configuration marked as failed. Tor
+  now has 10 minutes to bootstrap before failed checks count against it. A Tor that bootstraps
+  sooner is marked healthy at its next 30-second check, as before. A Tor that never bootstraps
+  now fails `up` after about 12.5 minutes instead of 3.5.
+
+- **The Monero payout wallet stays healthy while a restarted wallet catches up
+  ([#2756](https://github.com/p2pool-starter-stack/pithead/issues/2756)).** The scan grace applied
+  only to a newly created wallet. A reopened wallet that had to catch up, for example after the
+  Monero node came back from remote mode, blocked its RPC for the whole catch-up and `pithead status`
+  reported it unhealthy. The wallet now marks a scan on every start, bounded by the same 24-hour
+  grace.
+- **The Monero payout wallet's scan grace ends at monerod's tip, and a crash loop no longer renews
+  it ([#2720](https://github.com/p2pool-starter-stack/pithead/issues/2720)).** The RPC answers
+  between refresh passes, so the first answer no longer retires the grace mid-scan; the healthcheck
+  clears it once the wallet height reaches monerod's block count. A restart keeps an existing
+  marker's age, so a wallet that never catches up still turns unhealthy after 24 hours. Its ring
+  database moved into the wallet volume, off the read-only root filesystem.
+- **Worker Inspect can adopt a rig again
+  ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
+  pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
+  form sends, so the form always failed at the preview. An appliance rig set up by the wizard had
+  no way to be adopted short of a configuration stick. The host now lets an append through: every
+  existing descriptor must come back unchanged, a new rig may not reuse an existing rig's name,
+  its host must not resolve to loopback, link-local or the stack's own docker-bridge subnet, and
+  the commit needs the typed `APPLY`. The preview names the rig and the
+  address the dashboard will send its control token to, and the audit log records the commit as
+  confirmed with `workers.list` as its key. Repointing or removing a rig the dashboard already
+  controls is still refused.
 
 - **An unreachable image registry is no longer reported as a bad signature
   ([#2735](https://github.com/p2pool-starter-stack/pithead/issues/2735)).** When cosign cannot
@@ -239,8 +356,9 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Added
 
-- **Pithead OS, the appliance.** Write `pithead-os-v2.0.0.img` to a USB stick and boot the machine
-  from it: it installs itself and serves a one-page setup wizard to your browser. The page asks
+- **Pithead OS, the appliance.** Verify `pithead-os-v2.0.0.img.xz`, write its decompressed image
+  to a USB stick, and boot the machine from it: it installs itself and serves a one-page setup
+  wizard to your browser. The page asks
   what the machine is — a full coordinator, a coordinator that also mines with its own CPU, or a
   mining rig ([#797](https://github.com/p2pool-starter-stack/pithead/issues/797)) — which disk
   to use, and the same questions the DIY installer asks. A machine without a monitor can be set up

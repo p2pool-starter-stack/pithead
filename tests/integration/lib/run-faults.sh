@@ -21,6 +21,7 @@ fault_node_down() {
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after monerod recovery" "$?" "0"
+    wait_for 120 5 "readmission after the 60s node-health debounce (#31)" _pred_failover_armed && it_pass "xmrig-proxy readmitted after node-down recovery (#31)" || it_fail "xmrig-proxy readmitted after node-down recovery (#31)" "not readmitted within 120s"
 }
 
 fault_unhealthy() {
@@ -144,35 +145,6 @@ fault_firewall_grandfathered_flow() {
     sleep 5
     assert_eq "the re-applied firewall ends that flow: no ESTABLISHED socket to it left in monerod (#2672)" "$(_gf_flows)" "0"
     _gf_down
-}
-
-# DIY reboot restore (#2460), without rebooting the bench: a reboot empties DOCKER-USER while the
-# containers restart, and pithead-egress.service is what refills it. Check docker.service pulls the
-# unit in and waits for it, strip the rules exactly as a reboot does, run the installed unit
-# itself against the real kernel, and prove the result is LIVE (the direct dial dropped, the Tor
-# one through), not merely present. DESTRUCTIVE-then-restored, like the rollback fault above.
-fault_firewall_boot_restore() {
-    if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
-        it_skip_leg "firewall boot-restore fault" "network.tor_egress_firewall=false"
-        return 0
-    fi
-    it_step "fault: strip the Tor-egress rules as a reboot does, then run the boot unit…"
-    assert_eq "up installed and enabled the boot unit (#2460)" \
-        "$(rx 'systemctl is-enabled pithead-egress.service 2>/dev/null')" "enabled"
-    assert_contains "docker.service pulls the boot unit in (#2460)" \
-        "$(rx 'systemctl show -p Wants --value docker.service')" "pithead-egress.service"
-    assert_contains "docker.service starts only after it (#2460)" \
-        "$(rx 'systemctl show -p After --value docker.service')" "pithead-egress.service"
-    rx 'bash -c "source ./pithead && remove_tor_egress_firewall" >/dev/null 2>&1' || true
-    assert_eq "the rules are gone, as after a reboot" \
-        "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" "0"
-    local rc=0
-    rx 'sudo systemctl restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
-    assert_rc "the boot unit starts cleanly on the real kernel (#2460)" "$rc" "0"
-    rc=0
-    rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?
-    assert_rc "the rules it restored read as enforced: DROP reachable, nothing foreign above it (#2460)" "$rc" "0"
-    assert_egress_dial_pair
 }
 
 # TOP PRIVACY PRIORITY (#563): stop the tor container — the SOCKS proxy every app dials through
@@ -360,10 +332,12 @@ run_fault_injection() {
     fault_firewall_rollback
     fault_firewall_grandfathered_flow
     fault_firewall_boot_restore
+    fault_firewall_status_alert
     fault_tor_down
     fault_clock_drift
     fault_disk_enospc
     fault_p2pool_cold_cache_dns
+    fault_tor_probe_egress
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "fault-injection" "$OUT_DIR"
 
     # Belt-and-braces: whatever happened above, leave monerod + tor up, the dashboard data dir
@@ -372,6 +346,7 @@ run_fault_injection() {
     # read-only, tmpfs-shadowed, clock-shadowed, or with clearnet egress open.
     rx "docker compose up -d monerod" >/dev/null 2>&1 || true
     rx "docker compose up -d tor" >/dev/null 2>&1 || true
+    tor_probe_ns_ipt "-D OUTPUT -d $(env_on_box NETWORK_PREFIX).25 -p tcp --dport 9050 -m comment --comment pithead-e2e-fault-tor-probe -j DROP" >/dev/null 2>&1 || true
     rx "sudo umount $(quote_arg "$(env_on_box DASHBOARD_DATA_DIR)")" >/dev/null 2>&1 || true
     rx "sudo chmod -R u+w $(quote_arg "$(env_on_box DASHBOARD_DATA_DIR)")" >/dev/null 2>&1 || true
     rx "docker compose restart dashboard" >/dev/null 2>&1 || true

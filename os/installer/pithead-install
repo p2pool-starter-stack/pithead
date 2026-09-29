@@ -140,7 +140,7 @@ wipe_data_partition() { # $1 disk, $2 mode (data|all)
 }
 
 main() {
-    local target="" assume_yes=0 action="install" wipe="keep"
+    local target="" assume_yes=0 action="install" wipe="keep" copy_preseeds=1
     while [ $# -gt 0 ]; do
         case "$1" in
         --list)
@@ -157,6 +157,10 @@ main() {
             ;;
         --yes)
             assume_yes=1
+            shift
+            ;;
+        --no-preseeds)
+            copy_preseeds=0
             shift
             ;;
         *) die "unknown argument: $1" ;;
@@ -197,23 +201,6 @@ main() {
         fi
     else
         partition_fresh "$target"
-    fi
-
-    # A carried restore replaces the old configuration and role, but keep deliberately retains
-    # /data. Remove the two markers that would otherwise make both boot owners skip its first
-    # restore boot; chain data stays in place for restore_apply's merge.
-    if [ "$state" = "pithead-with-data" ] && [ -f /boot/efi/pithead-restore.enc ]; then
-        local data_part restore_mnt
-        data_part=$(lsblk -lnpo NAME,PARTLABEL "$target" | awk '$2 == "data" {print $1; exit}')
-        [ -b "$data_part" ] || die "no data partition found on $target for the carried restore"
-        restore_mnt=$(mktemp -d)
-        if ! mount "$data_part" "$restore_mnt" ||
-            ! rm -f "$restore_mnt/pithead/config.json" "$restore_mnt/pithead/machine-role" ||
-            ! umount "$restore_mnt" || ! rmdir "$restore_mnt"; then
-            umount "$restore_mnt" 2>/dev/null || true
-            rmdir "$restore_mnt" 2>/dev/null || true
-            die "could not prepare the preserved data for the carried restore"
-        fi
     fi
 
     local esp slot_a
@@ -272,8 +259,8 @@ main() {
     # the first reboot: the installer builds a fresh ESP, and the operator's config — the whole
     # point of pre-seeding — would stay behind on the stick.
     local seed
-    for seed in pithead-config.json pithead-token.txt pithead-rig.json \
-        pithead-restore.enc pithead-restore-pass pithead-setup-wizard; do
+    for seed in pithead-config.json pithead-token.txt pithead-rig.json pithead-setup-wizard; do
+        [ "$copy_preseeds" = 1 ] || [ "$seed" = pithead-setup-wizard ] || continue
         [ -f "/boot/efi/$seed" ] && install -m 600 "/boot/efi/$seed" "$mnt/boot/efi/$seed"
     done
 

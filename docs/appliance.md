@@ -44,14 +44,16 @@ outage happened while the machine was already down.
 
 ## 1. Write the image to a USB stick
 
-Download `pithead-os-vX.Y.Z.img` and verify the checksum. Then write it with
-[balenaEtcher](https://etcher.balena.io/), or from a terminal:
+Download `pithead-os-vX.Y.Z.img.xz` and its `.sha256` file from the same release.
+Verify the download, then write the decompressed image to the stick:
 
 ```bash
-sudo dd if=pithead-os-vX.Y.Z.img of=/dev/sdX bs=4M status=progress conv=fsync
+sha256sum -c pithead-os-vX.Y.Z.img.xz.sha256
+xz -dc pithead-os-vX.Y.Z.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 `/dev/sdX` is the USB stick. Check it twice — `dd` will erase whatever you name.
+Keep the `.xz` file intact for checksum verification; the write produces the full 5 GiB image.
 
 ## 2. Boot the machine from the stick
 
@@ -236,14 +238,14 @@ Then a handful of choices, all with sensible defaults:
 
 | Question | Default | When to change it |
 |---|---|---|
-| Merge-mine Tari? | no | Off on a new machine. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. It cannot be turned on from the dashboard afterwards — the Configuration view does not carry this switch; set the machine up again from the boot menu to change it. |
+| Merge-mine Tari? | no | Off on a new machine. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. You can change the mode and payout address later from the Configuration view behind confirmation. |
 | P2Pool sidechain | mini | `nano` for a single low-power rig, `main` only for very large hashrate. Changeable later. |
 | Telegram bot | — | Optional. Alerts and status commands; needs both the token and the chat id. |
 | Monero node | run it here | Point at a node you already run. It has to be on your own network — a private address (10.x, 172.16–31.x, 192.168.x) or one reached over a VPN — because the machine only lets the mining containers dial private ranges; everything else goes through Tor. |
 | Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
 | Join the XMRvsBeast raffle? | on | Off if you would rather send every hash to your own P2Pool payouts. On, the switching engine donates only enough hashrate to hold your tier and routes the rest to P2Pool; donating past a tier's threshold earns nothing extra, because the raffle picks its winners at random. Changeable later. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
-| First sync | private over Tor | Faster over the open internet if days of syncing is too slow; it uses Tor afterwards either way. |
+| First sync | private over Tor | Faster over clearnet: hours instead of days. Your IP is visible to that chain's peers during sync. With the firewall on, only the chosen node is exempted. The host closes and verifies its exception before the Tor restart, then verifies the live daemon and rules before clearing the warning. The firewall and each clearnet option are confirmed settings in the Configuration view. |
 | Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
@@ -275,11 +277,12 @@ Only when everything passes does the page show the things you must save:
 - the **dashboard address** (`https://pithead.local`)
 - where to **point your miners** (`stratum+tcp://pithead.local:3333`)
 
-A remote node's address is not a one-time answer. If the node you point at goes away, moves, or
-you want to try another one, the dashboard's Configuration view changes it on a running machine:
-type `APPLY` to confirm, and the machine dials the new endpoint and refuses it if nothing answers
-there ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). The node's RPC
-username and password are the exception and stay fixed at setup.
+A remote node's address and RPC login are not one-time answers. The dashboard's Configuration view
+changes either on a running machine: type `APPLY` to confirm, and the host checks the staged
+endpoint with the staged login before it commits the pair
+([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). Changing one login field in
+local-node mode preserves its masked partner and applies the pair to the local services together. A changed endpoint needs explicit replacement
+credentials: a masked login never follows it to a new node.
 
 **Copy the login somewhere safe, then press "I saved these — erase the disk and install."**
 Nothing touches the disk until that press. The install takes a few minutes, and when it
@@ -302,20 +305,22 @@ running *from* the stick, so the stick cannot come out while it runs. (If you pu
 early, the machine stops responding — hold the power button, leave the stick out, and switch
 it on. An install that had already reported success is safe on the disk.)
 
-Most of the configuration stays editable from the dashboard afterwards — see
-[configuration](configuration.md) for everything you can tune. Be aware of one honest limit
-in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
-password, per-rig worker entries) can be set **here, at install**, but not changed from the
-dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts or repoint a rig's control address and token to one it controls. A
-shell-less appliance adopting a new rig after install therefore needs the USB-stick route below,
-not the dashboard. Changing any of these later does not mean reinstalling: write the new settings
-to a
-FAT stick as `pithead-config.json`, insert it and reboot — see
-[Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
-media and power-cycle the machine is authority over it already, so that channel may set any
-supported setting, including what no remote channel is allowed to touch. Release images reject
-retired SSH settings.
+Reference settings stay editable from the dashboard afterwards — see
+[configuration](configuration.md). Security-sensitive changes, including payout destinations,
+require the signed-in operator to review full non-secret values and complete the confirmation step.
+Dashboard authentication is the access-control perimeter; the typed confirmation prevents paste
+mistakes, not a compromised dashboard process. The dashboard password and the two tamper-alarm
+toggles are changeable there too, behind typed `APPLY` and the confirmation step, with a warning
+that names the cost first: the password is also the console `root` login, so a new one replaces
+both, and a silenced alarm stops reporting the change it watches. Rigs are narrower: the dashboard can adopt a new rig
+(Worker Inspect's adopt form, confirmed by typing `APPLY`), but it cannot repoint, reorder or
+remove a rig it already controls. See
+[Changing settings with a USB stick](#changing-settings-with-a-usb-stick).
+
+The USB-stick route stays available for everything the dashboard can set and for what it cannot:
+write the new settings to a FAT stick as `pithead-config.json`, insert it and reboot. Being able to
+insert media and power-cycle the machine is authority over it already, so that channel may set any
+supported setting without the dashboard's confirmation step. Release images reject retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
@@ -329,12 +334,10 @@ without it. The machine publishes the dashboard as a Tor hidden service — no p
 VPN, no public IP — and its `.onion` address appears under the machine name at the top of the
 dashboard, with a **Copy** button.
 
-After setup, the Configuration view cannot change this switch. The dashboard refuses to commit
-onion settings until
-[#1959](https://github.com/p2pool-starter-stack/pithead/issues/1959) and
-[#2367](https://github.com/p2pool-starter-stack/pithead/issues/2367) let it. To turn the onion on
-or off on a running machine, use
-[a USB stick](#changing-settings-with-a-usb-stick) or **Set up again**.
+After setup, the Configuration view can change this switch too. Turning the onion on or off is a
+confirmed change: review the preview, type `APPLY`, and complete the confirmation step. Keep
+`dashboard.onion.client_auth` at `true` while the config editor is on, or the change is refused.
+[A USB stick](#changing-settings-with-a-usb-stick) and **Set up again** remain available.
 
 The address alone will not open it. An appliance keeps its config editor on, and pithead refuses
 to publish a config editor behind nothing but a password on an anonymously-reachable address, so

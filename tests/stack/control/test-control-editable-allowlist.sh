@@ -78,8 +78,8 @@ roundtrip_key "TELEGRAM_DAILY_SUMMARY_TIME" '.telegram.daily_summary_time="09:30
 roundtrip_key "P2POOL_FLAGS/P2POOL_PORT" '.p2pool.pool="mini"' '.p2pool.pool' "mini"
 # The 25 allowlisted TELEGRAM_EVENT_* toggles (raffle_win added 2026-08: audit found it was the one
 # event toggle missing from its siblings, all otherwise editable). wallet_changed + clearnet_exposed
-# are deliberately NOT on the allowlist (tamper-evidence alarms; their refusal is asserted above),
-# so they are excluded here. Each flips true->false as a single-key diff.
+# are deliberately NOT on the allowlist (tamper-evidence alarms confirm behind APPLY + envelope,
+# #2367, asserted in control-sensitive-preview.sh), so they are excluded here. Each flips true->false as a single-key diff.
 for ev in node_down node_recovered worker_offline worker_recovered worker_joined worker_left \
     sync_finished disk_space db_unhealthy db_reset xvb_no_share xvb_registration new_release \
     stack_online daily_summary hashrate_low hashrate_loss hugepages low_ram high_reject_rate \
@@ -108,41 +108,98 @@ env_now() { run_sourced "$C" env_get_file "$C/.env" "$1"; }
 
 # TARI_MODE, the #1929 subject: an operator turns merge-mining off and back on from the dashboard.
 # Asserted on the RENDERED .env rather than config.json alone — config.json is what the gate wrote,
-# the .env is what the containers are actually launched from, and only the second can show that the
-# profile and the sync-gate flag followed the mode.
+# .env shows the launched profile and sync-gate flag.
 assert_eq "baseline renders the bundled Tari node" "$(env_now TARI_MODE)" "local"
 tari_data_before="$(ls -A "$C/data/tari" 2>/dev/null | wc -l | tr -d ' ')"
-roundtrip_confirm "TARI_MODE/COMPOSE_PROFILES" '.tari.mode="off"' '.tari.mode' "off"
+roundtrip_confirm "TARI_MODE/COMPOSE_PROFILES/TOR_COMPOSE_PROFILES" '.tari.mode="off"' '.tari.mode' "off"
 assert_eq "off renders TARI_MODE=off" "$(env_now TARI_MODE)" "off"
 assert_not_contains "off drops the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
+assert_not_contains "off drops the Tari onion profile" "$(env_now TOR_COMPOSE_PROFILES)" "local_tari"
 assert_eq "off releases the sync gate — a machine that declined Tari still mines Monero" "$(env_now TARI_REQUIRED)" "false"
-# The operator's own requirement: turning Tari off must not destroy the chain. Nothing in the
-# commit path may touch the data dir — remove_deactivated_profile_containers removes the CONTAINER.
+# Turning Tari off must preserve its chain data; remove_deactivated_profile_containers removes only the container.
 assert_eq "off leaves the Tari data dir untouched" "$(ls -A "$C/data/tari" 2>/dev/null | wc -l | tr -d ' ')" "$tari_data_before"
 assert_eq "off leaves tari.data_dir pointing at the same chain" "$(jq -r '.tari.data_dir // "auto"' "$C/config.json")" "auto"
 # ...and back on, the direction that proves this is a switch and not a one-way door.
 roundtrip_confirm "TARI_MODE" '.tari.mode="local"' '.tari.mode' "local"
 assert_eq "back on renders TARI_MODE=local" "$(env_now TARI_MODE)" "local"
 assert_contains "back on restores the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
+assert_contains "back on restores the Tari onion profile" "$(env_now TOR_COMPOSE_PROFILES)" "local_tari"
 
 # The remaining confirm keys that need no live endpoint. TARI_CLEARNET_SYNC is asserted here as a
 # ROUND TRIP; test-confirm-approval.sh asserts its refusal semantics on the Monero twin.
+# This fake host keeps the installed firewall transaction for the live readback required when a
+# confirmed clearnet choice activates its exception.
+# shellcheck source=tests/stack/fixtures/tor-egress/validation-sandbox.sh
+source "$ROOT/tests/stack/fixtures/tor-egress/validation-sandbox.sh" "$C"
 roundtrip_confirm "TARI_CLEARNET_SYNC" '.tari.clearnet_initial_sync=true' '.tari.clearnet_initial_sync' "true"
-roundtrip_confirm "TARI_DATA_DIR" '.tari.data_dir="'"$C"'/data/tari2"' '.tari.data_dir' "$C/data/tari2"
 roundtrip_confirm "MONERO_CLEARNET_SYNC" '.monero.clearnet_initial_sync=true' '.monero.clearnet_initial_sync' "true"
+assert_eq "firewall on: MONERO_CLEARNET_SYNC remains selected" "$(env_now MONERO_CLEARNET_SYNC)" "true"
+assert_eq "firewall on: TARI_CLEARNET_SYNC remains selected" "$(env_now TARI_CLEARNET_SYNC)" "true"
+roundtrip_confirm "TARI_DATA_DIR" '.tari.data_dir="'"$C"'/data/tari2"' '.tari.data_dir' "$C/data/tari2"
 roundtrip_confirm "MONERO_OUT_PEERS" '.monero.out_peers=24' '.monero.out_peers' "24"
 roundtrip_confirm "MONERO_DATA_DIR" '.monero.data_dir="'"$C"'/data/monero2"' '.monero.data_dir' "$C/data/monero2"
 roundtrip_confirm "P2POOL_DATA_DIR" '.p2pool.data_dir="'"$C"'/data/p2pool2"' '.p2pool.data_dir' "$C/data/p2pool2"
+roundtrip_confirm "TOR_DATA_DIR" '.tor.data_dir="'"$C"'/data/tor2"' '.tor.data_dir' "$C/data/tor2"
 roundtrip_confirm "DASHBOARD_DATA_DIR" '.dashboard.data_dir="'"$C"'/data/dashboard2"' '.dashboard.data_dir' "$C/data/dashboard2"
 roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
 # PRUNE STARTS OFF IN THE BASELINE ABOVE, and that is not tidiness. monero_prune_flag defaults to
 # TRUE (19-small-utilities.sh), so on a config with no monero.prune key the rendered MONERO_PRUNE is
 # already 1 — setting it to true renders the SAME value, emits no porcelain row, and the commit then
 # "applies" with no typed APPLY because there is nothing for the confirm gate to see. That is how
-# this row read green while proving nothing; only the no-token half above caught it. ENABLE is also
-# the only direction that is confirm-gated at all (describe_change flags DISABLE a host-only DEST),
-# so a baseline that does not start pruned cannot exercise this key through the gate.
+# this row read green while proving nothing; only the no-token half above caught it. Use the enabling
+# direction here so the explicit CONFIRM row, not the generic destructive path, covers the key.
 roundtrip_confirm "MONERO_PRUNE" '.monero.prune=true' '.monero.prune' "true"
+# A standalone local-login edit reaches preflight (which correctly has no remote node to dial),
+# restores the untouched masked partner, and re-applies one coupled pair to the running stack. The
+# dashboard login is independent and must remain usable: its stable hash and Caddyfile cannot move.
+cp "$C/Caddyfile" "$C/Caddyfile.before-node-login"
+dashboard_hash_before=$(env_now DASHBOARD_AUTH_HASH_B64)
+if [ -n "$dashboard_hash_before" ]; then ok "node-login baseline has dashboard access"; else bad "node-login baseline has dashboard access" "empty auth hash"; fi
+roundtrip_local_login() { # <env-key> <jq-set-with-partner-sentinel> <jq-read> <new> <user> <password>
+    COVERED="$COVERED $1"
+    jq "$2" "$C/config.json" >"$C/cand.json"
+    gate_try "$C/cand.json"
+    assert_eq "$1 is refused with no typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+    : >"$CTRL_LOG"
+    gate_try "$C/cand.json" APPLY
+    assert_eq "$1 commit applies behind the typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+    assert_eq "$1 landed in config.json" "$(jq -r "$3" "$C/config.json")" "$4"
+    assert_eq "$1 keeps the coupled username in the runtime env" "$(env_now MONERO_NODE_USERNAME)" "$5"
+    assert_eq "$1 keeps the coupled password in the runtime env" "$(env_now MONERO_NODE_PASSWORD)" "$6"
+    assert_contains "$1 re-applies the running services" "$(cat "$CTRL_LOG")" "compose up"
+    assert_eq "$1 preserves the dashboard login hash" "$(env_now DASHBOARD_AUTH_HASH_B64)" "$dashboard_hash_before"
+    if cmp -s "$C/Caddyfile" "$C/Caddyfile.before-node-login"; then ok "$1 preserves dashboard access"; else bad "$1 preserves dashboard access" "Caddyfile changed"; fi
+}
+roundtrip_local_login "MONERO_NODE_USERNAME" \
+    '.monero.node_username="os1924-user" | .monero.node_password={"__secret__":true}' \
+    '.monero.node_username' "os1924-user" "os1924-user" "p"
+roundtrip_local_login "MONERO_NODE_PASSWORD" \
+    '.monero.node_password="os1924-pass" | .monero.node_username={"__secret__":true}' \
+    '.monero.node_password' "os1924-pass" "os1924-user" "os1924-pass"
+rm -f "$C/Caddyfile.before-node-login"
+
+# On a remote chain, a password-only edit must authenticate with the STAGED login before config.json
+# moves: a deterministic 401 proves the shared trigger (without the login keys it commits, red).
+cp "$C/config.json" "$C/local.before-login-preflight.json"
+jq '.monero.mode="remote" | .monero.remote={host:"node.test",rpc_port:18081,zmq_port:18083}' \
+    "$C/config.json" >"$C/remote.json"
+cp "$C/remote.json" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+printf '#!/usr/bin/env bash\nprintf "192.168.50.8 STREAM node.test\\n"\n' >"$C/bin/getent"
+printf '#!/usr/bin/env bash\ncat >/dev/null\nprintf "{\\"status\\":\\"OK\\",\\"nettype\\":\\"mainnet\\",\\"height\\":1,\\"target_height\\":1}\\n401"\n' >"$C/bin/curl"
+chmod +x "$C/bin/getent" "$C/bin/curl"
+jq '.monero.node_password="rejected-password" | .monero.node_username={"__secret__":true}' \
+    "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY
+assert_eq "standalone remote login runs authenticated preflight" \
+    "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_contains "authenticated preflight attributes the refusal to the staged login" \
+    "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected the configured RPC login"
+assert_eq "failed login preflight leaves the live password unchanged" \
+    "$(jq -r '.monero.node_password' "$C/config.json")" "os1924-pass"
+rm -f "$C/bin/getent" "$C/bin/curl"
+cp "$C/local.before-login-preflight.json" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 
 echo "== black-box: every dashboard-committable key has a commit round-trip (#1929) =="
 # TOTALITY, derived from the SHIPPED artifact rather than a hand list — a hand list is blind to the
@@ -195,6 +252,25 @@ assert_eq "monero.remote.host is inert on a local monero chain" "$(env_now MONER
 assert_eq "monero.remote.rpc_port is inert on a local monero chain" "$(env_now MONERO_RPC_PORT)" "18081"
 assert_eq "monero.remote.zmq_port is inert on a local monero chain" "$(env_now MONERO_ZMQ_PORT)" "18083"
 assert_eq "tari.remote.host is inert on a local tari chain" "$(env_now TARI_GRPC_ADDRESS)" "172.28.0.27:18142"
+
+# Inert endpoints still appear as confirmed settings in the editor. They carry no porcelain env
+# row until the chain enters remote mode, so the host must gate their source paths directly.
+jq '.monero.remote.host="stored.example.com" | .tari.remote.grpc_port=10' "$C/config.json" >"$C/cand.json"
+jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$C/cand.json" >"$C/data/control/requests/$UUID5.json"
+run_pending >/dev/null
+assert_eq "inactive Monero endpoint previews as CONFIRM" \
+    "$(jq -r '.changes[] | select(.key=="monero.remote.host") | .flag' "$RESULTS/$UUID5.json")" "CONFIRM"
+assert_eq "inactive Tari endpoint previews as CONFIRM" \
+    "$(jq -r '.changes[] | select(.key=="tari.remote.grpc_port") | .flag' "$RESULTS/$UUID5.json")" "CONFIRM"
+gate_try "$C/cand.json"
+assert_eq "inactive endpoints are refused without typed APPLY" \
+    "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+gate_try "$C/cand.json" APPLY
+assert_eq "inactive endpoints apply behind typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
+assert_eq "confirmed inactive Monero endpoint is stored" "$(jq -r '.monero.remote.host' "$C/config.json")" "stored.example.com"
+assert_eq "confirmed inactive Tari endpoint is stored" "$(jq -r '.tari.remote.grpc_port' "$C/config.json")" "10"
+assert_eq "confirmed inactive Monero endpoint stays inert" "$(env_now MONERO_NODE_HOST)" "172.28.0.26"
+assert_eq "confirmed inactive Tari endpoint stays inert" "$(env_now TARI_GRPC_ADDRESS)" "172.28.0.27:18142"
 
 # tari.mode off renders the SAME fixed placeholder local does (#1855) — the escalation this issue's
 # provenance section checked and ruled out, pinned here instead of left as an argument.

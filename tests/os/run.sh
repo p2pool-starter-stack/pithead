@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|stack|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -44,6 +44,7 @@
 #   reset   config-reset clears config but preserves the chain and onion through reconfiguration;
 #           factory-reset's ESP marker then wipes /data and returns a FRESH machine to the wizard;
 #           a corrupt /data superblock drives wedged-/data recovery.
+#   image-upgrade  signed v1.20.0 -> candidate -> exact rollback on guest-local reflink XFS
 #   crossupdate  a provisioned guest booted from a REAL prior build ($PITHEAD_OLD_IMAGE, bench-ci's
 #           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
@@ -52,7 +53,8 @@
 #           a non-destructive --check, then --lifecycle --fault-injection --hardening
 #           --auth-fail-closed on remote-main-secure-tari. A bench with no reserved node is a
 #           counted `missing` phase skip; #2443 and #2444 run from neither invocation.
-#   all     every phase above except crossupdate, in order (stack since #2062, rigmedia #2069)
+#   all     every phase above except crossupdate, in that order — media, fault and reset included
+#           since #1064; rigmedia added since #2069; image-upgrade added for #2057; stack since #2062
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -71,6 +73,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/zero-container-evidence.sh"
 # shellcheck source=tests/os/bundle-build-evidence.sh
 . "$SCRIPT_DIR/bundle-build-evidence.sh"
+. "$SCRIPT_DIR/package-appliance-verdict.sh"
 # shellcheck source=tests/os/kvm-preflight.sh
 . "$SCRIPT_DIR/kvm-preflight.sh"
 # shellcheck source=tests/os/journal-boot-verdict.sh
@@ -99,8 +102,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-egress-leg.sh"
 # shellcheck source=tests/os/appliance-xvb-routing-leg.sh
 . "$SCRIPT_DIR/appliance-xvb-routing-leg.sh"
+# shellcheck source=tests/os/appliance-address-watch-leg.sh
+. "$SCRIPT_DIR/appliance-address-watch-leg.sh"
 # shellcheck source=tests/os/appliance-dashboard-exposure-leg.sh
 . "$SCRIPT_DIR/appliance-dashboard-exposure-leg.sh"
+# shellcheck source=tests/os/appliance-lan-guard-leg.sh
+. "$SCRIPT_DIR/appliance-lan-guard-leg.sh"
+# shellcheck source=tests/os/appliance-tari-wallet-leg.sh
+. "$SCRIPT_DIR/appliance-tari-wallet-leg.sh"
 # shellcheck source=tests/os/appliance-chain-fault-leg.sh
 . "$SCRIPT_DIR/appliance-chain-fault-leg.sh"
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
@@ -189,6 +198,8 @@ source "$SCRIPT_DIR/phases/rigmedia.sh" || exit $?
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$SCRIPT_DIR/phases/reset.sh" || exit $?
+# shellcheck source=tests/os/phases/image-upgrade.sh
+source "$SCRIPT_DIR/phases/image-upgrade.sh" || exit $?
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
@@ -225,6 +236,7 @@ rigmedia) _run_phase rigmedia phase_rigmedia ;;
 media) _run_phase media phase_media ;;
 fault) _run_phase fault phase_fault ;;
 reset) _run_phase reset phase_reset ;;
+image-upgrade) _run_phase image-upgrade phase_image_upgrade ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
 stack) _run_phase stack phase_stack ;;
 all)
@@ -240,6 +252,7 @@ all)
     _run_phase media phase_media
     _run_phase fault phase_fault
     _run_phase reset phase_reset
+    _run_phase image-upgrade phase_image_upgrade
     _run_phase stack phase_stack
     ;;
 *)

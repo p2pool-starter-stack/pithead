@@ -34,7 +34,7 @@ TELEGRAM_EVENT_NODE_DOWN TELEGRAM_EVENT_NODE_RECOVERED TELEGRAM_EVENT_PAYOUT_CON
 TELEGRAM_EVENT_PAYOUT_FOUND TELEGRAM_EVENT_RAFFLE_WIN TELEGRAM_EVENT_STACK_ONLINE
 TELEGRAM_EVENT_SYNC_FINISHED TELEGRAM_EVENT_WALLET_CHANGED TELEGRAM_EVENT_WORKER_JOINED
 TELEGRAM_EVENT_WORKER_LEFT TELEGRAM_EVENT_WORKER_OFFLINE TELEGRAM_EVENT_WORKER_RECOVERED
-TELEGRAM_EVENT_XVB_NO_SHARE TELEGRAM_EVENT_XVB_REGISTRATION TOR_AUTO_HEAL TOR_DATA_DIR
+TELEGRAM_EVENT_XVB_NO_SHARE TELEGRAM_EVENT_XVB_REGISTRATION TOR_AUTO_HEAL TOR_COMPOSE_PROFILES TOR_DATA_DIR
 TOR_EGRESS_FIREWALL WALLET_RPC_USERNAME XMRIG_API_AUTH XMRIG_API_PORT XVB_DONATION_LEVEL
 XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 
@@ -51,6 +51,11 @@ XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 # assignment keeps its prose, but every `KEY=` inside it that is not a survivor with an `=`-free
 # value loses the rest of the line. Any other line is redacted whole, since it cannot
 # be classified. Plain `[ \t]` rather than `[[:space:]]`: older mawk has no POSIX classes.
+# The Tari explorer URL (#2464) may carry a token, so the bundle's config masks it on top of the
+# control channel's masked copy. Only here: in CONTROL_SECRET_PATHS the commit gate would read the
+# mask as an edit to TARI_EXPLORER_URL and refuse unrelated dashboard changes (KVM job 1397).
+bundle_mask_config() { jq 'if (.tari.explorer_url // "") != "" then .tari.explorer_url = {"__secret__": true} else . end'; }
+
 bundle_redact_env() {
     awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" '
         # The value up to its first unquoted `#`, honouring dotenv_render_value backslash escapes
@@ -168,7 +173,7 @@ stack_support_bundle() {
     if [ -f "$CONFIG_FILE" ]; then
         render_masked_config "$tmp/scratch" 2>/dev/null || true
         [ -f "$tmp/scratch/masked/config.json" ] &&
-            cp "$tmp/scratch/masked/config.json" "$tmp/bundle/config.masked.json"
+            bundle_mask_config <"$tmp/scratch/masked/config.json" >"$tmp/bundle/config.masked.json"
     fi
     # .env with secret-bearing values stripped by the survivor allowlist above; structure (ports,
     # dirs, modes) stays — that is what support actually needs.
