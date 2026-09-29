@@ -181,7 +181,11 @@ tor_recover() { # check | apply; explicit operator action only
     }
     control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "started"
     if ! docker compose stop tor; then
-        tor_recovery_restore_start "$dir" "$identities" || true
+        case "$(docker inspect tor --format '{{.State.Running}}' 2>/dev/null)" in
+        false) tor_recovery_restore_start "$dir" "$identities" || true ;;
+        true) : ;; # Stop failed before Tor stopped; no restart or Monero re-dial needed.
+        *) warn "Tor stop status is unknown; check Tor before retrying recovery." ;;
+        esac
         control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"
         mutation_lock_release
         return 1

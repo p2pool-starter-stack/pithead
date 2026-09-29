@@ -66,7 +66,9 @@ docker() {
     'exec tor /usr/local/bin/tor-control-signal.sh NEWNYM') printf 'newnym\n' >>"$WORK/actions" ;;
     'compose stop tor')
         printf 'stop\n' >>"$WORK/actions"
+        if [ "${STOP_FAIL:-0}" = 1 ]; then return 1; fi
         : >"$WORK/stopped"
+        if [ "${STOP_FAIL:-0}" = 2 ]; then return 1; fi
         ;;
     'compose start tor')
         printf 'start\n' >>"$WORK/actions"
@@ -111,6 +113,15 @@ if tor_recover apply; then exit 1; fi
 [ "$(cat "$WORK/actions")" = "$(printf 'stop\nstart\nredial')" ]
 rm "$WORK/control/tor-recovery-at" "$WORK/started" "$WORK/actions"
 sudo() { "$@"; }
+STOP_FAIL=1
+if tor_recover apply; then exit 1; fi
+[ "$(cat "$WORK/actions")" = stop ]
+rm "$WORK/control/tor-recovery-at" "$WORK/actions"
+STOP_FAIL=2
+if tor_recover apply; then exit 1; fi
+[ "$(cat "$WORK/actions")" = "$(printf 'stop\nstart\nredial')" ]
+rm "$WORK/control/tor-recovery-at" "$WORK/started" "$WORK/actions"
+STOP_FAIL=0
 ALTER_IDENTITY=1
 if tor_recover apply; then exit 1; fi
 [ "$(cat "$WORK/actions")" = "$(printf 'stop\nstart\nstop')" ]
