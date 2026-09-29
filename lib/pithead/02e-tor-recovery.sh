@@ -17,10 +17,10 @@ tor_recovery_info() {
 
 tor_recovery_state_saturated() { # <state file>
     local state="$1"
-    [ -f "$state" ] && [ ! -L "$state" ] || return 1
-    grep -qx 'CircuitBuildAbandonedCount 1000' "$state" || return 1
-    grep -qx 'TotalBuildTimes 1000' "$state" || return 1
-    ! grep -q '^CircuitBuildTimeBin ' "$state" || return 1
+    sudo test -f "$state" && sudo test ! -L "$state" || return 1
+    sudo grep -qx 'CircuitBuildAbandonedCount 1000' "$state" || return 1
+    sudo grep -qx 'TotalBuildTimes 1000' "$state" || return 1
+    ! sudo grep -q '^CircuitBuildTimeBin ' "$state" || return 1
 }
 
 tor_recovery_signature() { # <state file> <first Monero get_info> <second get_info>
@@ -46,16 +46,17 @@ tor_recovery_mount() { # print the one canonical live Tor data mount, else refus
     [ "$count" = x ] || return 1
     actual=$(docker inspect tor --format '{{range .Mounts}}{{if eq .Destination "/var/lib/tor"}}{{.Source}}{{end}}{{end}}' 2>/dev/null) || return 1
     [ "$actual" = "$(realpath -e -- "$expected")" ] || return 1
-    [ ! -L "$actual/state" ] || return 1
+    sudo test ! -L "$actual/state" || return 1
     printf '%s\n' "$actual"
 }
 
 tor_recovery_identities() { # hash retained onion identity keys, refusing missing or symlinked keys
     local dir="$1" keys
-    keys=$(find "$dir" -mindepth 2 -name hs_ed25519_secret_key -print | LC_ALL=C sort) || return 1
+    keys=$(sudo find "$dir" -mindepth 2 -name hs_ed25519_secret_key -print) || return 1
+    keys=$(printf '%s\n' "$keys" | LC_ALL=C sort)
     [ -n "$keys" ] || return 1
     while IFS= read -r key; do
-        [ -f "$key" ] && [ ! -L "$key" ] || return 1
+        sudo test -f "$key" && sudo test ! -L "$key" || return 1
         sudo sha256sum -- "$key" || return 1
     done <<<"$keys"
 }
@@ -95,7 +96,7 @@ tor_recovery_restore_start() { # <data dir> <original identity hashes>; recover 
 }
 
 tor_recover() { # check | apply; explicit operator action only
-    local mode="$1" dir state first second stamp now last backup healthy=0 info identities started_before started_after
+    local mode="$1" dir state first second stamp now last backup healthy=0 info identities started_before started_after i
     case "$mode" in check | apply) ;; *) error "Usage: ./pithead tor-recover check|apply" ;; esac
     require_deployed
     # An active host operation is a refusal, not a queued mutation against changing state.
@@ -169,7 +170,7 @@ tor_recover() { # check | apply; explicit operator action only
         return 0
     fi
     backup="$dir/state.backup.$now"
-    [ ! -e "$backup" ] && [ ! -L "$backup" ] || {
+    sudo test ! -e "$backup" && sudo test ! -L "$backup" || {
         warn "Tor recovery refused: circuit-state backup target already exists."
         mutation_lock_release
         return 1
@@ -202,9 +203,9 @@ tor_recover() { # check | apply; explicit operator action only
         mutation_lock_release
         return 1
     fi
-    if [ "$(tor_recovery_mount)" != "$dir" ] || [ ! -f "$state" ] || [ -L "$state" ] ||
+    if [ "$(tor_recovery_mount)" != "$dir" ] || ! sudo test -f "$state" || sudo test -L "$state" ||
         ! tor_recovery_signature "$state" "$first" "$second" ||
-        ! sudo mv -n -- "$state" "$backup" || [ -e "$state" ] || [ ! -f "$backup" ]; then
+        ! sudo mv -n -- "$state" "$backup" || sudo test -e "$state" || ! sudo test -f "$backup"; then
         warn "Tor recovery could not back up circuit state; starting Tor again."
         tor_recovery_restore_start "$dir" "$identities" || true
         control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"

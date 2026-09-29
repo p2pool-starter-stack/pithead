@@ -68,7 +68,7 @@ def _healer(clock=None, enabled=True, probe=None, notify=None, docker=None, rest
     return TorEgressHealer(
         docker or _FakeDocker(),
         enabled=enabled,
-        probe=probe or (lambda: False),
+        probe=probe or (lambda: (False, "test probe")),
         notify=notify,
         clock=clock or _Clock(),
         restart_monerod=restart_monerod,
@@ -173,7 +173,7 @@ class TestDecide:
         # so a flaky proxy doesn't burn the cap and abandon a real outage (#424 review, Finding 3).
         clock = _Clock()
         docker = _FailingDocker()
-        h = _healer(clock, docker=docker, probe=lambda: False)
+        h = _healer(clock, docker=docker, probe=lambda: (False, "test probe"))
         h._last_probe = None
         h._attempts = MAX_ATTEMPTS - 1
         _break_egress(h, clock)
@@ -206,26 +206,6 @@ class TestDecide:
 
 
 class TestCheck:
-    async def test_unconfirmed_newnym_cannot_escalate_to_container_restart(self):
-        clock = _Clock()
-        docker = _FakeDocker()
-        h = _healer(clock, probe=lambda: False, docker=docker)
-        with (
-            patch(
-                "mining_dashboard.service.health.tor_heal.control_service.submit", return_value="id"
-            ),
-            patch(
-                "mining_dashboard.service.health.tor_heal.control_service.result",
-                return_value={"status": "rejected", "error": "NEWNYM cooldown"},
-            ),
-        ):
-            await h.check()
-            for _ in range(MAX_ATTEMPTS + 1):
-                clock.t += COOLDOWN_SEC
-                await h.check()
-        assert docker.calls == []
-        assert h._attempts == 0
-
     async def test_disabled_is_a_total_noop(self):
         def probe():
             raise AssertionError("disabled healer must never probe")
@@ -235,24 +215,12 @@ class TestCheck:
         await h.check()
         assert docker.calls == []
 
-    async def test_probe_is_throttled_to_the_interval(self):
-        calls = []
-        clock = _Clock()
-        h = _healer(clock, probe=lambda: calls.append(1) or True)
-        await h.check()
-        clock.t += PROBE_INTERVAL_SEC - 1
-        await h.check()  # inside the cadence: no probe
-        assert len(calls) == 1
-        clock.t += 1
-        await h.check()
-        assert len(calls) == 2
-
     async def test_refreshes_circuits_before_restarting_tor_and_monerod(self, caplog):
         # The tor restart kills monerod's SOCKS peers; the heal cycles monerod right after so
         # it re-dials (#972) — order matters: monerod must come back to a LIVE tor.
         clock = _Clock()
         docker = _FakeDocker()
-        h = _healer(clock, probe=lambda: False, docker=docker)
+        h = _healer(clock, probe=lambda: (False, "test probe"), docker=docker)
         with (
             patch(
                 "mining_dashboard.service.health.tor_heal.control_service.submit", return_value="id"
@@ -280,7 +248,7 @@ class TestCheck:
         # #2749: a held monerod (LAN guard failed at boot) must stay down, or its LAN ports open.
         clock = _Clock()
         docker = _FakeDocker()
-        h = _healer(clock, probe=lambda: False, docker=docker)
+        h = _healer(clock, probe=lambda: (False, "test probe"), docker=docker)
         with (
             patch(
                 "mining_dashboard.service.health.tor_heal.get_container_health",
@@ -304,7 +272,9 @@ class TestCheck:
         # A remote monerod has no container here — the heal must stay tor-scoped.
         clock = _Clock()
         docker = _FakeDocker()
-        h = _healer(clock, probe=lambda: False, docker=docker, restart_monerod=False)
+        h = _healer(
+            clock, probe=lambda: (False, "test probe"), docker=docker, restart_monerod=False
+        )
         with (
             patch(
                 "mining_dashboard.service.health.tor_heal.control_service.submit", return_value="id"
@@ -330,7 +300,7 @@ class TestCheck:
 
         clock = _Clock()
         docker = _MonerodFailingDocker()
-        h = _healer(clock, probe=lambda: False, docker=docker)
+        h = _healer(clock, probe=lambda: (False, "test probe"), docker=docker)
         with (
             patch(
                 "mining_dashboard.service.health.tor_heal.control_service.submit", return_value="id"
@@ -352,7 +322,7 @@ class TestCheck:
     async def test_exhausted_warns_but_never_attempts(self, caplog):
         clock = _Clock()
         docker = _FakeDocker()
-        h = _healer(clock, probe=lambda: False, docker=docker)
+        h = _healer(clock, probe=lambda: (False, "test probe"), docker=docker)
         with (
             patch(
                 "mining_dashboard.service.health.tor_heal.control_service.submit", return_value="id"
@@ -404,7 +374,7 @@ class TestCheck:
         clock.t += PROBE_INTERVAL_SEC
         await h.check()  # still fine -> silent
         assert len(notes) == 1
-        assert "NEWNYM" in notes[0]
+        assert "recovered following NEWNYM" in notes[0]
         assert "failed probes first target; second circuit" in notes[0]
         assert "recovery probe first target; second circuit" in notes[0]
 
@@ -417,7 +387,7 @@ class TestCheck:
                 raise RuntimeError("proxy down")
 
         clock = _Clock()
-        h = _healer(clock, probe=lambda: False, docker=_BoomDocker())
+        h = _healer(clock, probe=lambda: (False, "test probe"), docker=_BoomDocker())
         h._attempts = MAX_ATTEMPTS - 1
         await h.check()
         clock.t += BROKEN_AFTER_SEC

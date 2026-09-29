@@ -833,9 +833,13 @@ confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_he
 `./pithead apply`. The dashboard probes every five minutes with a new SOCKS circuit per request.
 A failed request is corroborated against a second target before it counts toward the 15-minute
 outage window. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
-continued failure permits one Tor container restart, which also re-dials local Monero. Each step
-and its probe evidence is logged. Two consecutive successful probes confirm recovery and carry
-the targets, circuits, duration and recovering step into the Telegram note. No automatic step
+continued failure after accepted refreshes permits one Tor container restart, which also re-dials
+local Monero. A rejected NEWNYM does not advance to that restart: the dashboard warns and retries
+after 30 minutes while the outage persists. Once the host's daily refresh budget is spent, it
+cannot take another automatic action until the host accepts a request. Each step and its probe
+evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
+circuits, duration and preceding action into the Telegram note; the action is not credited as the
+cause of recovery. No automatic step
 changes guards or deletes Tor state. The action budget is three per outage; after that the
 monitor warns until egress recovers. The feature remains off by default.
 
@@ -843,7 +847,8 @@ monitor warns until egress recovers. The feature remains off by default.
 clearnet probe alone cannot authorize a state reset. If Tor repeatedly reports invalid circuit
 build timing and local Monero is peerless and stalled, run `./pithead tor-recover check`. This
 read-only check validates the live Tor data mount and the saturated history signature, then
-compares Monero height, sync and outgoing peers over three minutes. `./pithead tor-recover apply`
+compares Monero height, sync and outgoing peers over three minutes. It uses sudo for read-only
+access to Tor-owned state and identity keys. `./pithead tor-recover apply`
 rechecks the same evidence under the mutation lock, verifies onion identity keys, backs up only
 Tor's `state`, and restarts Tor. It re-dials local Monero after the actual restart, verifies Tor
 health and Monero peers, and records the attempt in the control audit. The backup remains for

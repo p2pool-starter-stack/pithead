@@ -184,7 +184,7 @@ class TorEgressHealer:
                     return
                 self._recovery_step = "NEWNYM"
             probe = await asyncio.to_thread(self._probe)
-            ok, evidence = probe if isinstance(probe, tuple) else (probe, "injected probe")
+            ok, evidence = probe
             if not ok:
                 self._failure_evidence = evidence
             outage_minutes = (now - self._failing_since) / 60 if self._failing_since else 0
@@ -264,14 +264,14 @@ class TorEgressHealer:
                     )
             elif action == "recovered":
                 logger.info(
-                    "Tor clearnet egress recovered after %s: failed probes %s; recovery probe %s",
+                    "Tor clearnet egress recovered following %s: failed probes %s; recovery probe %s",
                     self._recovery_step or "probe",
                     self._failure_evidence,
                     evidence,
                 )
                 if self._notify is not None:
                     await self._notify(
-                        f"\U0001f9c5 Tor clearnet egress recovered after "
+                        f"\U0001f9c5 Tor clearnet egress recovered following "
                         f"{self._recovery_step or 'probe'}; outage {outage_minutes:.0f} "
                         f"minutes; failed probes {self._failure_evidence}; "
                         f"recovery probe {evidence}."

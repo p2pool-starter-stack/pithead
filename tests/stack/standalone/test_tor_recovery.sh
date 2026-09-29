@@ -4,9 +4,10 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:?}/pithead-tor-recovery.XXXXXX")
 WORK=$(cd "$WORK" && pwd -P)
-trap 'rm -rf "$WORK"' EXIT
+trap 'chmod 700 "$WORK/tor" 2>/dev/null || true; chmod 700 "$WORK/tor/p2pool" 2>/dev/null || true; rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+sudo() { "$@"; }
 echo "== tor recovery refuses unsafe state and preserves identities =="
 mkdir -p "$WORK/tor/p2pool" "$WORK/control/audit"
 printf 'identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"
@@ -60,7 +61,22 @@ sleep() { :; }
 log() { :; }
 warn() { :; }
 control_audit() { printf '%s\n' "$5" >>"$WORK/audit"; }
-sudo() { "$@"; }
+sudo() {
+    local rc=0
+    if [ "${LOCK_TOR:-0}" = 1 ]; then
+        chmod 700 "$WORK/tor"
+        chmod 700 "$WORK/tor/p2pool"
+        chmod 600 "$WORK/tor/p2pool/hs_ed25519_secret_key"
+        [ ! -e "$WORK/tor/state" ] || chmod 600 "$WORK/tor/state"
+    fi
+    "$@" || rc=$?
+    if [ "${LOCK_TOR:-0}" = 1 ]; then
+        chmod 000 "$WORK/tor/p2pool/hs_ed25519_secret_key"
+        [ ! -e "$WORK/tor/state" ] || chmod 000 "$WORK/tor/state"
+        chmod 000 "$WORK/tor/p2pool" "$WORK/tor"
+    fi
+    return "$rc"
+}
 docker() {
     case "$*" in
     'exec tor /usr/local/bin/tor-control-signal.sh NEWNYM') printf 'newnym\n' >>"$WORK/actions" ;;
@@ -97,11 +113,21 @@ ACTIVE=1
 if tor_recover apply; then exit 1; fi
 [ ! -e "$WORK/actions" ]
 ACTIVE=0
-tor_recover check
-[ ! -e "$WORK/actions" ] && [ ! -e "$WORK/control/tor-recovery-at" ]
 before=$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key")
 chain_before=$(sha256sum "$WORK/chain")
+LOCK_TOR=1
+chmod 000 "$WORK/tor/p2pool/hs_ed25519_secret_key" "$WORK/tor/state" "$WORK/tor/p2pool" "$WORK/tor"
+if cat "$WORK/tor/state" >/dev/null 2>&1; then
+    echo 'protected Tor state was readable without sudo' >&2
+    exit 1
+fi
+tor_recover check
+[ ! -e "$WORK/actions" ] && [ ! -e "$WORK/control/tor-recovery-at" ]
 tor_recover apply
+LOCK_TOR=0
+chmod 700 "$WORK/tor"
+chmod 700 "$WORK/tor/p2pool"
+chmod 600 "$WORK/tor/p2pool/hs_ed25519_secret_key"
 [ "$(cat "$WORK/actions")" = "$(printf 'stop\nstart\nredial')" ]
 [ -f "$WORK/tor/state.backup.$(cat "$WORK/control/tor-recovery-at")" ]
 [ "$before" = "$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key")" ]

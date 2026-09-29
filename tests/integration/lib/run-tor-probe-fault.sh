@@ -29,6 +29,8 @@ fault_tor_probe_egress() {
     fi
     pithead tor-recover check >/dev/null 2>&1 || rc=$?
     assert_ne "ordinary Tor state refused by read-only recovery check" "$rc" "0"
+    rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && sudo grep -q . \"\$dir/state\" && tor_recovery_identities \"\$dir\" >/dev/null"' >/dev/null 2>&1
+    assert_rc "read-only recovery can inspect the live Tor state and onion identities" "$?" "0"
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
     assert_rc "Tor-egress firewall remains enforced before fault" "$?" "0"
     if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq '.tor.auto_heal=true')" ||
@@ -87,14 +89,14 @@ fault_tor_probe_egress() {
     assert_rc "Tor-egress firewall remains enforced after fault" "$?" "0"
     if wait_for 900 30 "Tor egress recovered after circuit refresh" \
         _tor_probe_recovered "$epoch"; then
-        it_pass "Tor egress recovery names the successful step"
+        it_pass "Tor egress recovery names the preceding step"
     else
-        it_fail "Tor egress recovery names the successful step" "no corroborated recovery log"
+        it_fail "Tor egress recovery names the preceding step" "no corroborated recovery log"
     fi
     push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 ||
         it_fail "Tor probe fault restored baseline config" "baseline apply failed"
 }
 
 _tor_probe_recovered() { # <epoch>
-    rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered after NEWNYM:'
+    rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following NEWNYM:'
 }
