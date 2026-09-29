@@ -8,14 +8,23 @@ tor_probe_ns_ipt() { # <iptables args...>
     rx "p=\$(docker inspect -f '{{.State.Pid}}' dashboard 2>/dev/null); [ \"\${p:-0}\" -gt 0 ] && sudo -n nsenter -t \"\$p\" -n iptables $*" 2>/dev/null
 }
 
+_tor_probe_mining_sample() {
+    local state accepted workers
+    state=$(api_state) || return 1
+    accepted=$(jq_get "$state" '.proxy_summary.accepted | gsub(","; "") | tonumber')
+    workers=$(jq_get "$state" '.proxy_workers')
+    [ -n "$accepted" ] && [ "${workers:-0}" -ge "${EXPECTED_WORKERS:-1}" ] 2>/dev/null || return 1
+    printf '%s\n' "$accepted"
+}
+
 fault_tor_probe_egress() {
-    local prefix epoch tor_before monero_before last now workers logs i rc=0 rule
+    local prefix epoch tor_before monero_before last now logs i rc=0 rule
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = false ]; then
         it_fail "Tor probe fault requires the egress firewall" "network.tor_egress_firewall=false"
         return
     fi
-    if ! wait_stratum_hashes 180; then
-        it_fail "Tor probe fault has live stratum hashes" "no active rig; cannot prove mining continuity"
+    if ! wait_for 180 10 "proxy workers online for Tor fault" _tor_probe_mining_sample >/dev/null; then
+        it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
     fi
     pithead tor-recover check >/dev/null 2>&1 || rc=$?
@@ -31,7 +40,10 @@ fault_tor_probe_egress() {
     tor_before=$(rx "docker inspect tor --format '{{.State.StartedAt}}'")
     monero_before=$(rx "docker inspect monerod --format '{{.State.StartedAt}}'")
     epoch=$(rx 'date +%s')
-    last=$(jq_get "$(api_state)" '.stratum.total_hashes')
+    last=$(_tor_probe_mining_sample) || {
+        it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
+        return
+    }
     rule="-d ${prefix}.25 -p tcp --dport 9050 -m comment --comment pithead-e2e-fault-tor-probe -j DROP"
     if ! tor_probe_ns_ipt "-I OUTPUT $rule" >/dev/null ||
         ! tor_probe_ns_ipt "-C OUTPUT $rule" >/dev/null; then
@@ -41,12 +53,11 @@ fault_tor_probe_egress() {
     fi
     it_pass "Tor probe fault blocks dashboard SOCKS traffic in its OUTPUT chain"
     it_step "fault: dashboard Tor SOCKS requests fail while mining onions stay connected…"
-    for ((i = 0; i < 20; i++)); do
+    for ((i = 0; i < 25; i++)); do
         sleep 60
-        now=$(jq_get "$(api_state)" '.stratum.total_hashes')
-        workers=$(jq_get "$(api_state)" '.proxy_workers')
-        if [ "${now:-0}" -le "${last:-0}" ] || [ "${workers:-0}" -lt "${EXPECTED_WORKERS:-1}" ]; then
-            it_fail "stratum hashing continued during Tor clearnet fault" "sample $i did not advance with workers online"
+        now=$(_tor_probe_mining_sample) || now=
+        if [ -z "$now" ] || [ "$now" -le "$last" ]; then
+            it_fail "proxy mining continued during Tor clearnet fault" "sample $i did not advance with workers online"
             break
         fi
         last=$now
