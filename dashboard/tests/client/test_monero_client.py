@@ -146,6 +146,9 @@ class TestGetSyncStatus:
             "percent": 50,
             "db_size": 85_000_000_000,
             "synchronized": False,
+            "height": 50,
+            "peers_in": None,
+            "peers_out": None,
         }
 
     def test_synced_via_flag(self):
@@ -163,6 +166,9 @@ class TestGetSyncStatus:
             "is_syncing": False,
             "db_size": 200_000_000_000,
             "synchronized": True,
+            "height": 90,
+            "peers_in": None,
+            "peers_out": None,
         }
 
     def test_synced_via_zero_target(self):
@@ -172,6 +178,9 @@ class TestGetSyncStatus:
             "is_syncing": False,
             "db_size": 0,
             "synchronized": False,
+            "height": 100,
+            "peers_in": None,
+            "peers_out": None,
         }
 
     def test_synced_when_height_reaches_target(self):
@@ -180,6 +189,9 @@ class TestGetSyncStatus:
             "is_syncing": False,
             "db_size": 0,
             "synchronized": False,
+            "height": 100,
+            "peers_in": None,
+            "peers_out": None,
         }
 
     def test_stranded_node_reads_synced_but_carries_the_false_flag(self):
@@ -192,6 +204,34 @@ class TestGetSyncStatus:
         status = client.get_sync_status()
         assert status["is_syncing"] is False
         assert status["synchronized"] is False
+
+    def test_peer_counts_pass_through_from_get_info(self):
+        # #2499: both counts ride the same payload; a synced node and a syncing one carry them.
+        info = {
+            "status": "OK",
+            "synchronized": True,
+            "height": 100,
+            "target_height": 0,
+            "outgoing_connections_count": 12,
+            "incoming_connections_count": 3,
+        }
+        status = self._client_with_info(info).get_sync_status()
+        assert (status["height"], status["peers_out"], status["peers_in"]) == (100, 12, 3)
+        info.update(synchronized=False, target_height=200)
+        status = self._client_with_info(info).get_sync_status()
+        assert status["is_syncing"] is True
+        assert (status["peers_out"], status["peers_in"]) == (12, 3)
+
+    def test_zero_peers_is_zero_but_a_missing_count_is_no_reading(self):
+        zero = self._client_with_info(
+            {"status": "OK", "height": 5, "outgoing_connections_count": 0}
+        ).get_sync_status()
+        assert zero["peers_out"] == 0
+        assert zero["peers_in"] is None
+        junk = self._client_with_info(
+            {"status": "OK", "height": 5, "outgoing_connections_count": "8"}
+        ).get_sync_status()
+        assert junk["peers_out"] is None
 
     def test_unreachable_returns_none(self):
         client = self._client_with_info(None)

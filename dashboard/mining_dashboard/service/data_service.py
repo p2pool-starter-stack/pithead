@@ -318,6 +318,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         self.monero_sync_stale.update(monero_reports_synced)
                     monero_stale = self.monero_sync_stale.down
                     monero_sync["stale"] = monero_stale
+                    self._observe_monero(monero_sync)
 
                     # 4. Sync gate (Issue #35): hold p2pool + xmrig-proxy until the required
                     # chain(s) first sync, then release. monerod must be synced; Tari must be
@@ -374,9 +375,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     )
                     await self.alert_service.process(
                         monero_down=monero_down,
-                        # Debounced "reachable but out of sync" (#972) — the 0-peer strand
-                        # after a tor restart that node-down can't see.
-                        monero_stale=monero_stale,
+                        monero_stale=monero_stale,  # #972 out-of-sync; health: #2499
+                        monero_health=monero_sync["health"],
                         tari_down=tari_down,
                         tari_required=TARI_REQUIRED,
                         miner_released=self.miner_released,

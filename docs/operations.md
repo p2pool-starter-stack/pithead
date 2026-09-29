@@ -857,6 +857,27 @@ restart does the same. (#972)
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
 
+**Monero node isolated or not advancing.**
+A local monerod can keep `synchronized: true` and a green RPC healthcheck while it has no outgoing
+peers, or while its tip stops moving because every peer sits on the same stale block (#2499). The
+XMR Network card shows **Node Health**, **Peers** and **Height Moved**; the tick means the node is
+at the tip with peers. It turns red, with the numbers, when monerod has had 0 outgoing peers for 10
+minutes (`NODE_STALE_AFTER_SEC`) or its height has not moved for 30 minutes (Monero blocks arrive
+about every 2). A red verdict also fails `./pithead doctor` (doctor's Monero sync check prints the
+peer counts and the last block's age too), adds a `monero chain` line to `./pithead status`, sends a
+`node_down`-toggle alert for each condition (peerless and stalled are separate messages, each with a
+recovery note), and makes the container's `docker inspect` health `unhealthy` once it has had 0
+outgoing peers for `MONERO_HEALTH_PEERLESS_SEC` (600 s). The stack only reports: it restarts
+nothing. Fix:
+
+```bash
+./pithead restart monerod
+```
+
+The clocks start when the dashboard first sees the node, so a dashboard restart never invents an
+age. With `monero.mode: remote` the peers of the remote node are not visible to this stack, so the
+card says so and gives no verdict.
+
 **Tari node stuck or forked.**
 A running Tari node can stop following the chain while every healthcheck stays green: the process
 lives, its gRPC answers and P2Pool's merge-mine channel reads READY, so every merge-mined Tari
