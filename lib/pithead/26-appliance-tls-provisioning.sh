@@ -153,7 +153,7 @@ cert_san_string() { # <cert-file>
 # uncovered on every box — a permanent doctor FAIL and a re-mint on every render (#2463). Anything
 # that is not a plain IPv6 literal comes back unchanged.
 ipv6_canonical() { # <literal>
-    local a="${1,,}" left right fill i out=() l=() r=()
+    local a="${1,,}" left right fill i parts=() lgrp=() rgrp=()
     case "$a" in *:*) ;; *)
         printf '%s' "$1"
         return 0
@@ -171,20 +171,20 @@ ipv6_canonical() { # <literal>
         left="$a"
         right=""
     fi
-    IFS=: read -ra l <<<"$left"
-    IFS=: read -ra r <<<"$right"
-    fill=$((8 - ${#l[@]} - ${#r[@]}))
+    IFS=: read -ra lgrp <<<"$left"
+    IFS=: read -ra rgrp <<<"$right"
+    fill=$((8 - ${#lgrp[@]} - ${#rgrp[@]}))
     if [[ "$a" != *::* ]]; then fill=0; fi
-    if [ "$fill" -lt 0 ] || { [[ "$a" == *::* ]] && [ "$fill" -lt 1 ]; } || { [ "$fill" -eq 0 ] && [ $((${#l[@]} + ${#r[@]})) -ne 8 ]; }; then
+    if [ "$fill" -lt 0 ] || { [[ "$a" == *::* ]] && [ "$fill" -lt 1 ]; } || { [ "$fill" -eq 0 ] && [ $((${#lgrp[@]} + ${#rgrp[@]})) -ne 8 ]; }; then
         printf '%s' "$1"
         return 0
     fi
-    for i in "${l[@]}"; do out+=("$(printf '%x' "$((16#${i:-0}))")"); done
-    for ((i = 0; i < fill; i++)); do out+=(0); done
-    for i in "${r[@]}"; do out+=("$(printf '%x' "$((16#${i:-0}))")"); done
+    for i in "${lgrp[@]}"; do parts+=("$(printf '%x' "$((16#${i:-0}))")"); done
+    for ((i = 0; i < fill; i++)); do parts+=(0); done
+    for i in "${rgrp[@]}"; do parts+=("$(printf '%x' "$((16#${i:-0}))")"); done
     (
         IFS=:
-        printf '%s' "${out[*]}"
+        printf '%s' "${parts[*]}"
     )
 }
 
