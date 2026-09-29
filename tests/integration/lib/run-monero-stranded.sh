@@ -64,6 +64,26 @@ _pred_monero_has_peers() { [ "$(monero_out_peers)" -gt 0 ] 2>/dev/null; }
 _pred_monerod_docker_health() { [ "$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)" = "$1" ]; }
 _pred_monero_alerted() { rx "grep -q 'Monero node has no outgoing peers' $MONERO_HOOK_LOG" >/dev/null 2>&1; }
 _pred_monero_recovery_alerted() { rx "grep -q 'Monero node has outgoing peers again' $MONERO_HOOK_LOG" >/dev/null 2>&1; }
+# Read-only capture of the peer wait (#2921): one line per poll, so a recreate run and one that does not
+# recreate compare, and a block at the timeout, taken before the restore replaces the containers.
+monero_peer_sample() {
+    local i t
+    # shellcheck disable=SC2016  # the snippet expands on the box
+    i="$(rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env | cut -d= -f2-); p=$(grep -E "^MONERO_NODE_PASSWORD=" .env | cut -d= -f2-);
+        curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info | jq -c "{out: .outgoing_connections_count, in: .incoming_connections_count, height, synchronized}"' 2>/dev/null)"
+    t="$(rx "docker logs --since 60s tor 2>&1 | grep -E 'Bootstrapped|Retrying on a new circuit|resolve failed' | cut -c17- | sort | uniq -c | sort -rn | head -3 | tr -s ' ' | tr '\n' ';'" 2>/dev/null)"
+    it_log "peer sample: monerod ${i:-unreadable}; tor 60s: ${t:-quiet}; tor $(rx "docker inspect -f '{{.State.Health.Status}} since {{.State.StartedAt}}' tor" 2>/dev/null); monerod since $(monero_started_at)"
+}
+_pred_monero_has_peers_sampled() { monero_peer_sample; _pred_monero_has_peers; }
+monero_peer_wait_diagnostics() {
+    local l
+    it_log "peer wait diagnostics (read-only): tor-recover check, then the log tails"
+    {
+        pithead tor-recover check 2>&1 | tail -n 8 | sed 's/^/tor-recover check: /'
+        rx "docker logs --tail 80 tor 2>&1" 2>&1 | sed 's/^/tor: /'
+        rx "docker logs --tail 60 monerod 2>&1" 2>&1 | sed 's/^/monerod: /'
+    } | while IFS= read -r l; do it_log "  $(printf '%s' "$l" | redact)"; done
+}
 monero_started_at() { rx "docker inspect -f '{{.State.StartedAt}}' monerod" 2>/dev/null; }
 monero_strand_state() { echo "verdict '$(monero_health_field level)', peers $(monero_health_field peers), docker health '$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)'"; }
 
@@ -97,7 +117,8 @@ run_monero_stranded() {
     fi
 
     # A green verdict is not proof of peers: a fresh monerod reads green for its first 10 minutes at 0.
-    if ! wait_for 900 10 "monerod holding outgoing peers before the fault" _pred_monero_has_peers; then
+    if ! wait_for 900 10 "monerod holding outgoing peers before the fault" _pred_monero_has_peers_sampled; then
+        monero_peer_wait_diagnostics
         # Nothing to strand: the box's own Tor-only monerod holds no outgoing peer (job 1803 saw it at
         # 0 for 25 minutes after a recreate). Not this leg's failure, and never a pass.
         it_skip_leg "monero-stranded: strand a monerod that holds peers" "monerod had no outgoing peer for 15 minutes before any fault: $(monero_strand_state)" "missing"
