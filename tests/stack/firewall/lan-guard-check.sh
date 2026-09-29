@@ -5,6 +5,9 @@ mkdir -p "$LGD/units"
 cp "$LGD/bin/systemctl" "$LGD/systemctl.precheck"
 cp "$LGD/.env" "$LGD/.env.precheck"
 [ ! -e "$LGD/data/lan-guard/enforced" ] || cp "$LGD/data/lan-guard/enforced" "$LGD/marker.precheck"
+lg 'lan_guard_mark' >/dev/null
+assert_eq "marker stays visible during an apply refresh" "$(lg 'mv() { test -e "$LAN_GUARD_MARKER" || return 1; command mv "$@"; }; lan_guard_mark; echo $?')" 0
+assert_eq "node uid can read an atomically refreshed marker" "$(stat -c %a "$LGD/data/lan-guard/enforced" 2>/dev/null || stat -f %Lp "$LGD/data/lan-guard/enforced")" 644
 cat >"$LGD/bin/systemctl" <<'SYSTEMCTL'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$LG_SYSTEMCTL"

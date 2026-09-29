@@ -358,6 +358,7 @@ lock_compose_path_probe() {
         export PITHEAD_LOCK_FILE="$LKFILE"
         # shellcheck disable=SC1090
         source "$STACK"
+        lan_guard_watched_ports() { :; } # this probe checks the lock bind, not node publishes
         docker() { printf '%s' "$PITHEAD_LOCK_FILE"; }
         compose_up -d
     )

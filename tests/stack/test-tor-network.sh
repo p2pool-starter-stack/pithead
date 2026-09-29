@@ -737,7 +737,8 @@ node_onion_probe() { # provision_node_onions recreates tor and captures a newly 
         : >dockerlog
         : >renders
         log() { :; }
-        restore_recreate_names() { :; } # its own test is tests/stack/lifecycle/recreate-names.sh
+        restore_recreate_names() { :; }  # its own test is tests/stack/lifecycle/recreate-names.sh
+        lan_guard_watched_ports() { :; } # LAN guard has its own tests; keep this onion probe scoped
         docker() { printf '%s ' "$*" >>dockerlog; }
         render_env() { printf 'x' >>renders; }
         wait_for_onion() {

@@ -27,10 +27,18 @@ LAN_GUARD_SOURCES="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.
 LAN_GUARD_BINDS="MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:18142"
 # The host's boot id, kept only while the rule is live (#2749). The node entrypoints (./data/lan-guard,
 # read-only) refuse a LAN bind unless it matches the running boot, so a reboot invalidates it. The
-# boot unit's copy is root's, hence rm before the write.
+# boot unit's copy is root's; replace it through a sibling temp file so a timer never sees a gap.
 LAN_GUARD_MARKER="data/lan-guard/enforced"
 BOOT_ID_FILE="${PITHEAD_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
-lan_guard_mark() { mkdir -p "${LAN_GUARD_MARKER%/*}" && rm -f "$LAN_GUARD_MARKER" && cat "$BOOT_ID_FILE" >"$LAN_GUARD_MARKER"; }
+lan_guard_mark() {
+    local tmp
+    mkdir -p "${LAN_GUARD_MARKER%/*}" || return 1
+    tmp=$(mktemp "${LAN_GUARD_MARKER}.XXXXXX") || return 1
+    if ! cat "$BOOT_ID_FILE" >"$tmp" || ! chmod 644 "$tmp" || ! mv -f "$tmp" "$LAN_GUARD_MARKER"; then
+        rm -f "$tmp"
+        return 1
+    fi
+}
 lan_guard_unmark() { rm -f "$LAN_GUARD_MARKER" 2>/dev/null || sudo -n rm -f "$LAN_GUARD_MARKER" 2>/dev/null; } # 1: still there
 # A verb's teardown of the rule (#2749): remove_lan_guard, or stop the verb with the rule kept.
 lan_guard_teardown() { # <verb>
