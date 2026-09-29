@@ -358,7 +358,10 @@ lock_compose_path_probe() {
         export PITHEAD_LOCK_FILE="$LKFILE"
         # shellcheck disable=SC1090
         source "$STACK"
-        docker() { printf '%s' "$PITHEAD_LOCK_FILE"; }
+        docker() {
+            [ "$1" != ps ] || return 0 # no running node in this lock-path fixture
+            printf '%s' "$PITHEAD_LOCK_FILE"
+        }
         compose_up -d
     )
 }
