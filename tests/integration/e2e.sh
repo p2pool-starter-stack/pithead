@@ -50,7 +50,7 @@ KEEP=0
 SCENARIO=""
 REMOTE_NODE_ARGS=()
 REMOTE_NODE_HOSTS=()
-BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" # raw --harness-arg values -> validate_harness_args's output
+BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" HARNESS_SCENARIO_ARGS="" # raw --harness-arg values -> validate_harness_args's output
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -621,7 +621,7 @@ run_harness() {
     # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
-    phases="$phases$remote_args $no_mining"
+    phases="$phases${HARNESS_SCENARIO_ARGS:-}$remote_args $no_mining"
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     harness_install_runner || die "Failed to install the detached harness runner."

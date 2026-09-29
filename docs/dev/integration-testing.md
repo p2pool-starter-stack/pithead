@@ -484,7 +484,8 @@ runs only the named phases against a commit without a dedicated `--mode`. Hand-p
 replace the mode's own phases and the borrowed rig's `--rigforge --rigforge-control`, so a phase
 you did not ask for cannot fail and skip one you did
 ([bench-ci#878](https://github.com/p2pool-starter-stack/bench-ci/issues/878)). The mode's scenario,
-the rig identity, the pregate and the restore still run. Only an allowlisted
+the rig identity, the pregate and the restore still run. `--scenario <name>` alone only changes
+the scenario; it keeps the mode's and borrowed rig's phases. Only an allowlisted
 `run.sh` phase flag is accepted — `--lifecycle`, `--fault-injection`, `--auth-fail-closed`,
 `--hardening`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
 `--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —
