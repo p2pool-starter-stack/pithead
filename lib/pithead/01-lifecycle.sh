@@ -79,6 +79,10 @@ compose_up() {
     is_source_checkout || build_args+=(--no-build)
     # Every container (re)start passes here, so the LAN-published node ports get their source rule
     # (or are held on loopback) before anything listens on them (#2616).
+    lan_guard_stop_rebound_nodes || {
+        warn "LAN-only source rules were kept because a node with an old published bind could not be stopped."
+        return 1
+    }
     apply_lan_guard
     # LAN guard inserts its RETURN-only jump at the top of DOCKER-USER. Put the Tor DROP back
     # above it before containers start. A selected clearnet first sync needs a verified firewall;

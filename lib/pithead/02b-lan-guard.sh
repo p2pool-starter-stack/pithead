@@ -48,6 +48,38 @@ lan_guard_published() {
     done
 }
 
+# A bind moving from LAN to loopback still belongs to the old container until Compose recreates
+# it. Stop that container before replacing the firewall rules; a failed Compose must not leave
+# the old all-interface listener running after its jump has been removed.
+lan_guard_stop_rebound_nodes() {
+    local names c kp bind published stop_node
+    names=$(docker ps --format '{{.Names}}' 2>/dev/null) || return 1
+    for c in monerod tari; do
+        grep -qxF "$c" <<<"$names" || continue
+        stop_node=0
+        for kp in $LAN_GUARD_BINDS; do
+            case "$c:${kp%%:*}" in
+            monerod:MONERO_* | tari:TARI_*) ;;
+            *) continue ;;
+            esac
+            bind=$(env_get "${kp%%:*}" 2>/dev/null) || return 1
+            case "$bind" in '' | 127.0.0.1) ;; *) continue ;; esac
+            published=$(docker port "$c" "${kp#*:}/tcp" 2>/dev/null) || {
+                stop_node=1
+                break
+            }
+            if [ -n "$published" ] && grep -qv '^127\.0\.0\.1:' <<<"$published"; then
+                stop_node=1
+                break
+            fi
+        done
+        [ "$stop_node" = 1 ] || continue
+        docker stop "$c" >/dev/null || return 1
+        names=$(docker ps --format '{{.Names}}' 2>/dev/null) || return 1
+        grep -qxF "$c" <<<"$names" && return 1
+    done
+}
+
 # `iptables-restore --noflush` input for <port>...: declaring our chain flushes and refills it, the
 # stale tagged jumps (<old jump spec> lines on stdin, as `iptables -S` prints them) are deleted and
 # the new ones inserted at the top of DOCKER-USER, all in one commit, so no packet sees a half-built

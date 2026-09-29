@@ -39,6 +39,7 @@ exit 0
 IPT
 cat >"$LGD/bin/iptables-restore" <<'IPR'
 #!/usr/bin/env bash
+[ -z "${LG_ORDER:-}" ] || echo restore >>"$LG_ORDER"
 cat >"$LG_RESTORE"
 exit "${LG_RESTORE_RC:-0}"
 IPR
@@ -60,16 +61,31 @@ cat >"$LGD/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
 case "$1 ${2:-}" in
 "compose up"*)
+    [ -z "${LG_ORDER:-}" ] || echo compose >>"$LG_ORDER"
     echo "compose-bind=${TARI_GRPC_BIND:-from-env-file}" >>"$LG_COMPOSE"
     echo "restart=${MONERO_RESTART:-default},${TARI_RESTART:-default}" >>"$LG_COMPOSE.restart"
-    [ -z "${LG_ORDER:-}" ] || echo compose >>"$LG_ORDER"
+    exit "${LG_COMPOSE_RC:-0}"
     ;;
-"ps "*) [ "${LG_RUNNING:-1}" = 1 ] && echo cid123 ;;
+"ps "*)
+    if [ "${2:-}" = --format ] && [ -n "${LG_RUNNING_FILE:-}" ]; then cat "$LG_RUNNING_FILE"
+    elif [ "${LG_RUNNING:-1}" = 1 ]; then echo cid123; fi
+    ;;
+"stop "*)
+    [ -z "${LG_ORDER:-}" ] || echo "stop:$2" >>"$LG_ORDER"
+    [ "${LG_STOP_FAIL:-0}" = 0 ] || exit 1
+    sed -i "/^$2$/d" "$LG_RUNNING_FILE"
+    ;;
 "inspect -f")
     [ "${LG_EXISTS:-1}" = 1 ] || exit 1
     case "$3" in *RestartPolicy*) echo "${LG_POLICY:-no}" ;; *ExitCode*) echo "${LG_EXIT:-137}" ;; esac
     ;;
-"port "*) echo "${LG_PUBLISHED:-0.0.0.0}:18142" ;;
+"port "*)
+    case "$2:$3" in
+    monerod:18081/tcp) echo "${LG_OLD_MONERO_RPC:-127.0.0.1}:18081" ;;
+    monerod:18083/tcp) echo "${LG_OLD_MONERO_ZMQ:-127.0.0.1}:18083" ;;
+    *) echo "${LG_PUBLISHED:-0.0.0.0}:18142" ;;
+    esac
+    ;;
 esac
 exit 0
 DOCKER
@@ -124,6 +140,8 @@ assert_eq "failed egress refresh prevents container startup" "$(cat "$LG_ORDER")
 : >"$LG_ORDER"
 lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; clearnet_sync_active() { return 1; }; compose_up -d' >/dev/null
 assert_eq "ordinary startup keeps its warning-only firewall failure behavior" "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
+
+source "$ROOT/tests/stack/firewall/lan-guard-transition.sh"
 lg_out="$(lg 'tor_egress_enforced() { return 5; }; tor_egress_verify_or_warn ok >/dev/null 2>&1 && echo allowed || echo refused')"
 assert_eq "shadowed egress readback refuses compose startup" "$lg_out" "refused"
 lg_out="$(lg 'tor_egress_enforced() { return 4; }; mining_stack_running() { return 1; }; tor_egress_verify_or_warn ok >/dev/null 2>&1 && echo allowed || echo refused')"
