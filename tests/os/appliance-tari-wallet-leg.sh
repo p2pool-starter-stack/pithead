@@ -26,7 +26,7 @@ tari_wallet_stop_ok() { # <stop-rc> <elapsed-s> <running>
 }
 
 phase_provision_tari_wallet() { # <phase-rc>
-    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running
+    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running wait_rc
     [ "${1:-0}" -eq 0 ] || unexercised=info
     info "phase: the view-only Tari payout wallet under podman quadlets (#462/#2731)"
     if ! SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh true 2>/dev/null; then
@@ -123,7 +123,31 @@ mv config.json.tari-wallet-test config.json
         bad "Tari wallet: podman stop took ${stop_s}s (rc $stop_rc) and the container is running='${running:-unknown}' (#2657)"
     fi
     info "Tari wallet: exit code after the stop was '${exit_code:-unknown}' (137 means the wallet outlasted the timeout after SIGTERM)"
+    info "Tari wallet: last log lines after SIGTERM stop (#2899):"
+    _ssh "podman logs --tail 25 tari-wallet" 2>/dev/null | tr -d '\r' | sed 's/^/     | /'
     _ssh "podman start tari-wallet" >/dev/null 2>&1 || bad "Tari wallet: the wallet did not start again after the stop (#2657)"
+    deadline=$(($(date +%s) + 120))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        health=$(_ssh "podman inspect tari-wallet --format '{{.State.Health.Status}}'" 2>/dev/null | tr -d '\r\n')
+        [ "$health" = healthy ] && break
+        sleep 5
+    done
+    if [ "$health" = healthy ]; then
+        _ssh "podman kill --signal INT tari-wallet" >/dev/null 2>&1
+        stop_rc=$?
+        t0=$(date +%s)
+        SSH_TIMEOUT=40 _ssh "timeout 30 podman wait tari-wallet" >/dev/null 2>&1
+        wait_rc=$?
+        running=$(_ssh "podman inspect tari-wallet --format '{{.State.Running}}'" 2>/dev/null | tr -d '\r\n')
+        exit_code=$(_ssh "podman inspect tari-wallet --format '{{.State.ExitCode}}'" 2>/dev/null | tr -d '\r\n')
+        info "Tari wallet: SIGINT diagnostic: signal rc $stop_rc, wait rc $wait_rc, running '${running:-unknown}' after $(($(date +%s) - t0))s, exit '${exit_code:-unknown}' (#2899)"
+        info "Tari wallet: last log lines after SIGINT (#2899):"
+        _ssh "podman logs --tail 25 tari-wallet" 2>/dev/null | tr -d '\r' | sed 's/^/     | /'
+        [ "$running" = false ] || _ssh "podman stop -t 2 tari-wallet" >/dev/null 2>&1
+        _ssh "podman start tari-wallet" >/dev/null 2>&1 || bad "Tari wallet: the wallet did not restart after SIGINT diagnostic (#2899)"
+    else
+        info "Tari wallet: SIGINT diagnostic unavailable; wallet did not become healthy after restart (#2899)"
+    fi
     approval_restore_pending || bad "Tari wallet cleanup (restoring the original config) failed"
 }
 _tari_wallet_self_test() {
