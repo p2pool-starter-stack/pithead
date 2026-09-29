@@ -90,7 +90,6 @@ stack_uninstall() {
     # #2379 §1: the Tari view-key secret file — chmod 600, holds MINOTARI_WALLET_PASSWORD in the
     # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.
     local secret_file="$checkout_dir/data/tari-wallet-secret.env"
-
     local kept_list derived_list
     kept_list=$(printf '%s\n' "${kept_dirs[@]}" | sort -u | tr '\n' ' ')
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')

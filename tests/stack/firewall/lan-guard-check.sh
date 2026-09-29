@@ -2,6 +2,9 @@
 : "${STACK_SUITE:?source via tests/stack/run.sh}"
 echo "== a periodic live-rule check closes a flushed LAN port (#2846) =="
 mkdir -p "$LGD/units"
+cp "$LGD/bin/systemctl" "$LGD/systemctl.precheck"
+cp "$LGD/.env" "$LGD/.env.precheck"
+[ ! -e "$LGD/data/lan-guard/enforced" ] || cp "$LGD/data/lan-guard/enforced" "$LGD/marker.precheck"
 cat >"$LGD/bin/systemctl" <<'SYSTEMCTL'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$LG_SYSTEMCTL"
@@ -10,7 +13,7 @@ SYSTEMCTL
 chmod +x "$LGD/bin/systemctl"
 printf '#!/usr/bin/env bash\necho Linux\n' >"$LGD/bin/uname"
 chmod +x "$LGD/bin/uname"
-export LG_SYSTEMCTL="$LGD/systemctl.log" PITHEAD_UNIT_DIR="$LGD/units" PITHEAD_APPLIANCE=0
+export LG_SYSTEMCTL="$LGD/systemctl.log"
 printf 'TARI_GRPC_BIND=0.0.0.0\n' >"$LGD/.env"
 lg_timer="$(run_sourced "$LGD" render_lan_guard_check_timer)"
 assert_contains "timer checks within two minutes" "$lg_timer" "OnUnitActiveSec=2min"
@@ -25,20 +28,47 @@ assert_contains "provision enables the timer" "$(cat "$LG_SYSTEMCTL")" "enable -
 assert_eq "provision writes the check unit" "$(test -e "$LGD/units/pithead-lan-check.service" && echo present)" present
 cp "$LGD/.env" "$LGD/.env.lan"
 printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
-lg provision_lan_guard_check_units >/dev/null
+LG_RUNNING=0 lg provision_lan_guard_check_units >/dev/null
 assert_eq "switch-off removes the timer" "$(test -e "$LGD/units/pithead-lan.timer" && echo present)" ""
-lg_stale='docker() { case "$1" in ps) [ "$2" = -a ] && echo tari ;; port) echo 0.0.0.0:18142 ;; stop) echo tari >>"$LG_STOP" ;; esac; };'
+lg_stale='docker() { case "$1" in ps) [[ " $* " == *"service=tari"* ]] && echo tari; return 0 ;; port) echo 0.0.0.0:18142 ;; stop) echo tari >>"$LG_STOP" ;; esac; };'
 lg "$lg_stale provision_lan_guard_check_units" >/dev/null
 assert_eq "a stale stopped LAN publish keeps the timer after .env switches off" "$(test -e "$LGD/units/pithead-lan.timer" && echo present)" present
 assert_eq "the check watches the stopped container's old port" "$(lg "$lg_stale lan_guard_watched_ports")" 18142
+lg_prefixed='docker() { case "$1" in ps) [[ " $* " == *"service=tari"* ]] && echo 123456789abc_tari; return 0 ;; port) echo 0.0.0.0:18142 ;; stop) echo "$2" >>"$LG_STOP" ;; esac; };'
+assert_eq "a Compose recreate name keeps the old port watched after switch-off" "$(lg "$lg_prefixed lan_guard_watched_ports")" 18142
+printf 'MONERO_RPC_BIND=0.0.0.0\nTARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env.new"
+assert_eq "transition protects the new bind and the old container publish" "$(lg "$lg_stale lan_guard_transition_ports '$LGD/.env.new'")" $'18142\n18081'
+lg_apply="$(run_sourced "$LGD" declare -f apply)"
+lg_prearm=missing
+case "$lg_apply" in *'lan_guard_arm_transition "$newenv"'*'mv "$newenv" "$ENV_FILE"'*) lg_prearm=before-commit ;; esac
+assert_eq "apply arms old and new ports before committing the new .env" "$lg_prearm" before-commit
+: >"$LG_RESTORE"
+lg "$lg_stale lan_guard_enforced() { return 0; }; provision_lan_guard_boot_unit() { :; }; lan_guard_arm_transition '$LGD/.env.new'" >/dev/null
+assert_contains "transition arms the new port" "$(cat "$LG_RESTORE")" "--dport 18081"
+assert_contains "transition keeps the old port" "$(cat "$LG_RESTORE")" "--dport 18142"
+printf 'MONERO_RPC_BIND=0.0.0.0\nTARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
+assert_eq "timer accepts a newly enabled port before Compose convergence" "$(lg "$lg_stale lan_guard_enforced() { return 0; }; rc=0; lan_guard_check >/dev/null 2>&1 || rc=\$?; echo \$rc")" 0
+: >"$LG_RESTORE"
+lg "$lg_stale lan_guard_enforced() { return 0; }; provision_lan_guard_boot_unit() { :; }; apply_lan_guard" >/dev/null
+assert_contains "apply guards the new configured port" "$(cat "$LG_RESTORE")" "--dport 18081"
+assert_contains "apply keeps the old container port guarded until Compose converges" "$(cat "$LG_RESTORE")" "--dport 18142"
+assert_eq "timer accepts the converging rule without stopping nodes" "$(lg "$lg_stale lan_guard_enforced() { [ \"\$*\" = \"18081 18142\" ]; }; rc=0; lan_guard_check >/dev/null 2>&1 || rc=\$?; echo \$rc")" 0
+lg_interleaved='sudo() { case "$*" in *"-S PITHEAD-LAN"*) printf "%s\n" "-A PITHEAD-LAN -j DROP" ;; *"-S DOCKER-USER"*) printf "%s\n" "-A DOCKER-USER -p tcp --dport 18081 -m comment --comment pithead-lan-guard -j PITHEAD-LAN" "-A DOCKER-USER -j ACCEPT" "-A DOCKER-USER -p tcp --dport 18142 -m comment --comment pithead-lan-guard -j PITHEAD-LAN" ;; *"-S FORWARD"*) echo "-A FORWARD -j DOCKER-USER" ;; esac; };'
+assert_eq "a foreign ACCEPT between two guard jumps shadows the second port" "$(lg "$lg_interleaved rc=0; lan_guard_enforced 18081 18142 || rc=\$?; echo \$rc")" 5
+printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
 lg 'lan_guard_mark' >/dev/null
 LG_LIVE=0 lg "$lg_stale mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; lan_guard_check" >/dev/null 2>&1 || true
 assert_eq "a stale stopped node loses the marker before an explicit start" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
+export LG_STOP="$LGD/stopped"
+: >"$LG_STOP"
+lg 'lan_guard_mark' >/dev/null
+LG_LIVE=0 lg "$lg_prefixed mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; lan_guard_check" >/dev/null 2>&1 || true
+assert_eq "a Compose recreate name is stopped after the rule is lost" "$(cat "$LG_STOP")" 123456789abc_tari
 mv "$LGD/.env.lan" "$LGD/.env"
 printf 'TARI_GRPC_BIND=0.0.0.0\n' >"$LGD/.env"
 export LG_STOP="$LGD/stopped"
 : >"$LG_STOP"
-lg_check='mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1" in ps) printf "%s\n" monerod tari ;; port) echo 127.0.0.1:18081 ;; stop) printf "%s\n" "$2" >>"$LG_STOP" ;; esac; }; lan_guard_check'
+lg_check='mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1" in ps) case " $* " in *"service=monerod"*) echo monerod ;; *"service=tari"*) echo tari ;; esac ;; port) echo 127.0.0.1:18081 ;; stop) printf "%s\n" "$2" >>"$LG_STOP" ;; esac; }; lan_guard_check'
 LG_LIVE=1 lg 'lan_guard_mark; mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; lan_guard_check' >/dev/null
 assert_eq "live rule leaves the marker" "$(cat "$LGD/data/lan-guard/enforced")" "boot-1"
 lg_rc=0
@@ -78,3 +108,9 @@ LG_LIVE=0 lg 'flock() { return 1; }; lan_guard_enforced() { [ -e rule-restored ]
 assert_eq "a concurrent up that restores the rule and marker is left running" "$(cat "$LG_STOP")" ""
 assert_eq "a concurrent restore completes the check successfully" "$lg_rc" 0
 rm -f "$LGD/rule-restored"
+rm -f "$LGD/.env.new"
+cp "$LGD/systemctl.precheck" "$LGD/bin/systemctl"
+mv "$LGD/.env.precheck" "$LGD/.env"
+rm -f "$LGD/units/pithead-lan.timer" "$LGD/units/pithead-lan-check.service" "$LGD/data/lan-guard/enforced"
+[ ! -e "$LGD/marker.precheck" ] || mv "$LGD/marker.precheck" "$LGD/data/lan-guard/enforced"
+unset LG_STOP

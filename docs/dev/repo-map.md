@@ -47,6 +47,8 @@ guards. Sources are excluded from release bundles.
 The host firewall installer is `02b-tor-egress-apply.sh`; the host-owned clearnet
 sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
 readback helpers are in `02d-tor-egress-verify.sh`.
+The LAN source rule and transition guard are in `02b-lan-guard.sh`; its periodic
+live-rule check is in `02c-lan-guard-check.sh`.
 
 ## Dashboard feature folders
 

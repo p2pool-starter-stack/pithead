@@ -306,7 +306,9 @@ runs `pithead up`, which installs the rule first.
 
 `pithead-lan.timer` checks the live rule every two minutes while any LAN port is configured or
 still published by a node container. A failed `apply` that leaves an old LAN bind running keeps the
-timer. If an external firewall reload removes the rule or its jump, the check deletes the node
+timer. `apply` guards the ports in the new configuration and any still published by old containers
+before committing a new `.env`; the old port stays guarded until Compose replaces the container. If an
+external firewall reload removes the rule or its jump, the check deletes the node
 start marker and stops the nodes that publish LAN ports. If a stop cannot be verified, it tries to
 restore the rule for all three fixed node ports, but keeps the marker invalid and reports failure until
 the node stop is verified. An existing connection can survive a restored rule. When Docker can

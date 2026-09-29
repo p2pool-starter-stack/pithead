@@ -64,7 +64,14 @@ case "$1 ${2:-}" in
     echo "restart=${MONERO_RESTART:-default},${TARI_RESTART:-default}" >>"$LG_COMPOSE.restart"
     [ -z "${LG_ORDER:-}" ] || echo compose >>"$LG_ORDER"
     ;;
-"ps "*) [ "${LG_RUNNING:-1}" = 1 ] && echo cid123 ;;
+"ps "*)
+    [ "${LG_RUNNING:-1}" = 1 ] || exit 0
+    case " $* " in
+    *"service=monerod"*) ;;
+    *"service=tari"*) echo tari ;;
+    *) echo cid123 ;;
+    esac
+    ;;
 "inspect -f")
     [ "${LG_EXISTS:-1}" = 1 ] || exit 1
     case "$3" in *RestartPolicy*) echo "${LG_POLICY:-no}" ;; *ExitCode*) echo "${LG_EXIT:-137}" ;; esac
@@ -160,7 +167,7 @@ assert_contains "podman: a table with the drop and the port is enforced" "$lg_ou
 rm -f "$LG_RESTORE"
 cp "$LGD/.env" "$LGD/.env.on"
 printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
-lg_out="$(lg apply_lan_guard)"
+lg_out="$(LG_RUNNING=0 lg apply_lan_guard)"
 mv "$LGD/.env.on" "$LGD/.env"
 assert_eq "every switch off: nothing is installed and nothing is said" "$lg_out" ""
 assert_eq "...and no firewall command runs" "$(test -e "$LG_RESTORE" && echo ran || echo none)" "none"
@@ -253,7 +260,7 @@ printf '[Unit]\n' >"$LGD/units/other-firewall.service"
 cp "$LGD/.env" "$LGD/.env.on"
 printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
 rm -f "$LG_SYSTEMCTL"
-lg apply_lan_guard >/dev/null
+LG_RUNNING=0 lg apply_lan_guard >/dev/null
 mv "$LGD/.env.on" "$LGD/.env"
 assert_eq "every switch off removes the unit" "$(test -e "$LG_UNIT" && echo present)" ""
 assert_eq "...and the hold" "$(test -e "$LG_HOLD" && echo present)" ""

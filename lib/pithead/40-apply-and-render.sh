@@ -254,9 +254,8 @@ apply() {
             fi
         fi
 
-        # After every confirm above (the typed wallet redirect, the disruptive-change y/N):
-        # carry the DB before the rendered .env switches its mount. A refusal therefore leaves
-        # the active path unchanged, rather than stranding the stopped dashboard on a new path.
+        # After confirmation, carry the DB before .env switches its mount, so a refusal leaves
+        # the active path unchanged rather than stranding the stopped dashboard on a new path.
         mutation_lock_acquire apply
         lock_held=1
         if { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; }; then
@@ -273,6 +272,7 @@ apply() {
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
             [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
         fi
+        lan_guard_arm_transition "$newenv" || error "The LAN-only source rule could not be armed before changing .env."
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs

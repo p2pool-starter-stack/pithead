@@ -51,30 +51,59 @@ lan_guard_published() {
 # Include ports still published by running containers after .env changed but Compose did not
 # converge. If the engine cannot be read, watch all fixed ports rather than dropping the timer.
 lan_guard_watched_ports() {
-    local running kp p c bind
-    running=$(docker ps -a --format '{{.Names}}' 2>/dev/null) || {
-        for kp in $LAN_GUARD_BINDS; do printf '%s\n' "${kp#*:}"; done
-        return 0
-    }
+    local kp p c containers name bind
     for kp in $LAN_GUARD_BINDS; do
         p=${kp#*:}
         c=$(lan_guard_container "$p")
         case "$(env_get "${kp%%:*}" 2>/dev/null)" in
         '' | 127.0.0.1)
-            grep -qxF "$c" <<<"$running" || continue
-            bind=$(docker port "$c" "$p/tcp" 2>/dev/null) || {
+            containers=$(docker ps -a --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" --format '{{.Names}}' 2>/dev/null) || {
                 printf '%s\n' "$p"
                 continue
             }
-            [ -n "$bind" ] || {
-                printf '%s\n' "$p"
-                continue
-            }
-            grep -qv '^127\.0\.0\.1:' <<<"$bind" || continue
+            while IFS= read -r name; do
+                [ -n "$name" ] || continue
+                bind=$(docker port "$name" "$p/tcp" 2>/dev/null) || break
+                [ -n "$bind" ] || break
+                grep -qv '^127\.0\.0\.1:' <<<"$bind" && break
+            done <<<"$containers"
+            [ -n "$name" ] || continue
+            [ -n "$bind" ] && ! grep -qv '^127\.0\.0\.1:' <<<"$bind" && continue
             ;;
         esac
         printf '%s\n' "$p"
     done
+}
+
+# Guard old container publishes and newly requested binds before apply commits a staged .env.
+lan_guard_transition_ports() { # <newenv>
+    local kp p ports=()
+    for p in $(lan_guard_watched_ports); do ports+=("$p"); done
+    for kp in $LAN_GUARD_BINDS; do
+        p=${kp#*:}
+        case "$(env_get_file "$1" "${kp%%:*}")" in
+        '' | 127.0.0.1) ;;
+        *) [[ " ${ports[*]} " == *" $p "* ]] || ports+=("$p") ;;
+        esac
+    done
+    printf '%s\n' "${ports[@]}"
+}
+
+lan_guard_arm_transition() { # <newenv>: before apply commits it
+    local p rc=0 live_nodes ports=()
+    for p in $(lan_guard_transition_ports "$1"); do ports+=("$p"); done
+    [ "${#ports[@]}" -gt 0 ] || return 0
+    apply_lan_guard "${ports[@]}"
+    lan_guard_enforced "${ports[@]}" || rc=$?
+    if [ "$rc" = 4 ]; then
+        # No Docker network yet: compose_up will create its FORWARD jump before a node starts.
+        live_nodes=$(docker ps --filter label=com.docker.compose.project=pithead --format '{{.Names}}') || rc=3
+        [ -n "$live_nodes" ] || [ "$rc" = 3 ] || rc=0
+    fi
+    if [ "$rc" -ne 0 ] || ! cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then
+        lan_guard_check_now || true
+        return 1
+    fi
 }
 
 # `iptables-restore --noflush` input for <port>...: declaring our chain flushes and refills it, the
@@ -118,7 +147,7 @@ render_lan_guard_nft() { # <port>...
 # the ruleset, 2 the backend's tool is missing, 3 unreadable (no passwordless sudo), 4 installed in
 # DOCKER-USER but nothing jumps there, 5 a foreign ACCEPT/RETURN sits above our jumps.
 lan_guard_enforced() { # <port>...
-    local out p line
+    local out p line seen=" "
     if [ "$(container_engine)" = "podman" ]; then
         command -v nft >/dev/null 2>&1 || return 2
         command -v jq >/dev/null 2>&1 || return 3
@@ -145,9 +174,13 @@ lan_guard_enforced() { # <port>...
     # above them never match a NEW inbound connection from outside the mining subnet.
     while IFS= read -r line; do
         case "$line" in
-        *"$LAN_GUARD_TAG"*) break ;;
+        *"$LAN_GUARD_TAG"*)
+            [[ "$line" =~ --dport[[:space:]]+([0-9]+) ]] && seen+="${BASH_REMATCH[1]} "
+            ;;
         -N* | -P* | *"$TOR_EGRESS_TAG"*) ;;
-        *" -j ACCEPT"* | *" -j RETURN"*) return 5 ;;
+        *" -j ACCEPT"* | *" -j RETURN"*)
+            for p in "$@"; do [[ "$seen" == *" $p "* ]] || return 5; done
+            ;;
         esac
     done <<<"$out"
     out=$(sudo -n iptables -S FORWARD 2>/dev/null) || return 4
@@ -172,18 +205,20 @@ lan_guard_reason() { # <rc>
 # Install the rule for every published node port, or hold those ports on loopback for this
 # process. Called by compose_up, so it runs before every container (re)start.
 apply_lan_guard() { # [port]...: explicit ports include stale container publishes after .env changes
-    local published kp ports=() old rc=0
+    local published="" watched kp ports=() old rc=0
     # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
     # bind-mount the marker dir, and podman does not create a missing bind source.
     export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
     mkdir -p "${LAN_GUARD_MARKER%/*}" 2>/dev/null || true
     if [ "$#" -gt 0 ]; then
-        for kp in $LAN_GUARD_BINDS; do
-            [[ " $* " == *" ${kp#*:} "* ]] && published+="$kp "
-        done
+        watched=$(printf '%s\n' "$@")
     else
-        published=$(lan_guard_published)
+        # Keep old container publishes guarded until Compose has converged the new binds.
+        watched=$(lan_guard_watched_ports)
     fi
+    for kp in $LAN_GUARD_BINDS; do
+        grep -qxF "${kp#*:}" <<<"$watched" && published+="$kp "
+    done
     if [ -z "$published" ]; then
         remove_lan_guard_boot_unit || warn "lan-guard:boot-unit-left — could not remove $LAN_GUARD_BOOT_UNIT/$LAN_GUARD_HOLD_UNIT; they keep the nodes held at boot until they are."
         return 0
@@ -283,59 +318,6 @@ lan_guard_ready() {
     local kp ports=()
     for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
     [ "${#ports[@]}" = 0 ] || lan_guard_enforced "${ports[@]}"
-}
-
-# Take the mutation lock only if free. A long apply/upgrade must not delay an emergency stop.
-lan_guard_check() {
-    local rc
-    if command -v flock >/dev/null 2>&1 && exec 8>>"$(mutation_lock_path)" 2>/dev/null && flock -n 8; then
-        lan_guard_check_now
-        rc=$?
-        exec 8>&-
-        return "$rc"
-    fi
-    exec 8>&-
-    lan_guard_check_now
-}
-
-# Invalidate the marker first so a concurrent explicit start fails its entrypoint gate.
-lan_guard_check_now() {
-    local p c seen=" " names rc=0
-    local ports=() fixed_ports=()
-    for p in $(lan_guard_watched_ports); do ports+=("$p"); done
-    [ "${#ports[@]}" -gt 0 ] || return 0
-    if lan_guard_enforced "${ports[@]}" && cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then return 0; fi
-    lan_guard_unmark || {
-        warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
-        rc=1
-    }
-    names=$(docker ps --format '{{.Names}}') || {
-        names=$'monerod\ntari'
-        rc=1
-    }
-    for p in "${ports[@]}"; do
-        c=$(lan_guard_container "$p")
-        [[ "$seen" == *" $c "* ]] && continue
-        seen+="$c "
-        if grep -qxF "$c" <<<"$names"; then
-            # A concurrent up may have restored the rule and marker while the lock was busy.
-            if lan_guard_enforced "${ports[@]}" && cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then return 0; fi
-            docker stop "$c" >/dev/null || rc=1
-        fi
-    done
-    names=$(docker ps --format '{{.Names}}') || rc=1
-    for c in $seen; do grep -qxF "$c" <<<"$names" && rc=1; done
-    if [ "$rc" -ne 0 ]; then
-        # Restore the rule for NEW connections, but an already-established session survives it.
-        # A concurrent up may change the port set: replacing its rule with this check's old
-        # snapshot could expose its new port. Guard every fixed node port in this emergency.
-        for p in $LAN_GUARD_BINDS; do fixed_ports+=("${p#*:}"); done
-        apply_lan_guard "${fixed_ports[@]}" || true
-        lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
-    fi
-    warn "lan-guard:rule-or-marker-lost — LAN-publishing nodes were stopped or a stop could not be verified. Run './pithead up' after fixing the firewall."
-    [ "$rc" = 0 ] || return "$rc"
-    return 1
 }
 
 # Remove the rule from both backends (`sudo -n`: a leftover only drops traffic to an unpublished
