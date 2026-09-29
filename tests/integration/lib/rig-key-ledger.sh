@@ -154,11 +154,13 @@ _rig_key_arm() {
 # is not exactly one JSON value is refused with a warning that names the key and never the value.
 rig_key_mark() { # <route: dash|rig> <rig> <key> <original-value-as-json>
     local v
-    _rig_key_arm
     if ! v="$(printf '%s' "$4" | jq -cs 'if length == 1 then .[0] else error end' 2>/dev/null)" || [ -z "$v" ]; then
         it_warn "cannot record the original $3 on rig '$2': not one JSON value — an abort will NOT restore it (#2668)"
         return 1
     fi
+    # Armed only once there is something to restore: a refused first mark records nothing, so it must
+    # not leave the EXIT trap (and its rig_lock and foreign-handler folding) installed either.
+    _rig_key_arm
     _RIG_LEDGER="${_RIG_LEDGER}$1	$2	$3	$v
 "
     return 0

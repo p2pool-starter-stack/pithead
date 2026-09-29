@@ -164,6 +164,12 @@ assert_eq "each says, by key, that an abort will not restore it (#2668)" \
     "$(grep -c 'cannot record the original .* an abort will NOT restore it' "$SCEN_OUT")" "2"
 assert_eq "the refused value is not printed (#2668)" "$(grep -c 'marksecret' "$SCEN_OUT")" "0"
 assert_eq "and nothing is POSTed for it (#2668)" "$(n_restores)" "0"
+# Nothing was recorded, so no EXIT trap should exist either; a valid mark afterwards still arms it.
+scenario 'rig_key_mark dash rig1 pools "not-json"' 'echo "TRAP=[$(trap -p EXIT)]"' 'echo "OUT=$(rig_key_outstanding)"' \
+    'rig_key_mark dash rig1 DONATION 0' 'echo "ARMED=$(trap -p EXIT | grep -c rig_key_atexit)"' 'exit 0' >/dev/null
+assert_eq "a refused first mark installs no EXIT trap (#2668)" "$(grep -c '^TRAP=\[\]$' "$SCEN_OUT")" "1"
+assert_eq "and records no entry (#2668)" "$(grep -c '^OUT=0$' "$SCEN_OUT")" "1"
+assert_eq "a valid mark after a refused one still arms the trap (#2668)" "$(grep -c '^ARMED=1$' "$SCEN_OUT")" "1"
 
 echo "== COMPOSITION: our trap replaces rig_lock's, so it must do rig_lock's job too =="
 # Drives lib.sh's REAL rig_lock against sandboxed paths. This is the assertion that catches the
