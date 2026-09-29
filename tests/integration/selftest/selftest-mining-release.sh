@@ -9,6 +9,8 @@ INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-state.sh
 source "$HERE/../lib/run-state.sh"
 
+echo "== mining services release after the sync gate before running-state assertions =="
+
 WAIT_LOG="$(mktemp)"
 trap 'rm -f "$WAIT_LOG"' EXIT
 
