@@ -248,6 +248,20 @@ lan_guard_restore_stopped() {
         warn "lan-guard:recreate-failed — could not restore the loopback-bound nodes after compose failed."
 }
 
+# Recreate stopped LAN nodes even when the caller names only another service.
+lan_guard_compose_up() { # <compose up arguments>
+    local rc=0 up_args=("$@")
+    if lan_guard_scoped_up "$@"; then up_args+=("${LAN_GUARD_STOPPED_SERVICES[@]}"); fi
+    # The dashboard bind-mounts this exact lock inode across versioned installs.
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}" || rc=$?
+    if [ "$rc" = 0 ]; then
+        finish_lan_guard_after_up "${up_args[@]}" || rc=1
+    else
+        lan_guard_restore_stopped
+    fi
+    return "$rc"
+}
+
 # Docker creates the first FORWARD jump during compose up. The first pass stays on loopback; only
 # a successful readback gets a marker and a second pass with the configured LAN binds.
 finish_lan_guard_after_up() { # <original compose up arguments>
