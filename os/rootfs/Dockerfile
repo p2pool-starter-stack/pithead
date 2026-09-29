@@ -302,7 +302,8 @@ COPY os/overlay/pithead-hugepages /usr/local/sbin/pithead-hugepages
 COPY os/overlay/pithead-xmrig-hugepages.conf /etc/systemd/system/xmrig.service.d/pithead-hugepages.conf
 # Keep the serial login on a real UART; a phantom 8250 node must not restart forever.
 COPY os/overlay/pithead-serial-port-present /usr/local/sbin/pithead-serial-port-present
-COPY os/overlay/pithead-serial-getty.conf /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
+ARG SERIAL_GETTY_UNIT_PREFIX=serial-getty
+COPY os/overlay/pithead-serial-getty.conf /etc/systemd/system/${SERIAL_GETTY_UNIT_PREFIX}@ttyS0.service.d/override.conf
 # The two-tier reset's deep tier and the wedged-/data recovery path: reformats /data before it
 # mounts, on a `pithead factory-reset` request (ESP marker) or a genuinely unmountable partition.
 # Ordered before data.mount by its unit; fail-safe — a healthy, unmarked partition is never touched.

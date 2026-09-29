@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 : "${STACK_SUITE:?source via tests/stack/run.sh}"
 
 echo "== serial getty: phantom 8250 ports are skipped =="
@@ -20,7 +21,8 @@ rc=0
 assert_rc "an invalid tty type cannot pass as a real port" "$rc" 1
 
 assert_rc "the image copies the port check" "$(grep -Fq 'COPY os/overlay/pithead-serial-port-present /usr/local/sbin/pithead-serial-port-present' "$ROOT/os/rootfs/Dockerfile"; echo $?)" 0
-assert_rc "the image installs the serial getty drop-in" "$(grep -Fq 'COPY os/overlay/pithead-serial-getty.conf /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf' "$ROOT/os/rootfs/Dockerfile"; echo $?)" 0
+assert_rc "the serial getty unit prefix is fixed" "$(grep -Fq 'ARG SERIAL_GETTY_UNIT_PREFIX=serial-getty' "$ROOT/os/rootfs/Dockerfile"; echo $?)" 0
+assert_rc "the image installs the serial getty drop-in" "$(grep -Fq 'COPY os/overlay/pithead-serial-getty.conf /etc/systemd/system/${SERIAL_GETTY_UNIT_PREFIX}@ttyS0.service.d/override.conf' "$ROOT/os/rootfs/Dockerfile"; echo $?)" 0
 assert_eq "the unit checks the same sysfs type" "$(sed -n 's/^ExecCondition=//p' "$GETTY_DROPIN")" \
     '/usr/local/sbin/pithead-serial-port-present /sys/class/tty/ttyS0/type'
 assert_eq "a skipped condition does not restart" "$(sed -n 's/^Restart=//p' "$GETTY_DROPIN")" on-failure

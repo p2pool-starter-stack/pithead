@@ -111,19 +111,31 @@ GETTY_DROPIN
     else
         bad "could not restore the guest's serial getty after the type-0 check"
     fi
-    if _ssh 'systemctl kill --kill-whom=main --signal=HUP serial-getty@ttyS0.service'; then
-        local getty_deadline=$(($(date +%s) + 20))
+    # systemctl kill can refuse a unit with no main process during the start transition. Read a
+    # concrete PID first so this row names that state and signals the process actually under test.
+    local getty_deadline getty_pid="" getty_restarts_before=""
+    getty_deadline=$(($(date +%s) + 20))
+    while [ "$(date +%s)" -lt "$getty_deadline" ]; do
+        getty_pid=$(_ssh 'systemctl show -P MainPID serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        [[ "$getty_pid" =~ ^[1-9][0-9]*$ ]] && break
+        sleep 1
+    done
+    getty_restarts_before=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+    if [[ "$getty_pid" =~ ^[1-9][0-9]*$ && "$getty_restarts_before" =~ ^[0-9]+$ ]] && _ssh "kill -HUP $getty_pid"; then
+        getty_deadline=$(($(date +%s) + 20))
         while [ "$(date +%s)" -lt "$getty_deadline" ]; do
             getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
             getty_restarts=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
-            [ "$getty_state" = active ] && [ "$getty_restarts" = 1 ] && break
+            [ "$getty_state" = active ] && [[ "$getty_restarts" =~ ^[0-9]+$ ]] &&
+                [ "$getty_restarts" -eq "$((getty_restarts_before + 1))" ] && break
             sleep 1
         done
-        [ "$getty_state" = active ] && [ "$getty_restarts" = 1 ] &&
+        [ "$getty_state" = active ] && [[ "$getty_restarts" =~ ^[0-9]+$ ]] &&
+            [ "$getty_restarts" -eq "$((getty_restarts_before + 1))" ] &&
             ok "a clean hangup respawns the serial login prompt" ||
-            bad "the serial login did not respawn after a clean hangup (state ${getty_state:-unreadable}, NRestarts ${getty_restarts:-unreadable})"
+            bad "the serial login did not respawn after a clean hangup (state ${getty_state:-unreadable}, NRestarts ${getty_restarts:-unreadable}, before ${getty_restarts_before:-unreadable})"
     else
-        bad "could not send a clean hangup to the serial getty"
+        bad "could not send a clean hangup to the serial getty (MainPID ${getty_pid:-unreadable}, state ${getty_state:-unreadable})"
     fi
 
     # Hugepages are load-bearing (the RandomX dataset must land in hugetlbfs, not the cgroup —
