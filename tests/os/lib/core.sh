@@ -360,6 +360,8 @@ cleanup() {
     [ "$approval_cleanup_rc" -eq 0 ] || exit "$approval_cleanup_rc"
 }
 trap cleanup EXIT
+# Read the serial file directly: grep -q on a pipe can SIGPIPE its writer under pipefail.
+serial_has() { grep -aEq "$1" "$SERIAL"; }
 # Wait until the serial log matches a pattern, or time out. $1 pattern, $2 seconds.
 wait_serial() {
     local pat="$1" deadline=$(($(date +%s) + ${2:-180}))
