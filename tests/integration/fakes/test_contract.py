@@ -50,7 +50,7 @@ def test_monero_synced_reads_no_sync_and_db_size():
     with FakeMonerod(database_size=85 * 10**9) as m:
         client = MoneroClient(url=m.url, username="")
         st = client.get_sync_status()
-    assert st == {"is_syncing": False, "db_size": 85 * 10**9, "synchronized": True}
+    assert st == {"is_syncing": False, "db_size": 85 * 10**9, "synchronized": True, "height": 3_000_000}
 
 
 def test_monero_syncing_reports_percent():
@@ -90,7 +90,7 @@ def test_monero_synced_by_height_even_without_flag():
 def test_monero_db_size_unknown_reads_zero():
     with FakeMonerod(database_size=0) as m:
         st = MoneroClient(url=m.url, username="").get_sync_status()
-    assert st == {"is_syncing": False, "db_size": 0, "synchronized": True}
+    assert st == {"is_syncing": False, "db_size": 0, "synchronized": True, "height": 3_000_000}
 
 
 def test_monero_http_control_mutates_state():

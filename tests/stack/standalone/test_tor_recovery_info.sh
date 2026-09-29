@@ -3,6 +3,7 @@
 # get_info, whose 0 is redacted (#2921). An unavailable count is null: neither "0 outgoing" (the
 # recovery signature) nor "> 0" (its verification) is then true.
 set -euo pipefail
+echo "== tor recovery: restricted RPC peer counts =="
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"

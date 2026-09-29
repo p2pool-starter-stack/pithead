@@ -8,6 +8,8 @@
 #
 set -uo pipefail
 
+echo "== selftest: Monero peer wait and RPC boundary =="
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"

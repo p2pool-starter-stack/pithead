@@ -155,7 +155,8 @@ function NetworkCard({ state }) {
   // The tick means "at the tip, with peers" (#2499): red carries the numbers, and an absent or
   // remote verdict stays neutral rather than pretending.
   const health = m.health || { status: "—", peers: "—", moved: "—", tooltip: "" };
-  const healthCls = health.level === "red" ? "status-bad" : health.level === "green" ? "status-ok" : "";
+  const healthCls =
+    health.level === "red" ? "status-bad" : health.level === "green" ? "status-ok" : "";
   // Headline = the chain's own money/health figures (height, difficulty, block reward); node
   // internals (mode, DB size, hash, network time) are reference detail.
   const headline = html`
