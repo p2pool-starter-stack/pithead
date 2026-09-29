@@ -6,7 +6,7 @@
 # at a staged candidate config.
 apply_dry_run() {
     local porcelain="$1"
-    local newenv="${ENV_FILE}.dryrun"
+    local newenv="$PITHEAD_ENV_DRYRUN"
     PITHEAD_DRY_RUN=1 # #556: parse_and_validate_config -> persist_node_credentials checks this
     {
         # NOTE: no ensure_onion_password here — it would write an auto-generated password into
@@ -173,7 +173,7 @@ apply() {
 
     # Render the new config to a staging file and diff it against the live .env, so we can
     # preview the changes and confirm anything disruptive before touching running containers.
-    local newenv="${ENV_FILE}.new"
+    local newenv="$PITHEAD_ENV_STAGE"
     render_env "$newenv"
 
     local changed=() key
@@ -268,7 +268,7 @@ apply() {
                 dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
                 : >"$apply_marker"
                 dashboard_carry_recovery=1
-                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published" "$incomplete"; rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
+                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published" "$incomplete"; rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
             fi
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
             [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
@@ -370,7 +370,7 @@ apply() {
     fi
     if [ "$dashboard_carry_recovery" -eq 1 ]; then
         dashboard_carry_recovery=0
-        trap 'rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
+        trap 'rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
     fi
     reconcile_appliance_hostname
     # Caddy mounts the Caddyfile read-only, so a content change alone won't recreate it.
