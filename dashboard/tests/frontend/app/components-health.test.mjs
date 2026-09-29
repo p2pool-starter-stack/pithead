@@ -83,6 +83,16 @@ test('ComponentHealth flips to a warning summary when the posture leaks', () => 
     assert.match(renderApp({ state: s }), /egress-summary c-bad/);
 });
 
+test('ComponentHealth names a chosen clearnet dial without marking it firewall-blocked', () => {
+    const s = clone();
+    const peer = s.egress.components.find(c => c.name === 'p2pool').conns[0];
+    peer.route = 'clearnet';
+    peer.chosen_clearnet = true;
+    const html = renderApp({ state: s });
+    assert.match(html, /sidechain P2P peers <span class="egress-note">\(your choice: your IP is visible to this destination\)<\/span>/);
+    assert.doesNotMatch(html, /sidechain P2P peers <span class="egress-note">\(firewall-blocked\)<\/span>/);
+});
+
 test('ComponentHealth renders an unverified-only posture as a warning, not a leak', () => {
     const s = clone();
     s.topology.summary.level = 'warn';

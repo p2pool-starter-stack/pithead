@@ -278,7 +278,8 @@ stable row payloads, stable security `kv_store` values, and the presence of ever
 XvB/snapshot key. A recreated dashboard rewrites those volatile values within seconds, so neither
 their values nor their shape are compared across the upgrade or the restore (#2421); the gate does
 not claim byte equality for values expected to advance while the stack runs. It also checks exact container mounts,
-chain anchors, workers, mining, image refs, revisions, and health. A failed verification retains both
+chain anchors, the worker set accepted by the post-upgrade readiness wait, mining, image refs,
+revisions, and health. A failed verification retains both
 recovery trees and private CoW snapshots until verification; any mismatch makes the gate red.
 
 ---
@@ -478,9 +479,14 @@ release ships ([#1364](https://github.com/p2pool-starter-stack/pithead/issues/13
 inspection (skips the restore). Requires SSH access to the test bench and the miner; see the
 [testbench README](../../tests/integration/tools/testbench-README.md).
 
-`--harness-arg <flag>` (repeatable) appends one more `run.sh` phase flag after the mode's own,
-in the order given — how bench-ci's `phases` selection runs exactly one named phase against a
-commit without a dedicated `--mode`. Only an allowlisted
+`--harness-arg <flag>` (repeatable) passes a hand-picked `run.sh` phase flag, in the order given.
+This is how bench-ci's `phases` selection ([bench-ci#46](https://github.com/p2pool-starter-stack/bench-ci/issues/46))
+runs only the named phases against a commit without a dedicated `--mode`. Hand-picked phases
+replace the mode's own phases and the borrowed rig's `--rigforge --rigforge-control`, so a phase
+you did not ask for cannot fail and skip one you did
+([bench-ci#878](https://github.com/p2pool-starter-stack/bench-ci/issues/878)). The mode's scenario,
+the rig identity, the pregate and the restore still run. `--scenario <name>` alone only changes
+the scenario; it keeps the mode's and borrowed rig's phases. Only an allowlisted
 `run.sh` phase flag is accepted — `--lifecycle`, `--fault-injection`, `--auth-fail-closed`,
 `--hardening`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
 `--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —

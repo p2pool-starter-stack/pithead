@@ -58,7 +58,17 @@ control_masked_binding_error() { # <request-file>
                  and ((full($candidate).monero.mode // "local") == "remote")
                  and (monero_rpc_endpoint($candidate) != monero_rpc_endpoint($live[0]))))
             then "the Monero RPC endpoint changed while its credentials were masked — enter the credentials for the new endpoint explicitly"
-            else empty end
+            else empty end,
+            # Webhook sentinels restore by position, and each carries the live position it was
+            # masked at: an added, removed or moved entry would restore another live URL (#2373).
+            ($candidate.notifications.webhooks as $hooks | ($live[0].notifications.webhooks // []) as $old
+             | if ($hooks | type) == "array" and any($hooks[]; sentinel)
+                   and (($hooks | length) != ($old | length)
+                        or any($hooks | to_entries[]; (.value | sentinel)
+                               and (.value.slot != .key
+                                    or ($old[.key] | type) != "string" or $old[.key] == "")))
+               then "notifications.webhooks were added, removed or reordered while entries were masked — re-enter every webhook URL explicitly"
+               else empty end)
           ] | .[0] // empty' "$1" 2>/dev/null
 }
 

@@ -202,9 +202,10 @@ render_masked_config() { # <control-dir>
           else . end
         # notifications.webhooks[] (#848): the whole URL is the bearer secret (query strings carry
         # tokens), and there is no fixed leaf path — mask each set entry, like the worker tokens.
+        # "slot" is the live position of the entry, so a moved sentinel is refused at staging (#2373).
         | if (.notifications | type) == "object" and (.notifications.webhooks | type) == "array"
-          then .notifications.webhooks |= map(
-              if (. // "") == "" then . else {"__secret__": true} end)
+          then .notifications.webhooks |= (to_entries | map(
+              if (.value // "") == "" then .value else {"__secret__": true, "slot": .key} end))
           else . end' "$CONFIG_FILE" >"$tmp" 2>/dev/null; then
         chmod 644 "$tmp" 2>/dev/null || true
         if mv "$tmp" "$mdir/config.json" 2>/dev/null; then

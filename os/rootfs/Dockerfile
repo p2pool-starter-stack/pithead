@@ -300,6 +300,9 @@ COPY os/overlay/pithead-hugepages.service /etc/systemd/system/pithead-hugepages.
 COPY os/overlay/pithead-hugepages /usr/local/sbin/pithead-hugepages
 # The pool's SECOND writer (#1724): xmrig runs as root and grows nr_hugepages through sysfs; this drop-in fences the miner unit off both subtrees.
 COPY os/overlay/pithead-xmrig-hugepages.conf /etc/systemd/system/xmrig.service.d/pithead-hugepages.conf
+COPY os/overlay/pithead-serial-port-present /usr/local/sbin/pithead-serial-port-present
+ARG SERIAL_GETTY_UNIT_PREFIX=serial-getty
+COPY os/overlay/pithead-serial-getty.conf /etc/systemd/system/${SERIAL_GETTY_UNIT_PREFIX}@ttyS0.service.d/override.conf
 # The two-tier reset's deep tier and the wedged-/data recovery path: reformats /data before it
 # mounts, on a `pithead factory-reset` request (ESP marker) or a genuinely unmountable partition.
 # Ordered before data.mount by its unit; fail-safe — a healthy, unmarked partition is never touched.

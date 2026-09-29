@@ -136,6 +136,7 @@ assert_eq "clearnet absent in baseline (default off)" "$(jq_get "$BASE" '.monero
 assert_contains "matrix has a clearnet scenario" "$(scenario_names)" "local-pruned-main-clearnet-sync"
 assert_contains "clearnet scenario enables monero" "$(scenario_overrides local-pruned-main-clearnet-sync)" "monero.clearnet_initial_sync=true"
 assert_contains "clearnet scenario enables tari" "$(scenario_overrides local-pruned-main-clearnet-sync)" "tari.clearnet_initial_sync=true"
+assert_contains "P2Pool clearnet scenario keeps the firewall on" "$(scenario_overrides local-pruned-main-p2pool-clearnet)" "p2pool.clearnet=true"
 
 echo "== moved-subnet matrix scenario (#201/#180) =="
 # The matrix documents the subnet axis for coverage; the --subnet phase runs it for real (a subnet

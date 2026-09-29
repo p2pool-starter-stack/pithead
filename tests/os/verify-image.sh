@@ -125,6 +125,8 @@ chk "avahi ships a rewritable allow-interfaces line" 'grep -qE "^#?allow-interfa
 # Boot recovery is compose-owned (#792): pithead-boot renders + ups + health-gates the slot commit.
 chk "pithead-boot unit enabled" 'test -L "$ROOT/etc/systemd/system/multi-user.target.wants/pithead-boot.service"'
 chk "pithead-boot script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-boot"'
+chk "serial getty port check shipped executable" 'test -x "$ROOT/usr/local/sbin/pithead-serial-port-present"'
+chk "serial getty condition shipped as a drop-in" 'test -s "$ROOT/etc/systemd/system/serial-getty@ttyS0.service.d/override.conf"'
 # Physical-presence config channel (#786 sub-issue D): pithead-boot's one stage before render,
 # no unit of its own.
 chk "pithead-media-config script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-media-config"'
