@@ -159,7 +159,8 @@ ipv6_canonical() { # <literal>
         return 0
         ;;
     esac
-    [[ "$a" =~ ^[0-9a-f:]+$ ]] || {
+    # A literal is at most one "::", groups of 1-4 hex digits, and no stray edge colon.
+    [[ "$a" =~ ^([0-9a-f]{1,4}(:[0-9a-f]{1,4})*)?(::([0-9a-f]{1,4}(:[0-9a-f]{1,4})*)?)?$ && "$a" != *:::* ]] || {
         printf '%s' "$1"
         return 0
     }
@@ -174,7 +175,7 @@ ipv6_canonical() { # <literal>
     IFS=: read -ra r <<<"$right"
     fill=$((8 - ${#l[@]} - ${#r[@]}))
     if [[ "$a" != *::* ]]; then fill=0; fi
-    if [ "$fill" -lt 0 ] || { [ "$fill" -eq 0 ] && [ $((${#l[@]} + ${#r[@]})) -ne 8 ]; }; then
+    if [ "$fill" -lt 0 ] || { [[ "$a" == *::* ]] && [ "$fill" -lt 1 ]; } || { [ "$fill" -eq 0 ] && [ $((${#l[@]} + ${#r[@]})) -ne 8 ]; }; then
         printf '%s' "$1"
         return 0
     fi

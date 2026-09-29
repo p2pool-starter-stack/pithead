@@ -217,7 +217,7 @@ check_appliance_cert() {
     local base missing=""
     base=$(appliance_base_name)
     case ",$san," in
-    *",DNS:$base,"* | *",IP:$base,"*) ;;
+    *",DNS:$base,"* | *",IP:$base,"* | *",IP:$(ipv6_canonical "$base"),"*) ;;
     *) missing="$base" ;;
     esac
 

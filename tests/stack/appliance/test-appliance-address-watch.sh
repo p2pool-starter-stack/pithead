@@ -179,6 +179,9 @@ assert_eq "ipv6_canonical handles a leading ::" "$(canon ::1)" "0:0:0:0:0:0:0:1"
 assert_eq "ipv6_canonical handles a trailing ::" "$(canon fd00::)" "fd00:0:0:0:0:0:0:0"
 assert_eq "ipv6_canonical leaves an IPv4 literal alone" "$(canon 192.168.1.20)" "192.168.1.20"
 assert_eq "ipv6_canonical leaves a malformed literal alone" "$(canon fd00:zz::1)" "fd00:zz::1"
+assert_eq "ipv6_canonical leaves a double :: alone" "$(canon 1::2::3)" "1::2::3"
+assert_eq "ipv6_canonical leaves an over-long group alone" "$(canon fffff::1)" "fffff::1"
+assert_eq "ipv6_canonical leaves a stray trailing colon alone" "$(canon fd00::1:)" "fd00::1:"
 unset -f canon
 
 echo "== unit: doctor counts an IPv6 SAN as covered whatever its spelling (#2463) =="
@@ -199,7 +202,7 @@ awd_run() { # <hostname -I output>
         is_appliance() { return 0; }
         appliance_tls_dir() { printf '%s' "$AWD/tls"; }
         appliance_bridge_gateway() { printf '172.19.0.1'; }
-        env_get() { [ "$1" = HOST_IP ] && printf 'rig1.local'; }
+        env_get() { [ "$1" = HOST_IP ] && printf '%s' "${AWD_BASE:-rig1.local}"; }
         hostname() { if [ "${1:-}" = "-I" ]; then printf '%s' "$AWD_ADDRS"; else printf 'rig1'; fi; }
         check_appliance_cert 2>&1
     )
@@ -208,4 +211,6 @@ awd_out=$(AWD_ADDRS='192.168.1.20 fd00:2463::1' awd_run)
 assert_contains "an IPv6 address the certificate carries counts as covered despite the spelling" "$awd_out" "covers every name"
 awd_out=$(AWD_ADDRS='192.168.1.20 fd00:2463::2' awd_run)
 assert_contains "a different IPv6 address is still uncovered" "$awd_out" "does not cover: fd00:2463::2"
+awd_out=$(AWD_BASE=fd00:2463::1 AWD_ADDRS='fd00:2463::1' awd_run)
+assert_contains "a base name pinned to a compressed IPv6 address is covered too" "$awd_out" "covers every name"
 unset AWD awd_run awd_out AWD_ADDRS
