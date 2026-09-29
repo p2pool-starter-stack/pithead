@@ -80,22 +80,21 @@ compose_up() {
     # Every container (re)start passes here, so the LAN-published node ports get their source rule
     # (or are held on loopback) before anything listens on them (#2616).
     apply_lan_guard
-    # LAN guard inserts its RETURN-only jump at the top of DOCKER-USER. Put the Tor DROP back
-    # above it before containers start. A selected exception must fail closed even when it was
-    # just disabled: retain its marker until a successful refresh proves the stale rule gone.
+    # Reapply egress above the LAN jump; retain choice markers until live removal is proved.
     local egress_rc=0 choice_marker selected_ips firewall_enabled choice_active=0
     choice_marker=$(tor_egress_choice_marker)
     selected_ips=$(tor_egress_sync_ips)
     tor_egress_choice_active && choice_active=1
     firewall_enabled=$(env_get TOR_EGRESS_FIREWALL 2>/dev/null)
     [ -n "$firewall_enabled" ] || firewall_enabled=true
+    prune_tor_egress_choice_markers || return 1
     if [ "$choice_active" = 1 ] && [ "$(normalize_bool "$firewall_enabled")" = true ]; then
         arm_tor_egress_choice_marker || return 1
     fi
     apply_tor_egress_firewall refresh >/dev/null || egress_rc=$?
     if [ "$egress_rc" = 0 ]; then
-        if [ "$choice_active" = 0 ] && [ "$(normalize_bool "$firewall_enabled")" = true ]; then
-            if [ -e "$choice_marker" ] || [ -L "$choice_marker" ]; then
+        if [ "$(normalize_bool "$firewall_enabled")" = true ]; then
+            if [ "$choice_active" = 0 ] && { [ -e "$choice_marker" ] || [ -L "$choice_marker" ]; }; then
                 rmdir "$choice_marker" || return 1
             fi
         fi

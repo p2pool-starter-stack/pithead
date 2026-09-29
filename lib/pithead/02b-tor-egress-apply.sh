@@ -22,17 +22,38 @@ tor_egress_sync_ips() {
 
 tor_egress_choice_marker() { printf '%s.egress-choice-active' "$(mutation_lock_path)"; }
 tor_egress_choice_active() {
-    [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] ||
-        { [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
-            [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ]; }
+    case "${1:-}" in
+    p2pool) [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] ;;
+    xvb) [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
+        [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ] ;;
+    *) tor_egress_choice_active p2pool || tor_egress_choice_active xvb ;;
+    esac
 }
 
-# A directory is an atomic, no-follow marker. Arm it before a selected ACCEPT can reach the kernel;
-# only compose_up's successful enabled refresh may clear it after the selection goes away.
-arm_tor_egress_choice_marker() {
-    local marker
+# Remove disabled choices before changing live rules: an old boot unit must not restore them if
+# refresh fails or the host loses power. Keep the parent until enabled live removal is proved.
+prune_tor_egress_choice_markers() {
+    local marker choice
     marker=$(tor_egress_choice_marker)
-    [ ! -L "$marker" ] && { mkdir "$marker" 2>/dev/null || [ -d "$marker" ]; }
+    [ ! -L "$marker" ] || return 1
+    for choice in p2pool xvb; do
+        tor_egress_choice_active "$choice" && continue
+        if [ -e "$marker/$choice" ] || [ -L "$marker/$choice" ]; then
+            rmdir "$marker/$choice" || return 1
+        fi
+    done
+}
+
+# A directory is an atomic, no-follow marker. Arm it before a selected ACCEPT can reach the kernel.
+arm_tor_egress_choice_marker() {
+    local marker choice
+    marker=$(tor_egress_choice_marker)
+    [ ! -L "$marker" ] && { mkdir "$marker" 2>/dev/null || [ -d "$marker" ]; } || return 1
+    for choice in p2pool xvb; do
+        tor_egress_choice_active "$choice" || continue
+        [ ! -L "$marker/$choice" ] &&
+            { mkdir "$marker/$choice" 2>/dev/null || [ -d "$marker/$choice" ]; } || return 1
+    done
 }
 
 # Remove every rule we previously installed — idempotent, config-agnostic, engine-agnostic. Clears
@@ -92,6 +113,7 @@ render_tor_egress_restore() { # <subnet> <tor_ip> [sync-ip ...] (stdin: iptables
 apply_tor_egress_firewall() {
     local enabled subnet tor_ip applied=0
     local -a sync_ips=()
+    prune_tor_egress_choice_markers || return 1
     enabled=$(env_get TOR_EGRESS_FIREWALL 2>/dev/null)
     [ -n "$enabled" ] || enabled=true
     if [ "$(normalize_bool "$enabled")" != "true" ]; then

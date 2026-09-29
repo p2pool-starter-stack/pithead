@@ -52,25 +52,28 @@ EOF
     for ((i = ${#rules[@]} - 1; i >= 0; i--)); do
         printf 'ExecStart=%s -I DOCKER-USER 1 -m comment --comment %s %s\n' "$ipt" "$TOR_EGRESS_TAG" "${rules[$i]}"
     done
-    # The boot unit is installed while the sync is active, but the marker may appear before
-    # reboot. Check it at boot too: an old unit must never reopen a completed sync.
+    # Check markers at boot: an old unit must not reopen a completed sync or a disabled choice
+    # when its rewrite failed after the live firewall removed that exception.
     for ip in "$@"; do
         case "$ip" in
         *.26) chain=monero ;;
         *.27) chain=tari ;;
-        *.28 | *.29)
-            printf 'ExecStart=%s -I DOCKER-USER 1 -m comment --comment %s -s %s -j ACCEPT\n' "$ipt" "$TOR_EGRESS_TAG" "$ip"
-            continue
-            ;;
+        *.28) marker="$(tor_egress_choice_marker)/p2pool" ;;
+        *.29) marker="$(tor_egress_choice_marker)/xvb" ;;
         *) return 1 ;;
         esac
-        marker="$(clearnet_state_dir)/$chain.synced"
+        if [ -n "${chain:-}" ]; then marker="$(clearnet_state_dir)/$chain.synced"; fi
         printf -v qmarker '%q' "$marker"
         printf -v qipt '%q' "$ipt"
         printf -v qtag '%q' "$TOR_EGRESS_TAG"
         printf -v qip '%q' "$ip"
-        cmd="if test ! -e $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
+        if [ -n "${chain:-}" ]; then
+            cmd="if test ! -e $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
+        else
+            cmd="if test -d $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
+        fi
         printf "ExecStart=/bin/bash -c '%s'\n" "$cmd"
+        chain=
     done
     cat <<EOF
 

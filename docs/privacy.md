@@ -50,7 +50,10 @@ by channel:
   A reboot empties the chain, and the containers restart on their own when Docker starts, so
   `pithead` also installs `pithead-egress.service`: a oneshot unit ordered before
   `docker.service` and pulled in by it, carrying the same rules. It inserts the `DROP` first,
-  so a start that fails halfway blocks more than intended rather than less.
+  so a start that fails halfway blocks more than intended rather than less. Its P2Pool and XvB
+  accepts check separate current-choice markers at boot. Disabling a choice removes its boot
+  marker before refreshing the live rules; a shared guard still blocks startup until the host
+  verifies that the old live exception is gone.
 - **podman + netavark (appliance):** netavark serves the forward hook from its own nftables table and
   never adds a `DOCKER-USER` jump, so the same iptables rules would sit in a chain no packet reaches.
   `pithead` instead installs an independent `inet pithead_egress` nftables table hooked at forward
@@ -115,8 +118,8 @@ Compose project. Pithead reinstalls the egress rules above its LAN-port guard ju
 containers, so the guard's return path still reaches the DROP. Until the host attests a selected
 first sync's Tor transition, a failed live firewall readback prevents Compose startup. A selected
 P2Pool or XvB exception also refuses startup on refresh failure; after a choice is disabled, its
-marker keeps that refusal through firewall opt-out until an enabled refresh proves the stale rule gone. Ordinary startup
-retains the firewall warning. Before Docker creates its first network,
+marker keeps that refusal through firewall opt-out until an enabled refresh proves the stale rule
+gone. Ordinary startup retains the firewall warning. Before Docker creates its first network,
 the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no
 mining container runs; Docker then adds the jump.
 The check does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or
