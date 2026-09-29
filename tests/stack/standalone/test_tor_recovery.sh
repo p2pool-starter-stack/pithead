@@ -63,14 +63,19 @@ sudo() { "$@"; }
 docker() {
     case "$*" in
     'exec tor /usr/local/bin/tor-control-signal.sh NEWNYM') printf 'newnym\n' >>"$WORK/actions" ;;
-    'compose stop tor') printf 'stop\n' >>"$WORK/actions" ;;
+    'compose stop tor')
+        printf 'stop\n' >>"$WORK/actions"
+        : >"$WORK/stopped"
+        ;;
     'compose start tor')
         printf 'start\n' >>"$WORK/actions"
+        if [ "${ALTER_IDENTITY:-0}" = 1 ]; then printf 'changed identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"; fi
         : >"$WORK/started"
+        rm -f "$WORK/stopped"
         ;;
     'compose restart monerod') printf 'redial\n' >>"$WORK/actions" ;;
     *'com.docker.compose.service'*) printf 'tor\n' ;;
-    *'.State.Running'*) printf 'true\n' ;;
+    *'.State.Running'*) if [ -e "$WORK/stopped" ]; then printf 'false\n'; else printf 'true\n'; fi ;;
     *'.State.Health.Status'*) printf 'healthy\n' ;;
     esac
 }
@@ -100,6 +105,14 @@ if tor_recover apply; then exit 1; fi
 [ "$(cat "$WORK/actions")" = "$(printf 'stop\nstart')" ]
 [ -f "$WORK/tor/state" ]
 [ "$before" = "$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key")" ]
+rm "$WORK/control/tor-recovery-at" "$WORK/started" "$WORK/actions"
+sudo() { "$@"; }
+ALTER_IDENTITY=1
+if tor_recover apply; then exit 1; fi
+[ "$(cat "$WORK/actions")" = "$(printf 'stop\nstart\nstop')" ]
+[ "$(docker inspect tor --format '{{.State.Running}}')" = false ]
+[ "$(tail -1 "$WORK/audit")" = failed ]
+ALTER_IDENTITY=0
 mkdir -p "$WORK/bin"
 printf 'cookie-for-test\n' >"$WORK/cookie"
 cat >"$WORK/bin/nc" <<'SH'
@@ -124,14 +137,27 @@ AUTO_HEAL=false
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 AUTO_HEAL=true
+ACTIVE=1
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = rejected ]
+[ ! -e "$WORK/control/tor-newnym-budget" ]
+ACTIVE=0
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = applied ]
 [ "$(tail -1 "$WORK/actions")" = newnym ]
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 [ "$(tail -1 "$WORK/actions")" = newnym ]
+read -r first count <"$WORK/control/tor-newnym-budget"
+[ "$count" = 1 ]
+printf '%s 1\n' "$((first - 1801))" >"$WORK/control/tor-newnym-budget"
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = applied ]
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = rejected ]
+[ "$(grep -c '^newnym$' "$WORK/actions")" = 2 ]
 jq '.extra="DROPGUARDS"' "$WORK/request.json" >"$WORK/rejected.json"
 control_process_request "$WORK/rejected.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
-[ "$(tail -1 "$WORK/actions")" = newnym ]
+[ "$(grep -c '^newnym$' "$WORK/actions")" = 2 ]
 echo 'tor recovery unit PASS'

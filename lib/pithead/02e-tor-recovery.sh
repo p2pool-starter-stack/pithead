@@ -8,7 +8,8 @@ tor_recovery_info() {
     url=$(env_get MONERO_RPC_URL) || return 1
     [ -n "$url" ] || url=http://127.0.0.1:18081
     if [ -n "$user" ]; then
-        curl -fsS --max-time 8 --max-filesize 65536 --digest -u "$user:$pass" "$url/get_info"
+        printf 'user = %s\n' "$(printf '%s:%s' "$user" "$pass" | jq -Rs .)" |
+            curl -fsS --max-time 8 --max-filesize 65536 --digest --config - "$url/get_info"
     else
         curl -fsS --max-time 8 --max-filesize 65536 "$url/get_info"
     fi
@@ -57,6 +58,32 @@ tor_recovery_identities() { # hash retained onion identity keys, refusing missin
         [ -f "$key" ] && [ ! -L "$key" ] || return 1
         sudo sha256sum -- "$key" || return 1
     done <<<"$keys"
+}
+
+tor_recovery_stop_changed_identity() {
+    docker compose stop tor || docker compose stop tor || true
+    if [ "$(docker inspect tor --format '{{.State.Running}}' 2>/dev/null)" != false ]; then
+        warn "Tor identity changed and the container could not be confirmed stopped; stop it immediately."
+        return 1
+    fi
+    warn "Tor identity changed; Tor is stopped. Restore the identity before starting Tor."
+}
+
+tor_recovery_restore_start() { # <data dir> <original identity hashes>; recover after failed state operation
+    local dir="$1" identities="$2"
+    if [ "$(tor_recovery_identities "$dir")" != "$identities" ]; then
+        tor_recovery_stop_changed_identity || true
+        return 1
+    fi
+    docker compose start tor || docker compose start tor || true
+    if [ "$(docker inspect tor --format '{{.State.Running}}' 2>/dev/null)" != true ]; then
+        warn "Tor could not be restarted; start it manually after resolving the failure."
+        return 1
+    fi
+    if [ "$(tor_recovery_identities "$dir")" != "$identities" ]; then
+        tor_recovery_stop_changed_identity || true
+        return 1
+    fi
 }
 
 tor_recover() { # check | apply; explicit operator action only
@@ -146,7 +173,7 @@ tor_recover() { # check | apply; explicit operator action only
     }
     control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "started"
     if ! docker compose stop tor; then
-        docker compose start tor || true
+        tor_recovery_restore_start "$dir" "$identities" || true
         control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"
         mutation_lock_release
         return 1
@@ -155,20 +182,27 @@ tor_recover() { # check | apply; explicit operator action only
         ! tor_recovery_signature "$state" "$first" "$second" ||
         ! sudo mv -n -- "$state" "$backup" || [ -e "$state" ] || [ ! -f "$backup" ]; then
         warn "Tor recovery could not back up circuit state; starting Tor again."
-        docker compose start tor || true
+        tor_recovery_restore_start "$dir" "$identities" || true
+        control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"
+        mutation_lock_release
+        return 1
+    fi
+    if [ "$(tor_recovery_identities "$dir")" != "$identities" ]; then
+        tor_recovery_stop_changed_identity || true
+        warn "Tor recovery failed before restart; circuit-state backup retained."
         control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"
         mutation_lock_release
         return 1
     fi
     if ! docker compose start tor; then
         warn "Tor did not start; backup retained. Retrying start."
-        docker compose start tor || true
+        tor_recovery_restore_start "$dir" "$identities" || true
         control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"
         mutation_lock_release
         return 1
     fi
     if [ "$(tor_recovery_identities "$dir")" != "$identities" ]; then
-        warn "Tor recovery failed: onion identity verification changed; backup retained."
+        tor_recovery_stop_changed_identity || true
         control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"
         mutation_lock_release
         return 1

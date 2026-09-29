@@ -832,7 +832,7 @@ right after tor is healthy again and re-dials in about a minute. Re-run `./pithe
 confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_heal: true` in `config.json` and run
 `./pithead apply`. The dashboard probes every five minutes with a new SOCKS circuit per request.
 A failed request is corroborated against a second target before it counts toward the 15-minute
-outage window. The host control runner then requests NEWNYM at most twice, 30 minutes apart;
+outage window. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
 continued failure permits one Tor container restart, which also re-dials local Monero. Each step
 and its probe evidence is logged. Two consecutive successful probes confirm recovery and carry
 the targets, circuits, duration and recovering step into the Telegram note. No automatic step

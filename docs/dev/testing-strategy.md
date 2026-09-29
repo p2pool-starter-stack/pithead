@@ -224,6 +224,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `up` | covered | DIY bench; KVM boot overlay |
 | `down` | covered | DIY bench (appliance parity is #2062) |
 | `restart` | covered | DIY bench (appliance parity is #2062) |
+| `tor-recover` | covered | DIY bench fault-injection phase exercises read-only `check`; `apply` is guarded and proven by the CLI unit test |
 | `upgrade` | covered | DIY bench (`--image-upgrade`, opt-in); KVM OS-update leg (combined hardware run still pending, see Known gaps) |
 | `status` | covered | DIY bench (appliance parity is #2062) |
 | `doctor` | covered | DIY bench; KVM boot overlay |
