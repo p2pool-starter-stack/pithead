@@ -3,6 +3,7 @@
 echo "== unit: doctor Tari payout wallet address (#2498) =="
 printf 'TARI_WALLET_ADDRESS=expected\n' >>"$SANDBOX/.env"
 rm -f "$DRBIN/python3"
+cp "$DRBIN/curl" "$DRBIN/curl.before-wallet"
 cat >"$DRBIN/curl" <<'EOF'
 #!/bin/sh
 [ "${TARI_FAKE_SILENT:-0}" = 1 ] && exit 7
@@ -25,4 +26,4 @@ out="$(RUNNING_CONTAINERS="tari-wallet" TARI_FAKE_SILENT=1 PATH="$DRBIN:$PATH" r
 assert_contains "Tari wallet: silent gRPC -> warning" "$out" "gRPC did not answer"
 out="$(RUNNING_CONTAINERS="" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_tari_wallet_address 2>&1)"
 assert_eq "Tari wallet: feature off -> no line" "$out" ""
-rm -f "$DRBIN/curl"
+mv "$DRBIN/curl.before-wallet" "$DRBIN/curl"
