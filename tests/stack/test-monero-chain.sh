@@ -73,7 +73,9 @@ assert_eq "peers.sh: an unrestricted body with real zeros is a reading of zero" 
     'rc=0 out={"outgoing":0,"incoming":0,"white":0,"grey":0}'
 assert_eq "peers.sh: a restricted body (its zeros are redacted) is refused" "$(mon_peers "$(printf '%s' "$REAL" | sed 's/"restricted": false/"restricted": true/')")" "rc=3 out="
 assert_eq "peers.sh: a body that does not say restricted is refused" "$(mon_peers "$(printf '%s' "$REAL" | sed '/restricted/d')")" "rc=3 out="
-assert_eq "peers.sh: a missing count is refused" "$(mon_peers "$(printf '%s' "$REAL" | sed '/white_peerlist/d')")" "rc=4 out="
+assert_eq "peers.sh: a missing count is refused" "$(mon_peers "$(printf '%s' "$REAL" | sed '/white_peerlist/d')")" "rc=3 out="
+assert_eq "peers.sh: malformed JSON is refused" "$(mon_peers '{"restricted":false,"outgoing_connections_count":7')" "rc=3 out="
+assert_eq "peers.sh: a string count is refused" "$(mon_peers "$(printf '%s' "$REAL" | sed 's/"outgoing_connections_count": 0/"outgoing_connections_count": "0"/')")" "rc=3 out="
 assert_eq "peers.sh: no answer is refused" "$(mon_peers down)" "rc=1 out="
 assert_not_contains "peers.sh: never prints the login" "$(mon_peers "$REAL")" "s3cr3tpw"
 

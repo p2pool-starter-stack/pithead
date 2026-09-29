@@ -4,7 +4,7 @@ FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffb
 # Install system dependencies required for downloading, verifying, and configuring the node
 # 'gettext-base' provides 'envsubst' for template processing in entrypoint.sh
 RUN apt-get update && apt-get install -y \
-    wget bzip2 ca-certificates curl gettext-base \
+    wget bzip2 ca-certificates curl gettext-base jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Define Monero version and SHA256 hash for binary verification

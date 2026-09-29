@@ -10,17 +10,16 @@
 # `"restricted": false` (a restricted answer must never be read as counts), or when a count is missing.
 set -eu
 
-port=${MONERO_ADMIN_RPC_PORT:-18085}
-body=$(curl -fsS --max-time 2 --max-filesize 65536 --digest \
-    -u "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
-    "http://127.0.0.1:$port/get_info") || exit 1
+body=$(printf 'user = %s\n' "$(printf '%s:%s' "${MONERO_NODE_USERNAME:-}" "${MONERO_NODE_PASSWORD:-}" | jq -Rs .)" |
+    curl -fsS --max-time 2 --max-filesize 65536 --digest --config - \
+        http://127.0.0.1:18085/get_info) || exit 1
 
-printf '%s' "$body" | grep -q '"restricted": *false' || exit 3
-
-field() { printf '%s' "$body" | sed -n "s/.*\"$1\": *\([0-9][0-9]*\).*/\1/p" | head -n 1; }
-out=$(field outgoing_connections_count)
-inn=$(field incoming_connections_count)
-white=$(field white_peerlist_size)
-grey=$(field grey_peerlist_size)
-[ -n "$out" ] && [ -n "$inn" ] && [ -n "$white" ] && [ -n "$grey" ] || exit 4
-printf '{"outgoing":%s,"incoming":%s,"white":%s,"grey":%s}\n' "$out" "$inn" "$white" "$grey"
+printf '%s' "$body" | jq -ec '
+    def count: type == "number" and . >= 0 and . == floor;
+    if .restricted != false then empty
+    elif ([.outgoing_connections_count, .incoming_connections_count,
+           .white_peerlist_size, .grey_peerlist_size] | all(count)) then
+        {outgoing: .outgoing_connections_count, incoming: .incoming_connections_count,
+         white: .white_peerlist_size, grey: .grey_peerlist_size}
+    else empty end
+' || exit 3
