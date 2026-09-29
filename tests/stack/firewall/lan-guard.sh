@@ -1,12 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# LAN-only sources for the node ports the *_lan_access switches publish (#2616): the rule is rendered
-# with the LAN set only, compose never publishes on 0.0.0.0 unless the rule is live (the loopback
-# fallback), doctor tells exposed from held, and every publish of the three ports stays an explicit
-# IPv4 bind, so the IPv4-only rule covers it, and the boot unit that restores the rule before
-# docker.service starts, plus the hold that starts the LAN-access containers only after it (#2749). The live half, a non-private source refused on the
-# bench before and after the rule is stripped and the unit re-run, is tests/integration/lib/run-lan-guard.sh.
-# Sourced by tests/stack/run.sh.
+# LAN-only source rule, loopback fallback, boot hold, marker and doctor checks (#2616/#2749/#2847).
+# Live non-private/private dials are in tests/integration/lib/run-lan-guard.sh.
 
 LGD="$SANDBOX/lan-guard"
 mkdir -p "$LGD/bin"
@@ -16,8 +11,6 @@ while [ $# -gt 0 ]; do case "$1" in -n | -H | -E) shift ;; *) break ;; esac; don
 [ -n "${LG_SUDO_FAIL:-}" ] && exit 1
 exec "$@"
 SUDO
-# iptables: the chain and our jumps read back only when LG_LIVE=1, so "restore exited zero" and
-# "the rule is live" can disagree.
 cat >"$LGD/bin/iptables" <<'IPT'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"${LG_IPT_LOG:-/dev/null}"
@@ -33,7 +26,11 @@ case "$*" in
     [ "${LG_LIVE:-0}" = 1 ] && echo '-A DOCKER-USER -p tcp -m tcp --dport 18142 -m conntrack --ctstate NEW -m comment --comment "pithead-lan-guard" -j PITHEAD-LAN'
     exit 0
     ;;
-"-S FORWARD") echo '-A FORWARD -j DOCKER-USER' ;;
+"-S FORWARD")
+    if [ "${LG_FORWARD_JUMP:-1}" = 1 ] || { [ "${LG_FORWARD_JUMP:-}" = after ] && [ -e "$LG_JUMP_FILE" ]; }; then
+        echo '-A FORWARD -j DOCKER-USER'
+    fi
+    ;;
 esac
 exit 0
 IPT
@@ -54,16 +51,22 @@ case "$*" in
 esac
 exit 0
 NFT
-# docker: `compose up` records the bind and the restart policies it was handed; `ps`/`port`/`inspect`
-# answer the doctor rows (LG_RUNNING, LG_EXISTS, LG_POLICY, LG_EXIT).
 cat >"$LGD/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
 case "$1 ${2:-}" in
 "compose up"*)
     echo "compose-bind=${TARI_GRPC_BIND:-from-env-file}" >>"$LG_COMPOSE"
+    [ "${LG_FORWARD_JUMP:-}" = after ] && touch "$LG_JUMP_FILE"
+    [ "${LG_LAN_UP_FAIL:-0}" = 1 ] && [ "${TARI_GRPC_BIND:-}" = 0.0.0.0 ] && exit 1
     echo "restart=${MONERO_RESTART:-default},${TARI_RESTART:-default}" >>"$LG_COMPOSE.restart"
     [ -z "${LG_ORDER:-}" ] || echo compose >>"$LG_ORDER"
     ;;
+"ps -q")
+    echo "$*" >>"$LG_QUERY_LOG"
+    [ "${LG_PS_RC:-0}" = 0 ] || exit 1
+    [ "${LG_RUNNING:-1}" = 1 ] && printf '%s\n' ${LG_IDS:-cid123}
+    ;;
+"stop "*) echo "docker-stop=$2" >>"$LG_COMPOSE"; exit "${LG_STOP_RC:-0}" ;;
 "ps "*) [ "${LG_RUNNING:-1}" = 1 ] && echo cid123 ;;
 "inspect -f")
     [ "${LG_EXISTS:-1}" = 1 ] || exit 1
@@ -89,13 +92,12 @@ exit 0
 SYSTEMCTL
 chmod +x "$LGD/bin/"*
 mkdir -p "$LGD/units"
-export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log" LG_SYSTEMCTL="$LGD/systemctl.log"
+export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log" LG_SYSTEMCTL="$LGD/systemctl.log" LG_JUMP_FILE="$LGD/jump" LG_QUERY_LOG="$LGD/query.log"
 printf 'TARI_GRPC_BIND=0.0.0.0\nMONERO_RPC_BIND=127.0.0.1\nMONERO_ZMQ_BIND=127.0.0.1\n' >"$LGD/.env"
 printf 'boot-1\n' >"$LGD/boot_id"
 lg() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PITHEAD_BOOT_ID_FILE="$LGD/boot_id" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; apply_tor_egress_firewall() { :; }; $1" 2>&1); }
 LG_UNIT="$LGD/units/pithead-lan-guard.service"
 LG_HOLD="$LGD/units/pithead-lan-hold.service"
-
 echo "== the rule admits loopback, RFC1918 and CGNAT only, and drops the rest (#2616) =="
 lg_out="$(printf '%s\n' '-A DOCKER-USER -p tcp -m tcp --dport 18081 -m comment --comment pithead-lan-guard -j PITHEAD-LAN' |
     run_sourced "$LGD" render_lan_guard_iptables 18142)"
@@ -140,21 +142,57 @@ assert_contains "installed: only the published port gets a jump" "$(cat "$LG_RES
 assert_not_contains "installed: a loopback-bound port gets none" "$(cat "$LG_RESTORE")" "--dport 18081"
 assert_eq "installed: compose publishes the .env bind" "$(cat "$LG_COMPOSE")" "compose-bind=from-env-file"
 : >"$LG_COMPOSE"
+rm -f "$LG_JUMP_FILE"
+rm -f "$LGD/data/lan-guard/enforced"
+lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=after lg 'compose_up -d')"
+assert_not_contains "first network adds the FORWARD jump: no fallback" "$lg_out" "lan-guard:not-installed"
+assert_eq "...first starts on loopback, then recreates with the LAN bind" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1\ncompose-bind=0.0.0.0'
+assert_eq "...and marks this boot before the LAN pass" "$(cat "$LGD/data/lan-guard/enforced" 2>/dev/null)" "boot-1"
+: >"$LG_COMPOSE"
+rm -f "$LG_JUMP_FILE"
+lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=after LG_LAN_UP_FAIL=1 lg 'compose_up -d')"; lg_rc=$?
+assert_rc "a failed LAN pass returns failure after loopback rollback" "$lg_rc" "1"
+assert_eq "...stops the node and restores the loopback bind" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1\ncompose-bind=0.0.0.0\ndocker-stop=cid123\ncompose-bind=127.0.0.1'
+assert_eq "...and clears the marker" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
+: >"$LG_COMPOSE"
+LG_LIVE=1 LG_FORWARD_JUMP=never LG_IDS='cid123 cid456' lg 'compose_up -d' >/dev/null
+assert_contains "both a canonical and interrupted replacement are stopped" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ndocker-stop=cid456'
+assert_contains "only this Compose project's Tari nodes are selected" "$(cat "$LG_QUERY_LOG")" 'label=com.docker.compose.project=pithead --filter label=com.docker.compose.service=tari'
+: >"$LG_COMPOSE"
+lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=never lg 'compose_up -d')"
+assert_contains "engine with no FORWARD jump: warn after compose (#2847)" "$lg_out" "nothing jumps from FORWARD to DOCKER-USER"
+assert_eq "...stop before starting the node on loopback" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
+assert_eq "...and keep the start marker absent" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
+: >"$LG_COMPOSE"
+lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=never LG_STOP_RC=1 lg 'compose_up -d')"
+lg_rc=$?
+assert_contains "a stop failure is reported as exposure, not a successful fallback" "$lg_out" "its ports may still be exposed"
+assert_rc "...and returns a failing status" "$lg_rc" "1"
+assert_not_contains "...and never starts compose while the old node may run" "$(cat "$LG_COMPOSE")" "compose-bind="
+: >"$LG_COMPOSE"
+lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=never LG_PS_RC=1 lg 'compose_up -d')"
+assert_contains "unreadable engine cannot be called an empty running set" "$lg_out" "cannot check running LAN nodes"
+assert_not_contains "...and cannot start compose" "$(cat "$LG_COMPOSE")" "compose-bind="
+: >"$LG_COMPOSE"
+lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=never lg 'lan_guard_unmark() { return 1; }; compose_up -d')"
+assert_contains "a marker that cannot be cleared refuses startup" "$lg_out" "could not delete"
+assert_not_contains "...and cannot start compose" "$(cat "$LG_COMPOSE")" "compose-bind="
+: >"$LG_COMPOSE"
 lg_out="$(LG_LIVE=0 lg 'compose_up -d')"
 assert_contains "restore exits 0 but the rule is not live: named" "$lg_out" "lan-guard:not-installed"
-assert_eq "...and compose is handed 127.0.0.1, not 0.0.0.0" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "...stops the old node and binds 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
 : >"$LG_COMPOSE"
 lg_out="$(LG_LIVE=1 LG_RESTORE_RC=1 lg 'compose_up -d')"
 assert_contains "the install itself fails (no root): the reason is named" "$lg_out" "could not enforce"
-assert_eq "...and compose is handed 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "...and stops the old node before binding 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
 : >"$LG_COMPOSE"
 rm -f "$LG_UNIT"
 lg_out="$(LG_LIVE=1 LG_ENABLE_RC=1 lg 'compose_up -d')"
 assert_contains "the rule is live but its boot unit cannot be enabled: named (#2749)" "$lg_out" "boot unit that restores it after a reboot could not be installed"
-assert_eq "...and compose is handed 127.0.0.1, so a reboot cannot reopen the port" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "...and stops the old node before binding 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
 : >"$LG_COMPOSE"
 lg_out="$(PITHEAD_ENGINE=podman LG_LIVE=0 lg 'compose_up -d')"
-assert_eq "podman: an nft table that does not read back holds the port on 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "podman: an nft table that does not read back stops the node and holds on 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
 lg_out="$(PITHEAD_ENGINE=podman LG_LIVE=1 lg 'apply_lan_guard')"
 assert_contains "podman: a table with the drop and the port is enforced" "$lg_out" "LAN-only sources enforced"
 rm -f "$LG_RESTORE"
@@ -164,7 +202,6 @@ lg_out="$(lg apply_lan_guard)"
 mv "$LGD/.env.on" "$LGD/.env"
 assert_eq "every switch off: nothing is installed and nothing is said" "$lg_out" ""
 assert_eq "...and no firewall command runs" "$(test -e "$LG_RESTORE" && echo ran || echo none)" "none"
-
 echo "== the rule survives a DIY host reboot: pithead-lan-guard.service, ahead of docker (#2749) =="
 lg_bu="$(run_sourced "$LGD" render_lan_guard_boot_unit /usr/sbin/iptables /srv/pithead/data/lan-guard/enforced 18081 18142)"
 assert_eq "last, once every rule is in, it records the current boot id as the nodes' marker (#2749)" \
@@ -179,8 +216,6 @@ assert_eq "an insert failure fails the unit (no '-' prefix on any insert or appe
     "$(grep -cE '^ExecStart=-.* -[IA] ' <<<"$lg_bu")" "0"
 assert_eq "every ExecStart runs iptables and nothing else (no checkout path, no docker call)" \
     "$(grep '^ExecStart=' <<<"$lg_bu" | grep -vc '^ExecStart=-\{0,1\}/usr/sbin/iptables ')" "0"
-# The chain edits in unit order: the DROP is live before any jump reaches the chain, so a start that
-# stops halfway over-blocks, and the finished chain matches what apply installs.
 lg_first="$(grep -nE ' -A PITHEAD-LAN | -I PITHEAD-LAN | -I DOCKER-USER ' <<<"$lg_bu" | head -n 1)"
 assert_contains "the chain's DROP is the first rule the unit puts in" "$lg_first" " -A PITHEAD-LAN -j DROP"
 assert_eq "the jumps come last, after every RETURN" \
@@ -196,7 +231,6 @@ for p in 18081 18142; do
     assert_contains "port $p's old jump is deleted first, so a restart does not stack them" "$lg_bu" \
         "ExecStart=-/usr/sbin/iptables -D DOCKER-USER -p tcp -m tcp --dport $p "
 done
-
 lg_hu="$(run_sourced "$LGD" render_lan_guard_hold_unit /usr/bin/docker /usr/sbin/iptables 18081 18083 18142)"
 assert_contains "the hold needs the guard: a failed guard never starts the containers" "$lg_hu" \
     "Requires=pithead-lan-guard.service docker.service"
@@ -209,7 +243,6 @@ assert_contains "...and the chain's live DROP, so a flushed chain behind a live 
     "ExecStartPre=/usr/sbin/iptables -C PITHEAD-LAN -j DROP"
 assert_eq "...only after checking each port's live jump, which fails the start when it is gone" \
     "$(grep -c '^ExecStartPre=/usr/sbin/iptables -C DOCKER-USER -p tcp -m tcp --dport 18[01][0-9]* -m conntrack --ctstate NEW -m comment --comment pithead-lan-guard -j PITHEAD-LAN$' <<<"$lg_hu")" "3"
-
 rm -f "$LG_UNIT" "$LG_SYSTEMCTL" "$LG_HOLD"
 : >"$LG_COMPOSE.restart"
 LG_LIVE=1 lg 'compose_up -d' >/dev/null
@@ -223,7 +256,7 @@ rm -f "$LG_HOLD"
 : >"$LG_COMPOSE.restart"
 lg_out="$(LG_LIVE=1 LG_HOLD_ENABLE_RC=1 lg 'compose_up -d')"
 assert_contains "the hold cannot be enabled: named" "$lg_out" "boot unit that restores it after a reboot could not be installed"
-assert_eq "...compose is handed 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "...stops the old node and binds 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
 assert_eq "...and the default restart, harmless on loopback" "$(cat "$LG_COMPOSE.restart")" "restart=unless-stopped,unless-stopped"
 for lg_case in "LG_LIVE=0" "LG_LIVE=1 LG_APPLIANCE=1" "LG_LIVE=1 PITHEAD_ENGINE=podman"; do
     : >"$LG_COMPOSE.restart"
@@ -231,7 +264,6 @@ for lg_case in "LG_LIVE=0" "LG_LIVE=1 LG_APPLIANCE=1" "LG_LIVE=1 PITHEAD_ENGINE=
     (export $lg_case && lg 'compose_up -d' >/dev/null)
     assert_eq "$lg_case: compose keeps the default restart" "$(cat "$LG_COMPOSE.restart")" "restart=unless-stopped,unless-stopped"
 done
-
 rm -f "$LG_UNIT" "$LG_SYSTEMCTL"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
 assert_eq "a live apply writes the unit for the published ports" "$(cat "$LG_UNIT" 2>/dev/null)" \
@@ -266,7 +298,6 @@ assert_contains "uninstall completes" "$lg_out" "Uninstalled."
 assert_eq "uninstall removes the unit" "$(test -e "$LG_UNIT" && echo present)" ""
 assert_eq "...and the hold" "$(test -e "$LG_HOLD" && echo present)" ""
 mv "$LGD/.env.keep" "$LGD/.env" # uninstall removes .env too
-
 echo "== doctor tells a port held on loopback from one exposed without the rule (#2616) =="
 lg_out="$(LG_LIVE=1 LG_ENABLED=0 lg check_lan_guard)"
 assert_contains "rule live and its boot unit enabled: OK" "$lg_out" "LAN-only sources enforced on port(s) 18142"
@@ -282,7 +313,6 @@ assert_contains "rule missing and the port on loopback: says it is held, and why
 assert_contains "...naming the reason" "$lg_out" "not in the live ruleset"
 lg_out="$(LG_LIVE=1 LG_FOREIGN='-A DOCKER-USER -j ACCEPT' LG_PUBLISHED=0.0.0.0 lg check_lan_guard)"
 assert_contains "a foreign ACCEPT above our jumps is not called enforced" "$lg_out" "not ours accepts traffic above it"
-
 echo "== doctor names a held or exited LAN-access node, and a restart policy that would beat the rule (#2749) =="
 lg_out="$(LG_LIVE=1 LG_ENABLED=0 LG_RUNNING=0 LG_GUARD_FAILED=0 lg check_lan_guard)"
 assert_contains "guard failed at boot: tari is down, held, with the recovery" "$lg_out" \
@@ -299,7 +329,6 @@ lg_out="$(LG_LIVE=1 LG_ENABLED=0 lg check_lan_guard)"
 assert_not_contains "running with restart no: no hold verdict" "$lg_out" "restart policy"
 lg_out="$(LG_LIVE=1 LG_APPLIANCE=1 LG_RUNNING=0 LG_GUARD_FAILED=0 lg check_lan_guard)"
 assert_not_contains "the appliance has no hold to report" "$lg_out" "is down:"
-
 echo "== only the two LAN-access node services take their restart policy from apply_lan_guard (#2749) =="
 # shellcheck disable=SC2016 # the compose text itself, unexpanded
 assert_eq "monerod and tari take MONERO_RESTART/TARI_RESTART, and a compose run without them fails closed to no" \
@@ -307,7 +336,6 @@ assert_eq "monerod and tari take MONERO_RESTART/TARI_RESTART, and a compose run 
     '    restart: ${MONERO_RESTART:-no}|    restart: ${TARI_RESTART:-no}|'
 assert_eq "...in that order: monerod's first, tari's second" \
     "$(awk '/^  [a-z-]+:$/{svc=$1} /^    restart: \$\{/{print svc}' "$ROOT/docker-compose.yml" | tr '\n' ' ')" "monerod: tari: "
-
 echo "== the marker the node entrypoints check follows the live rule (#2749) =="
 rm -f "$LGD/data/lan-guard/enforced"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
@@ -317,7 +345,6 @@ assert_eq "an apply that holds the port on loopback clears it" "$(test -e "$LGD/
 LG_LIVE=1 lg apply_lan_guard >/dev/null
 lg remove_lan_guard >/dev/null
 assert_eq "removing the rule (down, the backup window) clears it" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
-
 echo "== the node entrypoints refuse a LAN bind without a current marker, however started (#2749) =="
 printf 'boot-1\n' >"$LGD/marker"
 lg_gate() { # <marker content or -> <bind>...  (entrypoint in $lg_ep)

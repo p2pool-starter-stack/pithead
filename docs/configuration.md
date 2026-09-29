@@ -284,7 +284,11 @@ addresses is not supported.
 The rule needs root: `sudo` with `iptables` on the Docker install, `nft` on the appliance.
 `pithead` installs it on every `up`, `apply` and `upgrade` and removes it on `down`. When it cannot
 install the rule, it keeps the ports on `127.0.0.1` for that start instead of publishing them
-without it. `./pithead doctor` then says the ports are held and why.
+without it. On a first Docker `up`, before Docker has created its network, the first Compose pass
+keeps the node ports on `127.0.0.1` and leaves their start marker absent. It then checks whether
+Docker added the path from `FORWARD` to `DOCKER-USER`. If so, it records the marker and runs Compose
+again with the LAN binds. If that path remains absent, the ports stay on loopback and it warns.
+`./pithead doctor` then says the ports are held and why.
 
 A reboot clears the rule. On the Docker install, `pithead` therefore installs two units.
 `pithead-lan-guard.service` runs before `docker.service` and puts the rule back.

@@ -79,7 +79,7 @@ compose_up() {
     is_source_checkout || build_args+=(--no-build)
     # Every container (re)start passes here, so the LAN-published node ports get their source rule
     # (or are held on loopback) before anything listens on them (#2616).
-    apply_lan_guard
+    apply_lan_guard || return 1
     # LAN guard inserts its RETURN-only jump at the top of DOCKER-USER. Put the Tor DROP back
     # above it before containers start. A selected clearnet first sync needs a verified firewall;
     # without an active exception, retain the established warning-only failure behavior.
@@ -90,6 +90,7 @@ compose_up() {
     # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
     local rc=0
     PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@" || rc=$?
+    finish_lan_guard_after_up "${build_args[@]}" "$@" || rc=1
     restore_recreate_names
     return "$rc"
 }

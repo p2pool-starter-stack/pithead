@@ -144,6 +144,7 @@ lan_guard_reason() { # <rc>
 # process. Called by compose_up, so it runs before every container (re)start.
 apply_lan_guard() {
     local published kp ports=() old rc=0
+    LAN_GUARD_STAGED=0
     # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
     # bind-mount the marker dir, and podman does not create a missing bind source.
     export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
@@ -168,18 +169,70 @@ apply_lan_guard() {
     if [ "$rc" = 0 ]; then
         lan_guard_enforced "${ports[@]}" || rc=$?
         # 4 before the first network exists: Docker adds the FORWARD jump when compose creates it.
-        [ "$rc" = 4 ] && rc=0
+        if [ "$rc" = 4 ]; then LAN_GUARD_STAGED=1; rc=0; fi
     fi
     # A rule that cannot outlive a reboot (no boot unit), or that the nodes cannot see, is not installed.
     [ "$rc" = 0 ] && ! provision_lan_guard_boot_unit "${ports[@]}" && rc=6
-    [ "$rc" = 0 ] && ! lan_guard_mark 2>/dev/null && rc=7
+    [ "$rc" = 0 ] && [ "$LAN_GUARD_STAGED" = 0 ] && ! lan_guard_mark 2>/dev/null && rc=7
     if [ "$rc" = 0 ]; then
+        if [ "$LAN_GUARD_STAGED" = 1 ]; then
+            lan_guard_unmark || { warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."; return 1; }
+            lan_guard_stop_published || return 1
+            for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
+            log "LAN-only rules staged until Docker creates its network; starting the node ports on 127.0.0.1."
+            return 0
+        fi
         log "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
         return 0
     fi
-    lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
+    LAN_GUARD_STAGED=0
+    lan_guard_unmark || { warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."; return 1; }
+    lan_guard_stop_published || return 1
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
     warn "lan-guard:not-installed — could not enforce LAN-only sources on port(s) ${ports[*]} ($(lan_guard_reason "$rc")). Holding them on 127.0.0.1 until it can; see './pithead doctor'."
+}
+
+# A staged rule has no start marker. Stop any already-running LAN node before even the first
+# loopback-bound compose pass; a failed engine query cannot be mistaken for an empty set.
+lan_guard_stop_published() {
+    local ids kp c id seen=" "
+    for kp in $(lan_guard_published); do
+        c=$(lan_guard_container "${kp#*:}")
+        [[ "$seen" == *" $c "* ]] && continue
+        seen+="$c "
+        ids=$(docker ps -q --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" 2>/dev/null) ||
+            { warn "lan-guard:engine-unreadable — cannot check running LAN nodes."; return 1; }
+        for id in $ids; do
+            if ! docker stop "$id"; then
+                warn "lan-guard:stop-failed — could not stop $c; its ports may still be exposed."
+                return 1
+            fi
+        done
+    done
+}
+
+# Docker creates the first FORWARD jump during compose up. The first pass stays on loopback; only
+# a successful readback gets a marker and a second pass with the configured LAN binds.
+finish_lan_guard_after_up() { # <original compose up arguments>
+    [ "${LAN_GUARD_STAGED:-0}" = 1 ] || return 0
+    local kp check_rc=0 ports=()
+    for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
+    lan_guard_enforced "${ports[@]}" || check_rc=$?
+    if [ "$check_rc" != 0 ]; then
+        warn "lan-guard:not-installed — LAN-only rule stayed inactive after compose up ($(lan_guard_reason "$check_rc")); node ports stay on 127.0.0.1."
+        return 0
+    fi
+    lan_guard_mark 2>/dev/null || { warn "lan-guard:marker-kept — could not write $LAN_GUARD_MARKER; node ports stay on 127.0.0.1."; return 0; }
+    for kp in $(lan_guard_published); do export "${kp%%:*}=$(env_get "${kp%%:*}")"; done
+    if PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "$@"; then
+        log "LAN-only sources enforced on port(s) ${ports[*]} after Docker created its network."
+        return 0
+    fi
+    lan_guard_unmark || { warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."; return 1; }
+    lan_guard_stop_published || return 1
+    for kp in $(lan_guard_published); do export "${kp%%:*}=127.0.0.1"; done
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "$@" || warn "lan-guard:recreate-failed — could not restore the loopback-bound nodes."
+    return 1
 }
 
 # doctor (#2616): a *_lan_access switch publishes its node port only behind the LAN-only source rule
