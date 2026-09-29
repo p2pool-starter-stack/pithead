@@ -322,7 +322,7 @@ check_revenue_containers() {
 # mining (onion/established circuits) keeps working, so the stack otherwise looks healthy. One
 # SOCKS request through the tor container to a robust no-content endpoint distinguishes "Tor
 # down" (container health already shows that) from "Tor up but exits failing" — the state that
-# needs a tor restart to pick fresh guards. WARN not FAIL: Tor weather is transient and this
+# may need a circuit refresh; this single probe is only a warning. WARN not FAIL: Tor weather is transient and this
 # must not fail cron health gates on a slow circuit.
 check_tor_clearnet_egress() {
     if ! container_is_running tor; then
@@ -342,7 +342,7 @@ check_tor_clearnet_egress() {
         "https://www.google.com/generate_204" 2>/dev/null; then
         dr_ok "Tor clearnet egress works — Healthchecks, Telegram, and XvB can reach their services."
     else
-        dr_warn_surface "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats are likely down while mining still works (a failing Tor guard does this). Fix: './pithead restart tor' picks fresh guards; set tor.auto_heal:true in config.json to have the stack do this itself." "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats are likely down while mining still works (a failing Tor guard does this). There is no dashboard control that restarts Tor on its own."
+        dr_warn_surface "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats are likely down while mining still works (a failing Tor guard does this). Check with a second target; tor.auto_heal:true in config.json tries bounded circuit refresh first, then one restart." "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats are likely down while mining still works (a failing Tor guard does this). There is no dashboard control that restarts Tor on its own."
     fi
     return 0
 }

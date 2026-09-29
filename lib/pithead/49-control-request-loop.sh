@@ -1,5 +1,5 @@
 control_process_request() { # <claimed-file> <control-dir>
-    local file="$1" cdir="$2" id action actor size chain
+    local file="$1" cdir="$2" id action actor size chain stamp last now
     # Refuse a symlinked / non-regular claimed file (graft #437): a symlink dropped in requests/
     # could point the root runner at any host file. Skip + audit, never follow it.
     if [ -L "$file" ] || [ ! -f "$file" ]; then
@@ -45,6 +45,34 @@ control_process_request() { # <claimed-file> <control-dir>
         chain=$(jq -r 'if ((keys | sort) == ["action","actor","chain","id"])
             then .chain // "" else "" end' "$file")
         control_egress_sync "$id" "$chain" "$cdir"
+        ;;
+    tor-newnym)
+        stamp="$cdir/tor-newnym-at"
+        last=0
+        if [ -L "$stamp" ]; then
+            last=invalid
+        elif [ -f "$stamp" ]; then
+            read -r last <"$stamp" || last=invalid
+        fi
+        now=$(date +%s)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ] ||
+            ! [[ "$last" =~ ^[0-9]+$ ]]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        elif [ $((now - last)) -lt 1800 ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"NEWNYM cooldown",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        elif ! printf '%s\n' "$now" >"$stamp"; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"NEWNYM cooldown unavailable",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "failed"
+        elif docker exec tor /usr/local/bin/tor-control-signal.sh NEWNYM >/dev/null 2>&1; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",action:"tor-newnym",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "applied"
+        else
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"Tor control signal failed",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "failed"
+        fi
         ;;
     preview) control_preview "$file" "$id" "$actor" "$cdir" ;;
     commit) control_commit "$id" "$actor" "$cdir" "$(jq -r '.confirm // ""' "$file")" "$(jq -c '.approval // null' "$file")" ;;

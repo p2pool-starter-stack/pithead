@@ -12,7 +12,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead apply` | Preview and apply `config.json` changes. Warns before disruptive ones and recreates only what changed. `-y` / `--yes` skips the prompt. |
 | `./pithead up` | Start the stack. |
 | `./pithead down` | Stop the stack. |
-| `./pithead restart [tor\|monerod]` | Restart the stack, or one container. `restart tor` picks fresh guards when Tor clearnet egress is stuck (#424) — every Tor circuit drops and rebuilds, mining onions included, and a local monerod restarts right after tor is healthy again so it re-dials its peers (#972). `restart monerod` re-dials peers on its own when the node reports not synchronized after a Tor restart. See [Tor egress broken while mining works](#troubleshooting). |
+| `./pithead restart [tor\|monerod]` | Restart the stack, or one container. `restart tor` rebuilds circuits when Tor clearnet egress is stuck (#424) — every Tor circuit drops and rebuilds, mining onions included, and a local monerod restarts right after tor is healthy again so it re-dials its peers (#972). `restart monerod` re-dials peers on its own when the node reports not synchronized after a Tor restart. See [Tor egress broken while mining works](#troubleshooting). |
 | `./pithead upgrade` | Re-render the generated config, then **pull** (release bundle) or **rebuild** (source checkout) the images and restart. Run after downloading a newer bundle or a `git pull`. |
 | `./pithead logs [service]` | Follow logs for all containers, or a single service (e.g. `logs p2pool`). |
 | `./pithead status` | Show container status and health-check every expected service. Warns about anything down/unhealthy and exits non-zero if so (handy for cron/monitoring). Profile-aware, and treats a stopped `p2pool`/`xmrig-proxy` as intentional during a node-down failover or while the miner is held until the chains sync. |
@@ -825,17 +825,32 @@ confirms it: the Tor clearnet-egress check WARNs while everything else reads hea
 ./pithead restart tor
 ```
 
-The restart makes Tor reselect guards; all Tor circuits drop and rebuild. p2pool re-peers on its
+The restart rebuilds circuits through the retained guards; all Tor circuits drop and rebuild. p2pool re-peers on its
 own within minutes; monerod does **not** — it keeps its dead SOCKS connections and can sit at
 0 peers for hours while its healthcheck stays green (#972) — so a local monerod is restarted
 right after tor is healthy again and re-dials in about a minute. Re-run `./pithead doctor` to
-confirm egress recovered. To have the stack do this itself, set `tor.auto_heal: true` in
-`config.json` and run `./pithead apply`: the dashboard then probes Tor clearnet egress every 5
-minutes and restarts tor (and, on a local node, monerod) once egress has been broken for 15
-minutes — at most 3 restarts per outage, 30 minutes apart, each logged and followed by a
-Telegram note once the path is back. If the Tor network itself is overloaded, it stops
-restarting and keeps warning instead. Off by default: a tor restart drops every circuit, so the
-stack does not restart its privacy boundary unbidden. (#424)
+confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_heal: true` in `config.json` and run
+`./pithead apply`. The dashboard probes every five minutes with a new SOCKS circuit per request.
+A failed request is corroborated against a second target before it counts toward the 15-minute
+outage window. The host control runner then requests NEWNYM at most twice, 30 minutes apart;
+continued failure permits one Tor container restart, which also re-dials local Monero. Each step
+and its probe evidence is logged. Two consecutive successful probes confirm recovery and carry
+the targets, circuits, duration and recovering step into the Telegram note. No automatic step
+changes guards or deletes Tor state. The action budget is three per outage; after that the
+monitor warns until egress recovers. The feature remains off by default.
+
+**Saturated Tor circuit history while chains stop advancing.** A completed bootstrap or a failed
+clearnet probe alone cannot authorize a state reset. If Tor repeatedly reports invalid circuit
+build timing and local Monero is peerless and stalled, run `./pithead tor-recover check`. This
+read-only check validates the live Tor data mount and the saturated history signature, then
+compares Monero height, sync and outgoing peers over three minutes. `./pithead tor-recover apply`
+rechecks the same evidence under the mutation lock, verifies onion identity keys, backs up only
+Tor's `state`, and restarts Tor. It re-dials local Monero after the actual restart, verifies Tor
+health and Monero peers, and records the attempt in the control audit. The backup remains for
+inspection. A persistent six-hour cooldown includes failed attempts. The command refuses an
+ambiguous or symlinked Tor mount, an active mutation, ordinary warnings, or an advancing chain.
+It never removes onion keys, wallets, configuration or chain data. If verification fails, the
+command reports failure and leaves the backup for diagnosis; inspect Tor and Monero before retrying.
 
 **Monero node out of sync after a Tor restart.**
 Anything that restarts or recreates the tor container outside the stack's own operations — a
@@ -851,8 +866,7 @@ check) WARNs on the live state. Fix:
 ```
 
 Stack operations don't need the manual step: compose restarts monerod automatically whenever it
-restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the `tor.auto_heal`
-restart does the same. (#972)
+restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the final `tor.auto_heal` container restart does the same. NEWNYM does not restart monerod. (#972)
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
