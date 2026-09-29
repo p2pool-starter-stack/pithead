@@ -128,7 +128,7 @@ phase_media() {
     wait_serial "staged configuration differs from the running one" 180 &&
         ok "the exact diff is shown on the console before anything applies" ||
         bad "no diff banner appeared on the console"
-    if tr -d '\r' <"$SERIAL" | grep -qE "$new_wallet"; then
+    if serial_has "$new_wallet"; then
         ok "the changed wallet address is shown in full — verifying it is the point"
     else
         bad "the changed wallet address never appeared on the console"

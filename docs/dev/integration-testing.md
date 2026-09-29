@@ -479,8 +479,8 @@ inspection (skips the restore). Requires SSH access to the test bench and the mi
 [testbench README](../../tests/integration/tools/testbench-README.md).
 
 `--harness-arg <flag>` (repeatable) appends one more `run.sh` phase flag after the mode's own,
-in the order given — how bench-ci's `phases` selection ([bench-ci#46](https://github.com/p2pool-starter-stack/bench-ci/issues/46))
-runs exactly one named phase against a commit without a dedicated `--mode`. Only an allowlisted
+in the order given — how bench-ci's `phases` selection runs exactly one named phase against a
+commit without a dedicated `--mode`. Only an allowlisted
 `run.sh` phase flag is accepted — `--lifecycle`, `--fault-injection`, `--auth-fail-closed`,
 `--hardening`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
 `--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —

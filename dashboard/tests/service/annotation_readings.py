@@ -122,24 +122,16 @@ a plain module rather than a helper inside the test file.
 # them as a pair is the bulk-fill this list refuses: only one of the two Falses is ever an error
 # report at all, and the reason each is honest is a different reason.
 #
-#   `service/network/clearnet_sync.py:_marker_exists` — its `False` is `os.path.exists`'s own `False`, and
-#     the handler cannot give it a second meaning because the handler cannot be reached.
-#     `genericpath.exists` catches `(OSError, ValueError)` around its `os.stat` and answers False
-#     itself; the only other call in the `try` is `os.path.join`, which raises `TypeError` on bad
-#     input and never `OSError`. Measured rather than reasoned from the name: raw `os.stat` on a
-#     5000-character path raises `OSError` 36 (the positive control, so the probe can see the
-#     exception it claims is swallowed), while `os.path.exists` answers False for that path, for a
-#     path holding a NUL byte, and for a real file under a directory with mode 0.
+#   `service/network/clearnet_sync.py:_marker_exists` — its `False` is `os.path.isfile`'s own False
+#     for an absent or nonregular marker. `isfile` catches stat errors; the surrounding OSError
+#     handler remains defensive. A directory or FIFO is treated as missing, so it cannot authorize
+#     a restart. Once sync finishes, the supervisor still requests host firewall closure.
 #
 #     So there is one negative answer here, not two, and `-> bool | None` would invent a return the
-#     function never makes. The caller agrees and was read rather than assumed: `__init__` builds
-#     `self._preexisting` with `{n for n in ("monero", "tari") if self._marker_exists(n)}`, a set
-#     comprehension with exactly two outcomes — in the set or not — so no third branch exists for an
-#     out-of-band value to reach.
+#     function never makes. Its caller `maybe_transition` uses that boolean to decide whether it
+#     needs to write a marker, then waits for host proof before restarting the daemon.
 #
-#     The dead handler is DISCLOSED rather than removed: this slice is annotation-only and proven
-#     bytecode-identical, and deleting it would change what the gate sees in this module (it is the
-#     `except` door row, and losing it would take the module to a single row).
+#     The defensive handler remains visible to the annotation gate as a failure return.
 #
 #   `service/network/clearnet_sync.py:_write_marker` — the opposite case, which is why it could not share
 #     the reading above. Its `False` is EXCLUSIVELY an error report; there is no "wrote nothing,
@@ -147,12 +139,10 @@ a plain module rather than a helper inside the test file.
 #     path and the exception before returning — which is what separates it from the collapses #1487
 #     documents, where the failure's only symptom is the value itself.
 #
-#     Its sole production caller is `maybe_transition`, and the False branch is the safety-critical
-#     one: `if not self._write_marker(name): return True` — report the node as still exposed, do NOT
-#     restart, retry next cycle. That ordering is the class's stated fail-safe, because a restart
-#     with no marker on disk brings the daemon back up on clearnet. False therefore carries exactly
-#     one instruction, "hold", and True the other, "restart". A third answer would have to be one of
-#     those two under another name.
+#     Its sole production caller is `maybe_transition`. A failed write is logged and the caller
+#     still asks the host to close that chain's firewall exemption. It does not restart without a
+#     valid marker and host proof: a restart with no marker would bring the daemon back up on
+#     clearnet. False means the write failed; True means the marker was written.
 #
 # What NEITHER entry claims is that the module is now fully annotated. `maybe_transition` returns
 # `False` at two sites through neither of the gate's doors, so this module joins `PINNED` still

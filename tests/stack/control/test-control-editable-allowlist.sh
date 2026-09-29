@@ -127,18 +127,14 @@ assert_contains "back on restores the Tari onion profile" "$(env_now TOR_COMPOSE
 
 # The remaining confirm keys that need no live endpoint. TARI_CLEARNET_SYNC is asserted here as a
 # ROUND TRIP; test-confirm-approval.sh asserts its refusal semantics on the Monero twin.
-# A clearnet flag reaches .env only with the egress firewall off (#2649) and the gate reads the .env
-# diff, so the host (not the gate) turns the firewall off for the two clearnet rows, then back on.
-host_firewall() { # <true|false>
-    jq ".network.tor_egress_firewall=$1" "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
-    (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-}
-host_firewall false
+# This fake host keeps the installed firewall transaction for the live readback required when a
+# confirmed clearnet choice activates its exception.
+# shellcheck source=tests/stack/fixtures/tor-egress/validation-sandbox.sh
+source "$ROOT/tests/stack/fixtures/tor-egress/validation-sandbox.sh" "$C"
 roundtrip_confirm "TARI_CLEARNET_SYNC" '.tari.clearnet_initial_sync=true' '.tari.clearnet_initial_sync' "true"
 roundtrip_confirm "MONERO_CLEARNET_SYNC" '.monero.clearnet_initial_sync=true' '.monero.clearnet_initial_sync' "true"
-host_firewall true
-assert_eq "firewall back on: MONERO_CLEARNET_SYNC ignored (#2649)" "$(env_now MONERO_CLEARNET_SYNC)" "false"
-assert_eq "firewall back on: TARI_CLEARNET_SYNC ignored (#2649)" "$(env_now TARI_CLEARNET_SYNC)" "false"
+assert_eq "firewall on: MONERO_CLEARNET_SYNC remains selected" "$(env_now MONERO_CLEARNET_SYNC)" "true"
+assert_eq "firewall on: TARI_CLEARNET_SYNC remains selected" "$(env_now TARI_CLEARNET_SYNC)" "true"
 roundtrip_confirm "TARI_DATA_DIR" '.tari.data_dir="'"$C"'/data/tari2"' '.tari.data_dir' "$C/data/tari2"
 roundtrip_confirm "MONERO_OUT_PEERS" '.monero.out_peers=24' '.monero.out_peers' "24"
 roundtrip_confirm "MONERO_DATA_DIR" '.monero.data_dir="'"$C"'/data/monero2"' '.monero.data_dir' "$C/data/monero2"
