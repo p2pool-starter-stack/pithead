@@ -25,7 +25,11 @@ case "$*" in
 "-S DOCKER-USER")
     echo '-N DOCKER-USER'
     [ -n "${LG_FOREIGN:-}" ] && echo "$LG_FOREIGN"
-    [ "${LG_LIVE:-0}" = 1 ] && echo '-A DOCKER-USER -p tcp -m tcp --dport 18142 -m conntrack --ctstate NEW -m comment --comment "pithead-lan-guard" -j PITHEAD-LAN'
+    if [ "${LG_LIVE:-0}" = 1 ]; then
+        for port in 18081 18083 18142; do
+            echo "-A DOCKER-USER -p tcp -m tcp --dport $port -m conntrack --ctstate NEW -m comment --comment \"pithead-lan-guard\" -j PITHEAD-LAN"
+        done
+    fi
     exit 0
     ;;
 "-S FORWARD") echo '-A FORWARD -j DOCKER-USER' ;;
@@ -72,7 +76,12 @@ case "$1 ${2:-}" in
             esac
         done <"$LG_RUNNING_FILE"
     elif [[ " $* " == *"label=com.docker.compose.project=pithead"* ]]; then
-        :
+        [ "${LG_RUNNING:-1}" = 1 ] || exit 0
+        case " $* " in
+        *"service=monerod"*) ;;
+        *"service=tari"*) echo tari ;;
+        *) echo cid123 ;;
+        esac
     elif [ -n "${LG_RUNNING_FILE:-}" ]; then
         cat "$LG_RUNNING_FILE"
         [ -z "${LG_FOREIGN_FILE:-}" ] || cat "$LG_FOREIGN_FILE"
@@ -138,14 +147,6 @@ assert_contains "nft: its own table, hooked at forward" "$lg_out" "type filter h
 echo "== compose never publishes on 0.0.0.0 unless the rule is live (#2616) =="
 LG_ORDER="$LGD/order.log"
 export LG_ORDER
-: >"$LG_ORDER"
-lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; }; compose_up -d' >/dev/null
-assert_eq "compose restores egress precedence after LAN jumps, before containers start" \
-    "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
-: >"$LG_ORDER"
-lg_out="$(lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; clearnet_sync_active() { return 0; }; if compose_up -d; then echo rc=0; else echo "rc=$?"; fi')"
-assert_eq "failed egress refresh prevents container startup" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
-assert_contains "failed refresh returns failure" "$lg_out" "rc=1"
 # shellcheck source=tests/stack/firewall/choice-startup.sh
 source "$HERE/firewall/choice-startup.sh" || return $?
 # shellcheck source=tests/stack/firewall/lan-guard-transition.sh
@@ -163,30 +164,30 @@ unset LG_ORDER
 lg_out="$(LG_LIVE=1 lg 'compose_up -d')"
 assert_contains "installed and read back: apply says so" "$lg_out" "LAN-only sources enforced on port(s) 18142"
 assert_contains "installed: only the published port gets a jump" "$(cat "$LG_RESTORE")" "--dport 18142"
-assert_not_contains "installed: a loopback-bound port gets none" "$(cat "$LG_RESTORE")" "--dport 18081"
+assert_not_contains "installed: a loopback-bound port gets no new jump" "$(cat "$LG_RESTORE")" "-I DOCKER-USER 1 -p tcp -m tcp --dport 18081"
 assert_eq "installed: compose publishes the .env bind" "$(cat "$LG_COMPOSE")" "compose-bind=from-env-file"
 : >"$LG_COMPOSE"
-lg_out="$(LG_LIVE=0 lg 'compose_up -d')"
+lg_out="$(LG_LIVE=0 LG_RUNNING=0 lg 'compose_up -d')"
 assert_contains "restore exits 0 but the rule is not live: named" "$lg_out" "lan-guard:not-installed"
 assert_eq "...and compose is handed 127.0.0.1, not 0.0.0.0" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
 : >"$LG_COMPOSE"
-lg_out="$(LG_LIVE=1 LG_RESTORE_RC=1 lg 'compose_up -d')"
+lg_out="$(LG_LIVE=1 LG_RUNNING=0 LG_RESTORE_RC=1 lg 'compose_up -d')"
 assert_contains "the install itself fails (no root): the reason is named" "$lg_out" "could not enforce"
 assert_eq "...and compose is handed 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
 : >"$LG_COMPOSE"
 rm -f "$LG_UNIT"
-lg_out="$(LG_LIVE=1 LG_ENABLE_RC=1 lg 'compose_up -d')"
+lg_out="$(LG_LIVE=1 LG_RUNNING=0 LG_ENABLE_RC=1 lg 'compose_up -d')"
 assert_contains "the rule is live but its boot unit cannot be enabled: named (#2749)" "$lg_out" "boot unit that restores it after a reboot could not be installed"
 assert_eq "...and compose is handed 127.0.0.1, so a reboot cannot reopen the port" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
 : >"$LG_COMPOSE"
-lg_out="$(PITHEAD_ENGINE=podman LG_LIVE=0 lg 'compose_up -d')"
+lg_out="$(PITHEAD_ENGINE=podman LG_LIVE=0 LG_RUNNING=0 lg 'compose_up -d')"
 assert_eq "podman: an nft table that does not read back holds the port on 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
 lg_out="$(PITHEAD_ENGINE=podman LG_LIVE=1 lg 'apply_lan_guard')"
 assert_contains "podman: a table with the drop and the port is enforced" "$lg_out" "LAN-only sources enforced"
 rm -f "$LG_RESTORE"
 cp "$LGD/.env" "$LGD/.env.on"
 printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
-lg_out="$(lg apply_lan_guard)"
+lg_out="$(LG_RUNNING=0 lg apply_lan_guard)"
 mv "$LGD/.env.on" "$LGD/.env"
 assert_eq "every switch off: nothing is installed and nothing is said" "$lg_out" ""
 assert_eq "...and no firewall command runs" "$(test -e "$LG_RESTORE" && echo ran || echo none)" "none"
@@ -206,8 +207,7 @@ assert_eq "an insert failure fails the unit (no '-' prefix on any insert or appe
     "$(grep -cE '^ExecStart=-.* -[IA] ' <<<"$lg_bu")" "0"
 assert_eq "every ExecStart runs iptables and nothing else (no checkout path, no docker call)" \
     "$(grep '^ExecStart=' <<<"$lg_bu" | grep -vc '^ExecStart=-\{0,1\}/usr/sbin/iptables ')" "0"
-# The chain edits in unit order: the DROP is live before any jump reaches the chain, so a start that
-# stops halfway over-blocks, and the finished chain matches what apply installs.
+# The boot unit builds the DROP before the jump, and finishes with apply's chain.
 lg_first="$(grep -nE ' -A PITHEAD-LAN | -I PITHEAD-LAN | -I DOCKER-USER ' <<<"$lg_bu" | head -n 1)"
 assert_contains "the chain's DROP is the first rule the unit puts in" "$lg_first" " -A PITHEAD-LAN -j DROP"
 assert_eq "the jumps come last, after every RETURN" \
@@ -223,7 +223,6 @@ for p in 18081 18142; do
     assert_contains "port $p's old jump is deleted first, so a restart does not stack them" "$lg_bu" \
         "ExecStart=-/usr/sbin/iptables -D DOCKER-USER -p tcp -m tcp --dport $p "
 done
-
 lg_hu="$(run_sourced "$LGD" render_lan_guard_hold_unit /usr/bin/docker /usr/sbin/iptables 18081 18083 18142)"
 assert_contains "the hold needs the guard: a failed guard never starts the containers" "$lg_hu" \
     "Requires=pithead-lan-guard.service docker.service"
@@ -236,7 +235,6 @@ assert_contains "...and the chain's live DROP, so a flushed chain behind a live 
     "ExecStartPre=/usr/sbin/iptables -C PITHEAD-LAN -j DROP"
 assert_eq "...only after checking each port's live jump, which fails the start when it is gone" \
     "$(grep -c '^ExecStartPre=/usr/sbin/iptables -C DOCKER-USER -p tcp -m tcp --dport 18[01][0-9]* -m conntrack --ctstate NEW -m comment --comment pithead-lan-guard -j PITHEAD-LAN$' <<<"$lg_hu")" "3"
-
 rm -f "$LG_UNIT" "$LG_SYSTEMCTL" "$LG_HOLD"
 : >"$LG_COMPOSE.restart"
 LG_LIVE=1 lg 'compose_up -d' >/dev/null
@@ -248,14 +246,14 @@ assert_contains "...enabled for the next boot" "$(cat "$LG_SYSTEMCTL")" "enable 
 rm -f "$LG_HOLD"
 : >"$LG_COMPOSE"
 : >"$LG_COMPOSE.restart"
-lg_out="$(LG_LIVE=1 LG_HOLD_ENABLE_RC=1 lg 'compose_up -d')"
+lg_out="$(LG_LIVE=1 LG_RUNNING=0 LG_HOLD_ENABLE_RC=1 lg 'compose_up -d')"
 assert_contains "the hold cannot be enabled: named" "$lg_out" "boot unit that restores it after a reboot could not be installed"
 assert_eq "...compose is handed 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
 assert_eq "...and the default restart, harmless on loopback" "$(cat "$LG_COMPOSE.restart")" "restart=unless-stopped,unless-stopped"
 for lg_case in "LG_LIVE=0" "LG_LIVE=1 LG_APPLIANCE=1" "LG_LIVE=1 PITHEAD_ENGINE=podman"; do
     : >"$LG_COMPOSE.restart"
     # shellcheck disable=SC2086,SC2163 # the case is a list of NAME=value words
-    (export $lg_case && lg 'compose_up -d' >/dev/null)
+    (export $lg_case LG_RUNNING=0 && lg 'compose_up -d' >/dev/null)
     assert_eq "$lg_case: compose keeps the default restart" "$(cat "$LG_COMPOSE.restart")" "restart=unless-stopped,unless-stopped"
 done
 
@@ -280,7 +278,7 @@ printf '[Unit]\n' >"$LGD/units/other-firewall.service"
 cp "$LGD/.env" "$LGD/.env.on"
 printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
 rm -f "$LG_SYSTEMCTL"
-lg apply_lan_guard >/dev/null
+LG_RUNNING=0 lg apply_lan_guard >/dev/null
 mv "$LGD/.env.on" "$LGD/.env"
 assert_eq "every switch off removes the unit" "$(test -e "$LG_UNIT" && echo present)" ""
 assert_eq "...and the hold" "$(test -e "$LG_HOLD" && echo present)" ""
@@ -384,8 +382,7 @@ lg_out="$(LG_LIVE=1 lg 'lan_guard_mark; mutation_lock_acquire() { :; }; docker()
 assert_eq "a down whose stop fails leaves the marker (the nodes may still run)" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" "present"
 
 echo "== every publish of 18081, 18083 and 18142 is an explicit IPv4 bind (#2616) =="
-# The rule is IPv4 only. `[::]:P:P` or a bare `P:P` would also listen on IPv6, where nothing limits
-# the source, so a change of either shape, or of an engine default behind one, has to fail here.
+# Reject IPv6 publishes: the rule covers IPv4 only.
 for kp in MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:18142; do
     k="${kp%%:*}" p="${kp#*:}"
     assert_eq "compose publishes $p only as \${$k:-127.0.0.1}" \
@@ -398,3 +395,6 @@ done
 assert_eq "render_env assigns the three binds only IPv4 literals" \
     "$(grep -E '(rpc|zmq|tari_grpc)_bind="' "$ROOT/lib/pithead/33-render-env.sh" | grep -oE '_bind="[^"]*"' | sort -u | tr '\n' '|')" \
     '_bind="0.0.0.0"|_bind="127.0.0.1"|'
+
+# shellcheck source=tests/stack/firewall/lan-guard-check.sh
+source "$ROOT/tests/stack/firewall/lan-guard-check.sh"

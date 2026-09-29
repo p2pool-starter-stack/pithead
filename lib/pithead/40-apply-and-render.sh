@@ -72,7 +72,7 @@ render_derived() {
     generate_caddyfile
     provision_onion_client_auth
     provision_control_runner
-    provision_egress_check_units
+    provision_firewall_check_units || error "Firewall check units could not be provisioned."
     control_prune_results "${CONTROL_DIR:-$PWD/data/control}" # #1990: bounds results/ every boot (#790), not just per-request
     provision_ssh_access
     provision_console_login
@@ -273,6 +273,7 @@ apply() {
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
             [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
         fi
+        lan_guard_arm_transition "$newenv" || error "The LAN-only source rule could not be armed before changing .env."
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -304,7 +305,7 @@ apply() {
             # Idempotent and sudo-free when the units already match.
             mutation_lock_acquire apply
             provision_control_runner
-            provision_egress_check_units
+            provision_firewall_check_units || error "Firewall check units could not be provisioned."
             reconcile_appliance_hostname
             apply_refresh_appliance_tls # #1265: the mint doctor sends the operator here for
             log "No configuration changes detected. Nothing to apply."
@@ -323,7 +324,7 @@ apply() {
     # client-auth toggle) takes effect on this apply rather than the next (#343).
     provision_onion_client_auth
     provision_control_runner
-    provision_egress_check_units
+    provision_firewall_check_units || error "Firewall check units could not be provisioned."
     provision_ssh_access
     provision_console_login   # #33: converge the control-runner units on the (new) toggle
     render_local_miner_config # #796: the built-in miner's config is derived — keep it current
