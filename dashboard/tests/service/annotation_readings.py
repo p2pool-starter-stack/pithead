@@ -72,7 +72,7 @@ a plain module rather than a helper inside the test file.
 # local_miner_enabled() else 0)` — so there is no third branch for an out-of-band answer to reach,
 # and False-on-failure and False-because-no-miner move the RAM floor by exactly the same amount.
 # `-> bool | None` would invent a return the function never makes.
-# Slice 5a adds three outbound senders and `_probe_egress`. With the slice-2 Docker sender, the
+# Slice 5a added three outbound senders. With the slice-2 Docker sender, the
 # four senders share one argument: each returns True only when the send demonstrably landed, and
 # False for every other outcome — disabled, throttled, a non-2xx, or an exception. Every caller
 # acts on "the message did not go out", so there is no out-of-band case to declare. The grouping
@@ -85,7 +85,8 @@ a plain module rather than a helper inside the test file.
 #   `docker/docker_control.py:_post` (slice 2) is the same class and is folded in here: True only
 #     on HTTP 204/304, False on every other status and any exception, and its callers act on "the
 #     container action did not happen", which is what both False paths mean.
-# `_probe_egress` is not a sender: True iff a clearnet exit answered, False on `RequestException`.
+# `_probe_egress` now returns a typed (success, evidence) pair identifying both isolated circuits
+# and targets. Its former bare-bool exception no longer applies.
 #
 # Slice 5b adds two MORE, listed separately rather than folded into the group above, because they
 # fail in OPPOSITE directions — which is why `service/` was split rather than taken whole:
@@ -152,7 +153,8 @@ a plain module rather than a helper inside the test file.
 # `telegram_commands.py:pause_for_host_approval` left this set in #2076, and its floor in
 # test_annotation_coverage went 13 -> 12 in the same diff. It was not re-judged: the Telegram
 # config-approval round-trip was DELETED, so the reading has no subject. No surviving entry was
-# narrowed, and no unannotated function was admitted in its place.
+# narrowed, and no unannotated function was admitted in its place. The Tor probe's typed evidence
+# pair removes one more exception in #2458; the floor moves 12 -> 11 in the same diff.
 _UNJUDGED_AND_READ = frozenset(
     {
         "client/docker/docker_control.py:_post",
@@ -163,7 +165,6 @@ _UNJUDGED_AND_READ = frozenset(
         "helper/utils.py:is_ip_address",
         "service/network/egress.py:_sinks_all_private",
         "service/xvb/steering_projection.py:won_round_live",
-        "service/health/tor_heal.py:_probe_egress",
         "service/workers/worker_config_store.py:worker_config_change_known",
         "service/network/clearnet_sync.py:_marker_exists",
         "service/network/clearnet_sync.py:_write_marker",

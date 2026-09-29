@@ -9,10 +9,10 @@
 # Sourced by tests/stack/run.sh.
 : "${V:?}" "${WALLET:?}" "${VALID_TARI:?}" "${DOCKER_LOG:?}"
 
-cnfw_apply() { # <monero-flag> <tari-flag> [network-json]
+cnfw_apply() { # <monero-flag> <tari-flag> [network-json] [p2pool-clearnet] [xvb-enabled] [xvb-tor]
     seed_env
-    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":%s}, "tari":{"wallet_address":"%s","clearnet_initial_sync":%s}, %s"p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' \
-        "$WALLET" "$1" "$VALID_TARI" "$2" "${3:+\"network\":$3, }" >"$V/config.json"
+    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":%s}, "tari":{"wallet_address":"%s","clearnet_initial_sync":%s}, %s"p2pool":{"pool":"mini","clearnet":%s}, "xvb":{"enabled":%s,"tor":%s}, "dashboard":{"secure":false,"host":"box.lan"} }\n' \
+        "$WALLET" "$1" "$VALID_TARI" "$2" "${3:+\"network\":$3, }" "${4:-false}" "${5:-false}" "${6:-true}" >"$V/config.json"
     (cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 }
 cnfw_env() { run_sourced "$V" env_get_file "$V/.env" "$1"; }
@@ -30,6 +30,8 @@ cnfw_apply false true
 assert_eq "tari flag + firewall on: tari starts clearnet sync" "$(cnfw_env TARI_CLEARNET_SYNC)" "true"
 assert_eq "only Tari receives a public-dial exemption" "$(run_sourced "$V" tor_egress_sync_ips)" "172.28.0.27"
 assert_contains "nft rules allow only opted-in Tari before DROP" "$(run_sourced "$V" render_tor_egress_nft 172.28.0.0/24 172.28.0.25 '' 172.28.0.27)" "ip saddr 172.28.0.27 accept"
+# shellcheck source=tests/stack/firewall/choice-exemptions.sh
+source "$ROOT/tests/stack/firewall/choice-exemptions.sh"
 cnfw_apply true true '{"tor_egress_firewall":false}'
 assert_eq "firewall off: the monero flag reaches monerod" "$(cnfw_env MONERO_CLEARNET_SYNC)" "true"
 assert_eq "firewall off: the tari flag reaches tari" "$(cnfw_env TARI_CLEARNET_SYNC)" "true"

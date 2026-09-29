@@ -89,7 +89,7 @@ def mask_secrets(cfg):
             _set(cfg, path, dict(SECRET_SENTINEL))
     found, hooks = _get(cfg, WEBHOOKS_PATH)
     if found and isinstance(hooks, list):
-        _set(cfg, WEBHOOKS_PATH, [dict(SECRET_SENTINEL) if h else h for h in hooks])
+        _set(cfg, WEBHOOKS_PATH, [h and dict(SECRET_SENTINEL, slot=i) for i, h in enumerate(hooks)])
     workers = cfg.get("workers")
     if isinstance(workers, dict) and isinstance(workers.get("list"), list):
         for worker in workers["list"]:

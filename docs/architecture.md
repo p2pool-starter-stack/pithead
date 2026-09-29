@@ -20,7 +20,7 @@ directly instead.
 | 5 | **Tor** | Provides SOCKS5 proxies and hidden services (onion addresses) for the other containers. |
 | 6 | **Dashboard** | The web monitoring UI and the algorithmic switching engine. |
 | 7 | **Docker Proxy** | A **read-only** proxy onto the Docker socket so the dashboard can read container stats/logs — no write access. |
-| 8 | **Docker Control** | A second, minimal socket proxy scoped to **only** `start`/`stop` (nothing else — not create/kill/exec/reads), so the dashboard can reject workers when a node is down (Issue #31), hold p2pool + xmrig-proxy until the chains finish syncing (Issue #35), switch a clearnet-syncing node back to Tor once it's synced (Issue #234), and, opt-in via `dashboard.fail_closed`, hold p2pool + xmrig-proxy again on an unrecoverable dashboard health failure (Issue #490), restart `tor` when the opt-in guard self-heal (`tor.auto_heal`) finds clearnet egress stuck, and restart `monerod` right after that heal so it re-dials through the fresh Tor. Kept separate so its write grant can't widen the read-only proxy. |
+| 8 | **Docker Control** | A second, minimal socket proxy scoped to **only** `start`/`stop` (nothing else — not create/kill/exec/reads), so the dashboard can reject workers when a node is down (Issue #31), hold p2pool + xmrig-proxy until the chains finish syncing (Issue #35), switch a clearnet-syncing node back to Tor once it's synced (Issue #234), and, opt-in via `dashboard.fail_closed`, hold p2pool + xmrig-proxy again on an unrecoverable dashboard health failure (Issue #490), restart `tor` only after the opt-in egress healer (`tor.auto_heal`) exhausts circuit refreshes, and restart local `monerod` after that real Tor restart. NEWNYM requests go through the audited host control spool, which keeps Tor’s control cookie inside the Tor container. Kept separate so its write grant can't widen the read-only proxy. |
 | 9 | **Caddy** | A reverse proxy that serves the dashboard over HTTPS (automatic local TLS) on the LAN. |
 | 10 | **Monero Wallet-RPC** (`wallet-rpc`) | Opt-in: runs only when `monero.view_key` is set (compose profile `payout_confirm`). A view-only `monero-wallet-rpc` against the local node, so the dashboard can confirm P2Pool payouts on-chain. See [Dashboard › Payout confirmation](dashboard.md#payout-confirmation). |
 | 11 | **Tari Console Wallet** (`tari-wallet`) | Opt-in: runs only when `tari.view_key` is set (compose profile `tari_payout_confirm`). A view-only `minotari_console_wallet` against the local Tari node, confirming merge-mine payouts on-chain. See [Dashboard › Payout confirmation](dashboard.md#payout-confirmation). |
@@ -132,15 +132,18 @@ isn't started and P2Pool dials your external node's RPC/ZMQ; with `tari.mode: re
 node isn't started and P2Pool merge-mines against your external node's gRPC. Both add a path that
 leaves the box and is deliberately **not** Tor-routed — P2Pool bridges those legs onto direct
 connections, in plaintext — so keep a remote node on your LAN or behind WireGuard. The Tor-only
-egress firewall backs that up for the bridged containers, dropping any destination outside the
-private ranges; the host-networked dashboard, which polls a remote Tari node for sync state, sits
+egress firewall backs that up for remote-node RPC, dropping destinations outside the private
+ranges unless a container has an explicit clearnet exception; the host-networked dashboard,
+which polls a remote Tari node for sync state, sits
 outside those rules.
 
-> The one exception is **optional clearnet initial sync** (`monero.clearnet_initial_sync` /
+> An exception is **optional clearnet initial sync** (`monero.clearnet_initial_sync` /
 > `tari.clearnet_initial_sync`, default **off**): while active, that node's P2P leaves Tor to sync
 > faster through its own temporary firewall exception. Its IP is exposed until the host removes
 > and verifies the exception and the node restarts on Tor automatically (#234/#2678).
 > The Telegram bot alerts you the whole time it's exposed. See [Privacy](privacy.md).
+> P2Pool sidechain peers and enabled XvB donation also have scoped exceptions when their
+> clearnet options are selected; see [Privacy](privacy.md).
 
 ## Privacy by design
 

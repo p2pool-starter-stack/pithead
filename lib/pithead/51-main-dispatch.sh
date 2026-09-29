@@ -90,6 +90,10 @@ main() {
         require_deployed
         stack_restart "$@"
         ;;
+    tor-recover)
+        [ "$#" -eq 1 ] || error "Usage: ./pithead tor-recover check|apply"
+        tor_recover "$1"
+        ;;
     upgrade)
         _reject_options upgrade "$@"
         require_deployed

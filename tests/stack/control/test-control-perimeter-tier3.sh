@@ -65,11 +65,16 @@ assert_eq "config.json carries the confirmed payout address" "$(jq -r '.monero.w
 
 # Deanonymisation and egress: both applied before the 2026-09-13 perimeter audit, and both are asserted refused token-less
 # in the battery next door — which is exactly how that battery stayed green against this.
+# A confirmed direct P2Pool route needs live firewall readback. The control sandbox has no kernel,
+# so use the shared transaction/readback fixture before testing its committed route.
+# shellcheck source=tests/stack/fixtures/tor-egress/validation-sandbox.sh
+source "$ROOT/tests/stack/fixtures/tor-egress/validation-sandbox.sh" "$C"
 jq '.p2pool.clearnet=true' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "p2pool clearnet flip is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
 assert_eq "confirmed p2pool clearnet flip applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_contains "confirmed P2Pool route installed its scoped live exception" "$(cat "$C/fw-rules")" "-s 172.28.0.28 -j ACCEPT"
 jq '.network={tor_egress_firewall:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "tor-egress-firewall disable is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"

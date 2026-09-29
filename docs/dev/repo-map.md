@@ -49,6 +49,8 @@ sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
 readback helpers are in `02d-tor-egress-verify.sh`.
 The LAN source rule and transition guard are in `02b-lan-guard.sh`; its periodic
 live-rule check is in `02c-lan-guard-check.sh`.
+Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
+the dashboard's clearnet healer stays in `service/health/tor_heal.py`.
 
 ## Dashboard feature folders
 

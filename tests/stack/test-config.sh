@@ -70,9 +70,10 @@ case "$(run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD oldpw newp
 *DEST*) ok "stratum pw change hides the secret (DEST, no value shown)" ;;
 *) bad "stratum pw change hides the secret" "expected DEST" ;;
 esac
-# Tor guard self-heal toggle (#424): INFO either way, and the enable warns about circuits dropping.
+# Tor auto-heal toggle (#424): INFO either way, and the enable names circuit refresh and restart costs.
 assert_contains "tor auto-heal enable is INFO" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL false true)" "INFO"
-assert_contains "tor auto-heal enable names the cost" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL false true)" "drops ALL Tor circuits"
+assert_contains "tor auto-heal enable names the refresh" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL false true)" "NEWNYM"
+assert_contains "tor auto-heal enable names the restart cost" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL false true)" "restart drops mining connections"
 assert_contains "tor auto-heal disable names the manual fix" "$(run_sourced "$SANDBOX" describe_change TOR_AUTO_HEAL true false)" "restart tor"
 # Appliance (#1139): 'doctor' and a scoped tor restart are both CLI-only, and no dashboard control
 # restarts tor alone — the appliance-lane message states the fact instead of naming a remedy that
