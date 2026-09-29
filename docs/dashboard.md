@@ -843,7 +843,10 @@ Monero one — owner-only `.env`, never logged or on a container command line, a
 Configuration editor/browser only as a masked sentinel; replacement requires typed `APPLY`. The
 running wallet necessarily receives the key. As an extra safeguard, because Tari has no key-import
 file, the three wallet secrets are delivered in an owner-only host file bind-mounted read-only into
-the wallet container, so their values never appear in `docker inspect`.
+the wallet container, so their values never appear in `docker inspect`. The pinned wallet does not
+shut down on SIGTERM or SIGINT ([upstream issue](https://github.com/tari-project/tari/issues/8063)),
+so a container stop kills it after 10 seconds. Its view-only SQLite state is journaled and can be
+rebuilt from the keys and birthday when the wallet restarts.
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
 2022-01-01, as Tari Universe's `wallet_birthday`), not a block height. The wallet scans only through
 the local node's wallet HTTP service on the internal network, never Tari's public fallback node. Leave `tari.view_key` empty and none of the Tari half runs.
