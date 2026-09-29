@@ -75,4 +75,4 @@ proxy=${NETWORK_PREFIX}.25:9050
 tx-proxy=tor,${NETWORK_PREFIX}.25:9050,disable_noise
 
 # Advertise Tor hidden service for inbound connections
-anonymous-inbound=${MONERO_ONION_ADDRESS}:18080,127.0.0.1:18084
+anonymous-inbound=${MONERO_ONION_ADDRESS}:18080,0.0.0.0:18084

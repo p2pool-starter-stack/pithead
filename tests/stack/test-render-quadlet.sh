@@ -32,6 +32,8 @@ echo "== unit: render-quadlet parity vs os/quadlet fixtures (#77 phase 1) =="
 # an updated fixture.
 QOUT="$SANDBOX/quadlet-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/fixture.env" "$QOUT" >/dev/null
+assert_contains "remote Quadlet Tor receives P2Pool onion port (#2936)" \
+    "$(sed -n 's/^Environment=//p' "$QOUT/tor.container")" '"P2POOL_PORT=37888"'
 for f in mining.network proxy.network tor.container p2pool.container xmrig-proxy.container \
     caddy.container docker-proxy.container docker-control.container dashboard.container; do
     assert_eq "quadlet parity: $f" "$(diff -u "$ROOT/os/quadlet/$f" "$QOUT/$f" 2>&1 | head -c 300)" ""
@@ -122,6 +124,8 @@ assert_eq "#2040: literal % is doubled so systemd does not expand %H to the host
 # The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/local/fixture.env" "$QLOCAL" >/dev/null
+assert_contains "local Quadlet Tor receives P2Pool onion port (#2936)" \
+    "$(sed -n 's/^Environment=//p' "$QLOCAL/tor.container")" '"P2POOL_PORT=37888"'
 for f in mining.network proxy.network tor.container monerod.container tari.container \
     p2pool.container xmrig-proxy.container caddy.container docker-proxy.container \
     docker-control.container dashboard.container; do

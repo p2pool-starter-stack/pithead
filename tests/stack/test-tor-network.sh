@@ -26,7 +26,6 @@
 # No section here reads $C — the control-channel sandbox is untouched by this cut.
 build_val_sandbox
 DOCKER_LOG="$V/docker.log"
-
 echo "== unit: tor_egress_rules — fail-closed Tor-only egress ruleset (#270) =="
 TER=$(run_sourced "$SANDBOX" tor_egress_rules 172.28.0.0/24 172.28.0.25)
 assert_eq "the conntrack ACCEPT comes first and passes REPLIES only (#2672)" "$(printf '%s\n' "$TER" | head -1)" "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT"
@@ -36,7 +35,6 @@ assert_contains "10/8 LAN allowed" "$TER" "-s 172.28.0.0/24 -d 10.0.0.0/8 -j ACC
 assert_contains "192.168/16 LAN allowed" "$TER" "-s 172.28.0.0/24 -d 192.168.0.0/16 -j ACCEPT"
 assert_eq "the clearnet DROP is the FINAL rule (fail-closed)" "$(printf '%s\n' "$TER" | tail -1)" "-s 172.28.0.0/24 -j DROP"
 assert_contains "honours a custom subnet/prefix (#180)" "$(run_sourced "$SANDBOX" tor_egress_rules 172.30.5.0/24 172.30.5.25)" "-s 172.30.5.0/24 -j DROP"
-
 echo "== unit: render_tor_egress_nft — same allow-set as nftables for the netavark path (#855) =="
 # The appliance runs podman+netavark, whose FORWARD hook is served by `table inet netavark`; nothing
 # jumps to the iptables DOCKER-USER chain, so the Docker-path rules install into a chain no packet
@@ -630,7 +628,7 @@ assert_contains "doctor OK when p2pool IS routed over Tor (#273)" \
 # covered above; this exercises the real container entrypoint's branch + the .1 substitution with a
 # stub `tor` on PATH and the repo torrc.template (via the TORRC_TEMPLATE seam).
 TOR_ENTRY="$ROOT/build/tor/entrypoint.sh"
-tor_torrc() { # <DASHBOARD_ONION_ENABLED> [COMPOSE_PROFILES] -> the torrc the entrypoint would hand to `tor -f`
+tor_torrc() { # <DASHBOARD_ONION_ENABLED> [COMPOSE_PROFILES] [P2POOL_PORT] -> rendered torrc
     local d
     mk_tmpdir d
     # The stub cats the SANDBOX path, not /tmp/torrc (#1104). That is what makes the TORRC_OUT seam
@@ -639,7 +637,7 @@ tor_torrc() { # <DASHBOARD_ONION_ENABLED> [COMPOSE_PROFILES] -> the torrc the en
     # file left by an earlier run — the vacuous version of this check.
     printf '#!/bin/sh\ncat "%s"\n' "$d/torrc" >"$d/tor" # stub tor: ignore -f, print the rendered file
     chmod +x "$d/tor"
-    PATH="$d:$PATH" DASHBOARD_ONION_ENABLED="$1" COMPOSE_PROFILES="${2-local_node,local_tari}" NETWORK_PREFIX=10.9.0 \
+    PATH="$d:$PATH" DASHBOARD_ONION_ENABLED="$1" COMPOSE_PROFILES="${2-local_node,local_tari}" NETWORK_PREFIX=10.9.0 P2POOL_PORT="${3-37888}" \
         TORRC_TEMPLATE="$ROOT/build/tor/torrc.template" TORRC_OUT="$d/torrc" sh "$TOR_ENTRY"
     rm -rf "$d"
 }
@@ -685,6 +683,13 @@ assert_not_contains "tor entrypoint: no Tari HS with no profiles (remote tari, #
     "$tor_both_remote" "/var/lib/tor/tari/"
 assert_contains "tor entrypoint: P2Pool HS is unconditional — p2pool always runs (#103)" \
     "$tor_both_remote" "HiddenServiceDir /var/lib/tor/p2pool/"
+for pool_port in 37889 37888 37890; do
+    assert_contains "tor entrypoint: P2Pool onion follows selected port $pool_port (#2936)" \
+        "$(tor_torrc false "" "$pool_port")" "HiddenServicePort $pool_port 10.9.0.28:$pool_port"
+done
+assert_contains "Monero anonymous listener accepts Tor on the bridge (#2936)" \
+    "$(cat "$ROOT/build/monero/bitmonero.conf.template")" \
+    'anonymous-inbound=${MONERO_ONION_ADDRESS}:18080,0.0.0.0:18084'
 unset tor_both_local tor_remote_tari tor_both_remote
 
 echo "== unit: onion provisioning follows node mode (#103) =="

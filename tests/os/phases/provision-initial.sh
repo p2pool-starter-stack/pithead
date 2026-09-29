@@ -171,6 +171,33 @@ _phase_provision_initial_body() {
         info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
         return 1
     fi
+    # The fresh-chain sync gate may hold P2Pool, but the bundled Monero listener must already
+    # accept Tor's bridge dial. A torrc entry alone does not prove this across containers (#2936).
+    local onion_prefix onion_port onion_tries=0
+    onion_prefix=$(_ssh "sed -n 's/^NETWORK_PREFIX=//p' /data/pithead/.env" | tr -d '\r')
+    onion_port=$(_ssh "sed -n 's/^P2POOL_PORT=//p' /data/pithead/.env" | tr -d '\r')
+    if [ -n "$onion_prefix" ] && [ -n "$onion_port" ] &&
+        _ssh "podman exec tor grep -Fxq 'HiddenServicePort $onion_port $onion_prefix.28:$onion_port' /tmp/torrc"; then
+        ok "appliance Tor forwards the selected P2Pool port (#2936)"
+    else
+        bad "appliance Tor does not forward the selected P2Pool port (#2936)"
+    fi
+    if [ -n "$onion_prefix" ] &&
+        _ssh "podman exec tor grep -Fxq 'HiddenServicePort 18080 $onion_prefix.26:18084' /tmp/torrc"; then
+        ok "appliance Tor forwards to the Monero anonymous listener (#2936)"
+    else
+        bad "appliance Tor does not forward to the Monero anonymous listener (#2936)"
+    fi
+    until _ssh "podman exec tor nc -z -w 3 $onion_prefix.26 18084"; do
+        onion_tries=$((onion_tries + 1))
+        [ "$onion_tries" -lt 12 ] || break
+        sleep 5
+    done
+    if [ "$onion_tries" -lt 12 ]; then
+        ok "appliance Tor reaches the Monero anonymous listener (#2936)"
+    else
+        bad "appliance Tor cannot reach the Monero anonymous listener (#2936)"
+    fi
     # Caddy fronts the dashboard once the wizard's window closes; self-signed on :443 by default.
     # Status-based on purpose: the landing response may be a redirect to the login page or an
     # auth challenge, both empty-bodied — any well-formed HTTP answer proves caddy is proxying.

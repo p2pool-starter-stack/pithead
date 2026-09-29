@@ -17,7 +17,6 @@ assert_running_state() {
     # Clearnet initial sync (#183): absent => default false; a chosen sync keeps the firewall on.
     monero_clearnet="$(clearnet_flag_effective "$config" monero)"
     tari_clearnet="$(clearnet_flag_effective "$config" tari)"
-
     # 0. Clearnet auto-transition settle (#234). Enabling clearnet on an already-synced node makes the
     if [ "$monero_clearnet" = "true" ] || [ "$tari_clearnet" = "true" ]; then
         local csdir cdir
@@ -91,6 +90,7 @@ assert_running_state() {
     else
         assert_num_ge "Tari inbound onion published in local mode (#103)" "${hs_tari:-0}" 1
     fi
+    assert_onion_targets "$mode" "$pool"
     # 2. pithead status is green for a healthy config.
     pithead status >/dev/null 2>&1
     assert_rc "status exit code is 0 (healthy)" "$?" "0"

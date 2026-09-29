@@ -26,7 +26,7 @@ ControlPort 127.0.0.1:9051
 
 # P2Pool Hidden Service
 HiddenServiceDir /var/lib/tor/p2pool/
-HiddenServicePort 37888 __NETWORK_PREFIX__.28:37888
+HiddenServicePort __P2POOL_PORT__ __NETWORK_PREFIX__.28:__P2POOL_PORT__
 
 # --- Authentication & Permissions ---
 # Enable cookie-based authentication for the Control Port

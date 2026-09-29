@@ -153,7 +153,10 @@ Your home IP is never advertised to an inbound peer, and you never touch your ro
 settings. Every service that accepts inbound connections does so through a Tor hidden service (onion
 address): monerod, Tari, and P2Pool each get one from the built-in Tor daemon. A node you run
 elsewhere (`monero.mode` / `tari.mode: remote`) accepts its own peers, so Tor publishes no onion for
-it — only services that actually run here get an address. So:
+it — only services that actually run here get an address. Tor reaches the bundled Monero node on
+its bridge-bound anonymous P2P listener at `:18084`; that port is not published on the host.
+P2Pool's onion forwards to the selected sidechain's P2P port (`37889` main, `37888` mini,
+`37890` nano). So:
 
 - No public IPv4 port forwarding is required, and your IP is not advertised to inbound peers.
 - Two things face the LAN by default: the dashboard, served by the host-networked Caddy on `:443`

@@ -56,7 +56,7 @@ ContainerName=tor
 Image=$reg/pithead-tor:$ver
 Network=mining.network
 IP=$prefix.25
-Environment=NETWORK_PREFIX=$prefix COMPOSE_PROFILES=$tor_profiles $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH)
+Environment=NETWORK_PREFIX=$prefix COMPOSE_PROFILES=$tor_profiles $(_qenvq P2POOL_PORT) $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH)
 Volume=$(_qenv TOR_DATA_DIR):/var/lib/tor
 Tmpfs=/tmp:size=64m,mode=1777
 ReadOnly=true

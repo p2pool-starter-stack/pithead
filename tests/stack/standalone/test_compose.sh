@@ -2,19 +2,15 @@
 # Validate Compose parsing and ${VAR} interpolation against a representative .env.
 # This is client-side (`docker compose config` needs no daemon), so it runs anywhere with docker.
 set -uo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-
 if ! docker compose version >/dev/null 2>&1; then
     echo "SKIP: docker compose not available"
     exit 0
 fi
 bash "$ROOT/tests/stack/standalone/test_dotenv.sh" || exit 1
-
 ENV_FILE="$(mktemp)"
 EMPTY_TOKEN_ENV="$(mktemp)"
 trap 'rm -f "$ENV_FILE" "$EMPTY_TOKEN_ENV"' EXIT
-
 # A representative, fully-populated environment (mirrors what pithead renders).
 cat >"$ENV_FILE" <<'EOF'
 MONERO_DATA_DIR=/srv/data/monero
@@ -280,6 +276,10 @@ jq_assert "control staged/ dir never enters the container (#33)" \
 jq_assert "control channel defaults off in the dashboard env (#33)" \
     '.services.dashboard.environment["DASHBOARD_CONTROL_ENABLED"] == "false"'
 jq_assert "rendered Monero RPC URL reaches the dashboard (#1271)" '.services.dashboard.environment["MONERO_RPC_URL"] == "http://monero.example:28081"'
+jq_assert "Tor receives the same P2Pool port as the daemon (#2936)" \
+    '.services.tor.environment.P2POOL_PORT == "37889" and (.services.p2pool.command | tostring | contains("37889"))'
+jq_assert "anonymous Monero listener is not host-published (#2936)" \
+    '(.services.monerod.ports | all(.target != 18084))'
 # depends_on startup ordering (#565): "wait until healthy" vs "wait until started" is a startup-
 # correctness guarantee, not decoration. Render with the optional payout-confirmation profiles too
 # (payout_confirm/tari_payout_confirm, #381/#462) so the profile-gated wallet-rpc/tari-wallet edges
