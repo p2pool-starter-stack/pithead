@@ -371,3 +371,6 @@ done
 assert_eq "render_env assigns the three binds only IPv4 literals" \
     "$(grep -E '(rpc|zmq|tari_grpc)_bind="' "$ROOT/lib/pithead/33-render-env.sh" | grep -oE '_bind="[^"]*"' | sort -u | tr '\n' '|')" \
     '_bind="0.0.0.0"|_bind="127.0.0.1"|'
+
+# shellcheck source=tests/stack/firewall/lan-guard-check.sh
+source "$ROOT/tests/stack/firewall/lan-guard-check.sh"

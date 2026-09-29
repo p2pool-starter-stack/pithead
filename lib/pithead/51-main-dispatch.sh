@@ -157,6 +157,11 @@ main() {
         require_env
         egress_status
         ;;
+    lan-guard-check)
+        _reject_options lan-guard-check "$@"
+        require_env
+        lan_guard_check
+        ;;
     onion-client-key)
         _reject_options onion-client-key "$@"
         onion_client_key

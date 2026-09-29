@@ -21,6 +21,7 @@ BASELINE_IMAGES=""
 EGRESS_UNIT_BEFORE=""
 # The same record for pithead-egress.timer and its pithead-egress-check.service (#2599).
 EGRESS_CHECK_BEFORE=""
+LAN_CHECK_BEFORE=""
 
 # absent only when systemd itself answers not-found: a failed lookup is "" (unknown), never absent.
 egress_boot_unit_state() { # [unit] -> present | absent | "" (the bench could not be asked)
@@ -45,6 +46,22 @@ restore_egress_check_units() {
         return 0
     fi
     warn "restore proof: pithead-egress.timer or pithead-egress-check.service is still on the bench after the restore, and neither was there before this run (#2599)."
+    return 1
+}
+
+restore_lan_check_units() {
+    case "$LAN_CHECK_BEFORE" in
+    present) return 0 ;;
+    absent) ;;
+    *) warn "restore proof: whether pithead-lan.timer predated this run was never recorded (#2846)."; return 1 ;;
+    esac
+    on_bench "sudo systemctl disable --now pithead-lan.timer >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-lan.timer /etc/systemd/system/pithead-lan-check.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state pithead-lan.timer)" = absent ] &&
+        [ "$(egress_boot_unit_state pithead-lan-check.service)" = absent ]; then
+        ok "restore proof: pithead-lan.timer and its check removed (#2846)"
+        return 0
+    fi
+    warn "restore proof: pithead-lan.timer or its check service remains after restore (#2846)."
     return 1
 }
 
@@ -368,6 +385,7 @@ PROBE
     chain_restore_proof || prc=1
     restore_egress_boot_unit || prc=1
     restore_egress_check_units || prc=1
+    restore_lan_check_units || prc=1
     restore_lan_unit pithead-lan-guard.service "$LAN_UNIT_BEFORE" || prc=1
     restore_lan_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE" || prc=1
     return "$prc"

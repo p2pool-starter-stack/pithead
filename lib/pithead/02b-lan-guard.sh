@@ -48,6 +48,29 @@ lan_guard_published() {
     done
 }
 
+# Include ports still published by running containers after .env changed but Compose did not
+# converge. If the engine cannot be read, watch all fixed ports rather than dropping the timer.
+lan_guard_watched_ports() {
+    local running kp p c bind
+    running=$(docker ps -a --format '{{.Names}}' 2>/dev/null) || {
+        for kp in $LAN_GUARD_BINDS; do printf '%s\n' "${kp#*:}"; done
+        return 0
+    }
+    for kp in $LAN_GUARD_BINDS; do
+        p=${kp#*:}
+        c=$(lan_guard_container "$p")
+        case "$(env_get "${kp%%:*}" 2>/dev/null)" in
+        '' | 127.0.0.1)
+            grep -qxF "$c" <<<"$running" || continue
+            bind=$(docker port "$c" "$p/tcp" 2>/dev/null) || { printf '%s\n' "$p"; continue; }
+            [ -n "$bind" ] || { printf '%s\n' "$p"; continue; }
+            grep -qv '^127\.0\.0\.1:' <<<"$bind" || continue
+            ;;
+        esac
+        printf '%s\n' "$p"
+    done
+}
+
 # `iptables-restore --noflush` input for <port>...: declaring our chain flushes and refills it, the
 # stale tagged jumps (<old jump spec> lines on stdin, as `iptables -S` prints them) are deleted and
 # the new ones inserted at the top of DOCKER-USER, all in one commit, so no packet sees a half-built
@@ -142,13 +165,19 @@ lan_guard_reason() { # <rc>
 
 # Install the rule for every published node port, or hold those ports on loopback for this
 # process. Called by compose_up, so it runs before every container (re)start.
-apply_lan_guard() {
+apply_lan_guard() { # [port]...: explicit ports include stale container publishes after .env changes
     local published kp ports=() old rc=0
     # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
     # bind-mount the marker dir, and podman does not create a missing bind source.
     export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
     mkdir -p "${LAN_GUARD_MARKER%/*}" 2>/dev/null || true
-    published=$(lan_guard_published)
+    if [ "$#" -gt 0 ]; then
+        for kp in $LAN_GUARD_BINDS; do
+            [[ " $* " == *" ${kp#*:} "* ]] && published+="$kp "
+        done
+    else
+        published=$(lan_guard_published)
+    fi
     if [ -z "$published" ]; then
         remove_lan_guard_boot_unit || warn "lan-guard:boot-unit-left — could not remove $LAN_GUARD_BOOT_UNIT/$LAN_GUARD_HOLD_UNIT; they keep the nodes held at boot until they are."
         return 0
@@ -248,6 +277,54 @@ lan_guard_ready() {
     local kp ports=()
     for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
     [ "${#ports[@]}" = 0 ] || lan_guard_enforced "${ports[@]}"
+}
+
+# Take the mutation lock only if free. A long apply/upgrade must not delay an emergency stop.
+lan_guard_check() {
+    local rc
+    if command -v flock >/dev/null 2>&1 && exec 8>>"$(mutation_lock_path)" 2>/dev/null && flock -n 8; then
+        lan_guard_check_now
+        rc=$?
+        exec 8>&-
+        return "$rc"
+    fi
+    exec 8>&-
+    lan_guard_check_now
+}
+
+# Invalidate the marker first so a concurrent explicit start fails its entrypoint gate.
+lan_guard_check_now() {
+    local p c seen=" " names rc=0
+    local ports=()
+    for p in $(lan_guard_watched_ports); do ports+=("$p"); done
+    [ "${#ports[@]}" -gt 0 ] || return 0
+    if lan_guard_enforced "${ports[@]}" && cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then return 0; fi
+    lan_guard_unmark || {
+        warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
+        rc=1
+    }
+    names=$(docker ps --format '{{.Names}}') || { names=$'monerod\ntari'; rc=1; }
+    for p in "${ports[@]}"; do
+        c=$(lan_guard_container "$p")
+        [[ "$seen" == *" $c "* ]] && continue
+        seen+="$c "
+        if grep -qxF "$c" <<<"$names"; then
+            # A concurrent up may have restored the rule and marker while the lock was busy.
+            if lan_guard_enforced "${ports[@]}" && cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then return 0; fi
+            docker stop "$c" >/dev/null || rc=1
+        fi
+    done
+    names=$(docker ps --format '{{.Names}}') || rc=1
+    for c in $seen; do grep -qxF "$c" <<<"$names" && rc=1; done
+    if [ "$rc" -ne 0 ]; then
+        # Restore the rule for NEW connections, but an already-established session survives it.
+        # Keep the marker invalid and retry the stop on the next check; never claim recovery.
+        apply_lan_guard "${ports[@]}" || true
+        lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
+    fi
+    warn "lan-guard:rule-or-marker-lost — LAN-publishing nodes were stopped or a stop could not be verified. Run './pithead up' after fixing the firewall."
+    [ "$rc" = 0 ] || return "$rc"
+    return 1
 }
 
 # Remove the rule from both backends (`sudo -n`: a leftover only drops traffic to an unpublished
