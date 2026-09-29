@@ -145,6 +145,7 @@ lan_guard_reason() { # <rc>
 apply_lan_guard() {
     local published kp ports=() old rc=0
     LAN_GUARD_STAGED=0
+    LAN_GUARD_STOPPED_SERVICES=()
     # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
     # bind-mount the marker dir, and podman does not create a missing bind source.
     export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
@@ -219,8 +220,32 @@ lan_guard_stop_published() {
                 warn "lan-guard:stop-failed — could not stop $c; its ports may still be exposed."
                 return 1
             fi
+            [[ " ${LAN_GUARD_STOPPED_SERVICES[*]} " == *" $c "* ]] || LAN_GUARD_STOPPED_SERVICES+=("$c")
         done
     done
+}
+
+# Compose names a scope only when a service is positional. The other bare values are option values.
+lan_guard_scoped_up() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+        --pull | --scale | --timeout | --wait-timeout | --exit-code-from | --attach | --no-attach | -t)
+            shift
+            [ "$#" -gt 0 ] && shift
+            ;;
+        -*) shift ;;
+        *) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# A failed first up has not completed its requested work, but may have stopped a prior node.
+# Retry just those nodes with the loopback binds still exported; report the original failure.
+lan_guard_restore_stopped() {
+    [ "${#LAN_GUARD_STOPPED_SERVICES[@]}" -gt 0 ] || return 0
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up -d "${LAN_GUARD_STOPPED_SERVICES[@]}" ||
+        warn "lan-guard:recreate-failed — could not restore the loopback-bound nodes after compose failed."
 }
 
 # Docker creates the first FORWARD jump during compose up. The first pass stays on loopback; only

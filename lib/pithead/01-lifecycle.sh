@@ -85,12 +85,20 @@ compose_up() {
     # without an active exception, retain the established warning-only failure behavior.
     local egress_rc=0
     apply_tor_egress_firewall refresh >/dev/null || egress_rc=$?
+    # A required egress rule that failed keeps any stopped LAN nodes down as well.
     [ "$egress_rc" = 0 ] || ! clearnet_sync_active || return 1
     # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
     # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
     local rc=0
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@" || rc=$?
-    finish_lan_guard_after_up "${build_args[@]}" "$@" || rc=1
+    # A scoped up must restart any LAN node the guard stopped to remove an unsafe old bind.
+    local up_args=("${build_args[@]}" "$@")
+    if lan_guard_scoped_up "$@"; then up_args+=("${LAN_GUARD_STOPPED_SERVICES[@]}"); fi
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}" || rc=$?
+    if [ "$rc" = 0 ]; then
+        finish_lan_guard_after_up "${up_args[@]}" || rc=1
+    else
+        lan_guard_restore_stopped
+    fi
     restore_recreate_names
     return "$rc"
 }
