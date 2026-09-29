@@ -422,6 +422,10 @@ via an `EXIT` trap):
    output in the job log. After the baseline command, the restore recreates any container still
    labelled with the test checkout as its Compose working directory, leaving baseline-owned chain
    nodes running. It removes test-checkout containers for services absent from the baseline.
+   A recreated node can report healthy before the dashboard's sync gate stops p2pool and
+   xmrig-proxy while its chains reload. Restore waits up to 1500 seconds for the dashboard's
+   Monero and Tari sync panels to read `done`, then waits for service health before the final
+   census. A timeout leaves the restore unproved; the per-service identity check still runs.
 7. Proves the restored stack matches the on-disk config
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
