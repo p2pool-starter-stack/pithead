@@ -28,6 +28,10 @@ tar --transform='s|root/.ssh/authorized_keys|.//root/.ssh/authorized_keys|' \
 tar --transform='s|root/.ssh/authorized_keys|//root/.ssh/authorized_keys|' \
     -cf "$ROOTFS_GUARD/debug-absolute.tar" -C "$ROOTFS_GUARD/debug" etc root
 tar -cf "$ROOTFS_GUARD/debug-link.tar" -C "$ROOTFS_GUARD/debug-link" etc root keys
+mkdir -p "$ROOTFS_GUARD/debug-dir/etc" "$ROOTFS_GUARD/debug-dir/root/.ssh/authorized_keys"
+printf 'release\n' >"$ROOTFS_GUARD/debug-dir/etc/pithead-variant"
+printf 'ssh-ed25519 fixture\n' >"$ROOTFS_GUARD/debug-dir/root/.ssh/authorized_keys/root"
+tar -cf "$ROOTFS_GUARD/debug-dir.tar" -C "$ROOTFS_GUARD/debug-dir" etc root
 rootfs_guard() {
     local tarball="$1"
     (
@@ -51,7 +55,7 @@ mkdir "$ROOTFS_GUARD/extracted"
 (cd "$ROOT" && set -- && source "$REL" 2>/dev/null && TAR_OPTIONS='--transform=s#etc/pithead-variant#root/.ssh/authorized_keys#' extract_rootfs_tar "$ROOTFS_GUARD/release.tar" "$ROOTFS_GUARD/extracted")
 assert_eq "inherited tar transforms cannot create an authorized_keys file" "$([ -e "$ROOTFS_GUARD/extracted/root/.ssh/authorized_keys" ] && echo yes || echo no)" "no"
 assert_eq "the hermetic extraction keeps the original member" "$([ -e "$ROOTFS_GUARD/extracted/etc/pithead-variant" ] && echo yes || echo no)" "yes"
-for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute debug-absolute debug-link; do
+for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute debug-absolute debug-link debug-dir; do
     rootfs_guard "$ROOTFS_GUARD/$unsafe_tar.tar" >/dev/null 2>&1
     assert_rc "an unsafe debug-key member is refused" "$?" "2"
 done
