@@ -142,34 +142,28 @@ assert_eq "a pools original is restored intact, credential and all (#1002b/#1379
 assert_eq "the pools credential is not printed in the abort log" \
     "$(grep -c 'pass.*secret' "$SCEN_OUT")" "0"
 
-echo "== a pretty-printed original is one ledger entry, not one per line (#2668) =="
-# The shape an operator pastes into IT_RIG_POOLS_PROBE, which run_rigforge_pools seeds verbatim:
-# newlines AND tab indentation, both of them the ledger's own delimiters. Stored raw, it split into
-# five entries, restored nothing, and warned "restoring  on rig '"tabsecret"'".
-scenario 'v=$'"'"'[\n\t{\n\t\t"url":\t"real:1",\n\t\t"pass":\t"tabsecret"\n\t}\n]'"'" \
-    'rig_key_mark dash rig1 pools "$v"' 'echo "OUT=$(rig_key_outstanding)"' 'exit 1' >/dev/null
-assert_eq "it is recorded as exactly one outstanding write (#2668)" "$(grep -c '^OUT=1$' "$SCEN_OUT")" "1"
-assert_eq "and restored intact, compacted, credential and all (#2668)" \
-    "$(restores)" 'dash|{"pools":[{"url":"real:1","pass":"tabsecret"}]}'
-assert_eq "the unwind warns once, naming the pools key and the rig (#2668)" \
-    "$(grep -c "restoring pools on rig 'rig1' via the dash route" "$SCEN_OUT")" "1"
-assert_eq "and its pass is nowhere in the output (#2668)" "$(grep -c 'tabsecret' "$SCEN_OUT")" "0"
+echo "== the restored value never reaches a command line (#2663) =="
+# A jq argv is readable by every local user from the process table while jq runs, and the pools
+# original carries the stratum `pass`. The shim records every argv the unwind hands jq and then runs
+# the real one, so the restore itself is the control: a shim that saw nothing would pass for the
+# wrong reason, which the non-zero call count rules out.
+: >"$WORK/jq-argv.log"
+scenario 'jq() { printf "%s\n" "$*" >>"$WORK/jq-argv.log"; command jq "$@"; }' \
+    'rig_key_mark dash rig1 pools '"'"'[{"url":"real:1","pass":"argvsecret"}]'"'"'' 'exit 1' >/dev/null
+assert_eq "the pools original is still restored intact through the shim (#2663)" \
+    "$(restores)" 'dash|{"pools":[{"url":"real:1","pass":"argvsecret"}]}'
+# Two calls: the mark compacts its value through jq (#2668) and the unwind builds its payload through jq.
+assert_eq "the shim really saw the mark and the unwind call jq (the control for the next assertion)" \
+    "$(grep -c . "$WORK/jq-argv.log")" "2"
+assert_eq "and the credential was on no jq argv (#2663)" \
+    "$(grep -c argvsecret "$WORK/jq-argv.log")" "0"
 
-echo "== an original that is not one JSON value is refused at mark time, value unprinted (#2668) =="
-scenario 'rig_key_mark dash rig1 pools "not-json-marksecret"; echo "MARK=$?"' \
-    'rig_key_mark dash rig1 DONATION "5 6"; echo "MARK=$?"' 'echo "OUT=$(rig_key_outstanding)"' 'exit 1' >/dev/null
-assert_eq "both marks return non-zero (#2668)" "$(grep -c '^MARK=1$' "$SCEN_OUT")" "2"
-assert_eq "neither goes on the ledger (#2668)" "$(grep -c '^OUT=0$' "$SCEN_OUT")" "1"
-assert_eq "each says, by key, that an abort will not restore it (#2668)" \
-    "$(grep -c 'cannot record the original .* an abort will NOT restore it' "$SCEN_OUT")" "2"
-assert_eq "the refused value is not printed (#2668)" "$(grep -c 'marksecret' "$SCEN_OUT")" "0"
-assert_eq "and nothing is POSTed for it (#2668)" "$(n_restores)" "0"
-# Nothing was recorded, so no EXIT trap should exist either; a valid mark afterwards still arms it.
-scenario 'rig_key_mark dash rig1 pools "not-json"' 'echo "TRAP=[$(trap -p EXIT)]"' 'echo "OUT=$(rig_key_outstanding)"' \
-    'rig_key_mark dash rig1 DONATION 0' 'echo "ARMED=$(trap -p EXIT | grep -c rig_key_atexit)"' 'exit 0' >/dev/null
-assert_eq "a refused first mark installs no EXIT trap (#2668)" "$(grep -c '^TRAP=\[\]$' "$SCEN_OUT")" "1"
-assert_eq "and records no entry (#2668)" "$(grep -c '^OUT=0$' "$SCEN_OUT")" "1"
-assert_eq "a valid mark after a refused one still arms the trap (#2668)" "$(grep -c '^ARMED=1$' "$SCEN_OUT")" "1"
+echo "== an original that is not exactly one JSON value restores nothing =="
+# `--argjson` refused these, and the stdin form must refuse them too: POSTing half of `5 6`, or a
+# bare word as a string, would write a value the rig never had.
+scenario 'rig_key_mark dash rig1 DONATION "5 6"' 'rig_key_mark dash rig1 max_temp_c not-json' \
+    'rig_key_mark dash rig1 autotune ""' 'rig_key_mark dash rig1 watchdog true' 'exit 1' >/dev/null
+assert_eq "only the well-formed original is POSTed (#2663)" "$(restores)" 'dash|{"watchdog":true}'
 
 echo "== COMPOSITION: our trap replaces rig_lock's, so it must do rig_lock's job too =="
 # Drives lib.sh's REAL rig_lock against sandboxed paths. This is the assertion that catches the
