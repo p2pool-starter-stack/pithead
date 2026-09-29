@@ -68,13 +68,92 @@ norm() {
     printf '%s' "$v"
 }
 
+# Compare the numeric release core first, then put pre.N before its matching stable release.
+# Prints older/equal/newer; refuse unfamiliar spellings instead of guessing an upgrade.
+version_order() { # <pinned> <upstream>
+    local a b i a_label b_label
+    local -a left right
+    a=$(norm "$1")
+    b=$(norm "$2")
+    [[ "$a" =~ ^[0-9]+(\.[0-9]+){2,3}(-[a-z]+\.[0-9]+)?$ &&
+        "$b" =~ ^[0-9]+(\.[0-9]+){2,3}(-[a-z]+\.[0-9]+)?$ ]] || return 1
+    IFS=. read -r -a left <<<"${a%%-*}"
+    IFS=. read -r -a right <<<"${b%%-*}"
+    for ((i = 0; i < 4; i++)); do
+        if ((10#${left[i]:-0} < 10#${right[i]:-0})); then
+            echo older
+            return
+        fi
+        if ((10#${left[i]:-0} > 10#${right[i]:-0})); then
+            echo newer
+            return
+        fi
+    done
+    if [[ "$a" == *-* && "$b" != *-* ]]; then
+        echo older
+        return
+    fi
+    if [[ "$a" != *-* && "$b" == *-* ]]; then
+        echo newer
+        return
+    fi
+    if [[ "$a" == *-* && "$b" == *-* ]]; then
+        a_label=${a#*-}
+        a_label=${a_label%%.*}
+        b_label=${b#*-}
+        b_label=${b_label%%.*}
+        if [[ "$a_label" < "$b_label" ]]; then
+            echo older
+            return
+        fi
+        if [[ "$a_label" > "$b_label" ]]; then
+            echo newer
+            return
+        fi
+        a=${a##*.}
+        b=${b##*.}
+        if ((10#$a < 10#$b)); then
+            echo older
+            return
+        fi
+        if ((10#$a > 10#$b)); then
+            echo newer
+            return
+        fi
+    fi
+    echo equal
+}
+
+version_status() { # <pinned> <upstream> -> report classification
+    local order
+    order=$(version_order "$1" "$2") || return 1
+    case "$order" in
+    older) echo stale ;;
+    equal) echo current ;;
+    newer) echo ahead ;;
+    esac
+}
+
+newer_tari_prereleases() { # <pinned tag> -> newer prerelease tags, one per line
+    local tag order feed
+    feed=$(gh api 'repos/tari-project/tari/releases?per_page=100' \
+        --jq '.[] | select(.prerelease == true and .draft == false) | .tag_name' 2>/dev/null) || return 1
+    while IFS= read -r tag; do
+        [ -n "$tag" ] || continue
+        [[ "$tag" == *-* ]] || continue # Older upstream rows have a stable tag marked prerelease.
+        [[ "$tag" =~ ^v?[0-9]+(\.[0-9]+){2}(-[a-z]+\.[0-9]+)$ ]] || return 1
+        order=$(version_order "$1" "$tag") || return 1
+        if [ "$order" = older ]; then printf '%s\n' "$tag"; fi
+    done <<<"$feed"
+}
+
 # The one lookup, wrapped so a failure is a COUNTED failure and never a quiet "current".
 latest_release() { # <owner/repo> -> tag on stdout, rc 1 on any failure
     local tag
     tag=$(gh api "repos/$1/releases/latest" --jq .tag_name 2>/dev/null) || return 1
     # Third-party input. A tag that is not shaped like a version must not be compared, printed into
     # an issue body, or otherwise trusted.
-    printf '%s' "$tag" | grep -qE '^v?[0-9]' || return 1
+    [[ "$tag" =~ ^v?[0-9]+(\.[0-9]+){2,3}(-[a-z]+\.[0-9]+)?$ ]] || return 1
     printf '%s' "$tag"
 }
 
@@ -171,128 +250,9 @@ finish_report() {
     return 1
 }
 
-# --- self-test -----------------------------------------------------------------------------------
-# The comparison logic is the whole product here; the lookup itself is one `gh api` call. Drives
-# norm() over the real pin spellings, and both of the lookup's refusal paths over a stubbed `gh`.
 if [ "${1:-}" = "--self-test" ]; then
-    st_fail=0
-    st() { # <label> <got> <want>
-        if [ "$2" = "$3" ]; then
-            echo "  self-test ok: $1"
-        else
-            echo "  self-test FAIL: $1 (got [$2], want [$3])"
-            st_fail=1
-        fi
-    }
-    # The three spellings that would otherwise be reported stale every week for ever.
-    st "a bare image tag normalises to the upstream version" "$(norm 'caddy:2.11.4')" "2.11.4"
-    st "a leading v is not a version difference" "$(norm 'v6.26.0')" "6.26.0"
-    st "tari's network suffix is not a version difference" \
-        "$(norm 'quay.io/tarilabs/minotari_node:v5.3.1-mainnet')" "5.3.1"
-    st "a digest suffix is not part of the version" \
-        "$(norm 'caddy:2.11.4@sha256:aaaa')" "2.11.4"
-    # And the comparison must still SEE a real gap.
-    st "a real gap survives normalisation" \
-        "$([ "$(norm 'v5.3.1-mainnet')" = "$(norm 'v5.6.0')" ] && echo same || echo differs)" "differs"
-    # UNREACHABLE MUST NOT READ AS CURRENT — the defect this whole script is aimed at.
-    st "a release lookup that cannot run fails" \
-        "$(
-            gh() { return 1; }
-            latest_release foo/bar >/dev/null 2>&1 && echo ok || echo failed
-        )" "failed"
-    st "a non-version tag is refused, not compared" \
-        "$(
-            gh() { printf 'nightly'; }
-            latest_release foo/bar >/dev/null 2>&1 && echo ok || echo failed
-        )" "failed"
-    # A COMMIT pin cannot be compared against a TAG. What follows covers the resolution that
-    # makes the rigforge row honest, and the property the sha comparison rests on.
-    st "an upstream tag resolves to the commit it names" \
-        "$(
-            gh() { printf '%s' 4ce29b3daf063fd1b45e050649e93aa9592618e1; }
-            comparable rigforge foo/bar v1.16.0
-        )" "4ce29b3daf063fd1b45e050649e93aa9592618e1"
-    # The issue's own requirement: a resolution that cannot run reaches the unchecked row rather than
-    # any verdict at all. It is not uniquely load-bearing — see the overlap note on the next case but one.
-    st "a commit resolution that cannot run fails" \
-        "$(
-            gh() { return 1; }
-            comparable rigforge foo/bar v1.16.0 >/dev/null 2>&1 && echo ok || echo failed
-        )" "failed"
-    # The two refusals below overlap on every realistic input, and a mutation round proved it: with
-    # the `|| return 1` removed, this next case still failed — because an empty `sha` fails the shape
-    # check too, so the shape guard silently covered for the exit-code guard's deletion. Each is now
-    # pinned on the one input only IT refuses. This one is the exit code being trusted over stdout.
-    st "a resolution that exits non-zero is refused even when it printed a commit" \
-        "$(
-            gh() {
-                printf '%s' 4ce29b3daf063fd1b45e050649e93aa9592618e1
-                return 1
-            }
-            comparable rigforge foo/bar v1.16.0 >/dev/null 2>&1 && echo ok || echo failed
-        )" "failed"
-    st "an answer that is not shaped like a commit is refused, not compared" \
-        "$(
-            gh() { printf 'Not Found'; }
-            comparable rigforge foo/bar v1.16.0 >/dev/null 2>&1 && echo ok || echo failed
-        )" "failed"
-    # And every version-spelled pin is still compared against the tag itself, unresolved.
-    st "a version pin is compared against the tag, with no lookup at all" \
-        "$(comparable caddy caddyserver/caddy v2.11.4)" "v2.11.4"
-    # Both sides of that comparison go through norm(), so norm must leave a commit sha untouched.
-    st "normalisation leaves a commit sha alone" \
-        "$(norm 60aa883901fc74ea39ed2f21962b8ba7f96d73ba)" "60aa883901fc74ea39ed2f21962b8ba7f96d73ba"
-    st "a Tari node pin, release or pre-release (#2604), selects the matching upstream proto tag" \
-        "$(tari_proto_ref 'x:v6.0.0-mainnet@sha256:aaaa') $(tari_proto_ref 'x:v6.0.1-pre.0-mainnet@sha256:aaaa')" "v6.0.0 v6.0.1-pre.0"
-    st "a malformed Tari pin is refused" \
-        "$(tari_proto_ref 'ghcr.io/tari-project/minotari_node:latest' >/dev/null 2>&1 && echo accepted || echo refused)" "refused"
-    run_buf() {
-        case "$1" in
-        build)
-            [ "$2" = . ] && return "${ST_LOCAL_BUILD_RC:-0}"
-            [ "$2" = "https://github.com/tari-project/tari.git#tag=v6.0.0,subdir=applications/minotari_app_grpc/proto" ] || return 3
-            return "${ST_UPSTREAM_BUILD_RC:-0}"
-            ;;
-        breaking)
-            [ "$2" = "https://github.com/tari-project/tari.git#tag=v6.0.0,subdir=applications/minotari_app_grpc/proto" ] && [ "$3" = --against ] && [ "$4" = . ] || return 3
-            return "${ST_BUF_BREAKING_RC:-0}"
-            ;;
-        esac
-    }
-    tree_pin() { printf '%s' 'ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:aaaa'; }
-    row() { ST_ROW="$*"; }
-    proto_report() {
-        failed=0 stale=0 ST_ROW=""
-        add_tari_proto_row
-        printf '%s|%s|%s' "$failed" "$stale" "$ST_ROW"
-    }
-    ST_LOCAL_BUILD_RC=0 ST_UPSTREAM_BUILD_RC=0 ST_BUF_BREAKING_RC=0
-    st "matching Tari protos render current in the weekly report" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` compatible"
-    ST_BUF_BREAKING_RC=100
-    st "a node-side deletion renders breaking drift" "$(proto_report)" "0|1|tari gRPC schema \`f42e14d\` \`v6.0.0\` **breaking drift**"
-    ST_BUF_BREAKING_RC=0
-    st "a node-side addition stays compatible" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` compatible"
-    ST_BUF_BREAKING_RC=1
-    st "a failed comparison keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **schema comparison failed — NOT checked**"
-    ST_UPSTREAM_BUILD_RC=1 ST_BUF_BREAKING_RC=0
-    st "a failed upstream build renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **upstream schema fetch/build failed — NOT checked**"
-    ST_UPSTREAM_BUILD_RC=0 ST_LOCAL_BUILD_RC=100
-    st "a local parse failure keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **vendored schema build failed — NOT checked**"
-    st "the real weekly report invokes the Tari proto row" "$(grep -c '^add_tari_proto_row$' "$0")" "1"
-    integration_root=$(mktemp -d)
-    trap 'rm -rf "$integration_root"' EXIT
-    mkdir -p "$integration_root/os/rootfs" "$integration_root/scripts/watch"
-    : >"$integration_root/os/rootfs/Dockerfile"
-    printf '%s\n' 'printf "raise-watch-called\n"' 'exit 1' >"$integration_root/scripts/watch/go-raise-watch.sh"
-    ROOT=$integration_root
-    failed=0
-    finish_rc=0
-    finish_out=$(finish_report) || finish_rc=$?
-    st "a failed Go raise watch fails the combined report" "$finish_rc" "1"
-    st "the combined report actually ran the Go raise watch" "$(grep -c raise-watch-called <<<"$finish_out")" "1"
-    st "a failed Go raise watch withholds the last-success stamp" "$(grep -c 'Last fully successful' <<<"$finish_out")" "0"
-    [ "$st_fail" = 0 ] && echo "pin-watch self-test OK"
-    exit "$st_fail"
+    # shellcheck source=tests/watch/test-pin-watch.sh
+    source "$ROOT/tests/watch/test-pin-watch.sh"
 fi
 
 # --- the report ----------------------------------------------------------------------------------
@@ -336,6 +296,7 @@ tree_pin() {
 failed=0
 stale=0
 rows=""
+tari_prereleases=""
 
 row() { rows="${rows}| $1 | $2 | $3 | $4 |"$'\n'; }
 
@@ -360,19 +321,42 @@ for component in $components; do
         failed=$((failed + 1))
         continue
     fi
-    if [ "$(norm "$raw")" = "$(norm "$cmp_to")" ]; then
+    if [ "$component" = rigforge ]; then
+        if [ "$(norm "$raw")" = "$(norm "$cmp_to")" ]; then
+            verdict=current
+        else
+            verdict="**stale** → \`$latest\`"
+            stale=$((stale + 1))
+        fi
+    elif ! status=$(version_status "$raw" "$cmp_to"); then
+        verdict="**version could not be compared — NOT checked**"
+        failed=$((failed + 1))
+    elif [ "$status" = current ]; then
         verdict="current"
-    else
+    elif [ "$status" = stale ]; then
         verdict="**stale** → \`$latest\`"
         stale=$((stale + 1))
+    else
+        verdict="pinned version is newer than latest stable"
     fi
     row "$component" "\`$(norm "$raw")\`" "\`$(norm "$latest")\`" "$verdict"
+    if [ "$component" = tari ]; then
+        if ! tari_prereleases=$(newer_tari_prereleases "$raw"); then
+            tari_prereleases="**prerelease lookup failed — NOT checked**"
+            failed=$((failed + 1))
+        elif [ -n "$tari_prereleases" ]; then
+            tari_prereleases=${tari_prereleases//$'\n'/, }
+        else
+            tari_prereleases="none in the latest 100 releases"
+        fi
+    fi
 done
 
 add_tari_proto_row
 
 printf '%s\n\n' "Upstream currency for $lane, checked weekly by \`scripts/watch/pin-watch.sh\`. This never bumps anything."
 printf '| component | pinned | upstream latest | |\n|---|---|---|---|\n%s\n' "$rows"
+printf '%s\n' "Newer Tari prereleases (review separately; release policy does not automatically accept them): ${tari_prereleases:-not checked}."
 printf '%s\n' "Not watched here, because they publish no GitHub release feed: the alpine base image, \`ubuntu:24.04\`, \`python:3.11-slim\`. Dependabot's docker ecosystem reads those \`FROM\` lines and does cover them."
 # Both arms stay: the else-arm is what a checkout without `os/` reports (a branch cut before the
 # appliance tree existed), and it says so instead of printing a table that silently lacks two rows.
