@@ -259,8 +259,10 @@ services:
     # Tari needs NO clearnet DNS: dns_seeds = [] (config.toml), onion peer_seeds resolve via Tor, and
     # the Tor SOCKS is reached by IP (this container already overrode Docker's 127.0.0.11, so nothing
     # here depends on service discovery). The one OS-resolver lookup left is the Tari Pulse service's
-    # checkpoints.tari.com TXT (~every 120 s) — an ADVISORY deep-reorg check, no in-binary off-switch,
-    # that TOLERATES a DNS failure (returns "passed", verified in tari_pulse_service/mod.rs). Point the
+    # checkpoints.tari.com TXT (~every 120 s) — an ADVISORY deep-reorg check. Pinned Tari 6
+    # supports base_node.tari_pulse_enabled=false, but this stack keeps Pulse enabled and the
+    # resolver isolated. Pulse TOLERATES a DNS failure (returns "passed", verified in
+    # tari_pulse_service/mod.rs). Point the
     # resolver at a dead local address so that lookup fails WITHOUT a packet leaving the host — zero
     # clearnet DNS, no functional impact (#162; #160 decision-4). Trade-off: lose the Pulse deep-reorg
     # advisory, the same class as monerod's disable-dns-checkpoints (#161).
@@ -381,9 +383,10 @@ services:
     ports:
       # Loopback-only host publish (mirror wallet-rpc): the host-networked dashboard reaches the
       # wallet gRPC at 127.0.0.1:18143; no LAN exposure. Unlike monero-wallet-rpc, the minotari
-      # console-wallet gRPC has no built-in login — so the access controls are this loopback-only
-      # publish plus the mining_net-internal bridge (the same trust boundary as the unauthenticated
-      # Tari node gRPC at .27:18142, the operator's own containers).
+      # console-wallet gRPC is unauthenticated in this stack, though pinned Tari 6 supports
+      # wallet.grpc_authentication and TLS. The host publish is loopback-only; all containers
+      # attached to the shared mining_net bridge can reach gRPC. View-only prevents spending,
+      # but callers can read wallet metadata. Enabling auth requires updating the dashboard client.
       - "127.0.0.1:18143:18143"
     networks:
       mining_net:
