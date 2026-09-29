@@ -69,6 +69,7 @@ LG_LIVE=0 lg 'flock() { return 1; }; docker() { case "$1" in ps) [ "$2" = -a ] &
 assert_eq "the check does not wait for a long mutation lock" "$lg_rc" 1
 assert_contains "failed stop restores the stale published port even after .env switches off" "$(cat "$LG_RESTORE")" "--dport 18142"
 assert_contains "emergency restore also protects a port enabled by concurrent up" "$(cat "$LG_RESTORE")" "--dport 18081"
+assert_contains "emergency restore protects the other fixed Monero port" "$(cat "$LG_RESTORE")" "--dport 18083"
 assert_eq "failed stop leaves the marker invalid for the next retry" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
 printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
 : >"$LG_STOP"

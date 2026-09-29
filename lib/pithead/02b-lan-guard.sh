@@ -62,8 +62,14 @@ lan_guard_watched_ports() {
         case "$(env_get "${kp%%:*}" 2>/dev/null)" in
         '' | 127.0.0.1)
             grep -qxF "$c" <<<"$running" || continue
-            bind=$(docker port "$c" "$p/tcp" 2>/dev/null) || { printf '%s\n' "$p"; continue; }
-            [ -n "$bind" ] || { printf '%s\n' "$p"; continue; }
+            bind=$(docker port "$c" "$p/tcp" 2>/dev/null) || {
+                printf '%s\n' "$p"
+                continue
+            }
+            [ -n "$bind" ] || {
+                printf '%s\n' "$p"
+                continue
+            }
             grep -qv '^127\.0\.0\.1:' <<<"$bind" || continue
             ;;
         esac
@@ -303,7 +309,10 @@ lan_guard_check_now() {
         warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
         rc=1
     }
-    names=$(docker ps --format '{{.Names}}') || { names=$'monerod\ntari'; rc=1; }
+    names=$(docker ps --format '{{.Names}}') || {
+        names=$'monerod\ntari'
+        rc=1
+    }
     for p in "${ports[@]}"; do
         c=$(lan_guard_container "$p")
         [[ "$seen" == *" $c "* ]] && continue

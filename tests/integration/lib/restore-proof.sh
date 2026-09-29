@@ -53,7 +53,10 @@ restore_lan_check_units() {
     case "$LAN_CHECK_BEFORE" in
     present) return 0 ;;
     absent) ;;
-    *) warn "restore proof: whether pithead-lan.timer predated this run was never recorded (#2846)."; return 1 ;;
+    *)
+        warn "restore proof: whether pithead-lan.timer predated this run was never recorded (#2846)."
+        return 1
+        ;;
     esac
     on_bench "sudo systemctl disable --now pithead-lan.timer >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-lan.timer /etc/systemd/system/pithead-lan-check.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
     if [ "$(egress_boot_unit_state pithead-lan.timer)" = absent ] &&
