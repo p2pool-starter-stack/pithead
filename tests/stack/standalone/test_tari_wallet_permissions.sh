@@ -61,9 +61,13 @@ fi
 exit 7
 EOF
 chmod +x "$WORK/bin/curl"
-health_rc() { (rc=0; PATH="$WORK/bin:$PATH" WALLET_DIR="$WORK/wallet" FAKE_GRPC_OK="$1" PAYOUT_SCAN_GRACE_SEC="${2:-86400}" sh "$ROOT/build/tari-wallet/wallet-healthcheck.sh" >/dev/null 2>&1 || rc=$?; echo "$rc";); }
+health_rc() { (
+    rc=0
+    PATH="$WORK/bin:$PATH" WALLET_DIR="$WORK/wallet" FAKE_GRPC_OK="$1" PAYOUT_SCAN_GRACE_SEC="${2:-86400}" sh "$ROOT/build/tari-wallet/wallet-healthcheck.sh" >/dev/null 2>&1 || rc=$?
+    echo "$rc"
+); }
 touch "$marker"
-[ "$(health_rc 0)" = 0 ] # a first scan gets bounded grace
+[ "$(health_rc 0)" = 0 ]   # a first scan gets bounded grace
 [ "$(health_rc 0 0)" = 1 ] # zero grace is strict
 touch -t 200001010000.00 "$marker"
 [ "$(health_rc 0)" = 1 ] # expired grace fails

@@ -188,7 +188,9 @@ function confirmedBlock(c, fmt, unit) {
   const mismatch = c.address_match === false;
   const walletProblem = mismatch
     ? `Payout wallet address differs: configured ${c.configured_address}; wallet ${c.wallet_address}`
-    : c.down ? `Payout wallet unreachable since ${new Date(c.since * 1000).toLocaleString()}` : null;
+    : c.down
+      ? `Payout wallet unreachable since ${new Date(c.since * 1000).toLocaleString()}`
+      : null;
   return html`
     <div class="confirmed-block">
       <h3 class="confirmed-subhead">Confirmed on-chain</h3>

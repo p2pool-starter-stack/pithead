@@ -24,7 +24,7 @@ wallet_status() { # <monero|tari>
     compose exec -T dashboard python3 -c 'import json,sys,urllib.request; s=json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state",timeout=5)); print(json.dumps(s["earnings"]["tari_confirmed" if sys.argv[1]=="tari" else "confirmed"]))' "$1"
 }
 wait_wallet_field() { # <chain> <field> <expected>
-    local end=$(( $(date +%s) + 20 ))
+    local end=$(($(date +%s) + 20))
     while [ "$(date +%s)" -lt "$end" ]; do
         [ "$(wallet_status "$1" | jq -r ".${2}" 2>/dev/null)" = "$3" ] && return 0
         sleep 1
@@ -179,7 +179,7 @@ PY
     compose start fake-tari-wallet >/dev/null
 
     if compose --profile wallet-health up -d tari-wallet-broken; then
-        health_deadline=$(( $(date +%s) + 15 ))
+        health_deadline=$(($(date +%s) + 15))
         while [ "$(docker inspect -f '{{.State.Health.Status}}' itest-tari-wallet-broken 2>/dev/null)" != unhealthy ] &&
             [ "$(date +%s)" -lt "$health_deadline" ]; do sleep 1; done
         if [ "$(docker inspect -f '{{.State.Health.Status}}' itest-tari-wallet-broken 2>/dev/null)" = unhealthy ] &&

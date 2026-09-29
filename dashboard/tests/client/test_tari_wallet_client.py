@@ -21,6 +21,12 @@ async def test_scan_distinguishes_empty_answer_from_unreachable():
     assert await client.scan() == ([], False)
 
 
+async def test_legacy_payout_method_keeps_a_normalization_failure_quiet():
+    client = TariWalletClient()
+    client.scan = AsyncMock(side_effect=ValueError("bad transaction"))
+    assert await client.get_confirmed_payouts() == []
+
+
 async def test_embedded_payment_id_emoji_matches_wallet_raw_keys():
     key = bytes(range(64))
     wallet_raw = b"\x00\x02" + key + b"\x00"

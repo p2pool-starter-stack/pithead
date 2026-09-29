@@ -46,8 +46,8 @@ class TariWalletClient:
     large event worth an alert).
 
     Async (grpc.aio), mirroring :class:`TariClient`; the wallet gRPC is unauthenticated (insecure
-    channel), same as the base node. Every failure mode returns ``[]`` so a wallet still doing its
-    first-run scan (or briefly unreachable) degrades the feature quietly rather than raising.
+    channel), same as the base node. The compatibility payout method returns ``[]`` on a failed
+    scan; ``scan`` itself reports whether the wallet answered.
 
     ``get_confirmed_payouts`` delegates the scan to ``_scan_completed_transactions``; if tier-4
     shows the coinbase surfaces only via ``GetBalance``/``GetUnspentAmounts`` and not the completed-
@@ -74,7 +74,11 @@ class TariWalletClient:
         self._stub = None
 
     async def get_confirmed_payouts(self, min_height=0) -> list[dict]:
-        return (await self.scan(min_height))[0]
+        try:
+            return (await self.scan(min_height))[0]
+        except Exception as e:  # noqa: BLE001 — compatibility callers expect a quiet empty result
+            logger.warning("Tari wallet payout normalization failed: %s", e)
+            return []
 
     async def scan(self, min_height=0):
         """Return confirmed incoming payouts at or above ``min_height`` as normalized dicts.

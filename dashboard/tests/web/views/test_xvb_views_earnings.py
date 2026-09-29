@@ -115,6 +115,7 @@ class TestEarnings:
             "n_30d": 0,
             "last_ts": 0,
             "since_ts": 0,
+            "reachable": None,
             "partial": {"yesterday": True, "7d": True, "30d": True},
         }
 
@@ -136,5 +137,6 @@ class TestEarnings:
             "n_30d": 0,
             "last_ts": 0,
             "since_ts": 0,
+            "reachable": None,
             "partial": {"yesterday": True, "7d": True, "30d": True},
         }

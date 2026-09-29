@@ -13,7 +13,8 @@ check_tari_wallet_address() {
         return 0
     }
     expected_key=$(TARI_ADDRESS_KEY_ONLY=1 tari_address_type "$expected")
-    verdict=$(TARI_EXPECTED_ADDRESS="$expected" TARI_EXPECTED_KEY="$expected_key" python3 - <<'PY'
+    verdict=$(
+        TARI_EXPECTED_ADDRESS="$expected" TARI_EXPECTED_KEY="$expected_key" python3 - <<'PY'
 import os
 import re
 import subprocess
