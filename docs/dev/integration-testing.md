@@ -817,6 +817,12 @@ For a DONATION revert, each readback poll also logs one bounded JSON sample: the
 and RigForge generation stamp and stale verdict, and the rig's direct `/1/summary` DONATION and generation stamp plus exact-ID
 `/status`. A failed read is `poll_failed`; the sample contains no raw response, credential or host.
 Compare the stamps and values before changing the 90-second bound (#2894).
+After a DONATION worker-apply returns `accepted` or `applied`, the dashboard also refreshes that
+worker's enriched report out of cycle. It publishes the new config and reconciles the exact
+history ID only after the fresh report confirms the requested DONATION value and `applied` status;
+the read is bounded and uses the same worker probe as the normal collection loop. If a normal
+collection cycle finishes after the targeted read, it retains the report with the newer RigForge
+generation stamp.
 
 The same leg then asserts that the change reached the dashboard's `#185` per-worker history, and
 that readback needed a settle of its own

@@ -15,7 +15,7 @@ Mutation-kill notes:
 """
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -181,3 +181,74 @@ class TestMaybeRefreshAfterUpgrade:
             {}, "rig1", "v1.0.0", {"status": "applied", "version": "v1.2.0"}
         )
         called.assert_awaited_once_with({}, "rig1", "v1.2.0")
+
+
+async def test_donation_refresh_waits_for_exact_applied_report_and_updates_shared_worker():
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    reports = [
+        {
+            "generated_at": stamp,
+            "rigforge": {
+                "config": {"DONATION": 1},
+                "control": {"change_id": "abc", "status": "applied"},
+            },
+        },
+        {
+            "generated_at": stamp,
+            "rigforge": {
+                "config": {"DONATION": 0},
+                "control": {"change_id": "other", "status": "applied"},
+            },
+        },
+        {
+            "generated_at": stamp,
+            "rigforge": {
+                "config": {"DONATION": 0},
+                "control": {"change_id": "abc", "status": "applied"},
+            },
+        },
+    ]
+
+    class Client:
+        async def get_stats(self, ip, name):
+            assert (ip, name) == ("10.0.0.5", "rig1")
+            return reports.pop(0)
+
+    data = {
+        "workers": [{"name": "rig1", "ip": "10.0.0.5", "rigforge": {"config": {"DONATION": 1}}}]
+    }
+    state = Mock()
+    ok = await worker_refresh.refresh_donation_after_apply(
+        data, state, "rig1", "abc", 0, worker_client=Client(), attempts=3, sleep=_fake_sleep
+    )
+    assert ok is True and reports == []
+    assert data["workers"][0]["rigforge"]["config"]["DONATION"] == 0
+    state.reconcile_worker_config_status.assert_called_once_with("abc", "applied", None)
+
+
+def test_main_poll_cannot_overwrite_newer_targeted_report():
+    current = [
+        {
+            "name": "rig1",
+            "ip": "10.0.0.5",
+            "rigforge": {"generated_at": "2026-09-29T22:01:00Z", "config": {"DONATION": 0}},
+        }
+    ]
+    next_workers = [
+        {
+            "name": "rig1",
+            "ip": "10.0.0.5",
+            "rigforge": {"generated_at": "2026-09-29T22:00:30Z", "config": {"DONATION": 1}},
+        }
+    ]
+    worker_refresh.preserve_newer_reports(current, next_workers)
+    assert next_workers[0]["rigforge"]["config"]["DONATION"] == 0
+    changed_ip = [
+        {
+            "name": "rig1",
+            "ip": "10.0.0.6",
+            "rigforge": {"generated_at": "2026-09-29T22:00:30Z", "config": {"DONATION": 1}},
+        }
+    ]
+    worker_refresh.preserve_newer_reports(current, changed_ip)
+    assert changed_ip[0]["rigforge"]["config"]["DONATION"] == 1

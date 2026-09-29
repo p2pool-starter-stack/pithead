@@ -81,7 +81,7 @@ _pred_donation_revert_sample() { # <rig> <want-json> <change-id>
     [[ "$direct" =~ ^[0-9]{1,3}$ ]] || direct=poll_failed
     [[ "$history" =~ ^[a-z_]{1,24}$ ]] || history=poll_failed
     [[ "$direct_status" =~ ^[a-z_]{1,24}$ ]] || direct_status=poll_failed
-    [[ "$snapshot" =~ ^[0-9]{10}(\.[0-9]{1,6})?$ ]] || snapshot=poll_failed
+    [[ "$snapshot" =~ ^[0-9]{10}(\.[0-9]{1,9})?$ ]] || snapshot=poll_failed
     case "$status" in online | offline | down) ;; *) status=poll_failed ;; esac
     [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || stamp=poll_failed
     [[ "$direct_stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || direct_stamp=poll_failed
