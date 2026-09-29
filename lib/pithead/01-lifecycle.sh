@@ -77,9 +77,7 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
-    # Every container (re)start passes here, so the LAN-published node ports get their source rule
-    # (or are held on loopback) before anything listens on them (#2616).
-    apply_lan_guard
+    apply_lan_guard # every (re)start passes here: the LAN source rule lands before any node listens (#2616)
     lan_guard_stop_rebound_nodes || {
         lan_guard_check_now || true
         warn "A node with an old published bind could not be stopped; the LAN rule was rechecked."
