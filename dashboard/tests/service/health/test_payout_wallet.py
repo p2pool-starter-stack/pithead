@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
 from mining_dashboard.service.notify.alert_service import AlertService
-from mining_dashboard.service.payout_sync import observe_wallet
+from mining_dashboard.service.payout_sync import DOWN_ALERT_ATTEMPTS, observe_wallet
 
 
 def test_wallet_unreachable_debounces_and_alerts_once():
@@ -72,3 +72,34 @@ def test_wallet_down_event_has_no_event_specific_opt_out():
     sink.enabled = False
     asyncio.run(service.payout_wallet_down_alert("tari", "unreachable"))
     sink.send.assert_called_once()
+
+
+def _down_after_one_cycle():
+    now = [0]
+    monitor = NodeHealthMonitor(down_after=1, clock=lambda: now[0], ever_up=True)
+    client = MagicMock()
+    client.payout_addresses.return_value = None
+    first = asyncio.run(observe_wallet("monero", client, monitor, "expected", None, MagicMock()))
+    now[0] = 1
+    return client, monitor, first
+
+
+def test_raising_down_alert_keeps_status_and_retries_the_edge():
+    client, monitor, first = _down_after_one_cycle()
+    alerts = MagicMock(payout_wallet_down_alert=AsyncMock(side_effect=[RuntimeError("sink"), None]))
+    down = asyncio.run(observe_wallet("monero", client, monitor, "expected", first, alerts))
+    assert down["down"] is True and down["reachable"] is False
+    assert down["down_alert_failures"] == 1
+    retried = asyncio.run(observe_wallet("monero", client, monitor, "expected", down, alerts))
+    assert retried["down_alert_failures"] == 0
+    asyncio.run(observe_wallet("monero", client, monitor, "expected", retried, alerts))
+    assert alerts.payout_wallet_down_alert.await_count == 2
+
+
+def test_raising_down_alert_stops_after_bounded_attempts():
+    client, monitor, status = _down_after_one_cycle()
+    alerts = MagicMock(payout_wallet_down_alert=AsyncMock(side_effect=RuntimeError("sink")))
+    for _ in range(DOWN_ALERT_ATTEMPTS + 2):
+        status = asyncio.run(observe_wallet("monero", client, monitor, "expected", status, alerts))
+        assert status["down"] is True
+    assert alerts.payout_wallet_down_alert.await_count == DOWN_ALERT_ATTEMPTS

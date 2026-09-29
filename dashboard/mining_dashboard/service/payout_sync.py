@@ -29,6 +29,8 @@ from mining_dashboard.config.config import MONERO_WALLET_ADDRESS, TARI_WALLET_AD
 
 logger = logging.getLogger("DataService")
 
+DOWN_ALERT_ATTEMPTS = 3
+
 
 async def run_isolated(label, step):
     """Run one poll step so that its failure cannot skip the steps after it (#1644).
@@ -115,11 +117,25 @@ async def observe_wallet(
     since = (previous or {}).get("since") if bad else None
     if bad and since is None:
         since = time.time()
-    if monitor.down and not was_down:
+    # A sender that raises must not lose this status or the down edge: retry the edge on the
+    # next cycles while the wallet stays down, up to DOWN_ALERT_ATTEMPTS sends in all.
+    failures = (previous or {}).get("down_alert_failures", 0) if monitor.down else 0
+    if monitor.down and (not was_down or 0 < failures < DOWN_ALERT_ATTEMPTS):
         reason = (
             "unreachable" if not reachable else "address differs from configured payout address"
         )
-        await alert_service.payout_wallet_down_alert(chain, reason)
+        try:
+            await alert_service.payout_wallet_down_alert(chain, reason)
+            failures = 0
+        except Exception as e:  # noqa: BLE001 — a sender fault must not discard the status
+            failures += 1
+            logger.error(
+                "%s payout wallet down alert failed (attempt %d of %d): %s",
+                chain,
+                failures,
+                DOWN_ALERT_ATTEMPTS,
+                e,
+            )
     return {
         "reachable": reachable,
         "down": monitor.down,
@@ -127,6 +143,7 @@ async def observe_wallet(
         "address_match": match,
         "configured_address": expected if match is False else None,
         "wallet_address": addresses[0] if match is False else None,
+        "down_alert_failures": failures,
     }
 
 

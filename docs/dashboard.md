@@ -822,7 +822,9 @@ after the node-down debounce (`NODE_DOWN_AFTER_SEC`, default 90 seconds),
 with the time it became unreachable; an empty answered scan leaves the card normal. A wallet whose
 own address differs from the configured payout address shows both addresses and a red warning.
 Each enabled wallet emits one debounced `payout_wallet_down` alert per outage when alert delivery
-is configured. This alert has no event-specific opt-out. The Tari container's bounded first-scan
+is configured. If sending that alert raises an error, the card still turns red and the dashboard
+retries the alert on the next checks, up to three attempts per outage. This alert has no
+event-specific opt-out. The Tari container's bounded first-scan
 health grace does not delay the card or alert.
 
 > **The view key is a secret. Treat it like a password.** A view key **cannot spend** — it can only
