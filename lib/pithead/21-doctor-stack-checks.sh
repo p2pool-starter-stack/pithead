@@ -342,7 +342,7 @@ check_tor_clearnet_egress() {
         "https://www.google.com/generate_204" 2>/dev/null; then
         dr_ok "Tor clearnet egress works — Healthchecks, Telegram, and XvB can reach their services."
     else
-        dr_warn_surface "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats are likely down while mining still works (a failing Tor guard does this). Check with a second target; tor.auto_heal:true in config.json tries bounded circuit refresh first, then one restart." "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats are likely down while mining still works (a failing Tor guard does this). There is no dashboard control that restarts Tor on its own."
+        dr_warn_surface "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats may be down while mining still works. Check with a second target; run './pithead restart tor' for manual recovery, or set tor.auto_heal:true in config.json for bounded circuit refresh before one restart." "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats may be down while mining still works. Check with a second target; run './pithead restart tor' for manual recovery."
     fi
     return 0
 }

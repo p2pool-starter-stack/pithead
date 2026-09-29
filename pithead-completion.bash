@@ -60,6 +60,7 @@ _pithead() {
         return
     fi
     if [ "$prev" = "tor-recover" ]; then
+        # shellcheck disable=SC2207  # command names have no whitespace
         COMPREPLY=($(compgen -W "check apply" -- "$cur"))
         return
     fi

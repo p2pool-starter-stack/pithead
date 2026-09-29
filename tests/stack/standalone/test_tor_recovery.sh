@@ -7,6 +7,7 @@ WORK=$(cd "$WORK" && pwd -P)
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+echo "== tor recovery refuses unsafe state and preserves identities =="
 mkdir -p "$WORK/tor/p2pool" "$WORK/control/audit"
 printf 'identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"
 printf 'chain-data\n' >"$WORK/chain"

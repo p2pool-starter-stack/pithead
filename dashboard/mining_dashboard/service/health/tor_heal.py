@@ -87,7 +87,7 @@ class TorEgressHealer:
             )
 
     @staticmethod
-    def _probe_egress():
+    def _probe_egress() -> tuple[bool, str]:
         """Corroborate failures on separate SOCKS circuits and independent targets."""
         evidence = []
         for url in (PROBE_URL, SECOND_PROBE_URL):
@@ -153,7 +153,7 @@ class TorEgressHealer:
             self._attempts -= 1
         self._last_attempt = None
 
-    async def check(self):
+    async def check(self) -> None:
         """Probe (throttled) and act. Called every data-loop cycle; never raises."""
         if not self.enabled:
             return
