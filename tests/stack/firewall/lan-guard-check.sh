@@ -91,7 +91,7 @@ printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
 lg 'lan_guard_mark' >/dev/null
 LG_LIVE=0 lg "$lg_stale mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; lan_guard_check" >/dev/null 2>&1 || true
 assert_eq "a stale stopped node loses the marker before an explicit start" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
-export LG_STOP="$LGD/stopped"
+export LG_STOP="$LGD/stopped" LAN_GUARD_SETTLE=0
 : >"$LG_STOP"
 lg 'lan_guard_mark' >/dev/null
 LG_LIVE=0 lg "$lg_prefixed mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; lan_guard_check" >/dev/null 2>&1 || true
@@ -154,6 +154,12 @@ LG_LIVE=0 lg 'flock() { return 1; }; lan_guard_enforced() { [ -e rule-restored ]
 assert_eq "a concurrent up that restores the rule and marker is left running" "$(cat "$LG_STOP")" ""
 assert_eq "a concurrent restore completes the check successfully" "$lg_rc" 0
 rm -f "$LGD/rule-restored"
+printf 'TARI_GRPC_BIND=0.0.0.0\n' >"$LGD/.env"
+: >"$LG_STOP"
+lg_rc=0
+LG_LIVE=0 lg 'flock() { return 1; }; lan_guard_mark; n=0; lan_guard_enforced() { n=$((n + 1)); [ "$n" -gt 2 ]; }; docker() { case "$1" in ps) echo tari ;; port) echo 0.0.0.0:18142 ;; stop) echo "$2" >>"$LG_STOP" ;; esac; }; lan_guard_check' >/dev/null 2>&1 || lg_rc=$?
+assert_eq "a tick that lands while up rewrites the rule stops nothing" "$(cat "$LG_STOP")" ""
+assert_eq "a rule that settles during the busy-lock recheck is a passing check" "$lg_rc" 0
 rm -f "$LGD/.env.new"
 cp "$LGD/systemctl.precheck" "$LGD/bin/systemctl"
 mv "$LGD/.env.precheck" "$LGD/.env"

@@ -38,7 +38,16 @@ lan_guard_arm_transition() { # <newenv>: before apply commits it
     fi
 }
 
-# Take the mutation lock only if free. A long apply/upgrade must not delay an emergency stop.
+# The rule is installed and this boot's marker is current for every watched port.
+lan_guard_holds() {
+    local p ports=()
+    for p in $(lan_guard_watched_ports); do ports+=("$p"); done
+    [ "${#ports[@]}" -eq 0 ] || { lan_guard_enforced "${ports[@]}" && lan_guard_marker_current; }
+}
+
+# Take the mutation lock only if free. A long apply/upgrade must not delay an emergency stop, but
+# it rewrites the rule and marker itself: a tick that lands mid-rewrite must not stop the nodes
+# that up is about to start (they would refuse with 78), so a lock-busy tick rechecks briefly first.
 lan_guard_check() {
     local rc
     if command -v flock >/dev/null 2>&1 && exec 8>>"$(mutation_lock_path)" 2>/dev/null && flock -n 8; then
@@ -48,6 +57,10 @@ lan_guard_check() {
         return "$rc"
     fi
     exec 8>&-
+    for _ in 1 2 3; do
+        lan_guard_holds && return 0
+        sleep "${LAN_GUARD_SETTLE:-2}"
+    done
     lan_guard_check_now
 }
 
