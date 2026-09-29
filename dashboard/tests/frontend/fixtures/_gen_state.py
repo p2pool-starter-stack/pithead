@@ -59,7 +59,10 @@ WORKERS = [
         "hashrate_1m": 5100,
         "hashrate_15m": 5000,
         "h60": 5100,
-        "rigforge": {"power": {"watts": 142.0, "hs_per_watt": 35.9}},
+        "rigforge": {
+            "generated_at": "2025-01-01T00:00:00Z",
+            "power": {"watts": 142.0, "hs_per_watt": 35.9},
+        },
     },
     {
         "name": "rig-bravo",
@@ -72,7 +75,10 @@ WORKERS = [
         "hashrate_1m": 0,
         "hashrate_15m": 4800,
         "h60": 4800,
-        "rigforge": {"power": {"watts": 143.0, "hs_per_watt": 33.6}},
+        "rigforge": {
+            "generated_at": "2025-01-01T00:00:00Z",
+            "power": {"watts": 143.0, "hs_per_watt": 33.6},
+        },
     },
 ]
 

@@ -36,7 +36,7 @@ def test_worker_inspect_also_keeps_proxy_online_authoritative(monkeypatch):
     try:
         detail = build_worker_detail(
             "r",
-            {"workers": [_worker(report)]},
+            {"workers": [_worker(report)], "timestamp": 1790711070.25},
             state,
         )
     finally:
@@ -45,6 +45,7 @@ def test_worker_inspect_also_keeps_proxy_online_authoritative(monkeypatch):
     assert detail["rigforge"]["chips"][0]["variant"] == "warn"
     assert detail["rigforge"]["generated_at"] == report["generated_at"]
     assert detail["rigforge"]["stale"] is False
+    assert detail["snapshot_at"] == 1790711070.25
 
 
 def test_stale_agent_fields_are_hidden_and_cannot_drive_update_badge():

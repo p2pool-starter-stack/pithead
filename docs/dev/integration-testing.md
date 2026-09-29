@@ -813,8 +813,8 @@ The progress line names the accepted request's `change_id`, so a timed-out readb
 to that request's rig-side status and journal rather than a nearby change. The host CLI rejects a
 rig response whose change ID is not 16 lowercase hex digits before returning it to the dashboard.
 For a DONATION revert, each readback poll also logs one bounded JSON sample: the dashboard's
-`/api/worker` DONATION, matching history status, and RigForge generation stamp and
-stale verdict, and the rig's direct `/1/summary` DONATION and generation stamp plus exact-ID
+`/api/worker` DONATION, matching history status, dashboard snapshot time and worker state,
+and RigForge generation stamp and stale verdict, and the rig's direct `/1/summary` DONATION and generation stamp plus exact-ID
 `/status`. A failed read is `poll_failed`; the sample contains no raw response, credential or host.
 Compare the stamps and values before changing the 90-second bound (#2894).
 

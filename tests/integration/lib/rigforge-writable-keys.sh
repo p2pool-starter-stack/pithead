@@ -59,9 +59,11 @@ _pred_rig_config_key() { # <rig> <key> <want-json>
 # A timeout needs both sides of the read path, not another guess at the wait bound (#2894).
 # Print only allowlisted scalar fields; the raw responses and Bearer never reach the log.
 _pred_donation_revert_sample() { # <rig> <want-json> <change-id>
-    local rig="$1" want="$2" id="$3" detail feed outcome dash history stamp stale direct direct_stamp direct_status
+    local rig="$1" want="$2" id="$3" detail feed outcome dash history stamp stale direct direct_stamp direct_status snapshot status
     [[ "$id" =~ ^[0-9a-f]{16}$ ]] || return 1
     detail="$(_worker_detail "$rig")"
+    snapshot="$(printf '%s' "$detail" | jq -r '.snapshot_at // empty' 2>/dev/null)"
+    status="$(printf '%s' "$detail" | jq -r '.status // empty' 2>/dev/null)"
     dash="$(_rig_config_key "$detail" DONATION)"
     history="$(printf '%s' "$detail" | jq -r --arg id "$id" 'first(.history[]? | select(.change_id == $id) | .status) // empty' 2>/dev/null)"
     IFS='|' read -r stamp stale <<<"$(printf '%s' "$detail" | jq -r '"\(.rigforge.generated_at // "")|\(if .rigforge.stale == null then "" else .rigforge.stale end)"' 2>/dev/null)"
@@ -79,6 +81,8 @@ _pred_donation_revert_sample() { # <rig> <want-json> <change-id>
     [[ "$direct" =~ ^[0-9]{1,3}$ ]] || direct=poll_failed
     [[ "$history" =~ ^[a-z_]{1,24}$ ]] || history=poll_failed
     [[ "$direct_status" =~ ^[a-z_]{1,24}$ ]] || direct_status=poll_failed
+    [[ "$snapshot" =~ ^[0-9]{10}(\.[0-9]{1,6})?$ ]] || snapshot=poll_failed
+    case "$status" in online | offline | down) ;; *) status=poll_failed ;; esac
     [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || stamp=poll_failed
     [[ "$direct_stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || direct_stamp=poll_failed
     case "$stale" in true | false) ;; *) stale=poll_failed ;; esac
@@ -86,7 +90,8 @@ _pred_donation_revert_sample() { # <rig> <want-json> <change-id>
         --arg history "${history:-poll_failed}" --arg stamp "${stamp:-poll_failed}" \
         --arg stale "${stale:-poll_failed}" --arg direct "${direct:-poll_failed}" \
         --arg direct_stamp "${direct_stamp:-poll_failed}" --arg direct_status "${direct_status:-poll_failed}" \
-        '{at:$at,dashboard_donation:$dash,history:$history,dashboard_feed_at:$stamp,dashboard_stale:$stale,rig_donation:$direct,rig_feed_at:$direct_stamp,rig_status:$direct_status}' >&2
+        --arg snapshot "${snapshot:-poll_failed}" --arg status "${status:-poll_failed}" \
+        '{at:$at,dashboard_donation:$dash,history:$history,dashboard_feed_at:$stamp,dashboard_stale:$stale,dashboard_snapshot_at:$snapshot,dashboard_status:$status,rig_donation:$direct,rig_feed_at:$direct_stamp,rig_status:$direct_status}' >&2
     [ "$dash" = "$want" ]
 }
 

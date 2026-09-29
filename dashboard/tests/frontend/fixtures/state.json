@@ -702,7 +702,9 @@
             "variant": "outline"
           }
         ],
+        "generated_at": "2025-01-01T00:00:00Z",
         "miner_down": false,
+        "stale": false,
         "stats": [
           {
             "label": "Power / efficiency",
@@ -743,7 +745,9 @@
             "variant": "outline"
           }
         ],
+        "generated_at": "2025-01-01T00:00:00Z",
         "miner_down": false,
+        "stale": false,
         "stats": [
           {
             "label": "Power / efficiency",

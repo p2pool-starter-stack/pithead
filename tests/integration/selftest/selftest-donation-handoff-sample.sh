@@ -9,7 +9,8 @@ source "$HERE/../lib/rigforge-apply-settle.sh"
 # shellcheck source=tests/integration/lib/rigforge-writable-keys.sh
 source "$HERE/../lib/rigforge-writable-keys.sh"
 
-STUB_DETAIL='{"rig_config":{"DONATION":1},"history":[{"change_id":"0123456789abcdef","status":"accepted"}],"rigforge":{"generated_at":"2026-09-29T17:04:30Z","stale":true}}'
+STUB_DETAIL='{"snapshot_at":1790711070.25,"status":"online","rig_config":{"DONATION":1},"history":[{"change_id":"0123456789abcdef","status":"accepted"}],"rigforge":{"generated_at":"2026-09-29T17:04:30Z","stale":true}}'
+echo "== DONATION handoff timeout samples =="
 _worker_detail() { printf '%s' "$STUB_DETAIL"; }
 RIG_HOST=example.test
 RIG_CONTROL_PORT=8082
@@ -36,8 +37,8 @@ assert_eq "stale dashboard value does not promote accepted to applied" "$out" 'a
 assert_eq "a timeout retains one sample per poll" "$(rg -c '^\{' "$log")" "2"
 sample="$(rg '^\{' "$log" | tail -1 | jq -c '.')"
 assert_eq "one bounded sample contains the dashboard value, feed age inputs, history and exact rig status" \
-    "$(printf '%s' "$sample" | jq -c '[.dashboard_donation,.history,.dashboard_feed_at,.dashboard_stale,.rig_donation,.rig_feed_at,.rig_status]')" \
-    '["1","accepted","2026-09-29T17:04:30Z","true","0","2026-09-29T17:05:15Z","applied"]'
+    "$(printf '%s' "$sample" | jq -c '[.dashboard_donation,.history,.dashboard_feed_at,.dashboard_stale,.dashboard_snapshot_at,.dashboard_status,.rig_donation,.rig_feed_at,.rig_status]')" \
+    '["1","accepted","2026-09-29T17:04:30Z","true","1790711070.25","online","0","2026-09-29T17:05:15Z","applied"]'
 if rg -q 'fixture-secret|example\.test' "$log"; then
     it_fail "sample excludes token and host" "credential or topology escaped"
 else
