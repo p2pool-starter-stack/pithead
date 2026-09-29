@@ -174,7 +174,7 @@ PY
     compose stop fake-tari-wallet >/dev/null
     if wait_wallet_field monero down true && wait_wallet_field tari down true &&
         [ "$(wallet_status monero | jq -r .reachable)" = false ] &&
-        [ "$(wallet_status tari | jq -r .reachable)" = false ]; then c_ok "stopped wallets turn earnings red"; else c_bad "stopped wallets turn earnings red" "$(wallet_status tari)"; fi
+        [ "$(wallet_status tari | jq -r .reachable)" = false ]; then c_ok "stopped wallets turn earnings red"; else c_bad "stopped wallets turn earnings red" "Monero=$(wallet_status monero), Tari=$(wallet_status tari)"; fi
     compose start fake-wallet-rpc >/dev/null
     compose start fake-tari-wallet >/dev/null
 
