@@ -35,9 +35,20 @@ st "unreadable prerelease feed is unchecked" \
         gh() { return 1; }
         newer_tari_prereleases v6.0.1-pre.0 >/dev/null && echo accepted || echo refused
     )" refused
+st "unreadable feed marks report unchecked and increments failures" \
+    "$(
+        gh() { return 1; }
+        failed=0 tari_prereleases=""
+        add_tari_prerelease_report v6.0.1-pre.0
+        printf '%s|%s' "$failed" "$tari_prereleases"
+    )" \
+    "1|**prerelease lookup failed — NOT checked**"
 st "newer prereleases stay separate" \
     "$(
-        gh() { printf '%s\n' v6.0.1-pre.1 v6.0.1-pre.0 v6.0.0-pre.0 v4.10.0; }
+        gh() {
+            [[ "$*" != *'prerelease == true'* ]] || return 1 # A prerelease-shaped Tari tag can have false metadata.
+            printf '%s\n' v6.0.1-pre.1 v6.0.1-pre.0 v6.0.0-pre.0 v4.10.0
+        }
         newer_tari_prereleases v6.0.1-pre.0
     )" v6.0.1-pre.1
 st "no newer prerelease is a completed check" \
@@ -147,5 +158,12 @@ finish_out=$(finish_report) || finish_rc=$?
 st "a failed Go raise watch fails the combined report" "$finish_rc" "1"
 st "the combined report actually ran the Go raise watch" "$(grep -c raise-watch-called <<<"$finish_out")" "1"
 st "a failed Go raise watch withholds the last-success stamp" "$(grep -c 'Last fully successful' <<<"$finish_out")" "0"
+ROOT="$integration_root/no-rootfs"
+mkdir -p "$ROOT"
+failed=1
+finish_rc=0
+finish_out=$(finish_report) || finish_rc=$?
+st "an unchecked prerelease report fails the run" "$finish_rc" "1"
+st "an unchecked prerelease report withholds the last-success stamp" "$(grep -c 'Last fully successful' <<<"$finish_out")" "0"
 [ "$st_fail" = 0 ] && echo "pin-watch self-test OK"
 exit "$st_fail"

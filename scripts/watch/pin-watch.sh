@@ -137,7 +137,7 @@ version_status() { # <pinned> <upstream> -> report classification
 newer_tari_prereleases() { # <pinned tag> -> newer prerelease tags, one per line
     local tag order feed
     feed=$(gh api 'repos/tari-project/tari/releases?per_page=100' \
-        --jq '.[] | select(.prerelease == true and .draft == false) | .tag_name' 2>/dev/null) || return 1
+        --jq '.[] | select(.draft == false) | .tag_name' 2>/dev/null) || return 1
     while IFS= read -r tag; do
         [ -n "$tag" ] || continue
         [[ "$tag" == *-* ]] || continue # Older upstream rows have a stable tag marked prerelease.
@@ -145,6 +145,17 @@ newer_tari_prereleases() { # <pinned tag> -> newer prerelease tags, one per line
         order=$(version_order "$1" "$tag") || return 1
         if [ "$order" = older ]; then printf '%s\n' "$tag"; fi
     done <<<"$feed"
+}
+
+add_tari_prerelease_report() { # <pinned tag>; updates report text and failure count
+    if ! tari_prereleases=$(newer_tari_prereleases "$1"); then
+        tari_prereleases="**prerelease lookup failed — NOT checked**"
+        failed=$((failed + 1))
+    elif [ -n "$tari_prereleases" ]; then
+        tari_prereleases=${tari_prereleases//$'\n'/, }
+    else
+        tari_prereleases="none in the latest 100 releases"
+    fi
 }
 
 # The one lookup, wrapped so a failure is a COUNTED failure and never a quiet "current".
@@ -341,14 +352,7 @@ for component in $components; do
     fi
     row "$component" "\`$(norm "$raw")\`" "\`$(norm "$latest")\`" "$verdict"
     if [ "$component" = tari ]; then
-        if ! tari_prereleases=$(newer_tari_prereleases "$raw"); then
-            tari_prereleases="**prerelease lookup failed — NOT checked**"
-            failed=$((failed + 1))
-        elif [ -n "$tari_prereleases" ]; then
-            tari_prereleases=${tari_prereleases//$'\n'/, }
-        else
-            tari_prereleases="none in the latest 100 releases"
-        fi
+        add_tari_prerelease_report "$raw"
     fi
 done
 
