@@ -132,6 +132,25 @@ chain_keep_verdict() { # <baseline-fp> <branch-fp> <baseline-image> <branch-imag
     if [ -z "$why" ]; then echo keep; else echo "recreate $why"; fi
 }
 
+# Read-only: the baseline monerod's peer counts and peer-list sizes just before the deploy replaces it (#2921), so a
+# recreated node's zero peers can be set against the node that was running. Never fails the deploy.
+chain_peer_probe() {
+    local out
+    out="$(
+        {
+            printf 'cd %q\n' "$RESTORE_DIR"
+            cat <<'PROBE'
+u=$(grep -E "^MONERO_NODE_USERNAME=" .env | cut -d= -f2-)
+p=$(grep -E "^MONERO_NODE_PASSWORD=" .env | cut -d= -f2-)
+curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info |
+    jq -c '{out: .outgoing_connections_count, in: .incoming_connections_count, white: .white_peerlist_size, grey: .grey_peerlist_size, height}'
+PROBE
+        } | on_bench 'bash -s' 2>/dev/null
+    )" || true
+    step "chain: baseline monerod peers before the deploy: ${out:-unreadable}"
+    return 0
+}
+
 # Deploy the branch with the running chain services held out of the up, then recreate the ones
 # whose definition, mounted files or image differ from the baseline's. Sets CHAIN_KEPT.
 deploy_keeping_chain() {
@@ -141,6 +160,7 @@ deploy_keeping_chain() {
         warn "chain: cannot read the pre-deploy snapshot; refusing upgrade"
         return 1
     }
+    chain_peer_probe
     for svc in $CHAIN_SERVICES; do [ -z "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 2)" ] || held="$held $svc"; done
     held="${held# }"
     [ -n "$held" ] || {

@@ -56,5 +56,17 @@ if echo "$out" | grep -qE "hunter2|SECRETVALUE|198.51.100"; then it_fail "captur
 assert_contains "the leg still skips, never passes" "$out" "strand a monerod that holds peers"
 assert_eq "no fault was injected" "$(grep -c 'ns-ipt -I' "$CALLS")" "0"
 
+# The baseline node's counts are logged before the deploy replaces it, and an unreadable node never fails the deploy.
+# shellcheck source=tests/integration/lib/chain-keep.sh
+source "$HERE/../lib/chain-keep.sh"
+export RESTORE_DIR=/baseline
+step() { echo "$*"; }
+on_bench() { cat >"$CALLS.probe"; echo '{"out":7,"in":2,"white":900,"grey":50,"height":1}'; }
+assert_contains "the pre-deploy probe logs the baseline node's peers" "$(chain_peer_probe)" 'baseline monerod peers before the deploy: {"out":7'
+assert_contains "the probe reads the baseline checkout, read-only" "$(cat "$CALLS.probe")" "cd /baseline"
+on_bench() { return 1; }
+assert_contains "an unreadable node is reported, never fatal" "$(chain_peer_probe; echo "rc=$?")" "unreadable"
+rm -f "$CALLS.probe"
+
 echo "selftest-monero-peer-wait: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ]

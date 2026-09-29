@@ -70,7 +70,7 @@ monero_peer_sample() {
     local i t
     # shellcheck disable=SC2016  # the snippet expands on the box
     i="$(rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env | cut -d= -f2-); p=$(grep -E "^MONERO_NODE_PASSWORD=" .env | cut -d= -f2-);
-        curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info | jq -c "{out: .outgoing_connections_count, in: .incoming_connections_count, height, synchronized}"' 2>/dev/null)"
+        curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info | jq -c "{out: .outgoing_connections_count, in: .incoming_connections_count, white: .white_peerlist_size, grey: .grey_peerlist_size, height, synchronized}"' 2>/dev/null)"
     t="$(rx "docker logs --since 60s tor 2>&1 | grep -E 'Bootstrapped|Retrying on a new circuit|resolve failed' | cut -c17- | sort | uniq -c | sort -rn | head -3 | tr -s ' ' | tr '\n' ';'" 2>/dev/null)"
     it_log "peer sample: monerod ${i:-unreadable}; tor 60s: ${t:-quiet}; tor $(rx "docker inspect -f '{{.State.Health.Status}} since {{.State.StartedAt}}' tor" 2>/dev/null); monerod since $(monero_started_at)"
 }
