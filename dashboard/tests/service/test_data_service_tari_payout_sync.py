@@ -66,6 +66,7 @@ class TestTariPayoutSync:
         try:
             svc.tari_wallet_client.scan.return_value = ([], False)
             assert asyncio.run(svc._sync_tari_payouts()) is False
+            assert svc.tari_wallet_scan_answered is False
             assert sm.get_payouts("tari") == []
         finally:
             sm.close()

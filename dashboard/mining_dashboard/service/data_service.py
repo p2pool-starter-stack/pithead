@@ -105,15 +105,17 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
 
     async def _sync_payouts(self):
         """Monero payout poll; tests and the loop use this seam."""
-        return await payout_sync.sync_monero(
+        self.monero_wallet_scan_answered = await payout_sync.sync_monero(
             self.state_manager, self.wallet_client, self.alert_service
         )
+        return self.monero_wallet_scan_answered
 
     async def _sync_tari_payouts(self):
         """Tari payout poll; the async sibling of ``_sync_payouts``."""
-        return await payout_sync.sync_tari(
+        self.tari_wallet_scan_answered = await payout_sync.sync_tari(
             self.state_manager, self.tari_wallet_client, self.alert_service
         )
+        return self.tari_wallet_scan_answered
 
     async def run(self):
         """
@@ -607,12 +609,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         # 30-min wall-clock gate inside (the winners file updates ~hourly).
                         await self._sync_xvb_winners()
 
-                    # Confirm payouts every 10th poll; the fast health probe ran above.
-                    #
-                    # 7d/7e are the only steps in this body wrapped per-step (#1644): both take no
-                    # poll local and write no `self` attribute, so a failure in one cannot leave a
-                    # later step reading half-written state. Everything above stays under the single
-                    # handler below — see `payout_sync` for why widening this is its own change.
+                    # Confirm payouts every 10th poll; the next health probe reads scan results.
+                    # These independent steps remain guarded per-step (#1644).
                     if self.wallet_client is not None and iteration_count % 10 == 0:
                         await payout_sync.run_isolated("Monero payout sync", self._sync_payouts)
 

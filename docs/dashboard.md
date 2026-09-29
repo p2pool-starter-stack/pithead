@@ -816,8 +816,9 @@ payout to a small local table, so a restart never re-alerts. Coinbase outputs be
 after 60 blocks; a payout is recorded and announced when it's **confirmed in a block**, not when it
 matures — once, never twice. A pruned node confirms payouts fine (coinbase outputs are never pruned). If the
 wallet is still doing its first scan or is briefly unreachable, the confirmed totals stay put.
-The card separately checks each enabled payout wallet every dashboard cycle. A wallet that stops
-answering turns the card red after the node-down debounce (`NODE_DOWN_AFTER_SEC`, default 90 seconds),
+The card checks each enabled payout wallet every dashboard cycle and remembers whether its slower
+payout scan answered. A wallet whose address probe or payout scan stops answering turns the card red
+after the node-down debounce (`NODE_DOWN_AFTER_SEC`, default 90 seconds),
 with the time it became unreachable; an empty answered scan leaves the card normal. A wallet whose
 own address differs from the configured payout address shows both addresses and a red warning.
 Each enabled wallet emits one debounced `payout_wallet_down` alert per outage when alert delivery

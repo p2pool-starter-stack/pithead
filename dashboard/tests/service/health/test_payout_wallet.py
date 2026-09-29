@@ -40,6 +40,20 @@ def test_address_mismatch_is_explicit_even_before_debounce():
     )
 
 
+def test_failed_scan_is_unreachable_even_when_address_rpc_answers():
+    now = [0]
+    monitor = NodeHealthMonitor(down_after=90, clock=lambda: now[0], ever_up=True)
+    client = MagicMock()
+    client.payout_addresses.return_value = ["expected"]
+    alerts = MagicMock(payout_wallet_down_alert=AsyncMock())
+    first = asyncio.run(observe_wallet("monero", client, monitor, "expected", None, alerts, False))
+    assert first["reachable"] is False and first["address_match"] is True
+    now[0] = 90
+    down = asyncio.run(observe_wallet("monero", client, monitor, "expected", first, alerts, False))
+    assert down["down"] is True
+    alerts.payout_wallet_down_alert.assert_awaited_once_with("monero", "unreachable")
+
+
 def test_wallet_down_event_has_no_event_specific_opt_out():
     sink = MagicMock(enabled=True)
     sink.event_enabled.return_value = False

@@ -67,6 +67,7 @@ class TestPayoutSync:
         try:
             svc.wallet_client.scan.return_value = ([], False)
             assert asyncio.run(svc._sync_payouts()) is False
+            assert svc.monero_wallet_scan_answered is False
             assert sm.get_payouts("monero") == []
         finally:
             sm.close()
