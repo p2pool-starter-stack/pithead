@@ -114,7 +114,10 @@ _pred_feed_maxt() { # <rig-name> <want-max_temp_c>
 _rig_direct_summary() {
     local body
     body="$(printf 'header = %s\n' "$(printf 'Authorization: Bearer %s' "${IT_RIG_TOKEN:-}" | jq -Rs .)" | rx "curl -fsS --max-time 10 -K - $(quote_arg "http://$RIG_HOST:8081/1/summary")" --stdin 2>/dev/null)" ||
-        { echo "direct /1/summary read failed"; return 0; }
+        {
+            echo "direct /1/summary read failed"
+            return 0
+        }
     printf '%s' "$body" | jq -r '"generated_at=\(.generated_at // "absent"), watchdog max_temp_c=\(.rigforge.watchdog.max_temp_c // "absent")"' 2>/dev/null ||
         echo "direct /1/summary unparseable"
 }

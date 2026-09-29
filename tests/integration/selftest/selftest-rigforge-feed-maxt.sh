@@ -51,7 +51,11 @@ assert_eq "a malformed response is named" "$_FEED_MAXT_SEEN" "unparseable /api/s
 
 echo "== direct rig summary and the failure row's detail =="
 RX_BODY='{"generated_at":"2026-09-26T10:00:00Z","rigforge":{"watchdog":{"max_temp_c":100}}}' RX_RC=0
-rx() { cat >/dev/null; printf '%s' "$RX_BODY"; return "$RX_RC"; }
+rx() {
+    cat >/dev/null
+    printf '%s' "$RX_BODY"
+    return "$RX_RC"
+}
 assert_eq "the direct read reports the stamp and ceiling" "$(_rig_direct_summary)" "generated_at=2026-09-26T10:00:00Z, watchdog max_temp_c=100"
 RX_BODY='{}'
 assert_eq "an absent stamp and ceiling are explicit" "$(_rig_direct_summary)" "generated_at=absent, watchdog max_temp_c=absent"
