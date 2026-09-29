@@ -57,11 +57,16 @@ phase_provision_address_watch() {
     sleep 10
     sans=$(_ssh "openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -ext subjectAltName" 2>/dev/null) || sans=""
     sans=${sans//$'\n'/ }
-    doctor=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>/dev/null) || true
+    for _ in 1 2 3 4; do
+        doctor=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>/dev/null) || true
+        printf '%s' "$doctor" | jq -e --arg m "$ADDRESS_WATCH_COVERED_OK" 'any(.checks[]?; .status == "ok" and .message == $m)' >/dev/null 2>&1 && break
+        sleep 15
+    done
     if verdict=$(address_watch_verdict "$enabled" "$active" "$doctor" "$rc" "$sans" "$ADDRESS_WATCH_TEST_ULA" "$ADDRESS_WATCH_TEST_ULA_SAN"); then
         ok "$verdict"
     else
         bad "$verdict"
+        printf '%s' "$doctor" | jq -r '.checks[]? | select(.message | test("certificate")) | "\(.status): \(.message)"' 2>/dev/null | sed 's/^/     doctor: /'
         _ssh "journalctl -u pithead-address-watch.service --no-pager -n 20" 2>/dev/null | tr -d '\r' | sed 's/^/     | /'
         return 1
     fi
