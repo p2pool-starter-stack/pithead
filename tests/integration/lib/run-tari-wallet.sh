@@ -28,8 +28,17 @@ _pred_payout_wallet_ready() { # <confirmed|tari_confirmed>
         [ "$(jq_get "$st" ".earnings.$1.address_match")" = true ]
 }
 
+# monero-wallet-rpc refuses every call while it catches up after a start (#718, #2756), and the
+# wallet's own healthcheck retires this marker only once the wallet reaches monerod's tip.
+_pred_monero_wallet_caught_up() {
+    rx 'docker exec wallet-rpc test ! -e /home/ubuntu/wallets/.payout-scanning' >/dev/null 2>&1
+}
+
 assert_payout_wallet_ready() { # <confirmed|tari_confirmed> <Monero|Tari>
     local st
+    if [ "$1" = confirmed ]; then
+        wait_for 1200 15 "Monero wallet finishes catching up to monerod (#2498)" _pred_monero_wallet_caught_up || true
+    fi
     # A scan that failed while the wallet was starting holds reachable=false until the next scan,
     # every 10th dashboard poll (about five minutes), so the wait must outlast one scan cycle.
     wait_for 420 10 "$2 payout wallet reachability and address (#2498)" _pred_payout_wallet_ready "$1" || true

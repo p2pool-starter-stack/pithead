@@ -85,6 +85,17 @@ assert_rc "real-wallet status predicate accepts reachable matching Monero" "$(
     _pred_payout_wallet_ready confirmed
     echo $?
 )" "0"
+STUB_MARKER_RC=0
+assert_rc "a Monero wallet with no scan marker counts as caught up" "$(
+    _pred_monero_wallet_caught_up
+    echo $?
+)" "0"
+STUB_MARKER_RC=1
+assert_rc "a Monero wallet still holding its scan marker is not caught up" "$(
+    _pred_monero_wallet_caught_up
+    echo $?
+)" "1"
+STUB_MARKER_RC=0
 STUB_STATE='{"earnings":{"tari_confirmed":{"enabled":true,"count":39,"reachable":false,"address_match":true}}}'
 got="$(run_leg "$LOCAL_ARGV")"
 assert_ne "unreachable Tari wallet fails the payout leg" "${got#* }" "0"
