@@ -337,6 +337,7 @@ run_fault_injection() {
     fault_clock_drift
     fault_disk_enospc
     fault_p2pool_cold_cache_dns
+    fault_tor_probe_egress
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "fault-injection" "$OUT_DIR"
 
     # Belt-and-braces: whatever happened above, leave monerod + tor up, the dashboard data dir
@@ -345,6 +346,7 @@ run_fault_injection() {
     # read-only, tmpfs-shadowed, clock-shadowed, or with clearnet egress open.
     rx "docker compose up -d monerod" >/dev/null 2>&1 || true
     rx "docker compose up -d tor" >/dev/null 2>&1 || true
+    tor_probe_ns_ipt "-D OUTPUT -d $(env_on_box NETWORK_PREFIX).25 -p tcp --dport 9050 -m comment --comment pithead-e2e-fault-tor-probe -j DROP" >/dev/null 2>&1 || true
     rx "sudo umount $(quote_arg "$(env_on_box DASHBOARD_DATA_DIR)")" >/dev/null 2>&1 || true
     rx "sudo chmod -R u+w $(quote_arg "$(env_on_box DASHBOARD_DATA_DIR)")" >/dev/null 2>&1 || true
     rx "docker compose restart dashboard" >/dev/null 2>&1 || true

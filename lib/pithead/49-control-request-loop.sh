@@ -1,3 +1,44 @@
+control_tor_newnym() ( # <control-dir> <id> <actor>; isolate the lock's exit-on-contention path
+    # Enabling auto-heal delegates a bounded NEWNYM capability to the dashboard. The host cannot
+    # attest the dashboard's HTTPS probe; it enforces its own persistent limit and serialization.
+    local cdir="$1" id="$2" actor="$3" stamp="$1/tor-newnym-budget" first=0 count=0 now
+    command -v flock >/dev/null || return 1
+    PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-newnym || return 1
+    [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || return 1
+    now=$(date +%s)
+    if [ -L "$stamp" ]; then
+        first=invalid
+    elif [ -f "$stamp" ]; then
+        read -r first count <"$stamp" || first=invalid
+    fi
+    if ! [[ "$first" =~ ^[0-9]+$ && "$count" =~ ^[0-9]+$ ]]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid NEWNYM budget",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym rejected
+    else
+        if [ $((now - first)) -ge 86400 ]; then
+            first=0
+            count=0
+        fi
+        if [ "$count" -ge 2 ] || { [ "$count" -gt 0 ] && [ $((now - first)) -lt 1800 ]; }; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"NEWNYM budget or cooldown",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym rejected
+        else
+            [ "$first" -ne 0 ] || first=$now
+            if ! printf '%s %s\n' "$first" "$((count + 1))" >"$stamp"; then
+                control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"NEWNYM budget unavailable",ts:(now|floor)}')"
+                control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym failed
+            elif docker exec tor /usr/local/bin/tor-control-signal.sh NEWNYM >/dev/null 2>&1; then
+                control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",action:"tor-newnym",ts:(now|floor)}')"
+                control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym applied
+            else
+                control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"Tor control signal failed",ts:(now|floor)}')"
+                control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym failed
+            fi
+        fi
+    fi
+    mutation_lock_release
+)
+
 control_process_request() { # <claimed-file> <control-dir>
     local file="$1" cdir="$2" id action actor size chain
     # Refuse a symlinked / non-regular claimed file (graft #437): a symlink dropped in requests/
@@ -45,6 +86,16 @@ control_process_request() { # <claimed-file> <control-dir>
         chain=$(jq -r 'if ((keys | sort) == ["action","actor","chain","id"])
             then .chain // "" else "" end' "$file")
         control_egress_sync "$id" "$chain" "$cdir"
+        ;;
+    tor-newnym)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        elif ! control_tor_newnym "$cdir" "$id" "$actor"; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"host mutation lock unavailable",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        fi
         ;;
     preview) control_preview "$file" "$id" "$actor" "$cdir" ;;
     commit) control_commit "$id" "$actor" "$cdir" "$(jq -r '.confirm // ""' "$file")" "$(jq -c '.approval // null' "$file")" ;;
