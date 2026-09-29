@@ -17,7 +17,7 @@ lan_guard_check_now() {
     local ports=() fixed_ports=()
     for p in $(lan_guard_watched_ports); do ports+=("$p"); done
     [ "${#ports[@]}" -gt 0 ] || return 0
-    if lan_guard_enforced "${ports[@]}" && cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then return 0; fi
+    if lan_guard_enforced "${ports[@]}" && lan_guard_marker_current; then return 0; fi
     lan_guard_unmark || {
         warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
         rc=1
@@ -33,7 +33,7 @@ lan_guard_check_now() {
             [[ "$seen" == *" $name "* ]] && continue
             seen+="$name "
             # A concurrent up may have restored the rule and marker while the lock was busy.
-            if lan_guard_enforced "${ports[@]}" && cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then return 0; fi
+            if lan_guard_enforced "${ports[@]}" && lan_guard_marker_current; then return 0; fi
             docker stop "$name" >/dev/null || rc=1
         done <<<"$names"
     done

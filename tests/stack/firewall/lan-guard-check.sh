@@ -6,6 +6,20 @@ cp "$LGD/bin/systemctl" "$LGD/systemctl.precheck"
 cp "$LGD/.env" "$LGD/.env.precheck"
 [ ! -e "$LGD/data/lan-guard/enforced" ] || cp "$LGD/data/lan-guard/enforced" "$LGD/marker.precheck"
 lg 'lan_guard_mark' >/dev/null
+if [ "$(uname -s)" = Linux ]; then
+    cat /proc/sys/kernel/random/boot_id >"$LGD/data/lan-guard/enforced"
+    assert_eq "a live proc boot ID matches its written marker" \
+        "$(lg 'BOOT_ID_FILE=/proc/sys/kernel/random/boot_id; lan_guard_marker_current; echo $?')" 0
+    lg 'lan_guard_mark' >/dev/null
+fi
+printf 'boot-1\n\n' >"$LGD/marker.bad"
+printf '\n' >"$LGD/marker.blank"
+: >"$LGD/boot.empty"
+assert_eq "extra marker bytes never validate" "$(lg 'LAN_GUARD_MARKER=marker.bad; rc=0; lan_guard_marker_current || rc=$?; echo $rc')" 1
+assert_eq "a missing boot ID never validates a newline-only marker" "$(lg 'BOOT_ID_FILE=missing; LAN_GUARD_MARKER=marker.blank; rc=0; lan_guard_marker_current || rc=$?; echo $rc')" 1
+assert_eq "an unreadable boot ID never validates" "$(lg 'BOOT_ID_FILE=.; rc=0; lan_guard_marker_current || rc=$?; echo $rc')" 1
+assert_eq "an empty boot ID never validates" "$(lg 'BOOT_ID_FILE=boot.empty; rc=0; lan_guard_marker_current || rc=$?; echo $rc')" 1
+assert_eq "an empty marker never validates" "$(lg 'LAN_GUARD_MARKER=boot.empty; rc=0; lan_guard_marker_current || rc=$?; echo $rc')" 1
 assert_eq "marker stays visible during an apply refresh" "$(lg 'mv() { test -e "$LAN_GUARD_MARKER" || return 1; command mv "$@"; }; lan_guard_mark; echo $?')" 0
 assert_eq "node uid can read an atomically refreshed marker" "$(stat -c %a "$LGD/data/lan-guard/enforced" 2>/dev/null || stat -f %Lp "$LGD/data/lan-guard/enforced")" 644
 cat >"$LGD/bin/systemctl" <<'SYSTEMCTL'

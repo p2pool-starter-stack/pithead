@@ -40,6 +40,14 @@ lan_guard_mark() {
     fi
 }
 lan_guard_unmark() { rm -f "$LAN_GUARD_MARKER" 2>/dev/null || sudo -n rm -f "$LAN_GUARD_MARKER" 2>/dev/null; } # 1: still there
+# Pipe /proc's boot_id: its reported size is zero even when its contents match the marker.
+lan_guard_marker_current() {
+    local -a status
+    [ -s "$LAN_GUARD_MARKER" ] || return 1
+    cat "$BOOT_ID_FILE" 2>/dev/null | cmp -s - "$LAN_GUARD_MARKER"
+    status=("${PIPESTATUS[@]}")
+    [ "${status[0]}" -eq 0 ] && [ "${status[1]}" -eq 0 ]
+}
 # A verb's teardown of the rule (#2749): remove_lan_guard, or stop the verb with the rule kept.
 lan_guard_teardown() { # <verb>
     local rc=0 why="$LAN_GUARD_MARKER could not be deleted"
@@ -111,7 +119,7 @@ lan_guard_arm_transition() { # <newenv>: before apply commits it
             [ -n "$containers" ] || grep -qxF mining_net <<<"$networks" || rc=0
         fi
     fi
-    if [ "$rc" -ne 0 ] || ! cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then
+    if [ "$rc" -ne 0 ] || ! lan_guard_marker_current; then
         if [ "$rc" -ne 0 ]; then
             warn "lan-guard:transition-not-armed — $(lan_guard_reason "$rc")."
         else
