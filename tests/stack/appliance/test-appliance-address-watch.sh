@@ -11,6 +11,9 @@ AW="$SANDBOX/address-watch"
 rm -rf "$AW"
 mkdir -p "$AW/bin" "$AW/dir/data/tls"
 printf 'HOST_IP=192.168.1.5\n' >"$AW/dir/.env"
+printf '{}\n' >"$AW/dir/config.json"
+echo seed >"$AW/dir/data/tls/wizard.crt"
+echo seed >"$AW/dir/Caddyfile"
 cat >"$AW/bin/hostname" <<'STUB'
 #!/bin/bash
 cat "$AW_ADDRS"
@@ -37,7 +40,7 @@ aw_run() { # <addresses> [boot-state] -> script output; render calls in $AW/log,
     printf '%s\n' "$1" >"$AW/addrs"
     printf '%s\n' "${2:-active}" >"$AW/boot-state"
     AW_ADDRS="$AW/addrs" AW_BOOT_STATE="$AW/boot-state" AW_LOG="$AW/log" AW_RENDER_FAIL="$AW/render-fail" \
-        PATH="$AW/bin:$PATH" PITHEAD_DIR="$AW/dir" PITHEAD_ADDRESS_WATCH_STATE="$AW/state" \
+        PATH="$AW/bin:$PATH" PITHEAD_DIR="$AW/dir" PITHEAD_LOCK_FILE="$AW/lock" PITHEAD_ADDRESS_WATCH_STATE="$AW/state" \
         PITHEAD_TLS_DIR=data/tls AW_RESTARTS="$AW/restarts" PITHEAD_CADDY_RESTART_CMD="$AW/bin/restart-caddy" \
         bash "$HERE/../../os/overlay/pithead-address-watch" 2>&1
 }
@@ -53,25 +56,43 @@ assert_eq "…and restarts Caddy because the certificate changed" "$(aw_count re
 assert_contains "…and says why on the journal" "$out" "addresses changed"
 aw_run "fd1c::7 192.168.1.5" >/dev/null
 assert_eq "the same set in a different order is not a change" "$(aw_count render "$AW/log")" "2"
+# render that changes nothing
 cat >"$AW/dir/pithead" <<'STUB'
 #!/bin/bash
 echo render >>"$AW_LOG"
 STUB
 aw_run "192.168.1.5 fd1c::7 fd1c::8" >/dev/null
 assert_eq "a render that changes nothing does not restart Caddy" "$(aw_count restart "$AW/restarts")" "2"
-: >"$AW/render-fail"
+# render that rewrites the files and then fails: Caddy must still be restarted onto them, and the
+# retry must not forget it (the address set is unrecorded, the served signature is not)
 cat >"$AW/dir/pithead" <<'STUB'
 #!/bin/bash
 echo render >>"$AW_LOG"
+echo minted >data/tls/wizard.crt
 exit 1
 STUB
 out=$(aw_run "192.168.1.5 fd1c::9"; echo "rc=$?")
 assert_contains "a failed render leaves the unit successful" "$out" "rc=0"
 assert_contains "…and names the retry" "$out" "retrying on the next tick"
+assert_eq "…yet Caddy is restarted onto the files it left" "$(aw_count restart "$AW/restarts")" "3"
 before=$(aw_count render "$AW/log")
 aw_run "192.168.1.5 fd1c::9" >/dev/null
 assert_eq "…and the next tick renders again, the set never having been recorded" "$(aw_count render "$AW/log")" "$((before + 1))"
+assert_eq "…without restarting Caddy a second time for the same files" "$(aw_count restart "$AW/restarts")" "3"
+# a pithead operation holding the mutation lock: no render, retry
+cat >"$AW/dir/pithead" <<'STUB'
+#!/bin/bash
+echo render >>"$AW_LOG"
+STUB
+before=$(aw_count render "$AW/log")
+out=$(flock -n "$AW/lock" true && (exec 8>>"$AW/lock"; flock 8; aw_run "192.168.1.5 fd1c::b"))
+assert_eq "a held mutation lock defers the render" "$(aw_count render "$AW/log")" "$before"
+assert_contains "…and says it will retry" "$out" "retrying on the next tick"
+aw_run "192.168.1.5 fd1c::b" >/dev/null
+assert_eq "the render runs once the lock is free" "$(aw_count render "$AW/log")" "$((before + 1))"
 before=$(aw_count render "$AW/log")
 aw_run "192.168.1.5 fd1c::a" activating >/dev/null
 assert_eq "nothing renders while pithead-boot is still running" "$(aw_count render "$AW/log")" "$before"
+aw_run "192.168.1.5 fd1c::a" failed >/dev/null
+assert_eq "a failed pithead-boot (fallback boot) does not disable the watch" "$(aw_count render "$AW/log")" "$((before + 1))"
 unset AW aw_run aw_count out before

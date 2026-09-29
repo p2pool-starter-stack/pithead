@@ -1,7 +1,5 @@
 [Unit]
 Description=Pithead address watch — re-render the dashboard certificate when the machine's addresses change
-ConditionPathIsMountPoint=/data
-ConditionPathExists=/data/pithead/config.json
 After=pithead-boot.service
 
 [Service]

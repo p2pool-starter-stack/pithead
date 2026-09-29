@@ -3,7 +3,7 @@ Description=Pithead address watch — check the machine's addresses every five m
 
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=5min
+OnUnitInactiveSec=5min
 AccuracySec=30s
 
 [Install]

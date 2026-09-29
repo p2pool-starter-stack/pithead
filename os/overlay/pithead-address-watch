@@ -17,24 +17,41 @@ cd "${PITHEAD_DIR:-/data/pithead}" 2>/dev/null || exit 0
 STATE="${PITHEAD_ADDRESS_WATCH_STATE:-/run/pithead-address-watch}"
 TLS_DIR="${PITHEAD_TLS_DIR:-data/tls}"
 BOOT_UNIT="${PITHEAD_BOOT_UNIT:-pithead-boot.service}"
+LOCK="${PITHEAD_LOCK_FILE:-.pithead.lock}"
 
-[ -x ./pithead ] && [ -s .env ] || exit 0
-[ "$(systemctl is-active "$BOOT_UNIT" 2>/dev/null)" = active ] || exit 0
+[ -x ./pithead ] && [ -s .env ] && [ -s config.json ] || exit 0
+# pithead-boot's gate loop owns the render while it runs. Any other state (active, failed after a
+# fallback boot) is a settled box whose certificate may be stale.
+[ "$(systemctl is-active "$BOOT_UNIT" 2>/dev/null)" != activating ] || exit 0
 
 addrs=$(hostname -I 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' ')
 [ -n "$addrs" ] || exit 0
-[ "$addrs" != "$(cat "$STATE" 2>/dev/null)" ] || exit 0
 
+# The certificate and Caddyfile Caddy was last known to be serving: recorded when this script
+# restarts it, and the files as found on the first tick (pithead-boot started Caddy from them).
 sig() { sha256sum "$TLS_DIR/wizard.crt" Caddyfile 2>/dev/null | cut -d' ' -f1 | tr '\n' ' '; }
-before=$(sig)
-if ! ./pithead render >/dev/null 2>&1; then
-    echo "pithead-address-watch: render failed after the address set changed; retrying on the next tick"
-    exit 0
+served=$(cat "$STATE.served" 2>/dev/null)
+if [ -z "$served" ]; then
+    served=$(sig)
+    printf '%s' "$served" >"$STATE.served"
 fi
-printf '%s' "$addrs" >"$STATE"
-if [ "$before" != "$(sig)" ]; then
+[ -f "$STATE" ] && [ "$addrs" = "$(cat "$STATE")" ] && [ "$(sig)" = "$served" ] && exit 0
+
+# render is not under pithead's own mutation lock; take it here so this never interleaves with an
+# apply, up or restart the control plane is running. Busy means try again next tick.
+if flock -n "$LOCK" ./pithead render >/dev/null 2>&1; then
+    printf '%s' "$addrs" >"$STATE"
+else
+    echo "pithead-address-watch: render failed or another pithead operation holds the lock; retrying on the next tick"
+fi
+# A render that failed after minting still left files Caddy is not serving, so compare regardless.
+now=$(sig)
+if [ "$now" != "$served" ]; then
     echo "pithead-address-watch: the machine's addresses changed — re-rendered the dashboard certificate and Caddyfile, restarting Caddy"
-    ${PITHEAD_CADDY_RESTART_CMD:-docker compose restart caddy} >/dev/null 2>&1 ||
-        echo "pithead-address-watch: Caddy did not restart; it picks the new files up on its next start"
+    if ${PITHEAD_CADDY_RESTART_CMD:-docker compose restart caddy} >/dev/null 2>&1; then
+        printf '%s' "$now" >"$STATE.served"
+    else
+        echo "pithead-address-watch: Caddy did not restart; retrying on the next tick"
+    fi
 fi
 exit 0
