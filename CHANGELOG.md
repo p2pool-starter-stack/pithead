@@ -136,6 +136,19 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   source that could route to the host. See
   [LAN-only sources](docs/configuration.md#lan-only-sources).
 
+- **The LAN-only source rule now survives a DIY host reboot.** A reboot cleared the rule while
+  Docker restarted the node containers still published on every interface, so `18081`, `18083`
+  and `18142` took any source until `./pithead up`. `pithead-lan-guard.service`, ordered before
+  `docker.service`, now restores the rule. The node containers that publish a LAN port run with
+  restart policy `no`, and `pithead-lan-hold.service` starts them only after the guard succeeds, so
+  a guard that fails at boot leaves them stopped instead of exposed. While the rule is missing, the
+  nodes refuse to start with a LAN bind however they are started (`docker start`, a compose run
+  outside pithead), and `./pithead restart` and the Tor auto-heal do not try. Docker no longer restarts a
+  crashed `monerod` or `tari` on such a host; `./pithead doctor` and a `container_unhealthy` alert
+  name the node and the reason, and `./pithead up` recovers. The first `up` after upgrading
+  recreates those containers once. If either unit cannot be installed, the ports stay on `127.0.0.1`
+  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)).
+
 - **The dashboard alerts when the Tor-only egress firewall is missing.** The dashboard took the
   firewall's state from `network.tor_egress_firewall`, so it reported "blocked by the egress
   firewall" over an open egress. `pithead-egress.timer` now runs `pithead egress-status` every two

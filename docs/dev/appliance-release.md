@@ -271,6 +271,10 @@ sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGIS
 ```
 
 `--phase update` and `--phase fault` build their own v1/v2 images and need no `--image`.
+The update phase also packages its built v1 `system.img` and dev-signed v2 bundle, checks both
+asset sizes and checksums, and compares the decompressed image with the original.
+Its phase log retains the sizes and hashes; harness cleanup removes the packaged copies.
+This checks the release packaging path with test signing, not the final release-key artifacts.
 `--phase all` runs all eight — boot, update, install, provision, rig, media, fault and reset.
 Expect roughly 25 minutes per phase, most of it image builds, so budget an evening rather
 than a coffee break. It ran five of the eight until #1064, which meant a cut that followed
