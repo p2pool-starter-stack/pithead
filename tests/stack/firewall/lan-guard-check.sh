@@ -42,6 +42,18 @@ lg_apply="$(run_sourced "$LGD" declare -f apply)"
 lg_prearm=missing
 case "$lg_apply" in *'lan_guard_arm_transition "$newenv"'*'mv "$newenv" "$ENV_FILE"'*) lg_prearm=before-commit ;; esac
 assert_eq "apply arms old and new ports before committing the new .env" "$lg_prearm" before-commit
+lg_rc=0
+lg "docker() { case \"\$1\" in network) echo mining_net ;; esac; }; lan_guard_enforced() { return 4; }; provision_lan_guard_boot_unit() { :; }; lan_guard_arm_transition '$LGD/.env.new'" >/dev/null 2>&1 || lg_rc=$?
+assert_eq "a missing FORWARD jump refuses the staged LAN bind" "$lg_rc" 1
+assert_eq "a refused transition leaves no node start marker" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
+lg_rc=0
+lg "docker() { case \"\$1\" in ps) echo stopped-node ;; esac; }; lan_guard_enforced() { return 4; }; provision_lan_guard_boot_unit() { :; }; lan_guard_arm_transition '$LGD/.env.new'" >/dev/null 2>&1 || lg_rc=$?
+assert_eq "a stopped project node also forbids first-network staging" "$lg_rc" 1
+assert_eq "the stopped-node refusal also invalidates the marker" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
+lg_rc=0
+lg "docker() { :; }; lan_guard_enforced() { return 4; }; provision_lan_guard_boot_unit() { :; }; lan_guard_arm_transition '$LGD/.env.new'" >/dev/null 2>&1 || lg_rc=$?
+assert_eq "an absent first network can stage the guarded port" "$lg_rc" 0
+lg 'lan_guard_unmark' >/dev/null
 : >"$LG_RESTORE"
 lg "$lg_stale lan_guard_enforced() { return 0; }; provision_lan_guard_boot_unit() { :; }; lan_guard_arm_transition '$LGD/.env.new'" >/dev/null
 assert_contains "transition arms the new port" "$(cat "$LG_RESTORE")" "--dport 18081"

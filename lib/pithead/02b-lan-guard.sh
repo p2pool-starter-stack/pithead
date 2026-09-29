@@ -90,17 +90,21 @@ lan_guard_transition_ports() { # <newenv>
 }
 
 lan_guard_arm_transition() { # <newenv>: before apply commits it
-    local p rc=0 live_nodes ports=()
+    local p rc=0 containers networks ports=()
     for p in $(lan_guard_transition_ports "$1"); do ports+=("$p"); done
     [ "${#ports[@]}" -gt 0 ] || return 0
     apply_lan_guard "${ports[@]}"
     lan_guard_enforced "${ports[@]}" || rc=$?
     if [ "$rc" = 4 ]; then
-        # No Docker network yet: compose_up will create its FORWARD jump before a node starts.
-        live_nodes=$(docker ps --filter label=com.docker.compose.project=pithead --format '{{.Names}}') || rc=3
-        [ -n "$live_nodes" ] || [ "$rc" = 3 ] || rc=0
+        # Only the first network creation can supply a missing FORWARD jump. A stopped
+        # container or an existing network could still start with the port exposed.
+        if containers=$(docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.Names}}' 2>/dev/null) &&
+            networks=$(docker network ls --format '{{.Name}}' 2>/dev/null); then
+            [ -n "$containers" ] || grep -qxF mining_net <<<"$networks" || rc=0
+        fi
     fi
     if [ "$rc" -ne 0 ] || ! cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then
+        lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
         lan_guard_check_now || true
         return 1
     fi
