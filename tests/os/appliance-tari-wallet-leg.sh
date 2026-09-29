@@ -22,6 +22,10 @@ _tari_wallet_snapshot() {
     _ssh "podman exec dashboard python -c 'import hashlib, grpc; from mining_dashboard.client.tari.generated import types_pb2, wallet_pb2, wallet_pb2_grpc; channel=grpc.insecure_channel(\"127.0.0.1:18143\"); wallet=wallet_pb2_grpc.WalletStub(channel); version=wallet.GetVersion(wallet_pb2.GetVersionRequest(), timeout=10).version; address=wallet.GetCompleteAddress(types_pb2.Empty(), timeout=10).one_sided_address_base58; state=wallet.GetState(wallet_pb2.GetStateRequest(), timeout=10); print(version, hashlib.sha256(address.encode()).hexdigest(), state.scanned_height, state.balance.available_balance)'" 2>/dev/null | tr -d '\r'
 }
 
+tari_wallet_image_is_pinned() { # <image-name> <image-digest> <pinned-ref>
+    [ "$2" = "${3##*@}" ] || { [ -z "$2" ] && [ "$1" = "$3" ]; }
+}
+
 # #2657: the console wallet must not be PID 1 (a zombie PID 1 cannot be signalled), and a stop must
 # complete: rc 0 and the container down within the timeout plus a margin. How fast the wallet itself
 # shuts down on SIGTERM is the wallet's business, so the exit code is reported, not judged.
@@ -31,7 +35,7 @@ tari_wallet_stop_ok() { # <stop-rc> <elapsed-s> <running>
 }
 
 phase_provision_tari_wallet() { # <phase-rc>
-    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running dispositions before after version identity height balance after_version after_identity after_height after_balance image db_before db_after db_errors
+    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running dispositions before after version identity height balance after_version after_identity after_height after_balance image_name image_digest expected_image db_before db_after db_errors
     [ "${1:-0}" -eq 0 ] || unexercised=info
     info "phase: the view-only Tari payout wallet under podman quadlets (#462/#2731)"
     if ! SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh true 2>/dev/null; then
@@ -117,11 +121,13 @@ mv config.json.tari-wallet-test config.json
     fi
     dispositions=$(_ssh "podman exec tari-wallet sh -c 'for s in /proc/[0-9]*/status; do grep -q \"^Name:.*minotari_consol\" \"\$s\" && { printf \"%s \" \"\$s\"; grep -E \"^(SigIgn|SigCgt|SigBlk):\" \"\$s\"; }; done'" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
     if [ -n "$dispositions" ]; then info "Tari wallet: signal dispositions (#2899): $dispositions"; else bad "Tari wallet: could not read the wallet process's signal dispositions (#2899)"; fi
-    image=$(_ssh "podman inspect tari-wallet --format '{{.Config.Image}}'" 2>/dev/null | tr -d '\r\n')
-    case "$image" in
-    'ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d') ok "Tari wallet: running the pinned v6.0.1-pre.0 image" ;;
-    *) bad "Tari wallet: running image differs from the pinned v6.0.1-pre.0 image" ;;
-    esac
+    expected_image='ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d'
+    read -r image_name image_digest <<<"$(_ssh "podman inspect tari-wallet --format '{{.ImageName}} {{.ImageDigest}}'" 2>/dev/null | tr -d '\r\n')"
+    if tari_wallet_image_is_pinned "$image_name" "$image_digest" "$expected_image"; then
+        ok "Tari wallet: running the pinned v6.0.1-pre.0 image"
+    else
+        bad "Tari wallet: running image differs from the pinned v6.0.1-pre.0 image"
+    fi
     before=$(_tari_wallet_snapshot)
     read -r version identity height balance <<<"$before"
     if [ -n "$identity" ] && [[ "$version" = *6.0.1-pre.0* ]] && [[ "$height" =~ ^[0-9]+$ ]] && [[ "$balance" =~ ^[0-9]+$ ]]; then
@@ -177,6 +183,10 @@ _tari_wallet_self_test() {
     tari_wallet_stop_ok 0 2 true && f=$((f + 1))
     tari_wallet_stop_ok 1 2 false && f=$((f + 1))
     tari_wallet_stop_ok 0 2 '' && f=$((f + 1))
+    tari_wallet_image_is_pinned wrong sha256:good repo/wallet@sha256:good || f=$((f + 1))
+    tari_wallet_image_is_pinned repo/wallet@sha256:good '' repo/wallet@sha256:good || f=$((f + 1))
+    tari_wallet_image_is_pinned repo/wallet@sha256:good sha256:wrong repo/wallet@sha256:good && f=$((f + 1))
+    tari_wallet_image_is_pinned wrong '' repo/wallet@sha256:good && f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-tari-wallet-leg self-test: %s failed\n' "$f" >&2
         return 1
