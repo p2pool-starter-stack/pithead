@@ -303,11 +303,13 @@ monerod_peers_and_tip() { # <user> <pass> <url>
     if [ -z "$out" ]; then
         dr_info "monerod peers: no reading (the in-container helper gave none)${note}."
         [ -z "$ts" ] || [ "$age" -le 1800 ] ||
-            dr_warn "monerod's last block is ${age}s old — a stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials."
+            dr_warn_surface "monerod's last block is ${age}s old — a stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
+                "monerod's last block is ${age}s old — the node may be stale; check its container logs in the dashboard."
         return 0
     fi
     if [ "$out" -eq 0 ] || { [ -n "$ts" ] && [ "$age" -gt 1800 ]; }; then
-        dr_warn "monerod peers: ${out} out / ${inn:-?} in${note} — an isolated or stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials."
+        dr_warn_surface "monerod peers: ${out} out / ${inn:-?} in${note} — an isolated or stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
+            "monerod peers: ${out} out / ${inn:-?} in${note} — the node may be isolated or stale; check its container logs in the dashboard."
     else
         dr_ok "monerod peers: ${out} out / ${inn:-?} in${note}."
     fi

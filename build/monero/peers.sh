@@ -12,7 +12,7 @@ set -eu
 
 body=$(printf 'user = %s\n' "$(printf '%s:%s' "${MONERO_NODE_USERNAME:-}" "${MONERO_NODE_PASSWORD:-}" | jq -Rs .)" |
     curl -fsS --max-time 2 --max-filesize 65536 --digest --config - \
-        http://127.0.0.1:18085/get_info) || exit 1
+        http://127.0.0.1:18085/get_info) 2>/dev/null || exit 1
 
 printf '%s' "$body" | jq -ec '
     def count: type == "number" and . >= 0 and . == floor;
@@ -22,4 +22,4 @@ printf '%s' "$body" | jq -ec '
         {outgoing: .outgoing_connections_count, incoming: .incoming_connections_count,
          white: .white_peerlist_size, grey: .grey_peerlist_size}
     else empty end
-' || exit 3
+' 2>/dev/null || exit 3
