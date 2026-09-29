@@ -19,6 +19,7 @@ ReadOnly=true
 DropCapability=all
 AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID
 NoNewPrivileges=true
+RunInit=true
 PodmanArgs=--memory 512m --memory-swap 512m
 HealthCmd=/wallet-config/wallet-healthcheck.sh
 HealthInterval=30s

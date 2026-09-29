@@ -25,7 +25,8 @@ assert_tari_payout_scan() { # <config-json> <state-json>
     local config="$1" st="$2" birthday argv node tcp
     assert_eq "TARI_PAYOUT_CONFIRM_ENABLED matches config (#462/#942)" "$(env_on_box TARI_PAYOUT_CONFIRM_ENABLED)" "true"
     assert_eq "dashboard confirms Tari payout tracking is live (#462/#942)" "$(jq_get "$st" '.earnings.tari_confirmed.enabled')" "true"
-    argv="$(rx "docker exec tari-wallet cat /proc/1/cmdline" 2>/dev/null | tr '\0' ' ')"
+    # Every process's argv, not PID 1's: the container runs under an init (#2657), so PID 1 is the init.
+    argv="$(rx "docker exec tari-wallet sh -c 'cat /proc/[0-9]*/cmdline'" 2>/dev/null | tr '\0' ' ')"
     # The local node is the host of the rendered Tari gRPC address; both scan URLs must name it.
     node="http://$(env_on_box TARI_GRPC_ADDRESS | cut -d: -f1):9000"
     assert_contains "tari-wallet scans through the local node's :9000 (#2731)" "$argv" "-p wallet.http_server_url=$node "

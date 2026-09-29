@@ -321,6 +321,7 @@ jq_assert "tari-wallet healthcheck probes gRPC (#2498)" \
     '.services["tari-wallet"].healthcheck.test == ["CMD", "/wallet-config/wallet-healthcheck.sh"]'
 jq_assert "tari-wallet wrapper may repair its volume before dropping uid (#2454)" \
     '.services["tari-wallet"] | .user == "0:0" and .cap_drop == ["ALL"] and ((.cap_add | sort) == (["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"] | sort)) and .read_only == true'
+jq_assert "tari-wallet runs under an init that reaps and forwards signals (#2657)" '.services["tari-wallet"].init == true'
 # The console wallet's digest pin had NO assertion anywhere (#1137). It cannot have one where the
 # other three live: $RENDERED is built with COMPOSE_PROFILES=local_node,local_tari and tari-wallet
 # is profiles: ["tari_payout_confirm"], so an expect_present there would pass and fail identically —

@@ -43,10 +43,13 @@ assert_eq "public_remotes_in_proc_tcp: all-local is empty" "$(public_remotes_in_
 # configured one, or an unreadable socket table fails; the local argv with payouts found passes.
 env_on_box() { case "$1" in TARI_GRPC_ADDRESS) echo 172.28.0.27:18142 ;; *) echo true ;; esac }
 wait_for() { return 0; }
-STUB_ARGV="" STUB_TCP_RC=0
+STUB_ARGV="" STUB_TCP_RC=0 STUB_CMDS="$(mktemp)"
 rx() {
     case "$1" in
-    *cmdline*) printf '%s ' "$STUB_ARGV" | tr ' ' '\0' ;;
+    *cmdline*)
+        printf '%s\n' "$1" >>"$STUB_CMDS"
+        printf '%s ' "$STUB_ARGV" | tr ' ' '\0'
+        ;;
     *net/tcp*)
         [ "$STUB_TCP_RC" -eq 0 ] || return "$STUB_TCP_RC"
         printf '%s\n' "$PT" | head -3
@@ -68,6 +71,8 @@ run_leg() { # <argv> -> "<pass> <fail>" added by one leg run
 }
 got="$(run_leg "$LOCAL_ARGV")"
 assert_eq "local argv, payouts found: every row passes" "${got#* }" "0"
+# Under the init (#2657) the wallet is not PID 1: the leg reads every process's argv, never /proc/1 alone.
+assert_eq "the argv read covers every process, not PID 1 (#2657)" "$(grep -c '/proc/\[0-9\]\*/cmdline' "$STUB_CMDS")-$(grep -c '/proc/1/' "$STUB_CMDS")" "1-0"
 got="$(run_leg "${LOCAL_ARGV%%-p *}-p wallet.fallback_http_server_url=https://rpc.tari.com")"
 assert_ne "public fallback fails the leg" "${got#* }" "0"
 got="$(run_leg "${LOCAL_ARGV/1425/20000}")"

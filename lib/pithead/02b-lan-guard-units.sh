@@ -17,9 +17,9 @@ render_lan_guard_boot_unit() { # <iptables> <marker path> <port>...
     cat <<EOF
 [Unit]
 Description=pithead LAN-only sources on the *_lan_access node ports, restored before containers start
-Before=docker.service
-# After firewall loaders (they could flush our rules) and the egress unit (our jumps land above it).
-After=ufw.service firewalld.service netfilter-persistent.service nftables.service pithead-egress.service
+Before=docker.service pithead-egress.service
+# After firewall loaders (they could flush our rules); egress inserts its DROP above our jumps.
+After=ufw.service firewalld.service netfilter-persistent.service nftables.service
 
 [Service]
 Type=oneshot
