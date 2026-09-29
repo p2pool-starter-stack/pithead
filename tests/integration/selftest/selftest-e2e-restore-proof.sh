@@ -322,42 +322,8 @@ assert_eq "an unrecorded baseline fails closed and removes nothing" "$(egress_re
 assert_contains "verify_restore_proof runs the egress unit restore" "$(declare -f verify_restore_proof)" "restore_egress_boot_unit"
 assert_contains "e2e.sh records the unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"'
 
-# --- #2749: each LAN unit goes back the way the run found it, on the same model bench ----------------
-lan_restore() { # <unit> <before> <unit now> [sticky]
-    (
-        NAME="$1" UNIT="$3" STICKY="${4:-0}" removals=0
-        ok() { :; }
-        warn() { :; }
-        step() { printf 'step:%s\n' "$1" >&2; }
-        on_bench() {
-            case "$1" in
-            *"disable --now $NAME"*)
-                removals=$((removals + 1))
-                [ "$STICKY" = 1 ] || UNIT=absent
-                ;;
-            *"systemctl cat $NAME "*) echo "$UNIT" ;;
-            *"show -p Wants"*"multi-user.target"*"grep -qw $NAME"*)
-                # A failed lookup, as the shell sees it: a captured `w=$(...) &&` fails; a bare
-                # `! systemctl ... | grep` pipeline greps nothing and succeeds.
-                if [ "${SHOW_FAILS:-0}" = 1 ]; then [[ "$1" != *'w=$(systemctl show'* ]]; else [ "$UNIT" = absent ]; fi
-                ;;
-            esac
-        }
-        restore_lan_unit "$NAME" "$2"
-        echo "$? $UNIT $removals"
-    )
-}
-for u in pithead-lan-guard.service pithead-lan-hold.service; do
-    assert_eq "$u: a unit this run added is removed, and its absence and wants proven" "$(lan_restore "$u" absent present)" "0 absent 1"
-    assert_eq "$u: a unit the baseline already had is left alone" "$(lan_restore "$u" present present)" "0 present 0"
-    assert_eq "$u: a unit that survives the removal fails the restore proof" "$(lan_restore "$u" absent present 1)" "1 present 1"
-    assert_eq "$u: an unrecorded baseline fails closed and removes nothing" "$(lan_restore "$u" "" present)" "1 present 0"
-    assert_eq "$u: a wants lookup that fails is not proof of absence" "$(SHOW_FAILS=1 lan_restore "$u" absent present)" "1 absent 1"
-done
-assert_contains "verify_restore_proof restores both LAN units" "$(declare -f verify_restore_proof)" \
-    'restore_lan_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE"'
-assert_contains "e2e.sh records both before deploy_branch installs them" "$(cat "$E2E_SRC")" \
-    'LAN_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-guard.service)" HOLD_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-hold.service)"'
+# shellcheck source=tests/integration/tools/restore-lan-unit-proof-cases.sh
+source "$HERE/../tools/restore-lan-unit-proof-cases.sh"
 
 # --- #2599: the egress check pair goes back the same way ------------------------------------------
 check_restore() { # <before> <units now> [sticky] -> "<rc> <units after> <removal commands sent>"
