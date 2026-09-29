@@ -1,32 +1,12 @@
-"""Egress posture (#170) — for each stack component, its outbound connections and their network
-route (Tor / clearnet / incoming / LAN / local / unknown / inactive), plus a privacy roll-up.
-
-Routes are *derived from the live config*, never hardcoded, so the panel can't drift from reality or
-lie after a regression — the #160 audit's lesson (``--onion-address`` *looked* like Tor but wasn't).
-
-Two backstops matter for whether a clearnet route is actually an IP leak:
-
-* The **#270 egress firewall** (``DOCKER-USER``, fail-closed) DROPs non-Tor egress from the *container*
-  subnet — so a container's clearnet route can't actually leave while it's on.
-* It does **not** cover the **host-networked dashboard** (``network_mode: host``), whose own egress
-  (XvB stats fetch, update check, Healthchecks ping, Telegram bot, price feed, webhook/ntfy alert
-  sinks, #249 XvB standby pull) bypasses ``DOCKER-USER`` entirely. Those rely solely on their SOCKS config — a clearnet
-  route there is a real leak regardless of the firewall. (All are Tor-routed by default, so none
-  leak.)
-
-The alert sinks (#380) have one more wrinkle: ``notifications.tor: false`` is a LAN carve-out for
-self-hosted endpoints Tor exits can't reach. A POST to a private/loopback IP never leaves your
-network, so it routes as *local*, not a clearnet leak. Only IP literals can prove that without a
-DNS lookup. A hop to a relocatable node takes the same rule via ``topology_graph.node_route``
-(#1350), but keeps *LAN* and *unknown* apart instead of collapsing both into clearnet.
-
-So a connection is a *leak* only when its route is clearnet AND it isn't neutralised by a backstop.
+"""Derive outbound routes and privacy state (#170). A chosen node sync may bypass the host
+firewall; other container clearnet paths remain blocked. Host traffic is outside that firewall.
 """
 
 import ipaddress
 from urllib.parse import urlsplit
 
 from mining_dashboard.config import config
+from mining_dashboard.service.network.clearnet_sync import tor_attested
 from mining_dashboard.service.network.egress_status import with_firewall_state
 from mining_dashboard.service.network.topology_graph import (  # noqa: F401  (re-exported)
     CLEARNET,
@@ -186,7 +166,8 @@ def compute_egress_posture(
         },
     ]
 
-    leaks = 0  # clearnet egress that actually exposes the host IP
+    leaks = 0  # clearnet egress that actually exposes the host IP without this sync choice
+    chosen = 0  # clearnet first sync deliberately selected by the operator
     blocked = 0  # clearnet route a container is configured for, but the firewall DROPs it
     unverified = 0  # direct hostname route whose exposure cannot be classified without DNS
     for comp in components:
@@ -196,7 +177,10 @@ def compute_egress_posture(
                 continue
             if conn["route"] != CLEARNET:
                 continue
-            if comp.get("firewalled", False) and firewall:
+            if comp["name"] in ("monerod", "tari") and "initial" in conn["to"]:
+                conn["chosen_clearnet"] = True
+                chosen += 1
+            elif comp.get("firewalled", False) and firewall:
                 conn["blocked_by_firewall"] = True
                 blocked += 1
             else:
@@ -206,6 +190,13 @@ def compute_egress_posture(
         label = f"{leaks} clearnet egress path(s) exposing your IP"
         if unverified:
             label += f"; {unverified} path(s) unverified"
+    elif chosen:
+        chains = " + ".join(
+            name
+            for name, active in (("Monero", monero_clearnet_sync), ("Tari", tari_clearnet_sync))
+            if active
+        )
+        label = f"{chains} clearnet first sync or Tor transition pending by your choice — your IP may be visible to peers until host verification"
     elif unverified:
         label = f"{unverified} egress path(s) unverified; Tor-only status cannot be confirmed"
     elif blocked:
@@ -220,11 +211,15 @@ def compute_egress_posture(
             "leaks": leaks,
             "blocked_by_firewall": blocked,
             "unverified": unverified,
-            "all_tor": leaks == 0 and unverified == 0,
-            "level": "ok" if leaks == 0 and unverified == 0 else "warn",
+            "all_tor": leaks == 0 and chosen == 0 and unverified == 0,
+            "level": "ok" if leaks == 0 and chosen == 0 and unverified == 0 else "warn",
             "label": label,
         },
     }
+
+
+def _sync_pending(chain, flag):
+    return flag and not tor_attested(config.CLEARNET_STATE_DIR, chain)
 
 
 def egress_posture_from_config():
@@ -235,8 +230,8 @@ def egress_posture_from_config():
         p2pool_clearnet=config.P2POOL_CLEARNET,
         xvb_enabled=config.ENABLE_XVB,
         xvb_tor=config.XVB_TOR_ENABLED,
-        monero_clearnet_sync=config.MONERO_CLEARNET_SYNC,
-        tari_clearnet_sync=config.TARI_CLEARNET_SYNC,
+        monero_clearnet_sync=_sync_pending("monero", config.MONERO_CLEARNET_SYNC),
+        tari_clearnet_sync=_sync_pending("tari", config.TARI_CLEARNET_SYNC),
         monero_route=node_route(config.MONERO_NODE_HOST, is_local=config.monero_is_local()),
         tari_route=node_route(config.TARI_GRPC_ADDRESS, is_local=config.tari_is_local()),
         tari_enabled=config.TARI_MODE != "off",
@@ -379,7 +374,9 @@ def compute_topology(
     for link in edges:
         if link["route"] != CLEARNET:
             continue
-        if link["from"] != "dashboard" and firewall:
+        if link["from"] in ("monerod", "tari") and link.get("label") == "clearnet IBD":
+            link["chosen_clearnet"] = True
+        elif link["from"] != "dashboard" and firewall:
             link["blocked_by_firewall"] = True
         else:
             link["leak"] = True
@@ -401,8 +398,8 @@ def topology_from_config():
         p2pool_clearnet=config.P2POOL_CLEARNET,
         xvb_enabled=config.ENABLE_XVB,
         xvb_tor=config.XVB_TOR_ENABLED,
-        monero_clearnet_sync=config.MONERO_CLEARNET_SYNC,
-        tari_clearnet_sync=config.TARI_CLEARNET_SYNC,
+        monero_clearnet_sync=_sync_pending("monero", config.MONERO_CLEARNET_SYNC),
+        tari_clearnet_sync=_sync_pending("tari", config.TARI_CLEARNET_SYNC),
         monero_route=node_route(config.MONERO_NODE_HOST, is_local=config.monero_is_local()),
         tari_route=node_route(config.TARI_GRPC_ADDRESS, is_local=config.tari_is_local()),
         tari_enabled=config.TARI_MODE != "off",

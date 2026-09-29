@@ -136,6 +136,19 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   source that could route to the host. See
   [LAN-only sources](docs/configuration.md#lan-only-sources).
 
+- **The LAN-only source rule now survives a DIY host reboot.** A reboot cleared the rule while
+  Docker restarted the node containers still published on every interface, so `18081`, `18083`
+  and `18142` took any source until `./pithead up`. `pithead-lan-guard.service`, ordered before
+  `docker.service`, now restores the rule. The node containers that publish a LAN port run with
+  restart policy `no`, and `pithead-lan-hold.service` starts them only after the guard succeeds, so
+  a guard that fails at boot leaves them stopped instead of exposed. While the rule is missing, the
+  nodes refuse to start with a LAN bind however they are started (`docker start`, a compose run
+  outside pithead), and `./pithead restart` and the Tor auto-heal do not try. Docker no longer restarts a
+  crashed `monerod` or `tari` on such a host; `./pithead doctor` and a `container_unhealthy` alert
+  name the node and the reason, and `./pithead up` recovers. The first `up` after upgrading
+  recreates those containers once. If either unit cannot be installed, the ports stay on `127.0.0.1`
+  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)).
+
 - **The dashboard alerts when the Tor-only egress firewall is missing.** The dashboard took the
   firewall's state from `network.tor_egress_firewall`, so it reported "blocked by the egress
   firewall" over an open egress. `pithead-egress.timer` now runs `pithead egress-status` every two
@@ -178,6 +191,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **Clearnet initial sync works behind the default egress firewall
+  ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649),
+  [#2678](https://github.com/p2pool-starter-stack/pithead/issues/2678)).** An opted-in Monero or
+  Tari node gets its own temporary direct-dial exception while other containers stay restricted.
+  On sync, the host closes and verifies that exception before the node restarts on Tor; the
+  dashboard keeps the transition warning until the host verifies the live Tor daemon and rules.
+  A completed sync stays on Tor across apply and reboot.
 - **monerod flushes every chain-database commit to disk
   ([#2471](https://github.com/p2pool-starter-stack/pithead/issues/2471)).** monerod's default
   database mode, `fast:async`, opens LMDB with `MDB_NOSYNC` while the node is syncing and only
@@ -203,15 +223,6 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   crash-looped creating its config directory. It now uses a new volume, `tari_wallet_db`, on the
   image's own `/var/tari/wallet`, so every install creates the wallet fresh and scans from the
   birthday. The old `tari_wallet_data` volume never held a wallet; `uninstall` removes it.
-
-- **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
-  ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With
-  `clearnet_initial_sync` on and `network.tor_egress_firewall` at its default (on), monerod dropped
-  its Tor proxy while the firewall dropped every clearnet dial. The node had no peers, never
-  reported `synchronized`, and so never switched back to Tor. `apply` now passes the flag to the
-  daemons only while the firewall is off. With the firewall on, both nodes stay on Tor, and the
-  apply/doctor warning says the flag is ignored. A clearnet sync that already completed stays
-  complete when the firewall is turned back on.
 
 - **A slow first Tor bootstrap no longer fails provisioning
   ([#2648](https://github.com/p2pool-starter-stack/pithead/issues/2648)).** monerod and tari wait
@@ -338,8 +349,9 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Added
 
-- **Pithead OS, the appliance.** Write `pithead-os-v2.0.0.img` to a USB stick and boot the machine
-  from it: it installs itself and serves a one-page setup wizard to your browser. The page asks
+- **Pithead OS, the appliance.** Verify `pithead-os-v2.0.0.img.xz`, write its decompressed image
+  to a USB stick, and boot the machine from it: it installs itself and serves a one-page setup
+  wizard to your browser. The page asks
   what the machine is — a full coordinator, a coordinator that also mines with its own CPU, or a
   mining rig ([#797](https://github.com/p2pool-starter-stack/pithead/issues/797)) — which disk
   to use, and the same questions the DIY installer asks. A machine without a monitor can be set up

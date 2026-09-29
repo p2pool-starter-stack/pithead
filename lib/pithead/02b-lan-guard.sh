@@ -25,6 +25,20 @@ LAN_GUARD_NFT_TABLE="pithead_lan"
 LAN_GUARD_SOURCES="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10"
 # <.env bind key>:<port>. The ports are fixed on both sides in docker-compose.yml and the quadlet units.
 LAN_GUARD_BINDS="MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:18142"
+# The host's boot id, kept only while the rule is live (#2749). The node entrypoints (./data/lan-guard,
+# read-only) refuse a LAN bind unless it matches the running boot, so a reboot invalidates it. The
+# boot unit's copy is root's, hence rm before the write.
+LAN_GUARD_MARKER="data/lan-guard/enforced"
+BOOT_ID_FILE="${PITHEAD_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
+lan_guard_mark() { mkdir -p "${LAN_GUARD_MARKER%/*}" && rm -f "$LAN_GUARD_MARKER" && cat "$BOOT_ID_FILE" >"$LAN_GUARD_MARKER"; }
+lan_guard_unmark() { rm -f "$LAN_GUARD_MARKER" 2>/dev/null || sudo -n rm -f "$LAN_GUARD_MARKER" 2>/dev/null; } # 1: still there
+# A verb's teardown of the rule (#2749): remove_lan_guard, or stop the verb with the rule kept.
+lan_guard_teardown() { # <verb>
+    local rc=0 why="$LAN_GUARD_MARKER could not be deleted"
+    remove_lan_guard || rc=$?
+    [ "$rc" = 2 ] && why="monerod or tari may still be running (or the engine cannot say)"
+    [ "$rc" = 0 ] || error "$1 stopped: $why, so the LAN-only source rule stays."
+}
 
 # The key:port pairs whose .env bind is anything but loopback, one per line.
 lan_guard_published() {
@@ -120,6 +134,8 @@ lan_guard_reason() { # <rc>
     3) printf 'installing or reading it needs root (passwordless sudo)' ;;
     4) printf 'nothing jumps from FORWARD to DOCKER-USER' ;;
     5) printf 'a firewall rule that is not ours accepts traffic above it in DOCKER-USER' ;;
+    6) printf 'the boot unit that restores it after a reboot could not be installed' ;;
+    7) printf 'the marker the node containers check could not be written' ;;
     *) printf 'the readback failed (rc %s)' "$1" ;;
     esac
 }
@@ -128,8 +144,15 @@ lan_guard_reason() { # <rc>
 # process. Called by compose_up, so it runs before every container (re)start.
 apply_lan_guard() {
     local published kp ports=() old rc=0
+    # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
+    # bind-mount the marker dir, and podman does not create a missing bind source.
+    export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
+    mkdir -p "${LAN_GUARD_MARKER%/*}" 2>/dev/null || true
     published=$(lan_guard_published)
-    [ -n "$published" ] || return 0
+    if [ -z "$published" ]; then
+        remove_lan_guard_boot_unit || warn "lan-guard:boot-unit-left — could not remove $LAN_GUARD_BOOT_UNIT/$LAN_GUARD_HOLD_UNIT; they keep the nodes held at boot until they are."
+        return 0
+    fi
     for kp in $published; do ports+=("${kp#*:}"); done
     if [ "$(container_engine)" = "podman" ]; then
         if ! command -v nft >/dev/null 2>&1 || ! render_lan_guard_nft "${ports[@]}" | sudo nft -f - 2>/dev/null; then rc=2; fi
@@ -147,10 +170,14 @@ apply_lan_guard() {
         # 4 before the first network exists: Docker adds the FORWARD jump when compose creates it.
         [ "$rc" = 4 ] && rc=0
     fi
+    # A rule that cannot outlive a reboot (no boot unit), or that the nodes cannot see, is not installed.
+    [ "$rc" = 0 ] && ! provision_lan_guard_boot_unit "${ports[@]}" && rc=6
+    [ "$rc" = 0 ] && ! lan_guard_mark 2>/dev/null && rc=7
     if [ "$rc" = 0 ]; then
         log "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
         return 0
     fi
+    lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
     warn "lan-guard:not-installed — could not enforce LAN-only sources on port(s) ${ports[*]} ($(lan_guard_reason "$rc")). Holding them on 127.0.0.1 until it can; see './pithead doctor'."
 }
@@ -164,7 +191,12 @@ check_lan_guard() {
     published=$(lan_guard_published)
     [ -n "$published" ] || return 0
     for kp in $published; do ports+=("${kp#*:}"); done
+    check_lan_guard_hold "${ports[@]}"
     lan_guard_enforced "${ports[@]}" || rc=$?
+    if [ "$rc" = 0 ] && tor_egress_boot_unit_applies && ! systemctl is-enabled "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1; then
+        dr_warn_surface "LAN-only sources are enforced on port(s) ${ports[*]} now, but $LAN_GUARD_BOOT_UNIT is not enabled, so a reboot reopens them to every source until './pithead up'. Run './pithead up' to install it." "Node port(s) ${ports[*]} are limited to the LAN now, but that limit will not survive a restart of this machine."
+        return 0
+    fi
     if [ "$rc" = 0 ]; then
         dr_ok "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
         return 0
@@ -186,10 +218,52 @@ check_lan_guard() {
     return 0
 }
 
-# Remove the rule from both backends. `sudo -n`: a leftover rule only drops outside traffic to a
-# port nothing publishes any more, so a host without passwordless sudo is not prompted for it.
+# doctor (#2749), DIY Docker with a LAN port published: a stopped node FAILs with why (held at boot,
+# refused, exited) and the recovery; so does a running one Docker would restart at boot. Removed: none.
+check_lan_guard_hold() { # <port>...
+    tor_egress_boot_unit_applies || return 0
+    local p c seen=" " policy why
+    for p in "$@"; do
+        c=$(lan_guard_container "$p")
+        [[ "$seen" == *" $c "* ]] && continue
+        seen+="$c "
+        policy=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$c" 2>/dev/null) || continue
+        if container_is_running "$c"; then
+            [ "$policy" = no ] || dr_fail_surface "$c publishes a LAN port with restart policy '$policy', so after a reboot Docker starts it before the LAN-only source rule is back. Run './pithead up'." "$c could start after a restart before the rule that limits its LAN port is back."
+            continue
+        fi
+        if systemctl is-failed --quiet "$LAN_GUARD_BOOT_UNIT" 2>/dev/null; then
+            why="held since boot, because $LAN_GUARD_BOOT_UNIT failed and the LAN-only source rule is not in place (see 'journalctl -u $LAN_GUARD_BOOT_UNIT')"
+        elif [ "$(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)" = 78 ]; then
+            why="it refused to start because the LAN-only source rule was not in place"
+        else
+            why="it exited (code $(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)), and with LAN access on Docker does not restart it"
+        fi
+        dr_fail_surface "$c is down: $why. Run './pithead up' to start it." "$c is down and nothing restarts it by itself."
+    done
+}
+
+# Nothing published, or every published port's rule live (#2749): `pithead restart` checks it.
+lan_guard_ready() {
+    local kp ports=()
+    for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
+    [ "${#ports[@]}" = 0 ] || lan_guard_enforced "${ports[@]}"
+}
+
+# Remove the rule from both backends (`sudo -n`: a leftover only drops traffic to an unpublished
+# port, so no prompt). Kept, and 2, unless the engine answers and neither node runs, whatever the
+# profiles or binds say now; kept, and 1, if the marker stays (#2749).
 remove_lan_guard() {
-    local line
+    local line names kp ports=()
+    # Marker first: from here the gate refuses any start, so a start that raced this teardown is
+    # already running when the engine is asked. If a node runs or the engine cannot say, the rule
+    # stays, and the marker comes back only when the rule reads back live on every published port.
+    lan_guard_unmark || return 1
+    if ! names=$(docker ps --format '{{.Names}}' 2>/dev/null) || grep -qxE 'monerod|tari' <<<"$names"; then
+        for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
+        if [ "${#ports[@]}" -gt 0 ] && lan_guard_enforced "${ports[@]}"; then lan_guard_mark 2>/dev/null || true; fi
+        return 2
+    fi
     if command -v nft >/dev/null 2>&1; then
         sudo -n nft delete table inet "$LAN_GUARD_NFT_TABLE" 2>/dev/null || true
     fi

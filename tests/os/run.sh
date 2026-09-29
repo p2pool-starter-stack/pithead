@@ -73,6 +73,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/zero-container-evidence.sh"
 # shellcheck source=tests/os/bundle-build-evidence.sh
 . "$SCRIPT_DIR/bundle-build-evidence.sh"
+. "$SCRIPT_DIR/package-appliance-verdict.sh"
 # shellcheck source=tests/os/kvm-preflight.sh
 . "$SCRIPT_DIR/kvm-preflight.sh"
 # shellcheck source=tests/os/journal-boot-verdict.sh

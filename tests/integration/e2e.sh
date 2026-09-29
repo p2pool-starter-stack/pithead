@@ -278,7 +278,13 @@ restore_all() {
             warn "baseline recreation of test-checkout containers failed in $RESTORE_DIR"
             RESTORE_PROOF_FAILED=1
         fi
-        wait_bench_healthy 300 && ok "baseline stack healthy again" || warn "baseline stack came up but isn't reporting healthy yet — check 'pithead status' on $BENCH_HOST"
+        # Job 1677: status passed before the sync gate stopped p2pool. Wait for its release.
+        if wait_synced 1500 restore && wait_bench_healthy 300; then
+            ok "baseline stack healthy again"
+        else
+            warn "baseline stack did not regain synced chains and running services before restore proof"
+            RESTORE_PROOF_FAILED=1
+        fi
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
         verify_restore_proof || RESTORE_PROOF_FAILED=1
@@ -324,7 +330,8 @@ wait_bench_healthy() { # <timeout_s>
 # measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
 # so its bounded Tari readiness row has a synced chain before it starts.
 wait_synced() { # <timeout_s>
-    local deadline=$(($(date +%s) + ${1:-300})) st
+    local deadline=$(($(date +%s) + ${1:-300})) st refusal="destructive phases"
+    [ "${2:-}" = restore ] && refusal="baseline proof"
     while :; do
         st="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '\"\(.sync.monero.state)/\(.sync.tari.state)\"' 2>/dev/null" || true)"
         [ "$st" = "done/done" ] && {
@@ -332,7 +339,7 @@ wait_synced() { # <timeout_s>
             return 0
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
-            warn "sync panels still '$st' after $((${1:-300}))s — destructive phases refused"
+            warn "sync panels still '$st' after $((${1:-300}))s — $refusal refused"
             return 1
         }
         sleep 8
@@ -395,6 +402,7 @@ preflight() {
     # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
     # record is taken here or not at all. Read by verify_restore_proof.
     EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)" EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"
+    LAN_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-guard.service)" HOLD_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-hold.service)"
     if BASELINE_IMAGES="$(stack_image_census)" && [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
     else

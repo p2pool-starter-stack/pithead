@@ -29,10 +29,10 @@ render_quadlet_units() {
     # spike, the local-node units 2026-07-24, and the payout-wallet units the same day (real
     # throwaway monero wallet; tari view-only wallet on a canonical scalar). A new profile or
     # service starts life refused here until it has a bench run behind it.
-    local profiles
+    local profiles tor_profiles reg ver prefix subnet
     profiles=$(_qenv COMPOSE_PROFILES)
+    tor_profiles=$(_qenv TOR_COMPOSE_PROFILES)
 
-    local reg ver prefix subnet
     reg=$(_qenv PITHEAD_REGISTRY)
     ver=$(_qenv STACK_VERSION)
     prefix=$(_qenv NETWORK_PREFIX)
@@ -56,7 +56,7 @@ ContainerName=tor
 Image=$reg/pithead-tor:$ver
 Network=mining.network
 IP=$prefix.25
-Environment=NETWORK_PREFIX=$prefix COMPOSE_PROFILES=$profiles $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH)
+Environment=NETWORK_PREFIX=$prefix COMPOSE_PROFILES=$tor_profiles $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH)
 Volume=$(_qenv TOR_DATA_DIR):/var/lib/tor
 Tmpfs=/tmp:size=64m,mode=1777
 ReadOnly=true
@@ -205,7 +205,7 @@ ContainerName=tari-wallet
 Image=ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
 Network=mining.network
 IP=$prefix.31
-User=1000:1000
+User=0:0
 Entrypoint=/wallet-config/entrypoint.sh
 Environment=$(_qenvq TARI_BASE_NODE_GRPC_ADDRESS TARI_GRPC_ADDRESS) $(_qenvq TARI_WALLET_BIRTHDAY) TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/var/tari/wallet
 Volume=pithead-tari-wallet-db:/var/tari/wallet
@@ -215,9 +215,10 @@ Tmpfs=/tmp:size=32m,mode=1777
 PublishPort=127.0.0.1:18143:18143
 ReadOnly=true
 DropCapability=all
+AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID
 NoNewPrivileges=true
 PodmanArgs=--memory 512m --memory-swap 512m
-HealthCmd=ps | grep '[m]inotari_consol' || exit 1
+HealthCmd=ps -e | grep '[m]inotari_consol' || exit 1
 HealthInterval=30s
 HealthTimeout=5s
 HealthRetries=3

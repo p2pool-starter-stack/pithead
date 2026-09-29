@@ -35,6 +35,7 @@ test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-to
 
 test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_compose.sh
+	bash tests/stack/standalone/test_tari_wallet_permissions.sh
 	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness pure-logic self-test (no server needed)
@@ -45,6 +46,7 @@ test-integration-selftest: pithead ## Integration harness pure-logic self-test (
 
 test-tools: ## Bounded-log sanitizer and CI workflow guards (no services or dependencies)
 	bash scripts/lint/test-sanitize-test-log.sh
+	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
 	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 30( |$$)'
 	sed -n '/^  pull_request:$$/,/^permissions:$$/p' .github/workflows/integration-mini-stack.yml | grep -Fqx '      - "lib/pithead/**"'

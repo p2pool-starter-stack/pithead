@@ -44,6 +44,9 @@ The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
+The host firewall installer is `02b-tor-egress-apply.sh`; the host-owned clearnet
+sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
+readback helpers are in `02d-tor-egress-verify.sh`.
 
 ## Dashboard feature folders
 

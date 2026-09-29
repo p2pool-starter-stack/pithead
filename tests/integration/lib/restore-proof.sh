@@ -22,8 +22,10 @@ EGRESS_UNIT_BEFORE=""
 # The same record for pithead-egress.timer and its pithead-egress-check.service (#2599).
 EGRESS_CHECK_BEFORE=""
 
+# absent only when systemd itself answers not-found: a failed lookup is "" (unknown), never absent.
 egress_boot_unit_state() { # [unit] -> present | absent | "" (the bench could not be asked)
-    on_bench "if systemctl cat ${1:-pithead-egress.service} >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
+    local u="${1:-pithead-egress.service}"
+    on_bench "if systemctl cat $u >/dev/null 2>&1; then echo present; elif [ \"\$(systemctl show -p LoadState --value $u 2>/dev/null)\" = not-found ]; then echo absent; fi" 2>/dev/null || true
 }
 
 # The egress check pair (#2599), restored on the same rule as the boot unit below.
@@ -43,6 +45,33 @@ restore_egress_check_units() {
         return 0
     fi
     warn "restore proof: pithead-egress.timer or pithead-egress-check.service is still on the bench after the restore, and neither was there before this run (#2599)."
+    return 1
+}
+
+# pithead-lan-guard.service and pithead-lan-hold.service (#2749), recorded and restored one by one on
+# the egress unit's rule: a unit the run added is removed and proved gone, wants included; one the
+# bench already had stays. present | absent; empty = never read, which the restore refuses.
+LAN_UNIT_BEFORE=""
+HOLD_UNIT_BEFORE=""
+restore_lan_unit() { # <unit> <state before the run>
+    case "$2" in
+    present)
+        step "restore proof: $1 was already on the bench before this run — left in place, not removed (#2749)"
+        return 0
+        ;;
+    absent) ;;
+    *)
+        warn "restore proof: whether $1 predates this run was never recorded, so the restore cannot say it left the bench as found (#2749)."
+        return 1
+        ;;
+    esac
+    on_bench "sudo systemctl disable --now $1 >/dev/null 2>&1; sudo rm -f /etc/systemd/system/$1; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state "$1")" = absent ] &&
+        on_bench "w=\$(systemctl show -p Wants --value docker.service multi-user.target) && ! grep -qw $1 <<<\"\$w\"" >/dev/null 2>&1; then
+        ok "restore proof: $1 removed — no trace of this run's boot unit on the bench (#2749)"
+        return 0
+    fi
+    warn "restore proof: $1 is still on the bench after the restore, and it was not there before this run (#2749)."
     return 1
 }
 
@@ -339,5 +368,7 @@ PROBE
     chain_restore_proof || prc=1
     restore_egress_boot_unit || prc=1
     restore_egress_check_units || prc=1
+    restore_lan_unit pithead-lan-guard.service "$LAN_UNIT_BEFORE" || prc=1
+    restore_lan_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE" || prc=1
     return "$prc"
 }

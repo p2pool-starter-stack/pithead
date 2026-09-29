@@ -190,7 +190,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   bootloader path (#1318) and is not this leg's job.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
-  reboots. Asserts the exact diff appears on the console (the changed wallet address in full, a
+  reboots. Asserts the exact diff appears on the console (the changed wallet address in full, read
+  directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
   the stick mid-countdown cancels the change instead.

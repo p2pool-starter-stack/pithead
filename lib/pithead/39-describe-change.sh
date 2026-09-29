@@ -298,7 +298,7 @@ describe_change() {
         # (CONFIRM), not host-only. DISABLING returns to Tor, a plain INFO change.
         if [ "$new" == "true" ]; then
             flag=CONFIRM
-            msg="⚠ Monero CLEARNET initial sync ENABLED — monerod P2P will run over CLEARNET (this host's IP becomes visible to the Monero P2P network) so the chain syncs fast. Transaction broadcast STAYS on Tor; wallets are never exposed. The dashboard switches monerod back to Tor automatically once the chain is synced. monerod is recreated."
+            msg="⚠ Monero CLEARNET initial sync ENABLED — monerod P2P will run over CLEARNET (this host's IP becomes visible to the Monero P2P network) so the chain syncs fast. Transaction broadcast STAYS on Tor; wallets are never exposed. After sync, the host closes the exception, monerod restarts on Tor, and the warning clears only after host verification. monerod is recreated."
         else
             msg="Monero clearnet sync DISABLED — monerod P2P returns to Tor-only. monerod is recreated."
         fi
@@ -307,7 +307,7 @@ describe_change() {
         # #183/#719: ENABLING exposes the host IP during IBD (auto-reverts to Tor) — confirm-gated.
         if [ "$new" == "true" ]; then
             flag=CONFIRM
-            msg="⚠ Tari CLEARNET initial sync ENABLED — the Tari base node will sync over CLEARNET (TCP transport + seeds.tari.com DNS seed; this host's IP becomes visible to the Tari P2P network) so its large chain syncs fast. The dashboard switches Tari back to Tor automatically once the chain is synced. tari is recreated."
+            msg="⚠ Tari CLEARNET initial sync ENABLED — the Tari base node will sync over CLEARNET (TCP transport + seeds.tari.com DNS seed; this host's IP becomes visible to the Tari P2P network) so its large chain syncs fast. After sync, the host closes the exception, Tari restarts on Tor, and the warning clears only after host verification. tari is recreated."
         else
             msg="Tari clearnet sync DISABLED — the Tari base node returns to Tor-only transport. tari is recreated."
         fi
