@@ -114,9 +114,10 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
 
 On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
 that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
-Compose project. Pithead reinstalls the egress rules above its LAN-port guard jumps before starting
-containers, so the guard's return path still reaches the DROP. Until the host attests a selected
-first sync's Tor transition, a failed live firewall readback prevents Compose startup. A selected
+Compose project. At boot, the LAN guard runs first and Pithead reinstalls the egress rules above
+its LAN-port jumps before starting containers, so the guard's return path still reaches the DROP.
+Until the host attests a selected first sync's Tor transition, a failed live firewall readback
+prevents Compose startup. A selected
 P2Pool or XvB exception also refuses startup on refresh failure; after a choice is disabled, its
 marker keeps that refusal through firewall opt-out until an enabled refresh proves the stale rule
 gone. Ordinary startup retains the firewall warning. Before Docker creates its first network,
@@ -196,7 +197,7 @@ What the running stack sends to the internet, connection by connection.
 | **Telegram** bot (#121) | `api.telegram.org` | nothing about you — Telegram sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`, #340) | **off** | opt-in; both the alert sends and the command poll ride Tor |
 | Dashboard **Healthchecks** ping (#79) | `hc-ping.com` (or self-hosted) | nothing about you — the endpoint sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | opt-in (set `healthchecks.ping_url`; off until set) | the ping URL must be Tor-reachable (hosted, public, or an onion self-hosted instance) — there is no clearnet mode |
 | Dashboard **price feed** (#520) | `api.coingecko.com` | nothing about you — CoinGecko sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | **off** | opt-in (`dashboard.energy.price_feed: true`); fetches the XMR + XTM spot prices every 15 min; fails silently, static config prices are the fallback |
-| Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` | nothing about you — the endpoint sees a **Tor exit**, not your IP, and a 204 carries no content | ✅ **always** Tor (`socks5h`) | **off** | opt-in (`tor.auto_heal: true`); a reachability check every 5 min that decides whether the Tor guard is stuck. Fifteen minutes of sustained failure restarts the tor container; the probe never falls back to clearnet, so a broken Tor means no probe, not an exposed one |
+| Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` and `www.cloudflare.com/cdn-cgi/trace` | No account identifier; each endpoint sees a distinct Tor exit circuit, not your IP | ✅ **always** Tor (`socks5h` with a fresh SOCKS username) | **off** | Opt-in (`tor.auto_heal: true`); failed egress is corroborated on a second circuit and target. Bounded NEWNYM requests precede one possible Tor restart. Neither the probe nor automatic recovery drops guards or deletes Tor state. |
 | Dashboard **Tari explorer reference** (#2464) | `textexplore.tari.com` (or `tari.explorer_url`) | nothing about you — the explorer sees a **Tor exit**, not your IP, and the request carries no address or height | ✅ **always** Tor (`socks5h`) | **on** while Tari is local or remote | once an hour; the explorer's tip is the one height that is not your node's own opinion, so it is what catches a node on a dead fork. A blank `tari.explorer_url` turns it off; a failed fetch contributes nothing to the verdict |
 | **Webhook / ntfy** alert sinks (#380) | your configured URLs | alert texts; the endpoint sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) by default | opt-in (set `notifications.webhooks` / `notifications.ntfy.url`; off until set) | `notifications.tor: false` is the LAN carve-out (Tor exits can't reach private addresses) — with it, a **clearnet** endpoint sees your host IP on every alert |
 

@@ -3,7 +3,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$HERE/.."
-modules=(run-cli.sh run-matrix.sh run-egress-claim.sh run-state.sh run-tari-wallet.sh run-lan-guard.sh run-scenario.sh run-lifecycle.sh run-faults.sh run-egress-status.sh run-hardening.sh run-safety.sh run-rigforge.sh run-rig-control.sh run-rig-reverse.sh run-alert-egress.sh run-mergemine-submit.sh run-tari-stranded.sh run-mergemine-localnet.sh)
+modules=(run-cli.sh run-matrix.sh run-egress-claim.sh run-state.sh run-tari-wallet.sh run-lan-guard.sh run-scenario.sh run-lifecycle.sh run-faults.sh run-tor-probe-fault.sh run-egress-status.sh run-hardening.sh run-safety.sh run-rigforge.sh run-rig-control.sh run-rig-reverse.sh run-alert-egress.sh run-mergemine-submit.sh run-tari-stranded.sh run-mergemine-localnet.sh)
 
 echo "== run.sh modules load completely in their preserved order =="
 expected_modules="$(printf 'lib/%s ' "${modules[@]}" | sed 's/ $//')"
@@ -13,7 +13,7 @@ actual_modules="$(sed -n 's|^source "$HERE/\(lib/run-[a-z-]*\.sh\)".*|\1|p' "$RO
     exit 1
 }
 
-expected_functions='usage parse_args print_list push_config env_on_box running_services service_state secret_fingerprint preflight record_manifest run_scenario clearnet_flag_effective restore_firewall_after_clearnet assert_host_claims_spent_sync assert_running_state assert_egress_dial_pair public_remotes_in_proc_tcp _pred_tari_payouts_found assert_tari_payout_scan _lan_probe _lan_strip assert_lan_guard_live assert_lan_guard_boot_restore assert_lan_guard_boot_failure assert_scenario assert_egress_posture assert_xvb_over_tor assert_metrics_via_caddy assert_doctor_ok assert_share_stats_live assert_telemetry_tables_present assert_current_state box_fstype box_avail_gb box_mode _pred_readiness_status status_verdict_lines assert_release_readiness run_lifecycle kept_data_snapshot_snippet kept_chain_files_snippet run_uninstall_round_trip telemetry_rows_diff _pred_status_down _monerod_is _pred_monerod_missing _pred_monerod_unhealthy _pred_monerod_healthy _pred_proxy_stopped _pred_failover_armed _pred_p2pool_running _pred_tor_stopped _pred_tor_healthy fault_node_down fault_unhealthy fault_missing fault_db_readonly fault_firewall_rollback _gf_flows _gf_down fault_firewall_grandfathered_flow fault_tor_down fault_clock_drift fault_disk_enospc _pred_p2pool_peers _pred_dnswatch_listening fault_p2pool_cold_cache_dns _restore_p2pool_peer_lists run_fault_injection _await_egress_state fault_firewall_status_alert fault_firewall_boot_restore _set_env_token _spool_write _uuid4 _wait_control_status _onion_reachable_external _remove_control_units run_hardening run_auth_fail_closed safety_backup safety_secret_drift_categories safety_restore_exact safety_rollback_if_failed safety_abort_restore arm_safety_abort_restore safety_cleanup restore_baseline summary run_rigforge_integration assert_subnet_live run_subnet_scenario _worker_apply _max_temp_round_trip _restore_rig_control_baseline run_rigforge_control _pred_rig_present run_rigforge_reverse _rig_control_apply _rig_control_await _pred_feed_maxt run_rigforge_rollback it_alert_refused _alert_egress_overlay _alert_egress_verdict run_alert_egress_smoke _mm_rows _mm_cleanup run_mergemine_submit tari_ns_ipt tari_strand_count tari_strand_drops tari_strand_remove_all tari_hook_start tari_hook_stop tari_restore_config tari_strand_abort tari_health_field _pred_tari_level _pred_tari_at_least_amber _pred_tari_zero_peers _pred_tari_alerted _pred_tari_recovery_alerted tari_started_at tari_strand_state run_tari_stranded _mml_fact _mml_target_row _mml_inspect _mml_ip _mml_cleanup run_mergemine_localnet'
+expected_functions='usage parse_args print_list push_config env_on_box running_services service_state secret_fingerprint preflight record_manifest run_scenario clearnet_flag_effective restore_firewall_after_clearnet assert_host_claims_spent_sync assert_running_state assert_egress_dial_pair public_remotes_in_proc_tcp _pred_tari_payouts_found assert_tari_payout_scan _lan_probe _lan_strip assert_lan_guard_live assert_lan_guard_boot_restore assert_lan_guard_boot_failure assert_scenario assert_egress_posture assert_xvb_over_tor assert_metrics_via_caddy assert_doctor_ok assert_share_stats_live assert_telemetry_tables_present assert_current_state box_fstype box_avail_gb box_mode _pred_readiness_status status_verdict_lines assert_release_readiness run_lifecycle kept_data_snapshot_snippet kept_chain_files_snippet run_uninstall_round_trip telemetry_rows_diff _pred_status_down _monerod_is _pred_monerod_missing _pred_monerod_unhealthy _pred_monerod_healthy _pred_proxy_stopped _pred_failover_armed _pred_p2pool_running _pred_tor_stopped _pred_tor_healthy fault_node_down fault_unhealthy fault_missing fault_db_readonly fault_firewall_rollback _gf_flows _gf_down fault_firewall_grandfathered_flow fault_tor_down fault_clock_drift fault_disk_enospc _pred_p2pool_peers _pred_dnswatch_listening fault_p2pool_cold_cache_dns _restore_p2pool_peer_lists run_fault_injection tor_probe_ns_ipt _tor_probe_mining_sample fault_tor_probe_egress _tor_probe_recovered _await_egress_state fault_firewall_status_alert fault_firewall_boot_restore _set_env_token _spool_write _uuid4 _wait_control_status _onion_reachable_external _remove_control_units run_hardening run_auth_fail_closed safety_backup safety_secret_drift_categories safety_restore_exact safety_rollback_if_failed safety_abort_restore arm_safety_abort_restore safety_cleanup restore_baseline summary run_rigforge_integration assert_subnet_live run_subnet_scenario _worker_apply _max_temp_round_trip _restore_rig_control_baseline run_rigforge_control _pred_rig_present run_rigforge_reverse _rig_control_apply _rig_control_await _pred_feed_maxt run_rigforge_rollback it_alert_refused _alert_egress_overlay _alert_egress_verdict run_alert_egress_smoke _mm_rows _mm_cleanup run_mergemine_submit tari_ns_ipt tari_strand_count tari_strand_drops tari_strand_remove_all tari_hook_start tari_hook_stop tari_restore_config tari_strand_abort tari_health_field _pred_tari_level _pred_tari_at_least_amber _pred_tari_zero_peers _pred_tari_alerted _pred_tari_recovery_alerted tari_started_at tari_strand_state run_tari_stranded _mml_fact _mml_target_row _mml_inspect _mml_ip _mml_cleanup run_mergemine_localnet'
 actual_functions="$(for module in "${modules[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$ROOT/lib/$module"; done | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "integration function order or completeness mismatch" >&2
@@ -44,6 +44,8 @@ source "$ROOT/lib/run-scenario.sh" || exit $?
 source "$ROOT/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$ROOT/lib/run-faults.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tor-probe-fault.sh
+source "$ROOT/lib/run-tor-probe-fault.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-egress-status.sh
 source "$ROOT/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
@@ -65,6 +67,38 @@ source "$ROOT/lib/run-tari-stranded.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
 source "$ROOT/lib/run-mergemine-localnet.sh" || exit $?
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
+
+# The Tor fault must enter the dashboard namespace; host OUTPUT misses same-bridge traffic.
+namespace_cmd="$(
+    rx() { printf '%s' "$1"; }
+    tor_probe_ns_ipt '-I OUTPUT -d 192.0.2.1 -p tcp --dport 9050 -j DROP'
+)"
+[[ "$namespace_cmd" == *'nsenter -t "$p" -n iptables -I OUTPUT '* ]] || {
+    echo "Tor probe fault did not enter the dashboard network namespace" >&2
+    exit 1
+}
+
+# P2Pool's session counter can be zero while the proxy still accepts real rig shares.
+(
+    api_state() { printf '%s\n' '{"stratum":{"total_hashes":0},"proxy_summary":{"accepted":"1,201"},"proxy_workers":1}'; }
+    jq_get() { printf '%s' "$1" | jq -r "($2)? | values"; }
+    EXPECTED_WORKERS=1
+    [ "$(_tor_probe_mining_sample)" = 1201 ] || exit 1
+    EXPECTED_WORKERS=2
+    if _tor_probe_mining_sample >/dev/null; then exit 1; fi
+) || {
+    echo "Tor probe fault ignored proxy share progress or worker count" >&2
+    exit 1
+}
+declare -f fault_tor_probe_egress | grep -Fq 'wait_for 180 10 "proxy workers online for Tor fault" _tor_probe_mining_sample' || {
+    echo "Tor probe fault startup did not use the proxy mining witness" >&2
+    exit 1
+}
+fault_body=$(declare -f fault_tor_probe_egress)
+[[ "$fault_body" == *'i + 1 - last_progress'* ]] && [[ "$fault_body" != *'break'* ]] || {
+    echo "Tor probe fault must tolerate short share gaps and complete the full fault window" >&2
+    exit 1
+}
 
 pithead() {
     printf '%s\n' \

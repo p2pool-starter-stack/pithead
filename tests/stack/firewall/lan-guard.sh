@@ -121,7 +121,6 @@ lg() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$L
 lg_real() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PITHEAD_BOOT_ID_FILE="$LGD/boot_id" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
 LG_UNIT="$LGD/units/pithead-lan-guard.service"
 LG_HOLD="$LGD/units/pithead-lan-hold.service"
-
 echo "== the rule admits loopback, RFC1918 and CGNAT only, and drops the rest (#2616) =="
 lg_out="$(printf '%s\n' '-A DOCKER-USER -p tcp -m tcp --dport 18081 -m comment --comment pithead-lan-guard -j PITHEAD-LAN' |
     run_sourced "$LGD" render_lan_guard_iptables 18142)"
@@ -191,17 +190,18 @@ lg_out="$(lg apply_lan_guard)"
 mv "$LGD/.env.on" "$LGD/.env"
 assert_eq "every switch off: nothing is installed and nothing is said" "$lg_out" ""
 assert_eq "...and no firewall command runs" "$(test -e "$LG_RESTORE" && echo ran || echo none)" "none"
-
 echo "== the rule survives a DIY host reboot: pithead-lan-guard.service, ahead of docker (#2749) =="
 lg_bu="$(run_sourced "$LGD" render_lan_guard_boot_unit /usr/sbin/iptables /srv/pithead/data/lan-guard/enforced 18081 18142)"
 assert_eq "last, once every rule is in, it records the current boot id as the nodes' marker (#2749)" \
     "$(tail -n 5 <<<"$lg_bu" | grep '^ExecStartPost=')" \
     'ExecStartPost=/bin/sh -c "rm -f /srv/pithead/data/lan-guard/enforced && cat /proc/sys/kernel/random/boot_id > /srv/pithead/data/lan-guard/enforced"'
-assert_contains "runs before docker.service restarts the containers" "$lg_bu" "Before=docker.service"
+assert_contains "runs before Docker and Tor egress, so the egress DROP lands above the LAN jumps" "$lg_bu" \
+    "Before=docker.service pithead-egress.service"
 assert_contains "every docker start pulls it in (boot and socket activation)" "$lg_bu" "WantedBy=docker.service"
 assert_contains "a oneshot that stays active" "$lg_bu" "RemainAfterExit=yes"
-assert_contains "runs after the host firewall loaders and the egress unit, so its jumps land on top as after up" "$lg_bu" \
-    "After=ufw.service firewalld.service netfilter-persistent.service nftables.service pithead-egress.service"
+assert_contains "runs after the host firewall loaders" "$lg_bu" \
+    "After=ufw.service firewalld.service netfilter-persistent.service nftables.service"
+assert_not_contains "never runs after Tor egress" "$lg_bu" "After=pithead-egress.service"
 assert_eq "an insert failure fails the unit (no '-' prefix on any insert or append)" \
     "$(grep -cE '^ExecStart=-.* -[IA] ' <<<"$lg_bu")" "0"
 assert_eq "every ExecStart runs iptables and nothing else (no checkout path, no docker call)" \
