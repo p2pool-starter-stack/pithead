@@ -82,10 +82,11 @@ verdict that means something. The dashboard and frontend unit suites still run f
      keep the plain path),
      `lint-topology` (no real-looking IPv6/IPv4 literal, `/home/<name>` path, `.lan`/`.internal`/
      `.local` hostname, or `user@host` string — a public repo, so every one of those has to stay a
-     generic class, not a trace of whoever's actual box; `tests/` and `docs/` are an accepted
-     exemption boundary for illustrative/fixture content, and each class also carries a small,
-     explicit value-level allowlist — see the script's own header — never a per-file exemption
-     comment), `lint-file-budget` (the file-budget ratchet, issue #1105 Phase 0 — see
+     generic class, not a trace of whoever's actual box; an instantiated service drop-in under
+     `/systemd/system/` is a unit name, not an address; `tests/` and `docs/` are an
+     accepted exemption boundary for illustrative/fixture content, and each class also carries a
+     small, explicit allowlist — see the script's own header — never a per-file exemption comment),
+     `lint-file-budget` (the file-budget ratchet, issue #1105 Phase 0 — see
      [File budget gate](#file-budget-gate)),
      `lint-pithead-build` (the generated `pithead` must build from `lib/pithead/*.sh` in a clean
      checkout — issue #1105 Phase 2), `lint-trivy-parity` (the CVE gate installs trivy once per

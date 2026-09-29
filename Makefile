@@ -123,7 +123,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
 		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
-		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages \
+		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-serial-port-present \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version \
 		tests/os/*.sh tests/os/*/*.sh tests/netwatch/*.sh \
 		| xargs -0 -n 1 -P 4 shellcheck -x --severity=warning
