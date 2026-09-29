@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from mining_dashboard.service.storage_service import StateManager
 from mining_dashboard.web.views.infra_views import build_workers
@@ -32,21 +32,25 @@ def test_worker_inspect_also_keeps_proxy_online_authoritative(monkeypatch):
 
     monkeypatch.setattr(views.config, "DASHBOARD_WORKERS", [])
     state = StateManager(db_path=":memory:")
+    report = _fresh(version="1.7.0", miner_down=True)
     try:
         detail = build_worker_detail(
             "r",
-            {"workers": [_worker(_fresh(version="1.7.0", miner_down=True))]},
+            {"workers": [_worker(report)]},
             state,
         )
     finally:
         state.close()
     assert detail["rigforge"]["chips"][0]["text"] == "agent reports miner down"
     assert detail["rigforge"]["chips"][0]["variant"] == "warn"
+    assert detail["rigforge"]["generated_at"] == report["generated_at"]
+    assert detail["rigforge"]["stale"] is False
 
 
 def test_stale_agent_fields_are_hidden_and_cannot_drive_update_badge():
     agent = {
         "version": "1.7.0",
+        "generated_at": (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "miner_down": True,
         "stale": True,
         "age_sec": 3600,
@@ -55,5 +59,7 @@ def test_stale_agent_fields_are_hidden_and_cannot_drive_update_badge():
     row = build_workers([_worker(agent)], {"tag": "v2.0.0", "url": "https://h/v2.0.0"})[0]
     assert row["status"] == "online"
     assert row["rigforge"]["version"] is None
+    assert row["rigforge"]["stale"] is True
+    assert row["rigforge"]["generated_at"] == agent["generated_at"]
     assert [c["text"] for c in row["rigforge"]["chips"]] == ["agent stale for 1h 0m"]
     assert row["rigforge_update"] is None
