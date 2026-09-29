@@ -828,14 +828,13 @@ after, so the apply itself is covered — and comes off only when its revert is 
 or `rolled_back`; see the `pools` entry above).
 An `EXIT` trap restores whatever is still on the ledger, by the same route that changed it: the
 dashboard's `/api/control/worker-apply` for the #513, #1236 and #1002b legs, a direct dial at the
-rig's control API for #516's rig-side edit. For a value recorded as one line of compact JSON, each
-restore names its key, rig and route on stderr, never the value: for `pools` the value carries the
-stratum `pass`. A value recorded with a tab or newline in it splits the ledger and is not covered
-([#2668](https://github.com/p2pool-starter-stack/pithead/issues/2668)). The value reaches `jq` on
-stdin and is never passed as a command-line argument, because any local user can read a process's
+rig's control API for #516's rig-side edit. Each restore names its key, rig and route on stderr,
+never the value: for `pools` the value carries the stratum `pass`. The value reaches `jq` on
+stdin, both when it is recorded and when it is restored, and is never passed as a command-line
+argument, because any local user can read a process's
 arguments ([#2663](https://github.com/p2pool-starter-stack/pithead/issues/2663)).
 
-Three properties are worth knowing rather than rediscovering:
+Four properties are worth knowing rather than rediscovering:
 
 - **It is a no-op by construction, not by a guard.** A run that writes no writable key never marks
   anything, so no trap is ever installed. `--mode targeted` runs that borrow no rig are unaffected.
@@ -846,6 +845,12 @@ Three properties are worth knowing rather than rediscovering:
 - **`#517` is deliberately outside the ledger.** Its leg induces a change the *rig* rolls back on
   its own. Unwinding it from here would race that rollback and could re-apply a value the rig had
   already reverted, so the rig stays the authority for it.
+- **An original goes on the ledger as compact JSON.** The ledger is one tab-separated line per key,
+  so the value is compacted with `jq -c` when it is recorded; a pretty-printed `IT_RIG_POOLS_PROBE`
+  is still one entry and is restored intact
+  ([#2668](https://github.com/p2pool-starter-stack/pithead/issues/2668)). A value that is not exactly
+  one JSON value is not recorded: the harness warns, by key and without the value, that an abort will
+  not restore it, and the caller skips that leg rather than send a write it cannot undo.
 
 What it cannot do: the restore dials the dashboard or the rig while the run is already dying, so it
 is best-effort, and it cannot run at all if the shell never exits — `kill -9`, an OOM kill, or the

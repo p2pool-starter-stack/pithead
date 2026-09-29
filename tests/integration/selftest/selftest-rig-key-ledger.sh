@@ -152,8 +152,9 @@ scenario 'jq() { printf "%s\n" "$*" >>"$WORK/jq-argv.log"; command jq "$@"; }' \
     'rig_key_mark dash rig1 pools '"'"'[{"url":"real:1","pass":"argvsecret"}]'"'"'' 'exit 1' >/dev/null
 assert_eq "the pools original is still restored intact through the shim (#2663)" \
     "$(restores)" 'dash|{"pools":[{"url":"real:1","pass":"argvsecret"}]}'
-assert_eq "the shim really saw the unwind call jq (the control for the next assertion)" \
-    "$(grep -c . "$WORK/jq-argv.log")" "1"
+# Two calls: the mark compacts its value through jq (#2668) and the unwind builds its payload through jq.
+assert_eq "the shim really saw the mark and the unwind call jq (the control for the next assertion)" \
+    "$(grep -c . "$WORK/jq-argv.log")" "2"
 assert_eq "and the credential was on no jq argv (#2663)" \
     "$(grep -c argvsecret "$WORK/jq-argv.log")" "0"
 
