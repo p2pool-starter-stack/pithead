@@ -825,9 +825,11 @@ after, so the apply itself is covered — and comes off only when its revert is 
 or `rolled_back`; see the `pools` entry above).
 An `EXIT` trap restores whatever is still on the ledger, by the same route that changed it: the
 dashboard's `/api/control/worker-apply` for the #513, #1236 and #1002b legs, a direct dial at the
-rig's control API for #516's rig-side edit. Each restore names its key, rig and route on stderr,
-never the value: for `pools` the value carries the stratum `pass`. The value reaches `jq` on stdin
-and is never passed as a command-line argument, because any local user can read a process's
+rig's control API for #516's rig-side edit. For a value recorded as one line of compact JSON, each
+restore names its key, rig and route on stderr, never the value: for `pools` the value carries the
+stratum `pass`. A value recorded with a tab or newline in it splits the ledger and is not covered
+([#2668](https://github.com/p2pool-starter-stack/pithead/issues/2668)). The value reaches `jq` on
+stdin and is never passed as a command-line argument, because any local user can read a process's
 arguments ([#2663](https://github.com/p2pool-starter-stack/pithead/issues/2663)).
 
 Three properties are worth knowing rather than rediscovering:
