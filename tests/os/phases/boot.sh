@@ -85,12 +85,11 @@ phase_boot() {
     else
         bad "serial getty did not start cleanly on the guest UART (type ${getty_type:-unreadable}, state ${getty_state:-unreadable}, NRestarts ${getty_restarts:-unreadable})"
     fi
-    if _ssh 'mkdir -p /run/systemd/system/serial-getty@ttyS0.service.d && printf "0\n" >/run/pithead-test-serial-type && cat >/run/systemd/system/serial-getty@ttyS0.service.d/pithead-test.conf && systemctl daemon-reload && systemctl restart serial-getty@ttyS0.service' <<'GETTY_DROPIN'
+    if _ssh 'mkdir -p /run/systemd/system/serial-getty@ttyS0.service.d && printf "0\n" >/run/pithead-test-serial-type && cat >/run/systemd/system/serial-getty@ttyS0.service.d/pithead-test.conf && systemctl daemon-reload && systemctl restart serial-getty@ttyS0.service' <<'GETTY_DROPIN'; then
 [Service]
 ExecCondition=
 ExecCondition=/usr/local/sbin/pithead-serial-port-present /run/pithead-test-serial-type
 GETTY_DROPIN
-    then
         sleep 300
         getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
         getty_result=$(_ssh 'systemctl show -P Result serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')

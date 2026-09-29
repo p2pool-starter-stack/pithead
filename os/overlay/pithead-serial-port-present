@@ -3,5 +3,5 @@
 [ -r "$1" ] || exit 1
 type=$(cat "$1") || exit 1
 case "$type" in
-    ''|0|*[!0-9]*) exit 1 ;;
+'' | 0 | *[!0-9]*) exit 1 ;;
 esac
