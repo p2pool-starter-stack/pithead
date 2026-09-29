@@ -67,6 +67,8 @@ docker() {
     'compose stop tor')
         printf 'stop\n' >>"$WORK/actions"
         if [ "${STOP_FAIL:-0}" = 1 ]; then return 1; fi
+        if [ "${STOP_FAIL:-0}" = 3 ]; then : >"$WORK/restarted"; return 1; fi
+        if [ "${STOP_FAIL:-0}" = 4 ]; then STOP_FAIL=0; printf 'changed identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"; return 1; fi
         : >"$WORK/stopped"
         if [ "${STOP_FAIL:-0}" = 2 ]; then return 1; fi
         ;;
@@ -79,6 +81,7 @@ docker() {
     'compose restart monerod') printf 'redial\n' >>"$WORK/actions" ;;
     *'com.docker.compose.service'*) printf 'tor\n' ;;
     *'.State.Running'*) if [ -e "$WORK/stopped" ]; then printf 'false\n'; else printf 'true\n'; fi ;;
+    *'.State.StartedAt'*) if [ -e "$WORK/restarted" ]; then printf 'later\n'; else printf 'earlier\n'; fi ;;
     *'.State.Health.Status'*) printf 'healthy\n' ;;
     esac
 }
@@ -121,6 +124,16 @@ STOP_FAIL=2
 if tor_recover apply; then exit 1; fi
 [ "$(cat "$WORK/actions")" = "$(printf 'stop\nstart\nredial')" ]
 rm "$WORK/control/tor-recovery-at" "$WORK/started" "$WORK/actions"
+STOP_FAIL=3
+if tor_recover apply; then exit 1; fi
+[ "$(cat "$WORK/actions")" = "$(printf 'stop\nredial')" ]
+rm "$WORK/control/tor-recovery-at" "$WORK/actions" "$WORK/restarted"
+STOP_FAIL=4
+if tor_recover apply; then exit 1; fi
+[ "$(cat "$WORK/actions")" = "$(printf 'stop\nstop')" ]
+[ "$(docker inspect tor --format '{{.State.Running}}')" = false ]
+printf 'identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"
+rm "$WORK/control/tor-recovery-at" "$WORK/stopped" "$WORK/actions"
 STOP_FAIL=0
 ALTER_IDENTITY=1
 if tor_recover apply; then exit 1; fi

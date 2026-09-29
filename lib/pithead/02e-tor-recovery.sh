@@ -95,7 +95,7 @@ tor_recovery_restore_start() { # <data dir> <original identity hashes>; recover 
 }
 
 tor_recover() { # check | apply; explicit operator action only
-    local mode="$1" dir state first second stamp now last backup healthy=0 info identities
+    local mode="$1" dir state first second stamp now last backup healthy=0 info identities started_before started_after
     case "$mode" in check | apply) ;; *) error "Usage: ./pithead tor-recover check|apply" ;; esac
     require_deployed
     # An active host operation is a refusal, not a queued mutation against changing state.
@@ -180,12 +180,24 @@ tor_recover() { # check | apply; explicit operator action only
         return 1
     }
     control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "started"
+    started_before=$(docker inspect tor --format '{{.State.StartedAt}}' 2>/dev/null) || started_before=
     if ! docker compose stop tor; then
-        case "$(docker inspect tor --format '{{.State.Running}}' 2>/dev/null)" in
-        false) tor_recovery_restore_start "$dir" "$identities" || true ;;
-        true) : ;; # Stop failed before Tor stopped; no restart or Monero re-dial needed.
-        *) warn "Tor stop status is unknown; check Tor before retrying recovery." ;;
-        esac
+        if [ "$(tor_recovery_identities "$dir")" != "$identities" ]; then
+            tor_recovery_stop_changed_identity || true
+        else
+            case "$(docker inspect tor --format '{{.State.Running}}' 2>/dev/null)" in
+            false) tor_recovery_restore_start "$dir" "$identities" || true ;;
+            true)
+                started_after=$(docker inspect tor --format '{{.State.StartedAt}}' 2>/dev/null) || started_after=
+                if [ -z "$started_before" ] || [ -z "$started_after" ]; then
+                    warn "Tor start time is unknown; check Monero peers before retrying recovery."
+                elif [ "$started_before" != "$started_after" ]; then
+                    tor_recovery_redial_monerod
+                fi
+                ;;
+            *) warn "Tor stop status is unknown; check Tor before retrying recovery." ;;
+            esac
+        fi
         control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"
         mutation_lock_release
         return 1
