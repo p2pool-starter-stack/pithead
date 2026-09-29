@@ -112,6 +112,11 @@ lan_guard_arm_transition() { # <newenv>: before apply commits it
         fi
     fi
     if [ "$rc" -ne 0 ] || ! cmp -s "$BOOT_ID_FILE" "$LAN_GUARD_MARKER"; then
+        if [ "$rc" -ne 0 ]; then
+            warn "lan-guard:transition-not-armed — $(lan_guard_reason "$rc")."
+        else
+            warn "lan-guard:transition-not-armed — the boot marker does not match this boot."
+        fi
         lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
         lan_guard_check_now || true
         return 1
