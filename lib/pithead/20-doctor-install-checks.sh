@@ -259,7 +259,7 @@ check_appliance_cert() {
             for h in $extras; do
                 case "$bridge_gws" in *" $h "*) continue ;; esac
                 case ",$san," in
-                *",DNS:$h,"* | *",IP:$h,"*) ;;
+                *",DNS:$h,"* | *",IP:$h,"* | *",IP:$(ipv6_canonical "$h"),"*) ;;
                 *) missing="${missing:+$missing }$h" ;;
                 esac
             done

@@ -110,3 +110,70 @@ assert_rc "a still-red doctor row fails" "$(awv enabled active "$AWV_BAD" >/dev/
 assert_rc "a failed service run fails" "$(awv enabled active "$AWV_OK" 1 >/dev/null; echo $?)" 1
 assert_rc "a certificate without the added address fails" "$(awv enabled active "$AWV_OK" 0 "IP:192.168.1.5" >/dev/null; echo $?)" 1
 unset AWV_OK AWV_BAD awv
+
+echo "== unit: appliance_mint_cert keeps a certificate that already carries an IPv6 address (#2463) =="
+# openssl stores and prints an IPv6 SAN expanded and upper-case; the mint compared that string with
+# `hostname -I`'s compressed spelling, so any IPv6 in the set re-minted the certificate on EVERY
+# render and no render ever satisfied doctor. Mutation run: drop san_canonical_string from the
+# comparison -> the second mint replaces the certificate and both rows go red.
+AWM="$SANDBOX/address-watch-mint"
+rm -rf "$AWM"
+mkdir -p "$AWM"
+awm_out=$(
+    cd "$AWM" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK" 2>/dev/null
+    set +e
+    appliance_tls_dir() { printf '%s' "$AWM/tls"; }
+    appliance_site_names() { printf '%s' "rig1.local 192.168.1.20 fd00:2463::1 localhost"; }
+    log() { echo "LOG: $*"; }
+    fp1=$(appliance_mint_cert 2>&1)
+    fp2=$(appliance_mint_cert 2>&1)
+    echo "same=$([ "$fp1" = "$fp2" ] && echo yes || echo no)"
+    appliance_site_names() { printf '%s' "rig1.local 192.168.1.20 fd00:2463::1 fd00:2463::2 localhost"; }
+    fp3=$(appliance_mint_cert 2>&1)
+    echo "changed=$([ "$fp1" != "$fp3" ] && echo yes || echo no)"
+)
+assert_contains "a second mint with an IPv6 address keeps the certificate" "$awm_out" "same=yes"
+assert_contains "a new IPv6 address still re-mints" "$awm_out" "changed=yes"
+unset AWM awm_out
+
+echo "== unit: ipv6_canonical (#2463) =="
+# shellcheck disable=SC1090
+canon() { (source "$STACK" 2>/dev/null; ipv6_canonical "$1"); }
+assert_eq "ipv6_canonical expands a compressed ULA" "$(canon fd00:2463::1)" "fd00:2463:0:0:0:0:0:1"
+assert_eq "ipv6_canonical lower-cases and strips leading zeros as openssl prints" "$(canon FD00:2463:0000:0:0:0:0:0001)" "fd00:2463:0:0:0:0:0:1"
+assert_eq "ipv6_canonical handles a leading ::" "$(canon ::1)" "0:0:0:0:0:0:0:1"
+assert_eq "ipv6_canonical handles a trailing ::" "$(canon fd00::)" "fd00:0:0:0:0:0:0:0"
+assert_eq "ipv6_canonical leaves an IPv4 literal alone" "$(canon 192.168.1.20)" "192.168.1.20"
+assert_eq "ipv6_canonical leaves a malformed literal alone" "$(canon fd00:zz::1)" "fd00:zz::1"
+unset -f canon
+
+echo "== unit: doctor counts an IPv6 SAN as covered whatever its spelling (#2463) =="
+# openssl prints the SAN expanded and upper-case, `hostname -I` compressed: one address, covered.
+# Mutation run: drop the ipv6_canonical alternative in check_appliance_cert -> the first row goes red.
+AWD="$SANDBOX/address-watch-doctor"
+rm -rf "$AWD"
+mkdir -p "$AWD/tls"
+printf '{"dashboard":{"host":"auto"}}' >"$AWD/config.json"
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout "$AWD/tls/wizard.key" -out "$AWD/tls/wizard.crt" \
+    -subj "/CN=rig1.local" -addext "subjectAltName=DNS:rig1.local,IP:192.168.1.20,IP:fd00:2463::1,DNS:localhost" >/dev/null 2>&1
+awd_run() { # <hostname -I output>
+    (
+        cd "$AWD" || exit 1
+        # shellcheck disable=SC1090
+        source "$STACK" 2>/dev/null
+        set +e
+        is_appliance() { return 0; }
+        appliance_tls_dir() { printf '%s' "$AWD/tls"; }
+        appliance_bridge_gateway() { printf '172.19.0.1'; }
+        env_get() { [ "$1" = HOST_IP ] && printf 'rig1.local'; }
+        hostname() { if [ "${1:-}" = "-I" ]; then printf '%s' "$AWD_ADDRS"; else printf 'rig1'; fi; }
+        check_appliance_cert 2>&1
+    )
+}
+awd_out=$(AWD_ADDRS='192.168.1.20 fd00:2463::1' awd_run)
+assert_contains "an IPv6 address the certificate carries counts as covered despite the spelling" "$awd_out" "covers every name"
+awd_out=$(AWD_ADDRS='192.168.1.20 fd00:2463::2' awd_run)
+assert_contains "a different IPv6 address is still uncovered" "$awd_out" "does not cover: fd00:2463::2"
+unset AWD awd_run awd_out AWD_ADDRS

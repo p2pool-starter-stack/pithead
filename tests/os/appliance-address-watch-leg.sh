@@ -67,6 +67,8 @@ phase_provision_address_watch() {
     else
         bad "$verdict"
         printf '%s' "$doctor" | jq -r '.checks[]? | select(.message | test("certificate")) | "\(.status): \(.message)"' 2>/dev/null | sed 's/^/     doctor: /'
+        # Colons swapped so the bench's address redaction leaves the two sets comparable.
+        _ssh "echo hostname-I: \$(hostname -I); openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -ext subjectAltName | tr '\n' ' '" 2>/dev/null | tr ':' '_' | sed 's/^/     /'
         _ssh "journalctl -u pithead-address-watch.service --no-pager -n 20" 2>/dev/null | tr -d '\r' | sed 's/^/     | /'
         return 1
     fi
