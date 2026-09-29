@@ -58,6 +58,10 @@ if [ "${FAKE_GRPC_OK:-0}" = 1 ]; then
     printf 'HTTP/2 200\r\ngrpc-status: 0\r\n' >"$headers"
     exit 0
 fi
+if [ "${FAKE_GRPC_OK:-0}" = 2 ]; then
+    printf 'HTTP/2 200\r\n' >"$headers"
+    exit 0
+fi
 exit 7
 EOF
 chmod +x "$WORK/bin/curl"
@@ -68,9 +72,11 @@ health_rc() { (
 ); }
 touch "$marker"
 [ "$(health_rc 0)" = 0 ]   # a first scan gets bounded grace
+[ "$(health_rc 2)" = 0 ]   # HTTP success without gRPC status still gets bounded grace
 [ "$(health_rc 0 0)" = 1 ] # zero grace is strict
 touch -t 200001010000.00 "$marker"
 [ "$(health_rc 0)" = 1 ] # expired grace fails
+[ "$(health_rc 2)" = 1 ] # silent gRPC must fail after expiry
 [ "$(health_rc 1)" = 0 ] # successful gRPC retires grace
 [ ! -e "$marker" ]
 [ "$(health_rc 0)" = 1 ] # later failure is strict
