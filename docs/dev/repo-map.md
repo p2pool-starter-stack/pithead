@@ -47,6 +47,8 @@ guards. Sources are excluded from release bundles.
 The host firewall installer is `02b-tor-egress-apply.sh`; the host-owned clearnet
 sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
 readback helpers are in `02d-tor-egress-verify.sh`.
+Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
+the dashboard's clearnet healer stays in `service/health/tor_heal.py`.
 
 ## Dashboard feature folders
 
