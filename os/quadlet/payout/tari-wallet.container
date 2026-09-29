@@ -19,6 +19,7 @@ ReadOnly=true
 DropCapability=all
 AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID
 NoNewPrivileges=true
+RunInit=true
 PodmanArgs=--memory 512m --memory-swap 512m
 HealthCmd=ps -e | grep '[m]inotari_consol' || exit 1
 HealthInterval=30s
