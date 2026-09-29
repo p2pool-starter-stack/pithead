@@ -108,8 +108,9 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
 
 On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
 that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
-Compose project. Pithead reinstalls the egress rules above its LAN-port guard jumps before starting
-containers, so the guard's return path still reaches the DROP. Until the host attests a selected
+Compose project. At boot, the LAN guard runs first and Pithead reinstalls the egress rules above
+its LAN-port jumps before starting containers, so the guard's return path still reaches the DROP.
+Until the host attests a selected
 first sync's Tor transition, a failed live firewall readback prevents Compose startup;
 ordinary startup retains the firewall warning. Before Docker creates its first network,
 the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no

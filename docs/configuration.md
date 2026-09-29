@@ -287,7 +287,8 @@ install the rule, it keeps the ports on `127.0.0.1` for that start instead of pu
 without it. `./pithead doctor` then says the ports are held and why.
 
 A reboot clears the rule. On the Docker install, `pithead` therefore installs two units.
-`pithead-lan-guard.service` runs before `docker.service` and puts the rule back.
+`pithead-lan-guard.service` runs before `pithead-egress.service` and `docker.service` and puts the
+rule back. When Tor egress is enabled, its unit then places the egress DROP above the LAN jumps.
 `pithead-lan-hold.service` starts the node containers that publish a LAN port (`monerod` for
 `18081` and `18083`, `tari` for `18142`), and only once the guard has succeeded. Docker itself
 does not start those containers: they run with restart policy `no`. If the guard fails at boot,

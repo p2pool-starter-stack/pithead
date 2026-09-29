@@ -66,6 +66,18 @@ assert_lan_guard_boot_restore() { # <port>...
     assert_eq "control: with the rule gone, a non-private source reaches port $1" "$(_lan_probe 198.51.100 "$1")" open
     rx 'sudo systemctl restart pithead-lan-guard.service' >/dev/null 2>&1 || rc=$?
     assert_rc "the boot unit starts cleanly on the real kernel (#2749)" "$rc" "0"
+    if [ "$(env_on_box TOR_EGRESS_FIREWALL)" != false ]; then
+        assert_contains "boot orders LAN guard before Tor egress (#2901)" \
+            "$(rx 'systemctl show -p Before --value pithead-lan-guard.service')" "pithead-egress.service"
+        assert_contains "Docker waits for Tor egress too (#2901)" \
+            "$(rx 'systemctl show -p After --value docker.service')" "pithead-egress.service"
+        rc=0
+        rx 'sudo systemctl restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
+        assert_rc "the Tor-egress boot unit starts after the LAN guard (#2901)" "$rc" "0"
+        rc=0
+        rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?
+        assert_rc "post-boot live Tor-egress verdict is enforced above the LAN jump (#2901)" "$rc" "0"
+    fi
     for p in "$@"; do
         assert_eq "after the boot unit, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
         assert_eq "after the boot unit, port $p: a private source can (#2749)" "$(_lan_probe 10.254.254 "$p")" open
