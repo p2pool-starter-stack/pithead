@@ -48,6 +48,43 @@ lan_guard_published() {
     done
 }
 
+# A bind moving from LAN to loopback still belongs to the old container until Compose recreates
+# it. Stop that container before replacing the firewall rules; a failed Compose must not leave
+# the old all-interface listener running after its jump has been removed.
+lan_guard_stop_rebound_nodes() {
+    local names service name kp bind published stop_node
+    for service in monerod tari; do
+        names=$(docker ps --filter label=com.docker.compose.project=pithead \
+            --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            stop_node=0
+            for kp in $LAN_GUARD_BINDS; do
+                case "$service:${kp%%:*}" in
+                monerod:MONERO_* | tari:TARI_*) ;;
+                *) continue ;;
+                esac
+                bind=$(env_get "${kp%%:*}" 2>/dev/null) || return 1
+                case "$bind" in '' | 127.0.0.1) ;; *) continue ;; esac
+                published=$(docker port "$name" "${kp#*:}/tcp" 2>/dev/null) || {
+                    stop_node=1
+                    break
+                }
+                if [ -n "$published" ] && grep -qv '^127\.0\.0\.1:' <<<"$published"; then
+                    stop_node=1
+                    break
+                fi
+            done
+            [ "$stop_node" = 1 ] || continue
+            docker stop "$name" >/dev/null || return 1
+            names=$(docker ps --filter label=com.docker.compose.project=pithead \
+                --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
+            grep -qxF "$name" <<<"$names" && return 1
+        done <<<"$names"
+    done
+    return 0
+}
+
 # `iptables-restore --noflush` input for <port>...: declaring our chain flushes and refills it, the
 # stale tagged jumps (<old jump spec> lines on stdin, as `iptables -S` prints them) are deleted and
 # the new ones inserted at the top of DOCKER-USER, all in one commit, so no packet sees a half-built

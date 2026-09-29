@@ -79,6 +79,10 @@ compose_up() {
     is_source_checkout || build_args+=(--no-build)
     # Every container (re)start passes here, so the LAN-published node ports get their source rule
     # (or are held on loopback) before anything listens on them (#2616).
+    lan_guard_stop_rebound_nodes || {
+        warn "LAN-only source rules were kept because a node with an old published bind could not be stopped."
+        return 1
+    }
     apply_lan_guard || return 1
     # Reapply egress above the LAN jump; retain choice markers until live removal is proved.
     local egress_rc=0 choice_marker selected_ips firewall_enabled choice_active=0
@@ -350,7 +354,7 @@ stack_restart() { # [tor|monerod]
     # typo all along. Nothing here mutates, so there is nothing to serialise yet.
     case "${1:-}" in
     "" | tor | monerod) ;;
-    *) error "restart takes no argument, 'tor' (fresh Tor guards when clearnet egress is stuck), or 'monerod' (re-dial peers after a Tor restart left the node out of sync). Got: '$1'." ;;
+    *) error "restart takes no argument, 'tor' (fresh Tor circuits when clearnet egress is stuck), or 'monerod' (re-dial peers after a Tor restart left the node out of sync). Got: '$1'." ;;
     esac
     mutation_lock_acquire restart
     # `compose restart` also starts a stopped node, on its existing 0.0.0.0 publish, without
@@ -364,14 +368,14 @@ stack_restart() { # [tor|monerod]
         log "Stack restarted."
         ;;
     tor)
-        # Manual leg of the #424 guard self-heal: restart ONLY tor so it picks fresh guards
+        # Manual leg of the #424 guard self-heal: restart ONLY tor so it rebuilds circuits
         # when clearnet exits are stuck (the doctor Tor clearnet-egress check WARNs on this).
         # Tor takes no args from .env, so a plain restart is safe (other containers go
         # through apply/upgrade, whose recreate applies current args, #273). Compose then
         # restarts monerod right after tor is healthy again (depends_on restart: true, #972):
         # monerod does NOT re-peer on its own after a tor restart kills its SOCKS
         # connections — it can sit at 0 in / 0 out peers for hours; p2pool re-peers fine.
-        log "Restarting the tor container to pick fresh guards — ALL Tor circuits drop and rebuild (mining onions included; p2pool re-peers on its own, and a local monerod is restarted alongside so it re-dials)..."
+        log "Restarting the tor container to rebuild circuits — ALL Tor circuits drop and rebuild (mining onions included; p2pool re-peers on its own, and a local monerod is restarted alongside so it re-dials)..."
         docker compose restart tor
         log "tor restarted. Verify egress recovered: './pithead doctor' (Tor clearnet-egress check)."
         ;;

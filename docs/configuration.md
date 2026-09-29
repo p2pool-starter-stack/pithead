@@ -244,7 +244,7 @@ the desired value is not presented as proof of what the still-running services u
 | `tari.mem_limit` | `auto` | Upper limit on the Tari container's memory, so a runaway Tari restarts cleanly on its own instead of dragging down the whole host. `auto` picks a safe size for your machine. Leave it unless you want to give Tari less RAM (to free it for other apps) or more (if it ever restarts too often). Accepts any Docker memory value, e.g. `"8g"`. Local mode only: with `tari.mode: remote` or `off` there is no container to cap and the key is ignored. |
 | `p2pool.data_dir` | `auto` | Where P2Pool data lives on the host. `auto` = `./data/p2pool`. |
 | `tor.data_dir` | `auto` | Where Tor's state (including onion keys) lives. `auto` = `./data/tor`. |
-| `tor.auto_heal` | `false` _(off)_ | Privacy-relevant, default off. Tor can bootstrap fully and then sit on a **failing guard**: circuits time out, so everything that exits Tor to the clearnet (Healthchecks pings, the Telegram bot, XvB stats) breaks at once while mining keeps working (#424). `true` lets the dashboard probe Tor clearnet egress every 5 minutes and restart the tor container once egress has been broken for 15 minutes, so Tor reselects guards — bounded to 3 restarts per outage, 30 minutes apart, each logged; if egress stays broken (Tor network overload) it stops restarting and keeps warning. Off by default because each restart drops **every** Tor circuit, mining onions included (they rebuild in minutes). The manual equivalent is `./pithead restart tor`. See [Operations › Troubleshooting](operations.md#troubleshooting). |
+| `tor.auto_heal` | `false` _(off)_ | Privacy-relevant, default off. Enabling it delegates a limited circuit-refresh capability to the dashboard: isolated Tor SOCKS probes to two independent targets must fail for 15 minutes before it requests recovery. The host cannot verify those HTTPS results itself, so it independently limits NEWNYM to twice per 24 hours, 30 minutes apart. Persistent failure permits one disruptive Tor container restart and local Monero re-dial. No automatic step drops guards or deletes state. The monitor's three-attempt outage budget resets after two successful probes; otherwise it warns. See [Operations › Troubleshooting](operations.md#troubleshooting). |
 | `dashboard.data_dir` | `auto` | Where the dashboard's database lives. `auto` = `./data/dashboard`, unless the four other `*.data_dir` all point under one parent directory — then the dashboard joins them at `<that parent>/dashboard`. `upgrade`/`apply` moves the live database automatically only from the old in-install default. A confirmed change to an explicit path copies and verifies the database, including the payout-wallet alarm baseline, and leaves the old copy in place; a non-empty target refuses the change rather than guessing (see [Data directories](#data-directories)). |
 | `dashboard.check_for_updates` | `true` _(on)_ | The dashboard periodically asks GitHub whether a newer Pithead release exists and, if so, shows a header badge linking to it (e.g. "New release v1.4.0 available"). Notify-only: it never updates anything; you upgrade with `./pithead upgrade` on your own terms. On by default because the check is routed over Tor (the same bridge SOCKS as the XvB fetch, `socks5h` so the DNS lookup goes through Tor too), so GitHub sees a Tor exit, not your IP. It's cached (hourly) and fails silently offline. The same flag also covers the per-worker [RigForge new-release badge](workers.md#rigforge-new-release-badge) — one more hourly, Tor-routed fetch of the latest RigForge release, compared against every rig's reported version. Set to `false` to opt out of both. See [Privacy › Runtime egress](privacy.md#runtime-egress). |
 | `network.subnet` | `172.28.0.0/24` | The private Docker bridge the stack's containers run on. Change it only if install fails with `Pool overlaps with other one on this address space`, i.e. your host already uses `172.28.0.0/24` for another Docker network or interface. Must be a free `X.Y.Z.0/24` block (e.g. `"172.30.0.0/24"`); the services keep their fixed host octets (`.25`–`.31`) within it, so the structured addressing the dashboard and the worker SSRF guard rely on is preserved. |
@@ -288,16 +288,20 @@ The rule needs root: `sudo` with `iptables` on the Docker install, `nft` on the 
 install the rule, it keeps the ports on `127.0.0.1` for that start instead of publishing them
 without it. If a LAN node is already running, it stops that node before changing its bind and
 restarts it on loopback, including when `up` names only other services. On a first Docker `up`,
-before Docker has created its network, the first Compose pass
-keeps the node ports on `127.0.0.1` and leaves their start marker absent. It then checks whether
+before Docker has created its network, the first Compose pass keeps the node ports on `127.0.0.1`
+and leaves their start marker absent. It then checks whether
 Docker added the path from `FORWARD` to `DOCKER-USER`. If so, it records the marker and runs Compose
 again with the LAN binds. If that path remains absent, the ports stay on loopback and it warns.
 If the first Compose pass fails, `pithead` retries the stopped nodes on loopback and reports the
 original failure. If a required Tor egress rule cannot be verified, it leaves those nodes stopped.
 `./pithead doctor` then says the ports are held and why.
+When a LAN-access switch turns off, `pithead` stops a still-running node with the old published
+bind before it removes that port's rule. If the following Compose start fails, the old node stays
+stopped instead of listening without the rule. Run `./pithead up` after fixing the failure.
 
 A reboot clears the rule. On the Docker install, `pithead` therefore installs two units.
-`pithead-lan-guard.service` runs before `docker.service` and puts the rule back.
+`pithead-lan-guard.service` runs before `pithead-egress.service` and `docker.service` and puts the
+rule back. When Tor egress is enabled, its unit then places the egress DROP above the LAN jumps.
 `pithead-lan-hold.service` starts the node containers that publish a LAN port (`monerod` for
 `18081` and `18083`, `tari` for `18142`), and only once the guard has succeeded. Docker itself
 does not start those containers: they run with restart policy `no`. If the guard fails at boot,
