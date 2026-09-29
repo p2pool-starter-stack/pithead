@@ -79,6 +79,10 @@ compose_up() {
     is_source_checkout || build_args+=(--no-build)
     # Every container (re)start passes here, so the LAN-published node ports get their source rule
     # (or are held on loopback) before anything listens on them (#2616).
+    lan_guard_stop_rebound_nodes || {
+        warn "LAN-only source rules were kept because a node with an old published bind could not be stopped."
+        return 1
+    }
     apply_lan_guard
     # Reapply egress above the LAN jump; retain choice markers until live removal is proved.
     local egress_rc=0 choice_marker selected_ips firewall_enabled choice_active=0
