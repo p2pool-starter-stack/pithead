@@ -509,7 +509,6 @@ channels share the final cut commit, one version and one GitHub Release.
    `PITHEAD_RAUC_CERT` / `PITHEAD_RAUC_KEY` at the leaf that signs the bundle. Without the
    keyring export, `populate-slot.sh` defaults to baking the leaf as the trust anchor:
 
-
    ```bash
    export PITHEAD_RAUC_KEYRING=~/.config/pithead-release/rauc-root.pem
    export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem
@@ -603,7 +602,7 @@ channels share the final cut commit, one version and one GitHub Release.
    attached. Published release assets are immutable — v1.18.0 burned its tag this way — so
    the release publishes exactly once, with both channels' artifacts aboard. The bundle's
    signature is what devices verify.
-7. `main` fast-forwards to the tag automatically when `release.sh` creates the draft; if the push was
+6. `main` fast-forwards to the tag automatically when `release.sh` creates the draft; if the push was
    refused, run the command it prints (see
    [After publishing](manual-release-checklist.md#after-publishing)).
 

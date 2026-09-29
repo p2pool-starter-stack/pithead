@@ -74,6 +74,7 @@ drive_rootfs_build() { # <fixture-tar> <push-log>
         DRY_RUN=0
         # shellcheck disable=SC2034  # consumed by the dynamically sourced build_rootfs_image
         PLATFORMS=linux/amd64
+        # shellcheck disable=SC2034  # consumed by the dynamically sourced build_rootfs_image
         STAGING_TAG=v2.0.0-rc.1
         rootfs_tar=os/build/pithead-root.tar
         manifest_digest() { printf 'sha256:%064d\n' 4; }
