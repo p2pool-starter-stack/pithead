@@ -11,9 +11,13 @@ egress_direct_for() { # <p2pool|xmrig-proxy>
     egress_firewall_exempts "$1"
 }
 
-# ponytail: no per-component exemption exists yet, so the firewall blocks every chosen clearnet
-# route; the scoped exemption (#2790) replaces this with the real check.
-egress_firewall_exempts() { return 1; } # <component>
+egress_firewall_exempts() { # <component>; the candidate config is parsed for this preview
+    case "$1" in
+    p2pool) return 0 ;;
+    xmrig-proxy) [ "$(config_bool '.xvb.enabled' true)" = true ] ;;
+    *) return 1 ;;
+    esac
+}
 
 describe_exposure_change() { # <key> <old> <new>; sets caller's flag/msg
     local key="$1" new="$3"
@@ -23,16 +27,16 @@ describe_exposure_change() { # <key> <old> <new>; sets caller's flag/msg
             flag=CONFIRM
             msg="⚠ Tor-only egress firewall DISABLED — the host rules that drop direct clearnet dials from monerod, p2pool, tari and xmrig-proxy are removed, so a misconfigured or buggy daemon can reach the internet directly and show this host's IP to whatever it dials; each daemon's own Tor setting becomes the only guard."
         else
-            msg="Tor-only egress firewall ENABLED — direct clearnet dials from the mining containers are dropped again; only the Tor container reaches the internet."
+            msg="Tor-only egress firewall ENABLED — unselected mining containers' direct clearnet dials are dropped; only Tor and containers explicitly opted into clearnet can reach the public internet."
         fi
         ;;
     XVB_TOR_ENABLED)
-        if [ "$new" == "false" ] && egress_direct_for xmrig-proxy; then
+        if [ "$new" == "false" ] && [ "$(config_bool '.xvb.enabled' true)" != true ]; then
+            flag=CONFIRM
+            msg="XvB donation mining set OFF Tor while XvB is disabled — there is no donation dial now; enabling XvB later opens a direct dial and exposes this host's IP to the XvB pool."
+        elif [ "$new" == "false" ] && egress_direct_for xmrig-proxy; then
             flag=CONFIRM
             msg="⚠ XvB donation mining OFF Tor — xmrig-proxy dials the XvB pool directly and that route is open, so XvB sees this host's IP alongside the hashrate it donates."
-        elif [ "$new" == "false" ]; then
-            flag=CONFIRM
-            msg="XvB donation mining set OFF Tor — xmrig-proxy stops routing the XvB pool through Tor, but the Tor-only egress firewall blocks its direct dial, so this host's IP is not exposed and the XvB connection fails while that route stays blocked."
         else
             msg="XvB donation mining back on Tor — the XvB pool sees a Tor exit, not this host's IP."
         fi
@@ -49,9 +53,6 @@ describe_exposure_change() { # <key> <old> <new>; sets caller's flag/msg
         if [ "$new" == "true" ] && egress_direct_for p2pool; then
             flag=CONFIRM
             msg="⚠ P2Pool sidechain peers over CLEARNET — p2pool dials peers directly and resumes clearnet seed-node DNS lookups, and that route is open, so this host's IP becomes visible to the P2Pool network."
-        elif [ "$new" == "true" ]; then
-            flag=CONFIRM
-            msg="P2Pool sidechain peers set to CLEARNET — p2pool stops using the Tor proxy, but the Tor-only egress firewall blocks its direct dials, so this host's IP is not exposed and P2Pool gets no clearnet sidechain peers while that route stays blocked."
         else
             msg="P2Pool sidechain peers back on Tor — outbound dials go through the bundled Tor proxy and clearnet seed-node DNS stays off."
         fi

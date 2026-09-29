@@ -226,7 +226,7 @@ tor_egress_sync_rules_match() { # <nft|iptables> <live rules>
                 | all(.[]; safe(.)))
         ' >/dev/null <<<"$out" || return 1
     fi
-    for ip in "$prefix.26" "$prefix.27"; do
+    for ip in "$prefix.26" "$prefix.27" "$prefix.28" "$prefix.29"; do
         if [ "$backend" = nft ]; then
             actual=$(jq --arg ip "$ip" '
                 [.nftables[] | select(.rule?.chain == "forward") | .rule.expr] as $rules
