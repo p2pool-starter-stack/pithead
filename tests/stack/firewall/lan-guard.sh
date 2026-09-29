@@ -120,6 +120,13 @@ assert_eq "re-enabled firewall still blocks a failed refresh after opt-out" "$(c
 : >"$LG_ORDER"
 lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; }; compose_up -d' >/dev/null
 assert_eq "successful enabled refresh clears the selected-choice marker" "$([ ! -e "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
+lg_real 'env_get() { case "$1" in XVB_ENABLED) echo true ;; XVB_TOR_ENABLED) echo false ;; esac; }; tor_egress_sync_ips() { echo 172.28.0.29; }; apply_tor_egress_iptables() { :; }; apply_tor_egress_firewall refresh' >/dev/null
+assert_eq "XvB alone arms the choice marker" "$([ -d "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
+: >"$LG_ORDER"
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d' >/dev/null
+assert_eq "XvB removal also blocks a failed refresh" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
+lg 'apply_lan_guard() { :; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { :; }; compose_up -d' >/dev/null
+assert_eq "successful XvB removal clears the marker" "$([ ! -e "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
 : >"$LG_ORDER"
 lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d' >/dev/null
 assert_eq "ordinary startup keeps its warning-only firewall behavior" "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
