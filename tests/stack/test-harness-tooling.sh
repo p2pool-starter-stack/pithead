@@ -44,13 +44,9 @@ assert_eq "Compose release pin" "$(sed -n 's/^ARG COMPOSE_VERSION=//p' "$dockerf
 assert_eq "Compose commit pin" "$(sed -n 's/^ARG COMPOSE_COMMIT=//p' "$dockerfile")" "5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de"
 assert_eq "Compose keeps only the x/mod and grpc floors" "$(sed -n 's/^ARG COMPOSE_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"'
 assert_eq "Cosign keeps the x/mod and grpc floors" "$(sed -n 's/^ARG COSIGN_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"'
-ignores=$(cat "$ROOT/.config/trivyignore")
-for obsolete in CVE-2026-53612 CVE-2026-53613 CVE-2026-53614 CVE-2026-53615; do
-    assert_not_contains "$obsolete is no longer ignored" "$ignores" "$obsolete"
-done
-for live in CVE-2026-23949 CVE-2026-24049; do
-    assert_contains "$live remains ignored" "$ignores" "$live"
-done
+assert_eq "only the two live Trivy exceptions remain" \
+    "$(grep -E '^CVE-' "$ROOT/.config/trivyignore")" \
+    $'CVE-2026-23949\nCVE-2026-24049'
 
 echo "== unit: resolve-pins self-test (#1137) =="
 # pin-watch.sh above compares VERSIONS; it does not ask whether a pinned tag@sha256 digest still
