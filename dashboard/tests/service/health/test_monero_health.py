@@ -78,15 +78,25 @@ def test_a_falling_height_is_not_progress():
     assert mon.observe(_sync(height=90))["level"] == "red"  # rewound below the best one seen
 
 
-def test_unreachable_cycle_feeds_nothing_and_restarts_the_peerless_clock():
+def test_unreachable_node_is_no_verdict_never_green_and_clears_the_clocks():
     mon, clock = _mon()
     mon.observe(_sync(out=0))
     clock.t += PEERLESS_SEC
-    down = {"reachable": False}
-    assert mon.observe(down)["level"] == "green"  # node-down is another monitor's verdict
-    assert mon.verdict["peers_out"] is None
+    v = mon.observe({"reachable": False})  # node-down is another monitor's verdict
+    assert v["level"] == "unknown" and v["reachable"] is False and v["peers_visible"] is False
     clock.t += 1
-    assert mon.observe(_sync(out=0))["level"] == "green"
+    assert mon.observe(_sync(out=0))["level"] == "green"  # the peerless clock starts afresh
+
+
+def test_downtime_is_not_a_stall_and_a_restart_at_the_same_height_restarts_the_clock():
+    mon, clock = _mon()
+    mon.observe(_sync(height=100))
+    clock.t += STALLED_SEC * 2
+    assert mon.observe({"reachable": False})["level"] == "unknown"
+    v = mon.observe(_sync(height=100))  # back at the same height after a long stop
+    assert v["level"] == "green" and v["advance_age_sec"] == 0
+    clock.t += STALLED_SEC
+    assert mon.observe(_sync(height=100))["level"] == "red"
 
 
 def test_remote_node_gets_no_verdict_and_says_peers_are_not_visible():

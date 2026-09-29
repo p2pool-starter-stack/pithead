@@ -60,6 +60,8 @@ class TestMoneroHealthEdges:
         _mh(svc, _h())
         _mh(svc, _h(level="red", peerless=True, peers_out=0))
         assert _mh(svc, {"level": "unknown", "peers_visible": False}) == []
+        # A node that stopped answering is node-down's alert, not "peers are back" (no fake recovery).
+        assert _mh(svc, {"level": "unknown", "peers_visible": False, "reachable": False}) == []
         assert _mh(svc, None) == []
         assert _mh(svc, _h(level="red", peerless=True, peers_out=0)) == []  # still no repeat
 

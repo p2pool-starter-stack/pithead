@@ -5,13 +5,15 @@
 
 echo "== unit: monerod healthcheck fails a peerless node past the bound (#2499) =="
 # A stub curl on PATH answers get_info with a chosen outgoing count; the stamp file is sandboxed.
-mon_hc() { # <out-peers|none> <bound-sec> <stamp-age-sec|none> -> "rc=N"
+mon_hc() { # <out-peers|none|down> <bound-sec> <stamp-age-sec|none> -> "rc=N"
     local d rc body
     mk_tmpdir d
-    if [ "$1" = none ]; then body='{"status":"OK","height":10}'; else
+    if [ "$1" = down ]; then
+        printf '#!/bin/sh\nexit 22\n' >"$d/curl"
+    elif [ "$1" = none ]; then body='{"status":"OK","height":10}'; else
         body="$(printf '{\n  "outgoing_connections_count": %s,\n  "status": "OK"\n}' "$1")"
     fi
-    printf '#!/bin/sh\ncat <<'"'"'EOF'"'"'\n%s\nEOF\n' "$body" >"$d/curl"
+    [ "$1" = down ] || printf '#!/bin/sh\ncat <<'"'"'EOF'"'"'\n%s\nEOF\n' "$body" >"$d/curl"
     chmod +x "$d/curl"
     [ "$3" = none ] || echo $(($(date +%s) - $3)) >"$d/stamp"
     PATH="$d:$PATH" MONERO_HEALTH_STAMP="$d/stamp" MONERO_HEALTH_PEERLESS_SEC="$2" \
@@ -24,6 +26,7 @@ assert_eq "healthcheck: peers present -> healthy, stamp cleared" "$(mon_hc 8 600
 assert_eq "healthcheck: first zero reading -> healthy, stamp started" "$(mon_hc 0 600 none)" "rc=0 stamp=kept"
 assert_eq "healthcheck: zero peers under the bound -> healthy" "$(mon_hc 0 600 300)" "rc=0 stamp=kept"
 assert_eq "healthcheck: zero peers past the bound -> unhealthy" "$(mon_hc 0 600 700)" "rc=1 stamp=kept"
+assert_eq "healthcheck: RPC not answering -> unhealthy, and the stale stamp is dropped" "$(mon_hc down 600 700)" "rc=1 stamp=cleared"
 assert_eq "healthcheck: no peer count in the body is never a failure" "$(mon_hc none 600 700)" "rc=0 stamp=cleared"
 
 echo "== unit: doctor + status Monero chain verdict (#2499) =="

@@ -22,9 +22,14 @@ def _health(health):
     health = health or {}
     level = health.get("level", "unknown")
     if not health.get("peers_visible", True) or level == "unknown":
+        why = (
+            "Node not answering — see its down status"
+            if health.get("reachable") is False
+            else "Peers not visible — no health verdict for this node"
+        )
         return {
             "level": "unknown",
-            "status": "Peers not visible — no health verdict for this node",
+            "status": why,
             "peers": "—",
             "moved": "—",
             "reasons": [],

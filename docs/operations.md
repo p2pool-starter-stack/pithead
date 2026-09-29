@@ -874,8 +874,9 @@ nothing. Fix:
 ./pithead restart monerod
 ```
 
-The clocks start when the dashboard first sees the node, so a dashboard restart never invents an
-age. With `monero.mode: remote` the peers of the remote node are not visible to this stack, so the
+The clocks start when the dashboard first sees the node and again whenever it stops answering, so
+a dashboard restart or a monerod restart never reads as a stall; a node that does not answer shows
+no verdict here, because the node-down alert already covers it. With `monero.mode: remote` the peers of the remote node are not visible to this stack, so the
 card says so and gives no verdict.
 
 **Tari node stuck or forked.**

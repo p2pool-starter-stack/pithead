@@ -28,3 +28,10 @@ class TestMoneroCardView:
             h = build_pool_network({"monero_sync": sync}, _metrics())["monero"]["health"]
             assert h["level"] == "unknown" and h["peers"] == "—"
             assert "Peers not visible" in h["status"]
+
+    def test_unreachable_node_says_so_instead_of_claiming_peers_are_hidden(self, _metrics):
+        unreachable = {"level": "unknown", "peers_visible": False, "reachable": False}
+        h = build_pool_network({"monero_sync": {"health": unreachable}}, _metrics())["monero"][
+            "health"
+        ]
+        assert h["level"] == "unknown" and "not answering" in h["status"]

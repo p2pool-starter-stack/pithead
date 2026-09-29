@@ -37,8 +37,7 @@ class MoneroChainHealth:
     """Folds each poll's ``get_info`` readings into a verdict.
 
     Pure state + an injectable clock, so every threshold is unit-testable. An unreachable cycle
-    feeds no height or peer count (node-down is NodeHealthMonitor's verdict) and restarts the
-    peerless clock; the stall clock runs across it.
+    (node-down is NodeHealthMonitor's verdict) gives no verdict and clears both clocks.
     """
 
     def __init__(self, clock=time.monotonic):
@@ -51,23 +50,25 @@ class MoneroChainHealth:
     def observe(self, sync, local=True):
         now = self._clock()
         peers_out = sync.get("peers_out") if local else None
-        if not local or (peers_out is None and sync.get("reachable", True) is not False):
-            # Remote node, log-scrape fallback or a payload without the counts: no verdict, and
-            # nothing measured on it is carried over to a later, different source.
+        reachable = sync.get("reachable", True) is not False
+        if not local or not reachable or peers_out is None:
+            # No verdict: a remote node, a log-scrape fallback or a payload without the counts
+            # (peers not visible), or a node that did not answer (node-down is another monitor's
+            # call). Nothing measured is carried across the gap, so a restart never reads as a
+            # stall and a returning node earns its clocks afresh.
             self._best = self._advanced_at = self._zero_since = None
             self.verdict = {
                 "level": "unknown",
                 "reasons": [],
                 "advice": "",
                 "peers_visible": False,
+                "reachable": reachable,
             }
             return self.verdict
-        reachable = sync.get("reachable", True) is not False and peers_out is not None
         height = sync.get("height")
-        if reachable and height:
-            if self._best is None or height > self._best:
-                self._best, self._advanced_at = height, now
-        if not reachable or peers_out:
+        if height and (self._best is None or height > self._best or self._advanced_at is None):
+            self._best, self._advanced_at = max(height, self._best or 0), now
+        if peers_out:
             self._zero_since = None
         elif self._zero_since is None:
             self._zero_since = now
@@ -88,8 +89,8 @@ class MoneroChainHealth:
             "peerless": peerless,
             "stalled": stalled,
             "height": self._best,
-            "peers_in": sync.get("peers_in") if reachable else None,
-            "peers_out": peers_out if reachable else None,
+            "peers_in": sync.get("peers_in"),
+            "peers_out": peers_out,
             "advance_age_sec": None if age is None else int(age),
         }
         return self.verdict

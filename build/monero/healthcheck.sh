@@ -12,12 +12,17 @@
 # and any peer clears it. A body without the count (an older monerod) is never a failure.
 set -eu
 
+stamp=${MONERO_HEALTH_STAMP:-/tmp/monerod-peerless-since}
+# An RPC that does not answer is unhealthy on its own, and ends any zero-peer stretch: the next
+# zero reading starts a fresh bound instead of inheriting a stamp from before a restart.
 body=$(curl -fsS --digest \
     -u "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
-    http://localhost:18081/get_info)
+    http://localhost:18081/get_info) || {
+    rm -f "$stamp"
+    exit 1
+}
 
 out=$(printf '%s' "$body" | sed -n 's/.*"outgoing_connections_count": *\([0-9][0-9]*\).*/\1/p' | head -n 1)
-stamp=${MONERO_HEALTH_STAMP:-/tmp/monerod-peerless-since}
 if [ -z "$out" ] || [ "$out" -gt 0 ]; then
     rm -f "$stamp"
     exit 0
