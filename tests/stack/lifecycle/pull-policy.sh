@@ -77,7 +77,7 @@ upgrade_reconcile_probe() { # <starting image ID> <recreate result> -> outcome a
 out="$(upgrade_reconcile_probe old-proxy-image new-proxy-image)"
 assert_contains "old running image is recreated after the tag changes" "$out" "recreate -d --no-deps --force-recreate xmrig-proxy"
 assert_contains "a successful recreate verifies the new image ID" "$out" "result=0"
-assert_eq "the unchanged dashboard is not recreated" "$(printf '%s\n' "$out" | grep -c '^recreate ' )" "1"
+assert_eq "the unchanged dashboard is not recreated" "$(printf '%s\n' "$out" | grep -c '^recreate ')" "1"
 out="$(upgrade_reconcile_probe old-proxy-image old-proxy-image)"
 assert_contains "a recreate that leaves the old image fails the upgrade" "$out" "result=1"
 out="$(upgrade_reconcile_probe new-proxy-image new-proxy-image)"

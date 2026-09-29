@@ -142,9 +142,15 @@ reconcile_source_upgrade_images() {
         # The e2e harness deliberately keeps identical chain nodes across checkout changes.
         case " ${PITHEAD_KEEP_RUNNING:-} " in *" $svc "*) continue ;; esac
         image=$(jq -r --arg svc "$svc" '.services[$svc].image // empty' <<<"$config") || return 1
-        [ -n "$image" ] || { warn "No declared image for $svc after upgrade."; return 1; }
+        [ -n "$image" ] || {
+            warn "No declared image for $svc after upgrade."
+            return 1
+        }
         cid=$(docker compose ps -a -q "$svc") || return 1
-        [ -n "$cid" ] || { warn "No container for $svc after upgrade."; return 1; }
+        [ -n "$cid" ] || {
+            warn "No container for $svc after upgrade."
+            return 1
+        }
         declared=$(docker image inspect --format '{{.Id}}' "$image") || return 1
         running=$(docker inspect --format '{{.Image}}' "$cid") || return 1
         if [ "$running" != "$declared" ]; then
