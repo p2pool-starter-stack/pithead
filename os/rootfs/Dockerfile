@@ -35,28 +35,25 @@
 # claimed otherwise would be lying about the provenance this paragraph exists to describe.
 FROM golang:1.26.8-trixie@sha256:bdca99a00bc16590cb1a0bb4e698f5fc5d6a64e4d5eef13d9f18a0ee08e5fa65 AS gobuild
 
-ARG COMPOSE_VERSION=v5.5.0
-ARG COMPOSE_COMMIT=870908cc8f07f5e90acdf5d34dd1b96a4fe51d16
+ARG COMPOSE_VERSION=v5.5.1
+ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
 ARG COSIGN_VERSION=v3.1.3
 ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
-# Modules raised above what each project's own go.sum asks for, because upstream has not cut a
-# release carrying the fix and the CVE gate is not optional (#1153). Same reasoning as the patched
+# Security floors for each project's resolved Go module graph; upstream has not cut a
+# cosign release carrying these fixes and the CVE gate is not optional (#1153). Same reasoning as the patched
 # toolchain above, one level down: we compile from source, so the module graph is ours, and raising
 # the module beats muting the scanner. Per-binary because the findings differ, and EXACT versions
 # because `go get` will happily DOWNGRADE a module that is already newer.
 #
 #   golang.org/x/mod       v0.40.0   CVE-2026-56864 / CVE-2026-56865. Indirect in both: cosign
-#                                    v3.1.3 pins v0.37.0; compose v5.4.0 and v5.5.0 both pin
-#                                    v0.38.0; cosign's own main is still v0.38.0.
-#   golang.org/x/crypto    v0.55.0   CVE-2026-56854 (CRITICAL). COMPOSE ONLY: compose reaches v0.54.0
-#                                    indirectly; cosign's x/mod raise already seats v0.55.0 (#1649).
+#                                    v3.1.3 pins v0.37.0; compose v5.5.1 selects v0.40.0.
 #   google.golang.org/grpc v1.83.2   CVE-2026-84445 (HIGH), both binaries. Third trip down this
 #                                    ladder: #1153's v1.82.1 (GHSA-hrxh-6v49-42gf) aged into
 #                                    CVE-2026-84304, whose v1.83.1 aged into this. #1655.
 #
 # WHAT A RAISE ACTUALLY MOVES: `go get X@v Y@v` upgrades the whole closure minimum-version
-# selection needs to satisfy X and Y, not just X and Y — here compose moves 4 modules and cosign 9
-# (x/mod pulls x/tools, x/net, x/crypto...). When you add one, read Go's own upgrade list, not this.
+# selection needs to satisfy X and Y, not just X and Y. Compose v5.5.1 already selects
+# x/crypto v0.56.0; retaining its former v0.55.0 raise would downgrade it.
 #
 # Every entry here is debt, not a feature: drop it the moment an upstream release makes it a no-op,
 # and delete its .config/trivyignore mute in the SAME change — a mute left over a finding you have just
@@ -64,7 +61,7 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # survived in that file until #1153. Verify by re-running the scan against the built binaries with
 # NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
 # left two other HIGH findings standing.
-ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 golang.org/x/crypto@v0.55.0 google.golang.org/grpc@v1.83.2"
+ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
 ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
 ENV CGO_ENABLED=0
 
