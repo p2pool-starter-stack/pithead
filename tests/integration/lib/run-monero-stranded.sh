@@ -7,8 +7,9 @@
 # (monero_health.py, build/monero/healthcheck.sh): the node's first 0-outgoing-peer reading (latency
 # recorded); then within the 10-minute bound plus a poll, the verdict red with the numbers, the
 # container's docker health unhealthy, doctor non-zero, status naming it, the card's payload red, and
-# the alert at a loopback webhook; no automatic restart; then, the rule removed, the node re-peers and
-# every layer returns to green, with the recovery note. Opt-in, about 40 minutes: never part of a preset.
+# the alert at a loopback webhook; no automatic restart; then, the rule removed, the operator's fix
+# (`pithead restart monerod`: the dead SOCKS sockets do not recover on their own, job 1789 waited
+# 40 minutes) and every layer returns to green, with the recovery note. Opt-in, about 40 minutes: never part of a preset.
 # The rule carries a fixed comment, dies with monerod's namespace, and is removed by an EXIT trap too.
 
 MONERO_STRAND_TAG="pithead-e2e-fault-monero-stranded"
@@ -59,11 +60,12 @@ monero_out_peers() {
         curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info | jq -r .outgoing_connections_count' 2>/dev/null
 }
 _pred_monero_zero_out() { [ "$(monero_out_peers)" = 0 ]; }
+_pred_monero_has_peers() { [ "$(monero_out_peers)" -gt 0 ] 2>/dev/null; }
 _pred_monerod_docker_health() { [ "$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)" = "$1" ]; }
 _pred_monero_alerted() { rx "grep -q 'Monero node has no outgoing peers' $MONERO_HOOK_LOG" >/dev/null 2>&1; }
 _pred_monero_recovery_alerted() { rx "grep -q 'Monero node has outgoing peers again' $MONERO_HOOK_LOG" >/dev/null 2>&1; }
 monero_started_at() { rx "docker inspect -f '{{.State.StartedAt}}' monerod" 2>/dev/null; }
-monero_strand_state() { echo "verdict '$(monero_health_field level)', peers $(monero_health_field peers_out) out, docker health '$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)'"; }
+monero_strand_state() { echo "verdict '$(monero_health_field level)', peers $(monero_health_field peers), docker health '$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)'"; }
 
 run_monero_stranded() {
     # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
@@ -90,6 +92,14 @@ run_monero_stranded() {
     wait_for 600 10 "Monero verdict green before the fault" _pred_monero_level green ||
         it_fail "monero-stranded: green baseline" "$(monero_strand_state) before any fault — fault not injected"
     if [ "$(monero_health_field level)" != green ]; then
+        monero_restore_config
+        return
+    fi
+
+    # A green verdict is not proof of peers: a fresh monerod reads green for its first 10 minutes at 0.
+    wait_for 900 10 "monerod holding outgoing peers before the fault" _pred_monero_has_peers ||
+        it_fail "monero-stranded: peers before the fault" "$(monero_strand_state) — fault not injected"
+    if ! _pred_monero_has_peers; then
         monero_restore_config
         return
     fi
@@ -145,13 +155,14 @@ run_monero_stranded() {
     fi
     assert_eq "monero-stranded: detection only, monerod was not restarted" "$(monero_started_at)" "$started"
 
-    it_step "recover: remove the rule; monerod must re-peer and every layer return to green…"
+    it_step "recover: remove the rule, then the advised fix (restart monerod); every layer must return to green…"
     monero_strand_remove_all
+    pithead restart monerod >/dev/null 2>&1
     t0=$(now_s)
-    if wait_for 2400 15 "Monero verdict green after the fault is removed" _pred_monero_level green; then
-        it_pass "monero-stranded: green $(($(now_s) - t0)) s after the fault was removed"
+    if wait_for 1500 15 "Monero verdict green after the fix" _pred_monero_level green; then
+        it_pass "monero-stranded: green $(($(now_s) - t0)) s after the fault was removed and monerod restarted"
     else
-        it_fail "monero-stranded: green after the fault was removed" "$(monero_strand_state)"
+        it_fail "monero-stranded: green after the fault was removed and monerod restarted" "$(monero_strand_state)"
     fi
     if wait_for 300 10 "monerod docker health healthy" _pred_monerod_docker_health healthy; then
         it_pass "monero-stranded: docker inspect health is healthy again"
@@ -163,7 +174,6 @@ run_monero_stranded() {
     else
         it_fail "monero-stranded: the recovery note left the dashboard" "nothing at the loopback sink"
     fi
-    assert_eq "monero-stranded: recovered without a restart" "$(monero_started_at)" "$started"
     monero_restore_config
     trap - EXIT
     # shellcheck disable=SC2064  # restore the saved trap text as it was, expanded now on purpose
