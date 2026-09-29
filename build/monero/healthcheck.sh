@@ -20,7 +20,7 @@ set -eu
 stamp=${MONERO_HEALTH_STAMP:-/tmp/monerod-peerless-since}
 # An RPC that does not answer is unhealthy on its own, and ends any zero-peer stretch: the next
 # zero reading starts a fresh bound instead of inheriting a stamp from before a restart.
-curl -fsS --digest \
+curl -fsS --max-time 2 --digest \
     -u "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
     http://localhost:18081/get_info >/dev/null || {
     rm -f "$stamp"

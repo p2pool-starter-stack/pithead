@@ -893,7 +893,7 @@ about every 2). A red verdict also fails `./pithead doctor` (doctor's Monero syn
 peer counts and the last block's age too), adds a `monero chain` line to `./pithead status`, sends a
 `node_down`-toggle alert for each condition (peerless and stalled are separate messages, each with a
 recovery note), and makes the container's `docker inspect` health `unhealthy` once it has had 0
-outgoing peers for `MONERO_HEALTH_PEERLESS_SEC` (600 s). The stack only reports: it restarts
+outgoing peers for `MONERO_HEALTH_PEERLESS_SEC` (600 s); that run still prints its counts, so the card keeps reading them. The stack only reports: it restarts
 nothing. Fix:
 
 ```bash

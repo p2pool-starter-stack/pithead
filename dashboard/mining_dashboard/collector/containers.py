@@ -61,7 +61,10 @@ def parse_monero_peers(payload, now=None):
     admin listener on the container's own loopback and prints one ``pithead-monero-peers {...}``
     line, which the engine keeps in ``State.Health.Log``. Returns ``{"peers_in", "peers_out"}``,
     both ``None`` (unavailable, never zero) unless the LAST run is fresh, began after this
-    container run started, exited 0, and carries a well-formed observation.
+    container run started, and carries a well-formed observation. The exit code is not read: the
+    healthcheck prints the line and then exits 1 once the node has been peerless past its bound,
+    and that run is exactly the reading the peerless verdict needs. A run that failed before
+    reading (RPC down, timeout) prints no line.
     """
     now = time.time() if now is None else now
     state = payload.get("State") if isinstance(payload, dict) else None
@@ -73,8 +76,7 @@ def parse_monero_peers(payload, now=None):
     last = log[-1]
     began, ended = _epoch(last.get("Start")), _epoch(last.get("End"))
     if (
-        last.get("ExitCode") != 0
-        or began is None
+        began is None
         or ended is None
         or began < started
         or now - ended > PEERS_FRESH_SEC

@@ -38,6 +38,18 @@ assert_eq "healthcheck: RPC not answering -> unhealthy, and the stale stamp is d
 assert_eq "healthcheck: restricted zeros are never read: helper unavailable -> healthy, no stamp, says unavailable" "$(mon_hc unavailable 600 700)" \
     "rc=0 stamp=cleared line=pithead-monero-peers unavailable"
 
+echo "== unit: the rendered RPC split (#2921) =="
+TPL="$ROOT/build/monero/bitmonero.conf.template"
+tpl_has() { grep -cE "$1" "$TPL"; }
+assert_eq "template: the admin RPC binds the container loopback only" "$(tpl_has '^rpc-bind-ip=127\.0\.0\.1$')" "1"
+assert_eq "template: the admin RPC has its own unpublished port" "$(tpl_has '^rpc-bind-port=18085$')" "1"
+assert_eq "template: the network listener is the restricted one, on the published port" "$(tpl_has '^rpc-restricted-bind-ip=0\.0\.0\.0$')$(tpl_has '^rpc-restricted-bind-port=18081$')" "11"
+assert_eq "template: no global restricted-rpc (it would restrict the admin listener too)" "$(tpl_has '^restricted-rpc')" "0"
+assert_eq "template: IPv6 stays off" "$(tpl_has '^rpc-use-ipv6=(1|true)')" "0"
+assert_eq "template: the login guards both listeners" "$(tpl_has '^rpc-login=')" "1"
+assert_eq "template: still advertised as a public node" "$(tpl_has '^public-node=1$')" "1"
+assert_eq "no compose publish or quadlet publish names the admin port" "$(grep -rc 18085 "$ROOT/docker-compose.yml" "$ROOT"/os/quadlet/*/monerod.container | awk -F: '{s+=$2} END {print s+0}')" "0"
+
 echo "== unit: monerod-peers.sh reads only a non-restricted body (#2921) =="
 mon_peers() { # <get_info body|down>
     local d out rc

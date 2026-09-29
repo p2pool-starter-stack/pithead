@@ -239,8 +239,16 @@ def test_an_observation_from_before_this_container_run_is_unavailable():
     assert containers.parse_monero_peers(payload, now=_NOW) == _UNAVAILABLE
 
 
-def test_a_failed_last_run_is_unavailable_even_with_a_marker():
-    assert containers.parse_monero_peers(_peers_payload(ExitCode=1), now=_NOW) == _UNAVAILABLE
+def test_an_unhealthy_run_still_carries_its_reading():
+    # The healthcheck exits 1 once the node has been peerless past its bound, after printing the counts;
+    # that is the reading the peerless verdict needs, so the exit code must not gate it.
+    out = 'pithead-monero-peers {"outgoing":0,"incoming":0,"white":0,"grey":0}\n'
+    payload = _peers_payload(out, ExitCode=1)
+    assert containers.parse_monero_peers(payload, now=_NOW) == {"peers_in": 0, "peers_out": 0}
+
+
+def test_a_failed_run_without_a_reading_is_unavailable():
+    assert containers.parse_monero_peers(_peers_payload("", ExitCode=1), now=_NOW) == _UNAVAILABLE
 
 
 def test_only_the_last_run_counts():

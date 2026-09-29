@@ -11,7 +11,7 @@
 set -eu
 
 port=${MONERO_ADMIN_RPC_PORT:-18085}
-body=$(curl -fsS --max-time 4 --max-filesize 65536 --digest \
+body=$(curl -fsS --max-time 2 --max-filesize 65536 --digest \
     -u "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
     "http://127.0.0.1:$port/get_info") || exit 1
 
