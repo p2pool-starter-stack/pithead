@@ -22,7 +22,7 @@ SPEND=e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76
 OLD_VOLUME="pithead-wallet-red-$$"
 export MONERO_WALLET_ADDRESS="$MONERO_ADDR" TARI_WALLET_ADDRESS="$TARI_ADDR" MONERO_VIEW_KEY="$VIEW1"
 
-compose() { docker compose -p pithead-wallet-itest -f "$COMPOSE" --profile payout_confirm --profile tari_payout_confirm "$@"; }
+compose() { docker compose -p pithead-wallet-itest -f "$COMPOSE" --profile local_node --profile local_tari --profile payout_confirm --profile tari_payout_confirm "$@"; }
 # The production Compose file names this network globally. Never attach test wallets to a live stack.
 if docker network inspect mining_net >/dev/null 2>&1; then
     echo 'FAIL: mining_net already exists; real-wallet test needs an isolated Docker host' >&2
