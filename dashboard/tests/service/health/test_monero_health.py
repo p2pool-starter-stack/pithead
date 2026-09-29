@@ -140,3 +140,14 @@ def test_a_stalled_height_is_still_red_when_peers_are_unavailable():
     clock.t += STALLED_SEC
     v = mon.observe(_sync(out=None, inn=None))
     assert v["level"] == "red" and v["stalled"] and v["peers_visible"] is False
+
+
+def test_restart_between_polls_resets_peerless_and_stalled_clocks():
+    mon, clock = _mon()
+    mon.observe(_sync(height=100, out=0, monero_run_started=1.0))
+    clock.t += STALLED_SEC
+    assert mon.observe(_sync(height=100, out=0, monero_run_started=1.0))["level"] == "red"
+    # No unreachable poll occurred. The inspect run identity is the only restart signal.
+    v = mon.observe(_sync(height=100, out=0, monero_run_started=2.0))
+    assert v["level"] == "green" and not v["peerless"] and not v["stalled"]
+    assert v["advance_age_sec"] == 0

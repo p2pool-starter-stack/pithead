@@ -12,7 +12,7 @@
 # get_info answers 0 for them (#2921). They come from monerod-peers.sh, which reads the admin listener
 # on this container's loopback. The first real zero is stamped in /tmp (tmpfs) and any peer clears it.
 # A helper that gives no reading (listener down, restricted body, missing count) is "unavailable": no
-# stamp, no failure, and no zero. Every run prints one bounded line, which docker keeps in
+# stamp or fabricated zero, and the healthcheck fails until visibility returns. Every run prints one bounded line, which docker keeps in
 # State.Health.Log for the dashboard: `pithead-monero-peers {"outgoing":N,...}` or
 # `pithead-monero-peers unavailable`. No credential or raw response is printed.
 set -eu
@@ -32,7 +32,7 @@ out=$(printf '%s' "$peers" | sed -n 's/.*"outgoing": *\([0-9][0-9]*\).*/\1/p' | 
 if [ -z "$out" ]; then
     echo "pithead-monero-peers unavailable"
     rm -f "$stamp"
-    exit 0
+    exit 1
 fi
 echo "pithead-monero-peers $peers"
 if [ "$out" -gt 0 ]; then

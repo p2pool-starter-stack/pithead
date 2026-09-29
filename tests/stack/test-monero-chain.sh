@@ -35,8 +35,8 @@ assert_contains "healthcheck: first real zero -> healthy, stamp started" "$(mon_
 assert_contains "healthcheck: zero peers under the bound -> healthy" "$(mon_hc 0 600 300)" "rc=0 stamp=kept"
 assert_contains "healthcheck: zero peers past the bound -> unhealthy" "$(mon_hc 0 600 700)" "rc=1 stamp=kept"
 assert_eq "healthcheck: RPC not answering -> unhealthy, and the stale stamp is dropped" "$(mon_hc down 600 700 | cut -d' ' -f1-2)" "rc=1 stamp=cleared"
-assert_eq "healthcheck: restricted zeros are never read: helper unavailable -> healthy, no stamp, says unavailable" "$(mon_hc unavailable 600 700)" \
-    "rc=0 stamp=cleared line=pithead-monero-peers unavailable"
+assert_eq "healthcheck: restricted zeros are never read: helper unavailable -> unhealthy, no stamp, says unavailable" "$(mon_hc unavailable 600 700)" \
+    "rc=1 stamp=cleared line=pithead-monero-peers unavailable"
 
 echo "== unit: the rendered RPC split (#2921) =="
 TPL="$ROOT/build/monero/bitmonero.conf.template"

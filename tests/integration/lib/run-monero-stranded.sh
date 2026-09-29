@@ -90,18 +90,45 @@ monero_peer_wait_diagnostics() {
 # published listener stays restricted and authenticated. A refused connection is curl's code 000.
 _monero_http_code() { rx "curl -s --max-time 5 -o /dev/null -w '%{http_code}' $*" 2>/dev/null; }
 assert_monero_rpc_boundary() {
-    local ip
-    ip="$(rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' monerod" 2>/dev/null | head -n1)"
+    local nets net ip ip6 v6
+    nets="$(rx "docker inspect -f '{{json .NetworkSettings.Networks}}' monerod" 2>/dev/null)"
+    if ! printf '%s' "$nets" | jq -e 'type == "object" and length == 1' >/dev/null 2>&1; then
+        it_fail "monero-stranded: identify the monerod bridge address" "no single network found"
+        return 1
+    fi
+    net="$(printf '%s' "$nets" | jq -r 'keys[0]')"
+    ip="$(printf '%s' "$nets" | jq -r --arg net "$net" '.[$net].IPAddress // empty')"
+    ip6="$(printf '%s' "$nets" | jq -r --arg net "$net" '.[$net].GlobalIPv6Address // empty')"
+    if [[ ! "$net" =~ ^[A-Za-z0-9_.-]+$ || ! "$ip" =~ ^[0-9.]+$ ]]; then
+        it_fail "monero-stranded: identify the monerod bridge address" "network or IPv4 address unreadable"
+        return 1
+    fi
+    v6="$(rx "docker network inspect -f '{{.EnableIPv6}}' '$net'" 2>/dev/null)"
     assert_contains "monero-stranded: the in-container helper reads real counts from the admin listener" "$(monero_peer_counts)" '"outgoing":'
     assert_eq "monero-stranded: the admin listener rejects an unauthenticated request inside the container" \
         "$(rx "docker exec monerod curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18085/get_info" 2>/dev/null)" "401"
     assert_eq "monero-stranded: the admin listener is not published on the host's loopback" "$(_monero_http_code http://127.0.0.1:18085/get_info)" "000"
+    assert_eq "monero-stranded: no host or LAN port publishes the admin listener" "$(rx 'docker port monerod 18085' 2>/dev/null)" ""
     assert_eq "monero-stranded: the admin listener is not open on the host's IPv6 loopback" "$(_monero_http_code -g 'http://[::1]:18085/get_info')" "000"
-    assert_eq "monero-stranded: the admin listener is not reachable at monerod's bridge address" "$(_monero_http_code "http://${ip:-0.0.0.0}:18085/get_info")" "000"
-    if rx "docker exec dashboard python3 -c \"import socket,sys; socket.create_connection(('${ip:-0.0.0.0}', 18085), 4)\"" >/dev/null 2>&1; then
+    assert_eq "monero-stranded: the admin listener is not reachable at monerod's bridge address" "$(_monero_http_code "http://$ip:18085/get_info")" "000"
+    if rx "docker exec dashboard python3 -c \"import socket; socket.create_connection(('$ip', 18085), 4)\"" >/dev/null 2>&1; then
         it_fail "monero-stranded: another container cannot reach the admin listener" "connected from the dashboard container"
     else
         it_pass "monero-stranded: another container cannot reach the admin listener"
+    fi
+    if [ "$v6" = true ]; then
+        if [ -z "$ip6" ]; then
+            it_fail "monero-stranded: IPv6 bridge address is known" "IPv6 network has no monerod address"
+        else
+            assert_eq "monero-stranded: admin listener is not reachable at monerod's IPv6 bridge address" "$(_monero_http_code -g "http://[$ip6]:18085/get_info")" "000"
+            if rx "docker exec dashboard python3 -c \"import socket; socket.create_connection(('$ip6', 18085), 4)\"" >/dev/null 2>&1; then
+                it_fail "monero-stranded: another container cannot reach the IPv6 admin listener" "connected from the dashboard container"
+            else
+                it_pass "monero-stranded: another container cannot reach the IPv6 admin listener"
+            fi
+        fi
+    else
+        assert_eq "monero-stranded: IPv6 is disabled on the monerod bridge" "$v6" "false"
     fi
     assert_eq "monero-stranded: the published listener still rejects an unauthenticated request" "$(_monero_http_code http://127.0.0.1:18081/get_info)" "401"
     assert_contains "monero-stranded: the published listener is restricted (its counts are redacted, so no verdict may read them)" \
@@ -206,6 +233,11 @@ run_monero_stranded() {
     monero_strand_remove_all
     pithead restart monerod >/dev/null 2>&1
     t0=$(now_s)
+    if wait_for 900 15 "monerod has outgoing peers again after the fix" _pred_monero_has_peers_sampled; then
+        it_pass "monero-stranded: real outgoing peers returned after the fault was removed and monerod restarted"
+    else
+        it_fail "monero-stranded: real outgoing peers returned after recovery" "$(monero_strand_state)"
+    fi
     if wait_for 1500 15 "Monero verdict green after the fix" _pred_monero_level green; then
         it_pass "monero-stranded: green $(($(now_s) - t0)) s after the fault was removed and monerod restarted"
     else

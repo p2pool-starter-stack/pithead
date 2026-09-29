@@ -287,3 +287,21 @@ def test_a_missing_or_odd_payload_is_unavailable():
 async def test_get_monero_peers_is_unavailable_when_the_proxy_is_down():
     with patch.object(containers, "DOCKER_PROXY_URL", "http://127.0.0.1:1"):
         assert await containers.get_monero_peers() == _UNAVAILABLE
+
+
+async def test_get_monero_peers_carries_current_run_identity():
+    payload = _peers_payload()
+    with (
+        patch.object(
+            containers.aiohttp,
+            "ClientSession",
+            return_value=_AsyncCM(_session([_FakeResp(200, payload)])),
+        ),
+        patch.object(containers.time, "time", return_value=_NOW),
+    ):
+        got = await containers.get_monero_peers()
+    assert got == {
+        "peers_in": 2,
+        "peers_out": 8,
+        "monero_run_started": containers._epoch(payload["State"]["StartedAt"]),
+    }

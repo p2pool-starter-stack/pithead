@@ -176,7 +176,8 @@ async def get_container_health():
 async def get_monero_peers():
     """One read-only inspect of monerod through the read proxy, folded by
     :func:`parse_monero_peers`. Any failure (proxy down, no such container, bad body) is the same
-    unavailable answer, never a zero."""
+    unavailable answer, never a zero. The container start time travels with a successful inspect
+    so the health monitor can reset its clocks across a restart between polls."""
     base_url = DOCKER_PROXY_URL.replace("tcp://", "http://", 1)
     try:
         async with aiohttp.ClientSession() as session:
@@ -189,4 +190,9 @@ async def get_monero_peers():
     except Exception as e:
         logger.debug("monerod peers inspect failed: %s", e)
         return dict(_NO_PEERS)
-    return parse_monero_peers(payload)
+    peers = parse_monero_peers(payload)
+    state = payload.get("State") if isinstance(payload, dict) else None
+    peers["monero_run_started"] = (
+        _epoch(state.get("StartedAt")) if isinstance(state, dict) else None
+    )
+    return peers

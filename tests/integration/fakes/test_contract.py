@@ -1,12 +1,7 @@
 """
-Contract test: point the REAL dashboard clients at the controllable fakes and assert they
-parse every state we need to drive in the mini-stack (issue #54, tier 3 / tier 2 seam).
-
-This is the proof that the fakes speak the daemons' wire format closely enough for the real
-MoneroClient / TariClient — and it runs anywhere (no docker, no real chain). If a future
-monerod/Tari change breaks the parser, this goes red here instead of only on the live box.
-It also proves capped ``requests`` can traverse SOCKS5.
-
+Contract test: point the real dashboard clients at controllable fakes (#54).
+It checks daemon wire formats without Docker or a real chain and proves capped
+``requests`` can traverse SOCKS5.
 Run: PYTHONPATH=dashboard python3 -m pytest tests/integration/fakes -q
 """
 

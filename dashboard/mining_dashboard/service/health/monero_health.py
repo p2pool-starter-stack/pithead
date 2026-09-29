@@ -1,10 +1,10 @@
 """Monero chain health (#2499): a live ``monerod`` that is isolated or has stopped following the
 chain, the same 'at tip, with peers' contract the Tari card has (#2464).
 
-The container healthcheck only proves the RPC answers, and ``synchronized`` is the node's own
-opinion: monerod drops it when a peer reports a higher tip, so a node with no peers, or peers all
-on the same stale tip, keeps ``true`` while the height stops moving. Two signals, each read from the
-``get_info`` payload the dashboard already fetches:
+The container healthcheck verifies RPC liveness and real peer visibility, and ``synchronized`` is
+the node's own opinion: monerod drops it when a peer reports a higher tip, so a node with no peers,
+or peers all on the same stale tip, keeps ``true`` while the height stops moving. Height comes from
+restricted ``get_info``; peer counts come from the current container's health observation:
 
 - **peerless**  zero outgoing connections for :data:`PEERLESS_SEC` (the same bound as #972's
   out-of-sync debounce, ``NODE_STALE_AFTER_SEC``);
@@ -45,12 +45,18 @@ class MoneroChainHealth:
         self._best = None  # highest height seen: only a rise past it is progress
         self._advanced_at = None
         self._zero_since = None
+        self._run_started = None
         self.verdict = {"level": "unknown", "reasons": [], "advice": ""}
 
     def observe(self, sync, local=True):
         now = self._clock()
         peers_out = sync.get("peers_out") if local else None
         reachable = sync.get("reachable", True) is not False
+        run_started = sync.get("monero_run_started") if local else None
+        if run_started is not None and run_started != self._run_started:
+            # A restart can fall entirely between polls; the new run must earn both clocks again.
+            self._best = self._advanced_at = self._zero_since = None
+            self._run_started = run_started
         if not local or not reachable:
             # No verdict: a remote node, a log-scrape fallback, or a node that did not answer
             # (node-down is another monitor's call). Nothing measured is carried across the gap,

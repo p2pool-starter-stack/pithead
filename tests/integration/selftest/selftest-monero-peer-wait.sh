@@ -43,17 +43,23 @@ pithead() { case "$*" in "tor-recover check") echo "check: peers 0 at 203.0.113.
 # What the box answers. PEERS is the helper's output ("" = no reading); the boundary knobs break one
 # property each. The restricted get_info below always carries zeros: nothing may read them as peers.
 PEERS='{"outgoing":0,"incoming":0,"white":0,"grey":0}'
-ADMIN_UNAUTH=401 HOST_ADMIN=000 HOST_ADMIN6=000 BRIDGE_ADMIN=000 PUB_UNAUTH=401 PUB_RESTRICTED=true CONTAINER_REACHES=1
+ADMIN_UNAUTH=401 HOST_ADMIN=000 HOST_ADMIN6=000 HOST_PUBLISH='' BRIDGE_ADMIN=000 BRIDGE_ADMIN6=000 PUB_UNAUTH=401 PUB_RESTRICTED=true CONTAINER_REACHES=1 CONTAINER_REACHES6=1 V6=false
+NETS='{"mining_net":{"IPAddress":"172.20.0.26","GlobalIPv6Address":""}}'
 rx() {
     case "$1" in
     *monerod-peers.sh*) printf '%s' "$PEERS" ;;
+    *"docker inspect -f '{{json .NetworkSettings.Networks}}' monerod"*) printf '%s' "$NETS" ;;
+    *"docker network inspect"*) printf '%s' "$V6" ;;
     *"docker inspect -f '{{range"*monerod*) echo 172.20.0.26 ;;
     *"docker inspect -f '{{range"*) echo 172.20.0.5 ;;
     *"docker exec monerod curl"*) printf '%s' "$ADMIN_UNAUTH" ;;
+    *"docker port monerod 18085"*) printf '%s' "$HOST_PUBLISH" ;;
+    *"docker exec dashboard python3"*"2001:db8"*) [ "$CONTAINER_REACHES6" = 1 ] && return 1 || return 0 ;;
     *"docker exec dashboard python3"*) [ "$CONTAINER_REACHES" = 1 ] && return 1 || return 0 ;;
     *"http://127.0.0.1:18085"*) printf '%s' "$HOST_ADMIN" ;;
     *"[::1]:18085"*) printf '%s' "$HOST_ADMIN6" ;;
     *"172.20.0.26:18085"*) printf '%s' "$BRIDGE_ADMIN" ;;
+    *"[2001:db8::26]:18085"*) printf '%s' "$BRIDGE_ADMIN6" ;;
     *"-w"*"127.0.0.1:18081/get_info"*) printf '%s' "$PUB_UNAUTH" ;;
     *"restricted, o:"*) printf '{"restricted":%s,"o":0}' "$PUB_RESTRICTED" ;;
     *"logs --since"*) echo " 3 Bootstrapped 100% (done)" ;;
@@ -103,8 +109,18 @@ case_fails() { # <VAR=value> <row text>: break one property, expect a failing ro
 }
 case_fails "ADMIN_UNAUTH=200" "an admin listener that answers without a login fails"
 case_fails "HOST_ADMIN=200" "an admin listener published on the host loopback fails"
+case_fails "HOST_PUBLISH=18085/tcp" "a host or LAN publication of the admin listener fails"
 case_fails "HOST_ADMIN6=200" "an admin listener open on IPv6 loopback fails"
 case_fails "BRIDGE_ADMIN=401" "an admin listener reachable on the bridge address fails"
+case_fails 'NETS={}' "a missing bridge address fails"
+case_fails 'NETS={"mining_net":{"IPAddress":""}}' "an empty bridge address fails"
+case_fails 'V6=true' "an enabled IPv6 bridge with no address fails"
+V6=true
+NETS='{"mining_net":{"IPAddress":"172.20.0.26","GlobalIPv6Address":"2001:db8::26"}}'
+case_fails "BRIDGE_ADMIN6=401" "an admin listener reachable on the IPv6 bridge fails"
+case_fails "CONTAINER_REACHES6=0" "another container reaching the IPv6 admin listener fails"
+V6=false
+NETS='{"mining_net":{"IPAddress":"172.20.0.26","GlobalIPv6Address":""}}'
 case_fails "PUB_UNAUTH=200" "a published listener that answers without a login fails"
 case_fails "PUB_RESTRICTED=false" "an unrestricted published listener fails"
 case_fails "CONTAINER_REACHES=0" "another container reaching the admin listener fails"
