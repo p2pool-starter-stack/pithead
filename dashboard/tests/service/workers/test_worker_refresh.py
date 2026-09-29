@@ -226,6 +226,75 @@ async def test_donation_refresh_waits_for_exact_applied_report_and_updates_share
     state.reconcile_worker_config_status.assert_called_once_with("abc", "applied", None)
 
 
+async def test_donation_refresh_retries_failed_probe_then_records_exact_rollback():
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    class Client:
+        calls = 0
+
+        async def get_stats(self, ip, name):
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("probe failed")
+            return {
+                "generated_at": stamp,
+                "rigforge": {
+                    "config": {"DONATION": 1},
+                    "control": {
+                        "change_id": "abc",
+                        "status": "rolled_back",
+                        "reason": "miner down",
+                    },
+                },
+            }
+
+    data = {"workers": [{"name": "rig1", "ip": "10.0.0.5"}]}
+    state = Mock()
+    client = Client()
+    assert not await worker_refresh.refresh_donation_after_apply(
+        data, state, "rig1", "abc", 0, worker_client=client, attempts=3, sleep=_fake_sleep
+    )
+    assert client.calls == 2
+    state.reconcile_worker_config_status.assert_called_once_with("abc", "rolled_back", "miner down")
+
+
+async def test_donation_refresh_is_bounded_without_exact_applied_report():
+    data = {"workers": [{"name": "rig1", "ip": "10.0.0.5"}]}
+    client = FakeWorkerClient(["1.12.0"])
+    state = Mock()
+    assert not await worker_refresh.refresh_donation_after_apply(
+        data, state, "missing", "abc", 0, worker_client=client, sleep=_fake_sleep
+    )
+    assert not await worker_refresh.refresh_donation_after_apply(
+        data, state, "rig1", "abc", 0, worker_client=client, attempts=2, sleep=_fake_sleep
+    )
+    assert len(client.calls) == 2
+    state.reconcile_worker_config_status.assert_not_called()
+
+
+async def test_donation_refresh_does_not_publish_to_replaced_worker():
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    data = {"workers": [{"name": "rig1", "ip": "10.0.0.5"}]}
+
+    class Client:
+        async def get_stats(self, ip, name):
+            data["workers"] = [{"name": "rig1", "ip": "10.0.0.6"}]
+            return {
+                "generated_at": stamp,
+                "rigforge": {
+                    "config": {"DONATION": 0},
+                    "control": {"change_id": "abc", "status": "applied"},
+                },
+            }
+
+    state = Mock()
+    assert not await worker_refresh.refresh_donation_after_apply(
+        data, state, "rig1", "abc", 0, worker_client=Client(), attempts=1, sleep=_fake_sleep
+    )
+    assert "rigforge" not in data["workers"][0]
+    state.reconcile_worker_config_status.assert_not_called()
+
+
 def test_main_poll_cannot_overwrite_newer_targeted_report():
     current = [
         {

@@ -150,7 +150,7 @@ async def refresh_donation_after_apply(
             current = next(
                 (w for w in latest_data.get("workers", []) if w.get("name") == name), None
             )
-            if current is None:
+            if current is None or current.get("ip") != entry["ip"]:
                 return False
             current["rigforge"] = rf
             await asyncio.to_thread(
