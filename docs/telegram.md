@@ -186,7 +186,7 @@ block and set it to `false` — any event you don't list stays on:
 | `block_found` | `true` | The P2Pool sidechain found a Monero block (pool-wide — every miner with a PPLNS share gets paid) |
 | `payout_found` | `true` | That block pays you — this node held a share in the PPLNS window when it was found |
 | `payout_confirmed` | `true` | A payout (Monero or Tari) confirmed on-chain by the view-only wallet |
-| `container_unhealthy` | `true` | A stack container is crash-looping or stuck failing its healthcheck / recovered |
+| `container_unhealthy` | `true` | A stack container is crash-looping or stuck failing its healthcheck / recovered. Also a LAN-access node that nothing restarts (restart policy `no`, a `*_lan_access` switch on the Docker install) down for two minutes: held since boot by a failed LAN guard, or exited, with its exit code |
 | `raffle_win` | `true` | This wallet won an XvB raffle round, per XvB's public winners file — fires once per win, with the round type and credited hashrate |
 
 Run `./pithead apply` after editing.
