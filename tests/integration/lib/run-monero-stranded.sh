@@ -97,9 +97,10 @@ run_monero_stranded() {
     fi
 
     # A green verdict is not proof of peers: a fresh monerod reads green for its first 10 minutes at 0.
-    wait_for 900 10 "monerod holding outgoing peers before the fault" _pred_monero_has_peers ||
-        it_fail "monero-stranded: peers before the fault" "$(monero_strand_state) — fault not injected"
-    if ! _pred_monero_has_peers; then
+    if ! wait_for 900 10 "monerod holding outgoing peers before the fault" _pred_monero_has_peers; then
+        # Nothing to strand: the box's own Tor-only monerod holds no outgoing peer (job 1803 saw it at
+        # 0 for 25 minutes after a recreate). Not this leg's failure, and never a pass.
+        it_skip_leg "monero-stranded: strand a monerod that holds peers" "monerod had no outgoing peer for 15 minutes before any fault: $(monero_strand_state)" "missing"
         monero_restore_config
         return
     fi
