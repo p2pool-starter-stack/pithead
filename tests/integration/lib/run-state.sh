@@ -42,8 +42,8 @@ assert_running_state() {
         assert_contains "firewall on: completed sync exceptions absent from live rules (#2678)" \
             "$(pithead doctor 2>&1)" "Tor-only egress firewall is installed"
     fi
-
-    # 1. Expected containers up; unexpected ones absent.
+    # 1. Wait for the sync gate to release both miners before sampling live services, UID and TLS.
+    wait_for 1500 5 "p2pool and xmrig-proxy after sync gate" rx 'running=$(docker compose ps --services --status running); grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"' || true
     local running expected svc
     running="$(running_services)"
     expected="$(expected_services "$config")"

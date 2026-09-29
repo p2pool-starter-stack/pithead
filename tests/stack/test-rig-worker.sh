@@ -213,10 +213,10 @@ while [ $# -gt 0 ]; do
 done
 case "$url" in
 */apply)
-    printf '{"change_id":"chg-1"}' >"$out"
+    printf '{"change_id":"0123456789abcdef"}' >"$out"
     printf '202' ;;
 */status)
-    printf '{"change_id":"chg-1","status":"applied","changed_keys":["pools"]}' >"$out"
+    printf '{"change_id":"0123456789abcdef","status":"applied","changed_keys":["pools"]}' >"$out"
     printf '200' ;;
 *) printf '000' ;;
 esac
@@ -230,7 +230,7 @@ PATH="$WA3/bin:$PATH" CURL_LOG="$WA3/curl.log" CONTROL_WA_BUDGET=1 PITHEAD_CONFI
 assert_eq "worker-apply accept path reaches a terminal 'applied' status" \
     "$(jq -r '.status' "$WA3/results/$u9.json" 2>/dev/null)" "applied"
 assert_eq "worker-apply accept path records the rig's change_id" \
-    "$(jq -r '.change_id' "$WA3/results/$u9.json" 2>/dev/null)" "chg-1"
+    "$(jq -r '.change_id' "$WA3/results/$u9.json" 2>/dev/null)" "0123456789abcdef"
 assert_eq "worker-apply accept path records the rig's changed_keys" \
     "$(jq -rc '.changed_keys' "$WA3/results/$u9.json" 2>/dev/null)" '["pools"]'
 assert_contains "worker-apply accept is audited as applied" \
@@ -253,10 +253,10 @@ while [ $# -gt 0 ]; do
 done
 case "$url" in
 */apply)
-    printf '{"change_id":"chg-2"}' >"$out"
+    printf '{"change_id":"fedcba9876543210"}' >"$out"
     printf '202' ;;
 */status)
-    printf '{"change_id":"chg-2","status":"failed","reason":"rollback backup unreadable: /var/lib/rigforge/backup"}' >"$out"
+    printf '{"change_id":"fedcba9876543210","status":"failed","reason":"rollback backup unreadable: /var/lib/rigforge/backup"}' >"$out"
     printf '200' ;;
 *) printf '000' ;;
 esac

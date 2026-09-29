@@ -38,6 +38,16 @@ assert_rc "pin-watch self-test passes" "$?" "0"
 bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "Go module raise watch self-test passes" "$?" "0"
 
+echo "== unit: #2879 rootfs dependency refresh =="
+dockerfile="$ROOT/os/rootfs/Dockerfile"
+assert_eq "Compose release pin" "$(sed -n 's/^ARG COMPOSE_VERSION=//p' "$dockerfile")" "v5.5.1"
+assert_eq "Compose commit pin" "$(sed -n 's/^ARG COMPOSE_COMMIT=//p' "$dockerfile")" "5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de"
+assert_eq "Compose keeps only the x/mod and grpc floors" "$(sed -n 's/^ARG COMPOSE_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"'
+assert_eq "Cosign keeps the x/mod and grpc floors" "$(sed -n 's/^ARG COSIGN_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"'
+assert_eq "only the two live Trivy exceptions remain" \
+    "$(grep -E '^CVE-' "$ROOT/.config/trivyignore")" \
+    $'CVE-2026-23949\nCVE-2026-24049'
+
 echo "== unit: resolve-pins self-test (#1137) =="
 # pin-watch.sh above compares VERSIONS; it does not ask whether a pinned tag@sha256 digest still
 # matches what its registry serves for that tag. This is the check that does, and its --self-test

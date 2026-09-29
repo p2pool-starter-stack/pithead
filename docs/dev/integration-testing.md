@@ -784,6 +784,9 @@ first hardware run to exercise the wait hit precisely that
 `DONATION` changes applied, eighteen seconds apart, while the gate reported four failures. The
 self-test that covers the settle now runs the real wait rather than a silent stub, because a stub
 that prints nothing cannot see this class at all.
+The progress line names the accepted request's `change_id`, so a timed-out readback can be matched
+to that request's rig-side status and journal rather than a nearby change. The host CLI rejects a
+rig response whose change ID is not 16 lowercase hex digits before returning it to the dashboard.
 
 The same leg then asserts that the change reached the dashboard's `#185` per-worker history, and
 that readback needed a settle of its own
@@ -826,9 +829,12 @@ or `rolled_back`; see the `pools` entry above).
 An `EXIT` trap restores whatever is still on the ledger, by the same route that changed it: the
 dashboard's `/api/control/worker-apply` for the #513, #1236 and #1002b legs, a direct dial at the
 rig's control API for #516's rig-side edit. Each restore names its key, rig and route on stderr,
-never the value: for `pools` the value carries the stratum `pass`.
+never the value: for `pools` the value carries the stratum `pass`. The value reaches `jq` on
+stdin, both when it is recorded and when it is restored, and is never passed as a command-line
+argument, because any local user can read a process's
+arguments ([#2663](https://github.com/p2pool-starter-stack/pithead/issues/2663)).
 
-Three properties are worth knowing rather than rediscovering:
+Four properties are worth knowing rather than rediscovering:
 
 - **It is a no-op by construction, not by a guard.** A run that writes no writable key never marks
   anything, so no trap is ever installed. `--mode targeted` runs that borrow no rig are unaffected.
@@ -839,6 +845,12 @@ Three properties are worth knowing rather than rediscovering:
 - **`#517` is deliberately outside the ledger.** Its leg induces a change the *rig* rolls back on
   its own. Unwinding it from here would race that rollback and could re-apply a value the rig had
   already reverted, so the rig stays the authority for it.
+- **An original goes on the ledger as compact JSON.** The ledger is one tab-separated line per key,
+  so the value is compacted with `jq -c` when it is recorded; a pretty-printed `IT_RIG_POOLS_PROBE`
+  is still one entry and is restored intact
+  ([#2668](https://github.com/p2pool-starter-stack/pithead/issues/2668)). A value that is not exactly
+  one JSON value is not recorded: the harness warns, by key and without the value, that an abort will
+  not restore it, and the caller skips that leg rather than send a write it cannot undo.
 
 What it cannot do: the restore dials the dashboard or the rig while the run is already dying, so it
 is best-effort, and it cannot run at all if the shell never exits — `kill -9`, an OOM kill, or the
@@ -914,8 +926,10 @@ containers are attached — so this phase does a full down → up on `10.84.0.0/
 bind-mounted by path, never on the docker network, so they are untouched), asserts the moved prefix
 reached the live `.env`, the docker bridge, Tor's rendered torrc, monerod's envsubst'd proxy IP, the
 dashboard's SSRF CIDR + Tor SOCKS, `P2POOL_URL`, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344)
-onion vhost gateway, runs the standard running-state battery, then brings the box back to its
-baseline subnet. The matrix carries a `local-pruned-main-subnet` row for axis bookkeeping; the
+onion vhost gateway, waits up to 1500 seconds for the sync gate to release p2pool and xmrig-proxy,
+runs the standard running-state battery including live UID and TLS checks, then brings the box back
+to its baseline subnet. A release timeout leaves those checks binding and records the wait timeout.
+The matrix carries a `local-pruned-main-subnet` row for axis bookkeeping; the
 hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it for real.
 
 ---
