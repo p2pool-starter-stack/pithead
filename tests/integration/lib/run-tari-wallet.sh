@@ -30,7 +30,9 @@ _pred_payout_wallet_ready() { # <confirmed|tari_confirmed>
 
 assert_payout_wallet_ready() { # <confirmed|tari_confirmed> <Monero|Tari>
     local st
-    wait_for 120 5 "$2 payout wallet reachability and address (#2498)" _pred_payout_wallet_ready "$1" || true
+    # A scan that failed while the wallet was starting holds reachable=false until the next scan,
+    # every 10th dashboard poll (about five minutes), so the wait must outlast one scan cycle.
+    wait_for 420 10 "$2 payout wallet reachability and address (#2498)" _pred_payout_wallet_ready "$1" || true
     st="$(api_state)"
     assert_eq "$2 payout wallet answers the dashboard (#2498)" "$(jq_get "$st" ".earnings.$1.reachable")" true
     assert_eq "$2 payout wallet matches the configured address (#2498)" "$(jq_get "$st" ".earnings.$1.address_match")" true
