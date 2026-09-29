@@ -78,10 +78,14 @@ harness_phase_args_of() ( # <args...> -> HARNESS_PHASE_ARGS, or the refusal
         exit 1
     }
     MODE=targeted HARNESS_ARGS=("$@")
-    validate_harness_args && echo "$HARNESS_PHASE_ARGS"
+    validate_harness_args && echo "$HARNESS_PHASE_ARGS|$HARNESS_SCENARIO_ARGS"
 )
 assert_eq "--tari-stranded is on the allowlist and forwarded unchanged (#2464)" \
-    "$(harness_phase_args_of --tari-stranded)" " --tari-stranded"
+    "$(harness_phase_args_of --tari-stranded)" " --tari-stranded|"
+assert_eq "--scenario alone is a modifier, not a hand-picked phase" \
+    "$(harness_phase_args_of --scenario custom-name)" "| --scenario custom-name"
+assert_eq "a hand-picked phase and scenario modifier stay separate" \
+    "$(harness_phase_args_of --scenario custom-name --hardening)" " --hardening| --scenario custom-name"
 
 printf '\npassed: %s, failed: %s\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]

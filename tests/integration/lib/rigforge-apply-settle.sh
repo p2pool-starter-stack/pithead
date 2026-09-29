@@ -59,7 +59,7 @@ _settle_worker_apply() { # <ckeys-on-success> <wait-desc> <dial-result-json> <pr
     # of the caller's assertions red whatever the rig did. It fires only on a settle that actually
     # waits, i.e. exactly the RigForge #344 path this module exists for. stderr is where wait_for's
     # own "timed out after Ns" warning already goes, and e2e.sh merges both into the harness log.
-    if [ "$status" = "accepted" ] && wait_for 90 5 "$desc" "$@" >&2; then
+    if [ "$status" = "accepted" ] && wait_for 90 5 "$desc (change_id=$change_id)" "$@" >&2; then
         status="applied"
         ckeys="$key"
     fi

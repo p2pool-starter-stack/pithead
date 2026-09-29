@@ -30,6 +30,7 @@ render_env() {
         # Reuse the parse-time validated globals (see Monero above) — single source of truth.
         tari_grpc_addr="${TARI_REMOTE_HOST}:${TARI_REMOTE_GRPC_PORT}"
     fi
+    local tor_profiles="$profiles"
 
     # Tari gRPC LAN exposure (#760), mirroring monerod's rpc_lan_access above. Default
     # localhost-only: in-stack consumers reach the node over the internal Docker network
@@ -48,9 +49,8 @@ render_env() {
         profiles="${profiles:+$profiles,}payout_confirm"
     fi
 
-    # Tari on-chain payout confirmation (#462): the view-only tari-wallet service only starts when
-    # its own compose profile is active, which is only when a tari view key is set on the local Tari
-    # node. Separate from monero's payout_confirm so the two features toggle independently.
+    # Tari on-chain payout confirmation (#462) uses its own profile when a view key is set on a
+    # local Tari node, independently of Monero's payout_confirm.
     # TARI_PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config (which also refuses a view key
     # on a remote Tari node and validates the key/spend key/birthday).
     if [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
@@ -63,13 +63,11 @@ render_env() {
     prune=$(monero_prune_flag)
 
     # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
-    # this host's IP (Monero keeps tx-proxy=tor). Only while the egress firewall is off: it drops every
-    # clearnet dial, so a clearnet monerod behind it had no peers and never returned to Tor (#2649).
-    local monero_clearnet=false tari_clearnet=false
-    if [ "${TOR_EGRESS_FIREWALL:-true}" = "false" ]; then
-        monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
-        tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
-    fi
+    # this host's IP (Monero keeps tx-proxy=tor). The host firewall admits only the chosen
+    # chain's container until its sync marker appears (#2678).
+    local monero_clearnet tari_clearnet
+    monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
+    tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
 
     # Block-verification threads — hardware-dependent, so derive from THIS host's core count
     # rather than hardcoding (more cores = faster initial-sync verification). Reserve 2 cores
@@ -457,6 +455,7 @@ TARI_MODE=$(dotenv_render_value "$TARI_MODE")
 TARI_GRPC_ADDRESS=$(dotenv_render_value "$tari_grpc_addr")
 TARI_GRPC_BIND=$(dotenv_render_value "$tari_grpc_bind")
 COMPOSE_PROFILES=$(dotenv_render_value "$profiles")
+TOR_COMPOSE_PROFILES=$(dotenv_render_value "$tor_profiles")
 DASHBOARD_SECURE=$(dotenv_render_value "$DASHBOARD_SECURE")
 DASHBOARD_EXPOSE_PUBLIC_IP=$(dotenv_render_value "$DASHBOARD_EXPOSE_PUBLIC_IP")
 DASHBOARD_ONION_ENABLED=$(dotenv_render_value "$DASHBOARD_ONION_ENABLED")

@@ -80,6 +80,12 @@ compose_up() {
     # Every container (re)start passes here, so the LAN-published node ports get their source rule
     # (or are held on loopback) before anything listens on them (#2616).
     apply_lan_guard
+    # LAN guard inserts its RETURN-only jump at the top of DOCKER-USER. Put the Tor DROP back
+    # above it before containers start. A selected clearnet first sync needs a verified firewall;
+    # without an active exception, retain the established warning-only failure behavior.
+    local egress_rc=0
+    apply_tor_egress_firewall refresh >/dev/null || egress_rc=$?
+    [ "$egress_rc" = 0 ] || ! clearnet_sync_active || return 1
     # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
     # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
     local rc=0
@@ -281,10 +287,12 @@ stack_down() {
     mutation_lock_acquire down
     log "Stopping stack..."
     remove_tor_egress_firewall
-    remove_lan_guard
     if ! docker compose down; then
         error "Stack failed to stop — see the error above."
     fi
+    # After the stop (#2749): the nodes never listen on a LAN port without the rule, and a failed
+    # stop leaves it in place.
+    lan_guard_teardown down
     log "Stack stopped."
     mutation_lock_release
 }
@@ -302,7 +310,6 @@ stack_down_except_caddy() {
     mutation_lock_acquire down
     log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
     remove_tor_egress_firewall
-    remove_lan_guard
     local services
     # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
     # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
@@ -316,6 +323,9 @@ stack_down_except_caddy() {
     if ! docker compose stop $services; then
         error "Stack failed to stop — see the error above."
     fi
+    # After the stop, as in stack_down (#2749). If a node still runs or the marker stays, the rule
+    # stays too, and the backup goes on: the archive does not depend on it.
+    remove_lan_guard || warn "lan-guard:rule-kept — monerod or tari may still run, or $LAN_GUARD_MARKER could not be deleted; the LAN-only source rule stays."
     log "Stack stopped (caddy left running)."
     mutation_lock_release
 }
@@ -329,6 +339,10 @@ stack_restart() { # [tor|monerod]
     *) error "restart takes no argument, 'tor' (fresh Tor guards when clearnet egress is stuck), or 'monerod' (re-dial peers after a Tor restart left the node out of sync). Got: '$1'." ;;
     esac
     mutation_lock_acquire restart
+    # `compose restart` also starts a stopped node, on its existing 0.0.0.0 publish, without
+    # compose_up's rule install: refuse while a published LAN port has no live rule (#2749). Checked
+    # under the lock, so a `down` or backup that held it cannot remove the rule after the check.
+    lan_guard_ready || error "The LAN-only source rule for the published *_lan_access port(s) is not in place, so a restart would open them to every source. Run './pithead up', which installs it first."
     case "${1:-}" in
     "")
         log "Restarting stack..."

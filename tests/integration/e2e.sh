@@ -50,7 +50,7 @@ KEEP=0
 SCENARIO=""
 REMOTE_NODE_ARGS=()
 REMOTE_NODE_HOSTS=()
-BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" # raw --harness-arg values -> validate_harness_args's output
+BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" HARNESS_SCENARIO_ARGS="" # raw --harness-arg values -> validate_harness_args's output
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -87,7 +87,7 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
-  --harness-arg <f> append one more run.sh phase flag (repeatable, allowlisted; see lib/harness-args.sh)
+  --harness-arg <f> run this run.sh phase instead of the mode's (repeatable, allowlisted; see lib/harness-args.sh)
   --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
@@ -278,7 +278,13 @@ restore_all() {
             warn "baseline recreation of test-checkout containers failed in $RESTORE_DIR"
             RESTORE_PROOF_FAILED=1
         fi
-        wait_bench_healthy 300 && ok "baseline stack healthy again" || warn "baseline stack came up but isn't reporting healthy yet — check 'pithead status' on $BENCH_HOST"
+        # Job 1677: status passed before the sync gate stopped p2pool. Wait for its release.
+        if wait_synced 1500 restore && wait_bench_healthy 300; then
+            ok "baseline stack healthy again"
+        else
+            warn "baseline stack did not regain synced chains and running services before restore proof"
+            RESTORE_PROOF_FAILED=1
+        fi
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
         verify_restore_proof || RESTORE_PROOF_FAILED=1
@@ -324,7 +330,8 @@ wait_bench_healthy() { # <timeout_s>
 # measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
 # so its bounded Tari readiness row has a synced chain before it starts.
 wait_synced() { # <timeout_s>
-    local deadline=$(($(date +%s) + ${1:-300})) st
+    local deadline=$(($(date +%s) + ${1:-300})) st refusal="destructive phases"
+    [ "${2:-}" = restore ] && refusal="baseline proof"
     while :; do
         st="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '\"\(.sync.monero.state)/\(.sync.tari.state)\"' 2>/dev/null" || true)"
         [ "$st" = "done/done" ] && {
@@ -332,7 +339,7 @@ wait_synced() { # <timeout_s>
             return 0
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
-            warn "sync panels still '$st' after $((${1:-300}))s — destructive phases refused"
+            warn "sync panels still '$st' after $((${1:-300}))s — $refusal refused"
             return 1
         }
         sleep 8
@@ -395,6 +402,7 @@ preflight() {
     # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
     # record is taken here or not at all. Read by verify_restore_proof.
     EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)" EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"
+    LAN_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-guard.service)" HOLD_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-hold.service)"
     if BASELINE_IMAGES="$(stack_image_census)" && [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
     else
@@ -597,23 +605,23 @@ run_harness() {
     [ "$MODE" = "check" ] && target_dir="$RESTORE_DIR"
     case "$MODE" in
     check) phases="--check" ;;
-    targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
-    matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet" ;;
+    targeted) phases="--scenario local-pruned-main-secure-tari${HARNESS_PHASE_ARGS:- --auth-fail-closed --lifecycle}" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
+    matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO")}${HARNESS_PHASE_ARGS:- --safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet}" ;;
     esac
     [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
     # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
     # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
-    # supplies its host + token (#1378) and ALWAYS returns rc 0, so this && cannot drop the flags.
     if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ]; then
         rig_supply
         [ -n "$RIG_NAME" ] || die "Borrowed rig NAME unavailable from $RIGFORGE_CONFIG."
-        phases="$phases --rigforge --rigforge-control --rig-name $(quote_arg "$RIG_NAME")${RIG_HOST:+ --rig-host $(quote_arg "$RIG_HOST") --rig-control-port $(quote_arg "$RIG_CONTROL_PORT")}${RIGFORGE_BOOTSTRAP_VERSION:+ --rigforge-bootstrap-version $(quote_arg "$RIGFORGE_BOOTSTRAP_VERSION")}"
+        [ -n "${HARNESS_PHASE_ARGS:-}" ] || phases="$phases --rigforge --rigforge-control" # hand-picked phases replace these too (bench-ci#878)
+        phases="$phases --rig-name $(quote_arg "$RIG_NAME")${RIG_HOST:+ --rig-host $(quote_arg "$RIG_HOST") --rig-control-port $(quote_arg "$RIG_CONTROL_PORT")}${RIGFORGE_BOOTSTRAP_VERSION:+ --rigforge-bootstrap-version $(quote_arg "$RIGFORGE_BOOTSTRAP_VERSION")}"
     fi
     # #905: no borrowed miner means no worker will ever appear — tell the harness to SKIP its two
     # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
-    phases="$phases$remote_args $no_mining${HARNESS_PHASE_ARGS:-}" # bench-ci's one-phase selection, after the mode's own (#2179)
+    phases="$phases${HARNESS_SCENARIO_ARGS:-}$remote_args $no_mining"
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     harness_install_runner || die "Failed to install the detached harness runner."
