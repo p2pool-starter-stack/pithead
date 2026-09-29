@@ -278,7 +278,8 @@ stable row payloads, stable security `kv_store` values, and the presence of ever
 XvB/snapshot key. A recreated dashboard rewrites those volatile values within seconds, so neither
 their values nor their shape are compared across the upgrade or the restore (#2421); the gate does
 not claim byte equality for values expected to advance while the stack runs. It also checks exact container mounts,
-chain anchors, workers, mining, image refs, revisions, and health. A failed verification retains both
+chain anchors, the worker set accepted by the post-upgrade readiness wait, mining, image refs,
+revisions, and health. A failed verification retains both
 recovery trees and private CoW snapshots until verification; any mismatch makes the gate red.
 
 ---
