@@ -194,6 +194,43 @@ class TestDecide:
 
 
 class TestCheck:
+    async def test_pending_newnym_times_out_without_probing_or_restarting(self):
+        clock = _Clock()
+        docker = _FakeDocker()
+        probes = []
+        h = _healer(clock, probe=lambda: probes.append(1) or False, docker=docker)
+        h._pending_refresh = "id"
+        h._pending_since = clock.t
+        h._attempts = 1
+        with patch(
+            "mining_dashboard.service.health.tor_heal.control_service.result", return_value=None
+        ):
+            await h.check()
+            assert h._pending_refresh == "id"
+            clock.t += PROBE_INTERVAL_SEC
+            await h.check()
+        assert h._pending_refresh is None
+        assert h._attempts == 0
+        assert h._last_attempt == clock.t
+        assert probes == []
+        assert docker.calls == []
+
+    async def test_failed_newnym_submission_refunds_attempt(self):
+        clock = _Clock()
+        docker = _FakeDocker()
+        h = _healer(clock, probe=lambda: False, docker=docker)
+        with patch(
+            "mining_dashboard.service.health.tor_heal.control_service.submit",
+            side_effect=OSError("control spool unavailable"),
+        ):
+            await h.check()
+            clock.t += BROKEN_AFTER_SEC
+            await h.check()
+        assert h._attempts == 0
+        assert h._pending_refresh is None
+        assert h._last_attempt == clock.t
+        assert docker.calls == []
+
     async def test_unconfirmed_newnym_cannot_escalate_to_container_restart(self):
         clock = _Clock()
         docker = _FakeDocker()
