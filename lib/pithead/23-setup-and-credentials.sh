@@ -24,17 +24,18 @@ detect_os() {
     fi
 }
 
-# True when the four runtime dependencies are all present.
+# True when the runtime dependencies are all present.
 deps_satisfied() {
     command -v jq >/dev/null 2>&1 &&
         command -v openssl >/dev/null 2>&1 &&
+        command -v python3 >/dev/null 2>&1 &&
         command -v docker >/dev/null 2>&1 &&
         docker compose version >/dev/null 2>&1
 }
 
 check_prerequisites() {
     if [ "$SKIP_DEPS" == "1" ]; then
-        warn "Skipping dependency checks (--skip-deps). Ensure docker, docker compose (v2), jq and openssl are installed."
+        warn "Skipping dependency checks (--skip-deps). Ensure docker, docker compose (v2), jq, openssl and python3 are installed."
         return 0
     fi
 
@@ -54,6 +55,10 @@ check_prerequisites() {
     command -v openssl >/dev/null 2>&1 || {
         missing_cmds+=("openssl")
         missing_pkgs+=("openssl")
+    }
+    command -v python3 >/dev/null 2>&1 || {
+        missing_cmds+=("python3")
+        missing_pkgs+=("python3")
     }
     if ! command -v docker >/dev/null 2>&1; then
         missing_cmds+=("docker")

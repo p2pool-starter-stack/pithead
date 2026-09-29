@@ -342,9 +342,9 @@ require_clean_bench() {
 }
 cleanup() {
     local approval_cleanup_rc=0
+    package_appliance_cleanup || approval_cleanup_rc=$?
     declare -F approval_fixture_cleanup >/dev/null && approval_fixture_cleanup || approval_cleanup_rc=$?
-    # Preserve the console on failure; an at-assertion no-clobber copy remains authoritative.
-    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then
+    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then # Preserve the console on failure.
         cp "$SERIAL" "$SERIAL.failed" 2>/dev/null &&
             info "console from the failed run kept at $SERIAL.failed"
     fi
@@ -360,6 +360,8 @@ cleanup() {
     [ "$approval_cleanup_rc" -eq 0 ] || exit "$approval_cleanup_rc"
 }
 trap cleanup EXIT
+# Read the serial file directly: grep -q on a pipe can SIGPIPE its writer under pipefail.
+serial_has() { grep -aEq "$1" "$SERIAL"; }
 # Wait until the serial log matches a pattern, or time out. $1 pattern, $2 seconds.
 wait_serial() {
     local pat="$1" deadline=$(($(date +%s) + ${2:-180}))

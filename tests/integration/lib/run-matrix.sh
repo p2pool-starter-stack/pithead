@@ -125,7 +125,7 @@ record_manifest() {
 # globals RESOLVED / SKIP_REASON.
 
 run_scenario() {
-    local name="$1" overrides="$2"
+    local name="$1" overrides="$2" sync_dir=""
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="$name"
     echo ""
@@ -146,12 +146,48 @@ run_scenario() {
     fi
     push_config "$config"
 
+    # Hold the two dashboard-writable marker paths as directories for this one scenario. The
+    # supervisor cannot commit the transition yet, so the running daemons have time to establish
+    # real clearnet peers while the host firewall remains on. Release them immediately after the
+    # live egress sample; then the ordinary supervisor performs the automatic transition.
+    if [ "$name" = local-pruned-main-clearnet-sync ]; then
+        sync_dir="$(env_on_box CLEARNET_STATE_DIR)"
+        [ -n "$sync_dir" ] || sync_dir="$IT_REMOTE_DIR/data/clearnet-state"
+        if ! rx "mkdir -p $(quote_arg "$sync_dir") && rm -f $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced") && mkdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")"; then
+            it_fail "stage live clearnet sync window (#2678)" "could not reserve the marker paths"
+            return 0
+        fi
+    fi
+
     it_step "applying config (pithead apply -y)…"
     if ! pithead apply -y >"$OUT_DIR/${name}.apply.log" 2>&1; then
+        [ -z "$sync_dir" ] || rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")" >/dev/null 2>&1
         it_fail "apply succeeded" "see $OUT_DIR/${name}.apply.log"
         capture_artifacts "$name" "$OUT_DIR"
         restore_firewall_after_clearnet "$name" "$config"
         return 0
+    fi
+
+    if [ -n "$sync_dir" ]; then
+        # The staged directories hold the supervisor, but also (correctly) suppress the firewall
+        # exceptions and make the entrypoints start on Tor. Pause the supervisor, clear the staging
+        # paths, install the now-authorized exceptions, and restart the nodes before sampling peers.
+        if rx 'docker compose pause dashboard'; then
+            if rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")" &&
+                rx "sudo -n bash -c 'source ./pithead; apply_tor_egress_firewall refresh'" &&
+                rx 'docker compose restart monerod tari'; then
+                wait_for 180 5 "clearnet node containers running (#2678)" rx \
+                    'docker compose ps --services --status running | grep -Fx monerod && docker compose ps --services --status running | grep -Fx tari' || true
+                assert_egress_posture node-sync
+                it_pass "release clearnet marker paths for automatic Tor transition (#2678)"
+            else
+                it_fail "stage live clearnet sync window (#2678)" "firewall refresh or node restart failed"
+            fi
+            rx 'docker compose unpause dashboard' || it_fail "resume sync supervisor (#2678)" "dashboard stayed paused"
+        else
+            it_fail "stage live clearnet sync window (#2678)" "could not pause dashboard"
+            rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")" || true
+        fi
     fi
 
     # Wait for the stack to settle on real readiness signals before asserting. The miner/hash
@@ -182,20 +218,14 @@ run_scenario() {
     return 0
 }
 
-# Whether a chain's clearnet_initial_sync flag actually reaches its daemon: render_env ignores it
-# while the egress firewall is on (#2649). One caller, assert_running_state in run-state.sh; it
-# lives here to keep that file under its file-budget ceiling.
+# A chosen chain's clearnet flag reaches its daemon even with the firewall on (#2678).
 clearnet_flag_effective() { # <config> <chain: monero|tari> -> true|false
-    [ "$(jq_get "$1" ".$2.clearnet_initial_sync")" = "true" ] &&
-        [ "$(jq_get "$1" '.network.tor_egress_firewall')" = "false" ] && echo true || echo false
+    [ "$(jq_get "$1" ".$2.clearnet_initial_sync")" = "true" ] && echo true || echo false
 }
 
-# The clearnet-sync scenario runs with the egress firewall off, the only way its flags reach the
-# daemons (#2649). Before that scenario ends, turn the firewall back on with the flags left set and
-# prove what the operator then gets: the rules are installed again, render_env zeroes both .env
-# flags, and a sync that already completed stays spent. The marker survives the apply, so turning
-# the firewall off again later would not put a synced node back on clearnet. Any other config is
-# left alone.
+# A legacy firewall-off clearnet scenario still restores the firewall before leaving the bench.
+# Keep the flags and spent markers during that restore; the default-on sync scenario does not
+# enter this helper. Every other config is left alone.
 restore_firewall_after_clearnet() { # <name> <config>
     local name="$1" config="$2" sdir chain had=""
     [ "$(jq_get "$config" '.network.tor_egress_firewall')" = "false" ] || return 0
@@ -218,8 +248,8 @@ restore_firewall_after_clearnet() { # <name> <config>
     fi
     wait_status_ok 240 || true
     assert_contains "egress firewall back on after the clearnet sync (#2649)" "$(pithead doctor 2>&1)" "egress firewall is installed"
-    assert_eq "firewall on: monero clearnet flag ignored (#2649)" "$(env_on_box MONERO_CLEARNET_SYNC)" "false"
-    assert_eq "firewall on: tari clearnet flag ignored (#2649)" "$(env_on_box TARI_CLEARNET_SYNC)" "false"
+    assert_eq "firewall on: monero clearnet flag retained (#2678)" "$(env_on_box MONERO_CLEARNET_SYNC)" "true"
+    assert_eq "firewall on: tari clearnet flag retained (#2678)" "$(env_on_box TARI_CLEARNET_SYNC)" "true"
     for chain in $had; do
         if rx "test -f $(quote_arg "$sdir/$chain.synced")"; then
             it_pass "firewall on: the completed $chain clearnet sync stays spent (#234/#2649)"

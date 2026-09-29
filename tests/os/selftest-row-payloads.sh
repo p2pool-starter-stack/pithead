@@ -14,7 +14,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 rc=0
-for t in appliance-approval-verdict.sh bundle-build-evidence.sh appliance-tari-mode-leg.sh appliance-tari-wallet-leg.sh appliance-chain-fault-leg.sh tor-health-evidence.sh; do
+for t in appliance-approval-verdict.sh bundle-build-evidence.sh package-appliance-verdict.sh appliance-tari-mode-leg.sh appliance-tari-wallet-leg.sh appliance-chain-fault-leg.sh tor-health-evidence.sh; do
     bash "$HERE/$t" --self-test || rc=1
 done
 [ "$rc" -eq 0 ] && echo "selftest-row-payloads: PASS"
