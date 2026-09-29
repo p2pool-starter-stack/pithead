@@ -102,7 +102,7 @@ echo "== unit: address_watch_verdict — the KVM provision leg's discrimination 
 source "$HERE/../os/appliance-address-watch-leg.sh"
 AWV_OK='{"checks":[{"status":"ok","message":"The dashboard certificate covers every name Caddy serves."}]}'
 AWV_BAD='{"checks":[{"status":"fail","message":"The dashboard certificate does not cover: fd00:2463::1 — x"}]}'
-awv() { address_watch_verdict "${1-enabled}" "${2-active}" "${3-$AWV_OK}" "${4-0}" "${5-IP Address:fd00:2463::1, IP:fd00:2463::1}" "fd00:2463::1"; }
+awv() { address_watch_verdict "${1-enabled}" "${2-active}" "${3-$AWV_OK}" "${4-0}" "${5-DNS:x, IP Address:FD00:2463:0:0:0:0:0:1}" "fd00:2463::1" "IP Address:FD00:2463:0:0:0:0:0:1"; }
 assert_rc "a re-minted certificate with a green row and an enabled, active timer passes" "$(awv >/dev/null; echo $?)" 0
 assert_rc "a disabled timer fails (image wiring)" "$(awv disabled >/dev/null; echo $?)" 1
 assert_rc "an inactive timer fails" "$(awv enabled inactive >/dev/null; echo $?)" 1

@@ -3,10 +3,12 @@
 # certificate without an apply or a reboot.
 
 ADDRESS_WATCH_TEST_ULA="fd00:2463::1"
+# openssl prints an IPv6 SAN fully expanded and upper-case.
+ADDRESS_WATCH_TEST_ULA_SAN="IP Address:FD00:2463:0:0:0:0:0:1"
 ADDRESS_WATCH_COVERED_OK="The dashboard certificate covers every name Caddy serves."
 
-address_watch_verdict() { # <timer-enabled> <timer-active> <doctor-json> <service-result> <cert-sans> <address>
-    local enabled="$1" active="$2" doctor="$3" result="$4" sans="$5" addr="$6"
+address_watch_verdict() { # <timer-enabled> <timer-active> <doctor-json> <service-result> <cert-sans> <address> <san-entry>
+    local enabled="$1" active="$2" doctor="$3" result="$4" sans="$5" addr="$6" san="$7"
     [ "$enabled" = enabled ] || {
         echo "pithead-address-watch.timer is not enabled (systemctl is-enabled: ${enabled:-empty})"
         return 1
@@ -19,7 +21,7 @@ address_watch_verdict() { # <timer-enabled> <timer-active> <doctor-json> <servic
         echo "pithead-address-watch.service did not run to success (exit $result)"
         return 1
     }
-    case "$sans" in *"IP:$addr"*) ;; *)
+    case "$sans" in *"$san"*) ;; *)
         echo "the dashboard certificate does not carry the added address ($addr)"
         return 1
         ;;
@@ -56,7 +58,7 @@ phase_provision_address_watch() {
     sans=$(_ssh "openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -ext subjectAltName" 2>/dev/null) || sans=""
     sans=${sans//$'\n'/ }
     doctor=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>/dev/null) || true
-    if verdict=$(address_watch_verdict "$enabled" "$active" "$doctor" "$rc" "$sans" "$ADDRESS_WATCH_TEST_ULA"); then
+    if verdict=$(address_watch_verdict "$enabled" "$active" "$doctor" "$rc" "$sans" "$ADDRESS_WATCH_TEST_ULA" "$ADDRESS_WATCH_TEST_ULA_SAN"); then
         ok "$verdict"
     else
         bad "$verdict"
