@@ -20,6 +20,16 @@ tor_egress_sync_ips() {
     return 0
 }
 
+tor_egress_choice_marker() { printf '%s.egress-choice-active' "$(mutation_lock_path)"; }
+
+# A directory is an atomic, no-follow marker. Arm it before a selected ACCEPT can reach the kernel;
+# only compose_up's successful enabled refresh may clear it after the selection goes away.
+arm_tor_egress_choice_marker() {
+    local marker
+    marker=$(tor_egress_choice_marker)
+    [ ! -L "$marker" ] && { mkdir "$marker" 2>/dev/null || [ -d "$marker" ]; }
+}
+
 # Remove every rule we previously installed — idempotent, config-agnostic, engine-agnostic. Clears
 # BOTH backends so `down` or the opt-out can't leave a stale set behind. An enabled apply never calls
 # this: it replaces the rules in one transaction (#2672).
@@ -92,6 +102,9 @@ apply_tor_egress_firewall() {
     [ -n "$tor_ip" ] || tor_ip="172.28.0"
     tor_ip="${tor_ip}.25"
     mapfile -t sync_ips < <(tor_egress_sync_ips)
+    if [ "${#sync_ips[@]}" -gt 0 ]; then
+        arm_tor_egress_choice_marker || return 1
+    fi
     if [ "$(container_engine)" = "podman" ]; then
         if apply_tor_egress_nft "$subnet" "$tor_ip" "${sync_ips[@]}"; then
             remove_tor_egress_iptables
@@ -239,7 +252,7 @@ control_egress_sync() { # <id> <chain> <control-dir>
 apply_tor_egress_nft() { # <subnet> <tor_ip> [sync-ip ...]
     local subnet="$1" tor_ip="$2" br rc=0
     if ! command -v nft >/dev/null 2>&1; then
-        warn "egress-apply:nft-missing — nftables not found, cannot enforce Tor-only egress. Container startup is refused until the firewall is restored."
+        warn "egress-apply:nft-missing — nftables not found, cannot enforce Tor-only egress. Clearnet egress is NOT provably fail-closed."
         return 1
     fi
     # mining_net is IPv4-only by design, so br is empty and the ruleset stays v4-only. If it ever
@@ -271,7 +284,7 @@ apply_tor_egress_nft() { # <subnet> <tor_ip> [sync-ip ...]
 apply_tor_egress_iptables() { # <subnet> <tor_ip> [sync-ip ...]
     local subnet="$1" tor_ip="$2" saved
     if ! command -v iptables >/dev/null 2>&1 || ! command -v iptables-restore >/dev/null 2>&1; then
-        warn "egress-apply:iptables-missing — iptables/iptables-restore not found, cannot enforce Tor-only egress. Container startup is refused until the firewall is restored."
+        warn "egress-apply:iptables-missing — iptables/iptables-restore not found, cannot enforce Tor-only egress. Clearnet egress is NOT provably fail-closed."
         return 1
     fi
     # DOCKER-USER may not exist yet on a first-ever `up` (Docker creates it with its first network).

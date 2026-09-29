@@ -113,9 +113,10 @@ On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` loo
 that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
 Compose project. Pithead reinstalls the egress rules above its LAN-port guard jumps before starting
 containers, so the guard's return path still reaches the DROP. Until the host attests a selected
-first sync's Tor transition, a failed live firewall readback prevents Compose startup.
-Any failed firewall refresh also prevents Compose startup, including after a clearnet choice is
-disabled. Before Docker creates its first network,
+first sync's Tor transition, a failed live firewall readback prevents Compose startup. A selected
+P2Pool or XvB exception also refuses startup on refresh failure; after a choice is disabled, its
+marker keeps that refusal through firewall opt-out until an enabled refresh proves the stale rule gone. Ordinary startup
+retains the firewall warning. Before Docker creates its first network,
 the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no
 mining container runs; Docker then adds the jump.
 The check does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or

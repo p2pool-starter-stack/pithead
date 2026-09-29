@@ -68,6 +68,7 @@ chmod +x "$LGD/bin/"*
 export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log"
 printf 'TARI_GRPC_BIND=0.0.0.0\nMONERO_RPC_BIND=127.0.0.1\nMONERO_ZMQ_BIND=127.0.0.1\n' >"$LGD/.env"
 lg() { (cd "$LGD" && PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; apply_tor_egress_firewall() { :; }; $1" 2>&1); }
+lg_real() { (cd "$LGD" && PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
 
 echo "== the rule admits loopback, RFC1918 and CGNAT only, and drops the rest (#2616) =="
 lg_out="$(printf '%s\n' '-A DOCKER-USER -p tcp -m tcp --dport 18081 -m comment --comment pithead-lan-guard -j PITHEAD-LAN' |
@@ -92,12 +93,30 @@ lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() {
 assert_eq "compose restores egress precedence after LAN jumps, before containers start" \
     "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
 : >"$LG_ORDER"
-lg_out="$(lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d; echo "rc=$?"')"
+lg_out="$(lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; clearnet_sync_active() { return 0; }; if compose_up -d; then echo rc=0; else echo "rc=$?"; fi')"
 assert_eq "failed egress refresh prevents container startup" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
 assert_contains "failed refresh returns failure" "$lg_out" "rc=1"
 : >"$LG_ORDER"
-lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; P2POOL_CLEARNET=false; XVB_TOR_ENABLED=true; compose_up -d' >/dev/null
-assert_eq "failed refresh also stops startup after clearnet choices are disabled" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { echo 172.28.0.28; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d' >/dev/null
+assert_eq "failed refresh stops a newly selected P2Pool choice" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
+: >"$LG_ORDER"
+lg_real 'tor_egress_sync_ips() { echo 172.28.0.28; }; apply_tor_egress_iptables() { :; }; apply_tor_egress_firewall refresh' >/dev/null
+assert_eq "firewall install arms the choice marker before Compose" "$([ -d "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
+: >"$LG_ORDER"
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d' >/dev/null
+assert_eq "failed refresh stops startup after a clearnet choice is disabled" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
+: >"$LG_ORDER"
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; env_get() { [ "$1" != TOR_EGRESS_FIREWALL ] || echo false; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; }; compose_up -d' >/dev/null
+assert_eq "firewall opt-out cannot clear an unverified stale exception" "$([ -d "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
+: >"$LG_ORDER"
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d' >/dev/null
+assert_eq "re-enabled firewall still blocks a failed refresh after opt-out" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
+: >"$LG_ORDER"
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; }; compose_up -d' >/dev/null
+assert_eq "successful enabled refresh clears the selected-choice marker" "$([ ! -e "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
+: >"$LG_ORDER"
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d' >/dev/null
+assert_eq "ordinary startup keeps its warning-only firewall behavior" "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
 lg_out="$(lg 'tor_egress_enforced() { return 5; }; tor_egress_verify_or_warn ok >/dev/null 2>&1 && echo allowed || echo refused')"
 assert_eq "shadowed egress readback refuses compose startup" "$lg_out" "refused"
 lg_out="$(lg 'tor_egress_enforced() { return 4; }; mining_stack_running() { return 1; }; tor_egress_verify_or_warn ok >/dev/null 2>&1 && echo allowed || echo refused')"
