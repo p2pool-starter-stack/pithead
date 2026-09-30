@@ -38,9 +38,9 @@ it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
 # #1611, they had drifted); --flag by NAME; >=90 chars by SHAPE; --wallet/--merge-mine's next token by
 # POSITION (#1596); an IP by SCOPE (#1609), its \x01 sentinel an INVARIANT, not an input guess (#1613).
 redact() {
-    redact_it_password | sed -E \
+    redact_it_password | redact_onions | sed -E \
         -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|EXPLORER_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
-        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|explorer_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[a-z2-7]{56}\.onion/<redacted>.onion/g; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
+        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|explorer_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
 }
 
 # --- Assertions -------------------------------------------------------------
@@ -64,7 +64,7 @@ it_pass() {
 it_fail() {
     IT_FAIL=$((IT_FAIL + 1))
     IT_FAILED_NAMES="${IT_FAILED_NAMES}\n    - ${IT_CURRENT_SCENARIO:-?}: $1"
-    printf '    %b✗%b %s\n        %s\n' "$IT_RED" "$IT_RESET" "$1" "$(redact <<<"${2:-}")"
+    printf '    %b✗%b %s\n        %s\n' "$IT_RED" "$IT_RESET" "$1" "$(redact_it_password <<<"${2:-}" | redact_onions)"
 }
 
 assert_eq() { if [ "$2" = "$3" ]; then it_pass "$1"; else it_fail "$1" "expected [$3], got [$2]"; fi; }

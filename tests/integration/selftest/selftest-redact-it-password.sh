@@ -6,7 +6,7 @@
 # selftest-redact.sh covers can never meet it: nothing captured off the box ever contains the
 # string "IT_DASHBOARD_PASSWORD=...". The harness is instead the one place that holds the exact
 # VALUE, so redact_it_password() (lib.sh) scrubs by literal match, independent of shape or key
-# name, wired into redact(), including it_fail() (the console stream a bench-ci job
+# name, wired into both redact() and it_fail() (the console stream a bench-ci job
 # captures as its log — tiers/pithead/tier4-e2e.sh tees it verbatim).
 #
 # A file rather than a line in selftest-redact.sh: that file sits near lint-file-budget.sh's
@@ -78,6 +78,9 @@ assert_contains "the mismatch still records one failure" "$OUT" "failures=1"
 assert_contains "the failed assertion keeps its scenario and name" "$OUT" "lifecycle: setup after uninstall keeps the Monero onion address"
 OUT="$(assert_eq "unchanged onion" "$BEFORE" "$BEFORE")"
 assert_contains "redaction does not turn equal secret operands into failures" "$OUT" "✓ unchanged onion"
+
+OUT="$(it_fail "compound diagnostic" "PROXY_AUTH_TOKEN=<redacted> image unavailable; expected [$BEFORE], got [$AFTER]")"
+assert_contains "pre-redacted diagnostics keep the error after a KEY=value marker" "$OUT" "PROXY_AUTH_TOKEN=<redacted> image unavailable; expected [<redacted>.onion], got [<redacted>.onion]"
 
 echo "selftest-redact-it-password: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
