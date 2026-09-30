@@ -827,6 +827,7 @@ dependencies = [
     { name = "grpcio" },
     { name = "protobuf" },
     { name = "requests", extra = ["socks"] },
+    { name = "urllib3" },
 ]
 
 [package.optional-dependencies]
@@ -860,6 +861,7 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'test'", specifier = ">=3.14" },
     { name = "requests", extras = ["socks"], specifier = ">=2.34.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.16.9" },
+    { name = "urllib3", specifier = ">=2.8.0" },
 ]
 provides-extras = ["test", "dev"]
 

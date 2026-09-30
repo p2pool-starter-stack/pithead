@@ -68,8 +68,12 @@ It is an installable package (`pyproject.toml`): all internal imports are absolu
 
 ```bash
 # from dashboard/ — uv creates .venv and installs from the hashed uv.lock (Python 3.11+)
-uv sync --extra test
+uv sync --locked --extra test
 ```
+
+Requests keeps its SOCKS support. The dependency metadata requires urllib3 2.8.0 or
+newer for HTTPS proxy TLS isolation and bounded chunk-size parsing; `uv.lock` pins
+the installed version. Regenerate the lock when changing dependency requirements.
 
 ## Tests
 
