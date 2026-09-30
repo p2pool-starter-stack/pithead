@@ -87,7 +87,6 @@ set -uo pipefail
 umask 077
 d="$(mktemp -d)" || exit 1
 trap 'rm -rf "$d"' EXIT
-trap 'exit 1' HUP INT TERM
 stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # The file-size limit also bounds chunked responses on older curl versions.
 # No retry: even a transport error may follow a staged POST.
