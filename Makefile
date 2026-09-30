@@ -20,6 +20,7 @@ test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% 
 test-stack: pithead ## pithead shell test suite
 	bash tests/stack/run.sh
 	bash tests/stack/standalone/test_tor_recovery.sh
+	bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
 	bash tests/stack/standalone/test_data_reset.sh
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh

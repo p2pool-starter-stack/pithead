@@ -51,6 +51,7 @@ The LAN source rule and old-listener stop are in `02b-lan-guard.sh`; the staged 
 and scoped node restarts are in `02b1-lan-guard-compose.sh`. Transition prearm and the periodic
 live-rule check are in `02c-lan-guard-check.sh`.
 Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
+its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`.
 
 ## Dashboard feature folders
