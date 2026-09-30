@@ -105,6 +105,8 @@ source "$HERE/lib/run-tari-wallet.sh" || exit $?
 source "$HERE/lib/run-lan-guard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-scenario.sh
 source "$HERE/lib/run-scenario.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-source-image.sh
+source "$HERE/lib/run-source-image.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
