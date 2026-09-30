@@ -23,7 +23,7 @@ lan_guard_arm_transition() { # <newenv>: before apply commits it
         # container or an existing network could still start with the port exposed.
         if containers=$(docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.Names}}' 2>/dev/null) &&
             networks=$(docker network ls --format '{{.Name}}' 2>/dev/null); then
-            [ -n "$containers" ] || grep -qxF mining_net <<<"$networks" || rc=0
+            [ -n "$containers" ] || grep -qxF mining_net <<<"$networks" || return 0
         fi
     fi
     if [ "$rc" -ne 0 ] || ! lan_guard_marker_current; then
