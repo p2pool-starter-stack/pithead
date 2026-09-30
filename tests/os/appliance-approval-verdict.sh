@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329  # fake functions and dynamic globals are the controls
-# Verdicts and pure self-tests for appliance-config-approval-leg.sh.
+# Verdicts and pure self-tests for the appliance approval and node-runtime legs.
 #
 # #2076 removed the Telegram approval round-trip, and with it the fake-provider transport this file
 # used to carry: approval_fixture_arm/bind/quiesce/disarm, approval_fixture_post/preview, the
@@ -22,11 +22,17 @@
 # legs are the ones that can still disagree — what the commit returned, and whether the audit row
 # is the one for THIS request. The audit leg is spelled out here rather than delegated, because
 # the verdict it used to call (approval_audit_verdict) went with the Telegram leg.
-approval_bind_payload() { # <result-json> <audit-jsonl> <request-id>
-    local result="$1" audit="$2" rid="$3" apply audit_v
+approval_bind_payload() { # <result-json> <audit-jsonl> <request-id> [landed]
+    local result="$1" audit="$2" rid="$3" landed="${4:-}" apply audit_v
     apply=$(printf '%s' "${result:-null}" | jq -r '"\(.status // "none")/\(.error // "no error")"' 2>/dev/null) ||
         apply="unparseable: ${result:0:120}"
-    [ -n "$result" ] || apply="no result — the commit never returned"
+    if [ -z "$result" ]; then
+        if [ "$landed" = landed ]; then
+            apply="requested hostname change landed, but no result file was written — runner completion is unknown"
+        else
+            apply="no result — the commit never returned"
+        fi
+    fi
     # stderr suppressed: on a malformed audit jq writes a parse error, and the row's own `if`
     # already ran this check once — a second copy would land mid-payload, where it reads like a
     # harness crash rather than part of the evidence.
@@ -39,8 +45,45 @@ approval_bind_payload() { # <result-json> <audit-jsonl> <request-id>
     printf 'apply=%s audit=%.240s; live identity is the row printed above this one' "$apply" "$audit_v"
 }
 
-physical_presence_password_refusal_verdict() { # <control-result-json>
-    printf '%s' "$1" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null
+# #2367: the dashboard password left the physical-presence set and now commits behind typed
+# APPLY like any other unlisted leaf, so this proves the commit APPLIES rather than refuses.
+dashboard_password_repoint_applied_verdict() { # <control-result-json>
+    printf '%s' "$1" | jq -e '.status == "applied"' >/dev/null
+}
+
+# #2367: before the password commit, the host preview must be a real preview, envelope-gated, and
+# name both costs the owner required (session lockout, appliance console login) in one message.
+dashboard_password_preview_warns_verdict() { # <preview-json>
+    printf '%s' "$1" | jq -e '.status == "previewed" and .approval_required == true and
+        ([.changes[]?.msg] | any(contains("locks this session out") and contains("console root login")))' >/dev/null
+}
+
+# The pre-commit half of remote_node_runtime_verdict: the preview's rendered .env rows name the
+# endpoints p2pool is started with. Hosts always move off the bundled nodes; a port row is only
+# rendered when the port differs from the live one, so an absent port row is not a miss.
+reserved_node_rendered_endpoints_verdict() { # <preview-json> <mh> <rpc> <zmq> <th> <grpc>
+    printf '%s' "$1" | jq -e --arg mh "$2" --arg rpc "$3" --arg zmq "$4" --arg tg "$5:$6" '
+        def row($k): [.changes[]? | select(.key == $k) | .msg];
+        def to($k; $v): row($k) | any(contains("→ " + $v + " — "));
+        def port($k; $v): (row($k) | length == 0) or to($k; $v);
+        to("MONERO_NODE_HOST"; $mh) and to("TARI_GRPC_ADDRESS"; $tg) and
+        port("MONERO_RPC_PORT"; $rpc) and port("MONERO_ZMQ_PORT"; $zmq)' >/dev/null
+}
+
+_reserved_node_rendered_endpoints_self_test() {
+    local ok_rows
+    ok_rows='{"changes":[{"key":"MONERO_NODE_HOST","msg":"MONERO node endpoint (MONERO_NODE_HOST): monerod → node.fixture — x"},
+        {"key":"TARI_GRPC_ADDRESS","msg":"TARI node endpoint (TARI_GRPC_ADDRESS): tari:18142 → tari.fixture:18142 — x"}]}'
+    reserved_node_rendered_endpoints_verdict "$ok_rows" node.fixture 18081 18083 tari.fixture 18142 || return 1
+    reserved_node_rendered_endpoints_verdict "$ok_rows" other.fixture 18081 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$ok_rows" node.fixture 18081 18083 tari.fixture 9999 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_RPC_PORT",msg:"MONERO node endpoint (MONERO_RPC_PORT): 18081 → 18089 — x"}]')" \
+        node.fixture 18081 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_RPC_PORT",msg:"MONERO node endpoint (MONERO_RPC_PORT): 18081 → 18089 — x"}]')" \
+        other.fixture 18089 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_ZMQ_PORT",msg:"MONERO node endpoint (MONERO_ZMQ_PORT): 18083 → 18084 — x"}]')" \
+        node.fixture 18081 18083 tari.fixture 18142 && return 1
+    return 0
 }
 
 # Bounded, credential-scrubbed evidence for a reserved-node preview verdict (#2297). The row that
@@ -139,7 +182,7 @@ _control_request_transport_self_test() (
 # fires when the server ANSWERED a refusal would turn every rejection into a full deadline of
 # polling, which is the opposite failure and just as expensive on a 2.5-hour battery.
 _control_request_lost_response_self_test() (
-    local body ip=fixture result polls
+    local body ip=fixture result polls empty_post=0
     body='{"id":"rid-7","confirm":"APPLY"}'
     # A file, not a variable: every poll happens inside a command substitution, so a counter
     # incremented in the shim would be discarded with that subshell and read 0 however many times
@@ -155,10 +198,18 @@ _control_request_lost_response_self_test() (
             ;;
         *)
             cat >/dev/null
-            return 0
+            [ "$empty_post" -eq 1 ] && return 0
+            return 52
             ;;
         esac
     }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    # A successful empty POST has the same recoverable shape as the transport loss above.
+    sleep() { :; }
+    empty_post=1
+    : >"$polls"
     result=$(dashboard_control_request commit "$body" 30) || return 1
     case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
     [ -s "$polls" ] || return 1
@@ -324,8 +375,8 @@ _control_post_timeout_self_test() (
 
 # --- self-test (#2060) -------------------------------------------------------------------------
 #
-# Driven by tests/stack/test-harness-tooling.sh. The leg that consumes this file is at its file
-# budget, so the payload's controls live here with it rather than in the leg's own self-test.
+# Driven by tests/stack/test-harness-tooling.sh. The payload controls stay beside the verdicts they
+# exercise rather than the live guest paths.
 #
 # What must be proven is DISCRIMINATION: the row this feeds already prints one red for four
 # different defects, so a payload that printed one sentence for all four would leave it exactly
@@ -353,6 +404,9 @@ _approval_bind_payload_self_test() {
     # `unbound` CONTAINS `bound`, so the absence check has to carry the field prefix or it matches
     # the very failure it is meant to exclude.
     case "$out" in *'audit=bound'*) f=$((f + 1)) ;; esac
+    # A lost result file is not a failed commit when the caller has already observed its identity.
+    out=$(approval_bind_payload '' "$audit" "$rid" landed)
+    case "$out" in *'requested hostname change landed, but no result file was written — runner completion is unknown'*'audit=bound'*) ;; *) f=$((f + 1)) ;; esac
     out=$(approval_bind_payload '{"status":' "$audit" "$rid")
     case "$out" in *'apply=unparseable: {"status":'*) ;; *) f=$((f + 1)) ;; esac
     # A malformed audit must produce a payload and NOTHING on stderr.
@@ -365,10 +419,10 @@ _approval_bind_payload_self_test() {
     printf 'approval-bind-payload self-test passed\n'
 }
 
-_physical_presence_password_refusal_self_test() {
-    physical_presence_password_refusal_verdict '{"status":"rejected","error":"use the configuration stick"}' || return 1
-    physical_presence_password_refusal_verdict '{"status":"applied"}' && return 1
-    physical_presence_password_refusal_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
+_dashboard_password_repoint_applied_self_test() {
+    dashboard_password_repoint_applied_verdict '{"status":"applied"}' || return 1
+    dashboard_password_repoint_applied_verdict '{"status":"rejected","error":"use the configuration stick"}' && return 1
+    dashboard_password_repoint_applied_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
     return 0
 }
 
@@ -377,6 +431,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
     f=0
     _approval_bind_payload_self_test || f=1
     _reserved_node_preview_payload_self_test || f=1
-    _physical_presence_password_refusal_self_test || f=1
+    _dashboard_password_repoint_applied_self_test || f=1
+    _reserved_node_rendered_endpoints_self_test || f=1
     exit "$f"
 fi

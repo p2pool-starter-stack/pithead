@@ -1,7 +1,9 @@
 # Non-fatal heads-up that the unauthenticated stratum port :3333 may face the public internet (#113):
-# warn only when the host has a public IP AND stratum listens on all interfaces (the default bind).
-# Home/NAT hosts (no public IP on an interface) and hosts that narrowed p2pool.stratum_bind stay
-# quiet in setup. $1 = "setup" (emit via warn, only on exposure) or "doctor" (emit OK/WARN/skip).
+# warn when the host has a public IP AND stratum listens on all interfaces (the default bind) OR on
+# one of the host's own public addresses (#1803 -- narrowing the bind to that address is still
+# internet-reachable, not a private one). Home/NAT hosts (no public IP on an interface) and hosts
+# that narrowed p2pool.stratum_bind to a non-public address of their own stay quiet in setup.
+# $1 = "setup" (emit via warn, only on exposure) or "doctor" (emit OK/WARN/skip).
 check_stratum_exposure() {
     local mode="$1" bind pub msg port
     bind="${STRATUM_BIND:-}"
@@ -13,15 +15,22 @@ check_stratum_exposure() {
         [ "$mode" = doctor ] && dr_info "Skipped public-IP exposure check (no 'ip' command; Linux-only)."
         return 0
     fi
+
+    pub="$(host_public_ips)"
     case "$bind" in
     0.0.0.0 | "") ;; # all interfaces — the exposed case
     *)
-        [ "$mode" = doctor ] && dr_ok "Stratum :$port bound to $bind (not all interfaces) — not publicly exposed."
-        return 0
+        # A narrowed bind is only "not publicly exposed" if it isn't itself one of the host's own
+        # public addresses (#1803) -- a bind to 0.0.0.0/24's public interface address is still
+        # reachable from the internet, so that case must fall through to the warning below rather
+        # than short-circuit past it.
+        if ! printf '%s\n' "$pub" | grep -qxF "$bind"; then
+            [ "$mode" = doctor ] && dr_ok "Stratum :$port bound to $bind (not all interfaces) — not publicly exposed."
+            return 0
+        fi
         ;;
     esac
 
-    pub="$(host_public_ips)"
     pub="${pub//$'\n'/, }"
     if [ -n "$pub" ]; then
         # setup's console warn NAMES the address, and keeps naming it: that is the operator's own
@@ -34,13 +43,7 @@ check_stratum_exposure() {
         # redact() does have one (#1609), but that twin guards CI artifact uploads, not the browser.
         msg="This host appears to have a public IP ($pub). The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall."
         if [ "$mode" = doctor ]; then
-            # The appliance arm names only what an appliance operator can actually reach. Blocking
-            # the port at their own router is theirs. The two config remedies are not: neither
-            # STRATUM_BIND nor STRATUM_PASSWORD is in CONTROL_DASHBOARD_EDITABLE_KEYS or
-            # CONTROL_DASHBOARD_CONFIRM_KEYS (42-control-policy-and-host-checks.sh), where the
-            # stratum password is named as deliberately host-only. So it states the diagnosis,
-            # gives the one route that exists, and stops -- #1213's rule at #1772's site.
-            dr_warn_surface "This host appears to have a public IP. The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP, and the stratum port $port is unauthenticated and cleartext by default — anything on the internet can reach it. Block that port at your router, so that only your own network can. Narrowing the listen address or requiring a stratum password is not editable from the dashboard: changing either needs console access to this machine."
+            dr_warn_surface "This host appears to have a public IP. The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP, and the stratum port $port is unauthenticated and cleartext by default — anything on the internet can reach it. Block that port at your router so only your network can reach it. Open Configuration to narrow the listen address or require a stratum password, then complete the confirmation step."
         else
             warn "$msg"
         fi
@@ -76,15 +79,10 @@ check_control_units() {
     # stranded install: the units SHOULD name the live dir, and the dashboard writes there, not
     # here. Verdicts about the control channel belong to the live install, so say what this dir
     # is and stop. Same pattern update_current_symlink uses to recognise the layout (#455).
-    local _name _parent _live
-    _name=$(basename "$here")
-    _parent=$(dirname "$here")
-    if [[ "$_name" =~ ^pithead-v[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -L "$_parent/current" ]; then
-        _live=$(cd "$_parent/current" 2>/dev/null && pwd -P)
-        if [ -n "$_live" ] && [ "$_live" != "$here" ]; then
-            dr_info "This is not the live install — '$_parent/current' points at $_live. Run doctor there to check its control channel." # appliance-unreachable: the DIY versioned layout only -- the guard above needs basename pithead-vX.Y.Z AND a sibling `current` symlink, and the appliance's /opt/pithead install creates neither
-            return 0
-        fi
+    local _live
+    if _live=$(superseded_by_live_install "$here"); then
+        dr_info "This is not the live install — '$(dirname "$here")/current' points at $_live. Run doctor there to check its control channel." # appliance-unreachable: the DIY versioned layout only -- the guard above needs basename pithead-vX.Y.Z AND a sibling `current` symlink, and the appliance's /opt/pithead install creates neither
+        return 0
     fi
     if [ -z "$owner" ]; then
         dr_fail_surface "The control channel is enabled but no runner units are installed — the dashboard's config changes and one-click upgrades will never run, with no error shown. Fix: run './pithead apply' from this directory." "The control channel is enabled but no runner units are installed — config changes and one-click upgrades made here will never run, with no error shown. The installed system provides these units, so this system copy is faulty."
@@ -219,7 +217,7 @@ check_appliance_cert() {
     local base missing=""
     base=$(appliance_base_name)
     case ",$san," in
-    *",DNS:$base,"* | *",IP:$base,"*) ;;
+    *",DNS:$base,"* | *",IP:$base,"* | *",IP:$(ipv6_canonical "$base"),"*) ;;
     *) missing="$base" ;;
     esac
 
@@ -261,7 +259,7 @@ check_appliance_cert() {
             for h in $extras; do
                 case "$bridge_gws" in *" $h "*) continue ;; esac
                 case ",$san," in
-                *",DNS:$h,"* | *",IP:$h,"*) ;;
+                *",DNS:$h,"* | *",IP:$h,"* | *",IP:$(ipv6_canonical "$h"),"*) ;;
                 *) missing="${missing:+$missing }$h" ;;
                 esac
             done
@@ -269,7 +267,7 @@ check_appliance_cert() {
     fi
 
     if [ -n "$missing" ]; then
-        dr_fail_surface "The dashboard certificate does not cover: $missing — Caddy serves those names without a certificate for them. Run './pithead apply' to re-mint." "The dashboard certificate does not cover: $missing — those names are served without a certificate for them. This machine re-mints the certificate whenever it renders its web configuration, so saving any change from the dashboard renews it."
+        dr_fail_surface "The dashboard certificate does not cover: $missing — Caddy serves those names without a certificate for them. Run './pithead apply' to re-mint." "The dashboard certificate does not cover: $missing — those names are served without a certificate for them. This machine's address watch re-mints the certificate within five minutes of an address change, so if an address just arrived, wait and check again."
     else
         dr_ok "The dashboard certificate covers every name Caddy serves."
     fi

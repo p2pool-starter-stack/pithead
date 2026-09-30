@@ -206,7 +206,7 @@ assert_eq "setup hands its window back BEFORE the interactive start prompt" \
 # stack-already-stopped branch. Deleting the running branch's acquire outright left this whole
 # file green — the same shape as apply's two unreached windows, and it hides more: without it the
 # archive is taken in a THIRD window rather than one, with `tar` running UNLOCKED between
-# stack_down's release and stack_up's re-acquire. A concurrent setup or apply can then bring
+# stack_down_except_caddy's release and stack_up's re-acquire. A concurrent setup or apply can then bring
 # containers up mid-archive, which is a torn backup — #970's retry failure mode arriving for a
 # reason the retry cannot fix.
 #
@@ -228,6 +228,7 @@ lock_backup_running_probe() { # -> "<which branch>|<window while the archive is 
 echo "[docker] $*" >>"${DOCKER_LOG:-/dev/null}"
 case "$*" in
 "compose ps --status running -q") echo "c0ffeec0ffee" ;;
+"compose config --services") printf '%s\n' tor monerod tari p2pool dashboard caddy ;;
 esac
 exit 0
 DOCKEREOF
@@ -252,11 +253,12 @@ SUDOEOF
         WINDOW_OUT="$LKWRUN/window" PATH="$LKWRUN/bin:$PATH" env -u PITHEAD_LOCK_HELD \
         bash -c 'source "$1"; set +e; shift; "$@"' _ "$STACK" \
         stack_backup -y --no-encrypt) >/dev/null 2>&1
-    # Which branch actually ran, read from the stack having been STOPPED for the backup. Without
-    # this half the row is vacuous in exactly the way it exists to fix: if the stub ever stops
-    # answering the query, the stopped branch takes its own window, the archive is still taken
-    # under it, and a "held" verdict would read as coverage of a branch that never ran.
-    grep -Eq 'compose .*\bdown\b' "$log" 2>/dev/null && branch=running
+    # Which branch actually ran, read from the stack having been STOPPED for the backup (a targeted
+    # `compose stop`, #2364 — caddy stays up, so this is never a `compose down`). Without this half
+    # the row is vacuous in exactly the way it exists to fix: if the stub ever stops answering the
+    # query, the stopped branch takes its own window, the archive is still taken under it, and a
+    # "held" verdict would read as coverage of a branch that never ran.
+    grep -Eq 'compose stop' "$log" 2>/dev/null && branch=running
     printf '%s|%s' "$branch" "$(cat "$LKWRUN/window" 2>/dev/null || printf 'never-archived')"
 }
 assert_eq "a backup that stops a running stack holds one window across the archive" \

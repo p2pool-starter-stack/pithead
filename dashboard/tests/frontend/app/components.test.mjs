@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardSlice, clone, renderApp, UI } from '../harness.mjs';
+import { renderToString } from '../helpers/render.mjs';
+import { readyInstance } from '../workers/workerview-helpers.mjs';
 
 // --- App shell / connection states -----------------------------------------------------
 
@@ -12,12 +14,94 @@ test('App without state shows the right connection message', () => {
 test('App always renders the theme switcher, even before the first load', () => {
     assert.match(renderApp(), /theme-switcher/);
     assert.match(renderApp({ state: null }), /theme-switcher/);
+    // #1859: before the first load the switcher is fixed-position chrome with no <header> to live
+    // in, so it carries its own labelled landmark — without it axe's `region` rule flags it as
+    // content outside every landmark. Once state exists it sits inside the header and the wrapper
+    // would be redundant, so it is deliberately absent there.
+    assert.match(renderApp({ state: null }), /<section aria-label="Theme">/);
+    assert.doesNotMatch(renderApp(), /<section aria-label="Theme">/);
 });
 
 test('operational App shows a disconnected banner when not connected', () => {
     // The banner names the timestamp of the data on screen (#382) — the fixture's last_update.
     assert.match(renderApp({ connected: false }), /Disconnected — showing data from 00:00:00/);
     assert.doesNotMatch(renderApp({ connected: true }), /Disconnected — showing data from/);
+});
+
+test('the disconnected banner is a live region (#1859)', () => {
+    assert.match(renderApp({ connected: false }), /class="disconnected-banner" role="status" aria-live="polite">/);
+});
+
+test('the hashrate chart canvas carries a text alternative (#1859)', () => {
+    assert.match(renderApp(), /<canvas role="img" aria-label="Hashrate chart: [^"]+"/);
+});
+
+// #1859 (axe empty-table-header): every earnings tab and the XvB tier block render their
+// Day/Month/Year estimate through the shared EstTable, whose header row opened with a bare
+// `<th></th>` for the row-label corner. Fixing the two leaf tables left that shared corner behind,
+// so this sweeps the whole rendered document instead of naming one table: any table that reaches
+// the page with an unlabelled corner fails here, including one added later.
+test('no table reaches the page with an empty header cell (#1859)', () => {
+    const earnings = clone();
+    earnings.earnings.available = true;
+    earnings.earnings.tari_available = true;
+    const html = renderApp({ state: earnings });
+    // Guard against a vacuous pass: the state has to actually render the tables.
+    assert.ok((html.match(/<th[\s>]/g) || []).length > 10, 'expected many header cells to check');
+    assert.doesNotMatch(html, /<th[^>]*>\s*<\/th>/, 'an empty <th></th> is an unlabelled table corner');
+});
+
+// --- Landmarks + heading order (#1859: axe landmark-one-main / region / heading-order) ---------
+
+test('the App has exactly one header, one main and a labelled nav landmark', () => {
+    const html = renderApp();
+    assert.equal((html.match(/<header[\s>]/g) || []).length, 1);
+    assert.equal((html.match(/<main[\s>]/g) || []).length, 1);
+    assert.match(html, /<nav class="view-controls" aria-label="View">/);
+});
+
+const levelsOf = (html) => [...html.matchAll(/<h([1-6])(?=[\s>])/g)].map((m) => Number(m[1]));
+
+function assertContiguous(html, label) {
+    const levels = levelsOf(html);
+    for (let i = 1; i < levels.length; i++) {
+        assert.ok(
+            levels[i] <= levels[i - 1] + 1,
+            `${label}: heading jumped from h${levels[i - 1]} to h${levels[i]} at index ${i}`,
+        );
+    }
+    return levels;
+}
+
+test('heading levels never skip on the way down, from h1 through every card (#1859)', () => {
+    // axe's heading-order rule: a level may drop by any amount but must never jump UP by more
+    // than one. The shallow fixture only reaches h1/h2, so the levels that actually regressed
+    // (the h3s and h4s below a card title) need the deep states as well — an earnings-available
+    // payload for the estimate subheads and the XvB tier block, and Worker Inspect's own dialog.
+    const levels = assertContiguous(renderApp(), 'advanced view');
+    assert.ok(levels.length > 10, 'expected many headings across the advanced view');
+    assert.equal(levels[0], 1, 'the brand name must be the page h1');
+
+    // Earnings available -> the estimate subheads and the XvB tier block with its per-tier rows.
+    const earnings = clone();
+    earnings.earnings.available = true;
+    earnings.earnings.tari_available = true;
+    const deep = assertContiguous(renderApp({ state: earnings }), 'earnings + XvB');
+    assert.ok(deep.includes(3), 'the earnings/XvB state must reach h3');
+
+    // Worker Inspect is a dialog the App only mounts on demand, so drive the component itself.
+    const inspect = renderToString(readyInstance().render());
+    const inspectLevels = assertContiguous(inspect, 'Worker Inspect');
+    assert.ok(inspectLevels.includes(2) && inspectLevels.includes(3), 'dialog h2 then section h3s');
+
+    // The levels the promotion created must actually be exercised, or the walk above proves
+    // nothing about them: a tree of h1/h2 alone can never trip the rule. Both `.est-heading`
+    // instances in xvbview.mjs were promoted from h4 to h3 (to match their `.est-heading`
+    // siblings elsewhere, which were already h3) — that promotion removed the last h4 from the
+    // app, so the walk must see h3 and must never see h4 again.
+    const all = [...levels, ...deep, ...inspectLevels];
+    assert.ok(all.filter((l) => l === 3).length > 0, 'no h3 rendered — the walk never saw one');
+    assert.equal(all.filter((l) => l === 4).length, 0, 'an h4 regressed back in — every heading below a card title must be h3');
 });
 
 // --- Header -----------------------------------------------------------------------------
@@ -29,6 +113,15 @@ test('Header renders the brand, server badges, version + update badges', () => {
     assert.match(html, /Tor-only egress/); // the #170 egress badge rides in the header
     assert.match(html, /dev build/); // version badge text
     assert.match(html, /New release v9\.9\.9 available/); // update badge (#224)
+});
+
+test('the theme switcher lives inside the header, not fixed over the page (#1860)', () => {
+    // It used to render as a sibling of Header, position: fixed over the viewport (overlapping the
+    // chart and the phone hint). It now mounts inside the header's own markup, right of the
+    // version badges, so it scrolls with the page instead of floating over whatever is under it.
+    const html = renderApp();
+    const header = html.slice(html.indexOf('id="top-header"'), html.indexOf('id="hero-band"'));
+    assert.match(header, /class="toggle-group theme-switcher"/);
 });
 
 test('Header surfaces a High Usage badge only when a resource is hot', () => {
@@ -76,6 +169,18 @@ test('chart range buttons include All, active on the default full-history view (
     assert.doesNotMatch(weekly, /class="btn-range active"[^>]*>All</);
 });
 
+test('chart Range/Avg rows carry a collapsed <select> alongside the buttons, labelled to match (#1874)', () => {
+    // Phone width can't fit the button row (the last pill wraps onto its own line, #1874); a
+    // CSS media query swaps to this <select> below the button row rather than script. Its
+    // accessible name is the row's own visible label ("Range"/"Avg"), not the group's
+    // role=group aria-label ("Chart range"/"Hashrate averaging window").
+    const html = renderApp({ ui: { ...UI, range: '1w', avg: '1h' } });
+    assert.match(html, /<select class="chart-controls-select" aria-label="Range"/);
+    assert.match(html, /<option value="1w" selected>1 Wk<\/option>/);
+    assert.match(html, /<select class="chart-controls-select" aria-label="Avg"/);
+    assert.match(html, /<option value="1h" selected>1 Hr<\/option>/);
+});
+
 test('chart legend renders a toggle for every layer, including the marker datasets (#652)', () => {
     const html = renderApp();
     for (const label of ['P2Pool (routed)', 'XvB (routed)', 'Shares', 'Events', 'Raffle wins']) {
@@ -108,12 +213,12 @@ test('Global P2Pool Stats collapses to the headline stats by default (progressiv
     // Headline: the pool's own money/health figures.
     assert.match(card, /Pool Hashrate/);
     assert.match(card, /Blocks Found/);
-    assert.match(card, /<h5>Last Block<\/h5>/);
+    assert.match(card, /<p class="stat-label">Last Block<\/p>/);
     // Detail (sidechain internals, peers, uptime, ...) stays out of the DOM until expanded.
     assert.doesNotMatch(card, /Sidechain Height/);
     assert.doesNotMatch(card, /PPLNS Window/);
     assert.doesNotMatch(card, /PPLNS Weight/);
-    assert.doesNotMatch(card, /<h5>Uptime<\/h5>/);
+    assert.doesNotMatch(card, /<p class="stat-label">Uptime<\/p>/);
     assert.match(card, /class="more-stats-toggle" aria-expanded="false"/);
     assert.match(card, /Show all \(12\)/);
 });
@@ -144,6 +249,16 @@ test('XMR Network collapses to the headline stats by default', () => {
     assert.doesNotMatch(card, /Network Time/);
     assert.match(card, /class="more-stats-toggle" aria-expanded="false"/);
     assert.match(card, /Show all \(8\)/); // 7 + the node's local/remote location (#1040)
+});
+
+test('THE WIDER POOL label is gated like its own cards, not shown over an empty grid in Simple view (#1862)', () => {
+    // GlobalStats, NetworkCard and ComponentHealth — everything under this label — are all
+    // card-advanced. Without the same class the label itself stays visible in Simple view even
+    // though its grid renders 0 visible children. "Your Stack" is untouched: Overview
+    // (card-simple) and ExpectedVsActualCard (both views) keep that section non-empty in Simple.
+    const html = renderApp();
+    assert.match(html, /<div class="grid-section-label card-advanced">The Wider Pool<\/div>/);
+    assert.match(html, /<div class="grid-section-label">Your Stack<\/div>/);
 });
 
 test('MoreStats expands to show every stat when toggled, and persists the choice per card, independently of siblings', () => {

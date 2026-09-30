@@ -6,6 +6,34 @@ _worker_apply() { # <worker> <changes-json>  -> echoes the dashboard result JSON
     printf '%s' "$body" | rx "curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' --data-binary @- http://127.0.0.1:8000/api/control/worker-apply" --stdin 2>/dev/null
 }
 
+# The #513 leg: nudge max_temp_c by +1 through the dashboard, then revert it. Its own function so the
+# refusal of an unrecordable original (#2668) is driven through the real caller in
+# selftest-rig-key-refusal.sh.
+_max_temp_round_trip() { # <rig> <orig-max_temp_c-or-empty>
+    local rig="$1" orig_maxt="$2" new_maxt res status ckeys change_id
+    if [ -z "$orig_maxt" ]; then
+        it_skip_leg "reversible write, max_temp_c (#513)" "rig '$rig' watchdog isn't reporting a max_temp_c in the feed — can't read the original to restore it"
+    # On the books before the write; a refused mark means an abort could not restore it, so no write (#1379, #2668).
+    elif ! rig_key_mark dash "$rig" max_temp_c "$orig_maxt"; then
+        it_skip_leg "reversible write, max_temp_c (#513)" "the original max_temp_c on rig '$rig' cannot be recorded for the abort-safe unwind, so no write is sent"
+    else
+        new_maxt=$((orig_maxt + 1))
+        it_step "Worker Inspect edit: max_temp_c $orig_maxt -> $new_maxt via /api/control/worker-apply…"
+        res="$(_worker_apply "$rig" "{\"max_temp_c\":$new_maxt}")"
+        IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_maxt "$rig" "$new_maxt" "$res")"
+        assert_eq "Worker Inspect edit applied on the rig (#513)" "$status" "applied"
+        assert_contains "the rig's /status confirms max_temp_c changed (#513)" "$ckeys" "max_temp_c"
+        # By change_id, not "the newest row", and WAITED to terminal: the rig publishes its config
+        # before it decides the outcome, so reading the row straight after the settle raced it (#1471).
+        assert_eq "worker-apply recorded in the per-worker history (#185/#1471)" "$(_settle_history_row "$rig" "$change_id")" "applied"
+        it_step "reverting max_temp_c $new_maxt -> ${orig_maxt}…"
+        res="$(_worker_apply "$rig" "{\"max_temp_c\":$orig_maxt}")"
+        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
+        assert_eq "reversible edit reverted on the rig (#513)" "$status" "applied"
+        [ "$status" = "applied" ] && rig_key_clear dash "$rig" max_temp_c # (#1379)
+    fi
+}
+
 _restore_rig_control_baseline() {
     if ! push_config "$BASELINE_CONFIG"; then
         it_fail "write baseline after RigForge control" "could not restore config.json"
@@ -142,27 +170,9 @@ run_rigforge_control() {
     # enriched feed echoes (watchdog Temp/max), so read the current ceiling from the feed FIRST — if
     # the rig's watchdog isn't reporting it we can't safely restore it, so skip the write rather than
     # leave the rig mis-tuned.
-    local orig_maxt new_maxt res status ckeys change_id
+    local orig_maxt
     orig_maxt="$(printf '%s' "$st" | jq -r --arg n "$rig" 'first(.workers[]? | select(.name==$n) | .rigforge.stats[]? | select(.label=="Temp / max") | .value) // empty' 2>/dev/null | sed -n 's#.*/ *\([0-9][0-9]*\).*#\1#p')"
-    if [ -z "$orig_maxt" ]; then
-        it_skip_leg "reversible write, max_temp_c (#513)" "rig '$rig' watchdog isn't reporting a max_temp_c in the feed — can't read the original to restore it"
-    else
-        new_maxt=$((orig_maxt + 1))
-        it_step "Worker Inspect edit: max_temp_c $orig_maxt -> $new_maxt via /api/control/worker-apply…"
-        rig_key_mark dash "$rig" max_temp_c "$orig_maxt" # abort-safe unwind (#1379)
-        res="$(_worker_apply "$rig" "{\"max_temp_c\":$new_maxt}")"
-        IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_maxt "$rig" "$new_maxt" "$res")"
-        assert_eq "Worker Inspect edit applied on the rig (#513)" "$status" "applied"
-        assert_contains "the rig's /status confirms max_temp_c changed (#513)" "$ckeys" "max_temp_c"
-        # By change_id, not "the newest row", and WAITED to terminal: the rig publishes its config
-        # before it decides the outcome, so reading the row straight after the settle raced it (#1471).
-        assert_eq "worker-apply recorded in the per-worker history (#185/#1471)" "$(_settle_history_row "$rig" "$change_id")" "applied"
-        it_step "reverting max_temp_c $new_maxt -> ${orig_maxt}…"
-        res="$(_worker_apply "$rig" "{\"max_temp_c\":$orig_maxt}")"
-        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
-        assert_eq "reversible edit reverted on the rig (#513)" "$status" "applied"
-        [ "$status" = "applied" ] && rig_key_clear dash "$rig" max_temp_c # (#1379)
-    fi
+    _max_temp_round_trip "$rig" "$orig_maxt"
 
     # Lives in rigforge-writable-keys.sh: the legs read each original from the rig's OWN reported
     # config (.rig_config, #1235/rigforge#253) rather than from a record of what we last pushed, and
@@ -175,6 +185,32 @@ run_rigforge_control() {
     run_rigforge_rollback "$rig"
 
     [ -n "$RIGFORGE_BOOTSTRAP_VERSION" ] || run_rigforge_upgrade "$rig"
+
+    # #1990 release-gate row: everything above just drove a real burst of control requests
+    # (worker-apply, pools, reverse, rollback, upgrade) through the real host-side runner, each
+    # one writing (and control_prune_results pruning) results/ for real. Not a stress test of the
+    # caps themselves — tier 1 already drives control_prune_results directly against synthetic
+    # excess — this proves the routine runs on a real drain without breaking anything it touches.
+    # Defaults mirror lib/pithead/49-control-request-loop.sh and docs/dashboard.md#backup-view;
+    # change all three together.
+    local cdir results_count results_bytes_kb
+    cdir="$(env_on_box CONTROL_DIR)"
+    if [ -n "$cdir" ]; then
+        results_count="$(rx "find $(quote_arg "$cdir/results") -maxdepth 1 -type f 2>/dev/null | wc -l" | tr -d ' ')"
+        results_bytes_kb="$(rx "du -sk $(quote_arg "$cdir/results") 2>/dev/null | cut -f1" | tr -d ' ')"
+        assert_eq "control results/ file count stays within CONTROL_RESULT_MAX_COUNT after repeated control actions (#1990)" \
+            "$([ "${results_count:-0}" -le 200 ] && echo true || echo false)" "true"
+        assert_eq "control results/ total bytes stay within CONTROL_RESULTS_MAX_BYTES after repeated control actions (#1990)" \
+            "$([ "$(((${results_bytes_kb:-0}) * 1024))" -le 536870912 ] && echo true || echo false)" "true"
+    else
+        assert_eq "control result retention requires CONTROL_DIR (#1990)" \
+            "$([ -n "$cdir" ] && echo true || echo false)" "true"
+    fi
+    # Direct rc, not `$(wait_status_ok && echo true || echo false)`: wait_for's own it_step
+    # progress line ("→ waiting for…") goes to stdout, so that form's captured "got" was never
+    # true/false, it was the progress line — a real 60s job 577 failure on read, not on health.
+    wait_status_ok 240
+    assert_rc "stack still healthy after repeated control actions and retention pruning (#1990)" "$?" "0"
 
     control_rc=$((IT_FAIL > fails_before))
     [ "$control_rc" = 0 ] || capture_artifacts "rigforge-control" "$OUT_DIR"

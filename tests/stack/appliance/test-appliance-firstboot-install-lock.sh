@@ -66,7 +66,7 @@ fb_rc() { # <lock file> <fn> <args...> -> rc on stdout
         cd "$FB" || return
         export PITHEAD_LOCK_FILE="$lk" PITHEAD_LOCK_TIMEOUT=1
         PATH="$FB/bin:$PATH"
-        # shellcheck disable=SC1090
+        # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
         source "$FB/pithead"
         set +e
         systemctl() { echo "[systemctl] $*" >>"$FBLOG"; }
@@ -84,7 +84,7 @@ fb_window() { # <closing fn> <args...> -> begin-did-not-hold | released | still-
         cd "$FB" || return
         export PITHEAD_LOCK_FILE="$FBFREE" PITHEAD_LOCK_TIMEOUT=1
         PATH="$FB/bin:$PATH"
-        # shellcheck disable=SC1090
+        # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
         source "$FB/pithead"
         set +e
         systemctl() { echo "[systemctl] $*" >>"$FBLOG"; }
@@ -153,7 +153,7 @@ assert_eq "wizard_install_failed_page gives the window back" \
     "$(fb_window wizard_install_failed_page "$FBSPOOL" "Install")" "released"
 fb_reset
 assert_eq "wizard_install_finish gives the window back" \
-    "$(fb_window wizard_install_finish docker "Installation complete" "closing line")" "released"
+    "$(fb_window wizard_install_finish docker "$FBSPOOL" "Installation complete" "closing line")" "released"
 assert_contains "wizard_install_finish really reaches the switch-off it holds the window across" \
     "$(cat "$FBLOG")" "[systemctl] poweroff"
 

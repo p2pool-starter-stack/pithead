@@ -56,11 +56,11 @@ function EnergyPanel({ energy, est }) {
         <${StatCard} label="Efficiency" value=${formatUnit(energy.hs_per_watt, "H/s·W", 2)}
                      title="Fleet hashrate ÷ fleet watts." />
     </div>
-    <h4 class="est-heading">Energy${haveCost ? ` — Cost${haveNet ? ` & Net Profit, ${netLabel}` : ""} (${cur})` : ""}</h4>
+    <h3 class="est-heading">Energy${haveCost ? ` — Cost${haveNet ? ` & Net Profit, ${netLabel}` : ""} (${cur})` : ""}</h3>
     <div class="est-scroll">
     <table class="est-table">
         <thead><tr>
-            <th></th>
+            <th scope="col"><span class="sr-only">Row</span></th>
             <th scope="col">kWh</th>
             ${haveNet ? html`<th scope="col" title=${netTitle}>Revenue (est.)</th>` : null}
             ${haveCost ? html`<th scope="col">Power Cost</th>` : null}

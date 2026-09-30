@@ -47,14 +47,16 @@ seed_cr() {
     printf '{ "monero":{"mode":"local","wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"} }\n' "$WALLET" >"$CR/config.json"
     printf 'DEPLOYMENT_COMPLETED=true\nHOST_IP=box.lan\n' >"$CR/.env"
     : >"$CR/Caddyfile"
-    : >"$CR/data/monero/blockchain" # stand-in for the synced chain
-    : >"$CR/data/tor/hostname"      # stand-in for the onion key material
+    printf 'pithead\n' >"$CR/machine-role" # every provisioned machine gets one (#2347), not just rigs
+    : >"$CR/data/monero/blockchain"        # stand-in for the synced chain
+    : >"$CR/data/tor/hostname"             # stand-in for the onion key material
 }
 # Wrong confirmation word: aborts, changes nothing.
 seed_cr
 out=$(cd "$CR" && printf 'nope\n' | PITHEAD_APPLIANCE=0 PATH="$CR/bin:$PATH" ./pithead config-reset 2>&1) || true
 assert_contains "config-reset aborts on the wrong confirm word" "$out" "Aborted"
 assert_eq "aborted config-reset keeps config.json" "$([ -f "$CR/config.json" ] && echo yes)" "yes"
+assert_eq "aborted config-reset keeps machine-role" "$([ -f "$CR/machine-role" ] && echo yes)" "yes"
 # -y off the appliance: config + rendered files go, data dirs stay, no reboot — just the hint.
 seed_cr
 rebooted="$CR/.rebooted"
@@ -64,6 +66,11 @@ assert_rc "config-reset succeeds" "$?" "0"
 assert_eq "config-reset removes config.json" "$([ -f "$CR/config.json" ] || echo gone)" "gone"
 assert_eq "config-reset removes .env" "$([ -f "$CR/.env" ] || echo gone)" "gone"
 assert_eq "config-reset removes Caddyfile" "$([ -f "$CR/Caddyfile" ] || echo gone)" "gone"
+assert_eq "config-reset removes machine-role (#2347, or pithead-boot's OR'd condition stays armed)" "$([ -f "$CR/machine-role" ] || echo gone)" "gone"
+# The operator is told what a DESTRUCTIVE verb takes, and the enumeration drifting from the
+# behaviour is how #2347 stayed invisible: the line named config.json and its rendered files while
+# the marker that actually holds the wizard shut went unmentioned (and, before the fix, unremoved).
+assert_contains "config-reset's keep/remove line names the machine-role marker it removes" "$out" "machine-role"
 assert_eq "config-reset KEEPS the monero chain" "$([ -f "$CR/data/monero/blockchain" ] && echo kept)" "kept"
 assert_eq "config-reset KEEPS the Tor onion key" "$([ -f "$CR/data/tor/hostname" ] && echo kept)" "kept"
 assert_eq "config-reset off the appliance does not reboot" "$([ -f "$rebooted" ] || echo no)" "no"
@@ -205,6 +212,9 @@ assert_eq "the wipe is recorded on the ESP" "$([ -f "$DRW/esp/pithead-data-wiped
 assert_contains "the record says what was lost" "$(cat "$DRW/esp/pithead-data-wiped")" "everything on it was lost"
 assert_contains "the record is timestamped" "$(cat "$DRW/esp/pithead-data-wiped")" "$(date -u +%Y-)"
 assert_eq "one wipe, one line" "$(wc -l <"$DRW/esp/pithead-data-wiped" | tr -d ' ')" "1"
+# One-shot marker (#1208): data_wipe_note() consumes THIS, never the log, so a wipe reports once.
+assert_eq "record_wipe re-arms the one-shot marker beside the log" \
+    "$([ -f "$DRW/esp/pithead-data-wiped.pending" ] && echo present || echo absent)" "present"
 
 echo "== unit: pithead-data-reset boot_disk_part resolves by PARTLABEL on the boot disk (#926) =="
 # Stubbed findmnt + lsblk (the same PATH-stub shape pithead's own prefill_from_previous_install

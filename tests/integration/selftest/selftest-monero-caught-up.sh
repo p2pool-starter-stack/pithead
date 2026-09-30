@@ -91,6 +91,7 @@ cat >"$FAKEBIN/curl" <<'CURL_EOF'
 #!/bin/sh
 # Stands in for the dial only. FAKE_CURL_BODY empty + a nonzero rc is what a refused connection, a
 # timeout, a 401 under -f and any non-2xx all look like to the caller: no body on stdout.
+[ -z "${FAKE_CURL_EXPECT_URL:-}" ] || case " $* " in *" $FAKE_CURL_EXPECT_URL "*) ;; *) exit 3 ;; esac
 [ -n "${FAKE_CURL_BODY:-}" ] && printf '%s' "$FAKE_CURL_BODY"
 exit "${FAKE_CURL_RC:-0}"
 CURL_EOF
@@ -151,6 +152,10 @@ assert_rc "a non-JSON body is could-not-ask, not behind" "$(_mcu_rc 'not json at
 printf 'MONERO_NODE_USERNAME=rpcuser\nMONERO_NODE_PASSWORD=rpcpass\n' >>"$BOX/.env"
 assert_rc "the authenticated dial classifies could-not-ask too" "$(_mcu_rc '' 7)" "2"
 assert_rc "the authenticated dial still answers caught-up" "$(_mcu_rc '{"status":"OK","synchronized":true,"target_height":800000}' 0)" "0"
+
+printf '{"monero":{"mode":"remote","remote":{"host":"fd00::10","rpc_port":28081}}}\n' >"$BOX/config.json"
+assert_rc "legacy remote IPv6 fallback brackets the host" \
+    "$(FAKE_CURL_EXPECT_URL='http://[fd00::10]:28081/get_info' _mcu_rc '{"status":"OK","synchronized":true}' 0)" "0"
 
 # --- Part B: the SHIPPED classification lines ---------------------------------------------------
 # Lifted out of run.sh by grep rather than restated here. A copy of the mapping written into this

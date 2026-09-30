@@ -125,6 +125,8 @@ chk "avahi ships a rewritable allow-interfaces line" 'grep -qE "^#?allow-interfa
 # Boot recovery is compose-owned (#792): pithead-boot renders + ups + health-gates the slot commit.
 chk "pithead-boot unit enabled" 'test -L "$ROOT/etc/systemd/system/multi-user.target.wants/pithead-boot.service"'
 chk "pithead-boot script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-boot"'
+chk "serial getty port check shipped executable" 'test -x "$ROOT/usr/local/sbin/pithead-serial-port-present"'
+chk "serial getty condition shipped as a drop-in" 'test -s "$ROOT/etc/systemd/system/serial-getty@ttyS0.service.d/override.conf"'
 # Physical-presence config channel (#786 sub-issue D): pithead-boot's one stage before render,
 # no unit of its own.
 chk "pithead-media-config script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-media-config"'
@@ -154,11 +156,14 @@ chk "data-reset ordered before /data mounts (a mounted partition cannot be refor
     'grep -q "^Before=data.mount local-fs.target" "$ROOT/etc/systemd/system/pithead-data-reset.service"'
 chk "data-reset's repair tools are baked (e2fsck + mkfs.ext4, #1069 W11)" \
     'data_reset_repair_tools_present "$ROOT"'
+chk "image-upgrade gate's guest-local reflink filesystem tool is baked" \
+    'test -x "$ROOT/usr/sbin/mkfs.xfs"'
 # Hugepages: the sysctl the Dockerfile calls load-bearing for the memory caps.
 chk "hugepage reservation baked (RandomX dataset must land in hugetlbfs)" 'grep -q "vm.nr_hugepages=3072" "$ROOT/etc/sysctl.d/99-pithead-hugepages.conf"'
 # The low-RAM sizing that corrects that sysctl at boot: without it a small machine gets the
 # silent 6 GiB carve-out back.
 chk "hugepages sizing unit enabled (low-RAM boots degrade loudly, not silently)" 'test -L "$ROOT/etc/systemd/system/multi-user.target.wants/pithead-hugepages.service"'
+chk "address watch timer enabled and its script executable (#2463)" 'test -L "$ROOT/etc/systemd/system/timers.target.wants/pithead-address-watch.timer" && test -f "$ROOT/etc/systemd/system/pithead-address-watch.service" && test -x "$ROOT/usr/local/sbin/pithead-address-watch"'
 chk "hugepages sizing script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-hugepages"'
 # The pool's second writer (#1724): the miner unit must not be able to grow nr_hugepages through either sysfs subtree xmrig writes. The live unit's readback is the battery's; this pins the ship.
 chk "miner unit drop-in fences BOTH hugepage sysfs subtrees (#1724)" 'grep -qxF "ReadOnlyPaths=/sys/devices/system/node /sys/kernel/mm/hugepages" "$ROOT/etc/systemd/system/xmrig.service.d/pithead-hugepages.conf"'
@@ -280,8 +285,8 @@ if [ -f ./pithead ] && [ -d dashboard/mining_dashboard ]; then
     # The compose file is staged from the STACK_VERSION tag when that tag exists (#1215), so the
     # tree is the wrong reference then. The stamp says which; compose_reference refuses the rest.
     COMPOSE_REF=$(mktemp)
-    chk "shipped compose file matches its stamped source ($(cat "$ROOT/opt/pithead/COMPOSE_SOURCE" 2>/dev/null || echo missing))" \
-        'compose_reference "$ROOT" "$COMPOSE_REF" && cmp -s "$ROOT/opt/pithead/docker-compose.yml" "$COMPOSE_REF"'
+    chk "shipped compose file matches its stamped source with immutable first-party pins ($(cat "$ROOT/opt/pithead/COMPOSE_SOURCE" 2>/dev/null || echo missing))" \
+        'compose_reference "$ROOT" "$COMPOSE_REF" && compose_matches_source "$ROOT" "$COMPOSE_REF"'
     rm -f "$COMPOSE_REF"
     chk "shipped config reference matches" 'cmp -s "$ROOT/opt/pithead/config.reference.json" ./config.reference.json'
 

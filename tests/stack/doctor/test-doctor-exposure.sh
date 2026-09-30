@@ -13,10 +13,8 @@
 #      onion shape and the Monero shape -- it has NO IP rule, so nothing downstream removes the
 #      value and it has to be absent from the message. (tests/integration/lib.sh's redact() does
 #      have one, but that twin guards CI artifact uploads from a self-hosted runner, not this path.)
-#   2. The APPLIANCE arm must not prescribe a remedy that operator cannot reach. Neither
-#      STRATUM_BIND nor STRATUM_PASSWORD is dashboard-committable -- 42-control-policy-and-host-
-#      checks.sh names the stratum password as staying host-only -- so the appliance wording states
-#      the diagnosis, gives the one route that exists (the router), and stops.
+#   2. The APPLIANCE arm names the dashboard Configuration route #1959 makes available, plus the
+#      router firewall the operator already owns.
 # The setup console is the deliberate exception and is asserted to KEEP the address: it prints to
 # the operator's own terminal on their own host, where the value is what makes the finding
 # actionable, and it goes nowhere.
@@ -52,16 +50,25 @@ assert_contains "the host doctor verdict still reports the exposure (#1772)" "$_
 assert_not_contains "the host doctor verdict withholds the address (#1772)" "$_xp_host" "8.8.8.8"
 assert_contains "the host doctor verdict keeps its host remedies (#1772)" "$_xp_host" "stratum_bind"
 
-# The appliance arm: same finding, no value, and no remedy behind a console it does not have.
+# The appliance arm: same finding, no value, and only remedies the operator can reach.
 _xp_appl=$(_xp 1 doctor)
 assert_contains "the appliance verdict still reports the exposure (#1772)" "$_xp_appl" "public IP"
 assert_not_contains "the appliance verdict withholds the address (#1772)" "$_xp_appl" "8.8.8.8"
-assert_not_contains "the appliance verdict does not prescribe stratum_bind (#1772)" "$_xp_appl" "stratum_bind"
-assert_not_contains "the appliance verdict does not prescribe stratum_password (#1772)" "$_xp_appl" "stratum_password"
 assert_not_contains "the appliance verdict does not prescribe the LAN firewall (#1772)" "$_xp_appl" "firewall it to your LAN"
-assert_contains "the appliance verdict names the one route that exists (#1772)" "$_xp_appl" "router"
+assert_contains "the appliance verdict names the router remedy (#1772)" "$_xp_appl" "router"
+assert_contains "the appliance verdict names the Configuration editor (#1959)" "$_xp_appl" "Open Configuration"
+assert_contains "the appliance verdict names confirmation (#1959)" "$_xp_appl" "confirmation step"
 
 # NO SEPARATE "the two arms differ" ROW. It would be STRICTLY ENTAILED by the pair above -- the host
 # arm CONTAINS stratum_bind and the appliance arm does not -- so if the surface switch never flipped,
 # the appliance rows red on their own and the differ row could never be the only red. That is the
 # same redundant-control defect #1776's review found in this suite; not repeated here.
+
+echo "== unit: a narrowed bind to the host's OWN public address still warns (#1803) =="
+# The bind x public-IP CASE lives in test-doctor.sh; this domain's angle is the one thing that
+# matrix can't see -- a bind narrowed to 8.8.8.8 itself is exactly as internet-reachable as
+# 0.0.0.0, so it must reach the same withheld-address doctor verdict as the exposed row above,
+# never the "not publicly exposed" OK a LAN-narrowed bind gets.
+_xp_narrowed_public=$(STRATUM_BIND=8.8.8.8 PITHEAD_APPLIANCE=0 PATH="$XPBIN:$PATH" run_sourced "$SANDBOX" check_stratum_exposure doctor 2>&1)
+assert_contains "doctor still warns on a bind narrowed to its own public address (#1803)" "$_xp_narrowed_public" "public IP"
+assert_not_contains "doctor withholds that public bind address too (#1803)" "$_xp_narrowed_public" "8.8.8.8"

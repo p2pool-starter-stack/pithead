@@ -82,10 +82,11 @@ verdict that means something. The dashboard and frontend unit suites still run f
      keep the plain path),
      `lint-topology` (no real-looking IPv6/IPv4 literal, `/home/<name>` path, `.lan`/`.internal`/
      `.local` hostname, or `user@host` string — a public repo, so every one of those has to stay a
-     generic class, not a trace of whoever's actual box; `tests/` and `docs/` are an accepted
-     exemption boundary for illustrative/fixture content, and each class also carries a small,
-     explicit value-level allowlist — see the script's own header — never a per-file exemption
-     comment), `lint-file-budget` (the file-budget ratchet, issue #1105 Phase 0 — see
+     generic class, not a trace of whoever's actual box; an instantiated service drop-in under
+     `/systemd/system/` is a unit name, not an address; `tests/` and `docs/` are an
+     accepted exemption boundary for illustrative/fixture content, and each class also carries a
+     small, explicit allowlist — see the script's own header — never a per-file exemption comment),
+     `lint-file-budget` (the file-budget ratchet, issue #1105 Phase 0 — see
      [File budget gate](#file-budget-gate)),
      `lint-pithead-build` (the generated `pithead` must build from `lib/pithead/*.sh` in a clean
      checkout — issue #1105 Phase 2), `lint-trivy-parity` (the CVE gate installs trivy once per
@@ -116,7 +117,9 @@ verdict that means something. The dashboard and frontend unit suites still run f
    - **test-stack** — the `pithead` shell test suite.
    - **test-compose** — `docker-compose.yml` interpolation validation.
    - **test-integration-selftest** — the integration harness's own pure logic.
-   - **test-tools** — bounded build-log sanitization, without running a build.
+   - **test-tools** — bounded build-log sanitization, the shell suite's 30-minute CI timeout guard,
+     and a check that all four CI uv installs pin the same action, uv version, and archive checksum,
+     without running a build.
    - **test-fakes** — the tier-2 contract test (real dashboard clients vs controllable fakes).
 
    Bigger, infra-dependent suites run separately: `make test-mini-stack` (tier-3 docker) and

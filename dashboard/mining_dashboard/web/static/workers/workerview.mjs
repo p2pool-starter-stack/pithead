@@ -15,7 +15,7 @@
 import { WorkerChartCard } from "../app/chart.mjs";
 import { loadPref, savePref } from "../app/logic.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
-import { ConfigProvenance, HistoryRow, STATUS_META } from "../config/confighistory.mjs";
+import { ConfigProvenance, HistoryRow } from "../config/confighistory.mjs";
 import { SECRET_HINT } from "../config/configlogic.mjs";
 import { AdoptRigForm } from "./workeradopt.mjs";
 import {
@@ -27,44 +27,7 @@ import {
   jsonSyntaxError,
   parseJsonChanges,
 } from "./workerlogic.mjs";
-
-const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
-const POLL_MS = 2000;
-const POLL_MAX = 40; // ~80s — the host dials the rig then polls its /status
-// ~5 min — covers spool latency + the host runner's own 90s rig-poll cap (#597). A rebuild that
-// outlives the cap lands as "accepted"; the badge clears on its own once the rig reports the
-// new version, so polling longer here buys nothing.
-const UPGRADE_POLL_MAX = 150;
-
-// Poll the shared control-result endpoint until a terminal outcome lands, skipping the interim
-// "running". The apply can briefly out-run the dashboard, so tolerate a transient fetch failure.
-async function pollWorkerResult(id, max = POLL_MAX) {
-  for (let i = 0; i < max; i++) {
-    await new Promise((r) => setTimeout(r, POLL_MS));
-    let res;
-    try {
-      res = await fetch(`/api/control/result?id=${encodeURIComponent(id)}`);
-    } catch {
-      continue;
-    }
-    if (res.status === 202) continue;
-    if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
-    const out = await res.json();
-    if (out.status && out.status !== "running") return out;
-  }
-  return { status: "pending", note: "still applying — reopen to see the outcome" };
-}
-
-function StatusLine({ result }) {
-  if (!result) return null;
-  const meta = STATUS_META[result.status] || { cls: "text-muted", label: result.status };
-  const detail = result.reason || result.error || result.note || "";
-  return html`
-    <p class=${"text-small mt-1 " + meta.cls}>
-        ${meta.label}${result.change_id ? html` · <span class="font-mono text-xs">${result.change_id}</span>` : null}
-        ${detail ? html`<span class="text-muted"> — ${detail}</span>` : null}
-    </p>`;
-}
+import { CONTROL_HEADERS, pollWorkerResult, RigUpgrade, StatusLine } from "./workerupgrade.mjs";
 
 // One row of the hashrate-by-config table (#492): a config version + the measured hashrate
 // (worker_history) aggregated over that version's active window, so an operator can compare
@@ -126,11 +89,6 @@ export class WorkerInspect extends Component {
       jsonError: null,
       busy: false,
       result: null,
-      // One-click rig upgrade (#597): a two-step arm → confirm, its own in-flight flag (a build
-      // can run minutes) and its own result line, independent of the config editor's.
-      upgArmed: false,
-      upgBusy: false,
-      upgResult: null,
       // Per-worker hashrate chart (#1013): its own range preference (persisted, like the editor
       // mode above) and its own loading flag — a range switch refetches ONLY the chart data
       // (loadChart), never the full load(), so it can't wipe an in-progress config edit.
@@ -138,11 +96,21 @@ export class WorkerInspect extends Component {
       chartLoading: false,
     };
     this.dialogRef = createRef();
+    this.titleRef = createRef();
   }
 
   componentDidMount() {
     this.load();
     this.dialogRef.current?.showModal();
+    this.titleRef.current?.focus(); // "Worker rig-01" before "Close" (#1877)
+  }
+
+  // Escape/backdrop must not silently drop an edit not yet applied (#1877).
+  isDirty() {
+    const { detail, tableEdits, editText } = this.state;
+    if (!detail) return false;
+    const loaded = JSON.stringify(detailSnapshot(detail), null, 2);
+    return Object.keys(tableEdits).length > 0 || editText !== loaded;
   }
 
   setMode(mode) {
@@ -247,58 +215,27 @@ export class WorkerInspect extends Component {
     }
   }
 
-  // One-click rig upgrade (#597). POSTs {worker, version} only — the version is the badge's
-  // latest, a proposal the HOST re-derives and the rig bounds; this client never picks a target.
-  // 202 means spooled: poll with the long budget (the rig may rebuild its miner, ~10 min).
-  async upgrade() {
-    const version = this.state.detail.rigforge_update.latest;
-    this.setState({ upgArmed: false, upgBusy: true, upgResult: { status: "running" } });
-    try {
-      const res = await fetch("/api/control/worker-upgrade", {
-        method: "POST",
-        headers: CONTROL_HEADERS,
-        body: JSON.stringify({ worker: this.props.name, version }),
-      });
-      let out = await res.json();
-      if (res.status === 202 && out.id) out = await pollWorkerResult(out.id, UPGRADE_POLL_MAX);
-      this.setState({ upgBusy: false, upgResult: out });
-      this.load(); // an applied upgrade clears the badge once the rig reports the new version
-    } catch (e) {
-      this.setState({ upgBusy: false, upgResult: { status: "error", error: String(e) } });
-    }
-  }
-
   render() {
     const { phase, detail, error } = this.state;
     const { name, onClose } = this.props;
     const close = () => this.dialogRef.current?.close();
     return html`
         <dialog class="worker-inspect card" ref=${this.dialogRef} aria-label=${"Worker " + name}
-                onClose=${onClose} onClick=${(e) => e.target === this.dialogRef.current && close()}>
+                onClose=${onClose} onCancel=${(e) => this.isDirty() && e.preventDefault()}
+                onClick=${(e) => e.target === this.dialogRef.current && !this.isDirty() && close()}>
             <div class="flex items-center justify-between">
-                <h3>Worker · ${name}</h3>
+                <h2 ref=${this.titleRef} tabindex="-1">Worker · ${name}</h2>
                 <button class="btn-toggle" onClick=${close} aria-label="Close">✕</button>
             </div>
-            ${phase === "loading" ? html`<p class="text-muted">Loading…</p>` : null}
+            ${phase === "loading" ? html`<p class="text-muted" role="status" aria-live="polite">Loading…</p>` : null}
             ${phase === "error" ? html`<p class="status-bad">Couldn't load this worker: ${error}</p>` : null}
             ${phase === "ready" ? this.renderBody(detail) : null}
         </dialog>`;
   }
 
   renderBody(detail) {
-    const {
-      mode,
-      tableEdits,
-      editText,
-      jsonError,
-      busy,
-      result,
-      upgArmed,
-      upgBusy,
-      upgResult,
-      chartRange,
-      chartLoading,
-    } = this.state;
+    const { mode, tableEdits, editText, jsonError, busy, result, chartRange, chartLoading } =
+      this.state;
     const canEdit = detail.control_enabled && detail.editable;
     return html`
         <div class="worker-inspect-body">
@@ -307,39 +244,11 @@ export class WorkerInspect extends Component {
                 <${InfoCard} label="Hashrate (1m)" value=${detail.hashrate || "—"} />
                 <${InfoCard} label="RigForge" value=${detail.rigforge ? detail.rigforge.version || "yes" : "—"} />
             </div>
-            ${
-              // This rig runs an older RigForge (#596) — the badge links to the release notes;
-              // with the control channel on and an operator-set host, the one-click upgrade
-              // button (#597) appears beside it: arm → confirm → POST → poll (a rig rebuild can
-              // take ~10 min; the rig rolls back on a build that doesn't come back live).
-              detail.rigforge_update &&
-              detail.rigforge_update.available &&
-              detail.rigforge_update.url
-                ? html`<p class="mt-1"><a class="badge badge-accent" href=${detail.rigforge_update.url}
-                        target="_blank" rel="noopener noreferrer"
-                        title=${"A newer RigForge release is available: " + detail.rigforge_update.latest}
-                     >New RigForge release ${detail.rigforge_update.latest} available ↗</a>${
-                       canEdit && !upgBusy
-                         ? upgArmed
-                           ? html` <button class="btn-toggle" disabled=${busy}
-                                 title=${"Ask the rig to upgrade itself to " + detail.rigforge_update.latest + " now"}
-                                 onClick=${() => this.upgrade()}>Confirm upgrade</button>
-                               <button class="btn-toggle" onClick=${() => this.setState({ upgArmed: false })}>Cancel</button>`
-                           : html` <button class="btn-toggle" disabled=${busy}
-                                 title="Upgrade this rig's RigForge to the latest release (its miner may rebuild, ~10 min)"
-                                 onClick=${() => this.setState({ upgArmed: true, upgResult: null })}>Upgrade rig…</button>`
-                         : null
-}${
-                       upgBusy
-                         ? html` <span class="text-muted text-small">upgrading — a rebuild can take minutes…</span>`
-                         : null
-}</p>`
-                : null
-            }
-            <${StatusLine} result=${upgResult} />
+            <${RigUpgrade} name=${this.props.name} update=${detail.rigforge_update}
+                canEdit=${canEdit} busy=${busy} onDone=${() => this.load()} />
             ${detail.rigforge ? html`<${StatsTable} stats=${detail.rigforge.stats} />` : null}
 
-            <h4 class="mt-2">Hashrate${chartLoading ? html` <span class="text-muted text-small">refreshing…</span>` : null}</h4>
+            <h3 class="card-subhead mt-2">Hashrate${chartLoading ? html` <span class="text-muted text-small">refreshing…</span>` : null}</h3>
             <${WorkerChartCard}
                 chart=${{
                   hashrate: detail.hashrate_history?.hashrate || [],
@@ -348,7 +257,7 @@ export class WorkerInspect extends Component {
                 range=${chartRange}
                 onRange=${(r) => this.setChartRange(r)} />
 
-            <h4 class="mt-2">Edit config</h4>
+            <h3 class="card-subhead mt-2">Edit config</h3>
             ${
               canEdit
                 ? html`
@@ -380,13 +289,14 @@ export class WorkerInspect extends Component {
             <div class="mt-1">
                 <button class="btn-toggle" disabled=${busy} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
             </div>
+            ${!busy && this.isDirty() ? html`<p class="text-muted text-xs">Unsaved — Apply before closing, or the change is lost.</p>` : null}
             <${StatusLine} result=${result} />`
                 : detail.control_enabled
                   ? html`<${AdoptRigForm} name=${this.props.name} ip=${detail.ip} onAdopted=${() => this.load()} />`
                   : html`<p class="text-muted text-small">Config editing is off. Enable dashboard.control (which needs a dashboard password) to edit a rig's config.</p>`
             }
 
-            <h4 class="mt-2">History</h4>
+            <h3 class="card-subhead mt-2">History</h3>
             <${ConfigProvenance} origin=${detail.config_origin} meta=${detail.rig_config_meta} drift=${detail.config_drift} revisionDrift=${detail.config_revision_drift} />
             ${
               (detail.history || []).length
@@ -400,7 +310,7 @@ export class WorkerInspect extends Component {
                 : html`<p class="text-muted text-small">No changes applied from the dashboard yet.</p>`
             }
 
-            <h4 class="mt-2">Hashrate by config version</h4>
+            <h3 class="card-subhead mt-2">Hashrate by config version</h3>
             ${
               (detail.hashrate_by_config || []).length
                 ? html`
@@ -417,7 +327,7 @@ export class WorkerInspect extends Component {
 }
 
 const InfoCard = ({ label, value }) => html`
-    <div class="stat-card"><h5>${label}</h5><p>${value}</p></div>`;
+    <div class="stat-card"><p class="stat-label">${label}</p><p>${value}</p></div>`;
 
 // The compact Workers-Alive list renders the enriched feed as a horizontal badge row; here in the
 // single-rig detail view the same server-built metrics read better as a label → value table (#507).

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { RigUpgrade } from "../../../mining_dashboard/web/static/workers/workerupgrade.mjs";
 import { StatsTable } from "../../../mining_dashboard/web/static/workers/workerview.mjs";
 import { contrastRatio, DARK_BLOCK, DASHBOARD_CSS, LIGHT_BLOCK, themeToken } from "../helpers/contrast.mjs";
 import { renderToString } from "../helpers/render.mjs";
@@ -26,8 +27,25 @@ test("upgrade button gates on rigforge_update + an editable, control-enabled wor
   assert.doesNotMatch(current, /Upgrade rig…|New RigForge release/);
 });
 
+// #1877 split the upgrade flow out of workerview.mjs into its own module: RigUpgrade owns
+// upgArmed/upgBusy/upgResult and the POST, and WorkerInspect only hands it the rig's name, the
+// server-derived update and the editor's busy flag. The tests either side of these still drive the
+// whole panel, so the seam stays covered; these three drive the owner of that state directly.
+function upgradeInstance(props = {}) {
+  const inst = new RigUpgrade({
+    name: "rig1",
+    update: UPG_DETAIL.rigforge_update,
+    canEdit: true,
+    busy: false,
+    onDone: () => {},
+    ...props,
+  });
+  stubSetState(inst);
+  return inst;
+}
+
 test("arming swaps the button for confirm/cancel; cancel disarms (#597)", () => {
-  const inst = readyInstance(UPG_DETAIL);
+  const inst = upgradeInstance();
   inst.state.upgArmed = true;
   const armed = renderToString(inst.render());
   assert.match(armed, /Confirm upgrade/);
@@ -36,30 +54,32 @@ test("arming swaps the button for confirm/cancel; cancel disarms (#597)", () => 
 });
 
 test("upgrade() POSTs {worker, version} and renders the terminal result (#597)", async () => {
-  const inst = readyInstance(UPG_DETAIL);
+  let refreshed = false;
+  const inst = upgradeInstance({
+    onDone: () => {
+      refreshed = true;
+    },
+  });
   let posted = null;
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts) => {
-    if (posted === null && url === "/api/control/worker-upgrade") {
-      posted = { url, body: JSON.parse(opts.body) };
-      return { status: 200, json: async () => ({ status: "noop", note: "already on v1.11.2" }) };
-    }
-    return { ok: true, status: 200, json: async () => UPG_DETAIL }; // the load() refresh
+    posted = { url, body: JSON.parse(opts.body) };
+    return { status: 200, json: async () => ({ status: "noop", note: "already on v1.11.2" }) };
   };
   try {
     await inst.upgrade();
-    await new Promise((r) => setImmediate(r)); // flush the fire-and-forget load() refresh
   } finally {
     globalThis.fetch = realFetch;
   }
   assert.equal(posted.url, "/api/control/worker-upgrade");
   assert.deepEqual(posted.body, { worker: "rig1", version: "v1.11.2" });
   assert.equal(inst.state.upgBusy, false);
+  assert.equal(refreshed, true); // the panel still reloads once the outcome is terminal
   assert.match(renderToString(inst.render()), /Already up to date/);
 });
 
 test("terminal statuses render their calm/red variants (#597)", () => {
-  const inst = readyInstance(UPG_DETAIL);
+  const inst = upgradeInstance();
   inst.state.upgResult = { status: "throttled", reason: "throttled: retry after the window" };
   assert.match(renderToString(inst.render()), /Throttled by the rig — retry later/);
   inst.state.upgResult = { status: "rolled_back", reason: "miner did not return live" };

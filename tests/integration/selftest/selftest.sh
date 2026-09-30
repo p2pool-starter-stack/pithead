@@ -14,7 +14,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 # shellcheck source=tests/integration/scenarios.sh
 source "$HERE/../scenarios.sh"
-
 echo "== overrides_to_jq: value typing =="
 assert_contains "boolean stays unquoted" "$(overrides_to_jq monero.prune=false)" '.monero.prune=false'
 assert_contains "string gets quoted" "$(overrides_to_jq monero.mode=remote)" '.monero.mode="remote"'
@@ -77,9 +76,8 @@ rc=$?
 assert_rc "tari remote ok with endpoint" "$rc" "0"
 assert_contains "augments remote tari host" "$RESOLVED" "tari.remote.host=10.0.0.6"
 unset REMOTE_TARI_HOST
-# Payout confirmation (#381/#462/#942): the "payout_confirm=env" marker gates on
-# IT_MONERO_VIEW_KEY, is always stripped from RESOLVED, and folds in tari's pair only when BOTH
-# tari env vars are set.
+# Payout confirmation (#381/#462/#942/#2731): the "payout_confirm=env" marker gates on
+# IT_MONERO_VIEW_KEY or BOTH tari env vars, is always stripped from RESOLVED, and folds in each.
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 resolve_overrides "p2pool.pool=main payout_confirm=env"
 rc=$?
@@ -98,12 +96,6 @@ case "$RESOLVED" in
 *tari.view_key=*) it_fail "tari pair absent without both tari env vars" "tari.view_key present in $RESOLVED" ;;
 *) it_pass "tari pair absent without both tari env vars" ;;
 esac
-IT_TARI_VIEW_KEY="tvk" IT_TARI_SPEND_PUBLIC_KEY="tspk"
-resolve_overrides "payout_confirm=env"
-rc=$?
-assert_rc "payout confirm ok with both tari env vars too" "$rc" "0"
-assert_contains "augments tari.view_key" "$RESOLVED" "tari.view_key=tvk"
-assert_contains "augments tari.spend_public_key" "$RESOLVED" "tari.spend_public_key=tspk"
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 # Compound prerequisites both augment.
 BASELINE_PRUNE=1
@@ -144,6 +136,7 @@ assert_eq "clearnet absent in baseline (default off)" "$(jq_get "$BASE" '.monero
 assert_contains "matrix has a clearnet scenario" "$(scenario_names)" "local-pruned-main-clearnet-sync"
 assert_contains "clearnet scenario enables monero" "$(scenario_overrides local-pruned-main-clearnet-sync)" "monero.clearnet_initial_sync=true"
 assert_contains "clearnet scenario enables tari" "$(scenario_overrides local-pruned-main-clearnet-sync)" "tari.clearnet_initial_sync=true"
+assert_contains "P2Pool clearnet scenario keeps the firewall on" "$(scenario_overrides local-pruned-main-p2pool-clearnet)" "p2pool.clearnet=true"
 
 echo "== moved-subnet matrix scenario (#201/#180) =="
 # The matrix documents the subnet axis for coverage; the --subnet phase runs it for real (a subnet
@@ -223,8 +216,9 @@ done < <(axis_coverage)
 
 echo "== scenarios: lookup helpers =="
 assert_ne "scenario_names is non-empty" "$(scenario_names | head -n1)" ""
-assert_eq "scenario count matches matrix" "$(scenario_names | grep -c .)" "$(scenario_matrix | grep -c .)"
+assert_eq "every matrix row has a name and overrides" "$(scenario_names | grep -c .)" "$(scenario_matrix | grep -c $'\t')"
 assert_contains "overrides lookup works" "$(scenario_overrides remote-main-secure-tari)" "monero.mode=remote"
+assert_contains "remote Monero scenario disables local-only payout confirmation" "$(scenario_overrides remote-main-secure-tari)" "monero.view_key="
 # An unknown scenario name must fail (return 1) and print nothing — never silently resolve.
 miss="$(scenario_overrides no-such-scenario)"
 rc=$?

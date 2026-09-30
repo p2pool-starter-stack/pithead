@@ -40,11 +40,13 @@ export class WizardApp extends Component {
     // of role/install-target — an uploaded backup replaces the config the operator would
     // otherwise type in.
     restoreMode: false,
+    restoreEnabled: false,
     restoreFile: null,
     restorePassphrase: "",
     restorePassphraseVisible: false,
     status: "",
     handoff: null,
+    savedDashboard: "",
     moneroWalletTouched: false,
   };
 
@@ -71,7 +73,14 @@ export class WizardApp extends Component {
       handoff: s.handoff || null,
       savedRole: s.saved_role || null,
       nodeProbe: s.node_probe || null,
+      restoreEnabled: s.restore_enabled === true,
     };
+    if (!next.restoreEnabled) {
+      next.restoreMode = false;
+      next.restoreFile = null;
+      next.restorePassphrase = "";
+      next.restorePassphraseVisible = false;
+    }
     // The host's discovery pre-fills the rig fields, but only while they are untouched — the
     // form polls, and a half-typed pool address must survive it (same rule as cfg below).
     if (!this.state.rigPool && !this.state.rigWorker) {
@@ -262,6 +271,10 @@ export class WizardApp extends Component {
   // without a round trip.
   submitRestore = async (e) => {
     e.preventDefault();
+    if (!this.state.restoreEnabled) {
+      this.setState({ error: "Restore requires HTTPS. Reboot after setup TLS is available." });
+      return;
+    }
     if (!this.state.restoreFile) {
       this.setState({ error: "Choose a backup archive to upload." });
       return;
@@ -310,8 +323,13 @@ export class WizardApp extends Component {
   };
 
   ack = async () => {
+    // The server drops the handoff once acknowledged, so the "provisioning" screen that follows
+    // has no handoff of its own to read the applied address from (#2350) — keep the one field it
+    // still needs before loadState() clears it.
+    const savedDashboard = this.state.handoff && this.state.handoff.dashboard;
     await fetch("/handoff-ack", { method: "POST" });
-    await this.loadState(); // the server drops out of the handoff stage; the view follows
+    await this.loadState();
+    if (savedDashboard) this.setState({ savedDashboard });
   };
 
   // The rig role's whole form: where the pool is, what to call the machine, an optional
@@ -340,6 +358,7 @@ export class WizardApp extends Component {
     else if (stage === "installing") view = html`<${Installing} status=${status} />`;
     else if (stage === "done")
       view = html`<${Done} status=${status} handoff=${this.state.handoff}
+        savedDashboard=${this.state.savedDashboard}
         installer=${this.state.installer} stick=${this.state.chosen === "usb"}
         rig=${this.state.role === "rig"} onAck=${this.ack} />`;
     else view = savedRoleOrSetup(this);

@@ -105,8 +105,8 @@ assert_eq "no marker at all -> pithead (every pre-contract machine)" "$(run_sour
 run_sourced "$MRSB" record_machine_role rig >/dev/null 2>&1
 assert_eq "the marker lands where the boot path reads it" "$(cat "$MRSB/machine-role")" "rig"
 assert_eq "the boot path reads back what was written" "$(run_sourced "$MRSB" machine_role)" "rig"
-printf 'nonsense\n' >"$MRSB/machine-role"
-assert_eq "an unreadable marker degrades to pithead, never to rig" "$(run_sourced "$MRSB" machine_role)" "pithead"
+printf 'nonsense\n' >"$MRSB/machine-role" && assert_eq "an unreadable marker degrades to pithead, never to rig" "$(run_sourced "$MRSB" machine_role)" "pithead"
+printf 'rig\n' >"$MRSB/other-role" && assert_eq "PITHEAD_MACHINE_ROLE_FILE (#2057) wins over \$PWD" "$(PITHEAD_MACHINE_ROLE_FILE="$MRSB/other-role" run_sourced "$MRSB" machine_role)" "rig"
 rm -rf "$MRSB"
 unset MRSB
 
@@ -270,7 +270,7 @@ EOF
 chmod +x "$RPSB/rigforge/rigforge.sh"
 export PITHEAD_PRESEED_DIR="$RPESP" PITHEAD_RIGFORGE_DIR="$RPSB/rigforge" RF_LOG="$RPSB/calls"
 : >"$RF_LOG"
-printf '{"pool":"10.0.0.5:3333","worker":"shed-3"}' >"$RPESP/pithead-rig.json"
+printf '{"pool":"10.0.0.5:3333","worker":"shed-3","access_token":"dcfda835679ae98638633f189d9e5979"}' >"$RPESP/pithead-rig.json"
 out=$(PITHEAD_INSTALL_BIN=/nonexistent run_sourced "$RPSB" firstboot_wizard 2>&1)
 assert_rc "staged rig settings -> consumed, rc 0" "$?" "0"
 assert_eq "the answers land beside the program" "$(jq -r '.worker' "$RPSB/rig.json")" "shed-3"

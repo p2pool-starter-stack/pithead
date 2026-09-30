@@ -53,15 +53,46 @@ harness_finished() {
 # then the current-state battery. Both are read-only and cheap, and BOTH are binding — a run that
 # warned and carried on graded the branch against a bench that was already broken, so a failure
 # here refuses the destructive phases rather than reporting their fallout as a branch regression.
-harness_pregate() { # <no_mining flags>
-    local phase
+harness_pregate() { # <workers> <no_mining flags>
+    local phase lock_pair
+    # Fed as a here-string rather than a pipe (#2457). The sub-phase does read both lines, so a pipe
+    # carried the bytes correctly — but a pipeline whose reader can return before the write lands
+    # leaves this writing into a closed pipe, and `set -o pipefail` then promotes that SIGPIPE to the
+    # pipeline's status. A readiness that PASSED is read as "reported issues" and the destructive
+    # launch is refused for a failure that never happened. A here-string has no pipeline to poison.
+    # $( ) strips the trailing newline that <<< then re-adds, so `a` and `n` arrive byte-identical to
+    # what the pipe delivered. The one difference: with NONCE unset the second read hits EOF (rc 1)
+    # rather than reading an empty line. Nothing consumes that rc — the remote command joins its
+    # reads with `;`, not `&&`, and sets no `-e` — so the values, and the phase's verdict, are unchanged.
+    lock_pair="$(printf '%s\n%s' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}")"
     for phase in readiness check; do
-        printf '%s\n%s\n' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" |
-            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase $1" || {
+        on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $2" <<<"$lock_pair" || {
             warn "$phase reported issues (see above) — destructive phases refused"
             return 1
         }
     done
+}
+
+# The detached launch's stdin, one record per line, in the order run_harness reads them: the rig
+# token, the parent lock pair, the two base64 JSON inputs, then the payout-confirm row's wallet keys
+# (#2675). Secrets ride stdin, never the remote command line where ps on the bench shows them. The
+# JSON may span lines, hence base64; a newline in any other record would shift the ones after it.
+harness_launch_records() {
+    local rollback_b64 pools_b64 record
+    rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
+    pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
+    HARNESS_RECORDS=""
+    for record in "${IT_RIG_TOKEN:-}" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" \
+        "${IT_MONERO_VIEW_KEY:-}" "${IT_TARI_VIEW_KEY:-}" "${IT_TARI_SPEND_PUBLIC_KEY:-}"; do
+        [[ "$record" != *$'\n'* ]] || die "A harness launch record contains a newline."
+        HARNESS_RECORDS+="$record"$'\n'
+    done
+    # Names only, never a value: a payout-confirm SKIP then says whether the wrapper had the keys.
+    local name supplied=""
+    for name in IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY; do
+        supplied+=" $name=$([ -n "${!name:-}" ] && echo set || echo unset)"
+    done
+    step "payout-confirm keys forwarded to the harness:$supplied"
 }
 
 # Install the on-bench runner: it records `running <pid> <starttime>` BEFORE exec'ing the harness,

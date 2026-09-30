@@ -23,7 +23,8 @@ _RIG_LOCK_PARENT_VERIFIED=0
 # no writable key was touched" requirement structurally true rather than a guarded special case:
 # when nothing was written, no mark ever happened, so no trap was ever installed. It also keeps a
 # leg whose revert came back non-applied on the books, so the trap retries it at exit instead of
-# trusting an assertion that already red.
+# trusting an assertion that already red. The pools leg is the one exception: its restore value is
+# its probe, so it retires on the rig's own answer instead (see run_rigforge_pools, #2470).
 #
 # THE TRAP IS COMPOSED, NOT STACKED, AND THAT IS THE WHOLE HAZARD IN THIS FILE. `trap … EXIT`
 # REPLACES; it does not stack. run.sh calls `rig_lock` (lib.sh), which installs an EXIT trap of its
@@ -143,15 +144,30 @@ _rig_key_arm() {
 
 # Record an outstanding write. Call this BEFORE the apply goes out, not after — the window this
 # exists to cover includes the apply itself.
+#
+# The value is compacted HERE, once, rather than trusted from each caller (#2668). A ledger line is
+# split on tab and newline, and an operator's pretty-printed IT_RIG_POOLS_PROBE carries both: stored
+# verbatim it became several entries, the pools original was never restored, and the unwind's warning
+# printed fragments of it — the stratum `pass` among them — as a rig or route name. `jq -c` escapes
+# every tab and newline inside a string, so its output is one line with no raw tab in it. The value
+# goes in on stdin (printf is a builtin, so no process carries it on argv, #2663), and anything that
+# is not exactly one JSON value is refused with a warning that names the key and never the value.
 rig_key_mark() { # <route: dash|rig> <rig> <key> <original-value-as-json>
+    local v
+    if ! v="$(printf '%s' "$4" | jq -cs 'if length == 1 then .[0] else error end' 2>/dev/null)" || [ -z "$v" ]; then
+        it_warn "cannot record the original $3 on rig '$2': not one JSON value — an abort will NOT restore it (#2668)"
+        return 1
+    fi
+    # Armed only once there is something to restore: a refused first mark records nothing, so it must
+    # not leave the EXIT trap (and its rig_lock and foreign-handler folding) installed either.
     _rig_key_arm
-    _RIG_LEDGER="${_RIG_LEDGER}$1	$2	$3	$4
+    _RIG_LEDGER="${_RIG_LEDGER}$1	$2	$3	$v
 "
     return 0
 }
 
 # Retire an outstanding write. Call this only once the revert is CONFIRMED applied; a revert that
-# came back anything else stays on the books so the trap retries it.
+# came back anything else stays on the books so the trap retries it. (Pools: see run_rigforge_pools.)
 rig_key_clear() { # <route> <rig> <key>
     local out="" r w k v
     # `<<<` and not a pipe: a pipeline runs its right-hand side in a SUBSHELL, and the assignment
@@ -184,7 +200,11 @@ rig_key_unwind() {
         # reading the log needs to know the rig was left mid-change and what we did about it. (It is
         # invisible in the summary counters — #1365 — which is why it says the whole story here.)
         it_warn "aborted mid-change: restoring $k on rig '$w' via the $r route (#1379)"
-        payload="$(jq -nc --arg k "$k" --argjson v "$v" '{($k): $v}' 2>/dev/null)" || continue
+        # The value goes to jq on STDIN, never as an argument (#2663): the pools original carries the
+        # stratum `pass` (#113), and a jq argv is readable by any local user from the process table
+        # for as long as jq runs. `printf` is a builtin, so no process ever carries it. `-s` keeps
+        # the strictness `--argjson` had: exactly one JSON value, or nothing is restored.
+        payload="$(printf '%s' "$v" | jq -cs --arg k "$k" 'if length == 1 then {($k): .[0]} else error("original") end' 2>/dev/null)" || continue
         [ -n "$payload" ] || continue
         case "$r" in
         dash) _worker_apply "$w" "$payload" >/dev/null 2>&1 || true ;;

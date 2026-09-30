@@ -26,26 +26,28 @@ def test_safe_config_is_all_tor(_posture):
         "firewall": True,
         "leaks": 0,
         "blocked_by_firewall": 0,
+        "unverified": 0,
         "all_tor": True,
         "level": "ok",
         "label": "All egress via Tor",
     }
 
 
-def test_p2pool_clearnet_blocked_by_firewall_is_not_a_leak(_posture):
+def test_p2pool_clearnet_is_operator_choice_with_firewall_on(_posture):
     p = _posture(p2pool_clearnet=True, firewall=True)
     assert _conn(p, "p2pool", "sidechain")["route"] == CLEARNET
-    assert _conn(p, "p2pool", "sidechain")["blocked_by_firewall"] is True
+    assert _conn(p, "p2pool", "sidechain")["chosen_clearnet"] is True
     assert p["summary"]["leaks"] == 0
-    assert p["summary"]["blocked_by_firewall"] == 1
-    assert p["summary"]["all_tor"] is True  # fail-closed: configured-clearnet can't actually leave
+    assert p["summary"]["blocked_by_firewall"] == 0
+    assert p["summary"]["all_tor"] is False
+    assert "your IP is visible to peers" in p["summary"]["label"]
 
 
-def test_p2pool_clearnet_without_firewall_is_a_leak(_posture):
+def test_p2pool_clearnet_without_firewall_is_still_operator_choice(_posture):
     p = _posture(p2pool_clearnet=True, firewall=False)
-    assert p["summary"]["leaks"] == 1
+    assert p["summary"]["leaks"] == 0
     assert p["summary"]["level"] == "warn"
-    assert "exposing your IP" in p["summary"]["label"]
+    assert "your choice" in p["summary"]["label"]
 
 
 def test_dashboard_xvb_stats_stays_tor_when_xvb_tor_is_off(_posture):
@@ -53,11 +55,11 @@ def test_dashboard_xvb_stats_stays_tor_when_xvb_tor_is_off(_posture):
     # unconditionally socks5h over Tor (#163/#701), so turning xvb.tor off must not show a leak.
     p = _posture(xvb_tor=False, firewall=True)
     assert _conn(p, "dashboard", "XvB stats")["route"] == TOR
-    # The donation dial (a container) goes clearnet — but the #270 firewall blocks it.
+    # The donation dial is an explicit clearnet choice behind a scoped firewall exemption.
     assert _conn(p, "xmrig-proxy", "XvB donation")["route"] == CLEARNET
-    assert _conn(p, "xmrig-proxy", "XvB donation")["blocked_by_firewall"] is True
+    assert _conn(p, "xmrig-proxy", "XvB donation")["chosen_clearnet"] is True
     assert p["summary"]["leaks"] == 0
-    assert p["summary"]["all_tor"] is True
+    assert p["summary"]["all_tor"] is False
 
 
 def test_xvb_disabled_routes_are_inactive(_posture):
@@ -233,18 +235,18 @@ def test_topology_daemon_p2p_is_bidirectional_over_tor(_edge, _topo):
 
 
 def test_topology_clearnet_link_bypasses_the_tor_hub(_edge, _topo):
-    # A clearnet route must land on `internet`, not `tor`, so a leak visibly skips the hub.
+    # A chosen clearnet route lands on `internet`, bypassing the Tor hub.
     topo = _topo(p2pool_clearnet=True, firewall=False)
     edge = _edge(topo, "p2pool", "internet")
-    assert edge["route"] == CLEARNET and edge["leak"] is True
+    assert edge["route"] == CLEARNET and edge["chosen_clearnet"] is True
     assert not any(e["to"] == "tor" and e["from"] == "p2pool" for e in topo["edges"])
 
 
-def test_topology_clearnet_blocked_by_firewall_is_not_a_leak(_edge, _topo):
+def test_topology_clearnet_choice_with_firewall(_edge, _topo):
     topo = _topo(p2pool_clearnet=True, firewall=True)
     edge = _edge(topo, "p2pool", "internet")
-    assert edge.get("blocked_by_firewall") is True and edge.get("leak") is None
-    assert topo["summary"]["all_tor"] is True
+    assert edge.get("chosen_clearnet") is True and edge.get("leak") is None
+    assert topo["summary"]["all_tor"] is False
 
 
 def test_topology_dashboard_xvb_stats_stays_on_the_tor_hub_when_xvb_tor_is_off(_edge, _topo):
@@ -254,8 +256,8 @@ def test_topology_dashboard_xvb_stats_stays_on_the_tor_hub_when_xvb_tor_is_off(_
     xvb_stats = next(e for e in topo["edges"] if e["label"] == "XvB stats")
     assert xvb_stats["to"] == "tor" and xvb_stats["route"] == TOR
     assert not any(e["from"] == "dashboard" and e["to"] == "internet" for e in topo["edges"])
-    # The xmrig-proxy XvB dial IS clearnet here — a container, so the firewall blocks it.
-    assert _edge(topo, "xmrig-proxy", "internet").get("blocked_by_firewall") is True
+    # The XvB donation dial is the operator's clearnet choice.
+    assert _edge(topo, "xmrig-proxy", "internet").get("chosen_clearnet") is True
     assert not any(e.get("leak") for e in topo["edges"])
 
 
@@ -296,7 +298,7 @@ def test_topology_alert_sinks_edge_tracks_the_route(_topo):
 def test_topology_clearnet_sync_adds_bypass_edge(_edge, _topo):
     topo = _topo(monero_clearnet_sync=True, firewall=False)
     edge = _edge(topo, "monerod", "internet")
-    assert edge["route"] == CLEARNET and edge["leak"] is True
+    assert edge["route"] == CLEARNET and edge["chosen_clearnet"] is True
 
 
 def test_tari_clearnet_sync_surfaces_in_egress_and_topology(_edge, _posture, _topo):
@@ -310,11 +312,10 @@ def test_tari_clearnet_sync_surfaces_in_egress_and_topology(_edge, _posture, _to
     assert _conn(p, "tari", "initial sync")["route"] == CLEARNET
     topo = _topo(tari_clearnet_sync=True, firewall=False)
     edge = _edge(topo, "tari", "internet")
-    assert edge["route"] == CLEARNET and edge["leak"] is True
+    assert edge["route"] == CLEARNET and edge["chosen_clearnet"] is True
 
 
 # --- Exhaustive config sweep + frontend contract ---------------------------------------
-# The diagram must hold for ANY operator config, not just the hand-picked cases above.
 
 _KNOBS = (
     "firewall",
@@ -393,9 +394,7 @@ def test_topology_summary_matches_egress_for_all_configs():
         assert compute_topology(**cfg)["summary"] == compute_egress_posture(**cfg)["summary"], cfg
 
 
-def test_firewall_off_counts_every_clearnet_path_as_a_leak(_posture):
-    # Firewall down + every clearnet knob on: there's no backstop, so each clearnet path is a real,
-    # counted leak — leaks must equal the number of clearnet connections, with nothing "blocked".
+def test_firewall_off_counts_only_unchosen_clearnet_paths_as_leaks(_posture):
     p = _posture(
         firewall=False,
         p2pool_clearnet=True,
@@ -406,16 +405,14 @@ def test_firewall_off_counts_every_clearnet_path_as_a_leak(_posture):
     )
     clearnet = sum(1 for comp in p["components"] for c in comp["conns"] if c["route"] == CLEARNET)
     assert clearnet >= 5  # sidechain, RPC, monero IBD, tari IBD, XvB donation
-    assert p["summary"]["leaks"] == clearnet
+    assert p["summary"]["leaks"] + 3 == clearnet  # Tari IBD, P2Pool and XvB are chosen
     assert p["summary"]["blocked_by_firewall"] == 0
     assert p["summary"]["all_tor"] is False
     assert "exposing your IP" in p["summary"]["label"]
 
 
-def test_firewall_on_blocks_every_clearnet_path(_posture):
-    # Same clearnet-everywhere config with the firewall ON: every clearnet path belongs to a
-    # container, so all are blocked and nothing leaks — the dashboard's own egress is Tor-only
-    # (#163/#701), so the host-networked firewall bypass has nothing clearnet to expose.
+def test_firewall_does_not_cover_the_dashboard_s_remote_node_hop(_posture):
+    # The container paths are blocked, but the host-networked dashboard's remote-node RPC is not.
     p = _posture(
         firewall=True,
         p2pool_clearnet=True,
@@ -424,10 +421,11 @@ def test_firewall_on_blocks_every_clearnet_path(_posture):
         tari_clearnet_sync=True,
         monero_route=CLEARNET,
     )
-    assert p["summary"]["leaks"] == 0
+    assert p["summary"]["leaks"] == 1
     assert _conn(p, "dashboard", "XvB stats")["route"] == TOR
-    assert p["summary"]["blocked_by_firewall"] >= 5
-    assert p["summary"]["all_tor"] is True
+    assert p["summary"]["blocked_by_firewall"] == 1
+    assert _conn(p, "tari", "initial sync")["chosen_clearnet"] is True
+    assert p["summary"]["all_tor"] is False
 
 
 # The dashboard clients hard-wired through Tor SOCKS — no knob points any of them at clearnet

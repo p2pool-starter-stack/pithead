@@ -52,7 +52,10 @@ run_rigforge_reverse() { # <rig-name> <orig-max_temp_c-or-empty>
     fi
     local reflect=$((orig_maxt + 2)) change_id
     it_step "rig-side edit (direct control API): max_temp_c -> $reflect on $RIG_HOST:${RIG_CONTROL_PORT}…"
-    rig_key_mark rig "$rig" max_temp_c "$orig_maxt" # abort-safe unwind, rig route (#1379)
+    rig_key_mark rig "$rig" max_temp_c "$orig_maxt" || { # abort-safe unwind, rig route (#1379)
+        it_skip_leg "enriched-feed reflection (#516)" "the original max_temp_c cannot be recorded for the abort-safe unwind, so no write is sent (#2668)"
+        return 0
+    }
     change_id="$(_rig_control_apply "{\"max_temp_c\":$reflect}")"
     if [ -z "$change_id" ]; then
         it_fail "direct rig control apply accepted (#516)" "the rig's /apply did not return a change_id"
@@ -61,7 +64,7 @@ run_rigforge_reverse() { # <rig-name> <orig-max_temp_c-or-empty>
         if wait_for 90 5 "dashboard feed to reflect the rig-side max_temp_c=$reflect (#516)" _pred_feed_maxt "$rig" "$reflect"; then
             it_pass "rig-side edit reflected in the dashboard's enriched feed (#516)"
         else
-            it_fail "rig-side edit reflected in the dashboard's enriched feed (#516)" "feed never showed max_temp_c=$reflect"
+            it_fail "rig-side edit reflected in the dashboard's enriched feed (#516)" "$(_reverse_feed_failure_detail "$reflect")"
         fi
         # Revert the rig to its original ceiling.
         change_id="$(_rig_control_apply "{\"max_temp_c\":$orig_maxt}")"
@@ -92,12 +95,40 @@ _rig_control_await() { # <change_id> <want-status> [timeout-s=30]
 }
 
 # Predicate: the dashboard feed's watchdog Temp/max stat shows <want> as the ceiling for <rig>.
+# _FEED_MAXT_SEEN keeps the rig's status, report freshness and temperature rows from the last poll so a
+# timeout names what the feed showed: a stale report, a missing temperature, or the old ceiling (#2741).
 _pred_feed_maxt() { # <rig-name> <want-max_temp_c>
     local s v
+    _FEED_MAXT_SEEN="no response from /api/state"
     s="$(api_state)"
     [ -n "$s" ] || return 1
+    _FEED_MAXT_SEEN="$(printf '%s' "$s" | jq -r --arg n "$1" '[.workers[]? | select(.name==$n)][0] | if . == null then "rig not in the feed" else "status=\(.status // "?"), stats: " + ([.rigforge.stats[]? | select(.label == "Agent report" or .label == "Temp / max") | "\(.label)=\(.value)"] | join("; ")) end' 2>/dev/null)" ||
+        _FEED_MAXT_SEEN=""
+    [ -n "$_FEED_MAXT_SEEN" ] || _FEED_MAXT_SEEN="unparseable /api/state"
     v="$(printf '%s' "$s" | jq -r --arg n "$1" 'first(.workers[]? | select(.name==$n) | .rigforge.stats[]? | select(.label=="Temp / max") | .value) // empty' 2>/dev/null | sed -n 's#.*/ *\([0-9][0-9]*\).*#\1#p')"
     [ "$v" = "$2" ]
+}
+
+# The rig's own enriched feed, read straight from the bench (the dashboard bypassed): its generation stamp
+# and watchdog ceiling, or why the read failed. No curl stderr is kept: it names the rig's address (#2741).
+_rig_direct_summary() {
+    local body
+    body="$(printf 'header = %s\n' "$(printf 'Authorization: Bearer %s' "${IT_RIG_TOKEN:-}" | jq -Rs .)" | rx "curl -fsS --max-time 10 -K - $(quote_arg "http://$RIG_HOST:8081/1/summary")" --stdin 2>/dev/null)" ||
+        {
+            echo "direct /1/summary read failed"
+            return 0
+        }
+    [ -n "$body" ] || {
+        echo "direct /1/summary returned an empty body"
+        return 0
+    }
+    printf '%s' "$body" | jq -r '"generated_at=\(.generated_at // "absent"), watchdog max_temp_c=\(.rigforge.watchdog.max_temp_c // "absent")"' 2>/dev/null ||
+        echo "direct /1/summary unparseable"
+}
+
+# The #516 failure detail, taken before the rig is reverted.
+_reverse_feed_failure_detail() { # <wanted-max_temp_c>
+    printf 'feed never showed max_temp_c=%s; last poll: %s; rig direct: %s' "$1" "${_FEED_MAXT_SEEN:-}" "$(_rig_direct_summary)"
 }
 
 # #517: an auto-rollback (rigforge#236) recorded end-to-end from the dashboard. A change that tanks the

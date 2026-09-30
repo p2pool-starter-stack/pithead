@@ -32,18 +32,44 @@ preseed_token() {
 # most recent event is the one an operator needs — and prints one JSON object on success:
 # {when, reason, recovery}. "recovery" is false for a deliberate factory-reset (nothing to warn
 # about, the operator asked for it) and true for the wedged-/data case, where the next move is
-# restoring a backup rather than walking through setup as if this were a fresh machine. rc 1:
-# absent, unreadable, or a line with no "<when> <reason>" shape to parse.
+# restoring a backup rather than walking through setup as if this were a fresh machine.
+#
+# One-shot (#1208): the log is never cleared, so gate on a SEPARATE ".pending" marker
+# record_wipe() drops beside it and consume that marker (never the log) on a successful read — the
+# first caller to surface the note, doctor's check_data_wipe_note or the wizard's
+# publish_data_wipe_note, is the only one that ever sees it. A later record_wipe() re-arms the
+# marker, so a genuinely new wipe still gets reported.
+#
+# Cached in a tmpfs file for the rest of THIS BOOT after the first read (#1208): every caller
+# reads through `note=$(data_wipe_note)`, and command substitution always forks a subshell — a
+# shell variable set inside one is invisible to the next `$(...)` call, so a plain in-memory cache
+# is a no-op here (a real bug this fix went through once: #1208 job 557/560). stage_wizard_spool
+# re-stages the whole spool on every wizard loop iteration — including the very first, before the
+# container has even started once — so without a cache that SURVIVES across subshells, that second
+# call finds the marker the first one already consumed and overwrites the still-unseen banner with
+# "{}". /run is tmpfs: gone on reboot, so a later boot reads the marker file fresh with no cache.
+DATA_WIPE_NOTE_CACHE="${PITHEAD_DATA_WIPE_NOTE_CACHE:-/run/pithead-data-wipe-note.json}"
+#
+# rc 1: no wipe pending (never happened, or already surfaced), unreadable, or a line with no
+# "<when> <reason>" shape to parse.
 data_wipe_note() {
-    local f="$PRESEED_DIR/pithead-data-wiped" line when reason
+    local f="$PRESEED_DIR/pithead-data-wiped" line when reason note
+    if [ ! -f "$f.pending" ]; then
+        [ -s "$DATA_WIPE_NOTE_CACHE" ] || return 1
+        cat "$DATA_WIPE_NOTE_CACHE"
+        return 0
+    fi
     [ -f "$f" ] || return 1
     line=$(tail -n 1 "$f" 2>/dev/null) || return 1
     case "$line" in *' '*) ;; *) return 1 ;; esac
     when="${line%% *}"
     reason="${line#* }"
     [ -n "$when" ] && [ -n "$reason" ] || return 1
-    jq -cn --arg when "$when" --arg reason "$reason" \
-        '{when: $when, reason: $reason, recovery: ($reason != "factory-reset requested")}'
+    note=$(jq -cn --arg when "$when" --arg reason "$reason" \
+        '{when: $when, reason: $reason, recovery: ($reason != "factory-reset requested")}') || return 1
+    rm -f "$f.pending" 2>/dev/null || true
+    (umask 077 && printf '%s' "$note" >"$DATA_WIPE_NOTE_CACHE") 2>/dev/null || true
+    printf '%s' "$note"
 }
 
 # Carries the wipe note to the wizard's spool (#1121): the wizard runs in a container whose only
@@ -62,34 +88,50 @@ publish_data_wipe_note() { # <spool-dir>
     wizard_spool_publish "$1" data-wiped.json printf '%s' "$note"
 }
 
-# The restore pre-seed (#909): an installer boot that accepted a backup archive stages it —
-# still encrypted, passphrase beside it — on the target's ESP, and the installed machine's
-# first boot lands here to restore ITSELF: config, Tor onion keys, dashboard database, the
-# whole identity the docs promise survives. Spent on use, accepted or not — the passphrase
-# beside the archive makes the pair plaintext-equivalent and it must not outlive this boot.
-# rc: 0 restored, 1 present but rejected, 2 none.
+# Legacy restore pre-seed (#909): targets written by an older installer may still carry an
+# encrypted archive beside its passphrase on the ESP. Consume and scrub that pair for upgrade
+# compatibility; current installers apply from volatile memory before the target's first boot.
+# rc: 0 restored, 1 present but rejected, 2 none, 3 cleanup unsafe.
 consume_preseed_restore() {
-    local a="$PRESEED_DIR/pithead-restore.enc" pf="$PRESEED_DIR/pithead-restore-pass" pass errf
-    [ -f "$a" ] || return 2
+    local a="$PRESEED_DIR/pithead-restore.enc" pf="$PRESEED_DIR/pithead-restore-pass" pass errf rc=0
+    if [ ! -f "$a" ] || [ ! -f "$pf" ]; then
+        [ -e "$a" ] || [ -L "$a" ] || [ -e "$pf" ] || [ -L "$pf" ] || return 2
+        mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
+        if rm -f "$a" "$pf" 2>/dev/null; then
+            warn "An incomplete legacy restore handoff was cleared — submit the backup again."
+            return 1
+        fi
+        warn "Could not clear an incomplete legacy restore handoff — reboot before continuing."
+        return 3
+    fi
     { set +x; } 2>/dev/null # xtrace would print the passphrase below
     pass=$(cat "$pf" 2>/dev/null || true)
     errf=$(mktemp)
-    if restore_apply "$a" "$pass" "$errf"; then
+    restore_apply "$a" "$pass" "$errf" || rc=$?
+    if [ "$rc" = 0 ]; then
         pass=""
         log "Restored this machine from the carried backup archive."
         mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
-        rm -f "$a" "$pf" 2>/dev/null ||
-            warn "Could not remove the consumed restore archive from $PRESEED_DIR — it sits beside its passphrase; delete both."
+        rm -f "$a" "$pf" 2>/dev/null || rc=3
+        [ "$rc" = 0 ] || warn "Could not remove every consumed restore carry file — reboot before continuing."
         rm -f "$errf"
-        return 0
+        return "$rc"
     fi
     pass=""
+    if [ "$rc" = 3 ]; then
+        warn "Could not clear temporary restore files safely — reboot before continuing."
+        rm -f "$errf"
+        mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
+        rm -f "$a" "$pf" 2>/dev/null || warn "Could not remove every consumed restore carry file — remove both before leaving the machine unattended."
+        return 3
+    fi
     warn "The carried restore archive was rejected — falling back to the setup page."
     warn "  $(tail -c 200 "$errf" 2>/dev/null | tr -d '[:cntrl:]')"
     rm -f "$errf"
     mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
-    rm -f "$a" "$pf" 2>/dev/null || true
-    return 1
+    rm -f "$a" "$pf" 2>/dev/null || rc=3
+    [ "$rc" = 1 ] || warn "Could not remove every rejected restore carry file — reboot before continuing."
+    return "$rc"
 }
 
 # rc: 0 a valid pre-seeded config was installed, 1 one was present but rejected, 2 none.
@@ -135,6 +177,16 @@ boot_is_removable() {
     boot_dev=$(lsblk -no PKNAME "$root_src" 2>/dev/null | head -1)
     [ -n "$boot_dev" ] || return 1
     [ "$(cat "/sys/block/$boot_dev/removable" 2>/dev/null)" = "1" ]
+}
+
+# Staged rig settings that are spent OR unusable must not sit on the ESP: they may carry a
+# stratum password, and a VFAT ESP keeps no mode 600 to protect one. Never on removable media —
+# that stick is the operator's own fleet tool, theirs to keep for the next machine. $1 names which.
+scrub_staged_rig() { # <consumed|unusable>
+    boot_is_removable && return 0
+    mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
+    rm -f "$PRESEED_DIR/pithead-rig.json" 2>/dev/null ||
+        warn "Could not remove the $1 rig settings from $PRESEED_DIR — they may hold a password; delete the file."
 }
 
 # Booted from removable media AND some other disk is available to install onto. Both halves
@@ -239,9 +291,9 @@ prefill_from_previous_install() { # <spool-dir>
 # the wizard's combined submit; both fields are re-validated HERE because they arrive through
 # a web form — the disk against the inventory this host published, the wipe mode against the
 # fixed set. The container asks, the host decides.
-consume_install_request() ( # <spool-dir> [required-wipe]
-    local spool="$1" req="$1/install-request" target wipe err
-    local snap rc=0
+consume_install_request() ( # <spool-dir> [required-wipe] [volatile-restore-carry] [resolved-config]
+    local spool="$1" req="$1/install-request" target wipe err carry="${3:-}" resolved="${4:-$PWD/config.json}"
+    local snap rc=0 install_args
     snap=$(wizard_spool_request "$spool" install-request) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
     trap 'wizard_spool_clean "${snap%/*}"' EXIT
@@ -261,7 +313,15 @@ consume_install_request() ( # <spool-dir> [required-wipe]
         return 1
     fi
     log "Installing to /dev/$target (data: $wipe) ..."
-    if err=$("$(install_bin)" --target "/dev/$target" --wipe "$wipe" --yes 2>&1); then
+    install_args=(--target "/dev/$target" --wipe "$wipe" --yes)
+    [ -z "$carry" ] || [ ! -f "$carry/archive" ] || install_args+=(--no-preseeds)
+    if err=$("$(install_bin)" "${install_args[@]}" 2>&1); then
+        if [ -n "$carry" ] && [ -f "$carry/archive" ] &&
+            ! err=$(install_restore_to_target "/dev/$target" "$carry" "$resolved" 2>&1); then
+            printf '%s' "$err" | tail -n 2 | tr -d '[:cntrl:]' | tail -c 240 | wizard_spool_publish "$spool" error.txt cat
+            warn "Install to /dev/$target completed, but its restore failed."
+            return 1
+        fi
         wizard_spool_publish "$spool" installed true
         log "Installed to /dev/$target."
         return 0

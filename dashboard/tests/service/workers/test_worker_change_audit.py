@@ -5,10 +5,13 @@ table, not merely "the mock was called", because the whole feature is a permanen
 """
 
 import asyncio
+import time
 from unittest.mock import MagicMock
 
 from mining_dashboard.service.data_service import _RIG_EDIT_CAP_PER_HOUR, DataService
 from mining_dashboard.service.storage_service import StateManager
+from mining_dashboard.service.workers import worker_change_audit as wca
+from mining_dashboard.service.workers import worker_config_store as wcs
 
 
 def _svc():
@@ -116,7 +119,8 @@ class TestFloodIsBounded:
 
     def test_a_fresh_revision_every_poll_is_capped(self):
         # A rogue rig incrementing its revision clears the deterministic-id dedup every time, so
-        # unbounded this writes one PERMANENT row per poll. audit_events has no retention DELETE.
+        # unbounded this writes one row per poll. audit_events ages rows out at 30 days (#1814);
+        # this cap is what bounds how many a single device can pile up INSIDE that window.
         svc, sm = _svc()
         try:
             for i in range(_RIG_EDIT_CAP_PER_HOUR + 8):
@@ -170,6 +174,50 @@ class TestFloodIsBounded:
             # The budget was spent by drift, so the rig-edit row is dropped rather than granted a
             # second allowance of its own.
             assert _rows(sm, "rig-edit") == []
+        finally:
+            sm.close()
+
+
+def _revision_rows(sm):
+    cur = sm._conn.execute("SELECT worker, ts FROM worker_config_revision")
+    return {row["worker"]: row["ts"] for row in cur.fetchall()}
+
+
+class TestTheRevisionTableIsBounded:
+    """#1811: a permanent ``worker_config_revision`` row per device-chosen name, with no cap and
+    no prune, is a different defect from the #724/#1695 audit-row bound above -- the store WRITE
+    itself has to be gated, not merely the ``rig-drift`` audit row it may go on to produce."""
+
+    def test_a_first_sighting_past_the_1695_ceiling_writes_no_row(self, monkeypatch):
+        # Reuses the SAME name ceiling #1695 already enforces for the audit rows, so the
+        # device-chosen name space has one gate rather than two that can drift apart.
+        monkeypatch.setattr(wca, "_WORKERS_MAX", 1)
+        svc, sm = _svc()
+        try:
+            _poll(svc, "rig1", "aaa")  # admits and reserves the one slot
+            _poll(svc, "rig2", "bbb")  # the ceiling is already full: refused before any write
+            assert set(_revision_rows(sm)) == {"rig1"}
+        finally:
+            sm.close()
+
+    def test_prune_does_not_evict_a_row_a_live_rig_still_touches(self, monkeypatch):
+        # The ruling's guard: do not evict a row a live rig's Inspect provenance still points at.
+        # `ts` is rewritten on every poll, so a rig still being polled refreshes its own row
+        # before the sweep below ever runs -- only a name that has gone silent for the full
+        # window is a candidate, and this proves it against the real table, not by inspection.
+        monkeypatch.setattr(wcs, "HISTORY_RETENTION_SEC", 100)
+        monkeypatch.setattr(wcs.random, "random", lambda: 0.0)  # force the prune sampler to fire
+        svc, sm = _svc()
+        try:
+            stale_ts = time.time() - 1000
+            sm._conn.execute(
+                "INSERT INTO worker_config_revision "
+                "(worker, revision, last_change_id, ts, drift_from) VALUES (?, ?, ?, ?, ?)",
+                ("stale-rig", "rev", None, stale_ts, None),
+            )
+            sm._conn.commit()
+            _poll(svc, "live-rig", "aaa")  # writes + refreshes its own row, then the sweep runs
+            assert set(_revision_rows(sm)) == {"live-rig"}
         finally:
             sm.close()
 

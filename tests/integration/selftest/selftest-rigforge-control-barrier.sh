@@ -16,13 +16,15 @@ eval "$CONTROL_SRC"
 TMP="$(mktemp -d)"
 trap 'rm -r "$TMP"' EXIT
 OUT_DIR="$TMP"
+IT_REMOTE_DIR="$TMP"
+mkdir -p "$TMP/control/results"
 BASELINE_CONFIG='{"dashboard":{"control":{"enabled":false}},"monero":{"mode":"local"},"p2pool":{"pool":"mini"},"workers":{"api_port":8080,"list":[]}}'
 CURRENT_CONFIG='{"dashboard":{"control":{"enabled":false}},"monero":{"mode":"remote"},"p2pool":{"pool":"main"},"workers":{"api_port":8080,"list":[]}}'
 IT_MODE=local RIG_NAME=rig1 RIG_HOST=rig RIG_CONTROL_PORT=8082 RIGFORGE_BOOTSTRAP_VERSION=""
 IT_RIG_TOKEN=$(printf '%032d' 0)
 RUN_RIGFORGE=1
 api_state() { printf '%s' '{"workers":[{"name":"rig1","rigforge":{"version":"1.17.2"}}]}'; }
-env_on_box() { case "$1" in COMPOSE_PROFILES) echo local_node ;; DASHBOARD_AUTH_HASH_B64) echo present ;; esac }
+env_on_box() { case "$1" in COMPOSE_PROFILES) echo local_node ;; DASHBOARD_AUTH_HASH_B64) echo present ;; CONTROL_DIR) printf '%s' "$TMP/control" ;; esac }
 has_compose_profile() { return 0; }
 rx() { [ "$1" = 'cat config.json' ] && printf '%s' "$CURRENT_CONFIG"; }
 PUSHES=0 READ_PORT="" GLOBAL_PORT=""
@@ -72,10 +74,19 @@ echo "== a late RigForge assertion blocks later destructive phases =="
 IT_FAIL=0 RUN_RIGFORGE=0 RIGFORGE_BOOTSTRAP_VERSION=""
 BASELINE_CONFIG='{"dashboard":{"control":{"enabled":false}},"workers":{"api_port":8080,"list":[{"name":"rig1","host":"rig"}]}}'
 CURRENT_CONFIG="$BASELINE_CONFIG"
+rx() {
+    if [ "$1" = 'cat config.json' ]; then
+        printf '%s' "$CURRENT_CONFIG"
+    else
+        (cd "$IT_REMOTE_DIR" && bash -c "$1")
+    fi
+}
+_max_temp_round_trip() { :; }
 api_state() { printf '%s' '{"workers":[{"name":"rig1","api_ok":true,"rigforge":{"version":"1.17.2","stats":[]}}]}'; }
 push_config() { return 0; }
 _worker_detail() { printf '%s' '{"editable":true,"control_enabled":true}'; }
-run_rigforge_writable_keys() { it_fail "forced late RigForge failure" "control"; }
+WRITABLE_CALLED=0
+run_rigforge_writable_keys() { WRITABLE_CALLED=$((WRITABLE_CALLED + 1)); it_fail "forced late RigForge failure" "control"; }
 run_rigforge_pools() { :; }
 run_rigforge_reverse() { :; }
 run_rigforge_rollback() { :; }
@@ -83,10 +94,12 @@ run_rigforge_upgrade() { :; }
 capture_artifacts() { :; }
 run_rigforge_control >/dev/null 2>&1
 late_rc=$?
+assert_eq "late failure reaches the writable control leg" "$WRITABLE_CALLED" "1"
 assert_eq "a late RigForge assertion returns nonzero to main" "$late_rc" "1"
 
 MAIN_SRC="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../run.sh")"
-assert_contains "main gates later fault injection on successful RigForge control" "$MAIN_SRC" '[ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]'
+assert_contains "main gates later fault injection on successful RigForge control" "$MAIN_SRC" 'if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then'
+assert_contains "main gates later fault injection on a successful lifecycle" "$MAIN_SRC" 'if [ "$lifecycle_ok" = 1 ]; then'
 printf '\nselftest-rigforge-control-barrier: PASS\n'
 # The forced failures above are product-counter stimuli, not selftest failures.
-[ "$early_ok" = 1 ] && [ "$unreadable_ok" = 1 ] && [ "$late_rc" -eq 1 ] && [ "$IT_FAIL" -eq 1 ]
+[ "$early_ok" = 1 ] && [ "$unreadable_ok" = 1 ] && [ "$WRITABLE_CALLED" -eq 1 ] && [ "$late_rc" -eq 1 ] && [ "$IT_FAIL" -eq 1 ]

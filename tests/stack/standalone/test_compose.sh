@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Lightweight integration check: validate that docker-compose.yml parses and all
-# ${VAR} interpolations resolve against a representative .env. This is client-side
-# (`docker compose config` does not need the daemon), so it runs anywhere docker is installed.
-#
+# Validate Compose parsing and ${VAR} interpolation against a representative .env.
+# This is client-side (`docker compose config` needs no daemon), so it runs anywhere with docker.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -49,15 +47,16 @@ MONERO_PREP_THREADS=4
 MONERO_RPC_BIND=127.0.0.1
 MONERO_ZMQ_BIND=127.0.0.1
 MONERO_NODE_HOST=172.28.0.26
+MONERO_RPC_URL=http://monero.example:28081
 MONERO_RPC_PORT=18081
 MONERO_ZMQ_PORT=18083
 TARI_GRPC_ADDRESS=172.28.0.27:18142
 TARI_GRPC_BIND=127.0.0.1
 COMPOSE_PROFILES=local_node,local_tari
+TOR_COMPOSE_PROFILES=local_node,local_tari
 DASHBOARD_SECURE=true
 HOST_IP=box.lan
 EOF
-
 echo "Validating docker-compose.yml ..."
 if docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config -q; then
     echo "  ✓ compose config is valid"
@@ -152,8 +151,8 @@ expect_min "log rotation on every service" "max-size:" 9
 # leaving the other was green. The two would then run different socket-proxy builds, which is exactly
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
-expect_present "caddy pinned by digest" "caddy:2.11.4@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017"
-expect_present "tari node pinned by digest" "minotari_node:v5.3.1-mainnet@sha256:824fd6ec21d618805317d7eede374d6782906eeae17d2fc8aaad4df6205f94e0"
+expect_present "caddy pinned by digest" "caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52"
+expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.
 JSON="$(docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
@@ -167,9 +166,10 @@ jq_assert() { # <label> <filter> [json, default $JSON]
 jq_assert "docker-proxy cannot POST (read-only API)" '(.services["docker-proxy"].environment.POST // "0") != "1"'
 jq_assert "docker-control is start/stop only (no exec/image ops)" \
     '.services["docker-control"].environment | (.POST=="1" and .ALLOW_START=="1" and .ALLOW_STOP=="1" and ((.EXEC // "0") != "1") and ((.IMAGES // "0") != "1") and ((.ALLOW_PAUSE // "0") != "1") and ((.ALLOW_UNPAUSE // "0") != "1"))'
-# Both proxies mount the Docker socket read-only.
 jq_assert "docker socket mounted read-only in both proxies" \
     '[.services["docker-proxy"], .services["docker-control"]] | all((.volumes // []) | any((.source == "/var/run/docker.sock") and (.read_only == true)))'
+jq_assert "dashboard mounts the pithead mutation lock read-only without replacing it (#2218)" '[.services[] | (.volumes // [])[] | select(.target == "/pithead-lock")] | length == 1 and .[0].type == "bind" and .[0].read_only == true'
+expect_min "dashboard lock bind refuses host-path creation (#2218)" "create_host_path: false" 1 "$(<"$ROOT/docker-compose.yml")"
 # Socket-proxy isolation (#345): neither proxy is on the mining bridge, and each is published ONLY to
 # the host loopback — so no mining container (monerod/tari/p2pool/xmrig-proxy) can reach the Docker
 # API to read secrets (inspect) or start/stop containers.
@@ -184,13 +184,12 @@ jq_assert "mining services are not on proxy_net" \
     '[.services["monerod"], .services["tari"], .services["p2pool"], .services["xmrig-proxy"]] | all((.networks // {} | keys) | any(. == "proxy_net") | not)'
 jq_assert "p2pool disables its persistent file log (#1989)" '.services.p2pool.command | index("--no-log-file") != null'
 # The Tari probe uses the [m] bracket so grep can't match its own argv (a false-healthy bug).
-jq_assert "tari healthcheck uses the [m]inotari self-match guard" \
-    '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
-# The Compose project name is pinned to "pithead" (not derived from the checkout directory).
+jq_assert "tari healthcheck uses the [m]inotari self-match guard" '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
+jq_assert "tari runs under an init that reaps and forwards signals (#2627)" '.services.tari.init == true'
 jq_assert "compose project name is pinned to pithead" '.name == "pithead"'
-# Memory ceilings (#132): every service carries a mem_limit so a leak/runaway OOM-restarts the
-# offender in its own cgroup instead of the host OOM-killer reaching monerod (the revenue service).
-jq_assert "memory ceiling (mem_limit) on every service (#132)" '[.services[] | select(.mem_limit != null)] | length >= 9'
+# Memory ceilings (#132) OOM-restart a leak in its own cgroup, not monerod via the host OOM-killer.
+# p2pool's holds its 2592 MiB RandomX fallback off short HugePages plus heap: 1g OOM-looped (#2562).
+jq_assert "memory ceiling on every service (#132); p2pool's >= 3 GiB, no swap (#2562)" '([.services[] | select(.mem_limit != null)] | length >= 9) and (.services.p2pool | ((.mem_limit | tonumber) >= 3221225472) and (.memswap_limit == .mem_limit))'
 # Immutable root filesystems (#377): every service runs read_only with exactly its expected tmpfs
 # scratch set, INCLUDING the mount options. An edit that grows a size cap or slips in `exec` —
 # re-creating the executable staging area read_only exists to remove — must fail CI, not evolve
@@ -280,7 +279,7 @@ jq_assert "control staged/ dir never enters the container (#33)" \
     '.services.dashboard.volumes | any(.target | contains("staged")) | not'
 jq_assert "control channel defaults off in the dashboard env (#33)" \
     '.services.dashboard.environment["DASHBOARD_CONTROL_ENABLED"] == "false"'
-
+jq_assert "rendered Monero RPC URL reaches the dashboard (#1271)" '.services.dashboard.environment["MONERO_RPC_URL"] == "http://monero.example:28081"'
 # depends_on startup ordering (#565): "wait until healthy" vs "wait until started" is a startup-
 # correctness guarantee, not decoration. Render with the optional payout-confirmation profiles too
 # (payout_confirm/tari_payout_confirm, #381/#462) so the profile-gated wallet-rpc/tari-wallet edges
@@ -293,21 +292,22 @@ DEPS_ENV="$(mktemp)"
 sed 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node,local_tari,payout_confirm,tari_payout_confirm/' "$ENV_FILE" >"$DEPS_ENV"
 JSON="$(docker compose --env-file "$DEPS_ENV" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
 rm -f "$DEPS_ENV"
+jq_assert "payout profiles keep Tor's node-profile environment (#2859)" '.services.tor.environment.COMPOSE_PROFILES == "local_node,local_tari"'
 for edge in "monerod=tor" "tari=tor" "wallet-rpc=monerod" "tari-wallet=tari"; do
     svc="${edge%%=*}" dep="${edge#*=}"
     jq_assert "$svc waits for $dep to be service_healthy (#565)" \
         ".services[\"$svc\"].depends_on[\"$dep\"].condition == \"service_healthy\""
 done
-jq_assert "xmrig-proxy waits for p2pool service_started only, not health-gated (#565)" \
-    '.services["xmrig-proxy"].depends_on["p2pool"].condition == "service_started"'
+jq_assert "xmrig-proxy waits for p2pool service_started only, not health-gated (#565)" '.services["xmrig-proxy"].depends_on["p2pool"].condition == "service_started"'
+# Both service_healthy edges on tor fail the whole `up` once tor reads unhealthy, and a cold Tor
+# bootstrap has taken 5 minutes (#2648). Compose renders durations as Go strings: "10m", "1m30s".
+jq_assert "tor's start_period covers a slow cold bootstrap: 10 minutes or more (#2648)" 'def secs: capture("^((?<h>[0-9]+)h)?((?<m>[0-9]+)m)?((?<s>[0-9]+)s)?$") | ((.h // "0" | tonumber) * 3600 + (.m // "0" | tonumber) * 60 + (.s // "0" | tonumber)); (.services.tor.healthcheck.start_period | secs) >= 600'
 # Peer-loss coupling (#972): a tor restart/recreate kills monerod's SOCKS peers and monerod does
 # NOT re-dial on its own (bench: 0 in / 0 out peers for ~6h, healthcheck green). restart: true
 # makes every compose operation that restarts/recreates tor restart monerod right after — and it
 # is deliberately the ONLY such coupling: p2pool re-peers on its own.
-jq_assert "monerod restarts whenever compose restarts/recreates tor (#972)" \
-    '.services["monerod"].depends_on["tor"].restart == true'
-jq_assert "the tor restart coupling stays monerod-only (#972)" \
-    '[.services[] | (.depends_on // {}) | to_entries[] | select(.value.restart == true)] | length == 1'
+jq_assert "monerod restarts whenever compose restarts/recreates tor (#972)" '.services["monerod"].depends_on["tor"].restart == true'
+jq_assert "the tor restart coupling stays monerod-only (#972)" '[.services[] | (.depends_on // {}) | to_entries[] | select(.value.restart == true)] | length == 1'
 jq_assert "p2pool has no depends_on — both monerod and tari can be profiled off (#103/#565)" \
     '(.services["p2pool"].depends_on // {}) == {}'
 # Count guard: a NEW depends_on edge (health-gated or not) added anywhere in the file must show up
@@ -319,15 +319,17 @@ jq_assert "exactly 5 depends_on edges total (#565)" \
 # The wallet probe must fit ps's 15-char CMD column — procps truncates CMD there, so the full
 # binary name never matches and the container would report unhealthy forever while the wallet
 # runs fine (#777). Asserted here because tari-wallet only renders under tari_payout_confirm.
-jq_assert "tari-wallet healthcheck pattern survives ps CMD truncation (#777)" \
-    '(.services["tari-wallet"].healthcheck.test | tostring) | contains("[m]inotari_consol") and (contains("[m]inotari_console_wallet") | not)'
+jq_assert "tari-wallet probe sees process after UID drop (#2454/#777)" '.services["tari-wallet"].healthcheck.test == ["CMD-SHELL", "ps -e | grep '\''[m]inotari_consol'\'' || exit 1"]'
+jq_assert "tari-wallet wrapper may repair its volume before dropping uid (#2454)" \
+    '.services["tari-wallet"] | .user == "0:0" and .cap_drop == ["ALL"] and ((.cap_add | sort) == (["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"] | sort)) and .read_only == true'
+jq_assert "tari-wallet runs under an init that reaps and forwards signals (#2657)" '.services["tari-wallet"].init == true'
 # The console wallet's digest pin had NO assertion anywhere (#1137). It cannot have one where the
 # other three live: $RENDERED is built with COMPOSE_PROFILES=local_node,local_tari and tari-wallet
 # is profiles: ["tari_payout_confirm"], so an expect_present there would pass and fail identically —
 # it is not in that render at all. Here it is, for the same reason the healthcheck assertion above
 # is. Whole reference, not the `tag@sha256:` prefix, for the reason given at the other three.
 jq_assert "tari console wallet pinned by digest (#1137)" \
-    '.services["tari-wallet"].image == "quay.io/tarilabs/minotari_console_wallet:v5.3.1-mainnet@sha256:31b3cd7b2b390da33c279fd1a5cd457eb254aeea17a5a230ff4c7bfea79a47eb"'
+    '.services["tari-wallet"].image == "ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d"'
 # The two Tari images are one component, bumped together, so a tag that moves on one and not the
 # other is a silent split-brain — the node speaking one protocol version and the wallet another.
 # Nothing compared them, and `scripts/release/release.sh pin tari` reads the NODE only (#1138), so a wallet
@@ -389,7 +391,7 @@ JSON="$(docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" conf
 jq_assert "tari service present when local_tari is active (#103)" \
     '.services | has("tari")'
 REMOTE_TARI_ENV="$(mktemp)"
-sed 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node/' "$ENV_FILE" >"$REMOTE_TARI_ENV"
+sed -e 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node/' -e 's/^TOR_COMPOSE_PROFILES=.*/TOR_COMPOSE_PROFILES=local_node/' "$ENV_FILE" >"$REMOTE_TARI_ENV"
 if docker compose --env-file "$REMOTE_TARI_ENV" -f "$ROOT/docker-compose.yml" config -q; then
     echo "  ✓ compose config resolves with local_tari OMITTED (remote tari, #103)"
 else
@@ -404,8 +406,6 @@ else
     echo "  ✗ tari service still present with local_tari omitted (remote tari, #103)"
     fails=$((fails + 1))
 fi
-# The same profile list must reach the tor container, which gates each node's inbound hidden service
-# on it (#103) — without this wiring tor would keep publishing an onion for a node that never starts.
 if jq -e '.services.tor.environment.COMPOSE_PROFILES == "local_node"' <<<"$REMOTE_TARI_JSON" >/dev/null 2>&1; then
     echo "  ✓ tor receives the active profile list, so its onion gate matches the running nodes (#103)"
 else

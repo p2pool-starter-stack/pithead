@@ -55,8 +55,8 @@ DOCKER_LOG="$V/docker.log"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_contains "pool flag propagated" "$(run_sourced "$V" env_get_file "$V/.env" P2POOL_FLAGS)" "--mini"
 # Default routes outbound sidechain P2P through Tor (#165): the rendered P2POOL_FLAGS carries the
-# pool flag AND the Tor SOCKS flags (no p2pool.clearnet set in this config).
-assert_contains "outbound P2P via Tor by default (#165)" "$(run_sourced "$V" env_get_file "$V/.env" P2POOL_FLAGS)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor"
+# pool flag, the Tor SOCKS flags AND --no-dns (#2496) (no p2pool.clearnet set in this config).
+assert_contains "outbound P2P via Tor by default (#165)" "$(run_sourced "$V" env_get_file "$V/.env" P2POOL_FLAGS)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns"
 assert_eq "stratum_bind default" "$(run_sourced "$V" env_get_file "$V/.env" STRATUM_BIND)" "0.0.0.0"
 # stratum_port (#172) defaults to 3333, so an unconfigured stack keeps today's behaviour, and the
 # internal proxy→p2pool leg (P2POOL_URL) stays :3333 whatever the operator-facing port says.

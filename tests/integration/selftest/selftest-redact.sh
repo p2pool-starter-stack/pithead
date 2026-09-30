@@ -161,7 +161,8 @@ REF="$(cd "$HERE/../../.." && pwd)/config.reference.json"
 MUST_REDACT="monero.wallet_address monero.node_username monero.node_password monero.view_key
 tari.wallet_address tari.view_key tari.spend_public_key p2pool.stratum_password xvb.donor_id
 dashboard.auth.username dashboard.auth.password workers.api_token
-ssh.authorized_key healthchecks.ping_url telegram.bot_token notifications.ntfy.token"
+ssh.authorized_key healthchecks.ping_url telegram.bot_token notifications.ntfy.token
+xvb.standby.source tari.explorer_url"
 # Survivors, each for a stated reason — over-redaction is safe for secrets and not for anything
 # else: a bundle with its endpoints stripped is useless for the debugging it exists for.
 #   xvb.url                    a public service endpoint
@@ -192,13 +193,16 @@ MUST_SURVIVE="xvb.url workers.api_auth telegram.chat_id"
 # whole URL is the bearer secret (#848), redact() reaches no part of it, and the array ships empty
 # so no walk produced a path to classify. The bundle is covered as ntfy.url's is, by
 # render_masked_config's per-entry mask; this row measures the STREAM filter alone.
-# ⛔ `xvb.standby.source` is the third of these, and it is a NAME gap rather than a shape one:
-# `render_masked_config` masks it by path, redact() carries no suffix that reaches the bare word
-# `source`, and until #1723 widened the screen this file could not see it to say so.
-KNOWN_GAP="notifications.ntfy.url notifications.webhooks[] xvb.standby.source"
+#
+# `xvb.standby.source` WAS the third of these (#1723 found it, #2342 closed it). Unlike ntfy.url
+# and webhooks[], its bare leaf name `source` is unique in the whole schema — grep confirms no
+# other field is named or ends in `source` — so adding SOURCE/source to redact()'s two
+# alternations reaches it without touching `xvb.url`, the MUST_SURVIVE neighbour that made the
+# same move unsafe for the bare word `url`. Moved to MUST_REDACT above.
+KNOWN_GAP="notifications.ntfy.url notifications.webhooks[]"
 # Arrays OF OBJECTS: not a gap in redact() but in what an EMPTY value document can say about a
-# schema. Their `.token` entries are masked by render_masked_config (#172) and covered at tier 1
-# in tests/stack/test-worker-config.sh; populate it and `.token` returns to the name rule through
+# schema. Their `.token` and `.api_token` entries are masked by render_masked_config and covered at tier 1
+# in tests/stack/test-worker-config.sh; populate them and both names return to the name rule through
 # the screen above. The deprecated dashboard.workers[] twin went with the alias in 2.0.0 (#1832).
 ELEMENT_SHAPE_UNKNOWN="workers.list[]"
 
@@ -308,7 +312,6 @@ for field in $SCREENED; do
     if in_list "$field" "$KNOWN_GAP"; then
         case "$field" in
         *webhooks*) gap_ref="#848" ;;
-        *standby.source) gap_ref="#1723" ;;
         *) gap_ref="#1630" ;;
         esac
         assert_contains "KNOWN GAP ($gap_ref) — $field is NOT redacted by the STREAM filter" "$out" "$SENTINEL"
@@ -321,7 +324,7 @@ for field in $SCREENED; do
     if in_list "$field" "$ELEMENT_SHAPE_UNKNOWN"; then
         elems="$(printf '%s\n' "$ARRAY_LEN" | awk -v f="$field" '$1 == f { print $2; exit }')"
         if [ "$elems" = "0" ]; then
-            it_warn "NOT MEASURED (#1723): $field is an array of objects and the reference carries 0 elements, read from the schema — its .token entries are covered by render_masked_config and by tier 1, not by this filter."
+            it_warn "NOT MEASURED (#1723): $field is an array of objects and the reference carries 0 elements, read from the schema — its .token and .api_token entries are covered by render_masked_config and by tier 1, not by this filter."
         else
             it_fail "$field is in ELEMENT_SHAPE_UNKNOWN and the reference carries no element" \
                 "the reference carries ${elems:-no measured count} — this bucket asserts nothing BECAUSE there was no element to probe, so reclassify $field against what its element actually holds"

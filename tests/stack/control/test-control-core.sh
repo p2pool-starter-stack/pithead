@@ -176,11 +176,14 @@ jq -n --arg w "$WALLET" --arg id "$UUID0" '{id:$id, action:"preview", actor:"adm
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS0/$UUID0.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead control-run-pending >/dev/null 2>&1)
-# Node RPC credentials are perimeter keys, so the preview REFUSES rather than reporting
-# "previewed, approval_required" for a change the gate would then refuse anyway (2026-09-13
-# perimeter audit round 2 — preview and gate classify through control_committable_re alike).
-assert_eq "blank-creds preview status" "$(jq -r '.status' "$RESULTS0/$UUID0.json" 2>/dev/null)" "rejected"
-assert_contains "blank-creds refusal names the perimeter, not a missing envelope" "$(jq -r '.error' "$RESULTS0/$UUID0.json" 2>/dev/null)" "not committable from the dashboard"
+# The owner's #2333/#2367 ruling (2026-09-19) moved the RPC login onto the CONFIRM tier, so the
+# preview no longer refuses outright — it previews CONFIRM-flagged, same as any other CONFIRM key
+# (destructive, no approval envelope demanded), and the warning never surfaces the blank value in
+# preview_values (CONTROL_SECRET_PATHS masks it, same as every other secret leaf).
+assert_eq "blank-creds preview status" "$(jq -r '.status' "$RESULTS0/$UUID0.json" 2>/dev/null)" "previewed"
+assert_eq "blank-creds preview is destructive (CONFIRM tier)" "$(jq -r '.destructive' "$RESULTS0/$UUID0.json" 2>/dev/null)" "true"
+assert_eq "blank-creds preview does not demand the approval envelope" "$(jq -r '.approval_required' "$RESULTS0/$UUID0.json" 2>/dev/null)" "false"
+assert_eq "blank-creds preview does not surface the login in preview_values" "$(jq -r '.preview_values // [] | length' "$RESULTS0/$UUID0.json" 2>/dev/null)" "0"
 assert_eq "staged copy keeps the blank node_username — not persisted (#556)" "$(jq -r '.monero.node_username' "$STAGED0/$UUID0.json" 2>/dev/null)" ""
 assert_eq "staged copy keeps the blank node_password — not persisted (#556)" "$(jq -r '.monero.node_password' "$STAGED0/$UUID0.json" 2>/dev/null)" ""
 # Clean up: the result/staged counters the tests below assume start from a clean spool.
@@ -312,6 +315,22 @@ case "$(cat "$AUDIT")" in
 *"a control passphrase"* | *"$WALLET"* | *mini*) bad "audit log holds no config or secret values" "a value leaked into audit/control.log" ;;
 *) ok "audit log holds no config or secret values" ;;
 esac
+
+# #2365: the browser sends the whole explicit config (so unchanged credentials survive) but omits
+# untouched reference defaults. A one-field edit must still produce one preview row and audit key.
+jq '.dashboard.energy.cost_per_kwh=0.15' "$C/config.json" |
+    jq -n --arg id "$UUID2" --arg actor admin --slurpfile cfg /dev/stdin \
+        '{id:$id,action:"preview",actor:$actor,config:$cfg[0]}' >"$REQS/$UUID2.json"
+run_pending >/dev/null
+assert_eq "one-field candidate previews one control diff (#2365)" \
+    "$(jq -r '.changes | map(.key) | join(" ")' "$RESULTS/$UUID2.json")" "dashboard.energy"
+printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID2" >"$REQS/$UUID2.json"
+run_pending >/dev/null
+assert_eq "one-field candidate commits" "$(jq -r '.status' "$RESULTS/$UUID2.json")" "applied"
+assert_eq "one-field commit preserves an explicit credential" \
+    "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
+assert_eq "one-field commit audits only its key (#2365)" \
+    "$(tail -n 1 "$AUDIT" | jq -r '.keys')" "dashboard.energy.cost_per_kwh"
 
 # Expired staged intent (older than the 10-min commit window) → rejected as expired and cleared.
 # Age it ~15 min: past the 10-min expiry the commit enforces, but INSIDE the 60-min stale sweep so

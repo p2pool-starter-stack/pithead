@@ -239,8 +239,10 @@ class StorageSchemaMixin:
         # unissued change_id) and "rig-drift" (#1551 — a revision moved with no new change_id); the
         # last two read the unauthenticated worker feed and SHARE one #724 per-worker flood cap.
         # `keys` is names only — never a value — the same contract as control.log itself.
-        # Permanent, no pruning, like blocks/payouts/disk_growth: these are human-paced admin events,
-        # not a hot metrics series.
+        # 30-day retention (#1814, AUDIT_EVENTS_RETENTION_SEC in mining_store.py), pruned like the
+        # rest of this store's series: two of the three self-detected kinds read the unauthenticated
+        # worker feed, so this table is not exempt from #724's disk-fill concern the way blocks/
+        # payouts/disk_growth (all genuinely host-paced) are.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS audit_events "
             "(id TEXT PRIMARY KEY, ts TEXT, source TEXT, actor TEXT, action TEXT, status TEXT, "

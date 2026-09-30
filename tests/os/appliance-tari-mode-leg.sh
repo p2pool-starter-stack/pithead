@@ -49,6 +49,41 @@ p2pool_merge_mine_argv() {
 
 tari_data_preserved() { [ "$1" != missing ] && [ "$1" = "$2" ]; }
 
+# #2627: without compose's init: true minotari_node is PID 1, reaps nothing, and a zombie PID 1
+# cannot be stopped. Via the compat API podman's own init (/run/podman-init) is PID 1 instead.
+tari_pid1_comm() {
+    local comm tries=0
+    while [ "$tries" -lt 15 ]; do
+        comm=$(_ssh "podman exec tari cat /proc/1/comm" 2>/dev/null | tr -d '\r\n') && [ -n "$comm" ] && {
+            printf '%s' "$comm"
+            return 0
+        }
+        tries=$((tries + 1))
+        sleep 4
+    done
+    return 1
+}
+tari_pid1_is_init() { case "$1" in podman-init | catatonit) return 0 ;; *) return 1 ;; esac }
+
+# Both halves of the sync gate's post-switch verdict: the dashboard logged that it is holding
+# p2pool for the fresh-Monero sync, and p2pool itself is actually stopped clean. Neither settles
+# the instant the tari-container teardown loop above returns, so this is polled the same way.
+p2pool_held_by_sync_gate() {
+    _ssh "podman logs dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" 2>/dev/null &&
+        [ "$(_ssh "podman inspect p2pool --format '{{.State.Running}} {{.State.ExitCode}}'" 2>/dev/null | tr -d '\r')" = "false 0" ]
+}
+
+# Bounded the same way as the tari-container teardown loop above it: the check does not settle
+# the instant that loop returns.
+wait_for_p2pool_held_by_sync_gate() {
+    local tries=0
+    while [ "$tries" -lt 30 ] && ! p2pool_held_by_sync_gate; do
+        tries=$((tries + 1))
+        sleep 4
+    done
+    p2pool_held_by_sync_gate
+}
+
 tari_live_config() {
     local live tries
     for tries in 1 2 3 4 5 6; do
@@ -84,7 +119,7 @@ tari_mode_commit() { # <proposed-config-json> -> prints the commit result
 # shellcheck disable=SC2034,SC2154
 phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <phase-rc>
     local DASH_USER="$1" DASH_PASS="$2" phase_rc="${3:-0}"
-    local live proposed result before after origin argv rc=0 tries restored unexercised=bad
+    local live proposed result before after origin argv pid1 rc=0 tries restored unexercised=bad
     # A PRECONDITION FAILURE IS NOT A VERDICT ON TARI SWITCHING (#2059's contract, learned here the
     # same way). When the phase is already red this leg cannot run, and saying "bad" would put a
     # tari-shaped label on somebody else's defect: its first bench run reported "live config could
@@ -116,6 +151,17 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
         return 1
         ;;
     esac
+
+    # Before the switch, while the provisioned node is running: the stop below must reach it.
+    if ! pid1=$(tari_pid1_comm); then
+        bad "the tari container's PID 1 could not be read (#2627)"
+        rc=1
+    elif tari_pid1_is_init "$pid1"; then
+        ok "tari runs under podman's init ($pid1 is PID 1), so a stop reaches the node (#2627)"
+    else
+        bad "tari's PID 1 is $pid1, not an init: a zombie PID 1 cannot be stopped (#2627)"
+        rc=1
+    fi
 
     # --- local -> off, on the plain route -------------------------------------------------------
     proposed=$(printf '%s' "$live" | jq -c '.tari.mode = "off"')
@@ -168,8 +214,7 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
         rc=1
     fi
 
-    if _ssh "podman logs dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" &&
-        [ "$(_ssh "podman inspect p2pool --format '{{.State.Running}} {{.State.ExitCode}}'" 2>/dev/null | tr -d '\r')" = "false 0" ]; then
+    if wait_for_p2pool_held_by_sync_gate; then
         ok "fresh Monero sync still holds p2pool cleanly after Tari leaves the gate"
     else
         bad "p2pool is not cleanly held by the remaining fresh-Monero sync gate"
@@ -241,6 +286,26 @@ _tari_mode_self_test() {
     tari_data_preserved '41 2111' '41 2111' || f=$((f + 1))
     tari_data_preserved '41 2111' '41 2112' && f=$((f + 1))
     tari_data_preserved missing missing && f=$((f + 1))
+    tari_pid1_is_init podman-init && ! tari_pid1_is_init minotari_node && ! tari_pid1_is_init '' || f=$((f + 1))
+    # The PID 1 read retries through a restart and gives up when the container never answers.
+    (
+        counter=$(mktemp)
+        printf '0\n' >"$counter"
+        _ssh() {
+            calls=$(($(cat "$counter") + 1))
+            printf '%s\n' "$calls" >"$counter"
+            [ "$calls" -gt 2 ] && printf 'podman-init\r\n'
+        }
+        sleep() { :; }
+        if [ "$(tari_pid1_comm)" = podman-init ]; then rc=0; else rc=1; fi
+        rm -f "$counter"
+        exit "$rc"
+    ) || f=$((f + 1))
+    (
+        _ssh() { return 1; }
+        sleep() { :; }
+        ! tari_pid1_comm
+    ) || f=$((f + 1))
     (
         ip=fixture
         counter=$(mktemp)
@@ -272,6 +337,53 @@ _tari_mode_self_test() {
     (
         _ssh() { printf '[p2pool-entrypoint] launching: p2pool --merge-mine=tari://fixture [redacted]\n'; }
         [ "$(p2pool_merge_mine_argv)" = present ]
+    ) || f=$((f + 1))
+    # p2pool_held_by_sync_gate: red while p2pool is still running, green once it has settled stopped
+    # with the dashboard's holding line logged. A single-shot check would already catch both of
+    # these; the point of the poll is bridging the gap between them (below).
+    (
+        _ssh() {
+            case "$*" in
+            *'podman logs dashboard'*) return 0 ;;
+            *'podman inspect p2pool'*) printf 'true 0\n' ;;
+            *) return 1 ;;
+            esac
+        }
+        ! p2pool_held_by_sync_gate
+    ) || f=$((f + 1))
+    (
+        _ssh() {
+            case "$*" in
+            *'podman logs dashboard'*) return 0 ;;
+            *'podman inspect p2pool'*) printf 'false 0\n' ;;
+            *) return 1 ;;
+            esac
+        }
+        p2pool_held_by_sync_gate
+    ) || f=$((f + 1))
+    # The poll loop itself: p2pool is still running on the first calls and only settles after a
+    # few retries, the same shape as the teardown loop above it. A single unretried check would
+    # stay red for this whole run; the loop must turn it green before its 30-try bound runs out.
+    (
+        counter=$(mktemp)
+        printf '0\n' >"$counter"
+        _ssh() {
+            case "$*" in
+            *'podman logs dashboard'*) return 0 ;;
+            *'podman inspect p2pool'*)
+                calls=$(($(cat "$counter") + 1))
+                printf '%s\n' "$calls" >"$counter"
+                if [ "$calls" -lt 3 ]; then printf 'true 0\n'; else printf 'false 0\n'; fi
+                ;;
+            *) return 1 ;;
+            esac
+        }
+        sleep() { :; }
+        wait_for_p2pool_held_by_sync_gate
+        rc=$?
+        calls=$(cat "$counter")
+        rm -f "$counter"
+        [ "$rc" -eq 0 ] && [ "$calls" -ge 3 ]
     ) || f=$((f + 1))
     # The leg is wired into the provision phase; a leg nobody calls proves nothing.
     grep -Fq 'phase_provision_tari_mode_switch "$pv_user" "$pv_pass" "$rc"' \

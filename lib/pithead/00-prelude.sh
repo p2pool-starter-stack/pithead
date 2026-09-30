@@ -186,6 +186,15 @@ PITHEAD_EX_LOCK_TIMEOUT=75
 is_versioned_install_dir() { # <dir> — the `pithead-vX.Y.Z` shape control_upgrade's #629 deploy creates
     [[ "$(basename "$1")" =~ ^pithead-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
+# Prints the live install when <dir> is a superseded version dir: `current` beside it resolves to
+# another directory. rc 1 for the live dir itself, any other layout, or a dangling `current`.
+superseded_by_live_install() { # <dir, physical path>
+    local live
+    is_versioned_install_dir "$1" && [ -L "$(dirname "$1")/current" ] || return 1
+    live=$(cd "$(dirname "$1")/current" 2>/dev/null && pwd -P) || return 1
+    [ -n "$live" ] && [ "$live" != "$1" ] || return 1
+    printf '%s\n' "$live"
+}
 mutation_lock_path() {
     if [ -n "${PITHEAD_LOCK_FILE:-}" ]; then
         printf '%s' "$PITHEAD_LOCK_FILE"
@@ -286,6 +295,11 @@ mutation_lock_acquire() { # <verb label>
             echo -e "${C_RED}[ERROR]${C_RESET} Timed out after ${PITHEAD_LOCK_TIMEOUT}s waiting for another pithead operation ($holder) — nothing was changed. Re-run '$0 $label' once it has finished." >&2
             exit "$PITHEAD_EX_LOCK_TIMEOUT"
         fi
+    fi
+    # The dashboard opens this same non-secret inode through a read-only bind mount. Normalise its
+    # mode only after taking the lock; chmod changes neither the inode nor the held flock.
+    if ! chmod 644 "$_PITHEAD_LOCK_PATH" 2>/dev/null; then
+        warn "Cannot make the pithead lock file ($_PITHEAD_LOCK_PATH) readable to the dashboard — dashboard container control will fail closed."
     fi
     _PITHEAD_LOCK_OWNED=1
     _PITHEAD_LOCK_DEPTH=1

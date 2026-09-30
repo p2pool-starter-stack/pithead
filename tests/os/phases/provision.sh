@@ -4,6 +4,8 @@
 source "$SCRIPT_DIR/phases/provision-initial.sh" || return $?
 # shellcheck source=tests/os/phases/provision-reboot.sh
 source "$SCRIPT_DIR/phases/provision-reboot.sh" || return $?
+# shellcheck source=tests/os/phases/provision-power-cut.sh
+source "$SCRIPT_DIR/phases/provision-power-cut.sh" || return $?
 # shellcheck source=tests/os/phases/provision-migration.sh
 source "$SCRIPT_DIR/phases/provision-migration.sh" || return $?
 phase_provision() {
@@ -17,5 +19,6 @@ phase_provision() {
     local PROVISION_DASHBOARD_HOST=fixture-box
     _phase_provision_initial || return
     _phase_provision_reboot || return
+    _phase_provision_power_cut || return
     _phase_provision_migration
 }

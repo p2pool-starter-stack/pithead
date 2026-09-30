@@ -3,8 +3,9 @@
 ``_record_audit_event`` cleans five fields through ``audit_service._clean`` and used to pass the
 sixth — ``id``, the ``audit_events`` PRIMARY KEY — through untouched. On the rig-edit path that id
 is built from an unauthenticated worker's ``change_id``, validated upstream only as a non-empty
-``str`` inside a body capped at 1 MiB, and ``audit_events`` has no retention prune, so an oversized
-id is permanent.
+``str`` inside a body capped at 1 MiB. ``audit_events`` ages rows out at 30 days (#1814), so an
+oversized id is no longer permanent — but it is unbounded in SIZE for that whole window, which is
+the stake #1561 is about.
 
 ``build_event_id`` is the other half and the same stake: the id is the ``audit_events`` PRIMARY KEY
 under ``INSERT OR IGNORE``, so two distinct detections that mint the same id do not become two rows

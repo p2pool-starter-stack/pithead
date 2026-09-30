@@ -538,8 +538,7 @@ assert_eq "sync progress: dashboard down -> silent" \
 rm -rf "$SP"
 
 echo "== black-box: dashboard auth lifecycle (#8) =="
-# The hashing reads the pinned Caddy image out of docker-compose.yml and shells out to the stubbed
-# `caddy hash-password`, so the whole enable → reuse → change → disable path runs offline.
+# Hashing uses the pinned Caddy image and stubbed `caddy hash-password` for the offline lifecycle.
 cp "$ROOT/docker-compose.yml" "$V/docker-compose.yml"
 AUTH_LOG="$V/auth-docker.log"
 
@@ -556,6 +555,7 @@ fp1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)"
 [ -n "$hash1" ] && ok "auth hash persisted (base64)" || bad "auth hash persisted (base64)" "empty"
 [ -n "$fp1" ] && ok "auth fingerprint persisted" || bad "auth fingerprint persisted" "empty"
 assert_contains "auth hashed via the pinned caddy image" "$(cat "$AUTH_LOG")" "hash-password"
+assert_not_contains "auth password stays out of docker argv" "$(cat "$AUTH_LOG")" "hunter2hunter2"
 assert_contains "Caddyfile gains basic_auth" "$(cat "$V/Caddyfile")" "basic_auth"
 case "$(cat "$V/.env" "$V/Caddyfile")" in
 *hunter2hunter2*) bad "auth plaintext never persisted" "password leaked into .env/Caddyfile" ;;

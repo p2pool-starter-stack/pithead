@@ -164,3 +164,16 @@ assert_eq "overflow intents left for the next run" "$(ls "$REQS" | wc -l | tr -d
 out="$(run_pending)"
 assert_contains "next run drains the remainder" "$out" "Processed 10 control request(s)"
 assert_eq "spool empty after the second run" "$(ls "$REQS" | wc -l | tr -d ' ')" "0"
+
+# Retention is applied after every request, not only before the batch: two rejected intents write
+# two results, but a one-result cap leaves only the newest once the same drain finishes.
+rm -f "$RESULTS"/*.json
+UUID6="a6a6a6a6-a6a6-46a6-8a6a-a6a6a6a6a6a6"
+UUID7="a7a7a7a7-a7a7-47a7-8a7a-a7a7a7a7a7a7"
+printf '{"id":"%s","action":"unknown","actor":"x"}\n' "$UUID6" >"$REQS/$UUID6.json"
+printf '{"id":"%s","action":"unknown","actor":"x"}\n' "$UUID7" >"$REQS/$UUID7.json"
+export CONTROL_RESULT_MAX_COUNT=1 CONTROL_RESULT_MAX_AGE_S=100000
+run_pending >/dev/null
+result_count=$(find "$RESULTS" -maxdepth 1 -type f \( -name "$UUID6.json" -o -name "$UUID7.json" \) | wc -l | tr -d ' ')
+assert_eq "each request in one drain reapplies the result count cap" "$result_count" "1"
+unset CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S UUID6 UUID7 result_count

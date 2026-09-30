@@ -1,38 +1,54 @@
 #!/usr/bin/env bash
 set -uo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh)
-function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh)
+modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh)
+function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-fresh-start.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh)
 expected_modules="${modules[*]}"
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_modules" = "$expected_modules" ] || {
     echo "os module order mismatch: $actual_modules" >&2
     exit 1
 }
-
-expected_functions='ok bad info it_warn it_err have _ssh _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault phase_reset phase_crossupdate'
-actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_' | tr '\n' ' ' | sed 's/ $//')"
+expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup serial_has wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg _restore_target_preboot_verdict _restore_installer_preboot_verdict phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _phase_reset_config phase_reset _image_upgrade_input_failure _image_upgrade_input_run _image_upgrade_inputs_valid _image_upgrade_node_v4 _image_upgrade_prepare_inputs _image_upgrade_sign_wrong_key _image_upgrade_stage_guest _image_upgrade_clear_guest_inputs _image_upgrade_read_guest_failure _image_upgrade_read_miner_readiness phase_image_upgrade phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack'
+actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_(height|evidence)$' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
     exit 1
 }
-
+grep -Fq -- '--rawfile monero_pass "$stage/monero-pass"' "$HERE/phases/image-upgrade.sh" && ! grep -Fq -- '--arg monero_pass' "$HERE/phases/image-upgrade.sh" || {
+    echo "image-upgrade must not pass the remote-node password through jq argv" >&2
+    exit 1
+}
 if bash -c 'source "$1"' _ "$HERE/phases/boot.sh" >/dev/null 2>&1; then
     echo "os module accepted a direct source without its runner guard" >&2
     exit 1
 fi
-
+# shellcheck disable=SC2034 # sourced phase functions read these runner globals dynamically.
 OS_RUN_SUITE=1 SCRIPT_DIR="$HERE" SERIAL="$(mktemp)" PASS=0 FAIL=0 KEEP=1
+# shellcheck disable=SC2034 # sourced phase functions read these runner globals dynamically.
 VM=selftest DISK="$SERIAL.disk" SSH_ERR="$SERIAL.ssh-error"
 # shellcheck source=tests/os/lib/core.sh
 source "$HERE/lib/core.sh" || exit $?
+SSH_ERR="$SERIAL.ssh-error"
+# #2094's drain: a spool that never empties must spend its deadline and FAIL rather than fall through to an
+# apply; an unreadable spool must read as undrained, never as drained.
+(
+    info() { :; }
+    _ssh() { printf '0\n'; }
+    _control_requests_drained 5 || exit 1
+    _ssh() { printf '2\n'; }
+    ! _control_requests_drained 1 || exit 1
+    _ssh() { return 1; }
+    ! _control_requests_drained 1 || exit 1
+) || exit 1
 # shellcheck source=tests/os/phases/boot.sh
 source "$HERE/phases/boot.sh" || exit $?
 # shellcheck source=tests/os/phases/update.sh
 source "$HERE/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh
 source "$HERE/phases/update-dashboard.sh" || exit $?
+# shellcheck source=tests/os/phases/update-healthgate-leg.sh
+source "$HERE/phases/update-healthgate-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$HERE/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh
@@ -47,11 +63,224 @@ source "$HERE/phases/rigmedia.sh" || exit $?
 source "$HERE/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$HERE/phases/reset.sh" || exit $?
+# shellcheck source=tests/os/phases/image-upgrade.sh
+source "$HERE/phases/image-upgrade.sh" || exit $?
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$HERE/phases/crossupdate.sh" || exit $?
+# shellcheck source=tests/os/phases/stack.sh
+source "$HERE/phases/stack.sh" || exit $?
+# #2254: stack.sh is sourced into the runner's scope, so SCRIPT_DIR is the runner's own
+# directory (tests/os), never stack.sh's (tests/os/phases). _stack_run_integration must resolve
+# the DIY gate as "$SCRIPT_DIR/../integration/run.sh"; a stray extra ".." would send it above the
+# repo and fail with exit 127 on every bench run instead of here. Assert both the resolved path
+# exists AND the source line itself, so neither a path drift nor a same-string coincidence hides.
+grep -Fq '"$SCRIPT_DIR/../integration/run.sh" --host' "$HERE/phases/stack.sh" || {
+    echo "stack phase's DIY gate invocation no longer resolves via \$SCRIPT_DIR/../integration/run.sh" >&2
+    exit 1
+}
+[ -x "$SCRIPT_DIR/../integration/run.sh" ] || {
+    echo "stack phase's DIY gate path does not resolve to an executable tests/integration/run.sh" >&2
+    exit 1
+}
 trap - EXIT
+if (
+    PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT=18083 \
+        PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example
+    _image_upgrade_inputs_valid
+); then
+    :
+else
+    echo "image-upgrade rejected the complete remote-node contract" >&2
+    exit 1
+fi
+# #2057 job 978: the guest gets the node as an IPv4 literal resolved on the bench host; a name
+# with no IPv4 address fails with the sub-step alone, never the name.
+if (
+    getent() {
+        case "$2" in
+        node.example) printf '192.0.2.7      STREAM node.example\n192.0.2.7      DGRAM\n' ;;
+        192.0.2.9) printf '192.0.2.9      STREAM 192.0.2.9\n' ;;
+        *) return 2 ;;
+        esac
+    }
+    [ "$(_image_upgrade_node_v4 monero-node-address node.example)" = 192.0.2.7 ] || exit 1
+    [ "$(_image_upgrade_node_v4 tari-node-address 192.0.2.9)" = 192.0.2.9 ] || exit 1
+    v6_rc=0
+    v6_out="$(_image_upgrade_node_v4 tari-node-address v6only.example 2>&1)" || v6_rc=$?
+    [ "$v6_rc" -eq 2 ] &&
+        [ "$v6_out" = 'image-upgrade input failure: sub-step=tari-node-address command="getent ahostsv4 <node-host>" exit=2' ]
+); then
+    :
+else
+    echo "image-upgrade did not resolve the node to one IPv4 literal or leaked the name" >&2
+    exit 1
+fi
+diagnostic_rc=0
+diagnostic="$(_image_upgrade_input_run generated-config \
+    'tar -xOf <baseline> pithead/config.reference.json | jq <config-transform>' \
+    sh -c 'printf "must-not-leak\n" >&2; exit 17' 2>&1)" || diagnostic_rc=$?
+[ "$diagnostic_rc" -eq 17 ] &&
+    [ "$diagnostic" = 'image-upgrade input failure: sub-step=generated-config command="tar -xOf <baseline> pithead/config.reference.json | jq <config-transform>" exit=17' ] || {
+    echo "image-upgrade failure attribution lost the sub-step, redacted command, or exit status" >&2
+    exit 1
+}
+baseline_rc=0
+baseline_diagnostic="$(
+    stage="$(mktemp -d)" && trap 'rm -rf "$stage"' EXIT
+    tar() {
+        case "$1" in
+        -tf) printf 'usr/local/bin/cosign\n' ;;
+        -xOf) printf '#!/bin/sh\nexit 0\n' ;;
+        esac
+    }
+    chmod() { :; }
+    curl() {
+        printf 'must-not-leak\n' >&2
+        return 23
+    }
+    _image_upgrade_prepare_inputs "$stage" 2>&1
+)" || baseline_rc=$?
+[ "$baseline_rc" -eq 23 ] &&
+    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=signing command="curl <published-v1.20.0-bundle>" exit=23' ] || {
+    echo "image-upgrade baseline trust preparation lost safe failure attribution" >&2
+    exit 1
+}
+candidate_rc=0
+candidate_diagnostic="$(
+    stage="$(mktemp -d)" && trap 'rm -rf "$stage"' EXIT
+    tar() {
+        printf 'must-not-leak\n' >&2
+        return 31
+    }
+    _image_upgrade_prepare_inputs "$stage" 2>&1
+)" || candidate_rc=$?
+[ "$candidate_rc" -eq 31 ] &&
+    [ "$candidate_diagnostic" = 'image-upgrade input failure: sub-step=candidate-bundle command="tar -tf <candidate-rootfs>" exit=31' ] || {
+    echo "image-upgrade candidate bundle preparation lost safe failure attribution" >&2
+    exit 1
+}
+signing_rc=0
+signing_diagnostic="$(
+    stage="$(mktemp -d)" && trap 'rm -rf "$stage"' EXIT
+    tar() {
+        case "$1" in
+        -tf) printf 'usr/local/bin/cosign\n' ;;
+        -xOf) printf '#!/bin/sh\nprintf "must-not-leak\\n" >&2\nexit 29\n' ;;
+        esac
+    }
+    curl() { :; }
+    _image_upgrade_prepare_inputs "$stage" 2>&1
+)" || signing_rc=$?
+[ "$signing_rc" -eq 29 ] &&
+    [ "$signing_diagnostic" = 'image-upgrade input failure: sub-step=signing command="cosign verify-blob <published-v1.20.0-bundle>" exit=29' ] || {
+    echo "image-upgrade signing preparation lost safe failure attribution" >&2
+    exit 1
+}
+wrong_stage="$(mktemp -d)"
+trap 'rm -rf "$wrong_stage"' EXIT
+printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$@" >"$0.args"' >"$wrong_stage/cosign"
+chmod 0700 "$wrong_stage/cosign"
+: >"$wrong_stage/wrong.key"
+: >"$wrong_stage/candidate.tar.gz"
+_image_upgrade_sign_wrong_key "$wrong_stage" || exit $?
+grep -Fx -- '--use-signing-config=false' "$wrong_stage/cosign.args" >/dev/null &&
+    grep -Fx -- '--new-bundle-format=false' "$wrong_stage/cosign.args" >/dev/null &&
+    grep -Fx -- '--tlog-upload=false' "$wrong_stage/cosign.args" >/dev/null || {
+    echo "image-upgrade wrong-key signing lost its legacy detached flags" >&2
+    exit 1
+}
+bash "$HERE/image-upgrade-guest.sh" --self-test || exit $?
+if (
+    for stage in remote-node-reachable reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner-tree local-miner-role local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
+        _ssh() { printf 'stage=%s exit=17\n' "$stage"; }
+        [ "$(_image_upgrade_read_guest_failure)" = "stage=$stage exit=17" ] || exit 1
+    done
+    _ssh() { printf '%s\n' 'stage=baseline-setup exit=17 token=must-not-leak'; }
+    ! _image_upgrade_read_guest_failure >/dev/null 2>&1
+); then
+    :
+else
+    echo "image-upgrade guest-stage marker was not fixed and payload-only" >&2
+    exit 1
+fi
+if (
+    _ssh() { printf '%s\n' 'seconds=742 ready=15'; }
+    [ "$(_image_upgrade_read_miner_readiness)" = '742 15' ] || exit 1
+    _ssh() { printf '%s\n' 'seconds=742 ready=16'; }
+    ! _image_upgrade_read_miner_readiness >/dev/null 2>&1 || exit 1
+    _ssh() { printf '%s\n' 'seconds=742 ready=15 token=must-not-leak'; }
+    ! _image_upgrade_read_miner_readiness >/dev/null 2>&1
+); then
+    :
+else
+    echo "image-upgrade miner-readiness payload was not two bounded integers" >&2
+    exit 1
+fi
+if (
+    PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT='' \
+        PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example
+    _image_upgrade_inputs_valid
+); then
+    echo "image-upgrade accepted a missing remote-node input" >&2
+    exit 1
+fi
+if (
+    td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
+    PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT=18083
+    PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example IMAGE=fixture
+    _image_upgrade_prepare_inputs() { :; }
+    _vm_boot_disk() { :; }
+    _wait_ssh() { :; }
+    _image_upgrade_stage_guest() { return 1; }
+    _ssh() { [ "$1" = 'rm -rf /run/pithead-image-upgrade' ] && : >"$td/guest-inputs-cleared"; }
+    bad() { :; }
+    info() { :; }
+    phase_image_upgrade
+    [ -e "$td/guest-inputs-cleared" ] && rm -rf "$IMAGE_UPGRADE_HOST_STAGE"
+); then
+    :
+else
+    echo "image-upgrade left staged guest inputs after a staging failure" >&2
+    exit 1
+fi
+if (
+    td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
+    PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT=18083
+    PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example IMAGE=fixture
+    _image_upgrade_prepare_inputs() { :; }
+    _vm_boot_disk() { :; }
+    _wait_ssh() { :; }
+    _image_upgrade_stage_guest() { :; }
+    guest_inputs_cleared=0
+    _image_upgrade_clear_guest_inputs() { guest_inputs_cleared=1; }
+    _ssh() {
+        case "$1" in
+        'bash /run/pithead-image-upgrade/image-upgrade-guest.sh '*)
+            printf '%s\n' "$1" >"$td/guest-runner"
+            return 17
+            ;;
+        'cat /run/pithead-image-upgrade/guest-stage')
+            [ "$guest_inputs_cleared" -eq 0 ] && printf '%s\n' 'stage=baseline-setup exit=17'
+            ;;
+        '! mountpoint -q /data/pithead-image-upgrade-mount && test ! -e /data/pithead-image-upgrade-mount && test ! -e /data/pithead-image-upgrade.xfs && test ! -e /run/pithead-image-upgrade') : ;;
+        *) return 1 ;;
+        esac
+    }
+    bad() { printf '%s\n' "$1" >"$td/verdict"; }
+    info() { :; }
+    ok() { :; }
+    phase_image_upgrade
+    grep -Eq '^bash /run/pithead-image-upgrade/image-upgrade-guest\.sh [0-9a-f]{40}$' "$td/guest-runner" &&
+        grep -Fx 'deployed image upgrade gate failed (stage=baseline-setup exit=17)' "$td/verdict" >/dev/null &&
+        [ "$guest_inputs_cleared" -eq 1 ]
+); then
+    :
+else
+    echo "image-upgrade did not capture its fixed guest marker before cleanup" >&2
+    exit 1
+fi
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
-for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
+for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_power_cut _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
 preflight_cleanup="$(sed -n '/kvm_preflight || {/,/^    }/p' "$HERE/phases/rigmedia.sh")"
 grep -Fq '_rigmedia_fail_cleanup "$target_disk"' <<<"$preflight_cleanup" || exit 1
 target_create="$(sed -n '/qemu-img create -f raw/,/^    }/p' "$HERE/phases/rigmedia.sh")"
@@ -59,8 +288,11 @@ grep -Fq 'could not create the blank internal target disk' <<<"$target_create" |
 for evidence in 'could not hash the blank internal target disk' 'could not list containers after stick-run rig handoff' 'could not inspect journald after stick-run rig handoff' 'could not hash the internal target disk after the rig run'; do
     grep -Fq "$evidence" "$HERE/phases/rigmedia.sh" || exit 1
 done
-expected_all='phase_boot phase_update phase_install phase_provision phase_rig phase_rigmedia phase_media phase_fault phase_reset'
-actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phase_[a-z]*\)$/\1/p' | tr '\n' ' ' | sed 's/ $//')"
+expected_all='phase_boot phase_update phase_install phase_provision phase_rig phase_rigmedia phase_media phase_fault phase_reset phase_image_upgrade phase_stack'
+# #2356: every phase call in the `all` arm now runs through _run_phase (the wrapper that counts a
+# phase which recorded nothing as a missing skip instead of a silent pass), so the phase function
+# is the SECOND word on the line, not the whole line.
+actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    _run_phase [a-z-]* \(phase_[a-z_]*\)$/\1/p' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_all" = "$expected_all" ] || exit 1
 (
     actions="" bads=0 destroy_ok=1 list_ok=1 vm_destroy_ok=1 hash_ok=1 ssh_ok=1 copy_ok=1
@@ -162,6 +394,7 @@ actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phas
     [ -z "$actions" ]
 ) || exit 1
 (
+    # shellcheck disable=SC2034 # sourced helper reads this runner global dynamically.
     bads=0 create_called=0 KEEP=0
     _build_image() { printf 'image\n'; }
     vm_destroy_or_refuse() { :; }
@@ -181,5 +414,56 @@ actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phas
     [ "$create_called" -eq 1 ] || exit 1
     [ "$bads" -eq 1 ]
 ) || exit 1
-rm -f "$SERIAL" "$SERIAL.failed"
+grep -qF "pgrep -f '[p]odman.*load' >/dev/null" "$HERE/phases/fault.sh" || exit 1
+! grep -qF "pgrep -f 'podman.*load' >/dev/null" "$HERE/phases/fault.sh" || exit 1
+grep -qF 'serial_before=$(fault_serial_cut "$SERIAL") || {' "$HERE/phases/fault.sh" || exit 1
+grep -qF 'refusal=$(fault_serial_since "$SERIAL" "$serial_before") || break' "$HERE/phases/fault.sh" || exit 1
+! grep -qF 'if wait_serial "[Ee]rror|[Ff]ail|[Cc]ould not|[Cc]orrupt" 60; then' "$HERE/phases/fault.sh" || exit 1
+# Fault D's refusal arm must key on the product's own damage narration, never on any word a
+# failing boot happens to print: the generic alternation greens a brick (#2067c).
+grep -qF "legible='The container image store is damaged|Could not load the baked image archive'" "$HERE/phases/fault.sh" || exit 1
+! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
+grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
+# Only a flushed height is owed back after a cut: monerod does not fsync each block (batched
+# flushes) (#2557). So inside the three-cut loop the height read must precede the guest sync, and
+# the sync must precede the cut; a sync hoisted above the read or out of the loop owes back a
+# height that never reached the disk.
+m10_flush_before_cut() { # <phase file>
+    sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | awk '
+        index($0, "height_before=$(_monerod_height)") && !poll { poll = NR }
+        index($0, "_ssh sync || {") && !flush { flush = NR }
+        index($0, "virsh destroy \"$VM\"") && !cut { cut = NR }
+        END { exit !(poll && flush && cut && poll < flush && flush < cut) }'
+}
+m10_flush_before_cut "$HERE/phases/provision-power-cut.sh" || exit 1
+grep -qF 'verdict=$(m10_height_verdict "$height_before" "$height_after")' "$HERE/phases/provision-power-cut.sh" || exit 1
+# The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
+grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
+# And the recovery call must sit INSIDE the three-cut loop — the property the row claims. Checking
+# the call string anywhere in the file passes just as happily with it hoisted out of the loop,
+# where the invariants would be proven once instead of before every next cut (#2067a).
+m10_call_in_cut_loop() { # <phase file>
+    sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | grep -qF 'm10_recovered "$i" || return 1'
+}
+m10_call_in_cut_loop "$HERE/phases/provision-power-cut.sh" || exit 1
+# Reality check: the same guard must go RED with the call moved past the loop's `done`. The mutant
+# still CONTAINS the call, so a guard that stays green here is asserting a string, not the property.
+m10_mutant="$SERIAL.m10"
+awk 'index($0, "m10_recovered \"$i\" || return 1") { held = $0; next }
+     { print }
+     $0 == "    done" && held != "" { print held; held = "" }' \
+    "$HERE/phases/provision-power-cut.sh" >"$m10_mutant"
+grep -qF 'm10_recovered "$i" || return 1' "$m10_mutant" || exit 1
+! m10_call_in_cut_loop "$m10_mutant" || exit 1
+rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR" "$m10_mutant"
+
+# #1998's routing leg drives its own assertions against a stubbed guest. Driven from here rather
+# than tests/stack/test-harness-tooling.sh (where the other appliance-lane self-tests live) only
+# because that file sits exactly on its 406-line budget ceiling, which ceilings-only-go-down will
+# not let this add to; this runner is already the os lane's own self-test entry point and is
+# reached from the same tier-1 row.
+bash "$HERE/appliance-xvb-routing-leg.sh" --self-test >/dev/null || {
+    echo "#1998 appliance XvB routing leg self-test failed" >&2
+    exit 1
+}
 echo "os-run-modules: PASS"

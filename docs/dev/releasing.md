@@ -11,7 +11,7 @@ Pithead is versioned and released as a single product, not as individual compone
 
 The components are upstream projects pinned and integrated, not authored here: `p2pool`
 (`ARG P2POOL_VERSION`), `xmrig-proxy` (`ARG XMRIG_PROXY_VERSION`), `monerod`
-(`ARG MONERO_VERSION`), and `tari` (`quay.io/tarilabs/minotari_node:v5.3.1-mainnet`,
+(`ARG MONERO_VERSION`), and `tari` (`ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet`,
 pinned by digest in `docker-compose.yml`). The first-party code is the dashboard plus the
 orchestration (`pithead`, `docker-compose.yml`, configs). The integration matrix validates the
 composed set. A release is one artifact with one version, one changelog, one upgrade path, and
@@ -44,11 +44,17 @@ of each product release, not independent releases:
   release: bump the pin → cut a stack patch → re-run the integration gate → ship. The bundle
   ships re-tested.
 
+For Caddy, update the digest in Compose, the Quadlet renderer, and its three fixtures together;
+the render parity test checks that they agree. Release preflight checks the Compose tag against
+the registry index, including on a dry run.
+
 Noticing that a bump is available is a separate job from making one, and nothing did it until
 `scripts/watch/pin-watch.sh`. It runs weekly from `.github/workflows/pin-watch.yml`, compares each pin
-against the component's latest upstream release, checks whether each exact Go module raise still
-changes its pinned upstream graph, compares the vendored Tari gRPC schema with the pinned node's
-upstream tag, and keeps one tracking issue up to date. It reports and never bumps: a Tari or
+against the component's latest stable upstream release by numeric version and prerelease precedence,
+lists newer Tari prereleases separately for review without treating them as approved upgrades, checks
+whether each exact Go module raise still changes its pinned upstream graph, compares the vendored
+Tari gRPC schema with the pinned node's upstream tag, and keeps one tracking issue up to date. It
+reports and never bumps: a Tari or
 `monerod` minor can carry a one-time data migration, which is work to schedule rather than a pull
 request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
 bumps on the component pins for the same reason.
@@ -58,9 +64,9 @@ cannot change what is baked; that row resolves the latest release tag to the com
 compares the two commits. Comparing the commit against the tag directly would read stale for ever,
 including straight after a correct bump.
 
-A lookup that could not be made is reported as unchecked, never as current, and the run fails. The
-report carries the date of the last fully successful check, so a watcher that has stopped looks
-different from one with nothing to say.
+A lookup or version comparison that could not be made is reported as unchecked, never as current,
+and the run fails. The report carries the date of the last fully successful check, so a watcher
+that has stopped looks different from one with nothing to say.
 
 ## The Monday sweep, and who reads it
 
@@ -121,7 +127,7 @@ the bytes that are built and published. Before bundling, it rebuilds `pithead`
 from its slices and refuses a different generated artifact.
 
 > How to provision and harden that server, why end-to-end validation can't run on GitHub-hosted
-> runners (and what does run free on every PR), and the safe self-hosted-runner setup are covered
+> runners (and what does run free on every PR), and how bench-ci owns the release gate are covered
 > in [Release / Validation Server](release-server.md).
 
 ### Branch mechanics
@@ -151,6 +157,14 @@ Release notes, where operators actually read it. The branch model itself is in
 [#1076]: https://github.com/p2pool-starter-stack/pithead/issues/1076
 
 ### Pipeline: stage → smoke-test → promote
+
+Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
+additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
+release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
+and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. The
+bench publishes that status only after its full tier-4 suite completes; a missing, failed,
+unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
+verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
 
 1. Preflight: check the clean working tree, then build the git-ignored `pithead` executable from
    `lib/pithead/*.sh`; read the product version from the top-level `VERSION` file; confirm
@@ -192,7 +206,7 @@ Release notes, where operators actually read it. The branch model itself is in
 
    **When the version ships the appliance channel too, pass `--draft`.** Published release
    assets are immutable — v1.18.0 shipped an asset that could not be amended and the whole
-   version had to be withdrawn — and the appliance's `.img`/`.raucb` are built,
+   version had to be withdrawn — and the appliance's `.img.xz`, `.raucb`, and checksum files are built,
    battery-tested and attached by hand *after* this stage (see
    [appliance-release.md](appliance-release.md#cutting-a-release)). Publishing before they
    are attached burns the tag. Draft first, attach both channels' artifacts, publish once.
@@ -273,28 +287,31 @@ tolerated-known-failure habit the flag exists to end.
 
 ### Which gates are automated, and which are not
 
-Every gate below runs at cut time or is run by hand. **Nothing gates an update of `main`**, and no
-workflow claims to ([#1048](https://github.com/p2pool-starter-stack/pithead/issues/1048)):
-`release-gate.yml` is dispatch-only, because a self-hosted runner on a key-holding box is not
-registered. It previously carried a `push: [main]` trigger behind a repo variable nobody set, so
-every merge recorded a *skipped* run — and a skipped job is green, which made `main` display a
-passing live-node gate that had never once executed.
+The release lane requires a successful `bench-ci/tier4` status on its release SHA, and the `main`
+ruleset already requires the same context pinned to the bench-ci App's `integration_id` — both
+provisioned under [#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237). The bench
+publishes that status after its full tier-4 suite; `release.sh` checks the exact SHA, context, App
+slug, and numeric App id before stage 1. `release-gate.yml` stays dispatch-only as an operator
+tool, because a self-hosted runner on a key-holding public-repo box is not registered. It
+previously carried a `push: [main]` trigger behind a repo variable nobody set, so every merge
+recorded a *skipped* run — and a skipped job is green, which made `main` display a passing
+live-node gate that had never once executed
+([#1048](https://github.com/p2pool-starter-stack/pithead/issues/1048)).
 
 | Gate | When | Run by | Blocking |
 | --- | --- | --- | --- |
 | `make test` (tiers 1–3) + `make lint` | every PR | CI | yes |
+| Bench full tier-4 suite (`bench-ci/tier4`) | before `release.sh` stage 1 | bench-ci | yes |
 | `make test` again, on the release box | `release.sh` stage 2 | the cut | yes |
 | #54 live matrix, `--readiness` | `release.sh` stage 2 | the cut | yes |
 | Targeted e2e with a borrowed rig | before `make release` | you | yes — by policy, not by code |
 | Release signing environment + pinned verifier | `release.sh` stage 1 | the cut | yes |
 | Staged-image smoke (pull back, check version) | `release.sh` stage 5 | the cut | yes |
 | `release-smoke` (real cosign, real #59 upgrade) | after publish | you | no — the assets already exist |
-| `release-gate.yml` tier-4 live matrix | on demand | you, via *Run workflow* | no |
+| `release-gate.yml` tier-4 live matrix | never — unclaimable until a runner registers for `[self-hosted, pithead-release]` | nobody | no |
 | Live `--check` sweep on the bench | after deploy | you | no |
 
 The two human-run rows are policy, not automation: the release is not finished until they are green.
-To move `release-gate.yml` into the automated column, register the runner first — see
-[Release / Validation Server](release-server.md) and the note at the top of the workflow.
 
 ## Signed releases
 
@@ -533,7 +550,9 @@ What exists today:
 - ✅ Pull-based install: `${STACK_VERSION}` wired through `docker-compose.yml`. Each first-party
   service now carries an `image: ${PITHEAD_REGISTRY:-…}/pithead-<svc>:${STACK_VERSION:-dev}` ref
   alongside its `build:`. pithead picks build-vs-pull automatically: a source checkout (the image
-  Dockerfiles are present) builds locally and tags `:dev` with `--pull never`; a release install
+  Dockerfiles are present) builds locally and tags `:dev` with `--pull never`, after pulling any
+  missing third-party image that has no build context
+  ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)); a release install
   (the bundle ships no Dockerfiles, just `pithead` + `VERSION` + compose + the config templates + the
   `./build` runtime mounts) resolves `STACK_VERSION` to `vX.Y.Z` and pulls the published images
   (`--pull missing`; `upgrade` forces a re-pull). Override with `PITHEAD_REGISTRY` / `PITHEAD_PULL`. So

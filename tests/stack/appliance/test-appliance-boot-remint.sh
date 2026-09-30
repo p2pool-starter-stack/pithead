@@ -127,16 +127,16 @@ l_ready=$(bl_line '    if gate_ready "')
 l_elif=$(bl_line '    elif [ "$gate_doctor_ran" = 1 ] && gate_blocked_only_by_cert; then')
 l_remint=$(bl_line '        gate_remint_cert || true')
 l_sleep=$(bl_line '    sleep 10')
-l_fail=$(bl_line 'fail_boot "the stack never became healthy (serving + doctor)"')
+l_fail=$(bl_line 'fail_boot "the stack never became healthy (serving + doctor + status)"')
 assert_eq "every anchor is present exactly where a reader would look" \
     "$([ -n "$l_loop" ] && [ -n "$l_reset" ] && [ -n "$l_ready" ] && [ -n "$l_elif" ] && [ -n "$l_remint" ] && [ -n "$l_sleep" ] && [ -n "$l_fail" ] && echo all)" "all"
 assert_eq "gate_doctor_ran is reset INSIDE the loop, before the ready check" \
     "$([ "${l_loop:-0}" -lt "${l_reset:-0}" ] && [ "${l_reset:-0}" -lt "${l_ready:-0}" ] && echo ordered)" "ordered"
 assert_eq "the re-mint branch follows the ready check and precedes the sleep and the fail" \
     "$([ "${l_ready:-0}" -lt "${l_elif:-0}" ] && [ "${l_elif:-0}" -lt "${l_remint:-0}" ] && [ "${l_remint:-0}" -lt "${l_sleep:-0}" ] && [ "${l_sleep:-0}" -lt "${l_fail:-0}" ] && echo ordered)" "ordered"
-l_gr=$(bl_line 'gate_ready() {')
-l_set=$(bl_line '    gate_doctor_ran=1')
-l_doc=$(bl_line '    ./pithead doctor --json >"$BOOT_DOCTOR_JSON"')
+l_gr=$(grep -n -F 'gate_ready() {' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
+l_set=$(grep -n -F '    gate_doctor_ran=1' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
+l_doc=$(grep -n -F '    ./pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 assert_eq "gate_ready marks the round BEFORE it runs doctor, so a quiet round can never act on last round's file" \
     "$([ "${l_gr:-0}" -lt "${l_set:-0}" ] && [ "${l_set:-0}" -lt "${l_doc:-0}" ] && echo ordered)" "ordered"
 
@@ -160,7 +160,7 @@ fv_run() { # <doctor json, or ""> -> "flag=<json> verdict=<json> outcome=<..> co
         OS_INFLIGHT=data/os-update/in-flight.json
         OS_STATE_DIR=data/control/results
         BOOT_DOCTOR_JSON="$FV/doctor.json"
-        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor)" 2>/dev/null
+        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>/dev/null
     )
     flag=$(jq -rc '.blocking // "absent"' "$FV/data/os-update/in-flight.json" 2>/dev/null)
     printf '1.0.0\n' >"$FV/VERSION" # the fallback boot runs the OLD version
@@ -187,6 +187,147 @@ fv_none=$(fv_run "")
 assert_contains "no doctor file: nothing added to the flag" "$fv_none" "flag=absent"
 assert_contains "…the verdict carries an empty list and is still rolled_back" "$fv_none" "verdict=[] outcome=rolled_back"
 assert_not_contains "…and the console line is the plain one" "$fv_none" "held by"
+echo "== unit: the A/B commit gate also consumes 'pithead status', a third signal (#2383) =="
+# Manual battery M9: a dashboard container whose OWN healthcheck failed committed the slot,
+# because doctor only judges the revenue containers (monerod/p2pool/tari). `pithead status` exits
+# non-zero on any unhealthy/restarting container, closing that gap. A stubbed `pithead` answers
+# `doctor` and `status` independently, so the two can disagree — proving status is really
+# consulted rather than riding doctor's exit code.
+# Mutation run: drop the `./pithead status` call (or its `|| return 1` on doctor) from gate_ready
+# -> the "doctor clean but status unhealthy" row goes red.
+GS="$BR/gate-status"
+mkdir -p "$GS"
+gs_run() { # <doctor-exit> <status-exit> <code> <size> -> ready|held
+    cat >"$GS/pithead" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  doctor) exit $1 ;;
+  status) exit $2 ;;
+esac
+EOF
+    chmod +x "$GS/pithead"
+    (
+        cd "$GS" || exit 1
+        # shellcheck disable=SC1090
+        source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+        BOOT_DOCTOR_JSON="$GS/doctor.json"
+        BOOT_STATUS_LOG="$GS/status.log"
+        gate_ready "$3" "$4" && echo ready || echo held
+    )
+}
+assert_eq "doctor clean and status clean -> commit" "$(gs_run 0 0 200 4096)" "ready"
+assert_eq "doctor clean but status reports an unhealthy/restarting container -> held" \
+    "$(gs_run 0 1 200 4096)" "held"
+assert_eq "doctor itself fails -> held, status is never consulted (cheaper-first ordering)" \
+    "$(gs_run 1 0 200 4096)" "held"
+# The bench-caught regression (#2383): status exits 0 while a container is still inside its
+# healthcheck's start_period — informational to an operator, but the gate must not read that as
+# healthy, or a slot with a DOOMED healthcheck commits before it ever ran once (leg 5's own bench
+# run caught this at ~74s, inside the dashboard's 60s start_period). Mutation run: drop the
+# 'health check pending' grep from gate_ready -> this row goes red.
+cat >"$GS/pithead" <<'STARTING'
+#!/usr/bin/env bash
+case "$1" in
+  doctor) exit 0 ;;
+  status) printf '  . dashboard     starting (health check pending)\n'; exit 0 ;;
+esac
+STARTING
+chmod +x "$GS/pithead"
+gs_starting=$(
+    cd "$GS" || exit 1
+    # shellcheck disable=SC1090
+    source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+    BOOT_DOCTOR_JSON="$GS/doctor.json"
+    BOOT_STATUS_LOG="$GS/status.log"
+    gate_ready 200 4096 && echo ready || echo held
+)
+assert_eq "status exits 0 but a container is still 'starting' -> held, not committed early" "$gs_starting" "held"
+unset -f gs_run
+unset GS gs_starting
+
+echo "== unit: boot_status_blocking — names the container 'pithead status' called unhealthy or restarting (#2383) =="
+# The exact shape stack_status (lib/pithead/04-status.sh) prints, reproduced here rather than run
+# for real: a running-but-unhealthy row, a restarting row, a plain-missing row, an ok row, and a
+# sync-held "likely intentional" row that must NOT count (#31/#35 — that one is deliberate, not a
+# fault, and `pithead status` itself does not count it against its own exit code either).
+# Mutation run: drop the UNHEALTHY arm of the grep -> the first row goes red; drop the exclusion
+# implicit in requiring UNHEALTHY on the ⚠ arm -> the sync-held row wrongly appears.
+SB="$BR/status-blocking"
+mkdir -p "$SB"
+sb_run() { # <status log body> -> newline-joined "container NAME: reason" lines
+    printf '%s\n' "$1" >"$SB/status.log"
+    (
+        source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+        BOOT_STATUS_LOG="$SB/status.log"
+        boot_status_blocking
+    )
+}
+sb_out=$(sb_run '  ✓ monerod       running
+  ⚠ dashboard     running but UNHEALTHY
+  ✗ caddy         restarting (possible crash loop — check logs)
+  ✗ tari          missing
+  ⚠ p2pool        exited — likely intentional: held until the required chains finish syncing — check the dashboard')
+assert_contains "an unhealthy container is named" "$sb_out" "container dashboard: running but UNHEALTHY"
+assert_contains "a restarting container is named" "$sb_out" "container caddy: restarting (possible crash loop — check logs)"
+assert_contains "a missing container is named" "$sb_out" "container tari: missing"
+assert_not_contains "a healthy container is never named" "$sb_out" "monerod"
+assert_not_contains "the sync-hold's likely-intentional row is never named (#31/#35)" "$sb_out" "p2pool"
+assert_eq "no status log at all -> nothing to add" "$(sb_run '')" ""
+unset -f sb_run
+unset SB sb_out
+
+echo "== unit: fail_boot folds status's problems into the SAME blocking list as doctor's (#2383) =="
+# Doctor alone gates monerod/p2pool/tari; a dashboard container failing its OWN healthcheck (M9)
+# never shows up in doctor --json at all, so the rollback verdict has to carry it from the OTHER
+# record fail_boot now reads. Both land in the one list the fallback boot's
+# os_update_rollback_verdict publishes, doctor's checks first, status's rows appended after.
+FS="$BR/fail-status"
+fs_run() { # <doctor json, or ""> <status log body, or ""> -> "flag=<json>"
+    rm -rf "$FS"
+    mkdir -p "$FS/data/os-update" "$FS/data/control/results"
+    printf '{"from":"1.0.0","to":"1.0.1"}\n' >"$FS/data/os-update/in-flight.json"
+    [ -n "$1" ] && printf '%s\n' "$1" >"$FS/doctor.json"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" %q\nexit 1\n' "$2" >"$FS/pithead"
+    chmod +x "$FS/pithead" # fail_boot must refresh this real status output
+    (
+        cd "$FS" || exit 1
+        # shellcheck disable=SC1090
+        source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+        OS_INFLIGHT=data/os-update/in-flight.json
+        OS_STATE_DIR=data/control/results
+        BOOT_DOCTOR_JSON="$FS/doctor.json"
+        BOOT_STATUS_LOG="$FS/status.log"
+        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>/dev/null
+    )
+    printf 'flag=%s' "$(jq -rc '.blocking // "absent"' "$FS/data/os-update/in-flight.json" 2>/dev/null)"
+}
+assert_eq "doctor clean, status names the unhealthy dashboard -> the flag carries just that" \
+    "$(fs_run '' '  ⚠ dashboard     running but UNHEALTHY')" 'flag=["container dashboard: running but UNHEALTHY"]'
+assert_eq "both fail: doctor's message first, then status's container row" \
+    "$(fs_run "$(dj fail "$COVER")" '  ✗ caddy         restarting (possible crash loop — check logs)')" \
+    "flag=[\"$COVER\",\"container caddy: restarting (possible crash loop — check logs)\"]"
+assert_eq "neither fails -> nothing added" "$(fs_run '' '')" "flag=absent"
+unset -f fs_run
+unset FS
+
+echo "== unit: fail_boot names the container on ITS OWN console, with no update in flight (#2383) =="
+# The bench-caught gap: leg 5 installs the fault bundle the cheap way (a raw rauc install, like
+# legs 1-3), which never arms OS_INFLIGHT — so the in-flight-flag path above never fires, and a
+# console-only echo is the only way this boot's own journal can name the container at all.
+FC="$BR/fail-console"
+rm -rf "$FC"
+mkdir -p "$FC"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" %q\nexit 1\n' '  ⚠ dashboard     running but UNHEALTHY' >"$FC/pithead"
+chmod +x "$FC/pithead" # fail_boot must refresh this real status output
+fc_out=$(
+    cd "$FC" || exit 1
+    # shellcheck disable=SC1090
+    source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+    BOOT_STATUS_LOG="$FC/status.log" PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
+)
+assert_contains "no OS_INFLIGHT at all: the console still names the container" "$fc_out" "pithead-boot: held by container dashboard: running but UNHEALTHY"
+unset FC fc_out
+
 unset -f dj bc_run bl_line fv_run
 unset BR RM FV COVER rm_out BOOTSCRIPT l_loop l_reset l_ready l_elif l_remint l_sleep l_fail l_gr l_set l_doc fv_one fv_two fv_none
 

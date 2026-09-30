@@ -87,7 +87,7 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onIns
     const port = stratumPort || 3333; // configurable via p2pool.stratum_port (#172)
     return html`
         <div class="card">
-            <h3>Workers Alive</h3>
+            <h2>Workers Alive</h2>
             <div class="workers-empty">
                 <p>No workers connected yet.</p>
                 <p class="text-muted">Point each rig at <code>${addr}:${port}</code> and it appears here —${" "}
@@ -99,15 +99,16 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onIns
   const rows = sortWorkers(workers, ui.sortIndex, ui.sortAsc);
   return html`
     <div class="card">
-        <h3>Workers Alive</h3>
+        <h2>Workers Alive</h2>
         <div class="table-scroll">
             <table id="workers-table">
+                <caption class="sr-only">Workers</caption>
                 <thead>
                     <tr>${WORKER_COLUMNS.map(
                       // Sorted column carries the direction, visibly (arrow) and for AT (aria-sort);
                       // the title makes clickability discoverable (#656). A real <button> click
                       // target so keyboard users can sort too (#671), focusable without extra wiring.
-                      (c, i) => html`<th
+                      (c, i) => html`<th scope="col"
                             class=${i === ui.sortIndex ? "sorted" : null}
                             aria-sort=${i === ui.sortIndex ? (ui.sortAsc ? "ascending" : "descending") : null}><button
                               type="button" class="th-sort-btn" onClick=${() => onSort(i)}
