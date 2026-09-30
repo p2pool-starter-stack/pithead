@@ -79,6 +79,7 @@ def parse_monero_peers(payload, now=None):
         began is None
         or ended is None
         or began < started
+        or ended < began
         or now - ended > PEERS_FRESH_SEC
         or ended - now > 5
     ):

@@ -13,7 +13,7 @@ mon_hc() { # <out-peers|unavailable|down> <bound-sec> <stamp-age-sec|none> -> "r
         printf '#!/bin/sh\nexit 22\n' >"$d/curl"
     else
         # The restricted listener's get_info always says 0 here: a healthcheck reading it would go red.
-        printf '#!/bin/sh\necho %s\n' "'{\"status\":\"OK\",\"outgoing_connections_count\":0,\"restricted\":true}'" >"$d/curl"
+        printf '#!/bin/sh\necho %s\n' "'{\"status\":\"OK\",\"height\":100,\"outgoing_connections_count\":0,\"restricted\":true}'" >"$d/curl"
     fi
     if [ "$1" = unavailable ] || [ "$1" = down ]; then
         printf '#!/bin/sh\nexit 3\n' >"$d/peers"
@@ -22,7 +22,7 @@ mon_hc() { # <out-peers|unavailable|down> <bound-sec> <stamp-age-sec|none> -> "r
     fi
     chmod +x "$d/curl" "$d/peers"
     [ "$3" = none ] || echo $(($(date +%s) - $3)) >"$d/stamp"
-    line="$(PATH="$d:$PATH" MONERO_HEALTH_STAMP="$d/stamp" MONERO_HEALTH_PEERLESS_SEC="$2" MONERO_PEERS_HELPER="$d/peers" \
+    line="$(PATH="$d:$PATH" MONERO_HEALTH_STAMP="$d/stamp" MONERO_HEALTH_HEIGHT_STAMP="$d/height" MONERO_HEALTH_PEERLESS_SEC="$2" MONERO_PEERS_HELPER="$d/peers" \
         sh "$ROOT/build/monero/healthcheck.sh" 2>/dev/null)"
     rc=$?
     line="$(printf '%s' "$line" | head -n1)"
@@ -37,6 +37,53 @@ assert_contains "healthcheck: zero peers past the bound -> unhealthy" "$(mon_hc 
 assert_eq "healthcheck: RPC not answering -> unhealthy, and the stale stamp is dropped" "$(mon_hc down 600 700 | cut -d' ' -f1-2)" "rc=1 stamp=cleared"
 assert_eq "healthcheck: restricted zeros are never read: helper unavailable -> unhealthy, no stamp, says unavailable" "$(mon_hc unavailable 600 700)" \
     "rc=1 stamp=cleared line=pithead-monero-peers unavailable"
+
+echo "== unit: monerod healthcheck follows height progress with peers (#2499) =="
+mk_tmpdir HCBOX
+printf '#!/bin/sh\ncat "$HCBOX/info"\n' >"$HCBOX/curl"
+printf '#!/bin/sh\necho \047{"outgoing":8,"incoming":2,"white":5,"grey":6}\047\n' >"$HCBOX/peers"
+chmod +x "$HCBOX/curl" "$HCBOX/peers"
+export HCBOX
+printf '1000.0 0.0\n' >"$HCBOX/uptime"
+# /proc/1/stat: process start ticks are field 22, after a name that may contain spaces.
+printf '1 (monerod fixture) S 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 42\n' >"$HCBOX/run"
+echo '{"status":"OK","height":100}' >"$HCBOX/info"
+mon_height_rc() {
+    PATH="$HCBOX:$PATH" MONERO_HEALTH_STAMP="$HCBOX/peer-stamp" MONERO_HEALTH_HEIGHT_STAMP="$HCBOX/height" \
+        MONERO_HEALTH_UPTIME_FILE="$HCBOX/uptime" MONERO_HEALTH_RUN_FILE="$HCBOX/run" MONERO_PEERS_HELPER="$HCBOX/peers" \
+        sh "$ROOT/build/monero/healthcheck.sh" >"$HCBOX/output" 2>&1
+    echo "$?"
+}
+assert_eq "height health: cold start is not a stall" "$(mon_height_rc)" "0"
+echo '2799.0 0.0' >"$HCBOX/uptime"
+assert_eq "height health: one second below the 30-minute bound is healthy" "$(mon_height_rc)" "0"
+echo '2800.0 0.0' >"$HCBOX/uptime"
+assert_eq "height health: positive peers do not hide a stalled height" "$(mon_height_rc)" "1"
+assert_contains "height health: stall carries the height and age" "$(cat "$HCBOX/output")" "height 100 has not moved for 30 min"
+echo '{"status":"OK","height":90}' >"$HCBOX/info"
+assert_eq "height health: a rewound height is not progress" "$(mon_height_rc)" "1"
+echo '{"status":"OK","height":101}' >"$HCBOX/info"
+assert_eq "height health: a new best height clears the stall" "$(mon_height_rc)" "0"
+echo '4600.0 0.0' >"$HCBOX/uptime"
+assert_eq "height health: repeated height reaches the bound again" "$(mon_height_rc)" "1"
+sed 's/42$/43/' "$HCBOX/run" >"$HCBOX/new-run"
+mv "$HCBOX/new-run" "$HCBOX/run"
+assert_eq "height health: changed process identity resets the clock at the same height" "$(mon_height_rc)" "0"
+echo '{"status":"OK","height":"101"}' >"$HCBOX/info"
+assert_eq "height health: malformed height fails instead of fabricating progress" "$(mon_height_rc)" "1"
+echo '{"status":"OK","height":101}' >"$HCBOX/info"
+assert_eq "height health: valid reading returns after an unavailable height" "$(mon_height_rc)" "0"
+echo '{"status":"BUSY","height":102}' >"$HCBOX/info"
+assert_eq "height health: a busy RPC is not valid height progress" "$(mon_height_rc)" "1"
+echo '{"status":"OK","height":102}' >"$HCBOX/info"
+printf '#!/bin/sh\necho \047{"outgoing":0,"incoming":2,"white":5,"grey":6}\047\n' >"$HCBOX/peers"
+echo $(($(date +%s) - 700)) >"$HCBOX/peer-stamp"
+assert_eq "height health: a real peerless stretch remains unhealthy" "$(mon_height_rc)" "1"
+sed 's/43$/44/' "$HCBOX/run" >"$HCBOX/new-run"
+mv "$HCBOX/new-run" "$HCBOX/run"
+assert_eq "height health: a restart resets the peerless clock too" "$(mon_height_rc)" "0"
+rm -rf "$HCBOX"
+unset HCBOX
 
 echo "== unit: the rendered RPC split (#2921) =="
 TPL="$ROOT/build/monero/bitmonero.conf.template"
@@ -118,3 +165,20 @@ assert_contains "monerod peers: a helper with no reading says so" "$out" "monero
 assert_not_contains "monerod peers: no reading is never printed as zero peers" "$out" "0 out"
 out="$(RUNNING_CONTAINERS="monerod" PEERS_JSON='{"outgoing":"8","incoming":3}' CURL_BODY="$RESTRICTED_INFO" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_monerod_synchronized 2>&1)"
 assert_contains "monerod peers: a malformed helper body is no reading" "$out" "monerod peers: no reading"
+
+# Untrusted RPC values must never enter Bash's recursive arithmetic evaluator.
+mk_tmpdir TIPBOX
+TIP_EVIL='BASH_SOURCE[$(touch '"$TIPBOX"'/executed)0]'
+TIP_BODY=$(jq -nc --arg ts "$TIP_EVIL" '{result:{block_header:{timestamp:$ts}}}')
+out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY="$TIP_BODY" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
+assert_eq "doctor tip: a hostile timestamp executes no command" "$([ -e "$TIPBOX/executed" ] && echo executed || echo untouched)" "untouched"
+assert_not_contains "doctor tip: a hostile timestamp yields no calculated age" "$out" "last block"
+for TIP_VALUE in '"1000"' -1 1.5 true 10000000000 null; do
+    TIP_BODY=$(printf '{"result":{"block_header":{"timestamp":%s}}}' "$TIP_VALUE")
+    out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY="$TIP_BODY" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
+    assert_not_contains "doctor tip: malformed timestamp $TIP_VALUE yields no age" "$out" "last block"
+done
+TIP_BODY=$(jq -nc --argjson ts "$(($(date +%s) - 60))" '{result:{block_header:{timestamp:$ts}}}')
+out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY="$TIP_BODY" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
+assert_contains "doctor tip: a valid numeric timestamp retains the age" "$out" "last block"
+rm -rf "$TIPBOX"

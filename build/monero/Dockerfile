@@ -33,7 +33,7 @@ COPY wallet-entrypoint.sh /usr/local/bin/wallet-entrypoint.sh
 COPY wallet-healthcheck.sh /usr/local/bin/wallet-healthcheck.sh
 RUN chmod +x /usr/local/bin/wallet-entrypoint.sh /usr/local/bin/wallet-healthcheck.sh
 
-# RPC liveness healthcheck — reads creds from env so they stay off the compose command line (#90)
+# RPC, peer and height-progress healthcheck — reads creds from env, never from compose argv (#90, #2499)
 COPY healthcheck.sh /usr/local/bin/monerod-healthcheck.sh
 RUN chmod +x /usr/local/bin/monerod-healthcheck.sh
 

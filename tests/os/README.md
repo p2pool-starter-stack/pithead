@@ -14,7 +14,10 @@ observations, and a fresh run after restart. A failed P2P probe reports a bounde
 error code, with numeric header metadata; it prints no address, credential or raw response.
 An unavailable or malformed probe remains failed proof.
 The bounded P2P decoder validates up to four txpool notifications that Monero can send
-before the handshake response; none can substitute for that response.
+before the handshake response; none can substitute for that response. Required node identity
+and core sync fields must decode before an omitted or zero RPC port can mean suppression.
+The Compose leg accepts that suppression only with an active P2P proxy and separately proves
+restricted public-RPC selection; this unproxied native fixture requires port 18081.
 Cleanup removes only the fixture unit, container, its client container, private network and
 scratch files. The healthy-baseline
 fault and recovery proof remains the Compose

@@ -99,6 +99,23 @@ monero_peer_wait_diagnostics() {
 # The RPC boundary (#2921): the admin listener answers only inside monerod's container, with the login; the
 # published listener stays restricted and authenticated. A refused connection is curl's code 000.
 _monero_http_code() { rx "curl -s --max-time 5 -o /dev/null -w '%{http_code}' $*" 2>/dev/null; }
+assert_monero_p2p_advertisement() {
+    local ip="$1" advertised proxy
+    # Use the active rendered file: clearnet initial sync removes proxy=.
+    proxy="$(rx "docker exec monerod awk '/^proxy=.+/ { active=1 } END { print active ? \"enabled\" : \"disabled\" }' /home/ubuntu/.bitmonero/bitmonero.conf" 2>/dev/null)" || proxy=unavailable
+    assert_contains "monero-stranded: startup selects the restricted public RPC listener" \
+        "$(rx "docker logs --tail 120 monerod 2>&1 | grep -F 'Public RPC port 18081 will be advertised to other peers over P2P'" 2>/dev/null)" \
+        "Public RPC port 18081 will be advertised to other peers over P2P"
+    if ! advertised="$(rx "python3 tests/integration/monero-p2p-rpc-port.py '$ip' 18080" 2>/dev/null)"; then
+        it_fail "monero-stranded: the P2P handshake proves restricted RPC advertisement or configured suppression" "probe failed"
+    elif [ "$advertised" = 18081 ] && [[ "$proxy" = enabled || "$proxy" = disabled ]]; then
+        it_pass "monero-stranded: the P2P handshake advertises the restricted RPC port"
+    elif [ "$advertised" = 0 ] && [ "$proxy" = enabled ]; then
+        it_pass "monero-stranded: the decoded P2P handshake suppresses RPC advertisement with the active proxy"
+    else
+        it_fail "monero-stranded: the P2P handshake proves restricted RPC advertisement or configured suppression" "unexpected port or unavailable proxy evidence"
+    fi
+}
 assert_monero_rpc_boundary() {
     local nets net ip ip6 v6
     nets="$(rx "docker inspect -f '{{json .NetworkSettings.Networks}}' monerod" 2>/dev/null)"
@@ -114,8 +131,7 @@ assert_monero_rpc_boundary() {
         return 1
     fi
     v6="$(rx "docker network inspect -f '{{.EnableIPv6}}' '$net'" 2>/dev/null)"
-    assert_eq "monero-stranded: the P2P handshake advertises the restricted RPC port" \
-        "$(rx "python3 tests/integration/monero-p2p-rpc-port.py '$ip' 18080" 2>/dev/null)" "18081"
+    assert_monero_p2p_advertisement "$ip"
     assert_contains "monero-stranded: the in-container helper reads real counts from the admin listener" "$(monero_peer_counts)" '"outgoing":'
     assert_eq "monero-stranded: the admin listener rejects an unauthenticated request inside the container" \
         "$(rx "docker exec monerod curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18085/get_info" 2>/dev/null)" "401"

@@ -127,15 +127,40 @@ def storage_object(body):
 
 
 def advertised_port(body):
-    node = storage_object(body).get("node_data")
+    data = storage_object(body)
+    node, sync = data.get("node_data"), data.get("payload_data")
     if not isinstance(node, dict):
         raise ValueError("handshake node_data missing")
-    if "rpc_port" not in node:
-        raise ValueError("handshake rpc_port omitted")
-    port = node["rpc_port"]
-    if type(port) is int and port == 0:
-        raise ValueError("handshake rpc_port zero")
-    if type(port) is not int or not 1 <= port <= 65535:
+    if not isinstance(sync, dict):
+        raise ValueError("handshake payload_data invalid")
+    # Required fields and optional defaults follow the pinned basic_node_data and
+    # CORE_SYNC_DATA serializers. A partial object cannot prove suppression.
+    if node.get("network_id") != bytes.fromhex("1230f171610441611731008216a1a110"):
+        raise ValueError("handshake node_data invalid")
+    for obj, key, maximum, default in (
+        (node, "peer_id", 2**64 - 1, None),
+        (node, "my_port", 65535, None),
+        (node, "support_flags", 2**32 - 1, 0),
+        (node, "rpc_credits_per_hash", 2**32 - 1, 0),
+        (sync, "current_height", 2**64 - 1, None),
+        (sync, "cumulative_difficulty", 2**64 - 1, None),
+        (sync, "cumulative_difficulty_top64", 2**64 - 1, 0),
+        (sync, "top_version", 255, 0),
+        (sync, "pruning_seed", 2**32 - 1, 0),
+    ):
+        value = obj.get(key, default)
+        if type(value) is not int or not 0 <= value <= maximum:
+            raise ValueError("handshake payload_data invalid")
+    if (
+        sync["current_height"] == 0
+        or not isinstance(sync.get("top_id"), bytes)
+        or len(sync["top_id"]) != 32
+    ):
+        raise ValueError("handshake payload_data invalid")
+    # Monero omits this optional uint16 when its value is zero. The caller may
+    # accept zero only after separately proving that the active P2P proxy suppresses it.
+    port = node.get("rpc_port", 0)
+    if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("handshake rpc_port invalid")
     return port
 
@@ -168,8 +193,8 @@ ERROR_CODES = {
     "duplicate portable storage field": "duplicate_field",
     "trailing portable storage data": "trailing_storage",
     "handshake node_data missing": "node_data_missing",
-    "handshake rpc_port omitted": "rpc_port_omitted",
-    "handshake rpc_port zero": "rpc_port_zero",
+    "handshake node_data invalid": "node_data_invalid",
+    "handshake payload_data invalid": "payload_data_invalid",
     "handshake rpc_port invalid": "rpc_port_invalid",
     "invalid txpool notification": "invalid_notification",
     "P2P notification bound": "notification_bound",

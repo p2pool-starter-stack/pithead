@@ -15,8 +15,44 @@ SPEC = importlib.util.spec_from_file_location(
 probe = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(probe)
 
-# Independent portable-storage fixture: node_data object, rpc_port uint16.
-RESTRICTED = bytes.fromhex("01110101010102010104096e6f64655f646174610c04087270635f706f727407a146")
+
+# Independent encoder for small fixtures; never uses the production serializer.
+def object_bytes(fields):
+    if len(fields) >= 64:
+        raise ValueError("fixture field bound")
+    return bytes([len(fields) * 4]) + b"".join(
+        bytes([len(name)]) + name.encode() + bytes([kind]) + value for name, kind, value in fields
+    )
+
+
+def handshake(port=18081, omit=False, node_override=None, sync_override=None):
+    node = {
+        "network_id": (10, b"\x40" + bytes.fromhex("1230f171610441611731008216a1a110")),
+        "peer_id": (5, struct.pack("<Q", 42)),
+        "my_port": (6, struct.pack("<I", 18080)),
+    }
+    if not omit:
+        node["rpc_port"] = (7, struct.pack("<H", port))
+    sync = {
+        "current_height": (5, struct.pack("<Q", 1)),
+        "cumulative_difficulty": (5, struct.pack("<Q", 1)),
+        "top_id": (10, b"\x80" + b"x" * 32),
+    }
+    for fields, override in ((node, node_override), (sync, sync_override)):
+        for key, value in (override or {}).items():
+            if value is None:
+                fields.pop(key, None)
+            else:
+                fields[key] = value
+    return bytes.fromhex("011101010101020101") + object_bytes(
+        [
+            ("node_data", 12, object_bytes([(k, *v) for k, v in node.items()])),
+            ("payload_data", 12, object_bytes([(k, *v) for k, v in sync.items()])),
+        ]
+    )
+
+
+RESTRICTED = handshake()
 
 
 def transcript_probe(data):
@@ -54,7 +90,7 @@ class WireTests(unittest.TestCase):
         # Pinned Monero's empty txpool notification: both storage signatures, v1, no fields.
         notification = frame(2010, bytes.fromhex("01110101010102010100"))
         self.assertEqual(transcript_probe(notification + frame(1001, RESTRICTED, 2, 1)), 18081)
-        admin = RESTRICTED[:-2] + struct.pack("<H", 18085)
+        admin = handshake(18085)
         self.assertEqual(transcript_probe(notification + frame(1001, admin, 2, 1)), 18085)
 
     def test_notifications_never_substitute_for_a_handshake(self):
@@ -81,13 +117,36 @@ class WireTests(unittest.TestCase):
         self.assertEqual(probe.advertised_port(RESTRICTED), 18081)
 
     def test_admin_advertisement_is_distinct(self):
-        self.assertEqual(probe.advertised_port(RESTRICTED[:-2] + struct.pack("<H", 18085)), 18085)
+        self.assertEqual(probe.advertised_port(handshake(18085)), 18085)
 
-    def test_missing_zero_and_bad_ports_are_unavailable(self):
-        for data in (
+    def test_valid_suppression_is_a_decoded_zero(self):
+        for data in (handshake(0), handshake(omit=True)):
+            self.assertEqual(probe.advertised_port(data), 0)
+            self.assertEqual(transcript_probe(frame(1001, data, 2, 1)), 0)
+
+    def test_partial_or_malformed_handshakes_cannot_prove_suppression(self):
+        malformed = (
             probe.STORAGE + b"\x00",
-            RESTRICTED[:-2] + b"\x00\x00",
-            RESTRICTED[:-3] + b"\x0b\x01",
+            # The old port-only fixture lacks required identity and core sync fields.
+            bytes.fromhex("01110101010102010104096e6f64655f646174610c04087270635f706f7274070000"),
+            handshake(0, node_override={"network_id": (10, b"\x40" + b"x" * 16)}),
+            handshake(0, node_override={"peer_id": None}),
+            handshake(0, node_override={"my_port": (11, b"\x01")}),
+            handshake(0, node_override={"rpc_port": (11, b"\x00")}),
+            handshake(0, sync_override={"current_height": None}),
+            handshake(0, sync_override={"current_height": (5, b"\x00" * 8)}),
+            handshake(0, sync_override={"cumulative_difficulty": None}),
+            handshake(0, sync_override={"top_id": (10, b"\x04x")}),
+        )
+        for data in malformed:
+            with self.subTest(data=data), self.assertRaises(ValueError):
+                probe.advertised_port(data)
+
+    def test_restricted_port_requires_complete_handshake_data(self):
+        for data in (
+            bytes.fromhex("01110101010102010104096e6f64655f646174610c04087270635f706f727407a146"),
+            handshake(node_override={"peer_id": None}),
+            handshake(sync_override={"top_id": None}),
         ):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 probe.advertised_port(data)
@@ -186,11 +245,9 @@ class WireTests(unittest.TestCase):
                 "invalid_storage_header",
             ),
             (
-                probe.HEADER.pack(probe.MAGIC, len(RESTRICTED), 0, 1001, 1, 2, 1)
-                + RESTRICTED[:-2]
-                + b"\x00\x00",
+                frame(1001, handshake(sync_override={"top_id": None}), 2, 1),
                 "decode_handshake",
-                "rpc_port_zero",
+                "payload_data_invalid",
             ),
         )
         for data, stage, reason in cases:

@@ -35,3 +35,15 @@ class TestMoneroCardView:
             "health"
         ]
         assert h["level"] == "unknown" and "not answering" in h["status"]
+
+
+def test_syncing_health_never_claims_at_tip_and_keeps_peer_numbers():
+    from mining_dashboard.service.health.monero_health import MoneroChainHealth
+    from mining_dashboard.web.views.monero_view import _health
+
+    verdict = MoneroChainHealth().observe(
+        {"height": 100, "peers_out": 8, "peers_in": 2, "is_syncing": True}
+    )
+    card = _health(verdict)
+    assert card["level"] == "unknown" and card["status"] == "Node is syncing — no at-tip verdict"
+    assert card["peers"] == "8 out / 2 in" and card["advice"] == ""

@@ -151,3 +151,35 @@ def test_restart_between_polls_resets_peerless_and_stalled_clocks():
     v = mon.observe(_sync(height=100, out=0, monero_run_started=2.0))
     assert v["level"] == "green" and not v["peerless"] and not v["stalled"]
     assert v["advance_age_sec"] == 0
+
+
+def test_syncing_node_with_peers_has_no_at_tip_verdict():
+    mon, clock = _mon()
+    for height in (100, 101):
+        clock.t += 120
+        v = mon.observe(_sync(height=height, is_syncing=True))
+        assert v["level"] == "unknown" and v["syncing"]
+        assert v["peers_visible"] and v["peers_out"] == 8
+        assert v["advice"] == ""
+    assert mon.observe(_sync(height=102, is_syncing=False))["level"] == "green"
+
+
+def test_stale_sync_cannot_be_green_even_with_height_progress_and_peers():
+    mon, _ = _mon()
+    v = mon.observe(_sync(stale=True))
+    assert v["level"] == "red" and "node is out of sync" in v["reasons"]
+    assert mon.observe(_sync(height=101, stale=False))["level"] == "green"
+
+
+def test_syncing_does_not_hide_peerless_and_stalled_faults():
+    mon, clock = _mon()
+    mon.observe(_sync(out=0, is_syncing=True))
+    clock.t += STALLED_SEC
+    v = mon.observe(_sync(out=0, is_syncing=True))
+    assert v["level"] == "red" and v["stalled"] and v["peerless"]
+
+
+def test_remote_syncing_or_stale_node_still_gets_no_verdict():
+    mon, _ = _mon()
+    v = mon.observe(_sync(is_syncing=True, stale=True), local=False)
+    assert v["level"] == "unknown" and not v["peers_visible"]

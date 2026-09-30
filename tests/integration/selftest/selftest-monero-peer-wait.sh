@@ -45,10 +45,16 @@ pithead() { case "$*" in "tor-recover check") echo "check: peers 0 at 203.0.113.
 PEERS='{"outgoing":0,"incoming":0,"white":0,"grey":0}'
 ADMIN_UNAUTH=401 HOST_ADMIN=000 HOST_ADMIN6=000 HOST_PUBLISH='' BRIDGE_ADMIN=000 BRIDGE_ADMIN6=000 PUB_UNAUTH=401 PUB_RESTRICTED=true CONTAINER_REACHES=1 CONTAINER_REACHES6=1 V6=false
 NETS='{"mining_net":{"IPAddress":"172.20.0.26","GlobalIPv6Address":""}}'
-ADVERTISED_RPC=18081
+ADVERTISED_RPC=18081 PROBE_RC=0 ACTIVE_PROXY=enabled
+PUBLIC_SELECTION="Public RPC port 18081 will be advertised to other peers over P2P"
 rx() {
     case "$1" in
-    *monero-p2p-rpc-port.py*) printf '%s' "$ADVERTISED_RPC" ;;
+    *monero-p2p-rpc-port.py*)
+        printf '%s' "$ADVERTISED_RPC"
+        return "$PROBE_RC"
+        ;;
+    *"docker exec monerod awk"*) printf '%s' "$ACTIVE_PROXY" ;;
+    *"Public RPC port 18081"*) printf '%s' "$PUBLIC_SELECTION" ;;
     *monerod-peers.sh*) printf '%s' "$PEERS" ;;
     *"docker inspect -f '{{json .NetworkSettings.Networks}}' monerod"*) printf '%s' "$NETS" ;;
     *"docker network inspect"*) printf '%s' "$V6" ;;
@@ -110,6 +116,18 @@ case_fails() { # <VAR=value> <row text>: break one property, expect a failing ro
     assert_contains "$2" "$r" "✗"
 }
 case_fails "ADMIN_UNAUTH=200" "an admin listener that answers without a login fails"
+case_fails "PROBE_RC=1" "a failed probe cannot prove suppression"
+case_fails "PUBLIC_SELECTION=Public RPC port 18085 will be advertised" "admin selection fails even if the proxy suppresses it"
+case_fails "PUBLIC_SELECTION=" "unavailable startup selection fails"
+case_fails "ACTIVE_PROXY=" "unavailable active config fails"
+case_fails "ADVERTISED_RPC=18082" "an unexpected nonzero advertisement fails"
+ADVERTISED_RPC=0
+suppressed="$(boundary)"
+assert_contains "decoded zero with the active proxy proves suppression" "$suppressed" "suppresses RPC advertisement"
+case "$suppressed" in *"✗"*) it_fail "valid suppression has no failing row" "$suppressed" ;; *) it_pass "valid suppression has no failing row" ;; esac
+case_fails "ACTIVE_PROXY=disabled" "zero advertisement without the proxy fails"
+case_fails "PROBE_RC=1" "failed probe with a zero output still fails"
+ADVERTISED_RPC=18081
 case_fails "ADVERTISED_RPC=18085" "an advertised admin RPC port fails"
 case_fails "ADVERTISED_RPC=" "an unavailable advertisement fails"
 case_fails "HOST_ADMIN=200" "an admin listener published on the host loopback fails"

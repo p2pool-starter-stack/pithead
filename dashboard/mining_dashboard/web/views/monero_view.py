@@ -4,10 +4,11 @@ and whether it is at the tip with peers."""
 from mining_dashboard.helper.utils import format_duration
 
 HEALTH_TIP = (
-    "Green means monerod is at the network tip with peers: it has outgoing peers and its height "
+    "Green means monerod is synchronized at the network tip with outgoing peers and its height "
     "has moved in the last 30 minutes (Monero blocks arrive about every 2). Red means it has had "
     "no outgoing peers for 10 minutes or its height has not moved for 30 minutes, with the numbers "
-    "shown. A remote node's peers are not visible to this stack, so no verdict is given."
+    "shown. Stale sync is also red; a syncing node has no at-tip verdict. A remote node's peers "
+    "are not visible to this stack, so no verdict is given."
 )
 
 
@@ -21,7 +22,9 @@ def _health(health):
     """Display fields for the node verdict; ``level`` is green/red/unknown."""
     health = health or {}
     level = health.get("level", "unknown")
-    if level == "unknown":
+    if level == "unknown" and health.get("syncing"):
+        health = {**health, "reasons": ["Node is syncing — no at-tip verdict"]}
+    elif level == "unknown":
         why = (
             "Node not answering — see its down status"
             if health.get("reachable") is False

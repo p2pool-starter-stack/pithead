@@ -305,3 +305,9 @@ async def test_get_monero_peers_carries_current_run_identity():
         "peers_out": 8,
         "monero_run_started": containers._epoch(payload["State"]["StartedAt"]),
     }
+
+
+def test_an_impossible_observation_interval_is_unavailable():
+    for start, end in ((-20, -30), (20, -30), (-20, 20)):
+        payload = _peers_payload(Start=_iso(start), End=_iso(end))
+        assert containers.parse_monero_peers(payload, now=_NOW) == _UNAVAILABLE

@@ -890,10 +890,15 @@ container's loopback on an unpublished port (it needs the same login and is not 
 host, the LAN or other containers). The container's healthcheck reads it and prints one line that
 the dashboard reads from `docker inspect` (`State.Health.Log`); `./pithead doctor` and
 `./pithead tor-recover` read it with `docker exec`. A reading that is missing, older than 90 seconds,
-from before the container's current start or malformed shows as "peers not visible", never as 0
+from before the container's current start, with an end before its start, or malformed shows as
+"peers not visible", never as 0
 peers and never as green; the container healthcheck fails until the local reading returns. A
 restart resets the peerless and height clocks even when it falls between dashboard polls. A
-stalled height still turns the card red without peer visibility. It turns red, with the numbers, when monerod has had 0 outgoing peers for 10
+stalled height still turns the card red without peer visibility. The container healthcheck
+also fails after 30 minutes without a rise past its best height, even with outgoing peers;
+its monotonic height clock resets on a new container run or an unavailable height reading.
+A syncing local node has no at-tip verdict; a node marked stale by the sync monitor is red.
+Doctor omits the last-block age when the RPC timestamp is malformed or outside its integer bound. It turns red, with the numbers, when monerod has had 0 outgoing peers for 10
 minutes (`NODE_STALE_AFTER_SEC`) or its height has not moved for 30 minutes (Monero blocks arrive
 about every 2). A red verdict also fails `./pithead doctor` (doctor's Monero sync check prints the
 peer counts and the last block's age too), adds a `monero chain` line to `./pithead status`, sends a

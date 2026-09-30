@@ -82,6 +82,8 @@ class MoneroChainHealth:
         elif self._zero_since is None:
             self._zero_since = now
 
+        syncing = bool(sync.get("is_syncing"))
+        stale = bool(sync.get("stale"))
         reasons = []
         peerless = self._zero_since is not None and now - self._zero_since >= PEERLESS_SEC
         age = None if self._advanced_at is None else now - self._advanced_at
@@ -90,8 +92,13 @@ class MoneroChainHealth:
             reasons.append(f"0 outgoing peers for {_minutes(now - self._zero_since)} min")
         if stalled:
             reasons.append(f"height {self._best} has not moved for {_minutes(age)} min")
+        if stale:
+            reasons.append("node is out of sync")
         self.verdict = {
-            "level": "red" if reasons else ("green" if peers_out is not None else "unknown"),
+            "level": "red"
+            if reasons
+            else ("green" if peers_out is not None and not syncing else "unknown"),
+            "syncing": syncing,
             "reasons": reasons,
             "advice": RESTART_ADVICE if reasons else "",
             "peers_visible": peers_out is not None,
