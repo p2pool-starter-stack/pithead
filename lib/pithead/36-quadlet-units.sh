@@ -9,7 +9,6 @@ render_quadlet_units() {
     local envf="$1" outdir="$2"
     [ -f "$envf" ] || error "render-quadlet: env file not found: $envf"
     mkdir -p "$outdir"
-
     _qenv() { env_get_file "$envf" "$1"; }
     # systemd.exec space-splits Environment=, so a value holding a space silently loses its tail
     # (#2040). Every .env value goes through here, not a per-key "looks token-shaped" list, which
@@ -32,12 +31,10 @@ render_quadlet_units() {
     local profiles tor_profiles reg ver prefix subnet
     profiles=$(_qenv COMPOSE_PROFILES)
     tor_profiles=$(_qenv TOR_COMPOSE_PROFILES)
-
     reg=$(_qenv PITHEAD_REGISTRY)
     ver=$(_qenv STACK_VERSION)
     prefix=$(_qenv NETWORK_PREFIX)
     subnet=$(_qenv NETWORK_SUBNET)
-
     cat >"$outdir/mining.network" <<EOF
 [Network]
 NetworkName=mining_net
@@ -218,6 +215,9 @@ DropCapability=all
 AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID
 NoNewPrivileges=true
 RunInit=true
+# tari#8063: pinned gRPC wallet does not shut down on SIGTERM or SIGINT.
+# The appliance test checks the persisted SQLite reopen after a forced stop.
+StopTimeout=10
 PodmanArgs=--memory 512m --memory-swap 512m
 HealthCmd=/wallet-config/wallet-healthcheck.sh
 HealthInterval=30s

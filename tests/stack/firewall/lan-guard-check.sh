@@ -100,7 +100,7 @@ mv "$LGD/.env.lan" "$LGD/.env"
 printf 'TARI_GRPC_BIND=0.0.0.0\n' >"$LGD/.env"
 export LG_STOP="$LGD/stopped"
 : >"$LG_STOP"
-lg_check='mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1" in ps) case " $* " in *"service=monerod"*) echo monerod ;; *"service=tari"*) echo tari ;; esac ;; port) case "$2" in monerod) echo "${LG_MONERO_PORT:-127.0.0.1}:18081" ;; tari) echo "${LG_TARI_PORT:-0.0.0.0}:18142" ;; esac ;; stop) printf "%s\n" "$2" >>"$LG_STOP" ;; esac; }; lan_guard_check'
+lg_check='mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1" in ps) case " $* " in *"service=monerod"*) grep -qxF monerod "$LG_STOP" || echo monerod ;; *"service=tari"*) grep -qxF tari "$LG_STOP" || echo tari ;; esac ;; port) case "$2" in monerod) echo "${LG_MONERO_PORT:-127.0.0.1}:18081" ;; tari) echo "${LG_TARI_PORT:-0.0.0.0}:18142" ;; esac ;; stop) printf "%s\n" "$2" >>"$LG_STOP" ;; esac; }; lan_guard_check'
 LG_LIVE=1 lg 'lan_guard_mark; mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; lan_guard_check' >/dev/null
 assert_eq "live rule leaves the marker" "$(cat "$LGD/data/lan-guard/enforced")" "boot-1"
 lg_rc=0

@@ -50,6 +50,8 @@ readonly OS_TYPE
 # file; ordinary commands leave PITHEAD_ENV_FILE unset, so their generated files belong here.
 readonly CONFIG_FILE="${PITHEAD_CONFIG_FILE:-config.json}"
 readonly ENV_FILE="${PITHEAD_ENV_FILE:-.env}"
+PITHEAD_ENV_STAGE="${ENV_FILE}.new.$BASHPID"
+PITHEAD_ENV_DRYRUN="${ENV_FILE}.dryrun.$BASHPID"
 # Canonical closed schema: every known config.json leaf path, shipped beside this script (bundle +
 # checkout root). The #33 control gate uses it to refuse a staged config carrying any path the
 # schema doesn't know — the "unrecognized key renders to no env var, so no porcelain row" smuggling
@@ -124,7 +126,7 @@ if [ "$_STACK_SOURCED" = "0" ]; then
 
     # Friendly message on unexpected failure; always clean up the apply staging file.
     trap on_err ERR
-    trap 'rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
+    trap 'rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
 fi
 
 # --- Mutation lock (#1342) ---

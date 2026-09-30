@@ -458,7 +458,9 @@ curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/downl
 
 **Source checkout:** pull the latest code, then upgrade. `upgrade` **rebuilds** the first-party
 images locally and pulls only the pinned third-party images (Tari, Caddy, the socket proxies) that
-are not on the host. `setup` and `up` fetch those images the same way:
+are not on the host. After the build, it recreates any container whose image ID differs from its
+Compose declaration and fails if the IDs still differ. `setup` and `up` fetch missing third-party
+images the same way:
 
 ```bash
 git pull
