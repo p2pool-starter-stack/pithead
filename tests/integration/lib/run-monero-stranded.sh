@@ -60,6 +60,16 @@ _pred_monero_level() { [ "$(monero_health_field level)" = "$1" ]; }
 monero_peer_counts() { rx "docker exec monerod /usr/local/bin/monerod-peers.sh" 2>/dev/null; }
 # The outgoing count the dashboard's verdict and the healthcheck both act on.
 monero_out_peers() { monero_peer_counts | jq -r '.outgoing // empty' 2>/dev/null; }
+monero_tor_recovery_out() {
+    # Exercise the shipped consumer against the live restricted RPC and local helper without
+    # poisoning Tor state or invoking its unrelated saturated-history mutation contract.
+    rx 'source lib/pithead/02e-tor-recovery.sh
+        env_get() { sed -n "s/^$1=//p" .env | head -n 1; }
+        tor_recovery_info | jq -r ".outgoing_connections_count // empty"' 2>/dev/null
+}
+monero_observation() {
+    rx "docker exec dashboard python3 -c 'import asyncio,json; from mining_dashboard.collector.containers import get_monero_peers; print(json.dumps(asyncio.run(get_monero_peers())))'" 2>/dev/null
+}
 _pred_monero_zero_out() { [ "$(monero_out_peers)" = 0 ]; }
 _pred_monero_has_peers() { [ "$(monero_out_peers)" -gt 0 ] 2>/dev/null; }
 _pred_monerod_docker_health() { [ "$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)" = "$1" ]; }
@@ -104,6 +114,8 @@ assert_monero_rpc_boundary() {
         return 1
     fi
     v6="$(rx "docker network inspect -f '{{.EnableIPv6}}' '$net'" 2>/dev/null)"
+    assert_eq "monero-stranded: the P2P handshake advertises the restricted RPC port" \
+        "$(rx "python3 tests/integration/monero-p2p-rpc-port.py '$ip' 18080" 2>/dev/null)" "18081"
     assert_contains "monero-stranded: the in-container helper reads real counts from the admin listener" "$(monero_peer_counts)" '"outgoing":'
     assert_eq "monero-stranded: the admin listener rejects an unauthenticated request inside the container" \
         "$(rx "docker exec monerod curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18085/get_info" 2>/dev/null)" "401"
@@ -178,7 +190,15 @@ run_monero_stranded() {
         return
     fi
 
-    local cur
+    local cur observation_before
+    observation_before="$(monero_observation)"
+    assert_contains "monero-stranded: the cold-start observation is fresh and bound to this run" \
+        "$(printf '%s' "$observation_before" | jq -r '.peers_out >= 0 and (.monero_run_started | type) == "number"' 2>/dev/null)" "true"
+    if [ "$(monero_tor_recovery_out)" -gt 0 ] 2>/dev/null; then
+        it_pass "monero-stranded: tor-recover reads actual baseline peers through its local helper"
+    else
+        it_fail "monero-stranded: tor-recover reads actual baseline peers through its local helper" "peer evidence unavailable or redacted"
+    fi
     cur="$(trap -p EXIT)"
     if [ -n "$cur" ]; then
         local -a parsed
@@ -206,6 +226,7 @@ run_monero_stranded() {
     else
         it_fail "monero-stranded: monerod reports 0 outgoing peers within ${MONERO_DISCONNECT_MAX} s of the fault" "$(monero_strand_state)"
     fi
+    assert_eq "monero-stranded: tor-recover reads the real fault zero" "$(monero_tor_recovery_out)" "0"
     # The bound (NODE_STALE_AFTER_SEC, 10 min) runs from the first zero reading; one poll of slack.
     if wait_for $((600 + MONERO_POLL_SLACK)) 10 "Monero verdict red" _pred_monero_level red; then
         it_pass "monero-stranded: red $(($(now_s) - ${t_zero:-$t0})) s after the first 0-peer reading: $(monero_health_field reasons)"
@@ -247,6 +268,13 @@ run_monero_stranded() {
         it_pass "monero-stranded: docker inspect health is healthy again"
     else
         it_fail "monero-stranded: docker inspect health is healthy again" "$(monero_strand_state)"
+    fi
+    assert_eq "monero-stranded: the fresh recovery observation belongs to a newer container run" \
+        "$(monero_observation | jq -r --argjson before "${observation_before:-null}" '.peers_out > 0 and .monero_run_started > $before.monero_run_started' 2>/dev/null)" "true"
+    if [ "$(monero_tor_recovery_out)" -gt 0 ] 2>/dev/null; then
+        it_pass "monero-stranded: tor-recover verifies real peers after recovery"
+    else
+        it_fail "monero-stranded: tor-recover verifies real peers after recovery" "peer evidence unavailable or redacted"
     fi
     if wait_for 120 10 "recovery note at the sink" _pred_monero_recovery_alerted; then
         it_pass "monero-stranded: the recovery note left the dashboard"

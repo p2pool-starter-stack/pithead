@@ -45,8 +45,10 @@ pithead() { case "$*" in "tor-recover check") echo "check: peers 0 at 203.0.113.
 PEERS='{"outgoing":0,"incoming":0,"white":0,"grey":0}'
 ADMIN_UNAUTH=401 HOST_ADMIN=000 HOST_ADMIN6=000 HOST_PUBLISH='' BRIDGE_ADMIN=000 BRIDGE_ADMIN6=000 PUB_UNAUTH=401 PUB_RESTRICTED=true CONTAINER_REACHES=1 CONTAINER_REACHES6=1 V6=false
 NETS='{"mining_net":{"IPAddress":"172.20.0.26","GlobalIPv6Address":""}}'
+ADVERTISED_RPC=18081
 rx() {
     case "$1" in
+    *monero-p2p-rpc-port.py*) printf '%s' "$ADVERTISED_RPC" ;;
     *monerod-peers.sh*) printf '%s' "$PEERS" ;;
     *"docker inspect -f '{{json .NetworkSettings.Networks}}' monerod"*) printf '%s' "$NETS" ;;
     *"docker network inspect"*) printf '%s' "$V6" ;;
@@ -108,6 +110,8 @@ case_fails() { # <VAR=value> <row text>: break one property, expect a failing ro
     assert_contains "$2" "$r" "✗"
 }
 case_fails "ADMIN_UNAUTH=200" "an admin listener that answers without a login fails"
+case_fails "ADVERTISED_RPC=18085" "an advertised admin RPC port fails"
+case_fails "ADVERTISED_RPC=" "an unavailable advertisement fails"
 case_fails "HOST_ADMIN=200" "an admin listener published on the host loopback fails"
 case_fails "HOST_PUBLISH=18085/tcp" "a host or LAN publication of the admin listener fails"
 case_fails "HOST_ADMIN6=200" "an admin listener open on IPv6 loopback fails"
