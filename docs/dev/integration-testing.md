@@ -779,8 +779,24 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
-  `config.json` hand-edit shows up in the masked prefill (with the token still masked). The feed
-  half needs a *usable* read-only credential: with the descriptor's token masked, the dashboard
+  `config.json` hand-edit shows up in the masked prefill (with the token still masked).
+  The shared direct POST helper returns only a change ID of 16 lowercase hex digits. On failure,
+  it writes `direct rig control apply diagnostic:` to the harness transcript on stderr, with
+  `request_utc` (UTC immediately before curl), `http_status`, `curl_exit`, `classification`, and
+  `response_status`. A nonzero curl exit is `transport-failure`; otherwise a non-2xx response is
+  `http-refusal`, followed by `empty-body`, `invalid-json`, or `missing-valid-id` for a successful
+  HTTP response without exactly one JSON object containing a valid ID. Whitespace-only bodies
+  count as empty. If the execution transport fails before capture returns, the diagnostic uses
+  the caller's request timestamp, HTTP `000` and curl exit `unknown`.
+  Response status is restricted to `accepted`, `applied`, `rejected`, `failed`, `rolled_back`,
+  or `noop`; any other value is `absent`. No arbitrary body field, raw curl stderr, credential,
+  request config or endpoint is printed. Capture uses an owner-only temporary directory, a
+  16 KiB response-file limit and a 15 s curl timeout, and removes the files on exit. Curl's user
+  config is disabled; the POST is never retried because a failed response may follow a staged
+  change. The existing acceptance failure remains `the rig's /apply did not return a change_id`,
+  which the runner uses to collect the receiver journal before restore. Diagnostics use the
+  existing harness log artifact, with no separate response artifact.
+  The feed half needs a *usable* read-only credential: with the descriptor's token masked, the dashboard
   container never holds the real `ACCESS_TOKEN`, only a read-only credential the host derives from
   it (`render_worker_read_tokens`, `rigforge:api-read:v1`) and RigForge verifies the same way
   (`derive_read_token`, `util/api-server.py`) — both sides refuse to derive one from a control
