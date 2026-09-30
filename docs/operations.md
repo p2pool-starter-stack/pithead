@@ -835,8 +835,13 @@ confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_he
 A failed request is corroborated against a second target before it counts toward the 15-minute
 outage window. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
 continued failure after accepted refreshes permits one Tor container restart, which also re-dials
-local Monero. A rejected NEWNYM does not advance to that restart: the dashboard warns and retries
-after 30 minutes while the outage persists. Once the host's daily refresh budget is spent, it
+a running local Monero once Tor's start is confirmed. A failed or timed-out stop/start response
+is an uncertain mutation: the restart attempt and cooldown remain spent, including when both
+responses are unconfirmed. A confirmed start after an unconfirmed stop still re-dials a running
+local Monero; a stopped or remote node stays untouched. Logs record each control result and
+retain the distinction between a confirmed restart, a confirmed start with an unconfirmed stop,
+and an unconfirmed restart in the recovery note. A rejected NEWNYM does not advance to that
+restart: the dashboard warns and retries after 30 minutes while the outage persists. Once the host's daily refresh budget is spent, it
 cannot take another automatic action until the host accepts a request. Each step and its probe
 evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
 circuits, duration and preceding action into the Telegram note; the action is not credited as the
