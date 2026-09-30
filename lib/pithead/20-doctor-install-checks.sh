@@ -43,13 +43,7 @@ check_stratum_exposure() {
         # redact() does have one (#1609), but that twin guards CI artifact uploads, not the browser.
         msg="This host appears to have a public IP ($pub). The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall."
         if [ "$mode" = doctor ]; then
-            # The appliance arm names only what an appliance operator can actually reach. Blocking
-            # the port at their own router is theirs. The two config remedies are not: neither
-            # STRATUM_BIND nor STRATUM_PASSWORD is in CONTROL_DASHBOARD_EDITABLE_KEYS or
-            # CONTROL_DASHBOARD_CONFIRM_KEYS (42-control-policy-and-host-checks.sh), where the
-            # stratum password is named as deliberately host-only. So it states the diagnosis,
-            # gives the one route that exists, and stops -- #1213's rule at #1772's site.
-            dr_warn_surface "This host appears to have a public IP. The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP, and the stratum port $port is unauthenticated and cleartext by default — anything on the internet can reach it. Block that port at your router, so that only your own network can. Narrowing the listen address or requiring a stratum password is not editable from the dashboard: changing either needs console access to this machine."
+            dr_warn_surface "This host appears to have a public IP. The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP, and the stratum port $port is unauthenticated and cleartext by default — anything on the internet can reach it. Block that port at your router so only your network can reach it. Open Configuration to narrow the listen address or require a stratum password, then complete the confirmation step."
         else
             warn "$msg"
         fi
@@ -223,7 +217,7 @@ check_appliance_cert() {
     local base missing=""
     base=$(appliance_base_name)
     case ",$san," in
-    *",DNS:$base,"* | *",IP:$base,"*) ;;
+    *",DNS:$base,"* | *",IP:$base,"* | *",IP:$(ipv6_canonical "$base"),"*) ;;
     *) missing="$base" ;;
     esac
 
@@ -265,7 +259,7 @@ check_appliance_cert() {
             for h in $extras; do
                 case "$bridge_gws" in *" $h "*) continue ;; esac
                 case ",$san," in
-                *",DNS:$h,"* | *",IP:$h,"*) ;;
+                *",DNS:$h,"* | *",IP:$h,"* | *",IP:$(ipv6_canonical "$h"),"*) ;;
                 *) missing="${missing:+$missing }$h" ;;
                 esac
             done
@@ -273,7 +267,7 @@ check_appliance_cert() {
     fi
 
     if [ -n "$missing" ]; then
-        dr_fail_surface "The dashboard certificate does not cover: $missing — Caddy serves those names without a certificate for them. Run './pithead apply' to re-mint." "The dashboard certificate does not cover: $missing — those names are served without a certificate for them. This machine re-mints the certificate whenever it renders its web configuration, so saving any change from the dashboard renews it."
+        dr_fail_surface "The dashboard certificate does not cover: $missing — Caddy serves those names without a certificate for them. Run './pithead apply' to re-mint." "The dashboard certificate does not cover: $missing — those names are served without a certificate for them. This machine's address watch re-mints the certificate within five minutes of an address change, so if an address just arrived, wait and check again."
     else
         dr_ok "The dashboard certificate covers every name Caddy serves."
     fi

@@ -70,7 +70,7 @@ export class AdoptRigForm extends Component {
         controlPort,
         token,
       );
-      let res = await fetch("/api/control/preview", {
+      const res = await fetch("/api/control/preview", {
         method: "POST",
         headers: CONTROL_HEADERS,
         body: JSON.stringify({ config: proposed }),

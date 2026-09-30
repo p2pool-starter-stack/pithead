@@ -12,7 +12,8 @@
 # the enriched feed, and the dashboard re-exposes it at `GET /api/worker?name=<rig>` as
 # `.rig_config` (#1235, views.py). So the harness can now read the original from the rig itself,
 # derive a probe from it, and assert the rig's OWN reported value changed and was restored — no new
-# env var, no direct rig dial, no new port, and no reliance on a record of what we last pushed.
+# env var or port, and no reliance on a record of what we last pushed. The #2894 timeout sample
+# now dials the rig directly to locate a stale handoff; the assertion still reads the dashboard.
 #
 # The settle reasoning is rigforge-apply-settle.sh's: `.rig_config` rides the same per-rig poll
 # tick as the enriched feed (data_service step 3b), which runs strictly AFTER the #185 history
@@ -55,12 +56,57 @@ _pred_rig_config_key() { # <rig> <key> <want-json>
     [ -n "$v" ] && [ "$v" = "$3" ]
 }
 
+# A timeout needs both sides of the read path, not another guess at the wait bound (#2894).
+# Print only allowlisted scalar fields; the raw responses and Bearer never reach the log.
+_pred_donation_revert_sample() { # <rig> <want-json> <change-id>
+    local rig="$1" want="$2" id="$3" detail feed outcome dash history stamp stale direct direct_stamp direct_status snapshot status
+    [[ "$id" =~ ^[0-9a-f]{16}$ ]] || return 1
+    detail="$(_worker_detail "$rig")"
+    snapshot="$(printf '%s' "$detail" | jq -r '.snapshot_at // empty' 2>/dev/null)"
+    status="$(printf '%s' "$detail" | jq -r '.status // empty' 2>/dev/null)"
+    dash="$(_rig_config_key "$detail" DONATION)"
+    history="$(printf '%s' "$detail" | jq -r --arg id "$id" 'first(.history[]? | select(.change_id == $id) | .status) // empty' 2>/dev/null)"
+    IFS='|' read -r stamp stale <<<"$(printf '%s' "$detail" | jq -r '"\(.rigforge.generated_at // "")|\(if .rigforge.stale == null then "" else .rigforge.stale end)"' 2>/dev/null)"
+    feed='' outcome=''
+    if [ -n "${IT_RIG_TOKEN:-}" ] && [ -n "${RIG_HOST:-}" ]; then
+        local auth
+        auth="$(printf 'Authorization: Bearer %s' "$IT_RIG_TOKEN" | jq -Rs .)"
+        feed="$(printf 'header = %s\n' "$auth" | rx "curl -fsS --max-time 3 -K - $(quote_arg "http://$RIG_HOST:8081/1/summary")" --stdin 2>/dev/null)" || feed=''
+        outcome="$(printf 'header = %s\n' "$auth" | rx "curl -fsS --max-time 3 -K - $(quote_arg "http://$RIG_HOST:$RIG_CONTROL_PORT/status?change_id=$id")" --stdin 2>/dev/null)" || outcome=''
+    fi
+    IFS='|' read -r direct direct_stamp <<<"$(printf '%s' "$feed" | jq -r '"\(.rigforge.config.DONATION // "")|\(.generated_at // "")"' 2>/dev/null)"
+    direct_status="$(printf '%s' "$outcome" | jq -r --arg id "$id" 'if .change_id == $id then .status // empty else empty end' 2>/dev/null)"
+    # A malformed producer field must not become arbitrary log text, including a credential.
+    [[ "$dash" =~ ^[0-9]{1,3}$ ]] || dash=poll_failed
+    [[ "$direct" =~ ^[0-9]{1,3}$ ]] || direct=poll_failed
+    case "$history" in applied | rejected | rolled_back | accepted | failed | noop | throttled) ;; *) history=poll_failed ;; esac
+    case "$direct_status" in pending | started | applied | rejected | rolled_back | failed | noop | throttled) ;; *) direct_status=poll_failed ;; esac
+    [[ "$snapshot" =~ ^[0-9]{10}(\.[0-9]{1,9})?$ ]] || snapshot=poll_failed
+    case "$status" in online | offline | down) ;; *) status=poll_failed ;; esac
+    [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || stamp=poll_failed
+    [[ "$direct_stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || direct_stamp=poll_failed
+    case "$stale" in true | false) ;; *) stale=poll_failed ;; esac
+    jq -nc --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg dash "${dash:-poll_failed}" \
+        --arg history "${history:-poll_failed}" --arg stamp "${stamp:-poll_failed}" \
+        --arg stale "${stale:-poll_failed}" --arg direct "${direct:-poll_failed}" \
+        --arg direct_stamp "${direct_stamp:-poll_failed}" --arg direct_status "${direct_status:-poll_failed}" \
+        --arg snapshot "${snapshot:-poll_failed}" --arg status "${status:-poll_failed}" \
+        '{at:$at,dashboard_donation:$dash,history:$history,dashboard_feed_at:$stamp,dashboard_stale:$stale,dashboard_snapshot_at:$snapshot,dashboard_status:$status,rig_donation:$direct,rig_feed_at:$direct_stamp,rig_status:$direct_status}' >&2
+    [ "$dash" = "$want" ]
+}
+
 # Settle a dial-time "accepted" against the rig's own reported config. The wrapper — parse, wait,
 # promote to applied, leave a real rejected/failed/timeout alone so the caller's assert_eq reds — is
 # _settle_worker_apply in rigforge-apply-settle.sh, shared with the max_temp_c leg; only the
 # readback predicate is ours. Same '|'-joined output, and the same reason for that delimiter (an
 # empty middle field must survive `IFS='|' read`), documented on that module.
-_settle_worker_apply_key() { # <rig> <key> <want-json> <dial-result-json> -> "<status>|<ckeys>|<change_id>"
+_settle_worker_apply_key() { # <rig> <key> <want-json> <dial-result-json> [sample-revert] -> "<status>|<ckeys>|<change_id>"
+    if [ "${5:-}" = sample-revert ]; then
+        _settle_worker_apply "$2" \
+            "the rig to report $2=$3 applied (RigForge #344 async apply, #1309)" \
+            "$4" _pred_donation_revert_sample "$1" "$3" "$(printf '%s' "$4" | jq -r '.change_id // empty')"
+        return
+    fi
     _settle_worker_apply "$2" \
         "the rig to report $2=$3 applied (RigForge #344 async apply, #1309)" \
         "$4" _pred_rig_config_key "$1" "$2" "$3"
@@ -74,19 +120,27 @@ _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
     local rig="$1" key="$2" orig="$3" probe="$4" res status ckeys change_id
     it_step "Worker Inspect edit: $key $orig -> $probe via /api/control/worker-apply…"
     # On the books BEFORE the write goes out — the window #1379 covers includes the apply itself.
-    rig_key_mark dash "$rig" "$key" "$orig"
+    # A refused mark means an abort could not restore this key, so the write is not sent (#2668).
+    rig_key_mark dash "$rig" "$key" "$orig" || {
+        it_skip_leg "$key write (#1236)" "the original $key on rig '$rig' cannot be recorded for the abort-safe unwind, so no write is sent"
+        return 0
+    }
     res="$(_worker_apply "$rig" "$(jq -nc --arg k "$key" --argjson v "$probe" '{($k): $v}')")"
     IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_key "$rig" "$key" "$probe" "$res")"
     assert_eq "$key edit applied on the rig (#1236)" "$status" "applied"
     assert_contains "the rig's own config confirms $key changed (#1236)" "$ckeys" "$key"
     # Matched by change_id, not "the newest row" — #579/#604's reconciler, as the #513 leg does —
     # and waited to terminal first, because the settle above returns before the rig has published
-    # its outcome (#1471). Read unwaited, this raced the rig's whole apply (#2761).
+    # its outcome (#1471). Read unwaited, this raced a window of up to ~90s.
     assert_eq "$key worker-apply recorded in the per-worker history (#185/#1236/#1471)" \
-        "$(_settle_history_row "$rig" "$change_id" "$key")" "applied"
+        "$(_settle_history_row "$rig" "$change_id")" "applied"
     it_step "reverting $key $probe -> ${orig}…"
     res="$(_worker_apply "$rig" "$(jq -nc --arg k "$key" --argjson v "$orig" '{($k): $v}')")"
-    IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res")"
+    if [ "$key" = DONATION ]; then
+        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res" sample-revert)"
+    else
+        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res")"
+    fi
     assert_eq "$key edit reverted on the rig (#1236)" "$status" "applied"
     # Retired only on a CONFIRMED revert. A revert that came back anything else stays on the books
     # so the EXIT trap retries it — the assertion above has already red, and trusting it to have
@@ -222,7 +276,10 @@ run_rigforge_pools() { # <rig>
     # `rejected`/`rolled_back`, at the dial or on the row, leave it on its own previous config,
     # which the EXIT unwind must not overwrite with a value the rig just refused. `failed` (the
     # resulting config varies), a change still `accepted` and no answer stay on the books.
-    rig_key_mark dash "$rig" pools "$probe"
+    rig_key_mark dash "$rig" pools "$probe" || {
+        it_skip_leg "pools write (#1002b)" "the original pools on rig '$rig' cannot be recorded for the abort-safe unwind (not one JSON value), so no write is sent (#2668)"
+        return 0
+    }
     res="$(_worker_apply "$rig" "{\"pools\":$probe}")"
     # Settled, never read at dial time (#2407): the rig answers "accepted" and applies async
     # (RigForge #344, #1309), exactly as it does for the #1236 keys above.
@@ -233,7 +290,7 @@ run_rigforge_pools() { # <rig>
     assert_contains "the rig's own config reports the probe's pools (#1002b)" "$ckeys" "pools"
     # The readback is blind once a run has left the rig on the probe (every run after the first), so
     # the change's own #185 history row is the verdict that it landed, and the ledger retires on it.
-    row="$(_settle_history_row "$rig" "$change_id" pools)"
+    row="$(_settle_history_row "$rig" "$change_id")"
     assert_eq "pools worker-apply recorded in the per-worker history (#185/#1471/#2407)" "$row" "applied"
     case "$status|$row" in applied\|applied | rejected\|* | rolled_back\|* | *\|rejected | *\|rolled_back)
         rig_key_clear dash "$rig" pools

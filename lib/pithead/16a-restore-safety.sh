@@ -140,7 +140,7 @@ DASHBOARD_AUTH_HASH_B64 bcrypt
 DEPLOYMENT_COMPLETED bool
 EOF
     if ! PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \
-        bash -c 'source "$1" && parse_and_validate_config >/dev/null && load_preserved_state && DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) && resolve_dashboard_host && render_env "${ENV_FILE}.dryrun" >/dev/null && mv -f -- "${ENV_FILE}.dryrun" "$ENV_FILE" && generate_caddyfile "$PITHEAD_CADDY_FILE" false >/dev/null' \
+        bash -c 'source "$1" && parse_and_validate_config >/dev/null && load_preserved_state && DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) && resolve_dashboard_host && render_env "$PITHEAD_ENV_DRYRUN" >/dev/null && mv -f -- "$PITHEAD_ENV_DRYRUN" "$ENV_FILE" && generate_caddyfile "$PITHEAD_CADDY_FILE" false >/dev/null' \
         _ "${BASH_SOURCE[0]}"; then
         rm -f -- "$seed" "$staged_caddy"
         return 1
@@ -271,5 +271,11 @@ restore_commit_stage() {
             error "Restore failed while committing $path; inspect the destination before retrying."
         }
     done
+    # The archive wins ordinary collisions, but Tor's circuit history must never survive a
+    # restore. Its onion keys are separate files and remain untouched.
+    sudo rm -f -- "${RESTORE_ALLOWED_DIRS[3]}/state" || {
+        restore_discard_stage
+        error "Restore committed data but could not discard Tor circuit state; keep the stack stopped and remove the state before starting Tor."
+    }
     restore_discard_stage
 }

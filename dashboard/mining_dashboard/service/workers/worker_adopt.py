@@ -154,7 +154,18 @@ def new_worker_entries(live_cfg, staged_cfg):
     live_list = live_list if isinstance(live_list, list) else []
     if not isinstance(staged_list, list):
         return []
-    if staged_list[: len(live_list)] != live_list:
+
+    # The live editor copy masks credentials, while a submitted prefix may contain a newly
+    # typed string. Compare existing entries by their public fields; the host's add-only gate
+    # remains responsible for refusing an actual credential edit.
+    def public_entry(entry):
+        if not isinstance(entry, dict):
+            return entry
+        return {k: v for k, v in entry.items() if k not in ("token", "api_token")}
+
+    if [public_entry(e) for e in staged_list[: len(live_list)]] != [
+        public_entry(e) for e in live_list
+    ]:
         return []
     return staged_list[len(live_list) :]
 

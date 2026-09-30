@@ -161,6 +161,11 @@ assert_eq "contended: the upgrade is rejected, not failed" "$(cul_st)" "rejected
 assert_contains "contended: the reason says it was never started" "$(cul_err)" "never started"
 assert_contains "contended: the reason says nothing was changed" "$(cul_err)" "nothing was changed"
 assert_contains "contended: and it names the throttle the attempt still costs" "$(cul_err)" "ten-minute upgrade throttle"
+# One PITHEAD_LOCK_TIMEOUT, not two: the runner itself takes no window (#2363), so the handler's
+# own acquire is the only wait before the rejection.
+assert_eq "contended: the upgrade waits one PITHEAD_LOCK_TIMEOUT, not two" \
+    "$(grep -c 'waiting up to' <<<"$cul_out")" "1"
+assert_eq "contended: and reports never started once" "$(grep -o 'never started' <<<"$(cul_err)" | wc -l | tr -d ' ')" "1"
 assert_eq "contended: the new release's pithead was never re-invoked" "$(cat "$CUL/upgrade-invocations.log" 2>/dev/null)" ""
 assert_eq "contended: the install dir was not overwritten" "$(cat "$CUL/VERSION")" "1.3.1"
 assert_eq "contended: the new bundle's build/* did not land" "$(cat "$CUL/build/monero/bitmonero.conf.template")" "stale-monero-template-v1.3.1"

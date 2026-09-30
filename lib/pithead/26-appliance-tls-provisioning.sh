@@ -143,7 +143,62 @@ appliance_cert_alt_string() {
 # the caller to act on, not a reason for `pithead` itself to abort under `set -e`.
 cert_san_string() { # <cert-file>
     openssl x509 -in "$1" -noout -ext subjectAltName 2>/dev/null |
-        tr -d '[:space:]' | sed -e 's/^X509v3SubjectAlternativeName://' -e 's/IPAddress:/IP:/g' || true
+        tr -d '[:space:]' | sed -e 's/^X509v3SubjectAlternativeName://' -e 's/IPAddress:/IP:/g' |
+        san_canonical_string || true
+}
+
+# An IPv6 literal in one canonical spelling: lower-case, fully expanded, no leading zeros
+# (fd00:2463::1 -> fd00:2463:0:0:0:0:0:1). openssl prints an IPv6 SAN expanded and upper-case while
+# `hostname -I` prints it compressed, so comparing the two as strings called every IPv6 address
+# uncovered on every box — a permanent doctor FAIL and a re-mint on every render (#2463). Anything
+# that is not a plain IPv6 literal comes back unchanged.
+ipv6_canonical() { # <literal>
+    local a="${1,,}" left right fill i parts=() lgrp=() rgrp=()
+    case "$a" in *:*) ;; *)
+        printf '%s' "$1"
+        return 0
+        ;;
+    esac
+    # A literal is at most one "::", groups of 1-4 hex digits, and no stray edge colon.
+    [[ "$a" =~ ^([0-9a-f]{1,4}(:[0-9a-f]{1,4})*)?(::([0-9a-f]{1,4}(:[0-9a-f]{1,4})*)?)?$ && "$a" != *:::* ]] || {
+        printf '%s' "$1"
+        return 0
+    }
+    if [[ "$a" == *::* ]]; then
+        left="${a%%::*}"
+        right="${a#*::}"
+    else
+        left="$a"
+        right=""
+    fi
+    IFS=: read -ra lgrp <<<"$left"
+    IFS=: read -ra rgrp <<<"$right"
+    fill=$((8 - ${#lgrp[@]} - ${#rgrp[@]}))
+    if [[ "$a" != *::* ]]; then fill=0; fi
+    if [ "$fill" -lt 0 ] || { [[ "$a" == *::* ]] && [ "$fill" -lt 1 ]; } || { [ "$fill" -eq 0 ] && [ $((${#lgrp[@]} + ${#rgrp[@]})) -ne 8 ]; }; then
+        printf '%s' "$1"
+        return 0
+    fi
+    for i in "${lgrp[@]}"; do parts+=("$(printf '%x' "$((16#${i:-0}))")"); done
+    for ((i = 0; i < fill; i++)); do parts+=(0); done
+    for i in "${rgrp[@]}"; do parts+=("$(printf '%x' "$((16#${i:-0}))")"); done
+    (
+        IFS=:
+        printf '%s' "${parts[*]}"
+    )
+}
+
+# Rewrites every IP:<ipv6> entry of a "DNS:a,IP:b" SAN string (argument or stdin) canonically, so
+# a certificate's list and appliance_cert_alt_string's can be compared as sets.
+san_canonical_string() { # [san-string]
+    local san tok joined=""
+    if [ "$#" -gt 0 ]; then san="$1"; else san=$(cat); fi
+    local IFS=,
+    for tok in $san; do
+        case "$tok" in IP:*:*) tok="IP:$(ipv6_canonical "${tok#IP:}")" ;; esac
+        joined="${joined:+$joined,}$tok"
+    done
+    printf '%s' "$joined"
 }
 
 # The appliance's writable /etc: a /run-backed overlay over the read-only root's, mounted by
@@ -245,7 +300,7 @@ appliance_mint_cert() { # -> prints the SHA-256 fingerprint
     alt=$(appliance_cert_alt_string)
     if [ -s "$d/wizard.crt" ] && [ -s "$d/wizard.key" ] &&
         [ "$(cert_san_string "$d/wizard.crt" | tr ',' '\n' | sort | tr '\n' ',')" = \
-            "$(printf '%s' "$alt" | tr ',' '\n' | sort | tr '\n' ',')" ]; then
+            "$(san_canonical_string "$alt" | tr ',' '\n' | sort | tr '\n' ',')" ]; then
         need_mint=0
     fi
     if [ "$need_mint" = 1 ]; then
@@ -281,9 +336,10 @@ wizard_mint_cert() { # <spool-dir>  -> prints the fingerprint
 # defensible default: the operator ran the CLI wizard, was asked, and pressed Enter to skip. A
 # headless appliance was never asked, so the safe answer is the one it gets. The credential is
 # generated on the machine and printed to its console; it never crosses the setup page.
-ensure_appliance_dashboard_password() { # [spool-dir]
-    [ -f "$CONFIG_FILE" ] || return 0
-    [ -z "$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")" ] || return 0
+ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_FILE]
+    local config="${2:-$CONFIG_FILE}"
+    [ -f "$config" ] || return 0
+    [ -z "$(jq -r '.dashboard.auth.password // ""' "$config")" ] || return 0
     # The operator's explicit "no login" is honoured — an empty password is also what "not
     # chosen" looks like, so the choice cannot live in the config and rides beside it.
     if [ -n "${1:-}" ] && [ "$(wizard_spool_read "$1" auth-mode 2>/dev/null)" = "none" ]; then
@@ -292,9 +348,9 @@ ensure_appliance_dashboard_password() { # [spool-dir]
     fi
     local gen tmp user
     gen=$(generate_node_password) # 32 alnum: clears the >=16 floor, no quotes, no weak pattern
-    user=$(jq -r '.dashboard.auth.username // "admin"' "$CONFIG_FILE")
+    user=$(jq -r '.dashboard.auth.username // "admin"' "$config")
     tmp=$(mktemp) || return 1
-    if jq --arg p "$gen" '.dashboard.auth.password = $p' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"; then
+    if jq --arg p "$gen" '.dashboard.auth.password = $p' "$config" >"$tmp" && mv "$tmp" "$config"; then
         _console "" "Dashboard login for this machine:" "    user: $user" "    password: $gen" \
             "Write this down — it is also in config.json on the machine."
         return 0

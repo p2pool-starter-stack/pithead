@@ -44,6 +44,14 @@ The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
+The host firewall installer is `02b-tor-egress-apply.sh`; the host-owned clearnet
+sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
+readback helpers are in `02d-tor-egress-verify.sh`.
+The LAN source rule and old-listener stop are in `02b-lan-guard.sh`; the staged Compose passes
+and scoped node restarts are in `02b1-lan-guard-compose.sh`. Transition prearm and the periodic
+live-rule check are in `02c-lan-guard-check.sh`.
+Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
+the dashboard's clearnet healer stays in `service/health/tor_heal.py`.
 
 ## Dashboard feature folders
 
@@ -63,6 +71,7 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `web/views/` | HTTP views and response construction | `tests/web/views/` |
 | `web/server.py` | HTTP application setup and route registration | `tests/web/` |
 | `wizard/server.py`, `wizard/form.py` | Appliance wizard server, form translation, and install handoff | `tests/web/test_wizard*.py` |
+| `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
 
 Keep polling order, database locks, and transaction scopes intact when extracting
 helpers. The storage mixins share `StateManager`'s connection and lock; the

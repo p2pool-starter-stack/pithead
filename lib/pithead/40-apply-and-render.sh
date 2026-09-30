@@ -6,7 +6,7 @@
 # at a staged candidate config.
 apply_dry_run() {
     local porcelain="$1"
-    local newenv="${ENV_FILE}.dryrun"
+    local newenv="$PITHEAD_ENV_DRYRUN"
     PITHEAD_DRY_RUN=1 # #556: parse_and_validate_config -> persist_node_credentials checks this
     {
         # NOTE: no ensure_onion_password here — it would write an auto-generated password into
@@ -72,6 +72,7 @@ render_derived() {
     generate_caddyfile
     provision_onion_client_auth
     provision_control_runner
+    provision_firewall_check_units || error "Firewall check units could not be provisioned."
     control_prune_results "${CONTROL_DIR:-$PWD/data/control}" # #1990: bounds results/ every boot (#790), not just per-request
     provision_ssh_access
     provision_console_login
@@ -126,6 +127,15 @@ recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-
         warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
 }
 
+rearm_sync_gate_marker() { # <dashboard-dir>: plant sync-gate-reset without following what is there
+    local t
+    t=$(mktemp "$1/.sync-gate-reset.XXXXXX") || return 1
+    mv -f -T "$t" "$1/sync-gate-reset" || {
+        rm -f "$t"
+        return 1
+    }
+}
+
 apply() {
     # apply reaches its mutating window down two different paths (a normal change, and the retry
     # after a previous apply committed the config but did not finish recreating containers), so it
@@ -163,7 +173,7 @@ apply() {
 
     # Render the new config to a staging file and diff it against the live .env, so we can
     # preview the changes and confirm anything disruptive before touching running containers.
-    local newenv="${ENV_FILE}.new"
+    local newenv="$PITHEAD_ENV_STAGE"
     render_env "$newenv"
 
     local changed=() key
@@ -175,8 +185,10 @@ apply() {
     # committed (#125): the stack then runs OLD containers against NEW config files, and because a
     # re-apply diffs the (already-committed) .env it would see no change and silently no-op. While
     # the marker is present, re-apply re-attempts the recreate even when the rendered config matches.
-    local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0
+    local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
+    # A retried recreate keeps the sync-gate re-arm its first attempt decided on (#2763).
+    grep -qx rearm-sync-gate "$apply_marker" 2>/dev/null && rearm_sync_gate=1
 
     local destructive=0 caddy_changed=0 caddy_before="" caddy_had=0 wallet_keys=() line flag msg old new
     local dashboard_data_dir_old=""
@@ -193,6 +205,9 @@ apply() {
             # #2360: remember the active dashboard.data_dir for the carry before .env publication.
             # The separate historical-default migration runs later, after service configuration.
             [ "$key" == "DASHBOARD_DATA_DIR" ] && dashboard_data_dir_old="$old"
+            # #2763: a required chain now dials another node (remote<->local, a new endpoint)
+            # that may not have synced, so the #35 release earned on the old node no longer holds.
+            case "$key" in MONERO_NODE_HOST | MONERO_RPC_PORT | TARI_MODE | TARI_GRPC_ADDRESS) rearm_sync_gate=1 ;; esac
             line=$(describe_change "$key" "$old" "$new")
             flag=${line%%$'\t'*}
             msg=${line#*$'\t'}
@@ -253,11 +268,12 @@ apply() {
                 dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
                 : >"$apply_marker"
                 dashboard_carry_recovery=1
-                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published" "$incomplete"; rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
+                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published" "$incomplete"; rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
             fi
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
             [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
         fi
+        lan_guard_arm_transition "$newenv" || error "The LAN-only source rule could not be armed before changing .env."
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -289,6 +305,7 @@ apply() {
             # Idempotent and sudo-free when the units already match.
             mutation_lock_acquire apply
             provision_control_runner
+            provision_firewall_check_units || error "Firewall check units could not be provisioned."
             reconcile_appliance_hostname
             apply_refresh_appliance_tls # #1265: the mint doctor sends the operator here for
             log "No configuration changes detected. Nothing to apply."
@@ -307,6 +324,7 @@ apply() {
     # client-auth toggle) takes effect on this apply rather than the next (#343).
     provision_onion_client_auth
     provision_control_runner
+    provision_firewall_check_units || error "Firewall check units could not be provisioned."
     provision_ssh_access
     provision_console_login   # #33: converge the control-runner units on the (new) toggle
     render_local_miner_config # #796: the built-in miner's config is derived — keep it current
@@ -322,11 +340,26 @@ apply() {
     # Mark the recreate in-flight: cleared only after a SUCCESSFUL `up`, so a failure here (image
     # build error, a port already bound, a failed health/dependency gate, daemon hiccup) leaves the
     # marker for the next apply to retry instead of no-opping on the already-committed config (#125).
-    : >"$apply_marker"
+    if [ "$rearm_sync_gate" -eq 1 ]; then echo rearm-sync-gate >"$apply_marker"; else : >"$apply_marker"; fi
     # One-time move of the dashboard data out of the install dir (#455) — after the confirmed
     # commit above (never before the operator said yes) and under the marker, so a failed move is
     # retried; the recreate below then mounts the migrated directory.
     migrate_dashboard_data
+    # Re-arm the sync gate with the restore's marker (#2626), after the move above so its target
+    # is still empty. Each key that sets rearm_sync_gate reaches the dashboard's environment (the
+    # port via MONERO_RPC_URL), so the up below recreates it and it reads the marker at start. It
+    # holds the miner until the new node syncs (or releases on the first cycle if it already has).
+    # The directory belongs to the dashboard's uid (ensure_directories), hence sudo when the
+    # operator's is another. Whatever that uid left at the path is never opened: mktemp creates a
+    # fresh file (O_EXCL) and `mv -T` renames it over the entry, replacing a planted symlink
+    # instead of following it, and refusing a directory.
+    if [ "$rearm_sync_gate" -eq 1 ]; then
+        rearm_sync_gate_marker "$DASHBOARD_DIR" 2>/dev/null ||
+            sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\"" _ "$DASHBOARD_DIR" || true
+        # Judge the result, not the exit status: only a regular file at the path re-arms the gate.
+        [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
+            error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset); re-run '$0 apply' to retry."
+    fi
     # Compose recreates only the services whose resolved config changed. --remove-orphans covers
     # services that left the compose file entirely; a profile-deactivated service is NOT an orphan
     # to compose, so compose_up_checked removes those containers itself before the up (#795).
@@ -337,7 +370,7 @@ apply() {
     fi
     if [ "$dashboard_carry_recovery" -eq 1 ]; then
         dashboard_carry_recovery=0
-        trap 'rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
+        trap 'rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
     fi
     reconcile_appliance_hostname
     # Caddy mounts the Caddyfile read-only, so a content change alone won't recreate it.

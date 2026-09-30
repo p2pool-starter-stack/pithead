@@ -1,8 +1,8 @@
 # `uninstall` (#77 phase 1, #2379): the clean exit for the DIY channel — stop and remove
 # everything pithead put on this host, and delete NO data, ever, on any flag. Three named
-# volumes (caddy_data, wallet_data, tari_wallet_data) are pithead's, not the operator's — all
+# volumes (caddy_data, wallet_data, tari_wallet_db) are pithead's, not the operator's — all
 # three are derived (view-only wallets rebuild from the view keys in config.json, Caddy
-# re-issues its ACME state) — so they go with the containers via `compose down -v`. Everything
+# re-issues its ACME state). Everything
 # an operator would call "their data" (chains, Tor onion keys, dashboard history, the p2pool
 # sidechain) is a bind mount and is never touched. The appliance has no uninstall — its
 # equivalents are the reset tiers.
@@ -51,7 +51,7 @@ stack_uninstall() {
     detect_os
 
     # Every path below is read from .env BEFORE uninstall deletes it.
-    local checkout_dir="$PWD" kept_dirs=() derived_dirs=() d dkey
+    local checkout_dir="$PWD" kept_dirs=() derived_dirs=() d dkey units_left=0
     for dkey in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do
         d=$(env_get_file .env "$dkey")
         [ -n "$d" ] && kept_dirs+=("$d")
@@ -82,16 +82,21 @@ stack_uninstall() {
             warn "Not removing $dkey=$d: setup puts it at $want, and it must not overlap data uninstall keeps. Remove it by hand if it is pithead's."
         fi
     done
+    # The control runner's units are rendered from CONTROL_DIR; provision_control_runner below
+    # needs the deployed value to find and remove them once .env is gone.
+    local control_dir
+    control_dir=$(env_get_file .env CONTROL_DIR)
+    [ -n "$control_dir" ] || control_dir="$checkout_dir/data/control"
     # #2379 §1: the Tari view-key secret file — chmod 600, holds MINOTARI_WALLET_PASSWORD in the
     # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.
     local secret_file="$checkout_dir/data/tari-wallet-secret.env"
 
-    local kept_list derived_list
+    local kept_list derived_list unit
     kept_list=$(printf '%s\n' "${kept_dirs[@]}" | sort -u | tr '\n' ' ')
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
 
     warn "DESTRUCTIVE: stops the stack and removes everything pithead put on this host. Deletes no data."
-    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_data volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
+    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_db volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit and pithead-egress.timer check; the LAN-only source rule, its pithead-lan-guard.service boot unit, pithead-lan-hold.service and pithead-lan.timer check; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
     log "Kept (yours): $checkout_dir/config.json, $checkout_dir/backups/, and the data dirs: ${kept_list:-none recorded}"
     log "Left behind (shared with the machine, not pithead's alone to remove): the apt packages setup installed (jq, openssl, docker.io, docker-compose-v2); the GRUB HugePages cmdline; the runtime HugePages pool."
     if [ "$yes" -ne 1 ]; then
@@ -102,17 +107,32 @@ stack_uninstall() {
             return 1
         }
     fi
+    mutation_lock_acquire uninstall
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
-    remove_lan_guard
+    for unit in remove_egress_check_units remove_lan_guard_check_units; do "$unit" || units_left=1; done
     docker compose down --remove-orphans -v 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_data"
+        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
+    lan_guard_teardown uninstall && { remove_lan_guard_boot_unit || error "uninstall stopped: $LAN_GUARD_BOOT_UNIT or $LAN_GUARD_HOLD_UNIT could not be removed; retry."; } # (#2749)
+    # down -v skips an inactive profile's volume, and no longer declares tari_wallet_data (#2731).
+    local volumes labels vol
+    volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."
+    for vol in tari_wallet_db tari_wallet_data; do
+        printf '%s\n' "$volumes" | grep -Fx "pithead_$vol" >/dev/null || continue
+        labels=$(docker volume inspect "pithead_$vol" --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
+            error "Could not inspect pithead_$vol; uninstall stopped before removing .env. Retry when the engine is available."
+        if [ "$labels" = "pithead/$vol" ]; then
+            docker volume rm "pithead_$vol" >/dev/null ||
+                error "Could not remove pithead_$vol; uninstall stopped before removing .env. Retry when the volume is available."
+        fi
+    done
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
-    DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true
+    # stderr kept: the drain's timeout warning is the message for a request still in flight.
+    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false provision_control_runner || true
     # The view-key secret goes first: nothing after it may leave a 0600 key behind.
     rm -f "$secret_file"
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done
@@ -134,8 +154,9 @@ stack_uninstall() {
         name=$(basename "$checkout_dir")
         [ -L "$parent/current" ] && [ "$(readlink "$parent/current")" = "$name" ] && rm -f "$parent/current"
     fi
+    mutation_lock_release
 
-    log "Uninstalled."
+    [ "$units_left" -ne 0 ] || log "Uninstalled."
     log "Every data directory is still here. To delete pithead's data, run:"
     if [ "${#kept_dirs[@]}" -gt 0 ]; then
         local q quoted_kept=""
@@ -154,6 +175,7 @@ stack_uninstall() {
     log "Then, to remove the program itself:${inside}"
     printf '  rm -rf %s\n' "$(uninstall_quote "$checkout_dir")"
     # error, not a bare non-zero return: that would also print the ERR trap's "aborted unexpectedly".
+    [ "$units_left" -eq 0 ] || error "Uninstall finished, but a firewall check timer or service could not be fully removed: see the warning above."
     [ "$failed" -eq 0 ] || error "Uninstall finished, but a derived directory could not be removed: run the command in the warning above."
 }
 
@@ -176,9 +198,10 @@ wizard_mint_token() {
 # Consume one wizard submission: validate the candidate with the same parser setup/apply use; on
 # success install it as ./config.json and mark the spool applied (the wizard page polls for it).
 # On failure surface a short error into the spool for the form. rc: 0 applied, 1 rejected, 2 none.
-firstboot_consume_spool() ( # <spool-dir>
-    local spool="$1" cand="$1/config.json" err
+firstboot_consume_spool() ( # <spool-dir> [<config-dest>]
+    local spool="$1" dest="${2:-$PWD/config.json}" cand="$1/config.json" err
     local snap rc=0
+    wizard_submission_ready "$spool" || return 2
     snap=$(wizard_spool_request "$spool" config.json) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
     trap 'rm -f "${snap}.bak-1x"; wizard_spool_clean "${snap%/*}"' EXIT
@@ -186,13 +209,17 @@ firstboot_consume_spool() ( # <spool-dir>
     # CONFIG_FILE is readonly after sourcing; validate the candidate in a fresh process via the
     # PITHEAD_CONFIG_FILE override (the same parser setup/apply run, against the same file).
     if err=$(PITHEAD_CONFIG_FILE="$cand" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
-        install -m 600 "$cand" "$PWD/config.json" || return 1
+        install -m 600 "$cand" "$dest" || {
+            wizard_clear_submission_transaction "$spool" || true
+            return 1
+        }
         rm -f "$spool/config.json"
-        wizard_spool_publish "$spool" applied true
+        wizard_spool_publish "$spool" applied true || return 1
         return 0
     fi
     printf '%s' "$err" | tail -n 2 | tr -d '[:cntrl:]' | tail -c 240 | wizard_spool_publish "$spool" error.txt cat
     rm -f "$spool/config.json"
+    wizard_clear_submission_transaction "$spool" || return 1
     return 1
 )
 
@@ -285,10 +312,15 @@ wizard_setup_failed() { # <exit status of setup>
 
 # The marker, read back. Anything unrecognised (or absent) is a coordinator: every machine
 # provisioned before this contract existed had no marker and was one.
+#
+# PITHEAD_MACHINE_ROLE_FILE overrides $PWD/machine-role, mirroring PITHEAD_CONFIG_FILE and
+# PITHEAD_ENV_FILE (#2057): the script itself always `cd`s to its own SCRIPT_DIR at startup
+# (00-prelude.sh), so a caller cannot point one invocation at a DIFFERENT stack directory's
+# marker by `cd`ing there first — the same reason those two already take an override.
 machine_role() { # echoes pithead|both|rig
-    local r=""
-    if [ -f "$PWD/machine-role" ]; then
-        r=$(tr -d '[:space:]' <"$PWD/machine-role" 2>/dev/null) || r=""
+    local r="" f="${PITHEAD_MACHINE_ROLE_FILE:-$PWD/machine-role}"
+    if [ -f "$f" ]; then
+        r=$(tr -d '[:space:]' <"$f" 2>/dev/null) || r=""
     fi
     case "$r" in rig | both | pithead) printf '%s' "$r" ;; *) printf 'pithead' ;; esac
 }
@@ -322,6 +354,7 @@ publish_rig_defaults() { # <spool-dir>
 firstboot_consume_rig() ( # <spool-dir>
     local spool="$1" req="$1/rig-request.json" pool worker host port
     local snap rc=0
+    wizard_submission_ready "$spool" || return 2
     snap=$(wizard_spool_request "$spool" rig-request.json) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
     trap 'rm -f "${snap%/*}/rig.json"; wizard_spool_clean "${snap%/*}"' EXIT
@@ -335,11 +368,13 @@ firstboot_consume_rig() ( # <spool-dir>
     if [ "$host" = "$pool" ] || ! is_valid_host "$host" || ! is_valid_port "$port"; then
         printf 'the pool address must look like host:port — a Pithead answers on port 3333' | wizard_spool_publish "$spool" error.txt cat
         rm -f "$spool/rig-request.json"
+        wizard_clear_submission_transaction "$spool" || return 1
         return 1
     fi
     if ! timeout 5 bash -c '</dev/tcp/"$1"/"$2"' _ "$host" "$port" 2>/dev/null; then
         printf 'cannot reach a pool at %s:%s — check the address, and that the Pithead is up' "$host" "$port" | wizard_spool_publish "$spool" error.txt cat
         rm -f "$spool/rig-request.json"
+        wizard_clear_submission_transaction "$spool" || return 1
         return 1
     fi
     # The control token (#1836) survives a "Set up again" that keeps the role AND the worker name
@@ -356,6 +391,7 @@ firstboot_consume_rig() ( # <spool-dir>
     ); then
         rm -f "$spool/rig-request.json" "$PWD/rig.json"
         printf 'could not record the rig settings — submit again' | wizard_spool_publish "$spool" error.txt cat
+        wizard_clear_submission_transaction "$spool" || return 1
         return 1
     fi
     chmod 600 "$PWD/rig.json" 2>/dev/null || true

@@ -161,7 +161,7 @@ async def handle_control_preview(request):
     try:
         # The proposal ships as-is: an untouched secret rides as the {"__secret__": true}
         # sentinel, and the HOST swaps it for the live value when it stages the intent (#440) —
-        # this container never holds a secret the operator didn't just type.
+        # this editor route never receives the existing value from the masked config mount.
         rid = control_service.submit("preview", proposed, actor)
         res = await control_service.wait_result(rid)
     except Exception:
@@ -332,8 +332,7 @@ async def handle_worker_apply(request):
     This container never holds the rig's token: it spools ``{worker, changes}`` and the host resolves
     the rig's address + bearer from config.json (workers.list[]), POSTs, and polls the rig's
     ``/status``. Fail-closed — the route only exists when the control channel is on, which itself
-    requires a dashboard password. The change surface is the writable allowlist only. Records the
-    terminal outcome in the per-worker config history."""
+    requires a dashboard password. Only writable keys are accepted; the result is recorded in history."""
     _require_control_header(request)
     try:
         body = await request.json()
@@ -363,6 +362,7 @@ async def handle_worker_apply(request):
     if res is None:
         return web.json_response({"id": rid, "status": "pending"}, status=202)
     _record_worker_result(state_mgr, worker, changes, res)
+    worker_refresh.maybe_refresh_after_apply(request.app, state_mgr, worker, changes, res)
     return web.json_response({"id": rid, **res})
 
 

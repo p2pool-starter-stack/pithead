@@ -13,7 +13,7 @@ set -e
 # drops that marker and restarts the container, so this start (and every later one) uses the
 # untouched Tor config — the node returns to Tor on its own and stays there.
 #
-# Clearnet transform: flip the transport tor → tcp, re-enable the seeds.tari.com DNS seed (the
+# Clearnet transform: flip the transport socks5 → tcp, re-enable the seeds.tari.com DNS seed (the
 # bundled onion peer_seeds are unreachable without Tor), and stop advertising the onion. The host's
 # IP is briefly visible to the Tari P2P network during the sync window.
 #
@@ -35,7 +35,7 @@ CLEARNET_MARKER="${CLEARNET_MARKER:-/clearnet-state/tari.synced}"
 # (no in-place -e) so the shell test suite can exercise it directly.
 apply_clearnet_initial_sync() {
     local cfg="$1" tmp="$1.tmp"
-    sed -e 's/^type = "tor"/type = "tcp"/' \
+    sed -e 's/^type = "socks5"/type = "tcp"/' \
         -e 's/^dns_seeds = \[\]/dns_seeds = ["seeds.tari.com"]/' \
         -e 's#^public_addresses = .*#public_addresses = []#' \
         "$cfg" >"$tmp" && mv "$tmp" "$cfg"
@@ -43,7 +43,7 @@ apply_clearnet_initial_sync() {
 
 # True when Tari should sync over clearnet NOW: flag on AND the auto-transition marker absent (#234).
 clearnet_sync_active() {
-    [ "${TARI_CLEARNET_SYNC:-false}" = "true" ] && [ ! -f "$CLEARNET_MARKER" ]
+    [ "${TARI_CLEARNET_SYNC:-false}" = "true" ] && [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]
 }
 
 # Render the runtime config from the canonical Tor config, applying clearnet only while active.
@@ -319,11 +319,35 @@ run_node() {
     wait_node
 }
 
+# LAN-only sources (#2749). A bind other than 127.0.0.1 publishes this port on every host interface,
+# and only pithead's LAN-only source rule limits who can reach it. While that rule is live, pithead
+# keeps the host's boot id in the marker; it deletes the marker when it removes the rule, and a
+# reboot changes the boot id. Without a current marker this start exits before anything listens,
+# however the container was started: `docker start`, `docker compose up` or `start` outside pithead,
+# a restart policy.
+lan_guard_gate() { # <bind>...
+    local bind boot
+    for bind in "$@"; do
+        case "$bind" in
+        "" | 127.0.0.1) ;;
+        *)
+            # An unreadable boot id must not match a missing marker.
+            boot=$(cat "${BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null) || boot=""
+            [ -n "$boot" ] && [ "$(cat "${LAN_GUARD_MARKER:-/lan-guard/enforced}" 2>/dev/null)" = "$boot" ] && continue
+            echo "Refusing to start: a port is published on $bind, but the host's LAN-only source rule is not in place (#2749). Run ./pithead up." >&2
+            exit 78
+            ;;
+        esac
+    done
+}
+
 # Sourced by the test harness (PITHEAD_TEST_SOURCE=1): expose the functions, render nothing, exec
 # nothing. `return` works when sourced; the `|| exit` guards a direct run.
 if [ "${PITHEAD_TEST_SOURCE:-0}" = "1" ]; then
     return 0 2>/dev/null || exit 0
 fi
+
+lan_guard_gate "${TARI_GRPC_BIND:-127.0.0.1}"
 
 render_tari_runtime_config "$TARI_CONFIG_SRC" "$TARI_CONFIG_RUNTIME"
 

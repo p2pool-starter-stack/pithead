@@ -44,11 +44,17 @@ of each product release, not independent releases:
   release: bump the pin → cut a stack patch → re-run the integration gate → ship. The bundle
   ships re-tested.
 
+For Caddy, update the digest in Compose, the Quadlet renderer, and its three fixtures together;
+the render parity test checks that they agree. Release preflight checks the Compose tag against
+the registry index, including on a dry run.
+
 Noticing that a bump is available is a separate job from making one, and nothing did it until
 `scripts/watch/pin-watch.sh`. It runs weekly from `.github/workflows/pin-watch.yml`, compares each pin
-against the component's latest upstream release, checks whether each exact Go module raise still
-changes its pinned upstream graph, compares the vendored Tari gRPC schema with the pinned node's
-upstream tag, and keeps one tracking issue up to date. It reports and never bumps: a Tari or
+against the component's latest stable upstream release by numeric version and prerelease precedence,
+lists newer Tari prereleases separately for review without treating them as approved upgrades, checks
+whether each exact Go module raise still changes its pinned upstream graph, compares the vendored
+Tari gRPC schema with the pinned node's upstream tag, and keeps one tracking issue up to date. It
+reports and never bumps: a Tari or
 `monerod` minor can carry a one-time data migration, which is work to schedule rather than a pull
 request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
 bumps on the component pins for the same reason.
@@ -58,9 +64,9 @@ cannot change what is baked; that row resolves the latest release tag to the com
 compares the two commits. Comparing the commit against the tag directly would read stale for ever,
 including straight after a correct bump.
 
-A lookup that could not be made is reported as unchecked, never as current, and the run fails. The
-report carries the date of the last fully successful check, so a watcher that has stopped looks
-different from one with nothing to say.
+A lookup or version comparison that could not be made is reported as unchecked, never as current,
+and the run fails. The report carries the date of the last fully successful check, so a watcher
+that has stopped looks different from one with nothing to say.
 
 ## The Monday sweep, and who reads it
 
@@ -200,7 +206,7 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 
    **When the version ships the appliance channel too, pass `--draft`.** Published release
    assets are immutable — v1.18.0 shipped an asset that could not be amended and the whole
-   version had to be withdrawn — and the appliance's `.img`/`.raucb` are built,
+   version had to be withdrawn — and the appliance's `.img.xz`, `.raucb`, and checksum files are built,
    battery-tested and attached by hand *after* this stage (see
    [appliance-release.md](appliance-release.md#cutting-a-release)). Publishing before they
    are attached burns the tag. Draft first, attach both channels' artifacts, publish once.

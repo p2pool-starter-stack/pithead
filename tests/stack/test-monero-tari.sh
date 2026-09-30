@@ -5,7 +5,8 @@
 # flags + the p2pool entrypoint's word-splitting and Tor-loopback bridge for the Tari gRPC (#165/
 # #278), monero/tari address-type validation including the #829 checksum-vs-shape split (#250/
 # #845), the wallet-entrypoint view-only gen.json + healthcheck (#381/#714/#718), the payout view
-# key on both chains including the Tari birthday/spend-key gating (#381/#462/#523), tari.mode
+# key on both chains including the Tari spend-key gating (#381/#462/#523; the birthday is in
+# test-tari-wallet.sh), tari.mode
 # remote (#103), the profile-deactivation reconcile a monero/tari local<->remote switch drives
 # (#795 — kept here rather than split out: it is the direct consequence of the mode-switch
 # sections right above it, not a separate feature), monero.rpc_lan_access/prep_blocks_threads/
@@ -136,13 +137,9 @@ assert_eq "scan height: empty -> genesis 0" "$(rsh '')" "0"
 assert_eq "scan height: explicit block kept verbatim" "$(rsh 2500000)" "2500000"
 
 # Wallet healthcheck (#718/#2268): stub `curl` on PATH to control RPC up/down.
-HCBIN="$SANDBOX/hc-bin"
-HCDIR="$SANDBOX/hc-wallet"
+HCBIN="$SANDBOX/hc-bin" HCDIR="$SANDBOX/hc-wallet"
 mkdir -p "$HCBIN" "$HCDIR"
-mk_curl() {
-    printf '#!/bin/sh\nexit %s\n' "$1" >"$HCBIN/curl"
-    chmod +x "$HCBIN/curl"
-}
+mk_curl() { printf '#!/bin/sh\nexit %s\n' "$1" >"$HCBIN/curl" && chmod +x "$HCBIN/curl"; }
 run_hc() { (
     PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" sh "$ROOT/build/monero/wallet-healthcheck.sh" >/dev/null 2>&1
     echo $?
@@ -157,10 +154,14 @@ assert_eq "healthcheck: RPC down with expired scan marker -> unhealthy (#2268)" 
 mk_curl 0
 assert_eq "healthcheck: RPC up -> healthy (#718)" "$(run_hc)" "0"
 if [ -f "$HCDIR/.payout-scanning" ]; then bad "healthcheck: RPC up clears the scan marker (#718)" "marker still present"; else ok "healthcheck: RPC up clears the scan marker (#718)"; fi
-# RPC down + NO marker (scan already finished once) -> unhealthy: a real fault, not scan tolerance.
-mk_curl 7
+mk_curl 7 # RPC down + NO marker (scan already finished once): a real fault, not scan tolerance.
 assert_eq "healthcheck: RPC down after scan done -> unhealthy (#718)" "$(run_hc)" "1"
-assert_contains "wallet-entrypoint touches the scan marker on create (#718)" "$(cat "$ROOT/build/monero/wallet-entrypoint.sh")" 'touch "$SCAN_MARKER"'
+printf '#!/bin/sh\nexit 0\n' >"$HCBIN/monero-wallet-rpc" && chmod +x "$HCBIN/monero-wallet-rpc"
+run_wep() { rm -f "$HCDIR/.payout-scanning" && PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/wgen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1; } # every start marks a scan (#718): a reopen's catch-up blocks the RPC too (#2756)
+run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on create"; else bad "wallet-entrypoint marks the scan on create" "no marker"; fi
+: >"$HCDIR/payout-wallet" && run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on reopen"; else bad "wallet-entrypoint marks the scan on reopen" "no marker"; fi
 
 echo "== unit: monero_address_type — p2pool needs a PRIMARY address, and a REAL one (#250, #829) =="
 _a93="$(printf 'a%.0s' $(seq 93))"
@@ -221,21 +222,20 @@ run_sourced "$SANDBOX" cred_needs_generating "real" "PLACE"
 assert_rc "real value kept" "$?" "1"
 
 echo "== black-box: payout confirmation view key (#381) =="
-# The private view key gates the view-only wallet-rpc service. Empty (default) -> feature off, no
-# profile, no container. Set on a LOCAL node -> the payout_confirm profile is added, the key +
-# generated wallet-rpc creds render into .env, and PAYOUT_CONFIRM_ENABLED flips true. The key is a
-# secret: it must never be echoed to stdout by apply (BOTSECRET pattern), only land in the 600 .env.
+# A local node's private view key enables payout_confirm and wallet-rpc. The key and generated
+# credentials land only in the 600 .env, never in apply output (BOTSECRET pattern).
 VIEWKEY="$(printf 'a%.0s' $(seq 64))" # 64 hex chars — a well-formed private view key
-# (1) OFF by default: no view key -> feature disabled, wallet-rpc profile absent.
+# (1) OFF by default: no view key, profile or wallet-rpc container.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "payout confirm off by default" "$(run_sourced "$V" env_get_file "$V/.env" PAYOUT_CONFIRM_ENABLED)" "false"
+tor_profiles_before="$(run_sourced "$V" env_get_file "$V/.env" TOR_COMPOSE_PROFILES)"
 case "$(run_sourced "$V" env_get_file "$V/.env" COMPOSE_PROFILES)" in
 *payout_confirm*) bad "no wallet-rpc profile when view key unset" "payout_confirm leaked into COMPOSE_PROFILES" ;;
 *) ok "no wallet-rpc profile when view key unset" ;;
 esac
-# (2) ON (local node): view key set -> profile added, key + creds rendered, flag true.
+# (2) ON: a local view key adds the payout profile and wallet-rpc.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","view_key":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$VIEWKEY" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -243,6 +243,7 @@ assert_rc "apply with a view key succeeds" "$?" "0"
 assert_eq "payout confirm enabled renders true" "$(run_sourced "$V" env_get_file "$V/.env" PAYOUT_CONFIRM_ENABLED)" "true"
 assert_eq "view key rendered into .env" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_VIEW_KEY)" "$VIEWKEY"
 assert_contains "wallet-rpc profile added" "$(run_sourced "$V" env_get_file "$V/.env" COMPOSE_PROFILES)" "payout_confirm"
+assert_eq "payout confirmation keeps Tor's profiles (#2859)" "$(run_sourced "$V" env_get_file "$V/.env" TOR_COMPOSE_PROFILES)" "$tor_profiles_before"
 [ -n "$(run_sourced "$V" env_get_file "$V/.env" WALLET_RPC_PASSWORD)" ] && ok "wallet-rpc password generated" || bad "wallet-rpc password generated" "empty"
 # The view key must NEVER be echoed to stdout by apply — only land in the owner-only .env (#90).
 case "$out" in
@@ -273,13 +274,11 @@ assert_rc "malformed view key rejected" "$?" "1"
 assert_contains "malformed view-key message" "$out" "64-character hex"
 
 echo "== black-box: Tari payout confirmation view key (#462) =="
-# The Tari sibling of #381: tari.view_key + tari.spend_public_key gate the view-only tari-wallet.
-# Empty (default) -> feature off, no profile. Set on a LOCAL Tari node -> the tari_payout_confirm
-# profile is added, the keys render into .env, the secret file is written 600, and the view key is
-# never echoed to stdout. Obvious dummy keys (all-a / all-b) so gitleaks can't mistake them.
+# Tari's local view and spend keys enable tari_payout_confirm and its view-only wallet.
+# The secret file is 600; the view key never appears in apply output. Dummy keys avoid gitleaks.
 TVIEW="$(printf 'a%.0s' $(seq 64))"  # 64 hex — a well-formed Tari private view key
 TSPEND="$(printf 'b%.0s' $(seq 64))" # 64 hex — a well-formed Tari public spend key
-# (1) OFF by default: no tari view key -> feature disabled, tari_payout_confirm profile absent.
+# (1) OFF by default: no view key or tari-wallet profile.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -296,6 +295,7 @@ assert_rc "apply with a tari view key succeeds" "$?" "0"
 assert_eq "tari payout confirm enabled renders true" "$(run_sourced "$V" env_get_file "$V/.env" TARI_PAYOUT_CONFIRM_ENABLED)" "true"
 assert_eq "tari view key rendered into .env" "$(run_sourced "$V" env_get_file "$V/.env" TARI_VIEW_KEY)" "$TVIEW"
 assert_contains "tari-wallet profile added" "$(run_sourced "$V" env_get_file "$V/.env" COMPOSE_PROFILES)" "tari_payout_confirm"
+assert_eq "Tari payout confirmation keeps Tor's profiles (#2859)" "$(run_sourced "$V" env_get_file "$V/.env" TOR_COMPOSE_PROFILES)" "$tor_profiles_before"
 [ -n "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_PASSWORD)" ] && ok "tari wallet password generated" || bad "tari wallet password generated" "empty"
 # The secret file is written owner-only (600) and contains the view key; it is NOT world-readable.
 secret_file="$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_SECRET_FILE)"
@@ -331,30 +331,6 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "malformed tari spend key rejected" "$?" "1"
 assert_contains "malformed spend-key message names spend_public_key" "$out" "tari.spend_public_key"
-
-echo "== black-box: tari.payout_scan_birthday validation (#523) =="
-# The restore-point birthday is validated only on the view-key path (it feeds the tari-wallet). It
-# is "auto" or a u16 days-since-epoch (0–65535) — a block height or an out-of-range value is a
-# common mistake that must fail at apply, not silently mis-restore the wallet. Keys are valid so
-# only the birthday is under test.
-# (1) A non-integer birthday (a block height, say) is refused.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"height-3200000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "non-integer birthday rejected" "$?" "1"
-assert_contains "non-integer birthday message names the field" "$out" "tari.payout_scan_birthday"
-# (2) An in-range-looking but too-large birthday (> 65535, e.g. a block height) is refused.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"99999"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "out-of-range birthday rejected" "$?" "1"
-assert_contains "out-of-range birthday message names the u16 ceiling" "$out" "65535"
-# (3) A valid u16 birthday applies and reflects verbatim into .env.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"1000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "valid birthday accepted" "$?" "0"
-assert_eq "valid birthday reflected into .env" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_BIRTHDAY)" "1000"
 
 echo "== black-box: tari.mode remote (#103) =="
 # The Tari sibling of monero.mode remote: mirrors the Monero pattern above (host:port render,
@@ -511,7 +487,7 @@ assert_eq "zmq_lan_access default binds monerod ZMQ to localhost" "$(run_sourced
 assert_eq "grpc_lan_access default binds tari gRPC to localhost" "$(run_sourced "$V" env_get_file "$V/.env" TARI_GRPC_BIND)" "127.0.0.1"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","rpc_lan_access":true,"zmq_lan_access":true,"prep_blocks_threads":6}, "tari":{"wallet_address":"'"$VALID_TARI"'","grpc_lan_access":true}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)" || bad "LAN bind apply succeeds in the fake stack" "$(printf '%s\n' "$out" | tail -n 6)"
 assert_eq "rpc_lan_access true binds monerod RPC to all interfaces" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_BIND)" "0.0.0.0"
 assert_eq "zmq_lan_access true binds monerod ZMQ to all interfaces" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_ZMQ_BIND)" "0.0.0.0"
 assert_eq "grpc_lan_access true binds tari gRPC to all interfaces" "$(run_sourced "$V" env_get_file "$V/.env" TARI_GRPC_BIND)" "0.0.0.0"

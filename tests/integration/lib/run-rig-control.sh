@@ -6,6 +6,34 @@ _worker_apply() { # <worker> <changes-json>  -> echoes the dashboard result JSON
     printf '%s' "$body" | rx "curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' --data-binary @- http://127.0.0.1:8000/api/control/worker-apply" --stdin 2>/dev/null
 }
 
+# The #513 leg: nudge max_temp_c by +1 through the dashboard, then revert it. Its own function so the
+# refusal of an unrecordable original (#2668) is driven through the real caller in
+# selftest-rig-key-refusal.sh.
+_max_temp_round_trip() { # <rig> <orig-max_temp_c-or-empty>
+    local rig="$1" orig_maxt="$2" new_maxt res status ckeys change_id
+    if [ -z "$orig_maxt" ]; then
+        it_skip_leg "reversible write, max_temp_c (#513)" "rig '$rig' watchdog isn't reporting a max_temp_c in the feed — can't read the original to restore it"
+    # On the books before the write; a refused mark means an abort could not restore it, so no write (#1379, #2668).
+    elif ! rig_key_mark dash "$rig" max_temp_c "$orig_maxt"; then
+        it_skip_leg "reversible write, max_temp_c (#513)" "the original max_temp_c on rig '$rig' cannot be recorded for the abort-safe unwind, so no write is sent"
+    else
+        new_maxt=$((orig_maxt + 1))
+        it_step "Worker Inspect edit: max_temp_c $orig_maxt -> $new_maxt via /api/control/worker-apply…"
+        res="$(_worker_apply "$rig" "{\"max_temp_c\":$new_maxt}")"
+        IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_maxt "$rig" "$new_maxt" "$res")"
+        assert_eq "Worker Inspect edit applied on the rig (#513)" "$status" "applied"
+        assert_contains "the rig's /status confirms max_temp_c changed (#513)" "$ckeys" "max_temp_c"
+        # By change_id, not "the newest row", and WAITED to terminal: the rig publishes its config
+        # before it decides the outcome, so reading the row straight after the settle raced it (#1471).
+        assert_eq "worker-apply recorded in the per-worker history (#185/#1471)" "$(_settle_history_row "$rig" "$change_id")" "applied"
+        it_step "reverting max_temp_c $new_maxt -> ${orig_maxt}…"
+        res="$(_worker_apply "$rig" "{\"max_temp_c\":$orig_maxt}")"
+        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
+        assert_eq "reversible edit reverted on the rig (#513)" "$status" "applied"
+        [ "$status" = "applied" ] && rig_key_clear dash "$rig" max_temp_c # (#1379)
+    fi
+}
+
 _restore_rig_control_baseline() {
     if ! push_config "$BASELINE_CONFIG"; then
         it_fail "write baseline after RigForge control" "could not restore config.json"
@@ -137,27 +165,9 @@ run_rigforge_control() {
     # enriched feed echoes (watchdog Temp/max), so read the current ceiling from the feed FIRST — if
     # the rig's watchdog isn't reporting it we can't safely restore it, so skip the write rather than
     # leave the rig mis-tuned.
-    local orig_maxt new_maxt res status ckeys change_id
+    local orig_maxt
     orig_maxt="$(printf '%s' "$st" | jq -r --arg n "$rig" 'first(.workers[]? | select(.name==$n) | .rigforge.stats[]? | select(.label=="Temp / max") | .value) // empty' 2>/dev/null | sed -n 's#.*/ *\([0-9][0-9]*\).*#\1#p')"
-    if [ -z "$orig_maxt" ]; then
-        it_skip_leg "reversible write, max_temp_c (#513)" "rig '$rig' watchdog isn't reporting a max_temp_c in the feed — can't read the original to restore it"
-    else
-        new_maxt=$((orig_maxt + 1))
-        it_step "Worker Inspect edit: max_temp_c $orig_maxt -> $new_maxt via /api/control/worker-apply…"
-        rig_key_mark dash "$rig" max_temp_c "$orig_maxt" # abort-safe unwind (#1379)
-        res="$(_worker_apply "$rig" "{\"max_temp_c\":$new_maxt}")"
-        IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_maxt "$rig" "$new_maxt" "$res")"
-        assert_eq "Worker Inspect edit applied on the rig (#513)" "$status" "applied"
-        assert_contains "the rig's /status confirms max_temp_c changed (#513)" "$ckeys" "max_temp_c"
-        # By change_id, not "the newest row", and WAITED to terminal: the rig publishes its config
-        # before it decides the outcome, so reading the row straight after the settle raced it (#1471).
-        assert_eq "worker-apply recorded in the per-worker history (#185/#1471)" "$(_settle_history_row "$rig" "$change_id" max_temp_c)" "applied"
-        it_step "reverting max_temp_c $new_maxt -> ${orig_maxt}…"
-        res="$(_worker_apply "$rig" "{\"max_temp_c\":$orig_maxt}")"
-        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
-        assert_eq "reversible edit reverted on the rig (#513)" "$status" "applied"
-        [ "$status" = "applied" ] && rig_key_clear dash "$rig" max_temp_c # (#1379)
-    fi
+    _max_temp_round_trip "$rig" "$orig_maxt"
 
     # Lives in rigforge-writable-keys.sh: the legs read each original from the rig's OWN reported
     # config (.rig_config, #1235/rigforge#253) rather than from a record of what we last pushed, and

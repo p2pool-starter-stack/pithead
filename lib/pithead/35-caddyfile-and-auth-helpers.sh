@@ -43,7 +43,7 @@ caddy_hash_password_b64() {
     # for a short name, podman's native path refuses one outright — the compose pull worked (the
     # compat API keeps docker semantics) while this exact line killed appliance provisioning.
     img="docker.io/library/$img"
-    hash=$(docker run --rm "$img" caddy hash-password --plaintext "$pw" 2>/dev/null) || return 1
+    hash=$(printf '%s\n' "$pw" | docker run --rm -i "$img" caddy hash-password 2>/dev/null) || return 1
     [ -n "$hash" ] || return 1
     printf '%s' "$hash" | openssl base64 -A
 }

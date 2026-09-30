@@ -88,6 +88,7 @@ cat >"$EGD/bin/nft" <<'NFT'
 #!/usr/bin/env bash
 printf 'nft %s\n' "$*" >>"$EGD_LOG"
 case "$*" in -f*) cat >/dev/null; exit "${NFT_LOAD_RC:-0}" ;; esac
+case "$*" in *"list table inet pithead_egress") cat "$EGD_FIX/nft-list-table-2672.json" ;; esac
 exit 0
 NFT
 printf '#!/usr/bin/env bash\nprintf "ipt %%s\\n" "$*" >>"$EGD_LOG"\n' >"$EGD/bin/iptables"
@@ -95,7 +96,7 @@ printf '#!/usr/bin/env bash\necho "-A DOCKER-USER -m comment --comment pithead-t
 chmod +x "$EGD"/bin/*
 egd_apply() { # <NFT_LOAD_RC> -> the stub log of a podman apply
     : >"$EGD/log"
-    EGD_LOG="$EGD/log" NFT_LOAD_RC="$1" PITHEAD_ENGINE=podman PATH="$EGD/bin:$PATH" \
+    EGD_FIX="$EGD_FIX" EGD_LOG="$EGD/log" NFT_LOAD_RC="$1" PITHEAD_ENGINE=podman PATH="$EGD/bin:$PATH" \
         run_sourced "$EGD" apply_tor_egress_firewall >/dev/null 2>&1
     cat "$EGD/log"
 }

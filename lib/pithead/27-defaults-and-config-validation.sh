@@ -7,9 +7,9 @@
 # working while Healthchecks, Telegram and XvB all go dark at once. Production once sat that way
 # for six hours. The heal is probe-driven, rate-limited and bounded, so the risk it guards
 # against does not apply the way it does interactively.
-apply_appliance_defaults() {
-    [ -f "$CONFIG_FILE" ] || return 0
-    local tmp
+apply_appliance_defaults() { # [config, default $CONFIG_FILE]
+    local config="${1:-$CONFIG_FILE}" tmp
+    [ -f "$config" ] || return 0
     tmp=$(mktemp) || return 1
     # dashboard.control.enabled: on DIY the operator has a shell, so the config editor is a
     # convenience and stays off. An appliance has NO other way in — no shell, ssh disabled — so
@@ -28,7 +28,7 @@ apply_appliance_defaults() {
         | if .dashboard.control.enabled == null and ((.dashboard.auth.password // "") != "")
           then (.dashboard //= {}) | (.dashboard.control //= {}) | .dashboard.control.enabled = true
           else . end' \
-        "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"; then
+        "$config" >"$tmp" && mv "$tmp" "$config"; then
         return 0
     fi
     rm -f "$tmp"
@@ -42,10 +42,9 @@ apply_appliance_defaults() {
 # A set-but-not-an-array workers.list still reaches validation under its own name.
 readonly WORKER_LIST_JQ='def worker_list: ((.workers // {}) | .list // []);'
 
-# Validate the per-worker endpoint descriptors (#506): a list of {name, host?, port?, token?}
-# objects the dashboard uses to override the fleet worker-API defaults per rig. Nothing here
-# renders to .env — the dashboard reads the list straight off its read-only config.json bind
-# mount (tokens stay in the one owner-only file that already holds secrets) — so this validation
+# Validate the per-worker endpoint descriptors (#506): a list of {name, host?, port?, token?, api_token?}
+# objects the dashboard uses to override the fleet worker-API defaults per rig. The read-only
+# api_token renders to .env bound to host+port; the writable token remains host-only. Validation
 # exists to fail an apply LOUDLY on a typo instead of the dashboard silently dropping the entry
 # at runtime. The `host` charset matters for #122: it must never be able to smuggle a port, path,
 # or userinfo into the dashboard's probe URL.
@@ -56,7 +55,7 @@ validate_worker_endpoints() {
     local dw_err dw_dups
     dw_err=$(jq -r "$WORKER_LIST_JQ"'
         worker_list as $w
-        | if ($w | type) != "array" then "workers.list must be an array of {name, host?, port?, token?} objects."
+        | if ($w | type) != "array" then "workers.list must be an array of {name, host?, port?, token?, api_token?} objects."
           else [ $w[] |
               if type != "object" then "workers.list entries must be objects (got a \(type))."
               elif (.name | type) != "string" or (.name | test("^[!-~]{1,128}$") | not)
@@ -69,6 +68,8 @@ validate_worker_endpoints() {
                 then "workers.list[\(.name)].control_port must be an integer between 1 and 65535 (the rig writable control API port, #185)."
               elif has("token") and ((.token | type) != "string" or (.token | test("^[!-~]{1,128}$") | not))
                 then "workers.list[\(.name)].token must be 1-128 printable non-space characters."
+              elif has("api_token") and ((.api_token | type) != "string" or (.api_token | test("^[!-~]{1,128}$") | not) or (has("host") | not))
+                then "workers.list[\(.name)].api_token needs an operator-set host and 1-128 printable non-space characters."
               elif has("watts") and ((.watts | type) != "number" or .watts <= 0 or .watts >= 1000000)
                 then "workers.list[\(.name)].watts must be a positive number of watts (a manual power-draw estimate for the energy calculator, #260)."
               else empty end

@@ -46,7 +46,7 @@ echo "== black-box: per-worker token mask + host-side restore, legacy dashboard.
 # must stay with it: they are one mechanism, and a mask whose restore cannot resolve blanks every
 # per-rig token instead of leaking one. Hand-edit to legacy and render the masked copy, no apply.
 jq '.dashboard.workers=[
-    {name:"rig1",host:"10.0.0.5",token:"tok_rig1secret"},
+    {name:"rig1",host:"10.0.0.5",token:"tok_rig1secret",api_token:"probe_rig1secret"},
     {name:"rig2"},
     {name:"rig3",token:"tok_rig3secret"}] | del(.workers.list)' "$C/config.json" >"$C/config.json.tmp" &&
     mv "$C/config.json.tmp" "$C/config.json"
@@ -54,10 +54,11 @@ PATH="$C/bin:$PATH" run_sourced "$C" render_masked_config "$C/data/control" >/de
 # 1) masked prefill copy: each SET per-worker token is a sentinel, the raw token never appears,
 #    and a token-less worker stays token-less.
 assert_eq "per-worker token masked to the sentinel" "$(jq -c '.dashboard.workers[0].token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
+assert_eq "legacy probe token masked to the sentinel" "$(jq -c '.dashboard.workers[0].api_token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
 assert_eq "second per-worker token masked to the sentinel" "$(jq -c '.dashboard.workers[2].token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
 assert_eq "token-less worker stays token-less in the masked copy" "$(jq -r '.dashboard.workers[1] | has("token")' "$MASKED" 2>/dev/null)" "false"
 case "$(cat "$MASKED")" in
-*tok_rig1secret* | *tok_rig3secret*) bad "masked copy holds no per-worker token" "a per-worker token leaked into $MASKED" ;;
+*tok_rig1secret* | *tok_rig3secret* | *probe_rig1secret*) bad "masked copy holds no per-worker token" "a per-worker token leaked into $MASKED" ;;
 *) ok "masked copy holds no per-worker token" ;;
 esac
 # 2) staging swap: a proposal that prefills the workers from the masked copy (sentinel tokens) and
@@ -67,10 +68,11 @@ jq --arg id "$UUID6" '{id:$id, action:"preview", actor:"admin", config: (.p2pool
 run_pending >/dev/null
 assert_eq "worker-sentinel preview validates" "$(jq -r '.status' "$RESULTS/$UUID6.json" 2>/dev/null)" "previewed"
 assert_eq "per-worker sentinel restored to the live token by name" "$(jq -r '.dashboard.workers[0].token' "$STAGED/$UUID6.json" 2>/dev/null)" "tok_rig1secret"
+assert_eq "legacy probe token restored host-side" "$(jq -r '.dashboard.workers[0].api_token' "$STAGED/$UUID6.json" 2>/dev/null)" "probe_rig1secret"
 assert_eq "second per-worker sentinel restored by name" "$(jq -r '.dashboard.workers[2].token' "$STAGED/$UUID6.json" 2>/dev/null)" "tok_rig3secret"
 assert_eq "token-less worker stays token-less at staging" "$(jq -r '.dashboard.workers[1] | has("token")' "$STAGED/$UUID6.json" 2>/dev/null)" "false"
 case "$(cat "$RESULTS/$UUID6.json")$(cat "$AUDIT")" in
-*tok_rig1secret* | *tok_rig3secret*) bad "results/audit stay free of the restored per-worker token" "a per-worker token leaked" ;;
+*tok_rig1secret* | *tok_rig3secret* | *probe_rig1secret*) bad "results/audit stay free of the restored per-worker token" "a per-worker token leaked" ;;
 *) ok "results/audit stay free of the restored per-worker token" ;;
 esac
 # 3) commit: the sentinels resolve to the live values, so the gate sees only the pool change —
@@ -105,17 +107,18 @@ echo "== black-box: per-worker token mask + host-side restore, workers.list[] sh
 # config actually uses, not a hardcoded dashboard.workers path. Clear the legacy key first so the
 # live config carries only the new shape (both-set is refused at apply, asserted earlier).
 jq 'del(.dashboard.workers) | .workers.list=[
-    {name:"rig1",host:"10.0.0.5",token:"tok_rig1secret"},
+    {name:"rig1",host:"10.0.0.5",token:"tok_rig1secret",api_token:"probe_rig1secret"},
     {name:"rig2"},
     {name:"rig3",token:"tok_rig3secret"}]' "$C/config.json" >"$C/config.json.tmp" &&
     mv "$C/config.json.tmp" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 # 1) masked prefill copy: each SET per-worker token is a sentinel, the raw token never appears.
 assert_eq "workers.list token masked to the sentinel" "$(jq -c '.workers.list[0].token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
+assert_eq "workers.list probe token masked to the sentinel" "$(jq -c '.workers.list[0].api_token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
 assert_eq "second workers.list token masked to the sentinel" "$(jq -c '.workers.list[2].token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
 assert_eq "token-less workers.list worker stays token-less in the masked copy" "$(jq -r '.workers.list[1] | has("token")' "$MASKED" 2>/dev/null)" "false"
 case "$(cat "$MASKED")" in
-*tok_rig1secret* | *tok_rig3secret*) bad "masked copy holds no workers.list token" "a per-worker token leaked into $MASKED" ;;
+*tok_rig1secret* | *tok_rig3secret* | *probe_rig1secret*) bad "masked copy holds no workers.list token" "a per-worker token leaked into $MASKED" ;;
 *) ok "masked copy holds no workers.list token" ;;
 esac
 # 2) staging swap: a proposal that prefills from the masked copy stages with each token restored
@@ -125,13 +128,28 @@ jq --arg id "$UUID8" '{id:$id, action:"preview", actor:"admin", config: (.p2pool
 run_pending >/dev/null
 assert_eq "workers.list-sentinel preview validates" "$(jq -r '.status' "$RESULTS/$UUID8.json" 2>/dev/null)" "previewed"
 assert_eq "workers.list sentinel restored to the live token by name" "$(jq -r '.workers.list[0].token' "$STAGED/$UUID8.json" 2>/dev/null)" "tok_rig1secret"
+assert_eq "workers.list probe token restored host-side" "$(jq -r '.workers.list[0].api_token' "$STAGED/$UUID8.json" 2>/dev/null)" "probe_rig1secret"
 assert_eq "second workers.list sentinel restored by name" "$(jq -r '.workers.list[2].token' "$STAGED/$UUID8.json" 2>/dev/null)" "tok_rig3secret"
+assert_not_contains "canonical preview and audit hide probe token" "$(cat "$RESULTS/$UUID8.json")$(cat "$AUDIT")" "probe_rig1secret"
+# A nameless descriptor must not borrow a masked probe token from another worker.
+# Use a separate spool so this refusal cannot alter the audit/spool counts in later domains.
+mk_tmpdir WXMAL
+mkdir -p "$WXMAL/staged" "$WXMAL/results" "$WXMAL/audit"
+WXID="99999999-9999-4999-8999-999999999999"
+jq --arg id "$WXID" '{id:$id,action:"preview",actor:"admin",config:(.workers.list += [{api_token:{"__secret__":true}}])}' "$MASKED" >"$WXMAL/request.json"
+# control_preview re-invokes $0 for its dry run; give this sourced call the sandbox CLI as $0.
+(cd "$C" && PATH="$C/bin:$PATH" bash -c 'source "$1"; set +e; control_preview "$2" "$3" admin "$4"' \
+    "$C/pithead" "$STACK" "$WXMAL/request.json" "$WXID" "$WXMAL") >/dev/null 2>&1
+assert_eq "nameless worker descriptor is rejected" "$(jq -r '.status' "$WXMAL/results/$WXID.json" 2>/dev/null)" "rejected"
+assert_contains "nameless probe sentinel is refused before restoration" "$(jq -r '.error' "$WXMAL/results/$WXID.json" 2>/dev/null)" "masked worker token"
+rm -rf "$WXMAL"
 # 3) commit: workers.list restored to live == live, so the gate passes on the pool-only change, and
 #    the committed config KEEPS the live per-worker tokens.
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID8" >"$REQS/$UUID8.json"
 run_pending >/dev/null
 assert_eq "workers.list-sentinel commit applies" "$(jq -r '.status' "$RESULTS/$UUID8.json" 2>/dev/null)" "applied"
 assert_eq "committed config keeps the live workers.list token" "$(jq -r '.workers.list[0].token' "$C/config.json")" "tok_rig1secret"
+assert_eq "committed config keeps the live probe token" "$(jq -r '.workers.list[0].api_token' "$C/config.json")" "probe_rig1secret"
 assert_eq "committed config carries no sentinel dict" "$(jq -r '[.. | objects | select(.__secret__?)] | length' "$C/config.json")" "0"
 
 echo "== black-box: per-rig derived read credentials (#1983) =="

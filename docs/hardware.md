@@ -200,7 +200,7 @@ e.g. to keep the Monero blockchain on a separate SSD. See
   setup` offers to install anything missing, or do it yourself:
 
   ```bash
-  sudo apt update && sudo apt install -y jq docker.io docker-compose-v2 openssl
+  sudo apt update && sudo apt install -y jq docker.io docker-compose-v2 openssl python3
   ```
 
 ---

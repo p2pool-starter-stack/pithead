@@ -63,6 +63,7 @@ IMAGE_UPGRADE_TO_SHA=""
 RUN_XVB_ROUTING=0
 RUN_ALERT_EGRESS=0
 RUN_MERGEMINE_SUBMIT=0
+RUN_TARI_STRANDED=0
 RUN_MERGEMINE_LOCALNET=0
 RIG_HOST=""
 RIG_NAME=""
@@ -94,16 +95,26 @@ INTEGRATION_RUN_SUITE=1
 source "$HERE/lib/run-cli.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-matrix.sh
 source "$HERE/lib/run-matrix.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-egress-claim.sh
+source "$HERE/lib/run-egress-claim.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-state.sh
 source "$HERE/lib/run-state.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-wallet.sh
+source "$HERE/lib/run-tari-wallet.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lan-guard.sh
 source "$HERE/lib/run-lan-guard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-scenario.sh
 source "$HERE/lib/run-scenario.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-source-image.sh
+source "$HERE/lib/run-source-image.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$HERE/lib/run-faults.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tor-probe-fault.sh
+source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-egress-status.sh
+source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
@@ -120,6 +131,8 @@ source "$HERE/lib/live-gates.sh" || exit $?
 source "$HERE/lib/run-alert-egress.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-submit.sh
 source "$HERE/lib/run-mergemine-submit.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-stranded.sh
+source "$HERE/lib/run-tari-stranded.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
 source "$HERE/lib/run-mergemine-localnet.sh" || exit $?
 # --- Main -------------------------------------------------------------------
@@ -148,6 +161,15 @@ main() {
         rig_lock_remote pithead "$lock_suite" "$lock_shared" "$IT_SSH_DEST" "${IT_SSH_OPTS[@]}"
     fi
 
+    if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+        rx 'test "$TMPDIR" = "$IT_SCRATCH_DIR" && test -d "$TMPDIR" && test ! -L "$TMPDIR" &&
+            f=$(mktemp "$TMPDIR/rx-scratch.XXXXXX") || exit 1
+            scratch_device=$(stat -c %d "$f") && parent_device=$(stat -c %d "$TMPDIR/..") &&
+                test -n "$scratch_device" && test "$scratch_device" = "$parent_device"
+            rc=$?; rm -f "$f" || exit 1; exit "$rc"'
+        assert_rc "runner scratch usable in target rx shell (bench-ci#965)" "$?" 0
+        [ "$IT_FAIL" -eq 0 ] || return 1
+    fi
     preflight
 
     # Non-destructive release-server fitness assessment.
@@ -217,16 +239,35 @@ main() {
     elif [ "$RUN_RIGFORGE" = "1" ]; then
         run_rigforge_integration
     fi
-    local lifecycle_ok=1
+    local lifecycle_ok=1 _gated
+    # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
+    # name every requested one in the summary instead of dropping it silently (#2755).
+    if [ "$rig_control_ok" != 1 ]; then
+        for _gated in LIFECYCLE:lifecycle FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
+            XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
+            MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
+            local _flag="RUN_${_gated%%:*}"
+            [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
+        done
+    fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
         run_lifecycle || lifecycle_ok=0
     fi
-    [ "$rig_control_ok" = 1 ] && [ "$lifecycle_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
+    if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
+        # Faults need the healthy stack a passing lifecycle leaves (#2501); a requested phase that
+        # does not run is named in the summary, never dropped silently (#2755).
+        if [ "$lifecycle_ok" = 1 ]; then
+            run_fault_injection
+        else
+            it_skip_phase "fault-injection" "the lifecycle phase failed, so there is no healthy stack to inject faults into (#2501)"
+        fi
+    fi # fault-injection gate
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ALERT_EGRESS" = "1" ] && run_alert_egress_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_SUBMIT" = "1" ] && run_mergemine_submit
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_TARI_STRANDED" = "1" ] && run_tari_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.

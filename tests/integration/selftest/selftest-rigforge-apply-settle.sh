@@ -36,6 +36,7 @@ assert_eq "the settle's stdout is the result and nothing else" "$out" "applied|m
 # harness. Assert it is still emitted — on stderr, where wait_for's own timeout warning goes.
 err="$(_settle_worker_apply max_temp_c "the rig to report max_temp_c=101 applied" "$res" _pred_settles_now 2>&1 >/dev/null)"
 assert_contains "the progress banner is redirected, not deleted" "$err" "waiting for the rig to report max_temp_c=101 applied"
+assert_contains "the accepted request's ID is in the wait banner for bench-ci #913" "$err" "change_id=c-banner"
 
 echo "== _history_row_status: the row is read by change_id, never 'the newest' (#1471) =="
 # _worker_detail is the CALLER's, injected exactly like the readback predicates this module already
@@ -134,19 +135,6 @@ _worker_detail() { printf '{"history":%s}' "$STUB_HIST"; }
 wait_for() { return 1; }
 assert_eq "a timed-out settle reports the status the row is stuck at, so the caller can name it" \
     "$(_settle_history_row r c-stuck)" "accepted"
-
-echo "== _settle_history_row: a restart-path change gets the longer bound (#2761) =="
-# RigForge applies only max_temp_c and watchdog_interval_min without restarting xmrig; every other
-# key restarts it and waits for a live hashrate before it publishes "applied". Job 1313 read
-# DONATION and pools at the fast path's 90s and saw "accepted". Recording the bound wait_for is
-# handed kills a revert to one fixed bound, and the mixed case kills a check of the first key only.
-wait_for() { WAIT_BOUND="$1"; return 0; }
-for case_ in "max_temp_c:90" "watchdog_interval_min:90" "DONATION:300" "pools:300" \
-    "max_temp_c,DONATION:300" ":90"; do
-    WAIT_BOUND=""
-    _settle_history_row r c-stuck "${case_%%:*}" >/dev/null
-    assert_eq "history settle bound for keys '${case_%%:*}'" "$WAIT_BOUND" "${case_##*:}"
-done
 
 echo "== _settle_worker_apply_maxt: RigForge #344 async apply (#1309) =="
 # This is the load-bearing mutation-kill: if the "accepted is terminal" bug (#1309) were

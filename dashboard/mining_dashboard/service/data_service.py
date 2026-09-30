@@ -75,6 +75,7 @@ from mining_dashboard.service.data_xvb_sync import (
 )
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.notify.telegram_commands import format_daily_summary
+from mining_dashboard.service.workers import worker_refresh
 
 logger = logging.getLogger("DataService")
 
@@ -133,10 +134,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
 
             while True:
                 try:
-                    # 1. Collect Local Statistics (High Frequency Polling)
                     stratum_raw = get_stratum_stats()
 
-                    # 2. Fetch Worker Statistics from XMRig Proxy + normalize the payload.
                     proxy_workers = []
                     try:
                         proxy_data = await asyncio.to_thread(self.proxy_client.get_workers)
@@ -194,7 +193,6 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # (#169) and drop stale offline rows past the fall-off window (#182).
                     final_workers = self._lifecycle.update(final_workers, time.time())
 
-                    # 4. Calculate Aggregates (Priority: 15m > 60s > 10s)
                     total_hr, total_h10 = _aggregate_hashrate(final_workers)
 
                     # 5. Fetch Network & Sync Status
@@ -304,7 +302,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # node's live reachability into a stable DOWN flag; monerod-down always
                     # rejects, Tari-down never does — Tari stays visible in its own panel/alerts.
                     monero_down = self.monero_health.update(monero_sync.get("reachable", True))
-                    tari_down = self.tari_health.update(tari_sync.get("reachable", True))
+                    tari_down = await self._observe_tari(tari_client, tari_sync)
                     monero_sync["down"] = monero_down
                     tari_sync["down"] = tari_down
 
@@ -467,6 +465,9 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         )
                         await self.alert_service.degradation_alert(kind, drop_frac)
 
+                    worker_refresh.preserve_newer_reports(
+                        self.latest_data.get("workers", []), final_workers
+                    )
                     self.latest_data.update(
                         {
                             "workers": final_workers,
@@ -499,7 +500,6 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         }
                     )
 
-                    # 6. Persist Historical Data
                     is_xvb = "XVB" in current_mode
                     p2pool_hr = 0 if is_xvb else total_hr
                     xvb_hr = total_hr if is_xvb else 0

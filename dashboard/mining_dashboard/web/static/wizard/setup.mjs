@@ -102,9 +102,13 @@ export function renderSetup(app) {
           on ${dataWiped.when} — the wallets, node identity and synced chains that were on it are
           gone. If you have a backup, restore it below instead of setting up as a fresh machine.</p>`
         }
-        <p><button type="button" class="wizard-link"
-            onClick=${() => app.setState({ restoreMode: true, error: "" })}>
-            Restoring an existing Pithead? Upload its backup instead.</button></p>
+        <p>${
+          app.state.restoreEnabled
+            ? html`<button type="button" class="wizard-link"
+                onClick=${() => app.setState({ restoreMode: true, error: "" })}>
+                Restoring an existing Pithead? Upload its backup instead.</button>`
+            : "Restore from a backup requires HTTPS. Reboot after setup TLS is available."
+        }</p>
         ${app.state.probing && html`<${NodeProbeProgress} config=${cfg} />`}
         <${NodeProbeReport} report=${app.state.nodeProbe}>Setup does not continue while a
         check is failing. Correct the address below and submit again.<//>
@@ -135,7 +139,8 @@ export function renderSetup(app) {
               !keepEverything &&
               !rig &&
               html`<h2>Payout address</h2>
-            <${Note}>Paste it — it is far too long to type, and a typo pays a stranger.<//>
+            <${Note}>Use a dedicated mining wallet: P2Pool payout addresses are public. Paste
+            its address — it is too long to type, and a typo pays a stranger.<//>
             <${Field} label="Monero payout address">
                 <input class="wizard-mono" value=${v("moneroWallet") || ""} onInput=${on("moneroWallet")}
                     autocomplete="off" autocapitalize="off" spellcheck=${false}
@@ -214,7 +219,11 @@ export function renderSetup(app) {
             <${RadioField} label="Downloading the chain the first time" name="clearnet-sync"
                   value=${String(v("clearnetSync") ?? false)} onChange=${on("clearnetSync")} options=${[
                     ["false", "Private, over Tor", "Takes days."],
-                    ["true", "Faster, over the open internet", "Takes hours; use Tor afterwards."],
+                    [
+                      "true",
+                      "Faster, over clearnet",
+                      "Takes hours instead of days. Your IP is visible to peers during sync; this node switches to Tor automatically afterwards.",
+                    ],
                   ]} />
 
 
