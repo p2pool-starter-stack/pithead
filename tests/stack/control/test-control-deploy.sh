@@ -153,10 +153,12 @@ reset_apply2360() {
     : >"$APPLY2360_LOG"
 }
 apply2360() {
-    (
+    STACK="$STACK" APPLY2360="$APPLY2360" APPLY2360_NEW="$APPLY2360_NEW" APPLY2360_LOG="$APPLY2360_LOG" \
+        FAIL_STEP="${FAIL_STEP:-}" RENDER_DIR="${RENDER_DIR:-}" "$BASH" -s <<'EOF'
         cd "$APPLY2360" || exit 1
         # shellcheck disable=SC1090
         source "$STACK"
+        trap on_err ERR
         require_env() { :; }
         ensure_onion_password() { :; }
         load_preserved_state() { :; }
@@ -168,6 +170,7 @@ apply2360() {
         P2POOL_ONION=p2pa.onion
         inject_service_configs() {
             printf 'inject\n' >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != inject-unexpected ] || return 17
             [ "${FAIL_STEP:-}" != inject ] || error "injected config failure"
         }
         generate_caddyfile() { :; }
@@ -203,11 +206,12 @@ apply2360() {
         }
         mv() {
             printf 'publish-env\n' >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != publish-unexpected ] || return 17
             [ "${FAIL_STEP:-}" != publish ] || error "injected environment publication failure"
             command mv "$@"
         }
         apply -y
-    )
+EOF
 }
 reset_apply2360
 apply2360 >/dev/null 2>&1
@@ -243,6 +247,25 @@ if [ -e "$APPLY2360_NEW/mining_data.db" ]; then bad "apply: publication failure 
 apply2360 >/dev/null 2>&1
 assert_rc "apply: retry after publication failure is green" "$?" "0"
 assert_contains "apply: publication retry carries again" "$(cat "$APPLY2360_LOG")" "carry:$APPLY2360_OLD:$APPLY2360_NEW"
+
+# A real errexit unwinds apply's locals before EXIT; explicit error() does not (#2785).
+reset_apply2360
+out="$(FAIL_STEP=publish-unexpected apply2360 2>&1)"
+assert_rc "apply: unexpected publication failure preserves its status" "$?" "17"
+assert_not_contains "apply: unexpected failure recovery has no expired locals" "$out" "unbound variable"
+assert_contains "apply: unexpected publication failure restarts dashboard" "$(cat "$APPLY2360_LOG")" "docker:compose start dashboard"
+assert_eq "apply: unexpected failure keeps source intact" "$(cat "$APPLY2360_OLD/mining_data.db")" "livedb"
+if [ -e "$APPLY2360_NEW/mining_data.db" ]; then bad "apply: unexpected failure clears unpublished copy" "DB remains"; else ok "apply: unexpected failure clears unpublished copy"; fi
+apply2360 >/dev/null 2>&1
+assert_rc "apply: retry after unexpected publication failure succeeds" "$?" "0"
+
+reset_apply2360
+out="$(FAIL_STEP=inject-unexpected apply2360 2>&1)"
+assert_rc "apply: unexpected post-publication failure preserves its status" "$?" "17"
+assert_not_contains "apply: unexpected post-publication recovery has no expired locals" "$out" "unbound variable"
+assert_contains "apply: unexpected post-publication failure restarts dashboard" "$(cat "$APPLY2360_LOG")" "docker:compose start dashboard"
+assert_eq "apply: unexpected post-publication failure keeps carried DB" "$(cat "$APPLY2360_NEW/mining_data.db")" "livedb"
+if [ -f "$APPLY2360/.env.apply-incomplete" ]; then ok "apply: unexpected post-publication failure keeps retry marker"; else bad "apply: unexpected post-publication failure keeps retry marker" "marker missing"; fi
 
 reset_apply2360
 out="$(FAIL_STEP=inject apply2360 2>&1)"

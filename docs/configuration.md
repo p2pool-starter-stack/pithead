@@ -388,7 +388,9 @@ host where your account isn't uid 1000, expect to `sudo` when reading those dire
 > carries the live dashboard database and its SQLite companion files to the new path itself, then
 > verifies the published files — a non-empty target, or a failed or unverified copy, refuses the
 > move instead of guessing which copy is live
-> ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)).
+> ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)). If apply aborts before
+> publishing the new path, it removes its unpublished copy and restarts the existing dashboard.
+> After publication, it keeps the copy and retry marker; fix the reported error and re-run `apply`.
 
 ---
 
