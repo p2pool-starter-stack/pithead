@@ -11,7 +11,7 @@ lg_marker() {
         [ "${1:-}" != -n ] || shift
         case "$*" in
         *data/lan-guard*)
-            [ "${LG_MARKER_SUDO_FAIL:-0}" = 0 ] || return 1
+            [ "${LG_MARKER_SUDO_FAIL:-0}" = 0 ] || [ "$1" = rm ] || return 1
             "$LG_REAL_SUDO" -n "$@" ;;
         *) command sudo "$@" ;;
         esac
@@ -38,6 +38,7 @@ lg_out=$(LG_LIVE=1 LG_RUNNING=0 LG_MARKER_SUDO_FAIL=1 lg_marker 'compose_up -d')
 assert_rc "a marker write refused by sudo makes startup fail" "$lg_rc" 1
 assert_contains "startup names the marker failure" "$lg_out" "marker the node containers check could not be written"
 assert_eq "failed marker write still starts only on loopback" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "failed marker write clears the prior privileged marker" "$(test -e "$LGD/data/lan-guard/enforced" && echo present || echo absent)" absent
 lg_rc=0
 "$lg_real_sudo" -n chown "$(id -u):$(id -g)" "$LGD/data/lan-guard" || lg_rc=$?
 assert_rc "restore marker fixture ownership" "$lg_rc" 0
