@@ -17,7 +17,7 @@ assert_onion_targets() { # <monero mode> <pool name>
     esac
     onion_prefix="$(env_on_box NETWORK_PREFIX)"
     onion_pool_port="$(env_on_box P2POOL_PORT)"
-    assert_eq "rendered P2Pool port follows $pool sidechain (#2936)" "$onion_pool_port" "$expected_port"
+    assert_eq "rendered P2Pool port follows selected sidechain (#2936)" "$onion_pool_port" "$expected_port"
     if rx "docker exec tor grep -Fxq 'HiddenServicePort $onion_pool_port $onion_prefix.28:$onion_pool_port' /tmp/torrc"; then
         it_pass "P2Pool onion forwards the selected $pool port (#2936)"
     else

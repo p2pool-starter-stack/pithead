@@ -684,7 +684,7 @@ assert_not_contains "tor entrypoint: no Tari HS with no profiles (remote tari, #
 assert_contains "tor entrypoint: P2Pool HS is unconditional — p2pool always runs (#103)" \
     "$tor_both_remote" "HiddenServiceDir /var/lib/tor/p2pool/"
 for pool_port in 37889 37888 37890; do
-    assert_contains "tor entrypoint: P2Pool onion follows selected port $pool_port (#2936)" \
+    assert_contains "tor entrypoint: P2Pool onion follows selected port (#2936)" \
         "$(tor_torrc false "" "$pool_port")" "HiddenServicePort $pool_port 10.9.0.28:$pool_port"
 done
 assert_contains "Monero anonymous listener accepts Tor on the bridge (#2936)" \
