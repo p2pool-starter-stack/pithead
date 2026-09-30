@@ -52,6 +52,9 @@ tor_recovery_bootstrap_stalled() { # <state> <start of observation window>
     sleep 180
     second=$(tor_recovery_bootstrap_sample) || return 1
     [ "$first" = "$second" ] || return 1
+    # A transient RPC outage must not bypass the ordinary chain-evidence refusals.
+    # If it answers now, a fresh invocation must take the running-chain path.
+    if tor_recovery_info >/dev/null 2>&1; then return 1; fi
     tor_recovery_state_saturated "$1" || return 1
     # Recent bounded output, collected after the observation window (not historical warnings).
     warnings=$(timeout 10 docker logs --since "$2" --tail 200 tor 2>&1) || return 1

@@ -65,7 +65,7 @@ timeout() {
 tor_recovery_info() {
     if [ -e "$WORK/node-started" ]; then
         printf '{"status":"OK","synchronized":true,"height":43,"outgoing_connections_count":2}\n'
-    elif [ "${RPC:-unavailable}" = advancing ]; then
+    elif [ "${RPC:-unavailable}" = advancing ] || { [ "${RPC_LATER:-0}" = 1 ] && [ -e "$WORK/observed" ]; }; then
         printf '{"status":"OK","synchronized":true,"height":42,"outgoing_connections_count":2}\n'
     else
         return 1
@@ -122,6 +122,7 @@ LOG_FAIL=1 refused
 RECREATED=1 refused
 RECOVERED=1 refused
 RPC=advancing refused
+RPC_LATER=1 refused
 printf 'CircuitBuildTimeBin 1 2\n' >>"$WORK/tor/state"
 refused
 sed -i '/CircuitBuildTimeBin/d' "$WORK/tor/state"
