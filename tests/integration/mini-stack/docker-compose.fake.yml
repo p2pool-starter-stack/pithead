@@ -85,6 +85,7 @@ services:
       WALLET_RPC_USERNAME: ""
       WALLET_RPC_PASSWORD: ""
       TARI_PAYOUT_CONFIRM_ENABLED: "${TARI_PAYOUT_CONFIRM_ENABLED:-true}"
+      TARI_WALLET_ADDRESS: "tari-test-wallet"
       TARI_WALLET_GRPC_ADDRESS: "fake-tari-wallet:18143"
       PROXY_HOST: "xmrig-proxy"
       PROXY_API_PORT: "3344"
@@ -150,6 +151,25 @@ services:
     entrypoint: []
     command: ["python3", "/fakes/fake_tari_wallet.py", "--grpc-port", "18143", "--control-port", "18153"]
     volumes: ["../fakes:/fakes:ro"]
+
+  # The real image and health script: the wrapper rejects a missing secret, then the harness
+  # keeps the container alive long enough for Docker to record the failed gRPC healthcheck.
+  tari-wallet-broken:
+    profiles: [wallet-health]
+    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
+    container_name: itest-tari-wallet-broken
+    networks: [itestnet]
+    entrypoint: ["/bin/sh", "-c", "/wallet-config/entrypoint.sh || sleep 60"]
+    environment:
+      TARI_WALLET_SECRET_FILE_IN: /run/secrets/broken
+      WALLET_DIR: /tmp/wallet
+      PAYOUT_SCAN_GRACE_SEC: "0"
+    volumes: ["../../../build/tari-wallet:/wallet-config:ro"]
+    healthcheck:
+      test: ["CMD", "/wallet-config/wallet-healthcheck.sh"]
+      interval: 1s
+      timeout: 5s
+      retries: 1
 
   # Stand-ins for the miner containers: real, named containers the dashboard genuinely
   # stops/starts via docker-control. They just idle.
