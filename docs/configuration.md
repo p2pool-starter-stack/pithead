@@ -286,7 +286,15 @@ addresses is not supported.
 The rule needs root: `sudo` with `iptables` on the Docker install, `nft` on the appliance.
 `pithead` installs it on every `up`, `apply` and `upgrade` and removes it on `down`. When it cannot
 install the rule, it keeps the ports on `127.0.0.1` for that start instead of publishing them
-without it. `./pithead doctor` then says the ports are held and why.
+without it. If a LAN node is already running, it stops that node before changing its bind and
+restarts it on loopback, including when `up` names only other services. On a first Docker `up`,
+before Docker has created its network, the first Compose pass keeps the node ports on `127.0.0.1`
+and leaves their start marker absent. It then checks whether
+Docker added the path from `FORWARD` to `DOCKER-USER`. If so, it records the marker and runs Compose
+again with the LAN binds. If that path remains absent, the ports stay on loopback and it warns.
+If the first Compose pass fails, `pithead` retries the stopped nodes on loopback and reports the
+original failure. If a required Tor egress rule cannot be verified, it leaves those nodes stopped.
+`./pithead doctor` then says the ports are held and why.
 When a LAN-access switch turns off, `pithead` stops a still-running node with the old published
 bind before it removes that port's rule. If the following Compose start fails, the old node stays
 stopped instead of listening without the rule. Run `./pithead up` after fixing the failure.

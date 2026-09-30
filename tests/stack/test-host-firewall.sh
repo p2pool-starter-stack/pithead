@@ -6,5 +6,9 @@
 source "$HERE/firewall/tor-egress-enforcement.sh" || return $?
 # shellcheck source=tests/stack/firewall/lan-guard.sh
 source "$HERE/firewall/lan-guard.sh" || return $?
+# shellcheck source=tests/stack/firewall/lan-guard-entrypoints.sh
+source "$HERE/firewall/lan-guard-entrypoints.sh" || return $?
+# shellcheck source=tests/stack/firewall/lan-guard-first-network.sh
+source "$HERE/firewall/lan-guard-first-network.sh" || return $?
 # shellcheck source=tests/stack/firewall/lan-guard-teardown.sh
 source "$HERE/firewall/lan-guard-teardown.sh" || return $?
