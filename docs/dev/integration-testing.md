@@ -431,10 +431,12 @@ via an `EXIT` trap):
    waste. A **source checkout** gets `pithead upgrade` instead, and the difference is not an
    optimisation. `pithead` exports `STACK_VERSION=dev` for any source checkout, so a source-checkout
    baseline and the branch under test resolve to the same `:dev` tag — which deploying the branch has
-   already overwritten, with a pull policy of `never` to correct it. `apply` + `up` would bring the
-   branch back up under the baseline's name. A failed upgrade fails the restore and leaves its command
-   output in the job log. After the baseline command, the restore recreates any container still
-   labelled with the test checkout as its Compose working directory, leaving baseline-owned chain
+   already overwritten, with a pull policy of `never` to correct it. The upgrade compares each live
+   container image ID with the rebuilt Compose image and recreates any mismatch before restore proof.
+   `apply` + `up` would bring the branch back up under the baseline's name. A failed upgrade fails
+   the restore and leaves its command output in the job log. After the baseline command, the restore
+   recreates any container still labelled with the test checkout as its Compose working directory,
+   leaving baseline-owned chain
    nodes running. It removes test-checkout containers for services absent from the baseline.
    A recreated node can report healthy before the dashboard's sync gate stops p2pool and
    xmrig-proxy while its chains reload. Restore waits up to 1500 seconds for the dashboard's
@@ -720,9 +722,14 @@ For one representative config:
   with the `missing` pull policy must
   then return healthy on the same chain files and the same Monero onion address.
 
-> NOTE: `upgrade` (which rebuilds/pulls images) is intentionally not run unattended. It's slow
-> and changes the bundle under test. Validate it as part of the [release](releasing.md)
-> staging smoke test instead.
+A source checkout retains the original image under a temporary tag, builds a label-only
+`xmrig-proxy` image while the old container stays running, then calls the upgrade image
+reconciler. The regression requires guarded recreation,
+the declared immutable image ID and checkout Compose owner, and restoration of the original
+image before later phases. Cleanup removes the fixture image and temporary tag after restoration.
+Redacted output is saved in `source-image-reconcile.log`. The outer
+restore still verifies every baseline image and Compose owner. The full `upgrade` command
+(which rebuilds all images) remains part of the [release](releasing.md) staging smoke test.
 
 ### RigForge control (`--rigforge-control`)
 
