@@ -86,7 +86,10 @@ api_state() { printf '%s' '{"workers":[{"name":"rig1","api_ok":true,"rigforge":{
 push_config() { return 0; }
 _worker_detail() { printf '%s' '{"editable":true,"control_enabled":true}'; }
 WRITABLE_CALLED=0
-run_rigforge_writable_keys() { WRITABLE_CALLED=$((WRITABLE_CALLED + 1)); it_fail "forced late RigForge failure" "control"; }
+run_rigforge_writable_keys() {
+    WRITABLE_CALLED=$((WRITABLE_CALLED + 1))
+    it_fail "forced late RigForge failure" "control"
+}
 run_rigforge_pools() { :; }
 run_rigforge_reverse() { :; }
 run_rigforge_rollback() { :; }
