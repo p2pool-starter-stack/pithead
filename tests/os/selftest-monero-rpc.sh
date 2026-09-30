@@ -138,3 +138,42 @@ done
 printf '[{}]\n' >"$fixture/network.json"
 if ipv4_only "$fixture/network.json"; then exit 1; fi
 echo 'selftest-monero-rpc: pre-start family guard requires disabled IPv6'
+# The native caller reports probe diagnostics and never turns a failed command into a pass.
+probe_source=$(awk '/^p2p_advertisement\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+eval "$probe_source"
+# These variables are consumed by the extracted probe function.
+# shellcheck disable=SC2034
+P2P_PROBE_B64='' proof_name=fixture-name network=fixture-network client_image=fixture-image node_ip=fixture
+podman() {
+    printf '%s' "$probe_reply"
+    return "$probe_rc"
+}
+probe_rc=0 probe_reply=18081
+p2p_advertisement >/dev/null
+for probe_reply in 18085 18082 '' malformed 'P2P advertised RPC port unavailable {"stage":"decode_handshake","error":"rpc_port_zero"}'; do
+    probe_rc=0
+    case "$probe_reply" in P2P*) probe_rc=1 ;; esac
+    if p2p_advertisement >"$fixture/probe.log"; then
+        echo 'FAIL: native caller credited an invalid or failed advertisement probe' >&2
+        exit 1
+    fi
+    case "$probe_reply" in P2P*) grep -q 'decode_handshake' "$fixture/probe.log" ;; esac
+done
+echo 'selftest-monero-rpc: native caller fails and reports bounded probe diagnostics'
+# Startup selection is independent of whether the P2P proxy suppresses advertisement.
+selection_source=$(awk '/^restricted_rpc_selected\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+eval "$selection_source"
+podman() {
+    printf '%s\n' "$startup_line" >&"$startup_fd"
+}
+startup_line='Public RPC port 18081 will be advertised to other peers over P2P'
+for startup_fd in 1 2; do restricted_rpc_selected; done
+for startup_line in 'Public RPC port 18085 will be advertised to other peers over P2P' 'unavailable'; do
+    for startup_fd in 1 2; do
+        if restricted_rpc_selected; then
+            echo 'FAIL: startup selection accepted admin RPC or unavailable evidence' >&2
+            exit 1
+        fi
+    done
+done
+echo 'selftest-monero-rpc: startup must select restricted RPC, never admin RPC'

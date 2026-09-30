@@ -114,9 +114,28 @@ echo 'PASS: Quadlet admin listener is unpublished and unreachable from host and 
 code=$(curl -gs --max-time 5 -o /dev/null -w '%{http_code}' 'http://[::1]:18085/get_info' || true)
 [ "$code" = 000 ]
 echo 'PASS: Quadlet admin listener is unreachable on every enabled address family'
-advertised=$(printf %s "$P2P_PROBE_B64" | base64 -d | podman run --pull=never --rm -i --name "$proof_name-client" --network "$network" --entrypoint python3 "$client_image" - "$node_ip" 18080)
-[ "$advertised" = 18081 ]
-echo 'PASS: native Quadlet P2P handshake advertises restricted RPC port'
+restricted_rpc_selected() {
+    podman logs --tail 120 "$proof_name" 2>&1 | grep -F 'Public RPC port 18081 will be advertised to other peers over P2P' >/dev/null
+}
+restricted_rpc_selected
+echo 'PASS: native Quadlet startup selects the restricted RPC port for public RPC'
+p2p_advertisement() {
+    local advertised
+    if ! advertised=$(printf %s "$P2P_PROBE_B64" | base64 -d | podman run --pull=never --rm -i --name "$proof_name-client" --network "$network" --entrypoint python3 "$client_image" - "$node_ip" 18080); then
+        printf 'FAIL: native Quadlet P2P probe: %.512s\n' "$advertised"
+        return 1
+    fi
+    if [[ ! "$advertised" =~ ^[0-9]{1,5}$ ]]; then
+        echo 'FAIL: native Quadlet P2P probe returned an invalid result'
+        return 1
+    fi
+    if [ "$advertised" != 18081 ]; then
+        printf 'FAIL: native Quadlet unexpected RPC advertisement: %s\n' "$advertised"
+        return 1
+    fi
+    echo 'PASS: native Quadlet P2P handshake advertises restricted RPC port'
+}
+p2p_advertisement
 
 snapshot() {
     podman inspect "$proof_name" | jq -c '.[0] | {State:{StartedAt:.State.StartedAt,Health:(.State.Health // .State.Healthcheck)}}'

@@ -9,9 +9,12 @@ ports on a private IPv4-only managed bridge without a default route or external 
 Routing and disabled IPv6 are verified before the daemon starts. Outgoing peers are disabled,
 and the fixture advertises no existing onion identity; its real zero exercises cold-start
 visibility, not synchronization. It checks authenticated local admin access, the restricted
-network listener, P2P advertisement, fresh and expired health observations, and a fresh run
-after restart. Cleanup removes only the fixture unit, container, its client container, private
-network and scratch files. The healthy-baseline fault and recovery proof remains the Compose
+network listener, restricted public-RPC selection, P2P advertisement, fresh and expired health
+observations, and a fresh run after restart. A failed P2P probe reports a bounded stage and
+error code, with numeric header metadata; it prints no address, credential or raw response.
+An unavailable or malformed probe remains failed proof. Cleanup removes only the fixture
+unit, container, its client container, private network and scratch files. The healthy-baseline
+fault and recovery proof remains the Compose
 `monero-stranded` job. The appliance harness covers EFI boot, the first-boot wizard window,
 install-to-disk, the rig role, and the update → commit → rollback cycle that is the phase-2
 exit criterion.

@@ -69,8 +69,9 @@ hide-my-port=1
 
 # --- RPC Security ---
 # Enforce authentication on both listeners. The network listener is restricted by
-# rpc-restricted-bind-port above (public-node advertises that one); there is no global
-# restricted-rpc here, or the loopback listener would be restricted too.
+# rpc-restricted-bind-port above. public-node selects that restricted port; Monero's Tor
+# proxy suppresses the P2P RPC-port advertisement. There is no global restricted-rpc here,
+# or the loopback listener would be restricted too.
 rpc-login=${MONERO_NODE_USERNAME}:${MONERO_NODE_PASSWORD}
 no-igd=1
 

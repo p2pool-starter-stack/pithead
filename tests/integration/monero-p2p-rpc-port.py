@@ -5,6 +5,7 @@ Wire definitions: Monero v0.18.5.1, p2p_protocol_defs.h, CORE_SYNC_DATA,
 portable_storage_base.h and levin_base.h. No RPC login or peer list is printed.
 """
 
+import json
 import socket
 import struct
 import sys
@@ -123,9 +124,15 @@ def advertised_port(body):
     if reader.offset != len(body):
         raise ValueError("trailing portable storage data")
     node = result.get("node_data")
-    port = node.get("rpc_port") if isinstance(node, dict) else None
+    if not isinstance(node, dict):
+        raise ValueError("handshake node_data missing")
+    if "rpc_port" not in node:
+        raise ValueError("handshake rpc_port omitted")
+    port = node["rpc_port"]
+    if type(port) is int and port == 0:
+        raise ValueError("handshake rpc_port zero")
     if type(port) is not int or not 1 <= port <= 65535:
-        raise ValueError("advertised RPC port unavailable")
+        raise ValueError("handshake rpc_port invalid")
     return port
 
 
@@ -143,21 +150,81 @@ def receive(sock, size, deadline):
     return bytes(result)
 
 
+ERROR_CODES = {
+    "invalid P2P handshake response": "invalid_header",
+    "oversized P2P handshake response": "oversized_header",
+    "truncated P2P response": "truncated_response",
+    "invalid portable storage header": "invalid_storage_header",
+    "oversized portable storage": "oversized_storage",
+    "truncated portable storage": "truncated_storage",
+    "portable storage nesting bound": "nesting_bound",
+    "portable storage array bound": "array_bound",
+    "portable storage field bound": "field_bound",
+    "unknown portable storage type": "unknown_storage_type",
+    "duplicate portable storage field": "duplicate_field",
+    "trailing portable storage data": "trailing_storage",
+    "handshake node_data missing": "node_data_missing",
+    "handshake rpc_port omitted": "rpc_port_omitted",
+    "handshake rpc_port zero": "rpc_port_zero",
+    "handshake rpc_port invalid": "rpc_port_invalid",
+}
+
+
+class ProbeFailure(ValueError):
+    """Closed diagnostic fields: never include an exception's remote data or address."""
+
+    def __init__(self, stage, error, metadata):
+        if isinstance(error, TimeoutError):
+            reason = "timeout"
+        elif isinstance(error, ConnectionRefusedError):
+            reason = "connection_refused"
+        elif isinstance(error, OSError):
+            reason = "transport_error"
+        elif isinstance(error, UnicodeError):
+            reason = "invalid_field_encoding"
+        else:
+            reason = ERROR_CODES.get(str(error), "invalid_data")
+        self.observation = {"stage": stage, "error": reason, **metadata}
+        super().__init__(json.dumps(self.observation, separators=(",", ":")))
+
+
 def probe(host, port):
     deadline = time.monotonic() + 8
-    with socket.create_connection((host, port), timeout=8) as sock:
-        sock.sendall(request())
-        header = HEADER.unpack(receive(sock, HEADER.size, deadline))
-        signature, size, _, command, code, flags, version = header
-        if signature != MAGIC or command != 1001 or code < 0 or flags != 2 or version != 1:
-            raise ValueError("invalid P2P handshake response")
-        if size > MAX_BODY:
-            raise ValueError("oversized P2P handshake response")
-        return advertised_port(receive(sock, size, deadline))
+    stage, metadata = "connect", {}
+    try:
+        with socket.create_connection((host, port), timeout=8) as sock:
+            stage = "send_request"
+            sock.sendall(request())
+            stage = "response_header"
+            header = HEADER.unpack(receive(sock, HEADER.size, deadline))
+            signature, size, _, command, code, flags, version = header
+            metadata = {"command": command, "flags": flags, "code": code, "size": size}
+            if signature != MAGIC or command != 1001 or code < 0 or flags != 2 or version != 1:
+                raise ValueError("invalid P2P handshake response")
+            if size > MAX_BODY:
+                raise ValueError("oversized P2P handshake response")
+            stage = "response_body"
+            body = receive(sock, size, deadline)
+            stage = "decode_handshake"
+            return advertised_port(body)
+    except (OSError, ValueError, UnicodeError) as error:
+        raise ProbeFailure(stage, error, metadata) from None
+
+
+def main(argv):
+    try:
+        print(probe(argv[1], int(argv[2])))
+        return 0
+    except ProbeFailure as error:
+        # stdout survives capture by the container runner, whose stderr may go to journald.
+        print("P2P advertised RPC port unavailable " + str(error))
+        return 1
+    except (IndexError, ValueError):
+        print(
+            'P2P advertised RPC port unavailable {"stage":"arguments","error":"invalid_arguments"}'
+        )
+        return 1
 
 
 if __name__ == "__main__":
-    try:
-        print(probe(sys.argv[1], int(sys.argv[2])))
-    except (IndexError, OSError, ValueError, UnicodeError):
-        sys.exit("P2P advertised RPC port unavailable")
+    sys.exit(main(sys.argv))
