@@ -375,8 +375,10 @@ via an `EXIT` trap):
    A plain `up` from the e2e checkout would therefore recreate both nodes on every run. The upgrade
    runs with `PITHEAD_KEEP_RUNNING` set, a harness-only knob that names every other service in the
    `up` with `--no-deps`. `tests/integration/lib/chain-keep.sh` then compares each node between the
-   two checkouts. The rendered `docker compose config` is compared with the image and build dropped
-   and the checkout path normalized. The content, mode and symlink targets of those mounted files
+   two checkouts. If the LAN guard has to stop a named node for safety, the scoped `up` fails instead
+   of recreating a node the harness promised to keep running. The rendered `docker compose config`
+   is compared with the image and build dropped and the checkout path normalized. The content,
+   mode and symlink targets of those mounted files
    are compared too, and so is the image **ID**, never the tag. Two more conditions apply:
    - The running node must be what the baseline renders: its Compose `config-hash` label must equal
      `docker compose config --hash` in the restore directory.

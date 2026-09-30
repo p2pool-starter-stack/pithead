@@ -101,6 +101,7 @@ lan_guard_watched_ports() {
 # the old all-interface listener running after its jump has been removed.
 lan_guard_stop_rebound_nodes() {
     local names service name kp bind published stop_node
+    LAN_GUARD_REBOUND_SERVICES=()
     for service in monerod tari; do
         names=$(docker ps --filter label=com.docker.compose.project=pithead \
             --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
@@ -127,6 +128,7 @@ lan_guard_stop_rebound_nodes() {
             done
             [ "$stop_node" = 1 ] || continue
             docker stop "$name" >/dev/null || return 1
+            [[ " ${LAN_GUARD_REBOUND_SERVICES[*]} " == *" $service "* ]] || LAN_GUARD_REBOUND_SERVICES+=("$service")
             names=$(docker ps --filter label=com.docker.compose.project=pithead \
                 --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
             grep -qxF "$name" <<<"$names" && return 1
@@ -235,6 +237,8 @@ lan_guard_reason() { # <rc>
 # process. Called by compose_up, so it runs before every container (re)start.
 apply_lan_guard() { # [port]...: explicit ports include stale container publishes after .env changes
     local published="" watched kp ports=() old rc=0
+    LAN_GUARD_STAGED=0
+    LAN_GUARD_STOPPED_SERVICES=()
     LAN_GUARD_FALLBACK=0
     # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
     # bind-mount the marker dir, and podman does not create a missing bind source.
@@ -268,16 +272,35 @@ apply_lan_guard() { # [port]...: explicit ports include stale container publishe
     if [ "$rc" = 0 ]; then
         lan_guard_enforced "${ports[@]}" || rc=$?
         # 4 before the first network exists: Docker adds the FORWARD jump when compose creates it.
-        [ "$rc" = 4 ] && rc=0
+        if [ "$rc" = 4 ]; then
+            LAN_GUARD_STAGED=1
+            LAN_GUARD_FALLBACK=1
+            rc=0
+        fi
     fi
     # A rule that cannot outlive a reboot (no boot unit), or that the nodes cannot see, is not installed.
     [ "$rc" = 0 ] && ! provision_lan_guard_boot_unit "${ports[@]}" && rc=6
-    [ "$rc" = 0 ] && ! lan_guard_mark 2>/dev/null && rc=7
+    [ "$rc" = 0 ] && [ "$LAN_GUARD_STAGED" = 0 ] && ! lan_guard_mark 2>/dev/null && rc=7
     if [ "$rc" = 0 ]; then
+        if [ "$LAN_GUARD_STAGED" = 1 ]; then
+            lan_guard_stop_published || return 1
+            lan_guard_unmark || {
+                warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
+                return 1
+            }
+            for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
+            log "LAN-only rules staged until Docker creates its network; starting the node ports on 127.0.0.1."
+            return 0
+        fi
         log "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
         return 0
     fi
-    lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
+    LAN_GUARD_STAGED=0
+    lan_guard_stop_published || return 1
+    lan_guard_unmark || {
+        warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
+        return 1
+    }
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
     LAN_GUARD_FALLBACK=1
     warn "lan-guard:not-installed — could not enforce LAN-only sources on port(s) ${ports[*]} ($(lan_guard_reason "$rc")). Holding them on 127.0.0.1 until it can; see './pithead doctor'."

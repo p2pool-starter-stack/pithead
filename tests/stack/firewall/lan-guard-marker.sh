@@ -9,8 +9,8 @@ export LG_REAL_SUDO="$lg_real_sudo"
 lg_marker() {
     lg 'sudo() {
         [ "${1:-}" != -n ] || shift
-        case "$1" in
-        mkdir | mktemp | tee | chmod | mv | rm)
+        case "$*" in
+        *data/lan-guard*)
             [ "${LG_MARKER_SUDO_FAIL:-0}" = 0 ] || return 1
             "$LG_REAL_SUDO" -n "$@" ;;
         *) command sudo "$@" ;;

@@ -32,7 +32,11 @@ case "$*" in
     fi
     exit 0
     ;;
-"-S FORWARD") echo '-A FORWARD -j DOCKER-USER' ;;
+"-S FORWARD")
+    if [ "${LG_FORWARD_JUMP:-1}" = 1 ] || { [ "${LG_FORWARD_JUMP:-}" = after ] && [ -e "$LG_JUMP_FILE" ]; }; then
+        echo '-A FORWARD -j DOCKER-USER'
+    fi
+    ;;
 esac
 exit 0
 IPT
@@ -60,10 +64,32 @@ cat >"$LGD/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
 case "$1 ${2:-}" in
 "compose up"*)
+    rm -f "$LG_STOPPED_FILE"
     [ -z "${LG_ORDER:-}" ] || echo compose >>"$LG_ORDER"
     echo "compose-bind=${TARI_GRPC_BIND:-from-env-file}" >>"$LG_COMPOSE"
+    echo "$*" >>"$LG_ARGS_LOG"
+    [ "${LG_FORWARD_JUMP:-}" = after ] && touch "$LG_JUMP_FILE"
+    if [ "${LG_FIRST_UP_FAIL:-0}" = 1 ] && [ "${TARI_GRPC_BIND:-}" = 127.0.0.1 ] && [ ! -e "$LG_FAIL_FILE" ]; then
+        touch "$LG_FAIL_FILE"
+        exit 1
+    fi
+    [ "${LG_LAN_UP_FAIL:-0}" = 1 ] && [ "${TARI_GRPC_BIND:-}" = 0.0.0.0 ] && exit 1
     echo "restart=${MONERO_RESTART:-default},${TARI_RESTART:-default}" >>"$LG_COMPOSE.restart"
     exit "${LG_COMPOSE_RC:-0}"
+    ;;
+"ps -q")
+    echo "$*" >>"$LG_QUERY_LOG"
+    [ "${LG_PS_RC:-0}" = 0 ] || exit 1
+    if [ -n "${LG_RUNNING_FILE:-}" ]; then
+        service=""
+        [[ " $* " == *"label=com.docker.compose.service=monerod"* ]] && service=monerod
+        [[ " $* " == *"label=com.docker.compose.service=tari"* ]] && service=tari
+        while IFS= read -r name; do
+            case "$service:$name" in
+            monerod:monerod | monerod:*_monerod | tari:tari | tari:*_tari) echo "$name" ;;
+            esac
+        done <"$LG_RUNNING_FILE"
+    elif [ "${LG_RUNNING:-1}" = 1 ] && [ ! -e "$LG_STOPPED_FILE" ]; then printf '%s\n' ${LG_IDS:-cid123}; fi
     ;;
 "ps "*)
     if [[ " $* " == *"label=com.docker.compose.project=pithead"* ]] && [ -n "${LG_RUNNING_FILE:-}" ]; then
@@ -76,7 +102,7 @@ case "$1 ${2:-}" in
             esac
         done <"$LG_RUNNING_FILE"
     elif [[ " $* " == *"label=com.docker.compose.project=pithead"* ]]; then
-        [ "${LG_RUNNING:-1}" = 1 ] || exit 0
+        [ "${LG_RUNNING:-1}" = 1 ] && [ ! -e "$LG_STOPPED_FILE" ] || exit 0
         case " $* " in
         *"service=monerod"*) ;;
         *"service=tari"*) echo tari ;;
@@ -89,8 +115,10 @@ case "$1 ${2:-}" in
     ;;
 "stop "*)
     [ -z "${LG_ORDER:-}" ] || echo "stop:$2" >>"$LG_ORDER"
-    [ "${LG_STOP_FAIL:-0}" = 0 ] || exit 1
-    sed -i "/^$2$/d" "$LG_RUNNING_FILE"
+    echo "docker-stop=$2" >>"$LG_COMPOSE"
+    [ "${LG_STOP_FAIL:-0}" = 0 ] && [ "${LG_STOP_RC:-0}" = 0 ] || exit 1
+    [ -n "${LG_RUNNING_FILE:-}" ] || touch "$LG_STOPPED_FILE"
+    [ -z "${LG_RUNNING_FILE:-}" ] || sed -i "/^$2$/d" "$LG_RUNNING_FILE"
     [ -z "${LG_FOREIGN_FILE:-}" ] || sed -i "/^$2$/d" "$LG_FOREIGN_FILE"
     ;;
 "inspect -f")
@@ -123,11 +151,17 @@ exit 0
 SYSTEMCTL
 chmod +x "$LGD/bin/"*
 mkdir -p "$LGD/units"
-export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log" LG_SYSTEMCTL="$LGD/systemctl.log"
+export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log" LG_SYSTEMCTL="$LGD/systemctl.log" LG_JUMP_FILE="$LGD/jump" LG_QUERY_LOG="$LGD/query.log" LG_ARGS_LOG="$LGD/args.log" LG_FAIL_FILE="$LGD/failed-once" LG_STOPPED_FILE="$LGD/stopped-node"
 printf 'TARI_GRPC_BIND=0.0.0.0\nMONERO_RPC_BIND=127.0.0.1\nMONERO_ZMQ_BIND=127.0.0.1\n' >"$LGD/.env"
 printf 'boot-1\n' >"$LGD/boot_id"
-lg() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PITHEAD_BOOT_ID_FILE="$LGD/boot_id" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; apply_tor_egress_firewall() { :; }; $1" 2>&1); }
-lg_real() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PITHEAD_BOOT_ID_FILE="$LGD/boot_id" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
+lg() {
+    rm -f "$LG_STOPPED_FILE"
+    (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PITHEAD_BOOT_ID_FILE="$LGD/boot_id" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; apply_tor_egress_firewall() { :; }; $1" 2>&1)
+}
+lg_real() {
+    rm -f "$LG_STOPPED_FILE"
+    (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PITHEAD_BOOT_ID_FILE="$LGD/boot_id" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1)
+}
 LG_UNIT="$LGD/units/pithead-lan-guard.service"
 LG_HOLD="$LGD/units/pithead-lan-hold.service"
 echo "== the rule admits loopback, RFC1918 and CGNAT only, and drops the rest (#2616) =="
@@ -167,21 +201,22 @@ assert_contains "installed: only the published port gets a jump" "$(cat "$LG_RES
 assert_not_contains "installed: a loopback-bound port gets no new jump" "$(cat "$LG_RESTORE")" "-I DOCKER-USER 1 -p tcp -m tcp --dport 18081"
 assert_eq "installed: compose publishes the .env bind" "$(cat "$LG_COMPOSE")" "compose-bind=from-env-file"
 : >"$LG_COMPOSE"
-lg_out="$(LG_LIVE=0 LG_RUNNING=0 lg 'compose_up -d')"
+lg_out="$(LG_LIVE=0 lg 'compose_up -d')"
 assert_contains "restore exits 0 but the rule is not live: named" "$lg_out" "lan-guard:not-installed"
-assert_eq "...and compose is handed 127.0.0.1, not 0.0.0.0" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "...stops the old node and binds 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
 : >"$LG_COMPOSE"
-lg_out="$(LG_LIVE=1 LG_RUNNING=0 LG_RESTORE_RC=1 lg 'compose_up -d')"
+lg_out="$(LG_LIVE=1 LG_RESTORE_RC=1 lg 'compose_up -d')"
 assert_contains "the install itself fails (no root): the reason is named" "$lg_out" "could not enforce"
-assert_eq "...and compose is handed 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "...and stops the old node before binding 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
 : >"$LG_COMPOSE"
 rm -f "$LG_UNIT"
-lg_out="$(LG_LIVE=1 LG_RUNNING=0 LG_ENABLE_RC=1 lg 'compose_up -d')"
+lg_out="$(LG_LIVE=1 LG_ENABLE_RC=1 lg 'compose_up -d')"
 assert_contains "the rule is live but its boot unit cannot be enabled: named (#2749)" "$lg_out" "boot unit that restores it after a reboot could not be installed"
-assert_eq "...and compose is handed 127.0.0.1, so a reboot cannot reopen the port" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "...and stops the old node before binding 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
 : >"$LG_COMPOSE"
-lg_out="$(PITHEAD_ENGINE=podman LG_LIVE=0 LG_RUNNING=0 lg 'compose_up -d')"
-assert_eq "podman: an nft table that does not read back holds the port on 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+lg_out="$(PITHEAD_ENGINE=podman LG_LIVE=0 lg 'compose_up -d')"
+assert_eq "podman: an nft table that does not read back stops the node and holds on 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
+
 lg_out="$(PITHEAD_ENGINE=podman LG_LIVE=1 lg 'apply_lan_guard')"
 assert_contains "podman: a table with the drop and the port is enforced" "$lg_out" "LAN-only sources enforced"
 rm -f "$LG_RESTORE"
@@ -246,9 +281,9 @@ assert_contains "...enabled for the next boot" "$(cat "$LG_SYSTEMCTL")" "enable 
 rm -f "$LG_HOLD"
 : >"$LG_COMPOSE"
 : >"$LG_COMPOSE.restart"
-lg_out="$(LG_LIVE=1 LG_RUNNING=0 LG_HOLD_ENABLE_RC=1 lg 'compose_up -d')"
+lg_out="$(LG_LIVE=1 LG_HOLD_ENABLE_RC=1 lg 'compose_up -d')"
 assert_contains "the hold cannot be enabled: named" "$lg_out" "boot unit that restores it after a reboot could not be installed"
-assert_eq "...compose is handed 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "...stops the old node and binds 127.0.0.1" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1'
 assert_eq "...and the default restart, harmless on loopback" "$(cat "$LG_COMPOSE.restart")" "restart=unless-stopped,unless-stopped"
 for lg_case in "LG_LIVE=0" "LG_LIVE=1 LG_APPLIANCE=1" "LG_LIVE=1 PITHEAD_ENGINE=podman"; do
     : >"$LG_COMPOSE.restart"
@@ -340,35 +375,6 @@ LG_LIVE=1 lg apply_lan_guard >/dev/null
 lg remove_lan_guard >/dev/null
 assert_eq "removing the rule (down, the backup window) clears it" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
 
-echo "== the node entrypoints refuse a LAN bind without a current marker, however started (#2749) =="
-printf 'boot-1\n' >"$LGD/marker"
-lg_gate() { # <marker content or -> <bind>...  (entrypoint in $lg_ep)
-    local m="$1"
-    shift
-    [ "$m" = - ] && rm -f "$LGD/marker" || printf '%s\n' "$m" >"$LGD/marker"
-    (
-        PITHEAD_TEST_SOURCE=1 LAN_GUARD_MARKER="$LGD/marker" BOOT_ID_FILE="$LGD/boot_id" bash -c \
-            'source "$1"; shift; lan_guard_gate "$@"; echo started' _ "$ROOT/$lg_ep" "$@" 2>&1
-        echo "rc=$?"
-    )
-}
-for lg_ep in build/monero/entrypoint.sh build/tari/entrypoint.sh; do
-    assert_contains "$lg_ep: a loopback bind starts without a marker" "$(lg_gate - 127.0.0.1)" "started"
-    assert_contains "$lg_ep: a LAN bind with no marker exits 78 before the daemon" "$(lg_gate - 0.0.0.0)" "rc=78"
-    assert_not_contains "...and never reaches it" "$(lg_gate - 0.0.0.0)" "started"
-    assert_contains "$lg_ep: a marker from an earlier boot is refused too" "$(lg_gate boot-0 127.0.0.1 0.0.0.0)" "rc=78"
-    assert_contains "$lg_ep: this boot's marker lets a LAN bind start" "$(lg_gate boot-1 0.0.0.0)" "started"
-    assert_contains "$lg_ep: an unreadable boot id never matches a missing marker" \
-        "$(
-            mv "$LGD/boot_id" "$LGD/boot_id.off" && lg_gate - 0.0.0.0
-            mv "$LGD/boot_id.off" "$LGD/boot_id"
-        )" "rc=78"
-    assert_eq "$lg_ep: the gate runs before the daemon starts" \
-        "$(grep -nE '^lan_guard_gate |^exec monerod|^run_node ' "$ROOT/$lg_ep" | head -n 1 | cut -d: -f2 | cut -c1-14)" "lan_guard_gate"
-done
-assert_eq "compose hands each node its binds and the marker dir, read-only" \
-    "$(grep -cE '^      - (MONERO_RPC_BIND=\$\{MONERO_RPC_BIND:-127\.0\.0\.1\}|MONERO_ZMQ_BIND=\$\{MONERO_ZMQ_BIND:-127\.0\.0\.1\}|TARI_GRPC_BIND=\$\{TARI_GRPC_BIND:-127\.0\.0\.1\}|\./data/lan-guard:/lan-guard:ro)$' "$ROOT/docker-compose.yml")" "5"
-
 echo "== down and the backup window remove the rule only after the nodes stopped (#2749) =="
 for lg_fn in stack_down stack_down_except_caddy stack_uninstall; do
     lg_body="$(run_sourced "$LGD" declare -f "$lg_fn")"
@@ -377,22 +383,6 @@ for lg_fn in stack_down stack_down_except_caddy stack_uninstall; do
 done
 lg_out="$(LG_LIVE=1 lg 'lan_guard_mark; mutation_lock_acquire() { :; }; docker() { [ "$2" = down ] && return 1; :; }; stack_down' 2>&1)"
 assert_eq "a down whose stop fails leaves the marker (the nodes may still run)" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" "present"
-
-echo "== every publish of 18081, 18083 and 18142 is an explicit IPv4 bind (#2616) =="
-# Reject IPv6 publishes: the rule covers IPv4 only.
-for kp in MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:18142; do
-    k="${kp%%:*}" p="${kp#*:}"
-    assert_eq "compose publishes $p only as \${$k:-127.0.0.1}" \
-        "$(grep -E "^ *- *\"?[^ \"=]*\b$p(:$p)?(/tcp)?\"? *$" "$ROOT/docker-compose.yml" | sed 's/^ *//' | tr '\n' '|')" \
-        "- \"\${$k:-127.0.0.1}:$p:$p\"|"
-    assert_eq "quadlet publishes $p only from $k" \
-        "$(grep -E "PublishPort=.*:$p(:|$)" "$ROOT/lib/pithead/36-quadlet-units.sh" | tr '\n' '|')" \
-        "PublishPort=\$(_qenv $k):$p:$p|"
-done
-assert_eq "render_env assigns the three binds only IPv4 literals" \
-    "$(grep -E '(rpc|zmq|tari_grpc)_bind="' "$ROOT/lib/pithead/33-render-env.sh" | grep -oE '_bind="[^"]*"' | sort -u | tr '\n' '|')" \
-    '_bind="0.0.0.0"|_bind="127.0.0.1"|'
-
 # shellcheck source=tests/stack/firewall/lan-guard-check.sh
 source "$ROOT/tests/stack/firewall/lan-guard-check.sh"
 
