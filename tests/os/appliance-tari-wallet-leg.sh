@@ -19,7 +19,9 @@ _tari_wallet_state() {
 
 # Query the pinned wallet through the dashboard's existing gRPC client. Never print the address.
 _tari_wallet_snapshot() {
-    _ssh "podman exec dashboard python -c 'import hashlib, grpc; from mining_dashboard.client.tari.generated import types_pb2, wallet_pb2, wallet_pb2_grpc; channel=grpc.insecure_channel(\"127.0.0.1:18143\"); wallet=wallet_pb2_grpc.WalletStub(channel); version=wallet.GetVersion(wallet_pb2.GetVersionRequest(), timeout=10).version; address=wallet.GetCompleteAddress(types_pb2.Empty(), timeout=10).one_sided_address_base58; state=wallet.GetState(wallet_pb2.GetStateRequest(), timeout=10); print(version, hashlib.sha256(address.encode()).hexdigest(), state.scanned_height, state.balance.available_balance)'" 2>/dev/null | tr -d '\r'
+    local snapshot
+    snapshot=$(_ssh "podman exec dashboard python -c 'import hashlib, grpc, sys; from mining_dashboard.client.tari.generated import types_pb2, wallet_pb2, wallet_pb2_grpc; channel=grpc.insecure_channel(\"127.0.0.1:18143\"); wallet=wallet_pb2_grpc.WalletStub(channel); version=wallet.GetVersion(wallet_pb2.GetVersionRequest(), timeout=10).version; address=wallet.GetCompleteAddress(types_pb2.Empty(), timeout=10).one_sided_address_base58; address or sys.exit(\"wallet address unavailable\"); state=wallet.GetState(wallet_pb2.GetStateRequest(), timeout=10); print(version, hashlib.sha256(address.encode()).hexdigest(), state.scanned_height, state.balance.available_balance)'" 2>/dev/null) || return 1
+    printf '%s\n' "${snapshot//$'\r'/}"
 }
 
 tari_wallet_image_is_pinned() { # <image-name> <image-digest> <pinned-ref>
@@ -45,7 +47,7 @@ tari_wallet_stop_ok() { # <stop-rc> <elapsed-s> <running>
 }
 
 phase_provision_tari_wallet() { # <phase-rc>
-    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running dispositions before after version identity height balance after_version after_identity after_height after_balance image_name image_digest expected_image db_before db_after log_status
+    local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running dispositions before after version identity height balance after_version after_identity after_height after_balance image_name image_digest expected_image db_before db_after log_status snapshot_rc
     [ "${1:-0}" -eq 0 ] || unexercised=info
     info "phase: the view-only Tari payout wallet under podman quadlets (#462/#2731)"
     if ! SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh true 2>/dev/null; then
@@ -139,8 +141,9 @@ mv config.json.tari-wallet-test config.json
         bad "Tari wallet: running image differs from the pinned v6.0.1-pre.0 image"
     fi
     before=$(_tari_wallet_snapshot)
+    snapshot_rc=$?
     read -r version identity height balance <<<"$before"
-    if [ -n "$identity" ] && [[ "$version" = *6.0.1-pre.0* ]] && [[ "$height" =~ ^[0-9]+$ ]] && [[ "$balance" =~ ^[0-9]+$ ]]; then
+    if [ "$snapshot_rc" -eq 0 ] && [ -n "$identity" ] && [[ "$version" = *6.0.1-pre.0* ]] && [[ "$height" =~ ^[0-9]+$ ]] && [[ "$balance" =~ ^[0-9]+$ ]]; then
         ok "Tari wallet: pinned wallet answers address and state RPCs before stop"
     else
         bad "Tari wallet: pinned wallet did not answer address and state RPCs before stop"
@@ -170,8 +173,9 @@ mv config.json.tari-wallet-test config.json
     done
     if [ "$health" = healthy ]; then ok "Tari wallet: the stopped wallet restarted healthy (#2899)"; else bad "Tari wallet: the stopped wallet did not restart healthy (#2899)"; fi
     after=$(_tari_wallet_snapshot)
+    snapshot_rc=$?
     read -r after_version after_identity after_height after_balance <<<"$after"
-    if [ -n "$identity" ] && [ "$after_version" = "$version" ] && [ "$after_identity" = "$identity" ] && [ "$after_balance" = "$balance" ] && [[ "$height" =~ ^[0-9]+$ ]] && [[ "$after_height" =~ ^[0-9]+$ ]] && [ "$after_height" -ge "$height" ]; then
+    if [ "$snapshot_rc" -eq 0 ] && [ -n "$identity" ] && [ "$after_version" = "$version" ] && [ "$after_identity" = "$identity" ] && [ "$after_balance" = "$balance" ] && [[ "$height" =~ ^[0-9]+$ ]] && [[ "$after_height" =~ ^[0-9]+$ ]] && [ "$after_height" -ge "$height" ]; then
         ok "Tari wallet: the restarted wallet preserved its public identity and reported state (#2899)"
     else
         bad "Tari wallet: the restarted wallet's identity or reported state changed or its RPC failed (#2899)"
@@ -202,6 +206,38 @@ _tari_wallet_self_test() {
     tari_wallet_image_is_pinned repo/wallet@sha256:good '' repo/wallet@sha256:good || f=$((f + 1))
     tari_wallet_image_is_pinned repo/wallet@sha256:good sha256:wrong repo/wallet@sha256:good && f=$((f + 1))
     tari_wallet_image_is_pinned wrong '' repo/wallet@sha256:good && f=$((f + 1))
+    (
+        _ssh() {
+            local code=${1#*python -c \'}
+            code=${code%\'}
+            python3 - "$code" <<'PY'
+import os, sys, types
+for name in ('mining_dashboard', 'mining_dashboard.client', 'mining_dashboard.client.tari'):
+    module = types.ModuleType(name)
+    module.__path__ = []
+    sys.modules[name] = module
+grpc = types.ModuleType('grpc')
+grpc.insecure_channel = lambda _: None
+sys.modules['grpc'] = grpc
+generated = types.ModuleType('mining_dashboard.client.tari.generated')
+generated.types_pb2 = types.SimpleNamespace(Empty=lambda: None)
+generated.wallet_pb2 = types.SimpleNamespace(GetVersionRequest=lambda: None, GetStateRequest=lambda: None)
+class Wallet:
+    def GetVersion(self, *args, **kwargs): return types.SimpleNamespace(version='6.0.1-pre.0')
+    def GetCompleteAddress(self, *args, **kwargs): return types.SimpleNamespace(one_sided_address_base58=os.environ['TARI_TEST_ADDRESS'])
+    def GetState(self, *args, **kwargs): return types.SimpleNamespace(scanned_height=1, balance=types.SimpleNamespace(available_balance=2))
+generated.wallet_pb2_grpc = types.SimpleNamespace(WalletStub=lambda _: Wallet())
+sys.modules[generated.__name__] = generated
+exec(sys.argv[1])
+PY
+        }
+        export TARI_TEST_ADDRESS=public-test-address
+        snapshot=$(_tari_wallet_snapshot) || exit 1
+        [[ "$snapshot" = '6.0.1-pre.0 1703fc6dc8c522dae6b309a8363e0c0ddd56559a543b3a7f7a6f83747b8ce2ed 1 2' ]] || exit 1
+        export TARI_TEST_ADDRESS=''
+        _tari_wallet_snapshot >/dev/null 2>&1 && exit 1
+        exit 0
+    ) || f=$((f + 1))
     (
         _ssh() { return 255; }
         tari_wallet_integrity_log_status
