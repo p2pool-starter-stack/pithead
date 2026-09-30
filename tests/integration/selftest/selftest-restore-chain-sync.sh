@@ -8,7 +8,7 @@ python3 "$HERE/test_restore_chain_sync.py"
 source "$HERE/../lib/restore-chain-sync.sh"
 RESTORE_DIR=/fixture
 ok() { :; }
-warn() { :; }
+warn() { printf '%s\n' "$*"; }
 poll_case() (
     local scenario=$1 now=0
     date() { echo "$now"; }
@@ -16,13 +16,25 @@ poll_case() (
     on_bench() {
         cat >/dev/null
         case "$scenario" in
-        good) echo 'Monero authenticated synchronized=true; Tari direct initial_sync_achieved=true' ;;
-        failed)
-            echo 'Monero authenticated synchronized=true; Tari direct initial_sync_achieved=true'
-            return 1
-            ;;
-        missing) echo 'rpc-ok' ;;
-        late) return 1 ;;
+            good) echo 'Monero authenticated synchronized=true; Tari direct initial_sync_achieved=true' ;;
+            failed)
+                echo 'Monero authenticated synchronized=true; Tari direct initial_sync_achieved=true'
+                return 1
+                ;;
+            environment | monero-rpc | monero-sync | tari-command | tari-sync)
+                echo "independent daemon sync not proved: $scenario"
+                return 1
+                ;;
+            multiline)
+                printf 'independent daemon sync not proved: tari-command\nprivate-endpoint fixture-password\n'
+                return 1
+                ;;
+            private)
+                echo 'independent daemon sync not proved: private-endpoint fixture-password'
+                return 1
+                ;;
+            missing) echo 'rpc-ok' ;;
+            late) return 1 ;;
         esac
     }
     verify_chain_sync_proof
@@ -33,6 +45,15 @@ for scenario in failed missing late; do
         echo "unexpected restoration sync PASS: $scenario" >&2
         exit 1
     fi
+done
+for scenario in environment monero-rpc monero-sync tari-command tari-sync private multiline; do
+    if out=$(poll_case "$scenario"); then
+        echo 'diagnostic output passed without sync' >&2
+        exit 1
+    fi
+    case "$scenario" in private | multiline) expected=unavailable ;; *) expected=$scenario ;; esac
+    [[ "$out" == *"(stage: $expected)" ]] || exit 1
+    [[ "$out" != *private-endpoint* && "$out" != *fixture-password* ]] || exit 1
 done
 # Missing mandatory payload must not become a successful command with no assertions.
 if (

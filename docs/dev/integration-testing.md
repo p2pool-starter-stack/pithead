@@ -450,7 +450,9 @@ via an `EXIT` trap):
    600 seconds for authenticated Monero `status == OK` and `synchronized == true`, plus direct
    Tari `GetTipInfo.initial_sync_achieved == true`. It records both predicates without endpoints
    or credentials; unavailable RPC, missing credentials, missing fields and timeouts refuse
-   restoration proof. The source-side probe is streamed to the restored install, so its older
+   restoration proof. A timeout records only the fixed environment, Monero RPC, Monero sync,
+   Tari command or Tari sync stage; exception details and unexpected output are discarded.
+   The source-side probe is streamed to the restored install, so its older
    CLI cannot omit the assertions. An e2e run once left the containers on
    harness-rendered creds while the on-disk `.env` kept the real ones: internally consistent, so
    the stack mined and looked healthy for a day while every host-side RPC probe 401ed. A failed

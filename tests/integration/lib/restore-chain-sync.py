@@ -16,7 +16,12 @@ print(json.dumps({'initial_sync_achieved': tip.initial_sync_achieved}))
 """
 
 
+STAGE = "environment"
+
+
 def probe(env_path=Path(".env")):
+    global STAGE
+    STAGE = "environment"
     env = dict(
         line.split("=", 1)
         for line in env_path.read_text().splitlines()
@@ -33,13 +38,16 @@ def probe(env_path=Path(".env")):
     url = env.get("MONERO_RPC_URL")
     if not url:
         return False
+    STAGE = "monero-rpc"
     credentials = urllib.request.HTTPPasswordMgrWithDefaultRealm()
     credentials.add_password(None, url, user, password)
     opener = urllib.request.build_opener(urllib.request.HTTPDigestAuthHandler(credentials))
     with opener.open(url.rstrip("/") + "/get_info", timeout=8) as response:
         monero = json.load(response)
+    STAGE = "monero-sync"
     if monero.get("status") != "OK" or monero.get("synchronized") is not True:
         return False
+    STAGE = "tari-command"
     docker = shutil.which("docker")
     if not docker:
         return False
@@ -51,6 +59,7 @@ def probe(env_path=Path(".env")):
         timeout=12,
         check=True,
     )
+    STAGE = "tari-sync"
     return json.loads(result.stdout).get("initial_sync_achieved") is True
 
 
@@ -63,5 +72,5 @@ if __name__ == "__main__":
     if synced:
         print("Monero authenticated synchronized=true; Tari direct initial_sync_achieved=true")
     else:
-        print("independent daemon sync not proved")
+        print("independent daemon sync not proved: " + STAGE)
     raise SystemExit(0 if synced else 1)

@@ -59,6 +59,15 @@ class DaemonProof(unittest.TestCase):
                 )
             return result
 
+    def test_fixed_failure_stage_distinguishes_daemon_predicates(self):
+        self.assertFalse(self.run_probe(monero={"status": "OK", "synchronized": False}))
+        self.assertEqual(module.STAGE, "monero-sync")
+        self.assertFalse(self.run_probe(tari={"initial_sync_achieved": False}))
+        self.assertEqual(module.STAGE, "tari-sync")
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.run_probe(error=subprocess.TimeoutExpired("private-endpoint", 12))
+        self.assertEqual(module.STAGE, "tari-command")
+
     def test_independent_authenticated_sync(self):
         self.assertTrue(self.run_probe())
 
@@ -103,6 +112,7 @@ class DaemonProof(unittest.TestCase):
                 )
                 self.assertFalse(module.probe(self.env))
                 build.assert_not_called()
+                self.assertEqual(module.STAGE, "environment")
                 self.env.read_text.return_value = before
 
     def test_failed_or_timed_out_tari_cannot_pass(self):
@@ -128,7 +138,7 @@ class DaemonProof(unittest.TestCase):
         ):
             exec(compile(code, str(SOURCE), "exec"), {"__name__": "__main__"})  # noqa: S102 -- checked-in entrypoint
         self.assertEqual(raised.exception.code, 1)
-        self.assertEqual(out.getvalue(), "independent daemon sync not proved\n")
+        self.assertEqual(out.getvalue(), "independent daemon sync not proved: monero-rpc\n")
 
     def test_direct_tari_probe_checks_the_daemon_field(self):
         for synced in (False, True):
