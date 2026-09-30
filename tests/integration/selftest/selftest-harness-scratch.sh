@@ -79,6 +79,8 @@ assert_main_refuses() {
     assert_contains "real main records rejected scratch for $1" "$(cat "$WORK/main.log")" \
         "runner scratch usable in target rx shell"
     assert_eq "$1 stops before preflight" "$(test ! -e "$PREFLIGHT_RESULT" && echo yes)" yes
+    assert_eq "$1 leaves no rx scratch probe" \
+        "$(compgen -G "$IT_SCRATCH_DIR/rx-scratch.*" || :)" ""
 }
 for STAT_CASE in both-error scratch-error parent-error scratch-error-output parent-error-output empty mismatch; do
     export STAT_CASE
