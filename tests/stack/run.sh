@@ -13,6 +13,8 @@ assert_rc "control audit precedes result" "$?" "0"
 _d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran test-harness-tooling.sh "$_d0" "$?" || domain_ran test-harness-tooling.sh "$_d0" "$?"
 # shellcheck source=tests/stack/doctor/test-doctor.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor.sh" && domain_ran test-doctor.sh "$_d0" "$?" || domain_ran test-doctor.sh "$_d0" "$?"
+# shellcheck source=tests/stack/doctor/test-doctor-wallet.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-wallet.sh" && domain_ran test-doctor-wallet.sh "$_d0" "$?" || domain_ran test-doctor-wallet.sh "$_d0" "$?"
 # shellcheck source=tests/stack/doctor/test-doctor-onions.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-onions.sh" && domain_ran test-doctor-onions.sh "$_d0" "$?" || domain_ran test-doctor-onions.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-upgrade.sh disable=SC2015

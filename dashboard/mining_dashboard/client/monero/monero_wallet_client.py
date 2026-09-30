@@ -86,13 +86,16 @@ class MoneroWalletClient:
         return result
 
     def get_confirmed_payouts(self, min_height=0):
+        return self.scan(min_height)[0]
+
+    def scan(self, min_height=0):
         """Return confirmed incoming transfers at or above ``min_height`` as normalized dicts.
 
         Seeds ``min_height`` from the highest payout already stored so a restart re-fetches only
         the tip (and idempotent storage drops the overlap) rather than replaying history. Each row
         is ``{"txid", "height", "ts", "amount_atomic", "amount_xmr"}``; the caller records atomic
-        and converts to XMR only at the display edge. Returns ``[]`` when the wallet is still
-        scanning, unreachable, or has no transfers — never raises.
+        and converts to XMR only at the display edge. Returns ``(transfers, answered)``:
+        an empty successful scan has ``answered=True``; an RPC failure has ``answered=False``.
 
         ``coinbase: true`` includes the P2Pool coinbase payouts (each miner's PPLNS share is paid
         directly in a Monero block's coinbase). ``filter_by_height`` + ``min_height`` bound the
@@ -109,7 +112,7 @@ class MoneroWalletClient:
             },
         )
         if result is None:
-            return []
+            return [], False
         payouts = []
         # `in` is the wallet's word for its own payload shape, and the same "never raises" promise
         # covers it. A non-list `in` was iterated anyway — a dict yields its KEYS, a string its
@@ -121,7 +124,7 @@ class MoneroWalletClient:
             logger.warning(
                 f"wallet-rpc get_transfers sent a {type(rows).__name__} 'in', not a list"
             )
-            return []
+            return [], False
         for t in rows:
             if not isinstance(t, dict):
                 continue  # a non-object transfer is unusable — the same skip as the two below
@@ -150,4 +153,9 @@ class MoneroWalletClient:
                     "amount_xmr": amount_atomic / ATOMIC_PER_XMR,
                 }
             )
-        return payouts
+        return payouts, True
+
+    def payout_addresses(self):
+        """Return the wallet's own address, or None when RPC did not answer."""
+        result = self._rpc("get_address")
+        return [result["address"]] if result and result.get("address") else None

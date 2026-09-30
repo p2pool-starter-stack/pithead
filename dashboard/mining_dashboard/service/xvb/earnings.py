@@ -109,7 +109,9 @@ def previous_local_day(now):
     return start, today
 
 
-def confirmed_payouts_summary(payouts, now=None, divisor=ATOMIC_PER_XMR, unit="xmr"):
+def confirmed_payouts_summary(
+    payouts, now=None, divisor=ATOMIC_PER_XMR, unit="xmr", wallet_status=None
+):
     """Roll confirmed on-chain payouts into running totals + a count (#381/#462/#787).
 
     ``payouts`` is the stored-payout list (``storage.get_payouts(chain)``): each carries ``ts``
@@ -170,4 +172,5 @@ def confirmed_payouts_summary(payouts, now=None, divisor=ATOMIC_PER_XMR, unit="x
     }
     summary.update({f"{unit}_{w}": v / divisor for w, v in atomic.items()})
     summary["n_30d"] = n_30d
+    summary.update(wallet_status or {"reachable": None})
     return summary

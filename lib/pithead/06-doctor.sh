@@ -329,6 +329,7 @@ doctor() {
         check_dashboard_public_listener
         check_monerod_synchronized
         check_monero_chain
+        check_tari_wallet_address
         check_tari_chain
     fi
 

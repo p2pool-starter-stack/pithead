@@ -149,6 +149,11 @@ class DataSetupMixin:
         self.tari_health = NodeHealthMonitor()
         # Isolated / stalled monerod (#2499): the peers-and-tip verdict for the card, doctor, alerts.
         self.monero_chain = MoneroChainHealth()
+        # A configured payout wallet that never answered is still a failure after the debounce.
+        self.monero_wallet_health = NodeHealthMonitor(ever_up=True)
+        self.tari_wallet_health = NodeHealthMonitor(ever_up=True)
+        self.monero_wallet_scan_answered = None
+        self.tari_wallet_scan_answered = None
         # Peer-loss staleness (#972): the same debounce machine, fed monerod's own
         # `synchronized` flag instead of reachability. "Ever synchronized" plays the ever-up
         # guard, so a node mid-initial-sync (synchronized false for days) never alarms; only a

@@ -192,6 +192,10 @@ block and set it to `false` — any event you don't list stays on:
 
 Run `./pithead apply` after editing.
 
+When payout confirmation is enabled, `payout_wallet_down` sends one debounced alert per wallet
+that becomes unreachable or reports a different address. It is sent whenever an alert sink is
+enabled; there is no separate event toggle for this payout-safety signal.
+
 > The dashboard also shows an **AVX2-missing** badge when the CPU lacks AVX2, but it has **no
 > alert** — it's a fixed hardware fact with nothing to do at runtime, so it stays a badge (and shows
 > in `/status`) rather than a push you can't act on.

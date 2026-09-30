@@ -3,9 +3,8 @@
 Split out of ``data_service`` for a budget reason that is also a design one. ``data_service.py``
 sits one line under its recorded ceiling, so the per-step ``try``/``except`` #1644 needs did not
 fit inline; and these two steps are the only ones in the poll body proven independent enough to
-isolate, which makes them a coherent thing to own rather than an arbitrary slice. The bodies below
-are a pure move: byte-identical to their originals except that each now takes its collaborators as
-arguments instead of reading them off ``self``.
+isolate, which makes them a coherent thing to own rather than an arbitrary slice. Each step now
+returns whether its wallet answered, for the faster wallet-health probe.
 
 **What #1644 is about.** ``DataService.run()``'s poll body is 33 awaited steps under a single
 ``except Exception``, so any one of them raising skips every step below it for that poll. A
@@ -24,8 +23,13 @@ because it looks like the work is done.
 
 import asyncio
 import logging
+import time
+
+from mining_dashboard.config.config import MONERO_WALLET_ADDRESS, TARI_WALLET_ADDRESS
 
 logger = logging.getLogger("DataService")
+
+DOWN_ALERT_ATTEMPTS = 3
 
 
 async def run_isolated(label, step):
@@ -51,13 +55,13 @@ async def sync_monero(state_manager, wallet_client, alert_service):
     Seeds the query from the highest stored Monero payout height, so a restart re-scans only
     the tip; ``add_payouts`` is idempotent on ``(chain, txid)``, so the overlap is dropped and
     nothing replays. Every genuinely-new confirmed payout fires exactly one ``payout_confirmed``
-    alert. A wallet still doing its first-run scan (or briefly unreachable) returns ``[]`` — a
-    quiet no-op, no error. chain="monero" here; the Tari sibling (#462) reuses the same table."""
+    alert. Returns whether the wallet RPC answered; an empty scan returns true and an RPC
+    failure false. chain="monero" here; the Tari sibling (#462) reuses the same table."""
     chain = "monero"
     min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain)
-    payouts = await asyncio.to_thread(wallet_client.get_confirmed_payouts, min_height)
-    if not payouts:
-        return
+    payouts, answered = await asyncio.to_thread(wallet_client.scan, min_height)
+    if not answered or not payouts:
+        return answered
     new_rows = await asyncio.to_thread(state_manager.add_payouts, chain, payouts)
     for r in new_rows:
         logger.info(
@@ -67,6 +71,7 @@ async def sync_monero(state_manager, wallet_client, alert_service):
             r["height"],
         )
         await alert_service.payout_confirmed_alert(chain, r["amount_atomic"], r["txid"])
+    return answered
 
 
 async def sync_tari(state_manager, tari_wallet_client, alert_service):
@@ -78,12 +83,12 @@ async def sync_tari(state_manager, tari_wallet_client, alert_service):
     ``(chain, txid)`` so a restart replays nothing), and fire one ``payout_confirmed`` alert per
     genuinely-new payout. ``amount_atomic`` is microTari here; the shared alert divides by the
     Tari divisor. The Tari client is async (grpc.aio), so it's awaited directly rather than via
-    ``asyncio.to_thread``. An empty/unreachable scan is a quiet no-op."""
+    ``asyncio.to_thread``. Returns true for an empty answer and false for a failed RPC."""
     chain = "tari"
     min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain)
-    payouts = await tari_wallet_client.get_confirmed_payouts(min_height)
-    if not payouts:
-        return
+    payouts, answered = await tari_wallet_client.scan(min_height)
+    if not answered or not payouts:
+        return answered
     new_rows = await asyncio.to_thread(state_manager.add_payouts, chain, payouts)
     for r in new_rows:
         logger.info(
@@ -93,3 +98,86 @@ async def sync_tari(state_manager, tari_wallet_client, alert_service):
             r["height"],
         )
         await alert_service.payout_confirmed_alert(chain, r["amount_atomic"], r["txid"])
+    return answered
+
+
+async def observe_wallet(
+    chain, client, monitor, expected, previous, alert_service, scan_answered=None
+):
+    """Probe each cycle; payout scans remain on their slower cadence."""
+    if chain == "tari":
+        addresses, match = await client.payout_addresses(expected)
+    else:
+        addresses = await asyncio.to_thread(client.payout_addresses)
+        match = expected in addresses if addresses is not None else None
+    reachable = addresses is not None and scan_answered is not False
+    bad = not reachable or not match
+    was_down = monitor.down
+    monitor.update(not bad)
+    since = (previous or {}).get("since") if bad or monitor.down else None
+    if bad and since is None:
+        since = time.time()
+    # A sender that raises must not lose this status or the down edge: retry the edge on the
+    # next cycles while the failure persists, up to DOWN_ALERT_ATTEMPTS sends in all.
+    failures = (previous or {}).get("down_alert_failures", 0) if monitor.down else 0
+    if bad and monitor.down and (not was_down or 0 < failures < DOWN_ALERT_ATTEMPTS):
+        reason = (
+            "unreachable" if not reachable else "address differs from configured payout address"
+        )
+        try:
+            await alert_service.payout_wallet_down_alert(chain, reason)
+            failures = 0
+        except Exception as e:  # noqa: BLE001 — a sender fault must not discard the status
+            failures += 1
+            logger.error(
+                "%s payout wallet down alert failed (attempt %d of %d): %s",
+                chain,
+                failures,
+                DOWN_ALERT_ATTEMPTS,
+                e,
+            )
+    return {
+        "reachable": reachable,
+        "down": monitor.down,
+        "since": since,
+        "address_match": match,
+        "configured_address": expected if match is False else None,
+        "wallet_address": addresses[0] if match is False else None,
+        "down_alert_failures": failures,
+    }
+
+
+async def observe_enabled_wallets(service):
+    """Fast wallet checks run every data cycle, separately from the five-minute payout scan."""
+    health = service.latest_data.setdefault("payout_wallet", {})
+    for chain, client, monitor, expected, scan_answered in (
+        (
+            "monero",
+            service.wallet_client,
+            service.monero_wallet_health,
+            MONERO_WALLET_ADDRESS,
+            service.monero_wallet_scan_answered,
+        ),
+        (
+            "tari",
+            service.tari_wallet_client,
+            service.tari_wallet_health,
+            TARI_WALLET_ADDRESS,
+            service.tari_wallet_scan_answered,
+        ),
+    ):
+        if client is None:
+            health.pop(chain, None)
+            continue
+        try:
+            health[chain] = await observe_wallet(
+                chain,
+                client,
+                monitor,
+                expected,
+                health.get(chain),
+                service.alert_service,
+                scan_answered,
+            )
+        except Exception as e:  # noqa: BLE001 — one wallet must not skip the other or the poll
+            logger.error("%s payout wallet probe failed: %s", chain, e)

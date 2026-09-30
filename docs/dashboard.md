@@ -821,8 +821,20 @@ The dashboard polls the wallet on a slow cadence (about every 5 minutes) and rec
 payout to a small local table, so a restart never re-alerts. Coinbase outputs become spendable only
 after 60 blocks; a payout is recorded and announced when it's **confirmed in a block**, not when it
 matures — once, never twice. A pruned node confirms payouts fine (coinbase outputs are never pruned). If the
-wallet is still doing its first scan or is briefly unreachable, the confirmed figure stays put
-rather than erroring.
+wallet is still doing its first scan or is briefly unreachable, the confirmed totals stay put.
+The card checks each enabled payout wallet every dashboard cycle and remembers whether its slower
+payout scan answered. A wallet whose address probe or payout scan stops answering turns the card red
+after the node-down debounce (`NODE_DOWN_AFTER_SEC`, default 90 seconds),
+with the time it became unreachable; an empty answered scan leaves the card normal. The outage
+time stays visible until answers remain healthy through `NODE_RECOVERY_AFTER_SEC` (default 60
+seconds). A wallet whose own address differs from the configured payout address shows both
+addresses and a red warning.
+Each enabled wallet emits one debounced `payout_wallet_down` alert per outage when alert delivery
+is configured. If sending that alert raises an error, the card still turns red and the dashboard
+retries the alert on the next checks while the failure persists, up to three attempts per outage.
+Healthy answers during the recovery debounce do not retry the down alert. This alert has no
+event-specific opt-out. The Tari container's bounded first-scan
+health grace does not delay the card or alert.
 
 > **The view key is a secret. Treat it like a password.** A view key **cannot spend** — it can only
 > scan — but it reveals every incoming payout amount and its timing to anyone who can read it. The
