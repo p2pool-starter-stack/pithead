@@ -175,7 +175,6 @@ case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targe
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)
 # NOTE (testbench README): avoid literal shell parens '()' in remote command strings — they break the
 # non-interactive remote shell. jq filters (quoted) are fine; shell subshells are not.
-on_bench() { parent_lock_on_bench "$BENCH_HOST" "$1"; }
 on_miner() { ssh "${SSH_OPTS[@]}" "$MINER_HOST" "$1"; }
 # State captured for the restore trap.
 SAFETY_ARCHIVE=""
