@@ -883,9 +883,16 @@ assertion, `max_temp_c` and `watchdog_interval_min`, are on RigForge's restart-f
 the window is too small to see. The third, `DONATION`, is off that list and takes the full path —
 which is where the ninety-second bound comes from, and where a hardware run would have hit this.
 
-The row is now waited to a terminal status before it is read, on the same ninety-second bound the
-window itself has. Terminal rather than `applied`, which is what keeps the assertion honest in both
-directions: a rig that genuinely rejected a change publishes its terminal row at once, so the leg
+For scalar round trips, both the forward change and the revert retain their exact change ID and
+wait for that history row to become terminal, each with the existing ninety-second bound. A
+terminal refusal without a change ID returns immediately; a missing ID cannot confirm success.
+Config convergence alone never confirms a successful revert. The unwind entry is cleared only when both
+config readback and the revert history report `applied`; `failed` or `rolled_back` stays red and
+keeps the original value on the cleanup ledger. If the revert row is still `accepted` or absent
+at the deadline, the control phase captures artifacts, restores the stack baseline and stops
+before sending another key or control edit. The abort-safe unwind retains the rig cleanup duty.
+
+Waiting for terminal rather than `applied` keeps the assertion honest in both directions: a rig that genuinely rejected a change publishes its terminal row at once, so the leg
 reds on the real status instead of spending the whole bound on a verdict already known, and a row
 that never settles stays `accepted` and reds as well. The one answer the wait must never invent is
 `applied` for a row nobody has confirmed. Terminal is written as the complement of `accepted` and

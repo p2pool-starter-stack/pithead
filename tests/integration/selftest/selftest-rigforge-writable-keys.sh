@@ -192,7 +192,7 @@ echo "== _writable_key_round_trip: the probe and the revert are both real, well-
 STUB_DETAIL='{"rig_config":{"DONATION":1}}'
 reset_applies
 counts="$(quietly _writable_key_round_trip rig1 DONATION 0 1)"
-assert_eq "a clean round trip passes all four of its assertions" "$counts" "4,0"
+assert_eq "a clean round trip passes all five of its assertions" "$counts" "5,0"
 assert_eq "exactly two applies: the probe and the revert" "$(applies | grep -c .)" "2"
 assert_eq "the probe carries the probe value" "$(applies | sed -n 1p)" '{"DONATION":1}'
 assert_eq "the revert carries the ORIGINAL value" "$(applies | sed -n 2p)" '{"DONATION":0}'
@@ -204,7 +204,7 @@ echo "== _writable_key_round_trip: a history row still 'accepted' is NOT a pass 
 STUB_HISTORY='[{"change_id":"c-DONATION","status":"accepted"}]'
 reset_applies
 counts="$(quietly _writable_key_round_trip rig1 DONATION 0 1)"
-assert_eq "an unreconciled #185 row reds exactly one assertion" "$counts" "3,1"
+assert_eq "an unreconciled #185 row reds both forward and revert history assertions" "$counts" "3,2"
 STUB_HISTORY='[{"change_id":"c-DONATION","status":"applied"},
                {"change_id":"c-watchdog_interval_min","status":"applied"},
                {"change_id":"c-pools","status":"applied"}]'
@@ -219,7 +219,7 @@ reset_applies
 wait_for() { return 1; } # ...so every settle times out and every assert reds
 counts="$(quietly _writable_key_round_trip rig1 DONATION 0 1)"
 wait_for() { return 0; }
-assert_eq "a probe that never lands reds every assertion in the leg (0 passes)" "$counts" "0,4"
+assert_eq "a probe that never lands reds every assertion in the leg (0 passes)" "$counts" "0,5"
 assert_eq "the revert was still POSTed after the failures" "$(applies | sed -n 2p)" '{"DONATION":0}'
 STUB_HISTORY='[{"change_id":"c-DONATION","status":"applied"},
                {"change_id":"c-watchdog_interval_min","status":"applied"},
@@ -256,7 +256,7 @@ echo "== run_rigforge_writable_keys: an out-of-contract value FAILS, it does not
 STUB_DETAIL='{"rig_config":{"DONATION":0,"watchdog_interval_min":0}}'
 reset_applies
 counts="$(quietly run_rigforge_writable_keys rig1)"
-assert_eq "an interval outside 1-1440 reds, and only it (the DONATION leg is unaffected)" "$counts" "4,1"
+assert_eq "an interval outside 1-1440 reds, and only it (the DONATION leg is unaffected)" "$counts" "5,1"
 assert_eq "and no watchdog_interval_min apply was POSTed at all" \
     "$(applies | grep -c watchdog_interval_min)" "0"
 

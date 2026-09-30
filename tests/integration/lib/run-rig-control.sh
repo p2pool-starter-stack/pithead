@@ -28,9 +28,9 @@ _max_temp_round_trip() { # <rig> <orig-max_temp_c-or-empty>
         assert_eq "worker-apply recorded in the per-worker history (#185/#1471)" "$(_settle_history_row "$rig" "$change_id")" "applied"
         it_step "reverting max_temp_c $new_maxt -> ${orig_maxt}…"
         res="$(_worker_apply "$rig" "{\"max_temp_c\":$orig_maxt}")"
-        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
+        IFS='|' read -r status _ change_id <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
         assert_eq "reversible edit reverted on the rig (#513)" "$status" "applied"
-        [ "$status" = "applied" ] && rig_key_clear dash "$rig" max_temp_c # (#1379)
+        _finish_worker_revert "$rig" max_temp_c "$status" "$change_id" || return 1
     fi
 }
 
@@ -175,12 +175,15 @@ run_rigforge_control() {
     # leave the rig mis-tuned.
     local orig_maxt
     orig_maxt="$(printf '%s' "$st" | jq -r --arg n "$rig" 'first(.workers[]? | select(.name==$n) | .rigforge.stats[]? | select(.label=="Temp / max") | .value) // empty' 2>/dev/null | sed -n 's#.*/ *\([0-9][0-9]*\).*#\1#p')"
-    _max_temp_round_trip "$rig" "$orig_maxt"
 
     # Lives in rigforge-writable-keys.sh: the legs read each original from the rig's OWN reported
     # config (.rig_config, #1235/rigforge#253) rather than from a record of what we last pushed, and
     # the three keys not driven there carry their reasons with them.
-    run_rigforge_writable_keys "$rig"
+    if ! _max_temp_round_trip "$rig" "$orig_maxt" || ! run_rigforge_writable_keys "$rig"; then
+        capture_artifacts "rigforge-control" "$OUT_DIR"
+        _restore_rig_control_baseline
+        return 1
+    fi
     run_rigforge_pools "$rig"
 
     run_rigforge_reverse "$rig" "$orig_maxt"
