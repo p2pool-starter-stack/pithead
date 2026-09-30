@@ -67,7 +67,7 @@ check() { # <classification> <HTTP> <curl-exit> <body> [safe-status]
         [ "${#diag}" -lt 300 ] || it_fail 'diagnostic is bounded' 'too long'
     fi
 }
-echo '== direct rig POST classifications and constrained response fields =='
+echo "== direct rig POST classifications and constrained response fields =="
 check success 202 0 '{"change_id":"0123456789abcdef","status":"accepted","error":"UNSAFE"}'
 check http-refusal 401 0 '{"change_id":"0123456789abcdef","error":"UNSAFE"}'
 check http-refusal 302 0 '<html>UNSAFE</html>'
