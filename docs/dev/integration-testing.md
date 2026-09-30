@@ -710,6 +710,8 @@ For one representative config:
   digests for each secret category, plus the rendered Monero address and kept Tor
   hostname. These distinguish a stale rendered address from changed keys or tokens;
   they contain no plaintext secrets and do not reset the matrix secret baseline.
+  An unreadable fingerprint or failed artifact write fails the round trip, including
+  either identity append after setup; the exact onion comparison still runs.
 
 > NOTE: `upgrade` (which rebuilds/pulls images) is intentionally not run unattended. It's slow
 > and changes the bundle under test. Validate it as part of the [release](releasing.md)

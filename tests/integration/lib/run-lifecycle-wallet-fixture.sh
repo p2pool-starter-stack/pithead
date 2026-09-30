@@ -132,12 +132,18 @@ record_uninstall_secrets() { # <before|after>
             it_fail "uninstall $stage onion diagnostics readable (#2951)" "kept hostname fingerprint failed"
             return 1
         fi
-        printf 'monero-hostname=%s\n' "$fp" >>"$artifact"
+        if ! printf 'monero-hostname=%s\n' "$fp" >>"$artifact"; then
+            it_fail "uninstall $stage secret diagnostics writable (#2951)" "monero-hostname artifact append failed"
+            return 1
+        fi
         fp="$(rx "v=\$(grep '^MONERO_ONION_ADDRESS=' .env | head -n1 | cut -d= -f2-); [ -n \"\$v\" ] && printf '%s\\n' \"\$v\" | sha256sum | cut -d' ' -f1")" || fp=""
         if [[ ! "$fp" =~ ^[0-9a-f]{64}$ ]]; then
             it_fail "uninstall $stage onion diagnostics readable (#2951)" "rendered address fingerprint failed"
             return 1
         fi
-        printf 'monero-env=%s\n' "$fp" >>"$artifact"
+        if ! printf 'monero-env=%s\n' "$fp" >>"$artifact"; then
+            it_fail "uninstall $stage secret diagnostics writable (#2951)" "monero-env artifact append failed"
+            return 1
+        fi
     fi
 }

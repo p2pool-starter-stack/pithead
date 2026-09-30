@@ -139,9 +139,24 @@ drive() { # <case> -> round-trip-rc|failures
             [ "$FAKE_CASE" != unreadable-secrets ] || return 1
             [ "$FAKE_CASE" != unreadable-after ] || [ ! -e "$B/.uninstalled" ] || return 1
             printf 'proxy=%064d\nonion-files=%064d\n' 1 2
+            if [ "$FAKE_CASE" = unwritable-hostname-after ] && [ -e "$B/.uninstalled" ]; then
+                chmod 400 "$B/uninstall-after.secrets.txt"
+            fi
         }
         [ "$1" != stale-onion-env ] || sed -i 's/abc.onion/old.onion/' "$B/.env"
         [ "$1" != missing-onion-file ] || rm "$B/data/tor/monero/hostname"
+        if [ "$1" = unwritable-env-after ]; then
+            eval "$(declare -f rx | sed '1s/rx/fixture_rx/')"
+            rx() {
+                local rc
+                fixture_rx "$@"
+                rc=$?
+                if [[ "$1" == *"v=\$(grep '^MONERO_ONION_ADDRESS='"* ]] && [ -e "$B/.uninstalled" ]; then
+                    chmod 400 "$B/uninstall-after.secrets.txt"
+                fi
+                return "$rc"
+            }
+        fi
         run_uninstall_round_trip >"$B/run.log"
         result=$?
         if [ "$1" = clean ] || [ "$1" = stale-onion-env ]; then
@@ -194,6 +209,8 @@ assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
 assert_eq "stale rendered onion is isolated without weakening identity assertion" "$(drive stale-onion-env)" "1|1"
 assert_eq "unreadable categories fail before uninstall" "$(drive unreadable-secrets)" "1|1"
 assert_eq "unreadable post-setup categories still fail the round trip" "$(drive unreadable-after)" "1|1"
+assert_eq "failed post-setup hostname artifact append fails the round trip" "$(drive unwritable-hostname-after)" "1|1"
+assert_eq "failed post-setup rendered-address artifact append fails the round trip" "$(drive unwritable-env-after)" "1|1"
 assert_eq "missing kept hostname fails before uninstall" "$(drive missing-onion-file)" "1|1"
 assert_eq "remote Tari mode skips wallet creation and still completes uninstall" "$(drive remote-tari)" "0|0"
 assert_eq "a preexisting owned wallet volume is reset, then Compose creates it" "$(drive owned-preexisting)" "0|0"
