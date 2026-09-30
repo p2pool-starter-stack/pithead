@@ -5,7 +5,6 @@ import importlib.util
 import io
 import json
 import subprocess
-import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -19,10 +18,8 @@ spec.loader.exec_module(module)
 
 class DaemonProof(unittest.TestCase):
     def setUp(self):
-        self.scratch = tempfile.TemporaryDirectory()
-        self.addCleanup(self.scratch.cleanup)
-        self.env = Path(self.scratch.name) / ".env"
-        self.env.write_text(
+        self.env = Mock(spec=Path)
+        self.env.read_text.return_value = (
             "MONERO_RPC_URL=http://fixture.invalid:18081\n"
             "MONERO_NODE_USERNAME=fixture-user\nMONERO_NODE_PASSWORD=changeme\n"
         )
@@ -67,7 +64,7 @@ class DaemonProof(unittest.TestCase):
 
     def test_rendered_quoted_credentials_are_decoded_without_evaluation(self):
         password = 'space " quote \\ dollar $$ and $(exit 1)'  # noqa: S105 -- synthetic parser fixture
-        self.env.write_text(
+        self.env.read_text.return_value = (
             "MONERO_RPC_URL=http://fixture.invalid:18081\nMONERO_NODE_USERNAME=fixture-user\n"
             + "MONERO_NODE_PASSWORD="
             + json.dumps(password.replace("$", "$$"))
@@ -101,14 +98,12 @@ class DaemonProof(unittest.TestCase):
                 patch.object(module.urllib.request, "build_opener") as build,
             ):
                 before = self.env.read_text()
-                self.env.write_text(
-                    "\n".join(
-                        line for line in before.splitlines() if not line.startswith(key + "=")
-                    )
+                self.env.read_text.return_value = "\n".join(
+                    line for line in before.splitlines() if not line.startswith(key + "=")
                 )
                 self.assertFalse(module.probe(self.env))
                 build.assert_not_called()
-                self.env.write_text(before)
+                self.env.read_text.return_value = before
 
     def test_failed_or_timed_out_tari_cannot_pass(self):
         for error in (
