@@ -19,6 +19,8 @@ compose_up_checked() {
     [ "$CASE" != no-recreate ] || return 0
     cp "$STATE/declared" "$STATE/live"
     printf recreated >"$STATE/cid"
+    # An unnamed original is no longer guaranteed to exist after its last container is removed.
+    [ -f "$STATE/pinned" ] || rm -f "$STATE/old-available"
 }
 CLI
 cat >"$td/bin/docker" <<'DOCKER'
@@ -37,8 +39,11 @@ case "$*" in
     [ "$CASE" != build-fails ] || exit 1
     grep -q '^FROM proxy:dev$' "${@: -1}/Dockerfile"
     echo new >"$STATE/declared" ;;
-'image tag old proxy:dev') echo old >"$STATE/declared" ;;
+'image tag old pithead-source-image-backup:'*) [ -f "$STATE/old-available" ] && touch "$STATE/pinned" ;;
+'image tag pithead-source-image-backup:'*' proxy:dev') [ -f "$STATE/pinned" ] && echo old >"$STATE/declared" ;;
 'image rm new') [ "$(cat "$STATE/live")" = old ] && touch "$STATE/removed" ;;
+'image rm pithead-source-image-backup:'*)
+    [ "$(cat "$STATE/live")" = old ] && rm "$STATE/pinned" && touch "$STATE/backup-removed" ;;
 *) printf 'unexpected Docker call: %s\n' "$*" >&2; exit 1 ;;
 esac
 DOCKER
@@ -50,6 +55,7 @@ for CASE in success no-recreate wrong-owner build-fails; do
     printf old >"$STATE/declared"
     printf old >"$STATE/live"
     printf original >"$STATE/cid"
+    touch "$STATE/old-available"
     rc=0
     (cd "$td/stack" && PATH="$td/bin:$PATH" TMPDIR="$td/scratch" bash "$td/probe.sh") >"$td/$CASE.log" 2>&1 || rc=$?
     [ "$(cat "$STATE/declared")" = old ] && [ "$(cat "$STATE/live")" = old ]
@@ -64,6 +70,7 @@ for CASE in success no-recreate wrong-owner build-fails; do
         ! grep -q 'source-image: guarded recreate matches declared image and Compose owner' "$td/$CASE.log"
     fi
     [ "$CASE" = build-fails ] || [ -f "$STATE/removed" ]
+    [ -f "$STATE/backup-removed" ] && [ ! -f "$STATE/pinned" ]
 done
 [ -z "$(ls -A "$td/scratch")" ]
 echo 'selftest-source-image: 4 cases passed (success, missing recreate, wrong owner, build failure)'

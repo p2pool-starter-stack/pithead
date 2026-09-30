@@ -13,19 +13,26 @@ source_image_reconcile_snippet() {
     [ "$(docker image inspect --format '{{.Id}}' "$ref")" = "$old_id" ]
     owner=$(pwd -P)
     fixture=$(mktemp -d "${TMPDIR:?runner must provide scratch storage}/pithead-source-image.XXXXXX")
+    backup_ref="pithead-source-image-backup:${fixture##*/}"
     new_id=""
     cleanup() {
         local rc=$?
         trap - EXIT
         # Even a failed assertion must put the declaration and live image back before later phases.
-        docker image tag "$old_id" "$ref" && reconcile_source_upgrade_images &&
-            [ "$(docker inspect --format '{{.Image}}' "$(docker compose ps -q xmrig-proxy)")" = "$old_id" ] &&
-            printf '%s\n' 'source-image: original image restored' || rc=1
+        if docker image tag "$backup_ref" "$ref" && reconcile_source_upgrade_images &&
+            [ "$(docker inspect --format '{{.Image}}' "$(docker compose ps -q xmrig-proxy)")" = "$old_id" ]; then
+            printf '%s\n' 'source-image: original image restored'
+            docker image rm "$backup_ref" >/dev/null || rc=1
+        else
+            rc=1
+        fi
         [ -z "$new_id" ] || docker image rm "$new_id" >/dev/null || rc=1
         rm -rf -- "$fixture"
         exit "$rc"
     }
     trap cleanup EXIT
+    # Keep the restore image named after the build replaces its tag and recreation removes its container.
+    docker image tag "$old_id" "$backup_ref"
     # A label-only build keeps the actual proxy binary/config while producing a distinct image ID.
     printf 'FROM %s\nLABEL pithead.test.source-image="%s"\n' "$ref" "${fixture##*/}" >"$fixture/Dockerfile"
     docker build --pull=false -q -t "$ref" "$fixture"

@@ -722,10 +722,12 @@ For one representative config:
   with the `missing` pull policy must
   then return healthy on the same chain files and the same Monero onion address.
 
-A source checkout also builds a label-only `xmrig-proxy` image while the old container stays
-running, then calls the upgrade image reconciler. The regression requires guarded recreation,
+A source checkout retains the original image under a temporary tag, builds a label-only
+`xmrig-proxy` image while the old container stays running, then calls the upgrade image
+reconciler. The regression requires guarded recreation,
 the declared immutable image ID and checkout Compose owner, and restoration of the original
-image before later phases. Redacted output is saved in `source-image-reconcile.log`. The outer
+image before later phases. Cleanup removes the fixture image and temporary tag after restoration.
+Redacted output is saved in `source-image-reconcile.log`. The outer
 restore still verifies every baseline image and Compose owner. The full `upgrade` command
 (which rebuilds all images) remains part of the [release](releasing.md) staging smoke test.
 
