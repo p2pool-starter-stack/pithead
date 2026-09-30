@@ -14,7 +14,8 @@ Mutation-kill notes:
     the "stops on first matching version" test asserts the call count stops short of the cap.
 """
 
-from datetime import UTC, datetime
+import asyncio
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -293,6 +294,42 @@ async def test_donation_refresh_does_not_publish_to_replaced_worker():
     )
     assert "rigforge" not in data["workers"][0]
     state.reconcile_worker_config_status.assert_not_called()
+
+
+@pytest.mark.parametrize("age_seconds", [0, 10])
+async def test_older_targeted_read_finishing_last_preserves_newer_report_and_reconciles_history(
+    age_seconds,
+):
+    now = datetime.now(UTC)
+    newer = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "config": {"DONATION": 0}}
+    older = {
+        "generated_at": (now - timedelta(seconds=age_seconds)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "rigforge": {
+            "config": {"DONATION": 1},
+            "control": {"change_id": "abc", "status": "applied"},
+        },
+    }
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class Client:
+        async def get_stats(self, ip, name):
+            started.set()
+            await release.wait()
+            return older
+
+    data = {"workers": [{"name": "rig1", "ip": "10.0.0.5"}]}
+    state = Mock()
+    task = asyncio.create_task(
+        worker_refresh.refresh_donation_after_apply(
+            data, state, "rig1", "abc", 1, worker_client=Client(), attempts=1, sleep=_fake_sleep
+        )
+    )
+    await started.wait()
+    data["workers"][0]["rigforge"] = newer
+    release.set()
+    assert await task is True
+    assert data["workers"][0]["rigforge"] is newer
+    state.reconcile_worker_config_status.assert_called_once_with("abc", "applied", None)
 
 
 def test_main_poll_cannot_overwrite_newer_targeted_report():

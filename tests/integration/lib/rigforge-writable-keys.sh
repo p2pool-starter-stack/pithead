@@ -79,8 +79,8 @@ _pred_donation_revert_sample() { # <rig> <want-json> <change-id>
     # A malformed producer field must not become arbitrary log text, including a credential.
     [[ "$dash" =~ ^[0-9]{1,3}$ ]] || dash=poll_failed
     [[ "$direct" =~ ^[0-9]{1,3}$ ]] || direct=poll_failed
-    [[ "$history" =~ ^[a-z_]{1,24}$ ]] || history=poll_failed
-    [[ "$direct_status" =~ ^[a-z_]{1,24}$ ]] || direct_status=poll_failed
+    case "$history" in applied | rejected | rolled_back | accepted | failed | noop | throttled) ;; *) history=poll_failed ;; esac
+    case "$direct_status" in pending | started | applied | rejected | rolled_back | failed | noop | throttled) ;; *) direct_status=poll_failed ;; esac
     [[ "$snapshot" =~ ^[0-9]{10}(\.[0-9]{1,9})?$ ]] || snapshot=poll_failed
     case "$status" in online | offline | down) ;; *) status=poll_failed ;; esac
     [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || stamp=poll_failed

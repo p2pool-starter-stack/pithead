@@ -120,7 +120,7 @@ async def refresh_donation_after_apply(
     delay_s=5.0,
     sleep=asyncio.sleep,
 ):
-    """Read one rig until its fresh report confirms this DONATION apply, then publish it."""
+    """Confirm this DONATION apply and reconcile history, retaining any superseding report."""
     entry = next((w for w in latest_data.get("workers", []) if w.get("name") == name), None)
     if not entry or not entry.get("ip") or not change_id:
         return False
@@ -152,7 +152,9 @@ async def refresh_donation_after_apply(
             )
             if current is None or current.get("ip") != entry["ip"]:
                 return False
-            current["rigforge"] = rf
+            refreshed = {**current, "rigforge": rf}
+            preserve_newer_reports([current], [refreshed])
+            current["rigforge"] = refreshed["rigforge"]
             await asyncio.to_thread(
                 state_mgr.reconcile_worker_config_status, change_id, "applied", ctrl["reason"]
             )

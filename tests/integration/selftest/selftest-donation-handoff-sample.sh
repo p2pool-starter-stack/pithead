@@ -15,11 +15,12 @@ _worker_detail() { printf '%s' "$STUB_DETAIL"; }
 RIG_HOST=example.test
 RIG_CONTROL_PORT=8082
 IT_RIG_TOKEN=fixture-secret-never-print
+STUB_OUTCOME='{"change_id":"0123456789abcdef","status":"applied"}'
 rx() {
     cat >/dev/null # consume curl -K stdin; the token must stay off argv and output
     case "$1" in
     *'/1/summary'*) printf '%s' '{"generated_at":"2026-09-29T17:05:15Z","rigforge":{"config":{"DONATION":0}}}' ;;
-    *status*change_id*) printf '%s' '{"change_id":"0123456789abcdef","status":"applied"}' ;;
+    *status*change_id*) printf '%s' "$STUB_OUTCOME" ;;
     esac
 }
 wait_for() {
@@ -59,6 +60,23 @@ if grep -q 'fixture-secret' "$log"; then
 else
     it_pass "untrusted fields cannot write arbitrary text to the sample"
 fi
+
+IT_RIG_TOKEN=fixturebearer
+STUB_DETAIL='{"history":[{"change_id":"0123456789abcdef","status":"fixturebearer"}]}'
+STUB_OUTCOME='{"change_id":"0123456789abcdef","status":"fixturebearer"}'
+_pred_donation_revert_sample rig1 0 0123456789abcdef 2>"$log"
+assert_eq "lowercase credential reflections are not status enums" \
+    "$(jq -r '[.history,.rig_status] | join(",")' "$log")" 'poll_failed,poll_failed'
+if grep -q "$IT_RIG_TOKEN" "$log"; then
+    it_fail "lowercase bearer cannot escape through reflected statuses" "credential escaped"
+else
+    it_pass "lowercase bearer cannot escape through reflected statuses"
+fi
+STUB_DETAIL='{"history":[{"change_id":"0123456789abcdef","status":"rolled_back"}]}'
+STUB_OUTCOME='{"change_id":"0123456789abcdef","status":"pending"}'
+_pred_donation_revert_sample rig1 0 0123456789abcdef 2>"$log"
+assert_eq "documented history and in-flight rig statuses remain visible" \
+    "$(jq -r '[.history,.rig_status] | join(",")' "$log")" 'rolled_back,pending'
 
 echo "selftest-donation-handoff-sample: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ]
