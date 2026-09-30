@@ -1,4 +1,12 @@
 # shellcheck shell=bash
+on_bench() {
+    local prefix=""
+    if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+        prefix="export IT_SCRATCH_DIR=$(quote_arg "$IT_SCRATCH_DIR"); export TMPDIR=\"\$IT_SCRATCH_DIR\"; "
+    fi
+    parent_lock_on_bench "$BENCH_HOST" "$prefix$1"
+}
+
 HARNESS_PID=""
 HARNESS_START=""
 HARNESS_DONE=0
@@ -102,13 +110,28 @@ harness_launch_records() {
 harness_install_runner() {
     local runner
     runner="$(mktemp)" || return 1
-    cat >"$runner" <<'RUNNER'
-#!/usr/bin/env bash
+    # Pin the runner-owned target scratch even when SSH drops ambient variables.
+    printf '#!/usr/bin/env bash\n' >"$runner"
+    if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+        printf 'export IT_SCRATCH_DIR=%s\n' "$(quote_arg "$IT_SCRATCH_DIR")" >>"$runner"
+    fi
+    cat >>"$runner" <<'RUNNER'
 set -uo pipefail
 state="$1"; dir="$2"; target="$3"; workers="$4"; rearm_request="$5"; rearm_ack="$6"; rearm_id="$7"; shift 7
 start=$(awk '{print $22}' "/proc/$$/stat") || exit 1
 printf 'running %s %s\n' "$$" "$start" >"$state.tmp" && mv "$state.tmp" "$state"
 mkdir -p "$dir/results"
+if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+    export TMPDIR="$IT_SCRATCH_DIR"
+    if ! { [ -d "$TMPDIR" ] && [ ! -L "$TMPDIR" ] &&
+        scratch_device=$(stat -c %d "$TMPDIR") && parent_device=$(stat -c %d "$TMPDIR/..") &&
+        [ -n "$scratch_device" ] && [ "$scratch_device" = "$parent_device" ] &&
+        probe=$(mktemp "$TMPDIR/harness-scratch.XXXXXX") && rm -f "$probe"; }; then
+        echo 'e2e: target scratch unavailable or on another filesystem' >"$dir/results/e2e-harness.log"
+        echo 1 >"$dir/results/e2e-harness.done"
+        exit 1
+    fi
+fi
 IT_BORROW_REARM_REQUEST="$rearm_request" IT_BORROW_REARM_ACK="$rearm_ack" IT_BORROW_REARM_TOKEN="$rearm_id" \
     bash "$dir/tests/integration/run.sh" --local --dir "$target" --workers "$workers" "$@" \
     > "$dir/results/e2e-harness.log" 2>&1

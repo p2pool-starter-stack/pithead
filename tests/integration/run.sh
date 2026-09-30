@@ -107,6 +107,8 @@ source "$HERE/lib/run-tari-wallet.sh" || exit $?
 source "$HERE/lib/run-lan-guard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-scenario.sh
 source "$HERE/lib/run-scenario.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-source-image.sh
+source "$HERE/lib/run-source-image.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
@@ -161,6 +163,15 @@ main() {
         rig_lock_remote pithead "$lock_suite" "$lock_shared" "$IT_SSH_DEST" "${IT_SSH_OPTS[@]}"
     fi
 
+    if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+        rx 'test "$TMPDIR" = "$IT_SCRATCH_DIR" && test -d "$TMPDIR" && test ! -L "$TMPDIR" &&
+            f=$(mktemp "$TMPDIR/rx-scratch.XXXXXX") || exit 1
+            scratch_device=$(stat -c %d "$f") && parent_device=$(stat -c %d "$TMPDIR/..") &&
+                test -n "$scratch_device" && test "$scratch_device" = "$parent_device"
+            rc=$?; rm -f "$f" || exit 1; exit "$rc"'
+        assert_rc "runner scratch usable in target rx shell (bench-ci#965)" "$?" 0
+        [ "$IT_FAIL" -eq 0 ] || return 1
+    fi
     preflight
 
     # Non-destructive release-server fitness assessment.
