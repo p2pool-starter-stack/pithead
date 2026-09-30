@@ -692,7 +692,9 @@ and `--list` prints it).
 - Payout confirmation is live (the view-key row only). `PAYOUT_CONFIRM_ENABLED`/
   `TARI_PAYOUT_CONFIRM_ENABLED` in `.env` match the config, and the dashboard's own
   `earnings.confirmed.enabled`/`earnings.tari_confirmed.enabled` flags read `true`
-  ([#381](https://github.com/p2pool-starter-stack/pithead/issues/381)/[#462](https://github.com/p2pool-starter-stack/pithead/issues/462)). A real
+  ([#381](https://github.com/p2pool-starter-stack/pithead/issues/381)/[#462](https://github.com/p2pool-starter-stack/pithead/issues/462)). Both real
+  wallet summaries must report `reachable=true` and `address_match=true`; the Tari wallet's
+  gRPC healthcheck must succeed with scan grace disabled and clear its first-scan marker. A real
   confirmed payout needs days of chain time no e2e run has, so that total staying `0` is expected
   and not asserted otherwise — only that the feature is genuinely ON, not just configured.
 - Idempotency. A second `apply -y` with no change is a clean no-op.
