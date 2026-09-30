@@ -46,7 +46,7 @@ capture_artifacts() { echo artifacts >>"$TRACE"; }
 
 SKIP_MINING_ASSERTS=1 EXPECTED_WORKERS=0 BASELINE_SECRET_FP=fixture IT_FAIL=0
 
-echo '== current-state checks never run the LAN guard scenario battery =='
+echo "== current-state checks never run the LAN guard scenario battery =="
 for config in \
     '{"monero":{"rpc_lan_access":true}}' \
     '{"monero":{"zmq_lan_access":true}}' \
@@ -63,7 +63,7 @@ state-complete" ] || {
     }
 done
 
-echo '== deploying scenarios retain every LAN probe and recovery exercise =='
+echo "== deploying scenarios retain every LAN probe and recovery exercise =="
 : >"$TRACE"
 assert_scenario lan "$BASELINE_CONFIG"
 [ "$(cat "$TRACE")" = "pithead status
