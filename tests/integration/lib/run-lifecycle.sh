@@ -341,8 +341,7 @@ run_uninstall_round_trip() {
     else
         it_fail "status OK after setup-after-uninstall" "pithead status did not recover within 600s"
     fi
-    # The chains' large files are the same files after setup, and the kept Tor keys give back the
-    # same onion address.
+    # Setup reuses the large chain files and recovers the same onion from kept Tor keys.
     if [ -n "$local_node" ]; then
         big_after="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"
         if [ -n "$big_before" ] && [ "$big_after" = "$big_before" ]; then
