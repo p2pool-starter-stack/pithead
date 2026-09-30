@@ -124,7 +124,8 @@ mkdir -p "$dir/results"
 if [ -n "${IT_SCRATCH_DIR:-}" ]; then
     export TMPDIR="$IT_SCRATCH_DIR"
     if ! { [ -d "$TMPDIR" ] && [ ! -L "$TMPDIR" ] &&
-        [ "$(stat -c %d "$TMPDIR")" = "$(stat -c %d "$TMPDIR/..")" ] &&
+        scratch_device=$(stat -c %d "$TMPDIR") && parent_device=$(stat -c %d "$TMPDIR/..") &&
+        [ -n "$scratch_device" ] && [ "$scratch_device" = "$parent_device" ] &&
         probe=$(mktemp "$TMPDIR/harness-scratch.XXXXXX") && rm -f "$probe"; }; then
         echo 'e2e: target scratch unavailable or on another filesystem' >"$dir/results/e2e-harness.log"
         echo 1 >"$dir/results/e2e-harness.done"
