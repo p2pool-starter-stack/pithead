@@ -114,13 +114,13 @@ async def observe_wallet(
     bad = not reachable or not match
     was_down = monitor.down
     monitor.update(not bad)
-    since = (previous or {}).get("since") if bad else None
+    since = (previous or {}).get("since") if bad or monitor.down else None
     if bad and since is None:
         since = time.time()
     # A sender that raises must not lose this status or the down edge: retry the edge on the
-    # next cycles while the wallet stays down, up to DOWN_ALERT_ATTEMPTS sends in all.
+    # next cycles while the failure persists, up to DOWN_ALERT_ATTEMPTS sends in all.
     failures = (previous or {}).get("down_alert_failures", 0) if monitor.down else 0
-    if monitor.down and (not was_down or 0 < failures < DOWN_ALERT_ATTEMPTS):
+    if bad and monitor.down and (not was_down or 0 < failures < DOWN_ALERT_ATTEMPTS):
         reason = (
             "unreachable" if not reachable else "address differs from configured payout address"
         )

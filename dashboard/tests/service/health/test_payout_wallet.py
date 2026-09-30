@@ -1,6 +1,8 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
 from mining_dashboard.service.notify.alert_service import AlertService
 from mining_dashboard.service.payout_sync import DOWN_ALERT_ATTEMPTS, observe_wallet
@@ -103,3 +105,32 @@ def test_raising_down_alert_stops_after_bounded_attempts():
         status = asyncio.run(observe_wallet("monero", client, monitor, "expected", status, alerts))
         assert status["down"] is True
     assert alerts.payout_wallet_down_alert.await_count == DOWN_ALERT_ATTEMPTS
+
+
+@pytest.mark.parametrize("chain", ["monero", "tari"])
+def test_recovery_keeps_outage_time_without_retrying_a_resolved_failure(chain):
+    now = [0]
+    monitor = NodeHealthMonitor(down_after=1, recovery_after=4, clock=lambda: now[0], ever_up=True)
+    client = MagicMock()
+    client.payout_addresses.return_value = None
+    if chain == "tari":
+        client.payout_addresses = AsyncMock(return_value=(None, None))
+    alerts = MagicMock(payout_wallet_down_alert=AsyncMock(side_effect=RuntimeError("sink")))
+    first = asyncio.run(observe_wallet(chain, client, monitor, "expected", None, alerts))
+    now[0] = 1
+    down = asyncio.run(observe_wallet(chain, client, monitor, "expected", first, alerts))
+    assert down["down_alert_failures"] == 1
+
+    client.payout_addresses.return_value = (["expected"], True) if chain == "tari" else ["expected"]
+    now[0] = 2
+    recovering = asyncio.run(observe_wallet(chain, client, monitor, "expected", down, alerts))
+    assert recovering["reachable"] is True and recovering["address_match"] is True
+    assert recovering["down"] is True
+    assert recovering["since"] == first["since"]
+    alerts.payout_wallet_down_alert.assert_awaited_once_with(chain, "unreachable")
+
+    now[0] = 6
+    recovered = asyncio.run(observe_wallet(chain, client, monitor, "expected", recovering, alerts))
+    assert recovered["down"] is False and recovered["since"] is None
+    assert recovered["down_alert_failures"] == 0
+    alerts.payout_wallet_down_alert.assert_awaited_once_with(chain, "unreachable")
