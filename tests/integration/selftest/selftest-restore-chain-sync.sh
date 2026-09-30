@@ -16,25 +16,25 @@ poll_case() (
     on_bench() {
         cat >/dev/null
         case "$scenario" in
-            good) echo 'Monero authenticated synchronized=true; Tari direct initial_sync_achieved=true' ;;
-            failed)
-                echo 'Monero authenticated synchronized=true; Tari direct initial_sync_achieved=true'
-                return 1
-                ;;
-            environment | monero-rpc | monero-sync | tari-command | tari-sync)
-                echo "independent daemon sync not proved: $scenario"
-                return 1
-                ;;
-            multiline)
-                printf 'independent daemon sync not proved: tari-command\nprivate-endpoint fixture-password\n'
-                return 1
-                ;;
-            private)
-                echo 'independent daemon sync not proved: private-endpoint fixture-password'
-                return 1
-                ;;
-            missing) echo 'rpc-ok' ;;
-            late) return 1 ;;
+        good) echo 'Monero authenticated synchronized=true; Tari direct initial_sync_achieved=true' ;;
+        failed)
+            echo 'Monero authenticated synchronized=true; Tari direct initial_sync_achieved=true'
+            return 1
+            ;;
+        environment | monero-rpc | monero-sync | tari-command | tari-sync)
+            echo "independent daemon sync not proved: $scenario"
+            return 1
+            ;;
+        multiline)
+            printf 'independent daemon sync not proved: tari-command\nprivate-endpoint fixture-password\n'
+            return 1
+            ;;
+        private)
+            echo 'independent daemon sync not proved: private-endpoint fixture-password'
+            return 1
+            ;;
+        missing) echo 'rpc-ok' ;;
+        late) return 1 ;;
         esac
     }
     verify_chain_sync_proof

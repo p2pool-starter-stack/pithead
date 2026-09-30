@@ -11,12 +11,12 @@ verify_chain_sync_proof() {
             return 0
         fi
         case "$out" in
-            'independent daemon sync not proved: environment' | \
-                'independent daemon sync not proved: monero-rpc' | \
-                'independent daemon sync not proved: monero-sync' | \
-                'independent daemon sync not proved: tari-command' | \
-                'independent daemon sync not proved: tari-sync') reason=${out##*: } ;;
-            *) reason=unavailable ;;
+        'independent daemon sync not proved: environment' | \
+            'independent daemon sync not proved: monero-rpc' | \
+            'independent daemon sync not proved: monero-sync' | \
+            'independent daemon sync not proved: tari-command' | \
+            'independent daemon sync not proved: tari-sync') reason=${out##*: } ;;
+        *) reason=unavailable ;;
         esac
         if [ "$(date +%s)" -ge "$deadline" ]; then
             warn "restore proof: independent authenticated Monero and direct Tari sync not proved within 600s (stage: $reason)"
