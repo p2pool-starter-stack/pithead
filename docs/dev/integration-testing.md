@@ -368,8 +368,8 @@ via an `EXIT` trap):
    [#272](https://github.com/p2pool-starter-stack/pithead/issues/272)) and runs
    `run.sh` detached on the box (survives an SSH drop on a long matrix), streaming a heartbeat and
    the full log at the end. Bench-ci supplies `IT_SCRATCH_DIR` pointing to its
-   per-job `data_dir/jobs/<id>/scratch`. The wrapper exports it as `TMPDIR` for
-   target commands and pins it in the detached runner, whose children (including
+   per-job `data_dir/jobs/<id>/scratch`. The wrapper exports `IT_SCRATCH_DIR` and
+   `TMPDIR` for target commands and pins the path in the detached runner, whose children (including
    local `rx` shells) inherit it. Before the harness runs, the detached runner
    requires a real directory on its parent's filesystem and proves it can create
    a temporary file there. Unavailable scratch fails explicitly; no system-temp

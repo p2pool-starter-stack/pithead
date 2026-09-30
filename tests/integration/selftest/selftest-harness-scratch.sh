@@ -14,8 +14,8 @@ export MAIN_SRC
 export IT_SCRATCH_DIR="$WORK/scratch quote'" LIB="$HERE/../lib.sh" PROBE_RESULT="$WORK/proof"
 # shellcheck disable=SC2034 # consumed by the real on_bench function extracted below
 BENCH_HOST=unused E2E_DIR="$WORK/target"
-# Model SSH dropping ambient TMPDIR; execute the real wrapper's remote command.
-parent_lock_on_bench() { env -u TMPDIR bash -c "$2"; }
+# Model SSH dropping ambient scratch variables; execute the real wrapper's remote command.
+parent_lock_on_bench() { env -u TMPDIR -u IT_SCRATCH_DIR bash -c "$2"; }
 cat >"$WORK/target/tests/integration/run.sh" <<'HARNESS'
 #!/usr/bin/env bash
 set -eu
@@ -39,7 +39,7 @@ chmod +x "$WORK/tools/awk"
 export PATH="$WORK/tools:$PATH"
 
 echo "== runner scratch survives target transport, detached launch, and local rx =="
-on_bench 'test -d "$TMPDIR" && f=$(mktemp "$TMPDIR/transport.XXXXXX") && test -f "$f"'
+on_bench 'test "$TMPDIR" = "$IT_SCRATCH_DIR" && test -d "$TMPDIR" && f=$(mktemp "$TMPDIR/transport.XXXXXX") && test -f "$f"'
 assert_rc "wrapper target shell receives usable scratch" "$?" 0
 harness_install_runner
 assert_rc "real detached runner installs" "$?" 0

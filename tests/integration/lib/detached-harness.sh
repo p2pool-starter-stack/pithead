@@ -2,7 +2,7 @@
 on_bench() {
     local prefix=""
     if [ -n "${IT_SCRATCH_DIR:-}" ]; then
-        prefix="export TMPDIR=$(quote_arg "$IT_SCRATCH_DIR"); "
+        prefix="export IT_SCRATCH_DIR=$(quote_arg "$IT_SCRATCH_DIR"); export TMPDIR=\"\$IT_SCRATCH_DIR\"; "
     fi
     parent_lock_on_bench "$BENCH_HOST" "$prefix$1"
 }
