@@ -3,6 +3,8 @@
 assert_scenario() {
     local name="$1" config="$2"
     assert_running_state "$name" "$config"
+    # Namespace probes, rule flushes and node restarts belong only to deploying scenarios.
+    assert_lan_guard_live "$config"
     assert_lan_guard_marker_startup
     local again
     again="$(pithead apply -y 2>&1)"
