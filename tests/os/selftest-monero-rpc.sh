@@ -107,3 +107,34 @@ grep -qxF 'FAIL: native Quadlet proof service did not stop' "$fixture/active.log
 [ ! -e "$fixture/proof.container" ]
 [ ! -e "$fixture/scratch" ]
 echo 'selftest-monero-rpc: failed service stop cannot pass with an active unit'
+# The runtime isolation predicate rejects a default route, not a connected bridge route.
+route_source=$(awk '/^no_default_route\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+eval "$route_source"
+cat >"$fixture/routes" <<'ROUTES'
+Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
+eth0 000011AC 00000000 0001 0 0 0 0000FFFF 0 0 0
+ROUTES
+no_default_route "$fixture/routes"
+printf 'eth0 00000000 010011AC 0003 0 0 0 00000000 0 0 0\n' >>"$fixture/routes"
+if no_default_route "$fixture/routes"; then
+    echo 'FAIL: runtime isolation accepted a default route' >&2
+    exit 1
+fi
+echo 'selftest-monero-rpc: runtime isolation rejects an external default route'
+# The fixture's pre-start family guard rejects enabled, missing and malformed IPv6.
+family_source=$(awk '/^ipv4_only\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+eval "$family_source"
+for field in ipv6_enabled EnableIPv6; do
+    printf '[{"%s":false}]\n' "$field" >"$fixture/network.json"
+    ipv4_only "$fixture/network.json"
+    for value in true null '"false"'; do
+        printf '[{"%s":%s}]\n' "$field" "$value" >"$fixture/network.json"
+        if ipv4_only "$fixture/network.json"; then
+            echo 'FAIL: fixture admitted enabled or unreadable IPv6' >&2
+            exit 1
+        fi
+    done
+done
+printf '[{}]\n' >"$fixture/network.json"
+if ipv4_only "$fixture/network.json"; then exit 1; fi
+echo 'selftest-monero-rpc: pre-start family guard requires disabled IPv6'

@@ -5,14 +5,16 @@ firmware and a real A/B updater can prove. The compose/CLI stack is covered by t
 tiers ([`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md)); this harness
 also runs a native Quadlet Monero RPC fixture during `provision`. The rendered unit uses the
 guest’s current Monero image, with separate data, a separate container name and loopback host
-ports on a private internal network without an external route. Outgoing peers are disabled
-and the fixture advertises no existing onion identity; its real zero exercises cold-start visibility, not synchronization. It checks authenticated local
-admin access, the restricted network listener, P2P advertisement, fresh and expired health
-observations, and a fresh run after restart. Cleanup removes only the fixture unit, container,
-its client container, internal network and scratch files. The healthy-baseline fault and
-recovery proof remains the Compose
-`monero-stranded` job. The appliance harness covers EFI boot, the first-boot wizard window, install-to-disk,
-the rig role, and the update → commit → rollback cycle that is the phase-2 exit criterion.
+ports on a private IPv4-only managed bridge without a default route or external DNS.
+Routing and disabled IPv6 are verified before the daemon starts. Outgoing peers are disabled,
+and the fixture advertises no existing onion identity; its real zero exercises cold-start
+visibility, not synchronization. It checks authenticated local admin access, the restricted
+network listener, P2P advertisement, fresh and expired health observations, and a fresh run
+after restart. Cleanup removes only the fixture unit, container, its client container, private
+network and scratch files. The healthy-baseline fault and recovery proof remains the Compose
+`monero-stranded` job. The appliance harness covers EFI boot, the first-boot wizard window,
+install-to-disk, the rig role, and the update → commit → rollback cycle that is the phase-2
+exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
 

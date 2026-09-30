@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# A disposable native unit rendered by the shipped CLI. It has separate data, an internal
-# network with no external route, a unique name and loopback host ports.
+# A disposable native unit rendered by the shipped CLI. It has separate data, a private bridge
+# network with no default route, a unique name and loopback host ports.
 set -euo pipefail
+no_default_route() {
+    awk 'NR > 1 && $2 == "00000000" && $8 == "00000000" { default_route=1 } END { exit default_route }' "$1"
+}
+ipv4_only() {
+    jq -e '.[0] | (if has("ipv6_enabled") then .ipv6_enabled else .EnableIPv6 end) == false' "$1" >/dev/null
+}
 cd /data/pithead
 proof_dir=$(mktemp -d "${TMPDIR:-/run}/pithead-monero-rpc.XXXXXX")
 proof_name="monerod-rpc-proof-${proof_dir##*.}"
@@ -45,8 +51,17 @@ mkdir "$proof_dir/data"
 chown 1000:1000 "$proof_dir/data"
 image=$(podman inspect -f '{{.ImageName}}' monerod)
 client_image=$(podman inspect -f '{{.ImageName}}' dashboard)
-podman network create --internal "$proof_name" >/dev/null
+# --internal disables bridge forwarding, including mapped host ports. Keep managed
+# forwarding for publication proof, but omit the default route and external DNS.
+podman network create --disable-dns --opt no_default_route=1 "$proof_name" >/dev/null
 network="$proof_name"
+podman network inspect "$network" >"$proof_dir/network.json"
+ipv4_only "$proof_dir/network.json"
+# Refuse a routing mismatch before the fixture daemon can dial anything.
+podman run --pull=never --rm --name "$proof_name-client" --network "$network" --entrypoint python3 "$client_image" \
+    -c 'from pathlib import Path; print(Path("/proc/net/route").read_text(),end="")' >"$proof_dir/client-routes"
+no_default_route "$proof_dir/client-routes"
+echo 'PASS: native Quadlet fixture bridge is IPv4-only without a default route before startup'
 grep -vE '^(QUADLET_HOST_CONFIG_DIR|QUADLET_CADDYFILE|QUADLET_ENGINE_SOCK|MONERO_OUT_PEERS|MONERO_CLEARNET_SYNC)=' .env >"$proof_dir/env"
 printf '\nQUADLET_HOST_CONFIG_DIR=/data/pithead\nQUADLET_CADDYFILE=/data/pithead/Caddyfile\nQUADLET_ENGINE_SOCK=/run/podman/podman.sock\nMONERO_OUT_PEERS=0\nMONERO_CLEARNET_SYNC=false\n' >>"$proof_dir/env"
 # This cold-start fixture has a real zero, not a synchronized-chain claim. It advertises no
@@ -66,6 +81,11 @@ grep -qxF "Volume=$proof_dir/data:/home/ubuntu/.bitmonero" "$unit"
 systemctl daemon-reload
 timeout 180 systemctl start "$proof_name.service" >/dev/null 2>&1
 systemctl show "$proof_name.service" -p FragmentPath --value | grep -q '/generator'
+# Verify isolation before any network probe; never infer it only from create options.
+route_file="$proof_dir/routes"
+podman exec "$proof_name" cat /proc/net/route >"$route_file"
+no_default_route "$route_file"
+echo 'PASS: native Quadlet fixture has no IPv4 default route'
 echo 'PASS: native Quadlet cold start uses the rendered monerod unit'
 
 admin=$(podman exec "$proof_name" /usr/local/bin/monerod-peers.sh)
@@ -93,18 +113,6 @@ sys.exit(1)' "$node_ip"
 echo 'PASS: Quadlet admin listener is unpublished and unreachable from host and another container'
 code=$(curl -gs --max-time 5 -o /dev/null -w '%{http_code}' 'http://[::1]:18085/get_info' || true)
 [ "$code" = 000 ]
-v6=$(podman network inspect "$network" | jq -er '.[0] | if has("ipv6_enabled") then .ipv6_enabled | tostring else .EnableIPv6 | tostring end')
-if [ "$v6" = true ]; then
-    node_ip6=$(podman inspect "$proof_name" | jq -er '.[0].NetworkSettings.Networks | to_entries[0].value.GlobalIPv6Address | select(length > 0)')
-    code=$(curl -gs --max-time 5 -o /dev/null -w '%{http_code}' "http://[$node_ip6]:18085/get_info" || true)
-    [ "$code" = 000 ]
-    podman run --pull=never --rm --name "$proof_name-client" --network "$network" --entrypoint python3 "$client_image" -c 'import socket,sys
-try: socket.create_connection((sys.argv[1],18085),4)
-except OSError: sys.exit(0)
-sys.exit(1)' "$node_ip6"
-else
-    [ "$v6" = false ]
-fi
 echo 'PASS: Quadlet admin listener is unreachable on every enabled address family'
 advertised=$(printf %s "$P2P_PROBE_B64" | base64 -d | podman run --pull=never --rm -i --name "$proof_name-client" --network "$network" --entrypoint python3 "$client_image" - "$node_ip" 18080)
 [ "$advertised" = 18081 ]
