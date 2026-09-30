@@ -6,6 +6,7 @@ WORK=$(mktemp -d "${TMPDIR:?}/pithead-tor-bootstrap.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+echo "== authenticated bootstrap recovery without chain RPC =="
 mkdir -p "$WORK/bin" "$WORK/tor/p2pool" "$WORK/control/audit"
 printf 'onion-identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"
 printf 'chain\n' >"$WORK/chain"
