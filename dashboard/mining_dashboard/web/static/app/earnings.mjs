@@ -185,9 +185,16 @@ function confirmedBlock(c, fmt, unit) {
                  value=${fmt(c[`${k}_${key}`])}
                  title=${partial[key] ? hint : ""} />`;
   const note = `* ${hint.replace("Partial — ", "")} — the window covers only the history on record, not its full span.`;
+  const mismatch = c.address_match === false;
+  const walletProblem = mismatch
+    ? `Payout wallet address differs: configured ${c.configured_address}; wallet ${c.wallet_address}`
+    : c.down
+      ? `Payout wallet unreachable since ${new Date(c.since * 1000).toLocaleString()}`
+      : null;
   return html`
     <div class="confirmed-block">
       <h3 class="confirmed-subhead">Confirmed on-chain</h3>
+      ${walletProblem ? html`<p class="status-bad" role="alert">${walletProblem}</p>` : null}
       <div class="stat-grid">
         ${running("yesterday", "Yesterday")}
         <${StatCard} label="Confirmed 24h" value=${fmt(c[`${k}_24h`])} />
