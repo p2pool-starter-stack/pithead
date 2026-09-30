@@ -706,6 +706,10 @@ For one representative config:
   `tari-wallet` depends on the absent local `tari` service. A `setup`
   with the `missing` pull policy must
   then return healthy on the same chain files and the same Monero onion address.
+  `uninstall-before.secrets.txt` and `uninstall-after.secrets.txt` record target-side
+  digests for each secret category, plus the rendered Monero address and kept Tor
+  hostname. These distinguish a stale rendered address from changed keys or tokens;
+  they contain no plaintext secrets and do not reset the matrix secret baseline.
 
 > NOTE: `upgrade` (which rebuilds/pulls images) is intentionally not run unattended. It's slow
 > and changes the bundle under test. Validate it as part of the [release](releasing.md)
