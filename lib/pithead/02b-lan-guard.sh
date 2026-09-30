@@ -60,7 +60,6 @@ lan_guard_teardown() { # <verb>
     [ "$rc" = 2 ] && why="monerod or tari may still be running (or the engine cannot say)"
     [ "$rc" = 0 ] || error "$1 stopped: $why, so the LAN-only source rule stays."
 }
-
 # The key:port pairs whose .env bind is anything but loopback, one per line.
 lan_guard_published() {
     local kp
@@ -68,7 +67,6 @@ lan_guard_published() {
         case "$(env_get "${kp%%:*}" 2>/dev/null)" in '' | 127.0.0.1) ;; *) printf '%s\n' "$kp" ;; esac
     done
 }
-
 # Include ports still published by running containers after .env changed but Compose did not
 # converge. If the engine cannot be read, watch all fixed ports rather than dropping the timer.
 lan_guard_watched_ports() {
@@ -95,7 +93,6 @@ lan_guard_watched_ports() {
         printf '%s\n' "$p"
     done
 }
-
 # A bind moving from LAN to loopback still belongs to the old container until Compose recreates
 # it. Stop that container before replacing the firewall rules; a failed Compose must not leave
 # the old all-interface listener running after its jump has been removed.
@@ -136,7 +133,6 @@ lan_guard_stop_rebound_nodes() {
     done
     return 0
 }
-
 # `iptables-restore --noflush` input for <port>...: declaring our chain flushes and refills it, the
 # stale tagged jumps (<old jump spec> lines on stdin, as `iptables -S` prints them) are deleted and
 # the new ones inserted at the top of DOCKER-USER, all in one commit, so no packet sees a half-built
