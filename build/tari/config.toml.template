@@ -125,5 +125,5 @@ proxy_address = "/ip4/172.28.0.25/tcp/9050"
 
 [base_node.state_machine]
 # Synchronization timeouts
-blockchain_sync_config.initial_max_sync_latency = 2000
-blockchain_sync_config.rpc_deadline = 2000
+blockchain_sync_config.initial_max_sync_latency = 240
+blockchain_sync_config.rpc_deadline = 240
