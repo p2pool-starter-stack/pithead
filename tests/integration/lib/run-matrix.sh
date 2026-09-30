@@ -199,7 +199,7 @@ run_scenario() {
     # until peers on the new chain connect — wait for the dashboard to classify it (issue #54).
     local _pool
     _pool="$(jq_get "$config" '.p2pool.pool')"
-    _pool="${_pool:-main}"
+    _pool="${_pool:-mini}"
     wait_pool_ready 180 "$(pool_label "$_pool")" || true
     if [ "$name" = local-pruned-main-p2pool-clearnet ]; then
         assert_egress_posture p2pool-choice
