@@ -79,7 +79,10 @@ run_rigforge_control() {
     fi
 
     local current_config have_host inject=0
-    current_config="$(rx 'cat config.json')"
+    if ! current_config="$(rx 'cat config.json')"; then
+        it_fail "read current config before RigForge control" "could not read config.json"
+        return 1
+    fi
     if ! printf '%s' "$current_config" | jq -e 'type == "object"' >/dev/null 2>&1; then
         it_fail "read current config before RigForge control" "config.json is not a JSON object"
         return 1

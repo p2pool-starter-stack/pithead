@@ -99,10 +99,32 @@ run_rigforge_control >/dev/null 2>&1
 late_rc=$?
 assert_eq "late failure reaches the writable control leg" "$WRITABLE_CALLED" "1"
 assert_eq "a late RigForge assertion returns nonzero to main" "$late_rc" "1"
+late_ok=$([ "$WRITABLE_CALLED" -eq 1 ] && [ "$late_rc" -eq 1 ] && [ "$IT_FAIL" -eq 1 ] && echo 1 || echo 0)
+
+echo "== a failed current config read rejects even valid JSON stdout =="
+IT_FAIL=0 PUSHES=0 WRITABLE_CALLED=0 APPLIES=0
+rx() {
+    if [ "$1" = 'cat config.json' ]; then
+        printf '%s' "$CURRENT_CONFIG"
+        return 255
+    else
+        (cd "$IT_REMOTE_DIR" && bash -c "$1")
+    fi
+}
+push_config() { PUSHES=$((PUSHES + 1)); }
+run_rigforge_writable_keys() { WRITABLE_CALLED=$((WRITABLE_CALLED + 1)); }
+run_rigforge_control >/dev/null 2>&1
+failed_read_rc=$? failed_read_failures=$IT_FAIL
+assert_eq "a failed read with valid JSON returns nonzero" "$failed_read_rc" "1"
+assert_eq "a failed read with valid JSON records failure" "$failed_read_failures" "1"
+assert_eq "a failed read with valid JSON never pushes configuration" "$PUSHES" "0"
+assert_eq "a failed read with valid JSON never applies configuration" "$APPLIES" "0"
+assert_eq "a failed read with valid JSON never reaches a writable leg" "$WRITABLE_CALLED" "0"
+failed_read_ok=$([ "$failed_read_rc" -eq 1 ] && [ "$failed_read_failures" -eq 1 ] && [ "$PUSHES" -eq 0 ] && [ "$APPLIES" -eq 0 ] && [ "$WRITABLE_CALLED" -eq 0 ] && echo 1 || echo 0)
 
 MAIN_SRC="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../run.sh")"
 assert_contains "main gates later fault injection on successful RigForge control" "$MAIN_SRC" 'if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then'
 assert_contains "main gates later fault injection on a successful lifecycle" "$MAIN_SRC" 'if [ "$lifecycle_ok" = 1 ]; then'
-printf '\nselftest-rigforge-control-barrier: PASS\n'
 # The forced failures above are product-counter stimuli, not selftest failures.
-[ "$early_ok" = 1 ] && [ "$unreadable_ok" = 1 ] && [ "$WRITABLE_CALLED" -eq 1 ] && [ "$late_rc" -eq 1 ] && [ "$IT_FAIL" -eq 1 ]
+[ "$early_ok" = 1 ] && [ "$unreadable_ok" = 1 ] && [ "$late_ok" = 1 ] && [ "$failed_read_ok" = 1 ] && [ "$IT_FAIL" -eq 1 ] || exit 1
+printf '\nselftest-rigforge-control-barrier: PASS\n'
