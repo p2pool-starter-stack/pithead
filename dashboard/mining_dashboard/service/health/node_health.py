@@ -34,11 +34,12 @@ class NodeHealthMonitor:
         down_after=NODE_DOWN_AFTER_SEC,
         recovery_after=NODE_RECOVERY_AFTER_SEC,
         clock=time.monotonic,
+        ever_up=False,
     ):
         self.down_after = down_after
         self.recovery_after = recovery_after
         self._clock = clock
-        self.ever_up = False
+        self.ever_up = ever_up
         self.down = False
         self.healthy = False
         self._unreachable_since = None
