@@ -101,6 +101,7 @@ OPTIONS:
 ENV OVERRIDES: BENCH_HOST, MINER_HOST, CANONICAL_DIR, E2E_DIR, MINER_XMRIG_CONFIG, GIT_REMOTE_URL, and
   RIG_HOST, RIG_NAME, IT_RIG_TOKEN, IT_RIG_ROLLBACK_CHANGES, IT_RIG_POOLS_PROBE, RIG_CONTROL_PORT, RIGFORGE_CONFIG, RIGFORGE_BOOTSTRAP_VERSION,
   IT_MONERO_VIEW_KEY, IT_TARI_VIEW_KEY, IT_TARI_SPEND_PUBLIC_KEY (payout-confirm row; sent to the harness on stdin)
+  IT_SCRATCH_DIR (existing target scratch directory; inherited as TMPDIR by target commands and the detached harness)
 
 EXAMPLES:
   tests/integration/e2e.sh claude/my-feature                 # targeted (the default), borrow the miner
