@@ -43,8 +43,8 @@ cp "$LGD/.env.lan-fallback" "$LGD/.env"
 LG_LIVE=0 LG_OLD_MONERO_RPC=0.0.0.0 LG_COMPOSE_RC=1 lg 'compose_up -d' >/dev/null
 assert_eq "a failed rule stops old LAN listeners despite loopback fallback only in Compose's environment" \
     "$(cat "$LG_RUNNING_FILE")" ""
-assert_eq "a failed rule stops old listeners before Compose can fail" \
-    "$(cat "$LG_ORDER")" $'restore\nstop:monerod\nstop:tari\ncompose'
+assert_eq "a failed rule stops old listeners before Compose and its loopback recovery fail" \
+    "$(cat "$LG_ORDER")" $'restore\nstop:monerod\nstop:tari\ncompose\ncompose'
 mv "$LGD/.env.fallback-original" "$LGD/.env"
 : >"$LG_ORDER"
 printf 'monerod\ntari\n' >"$LG_RUNNING_FILE"
@@ -79,5 +79,17 @@ assert_eq "Tari switch-off reaches Compose after stopping Tari" "$lg_rc" "1"
 assert_eq "Tari is stopped when its old gRPC bind is withdrawn" "$(cat "$LG_RUNNING_FILE")" ""
 assert_eq "Tari stops after the rule refresh and before failed Compose" \
     "$(cat "$LG_ORDER")" $'restore\nstop:tari\ncompose'
+printf 'tari\n' >"$LG_RUNNING_FILE"
+: >"$LG_ARGS_LOG"
+LG_LIVE=1 lg 'compose_up -d tor' >/dev/null
+assert_contains "a scoped up restarts a node switched to loopback" "$(cat "$LG_ARGS_LOG")" " tor tari"
+printf 'tari\n' >"$LG_RUNNING_FILE"
+: >"$LG_ARGS_LOG"
+lg_out="$(PITHEAD_KEEP_RUNNING=tari LG_LIVE=1 lg 'compose_up -d tor')"
+lg_rc=$?
+assert_eq "a switch-off stop refuses the keep-running promise" "$lg_rc" "1"
+assert_contains "the stopped node is named" "$lg_out" "Cannot keep tari running"
+assert_eq "a kept node is not silently restarted" "$(cat "$LG_ARGS_LOG")" ""
+
 mv "$LGD/.env.transition-original" "$LGD/.env"
 unset LG_RUNNING_FILE
