@@ -20,7 +20,7 @@ spec.loader.exec_module(module)
 
 
 class CurlConnection(unittest.TestCase):
-    def exchange(self, close=False, unauthenticated=False, password="changeme"):  # noqa: S107 -- synthetic fixture
+    def exchange(self, close=False, unauthenticated=False, redirect=False, password="changeme"):  # noqa: S107 -- synthetic fixture
         openssl = shutil.which("openssl")
         self.assertIsNotNone(openssl, "required OpenSSL fixture verifier unavailable")
         requests = []
@@ -75,7 +75,9 @@ class CurlConnection(unittest.TestCase):
                         and hmac.compare_digest(fields.get("response", ""), expected)
                     )
                 payload = json.dumps({"status": "OK", "synchronized": True}).encode()
-                self.send_response(200 if accepted or unauthenticated else 401)
+                self.send_response(302 if redirect else 200 if accepted or unauthenticated else 401)
+                if redirect:
+                    self.send_header("Location", "http://redirect.invalid/get_info")
                 if not accepted and not unauthenticated:
                     self.send_header(
                         "WWW-Authenticate",
@@ -120,10 +122,11 @@ class CurlConnection(unittest.TestCase):
     def test_connection_bound_challenge_and_authorized_request_share_socket(self):
         self.assertIs(self.exchange()["synchronized"], True)
 
-    def test_closed_nonce_session_unauthenticated_ok_and_bad_login_refuse(self):
+    def test_closed_session_redirect_unauthenticated_ok_and_bad_login_refuse(self):
         for options in (
             {"close": True},
             {"unauthenticated": True},
+            {"redirect": True},
             {"password": "wrong-fixture-login"},
         ):
             with (

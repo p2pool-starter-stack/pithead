@@ -23,3 +23,6 @@ ec572a4034faa029839a6a29d616718d1513cef8:tests/stack/test-cli-restore-hardening.
 270c4d4ffd6fb73feecc5d459e38d0c6afa94166:tests/os/appliance-tari-wallet-leg.sh:generic-api-key:13
 # The same public constant after #2734 was squash-merged onto develop.
 c79b0581536b5f059fca1c643a93333f6b928965:tests/os/appliance-tari-wallet-leg.sh:generic-api-key:13
+# Public HTTP Digest HA2 of the fixed string GET:/get_info, not an API key or credential.
+# The CI-only server independently verifies the libcurl fixture response with this protocol constant.
+29c753378adb57a5e99b11a1687601468cfeb18e:tests/integration/selftest/test_restore_curl_connection.py:generic-api-key:59

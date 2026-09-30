@@ -177,7 +177,7 @@ class DaemonProof(unittest.TestCase):
 class DigestExchange(unittest.TestCase):
     """Pure tests for libcurl's private input and mandatory session evidence."""
 
-    def exchange(self, headers=None, counts="1 200 0", body=None, password="changeme"):  # noqa: S107 -- synthetic fixture
+    def exchange(self, headers=None, counts="1 200", body=None, password="changeme"):  # noqa: S107 -- synthetic fixture
         if headers is None:
             headers = (
                 'HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Digest realm="fixture", '
@@ -241,7 +241,7 @@ class DigestExchange(unittest.TestCase):
         self.assertIs(self.exchange(password='quote " slash \\ dollar $$')["synchronized"], True)  # noqa: S106 -- synthetic fixture
 
     def test_reconnect_redirect_or_failed_authentication_cannot_pass(self):
-        for counts in ("2 200 0", "0 200 0", "1 302 0", "1 200 1", "1 401 0", ""):
+        for counts in ("2 200", "0 200", "1 302", "1 200 extra", "1 401", ""):
             with self.subTest(counts=counts), self.assertRaises(ValueError):
                 self.exchange(counts=counts)
 

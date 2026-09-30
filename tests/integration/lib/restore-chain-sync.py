@@ -61,7 +61,7 @@ def monero_info(url, user, password):
                 "--dump-header",
                 str(headers),
                 "--write-out",
-                "\n%{num_connects} %{http_code} %{num_redirects}",
+                "\n%{num_connects} %{http_code}",
                 "--url",
                 url.rstrip("/") + "/get_info",
             ],
@@ -71,8 +71,10 @@ def monero_info(url, user, password):
             timeout=10,
             check=True,
         )
+        # num_redirects also counts Digest authentication reloads in libcurl.
+        # --no-location and the exact 401/200 header sequence reject HTTP redirects.
         body, separator, counts = result.stdout.rpartition("\n")
-        if not separator or counts != "1 200 0" or len(body.encode()) > 65536:
+        if not separator or counts != "1 200" or len(body.encode()) > 65536:
             raise ValueError("required authenticated connection not proved")
         with headers.open("rb") as stream:
             wire = stream.read(16385)
