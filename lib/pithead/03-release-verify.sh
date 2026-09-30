@@ -155,8 +155,8 @@ stack_upgrade() {
     # flag to false and the next require_deployed command (up/apply/upgrade) errors "run setup". We
     # only reach here past require_deployed, so the stack IS deployed and the flag must stay true.
     DEPLOYMENT_COMPLETED=true
-    render_env "${ENV_FILE}.new"
-    mv "${ENV_FILE}.new" "$ENV_FILE"
+    render_env "$PITHEAD_ENV_STAGE"
+    mv "$PITHEAD_ENV_STAGE" "$ENV_FILE"
     # #2636: a Tari major that migrates chain data needs room for the old database again. Refuse
     # on the freshly rendered .env and before provision_node_onions, whose onion step can start tor:
     # nothing is started or recreated first, so the migrating node never starts on a full volume.
