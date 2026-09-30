@@ -37,21 +37,6 @@ class _FakeDocker:
         return True
 
 
-class _FailingDocker:
-    """docker-control unreachable: records the attempt, reports failure."""
-
-    def __init__(self):
-        self.calls = []
-
-    async def stop(self, container, **kwargs):
-        self.calls.append(("stop", container))
-        return False
-
-    async def start(self, container, **kwargs):
-        self.calls.append(("start", container))
-        return False
-
-
 @pytest.fixture(autouse=True)
 def _monerod_running():
     """The heal cycles monerod only when the read proxy says it runs (#2749); running by default."""
@@ -168,23 +153,43 @@ class TestDecide:
         # Budget is spent and a lone OK never refilled it: warn-only, not another heal.
         assert h.decide(False, clock.t) == "exhausted"
 
-    async def test_failed_restart_refunds_the_budget(self):
-        # If docker-control is unreachable, the stop/start no-op and the budget slot is refunded,
-        # so a flaky proxy doesn't burn the cap and abandon a real outage (#424 review, Finding 3).
+    @pytest.mark.parametrize(
+        "stopped,started", [(False, False), (False, True), (True, False), (True, True)]
+    )
+    async def test_restart_outcomes_keep_budget_and_record_start(self, stopped, started, caplog):
         clock = _Clock()
-        docker = _FailingDocker()
-        h = _healer(clock, docker=docker, probe=lambda: (False, "test probe"))
-        h._last_probe = None
+        docker = AsyncMock()
+        docker.stop.return_value = stopped
+        docker.start.return_value = started
+        h = _healer(clock, docker=docker)
         h._attempts = MAX_ATTEMPTS - 1
         _break_egress(h, clock)
-        clock.t += PROBE_INTERVAL_SEC
-        await h.check()  # decides "heal", docker fails, refunds
-        assert docker.calls  # a restart was attempted
-        assert h._attempts == MAX_ATTEMPTS - 1  # ...but refunded
-        assert h._last_attempt is None
-        # So the next probe (still broken, cooldown cleared) heals again rather than giving up.
-        clock.t += PROBE_INTERVAL_SEC
-        assert h.decide(False, clock.t) == "heal"
+        with caplog.at_level("INFO", logger="TorHeal"):
+            await h.check()
+            assert h._attempts == MAX_ATTEMPTS
+            assert h._last_attempt == clock.t
+            assert docker.start.await_args_list[0].args == ("tor",)
+            assert docker.start.await_count == (2 if started else 1)
+            if started:
+                assert docker.start.await_args_list[1].args == ("monerod",)
+            expected = (
+                "Tor restart"
+                if stopped and started
+                else "Tor start (stop unconfirmed)"
+                if started
+                else "Tor restart unconfirmed"
+            )
+            assert h._recovery_step == expected
+            clock.t += COOLDOWN_SEC
+            await h.check()
+            assert docker.start.await_count == (2 if started else 1)
+            h._probe = lambda: (True, "fresh circuit answered")
+            for _ in range(RECOVERY_CONFIRM_PROBES):
+                clock.t += PROBE_INTERVAL_SEC
+                await h.check()
+        assert any(f"recovered following {expected}:" in r.message for r in caplog.records)
+        assert not any("refunded" in r.message for r in caplog.records)
+        assert h._attempts == 0
 
     def test_recovery_after_heal_reports_and_resets_the_budget(self):
         clock = _Clock()

@@ -149,7 +149,7 @@ class TorEgressHealer:
         return "heal"
 
     def refund_attempt(self):
-        """Refund a failed container restart; keep the ongoing outage clock."""
+        """Refund an unconfirmed NEWNYM; keep the ongoing outage clock."""
         if self._attempts > 0:
             self._attempts -= 1
         self._last_attempt = None
@@ -222,18 +222,23 @@ class TorEgressHealer:
                     self.CONTAINER, stop_timeout=15, request_timeout=60
                 )
                 started = await self._docker.start(self.CONTAINER, request_timeout=60)
-                if not (stopped and started):
-                    # The restart never actually happened (docker-control unreachable) — give the
-                    # budget slot back so a transiently-flaky proxy doesn't exhaust the cap on
-                    # no-ops and abandon a real outage (#424 review).
-                    self.refund_attempt()
-                    logger.warning(
-                        "tor restart could not be issued via docker-control (unreachable) — "
-                        "the attempt was refunded and will be retried on the next probe (#424)."
-                    )
-                else:
-                    self._recovery_step = "Tor restart"
-                if stopped and started and self._restart_monerod and await self._monerod_running():
+                # False means unconfirmed, not unissued: a timed-out POST may have mutated
+                # the daemon. Keep the attempt and cooldown even when both responses are lost.
+                self._recovery_step = (
+                    "Tor restart"
+                    if stopped and started
+                    else "Tor start (stop unconfirmed)"
+                    if started
+                    else "Tor restart unconfirmed"
+                )
+                logger.warning(
+                    "Tor recovery control results: stop=%s, start=%s; attempt retained (%d/%d).",
+                    "confirmed" if stopped else "unconfirmed",
+                    "confirmed" if started else "unconfirmed",
+                    self._attempts,
+                    MAX_ATTEMPTS,
+                )
+                if started and self._restart_monerod and await self._monerod_running():
                     # The tor restart just killed every SOCKS connection; monerod holds its
                     # dead peer sockets and can sit at 0 in / 0 out peers for hours while
                     # looking healthy (#972). Cycle it so it re-dials through the fresh tor.
