@@ -753,8 +753,9 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   the rig's own effective writable config on the enriched feed, and the dashboard re-exposes it at
   `GET /api/worker`'s `.rig_config` — the same values the Worker Inspect editor prefills from. So
   each leg reads the original off the rig itself, derives a probe from it, asserts the **rig**
-  reports the new value, and restores. No new environment variable, no direct rig dial. `DONATION`
-  only ever moves toward zero (a rig already at 0 is nudged to RigForge's default 1), and
+  reports the new value, and restores. No new environment variable or port is needed; the
+  DONATION revert's diagnostic sample dials the rig directly, while the assertion reads the
+  dashboard. `DONATION` only ever moves toward zero (a rig already at 0 is nudged to RigForge's default 1), and
   `watchdog_interval_min` steps one minute away from wherever it sits, inside RigForge's 1–1440
   range. The restore runs whatever the assertions said, so a mid-leg failure cannot strand a
   borrowed rig on a probe value.
@@ -847,6 +848,20 @@ that prints nothing cannot see this class at all.
 The progress line names the accepted request's `change_id`, so a timed-out readback can be matched
 to that request's rig-side status and journal rather than a nearby change. The host CLI rejects a
 rig response whose change ID is not 16 lowercase hex digits before returning it to the dashboard.
+For a DONATION revert, each readback poll also logs one bounded JSON sample: the dashboard's
+`/api/worker` DONATION, matching history status, dashboard snapshot time and worker state,
+and RigForge generation stamp and stale verdict, and the rig's direct `/1/summary` DONATION and generation stamp plus exact-ID
+`/status`. Status and history fields accept only their documented enums; other values and failed
+reads are `poll_failed`. The sample contains no raw response, credential or host.
+Compare the stamps and values before changing the 90-second bound (#2894).
+After a DONATION worker-apply returns `accepted` or `applied`, the dashboard also refreshes that
+worker's enriched report out of cycle. It publishes the new config and reconciles the exact
+history ID only after the fresh report confirms the requested DONATION value and `applied` status;
+the read is bounded and uses the same worker probe as the normal collection loop. Both normal
+collection and targeted reads retain the report with the newer RigForge generation stamp when an
+older read finishes last. Equal stamps retain the current snapshot because they do not establish
+generation order. Confirming an earlier apply still reconciles its history ID even when its
+snapshot is not published.
 
 The same leg then asserts that the change reached the dashboard's `#185` per-worker history, and
 that readback needed a settle of its own
