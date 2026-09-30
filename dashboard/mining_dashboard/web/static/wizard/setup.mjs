@@ -139,7 +139,8 @@ export function renderSetup(app) {
               !keepEverything &&
               !rig &&
               html`<h2>Payout address</h2>
-            <${Note}>Paste it — it is far too long to type, and a typo pays a stranger.<//>
+            <${Note}>Use a dedicated mining wallet: P2Pool payout addresses are public. Paste
+            its address — it is too long to type, and a typo pays a stranger.<//>
             <${Field} label="Monero payout address">
                 <input class="wizard-mono" value=${v("moneroWallet") || ""} onInput=${on("moneroWallet")}
                     autocomplete="off" autocapitalize="off" spellcheck=${false}

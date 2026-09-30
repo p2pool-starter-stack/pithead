@@ -226,7 +226,7 @@ Useful flags (full list in `run.sh --help`):
 | `--host <user@host>` / `--local` | Drive the box over SSH, or a stack on this machine. |
 | `--dir <path>` | The Pithead stack directory on the box, relative to the SSH login dir or absolute (default `pithead`). Avoid a literal `~`; your local shell expands it before the box sees it. |
 | `--pithead <cmd>` | How to invoke pithead there (e.g. `"sudo ./pithead"`). |
-| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion, plus `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. `/metrics` through Caddy needs `IT_DASHBOARD_PASSWORD` (env; never a flag — the box's real dashboard login plaintext, only the bcrypt hash of which the box itself can produce) when the box has a dashboard login set; without it the leg is a counted `missing` skip ([#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058)). This is a bench operator input, not a dev-checkout default: on the bench-ci-run boxes it is supplied via the runner's own per-tier knob, `[tiers."pithead/tier4-e2e"] env = { IT_DASHBOARD_PASSWORD = "…" }` in bench-ci's config, the same mechanism RigForge's `tier4-e2e` already uses for `stratum_pass`/`dash_auth` — never through this repo or a request body. |
+| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. LAN guard namespace probes, rule flushes, boot-failure injection and node restarts run only in deploying scenarios. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion, plus `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. `/metrics` through Caddy needs `IT_DASHBOARD_PASSWORD` (env; never a flag — the box's real dashboard login plaintext, only the bcrypt hash of which the box itself can produce) when the box has a dashboard login set; without it the leg is a counted `missing` skip ([#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058)). This is a bench operator input, not a dev-checkout default: on the bench-ci-run boxes it is supplied via the runner's own per-tier knob, `[tiers."pithead/tier4-e2e"] env = { IT_DASHBOARD_PASSWORD = "…" }` in bench-ci's config, the same mechanism RigForge's `tier4-e2e` already uses for `stratum_pass`/`dash_auth` — never through this repo or a request body. |
 | `--readiness` | Non-destructive: assess whether the box is fit to be a release/validation server (Monero synced, Tari dashboard sync `done` within 240 s, `pithead status` healthy within 240 s, snapshot-capable FS, disk headroom, secrets owner-only, dashboard localhost-only). A Tari-only timeout tells bench-ci to restore and retry as an environment wait. See [Release Server](release-server.md). |
 | `--scenario <name>` | Run just one scenario. |
 | `--workers <n>` | Miners expected online while mining (default `2`). |
@@ -645,7 +645,8 @@ and `--list` prints it).
   and total hashes are accumulating ([#28](https://github.com/p2pool-starter-stack/pithead/issues/28)).
 - Posture propagated. `MONERO_RPC_BIND`, `DASHBOARD_SECURE`, `XVB_ENABLED`, and `TARI_REQUIRED`
   in `.env` match the config; the Caddyfile uses the right scheme.
-- LAN ports take LAN sources only (`local-pruned-main-rpclan` row, which turns on all three
+- Deploying scenarios exercise LAN guard recovery; `--check` does not run this battery.
+  LAN ports take LAN sources only (`local-pruned-main-rpclan` row, which turns on all three
   `*_lan_access` switches). Each published node port is dialled from a network namespace on a veth
   to the host: from `198.51.100.2` the dial must fail, from `10.254.254.2` it must connect
   ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)). With the boot marker
@@ -691,7 +692,9 @@ and `--list` prints it).
 - Payout confirmation is live (the view-key row only). `PAYOUT_CONFIRM_ENABLED`/
   `TARI_PAYOUT_CONFIRM_ENABLED` in `.env` match the config, and the dashboard's own
   `earnings.confirmed.enabled`/`earnings.tari_confirmed.enabled` flags read `true`
-  ([#381](https://github.com/p2pool-starter-stack/pithead/issues/381)/[#462](https://github.com/p2pool-starter-stack/pithead/issues/462)). A real
+  ([#381](https://github.com/p2pool-starter-stack/pithead/issues/381)/[#462](https://github.com/p2pool-starter-stack/pithead/issues/462)). Both real
+  wallet summaries must report `reachable=true` and `address_match=true`; the Tari wallet's
+  gRPC healthcheck must succeed with scan grace disabled and clear its first-scan marker. A real
   confirmed payout needs days of chain time no e2e run has, so that total staying `0` is expected
   and not asserted otherwise — only that the feature is genuinely ON, not just configured.
 - Idempotency. A second `apply -y` with no change is a clean no-op.
@@ -734,8 +737,10 @@ restore still verifies every baseline image and Compose owner. The full `upgrade
 ### RigForge control (`--rigforge-control`)
 
 The dashboard↔RigForge WRITE surfaces that only a real rig with its `:8082` control API opted in
-can prove — the tier-2 fake covers the `:8081` read only. It enables `dashboard.control`, pins the
-borrowed rig in `workers.list[]` (#506; its token seen inside the container only as the
+can prove — the tier-2 fake covers the `:8081` read only. It derives the temporary control config
+from the just-proven scenario. A failed read or non-object configuration stops the phase before
+any configuration write or control leg. It then enables `dashboard.control` and pins the borrowed rig in
+`workers.list[]` (#506; its token seen inside the container only as the
 `{"__secret__": true}` sentinel, [#440](https://github.com/p2pool-starter-stack/pithead/issues/440);
 the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still
 carrying that key is migrated to `workers.list[]` before the legs run). Missing inputs are recorded
@@ -753,8 +758,9 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   the rig's own effective writable config on the enriched feed, and the dashboard re-exposes it at
   `GET /api/worker`'s `.rig_config` — the same values the Worker Inspect editor prefills from. So
   each leg reads the original off the rig itself, derives a probe from it, asserts the **rig**
-  reports the new value, and restores. No new environment variable, no direct rig dial. `DONATION`
-  only ever moves toward zero (a rig already at 0 is nudged to RigForge's default 1), and
+  reports the new value, and restores. No new environment variable or port is needed; the
+  DONATION revert's diagnostic sample dials the rig directly, while the assertion reads the
+  dashboard. `DONATION` only ever moves toward zero (a rig already at 0 is nudged to RigForge's default 1), and
   `watchdog_interval_min` steps one minute away from wherever it sits, inside RigForge's 1–1440
   range. The restore runs whatever the assertions said, so a mid-leg failure cannot strand a
   borrowed rig on a probe value.
@@ -847,6 +853,20 @@ that prints nothing cannot see this class at all.
 The progress line names the accepted request's `change_id`, so a timed-out readback can be matched
 to that request's rig-side status and journal rather than a nearby change. The host CLI rejects a
 rig response whose change ID is not 16 lowercase hex digits before returning it to the dashboard.
+For a DONATION revert, each readback poll also logs one bounded JSON sample: the dashboard's
+`/api/worker` DONATION, matching history status, dashboard snapshot time and worker state,
+and RigForge generation stamp and stale verdict, and the rig's direct `/1/summary` DONATION and generation stamp plus exact-ID
+`/status`. Status and history fields accept only their documented enums; other values and failed
+reads are `poll_failed`. The sample contains no raw response, credential or host.
+Compare the stamps and values before changing the 90-second bound (#2894).
+After a DONATION worker-apply returns `accepted` or `applied`, the dashboard also refreshes that
+worker's enriched report out of cycle. It publishes the new config and reconciles the exact
+history ID only after the fresh report confirms the requested DONATION value and `applied` status;
+the read is bounded and uses the same worker probe as the normal collection loop. Both normal
+collection and targeted reads retain the report with the newer RigForge generation stamp when an
+older read finishes last. Equal stamps retain the current snapshot because they do not establish
+generation order. Confirming an earlier apply still reconciles its history ID even when its
+snapshot is not published.
 
 The same leg then asserts that the change reached the dashboard's `#185` per-worker history, and
 that readback needed a settle of its own

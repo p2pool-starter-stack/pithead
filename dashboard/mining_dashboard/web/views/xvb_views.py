@@ -547,19 +547,19 @@ def build_earnings(data, metrics, payouts=None, tari_payouts=None, xvb_day=None)
         "tari_reward": metrics.tari_reward,  # full XTM paid per Tari block (solo, lumpy)
         # Current-tier XvB expected reward, XMR/day, folded into the net-profit estimate (#712).
         # None unless XvB is on with a fresh published estimate for the tier the fleet holds now.
-        # build_state tempers this by measured delivery (xvb_tempered_day, #902) before the
-        # payload ships — clients never see the raw published figure.
+        # build_state tempers this by measured delivery before publishing.
         "xvb_day": xvb_day,
         "pool_difficulty": metrics.pool_difficulty,  # for expected time-to-share (diff/hr)
         "block_reward": f"{reward_atomic / 1e12:.4f} XMR",  # context, server-formatted like NetworkCard
         "disclaimer": _EARNINGS_DISCLAIMER,
-        # Confirmed on-chain payouts (#381), beside the estimate above. {"enabled": False} when the
-        # view-only wallet feature is off — the UI then shows only the estimate.
-        "confirmed": confirmed_payouts_summary(payouts),
-        # Confirmed Tari payouts (#462), beside the Tari time-to-block estimate. XTM (microTari),
-        # {"enabled": False} when the Tari view-only wallet feature is off.
+        "confirmed": confirmed_payouts_summary(
+            payouts, wallet_status=(data.get("payout_wallet") or {}).get("monero")
+        ),
         "tari_confirmed": confirmed_payouts_summary(
-            tari_payouts, divisor=MICRO_PER_XTM, unit="xtm"
+            tari_payouts,
+            divisor=MICRO_PER_XTM,
+            unit="xtm",
+            wallet_status=(data.get("payout_wallet") or {}).get("tari"),
         ),
     }
 

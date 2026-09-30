@@ -227,6 +227,9 @@ elif raw[0] != 0x00:
 elif raw[1] & ~0b111:  # unknown feature bits (known: one-sided 1, interactive 2, payment-id 4)
     print("invalid")
 else:
-    print("ok")
+    if os.environ.get("TARI_ADDRESS_KEY_ONLY") == "1":
+        print((raw[:1] + (raw[2:34] if len(raw) == 35 else raw[2:66])).hex())
+    else:
+        print("ok")
 PYEOF
 }

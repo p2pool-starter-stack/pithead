@@ -96,12 +96,18 @@ class TestRunIteration:
             patch.object(ds_mod, "get_cpu_avx2", return_value=True),
             patch("asyncio.sleep", AsyncMock(side_effect=StopAsyncIteration)),
         ):
-            with pytest.raises(StopAsyncIteration):
-                await svc.run()
+            with patch.object(
+                ds_mod.worker_refresh,
+                "preserve_newer_reports",
+                wraps=ds_mod.worker_refresh.preserve_newer_reports,
+            ) as preserve:
+                with pytest.raises(StopAsyncIteration):
+                    await svc.run()
 
         # The worker was aggregated and totals computed from proxy-derived hashrate.
         assert svc.latest_data["workers"][0]["name"] == "rig1"
         assert svc.latest_data["workers"][0]["status"] == "online"
+        preserve.assert_called_once()
         assert svc.latest_data["total_live_h15"] == 2000.0
         # The proxy /summary totals were collected and surfaced (Issue #82).
         assert svc.latest_data["proxy_summary"] == {
