@@ -4,7 +4,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib/run-source-image.sh
 source "$HERE/../lib/run-source-image.sh"
-td=$(mktemp -d "${TMPDIR:?}/source-image-selftest.XXXXXX")
+echo "== source upgrade stale-image reconciliation and failure cleanup (#2934) =="
+td=$(mktemp -d)
 trap 'rm -rf -- "$td"' EXIT
 mkdir -p "$td/bin" "$td/stack" "$td/scratch"
 # Read the real reconciler; only Docker and guarded up are substituted in this pure selftest.
