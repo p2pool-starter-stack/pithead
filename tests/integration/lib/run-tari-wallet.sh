@@ -39,7 +39,11 @@ _pred_monero_wallet_caught_up() {
 assert_payout_wallet_ready() { # <confirmed|tari_confirmed> <Monero|Tari>
     local st
     if [ "$1" = confirmed ]; then
-        wait_for 1200 15 "Monero wallet finishes catching up to monerod (#2498)" _pred_monero_wallet_caught_up || true
+        if wait_for 1200 15 "Monero wallet finishes catching up to monerod (#2498)" _pred_monero_wallet_caught_up; then
+            it_pass "Monero payout wallet finished catching up (#2976)"
+        else
+            it_fail "Monero payout wallet finished catching up (#2976)" "scan marker remains or could not be read after 1200s"
+        fi
     fi
     # A scan that failed while the wallet was starting holds reachable=false until the next scan,
     # every 10th dashboard poll (about five minutes), so the wait must outlast one scan cycle.

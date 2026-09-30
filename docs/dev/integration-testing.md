@@ -1067,8 +1067,12 @@ automatic restart in the transcript; a final current-state snapshot alone cannot
 establish whether an earlier process was OOM-killed. Docker retains only a recent
 event buffer, so missing events do not prove that no OOM occurred. Health output
 separates answering RPC and numeric scan heights from silent-RPC scan grace;
-grace still does not prove catch-up or payout readiness. The existing scan bound,
-reachability and configured-address assertions remain binding.
+grace still does not prove catch-up or payout readiness. The 1200-second scan bound is a binding marker-retirement assertion. With a
+readable daemon height, answering RPC behind the tip keeps the marker and cannot
+satisfy it. The existing healthcheck also retires the marker when daemon height is
+unreadable, switching to strict RPC health; that fallback does not prove numeric
+catch-up. Use the retained wallet/daemon heights to establish catch-up during
+recovery validation. Reachability and configured-address assertions remain binding.
 
 `config.json` and `env.redacted.txt` are the two artifacts that are not streamed straight through
 the generic redactor. Both are documents with an enumerable shape, and the stack classifies each on

@@ -152,5 +152,31 @@ for mode in create reopen; do
         assert_eq "create writes the existing key-generation input" "$(test -f "$d/gen.json" && echo present)" present
     fi
 done
+echo "== wallet prerequisite: answering RPC behind the tip is not caught up =="
+# Poll once against the real predicates, without sleeping through the production bounds.
+wait_for() { "$4" "${@:5}"; }
+api_state() { printf '%s\n' "$WALLET_TEST_STATE"; }
+WALLET_TEST_STATE='{"earnings":{"confirmed":{"reachable":true,"address_match":true}}}'
+export WALLET_TEST_MARKER_RC=1
+fails="$(
+    IT_FAIL=0
+    assert_payout_wallet_ready confirmed Monero >/dev/null
+    echo "$IT_FAIL"
+)"
+assert_eq "reachable matching RPC with a scan marker still fails catch-up" "$fails" 1
+export WALLET_TEST_MARKER_RC=0
+fails="$(
+    IT_FAIL=0
+    assert_payout_wallet_ready confirmed Monero >/dev/null
+    echo "$IT_FAIL"
+)"
+assert_eq "caught-up reachable matching wallet passes prerequisite" "$fails" 0
+WALLET_TEST_STATE='{"earnings":{"confirmed":{"reachable":false,"address_match":null}}}'
+fails="$(
+    IT_FAIL=0
+    assert_payout_wallet_ready confirmed Monero >/dev/null
+    echo "$IT_FAIL"
+)"
+assert_eq "catch-up alone cannot bypass reachability and address checks" "$fails" 2
 printf 'selftest-wallet-diagnostics: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
