@@ -1060,8 +1060,8 @@ starting restoration. Diagnostic capture is best-effort: it never changes the fa
 the recovery sequence. Capture also writes `wallet-health.json` and
 `wallet-memory-events.txt`. During the existing 1200-second Monero scan wait, each
 15-second poll records container identity, start time, current exit/OOM/restart
-state, cgroup memory usage/peak/limit/events (v2 or v1), PID 1 RSS/peak/thread count,
-and the last 60 seconds of wallet OOM, exit, start and restart events in the harness
+state, cgroup memory usage/peak/limit/events (v2 or v1), PID 1 RSS/peak/thread count
+and read counters, numeric wallet cache/key file sizes, and the last 60 seconds of wallet OOM, exit, start and restart events in the harness
 transcript. Each Docker diagnostic command has a 5-second bound. Samples survive
 automatic restart in the transcript; a final current-state snapshot alone cannot
 establish whether an earlier process was OOM-killed. Docker retains only a recent

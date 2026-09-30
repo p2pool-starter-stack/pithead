@@ -9,6 +9,10 @@ TD="$(mktemp -d)"
 trap 'rm -rf "$TD"' EXIT
 mkdir -p "$TD/bin" "$TD/wallet" "$TD/cgroup/memory"
 export WALLET_TEST_CGROUP="$TD/cgroup" WALLET_TEST_PROC_STATUS="$TD/process-status"
+export WALLET_TEST_PROC_IO="$TD/process-io" WALLET_DIR="$TD/wallet"
+printf 'rchar: 2000000000\nread_bytes: 400000000\n' >"$TD/process-io"
+printf 'cache-fixture' >"$TD/wallet/payout-wallet"
+printf 'keys-fixture' >"$TD/wallet/payout-wallet.keys"
 printf '1800000000\n' >"$TD/cgroup/memory.current"
 printf '2147483648\n' >"$TD/cgroup/memory.peak"
 printf '2147483648\n' >"$TD/cgroup/memory.max"
@@ -28,7 +32,7 @@ inspect)
 exec)
     case "$*" in
     *'test ! -e'*) exit "${WALLET_TEST_MARKER_RC:-1}" ;;
-    *) script=$(printf '%s' "$5" | sed "s|/sys/fs/cgroup|$WALLET_TEST_CGROUP|g; s|/proc/1/status|$WALLET_TEST_PROC_STATUS|g")
+    *) script=$(printf '%s' "$5" | sed "s|/sys/fs/cgroup|$WALLET_TEST_CGROUP|g; s|/proc/1/status|$WALLET_TEST_PROC_STATUS|g; s|/proc/1/io|$WALLET_TEST_PROC_IO|g")
        sh -c "$script" ;;
 
     esac ;;
@@ -54,6 +58,10 @@ assert_contains "previous OOM survives current-state reset" "$body" 'action=oom'
 assert_contains "previous fatal exit survives current-state reset" "$body" 'action=die exit=137'
 assert_contains "memory peak is captured alongside current usage" "$body" $'memory.peak:\n2147483648'
 assert_contains "scan position survives restart in the sampled health history" "$body" 'wallet_height=10 daemon_height=1000'
+assert_contains "cache size is measured without exposing content" "$body" 'wallet_cache_bytes=13'
+assert_contains "key file size is measured without exposing content" "$body" 'wallet_keys_bytes=12'
+assert_contains "read demand is measured" "$body" 'rchar: 2000000000'
+assert_eq "cache content is never emitted" "$(printf '%s' "$body" | grep -c cache-fixture)" 0
 assert_contains "process demand is captured" "$body" 'Threads: 32'
 commands="$(cat "$WALLET_TEST_COMMANDS")"
 assert_contains "events end at a timestamp instead of following forever" "$commands" '--until'
@@ -67,6 +75,9 @@ printf '2100000000\n' >"$TD/cgroup/memory/memory.max_usage_in_bytes"
 body="$(wallet_scan_sample)"
 assert_contains "v1 current usage is measured when v2 files are absent" "$body" $'memory.usage_in_bytes:\n1700000000'
 assert_contains "v1 peak is measured when v2 files are absent" "$body" $'memory.max_usage_in_bytes:\n2100000000'
+rm "$TD/wallet/payout-wallet.keys"
+body="$(wallet_scan_sample)"
+assert_contains "unavailable metadata is explicit" "$body" 'wallet_keys_bytes=unavailable'
 capture_wallet_diagnostics "$TD"
 export IT_PITHEAD=true
 api_state() { echo '{}'; }
@@ -115,5 +126,31 @@ assert_contains "strict healthy mode has an explicit reason" "$body" 'wallet_rpc
 export WALLET_TEST_RPC_RC=7
 sh "$HC" >/dev/null 2>&1
 assert_rc "RPC failure after catch-up still fails" "$?" 1
+echo "== wallet startup: one parallel worker on creation and reopen =="
+export WALLET_TEST_ARGV="$TD/argv"
+cat >"$TD/bin/monero-wallet-rpc" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"$WALLET_TEST_ARGV"
+EOF
+chmod +x "$TD/bin/monero-wallet-rpc"
+ENTRYPOINT="$HERE/../../../build/monero/wallet-entrypoint.sh"
+for mode in create reopen; do
+    d="$TD/start-$mode"
+    mkdir -p "$d"
+    [ "$mode" != reopen ] || printf 'persisted-wallet' >"$d/payout-wallet"
+    WALLET_DIR="$d" GEN_JSON="$d/gen.json" MONERO_VIEW_KEY=fixture-view-key bash "$ENTRYPOINT" >/dev/null
+    rc=$?
+    assert_rc "wallet $mode still invokes the daemon" "$rc" 0
+    assert_eq "wallet $mode limits parallel work to one worker" "$(grep -A1 -x -- --max-concurrency "$WALLET_TEST_ARGV" | tail -1)" 1
+    assert_eq "wallet $mode supplies only one concurrency bound" "$(grep -cx -- --max-concurrency "$WALLET_TEST_ARGV")" 1
+    assert_eq "wallet $mode does not skip initial sync" "$(grep -cx -- --no-initial-sync "$WALLET_TEST_ARGV")" 0
+    assert_eq "wallet $mode keeps view material off argv" "$(grep -c fixture-view-key "$WALLET_TEST_ARGV")" 0
+    if [ "$mode" = reopen ]; then
+        assert_eq "reopen preserves cached wallet content" "$(cat "$d/payout-wallet")" persisted-wallet
+        assert_eq "reopen does not regenerate the wallet" "$(test -f "$d/gen.json" && echo present)" ''
+    else
+        assert_eq "create writes the existing key-generation input" "$(test -f "$d/gen.json" && echo present)" present
+    fi
+done
 printf 'selftest-wallet-diagnostics: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]

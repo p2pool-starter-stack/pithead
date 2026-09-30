@@ -18,6 +18,10 @@ wallet_scan_sample() {
                 fi
             done
             sed -n "/^VmRSS:/p; /^VmHWM:/p; /^Threads:/p" /proc/1/status
+            sed -n "/^rchar:/p; /^read_bytes:/p" /proc/1/io
+            wallet_dir="${WALLET_DIR:-/home/ubuntu/wallets}"
+            printf "wallet_cache_bytes=%s\n" "$(stat -c %s "$wallet_dir/payout-wallet" 2>/dev/null || echo unavailable)"
+            printf "wallet_keys_bytes=%s\n" "$(stat -c %s "$wallet_dir/payout-wallet.keys" 2>/dev/null || echo unavailable)"
         '
         timeout 5 docker events --since 60s --until "$(date +%s)" --filter container=wallet-rpc --filter event=oom --filter event=die --filter event=start --filter event=restart --format '{{.Time}} action={{.Action}} exit={{index .Actor.Attributes "exitCode"}}'
 WALLET_DIAGNOSTICS
