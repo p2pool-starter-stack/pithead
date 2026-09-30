@@ -49,6 +49,7 @@ wait_for() {
 }
 _pred_feed_maxt() { return 0; }
 
+echo "== scalar revert config convergence precedes terminal history =="
 for key in DONATION watchdog_interval_min max_temp_c; do
     for OUTCOME in applied rolled_back failed accepted ''; do
         : >"$TMP/applies"
@@ -77,6 +78,7 @@ for key in DONATION watchdog_interval_min max_temp_c; do
     done
 done
 
+echo "== DONATION revert gates the real watchdog caller =="
 # Drive the real DONATION -> watchdog caller, rather than manually ignoring a barrier's rc.
 eval "$(declare -f _worker_detail | sed '1s/_worker_detail/_worker_detail_original/')"
 _worker_detail() {
@@ -99,6 +101,7 @@ for OUTCOME in applied rolled_back accepted ''; do
     assert_eq "[$OUTCOME] watchdog sent only after terminal predecessor" \
         "$(wc -l <"$TMP/applies" | tr -d ' '),$rc,$(grep -c premature "$TMP/ledger")" "$want_count,$want_rc,0"
 done
+echo "== terminal history with stale config retains cleanup =="
 # A terminal transaction allows sequencing even if config readback failed; never clear cleanup.
 _settle_history_row() { printf '%s' "$OUTCOME"; }
 for OUTCOME in applied failed rolled_back; do
@@ -113,6 +116,7 @@ for OUTCOME in applied failed rolled_back; do
         "$rc,$failures,$(grep -c clear "$TMP/ledger")" "0,$want_fail,0"
 done
 
+echo "== terminal refusal without an ID never polls history =="
 # A terminal pre-dial refusal has no ID: do not wait for a nonexistent history row.
 _settle_history_row() { echo unexpected >>"$TMP/polls"; }
 for status in rejected failed rolled_back noop throttled applied accepted ''; do
