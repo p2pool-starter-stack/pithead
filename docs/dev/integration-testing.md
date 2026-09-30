@@ -367,7 +367,18 @@ via an `EXIT` trap):
    `apply` never builds and would reuse whatever images were last built on the box,
    [#272](https://github.com/p2pool-starter-stack/pithead/issues/272)) and runs
    `run.sh` detached on the box (survives an SSH drop on a long matrix), streaming a heartbeat and
-   the full log at the end.
+   the full log at the end. Bench-ci supplies `IT_SCRATCH_DIR` pointing to its
+   per-job `data_dir/jobs/<id>/scratch`. The wrapper exports `IT_SCRATCH_DIR` and
+   `TMPDIR` for target commands and pins the path in the detached runner, whose children (including
+   local `rx` shells) inherit it. Before the harness runs, the detached runner
+   requires a real directory on its parent's filesystem and proves it can create
+   a temporary file there. Failed device queries, empty device results, filesystem
+   mismatches and unavailable scratch fail explicitly; no system-temp
+   fallback is used for runner-managed jobs. Every runner-managed harness also
+   records a required `runner scratch usable in target rx shell` row, proving a
+   created file resides on that filesystem. The bench-ci runner owns scratch cleanup after
+   collection and restoration. Standalone e2e callers may set `IT_SCRATCH_DIR`
+   to an existing target directory; it is a target path, not the caller's temp path.
    The deploy leaves monerod and tari running when the branch leaves them unchanged
    ([#2639](https://github.com/p2pool-starter-stack/pithead/issues/2639)). Both bind-mount paths
    inside the checkout (`build/monero/bitmonero.conf.template`, `build/tari`,
@@ -375,8 +386,10 @@ via an `EXIT` trap):
    A plain `up` from the e2e checkout would therefore recreate both nodes on every run. The upgrade
    runs with `PITHEAD_KEEP_RUNNING` set, a harness-only knob that names every other service in the
    `up` with `--no-deps`. `tests/integration/lib/chain-keep.sh` then compares each node between the
-   two checkouts. The rendered `docker compose config` is compared with the image and build dropped
-   and the checkout path normalized. The content, mode and symlink targets of those mounted files
+   two checkouts. If the LAN guard has to stop a named node for safety, the scoped `up` fails instead
+   of recreating a node the harness promised to keep running. The rendered `docker compose config`
+   is compared with the image and build dropped and the checkout path normalized. The content,
+   mode and symlink targets of those mounted files
    are compared too, and so is the image **ID**, never the tag. Two more conditions apply:
    - The running node must be what the baseline renders: its Compose `config-hash` label must equal
      `docker compose config --hash` in the restore directory.
@@ -782,8 +795,24 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
-  `config.json` hand-edit shows up in the masked prefill (with the token still masked). The feed
-  half needs a *usable* read-only credential: with the descriptor's token masked, the dashboard
+  `config.json` hand-edit shows up in the masked prefill (with the token still masked).
+  The shared direct POST helper returns only a change ID of 16 lowercase hex digits. On failure,
+  it writes `direct rig control apply diagnostic:` to the harness transcript on stderr, with
+  `request_utc` (UTC immediately before curl), `http_status`, `curl_exit`, `classification`, and
+  `response_status`. A nonzero curl exit is `transport-failure`; otherwise a non-2xx response is
+  `http-refusal`, followed by `empty-body`, `invalid-json`, or `missing-valid-id` for a successful
+  HTTP response without exactly one JSON object containing a valid ID. Whitespace-only bodies
+  count as empty. If the execution transport fails before capture returns, the diagnostic uses
+  the caller's request timestamp, HTTP `000` and curl exit `unknown`.
+  Response status is restricted to `accepted`, `applied`, `rejected`, `failed`, `rolled_back`,
+  or `noop`; any other value is `absent`. No arbitrary body field, raw curl stderr, credential,
+  request config or endpoint is printed. Capture uses an owner-only temporary directory, a
+  16 KiB response-file limit and a 15 s curl timeout, and removes the files on exit. Curl's user
+  config is disabled; the POST is never retried because a failed response may follow a staged
+  change. The existing acceptance failure remains `the rig's /apply did not return a change_id`,
+  which the runner uses to collect the receiver journal before restore. Diagnostics use the
+  existing harness log artifact, with no separate response artifact.
+  The feed half needs a *usable* read-only credential: with the descriptor's token masked, the dashboard
   container never holds the real `ACCESS_TOKEN`, only a read-only credential the host derives from
   it (`render_worker_read_tokens`, `rigforge:api-read:v1`) and RigForge verifies the same way
   (`derive_read_token`, `util/api-server.py`) — both sides refuse to derive one from a control

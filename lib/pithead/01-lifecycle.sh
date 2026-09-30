@@ -77,12 +77,7 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
-    apply_lan_guard # every (re)start passes here: the LAN source rule lands before any node listens (#2616)
-    lan_guard_stop_rebound_nodes || {
-        lan_guard_check_now || true
-        warn "A node with an old published bind could not be stopped; the LAN rule was rechecked."
-        return 1
-    }
+    lan_guard_prepare_up || return 1
     # Reapply egress above the LAN jump; retain choice markers until live removal is proved.
     local egress_rc=0 choice_marker selected_ips firewall_enabled choice_active=0
     choice_marker=$(tor_egress_choice_marker)
@@ -102,12 +97,11 @@ compose_up() {
             fi
         fi
     elif clearnet_sync_active || [ -n "$selected_ips" ] || [ -e "$choice_marker" ] || [ -L "$choice_marker" ]; then
+        # Required egress protection failed; leave any stopped LAN nodes down.
         return 1
     fi
-    # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
-    # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
     local rc=0
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@" || rc=$?
+    lan_guard_compose_up "${build_args[@]}" "$@" || rc=$?
     restore_recreate_names
     return "$rc"
 }

@@ -322,7 +322,7 @@ render_env() {
     # shows). The mount keeps its owner, so it must be the container's APP_UID (#2731). Built as a temp
     # file then renamed, so a planted symlink is replaced, not followed. REAL .env target only.
     local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
-    if [ "$target" != "${ENV_FILE}.dryrun" ]; then
+    if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then
         mkdir -p "$PWD/data"
         tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
         printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
