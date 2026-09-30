@@ -3,6 +3,9 @@
 : "${LGD:?}"
 
 echo "== normal-user startup replaces a root-created guard marker (#2946) =="
+lg_rc=0
+bash "$HERE/firewall/lan-guard-marker-portable.sh" || lg_rc=$?
+assert_rc "portable privilege-path regression" "$lg_rc" 0
 # Use real root only for the marker fixture; firewall, engine and systemd remain stubbed.
 lg_real_sudo=$(command -v sudo)
 export LG_REAL_SUDO="$lg_real_sudo"
