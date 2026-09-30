@@ -169,6 +169,74 @@ echo "== _settle_worker_apply_maxt: '|'-joined output survives an empty MIDDLE f
 IFS='|' read -r rstatus rckeys rchange_id <<<"$(_settle_worker_apply_maxt rig1 101 "$res")"
 assert_eq "empty middle field (ckeys) does not shift change_id left" "$rstatus,$rckeys,$rchange_id" "rejected,,"
 
+echo "== exact-ID history handoff samples (#2761) =="
+log="$(mktemp)"
+bound_log="$(mktemp)"
+trap 'rm -f "$log" "$bound_log"' EXIT
+RIG_HOST=example.test
+RIG_CONTROL_PORT=8082
+IT_RIG_TOKEN=fixture-secret
+STUB_DETAIL='{"snapshot_at":1790760000.25,"status":"online","history":[{"change_id":"ffffffffffffffff","status":"failed"},{"change_id":"0123456789abcdef","status":"accepted"}],"rigforge":{"generated_at":"2026-09-30T13:15:30Z","stale":false},"rig_config":{"pools":[{"pass":"fixture-secret"}]}}'
+api_state() { printf '%s' '{"workers":[{"name":"other","api_ok":true},{"name":"r","api_ok":false,"rigforge":{"generated_at":"2026-09-30T13:15:30Z"}}]}'; }
+STUB_FEED='{"generated_at":"2026-09-30T13:16:00Z","rigforge":{"control":{"change_id":"ffffffffffffffff","status":"failed"},"control_history":[{"change_id":"0123456789abcdef","status":"applied","reason":"fixture-secret"}],"config":{"pools":[{"pass":"fixture-secret"}]}}}'
+_worker_detail() { printf '%s' "$STUB_DETAIL"; }
+rx() {
+    cat >/dev/null
+    case "$1" in
+    *'/1/summary'*) printf '%s' "$STUB_FEED" ;;
+    *status*change_id*) printf '%s' '{"change_id":"0123456789abcdef","status":"applied","reason":"fixture-secret"}' ;;
+    esac
+}
+wait_for() {
+    printf '%s' "$1" >"$bound_log"
+    shift 3
+    local i
+    for ((i = 0; i < 22; i++)); do "$@"; done
+    return 1
+}
+out="$(_settle_history_row r 0123456789abcdef 2>"$log")"
+assert_eq "history assertion retains its 90-second bound" "$(cat "$bound_log")" 90
+assert_eq "samples never promote accepted to applied" "$out" accepted
+assert_eq "diagnostics retain at most 20 samples per wait" "$(grep -c '^{' "$log")" 20
+sample="$(grep '^{' "$log" | tail -1)"
+assert_eq "exact ID is compared across dashboard, direct ring and status despite a newer current slot" \
+    "$(printf '%s' "$sample" | jq -c '[.history_handoff.change_id,.history_handoff.dashboard.history,.history_handoff.direct.history,.history_handoff.direct.current,.history_handoff.outcome.status]')" \
+    '["0123456789abcdef","accepted","applied","absent","applied"]'
+assert_eq "collector result is matched by worker and retains failed probe plus feed stamp" \
+    "$(printf '%s' "$sample" | jq -c '[.history_handoff.collector.api_ok,.history_handoff.collector.feed_at]')" \
+    '[false,"2026-09-30T13:15:30Z"]'
+assert_eq "snapshot and both feed generation times survive" \
+    "$(printf '%s' "$sample" | jq -c '[.history_handoff.dashboard.snapshot_at,.history_handoff.dashboard.feed_at,.history_handoff.direct.feed_at]')" \
+    '[1790760000.25,"2026-09-30T13:15:30Z","2026-09-30T13:16:00Z"]'
+if grep -Eq 'fixture-secret|example\.test|pass|reason' "$log"; then
+    it_fail "samples exclude credentials, reasons, config and topology" "unsafe output"
+else
+    it_pass "samples exclude credentials, reasons, config and topology"
+fi
+STUB_DETAIL='{"history":[{"change_id":"0123456789abcdef","status":"fixture-secret"}],"rigforge":{"generated_at":"fixture-secret","stale":"fixture-secret"}}'
+STUB_FEED='{"generated_at":"fixture-secret","rigforge":{"control_history":[{"change_id":"0123456789abcdef","status":"fixture-secret"}]}}'
+_history_handoff_sample 0123456789abcdef "$STUB_DETAIL" 2>"$log"
+assert_eq "malicious reflected scalars are replaced" \
+    "$(jq -c '[.history_handoff.dashboard.history,.history_handoff.dashboard.feed_at,.history_handoff.direct.history]' "$log")" \
+    '["unrecognized","invalid_or_absent","unrecognized"]'
+if grep -q 'fixture-secret' "$log"; then it_fail "no reflected credential" "unsafe output"; else it_pass "no reflected credential"; fi
+rx() {
+    cat >/dev/null
+    return 1
+}
+_history_handoff_sample 0123456789abcdef '' 2>"$log"
+assert_eq "failed polls are named without hiding either failed surface" \
+    "$(jq -c '[.history_handoff.dashboard.poll,.history_handoff.direct_poll,.history_handoff.direct.poll,.history_handoff.status_poll]' "$log")" \
+    '["invalid_or_failed","failed","invalid_or_failed","failed"]'
+_history_handoff_sample 0123456789abcdef '{}{}' 2>"$log"
+assert_eq "multiple JSON responses are invalid rather than breaking the combined sample" \
+    "$(jq -r '.history_handoff.dashboard.poll' "$log")" invalid_or_failed
+IT_RIG_TOKEN=''
+_history_handoff_sample 0123456789abcdef '{}' 2>"$log"
+assert_eq "missing credentials are explicitly unavailable" "$(jq -r '.history_handoff.direct_poll' "$log")" unavailable
+_history_handoff_sample 'fixture-secret' '{}' 2>"$log"
+assert_eq "malformed IDs never reach output or a dial" "$(wc -c <"$log" | tr -d ' ')" 0
+
 echo ""
 echo "selftest-rigforge-apply-settle: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
