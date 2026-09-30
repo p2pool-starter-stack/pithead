@@ -116,14 +116,18 @@ class Reader:
         return result
 
 
-def advertised_port(body):
+def storage_object(body):
     reader = Reader(body)
     if reader.take(len(STORAGE)) != STORAGE:
         raise ValueError("invalid portable storage header")
     result = reader.object()
     if reader.offset != len(body):
         raise ValueError("trailing portable storage data")
-    node = result.get("node_data")
+    return result
+
+
+def advertised_port(body):
+    node = storage_object(body).get("node_data")
     if not isinstance(node, dict):
         raise ValueError("handshake node_data missing")
     if "rpc_port" not in node:
@@ -167,6 +171,8 @@ ERROR_CODES = {
     "handshake rpc_port omitted": "rpc_port_omitted",
     "handshake rpc_port zero": "rpc_port_zero",
     "handshake rpc_port invalid": "rpc_port_invalid",
+    "invalid txpool notification": "invalid_notification",
+    "P2P notification bound": "notification_bound",
 }
 
 
@@ -195,18 +201,36 @@ def probe(host, port):
         with socket.create_connection((host, port), timeout=8) as sock:
             stage = "send_request"
             sock.sendall(request())
-            stage = "response_header"
-            header = HEADER.unpack(receive(sock, HEADER.size, deadline))
-            signature, size, _, command, code, flags, version = header
-            metadata = {"command": command, "flags": flags, "code": code, "size": size}
-            if signature != MAGIC or command != 1001 or code < 0 or flags != 2 or version != 1:
-                raise ValueError("invalid P2P handshake response")
-            if size > MAX_BODY:
-                raise ValueError("oversized P2P handshake response")
-            stage = "response_body"
-            body = receive(sock, size, deadline)
-            stage = "decode_handshake"
-            return advertised_port(body)
+            # v0.18.5.1 can queue NOTIFY_GET_TXPOOL_COMPLEMENT before its handshake
+            # response. It needs no reply; never mistake it for handshake evidence.
+            for frame in range(5):
+                stage = "response_header"
+                header = HEADER.unpack(receive(sock, HEADER.size, deadline))
+                signature, size, wants_reply, command, code, flags, version = header
+                metadata = {"command": command, "flags": flags, "code": code, "size": size}
+                notification = command == 2010 and flags == 1 and code == 0
+                response = command == 1001 and flags == 2 and code == 1
+                if (
+                    signature != MAGIC
+                    or wants_reply != 0
+                    or version != 1
+                    or not (notification or response)
+                ):
+                    raise ValueError("invalid P2P handshake response")
+                if size > MAX_BODY:
+                    raise ValueError("oversized P2P handshake response")
+                stage = "response_body"
+                body = receive(sock, size, deadline)
+                if response:
+                    stage = "decode_handshake"
+                    return advertised_port(body)
+                stage = "decode_notification"
+                data = storage_object(body)
+                hashes = data.get("hashes", b"")
+                if set(data) - {"hashes"} or not isinstance(hashes, bytes) or len(hashes) % 32:
+                    raise ValueError("invalid txpool notification")
+                if frame == 4:
+                    raise ValueError("P2P notification bound")
     except (OSError, ValueError, UnicodeError) as error:
         raise ProbeFailure(stage, error, metadata) from None
 

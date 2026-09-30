@@ -12,8 +12,11 @@ visibility, not synchronization. It checks authenticated local admin access, the
 network listener, restricted public-RPC selection, P2P advertisement, fresh and expired health
 observations, and a fresh run after restart. A failed P2P probe reports a bounded stage and
 error code, with numeric header metadata; it prints no address, credential or raw response.
-An unavailable or malformed probe remains failed proof. Cleanup removes only the fixture
-unit, container, its client container, private network and scratch files. The healthy-baseline
+An unavailable or malformed probe remains failed proof.
+The bounded P2P decoder validates up to four txpool notifications that Monero can send
+before the handshake response; none can substitute for that response.
+Cleanup removes only the fixture unit, container, its client container, private network and
+scratch files. The healthy-baseline
 fault and recovery proof remains the Compose
 `monero-stranded` job. The appliance harness covers EFI boot, the first-boot wizard window,
 install-to-disk, the rig role, and the update → commit → rollback cycle that is the phase-2
