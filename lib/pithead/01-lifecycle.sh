@@ -77,14 +77,7 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
-    # Every container (re)start passes here, so the LAN-published node ports get their source rule
-    # (or are held on loopback) before anything listens on them (#2616).
-    lan_guard_stop_rebound_nodes || {
-        warn "LAN-only source rules were kept because a node with an old published bind could not be stopped."
-        return 1
-    }
-    apply_lan_guard || return 1
-    lan_guard_check_keep_running || return 1
+    lan_guard_prepare_up || return 1
     # Reapply egress above the LAN jump; retain choice markers until live removal is proved.
     local egress_rc=0 choice_marker selected_ips firewall_enabled choice_active=0
     choice_marker=$(tor_egress_choice_marker)
@@ -253,6 +246,7 @@ stack_up() {
     # firewall resets such a flow once it is in (#2672), but the packets sent before that have leaked.
     apply_tor_egress_firewall
     provision_egress_check_units # #2599: the dashboard reads the firewall's live state
+    provision_lan_guard_check_units
     # #452: a fresh release install's first `up` pulls the 5 first-party images (pull policy
     # `missing`) — gate that pull on the same cosign check `upgrade` uses, so first install is not
     # the one unverified pull. Same guard: source checkouts skip, a missing cosign.pub warns and

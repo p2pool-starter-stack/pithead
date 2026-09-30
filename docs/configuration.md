@@ -318,6 +318,19 @@ the rule is live but the guard is not enabled. `pithead` removes both units when
 `*_lan_access` switch is off, and `uninstall` removes them. The appliance needs neither: its boot
 runs `pithead up`, which installs the rule first.
 
+`pithead-lan.timer` checks the live rule every two minutes while any LAN port is configured or
+still published by a node container. A failed `apply` that leaves an old LAN bind running keeps the
+timer. `apply` guards the ports in the new configuration and any still published by old containers
+before committing a new `.env`; the old port stays guarded until Compose replaces the container. If an
+external firewall reload removes the rule or its jump, the check deletes the node
+start marker and stops the nodes that publish LAN ports. Nodes Docker reports as published only
+on loopback keep running. If a stop cannot be verified, it tries to
+restore the rule for all three fixed node ports, but keeps the marker invalid and reports failure until
+the node stop is verified. An existing connection can survive a restored rule. When Docker can
+stop the nodes, the ports close by the next check; a start outside
+`pithead` then fails the marker gate. Fix the firewall and run `./pithead up` to restore the rule
+and restart the nodes. This check also runs on the appliance after `pithead up`.
+
 Turning a `*_lan_access` switch on has a cost on the Docker install: Docker no longer restarts a
 crashed `monerod` or `tari`. It stays down until `./pithead up` or the next boot. `./pithead doctor`
 reports a node that is down with the reason, either held since boot because the guard failed (see

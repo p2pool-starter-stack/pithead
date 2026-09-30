@@ -635,7 +635,11 @@ and `--list` prints it).
 - LAN ports take LAN sources only (`local-pruned-main-rpclan` row, which turns on all three
   `*_lan_access` switches). Each published node port is dialled from a network namespace on a veth
   to the host: from `198.51.100.2` the dial must fail, from `10.254.254.2` it must connect
-  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)). The row then strips the
+  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)). With the boot marker
+  still present, the row flushes the live rule, proves the non-private dial opens, then waits for
+  `pithead-lan.timer` to invalidate the marker and close each port within its check interval
+  ([#2846](https://github.com/p2pool-starter-stack/pithead/issues/2846)). `up` restores the nodes.
+  The row then strips the
   rule as a reboot does, checks that the non-private dial now connects, runs
   `pithead-lan-guard.service` before `pithead-egress.service` on the bench, verifies the live
   Tor-egress verdict, and dials again: non-private refused, private through
@@ -647,6 +651,7 @@ and `--list` prints it).
   is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the nodes
   running, `remove_lan_guard` refuses and the rule stays live. The restore proof records
   `pithead-lan-guard.service` and `pithead-lan-hold.service` before the run and restores each one
+  plus `pithead-lan.timer` and its check service
   as it does the egress units: a unit the run added is removed and checked absent, including from
   the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when

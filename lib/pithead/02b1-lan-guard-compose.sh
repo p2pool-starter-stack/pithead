@@ -1,3 +1,41 @@
+# Refresh the rule before stopping stale listeners; both safety stop sets participate in scoped up.
+lan_guard_prepare_up() {
+    # Refresh configured and stale published ports before stopping or starting any node.
+    apply_lan_guard || {
+        lan_guard_check_now || true
+        return 1
+    }
+    lan_guard_stop_rebound_nodes || {
+        lan_guard_check_now || true
+        warn "A node with an old published bind could not be stopped; the LAN rule was rechecked."
+        return 1
+    }
+    lan_guard_check_keep_running || return 1
+}
+
+# A staged rule has no start marker. Stop any already-running LAN node before even the first
+# loopback-bound compose pass; a failed engine query cannot be mistaken for an empty set.
+lan_guard_stop_published() {
+    local ids kp c id seen=" "
+    for kp in $(lan_guard_published); do
+        c=$(lan_guard_container "${kp#*:}")
+        [[ "$seen" == *" $c "* ]] && continue
+        seen+="$c "
+        ids=$(docker ps -q --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" 2>/dev/null) ||
+            {
+                warn "lan-guard:engine-unreadable — cannot check running LAN nodes."
+                return 1
+            }
+        for id in $ids; do
+            if ! docker stop "$id"; then
+                warn "lan-guard:stop-failed — could not stop $c; its ports may still be exposed."
+                return 1
+            fi
+            [[ " ${LAN_GUARD_STOPPED_SERVICES[*]} " == *" $c "* ]] || LAN_GUARD_STOPPED_SERVICES+=("$c")
+        done
+    done
+}
+
 # The e2e keep-running promise cannot survive a stopped LAN node. Refuse rather than silently
 # recreate one that the harness said must continue uninterrupted.
 lan_guard_check_keep_running() {
@@ -54,8 +92,8 @@ lan_guard_compose_up() { # <compose up arguments>
 # a successful readback gets a marker and a second pass with the configured LAN binds.
 finish_lan_guard_after_up() { # <original compose up arguments>
     [ "${LAN_GUARD_STAGED:-0}" = 1 ] || return 0
-    local kp check_rc=0 ports=() up_args=("$@") i
-    for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
+    local kp p check_rc=0 ports=() up_args=("$@") i
+    for p in $(lan_guard_watched_ports); do ports+=("$p"); done
     lan_guard_enforced "${ports[@]}" || check_rc=$?
     if [ "$check_rc" != 0 ]; then
         warn "lan-guard:not-installed — LAN-only rule stayed inactive after compose up ($(lan_guard_reason "$check_rc")); node ports stay on 127.0.0.1."

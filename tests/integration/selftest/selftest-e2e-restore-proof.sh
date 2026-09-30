@@ -203,6 +203,7 @@ proof_probe() { # <baseline-census> <live-census> [fail-census] -> verify_restor
         chain_restore_proof() { return 0; }
         restore_egress_boot_unit() { return 0; }
         restore_egress_check_units() { return 0; }
+        restore_lan_check_units() { return 0; }
         restore_lan_unit() { return 0; }
         ok() { :; }
         warn() { :; }
@@ -374,6 +375,10 @@ assert_eq "a check pair that survives the removal fails the restore proof" "$(ch
 assert_eq "an unrecorded baseline fails closed and removes nothing" "$(check_restore "" present)" "1 present 0"
 assert_contains "verify_restore_proof runs the check pair restore" "$(declare -f verify_restore_proof)" "restore_egress_check_units"
 assert_contains "e2e.sh records the timer before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"'
+assert_contains "e2e.sh records the LAN timer before deploy_branch installs it" "$(cat "$E2E_SRC")" 'LAN_CHECK_BEFORE="$(egress_boot_unit_state pithead-lan.timer)"'
+assert_contains "restore proof removes a LAN timer added by the run" "$(declare -f verify_restore_proof)" "restore_lan_check_units"
+# shellcheck source=tests/integration/tools/restore-lan-check-proof-cases.sh
+source "$HERE/../tools/restore-lan-check-proof-cases.sh"
 
 echo ""
 printf 'restore-proof self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"

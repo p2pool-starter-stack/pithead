@@ -47,6 +47,9 @@ guards. Sources are excluded from release bundles.
 The host firewall installer is `02b-tor-egress-apply.sh`; the host-owned clearnet
 sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
 readback helpers are in `02d-tor-egress-verify.sh`.
+The LAN source rule and old-listener stop are in `02b-lan-guard.sh`; the staged Compose passes
+and scoped node restarts are in `02b1-lan-guard-compose.sh`. Transition prearm and the periodic
+live-rule check are in `02c-lan-guard-check.sh`.
 Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`.
 
