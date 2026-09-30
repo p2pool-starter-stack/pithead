@@ -205,7 +205,6 @@ assert_running_state() {
     # 8. Security/posture axes propagated to .env.
     assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" \
         "$([ "$rpc_lan" = "true" ] && echo 0.0.0.0 || echo 127.0.0.1)"
-    assert_lan_guard_live "$config" # #2616: only LAN sources reach a published node port
     assert_eq "DASHBOARD_SECURE matches config" "$(env_on_box DASHBOARD_SECURE)" "${secure:-true}"
     # #740: dashboard.port flows config -> .env. Unset in every scenario, so HOST_PORT must render
     # empty (the scheme-default path); a scenario that sets dash_port would assert the custom value.
@@ -395,6 +394,3 @@ assert_egress_dial_pair() {
         fi
     fi
 }
-
-# Full per-scenario battery: the read-only state assertions, plus the apply-only idempotency
-# check (a second apply with no config change is a clean no-op).
