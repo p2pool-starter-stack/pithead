@@ -23,7 +23,9 @@ assert_onion_targets() { # <monero mode> <pool name>
     else
         it_fail "P2Pool onion forwards the selected $pool port (#2936)" "rendered Tor destination differs"
     fi
-    if rx "docker exec tor nc -z -w 3 $onion_prefix.28 $onion_pool_port"; then
+    # A running container can still be reconnecting to Monero after a subnet restart.
+    # Require the advertised listener itself to settle, within the readiness deadline.
+    if wait_for 240 5 "P2Pool onion listener (#2936)" rx "docker exec tor nc -z -w 3 $onion_prefix.28 $onion_pool_port"; then
         it_pass "Tor reaches the P2Pool onion target (#2936)"
     else
         it_fail "Tor reaches the P2Pool onion target (#2936)" "TCP probe refused or timed out"
@@ -34,7 +36,7 @@ assert_onion_targets() { # <monero mode> <pool name>
         else
             it_fail "Monero onion forwards to the local node (#2936)" "rendered Tor destination differs"
         fi
-        if rx "docker exec tor nc -z -w 3 $onion_prefix.26 18084"; then
+        if wait_for 240 5 "Monero onion listener (#2936)" rx "docker exec tor nc -z -w 3 $onion_prefix.26 18084"; then
             it_pass "Tor reaches the Monero anonymous listener (#2936)"
         else
             it_fail "Tor reaches the Monero anonymous listener (#2936)" "TCP probe refused or timed out"
