@@ -217,16 +217,16 @@ tor_recover() { # check | apply; explicit operator action only
             tor_recovery_stop_changed_identity || true
         else
             case "$(docker inspect tor --format '{{.State.Running}}' 2>/dev/null)" in
-                false) tor_recovery_restore_start "$dir" "$identities" || true ;;
-                true)
-                    started_after=$(docker inspect tor --format '{{.State.StartedAt}}' 2>/dev/null) || started_after=
-                    if [ -z "$started_before" ] || [ -z "$started_after" ]; then
-                        warn "Tor start time is unknown; check Monero peers before retrying recovery."
-                    elif [ "$started_before" != "$started_after" ]; then
-                        tor_recovery_redial_monerod
-                    fi
-                    ;;
-                *) warn "Tor stop status is unknown; check Tor before retrying recovery." ;;
+            false) tor_recovery_restore_start "$dir" "$identities" || true ;;
+            true)
+                started_after=$(docker inspect tor --format '{{.State.StartedAt}}' 2>/dev/null) || started_after=
+                if [ -z "$started_before" ] || [ -z "$started_after" ]; then
+                    warn "Tor start time is unknown; check Monero peers before retrying recovery."
+                elif [ "$started_before" != "$started_after" ]; then
+                    tor_recovery_redial_monerod
+                fi
+                ;;
+            *) warn "Tor stop status is unknown; check Tor before retrying recovery." ;;
             esac
         fi
         control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"

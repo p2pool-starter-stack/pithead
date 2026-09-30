@@ -74,35 +74,35 @@ tor_recovery_info() {
 }
 docker() {
     case "$*" in
-        *'.Id}}'*)
-            if [ "${RECREATED:-0}" = 1 ] && [ -e "$WORK/observed" ]; then printf 'different startup true\n'; else printf 'same startup true\n'; fi
-            ;;
-        *'.State.Running'*) if [ "${RPC:-unavailable}" = advancing ] || [ -e "$WORK/node-started" ]; then echo true; else echo false; fi ;;
-        *'.State.StartedAt'*) echo startup ;;
-        *'.State.Status'*) echo created ;;
-        *'.State.Health.Status'*) echo healthy ;;
-        'exec tor /usr/local/bin/tor-recovery-diagnose.sh')
-            [ "${AUTH_FAIL:-0}" = 0 ] || return 1
-            [ "${CIRCUIT:-0}" = 0 ] || return 1
-            [ "${BOOTSTRAP:-95}" = 95 ] || return 1
-            if [ "${RECOVERED:-0}" = 1 ] && [ -e "$WORK/observed" ]; then return 1; fi
-            echo bootstrap95-no-circuit
-            ;;
-        'logs --since '*' --tail 200 tor')
-            [ "${LOG_FAIL:-0}" = 0 ] || return 1
-            for ((n = 0; n < ${WARNINGS:-2}; n++)); do echo 'No valid circuit build time data out of 1000 times'; done
-            ;;
-        'compose stop tor') echo stop >>"$WORK/actions" ;;
-        'compose start tor') echo start >>"$WORK/actions" ;;
-        'compose start monerod')
-            echo node-start >>"$WORK/actions"
-            : >"$WORK/node-started"
-            ;;
-        'compose restart monerod') echo redial >>"$WORK/actions" ;;
-        *)
-            echo "unexpected Docker command: $*" >&2
-            return 1
-            ;;
+    *'.Id}}'*)
+        if [ "${RECREATED:-0}" = 1 ] && [ -e "$WORK/observed" ]; then printf 'different startup true\n'; else printf 'same startup true\n'; fi
+        ;;
+    *'.State.Running'*) if [ "${RPC:-unavailable}" = advancing ] || [ -e "$WORK/node-started" ]; then echo true; else echo false; fi ;;
+    *'.State.StartedAt'*) echo startup ;;
+    *'.State.Status'*) echo created ;;
+    *'.State.Health.Status'*) echo healthy ;;
+    'exec tor /usr/local/bin/tor-recovery-diagnose.sh')
+        [ "${AUTH_FAIL:-0}" = 0 ] || return 1
+        [ "${CIRCUIT:-0}" = 0 ] || return 1
+        [ "${BOOTSTRAP:-95}" = 95 ] || return 1
+        if [ "${RECOVERED:-0}" = 1 ] && [ -e "$WORK/observed" ]; then return 1; fi
+        echo bootstrap95-no-circuit
+        ;;
+    'logs --since '*' --tail 200 tor')
+        [ "${LOG_FAIL:-0}" = 0 ] || return 1
+        for ((n = 0; n < ${WARNINGS:-2}; n++)); do echo 'No valid circuit build time data out of 1000 times'; done
+        ;;
+    'compose stop tor') echo stop >>"$WORK/actions" ;;
+    'compose start tor') echo start >>"$WORK/actions" ;;
+    'compose start monerod')
+        echo node-start >>"$WORK/actions"
+        : >"$WORK/node-started"
+        ;;
+    'compose restart monerod') echo redial >>"$WORK/actions" ;;
+    *)
+        echo "unexpected Docker command: $*" >&2
+        return 1
+        ;;
     esac
 }
 refused() {
