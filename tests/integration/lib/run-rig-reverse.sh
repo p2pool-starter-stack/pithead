@@ -74,11 +74,77 @@ run_rigforge_reverse() { # <rig-name> <orig-max_temp_c-or-empty>
 }
 
 # POST straight to the rig's control API from the bench (the host runner's dial, minus the dashboard); used only by #516.
-_rig_control_apply() { # <changes-json> -> echoes change_id
-    local config
+_rig_control_apply() { # <changes-json> -> only a validated change_id on stdout
+    local config script result id diagnostic started
     config="$(printf '%s' "$1" | jq -er 'if type == "object" then tojson | @json else error("changes") end')" || return 1
     printf -v config 'header = %s\ndata-binary = %s' "$(printf 'Authorization: Bearer %s' "${IT_RIG_TOKEN:-}" | jq -Rs .)" "$config"
-    printf '%s\n' "$config" | rx "curl -fsS --max-time 15 -K - -X POST -H 'Content-Type: application/json' $(quote_arg "http://$RIG_HOST:$RIG_CONTROL_PORT/apply")" --stdin 2>/dev/null | jq -r '.change_id // empty' 2>/dev/null
+    started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    # Execute capture where curl runs. Only the constrained envelope crosses rx;
+    # credentials stay on stdin, and raw response bytes never enter the transcript.
+    script="$(
+        cat <<'CAPTURE'
+set -uo pipefail
+umask 077
+d="$(mktemp -d)" || exit 1
+trap 'rm -rf "$d"' EXIT
+trap 'exit 1' HUP INT TERM
+stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# The file-size limit also bounds chunked responses on older curl versions.
+# No retry: even a transport error may follow a staged POST.
+http="$( (ulimit -c 0; ulimit -f 16 || exit 1
+    curl -q -sS --max-time 15 --max-filesize 16384 -K - -X POST \
+        -H 'Content-Type: application/json' -o "$d/body" -w '%{http_code}' "$1"
+) 2>/dev/null)"
+rc=$?
+[[ "$http" =~ ^[0-9]{3}$ ]] || http=000
+id='' status=absent
+if [ "$rc" -ne 0 ]; then
+    classification=transport-failure
+elif [[ ! "$http" =~ ^2[0-9]{2}$ ]]; then
+    classification=http-refusal
+elif [ ! -s "$d/body" ]; then
+    classification=empty-body
+elif ! jq -cs . "$d/body" >"$d/json" 2>/dev/null; then
+    classification=invalid-json
+elif [ "$(jq 'length' "$d/json")" = 0 ]; then
+    classification=empty-body
+else
+    # Exactly one object; no coercion, multiline IDs or arbitrary response text.
+    id="$(jq -r 'if length == 1 and (.[0] | type) == "object" then
+        .[0].change_id | select(type == "string") |
+        select(length == 16 and test("^[0-9a-f]{16}$")) else empty end' "$d/json" 2>/dev/null)"
+    status="$(jq -r 'if length == 1 and (.[0] | type) == "object" then
+        .[0].status | select(. == "accepted" or . == "applied" or . == "rejected" or
+        . == "failed" or . == "rolled_back" or . == "noop") else empty end' "$d/json" 2>/dev/null)"
+    status="${status:-absent}"
+    classification=missing-valid-id
+    [ -z "$id" ] || classification=success
+fi
+jq -cn --arg request_utc "$stamp" --arg http_status "$http" --arg curl_exit "$rc" \
+    --arg classification "$classification" --arg change_id "$id" --arg response_status "$status" \
+    '$ARGS.named'
+CAPTURE
+    )"
+    result="$(printf '%s\n' "$config" | rx "bash -c $(quote_arg "$script") -- $(quote_arg "http://$RIG_HOST:$RIG_CONTROL_PORT/apply")" --stdin 2>/dev/null)" || result=''
+    id="$(printf '%s' "$result" | jq -er 'select(.classification == "success" and .curl_exit == "0") |
+        select(.http_status | test("^2[0-9]{2}$")) | .change_id |
+        select(type == "string") | select(length == 16 and test("^[0-9a-f]{16}$"))' 2>/dev/null)" || id=''
+    if [ -n "$id" ]; then
+        printf '%s\n' "$id"
+        return 0
+    fi
+    diagnostic="$(printf '%s' "$result" | jq -er '
+        select(.request_utc | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) |
+        select(.http_status | test("^[0-9]{3}$")) |
+        select(.curl_exit | test("^[0-9]{1,3}$")) |
+        select(.classification == "http-refusal" or .classification == "transport-failure" or
+            .classification == "empty-body" or .classification == "invalid-json" or .classification == "missing-valid-id") |
+        select(.response_status == "absent" or .response_status == "accepted" or .response_status == "applied" or
+            .response_status == "rejected" or .response_status == "failed" or .response_status == "rolled_back" or .response_status == "noop") |
+        "request_utc=\(.request_utc) http_status=\(.http_status) curl_exit=\(.curl_exit) classification=\(.classification) response_status=\(.response_status)"' 2>/dev/null)" || diagnostic="request_utc=$started http_status=000 curl_exit=unknown classification=transport-failure response_status=absent"
+    it_log "direct rig control apply diagnostic: $diagnostic" >&2
+    # Preserve the caller's direct acceptance assertion even under errexit.
+    return 0
 }
 # Poll the rig's /status for <change_id> reaching <want-status>. Returns 0 on match within the window.
 _rig_control_await() { # <change_id> <want-status> [timeout-s=30]
