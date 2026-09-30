@@ -9,7 +9,8 @@ assert_running_state() {
     tmode="$(jq_get "$config" '.tari.mode')"
     tmode="${tmode:-local}"
     pool="$(jq_get "$config" '.p2pool.pool')"
-    pool="${pool:-main}"
+    # Wizard configs omit reference defaults; the renderer defaults to mini.
+    pool="${pool:-mini}"
     secure="$(jq_get "$config" '.dashboard.secure')"
     tari_req="$(jq_get "$config" '.dashboard.tari_required')"
     xvb="$(jq_get "$config" '.xvb.enabled')"

@@ -66,4 +66,29 @@ for pool in main mini nano; do
     run_case "$pool" local 1000 0 1
     run_case "$pool" local 0 1000 1
 done
+# The wizard strips keys equal to reference defaults. Exercise the real state
+# assertion's choice before the network probes, including a sparse mini config.
+check_state_pool() (
+    local requested="$1" case_expected="$2" config passes=0 failures=0
+    # shellcheck source=tests/integration/lib/run-state.sh
+    source "$HERE/../lib/run-state.sh"
+    config=$(jq -nc --arg pool "$requested" '
+        {monero: {mode: "remote"}, tari: {mode: "off"}} |
+        if $pool == "" then . else .p2pool.pool = $pool end')
+    wait_for() { return 0; }
+    clearnet_flag_effective() { echo false; }
+    running_services() { :; }
+    expected_services() { :; }
+    rx() { echo 0; }
+    assert_eq() { [ "$2" = "$3" ]; }
+    assert_onion_targets() {
+        [ "$1" = remote ] && [ "$2" = "$case_expected" ] || exit 1
+        exit 0
+    }
+    assert_running_state check "$config"
+    # The assertion must call the onion probe with the expected effective pool.
+    exit 1
+)
+check_state_pool '' mini
+for pool in main mini nano; do check_state_pool "$pool" "$pool"; done
 echo 'selftest-onion-targets: PASS'
