@@ -1,15 +1,11 @@
 """Read-only daemon sync proof using the restored credentials and direct Tari gRPC."""
 
-import hashlib
-import http.client
 import json
-import secrets
 import shutil
 import subprocess
-import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
-from urllib.request import parse_http_list, parse_keqv_list
 
 TARI_PROBE = """
 import json, os, grpc
@@ -24,47 +20,6 @@ print(json.dumps({'initial_sync_achieved': tip.initial_sync_achieved}))
 STAGE = "environment"
 
 
-def digest_header(challenges, user, password, path):
-    # Monero advertises MD5 and MD5-sess separately. Select its MD5/auth challenge.
-    for value in challenges:
-        scheme, _, fields = value.partition(" ")
-        if scheme.lower() != "digest":
-            continue
-        challenge = parse_keqv_list(parse_http_list(fields))
-        if challenge.get("algorithm", "MD5").upper() == "MD5" and "auth" in (
-            part.strip() for part in challenge.get("qop", "").split(",")
-        ):
-            break
-    else:
-        raise ValueError("required Digest challenge missing")
-    realm, nonce = challenge["realm"], challenge["nonce"]
-    if not realm or not nonce:
-        raise ValueError("incomplete Digest challenge")
-
-    def quoted(value):
-        if any(ord(char) < 32 or ord(char) == 127 for char in value):
-            raise ValueError("invalid Digest field")
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-    def md5(value):
-        return hashlib.md5(value.encode(), usedforsecurity=False).hexdigest()
-
-    cnonce = secrets.token_hex(16)
-    response = md5(
-        f"{md5(f'{user}:{realm}:{password}')}:{nonce}:00000001:{cnonce}:auth:{md5('GET:' + path)}"
-    )
-    fields = dict(
-        username=user, realm=realm, nonce=nonce, uri=path, response=response, cnonce=cnonce
-    )
-    if "opaque" in challenge:
-        fields["opaque"] = challenge["opaque"]
-    return (
-        "Digest "
-        + ", ".join(key + "=" + quoted(value) for key, value in fields.items())
-        + ", algorithm=MD5, qop=auth, nc=00000001"
-    )
-
-
 def monero_info(url, user, password):
     target = urlsplit(url)
     if (
@@ -74,44 +29,67 @@ def monero_info(url, user, password):
         or target.password is not None
         or target.query
         or target.fragment
+        or any(ord(char) < 32 or ord(char) == 127 for char in user + password)
     ):
-        raise ValueError("invalid daemon endpoint")
-    path = target.path.rstrip("/") + "/get_info"
-    transport = (
-        http.client.HTTPSConnection if target.scheme == "https" else http.client.HTTPConnection
-    )
-    connection = transport(target.hostname, target.port, timeout=8)
-    deadline = time.monotonic() + 8
-
-    def read(response):
-        payload = response.read(65537)
-        if len(payload) > 65536:
-            raise ValueError("daemon response too large")
-        return payload
-
-    try:
-        # HTTPConnection connects directly; no proxy discovery or redirect handling.
-        connection.request("GET", path)
-        challenge = connection.getresponse()
-        if challenge.status != 401 or challenge.will_close:
-            raise ValueError("required persistent Digest session missing")
-        headers = [
-            value for key, value in challenge.getheaders() if key.lower() == "www-authenticate"
-        ]
-        read(challenge)
-        authorization = digest_header(headers, user, password, path)
-        remaining = deadline - time.monotonic()
-        if remaining <= 0 or connection.sock is None:
-            raise TimeoutError("Digest session expired")
-        # Preserve the challenged socket. Never reconnect to retry credentials.
-        connection.sock.settimeout(remaining)
-        connection.request("GET", path, headers={"Authorization": authorization})
-        response = connection.getresponse()
-        if response.status != 200:
-            raise ValueError("authenticated daemon request refused")
-        return json.loads(read(response))
-    finally:
-        connection.close()
+        raise ValueError("invalid daemon endpoint or credentials")
+    curl = shutil.which("curl")
+    if not curl:
+        raise ValueError("required Digest transport unavailable")
+    # libcurl owns Digest negotiation. Credentials go only to stdin; neither argv
+    # nor the private response-header file contains the login. Disable ambient
+    # curl configuration and proxies, redirects and non-HTTP protocols.
+    with TemporaryDirectory(prefix="pithead-sync-") as scratch:
+        headers = Path(scratch) / "headers"
+        result = subprocess.run(  # noqa: S603
+            [
+                curl,
+                "-q",
+                "-fsS",
+                "--http1.1",
+                "--noproxy",
+                "*",
+                "--proto",
+                "=http,https",
+                "--no-location",
+                "--max-filesize",
+                "65536",
+                "--max-time",
+                "8",
+                "--digest",
+                "-K",
+                "-",
+                "--dump-header",
+                str(headers),
+                "--write-out",
+                "\n%{num_connects} %{http_code} %{num_redirects}",
+                "--url",
+                url.rstrip("/") + "/get_info",
+            ],
+            input="user = " + json.dumps(user + ":" + password, ensure_ascii=False) + "\n",
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+        body, separator, counts = result.stdout.rpartition("\n")
+        if not separator or counts != "1 200 0" or len(body.encode()) > 65536:
+            raise ValueError("required authenticated connection not proved")
+        with headers.open("rb") as stream:
+            wire = stream.read(16385)
+        if len(wire) > 16384:
+            raise ValueError("daemon headers too large")
+        blocks = wire.decode("iso-8859-1").strip().split("\r\n\r\n")
+        if (
+            len(blocks) != 2
+            or blocks[0].split("\r\n", 1)[0].split()[1:2] != ["401"]
+            or blocks[1].split("\r\n", 1)[0].split()[1:2] != ["200"]
+            or not any(
+                line.lower().startswith("www-authenticate: digest ")
+                for line in blocks[0].split("\r\n")[1:]
+            )
+        ):
+            raise ValueError("required Digest challenge not proved")
+        return json.loads(body)
 
 
 def probe(env_path=Path(".env")):

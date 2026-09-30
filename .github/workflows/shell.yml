@@ -79,8 +79,8 @@ jobs:
         # git-ignored and read on demand via `make test-inventory`.
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test
-        # Pure-logic checks for the tests/integration/ harness (config rendering, matrix
-        # coverage, redaction). The LIVE matrix (tests/integration/run.sh) needs a real test
+        # Pure logic and bounded local transport fixtures for the tests/integration/
+        # harness (config rendering, matrix coverage, redaction, Digest connection reuse). The LIVE matrix (tests/integration/run.sh) needs a real test
         # server and runs as a gated/manual release gate (#54), not on every PR.
         run: make test-integration-selftest
       - name: Run repository tooling checks

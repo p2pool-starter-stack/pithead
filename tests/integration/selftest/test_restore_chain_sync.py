@@ -1,11 +1,9 @@
 """Exercise daemon restoration verdicts without Docker, network access or credentials."""
 
 import contextlib
-import hashlib
 import importlib.util
 import io
 import json
-import socket
 import subprocess
 import types
 import unittest
@@ -131,15 +129,15 @@ class DaemonProof(unittest.TestCase):
         with (
             patch.object(Path, "read_text", return_value=self.env.read_text()),
             patch.object(
-                socket,
-                "create_connection",
+                module.subprocess,
+                "run",
                 side_effect=ValueError("private-endpoint fixture-password"),
-            ) as connect,
+            ) as request,
             contextlib.redirect_stdout(out),
             self.assertRaises(SystemExit) as raised,
         ):
             exec(compile(code, str(SOURCE), "exec"), {"__name__": "__main__"})  # noqa: S102 -- checked-in entrypoint
-        connect.assert_called_once()
+        request.assert_called_once()
         self.assertEqual(raised.exception.code, 1)
         self.assertEqual(out.getvalue(), "independent daemon sync not proved: monero-rpc\n")
 
@@ -177,169 +175,124 @@ class DaemonProof(unittest.TestCase):
 
 
 class DigestExchange(unittest.TestCase):
-    """Real HTTPConnection/HTTPResponse framing over in-memory sockets."""
+    """Pure tests for libcurl's private input and mandatory session evidence."""
 
-    def exchange(
-        self,
-        first=401,
-        second=200,
-        close=False,
-        body=None,
-        challenge=None,
-        password="changeme",  # noqa: S107 -- synthetic protocol fixture
-        url="http://fixture.invalid:18081",
-    ):
-        sockets = []
-        requests = []
-        challenges = challenge or (
-            'Digest realm="monero-rpc", nonce="fixture-nonce", algorithm=MD5, qop="auth"\r\n'
-            'WWW-Authenticate: Digest realm="monero-rpc", nonce="fixture-nonce", algorithm=MD5-sess, qop="auth"'
-        )
+    def exchange(self, headers=None, counts="1 200 0", body=None, password="changeme"):  # noqa: S107 -- synthetic fixture
+        if headers is None:
+            headers = (
+                'HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Digest realm="fixture", '
+                'nonce="fixture-nonce", qop="auth"\r\nContent-Length: 0\r\n\r\n'
+                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+            )
+        if body is None:
+            body = json.dumps({"status": "OK", "synchronized": True})
+        header_path = None
 
-        testcase = self
-
-        class WireSocket:
-            def __init__(self):
-                self.sent = bytearray()
-                self.closed = False
-                self.calls = 0
-
-            def setsockopt(self, *args):
-                pass
-
-            def sendall(self, value):
-                self.sent.extend(value)
-
-            def settimeout(self, value):
-                testcase.assertTrue(0 < value <= 8)
-
-            def close(self):
-                self.closed = True
-
-            def makefile(self, *args):
-                request = bytes(self.sent).decode("latin-1")
-                self.sent.clear()
-                requests.append(request)
-                self.calls += 1
-                code = first if self.calls == 1 else second
-                headers = ""
-                if code == 401:
-                    headers = "WWW-Authenticate: " + challenges + "\r\n"
-                if close:
-                    headers += "Connection: close\r\n"
-                if self.calls > 1:
-                    # Independently verify the session nonce and saved credentials.
-                    line = next(
-                        line for line in request.splitlines() if line.startswith("Authorization: ")
-                    )
-                    auth = module.parse_keqv_list(
-                        module.parse_http_list(line.split("Digest ", 1)[1])
-                    )
-
-                    def h(value):
-                        return hashlib.md5(value.encode(), usedforsecurity=False).hexdigest()
-
-                    expected = h(
-                        h("fixture-user:monero-rpc:" + password)
-                        + ":fixture-nonce:"
-                        + auth["nc"]
-                        + ":"
-                        + auth["cnonce"]
-                        + ":auth:"
-                        + h("GET:/get_info")
-                    )
-                    if auth["nonce"] != "fixture-nonce" or auth["response"] != expected:
-                        code = 401
-                    testcase.assertEqual(auth["username"], "fixture-user")
-                    testcase.assertEqual(auth["uri"], "/get_info")
-                    testcase.assertEqual(auth["algorithm"], "MD5")
-                    testcase.assertEqual(auth["qop"], "auth")
-                    testcase.assertEqual(auth["nc"], "00000001")
-                payload = (
-                    body
-                    if body is not None
-                    else json.dumps({"status": "OK", "synchronized": True}).encode()
-                )
-                return io.BytesIO(
-                    (
-                        f"HTTP/1.1 {code} fixture\r\n"
-                        + headers
-                        + f"Content-Length: {len(payload)}\r\n\r\n"
-                    ).encode()
-                    + payload
-                )
-
-        def connect(address, *args, **kwargs):
-            self.assertEqual(address, ("fixture.invalid", 18081))
-            wire = WireSocket()
-            sockets.append(wire)
-            return wire
+        def transport(argv, **kwargs):
+            nonlocal header_path
+            self.assertEqual(argv[:3], ["/fixture/curl", "-q", "-fsS"])
+            for flag, value in (
+                ("--max-time", "8"),
+                ("--max-filesize", "65536"),
+                ("--noproxy", "*"),
+                ("--proto", "=http,https"),
+                ("-K", "-"),
+                ("--url", "http://fixture.invalid:18081/get_info"),
+            ):
+                self.assertEqual(argv[argv.index(flag) + 1], value)
+            self.assertIn("--digest", argv)
+            self.assertIn("--no-location", argv)
+            self.assertIn("--http1.1", argv)
+            self.assertNotIn("--basic", argv)
+            self.assertNotIn("fixture-user", " ".join(argv))
+            self.assertNotIn(password, " ".join(argv))
+            self.assertEqual(
+                kwargs,
+                dict(
+                    input="user = "
+                    + json.dumps("fixture-user:" + password, ensure_ascii=False)
+                    + "\n",
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=True,
+                ),
+            )
+            header_path = Path(argv[argv.index("--dump-header") + 1])
+            header_path.write_bytes(headers.encode("iso-8859-1"))
+            return types.SimpleNamespace(stdout=body + "\n" + counts)
 
         with (
-            patch.object(socket, "create_connection", side_effect=connect),
-            patch.dict(
-                "os.environ",
-                {"http_proxy": "http://proxy.invalid", "HTTP_PROXY": "http://proxy.invalid"},
-            ),
+            patch.object(module.shutil, "which", return_value="/fixture/curl"),
+            patch.object(module.subprocess, "run", side_effect=transport) as run,
         ):
             try:
-                result = module.monero_info(url, "fixture-user", password)
-                self.assertEqual(len(sockets), 1)
-                self.assertEqual(len(requests), 2)
-                self.assertNotIn("Authorization:", requests[0])
-                self.assertNotIn("Connection: close", "".join(requests))
+                result = module.monero_info(
+                    "http://fixture.invalid:18081", "fixture-user", password
+                )
+                run.assert_called_once()
                 return result
             finally:
-                self.assertTrue(all(wire.closed for wire in sockets))
+                if header_path:
+                    self.assertFalse(header_path.exists())
 
-    def test_authenticated_retry_retains_challenged_connection(self):
+    def test_libcurl_digest_uses_private_stdin_and_bounded_direct_transport(self):
         self.assertIs(self.exchange()["synchronized"], True)
+        self.assertIs(self.exchange(password='quote " slash \\ dollar $$')["synchronized"], True)  # noqa: S106 -- synthetic fixture
 
-    def test_saved_password_is_used_in_digest(self):
-        self.assertIs(self.exchange(password='quote " slash \\ dollar $$')["synchronized"], True)  # noqa: S106 -- synthetic protocol fixture
+    def test_reconnect_redirect_or_failed_authentication_cannot_pass(self):
+        for counts in ("2 200 0", "0 200 0", "1 302 0", "1 200 1", "1 401 0", ""):
+            with self.subTest(counts=counts), self.assertRaises(ValueError):
+                self.exchange(counts=counts)
 
-    def test_unauthenticated_ok_redirect_closed_session_and_bad_retry_refuse(self):
-        for options in (
-            {"first": 200},
-            {"first": 302},
-            {"close": True},
-            {"second": 401},
-            {"second": 302},
-            {"second": 503},
+    def test_actual_digest_challenge_and_final_ok_are_required(self):
+        for headers in (
+            "HTTP/1.1 200 OK\r\n\r\n",
+            'HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="fixture"\r\n\r\nHTTP/1.1 200 OK\r\n\r\n',
+            'HTTP/1.1 302 Found\r\nWWW-Authenticate: Digest realm="fixture"\r\n\r\nHTTP/1.1 200 OK\r\n\r\n',
+            'HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Digest realm="fixture"\r\n\r\nHTTP/1.1 401 Unauthorized\r\n\r\n',
+            "HTTP/1.1 401 Unauthorized\r\n\r\nHTTP/1.1 200 OK\r\n\r\n",
         ):
-            with self.subTest(options=options), self.assertRaises(ValueError):
+            with self.subTest(headers=headers), self.assertRaises(ValueError):
+                self.exchange(headers=headers)
+
+    def test_response_and_headers_are_bounded_and_json_is_required(self):
+        for options in ({"body": "x" * 65537}, {"body": "invalid-json"}, {"headers": "x" * 16385}):
+            with self.subTest(options=list(options)), self.assertRaises(ValueError):
                 self.exchange(**options)
 
-    def test_challenge_is_required_and_must_support_monero_md5_auth(self):
-        for value in (
-            'Basic realm="fixture"',
-            'Digest realm="fixture", nonce="n", qop="auth-int"',
-            'Digest realm="fixture", qop="auth"',
-            'Digest realm="fixture", nonce="n", algorithm=SHA-512, qop="auth"',
+    def test_endpoint_and_credentials_cannot_inject_transport_options(self):
+        for url, password in (
+            ("ftp://fixture.invalid", "changeme"),
+            ("http://other:password@fixture.invalid", "changeme"),
+            ("http://fixture.invalid?target=other", "changeme"),
+            ("http://fixture.invalid#other", "changeme"),
+            ("http://fixture.invalid", "line\nbreak"),
+            ("http://fixture.invalid", "nul\x00byte"),
         ):
-            with self.subTest(value=value), self.assertRaises((ValueError, KeyError)):
-                self.exchange(challenge=value)
+            with (
+                self.subTest(url=url),
+                patch.object(module.subprocess, "run") as run,
+                self.assertRaises(ValueError),
+            ):
+                module.monero_info(url, "fixture-user", password)
+            run.assert_not_called()
 
-    def test_oversized_and_invalid_payloads_refuse(self):
-        for body in (b"x" * 65537, b"invalid-json"):
-            with self.subTest(size=len(body)), self.assertRaises(ValueError):
-                self.exchange(body=body)
-
-    def test_endpoint_cannot_supply_credentials_or_redirect_destination(self):
-        for url in (
-            "ftp://fixture.invalid",
-            "http://other:password@fixture.invalid",
-            "http://fixture.invalid?target=other",
-            "http://fixture.invalid#other",
+    def test_missing_transport_and_transport_failure_refuse(self):
+        with patch.object(module.shutil, "which", return_value=None), self.assertRaises(ValueError):
+            module.monero_info("http://fixture.invalid", "fixture-user", "changeme")
+        for error in (
+            subprocess.TimeoutExpired("private", 10),
+            subprocess.CalledProcessError(1, "private"),
         ):
-            with self.subTest(url=url), self.assertRaises(ValueError):
-                self.exchange(url=url)
-
-    def test_connection_errors_propagate_without_any_retry(self):
-        with patch.object(socket, "create_connection", side_effect=TimeoutError) as connect:
-            with self.assertRaises(TimeoutError):
+            with (
+                self.subTest(error=error),
+                patch.object(module.shutil, "which", return_value="/fixture/curl"),
+                patch.object(module.subprocess, "run", side_effect=error) as run,
+                self.assertRaises(type(error)),
+            ):
                 module.monero_info("http://fixture.invalid", "fixture-user", "changeme")
-            connect.assert_called_once()
+            run.assert_called_once()
 
 
 if __name__ == "__main__":
