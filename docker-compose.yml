@@ -261,8 +261,8 @@ services:
     # here depends on service discovery). The one OS-resolver lookup left is the Tari Pulse service's
     # checkpoints.tari.com TXT (~every 120 s) — an ADVISORY deep-reorg check. Pinned Tari 6
     # supports base_node.tari_pulse_enabled=false, but this stack keeps Pulse enabled and the
-    # resolver isolated. Pulse TOLERATES a DNS failure (returns "passed", verified in
-    # tari_pulse_service/mod.rs). Point the
+    # resolver isolated. DNS query errors warn and skip the check; timeouts return "passed"
+    # (verified in tari_pulse_service/mod.rs). Point the
     # resolver at a dead local address so that lookup fails WITHOUT a packet leaving the host — zero
     # clearnet DNS, no functional impact (#162; #160 decision-4). Trade-off: lose the Pulse deep-reorg
     # advisory, the same class as monerod's disable-dns-checkpoints (#161).
