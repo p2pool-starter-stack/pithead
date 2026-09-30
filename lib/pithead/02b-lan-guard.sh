@@ -31,11 +31,16 @@ LAN_GUARD_BINDS="MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:1814
 LAN_GUARD_MARKER="data/lan-guard/enforced"
 BOOT_ID_FILE="${PITHEAD_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
 lan_guard_mark() {
-    local tmp
-    mkdir -p "${LAN_GUARD_MARKER%/*}" || return 1
-    tmp=$(mktemp "${LAN_GUARD_MARKER}.XXXXXX") || return 1
-    if ! cat "$BOOT_ID_FILE" >"$tmp" || ! chmod 644 "$tmp" || ! mv -f "$tmp" "$LAN_GUARD_MARKER"; then
-        rm -f "$tmp"
+    local tmp boot_id dir="${LAN_GUARD_MARKER%/*}"
+    local -a writer=()
+    boot_id=$(cat "$BOOT_ID_FILE") || return 1
+    mkdir -p "$dir" 2>/dev/null || sudo -n mkdir -p "$dir" || return 1
+    # Boot and privileged startup can leave a root-owned 0755 directory. Keep its metadata.
+    [ -w "$dir" ] || writer=(sudo -n)
+    tmp=$("${writer[@]}" mktemp "${LAN_GUARD_MARKER}.XXXXXX") || return 1
+    if ! printf '%s\n' "$boot_id" | "${writer[@]}" tee "$tmp" >/dev/null ||
+        ! "${writer[@]}" chmod 644 "$tmp" || ! "${writer[@]}" mv -f "$tmp" "$LAN_GUARD_MARKER"; then
+        "${writer[@]}" rm -f "$tmp"
         return 1
     fi
 }

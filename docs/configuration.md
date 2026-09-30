@@ -286,7 +286,8 @@ addresses is not supported.
 The rule needs root: `sudo` with `iptables` on the Docker install, `nft` on the appliance.
 `pithead` installs it on every `up`, `apply` and `upgrade` and removes it on `down`. When it cannot
 install the rule, it keeps the ports on `127.0.0.1` for that start instead of publishing them
-without it. `./pithead doctor` then says the ports are held and why.
+without it. Startup returns nonzero when requested LAN bindings are unavailable, even if the
+loopback start succeeds. `./pithead doctor` then says the ports are held and why.
 When a LAN-access switch turns off, `pithead` stops a still-running node with the old published
 bind before it removes that port's rule. If the following Compose start fails, the old node stays
 stopped instead of listening without the rule. Run `./pithead up` after fixing the failure.
@@ -302,8 +303,10 @@ before it starts anything. `docker.service` depends on neither unit, so other co
 host start as usual. A restart policy does not stop a start by hand, so the node containers check
 for themselves: while the rule is live, `pithead` records the host's boot id in `data/lan-guard/`,
 and a node with a LAN bind exits (code 78) before it listens unless that record matches the
-running boot. That covers `docker start`, `docker compose up` or `start` outside `pithead`, and a
-reboot. `./pithead restart` also refuses while a published port has no live rule, and the
+running boot. When boot or a privileged start leaves a root-owned marker directory, normal-user
+startup uses passwordless sudo to replace the marker atomically, preserving directory ownership
+and mode. If that write fails, startup keeps the ports on loopback and returns nonzero. The marker
+gate covers `docker start`, `docker compose up` or `start` outside `pithead`, and a reboot. `./pithead restart` also refuses while a published port has no live rule, and the
 dashboard's Tor auto-heal never starts a stopped `monerod`. When either unit cannot be installed, `pithead` keeps
 the ports on `127.0.0.1`, as it does when the rule itself fails, and `./pithead doctor` warns while
 the rule is live but the guard is not enabled. `pithead` removes both units when every

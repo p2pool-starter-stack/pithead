@@ -54,6 +54,37 @@ assert_lan_guard_live() { # <config>
     assert_lan_guard_boot_failure $ports
 }
 
+# Destructive scenario-only regression; never added to a read-only current-state check.
+assert_lan_guard_marker_startup() {
+    local kp ports="" p
+    for kp in MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:18142; do
+        case "$(env_on_box "${kp%%:*}")" in '' | 127.0.0.1) ;; *) ports="$ports ${kp#*:}" ;; esac
+    done
+    [ -n "$ports" ] || return 0
+    # A privileged startup can create this directory before the supported runtime user starts.
+    local metadata before after rc=0
+    metadata=$(rx "stat -c '%u:%g:%a' data/lan-guard")
+    before=$(rx "docker inspect -f '{{.Id}}' monerod tari 2>/dev/null")
+    rx 'sudo chown 0:0 data/lan-guard && sudo chmod 755 data/lan-guard' >/dev/null 2>&1 || rc=$?
+    assert_rc "root-created marker directory fixture (#2946)" "$rc" 0
+    assert_ne "guarded startup runs as the normal runtime user (#2946)" "$(rx 'id -u')" 0
+    rc=0
+    pithead up >/dev/null 2>&1 || rc=$?
+    assert_rc "normal-user startup retains LAN bindings with a root-created marker directory (#2946)" "$rc" 0
+    assert_eq "the root-created marker directory keeps its metadata (#2946)" "$(rx "stat -c '%u:%g:%a' data/lan-guard")" 0:0:755
+    after=$(rx "docker inspect -f '{{.Id}}' monerod tari 2>/dev/null")
+    assert_eq "healthy nodes are not recreated for marker permissions (#2946)" "$after" "$before"
+    rc=0
+    if [[ "$metadata" =~ ^([0-9]+):([0-9]+):([0-7]+)$ ]]; then
+        rx "sudo chown ${BASH_REMATCH[1]}:${BASH_REMATCH[2]} data/lan-guard && sudo chmod ${BASH_REMATCH[3]} data/lan-guard" >/dev/null 2>&1 || rc=$?
+    else rc=1; fi
+    assert_rc "restore marker-directory metadata (#2946)" "$rc" 0
+    for p in $ports; do
+        assert_eq "root-created marker, LAN port $p: private source connects (#2946)" "$(_lan_probe 10.254.254 "$p")" open
+        assert_eq "root-created marker, LAN port $p: non-private source refused (#2946)" "$(_lan_probe 198.51.100 "$p")" closed
+    done
+}
+
 # Flush only the kernel rule while the boot marker still says this boot. The timer must remove the
 # marker and stop the running LAN nodes before its next two-minute interval ends (#2846).
 assert_lan_guard_timer_flush() { # <port>...

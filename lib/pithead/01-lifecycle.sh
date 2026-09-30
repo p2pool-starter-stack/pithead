@@ -72,7 +72,6 @@ resolve_pull_policy() {
         printf 'never'
     else printf 'missing'; fi
 }
-
 # Installed runtimes do not ship build contexts; source checkouts keep development builds.
 compose_up() {
     local build_args=()
@@ -109,6 +108,7 @@ compose_up() {
     local rc=0
     PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@" || rc=$?
     restore_recreate_names
+    [ "$rc" != 0 ] || [ "${LAN_GUARD_FALLBACK:-0}" != 1 ] || rc=1
     return "$rc"
 }
 
@@ -192,7 +192,7 @@ scope_keep_running() { # <compose up flags and services...>
 }
 
 # Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if
-# that's what Docker rejected. Returns compose's own exit code.
+# that's what Docker rejected. A successful loopback fallback returns 1; Compose failures keep their code.
 compose_up_checked() {
     local tmp out rc _attempt
     if [ -n "${PITHEAD_KEEP_RUNNING:-}" ]; then
