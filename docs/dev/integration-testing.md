@@ -367,7 +367,18 @@ via an `EXIT` trap):
    `apply` never builds and would reuse whatever images were last built on the box,
    [#272](https://github.com/p2pool-starter-stack/pithead/issues/272)) and runs
    `run.sh` detached on the box (survives an SSH drop on a long matrix), streaming a heartbeat and
-   the full log at the end.
+   the full log at the end. Bench-ci supplies `IT_SCRATCH_DIR` pointing to its
+   per-job `data_dir/jobs/<id>/scratch`. The wrapper exports `IT_SCRATCH_DIR` and
+   `TMPDIR` for target commands and pins the path in the detached runner, whose children (including
+   local `rx` shells) inherit it. Before the harness runs, the detached runner
+   requires a real directory on its parent's filesystem and proves it can create
+   a temporary file there. Failed device queries, empty device results, filesystem
+   mismatches and unavailable scratch fail explicitly; no system-temp
+   fallback is used for runner-managed jobs. Every runner-managed harness also
+   records a required `runner scratch usable in target rx shell` row, proving a
+   created file resides on that filesystem. The bench-ci runner owns scratch cleanup after
+   collection and restoration. Standalone e2e callers may set `IT_SCRATCH_DIR`
+   to an existing target directory; it is a target path, not the caller's temp path.
    The deploy leaves monerod and tari running when the branch leaves them unchanged
    ([#2639](https://github.com/p2pool-starter-stack/pithead/issues/2639)). Both bind-mount paths
    inside the checkout (`build/monero/bitmonero.conf.template`, `build/tari`,
