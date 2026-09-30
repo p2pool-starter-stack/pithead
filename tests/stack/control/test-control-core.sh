@@ -108,7 +108,11 @@ case "$(grep 'compose up' "$CTRL_LOG" 2>/dev/null || true)" in
 "") ok "dry-run touches no container" ;;
 *) bad "dry-run touches no container" "docker compose up was called" ;;
 esac
-[ ! -f "$C/.env.dryrun" ] && ok "dry-run staging file removed" || bad "dry-run staging file removed" ".env.dryrun left behind"
+if compgen -G "$C/.env.dryrun*" >/dev/null; then
+    bad "dry-run staging file removed" "preview staging file left behind"
+else
+    ok "dry-run staging file removed"
+fi
 # Human (non-porcelain) preview prints the bullet form of the same row.
 out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" NO_COLOR=1 ./pithead apply --dry-run 2>/dev/null)"
 assert_contains "human dry-run prints the preview bullet" "$out" "• P2Pool sidechain changing"

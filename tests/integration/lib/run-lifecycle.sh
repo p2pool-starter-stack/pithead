@@ -51,6 +51,7 @@ run_lifecycle() {
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
 
+    run_source_image_reconcile || return 1
     # apply that changes the sidechain recreates only the affected containers, preserving
     # secrets. We flip main<->mini and assert the token/onions are untouched, then revert.
     local cur_pool fp_before
