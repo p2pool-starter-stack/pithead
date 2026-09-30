@@ -58,6 +58,7 @@ run_case() {
     [ "$clock" -le 480 ] && [ "$pool_calls" -ge 1 ]
     [ "$pool_refusals" -eq 0 ] || [ "$pool_calls" -gt 1 ]
 }
+echo "== onion target listener readiness (#2936) =="
 for pool in main mini nano; do
     run_case "$pool" local 0 0 0
     run_case "$pool" local 2 3 0
