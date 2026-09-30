@@ -26,7 +26,7 @@
 # bounded at 20 tries x 3s; the reconciler cannot move the row off "accepted" until it has read
 # that second file, which costs up to one further UPDATE_INTERVAL. A settle on the readback
 # surface therefore ends at the START of that gap, not after it. The claim survived because two of
-# the three keys that reach the row, max_temp_c and watchdog_interval_min, are on RigForge's
+# the four keys that reach the row, max_temp_c and watchdog_interval_min, are on RigForge's
 # restart-free fast path (CONTROL_FAST_PATH_KEYS, rigforge.sh:4203 at v1.16.0), where the gap is
 # too small to see. DONATION and pools take the full path; their config readback is not proof
 # that the rig has published a terminal outcome or that the dashboard has consumed it.
@@ -90,7 +90,7 @@ _history_row_status() { # <rig> <change_id> -> that row's status, or empty when 
 # full bound to reach. Empty is non-terminal because there is no row yet, not because it is stuck.
 # Bounded scalar-only observations support tracing a stale publication/consumption hop (#2761).
 # Never print config, reasons, host names or arbitrary producer strings: pools carry credentials.
-_history_handoff_sample() { # <change_id> <detail-json> [rig]
+_history_handoff_sample() { # <change_id> <detail-json> [rig] [dashboard-poll]
     local id="$1" detail="$2" feed='{}' outcome='{}' direct_poll=unavailable status_poll=unavailable auth fields collector
     [[ "$id" =~ ^[0-9a-f]{16}$ ]] || return 0
     if [ -n "${IT_RIG_TOKEN:-}" ] && [ -n "${RIG_HOST:-}" ]; then
@@ -109,11 +109,15 @@ _history_handoff_sample() { # <change_id> <detail-json> [rig]
         def status: if . == null then "absent" elif IN("accepted","pending","started","running","applied","rejected","rolled_back","failed","noop","throttled") then . else "unrecognized" end;
         def exact($rows): (first($rows[]? | select(.change_id == $id) | .status) // null) | status;
         if length == 1 and (.[0] | type) == "object" then .[0] else error("invalid response") end |'
-    detail="$(printf '%s' "$detail" | jq -sc --arg id "$id" "$fields"'
+    if [ "${4:-ok}" = failed ]; then
+        detail='{"poll":"failed"}'
+    else
+        detail="$(printf '%s' "$detail" | jq -sc --arg id "$id" "$fields"'
         {history:exact(.history),feed_at:(.rigforge.generated_at | stamp),
          stale:(if (.rigforge.stale | type) == "boolean" then .rigforge.stale else "invalid_or_absent" end),
          snapshot_at:(if (.snapshot_at | type) == "number" then .snapshot_at else null end),
          worker_status:(if (.status | IN("online","offline","down")) then .status else "unrecognized" end)}' 2>/dev/null)" || detail='{"poll":"invalid_or_failed"}'
+    fi
     feed="$(printf '%s' "$feed" | jq -sc --arg id "$id" "$fields"'
         {feed_at:(.generated_at | stamp),history:exact(.rigforge.control_history),
          current:(if .rigforge.control.change_id == $id then .rigforge.control.status | status else "absent" end)}' 2>/dev/null)" || feed='{"poll":"invalid_or_failed"}'
@@ -134,15 +138,21 @@ _history_handoff_sample() { # <change_id> <detail-json> [rig]
 }
 
 _pred_history_row_terminal() { # <rig> <change_id>
-    local detail status
+    local detail status="" dashboard_poll=ok
     if [ -n "${_HISTORY_DEADLINE:-}" ] && [ "$(now_s)" -gt "$_HISTORY_DEADLINE" ]; then return 1; fi
-    detail="$(_worker_detail "$1")"
+    if ! detail="$(_worker_detail "$1")"; then
+        dashboard_poll=failed
+        detail=""
+    fi
     if [ -n "${_HISTORY_DEADLINE:-}" ] && [ "$(now_s)" -gt "$_HISTORY_DEADLINE" ]; then return 1; fi
-    status="$(printf '%s' "$detail" | jq -r --arg c "$2" 'first(.history[]? | select(.change_id == $c)) | .status // empty' 2>/dev/null)"
-    _HISTORY_ROW_STATUS="$status"
+    # A transport can fail after writing valid JSON. Its body is not an observation.
+    if [ "$dashboard_poll" = ok ]; then
+        status="$(printf '%s' "$detail" | jq -r --arg c "$2" 'first(.history[]? | select(.change_id == $c)) | .status // empty' 2>/dev/null)"
+        _HISTORY_ROW_STATUS="$status"
+    fi
     if [ "${_HISTORY_SAMPLE_COUNT:-20}" -lt 20 ]; then
         _HISTORY_SAMPLE_COUNT=$((_HISTORY_SAMPLE_COUNT + 1))
-        _history_handoff_sample "$2" "$detail" "$1"
+        _history_handoff_sample "$2" "$detail" "$1" "$dashboard_poll"
     fi
     case "$status" in
     "" | accepted) return 1 ;;

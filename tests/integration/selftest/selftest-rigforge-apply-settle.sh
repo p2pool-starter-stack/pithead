@@ -239,6 +239,7 @@ echo "== slow diagnostics cannot accept history observed after the deadline =="
 # Failed reads consume their HTTP limits without a real 90-second sleep or a server.
 (
     source "$HERE/../lib.sh"
+    IT_RIG_TOKEN=fixture-secret
     clock_file="$(mktemp)"
     warning_file="$(mktemp)"
     trap 'rm -f "$clock_file" "$warning_file"' EXIT
@@ -276,6 +277,35 @@ echo "== slow diagnostics cannot accept history observed after the deadline =="
     assert_eq "a dashboard read that finishes after the deadline cannot pass" "$out" accepted
     [ "$IT_FAIL" -eq 0 ]
 ) && it_pass "deadline regressions reject late convergence" || it_fail "deadline regressions" "late convergence escaped the 90-second boundary"
+
+echo "== failed transport cannot supply an applied history observation =="
+(
+    source "$HERE/../lib.sh"
+    warning_file="$(mktemp)"
+    trap 'rm -f "$warning_file"' EXIT
+    now_s() { printf '0'; }
+    IT_RIG_TOKEN=''
+    api_state() { printf '{}'; }
+    _worker_detail() {
+        printf '{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}'
+        return 255
+    }
+    wait_for() {
+        shift 3
+        "$@"
+    }
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "valid applied JSON from a failed transport cannot pass" "$out" ""
+    assert_eq "failed transport has an explicit dashboard observation" \
+        "$(jq -r '.history_handoff.dashboard.poll' "$warning_file")" failed
+    assert_eq "failed transport body never supplies a history status" \
+        "$(jq -r '.history_handoff.dashboard.history // "absent"' "$warning_file")" absent
+    _HISTORY_ROW_STATUS=accepted _HISTORY_SAMPLE_COUNT=0
+    _pred_history_row_terminal r 0123456789abcdef 2>"$warning_file"
+    assert_eq "a failed read remains nonterminal" "$?" 1
+    assert_eq "a failed read preserves the last successful accepted observation" "$_HISTORY_ROW_STATUS" accepted
+    [ "$IT_FAIL" -eq 0 ]
+) && it_pass "failed dashboard transport is rejected" || it_fail "failed dashboard transport" "failed read supplied a verdict or lacked a failure marker"
 
 echo ""
 echo "selftest-rigforge-apply-settle: $IT_PASS passed, $IT_FAIL failed"

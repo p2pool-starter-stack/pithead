@@ -878,14 +878,16 @@ control-apply, before it has decided the outcome at all. The terminal status goe
 at the end, after the apply, an xmrig restart and a bounded wait for the miner to come back, and
 the reconciler cannot move the row off `accepted` until it has read that one. Settling on the
 config therefore ends at the start of that window rather than after it, and reading the row there
-raced it by up to ninety seconds. The claim survived because two of the three keys that reach that
+raced it by up to ninety seconds. The claim survived because two of the four keys that reach that
 assertion, `max_temp_c` and `watchdog_interval_min`, are on RigForge's restart-free fast path, where
 the window is too small to see. `DONATION` and `pools` take the full path; their config readback
 does not prove the rig has published a terminal outcome or that the dashboard has consumed it.
 
 The row is polled to a terminal status within a ninety-second observation budget.
-The result is the last history status whose read completed within that budget; reads finishing
-later cannot pass. Diagnostics may finish after the deadline, but do not change the cached
+The result is the last history status whose read succeeded within that budget; reads finishing
+later cannot pass. A nonzero dashboard transport exit discards its body, even if it contains
+valid JSON, and records `dashboard.poll=failed` without replacing the last successful status.
+Diagnostics may finish after the deadline, but do not change the cached
 verdict. There is no fresh history read after timeout.
 Each history wait retains at most twenty `history_handoff` JSON samples in the harness log:
 the exact change ID, UTC sample time, dashboard history status, snapshot time, feed generation
