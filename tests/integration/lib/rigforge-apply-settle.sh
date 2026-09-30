@@ -135,8 +135,11 @@ _history_handoff_sample() { # <change_id> <detail-json> [rig]
 
 _pred_history_row_terminal() { # <rig> <change_id>
     local detail status
+    if [ -n "${_HISTORY_DEADLINE:-}" ] && [ "$(now_s)" -gt "$_HISTORY_DEADLINE" ]; then return 1; fi
     detail="$(_worker_detail "$1")"
+    if [ -n "${_HISTORY_DEADLINE:-}" ] && [ "$(now_s)" -gt "$_HISTORY_DEADLINE" ]; then return 1; fi
     status="$(printf '%s' "$detail" | jq -r --arg c "$2" 'first(.history[]? | select(.change_id == $c)) | .status // empty' 2>/dev/null)"
+    _HISTORY_ROW_STATUS="$status"
     if [ "${_HISTORY_SAMPLE_COUNT:-20}" -lt 20 ]; then
         _HISTORY_SAMPLE_COUNT=$((_HISTORY_SAMPLE_COUNT + 1))
         _history_handoff_sample "$2" "$detail" "$1"
@@ -157,12 +160,13 @@ _pred_history_row_terminal() { # <rig> <change_id>
 # exact-ID samples correlate publication/consumption delays from an unfinished rig apply.
 #
 # The `>&2` is this module's #1454 discipline, for the same reason: stdout is the return value and
-# wait_for opens with an it_step banner on stdout. The wait's rc is deliberately NOT guarded: the
-# read below runs either way (run.sh:20 — "NOT -e: we deliberately continue-on-error"), and on a
-# timeout reporting the status the row is STUCK at is what lets the caller's assert_eq name it.
-_settle_history_row() { # <rig> <change_id> -> the row's terminal status, or what it is stuck at
-    local _HISTORY_SAMPLE_COUNT=0
+# wait_for opens with an it_step banner on stdout. Cache the history observation before the
+# diagnostic reads: those may finish after the deadline, but cannot change the verdict. Never
+# perform a fresh result read after timeout, which could falsely pass a later convergence.
+_settle_history_row() { # <rig> <change_id> -> the last status observed within the 90s budget
+    local _HISTORY_SAMPLE_COUNT=0 _HISTORY_ROW_STATUS="" _HISTORY_DEADLINE
+    _HISTORY_DEADLINE=$(($(now_s) + 90))
     wait_for 90 5 "the #185 history row for $2 to reach a terminal status (#1471)" \
         _pred_history_row_terminal "$1" "$2" >&2
-    _history_row_status "$1" "$2"
+    printf '%s' "$_HISTORY_ROW_STATUS"
 }

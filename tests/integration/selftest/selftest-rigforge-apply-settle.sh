@@ -112,17 +112,10 @@ _worker_detail() { # "accepted" on the first read, "applied" from the second onw
 }
 assert_eq "a row still 'accepted' at settle time is waited to its terminal status" \
     "$(_settle_history_row r c-late)" "applied"
-# Second conjunct, a DIFFERENT mechanism on purpose: the status assertion alone would also pass a
-# function that read the row once and got lucky on ordering. The unwaited form reads exactly twice
-# (predicate never runs; one read for the result); the waited form re-reads after the interval.
+# Two distinct reads must observe accepted, then applied. The file counter starts at one,
+# so reaching three proves the wait performed both reads; the result uses the cached second read.
 assert_num_ge "the wait re-read the row rather than settling on one look" "$(cat "$TICKS")" "3"
-# What this case does NOT discriminate, said so it is not read as covering more than it does: a
-# predicate that treats "accepted" as TERMINAL passes both assertions above. It returns on the
-# first read, and the result read is then the second — the one that converges — so the status
-# comes back "applied" for the wrong reason and the tick count still reaches 3. That mutation is
-# owned by the "a still-'accepted' row is NOT terminal" case in the block above; delete that case
-# and nothing here replaces it. Converging on the third read instead would cover it twice at the
-# price of a second real interval, which is not worth paying for a mutation already killed.
+# Treating accepted as terminal is separately rejected by the predicate tests above.
 
 echo "== _settle_history_row: a row that never settles must not read as 'applied' (#1471) =="
 # The other half, stubbed rather than real so it costs nothing — the 90s bound is the function's
@@ -132,7 +125,11 @@ echo "== _settle_history_row: a row that never settles must not read as 'applied
 # wait_for for its own case, so this stub does not reach it.
 STUB_HIST='[{"change_id":"c-stuck","status":"accepted"}]'
 _worker_detail() { printf '{"history":%s}' "$STUB_HIST"; }
-wait_for() { return 1; }
+wait_for() {
+    shift 3
+    "$@"
+    return 1
+}
 assert_eq "a timed-out settle reports the status the row is stuck at, so the caller can name it" \
     "$(_settle_history_row r c-stuck)" "accepted"
 
@@ -236,6 +233,49 @@ _history_handoff_sample 0123456789abcdef '{}' 2>"$log"
 assert_eq "missing credentials are explicitly unavailable" "$(jq -r '.history_handoff.direct_poll' "$log")" unavailable
 _history_handoff_sample 'fixture-secret' '{}' 2>"$log"
 assert_eq "malformed IDs never reach output or a dial" "$(wc -c <"$log" | tr -d ' ')" 0
+
+echo "== slow diagnostics cannot accept history observed after the deadline =="
+# Use the genuine wait loop with a file-backed clock, so command substitutions share time.
+# Failed reads consume their HTTP limits without a real 90-second sleep or a server.
+(
+    source "$HERE/../lib.sh"
+    clock_file="$(mktemp)"
+    warning_file="$(mktemp)"
+    trap 'rm -f "$clock_file" "$warning_file"' EXIT
+    advance() { printf '%s\n' "$(($(cat "$clock_file") + $1))" >"$clock_file"; }
+    now_s() { cat "$clock_file"; }
+    sleep() { advance "$1"; }
+    _worker_detail() {
+        advance "$read_delay"
+        local status=accepted
+        [ "$(now_s)" -lt "$applied_at" ] || status=applied
+        printf '{"history":[{"change_id":"0123456789abcdef","status":"%s"}]}' "$status"
+    }
+    rx() {
+        cat >/dev/null
+        advance "$probe_delay"
+        return 1
+    }
+    api_state() {
+        advance "$collector_delay"
+        return 1
+    }
+    read_delay=0 probe_delay=3 collector_delay=10 applied_at=95
+    printf '0\n' >"$clock_file"
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "slow failed probes cannot turn 95-second convergence into a pass" "$out" accepted
+    assert_contains "deadline failure is reported" "$(cat "$warning_file")" "timed out after 90s"
+    assert_num_ge "the proof actually consumes the diagnostic limits" "$(now_s)" 95
+    printf '0\n' >"$clock_file"
+    applied_at=84
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "a terminal history read before the deadline passes even when diagnostics finish later" "$out" applied
+    printf '0\n' >"$clock_file"
+    read_delay=10 probe_delay=0 collector_delay=0 applied_at=95
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "a dashboard read that finishes after the deadline cannot pass" "$out" accepted
+    [ "$IT_FAIL" -eq 0 ]
+) && it_pass "deadline regressions reject late convergence" || it_fail "deadline regressions" "late convergence escaped the 90-second boundary"
 
 echo ""
 echo "selftest-rigforge-apply-settle: $IT_PASS passed, $IT_FAIL failed"

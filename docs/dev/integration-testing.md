@@ -881,7 +881,10 @@ assertion, `max_temp_c` and `watchdog_interval_min`, are on RigForge's restart-f
 the window is too small to see. `DONATION` and `pools` take the full path; their config readback
 does not prove the rig has published a terminal outcome or that the dashboard has consumed it.
 
-The row is waited to a terminal status before it is read, with a ninety-second bound.
+The row is polled to a terminal status within a ninety-second observation budget.
+The result is the last history status whose read completed within that budget; reads finishing
+later cannot pass. Diagnostics may finish after the deadline, but do not change the cached
+verdict. There is no fresh history read after timeout.
 Each history wait retains at most twenty `history_handoff` JSON samples in the harness log:
 the exact change ID, UTC sample time, dashboard history status, snapshot time, feed generation
 time and stale verdict; direct `/1/summary` generation time and exact-ID current/history
@@ -894,8 +897,9 @@ Only allowlisted scalars are emitted; pool config, credentials, reasons and topo
 Read these samples with the phase's dashboard logs for collector warnings and the
 runner's exact-ID apply diagnostic before assigning a stale handoff. A rig terminal record alone
 does not prove its enriched feed published that record during the wait, and a passing rerun does
-not resolve an earlier propagation failure. The ninety-second assertion remains unchanged. Terminal rather than `applied`, which is what keeps the assertion honest in both
-directions: a rig that genuinely rejected a change publishes its terminal row at once, so the leg
+not resolve an earlier propagation failure.
+
+Waiting for terminal rather than `applied` keeps the assertion honest in both directions: a rig that genuinely rejected a change publishes its terminal row at once, so the leg
 reds on the real status instead of spending the whole bound on a verdict already known, and a row
 that never settles stays `accepted` and reds as well. The one answer the wait must never invent is
 `applied` for a row nobody has confirmed. Terminal is written as the complement of `accepted` and
