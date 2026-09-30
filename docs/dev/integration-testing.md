@@ -447,7 +447,8 @@ via an `EXIT` trap):
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
    line — compared as verdict words, values never printed — and monerod must answer a host-side
    `get_info` authed with the on-disk creds. A separate read-only daemon proof waits up to
-   600 seconds for authenticated Monero `status == OK` and `synchronized == true`, plus direct
+   600 seconds for Monero authenticated with the existing host-side `curl --digest` transport
+   (credentials passed through stdin), requiring `status == OK` and `synchronized == true`, plus direct
    Tari `GetTipInfo.initial_sync_achieved == true`. It records both predicates without endpoints
    or credentials; unavailable RPC, missing credentials, missing fields and timeouts refuse
    restoration proof. A timeout records only the fixed environment, Monero RPC, Monero sync,

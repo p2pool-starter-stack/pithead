@@ -3,7 +3,6 @@
 import json
 import shutil
 import subprocess
-import urllib.request
 from pathlib import Path
 
 TARI_PROBE = """
@@ -39,11 +38,33 @@ def probe(env_path=Path(".env")):
     if not url:
         return False
     STAGE = "monero-rpc"
-    credentials = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-    credentials.add_password(None, url, user, password)
-    opener = urllib.request.build_opener(urllib.request.HTTPDigestAuthHandler(credentials))
-    with opener.open(url.rstrip("/") + "/get_info", timeout=8) as response:
-        monero = json.load(response)
+    curl = shutil.which("curl")
+    if not curl:
+        return False
+    # Match the existing host-side restoration auth transport. Feed credentials through
+    # stdin, never argv, and capture all errors so only fixed stage verdicts leave the box.
+    response = subprocess.run(  # noqa: S603
+        [
+            curl,
+            "-q",
+            "-fsS",
+            "--max-filesize",
+            "65536",
+            "--max-time",
+            "8",
+            "--digest",
+            "-K",
+            "-",
+            "--url",
+            url.rstrip("/") + "/get_info",
+        ],
+        input="user = " + json.dumps(user + ":" + password, ensure_ascii=False) + "\n",
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    monero = json.loads(response.stdout)
     STAGE = "monero-sync"
     if monero.get("status") != "OK" or monero.get("synchronized") is not True:
         return False

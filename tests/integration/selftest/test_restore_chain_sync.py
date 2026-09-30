@@ -31,31 +31,52 @@ class DaemonProof(unittest.TestCase):
             monero = {"status": "OK", "synchronized": True}
         if tari is None:
             tari = {"initial_sync_achieved": True}
-        response = contextlib.nullcontext(io.StringIO(json.dumps(monero)))
-        opener = Mock()
-        opener.open.return_value = response
         with (
-            patch.object(module.urllib.request, "build_opener", return_value=opener) as build,
-            patch.object(module.shutil, "which", return_value="/fixture/docker"),
+            patch.object(module.shutil, "which", side_effect=lambda tool: "/fixture/" + tool),
             patch.object(module.subprocess, "run") as run,
         ):
-            run.return_value = types.SimpleNamespace(stdout=json.dumps(tari))
-            if error:
-                run.side_effect = error
+            run.side_effect = [
+                types.SimpleNamespace(stdout=json.dumps(monero)),
+                error or types.SimpleNamespace(stdout=json.dumps(tari)),
+            ]
             result = module.probe(self.env)
-            handler = build.call_args.args[0]
+            curl = run.call_args_list[0]
             self.assertEqual(
-                handler.passwd.find_user_password(None, "http://fixture.invalid:18081"),
-                credentials,
+                curl.args[0],
+                [
+                    "/fixture/curl",
+                    "-q",
+                    "-fsS",
+                    "--max-filesize",
+                    "65536",
+                    "--max-time",
+                    "8",
+                    "--digest",
+                    "-K",
+                    "-",
+                    "--url",
+                    "http://fixture.invalid:18081/get_info",
+                ],
             )
-            opener.open.assert_called_once_with("http://fixture.invalid:18081/get_info", timeout=8)
-            if result:
-                run.assert_called_once_with(
-                    ["/fixture/docker", "exec", "dashboard", "python3", "-c", module.TARI_PROBE],
+            self.assertEqual(
+                curl.kwargs,
+                dict(
+                    input="user = " + json.dumps(":".join(credentials), ensure_ascii=False) + "\n",
                     capture_output=True,
                     text=True,
-                    timeout=12,
+                    timeout=10,
                     check=True,
+                ),
+            )
+            if result:
+                self.assertEqual(run.call_count, 2)
+                self.assertEqual(
+                    run.call_args.args[0],
+                    ["/fixture/docker", "exec", "dashboard", "python3", "-c", module.TARI_PROBE],
+                )
+                self.assertEqual(
+                    run.call_args.kwargs,
+                    dict(capture_output=True, text=True, timeout=12, check=True),
                 )
             return result
 
@@ -104,16 +125,37 @@ class DaemonProof(unittest.TestCase):
         for key in ("MONERO_NODE_USERNAME", "MONERO_NODE_PASSWORD", "MONERO_RPC_URL"):
             with (
                 self.subTest(key=key),
-                patch.object(module.urllib.request, "build_opener") as build,
+                patch.object(module.subprocess, "run") as request,
             ):
                 before = self.env.read_text()
                 self.env.read_text.return_value = "\n".join(
                     line for line in before.splitlines() if not line.startswith(key + "=")
                 )
                 self.assertFalse(module.probe(self.env))
-                build.assert_not_called()
+                request.assert_not_called()
                 self.assertEqual(module.STAGE, "environment")
                 self.env.read_text.return_value = before
+
+    def test_monero_transport_refuses_before_tari(self):
+        for error in (
+            subprocess.TimeoutExpired("private-endpoint", 10),
+            subprocess.CalledProcessError(22, "curl", stderr="fixture-password"),
+        ):
+            with (
+                self.subTest(error=error),
+                patch.object(module.shutil, "which", return_value="/fixture/curl"),
+                patch.object(module.subprocess, "run", side_effect=error) as run,
+                self.assertRaises(type(error)),
+            ):
+                module.probe(self.env)
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(module.STAGE, "monero-rpc")
+        with (
+            patch.object(module.shutil, "which", return_value=None),
+            patch.object(module.subprocess, "run") as run,
+        ):
+            self.assertFalse(module.probe(self.env))
+            run.assert_not_called()
 
     def test_failed_or_timed_out_tari_cannot_pass(self):
         for error in (
@@ -129,8 +171,8 @@ class DaemonProof(unittest.TestCase):
         with (
             patch.object(Path, "read_text", return_value=self.env.read_text()),
             patch.object(
-                module.urllib.request,
-                "build_opener",
+                module.subprocess,
+                "run",
                 side_effect=ValueError("private-endpoint fixture-password"),
             ),
             contextlib.redirect_stdout(out),
