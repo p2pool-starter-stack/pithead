@@ -44,6 +44,8 @@ sed '/source "\$HERE\/test-harness-tooling.sh"/d' "$SB_RUN" >"$SB/missing.sh"
 sb_audit "a dropped stanza" "test-harness-tooling.sh is absent from every block" "$SB/missing.sh"
 sed '/source "\$HERE\/test-harness-tooling.sh"/s/^/# /' "$SB_RUN" >"$SB/commented.sh"
 sb_audit "a commented stanza" "test-harness-tooling.sh is absent from every block" "$SB/commented.sh"
+sed '/source "\$HERE\/appliance\/test-appliance-boot-labels.sh"/c\    source "$HERE/appliance/test-appliance-boot-labels.sh"' "$SB_RUN" >"$SB/unaccounted.sh"
+sb_audit "a bare boot-label source" "appliance/test-appliance-boot-labels.sh has no domain accounting" "$SB/unaccounted.sh"
 for arg in 0 $((SB_N + 1)) x 1x 999999999999999999999999; do
     out=$(bash "$SB_RUN" "$arg" 2>&1)
     assert_rc "run.sh refuses block '$arg'" "$?" "2"
@@ -70,7 +72,7 @@ printf 'bad "block four" "seeded failure"\n' >"$SBT/tests/stack/test-b4.sh"
     sed -n '1,/^STACK_BLOCK="\$1"$/p' "$SB_RUN" | sed 's/^STACK_BLOCKS=.*/STACK_BLOCKS=4/'
     printf 'in_block() { [ "$1" = "$STACK_BLOCK" ]; }\n'
     for sb_k in 1 2 3 4; do
-        printf 'if in_block %s; then\n    source "$HERE/test-b%s.sh"\nfi\n' "$sb_k" "$sb_k"
+        printf 'if in_block %s; then\n    _d0=$((PASS + FAIL)) && source "$HERE/test-b%s.sh" && domain_ran test-b%s.sh "$_d0" "$?" || domain_ran test-b%s.sh "$_d0" "$?"\nfi\n' "$sb_k" "$sb_k" "$sb_k" "$sb_k"
     done
     tail -2 "$SB_RUN"
 } >"$SBT/tests/stack/run.sh"

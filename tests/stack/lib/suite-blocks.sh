@@ -32,6 +32,7 @@ stack_blocks_audit() { # <run.sh> <workflow.yml> [suite-directory]
                 split(call, quoted, "\"")
                 f = substr(quoted[2], 7)
                 if (f !~ /(^|\/)test[^\/]*\.sh$/) next
+                if (call ~ /^source / && $0 !~ /domain_ran /) print f " has no domain accounting"
                 if (!open) print f " is sourced outside every block"
                 else if (f in at) print f " is sourced in block " at[f] " and block " open
                 else at[f] = open
