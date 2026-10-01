@@ -123,5 +123,6 @@ bash tests/integration/selftest/selftest-backup-window.sh
 The fixtures cover changing transcripts, later wallet failures, missing archives,
 unavailable observations, stale/malformed/private fields, atomic invocation freshness,
 unsafe artifact references and diagnostic failure without loss of the original exit.
-Tier 4 proof uses the narrow safety-backup phase through bench-ci on a pushed exact
-commit. No induced Tor stall or unchanged diagnostic rerun is required.
+Tier 4 proof uses the narrow lifecycle phase through bench-ci on a pushed exact
+commit, covering candidate backup and restore as well as the wrapper safety backup.
+`--safety-backup` is a harness prerequisite flag, not a selectable bench-ci phase. No induced Tor stall or unchanged diagnostic rerun is required.
