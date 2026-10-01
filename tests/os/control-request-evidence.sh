@@ -25,7 +25,8 @@ control_request_evidence() { # <route> <stage> <curl-rc> <response-with-HTTP-foo
 # A failed request keeps its normal failure verdict. Sample only unit state and spool counts;
 # the runner's per-boot journals and control timeline retain the detailed guest history.
 control_request_guest_evidence() {
-    local guest
+    # shellcheck disable=SC2034 # _ssh reads its per-call deadline through dynamic scope
+    local guest SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}"
     guest=$(_ssh 'set -euo pipefail
 systemctl show pithead-control.service -p ActiveState -p SubState -p Result -p NRestarts -p ExecMainCode -p ExecMainStatus
 cd /data/pithead/data/control
@@ -50,6 +51,7 @@ _control_request_evidence_self_test() (
     sleep() { :; }
     date() { printf '100\n'; }
     _ssh() {
+        [ "${SSH_TIMEOUT:-}" = "${SSH_PROBE_TIMEOUT:-20}" ] || return 1
         printf 'ActiveState=active\nSubState=running\nResult=success\nNRestarts=2\nExecMainCode=0\nExecMainStatus=0\nqueued=1\nclaimed=1\n'
         printf 'untrusted=%s\n' "$secret"
     }
@@ -95,6 +97,8 @@ _control_request_evidence_self_test() (
     [ "$rc" -eq 1 ] && [ -z "$result" ] || return 1
     grep -Fq '"stage":"deadline"' "$dir/deadline" && grep -Fq "$fixture_id" "$dir/deadline" || return 1
     ! grep -Fq "$secret" "$dir/deadline" || return 1
+    SSH_PROBE_TIMEOUT=7 control_request_guest_evidence 2>"$dir/probe"
+    grep -Fq '"queued=1"' "$dir/probe" || return 1
     _ssh() { return 255; }
     control_request_guest_evidence 2>"$dir/ssh"
     grep -Fxq '  control guest snapshot: unavailable' "$dir/ssh" || return 1

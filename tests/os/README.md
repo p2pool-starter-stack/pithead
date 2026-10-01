@@ -145,7 +145,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   The shared dashboard control poller records POST and poll metadata on stderr: timestamp, route,
   curl exit code, HTTP status, response size, JSON/error presence, UUID and allowlisted result
   status. A refused or untrackable POST and an exhausted deadline also capture the guest control
-  unit's state, restart/exit counters and queued/claimed request counts. Correlate these with the
+  unit's state, restart/exit counters and queued/claimed request counts, with the existing
+  20-second SSH probe deadline (`SSH_PROBE_TIMEOUT` overrides it). Correlate these with the
   runner's per-boot guest journals and control timeline before attributing a missing preview to
   the guest or the harness. Request bodies, free-text errors, preview values and credentials are
   excluded; diagnostic output never substitutes for the preview or typed approval assertions.
