@@ -42,6 +42,7 @@ make test-container ARGS="--ssh make test-integration ARGS='--host user@box --di
 make test                 # local gates; needs Docker, but no live test server
 make test-dashboard       # dashboard pytest + 80% coverage gate
 make test-stack           # pithead shell suite
+bash tests/stack/run.sh 3 # one of the shell suite's four blocks, as one CI leg runs it
 make test-fakes           # tier-2 contract test (real clients vs fakes)
 make test-integration-selftest   # the integration harness's own logic
 make test-inventory       # write a generated (git-ignored) coverage list to docs/dev/test-inventory.md

@@ -80,6 +80,13 @@ assertions; `tests/stack/run.sh` itself is the tier-1 shell **suite** — it sou
 file rather than holding assertions of its own (see the test-inventory note under
 [Production-readiness posture](#production-readiness-posture) for how that sourcing is checked).
 
+`run.sh` cuts its source order into four contiguous blocks, and the Shell workflow runs each block
+as its own job (#2631). `bash tests/stack/run.sh 2` runs block 2 alone. With no argument it runs
+all four in turn, each in a fresh process, and prints the summed count. A block starts with nothing
+but `lib.sh`, so a fragment that reads what another left behind has to sit after it in the same
+block. Before any block runs, `run.sh` checks that every stanza sits in exactly one block and that
+the workflow matrix lists every block, and it refuses to start otherwise.
+
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the
 55 — a domain reporting success having executed nothing, and building its fixtures in the caller's
@@ -760,7 +767,7 @@ Keep each situation at the lowest honest tier; don't re-prove logic with a heavi
 
 ## Framework choice: hand-rolled, not bats/ShellSpec (#1338)
 
-`tests/stack/run.sh` line 3 says the suite is dependency-free — "no bats required". That traces to
+`tests/stack/run.sh`'s header says the suite is dependency-free — "no bats required". That traces to
 PR #37 and was never revisited until the question came up again, so it was measured instead of
 argued.
 

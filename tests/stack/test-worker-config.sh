@@ -13,8 +13,8 @@
 # THIS FILE IS POSITION-LOCKED AND IS NOT SOURCEABLE ON ITS OWN — both deliberately. It inherits
 # the control sandbox that the black-box control-channel run builds once and then mutates in a
 # chain: $C and $CTRL_LOG come from lib.sh's build_control_sandbox, and $AUDIT, $MASKED, $REQS,
-# $RESULTS and $STAGED from sections that #1105 R12 moved out of run.sh into
-# test-control-core.sh, sourced earlier. Nothing here builds a sandbox, and nothing here should.
+# $RESULTS and $STAGED from test-control-add-only-ssrf.sh, which calls it and opens run.sh's
+# block 3 ahead of this file (#2631). Nothing here builds a sandbox, and nothing here should.
 # The sections commit through the real gate, so they write into the shared request spool and
 # append to the shared audit log — and two sections that run AFTER this one, both now in
 # test-spool-audit.sh, count exactly that: "audit log growth is bounded (#349)" measures the

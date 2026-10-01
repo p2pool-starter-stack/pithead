@@ -14,8 +14,8 @@
 # self-arm like its neighbours" is the obvious review note and it is wrong for this domain:
 #
 # - This domain is a pure CONSUMER of the control sandbox. It never calls build_control_sandbox();
-#   test-control-core.sh calls it once, in the control-core domain sourced ahead, and $C reaches
-#   here from it.
+#   test-control-add-only-ssrf.sh calls it at the head of run.sh's block 3 (#2631), and $C
+#   reaches here from it.
 #   (That section lived in run.sh until #1105 R12 moved it into its own domain file.)
 # - This domain is position-locked by EXECUTION ORDER relative to the sibling sections that
 #   accumulate what it counts, not by anything a second builder call would overwrite. Calling
@@ -43,8 +43,8 @@
 # lane-local and is NOT in this repo, so nothing below rests on it: each claim is written to be
 # re-derived here with git and grep alone, and should be treated as a claim to check.
 # - $REQS, $RESULTS, $STAGED and $AUDIT are NOT the builder's. They are assigned by the
-#   control-run-pending section, in test-control-core.sh, sourced before this stanza — an ordering
-#   dependency, same class as any other. They are deliberately NOT seeded here: each is a plain
+#   head of run.sh's block 3, in test-control-add-only-ssrf.sh, sourced before this stanza — an
+#   ordering dependency, same class as any other. They are deliberately NOT seeded here: each is a plain
 #   derivation from $C, so a seed would duplicate that file's definitions and could drift from them,
 #   and it would buy nothing, because $C itself keeps this file non-standalone either way.
 # - $UUID5 IS INHERITED FROM ANOTHER DOMAIN — the approval-gate section assigns it, and this

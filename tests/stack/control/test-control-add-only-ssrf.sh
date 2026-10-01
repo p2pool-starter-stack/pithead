@@ -9,32 +9,33 @@
 # R13 brings the rest here, order preserved exactly: what ran BEFORE the old source stanza sits
 # above the add-only battery, what ran AFTER it sits below, run.sh sources it from that position.
 #
-# SELF-ARMING, AND WHY THAT IS SAFE IN POSITION. This file builds its own control sandbox and
-# derives its own spool paths, so it is sourceable standalone: of the names it reads but never
-# assigns, $ROOT and $VALID_TARI are top-level lib.sh constants, and $C, $CTRL_LOG and $WALLET are
-# assigned inside build_control_sandbox(), which this file now calls itself. In position the arm
-# changes nothing — $C is the fixed path "$SANDBOX/control", the builder's mkdir -p only creates,
-# its copies are static repo inputs no earlier section rewrites, and seed_control_env/control_config
-# are DEFINED inside it and never called, so it writes no config.json and touches nothing under
-# data/control/; the spool paths below re-derive to the values test-control-core.sh already set, and
-# the baseline this domain depends on is seeded by its own first block from the host CLI. It
-# therefore does not borrow another section's ambient fixtures. An earlier header here claimed it
-# shared them "exactly like test-control-deploy.sh shares its own section's"; that precedent was
-# false — that file's own header states its sections are fully self-contained (#1462).
+# SELF-ARMING, AND WHY THAT IS SAFE IN POSITION. This file opens run.sh's block 3 (#2631), a fresh
+# process, so it builds what it reads: $ROOT and $VALID_TARI are lib.sh constants, and $C, $CTRL_LOG
+# and $WALLET come from build_control_sandbox(), called here. The builder writes no .env and `apply`
+# refuses to run without one, so the arm seeds test-control-core.sh's when none exists; before #2631
+# that gap made the "sourceable standalone" claim here false (26 passed, 90 failed alone). In
+# position the arm changes nothing: $C is the fixed "$SANDBOX/control", mkdir -p only creates, the
+# copies are static repo inputs, the .env already exists, and control_config is only DEFINED, so no
+# config.json is written and nothing under data/control/ is touched. The spool paths below re-derive
+# the values test-control-core.sh and test-secrets-masking.sh set, and this domain's baseline is
+# seeded by its own first block from the host CLI.
 #
-# WHAT OUTLIVES THE SOURCE. gate_try() and $UUID5 are defined here and not unset at the end, so they
-# outlive the source as they outlived the old in-run.sh position: the editable-allowlist domain file
-# run.sh sources next reads both, as test-spool-audit.sh reuses $UUID5. Hence the stanza stays put.
+# WHAT OUTLIVES THE SOURCE. gate_try(), $UUID5 and the spool paths are not unset at the end: the
+# editable-allowlist, worker-config and spool-audit domains and run.sh's #848 masking rows read them
+# later in block 3. Hence the stanza opens that block.
 #
 # MUTATION PROOF: dropping the adopt's typed APPLY, prefix match or duplicate-name check turns its rows
 # red; weakening _control_host_is_internal lets a confirmed unsafe append apply.
 # Round 5's resolve-and-check battery (below) names its own mutation kills.
 
 build_control_sandbox
+[ -f "$C/.env" ] || seed_control_env
 REQS="$C/data/control/requests"
 RESULTS="$C/data/control/results"
 STAGED="$C/data/control/staged"
 AUDIT="$C/data/control/audit/control.log"
+# shellcheck disable=SC2034 # read by later block-3 fragments
+MASKED="$C/data/control/masked/config.json"
 
 echo "== black-box: sensitive changes require confirmation; physical paths still refuse (#1959) =="
 # describe_change flags only the ENABLE/CHANGE direction of security controls as DEST — disabling

@@ -1,12 +1,12 @@
 name: Shell
 
 # Split out of ci.yml by #2048, where one serial job decided CI's wall clock. lint-sh (~90 s, #2632) and
-# the standalone suites (~110 s) share nothing with `tests/stack/run.sh` (~19 min on develop, #2776) but the generated
-# CLI, which each job builds for itself. run.sh itself is NOT sharded: its domain files are run.sh
-# fragments by design — each opens with a `$STACK_SUITE` guard saying so — and share a sandbox
-# chain, so splitting them is a test-design change, not a YAML one. #2048 has the per-domain table
-# and the coupling map. No `schedule:` here: the Monday CVE sweep stays in ci.yml, which is what
-# every shell job used to gate itself off one `if:` at a time.
+# the standalone suites (~110 s) share nothing with `tests/stack/run.sh` but the generated CLI,
+# which each job builds for itself. run.sh itself runs as a matrix of contiguous blocks (#2631):
+# each leg is `run.sh <block>` in a fresh runner, and a fragment that reads another's state sits in
+# the same block after it. run.sh refuses to start when this matrix and its STACK_BLOCKS disagree.
+# No `schedule:` here: the Monday CVE sweep stays in ci.yml, which is what every shell job used to
+# gate itself off one `if:` at a time.
 
 on:
   push:
@@ -24,10 +24,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  shell:
-    name: Shell tests (pithead suite)
+  shell-block:
+    name: Shell tests (pithead suite, block ${{ matrix.block }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30 # develop's run.sh now takes ~19 min (#2776); leave room for added tests
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false # a red block should not hide the verdicts of the other three
+      matrix:
+        block: [1, 2, 3, 4] # run.sh's STACK_BLOCKS; stack_blocks_audit holds the two equal
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,8 +40,24 @@ jobs:
         # run.sh sources the generated root `pithead` (git-ignored). Until #2048 split `lint-sh`
         # off, the build came in free as that target's prerequisite.
         run: make pithead
-      - name: Run pithead test suite
-        run: bash tests/stack/run.sh
+      - name: Run pithead test suite block
+        run: bash tests/stack/run.sh "$BLOCK"
+        env:
+          BLOCK: ${{ matrix.block }}
+
+  shell:
+    # The required status check. Branch protection names this context, so it stays one job that is
+    # green only when every block is: a matrix leg's name carries its block number.
+    name: Shell tests (pithead suite)
+    needs: shell-block
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every block passed
+        run: '[ "$RESULT" = success ] || { echo "the pithead suite blocks ended: $RESULT"; exit 1; }'
+        env:
+          RESULT: ${{ needs.shell-block.result }}
 
   shell-standalone:
     name: Shell tests (standalone suites + tooling)
