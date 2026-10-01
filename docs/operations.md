@@ -470,7 +470,10 @@ git pull
 Either way, `upgrade` re-renders the generated config (`.env`, the Caddyfile, and the Tari config) for
 the new release *before* pulling/rebuilding, so a release that changes a config template or adds an
 `.env` var takes effect, not just the new image. Data directories and `config.json` are untouched, so
-blockchain sync and settings survive an upgrade.
+blockchain sync and settings survive an upgrade. An `apply` with configuration changes and every
+`upgrade` reconcile cached local-node onion addresses with kept Tor hostnames before recreating the nodes. A stale `.env`
+address is corrected; the Tor keys and other credentials are preserved. A missing, unreadable or
+invalid kept hostname stops reconciliation instead of trusting the cached address.
 
 An upgrade to a new Tari major version, such as 5.x to 6.x, migrates the node database on its first
 start by writing a compacted copy beside the old one. Before it starts or recreates any container,

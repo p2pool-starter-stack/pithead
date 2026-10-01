@@ -36,17 +36,55 @@ provision_tor() {
     provision_dashboard_onion # #343: reads the dashboard onion too, but only when it's enabled
 }
 
-# Mint and capture a node's inbound onion when that node has just switched remote → local (#103).
+# Read a retained local node's Tor hostname without starting Tor. An absent, unreadable or malformed
+# hostname cannot safely replace the cached address.
+retained_node_onion() { # <monero|tari>
+    local path="${TOR_DATA_DIR:-}/$1/hostname" onion
+    [ -n "${TOR_DATA_DIR:-}" ] || return 1
+    if [ -r "$path" ]; then
+        onion=$(cat -- "$path") || return 1
+    else
+        onion=$(sudo -n cat -- "$path" 2>/dev/null) || return 1
+    fi
+    [[ "$onion" =~ ^[a-z2-7]{56}\.onion$ ]] || return 1
+    printf '%s' "$onion"
+}
+
+# Mint and capture a node's inbound onion when that node has just switched remote → local (#103),
+# or reconcile a stale cached address with the hostname belonging to its retained Tor keys (#2951).
 # Its hidden service exists only while the node is local, so a stack first set up in remote mode
 # has no address for it yet. Recreating tor against the freshly committed .env publishes the
 # service; the address must then be in .env BEFORE the node container starts, because monerod
 # templates `anonymous-inbound` from it and the Tari config takes the onion at render time.
-# No-op — and no docker call — whenever both nodes' addresses are already in hand.
+# No docker call is needed when retained hostnames and cached addresses already agree.
 provision_node_onions() {
-    local want_monero=false want_tari=false
+    local want_monero=false want_tari=false changed=false retained
+    if [ "${MONERO_MODE:-}" == "local" ] && ! onion_missing "${MONERO_ONION:-}"; then
+        if retained=$(retained_node_onion monero); then
+            [ "$MONERO_ONION" == "$retained" ] || {
+                MONERO_ONION="$retained"
+                changed=true
+            }
+        else
+            error "Could not safely read the retained Monero Tor hostname."
+        fi
+    fi
+    if [ "${TARI_MODE:-}" == "local" ] && ! onion_missing "${TARI_ONION:-}"; then
+        if retained=$(retained_node_onion tari); then
+            [ "$TARI_ONION" == "$retained" ] || {
+                TARI_ONION="$retained"
+                changed=true
+            }
+        else
+            error "Could not safely read the retained Tari Tor hostname."
+        fi
+    fi
     if [ "${MONERO_MODE:-}" == "local" ] && onion_missing "${MONERO_ONION:-}"; then want_monero=true; fi
     if [ "${TARI_MODE:-}" == "local" ] && onion_missing "${TARI_ONION:-}"; then want_tari=true; fi
-    [ "$want_monero" == "true" ] || [ "$want_tari" == "true" ] || return 0
+    if [ "$want_monero" != "true" ] && [ "$want_tari" != "true" ]; then
+        [ "$changed" == "false" ] || render_env
+        return 0
+    fi
 
     log "Publishing the Tor hidden service for the node that just became local..."
     compose_up -d tor

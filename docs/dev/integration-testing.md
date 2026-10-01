@@ -39,7 +39,7 @@ which:
 
 - recreates only the containers whose resolved config changed,
 - reuses the synced chain data dirs (it never re-syncs, never re-provisions Tor), and
-- preserves secrets (`PROXY_AUTH_TOKEN`, onion addresses).
+- preserves credentials and Tor keys; local-node onion addresses follow the kept Tor hostnames.
 
 For each scenario it writes a `config.json`, applies it, then waits on real readiness signals
 (container health, `pithead status`, dashboard sync %, miner-released) with timeouts. Never a
@@ -339,7 +339,8 @@ via an `EXIT` trap):
    pins `tor.data_dir` to the seed's rendered `TOR_DATA_DIR`, resolving relative paths from the
    seed directory. An `auto` Tor path must keep the live keys instead of selecting the disposable
    checkout's keys on upgrade. A missing or nonexistent rendered Tor directory refuses provisioning.
-   The seed's `.env` remains byte-identical; the branch's code differs.
+   The copied `.env` remains byte-identical until upgrade reconciles any stale local-node onion
+   address with its kept hostname. The matrix captures its baseline after that upgrade.
 3. Safety backup (`pithead backup`) as the rollback anchor.
 4. Borrows a miner (default the configured miner): backs up its xmrig config and repoints it at the
    bench so the matrix has a real worker mining through this stack (1 worker → run with `--workers 1`).
