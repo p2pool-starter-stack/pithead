@@ -109,6 +109,10 @@ Keep local code out of `vendor/`.
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
 
+The running-service assertion uses `tests/integration/lib/compose-read.sh` and
+`compose-read.py` to retain the original Compose read and a bounded failure-time snapshot;
+`selftest-compose-read.sh` exercises them without Docker or SSH.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted

@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+source "${BASH_SOURCE[0]%/*}/compose-read.sh" || return $?
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     local name="$1" config="$2"
@@ -44,8 +45,9 @@ assert_running_state() {
     fi
     # 1. Wait for the sync gate to release both miners before sampling live services, UID and TLS.
     wait_for 1500 5 "p2pool and xmrig-proxy after sync gate" rx 'running=$(docker compose ps --services --status running); grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"' || true
-    local running expected svc
-    running="$(running_services)"
+    local running expected svc snapshot
+    snapshot="$(mktemp -d)"
+    running="$(running_services "$snapshot" "$name")"
     expected="$(expected_services "$config")"
     while IFS= read -r svc; do
         [ -z "$svc" ] && continue
@@ -53,8 +55,10 @@ assert_running_state() {
             it_pass "container up: $svc"
         else
             it_fail "container up: $svc" "not in running services"
+            capture_missing_service "$snapshot" "$name" "$svc" || true
         fi
     done <<<"$expected"
+    rm -rf "$snapshot"
     if [ "$mode" = "remote" ]; then
         if service_present monerod "$running"; then
             it_fail "monerod absent in remote mode" "monerod is running"

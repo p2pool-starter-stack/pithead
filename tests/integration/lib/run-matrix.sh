@@ -28,7 +28,10 @@ env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
 
 # Services currently running, one per line, sorted. Honours active compose profiles, so
 # monerod is absent in remote mode.
-running_services() { rx "docker compose ps --services --status running 2>/dev/null | sort"; }
+running_services() {
+    compose_read "$1" running-services 'docker compose ps --services --status running' --passthrough | sort
+    mkdir -p "$OUT_DIR/$2" && retain_compose_read "$1" running-services "$OUT_DIR/$2" || true
+}
 
 # Print "<state> <health>" for one service, exactly as stack_status reads it: state is the
 # container State.Status (running/exited/paused/restarting/…) and health is the healthcheck
