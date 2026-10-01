@@ -142,6 +142,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   and closing A/B migration update. A dashboard-password edit commits through the panel behind
   typed `APPLY` and the approval envelope, after its preview names the lockout and console-login
   costs; the new login must read the dashboard, and the fixture password is restored the same way.
+  The shared dashboard control poller records POST and poll metadata on stderr: timestamp, route,
+  curl exit code, HTTP status, response size, JSON/error presence, UUID and allowlisted result
+  status. A refused or untrackable POST and an exhausted deadline also capture the guest control
+  unit's state, restart/exit counters and queued/claimed request counts. Correlate these with the
+  runner's per-boot guest journals and control timeline before attributing a missing preview to
+  the guest or the harness. Request bodies, free-text errors, preview values and credentials are
+  excluded; diagnostic output never substitutes for the preview or typed approval assertions.
   Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
   no queued or claimed request and reds the row if it never drains, keeping the harness's phase
   boundary deterministic. Apply does not stop an in-flight runner (#2363). Then the

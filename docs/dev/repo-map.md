@@ -110,6 +110,9 @@ Keep local code out of `vendor/`.
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
+The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
+transport metadata and failure snapshots; its selftest runs through
+`tests/os/provision-browser-submit.sh --self-test`.
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
 
