@@ -34,6 +34,7 @@ chmod +x "$LKW/bin/sudo"
 # lock_wiring_balance.
 lock_wiring_fixture() { # <dir>
     mkdir -p "$1/data/tor" "$1/data/dashboard"
+    seed_node_onion_state "$1/data/tor"
     cat >"$1/.env" <<'ENVEOF'
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion

@@ -3,11 +3,11 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../../.." && pwd)"
+RECONCILE_ROOT="$(cd "$HERE/../../.." && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
 # shellcheck source=lib/pithead/32-onion-provisioning.sh
-source "$ROOT/lib/pithead/32-onion-provisioning.sh"
+source "$RECONCILE_ROOT/lib/pithead/32-onion-provisioning.sh"
 
 echo "== node onion provisioning: retained identity wins over stale cache (#2951) =="
 T="$(mktemp -d)"
