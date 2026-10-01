@@ -12,6 +12,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 # shellcheck source=tests/integration/lib/remote-endpoints.sh
 source "$HERE/../lib/remote-endpoints.sh"
+# HERE is the selftest directory; the helper uses it only when collection is enabled.
+source "$HERE/../lib/backup-window.sh"
 
 echo "== backup_stack names why the safety backup failed =="
 SRC="$(sed -n '/^backup_stack() {$/,/^}$/p' "$HERE/../lib/safety-backup.sh")"

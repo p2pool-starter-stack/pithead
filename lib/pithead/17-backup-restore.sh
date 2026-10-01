@@ -34,6 +34,7 @@ backup_diagnose_items() { # <tar -C dir> <item>...
 }
 
 stack_backup() {
+    backup_window_observe backup_begin
     local with_chains=0 assume_yes=0 was_running=0 no_encrypt=0
     for arg in "$@"; do
         case "$arg" in

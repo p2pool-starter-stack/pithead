@@ -35,6 +35,7 @@ source "$HERE/lib/borrow-fixture.sh" || exit $?
 source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" || exit $? # chain-keep: #2639
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" || exit $?
+source "$HERE/lib/backup-window.sh" && backup_window_init || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -498,7 +499,6 @@ provision() {
 }
 # --- Phase 2: safety backup of the live stack -------------------------------
 source "$HERE/lib/safety-backup.sh" || exit $?
-
 # --- Phase 3: borrow the miner ----------------------------------------------
 borrow_miner() {
     [ "$BORROW_MINER" = "1" ] || {

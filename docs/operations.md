@@ -677,7 +677,10 @@ failed backup (disk full mid-archive, for example) removes the partial archive a
 the stack before reporting the error. If startup fails, it prints Tor's health-check history and
 last 40 container log lines before retrying, while retaining the original startup error. Failed
 Tor health checks record bootstrap progress and tag, or a cookie, control-query, authentication,
-or invalid-reply failure. Raw control replies and relay summaries are omitted. Pass `-y` / `--yes`
+or invalid-reply failure. Raw control replies and relay summaries are omitted. The integration
+wrapper can opt into bounded machine-readable observations of these startup boundaries; its
+[backup-window contract](dev/backup-window-results.md) keeps command outcome and restoration
+separate and leaves unobserved healthcheck execution unknown. Pass `-y` / `--yes`
 to skip both prompts (low-space warning, stop-the-stack question).
 
 Include the blockchains (larger, slower) with:
