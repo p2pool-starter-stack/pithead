@@ -1111,6 +1111,7 @@ category is enabled and no raw debug metadata is collected before filtering.
 The build checks Ubuntu's static Unbound/libevent link dependencies and runs the
 probe's limiter/privacy checks before compiling the wallet. Both libraries are
 passed to the pinned source's Unbound finder, which otherwise omits libevent.
+The dependency check compiles standard input as C++ and links archives as libraries.
 The build retains HID support with Ubuntu's libudev development package and copies
 its runtime library into the job-owned image; the runtime version check must pass.
 

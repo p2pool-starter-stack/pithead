@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Ubuntu's static libunbound requires libevent; pinned upstream finds only unbound.
 # Exercise that dependency before the expensive source compilation.
 RUN printf '#include <unbound.h>\nint main() { ub_ctx_delete(ub_ctx_create()); }\n' \
-        | c++ -x c++ - -o /unbound-link-test \
+        | c++ -x c++ - -x none -o /unbound-link-test \
             /usr/lib/"$(gcc -print-multiarch)"/libunbound.a \
             /usr/lib/"$(gcc -print-multiarch)"/libevent.a -lssl -lcrypto -pthread \
     && /unbound-link-test

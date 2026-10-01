@@ -7,6 +7,34 @@ probe=$HERE/../diagnostics/wallet-progress
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 echo "== numeric-only wallet probe privacy, limits and job isolation =="
+python3 - "$probe/Dockerfile" "$scratch" <<'PY'
+import os
+import pathlib
+import subprocess
+import sys
+
+recipe = pathlib.Path(sys.argv[1]).read_text()
+root = pathlib.Path(sys.argv[2])
+libs = root / "lib" / "fixture"
+libs.mkdir(parents=True)
+(root / "unbound.h").write_text("void* ub_ctx_create(); void ub_ctx_delete(void*);\n")
+# Actual archives require the compiler to stop treating inputs as C++ source.
+# The unresolved event symbol also exercises archive ordering.
+for name, source in {
+    "unbound": "extern void event_fixture(); void* ub_ctx_create() { event_fixture(); return nullptr; } void ub_ctx_delete(void*) {}",
+    "event": "void event_fixture() {}",
+}.items():
+    subprocess.run(["c++", "-x", "c++", "-c", "-", "-o", str(root / (name + ".o"))], input=source, text=True, check=True)
+    subprocess.run(["ar", "rcs", str(libs / ("lib" + name + ".a")), str(root / (name + ".o"))], check=True)
+command = recipe.split("RUN printf '#include <unbound.h>", 1)[1].split("WORKDIR /source", 1)[0]
+command = "printf '#include <unbound.h>" + command
+command = command.replace("/usr/lib/", str(root / "lib") + "/")
+command = command.replace("$(gcc -print-multiarch)", "fixture")
+command = command.replace("/unbound-link-test", str(root / "unbound-link-test"))
+env = dict(os.environ, CPATH=str(root))
+subprocess.run(["bash", "-euo", "pipefail", "-c", command], env=env, check=True, timeout=10)
+PY
+assert_rc "Dockerfile dependency preflight compiles source and links ordered archives" "$?" 0
 assert_eq "wrapper always sources its deployment owner with a failure guard" \
     "$(grep -cE '^source .*lib/deploy-branch[.]sh" [|][|] exit [$][?]$' "$HERE/../e2e.sh")" 1
 c++ -std=c++11 -Wall -Wextra -Werror -pthread "$probe/probe-test.cpp" -o "$scratch/probe"
