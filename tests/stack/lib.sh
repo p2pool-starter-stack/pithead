@@ -21,6 +21,8 @@
 # tests/inventory.sh lists them as UNSOURCED) — they carry no marker check and must not gain one.
 # shellcheck disable=SC2034  # sourced library: this marker and the fixtures are read by run.sh
 STACK_SUITE=1
+# shellcheck source=tests/stack/lib/doctor-stubs.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/doctor-stubs.sh"
 # shellcheck source=tests/stack/lib/config-read-sites.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config-read-sites.sh"
 
