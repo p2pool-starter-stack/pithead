@@ -20,6 +20,34 @@ SPEC.loader.exec_module(window)
 
 
 class BackupStorageTests(unittest.TestCase):
+    def test_inaccessible_root_has_only_fixed_diagnostics(self):
+        script = (
+            'HERE="$PWD/tests/integration"; source "$HERE/lib/backup-window.sh"; backup_window_init'
+        )
+        with tempfile.TemporaryDirectory() as parent:
+            # Inject an inaccessible-path failure even when the test user is root.
+            (Path(parent) / "sitecustomize.py").write_text(
+                "from pathlib import Path\n"
+                "def denied(self): raise PermissionError('private inaccessible path')\n"
+                "Path.is_symlink = denied\n"
+            )
+            env = {**os.environ, "CI_ARTIFACTS": parent, "PYTHONPATH": parent}
+            env.pop("IT_BACKUP_WINDOW_DIR", None)
+            process = subprocess.run(  # noqa: S603 - fixed fixture command
+                ["/bin/bash", "-c", script],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(process.returncode, 0)
+            self.assertEqual(process.stderr, "Backup-window diagnostics unavailable.\n")
+            facts = json.loads(process.stdout.removeprefix("Backup-window storage refused: "))
+            self.assertEqual(facts, {"absolute": True, "stat_available": False})
+            self.assertNotIn(parent, process.stdout + process.stderr)
+            self.assertNotIn("private inaccessible path", process.stdout + process.stderr)
+
     def test_runner_artifact_root_and_refusal_diagnostics(self):
         script = (
             'HERE="$PWD/tests/integration"; source "$HERE/lib/backup-window.sh"; backup_window_init'

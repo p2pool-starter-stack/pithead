@@ -5,12 +5,13 @@ backup_window_init() {
     if ! BACKUP_WINDOW_DIR="$(python3 "$HERE/lib/backup-window.py" init "$parent")"; then
         BACKUP_WINDOW_DIR=""
         # Fixed storage facts explain a refusal without exposing the caller's path.
-        python3 - "$parent" <<'PY' || true
+        python3 - "$parent" 2>/dev/null <<'PY' || true
 import json, os, sys
 from pathlib import Path
 parent = Path(sys.argv[1])
-facts = {"absolute": parent.is_absolute(), "symlink": parent.is_symlink()}
+facts = {"absolute": parent.is_absolute()}
 try:
+    facts["symlink"] = parent.is_symlink()
     info = parent.stat()
     facts.update(directory=parent.is_dir(), owned=info.st_uid == os.getuid(),
                  writable_by_others=bool(info.st_mode & 0o022))
