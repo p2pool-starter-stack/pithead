@@ -68,7 +68,7 @@ printf '%s\n' "$reply" | tr -d '\r' | awk '
     END {
         if (!authenticated) {
             print "Tor health: control authentication failed."
-        } else if (invalid || bootstrap != 1 || completed != 1 || progress_count != 1 || tag_count != 1 || progress + 0 > 100) {
+        } else if (invalid || bootstrap != 1 || completed != 1 || closed != 1 || progress_count != 1 || tag_count != 1 || progress + 0 > 100) {
             print "Tor health: bootstrap reply unavailable."
         } else if (progress + 0 == 100 && tag == "done") {
             exit 0

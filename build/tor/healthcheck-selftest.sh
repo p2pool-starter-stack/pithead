@@ -60,7 +60,7 @@ hc_run() { # <cookie: none|empty|fixed> <control-port reply> <allowed cmd...> ->
             cat >"$d/bin/nc" <<'NCSTUB'
 #!/bin/sh
 while IFS= read -r l; do printf '%s\n' "$l"; done >"$HC_CAP"
-printf '%s\r\n%s\r\n%s\r\n250 closing connection\r\n' "$HC_AUTH_REPLY" "$HC_REPLY" "$HC_CONTROL_END"
+printf '%s\r\n%s\r\n%s\r\n%s\r\n' "$HC_AUTH_REPLY" "$HC_REPLY" "$HC_CONTROL_END" "$HC_CLOSE"
 exit "$HC_NC_EXIT"
 NCSTUB
             chmod +x "$d/bin/nc"
@@ -81,7 +81,7 @@ NCSTUB
     # /bin/sh by absolute path: with PATH stripped to the stub dir, `sh` itself is unresolvable.
     PATH="$d/bin" HC_CAP="$HC_D/sent" HC_REPLY="$reply" TOR_COOKIE_FILE="$d/cookie" \
         HC_AUTH_REPLY="${HC_AUTH_REPLY:-250 OK}" HC_CONTROL_END="${HC_CONTROL_END-250 OK}" \
-        HC_NC_EXIT="${HC_NC_EXIT:-0}" /bin/sh "$HC" >"$HC_D/output" 2>&1 || rc=$?
+        HC_CLOSE="${HC_CLOSE-250 closing connection}" HC_NC_EXIT="${HC_NC_EXIT:-0}" /bin/sh "$HC" >"$HC_D/output" 2>&1 || rc=$?
     if [ "$rc" = 0 ]; then printf 'healthy\n'; else printf 'unhealthy\n'; fi
 }
 
@@ -129,6 +129,8 @@ expect "rejected authentication stays unhealthy" "$(HC_AUTH_REPLY='515 secret-ma
 expect "authentication failure omits raw reply" "$(cat "$HC_D/output")" "Tor health: control authentication failed."
 expect "missing query completion stays unhealthy" "$(HC_CONTROL_END='' hc_run fixed "$HC_DONE" "${HC_CMDS[@]}")" "unhealthy"
 expect "malformed reply explains failure" "$(cat "$HC_D/output")" "Tor health: bootstrap reply unavailable."
+expect "missing connection closure stays unhealthy" "$(HC_CLOSE='' hc_run fixed "$HC_DONE" "${HC_CMDS[@]}")" "unhealthy"
+expect "missing closure explains failure" "$(cat "$HC_D/output")" "Tor health: bootstrap reply unavailable."
 expect "done in summary cannot make incomplete bootstrap healthy" "$(hc_run fixed '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=50 TAG=loading_descriptors SUMMARY="Bootstrap TAG=done"' "${HC_CMDS[@]}")" "unhealthy"
 expect "summary is omitted" "$(cat "$HC_D/output")" "Tor health: bootstrap progress=50 tag=loading_descriptors."
 expect "duplicate progress is unhealthy" "$(hc_run fixed '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 PROGRESS=95 TAG=done' "${HC_CMDS[@]}")" "unhealthy"
