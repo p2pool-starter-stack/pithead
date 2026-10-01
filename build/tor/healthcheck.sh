@@ -20,13 +20,61 @@ CONTROL_HOST=127.0.0.1
 CONTROL_PORT=9051
 
 # Control port not up yet, or cookie not written -> not ready.
-[ -r "$COOKIE_FILE" ] || exit 1
+[ -r "$COOKIE_FILE" ] || {
+    printf 'Tor health: control cookie unavailable.\n'
+    exit 1
+}
 
 # Cookie auth requires the raw 32-byte cookie hex-encoded in the AUTHENTICATE command.
-COOKIE_HEX=$(xxd -p -c 256 "$COOKIE_FILE" | tr -d '\n')
-[ -n "$COOKIE_HEX" ] || exit 1
+COOKIE_HEX=$(xxd -p -c 256 "$COOKIE_FILE" 2>/dev/null | tr -d '\n')
+case "$COOKIE_HEX" in
+*[!0-9a-fA-F]* | "")
+    printf 'Tor health: invalid control cookie.\n'
+    exit 1
+    ;;
+esac
+[ "${#COOKIE_HEX}" -eq 64 ] || {
+    printf 'Tor health: invalid control cookie.\n'
+    exit 1
+}
 
-# Authenticate, query bootstrap phase, then close. Healthy only at TAG=done (100%).
-printf 'AUTHENTICATE %s\r\nGETINFO status/bootstrap-phase\r\nQUIT\r\n' "$COOKIE_HEX" |
-    nc -w 3 "$CONTROL_HOST" "$CONTROL_PORT" |
-    grep -q 'TAG=done'
+# Keep only numeric progress and a bounded tag in health history. Never print the cookie,
+# raw control reply or SUMMARY, which can contain relay addresses and other live values.
+reply=$(printf 'AUTHENTICATE %s\r\nGETINFO status/bootstrap-phase\r\nQUIT\r\n' "$COOKIE_HEX" |
+    nc -w 3 "$CONTROL_HOST" "$CONTROL_PORT" 2>/dev/null) || {
+    printf 'Tor health: control query failed.\n'
+    exit 1
+}
+printf '%s\n' "$reply" | tr -d '\r' | awk '
+    NR == 1 { authenticated = ($0 == "250 OK"); next }
+    /^250-status\/bootstrap-phase=/ {
+        if (++bootstrap != 1 || completed) invalid = 1
+        for (i = 1; i <= NF; i++) {
+            if ($i ~ /^SUMMARY=/) break
+            if ($i ~ /^PROGRESS=/) {
+                if (++progress_count != 1 || $i !~ /^PROGRESS=[0-9]+$/ || length($i) > 12) invalid = 1
+                progress = substr($i, 10)
+            }
+            if ($i ~ /^TAG=/) {
+                if (++tag_count != 1 || $i !~ /^TAG=[a-z_]+$/ || length($i) > 68) invalid = 1
+                tag = substr($i, 5)
+            }
+        }
+        next
+    }
+    /^250 OK$/ { if (++completed != 1 || bootstrap != 1) invalid = 1; next }
+    /^250 closing connection$/ { if (!completed || ++closed != 1) invalid = 1; next }
+    { invalid = 1 }
+    END {
+        if (!authenticated) {
+            print "Tor health: control authentication failed."
+        } else if (invalid || bootstrap != 1 || completed != 1 || closed != 1 || progress_count != 1 || tag_count != 1 || progress + 0 > 100) {
+            print "Tor health: bootstrap reply unavailable."
+        } else if (progress + 0 == 100 && tag == "done") {
+            exit 0
+        } else {
+            printf "Tor health: bootstrap progress=%s tag=%s.\n", progress, tag
+        }
+        exit 1
+    }
+'
