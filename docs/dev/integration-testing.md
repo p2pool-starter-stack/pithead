@@ -889,7 +889,7 @@ does not prove the rig has published a terminal outcome or that the dashboard ha
 
 The row is polled to a terminal status within a ninety-second observation budget.
 The result is the last history status whose transport and JSON decoding succeeded within that
-budget; reads finishing later cannot pass. A nonzero transport exit discards even valid JSON
+budget; reads or decoding finishing later cannot pass. A nonzero transport exit discards even valid JSON
 and records `dashboard.poll=failed`. Decoding must succeed with one JSON object; trailing junk
 or multiple documents produce `dashboard.poll=invalid_or_failed`. Partial decoder output is
 discarded, preserving the last successfully decoded status. Diagnostics may finish after the

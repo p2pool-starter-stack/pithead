@@ -150,6 +150,7 @@ _pred_history_row_terminal() { # <rig> <change_id>
         if status="$(printf '%s' "$detail" | jq -sr --arg c "$2" '
             if length == 1 and (.[0] | type) == "object" then .[0] else error("invalid response") end |
             first(.history[]? | select(.change_id == $c)) | .status // empty' 2>/dev/null)"; then
+            if [ -n "${_HISTORY_DEADLINE:-}" ] && [ "$(now_s)" -gt "$_HISTORY_DEADLINE" ]; then return 1; fi
             _HISTORY_ROW_STATUS="$status"
         else
             status=""

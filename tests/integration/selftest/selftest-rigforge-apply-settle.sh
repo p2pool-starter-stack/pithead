@@ -347,6 +347,31 @@ echo "== partial decoder output cannot supply an applied history observation =="
     [ "$IT_FAIL" -eq 0 ]
 ) && it_pass "partial dashboard decoder output is rejected" || it_fail "partial dashboard decoder output" "invalid JSON supplied a verdict or replaced the last valid observation"
 
+echo "== successful decoding must finish within the observation budget =="
+(
+    source "$HERE/../lib.sh"
+    decoder_clock="$(mktemp)"
+    trap 'rm -f "$decoder_clock"' EXIT
+    now_s() { cat "$decoder_clock"; }
+    _worker_detail() { printf '{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}'; }
+    jq() {
+        if [ "${1:-}" = -sr ]; then printf '%s\n' "$(($(now_s) + 10))" >"$decoder_clock"; fi
+        command jq "$@"
+    }
+    _HISTORY_DEADLINE=90 _HISTORY_SAMPLE_COUNT=20 _HISTORY_ROW_STATUS=accepted
+    printf '85\n' >"$decoder_clock"
+    _pred_history_row_terminal r 0123456789abcdef
+    assert_eq "a successful decode finishing after the deadline cannot pass" "$?" 1
+    assert_eq "late decoding preserves the prior accepted observation" "$_HISTORY_ROW_STATUS" accepted
+    assert_eq "the late-decoder fixture actually crosses the deadline" "$(now_s)" 95
+    printf '80\n' >"$decoder_clock"
+    _pred_history_row_terminal r 0123456789abcdef
+    assert_eq "a successful decode finishing on the boundary can pass" "$?" 0
+    assert_eq "an in-budget decode updates the history cache" "$_HISTORY_ROW_STATUS" applied
+    assert_eq "the in-budget fixture finishes exactly on the deadline" "$(now_s)" 90
+    [ "$IT_FAIL" -eq 0 ]
+) && it_pass "successful decoding respects the deadline" || it_fail "successful decoding deadline" "late decoding supplied a verdict or rejected an in-budget observation"
+
 echo ""
 echo "selftest-rigforge-apply-settle: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
