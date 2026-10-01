@@ -148,8 +148,11 @@ fingerprint. Keep real credentials out of exceptions and rotate them if exposed.
 The history-scan job also runs `bash scripts/lint/selftest-gitleaks-history.sh`.
 It checks the synthetic restore-connection Digest exception, detects the finding
 with that exception removed, and detects an identical fixture in a new commit.
-The connection-bound libcurl fixture remains authenticated and verifies the wire
-response independently with OpenSSL.
+The stale dashboard-hash exception accepts only the complete reviewed fixture
+line in its exact test paths. The selftest requires both findings at distinct
+columns when another credential precedes that fixture, and detects altered
+lines and copies in unreviewed paths. The connection-bound libcurl fixture
+remains authenticated and verifies the wire response independently with OpenSSL.
 
 ### File budget gate
 

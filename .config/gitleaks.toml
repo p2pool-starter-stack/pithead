@@ -47,7 +47,7 @@ regexTarget = "line"
 paths = [
   '''^tests/stack/(appliance/test-appliance-(setup|restore)|test-cli-restore-hardening)\.sh$''',
 ]
-regexes = ['''DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ==[ \t\r\n]*\z''']
+regexes = ['''(?m)^DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ==[ \t\r\n]*\z''']
 
 # The KVM wallet leg uses the public Ristretto255 basepoint as a spend public key (#2731).
 # Limit this exception to that assignment, rule and file, including its squash-merge history.
