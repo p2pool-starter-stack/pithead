@@ -123,7 +123,7 @@ assert_eq "neither artifact contains raw identity or credential text" \
     "$(cat "$WORK/rigforge-control."*.json | grep -Ec 'credential-marker|private-host-marker|rig1' || true)" "0"
 echo "== actual producer formatting selects accepted names with quotes and escapes =="
 LOG_PRODUCER=1
-for RIG_NAME in "rig'1" 'rig'; do
+for RIG_NAME in "rig'1" 'rig\1'; do
     BASELINE_CONFIG="$(jq -nc --arg n "$RIG_NAME" '{workers:{list:[{name:$n,host:"rig"}]}}')"
     STATE="$(jq -nc --arg n "$RIG_NAME" '{workers:[{name:$n,rigforge:{version:null}}]}')"
     prior_fail=$IT_FAIL
