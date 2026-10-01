@@ -44,6 +44,7 @@ wrong=222222222222222222222222
 printf 'PROXY_AUTH_TOKEN=%s\nOTHER_SECRET=kept-fixture\n' "$original" >"$TD/.env"
 chmod 600 "$TD/.env"
 owner="$(stat -c '%u:%g' "$TD/.env")"
+echo "== auth environment: private replacement and failure cleanup =="
 umask 022
 _set_env_token ''
 assert_rc "empty token replacement succeeds" "$?" 0
@@ -65,6 +66,7 @@ done
 unset AUTH_TEST_FAIL
 assert_eq "replacement failures preserve private mode" "$(stat -c %a "$TD/.env")" 600
 
+echo "== auth restoration: exact comparison and credential-free diagnostics =="
 # Run the real phase and assertion helpers; only live operations are stubbed.
 env_on_box() { sed -n "s/^$1=//p" "$TD/.env"; }
 pithead() {
