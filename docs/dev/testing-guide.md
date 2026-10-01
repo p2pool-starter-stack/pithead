@@ -43,6 +43,8 @@ make test                 # local gates; needs Docker, but no live test server
 make test-dashboard       # dashboard pytest + 80% coverage gate
 make test-stack           # pithead shell suite
 bash tests/stack/run.sh 3 # one of the shell suite's four blocks, as one CI leg runs it
+# Run one #2048 prerequisite independently, with no predecessor fragment:
+bash -uo pipefail -c 'source tests/stack/lib.sh; source tests/stack/test-spool-audit.sh; [ "$PASS" -gt 0 ] && [ "$FAIL" -eq 0 ]'
 make test-fakes           # tier-2 contract test (real clients vs fakes)
 make test-integration-selftest   # the integration harness's own logic
 make test-inventory       # write a generated (git-ignored) coverage list to docs/dev/test-inventory.md

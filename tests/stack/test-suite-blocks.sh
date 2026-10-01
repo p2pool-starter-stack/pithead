@@ -14,6 +14,17 @@ out=$(stack_blocks_audit "$SB_RUN" "$SB_WF")
 assert_rc "the shipped run.sh and shell.yml pass the block audit" "$?" "0"
 assert_eq "...and the audit printed no defect" "$out" ""
 
+# An audit parser failure with no stdout used to look exactly like a clean layout.
+out=$(
+    awk() {
+        echo "seeded awk failure" >&2
+        return 2
+    }
+    stack_blocks_audit "$SB_RUN" "$SB_WF" 2>&1
+)
+assert_rc "a failed audit parser refuses the layout" "$?" "1"
+assert_contains "a failed audit parser is diagnosed" "$out" "block audit parser failed"
+
 # Each seeded copy breaks one rule, and the audit has to name it. A rule that stopped firing would
 # leave the row above green over a layout that no longer puts every fragment in a leg.
 sb_audit() { # <label> <expected-defect> <run.sh copy> [workflow copy]
@@ -64,6 +75,8 @@ cp "$ROOT/tests/stack/lib.sh" "$SBT/tests/stack/"
 cp "$ROOT/tests/stack/lib/config-read-sites.sh" "$SBT/tests/stack/lib/"
 cp "$ROOT/tests/stack/lib/suite-blocks.sh" "$SBT/tests/stack/lib/"
 cp "$ROOT/tests/stack/lib/doctor-stubs.sh" "$SBT/tests/stack/lib/"
+cp "$ROOT/tests/stack/lib/control-fixtures.sh" "$SBT/tests/stack/lib/"
+cp "$ROOT/tests/stack/lib/backup-fixtures.sh" "$SBT/tests/stack/lib/"
 printf 'jobs:\n  shell-block:\n    strategy:\n      matrix:\n        block: [1, 2, 3, 4]\n' >"$SBT/.github/workflows/shell.yml"
 printf 'SB_LEAK=1\nok "block one"\n' >"$SBT/tests/stack/test-b1.sh"
 printf 'assert_eq "block two cannot see block one'"'"'s variables" "${SB_LEAK:-}" ""\n' >"$SBT/tests/stack/test-b2.sh"
@@ -85,6 +98,44 @@ assert_contains "the full run names the block that ended without a verdict" "$ou
 out=$(bash "$SBT/tests/stack/run.sh" 2 2>&1)
 assert_rc "one block runs alone and carries its own verdict" "$?" "0"
 assert_contains "a single block's summary names the block" "$out" "pithead tests, block 2 of 4:"
+# Fail only the tally producer, leaving the real layout audit and child verdicts intact.
+# All four children are red: losing the producer status must never turn them green.
+mkdir -p "$SB/bin"
+SB_AWK=$(command -v awk)
+cat >"$SB/bin/awk" <<'EOF'
+#!/usr/bin/env bash
+case "${!#}" in
+    */block-tally)
+        case "$SB_SUM_FAULT" in
+            exit) echo "seeded tally failure" >&2; exit 2 ;;
+            negative) printf '%s\n' '-1 4' ;;
+            word) printf '%s\n' '0 nope' ;;
+            extra) printf '%s\n' '0 0 4' ;;
+            empty) : ;;
+        esac
+        exit 0 ;;
+esac
+exec "$SB_REAL_AWK" "$@"
+EOF
+chmod +x "$SB/bin/awk"
+for sb_k in 1 2 3 4; do
+    printf 'bad "red child" "seeded failure"\n' >"$SBT/tests/stack/test-b$sb_k.sh"
+done
+out=$(PATH="$SB/bin:$PATH" SB_REAL_AWK="$SB_AWK" SB_SUM_FAULT=exit bash "$SBT/tests/stack/run.sh" 2>&1)
+assert_rc "a failed tally producer refuses a full run of red blocks" "$?" "2"
+assert_contains "a failed tally producer is diagnosed" "$out" "block tally producer failed"
+assert_not_contains "a failed producer never reports a green parent" "$out" "pithead tests: "
+out=$(PATH="$SB/bin:$PATH" SB_REAL_AWK="$SB_AWK" SB_SUM_FAULT=negative bash "$SBT/tests/stack/run.sh" 2>&1)
+assert_rc "a negative pass count refuses the verdict" "$?" "2"
+assert_contains "a negative pass count is diagnosed" "$out" "invalid block tally counts"
+out=$(PATH="$SB/bin:$PATH" SB_REAL_AWK="$SB_AWK" SB_SUM_FAULT=word bash "$SBT/tests/stack/run.sh" 2>&1)
+assert_rc "a noninteger fail count refuses the verdict" "$?" "2"
+out=$(PATH="$SB/bin:$PATH" SB_REAL_AWK="$SB_AWK" SB_SUM_FAULT=extra bash "$SBT/tests/stack/run.sh" 2>&1)
+assert_rc "an extra count refuses the verdict" "$?" "2"
+out=$(PATH="$SB/bin:$PATH" SB_REAL_AWK="$SB_AWK" SB_SUM_FAULT=empty bash "$SBT/tests/stack/run.sh" 2>&1)
+assert_rc "empty counts refuse the verdict" "$?" "2"
+printf 'SB_LEAK=1\nok "block one"\n' >"$SBT/tests/stack/test-b1.sh"
+printf 'assert_eq "block two cannot see block one variables" "${SB_LEAK:-}" ""\n' >"$SBT/tests/stack/test-b2.sh"
 printf 'ok "block three"\n' >"$SBT/tests/stack/test-b3.sh"
 printf 'ok "block four"\n' >"$SBT/tests/stack/test-b4.sh"
 out=$(bash "$SBT/tests/stack/run.sh" 2>&1)
@@ -100,5 +151,5 @@ out=$(bash "$SBT/tests/stack/run.sh" 1 2>&1)
 assert_rc "a missing harness dependency refuses the run" "$?" "1"
 assert_contains "the missing harness dependency is named" "$out" "doctor-stubs.sh"
 rm -rf "$SB"
-unset SB SB_RUN SB_WF SB_N SBT sb_stanza sb_first sb_k arg out
+unset SB SB_RUN SB_WF SB_N SB_AWK SBT sb_stanza sb_first sb_k arg out
 unset -f sb_audit

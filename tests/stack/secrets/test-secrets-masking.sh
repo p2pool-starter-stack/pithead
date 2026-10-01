@@ -1,63 +1,10 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Control-channel secrets-masking domain (#1105 Phase 1, appliance lane): the three sections that
-# prove a secret never leaves the host in the clear. The pre-masked prefill copy and the host-side
-# secret merge the dashboard container reads instead of the raw config.json (#440), the per-field
-# .env line-injection guard (#33 hardening), and the client-auth requirement on a published onion
-# (#33 hardening). A fourth section covered telegram.control failing closed on each of its legs
-# (#521) until #2076 removed that feature.
-# Sourced by tests/stack/run.sh.
-#
-# THIS FILE IS DELIBERATELY NOT STANDALONE-SOURCEABLE, AND THAT IS THE CORRECT CALL HERE.
-# It follows the shipped add-only-ssrf disclosure precedent — source in place, position-locked,
-# dependency disclosed here — rather than the self-arm pattern most domain files use. "It should
-# self-arm like its neighbours" is the obvious review note and it is wrong for this domain:
-#
-# - This domain is a pure CONSUMER of the control sandbox. It never calls build_control_sandbox();
-#   test-control-core.sh calls it once, in the control-core domain sourced ahead, and $C and
-#   $CTRL_LOG reach here from it.
-#   (That section lived in run.sh until #1105 R12 moved it into its own domain file.)
-# - Self-arming would BUILD A SECOND SANDBOX, and that is the defect, not the fix. This domain
-#   drives the control channel repeatedly through `pithead apply -y` and run_pending, and sections
-#   that run AFTER this one, both in test-spool-audit.sh, count that shared state exactly — the
-#   audit log by line count, the request spool by file count, each against an exact expected
-#   number. A fresh $C would
-#   send these writes to a different results dir than those counters read. That is coupling rule A,
-#   and it has a recorded firing: the rig-worker token-mask cluster moved with a re-derived $C, its
-#   applies wrote extra result files into the shared results dir, and a still-in-run.sh assertion
-#   counting that dir went red.
-#   RETRACTED (#1105 R12): that firing's stated MECHANISM does not reproduce at the tip — the
-#   apply path writes nothing into results/ unless is_appliance(), which no sandbox run
-#   satisfies. The RED was real; WHY is not established, and the full re-derivation is in
-#   test-rig-worker.sh's header. This domain's position-lock rests on what it READS, not on it.
-#
-# Re-derivations (audited over this WHOLE file, header included, with split-name-audit.py):
-# - $REQS, $RESULTS, $STAGED and $AUDIT are NOT the builder's. They are assigned by the
-#   control-run-pending section, in test-control-core.sh, sourced before this stanza — an ordering
-#   dependency, same class as any other. They are deliberately NOT seeded here: each is a plain
-#   derivation from $C, so a seed would duplicate that file's definitions and could drift from them,
-#   and it would buy nothing, because $C itself keeps this file non-standalone either way.
-#   Disclosure is the contract this file offers instead.
-# - $MASKED is assigned HERE, in the moved text, not inherited.
-# - $VALID_TARI is a lib.sh top-level constant; $PATH is the environment's.
-# - $WALLET is NOT a top-level constant, and getting that right matters here. lib.sh assigns it
-#   only INSIDE the two sandbox builders, as WALLET="${WALLET:-$VALID_PRIMARY}", and run.sh never
-#   assigns it at all — so $WALLET reaches this domain from the same build_control_sandbox call
-#   that provides $C, by the same ordering dependency, and belongs in the disclosure above rather
-#   than filed as a constant. A defaulting fix retires a coupling only for CALLERS, and a split
-#   manufactures non-callers; under run.sh's `set -u` an unset $WALLET would abort outright.
-# - Provider functions this domain calls, from lib.sh: assert_eq, assert_contains,
-#   assert_not_contains, assert_rc, file_mode, control_config, run_pending, and ok/bad beneath the
-#   assertions. It does NOT call seed_control_env.
-# - inject_reject() and onion_control_config() are defined in the moved text and are not unset at
-#   its end, so they outlive the source exactly as they outlived their old position in run.sh. No
-#   other file under tests/stack/ uses those names, so nothing downstream can see a definition it
-#   did not see before. (tg_control_config() was a third such name until #2076 removed it.)
-#
-# The block's own tail is load-bearing for what follows it: its last lines restore the section
-# baseline — control on, no telegram — and re-apply, and the in-code comment there says so. The
-# source stanza therefore sits at this block's own vacated position, so the tail still runs where
-# it always ran. The anchor is a correctness requirement in this cut, not the usual preference.
+# Secrets stay masked in container-visible copies and are restored only on the host.
+# The shared fixture seeds fresh processes and preserves existing config and spool state.
+
+ensure_control_fixture
+
 echo "== black-box: pre-masked prefill copy + host-side secret merge (#440) =="
 # The dashboard container never mounts the raw config.json: apply/run-pending render a PRE-MASKED
 # copy into the spool's masked/ leg, and the "blank secret keeps the live value" sentinel swap

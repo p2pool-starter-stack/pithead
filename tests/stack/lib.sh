@@ -23,6 +23,10 @@
 STACK_SUITE=1
 # shellcheck source=tests/stack/lib/doctor-stubs.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/doctor-stubs.sh" || exit 1
+# shellcheck source=tests/stack/lib/backup-fixtures.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/backup-fixtures.sh" || exit 1
+# shellcheck source=tests/stack/lib/control-fixtures.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/control-fixtures.sh" || exit 1
 # shellcheck source=tests/stack/lib/config-read-sites.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config-read-sites.sh"
 

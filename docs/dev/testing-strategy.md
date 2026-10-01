@@ -83,9 +83,12 @@ file rather than holding assertions of its own (see the test-inventory note unde
 `run.sh` cuts its source order into four contiguous blocks, and the Shell workflow runs each block
 as its own job (#2631). `bash tests/stack/run.sh 2` runs block 2 alone. With no argument it runs
 all four in turn, each in a fresh process, and prints the summed count. A block starts with nothing
-but `lib.sh`, so a fragment that reads what another left behind has to sit after it in the same
-block. Before any block runs, `run.sh` checks that every suite file sits in exactly one block, that sourced fragments have domain
-accounting, and that the workflow matrix lists every block; it refuses to start otherwise.
+but `lib.sh`. Shared control and backup builders initialize the nine #2048 prerequisite fragments
+without sourcing predecessors; a separate Shell matrix runs each with only `lib.sh` in a fresh
+process. Both matrices must pass for the required Shell status to pass. Before any block runs,
+`run.sh` checks that every suite file sits in exactly one block, that sourced fragments have domain
+accounting, and that the workflow matrix lists every block. Audit parser failures stop execution;
+tally producer failures and counts that are not nonnegative integers stop the full-run verdict.
 
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the

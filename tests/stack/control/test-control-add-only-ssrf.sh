@@ -9,33 +9,12 @@
 # R13 brings the rest here, order preserved exactly: what ran BEFORE the old source stanza sits
 # above the add-only battery, what ran AFTER it sits below, run.sh sources it from that position.
 #
-# SELF-ARMING, AND WHY THAT IS SAFE IN POSITION. This file opens run.sh's block 3 (#2631), a fresh
-# process, so it builds what it reads: $ROOT and $VALID_TARI are lib.sh constants, and $C, $CTRL_LOG
-# and $WALLET come from build_control_sandbox(), called here. The builder writes no .env and `apply`
-# refuses to run without one, so the arm seeds test-control-core.sh's when none exists; before #2631
-# that gap made the "sourceable standalone" claim here false (26 passed, 90 failed alone). In
-# position the arm changes nothing: $C is the fixed "$SANDBOX/control", mkdir -p only creates, the
-# copies are static repo inputs, the .env already exists, and control_config is only DEFINED, so no
-# config.json is written and nothing under data/control/ is touched. The spool paths below re-derive
-# the values test-control-core.sh and test-secrets-masking.sh set, and this domain's baseline is
-# seeded by its own first block from the host CLI.
-#
-# WHAT OUTLIVES THE SOURCE. gate_try(), $UUID5 and the spool paths are not unset at the end: the
-# editable-allowlist, worker-config and spool-audit domains and run.sh's #848 masking rows read them
-# later in block 3. Hence the stanza opens that block.
-#
-# MUTATION PROOF: dropping the adopt's typed APPLY, prefix match or duplicate-name check turns its rows
-# red; weakening _control_host_is_internal lets a confirmed unsafe append apply.
-# Round 5's resolve-and-check battery (below) names its own mutation kills.
+# Initializes the shared fixture without replacing an existing config or spool. Each fragment
+# can start in a fresh process with lib.sh; the ordered blocks keep their accumulated state.
+# Mutation proof: dropping the adopt's typed APPLY, prefix match or duplicate-name check turns
+# its rows red; weakening _control_host_is_internal lets a confirmed unsafe append apply.
 
-build_control_sandbox
-[ -f "$C/.env" ] || seed_control_env
-REQS="$C/data/control/requests"
-RESULTS="$C/data/control/results"
-STAGED="$C/data/control/staged"
-AUDIT="$C/data/control/audit/control.log"
-# shellcheck disable=SC2034 # read by later block-3 fragments
-MASKED="$C/data/control/masked/config.json"
+ensure_control_fixture
 
 echo "== black-box: sensitive changes require confirmation; physical paths still refuse (#1959) =="
 # describe_change flags only the ENABLE/CHANGE direction of security controls as DEST — disabling
@@ -51,18 +30,6 @@ jq -n --arg w "$WALLET" \
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},
                control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview then commit via the spool
-    # Second arg: a typed "APPLY", so a PERIMETER case can prove refusal EVEN WITH a valid token.
-    # Third: the approval ENVELOPE (2026-09-13 perimeter audit). Without one, every case here proved only that a
-    # TOKEN-LESS commit is refused — and a self-written envelope walked past four (the container
-    # writes the spool: its own actor, APPLY and suffix). test-control-perimeter-tier3.sh sends them.
-    jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$1" >"$REQS/$UUID5.json"
-    run_pending >/dev/null
-    jq -n --arg id "$UUID5" --arg c "${2:-}" --argjson a "${3:-null}" \
-        '{id:$id,action:"commit",actor:"admin"} + (if $c == "" then {} else {confirm:$c} end)
-         + (if $a == null then {} else {approval:$a} end)' >"$REQS/$UUID5.json"
-    run_pending >/dev/null
-}
 
 . "$ROOT/tests/stack/control/control-sensitive-preview.sh"
 assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"

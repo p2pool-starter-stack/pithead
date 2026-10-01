@@ -8,11 +8,10 @@
 #   BLOCK   one block, 1..STACK_BLOCKS: what each leg of the Shell workflow's matrix runs
 #
 # The source order below is cut into STACK_BLOCKS contiguous blocks that CI runs in parallel
-# (#2631). A block starts in a fresh process holding nothing but lib.sh, so a fragment that reads
-# what an earlier one left behind ($C, $REQS, $UUID5...) must sit after it in the SAME block. The
-# no-argument run keeps those boundaries too: one shared process would hide a dependency across a
-# boundary until CI split it. stack_blocks_audit (lib.sh) refuses a stanza outside every block, a
-# stanza in two, and a workflow matrix that does not list every block.
+# (#2631). Each block starts with lib.sh in a fresh process. Shared fixture builders also let the
+# nine #2048 prerequisite fragments run individually; CI proves those runs separately. The
+# no-argument run keeps the same process boundaries. stack_blocks_audit refuses missing or duplicate
+# stanzas, missing domain accounting, and a workflow matrix that does not list every block.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -47,7 +46,15 @@ if [ "$#" -eq 0 ]; then
         printf '\n=== block %s of %s ===\n' "$_b" "$STACK_BLOCKS"
         STACK_TALLY="$SANDBOX/block-tally" bash "$HERE/run.sh" "$_b"
     done
-    read -r PASS FAIL < <(stack_blocks_sum "$SANDBOX/block-tally" "$STACK_BLOCKS")
+    if ! _counts=$(stack_blocks_sum "$SANDBOX/block-tally" "$STACK_BLOCKS"); then
+        echo "run.sh: block tally producer failed" >&2
+        exit 2
+    fi
+    if ! [[ "$_counts" =~ ^[0-9]+[[:blank:]][0-9]+$ ]]; then
+        printf 'run.sh: invalid block tally counts: %s\n' "$_counts" >&2
+        exit 2
+    fi
+    read -r PASS FAIL <<<"$_counts"
     stack_verdict "pithead tests"
 fi
 if [ "$#" -gt 1 ] || ! [[ "$1" =~ ^[1-9][0-9]*$ ]] || [ "${#1}" -gt "${#STACK_BLOCKS}" ] || [ "$1" -gt "$STACK_BLOCKS" ]; then

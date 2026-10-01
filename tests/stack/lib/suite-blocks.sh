@@ -14,7 +14,7 @@ stack_blocks_audit() { # <run.sh> <workflow.yml> [suite-directory]
     want=$(seq -s, 1 "$n")
     have=$(sed -n 's/^ *block: \[\([0-9, ]*\)\].*$/\1/p' "$wf" | tr -d ' ')
     expected=$(find "$suite" -type f -name 'test*.sh' ! -path '*/standalone/*' | sed "s|^$suite/||" | sort) || return 1
-    defects=$(
+    if ! defects=$(
         [ "$have" = "$want" ] || echo "$wf matrix lists blocks [$have], run.sh declares [$want]"
         awk -v n="$n" -v expected="$expected" '
             BEGIN { count = split(expected, files, "\n"); for (k = 1; k <= count; k++) if (files[k] != "") want[files[k]] = 1 }
@@ -44,7 +44,10 @@ stack_blocks_audit() { # <run.sh> <workflow.yml> [suite-directory]
                 if (open) print "block " open " is never closed"
                 if (seen != n) print "run.sh opens " seen " blocks, STACK_BLOCKS says " n
             }' "$runsh"
-    )
+    ); then
+        printf 'block audit parser failed for %s\n%s\n' "$runsh" "$defects" >&2
+        return 1
+    fi
     [ -z "$defects" ] && return 0
     printf '%s\n' "$defects"
     return 1
