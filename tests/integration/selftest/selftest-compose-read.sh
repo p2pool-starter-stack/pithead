@@ -116,7 +116,10 @@ rx() {
 compose_read "$snapshot" stalled true --seconds 0.2
 check_json "time bound records capture error" "$snapshot/stalled.json" '.capture_error == "time limit exceeded" and .transport_exit != 0'
 assert_contains "timeout preserves completed safe output" "$(cat "$snapshot/stalled.stdout")" 'safe before stall'
-rx() { exec >/dev/null 2>&1; sleep 30; }
+rx() {
+    exec >/dev/null 2>&1
+    sleep 30
+}
 started=$SECONDS
 compose_read "$snapshot" closed-streams true --seconds 0.2
 check_json "closed streams cannot bypass the transport deadline" "$snapshot/closed-streams.json" '.capture_error == "time limit exceeded" and .transport_exit != 0'
