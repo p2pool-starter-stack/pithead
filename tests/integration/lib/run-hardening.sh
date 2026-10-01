@@ -1,7 +1,13 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 _set_env_token() { # _set_env_token <value>
-    rx "awk -v t=$(quote_arg "$1") '/^PROXY_AUTH_TOKEN=/{print \"PROXY_AUTH_TOKEN=\" t; next} {print}' .env > .env.itest && mv .env.itest .env"
+    rx "(
+        umask 077
+        tmp=\$(mktemp .env.itest.XXXXXX) || exit 1
+        trap 'rm -f \"\$tmp\"' EXIT
+        awk -v t=$(quote_arg "$1") '/^PROXY_AUTH_TOKEN=/{print \"PROXY_AUTH_TOKEN=\" t; next} {print}' .env > \"\$tmp\" &&
+            chown --reference=.env \"\$tmp\" && mv -f \"\$tmp\" .env
+    )"
 }
 
 # Drop a file into the control spool on the box (mirrors push_config's stdin-over-ssh transfer so
@@ -302,7 +308,10 @@ run_auth_fail_closed() {
 
     # 1. Empty the token; `pithead up` must refuse to start AND name the documented fix.
     it_step "emptying PROXY_AUTH_TOKEN in .env and running 'pithead up'…"
-    _set_env_token ""
+    if ! _set_env_token ""; then
+        it_fail "empty PROXY_AUTH_TOKEN for fail-closed probe" "environment replacement failed"
+        return 1
+    fi
     local out rc
     out="$(pithead up 2>&1)"
     rc=$?
@@ -312,8 +321,12 @@ run_auth_fail_closed() {
 
     # 2. Restore the EXACT original token (apply would mint a new one) and recover.
     it_step "restoring the original PROXY_AUTH_TOKEN and recovering…"
-    _set_env_token "$orig"
-    assert_eq "original PROXY_AUTH_TOKEN restored verbatim" "$(env_on_box PROXY_AUTH_TOKEN)" "$orig"
+    _set_env_token "$orig" || it_fail "restore PROXY_AUTH_TOKEN" "environment replacement failed"
+    if [ "$(env_on_box PROXY_AUTH_TOKEN)" = "$orig" ]; then
+        it_pass "original PROXY_AUTH_TOKEN restored verbatim"
+    else
+        it_fail "original PROXY_AUTH_TOKEN restored verbatim" "restored token differs from the original"
+    fi
     pithead up >/dev/null 2>&1 || it_warn "recovery 'pithead up' returned non-zero; check the box."
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
