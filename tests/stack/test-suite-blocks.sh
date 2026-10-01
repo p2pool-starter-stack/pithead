@@ -63,6 +63,7 @@ mkdir -p "$SBT/tests/stack/lib" "$SBT/.github/workflows"
 cp "$ROOT/tests/stack/lib.sh" "$SBT/tests/stack/"
 cp "$ROOT/tests/stack/lib/config-read-sites.sh" "$SBT/tests/stack/lib/"
 cp "$ROOT/tests/stack/lib/suite-blocks.sh" "$SBT/tests/stack/lib/"
+cp "$ROOT/tests/stack/lib/doctor-stubs.sh" "$SBT/tests/stack/lib/"
 printf 'jobs:\n  shell-block:\n    strategy:\n      matrix:\n        block: [1, 2, 3, 4]\n' >"$SBT/.github/workflows/shell.yml"
 printf 'SB_LEAK=1\nok "block one"\n' >"$SBT/tests/stack/test-b1.sh"
 printf 'assert_eq "block two cannot see block one'"'"'s variables" "${SB_LEAK:-}" ""\n' >"$SBT/tests/stack/test-b2.sh"
@@ -94,6 +95,10 @@ printf 'ok "unlisted"\n' >"$SBT/tests/stack/test-unlisted.sh"
 out=$(bash "$SBT/tests/stack/run.sh" 1 2>&1)
 assert_rc "a new file missing from all blocks prevents execution" "$?" "2"
 assert_contains "the missing file is named" "$out" "test-unlisted.sh is absent from every block"
+rm "$SBT/tests/stack/lib/doctor-stubs.sh"
+out=$(bash "$SBT/tests/stack/run.sh" 1 2>&1)
+assert_rc "a missing harness dependency refuses the run" "$?" "1"
+assert_contains "the missing harness dependency is named" "$out" "doctor-stubs.sh"
 rm -rf "$SB"
 unset SB SB_RUN SB_WF SB_N SBT sb_stanza sb_first sb_k arg out
 unset -f sb_audit
