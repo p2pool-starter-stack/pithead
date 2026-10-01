@@ -62,6 +62,8 @@ check_json() {
     assert_rc "$name" "$?" 0
 }
 
+echo "== Compose service-read diagnostics =="
+
 snapshot="$(mktemp -d "$TD/snapshot.XXXXXX")"
 running="$(running_services "$snapshot" healthy)"
 assert_eq "successful original read preserves sorted membership" "$running" $'caddy\ndocker-control\ntor'
@@ -94,8 +96,7 @@ for mode in missing read-error capture-error large; do
         assert_contains "later safe lines survive oversized lines" "$(cat "$OUT_DIR/$mode/compose-ps-all.stdout")" 'safe tail'
         for stream in stdout stderr; do
             bytes="$(wc -c <"$OUT_DIR/$mode/compose-ps-all.$stream")"
-            [ "$bytes" -le 65536 ]
-            assert_rc "retained $stream has a byte bound" "$?" 0
+            assert_num_ge "retained $stream has a byte bound" 65536 "$bytes"
         done
     fi
 done
