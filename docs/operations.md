@@ -12,23 +12,25 @@ separately, [below](#appliance-only-commands).
 | `./pithead apply` | Preview and apply `config.json` changes. Warns before disruptive ones and recreates only what changed. `-y` / `--yes` skips the prompt. |
 | `./pithead up` | Start the stack. |
 | `./pithead down` | Stop the stack. |
-| `./pithead restart [tor\|monerod]` | Restart the stack, or one container. `restart tor` picks fresh guards when Tor clearnet egress is stuck (#424) — every Tor circuit drops and rebuilds, mining onions included, and a local monerod restarts right after tor is healthy again so it re-dials its peers (#972). `restart monerod` re-dials peers on its own when the node reports not synchronized after a Tor restart. See [Tor egress broken while mining works](#troubleshooting). |
+| `./pithead restart [tor\|monerod]` | Restart the stack, or one container. `restart tor` rebuilds circuits when Tor clearnet egress is stuck (#424) — every Tor circuit drops and rebuilds, mining onions included, and a local monerod restarts right after tor is healthy again so it re-dials its peers (#972). `restart monerod` re-dials peers on its own when the node reports not synchronized after a Tor restart. See [Tor egress broken while mining works](#troubleshooting). |
 | `./pithead upgrade` | Re-render the generated config, then **pull** (release bundle) or **rebuild** (source checkout) the images and restart. Run after downloading a newer bundle or a `git pull`. |
 | `./pithead logs [service]` | Follow logs for all containers, or a single service (e.g. `logs p2pool`). |
 | `./pithead status` | Show container status and health-check every expected service. Warns about anything down/unhealthy and exits non-zero if so (handy for cron/monitoring). Profile-aware, and treats a stopped `p2pool`/`xmrig-proxy` as intentional during a node-down failover or while the miner is held until the chains sync. |
 | `./pithead test-alert` | Send one marked test message through every configured Telegram, webhook, and ntfy sink. Prints one result per sink without exposing URLs or tokens and exits non-zero if any configured sink fails. Healthchecks is reported as excluded because a ping would move the dead-man switch. |
 | `./pithead doctor` | Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk, `.env`/onion state, and container status — plus runtime checks: the Tor container is actually running while the mining stack runs (a loud FAIL when it's down — the privacy backbone is dead), the Tor-egress firewall rules are actually installed (a reboot silently drops them while the containers auto-restart), something is listening on the stratum port (`p2pool.stratum_port`, default `3333`, and whether that port sits on a public IP), the dashboard app answers behind its container, a clearnet request through Tor's SOCKS succeeds (a failing Tor guard breaks Healthchecks/Telegram/XvB while mining still works — fix with `./pithead restart tor`, or set `tor.auto_heal: true` to automate it), a local monerod reports `synchronized` from its own RPC (a node stranded at 0 peers by a Tor restart keeps a green healthcheck while mining sits on a stale tip — fix with `./pithead restart monerod`, #972), and, on the appliance, Caddy has no wildcard or public-address dashboard listener and the served certificate covers every name Caddy answers on without expiring within 30 days (fix either with `./pithead apply`; an unreadable certificate file warns instead of failing, so a read hiccup can't reboot-loop the box). A paste-able health report. |
-| `./pithead backup` | Save `config.json`, `.env`, `Caddyfile`, the Tor onion keys, and the dashboard's database (your hashrate history & settings) to a timestamped, passphrase-encrypted archive under `backups/` (checks free space first; stops a running stack, except caddy, for a clean copy, then restarts everything). `--with-chains` also includes the blockchain data; `--no-encrypt` writes a plaintext `tar.gz`; `-y` / `--yes` skips the prompts (low free space and stopping the stack). |
+| `./pithead backup` | Save `config.json`, `.env`, `Caddyfile`, the Tor onion keys, and the dashboard's database (your hashrate history & settings) to a timestamped, passphrase-encrypted archive under `backups/` (checks free space first; stops a running stack, except caddy, for a clean copy, then restarts everything). If startup fails with unhealthy Tor and its circuit history has the saturated signature, backup discards only Tor's `state` file before retrying; onion keys remain. Other startup failures retain their original error and diagnostics. `--with-chains` also includes the blockchain data; `--no-encrypt` writes a plaintext `tar.gz`; `-y` / `--yes` skips the prompts (low free space and stopping the stack). |
 | `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak: the local Monero RPC password, the stratum access-password (only when `p2pool.stratum_password` is `"auto"`), and the xmrig-proxy control-API token. Recreates the affected containers. `-y` / `--yes` skips the prompt. See [Rotating the internal secrets](#rotating-the-internal-secrets). |
-| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
+| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. With the config editor on, the dashboard header's **Show client key** button gets the same line without a shell, which is how an appliance operator gets it. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
 | `./pithead rotate-dashboard-onion` | Mint a new dashboard onion address and client-auth keypair, retiring the old one. Run after a leaked address or key. |
 | `./pithead control-run-pending` | Drain the dashboard's control-request spool once. Fired by the `pithead-control` systemd path unit; run it by hand only when debugging the control channel. See [Editing config from the dashboard](#editing-config-from-the-dashboard). |
+| `./pithead egress-status` | Check the Tor-only egress firewall the way `doctor` does and write the verdict to `data/control/results/egress-status.json` for the dashboard. Read-only. Fired every two minutes by `pithead-egress.timer`; `up`, `apply` and `upgrade` install the timer, and `network.tor_egress_firewall: false` or `uninstall` removes it. |
+| `./pithead lan-guard-check` | Check the live LAN-only source rule. If it is missing, remove the node start marker and stop the nodes that publish LAN ports; if a stop cannot be verified, try restoring the rule on all three fixed node ports and keep reporting failure until the stop is verified. Fired every two minutes by `pithead-lan.timer`; `up`, `apply` and `upgrade` install the timer while a LAN port is configured or still published by a node. Run `./pithead up` after fixing the firewall to restore access. |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
-| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: removes everything pithead put on this host, including the egress firewall rules with their `pithead-egress.service` boot unit and `pithead-egress.timer` check, the LAN-only source rule and its `pithead-lan.timer` check, and deletes NO data, on any flag. Prints the three-column inventory below, resolved for this box, and the exact command to delete the rest. Refuses in a `pithead-vX.Y.Z` directory that `current` does not point at, because every version directory drives the same live stack: run it in the live directory, and delete an old version directory by hand. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
 
@@ -52,7 +54,7 @@ boot path drives most of them for you:
 
 | Command | Description |
 |---|---|
-| `./pithead os-update BUNDLE` | Install an OS update bundle into the spare A/B slot (`rauc install`). Refuses a bundle older than the running OS — a signed downgrade re-opens fixed holes — and refuses one below the `/data` migration floor outright. `--allow-downgrade` overrides the first, never the second. A floor above the running OS is a migrating update that fell back before its migration ran, not migrated data: the next boot of a fixed slot restores the floor, and the refusal says so and names the open route (the floor version or newer) rather than a reset. On a debug build (SSH baked in) installing a non-debug bundle, it warns first: that install removes the SSH channel you're driving it over. `-y` / `--yes` skips the prompt. On success it says the update is written to the spare slot, that this machine keeps running the current version until it reboots, that the reboot boots the new slot and commits it only if the stack comes up healthy (otherwise the next boot falls back), and the exact reboot command. `--reboot` reboots to finish the update once installed — it asks first unless `-y` is also given. |
+| `./pithead os-update BUNDLE` | Install an OS update bundle into the spare A/B slot (`rauc install`). Refuses a bundle older than the running OS — a signed downgrade re-opens fixed holes — and refuses one below the `/data` migration floor outright. `--allow-downgrade` overrides the first, never the second. A bundle that declares `data_migration` is refused when a local Tari node's data volume lacks free space of `data.mdb`'s size plus 5 GiB, the room its migration needs for the compacted copy; the refusal names the volume, the size needed and the size free, the same check `upgrade` makes (#2645). A floor above the running OS is a migrating update that fell back before its migration ran, not migrated data: the next boot of a fixed slot restores the floor, and the refusal says so and names the open route (the floor version or newer) rather than a reset. On a debug build (SSH baked in) installing a non-debug bundle, it warns first: that install removes the SSH channel you're driving it over. `-y` / `--yes` skips the prompt. On success it says the update is written to the spare slot, that this machine keeps running the current version until it reboots, that the reboot boots the new slot and commits it only if the stack comes up healthy (otherwise the next boot falls back), and the exact reboot command. `--reboot` reboots to finish the update once installed — it asks first unless `-y` is also given. |
 | `./pithead factory-reset` | **DESTRUCTIVE**, appliance only. Erase the whole data partition back to a blank machine — chains, wallets, Tor keys and settings all go — then reboot into the setup wizard. The resync that follows costs days, so reach for `config-reset` first. Type-to-confirm unless `-y`. |
 | `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console, and five wrong tries mint a fresh one. |
 | `./pithead load-images` | Load the baked container-image archives from `/opt/pithead/images` into the engine when their content changed since the last load. The boot path runs this every boot, so a reinstall or update that ships new images converges with no wizard involvement. |
@@ -98,8 +100,9 @@ stray argument), so run flagged commands separately.
 ### Two commands at once
 
 Commands that change the stack take a lock, so a second one waits instead of running alongside
-the first. Without it a `backup` — which stops the stack to take a consistent archive — could
-remove a container out from under a `setup` or an `apply` that was still using it.
+the first. `uninstall` joins that window before its first destructive step. Without it a
+`backup` — which stops the stack to take a consistent archive — could remove a container out from
+under a `setup` or an `apply` that was still using it.
 
 The waiting command says what it is waiting for:
 
@@ -127,6 +130,12 @@ another command is running comes back refused with nothing changed, instead of o
 install underneath it. Read-only commands — `status`, `doctor` and `logs` among them — never take
 it and never wait.
 
+The dashboard takes the same lock for each container start or stop it sends through its control
+proxy. This keeps the sync gate, node-down failover, clearnet-to-Tor transition and Tor self-heal
+from changing a container while a CLI mutation is recreating the stack. The dashboard receives a
+read-only bind mount of the same inode: it can hold the advisory lock, but it cannot alter the
+holder record.
+
 The lock covers one stack, not one directory. A bundle install keeps each release in its own
 `pithead-vX.Y.Z` directory beside the one before it (see [The deploy-box
 layout](#the-deploy-box-layout)), and every one of those directories drives the same containers
@@ -134,12 +143,16 @@ and the same data — including the fresh directory a one-click upgrade creates 
 share a single `.pithead.lock` in the directory that holds them all. A plain `pithead/` checkout
 has no siblings and keeps its lock in the checkout. `PITHEAD_LOCK_FILE` overrides the path.
 
-The lock belongs to the running process rather than to the file: if a command is killed, the lock
-is released with it. A leftover `.pithead.lock` after a crash is an ordinary file, not a stale
-lock, and there is nothing to clean up by hand. The line inside it can outlive the command that
-wrote it, which is why the next command checks it before quoting it back to you. Where the file cannot be opened at all — a
-directory only root can write, a read-only mount — pithead says so and runs anyway rather than
-refusing every command that changes the stack.
+The lock belongs to the running process rather than to the file: if a command or dashboard request
+ends, the lock is released with it. A leftover `.pithead.lock` after a crash is an ordinary file,
+not a stale lock, and there is nothing to clean up by hand. Do not delete or replace it while the
+stack is running: the CLI and dashboard must keep locking the same inode. The line inside it can
+outlive the command that wrote it, which is why the next command checks it before quoting it back
+to you. Where the file cannot be opened at all — a directory only root can write, a read-only
+mount — pithead says so and runs anyway rather than refusing every command that changes the stack.
+Dashboard container control instead fails closed if its read-only lock mount cannot be opened.
+A compromised dashboard can hold the lock and make a CLI mutation time out, so the lock protects
+operation ordering rather than availability.
 
 ### Tab completion
 
@@ -178,6 +191,9 @@ it works from any checkout or bundle directory.
 
 `status` prints the usual compose table, then a per-service health check: a green ✓ for each
 running (and healthy) service, and a ⚠/✗ for anything unhealthy, restarting, stopped, or missing.
+A miner deliberately created/exited/stopped by the sync gate or node failover is the sole stopped
+exception during normal operation. A pending appliance data migration also withholds its chain
+services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero.
 Every container carries its own healthcheck — including the dashboard, Caddy, xmrig-proxy and the
 two Docker-socket proxies — so a ✓ usually means the service answered its probe, not merely that a
 process exists. xmrig-proxy is the one exception: its healthcheck script ships in the same image
@@ -186,11 +202,13 @@ appliance whose compose was rendered ahead of its pinned images), the check repo
 dialing the API — a caveat, not a bug, since it only trades a permanent false ✗ for a rare false ✓
 on a release you're already about to update past. A service whose check hasn't passed yet shows as
 starting, which is normal for a minute after a start or upgrade. The Monero payout wallet stays
-healthy for its first scan while its RPC is busy, but only while its scan marker is less than 24
-hours old. After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400
-seconds in the wallet-rpc environment. The Tari payout wallet remains process-
-liveness only because its gRPC is a long stream rather than a request/response readiness probe; it
-detects a crashed wallet, not scan progress.
+healthy while it scans, on its first run and while it catches up after each restart, but only
+while its scan marker is less than 24 hours old; the marker is cleared once the wallet reaches
+monerod's tip. After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400
+seconds in the wallet-rpc environment. The Tari payout wallet probes gRPC `GetVersion` instead of
+process liveness. Its first-scan marker survives restarts and allows at most 24 hours of silent
+gRPC (`PAYOUT_SCAN_GRACE_SEC`, default 86400 seconds); a successful probe clears the marker, so
+later silence is unhealthy. This container grace never hides dashboard wallet reachability.
 It exits non-zero when something needs attention, so you can wire it into a cron/monitoring check.
 A stopped `p2pool`/`xmrig-proxy` is reported as intentional, not an error: the dashboard stops it
 either to fail workers over a node-down outage or while the miner is held until the required chains
@@ -229,6 +247,14 @@ enables this by default; a custom/rootless install (or `setup --skip-deps`) may 
 `./pithead doctor` checks this and warns if Docker isn't boot-enabled. Fix it with
 `sudo systemctl enable --now docker`.
 
+The Tor-egress firewall lives in the kernel, so a reboot clears it while the containers restart.
+`up`, `apply` and `upgrade` install `pithead-egress.service`, which Docker's own start pulls in and
+waits for: it puts the rules back into `DOCKER-USER` before any container starts. `doctor` warns
+when the rules are live but the unit is not enabled, and FAILs when the rules are missing. The
+dashboard learns the same state from `pithead-egress.timer`, which runs `pithead egress-status`
+every two minutes, and alerts when the rules go missing while the stack runs. See
+[Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270).
+
 ---
 
 ## Editing config from the dashboard
@@ -251,7 +277,25 @@ The unit names are global to the host, so removal is ownership-checked: a checko
 off only removes units whose `ExecStart` points at itself, comparing physical paths so the
 `current` symlink and the versioned directory it targets count as the same checkout. Another
 checkout on the same box (an e2e harness, a bundle smoke test) therefore cannot delete the live
-stack's runner and strand its queued requests.
+stack's runner and strand its queued requests. That physical-path comparison also decides whether
+`apply` needs to touch the runner at all: an `apply` whose config did not change re-provisions
+only when the installed units genuinely differ (a stale checkout path, a container-engine change,
+a missing hardening field) — never on a routine, unchanged apply, however the checkout was reached
+(`current` symlink or its versioned directory).
+
+When re-provisioning is needed, `apply` holds the shared mutation lock while it stops
+`pithead-control.path`, waits up to 30 seconds for a request the runner has already claimed to
+write its result, rewrites the units and enables the path unit again. The runner itself never
+takes the lock, so a request that changes nothing on the stack (a preview, a diagnostic) is never
+delayed by a `pithead` command running in a shell, and never delays one. A request that changes
+the stack (a commit, a lifecycle verb, an upgrade) takes the lock inside its own handler like any
+shell command. If one is in flight when `apply` re-provisions, it is waiting for the lock `apply`
+holds, so the 30-second wait runs out, `apply` finishes, and the request then runs. None of these
+calls stops a runner that is working a request: on systemd 255 the running service finishes and
+writes its result. A request still sitting in `requests/` is
+untouched, and `pithead-control.path` fires for it as soon as the path unit is enabled again.
+A first install, and the `pithead render` that runs on every appliance boot, have no runner to
+drain and take no lock.
 
 Installation is ownership-checked the same way: when the units already name a different install
 that still exists on disk, `apply` refuses to overwrite them and names the owning directory — a
@@ -278,9 +322,10 @@ can write), `staged/` (host-only), and `results/` + `audit/` + `masked/` (contai
 sentinel ([#440](https://github.com/p2pool-starter-stack/pithead/issues/440)); the Configuration
 form prefills from it, and the raw `config.json` is never mounted into the container. It is
 re-rendered on every `setup`/`apply`/`upgrade` and on every runner pass.
-`audit/control.log` records one JSON line per handled request — timestamp, the logged-in dashboard
-user, action, outcome, and the names of the changed settings (never their values) — and the
-container cannot rewrite it. The writer trims the log to its newest 2000 entries once it passes
+`audit/control.log` records one JSON line per handled request: timestamp, logged-in dashboard
+user, action, outcome, and the names of the changed settings (never their values). A commit's
+audit line is written before its result is published. The container cannot rewrite the log. The
+writer trims it to its newest 2000 entries once it passes
 512 KiB, so it never grows unbounded.
 
 To disable the channel, set `dashboard.control.enabled: false` and run `./pithead apply`: the
@@ -310,7 +355,8 @@ rate and pattern of failures, not identity.
 - **A burst of 401s** means someone who can already reach the dashboard — they have the onion
   address, and the client-auth key if `dashboard.onion.client_auth` is on (the default) — is
   guessing the password. Rotate it: set a new `dashboard.auth.password` in `config.json` and run
-  `./pithead apply`.
+  `./pithead apply`. Check `control.log` for an `onion-client-key` entry you did not make: that is
+  the one place a client key can be handed out while the stack is running.
 - **Unexplained traffic on a client-auth-off onion** means the address itself has leaked (it is
   online-guessable in that mode). Rotate the address: `./pithead rotate-dashboard-onion` mints a
   fresh onion and client key; the old ones stop working immediately
@@ -410,7 +456,11 @@ curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/downl
 ./pithead upgrade
 ```
 
-**Source checkout:** pull the latest code, then upgrade. `upgrade` **rebuilds** the images locally:
+**Source checkout:** pull the latest code, then upgrade. `upgrade` **rebuilds** the first-party
+images locally and pulls only the pinned third-party images (Tari, Caddy, the socket proxies) that
+are not on the host. After the build, it recreates any container whose image ID differs from its
+Compose declaration and fails if the IDs still differ. `setup` and `up` fetch missing third-party
+images the same way:
 
 ```bash
 git pull
@@ -421,6 +471,17 @@ Either way, `upgrade` re-renders the generated config (`.env`, the Caddyfile, an
 the new release *before* pulling/rebuilding, so a release that changes a config template or adds an
 `.env` var takes effect, not just the new image. Data directories and `config.json` are untouched, so
 blockchain sync and settings survive an upgrade.
+
+An upgrade to a new Tari major version, such as 5.x to 6.x, migrates the node database on its first
+start by writing a compacted copy beside the old one. Before it starts or recreates any container,
+`upgrade` compares the major version of the existing `tari` container with the one the new release
+starts. When the major goes up, `upgrade` checks free space on the volume that holds Tari's
+`data.mdb` against the file's current size plus 5 GiB. That is a conservative bound, since the
+compacted copy is smaller than the original. If there is less, `upgrade` stops, names the volume,
+the size needed and the size free, and leaves the running containers as they were. Free space on
+that volume, or move `tari.data_dir` to a larger one, and run `upgrade` again. If no `tari`
+container exists (for example after `./pithead down`), `upgrade` cannot tell which version wrote
+the database, so a shortfall is a warning instead.
 
 On a release install with the release public key on disk (`cosign.pub`, shipped in every signed
 bundle), `upgrade` verifies each image's cosign signature before pulling and aborts on any failure.
@@ -471,6 +532,44 @@ so confirm yours is a `4…`/95-char address first (see [Configuration](configur
 
 ---
 
+### What `uninstall` removes
+
+`uninstall` tears down and removes everything pithead put on this machine. It deletes **no**
+data, on any flag — then prints where the data is and the exact command that removes it, if you
+want it gone.
+
+**Removed:**
+
+| item | what |
+|---|---|
+| containers + networks | the `pithead` compose project, `mining_net`, `proxy_net` |
+| images | every ref from `docker compose config --images` |
+| named volumes | `caddy_data`, `wallet_data`, `tari_wallet_db` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues. On startup, `tari-wallet` repairs a root-owned volume before running as uid 1000. Uninstall removes the Tari wallet volume even when its payout profile is disabled, after checking its Compose ownership labels. If Docker cannot list, inspect, or remove that volume, uninstall stops before deleting `.env` so the operator can retry. |
+| systemd units | `pithead-control.path` / `.service`, this checkout's only |
+| firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit; the LAN-only source rule, its `pithead-lan-guard.service` boot unit, `pithead-lan-hold.service`, and `pithead-lan.timer` check |
+| rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
+| derived state dirs | `data/control/` (control spool + audit trail), `data/clearnet-state/`, `data/caddy-logs/`, `data/proxy-tls/` (the stratum TLS keypair), and `data/tari-wallet-secret.env` (the Tari view-key secret) — each removed individually by path, never `rm -rf data/` |
+| version symlink | `<parent>/current`, only when it points at this checkout |
+
+**Kept — yours, never touched:** the Monero, Tari, P2Pool, Tor, and dashboard data dirs;
+`config.json`; `backups/`.
+
+A derived directory is removed only at the path setup gives it. If `.env` names it anywhere else,
+or at, above or inside a kept path, `uninstall` leaves it in place with a warning. After
+`uninstall`, `./pithead setup` re-provisions from the kept `config.json` and data dirs. The chains
+are reused rather than re-synced, and the kept Tor data gives back the same onion addresses.
+Secrets that lived only in `.env` or in a removed directory are generated anew: the proxy token,
+an `auto` stratum password and the stratum TLS keypair. Rigs that use the generated password or
+pin the TLS fingerprint need the new values.
+
+**Left behind — installed by setup, shared with the machine, not removed:**
+
+| item | why it stays | to remove it by hand |
+|---|---|---|
+| apt packages `jq`, `openssl`, `docker.io`, `docker-compose-v2` | other software on the box may use them | `sudo apt-get remove <pkgs>` |
+| GRUB HugePages cmdline | reverting needs `update-grub` and a reboot the verb must not trigger | restore `/etc/default/grub.bak`, `sudo update-grub`, reboot |
+| runtime HugePages pool | resets on reboot anyway | `sudo sysctl -w vm.nr_hugepages=0` |
+
 ## The deploy-box layout
 
 A box that installs each release into its own directory keeps code and data apart. This is the
@@ -494,7 +593,8 @@ data root:
   paths in `.env` — but it makes the live install discoverable without `docker inspect`. Any
   other directory name (a source checkout, a plain `pithead/` extract) leaves the symlink alone.
 - **Version dirs** — keep `current`'s target plus one older dir for rollback; delete anything
-  older. Each release lands in a fresh dir: extract the bundle, copy `config.json` and `.env`
+  older by hand. `./pithead uninstall` refuses in a version dir that `current` does not name,
+  because it would stop the live stack. Each release lands in a fresh dir: extract the bundle, copy `config.json` and `.env`
   from the previous dir, run `./pithead upgrade`. Rollback is the same two steps from the older
   dir. The single-directory overlay under [Updating the stack](#updating-the-stack) also works;
   the per-version layout is what a long-lived box converges to. The dashboard's one-click
@@ -509,9 +609,9 @@ data root:
   the version dir — no data moves with the code. Installs that pre-date this carry the dashboard
   data at the old in-install default (`./data/dashboard`); the first `upgrade` (or `apply`)
   moves it to the shared root automatically, stops the dashboard for the move, and verifies the
-  database arrived. An explicit `dashboard.data_dir` is never touched — a warning names the
-  leftover instead — and data at *both* locations stops the run rather than guessing which
-  database is live.
+  database arrived. That automatic migration leaves an explicit `dashboard.data_dir` alone. When
+  you confirm a change to that setting, `apply` instead copies and verifies the live database at
+  the new path; a non-empty target refuses rather than guessing which database is live.
 - **Config archives** — `./pithead backup` writes under `backups/` inside the dir that ran it.
   Before deleting an old version dir, keep any `backups/` archives you still want.
 
@@ -528,7 +628,8 @@ points; see [Configuration › Data directories](configuration.md#data-directori
   ([#637](https://github.com/p2pool-starter-stack/pithead/issues/637)). The newest three pairs
   are kept; older ones are pruned automatically. The `.env` copies carry secrets — handle them
   like `.env` itself.
-- **`data/tor/`**: onion service keys. Back up to keep the same onion addresses across a rebuild.
+- **`data/tor/`**: onion service keys retain the same addresses across a rebuild. Restore discards
+  Tor's disposable circuit `state`, so it builds fresh circuits on the next start.
 - **`data/monero/`**, **`data/tari/`**: the blockchains. Large; backing them up saves a re-sync,
   but they re-download from the network if lost.
 - **`data/dashboard/`**: the dashboard database (hashrate history and settings). Small and
@@ -573,8 +674,11 @@ prompt does the same, with a warning).
 If the stack is running, `backup` stops it (except caddy, the reverse proxy, which stays up — none
 of its own state is in the archive) for a consistent copy and restarts everything when done. A
 failed backup (disk full mid-archive, for example) removes the partial archive and still restarts
-the stack before reporting the error. Pass `-y` / `--yes` to skip both prompts (low-space warning,
-stop-the-stack question).
+the stack before reporting the error. If startup fails, it prints Tor's health-check history and
+last 40 container log lines before retrying, while retaining the original startup error. Failed
+Tor health checks record bootstrap progress and tag, or a cookie, control-query, authentication,
+or invalid-reply failure. Raw control replies and relay summaries are omitted. Pass `-y` / `--yes`
+to skip both prompts (low-space warning, stop-the-stack question).
 
 Include the blockchains (larger, slower) with:
 
@@ -597,9 +701,16 @@ fails before anything on disk is touched. `restore` also refuses unless Compose 
 services are stopped. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
-only validated generated secrets and Tor identity are retained from the archived environment.
+the validated proxy token, wallet RPC and database passwords, and Tor identities are retained
+exactly from the archived environment. The dashboard login hash and fingerprint are retained with
+them while the fingerprint matches `dashboard.auth.password` and the hash is well-formed bcrypt;
+otherwise restore hashes the configured password again. An archive is trusted as far as its own
+`config.json`: whoever can edit it can change the login, so keep backups private and encrypted.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
-onion address returns unchanged, and restores hashrate history and dashboard settings.
+onion address returns unchanged, and restores hashrate history and dashboard settings — including
+the sync gate's own released/held state, since this is the same-box recovery door: the machine's
+chains have not gone anywhere. Restore discards Tor's circuit `state`, including from older archives;
+Tor rebuilds that history on startup without changing the onion keys.
 
 #### Restore collision rules
 
@@ -720,17 +831,57 @@ confirms it: the Tor clearnet-egress check WARNs while everything else reads hea
 ./pithead restart tor
 ```
 
-The restart makes Tor reselect guards; all Tor circuits drop and rebuild. p2pool re-peers on its
+The restart rebuilds circuits through the retained guards; all Tor circuits drop and rebuild. p2pool re-peers on its
 own within minutes; monerod does **not** — it keeps its dead SOCKS connections and can sit at
 0 peers for hours while its healthcheck stays green (#972) — so a local monerod is restarted
 right after tor is healthy again and re-dials in about a minute. Re-run `./pithead doctor` to
-confirm egress recovered. To have the stack do this itself, set `tor.auto_heal: true` in
-`config.json` and run `./pithead apply`: the dashboard then probes Tor clearnet egress every 5
-minutes and restarts tor (and, on a local node, monerod) once egress has been broken for 15
-minutes — at most 3 restarts per outage, 30 minutes apart, each logged and followed by a
-Telegram note once the path is back. If the Tor network itself is overloaded, it stops
-restarting and keeps warning instead. Off by default: a tor restart drops every circuit, so the
-stack does not restart its privacy boundary unbidden. (#424)
+confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_heal: true` in `config.json` and run
+`./pithead apply`. The dashboard probes every five minutes with a new SOCKS circuit per request.
+A failed request is corroborated against a second target before it counts toward the 15-minute
+outage window. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
+continued failure after accepted refreshes permits one Tor container restart, which also re-dials
+a running local Monero once Tor's start is confirmed. A failed or timed-out stop/start response
+is an uncertain mutation: the restart attempt and cooldown remain spent, including when both
+responses are unconfirmed. A confirmed start after an unconfirmed stop still re-dials a running
+local Monero; a stopped or remote node stays untouched. Logs record each control result and
+retain the distinction between a confirmed restart, a confirmed start with an unconfirmed stop,
+and an unconfirmed restart in the recovery note. A rejected NEWNYM does not advance to that
+restart: the dashboard warns and retries after 30 minutes while the outage persists. Once the host's daily refresh budget is spent, it
+cannot take another automatic action until the host accepts a request. Each step and its probe
+evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
+circuits, duration and preceding action into the Telegram note; the action is not credited as the
+cause of recovery. No automatic step
+changes guards or deletes Tor state. The action budget is three per outage; after that the
+monitor warns until egress recovers. The feature remains off by default.
+
+**Saturated Tor circuit history while chains stop advancing.** A completed bootstrap, a failed
+clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
+reports invalid circuit build timing, run `./pithead tor-recover check`. This read-only check
+validates the live Tor data mount and the saturated history signature. When local Monero RPC
+answers, it requires peerless, stalled Monero across three minutes, with real outgoing peer
+counts read through the authenticated in-container admin helper. When RPC is unavailable,
+it instead requires two cookie-authenticated Tor observations three minutes apart: bootstrap
+95% at `circuit_create`, no established circuit, and the same running Tor instance. At least
+two invalid circuit-timing warnings must appear in the last 200 log lines from that interval;
+unreadable diagnostics refuse recovery. It uses sudo for read-only access to Tor-owned state
+and identity keys.
+
+`./pithead tor-recover apply` rechecks the evidence under the mutation lock, verifies onion
+identity keys, backs up only Tor's `state`, and restarts Tor. It re-dials a running local Monero
+after the actual restart. If Compose left Monero Created behind unhealthy Tor, recovery starts
+that existing node once Tor is healthy. The command verifies Tor health and Monero peers and
+records the attempt in the control audit; this connectivity result does not prove chain sync.
+Restore the remaining baseline services through the caller's normal workflow and independently
+verify baseline health and authenticated Monero and Tari sync before admitting new work.
+
+The backup remains for inspection. A persistent six-hour cooldown includes failed attempts.
+The command refuses an ambiguous or symlinked Tor mount, an active mutation, ordinary warnings,
+or an advancing chain. It never removes onion keys, wallets, configuration or chain data.
+If verification fails, the command reports failure and leaves the backup for diagnosis;
+inspect Tor and Monero before retrying. This is an explicit operator operation, not an automatic
+watchdog. A trusted CI caller must hold its fleet reservation and exclude active consumers
+through recovery, baseline restoration and independent sync verification. Pithead enforces
+local mutation exclusion; it does not acquire or attest fleet reservations.
 
 **Monero node out of sync after a Tor restart.**
 Anything that restarts or recreates the tor container outside the stack's own operations — a
@@ -746,11 +897,81 @@ check) WARNs on the live state. Fix:
 ```
 
 Stack operations don't need the manual step: compose restarts monerod automatically whenever it
-restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the `tor.auto_heal`
-restart does the same. (#972)
+restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the final `tor.auto_heal` container restart does the same. NEWNYM does not restart monerod. (#972)
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
+
+**Monero node isolated or not advancing.**
+A local monerod can keep `synchronized: true` and a green RPC healthcheck while it has no outgoing
+peers, or while its tip stops moving because every peer sits on the same stale block (#2499). The
+XMR Network card shows **Node Health**, **Peers** and **Height Moved**; the tick means the node is
+at the tip with peers. The published RPC is restricted, and a restricted `get_info` answers 0 for
+every peer count, so the counts come from a second, unrestricted RPC that monerod binds to its own
+container's loopback on an unpublished port (it needs the same login and is not reachable from the
+host, the LAN or other containers). The container's healthcheck reads it and prints one line that
+the dashboard reads from `docker inspect` (`State.Health.Log`); `./pithead doctor` and
+`./pithead tor-recover` read it with `docker exec`. A reading that is missing, older than 90 seconds,
+from before the container's current start, with an end before its start, or malformed shows as
+"peers not visible", never as 0
+peers and never as green; the container healthcheck fails until the local reading returns. A
+restart resets the peerless and height clocks even when it falls between dashboard polls. A
+stalled height still turns the card red without peer visibility. The container healthcheck
+also fails after 30 minutes without a rise past its best height, even with outgoing peers;
+its monotonic height clock resets on a new container run or an unavailable height reading.
+A syncing local node has no at-tip verdict; a node marked stale by the sync monitor is red.
+Doctor omits the last-block age when the RPC timestamp is malformed or outside its integer
+bound. The chain verdict turns red, with the numbers, when monerod has had 0 outgoing peers for
+10 minutes (`NODE_STALE_AFTER_SEC`) or its height has not moved for 30 minutes (Monero blocks
+arrive about every 2). A red local verdict adds a “Monero chain unhealthy” header badge with the
+reason and recovery advice. It also fails `./pithead doctor` (the Monero sync check prints the
+peer counts and last-block age) and adds a `monero chain` line to `./pithead status`.
+Each condition sends a `node_down`-toggle alert and a recovery note. A measured height stall
+alerts and recovers even while peer counts are unavailable; only the peerless edge needs visible
+counts. Remote and unreachable nodes have no chain verdict. The container's `docker inspect`
+health becomes `unhealthy` after 600 seconds without outgoing peers
+(`MONERO_HEALTH_PEERLESS_SEC`) or 30 minutes without height progress; it still prints its peer
+counts, so the card keeps reading them. The stack only reports: it restarts nothing. Fix:
+
+```bash
+./pithead restart monerod
+```
+
+The clocks start when the dashboard first sees the node and again whenever it stops answering, so
+a dashboard restart or a monerod restart never reads as a stall; a node that does not answer shows
+no verdict here, because the node-down alert already covers it. With `monero.mode: remote` the peers of the remote node are not visible to this stack, so the
+card says so and gives no verdict.
+
+**Tari node stuck or forked.**
+A running Tari node can stop following the chain while every healthcheck stays green: the process
+lives, its gRPC answers and P2Pool's merge-mine channel reads READY, so every merge-mined Tari
+block is built on a stale tip (#2464). The dashboard judges the node on three signals: its tip
+unchanged for 30 minutes, 0 peer connections for 10 minutes, and its height more than 50 blocks
+behind a public explorer fetched through Tor once an hour (`tari.explorer_url`). One signal turns
+the Tari status amber with the reason; two, or explorer lag on its own, turn it red, fail
+`./pithead doctor`, add a line to `./pithead status` and send an alert. The dashboard only reports:
+it restarts nothing and P2Pool keeps merge-mining against the node, so Tari work stays wasted until
+you recover the node. Monero mining is not affected. Recover in this order:
+
+1. **Restart the node.** Do not restart it while it is migrating its database after an upgrade
+   (its gRPC answers only once the migration finishes, #2593):
+
+   ```bash
+   ./pithead restart tari
+   ```
+
+   A restart clears the node's list of rejected blocks. That list is what locked out the canonical
+   chain in #2465: the node banned every peer that served it. Catch-up then takes minutes, and the
+   status returns to green once the tip moves again with peers connected and the explorer lag is gone.
+2. **Still red after a restart or two**: likely a chain fork or an upgrade required. A node on the
+   wrong side of a hard fork rejoins the same dead branch after every
+   restart. Check the Tari release notes for a required upgrade first. A node that followed a dead
+   branch past a fork height has to be rewound below it before it can sync; #2618 covers that
+   rewind for the 350,000 fork.
+3. **Resync from scratch** as the last resort: stop the node, move its chain data away (`tari.data_dir`,
+   `./data/tari` by default) and start it again. Over Tor this takes days. `tari.clearnet_initial_sync:
+   true` cuts it to hours at the cost of exposing the host's IP to Tari peers while it runs (see
+   [Privacy](privacy.md#optional-clearnet-initial-sync-off-by-default)).
 
 **The dashboard data looks broken and you want a clean slate.**
 `./pithead reset-dashboard` wipes and recreates the dashboard and P2Pool data. This is

@@ -8,6 +8,7 @@ import aiofiles
 import aiohttp
 
 from mining_dashboard.client.monero.monero_client import MoneroClient
+from mining_dashboard.collector.containers import get_monero_peers
 from mining_dashboard.config.config import (
     DOCKER_PROXY_URL,
     DOCKER_TIMEOUT,
@@ -178,6 +179,8 @@ async def _get_local_monero_sync_status():
         # RPC answered → monerod is reachable. `reachable` drives node-down detection
         # (Issue #31); it's distinct from is_syncing (a synced node is reachable).
         rpc_status["reachable"] = True
+        # The peer counts (#2921): the restricted RPC above cannot give them.
+        rpc_status.update(await get_monero_peers())
         return rpc_status
     # RPC unreachable this cycle: fall back to log scraping for the display value, but
     # report the node as not reachable so the down-detector can act on a sustained outage.

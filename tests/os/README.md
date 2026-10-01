@@ -3,8 +3,27 @@
 Tier-4 tests for the `pithead-os` appliance image (#77 phase 2): the properties only real
 firmware and a real A/B updater can prove. The compose/CLI stack is covered by the other
 tiers ([`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md)); this harness
-covers what the flashed image adds — EFI boot, the first-boot wizard window, install-to-disk,
-the rig role, and the update → commit → rollback cycle that is the phase-2 exit criterion.
+also runs a native Quadlet Monero RPC fixture during `provision`. The rendered unit uses the
+guest’s current Monero image, with separate data, a separate container name and loopback host
+ports on a private IPv4-only managed bridge without a default route or external DNS.
+Routing and disabled IPv6 are verified before the daemon starts. Outgoing peers are disabled,
+and the fixture advertises no existing onion identity; its real zero exercises cold-start
+visibility, not synchronization. It checks authenticated local admin access, the restricted
+network listener, restricted public-RPC selection, P2P advertisement, fresh and expired health
+observations, and a fresh run after restart. A failed P2P probe reports a bounded stage and
+error code, with numeric header metadata; it prints no address, credential or raw response.
+An unavailable or malformed probe remains failed proof.
+The bounded P2P decoder validates up to four txpool notifications that Monero can send
+before the handshake response; none can substitute for that response. Required node identity
+and core sync fields must decode before an omitted or zero RPC port can mean suppression.
+The Compose leg accepts that suppression only with an active P2P proxy and separately proves
+restricted public-RPC selection; this unproxied native fixture requires port 18081.
+Cleanup removes only the fixture unit, container, its client container, private network and
+scratch files. The healthy-baseline
+fault and recovery proof remains the Compose
+`monero-stranded` job. The appliance harness covers EFI boot, the first-boot wizard window,
+install-to-disk, the rig role, and the update → commit → rollback cycle that is the phase-2
+exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
 
@@ -13,15 +32,16 @@ It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 ```bash
 sudo cp /root/.ssh/pithead-os-test.pub /tmp/pithead-os-test.pub
 # Publish the five first-party images under the tag the appliance will ask for, then point the
-# build at that registry. PITHEAD_REGISTRY_CA is needed only when the registry is TLS.
-PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+# build at that registry. PITHEAD_REGISTRY_CA is needed only when the registry is TLS; it is baked
+# for both Podman pulls and the containerized Cosign verification.
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     os/build-image.sh --ssh /tmp/pithead-os-test.pub # battery runs as root and uses root's key
 os/rauc/mkimage.sh --dev                      # bootable image -> os/rauc/build/system.img
-sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     tests/os/run.sh --image os/rauc/build/system.img
 ```
 
-`sudo` resets the environment (`env_reset`), so the override has to be passed THROUGH it — the phases rebuild the image themselves via `_build_image`, so an exported variable that sudo drops produces exactly the zero-container appliance this avoids.
+`sudo` resets the environment (`env_reset`), so the override has to be passed THROUGH it — the phases carry those inputs through both `_build_image` and its static image verification, so an exported variable that sudo drops produces exactly the zero-container appliance this avoids.
 
 `PITHEAD_REGISTRY` is not optional on a tree whose `VERSION` is unreleased, and that is the usual
 case here. Only the wizard's dashboard image is baked into the appliance, so at first boot every
@@ -40,7 +60,7 @@ printing it. The build runs on the host, so the evidence outlives the guest — 
 the omission was expensive (#2060). A missing log, an empty one and a failing build each get their
 own sentence, because "nothing to show" and "nothing went wrong" are different facts. It is also the
 first thing to put build-log lines on the battery's stdout, so `PITHEAD_REGISTRY` and
-`PITHEAD_REGISTRY_CA` are masked out of the tail from the environment, literally and without a
+`PITHEAD_REGISTRY_CA` and `PITHEAD_REGISTRY_COSIGN_PUB` are masked out of the tail from the environment, literally and without a
 regex — the failing image ref survives, because which ref failed is the diagnostic and the bench
 host is not. Under `sed` the value's own characters were part of the program: a `|` dropped the
 whole tail, and a `\` or `[` leaked the raw host while still looking masked.
@@ -50,7 +70,12 @@ unresolved half): the restore leg's source-provisioning machine can fail with to
 healthy, and the only evidence any battery captured for it was the compose orchestration's own
 verdict ("dependency tor failed to start") — never tor's own log, so nobody could tell why the
 healthcheck itself failed. `backup_failure_evidence` now also dumps tor's container status, its
-own healthcheck verdict and its own log.
+own healthcheck verdict, tor's bootstrap and warning lines from its whole log, and the log's tail.
+A dump whose `ssh` fails says so, with the ssh error, instead of printing an empty section. The
+restore leg reds its row and dumps as soon as a provisioning unit ends `failed`, before it takes the
+backup (#2725). The backup restarts the stack through `pithead-boot`, and on an unhealthy tor
+`pithead-boot` reboots the guest, which erased job 1194's evidence. The provision phase's onion-exposure leg calls the same dump,
+after the tail of the refused `./pithead apply -y` output, when that apply fails (#2680).
 
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
 values live in the private bench notes.
@@ -71,7 +96,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd
   banner reaches the serial console, the first-boot wizard announces its URL + one-time token,
-  and the token gate answers. Also asserts machine-id is stable across a plain reboot (#895) —
+  and the token gate answers. Assert serial getty is active on the guest's UART; give its installed
+  condition a type-0 port for five minutes and require an inactive unit with no restarts or terminal
+  errors, then restore the UART, require the unit active again and check a clean hangup respawns
+  the login prompt. Also assert
+  machine-id is stable across a plain reboot (#895) —
   the empty-baked image with no restore mechanism would regenerate a new one every boot — and,
   across that same reboot, that journald follows the restored id (#1659) and writes the one
   persistent journal home, the `/data/pithead/journal` bind, with the boot list intact (#1791:
@@ -89,8 +118,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   `/data` must survive a second install over the same disk, and the three-way wipe choice
   (`keep`/`data`/`all`) is asserted on the raw partition. A previous 1.x `xmrig_proxy` setting
   must appear under `xvb` in the reinstall pre-fill, never survive under its removed name. The
-  restore leg moves a real encrypted archive to a fresh disk and requires the running stack to
-  carry the original payout wallet and Tor onion identity.
+  restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk and
+  requires its running stack to carry the prior-release wallet, Tor identity and secrets while
+  both the fixture's and the target's chain-data sentinels survive. The fixture's removed 1.x
+  `xmrig_proxy` settings must move to `xvb` unchanged without leaving a `config.json.bak-1x`,
+  and `telegram.control` must be dropped.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
   served, built-in miner up. The Tor-only egress enforcement backstop — a real clearnet dial from a
@@ -98,7 +130,18 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Tor's SOCKS — runs on EVERY path through this phase, including the aborting ones, and reports RED
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
-  ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)). Before the successful attempt, an
+  ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
+  The nightly KVM battery also makes a wallet-bearing XvB stats request through that Tor SOCKS
+  path, up to three attempts 15 seconds apart because one Tor circuit can read-time-out against the
+  remote host; every attempt refuses any socket but the Tor SOCKS. It then starts the otherwise sync-held proxy only long enough to invoke the controller's
+  existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
+  the same process before the unsynced controller can return it to P2Pool. This bounded injection
+  proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
+  until their chains sync. Each of its verdicts is a counted row in the phase's own summary and none of
+  them aborts it: a controller that cannot move the live route is one RED row, and the rows after it still
+  run ([#2321](https://github.com/p2pool-starter-stack/pithead/issues/2321)). The leg restores P2Pool and
+  stops the proxy again on every path, including the ones that bail mid-transition.
+  Before the successful attempt, an
   unreachable remote node must be refused by preflight with its safe form values retained; a
   separate injected post-validation setup fault must open a recoverable failed page and retry
   with those values. The successful wizard submission names the appliance `fixture-box`; the
@@ -115,19 +158,43 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   leave the kernel name, mDNS activation, certificate and live config byte-for-byte unchanged
   when it is omitted. A confirmed change must apply and audit without a second approver; the
   changed kernel, dashboard, certificate and mDNS identity must survive both the unaided reboot
-  and closing A/B migration update. A dashboard-password edit remains physical-presence-only.
+  and closing A/B migration update. A dashboard-password edit commits through the panel behind
+  typed `APPLY` and the approval envelope, after its preview names the lockout and console-login
+  costs; the new login must read the dashboard, and the fixture password is restored the same way.
+  The shared dashboard control poller records POST and poll metadata on stderr: timestamp, route,
+  curl exit code, HTTP status, response size, JSON/error presence, UUID and allowlisted result
+  status. A refused or untrackable POST and an exhausted deadline also capture the guest control
+  unit's state, restart/exit counters and queued/claimed request counts, with the existing
+  20-second SSH probe deadline (`SSH_PROBE_TIMEOUT` overrides it). Correlate these with the
+  runner's per-boot guest journals and control timeline before attributing a missing preview to
+  the guest or the harness. Request bodies, free-text errors, preview values and credentials are
+  excluded; diagnostic output never substitutes for the preview or typed approval assertions.
+  The day-two Tari-mode prerequisite records a read-only Caddy baseline snapshot, and another
+  if its existing config-read retries fail, before later reboots replace the evidence (#3001).
+  The snapshot includes container running/restarting/OOM/exit state, the last 40 daemon log
+  lines classified by allowlisted error phrases and Caddyfile line numbers, and the first 200
+  configuration lines represented only by directive names and token counts. Config reads stop
+  at 64 KiB, as does each Podman capture; truncation and unavailable probes are explicit. Both
+  Podman probes have a four-second
+  deadline inside the normal 20-second SSH probe deadline. Auth entries, config operands,
+  arbitrary error text and local topology are excluded. An unclassified log line retains only
+  its level and byte count; this snapshot does not establish an original cause or repair.
+  The unreadable-config verdict and switching assertions remain binding.
   Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
-  no queued or claimed request and reds the row if it never drains, because an apply re-provisions
-  the control runner and kills a request in flight (#2363). Then the
+  no queued or claimed request and reds the row if it never drains, keeping the harness's phase
+  boundary deterministic. Apply does not stop an in-flight runner (#2363). Then the
   stack must return from a reboot with no
   hands on it, and the real commit gate — `pithead doctor --json` — must pass on that healthy
   stack yet refuse once a revenue service is down. The closing leg installs a `data_migration`
   bundle through `pithead os-update` and proves the migration hold: the chain services stay down
-  until the slot commits, then start, with the pending marker consumed. After it, the floor-fallback
-  leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating bundle stamped with a version no
-  release carries. Its copied build tree opts into the harness-only synthetic compose path, names
-  its compose file explicitly, uses the resolved signing material, and records the file hash in
-  `COMPOSE_SOURCE`, so the build does not need a git origin or a local dev-key directory. The
+  until the slot commits, then start, with the pending marker consumed. Tari is then stopped on the
+  committed slot (`appliance-chain-fault-leg.sh`, #2588): `pithead status`, `pithead doctor` and
+  the dashboard's `Tari DOWN` badge must report it, and `./pithead up` must bring all three back.
+  After it, the floor-fallback leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating
+  bundle stamped with a version no release carries. Its copied build tree opts into the
+  harness-only synthetic compose path, names its compose file explicitly, uses the resolved
+  signing material, and records the file hash in `COMPOSE_SOURCE`, so the build does not need a
+  git origin or a local dev-key directory. The
   resulting slot cannot bring the stack up and falls back uncommitted: the
   previous slot's boot must put the `/data` floor back from the record the raise left, and the same
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
@@ -136,7 +203,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   (`fault`) or was a clean reboot; this is the first that hits a provisioned one. After EVERY cut,
   asserts every container returns, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
-  monerod's height never regresses, the miner and the boot-gated slot commit both survive. A KVM
+  monerod stays readable at or above the height read and flushed to disk just before that cut
+  (its default db-sync-mode does not fsync each block (batched flushes), so an unflushed height
+  is not owed back; #2557), and the miner and the boot-gated slot commit both survive. A KVM
   guest never clears the sync gate (#2063), so this runs against the held (still-syncing) stack
   rather than the full remote-node repoint M10 describes on real hardware — #2067 allows that for
   a first version.
@@ -148,7 +217,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
   everything except this. The reboot leg proves a CLEAN return; a power-cut leg (M13's rig half,
   #2067) then destroys the guest mid-mining and asserts the same "mining unaided" fact off a real
-  `virsh destroy` and that the slot is still committed afterwards.
+  `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063) closes
+  with the one thing every other row here cannot show: an ACCEPTED share. It boots a second,
+  concurrent guest as a remote-node coordinator (`stack`'s own #2062 helper, from the SAME image —
+  no second build), re-points the already-proven rig at that guest's stratum through the "Set up
+  again" menu entry, and reads the coordinator's own `/api/state` until BOTH the rig's worker and
+  the coordinator's built-in miner show `accepted > 0`. A bench with no reserved remote Monero node
+  counts it a `missing` leg skip, the same env vars the `stack` phase needs.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
@@ -157,7 +232,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   bootloader path (#1318) and is not this leg's job.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
-  reboots. Asserts the exact diff appears on the console (the changed wallet address in full, a
+  reboots. Asserts the exact diff appears on the console (the changed wallet address in full, read
+  directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
   the stick mid-countdown cancels the change instead.
@@ -167,13 +243,38 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
-- **reset** — the shell-less box's last resort, never before run against a real disk: a
-  provisioned machine runs the real `pithead factory-reset -y`, which arms the `pithead-reset`
-  marker on the ESP and reboots; assert it comes back to the wizard with the provisioned config
-  and old container images gone, the seeded dirs back, and a FRESH host identity (SSH host-key
-  fingerprint, machine-id) — the reset tier keeps nothing of the old owner's. A second leg
-  corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
-  rather than bricking.
+- **reset** — the shell-less box's last resort, never before run against a real disk. Leg 0 runs
+  the cheap tier first, on the same provisioned guest: `pithead config-reset -y` must clear
+  `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
+  while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every
+  data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
+  and requiring the monero chain directory to survive, monerod's height to resume at or past its
+  pre-reset value (no resync), and the Tor onion address, read from the hidden-service hostname
+  file rather than `.env`, to come back byte-for-byte unchanged. Leg 1 is the deep tier: the real
+  `pithead factory-reset -y`, which arms the `pithead-reset` marker on the ESP and reboots; assert
+  it comes back to the wizard with the provisioned config and old container images gone, the
+  seeded dirs back, and a FRESH host identity (SSH host-key fingerprint, machine-id) — the deep
+  tier keeps nothing of the old owner's. Leg 2 corrupts the data partition's ext4 magic and
+  asserts the wedged-`/data` recovery reformats it rather than bricking.
+- **image-upgrade** — boot the submitted appliance image, create a sparse loop-mounted XFS with
+  reflinks under the disposable guest's writable data partition, verify and install the published
+  v1.20.0 bundle without modifying it, then invoke the existing image-upgrade harness against the
+  submitted images. The baseline uses remote Monero and remote Tari because v1.20.0 predates
+  Tari-off mode, and keeps its five data dirs on a shared root beside the version dirs on the same
+  reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
+  the tier's debug-registry public key, so submitted images are verified against the key that
+  signed them. When `PITHEAD_REGISTRY_CA` is set, the signed candidate also carries that CA as
+  `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. It runs the release-shaped stack under the CLI's existing test override inside the
+  otherwise appliance-shaped guest. Its private volatile script is invoked through `bash`, so a
+  noexec mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
+  refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
+  and resumed hashes. The v1.20.0 rollback starts without the strict Tor-egress check, because that
+  release cannot install the podman ruleset; the run records it as a counted by-design row that
+  [#2696](https://github.com/p2pool-starter-stack/pithead/issues/2696) removes. Release-input preparation failures name only the failed sub-step, a redacted
+  command, and its exit status. Downstream guest failures name only a fixed stage (including the
+  mountpoint or loop-mount half of reflink setup) and integer exit status; command output, tokens,
+  keys, signature material, and topology stay hidden. Its EXIT trap stops the stack, unmounts the
+  XFS, and removes the sparse file.
 - **stack** — one stack suite, two channel harnesses (#2062, `docs/dev/testing-strategy.md` § J):
   provisions a guest in remote-node mode from the first wizard submit (`monero.mode=remote` at an
   already-synced bench node; `tari.mode=remote`, or `off` per #1855 when no reserved Tari node is
@@ -192,11 +293,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
   diagnostics, so the red is unreadable).
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|stack|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means every phase except
-crossupdate, including fault, reset and stack, and the full run is required once for every RC
-candidate.
+crossupdate, including image-upgrade, fault, reset and stack, and the full run is required once for
+every RC candidate.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
 phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
@@ -205,6 +306,18 @@ counts it as a `missing` phase skip. And a run where every requested phase skipp
 a clean pass: `0 passed, 0 failed` now prints "no requested phase ran" and exits non-zero, instead
 of reading as an empty success. A run that executed at least one row, pass or fail, keeps today's
 exit code.
+
+The image-upgrade phase fails closed unless `PITHEAD_OS_MONERO_NODE_HOST`,
+`PITHEAD_OS_MONERO_RPC_PORT`, `PITHEAD_OS_MONERO_ZMQ_PORT`, and `PITHEAD_OS_TARI_NODE_HOST` are
+set, the same inputs the stack phase reads. These are endpoint names, never values committed to
+the repository. The harness resolves each node host on the bench host with `getent ahostsv4` and
+gives the guest only the first IPv4 address; a host with no IPv4 address fails as a
+`monero-node-address` or `tari-node-address` input failure that does not print the host. The guest
+script prints `stage=<name> passed` or `stage=<name> failed` (with `primitive=tcp zmq` or
+`primitive=rpc http` for the remote-node probe) to its serial console and the harness log. These
+lines never include a host or port. Local-chain directory
+continuity is outside this lean-storage gate and tracked by
+[#2176](https://github.com/p2pool-starter-stack/pithead/issues/2176).
 
 The final summary carries the same missing/by-design/covered skip vocabulary as the integration
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than
@@ -221,9 +334,12 @@ skipped: 0 scenarios, 0 phases, 5 legs
 
 The pass total is the part that tracks the run; the five skip rows are what `--phase all` always
 enumerates — the rig phase's one by-design row, the update phase's three missing rows, and leg 4's
-covered row. Narrower invocations print a subset of those five and nothing else: `--phase update`
-drops the by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
-and `--phase rig` prints that row alone.
+covered row. A bench whose reserved Monero node requires an RPC login adds a sixth, the provision
+phase's reserved-node commit (`6 legs`, `4 missing, 1 by-design, 1 covered`; see the remote-node
+row below). Narrower invocations print a subset and nothing else: `--phase update` drops the
+by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
+`--phase rig` prints that row alone, and `--phase provision` prints only the reserved-node row,
+and only on a credentialed bench.
 
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer
@@ -254,17 +370,33 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_TARI_GRPC_PORT`. `PITHEAD_OS_MONERO_NODE_USERNAME` and
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
-root-run battery without overriding `HOME`. The row requires the host preflight and typed
-confirmation to succeed, checks the current p2pool container's narrowly extracted
-Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
-endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
+root-run battery without overriding `HOME`. The login is a Monero-node credential, not endpoint
+identity, but the dashboard carries it with the endpoint under the typed confirmation: the preview
+warns without echoing either credential, then the confirmed commit stages mode, endpoint and login
+together for the host-side reachability preflight. This never leaves local mode with a foreign
+login attached to the still-running local monerod/wallet-rpc containers, or remote mode short the
+login its own preflight needs. Before that edit, the fixture sets `p2pool.clearnet=true` host-side:
+p2pool otherwise routes its Tari merge-mining connection through Tor, and Tor's exit policy refuses
+a private address — which the reserved test nodes always are — while the dashboard cannot commit
+that setting on an appliance. The row checks the current p2pool container's narrowly extracted
+Monero and Tari endpoints and, for each nonblank proposed login part, that p2pool's live
+`--rpc-login` carries it (compared on the harness, never printed). It then binds the
+current-startup `uses chain_id` verdict to that Tari endpoint (or its documented SOCKS loopback
+bridge). It then restores the original local-node
 configuration. Missing node inputs are a counted failure, never a skipped release gate.
+
+On a failed current-startup Tari round trip, the row first searches the full current P2Pool log
+(not a retained tail), then records the opaque runner-selected provider ID, the first failed
+runtime predicate as a bounded reason, and allowlisted Monero/Tari RPC and sync fields from the
+guest's existing authenticated dashboard clients. Those readiness fields are diagnostic only: the
+current-process `uses chain_id` handshake remains the pass assertion.
 
 ## Static verification
 
 `tests/os/verify-image.sh` is the cheapest gate and runs without KVM — it mounts a built image
 read-only and checks that no test material shipped, that every baked fix is in the artifact, and
-that the boot path's files sit where the firmware and GRUB will look.
+that the boot path's files sit where the firmware and GRUB will look. It compares the shipped
+compose with its stamped source after removing only the five first-party digest pins.
 
 ```bash
 sudo tests/os/verify-image.sh os/rauc/build/system.img          # release: test artifacts REFUSED

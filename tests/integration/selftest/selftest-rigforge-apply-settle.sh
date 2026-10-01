@@ -36,6 +36,7 @@ assert_eq "the settle's stdout is the result and nothing else" "$out" "applied|m
 # harness. Assert it is still emitted — on stderr, where wait_for's own timeout warning goes.
 err="$(_settle_worker_apply max_temp_c "the rig to report max_temp_c=101 applied" "$res" _pred_settles_now 2>&1 >/dev/null)"
 assert_contains "the progress banner is redirected, not deleted" "$err" "waiting for the rig to report max_temp_c=101 applied"
+assert_contains "the accepted request's ID is in the wait banner for bench-ci #913" "$err" "change_id=c-banner"
 
 echo "== _history_row_status: the row is read by change_id, never 'the newest' (#1471) =="
 # _worker_detail is the CALLER's, injected exactly like the readback predicates this module already

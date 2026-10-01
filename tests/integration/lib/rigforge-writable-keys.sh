@@ -3,16 +3,17 @@
 # The Worker Inspect writable-key apply legs (#1236), and the reasoned refusals that go with them.
 #
 # The control phase used to prove the write path on ONE key. `max_temp_c` (#513) had a live readback
-# in the enriched feed, so its round trip could be asserted; `pools` (#1002b) did not, so it was
-# built on the dashboard's own `last_applied` record and gated behind an `IT_RIG_POOLS_PROBE` the
-# harness sets nowhere. The other four writable keys had no leg at all. A gate that applies one of
+# in the enriched feed, so its round trip could be asserted; `pools` (#1002b) did not, and is still
+# gated behind an operator-supplied `IT_RIG_POOLS_PROBE` (#2470, below). The other four writable
+# keys had no leg at all. A gate that applies one of
 # six keys is not a gate on "the writable path works" — it is a gate on max_temp_c.
 #
 # What changed: RigForge v1.10.0 (rigforge#253) serves the rig's own EFFECTIVE writable config on
 # the enriched feed, and the dashboard re-exposes it at `GET /api/worker?name=<rig>` as
 # `.rig_config` (#1235, views.py). So the harness can now read the original from the rig itself,
 # derive a probe from it, and assert the rig's OWN reported value changed and was restored — no new
-# env var, no direct rig dial, no new port, and no reliance on a record of what we last pushed.
+# env var or port, and no reliance on a record of what we last pushed. The #2894 timeout sample
+# now dials the rig directly to locate a stale handoff; the assertion still reads the dashboard.
 #
 # The settle reasoning is rigforge-apply-settle.sh's: `.rig_config` rides the same per-rig poll
 # tick as the enriched feed (data_service step 3b), which runs strictly AFTER the #185 history
@@ -55,12 +56,57 @@ _pred_rig_config_key() { # <rig> <key> <want-json>
     [ -n "$v" ] && [ "$v" = "$3" ]
 }
 
+# A timeout needs both sides of the read path, not another guess at the wait bound (#2894).
+# Print only allowlisted scalar fields; the raw responses and Bearer never reach the log.
+_pred_donation_revert_sample() { # <rig> <want-json> <change-id>
+    local rig="$1" want="$2" id="$3" detail feed outcome dash history stamp stale direct direct_stamp direct_status snapshot status
+    [[ "$id" =~ ^[0-9a-f]{16}$ ]] || return 1
+    detail="$(_worker_detail "$rig")"
+    snapshot="$(printf '%s' "$detail" | jq -r '.snapshot_at // empty' 2>/dev/null)"
+    status="$(printf '%s' "$detail" | jq -r '.status // empty' 2>/dev/null)"
+    dash="$(_rig_config_key "$detail" DONATION)"
+    history="$(printf '%s' "$detail" | jq -r --arg id "$id" 'first(.history[]? | select(.change_id == $id) | .status) // empty' 2>/dev/null)"
+    IFS='|' read -r stamp stale <<<"$(printf '%s' "$detail" | jq -r '"\(.rigforge.generated_at // "")|\(if .rigforge.stale == null then "" else .rigforge.stale end)"' 2>/dev/null)"
+    feed='' outcome=''
+    if [ -n "${IT_RIG_TOKEN:-}" ] && [ -n "${RIG_HOST:-}" ]; then
+        local auth
+        auth="$(printf 'Authorization: Bearer %s' "$IT_RIG_TOKEN" | jq -Rs .)"
+        feed="$(printf 'header = %s\n' "$auth" | rx "curl -fsS --max-time 3 -K - $(quote_arg "http://$RIG_HOST:8081/1/summary")" --stdin 2>/dev/null)" || feed=''
+        outcome="$(printf 'header = %s\n' "$auth" | rx "curl -fsS --max-time 3 -K - $(quote_arg "http://$RIG_HOST:$RIG_CONTROL_PORT/status?change_id=$id")" --stdin 2>/dev/null)" || outcome=''
+    fi
+    IFS='|' read -r direct direct_stamp <<<"$(printf '%s' "$feed" | jq -r '"\(.rigforge.config.DONATION // "")|\(.generated_at // "")"' 2>/dev/null)"
+    direct_status="$(printf '%s' "$outcome" | jq -r --arg id "$id" 'if .change_id == $id then .status // empty else empty end' 2>/dev/null)"
+    # A malformed producer field must not become arbitrary log text, including a credential.
+    [[ "$dash" =~ ^[0-9]{1,3}$ ]] || dash=poll_failed
+    [[ "$direct" =~ ^[0-9]{1,3}$ ]] || direct=poll_failed
+    case "$history" in applied | rejected | rolled_back | accepted | failed | noop | throttled) ;; *) history=poll_failed ;; esac
+    case "$direct_status" in pending | started | applied | rejected | rolled_back | failed | noop | throttled) ;; *) direct_status=poll_failed ;; esac
+    [[ "$snapshot" =~ ^[0-9]{10}(\.[0-9]{1,9})?$ ]] || snapshot=poll_failed
+    case "$status" in online | offline | down) ;; *) status=poll_failed ;; esac
+    [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || stamp=poll_failed
+    [[ "$direct_stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || direct_stamp=poll_failed
+    case "$stale" in true | false) ;; *) stale=poll_failed ;; esac
+    jq -nc --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg dash "${dash:-poll_failed}" \
+        --arg history "${history:-poll_failed}" --arg stamp "${stamp:-poll_failed}" \
+        --arg stale "${stale:-poll_failed}" --arg direct "${direct:-poll_failed}" \
+        --arg direct_stamp "${direct_stamp:-poll_failed}" --arg direct_status "${direct_status:-poll_failed}" \
+        --arg snapshot "${snapshot:-poll_failed}" --arg status "${status:-poll_failed}" \
+        '{at:$at,dashboard_donation:$dash,history:$history,dashboard_feed_at:$stamp,dashboard_stale:$stale,dashboard_snapshot_at:$snapshot,dashboard_status:$status,rig_donation:$direct,rig_feed_at:$direct_stamp,rig_status:$direct_status}' >&2
+    [ "$dash" = "$want" ]
+}
+
 # Settle a dial-time "accepted" against the rig's own reported config. The wrapper — parse, wait,
 # promote to applied, leave a real rejected/failed/timeout alone so the caller's assert_eq reds — is
 # _settle_worker_apply in rigforge-apply-settle.sh, shared with the max_temp_c leg; only the
 # readback predicate is ours. Same '|'-joined output, and the same reason for that delimiter (an
 # empty middle field must survive `IFS='|' read`), documented on that module.
-_settle_worker_apply_key() { # <rig> <key> <want-json> <dial-result-json> -> "<status>|<ckeys>|<change_id>"
+_settle_worker_apply_key() { # <rig> <key> <want-json> <dial-result-json> [sample-revert] -> "<status>|<ckeys>|<change_id>"
+    if [ "${5:-}" = sample-revert ]; then
+        _settle_worker_apply "$2" \
+            "the rig to report $2=$3 applied (RigForge #344 async apply, #1309)" \
+            "$4" _pred_donation_revert_sample "$1" "$3" "$(printf '%s' "$4" | jq -r '.change_id // empty')"
+        return
+    fi
     _settle_worker_apply "$2" \
         "the rig to report $2=$3 applied (RigForge #344 async apply, #1309)" \
         "$4" _pred_rig_config_key "$1" "$2" "$3"
@@ -74,7 +120,11 @@ _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
     local rig="$1" key="$2" orig="$3" probe="$4" res status ckeys change_id
     it_step "Worker Inspect edit: $key $orig -> $probe via /api/control/worker-apply…"
     # On the books BEFORE the write goes out — the window #1379 covers includes the apply itself.
-    rig_key_mark dash "$rig" "$key" "$orig"
+    # A refused mark means an abort could not restore this key, so the write is not sent (#2668).
+    rig_key_mark dash "$rig" "$key" "$orig" || {
+        it_skip_leg "$key write (#1236)" "the original $key on rig '$rig' cannot be recorded for the abort-safe unwind, so no write is sent"
+        return 0
+    }
     res="$(_worker_apply "$rig" "$(jq -nc --arg k "$key" --argjson v "$probe" '{($k): $v}')")"
     IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_key "$rig" "$key" "$probe" "$res")"
     assert_eq "$key edit applied on the rig (#1236)" "$status" "applied"
@@ -86,7 +136,11 @@ _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
         "$(_settle_history_row "$rig" "$change_id")" "applied"
     it_step "reverting $key $probe -> ${orig}…"
     res="$(_worker_apply "$rig" "$(jq -nc --arg k "$key" --argjson v "$orig" '{($k): $v}')")"
-    IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res")"
+    if [ "$key" = DONATION ]; then
+        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res" sample-revert)"
+    else
+        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res")"
+    fi
     assert_eq "$key edit reverted on the rig (#1236)" "$status" "applied"
     # Retired only on a CONFIRMED revert. A revert that came back anything else stays on the books
     # so the EXIT trap retries it — the assertion above has already red, and trusting it to have
@@ -159,65 +213,88 @@ run_rigforge_writable_keys() { # <rig>
     fi
 }
 
-# #1002b: pools, the repoint-your-hashrate key. Unchanged in substance from the leg that lived in
-# run.sh, and still operator-gated for the reason above: the harness cannot read a pools value it
-# could safely write back. pithead treats `pools` as opaque passthrough (WORKER_WRITABLE_KEYS checks
-# the key NAME, never the value shape), so a guessed value risks a real rejected/failed instead of
-# proving the round trip — the same reasoning IT_RIG_ROLLBACK_CHANGES applies to the #517 leg.
-# The restore target is `.last_applied.pools`: the dashboard's record of what IT pushed, and the
-# same source the real editor prefills from when the rig sends no config. It is the best available
-# restore value, but being on record is NOT a guarantee that it carries a credential — so the leg
-# checks, rather than assuming (#1546).
+# The pools readback is its URLs, and only its URLs: `pass` and `tls-fingerprint` never reach
+# `.rig_config` (#113), so a whole-value compare could never match. The URLs are enough to see which
+# pools the rig is running, and that is all a readback is asked here — it is never written back.
+_pool_urls() { # <pools-json> -> its entries' urls as a compact JSON array, or empty
+    printf '%s' "$1" | jq -c '[.[].url]' 2>/dev/null
+}
+
+_pred_rig_pool_urls() { # <rig> <want-urls-json>
+    local v
+    v="$(_rig_config_key "$(_worker_detail "$1")" pools)"
+    [ -n "$v" ] && [ "$(_pool_urls "$v")" = "$2" ]
+}
+
+# #1002b: pools, the repoint-your-hashrate key. Settled like the #1236 keys since #2407 (it read the
+# dial-time "accepted" as a failure), and still operator-gated for the reason above: the
+# harness cannot read a pools value it could safely write back. pithead treats `pools` as opaque
+# passthrough (WORKER_WRITABLE_KEYS checks the key NAME, never the value shape), so a guessed value
+# risks a real rejected/failed instead of proving the round trip — the same reasoning IT_RIG_ROLLBACK_CHANGES applies to the #517 leg.
 #
-# #2325: that record can only ever be created by this leg applying a pools value, so requiring one
-# on record before the leg runs was circular — a rig this leg had never touched could never pass its
-# own precondition. When nothing is on record yet, IT_RIG_POOLS_PROBE is the seed: it is by
-# definition a pools value the operator has already attested is safe to apply to this rig and
-# carries a `pass` (its contract, same as always), so it doubles as "the original" too — there was
-# no real prior value to restore, and restoring to the probe leaves `.last_applied.pools` seeded for
-# every run after this one. The #1546 credential check below still runs against whatever ends up in
-# `orig_pools`, seeded or not, so a probe missing its own `pass` is refused rather than applied.
+# #2470: the restore target is IT_RIG_POOLS_PROBE, and only that. The leg used to restore from
+# `.last_applied.pools`, which is the dashboard's record of what it pushed but is served through the
+# same credential strip as `.rig_config` — `pass` and `tls-fingerprint` are gone from it by design
+# (#113, test_worker_detail_credentials.py::test_last_applied_is_clean). So once any pools row was on
+# record, the #1546 check below refused the stripped value and the leg skipped on that rig for good;
+# only a rig with an empty record (#2325's seed) ever ran it. A credential that DID arrive through
+# that payload would be a #113 regression to report, never a value to write at a real miner, so the
+# record is not read here at all. The probe is by contract the pools value the operator has attested
+# this rig is to keep running, carrying a `pass`, so it doubles as "the original": the harness has
+# no credential-bearing reading of the rig's real prior value to restore instead, so the rig is left
+# on the probe. With the restore value equal to the probe, a second "revert" apply would only
+# restart the miner to the same config, so one confirmed apply is the round trip.
 run_rigforge_pools() { # <rig>
-    local rig="$1" orig_pools res status ckeys
+    local rig="$1" probe res status ckeys change_id row
     if [ -z "${IT_RIG_POOLS_PROBE:-}" ]; then
-        it_skip_leg "pools write (#1002b)" "no IT_RIG_POOLS_PROBE (a JSON pools value safe to apply to rig '$rig')"
+        it_skip_leg "pools write (#1002b)" "no IT_RIG_POOLS_PROBE (the pass-bearing JSON pools value rig '$rig' is to keep running)"
         return 0
     fi
-    if ! printf '%s' "${IT_RIG_POOLS_PROBE:-}" | jq -e . >/dev/null 2>&1; then
-        it_fail "IT_RIG_POOLS_PROBE is valid JSON (#1002b)" "the operator-supplied pools probe is malformed"
+    # Exactly one JSON value, compacted once, and every use below takes this form: the #1379 ledger
+    # holds one entry per line, so a pretty-printed probe, or two values back to back, would split
+    # into fragments that never clear and that the EXIT unwind echoes to stderr, `pass` included.
+    if ! probe="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" |
+        jq -cs 'if length == 1 then .[0] else error("not one JSON value") end' 2>/dev/null)"; then
+        it_fail "IT_RIG_POOLS_PROBE is exactly one valid JSON value (#1002b)" "the operator-supplied pools probe is malformed"
         return 0
     fi
-    orig_pools="$(_worker_detail "$rig" | jq -c '.last_applied.pools // empty' 2>/dev/null)"
-    # #2325: nothing on record yet is not a dead end — the probe is the only value this leg has ever
-    # been allowed to trust, so it seeds the record with itself rather than refusing forever.
-    [ -z "$orig_pools" ] && orig_pools="$IT_RIG_POOLS_PROBE"
-    # #1546: test the CREDENTIAL, never emptiness as a proxy for it. Being ON RECORD (or being the
-    # seed above) does not mean a value can be written back — a pools array whose entries carry no
-    # usable `pass` restores the rig to a credential-less config, which is the outcome the
-    # self-derived-pools refusal exists to prevent. Refusing is the honest answer for the same reason
-    # #1236 refuses `.rig_config.pools`: the harness cannot tell "this rig has no pass" from "it was
-    # stripped", and must not guess against a real miner. The shapes that reach this branch are
-    # enumerated as executable cases in the self-test, which is where they cannot drift out of step
-    # with the code.
-    if ! printf '%s' "$orig_pools" |
+    # #1546: test the CREDENTIAL, never emptiness as a proxy for it. A pools array whose entries
+    # carry no usable `pass` restores the rig to a credential-less config, which is the outcome the
+    # self-derived-pools refusal exists to prevent. The shapes that reach this branch are enumerated
+    # as executable cases in the self-test, which is where they cannot drift out of step with the
+    # code.
+    if ! printf '%s' "$probe" |
         jq -e 'type == "array" and length > 0 and all(.[]; (.pass? // "") != "")' >/dev/null 2>&1; then
-        it_skip_leg "pools write (#1002b)" "rig '$rig' has no usable credential to restore pools with — neither .last_applied.pools nor IT_RIG_POOLS_PROBE carries a non-empty \`pass\` on every entry, and the rig's own .rig_config.pools is credential-stripped and must not be written back (#1546)"
+        it_skip_leg "pools write (#1002b)" "IT_RIG_POOLS_PROBE is not a usable pools value to apply and restore on rig '$rig' — it must be a non-empty array with a non-empty \`pass\` on every entry; the dashboard's .last_applied.pools and the rig's own .rig_config.pools are credential-stripped and are never written back (#1546/#2470)"
         return 0
     fi
     it_step "Worker Inspect edit: pools -> the operator-supplied probe via /api/control/worker-apply…"
-    # The restore target is last_applied, and the guard above has PROVEN this value carries `pass`
-    # rather than assuming it — the same un-stripped value the revert below uses, and the only one
-    # safe to write back (#113). (#1379, #1546)
-    rig_key_mark dash "$rig" pools "$orig_pools"
-    res="$(_worker_apply "$rig" "{\"pools\":$IT_RIG_POOLS_PROBE}")"
-    status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
-    ckeys="$(printf '%s' "$res" | jq -r '(.changed_keys // []) | join(",")' 2>/dev/null)"
+    # On the books before the write goes out (#1379), so a run that dies before the rig confirms the
+    # probe still ends with the rig on it, and with the value the guard above has PROVEN carries
+    # `pass`. Retired once the rig reports which config it is on: `applied`, settled and confirmed
+    # by its history row, leaves it on the probe, which is also the restore value, and
+    # `rejected`/`rolled_back`, at the dial or on the row, leave it on its own previous config,
+    # which the EXIT unwind must not overwrite with a value the rig just refused. `failed` (the
+    # resulting config varies), a change still `accepted` and no answer stay on the books.
+    rig_key_mark dash "$rig" pools "$probe" || {
+        it_skip_leg "pools write (#1002b)" "the original pools on rig '$rig' cannot be recorded for the abort-safe unwind (not one JSON value), so no write is sent (#2668)"
+        return 0
+    }
+    res="$(_worker_apply "$rig" "{\"pools\":$probe}")"
+    # Settled, never read at dial time (#2407): the rig answers "accepted" and applies async
+    # (RigForge #344, #1309), exactly as it does for the #1236 keys above.
+    IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply pools \
+        "the rig to report the probe's pool URLs applied (RigForge #344 async apply, #1309)" \
+        "$res" _pred_rig_pool_urls "$rig" "$(_pool_urls "$probe")")"
     assert_eq "pools edit applied on the rig (#1002b)" "$status" "applied"
-    assert_contains "the rig's /status confirms pools changed (#1002b)" "$ckeys" "pools"
-    it_step "reverting pools to the dashboard's last-applied value…"
-    res="$(_worker_apply "$rig" "{\"pools\":$orig_pools}")"
-    status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
-    assert_eq "pools edit reverted on the rig (#1002b)" "$status" "applied"
-    [ "$status" = "applied" ] && rig_key_clear dash "$rig" pools
+    assert_contains "the rig's own config reports the probe's pools (#1002b)" "$ckeys" "pools"
+    # The readback is blind once a run has left the rig on the probe (every run after the first), so
+    # the change's own #185 history row is the verdict that it landed, and the ledger retires on it.
+    row="$(_settle_history_row "$rig" "$change_id")"
+    assert_eq "pools worker-apply recorded in the per-worker history (#185/#1471/#2407)" "$row" "applied"
+    case "$status|$row" in applied\|applied | rejected\|* | rolled_back\|* | *\|rejected | *\|rolled_back)
+        rig_key_clear dash "$rig" pools
+        ;;
+    esac
     return 0
 }

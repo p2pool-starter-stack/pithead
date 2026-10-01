@@ -14,12 +14,8 @@
 # runtime, monerod answers with them, and the control units name RESTORE_DIR either way. The run
 # prints "restore complete."
 #
-# Two things are proven here, both against the SHIPPED files, never against a re-spelling:
-#   1. grade_image_census classifies correctly, sourced straight out of restore-proof.sh.
-#   2. restore_all, extracted out of e2e.sh and evaluated against stubs, picks `pithead upgrade` for
-#      a source-checkout baseline and the cheaper `apply && up` for a release bundle.
-# Then a mutation battery restores each defect in a COPY of the shipped module and requires the
-# assertions to RED. A classifier that cannot fail is a grep, not a guard.
+# The shipped restore command and identity grader are driven with local stubs. A late scenario
+# recreation must fail the proof even when its image was absent from the first branch census.
 #
 # Standalone (not sourced by selftest.sh), same reasoning as selftest-e2e-phases.sh. Run directly or
 # via `make test-integration-selftest`. No server, no bench, no rig, no docker.
@@ -33,106 +29,15 @@ source "$HERE/../lib.sh"
 E2E_SRC="$HERE/../e2e.sh"
 PROOF_SRC="$HERE/../lib/restore-proof.sh"
 
-# Fail CLOSED: if a refactor moves the classifier out of restore-proof.sh this must go red rather
-# than quietly stop testing anything — the exact shape of gate this file exists to catch.
 # shellcheck source=tests/integration/lib/restore-proof.sh
 source "$PROOF_SRC"
-assert_eq "restore-proof.sh actually defines grade_image_census" "$(type -t grade_image_census)" "function"
+assert_eq "restore proof defines the live identity grader" "$(type -t grade_restore_identity)" "function"
 
-# --- Fixtures ---------------------------------------------------------------------------------
-# Five services. The branch build changed only two images (tor, dashboard) — the realistic case,
-# and the one that makes a whole-list comparison useless: monerod/p2pool/xmrig-proxy carry an ID
-# that matches the baseline AND the branch, so "the censuses differ" says nothing about them.
 BASE='dashboard=sha256:aaa
 monerod=sha256:mmm
 p2pool=sha256:ppp
 tor=sha256:ttt
 xmrig-proxy=sha256:xxx'
-BRANCH='dashboard=sha256:AAA
-monerod=sha256:mmm
-p2pool=sha256:ppp
-tor=sha256:TTT
-xmrig-proxy=sha256:xxx'
-
-verdict_for() { # <now-census> <service> -> the verdict word
-    grade_image_census "$BASE" "$1" "$BRANCH" | sed -n "s/ $2\$//p" | head -n1
-}
-
-# --- 1. The classifier ------------------------------------------------------------------------
-# Every assertion below is written so that ONE named mutation flips it; the battery at the bottom
-# runs those mutations for real.
-run_census_assertions() {
-    echo "== grade_image_census =="
-
-    # A faithful restore: every service back on the image it ran before.
-    assert_eq "an exact restore grades every service 'kept'" \
-        "$(grade_image_census "$BASE" "$BASE" "$BRANCH" | cut -d' ' -f1 | sort -u | tr '\n' ' ')" "kept "
-
-    # THE DEFECT. The branch's images are still up under the baseline's name. Kills the mutation
-    # that drops the branch census from the comparison (grading against the baseline alone): the
-    # two changed services differ from the baseline either way, so a baseline-only check calls this
-    # "rebuilt" and passes the run.
-    assert_eq "the branch's dashboard left running is 'stale', not 'rebuilt'" \
-        "$(verdict_for "$BRANCH" dashboard)" "stale"
-    assert_eq "the branch's tor left running is 'stale', not 'rebuilt'" \
-        "$(verdict_for "$BRANCH" tor)" "stale"
-
-    # The other three are indistinguishable between the two censuses and must NOT be accused.
-    # Kills a whole-list `[ "$now" = "$BASELINE_IMAGES" ]` comparison, which would condemn all five
-    # on any difference and make the check's output useless for locating the fault.
-    assert_eq "a service the branch never rebuilt is 'kept', even on a stale run" \
-        "$(verdict_for "$BRANCH" monerod)" "kept"
-
-    # A genuine rebuild from RESTORE_DIR's own tree: differs from the baseline AND from the branch.
-    REBUILT='dashboard=sha256:zzz
-monerod=sha256:mmm
-p2pool=sha256:ppp
-tor=sha256:yyy
-xmrig-proxy=sha256:xxx'
-    assert_eq "an image built from neither census is 'rebuilt'" \
-        "$(verdict_for "$REBUILT" dashboard)" "rebuilt"
-
-    # Ordering. This image differs from the baseline and equals the branch's; 'stale' must win.
-    # Kills a mutation that tests the rebuilt arm first, which would silently reclassify every
-    # stale service as a legitimate rebuild — a green run on the exact failure being guarded.
-    ONE_STALE='dashboard=sha256:AAA
-monerod=sha256:mmm
-p2pool=sha256:ppp
-tor=sha256:ttt
-xmrig-proxy=sha256:xxx'
-    assert_eq "'stale' beats 'rebuilt' when an image matches the branch" \
-        "$(verdict_for "$ONE_STALE" dashboard)" "stale"
-
-    # A service that ran before and is not running now is its own verdict, never a silent pass.
-    GONE='monerod=sha256:mmm
-p2pool=sha256:ppp
-tor=sha256:ttt
-xmrig-proxy=sha256:xxx'
-    assert_eq "a service that ran before and is gone now grades 'gone'" \
-        "$(verdict_for "$GONE" dashboard)" "gone"
-    # ...and the four that came back are still graded, so one absence does not mask the rest.
-    assert_eq "the other four are still graded when one service is gone" \
-        "$(grade_image_census "$BASE" "$GONE" "$BRANCH" | grep -c '^kept ')" "4"
-
-    # An empty branch census (deploy_branch never ran — e.g. --mode check) must not turn every
-    # changed image into a false 'stale'. Kills a mutation that drops the `[ -n "$branch" ]` guard,
-    # where an empty branch value would equal an empty `now` and mis-grade.
-    assert_eq "with no branch census, a changed image is 'rebuilt', not accused of being the branch's" \
-        "$(grade_image_census "$BASE" "$BRANCH" "" | sed -n 's/ dashboard$//p')" "rebuilt"
-
-    # census_get lives in here rather than beside the other unit assertions for a reason the
-    # battery below made concrete: the classifier fixtures cannot kill a census_get mutation. The
-    # service names it looks up come out of the census itself, so even an unanchored match resolves
-    # each line to itself and every verdict stays correct. Only a direct assertion sees the defect,
-    # so a direct assertion has to be inside the block the mutants re-run.
-    echo "== census_get =="
-    assert_eq "reads the id for a service" "$(census_get "$BASE" tor)" "sha256:ttt"
-    assert_eq "a service not in the census reads empty" "$(census_get "$BASE" caddy)" ""
-    # 'proxy' must not resolve off 'xmrig-proxy='.
-    assert_eq "the service name is matched from the start of the line, not anywhere in it" \
-        "$(census_get "$BASE" proxy)" ""
-}
-run_census_assertions
 
 # --- 2. Which restore command e2e.sh runs -----------------------------------------------------
 # The REAL restore_all out of the shipped e2e.sh, evaluated against stubs, so this reads the
@@ -151,7 +56,7 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         MODE="${2:-targeted}" RESTORED=0 KEEP=0 MINER_CFG_BACKUP="" RESTORE_DIR=/srv/code/baseline
         E2E_DIR=/srv/code/pithead-e2e BENCH_HOST=bench SAFETY_ARCHIVE=""
         RESTORE_PROOF_FAILED=0 CONTROL_PROOF_FAILED=0 CONTROL_VERDICT_BEFORE=""
-        BASELINE_IMAGES="" BRANCH_IMAGES="" SRC_CHECKOUT="$1" CMD_FILE="$cf"
+        BASELINE_IMAGES="" SRC_CHECKOUT="$1" CMD_FILE="$cf"
         log() { :; }
         step() { :; }
         warn() { :; }
@@ -160,15 +65,27 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         parent_lock_checkpoint() { :; }
         parent_lock_miner_restore() { :; }
         control_units_verdict() { echo on-target; }
-        wait_bench_healthy() { return 0; }
-        verify_restore_proof() { return 0; }
+        wait_synced() {
+            echo "sync:$1:$2" >>"${ALL_LOG:-/dev/null}"
+            return "${SYNC_RESULT:-0}"
+        }
+        wait_bench_healthy() {
+            echo health >>"${ALL_LOG:-/dev/null}"
+            return 0
+        }
+        verify_restore_proof() {
+            echo proof >>"${ALL_LOG:-/dev/null}"
+            return 0
+        }
+        chain_restore_prepare() { echo chain_restore_prepare >>"${ALL_LOG:-/dev/null}"; }
         on_bench() {
+            echo "$1" >>"${ALL_LOG:-/dev/null}"
             case "$1" in
             # The source-checkout probe: answer as the fixture says, and never record it as the
             # restore command.
             "test -f "*dashboard/Dockerfile*) [ "$SRC_CHECKOUT" = yes ] && return 0 || return 1 ;;
-            "cd '$RESTORE_DIR' && "*)
-                printf '%s' "$1" >"$CMD_FILE"
+            "cd '$RESTORE_DIR' && { "*)
+                [ -s "$CMD_FILE" ] || printf '%s' "$1" >"$CMD_FILE"
                 return 0
                 ;;
             esac
@@ -177,6 +94,7 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         eval "$RESTORE_SRC"
         restore_all
     ) >/dev/null 2>&1
+    echo "restore_rc:$?" >>"${ALL_LOG:-/dev/null}"
     cat "$cf"
     rm -f "$cf"
 }
@@ -193,9 +111,7 @@ assert_contains "the capture is the full command, cd included" "$SRC_FULL" "cd '
 # The fix. A source-checkout baseline shares `:dev` with the branch, so the restore must REBUILD
 # from the baseline's tree. Kills the mutation that reverts the restore to `apply && up`.
 assert_contains "a source-checkout baseline is restored with 'pithead upgrade'" "$SRC_CMD" "./pithead upgrade"
-# ...and keeps the old pairing as a fallback, so a failed rebuild is not worse than the status quo.
-assert_contains "the source-checkout restore falls back to apply/up if the rebuild fails" \
-    "$SRC_CMD" "|| { ./pithead apply -y"
+assert_eq "a source-checkout restore cannot fall back to apply/up" "$SRC_CMD" "{ ./pithead upgrade; }"
 # A release bundle's images are versioned tags the branch never touched: rebuilding there is waste,
 # and forcing it would make every release-box restore minutes longer for nothing.
 assert_eq "a release-bundle baseline is NOT rebuilt" \
@@ -227,67 +143,244 @@ grouping_probe() { # <full-command> -> "<rc> ran|clean"
 echo "== a failed cd must not run the restore anyway =="
 assert_eq "a failed cd fails the restore and executes nothing" "$(grouping_probe "$SRC_FULL")" "1 clean"
 
-# Negative control. Without it "1 clean" is equally consistent with a probe that never ran anything
-# at all, which is the likelier of the two failure modes and the one that reads exactly like a pass.
-# Assert the transform CHANGED the string first — an unapplied mutation reads as a guard that held.
-UNBRACED="$(printf '%s' "$SRC_FULL" | sed 's/&& { /\&\& /; s/; }$//')"
-assert_eq "negative control: the unbracing actually changed the command" \
-    "$(if [ "$UNBRACED" = "$SRC_FULL" ]; then echo unchanged; else echo changed; fi)" "changed"
-# ...and that it is still a RUNNABLE command. The first draft of this transform produced a syntax
-# error, which the probe reported as rc=2/clean — a control that fails to fire looks like the
-# defect being absent, so the shape has to be checked as well as the difference.
-assert_eq "negative control: the unbraced command still parses" \
-    "$(bash -n -c "$UNBRACED" 2>/dev/null && echo parses || echo broken)" "parses"
-assert_eq "negative control: the UNBRACED shape runs the fallback in the wrong dir, and returns 0" \
-    "$(grouping_probe "$UNBRACED")" "0 ran"
+assert_contains "restore calls recreation after upgrade" "$RESTORE_SRC" "recreate_test_checkout_containers"
 
-# --- 3. Mutation battery ----------------------------------------------------------------------
-# Each entry restores a real defect in a COPY of the shipped module and requires the classifier
-# assertions above to RED. A guard that survives its own defect being put back is decoration.
-echo "== mutation battery: every mutant must kill at least one assertion =="
-# A sed expression that matches nothing produces an unmutated copy, whose assertions all pass —
-# indistinguishable from a mutant the guard survived, and the more likely of the two. So the
-# mutation is asserted to have CHANGED the file before its result is believed; without this the
-# battery's own failure mode is a green.
-mutant_applies() { # <sed-expr> -> yes|no
-    if [ "$(sed "$1" "$PROOF_SRC" | diff -q - "$PROOF_SRC" >/dev/null 2>&1 && echo same || echo differs)" = differs ]; then
-        echo yes
-    else echo no; fi
-}
-mutate_and_count_fails() { # <sed-expr> -> the number of failed assertions under the mutant
-    local mutant
-    [ "$(mutant_applies "$1")" = yes ] || {
-        echo "MUTANT DID NOT APPLY"
-        return 0
-    }
-    mutant="$(mktemp)"
-    sed "$1" "$PROOF_SRC" >"$mutant"
+# Job 1677: upgrade starts p2pool, then the dashboard's sync gate stops it while the
+# restored nodes show loading/loading. The proof must run only after the gate releases.
+ALL_LOG="$(mktemp)"
+ALL_LOG="$ALL_LOG" drive_restore yes >/dev/null
+assert_eq "restore waits for chain sync before service health and identity proof" \
+    "$(grep -E '^(sync:|health|proof)' "$ALL_LOG")" $'sync:1500:restore\nhealth\nproof'
+rm -f "$ALL_LOG"
+ALL_LOG="$(mktemp)"
+ALL_LOG="$ALL_LOG" SYNC_RESULT=1 drive_restore yes >/dev/null
+assert_eq "a sync timeout cannot be mistaken for a completed restore" \
+    "$(grep -E '^(sync:|health|proof|restore_rc:)' "$ALL_LOG")" $'sync:1500:restore\nproof\nrestore_rc:1'
+rm -f "$ALL_LOG"
+
+echo "== a post-census branch recreation must not pass restoration =="
+DECLARED="$BASE"
+LIVE='dashboard=sha256:aaa|/baseline|running
+monerod=sha256:mmm|/baseline|running
+p2pool=sha256:ppp|/baseline|running
+tor=sha256:ttt|/baseline|running
+xmrig-proxy=sha256:xxx|/baseline|running'
+LATE_OWNER="${LIVE/p2pool=sha256:ppp|\/baseline|running/p2pool=sha256:ppp|\/test|running}"
+assert_eq "the baseline declaration and owner both match" \
+    "$(grade_restore_identity "$BASE" "$LIVE" "$DECLARED" /test | grep -cv '^verified ')" "0"
+assert_eq "a branch container recreated after the branch census is rejected by its owner" \
+    "$(grade_restore_identity "$BASE" "$LATE_OWNER" "$DECLARED" /test | grep '^test-checkout ')" "test-checkout p2pool"
+LATE_IMAGES="${LIVE/p2pool=sha256:ppp/p2pool=sha256:late}"
+assert_eq "a post-census branch image is rejected against the baseline declaration" \
+    "$(grade_restore_identity "$BASE" "$LATE_IMAGES" "$DECLARED" /test | grep '^wrong-image ')" "wrong-image p2pool"
+assert_eq "a duplicate branch container cannot hide behind a matching baseline container" \
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"p2pool=sha256:late|/test|running" "$DECLARED" /test | grep '^test-checkout ')" "test-checkout p2pool"
+assert_eq "a duplicate service fails even when its labels look valid" \
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"p2pool=sha256:ppp|/baseline|running" "$DECLARED" /test | grep '^duplicate ')" "duplicate p2pool"
+assert_eq "a test-only service cannot escape the proof" \
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"extra=sha256:late|/other|running" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service extra"
+assert_eq "an extra service label is matched literally" \
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'".*=sha256:late|/other|running" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service .*"
+assert_eq "an option-shaped extra label cannot bypass the proof" \
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"--help=sha256:late|/other|running" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service --help"
+STOPPED="${LIVE/p2pool=sha256:ppp|\/baseline|running/p2pool=sha256:ppp|\/baseline|exited}"
+assert_eq "a stopped baseline service names its state" \
+    "$(grade_restore_identity "$BASE" "$STOPPED" "$DECLARED" /test | grep '^not-running ')" "not-running p2pool (exited)"
+
+# Drive the full proof with the other, independent restore checks satisfied. A mutation that
+# replaces verify_restore_proof's identity grader with a hardcoded pass must fail these checks.
+proof_probe() { # <baseline-census> <live-census> [fail-census] -> verify_restore_proof exit status
     (
-        IT_PASS=0 IT_FAIL=0
-        # shellcheck disable=SC1090
-        source "$mutant"
-        run_census_assertions >/dev/null 2>&1
-        printf '%s' "$IT_FAIL"
+        BASELINE_IMAGES="$1" E2E_DIR=/test RESTORE_DIR=/baseline RESTORE_PROOF_VAR=MONERO_NODE_PASSWORD
+        stack_image_census() { printf '%s\n' "$BASE"; }
+        declared_image_census() { printf '%s\n' "$DECLARED"; }
+        stack_restore_census() {
+            [ "${PROBE_FAIL:-}" != yes ] || return 7
+            printf '%s\n' "$PROBE_LIVE"
+        }
+        env_bake_verdict() { echo match; }
+        control_units_verdict() { echo on-target; }
+        chain_restore_proof() { return 0; }
+        verify_chain_sync_proof() { [ "${PROBE_SYNC_FAIL:-}" != yes ]; }
+        restore_egress_boot_unit() { return 0; }
+        restore_egress_check_units() { return 0; }
+        restore_lan_check_units() { return 0; }
+        restore_lan_unit() { return 0; }
+        ok() { :; }
+        warn() { :; }
+        on_bench() {
+            case "$1" in
+            *"cd '/baseline' && bash -s"*) echo rpc-ok ;;
+            *"is-enabled pithead-control.path"*) return 0 ;;
+            esac
+        }
+        PROBE_LIVE="$2" PROBE_FAIL="${3:-}" PROBE_SYNC_FAIL="${4:-}"
+        verify_restore_proof >/dev/null 2>&1
+        printf '%s' "$?"
     )
-    rm -f "$mutant"
 }
+assert_eq "failed independent daemon sync fails the full restoration proof" "$(proof_probe "$BASE" "$LIVE" no yes)" "1"
+assert_eq "the full proof accepts baseline images and owners" "$(proof_probe "$BASE" "$LIVE")" "0"
+assert_eq "the full proof rejects a missing preflight image census" "$(proof_probe '' "$LIVE")" "1"
+assert_eq "the full proof rejects a late test-checkout owner" "$(proof_probe "$BASE" "$LATE_OWNER")" "1"
+assert_eq "the full proof rejects a late branch image" "$(proof_probe "$BASE" "$LATE_IMAGES")" "1"
+assert_eq "the full proof rejects a stopped baseline service" "$(proof_probe "$BASE" "$STOPPED")" "1"
+assert_eq "the full proof rejects a failed final census" "$(proof_probe "$BASE" "$LIVE" yes)" "1"
 
-# M1 — grade against the baseline alone, dropping the branch census. This is the pre-fix world:
-# every changed image reads as a rebuild and the run passes on the defect.
-assert_num_ge "M1 (no branch comparison) is killed" \
-    "$(mutate_and_count_fails 's/elif \[ "$now" = "$branch" \]; then/elif false; then/')" 1
-# M2 — never emit 'stale': grade a branch image as an ordinary rebuild. The first spelling of this
-# mutant did not match the file at all and read as a survivor; each expression below is asserted to
-# actually change the module before it is trusted (mutant_applies).
-assert_num_ge "M2 (branch image graded 'rebuilt') is killed" \
-    "$(mutate_and_count_fails "s/'stale %s/'rebuilt %s/")" 1
-# M3 — unanchor census_get, so one service name resolves off another's line.
-assert_num_ge "M3 (unanchored census_get) is killed" \
-    "$(mutate_and_count_fails 's|sed -n "s/\^\$2=//p"|sed -n "s/.*$2=//p"|')" 1
+census_probe() { # <service-label> -> remote census exit status
+    local dir rc output
+    dir="$(mktemp -d)"
+    cat >"$dir/docker" <<'DOCKER'
+#!/usr/bin/env bash
+case "$1" in
+ps) [ "${CENSUS_FAIL:-}" = ps ] && { echo 'docker ps unavailable' >&2; exit 7; }; printf 'container\n' ;;
+inspect) case "$3" in
+    *service*) printf '%s\n' "$SERVICE_LABEL" ;;
+    *working_dir*) printf '/other\n' ;;
+    *State.Status*) printf '%s\n' "${SERVICE_STATE:-running}" ;;
+    *) printf 'sha256:%064d\n' 0 ;;
+    esac; [ "${CENSUS_FAIL:-}" != inspect ] || { echo 'docker inspect unavailable' >&2; exit 7; } ;;
+esac
+DOCKER
+    chmod +x "$dir/docker"
+    output="$({
+        export PATH="$dir:$PATH" SERVICE_LABEL="$1" CENSUS_FAIL="${2:-}"
+        on_bench() { bash -c "$1"; }
+        if [ "${3:-}" = baseline ]; then
+            stack_image_census
+        else
+            stack_restore_census
+        fi
+    } 2>&1)"
+    rc=$?
+    rm -rf "$dir"
+    if [ "${4:-}" = detail ]; then printf '%s' "$output"; else printf '%s' "$rc"; fi
+}
+assert_eq "a normal service label is accepted by the live census" "$(census_probe p2pool)" "0"
+assert_eq "a newline label cannot forge a second service row" "$(census_probe $'extra\np2pool')" "1"
+assert_eq "a trailing newline in a service label cannot be stripped into a valid row" \
+    "$(census_probe $'p2pool\n')" "1"
+assert_eq "a failed docker ps fails the baseline census" "$(census_probe p2pool ps baseline)" "1"
+assert_eq "a failed docker inspect fails the baseline census" "$(census_probe p2pool inspect baseline)" "1"
+assert_eq "a failed docker ps fails the final census" "$(census_probe p2pool ps)" "1"
+assert_eq "a failed docker inspect fails the final census" "$(census_probe p2pool inspect)" "1"
+assert_contains "the failed listing command is named" "$(census_probe p2pool ps final detail)" "docker ps failed during census"
+assert_contains "the failed inspection command is named" "$(census_probe p2pool inspect final detail)" "docker inspect service failed for container"
+
+echo "== recreate only late test-checkout containers =="
+recreate_probe() { # [fail] [branch-service] -> command and return code
+    local dir rc
+    dir="$(mktemp -d)"
+    mkdir "$dir/baseline" "$dir/bin"
+    cat >"$dir/bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+case "$1 $2" in
+"ps -aq") printf 'branch\nbaseline\n' ;;
+"inspect --format") case "${*: -1}" in branch) printf '%s|/test\n' "$BRANCH_SERVICE" ;; baseline) printf 'monerod|/baseline\n' ;; esac ;;
+"compose config") printf 'p2pool\nmonerod\n' ;;
+"compose up") printf '%s\n' "$*" >"$CAPTURE"; [ "${FAIL_COMPOSE:-}" != yes ] ;;
+"rm -f") printf '%s\n' "$*" >"$CAPTURE" ;;
+esac
+DOCKER
+    chmod +x "$dir/bin/docker"
+    (
+        export PATH="$dir/bin:$PATH" CAPTURE="$dir/capture" FAIL_COMPOSE="${1:-}" BRANCH_SERVICE="${2:-p2pool}"
+        RESTORE_DIR="$dir/baseline" E2E_DIR=/test
+        on_bench() { bash -c "$1"; }
+        recreate_test_checkout_containers >/dev/null
+    )
+    rc=$?
+    printf '%s|%s' "$(cat "$dir/capture" 2>/dev/null)" "$rc"
+    rm -rf "$dir"
+}
+assert_eq "only the late branch service is force-recreated" "$(recreate_probe)" \
+    "compose up -d --no-deps --force-recreate p2pool|0"
+assert_eq "a failed recreation is not a restore pass" "$(recreate_probe yes)" \
+    "compose up -d --no-deps --force-recreate p2pool|1"
+assert_eq "a test-only service is removed by container ID" "$(recreate_probe no extra)" "rm -f branch|0"
+assert_eq "an option-shaped service label cannot become a Compose argument" \
+    "$(recreate_probe no --renew-anon-volumes)" "rm -f branch|0"
+
+# #2639: the restore converges the baseline over the branch and never runs `pithead down`, which
+# stopped and recreated monerod and tari on every deploying run, however unchanged. Every command
+# restore_all gives the box is recorded, for both baseline kinds.
+echo "== the restore never takes the stack down (#2639) =="
+for kind in yes no; do
+    ALL_LOG="$(mktemp)"
+    ALL_LOG="$ALL_LOG" drive_restore "$kind" >/dev/null
+    assert_eq "no 'pithead down' on the restore path (source checkout: $kind)" "$(grep -c 'pithead down' "$ALL_LOG")" "0"
+    assert_eq "the restore prepares the chain record first (source checkout: $kind)" "$(head -n1 "$ALL_LOG")" "chain_restore_prepare"
+    rm -f "$ALL_LOG"
+done
 
 # --check deploys nothing and borrows nothing, so restore_all has nothing to put back — and an
 # outer restore would mutate a bench this mode promised only to read.
 assert_eq "restore_all is a no-op in --check mode" "$(drive_restore no check)" ""
+
+# --- #2460: the egress boot unit goes back the way the run found it ------------------------------
+# A model bench: UNIT is the unit's state; the removal command clears it unless STICKY=1. Prints
+# "<rc> <unit after> <removal commands sent>".
+egress_restore() { # <before> <unit now> [sticky]
+    (
+        EGRESS_UNIT_BEFORE="$1" UNIT="$2" STICKY="${3:-0}" removals=0
+        ok() { :; }
+        warn() { :; }
+        step() { printf 'step:%s\n' "$1" >&2; }
+        on_bench() {
+            case "$1" in
+            *"disable --now"*)
+                removals=$((removals + 1))
+                [ "$STICKY" = 1 ] || UNIT=absent
+                ;;
+            *"systemctl cat"*) echo "$UNIT" ;;
+            *"show -p Wants"*) [ "$UNIT" = absent ] ;;
+            esac
+        }
+        restore_egress_boot_unit
+        echo "$? $UNIT $removals"
+    )
+}
+assert_eq "a unit this run added is removed, and the absence proven" "$(egress_restore absent present)" "0 absent 1"
+assert_eq "a unit the baseline already had is left alone" "$(egress_restore present present)" "0 present 0"
+assert_contains "and the restore says so, so a leftover from a cancelled run is visible" \
+    "$(egress_restore present present 2>&1 >/dev/null)" "already on the bench before this run"
+assert_eq "a unit that survives the removal fails the restore proof" "$(egress_restore absent present 1)" "1 present 1"
+assert_eq "an unrecorded baseline fails closed and removes nothing" "$(egress_restore "" present)" "1 present 0"
+assert_contains "verify_restore_proof runs the egress unit restore" "$(declare -f verify_restore_proof)" "restore_egress_boot_unit"
+assert_contains "e2e.sh records the unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"'
+
+# shellcheck source=tests/integration/tools/restore-lan-unit-proof-cases.sh
+source "$HERE/../tools/restore-lan-unit-proof-cases.sh"
+
+# --- #2599: the egress check pair goes back the same way ------------------------------------------
+check_restore() { # <before> <units now> [sticky] -> "<rc> <units after> <removal commands sent>"
+    (
+        EGRESS_CHECK_BEFORE="$1" UNITS="$2" STICKY="${3:-0}" removals=0
+        ok() { :; }
+        warn() { :; }
+        on_bench() {
+            case "$1" in
+            *"disable --now pithead-egress.timer"*)
+                removals=$((removals + 1))
+                [ "$STICKY" = 1 ] || UNITS=absent
+                ;;
+            *"systemctl cat pithead-egress"*) echo "$UNITS" ;;
+            esac
+        }
+        restore_egress_check_units
+        echo "$? $UNITS $removals"
+    )
+}
+assert_eq "a check pair this run added is removed, and the absence proven" "$(check_restore absent present)" "0 absent 1"
+assert_eq "a check pair the baseline already had is left alone" "$(check_restore present present)" "0 present 0"
+assert_eq "a check pair that survives the removal fails the restore proof" "$(check_restore absent present 1)" "1 present 1"
+assert_eq "an unrecorded baseline fails closed and removes nothing" "$(check_restore "" present)" "1 present 0"
+assert_contains "verify_restore_proof runs the check pair restore" "$(declare -f verify_restore_proof)" "restore_egress_check_units"
+assert_contains "e2e.sh records the timer before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"'
+assert_contains "e2e.sh records the LAN timer before deploy_branch installs it" "$(cat "$E2E_SRC")" 'LAN_CHECK_BEFORE="$(egress_boot_unit_state pithead-lan.timer)"'
+assert_contains "restore proof removes a LAN timer added by the run" "$(declare -f verify_restore_proof)" "restore_lan_check_units"
+# shellcheck source=tests/integration/tools/restore-lan-check-proof-cases.sh
+source "$HERE/../tools/restore-lan-check-proof-cases.sh"
 
 echo ""
 printf 'restore-proof self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"

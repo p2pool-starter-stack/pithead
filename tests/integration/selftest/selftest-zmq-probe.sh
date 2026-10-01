@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Self-test for the ZMTP PUB probe (#1497) — the verdicts, driven from captured and hand-built
-# wire fixtures, with no socket and no stack.
+# Self-test for the ZMTP PUB probe (#1497) — verdict fixtures plus a loopback publisher, with no
+# stack.
 #
 # The probe exists because a bare TCP dial cannot tell a live ZMQ publisher from a
 # docker-published port with nothing behind it. Proven on the bench 2026-08-29, one host, three
@@ -209,6 +209,95 @@ fi
 
 echo "== tier B: the peer must actually PUBLISH, not merely hold a socket open (#1497) =="
 
+# This is the bounded control for the I/O path the pure fixtures cannot reach. It proves only the
+# probe's subscription/sample boundary: no RPC, P2Pool, transaction, payout or live chain is in it.
+# The live tier-4 row still proves the configured node answers that same probe.
+start_fixture() { # [--silent] -> leaves FIXTURE_PID/FIXTURE_PORT_FILE set
+    FIXTURE_PORT_FILE="$(mktemp)"
+    FIXTURE_ERROR_FILE="$(mktemp)"
+    python3 "$HERE/../fakes/fake_zmq_publisher.py" "$@" >"$FIXTURE_PORT_FILE" 2>"$FIXTURE_ERROR_FILE" &
+    FIXTURE_PID=$!
+    for _ in $(seq 1 20); do
+        [ -s "$FIXTURE_PORT_FILE" ] && break
+        sleep 0.1
+    done
+    [ -s "$FIXTURE_PORT_FILE" ]
+}
+
+# The fixture's own protocol checks are deliberate: a raw TCP peer is not the probe path.
+# Each peer below breaks one step; the fixture must exit non-zero and name that step, so an
+# unrelated socket error cannot pass for the check.
+fixture_rejects() { # <label> <expected stderr> <READY hex | half-greeting | bad-greeting> [subscription hex]
+    start_fixture
+    port="$(cat "$FIXTURE_PORT_FILE")"
+    PYTHONPATH="$HERE/../fakes" timeout 5 python3 - "$port" "${@:3}" <<'PY'
+import socket
+import sys
+
+import fake_zmq_publisher as fx
+
+port, ready, *subscription = sys.argv[1:]
+with socket.create_connection(("127.0.0.1", int(port)), timeout=1) as client:
+    client.settimeout(1)
+    if ready == "half-greeting":
+        client.sendall(fx.GREETING[:32])  # Then EOF: the fixture must not spin on it.
+        sys.exit()
+    if ready == "bad-greeting":
+        client.sendall(fx.GREETING[:-1] + b"\x01")
+        sys.exit()
+    client.sendall(fx.GREETING)
+    fx.read_exact(client, 64)
+    client.sendall(bytes.fromhex(ready))
+    if bytes.fromhex(ready) == fx.SUB_READY:
+        fx.read_exact(client, 28)
+    client.sendall(bytes.fromhex(subscription[0]))
+PY
+    for _ in $(seq 1 30); do
+        kill -0 "$FIXTURE_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    if kill -0 "$FIXTURE_PID" 2>/dev/null; then
+        kill "$FIXTURE_PID"
+        it_fail "$1" "fixture still running after 3s"
+    else
+        wait "$FIXTURE_PID"
+        assert_rc "$1: exits 1" "$?" "1"
+        assert_contains "$1: names the step" "$(cat "$FIXTURE_ERROR_FILE")" "$2"
+    fi
+    wait "$FIXTURE_PID" 2>/dev/null
+    rm -f "$FIXTURE_PORT_FILE" "$FIXTURE_ERROR_FILE"
+}
+
+fixture_rejects "the fixture rejects a non-READY peer" "expected ZMTP SUB READY" \
+    "00$(printf '%s' "$READY_SUB" | cut -c3-)" "000101"
+fixture_rejects "the fixture rejects a non-SUBSCRIBE peer" "expected empty-topic SUBSCRIBE" \
+    "$READY_SUB" "000100"
+fixture_rejects "the fixture rejects a non-ZMTP greeting" "unexpected ZMTP greeting" bad-greeting
+fixture_rejects "the fixture fails on EOF instead of spinning" "short read" \
+    half-greeting
+
+start_fixture
+port="$(cat "$FIXTURE_PORT_FILE")"
+v="$(IT_MODE=local IT_REMOTE_DIR="$HERE/.." zmq_publishes_probe 127.0.0.1 "$port" 1 1)"
+rc=$?
+wait "$FIXTURE_PID"
+fixture_rc=$?
+rm -f "$FIXTURE_PORT_FILE" "$FIXTURE_ERROR_FILE"
+assert_rc "the deterministic publisher completed its protocol exchange" "$fixture_rc" "0"
+assert_rc "the deterministic publisher passes the real probe" "$rc" "0"
+assert_contains "the deterministic publisher is reported live" "$v" "published within the budget"
+
+start_fixture --silent
+port="$(cat "$FIXTURE_PORT_FILE")"
+v="$(IT_MODE=local IT_REMOTE_DIR="$HERE/.." zmq_publishes_probe 127.0.0.1 "$port" 1 1)"
+rc=$?
+wait "$FIXTURE_PID"
+fixture_rc=$?
+rm -f "$FIXTURE_PORT_FILE" "$FIXTURE_ERROR_FILE"
+assert_rc "the deterministic silent publisher completed its protocol exchange" "$fixture_rc" "0"
+assert_rc "the deterministic silent publisher fails the real probe" "$rc" "1"
+assert_contains "the deterministic silent publisher is named silent" "$v" "published NOTHING"
+
 # The live half of this pair cannot run here (no node, no socket), so it is recorded rather than
 # re-run. MEASURED on the bench 2026-08-30, one host, the SAME probe against both targets:
 #
@@ -284,6 +373,58 @@ if [ "$elapsed" -lt 3 ]; then
 else
     it_fail "a closed port does not pay the publish budget" "took ${elapsed}s"
 fi
+
+echo "== chain-activity corroboration: a quiet chain is not a dead publisher (#2705) =="
+
+# The defect: monerod's ZMQ pub fires on a new block, a new mempool tx, or a template update,
+# never on a timer. A "silent" verdict from a chain that provably did not move either is not
+# evidence the publisher is dead — it means nothing happened for ZMQ to report.
+v=$(zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "800000 2" "800000 2")
+assert_rc "an unmoved chain downgrades silence to a warn (rc 2)" "$?" "2"
+assert_contains "the downgrade is named quiet" "$v" "quiet"
+assert_contains "the downgrade cites #2705" "$v" "#2705"
+
+# The real defect this probe exists to catch: the chain DID move (height rose) and ZMQ still said
+# nothing. That must stay the original silent failure, not be waved through.
+v=$(zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "800000 2" "800001 2")
+assert_rc "a moved chain leaves silence a failure" "$?" "1"
+assert_contains "the failure keeps its original wording" "$v" "published NOTHING"
+
+# A mempool-only change (height unchanged, tx_pool_size moved) must count as movement too.
+v=$(zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "800000 2" "800000 3")
+assert_rc "a mempool-only change also leaves silence a failure" "$?" "1"
+
+# An unreadable fingerprint (get_info could not be asked) cannot corroborate anything — the
+# original verdict passes through unchanged rather than being waved through on missing evidence.
+v=$(zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "" "")
+assert_rc "an unreadable fingerprint does not downgrade" "$?" "1"
+
+# Verdicts other than "silent" are untouched regardless of the fingerprints, matching or not.
+v=$(zmq_corroborate_silence "ok 127.0.0.1:18083 speaks ZMTP and advertises Socket-Type XPUB" 0 "800000 2" "800000 2")
+assert_rc "a passing verdict is untouched" "$?" "0"
+assert_eq "a passing verdict's text is untouched" "$v" "ok 127.0.0.1:18083 speaks ZMTP and advertises Socket-Type XPUB"
+v=$(zmq_corroborate_silence "connect-refused no TCP connection to 127.0.0.1:18083" 1 "800000 2" "800000 2")
+assert_rc "a tier-A failure is untouched" "$?" "1"
+assert_contains "a tier-A failure keeps its own reason" "$v" "connect-refused"
+
+# MUTATION PROOF: the equality check is the whole guard. Remove it and EVERY silent verdict
+# downgrades to a warn regardless of the fingerprints — including the moved-chain case above,
+# which is exactly the dead-publisher defect #1497 exists to catch.
+_mutated=$(
+    zmq_corroborate_silence() {
+        local v="$1"
+        case "$v" in silent\ *)
+            echo "quiet ${v#silent }"
+            return 2
+            ;;
+        esac
+        echo "$v"
+        return "$2"
+    }
+    zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "800000 2" "800001 2" >/dev/null
+    echo "$?"
+)
+assert_eq "without the equality guard a moved-chain dead publisher is waved through (mutation proof)" "$_mutated" "2"
 
 echo ""
 echo "selftest-zmq-probe: $IT_PASS passed, $IT_FAIL failed"

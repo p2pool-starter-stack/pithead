@@ -8,7 +8,7 @@ mkdir -p "$HN"
 hn_run() { # engine-kind, configured host, operation, optional apply state
     (
         cd "$HN" || exit 1
-        # shellcheck source=pithead
+        # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
         source "$STACK"
         set -e
         printf 'old-name' >kernel-name
@@ -101,7 +101,7 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
             is_deployed() { return 0; }
             render_env() { printf 'HOST_IP=%s\n' "$HOST_IP" >"${1:-.env}"; }
             env_changed_keys() { [ "$mode" = unchanged ] || echo HOST_IP; }
-            env_get_file() { sed -n 's/^HOST_IP=//p' "$1"; }
+            env_get_file() { sed -n "s/^$2=//p" "$1"; }
             describe_change() { printf 'INFO\tname changes\n'; }
             generate_caddyfile() { echo "$HOST_IP" >Caddyfile; }
             docker() { :; }
@@ -164,7 +164,7 @@ mkdir -p "$MD"
 md_run() { # <operation> [conf-body-mode]
     (
         cd "$MD" || exit 1
-        # shellcheck source=pithead
+        # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
         source "$STACK"
         set -e
         : >calls

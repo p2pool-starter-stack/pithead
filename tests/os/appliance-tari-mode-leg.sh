@@ -49,6 +49,22 @@ p2pool_merge_mine_argv() {
 
 tari_data_preserved() { [ "$1" != missing ] && [ "$1" = "$2" ]; }
 
+# #2627: without compose's init: true minotari_node is PID 1, reaps nothing, and a zombie PID 1
+# cannot be stopped. Via the compat API podman's own init (/run/podman-init) is PID 1 instead.
+tari_pid1_comm() {
+    local comm tries=0
+    while [ "$tries" -lt 15 ]; do
+        comm=$(_ssh "podman exec tari cat /proc/1/comm" 2>/dev/null | tr -d '\r\n') && [ -n "$comm" ] && {
+            printf '%s' "$comm"
+            return 0
+        }
+        tries=$((tries + 1))
+        sleep 4
+    done
+    return 1
+}
+tari_pid1_is_init() { case "$1" in podman-init | catatonit) return 0 ;; *) return 1 ;; esac }
+
 # Both halves of the sync gate's post-switch verdict: the dashboard logged that it is holding
 # p2pool for the fresh-Monero sync, and p2pool itself is actually stopped clean. Neither settles
 # the instant the tari-container teardown loop above returns, so this is polled the same way.
@@ -103,7 +119,7 @@ tari_mode_commit() { # <proposed-config-json> -> prints the commit result
 # shellcheck disable=SC2034,SC2154
 phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <phase-rc>
     local DASH_USER="$1" DASH_PASS="$2" phase_rc="${3:-0}"
-    local live proposed result before after origin argv rc=0 tries restored unexercised=bad
+    local live proposed result before after origin argv pid1 rc=0 tries restored unexercised=bad
     # A PRECONDITION FAILURE IS NOT A VERDICT ON TARI SWITCHING (#2059's contract, learned here the
     # same way). When the phase is already red this leg cannot run, and saying "bad" would put a
     # tari-shaped label on somebody else's defect: its first bench run reported "live config could
@@ -112,16 +128,16 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
     # dashboard is still a real failure, so the verdict follows the phase.
     [ "$phase_rc" -eq 0 ] || unexercised=info
 
-    # Retry rather than single-shot: the leg that runs before this one recreates the dashboard
-    # container, so one curl the instant it returns is a race, not a measurement.
     #
     # THE BREAK TESTS THE BODY, NOT JUST THE EXIT CODE. `curl -f` returns 0 with a ZERO-LENGTH body
     # on a 200 — measured, not assumed — so breaking on rc alone would leave the loop after ONE try
     # against a dashboard answering empty while it starts, which is the exact condition the retry
     # exists for. The guard below still catches it, so this was never a false pass; it was a retry
     # that did not retry.
+    caddy_failure_evidence # baseline collection also exercises the probes on a healthy run
     if ! live=$(tari_live_config); then
         "$unexercised" "the dashboard config was unreadable — day-two tari.mode switching was NOT exercised (#1929)"
+        caddy_failure_evidence
         return 0
     fi
     origin=$(printf '%s' "$live" | jq -r '.tari.mode // "local"')
@@ -135,6 +151,17 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
         return 1
         ;;
     esac
+
+    # Before the switch, while the provisioned node is running: the stop below must reach it.
+    if ! pid1=$(tari_pid1_comm); then
+        bad "the tari container's PID 1 could not be read (#2627)"
+        rc=1
+    elif tari_pid1_is_init "$pid1"; then
+        ok "tari runs under podman's init ($pid1 is PID 1), so a stop reaches the node (#2627)"
+    else
+        bad "tari's PID 1 is $pid1, not an init: a zombie PID 1 cannot be stopped (#2627)"
+        rc=1
+    fi
 
     # --- local -> off, on the plain route -------------------------------------------------------
     proposed=$(printf '%s' "$live" | jq -c '.tari.mode = "off"')
@@ -259,6 +286,26 @@ _tari_mode_self_test() {
     tari_data_preserved '41 2111' '41 2111' || f=$((f + 1))
     tari_data_preserved '41 2111' '41 2112' && f=$((f + 1))
     tari_data_preserved missing missing && f=$((f + 1))
+    tari_pid1_is_init podman-init && ! tari_pid1_is_init minotari_node && ! tari_pid1_is_init '' || f=$((f + 1))
+    # The PID 1 read retries through a restart and gives up when the container never answers.
+    (
+        counter=$(mktemp)
+        printf '0\n' >"$counter"
+        _ssh() {
+            calls=$(($(cat "$counter") + 1))
+            printf '%s\n' "$calls" >"$counter"
+            [ "$calls" -gt 2 ] && printf 'podman-init\r\n'
+        }
+        sleep() { :; }
+        if [ "$(tari_pid1_comm)" = podman-init ]; then rc=0; else rc=1; fi
+        rm -f "$counter"
+        exit "$rc"
+    ) || f=$((f + 1))
+    (
+        _ssh() { return 1; }
+        sleep() { :; }
+        ! tari_pid1_comm
+    ) || f=$((f + 1))
     (
         ip=fixture
         counter=$(mktemp)

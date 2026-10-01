@@ -57,7 +57,7 @@ from mining_dashboard.service.data_audit import (
     _RIG_EDIT_WINDOW_SEC,
     DataAuditMixin,
 )
-from mining_dashboard.service.data_gates import DataGateMixin
+from mining_dashboard.service.data_gates import SYNC_GATE_RESET_PATH, DataGateMixin, chain_synced
 from mining_dashboard.service.data_helpers import (
     _SHARE_STAT_KEYS,
     _aggregate_hashrate,
@@ -75,6 +75,7 @@ from mining_dashboard.service.data_xvb_sync import (
 )
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.notify.telegram_commands import format_daily_summary
+from mining_dashboard.service.workers import worker_refresh
 
 logger = logging.getLogger("DataService")
 
@@ -104,14 +105,18 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
             )
 
     async def _sync_payouts(self):
-        """Monero on-chain payout confirmation (#381). The body moved to ``payout_sync`` for #1644;
-        this stays as the poll body's call seam, and as the name the tests already reach for."""
-        await payout_sync.sync_monero(self.state_manager, self.wallet_client, self.alert_service)
+        """Monero payout poll; tests and the loop use this seam."""
+        self.monero_wallet_scan_answered = await payout_sync.sync_monero(
+            self.state_manager, self.wallet_client, self.alert_service
+        )
+        return self.monero_wallet_scan_answered
 
     async def _sync_tari_payouts(self):
-        """Tari on-chain payout confirmation (#462) — the sibling of ``_sync_payouts``, same shape
-        and same reason for staying here while its body lives in ``payout_sync``."""
-        await payout_sync.sync_tari(self.state_manager, self.tari_wallet_client, self.alert_service)
+        """Tari payout poll; the async sibling of ``_sync_payouts``."""
+        self.tari_wallet_scan_answered = await payout_sync.sync_tari(
+            self.state_manager, self.tari_wallet_client, self.alert_service
+        )
+        return self.tari_wallet_scan_answered
 
     async def run(self):
         """
@@ -133,10 +138,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
 
             while True:
                 try:
-                    # 1. Collect Local Statistics (High Frequency Polling)
                     stratum_raw = get_stratum_stats()
 
-                    # 2. Fetch Worker Statistics from XMRig Proxy + normalize the payload.
                     proxy_workers = []
                     try:
                         proxy_data = await asyncio.to_thread(self.proxy_client.get_workers)
@@ -194,7 +197,6 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # (#169) and drop stale offline rows past the fall-off window (#182).
                     final_workers = self._lifecycle.update(final_workers, time.time())
 
-                    # 4. Calculate Aggregates (Priority: 15m > 60s > 10s)
                     total_hr, total_h10 = _aggregate_hashrate(final_workers)
 
                     # 5. Fetch Network & Sync Status
@@ -238,18 +240,14 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     tari_sync = await tari_client.get_sync_status()
 
                     # Raw per-node "fully synced" signals for the sync gate (Issue #35),
-                    # captured BEFORE the network-height UI override below. A node counts as
-                    # synced only when it's reachable AND not syncing — an unreachable node
-                    # reports is_syncing=False too, and we must not mistake that for synced
-                    # (that's what #31's node-down handling is for). Reading the raw signal
-                    # also avoids a deadlock: the height override is fed by p2pool's stats
-                    # file, which reads 0 while p2pool is held — falsely "syncing" forever.
-                    monero_synced = monero_sync.get("reachable", True) and not monero_sync.get(
-                        "is_syncing", False
-                    )
-                    tari_synced = tari_sync.get("reachable", True) and not tari_sync.get(
-                        "is_syncing", False
-                    )
+                    # captured BEFORE the network-height UI override below. `chain_synced`
+                    # counts only an explicit reachable, not-syncing reading, so an unreachable
+                    # node or an empty result is never mistaken for synced (#31, #2472). Reading
+                    # the raw signal also avoids a deadlock: the height override is fed by
+                    # p2pool's stats file, which reads 0 while p2pool is held — falsely
+                    # "syncing" forever.
+                    monero_synced = chain_synced(monero_sync)
+                    tari_synced = chain_synced(tari_sync)
 
                     # Auto-transition a clearnet initial-sync node back to Tor once it's synced
                     # (#234). Reuses the synced signals above; the supervisor writes a persistent
@@ -308,7 +306,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # node's live reachability into a stable DOWN flag; monerod-down always
                     # rejects, Tari-down never does — Tari stays visible in its own panel/alerts.
                     monero_down = self.monero_health.update(monero_sync.get("reachable", True))
-                    tari_down = self.tari_health.update(tari_sync.get("reachable", True))
+                    tari_down = await self._observe_tari(tari_client, tari_sync)
                     monero_sync["down"] = monero_down
                     tari_sync["down"] = tari_down
 
@@ -322,6 +320,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         self.monero_sync_stale.update(monero_reports_synced)
                     monero_stale = self.monero_sync_stale.down
                     monero_sync["stale"] = monero_stale
+                    self._observe_monero(monero_sync)
 
                     # 4. Sync gate (Issue #35): hold p2pool + xmrig-proxy until the required
                     # chain(s) first sync, then release. monerod must be synced; Tari must be
@@ -378,9 +377,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     )
                     await self.alert_service.process(
                         monero_down=monero_down,
-                        # Debounced "reachable but out of sync" (#972) — the 0-peer strand
-                        # after a tor restart that node-down can't see.
-                        monero_stale=monero_stale,
+                        monero_stale=monero_stale,  # #972 out-of-sync; health: #2499
+                        monero_health=monero_sync["health"],
                         tari_down=tari_down,
                         tari_required=TARI_REQUIRED,
                         miner_released=self.miner_released,
@@ -471,6 +469,9 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         )
                         await self.alert_service.degradation_alert(kind, drop_frac)
 
+                    worker_refresh.preserve_newer_reports(
+                        self.latest_data.get("workers", []), final_workers
+                    )
                     self.latest_data.update(
                         {
                             "workers": final_workers,
@@ -503,7 +504,6 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         }
                     )
 
-                    # 6. Persist Historical Data
                     is_xvb = "XVB" in current_mode
                     p2pool_hr = 0 if is_xvb else total_hr
                     xvb_hr = total_hr if is_xvb else 0
@@ -525,7 +525,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         window_splits,
                     )
 
-                    # Create a lightweight snapshot (exclude shares entirely as they are safely in DB)
+                    await payout_sync.observe_enabled_wallets(self)
+                    # Snapshot without shares, which already live in the DB.
                     snapshot_data = self.latest_data.copy()
                     snapshot_data.pop("shares", None)
                     await asyncio.to_thread(self.state_manager.save_snapshot, snapshot_data)
@@ -608,19 +609,12 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         # 30-min wall-clock gate inside (the winners file updates ~hourly).
                         await self._sync_xvb_winners()
 
-                    # 7d. On-chain payout confirmation (#381), every 10th poll (~5 min). Independent
-                    # of XvB — gated on the view-only wallet-rpc being configured (local node + view
-                    # key). Polls get_transfers, persists new confirmed payouts, fires one alert each.
-                    #
-                    # 7d/7e are the only steps in this body wrapped per-step (#1644): both take no
-                    # poll local and write no `self` attribute, so a failure in one cannot leave a
-                    # later step reading half-written state. Everything above stays under the single
-                    # handler below — see `payout_sync` for why widening this is its own change.
+                    # Confirm payouts every 10th poll; the next health probe reads scan results.
+                    # These independent steps remain guarded per-step (#1644).
                     if self.wallet_client is not None and iteration_count % 10 == 0:
                         await payout_sync.run_isolated("Monero payout sync", self._sync_payouts)
 
-                    # 7e. Tari on-chain payout confirmation (#462), same cadence — gated on the
-                    # view-only Tari console wallet being configured (local node + tari view key).
+                    # Tari uses the same cadence.
                     if self.tari_wallet_client is not None and iteration_count % 10 == 0:
                         await payout_sync.run_isolated("Tari payout sync", self._sync_tari_payouts)
 

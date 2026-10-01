@@ -25,6 +25,7 @@ import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs
 import {
   buildSections,
   editableCandidate,
+  explicitCandidate,
   isSecretSentinel,
   jsonSyntaxError,
   markEditable,
@@ -238,11 +239,11 @@ export class ConfigView extends Component {
     return pollResult(id, skip);
   }
 
-  // The candidate is the proposed config. A pane mid-typo blocks Save via jsonError instead.
+  // Keep explicit values; only read_config's untouched defaults were absent from config.json.
   buildProposed() {
-    const { candidate, jsonError } = this.state;
+    const { candidate, defaultKeys, jsonError, pristine } = this.state;
     if (jsonError) return { error: jsonError };
-    return { config: candidate };
+    return { config: explicitCandidate(JSON.parse(pristine || "{}"), candidate, defaultKeys) };
   }
 
   async save() {
@@ -352,7 +353,7 @@ export class ConfigView extends Component {
 
   // The JSON pane (#785, the wizard's pattern): the whole candidate beneath the form, collapsed
   // by default, two-way live — never a separate mode. Load-from-file fills it (FileReader, no
-  // upload); it shows byte-for-byte what Save previews, minus the hidden paths (#1850).
+  // upload); Save sends this candidate minus untouched reference defaults (#2365).
   renderJson(editText, jsonError, busy) {
     return html`<details class="card config-section">
         <summary><strong>Advanced</strong> — the configuration this page sends</summary>

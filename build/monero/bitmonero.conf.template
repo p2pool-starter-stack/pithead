@@ -3,6 +3,12 @@
 data-dir=/home/ubuntu/.bitmonero
 log-file=/home/ubuntu/.bitmonero/bitmonero.log
 log-level=0
+# Power-loss safety (#2471). monerod's default, fast:async, opens LMDB with MDB_NOSYNC while it is
+# syncing and syncs commits only once it reaches the chain tip. safe syncs every commit, so a power
+# cut cannot take the chain below a committed height. The cost is paid only while syncing: two disk
+# flushes per commit, at most about 590,000 over a full pruned mainnet sync with full download
+# batches and at most about 15 million with one-block batches. The time per flush is not measured.
+db-sync-mode=safe
 
 # --- Blockchain Pruning ---
 prune-blockchain=${MONERO_PRUNE}
@@ -12,11 +18,16 @@ sync-pruned-blocks=${MONERO_PRUNE}
 # Bind to all interfaces (0.0.0.0) to allow communication with P2Pool and Tari containers.
 # NOTE: this 0.0.0.0 is *container-internal* only. Host-level RPC exposure is controlled
 # separately by MONERO_RPC_BIND in docker-compose.yml (default 127.0.0.1 — localhost only).
-# Combined with restricted-rpc=1 + rpc-login below, the RPC is not reachable off-host by default.
+# Two RPC listeners (#2921). The published one (18081, below) is the restricted, public-safe RPC:
+# it hides peer counts. The unrestricted one is bound to the container's own loopback on an
+# unpublished port, so only processes inside this container can reach it: the healthcheck and the
+# fixed monerod-peers helper read the real peer counts there. Both need rpc-login.
 p2p-bind-ip=0.0.0.0
 p2p-bind-port=18080
-rpc-bind-ip=0.0.0.0
-rpc-bind-port=18081
+rpc-bind-ip=127.0.0.1
+rpc-bind-port=18085
+rpc-restricted-bind-ip=0.0.0.0
+rpc-restricted-bind-port=18081
 confirm-external-bind=1
 public-node=1
 
@@ -57,8 +68,10 @@ pad-transactions=1
 hide-my-port=1
 
 # --- RPC Security ---
-# Restrict RPC access and enforce authentication
-restricted-rpc=1
+# Enforce authentication on both listeners. The network listener is restricted by
+# rpc-restricted-bind-port above. public-node selects that restricted port; Monero's Tor
+# proxy suppresses the P2P RPC-port advertisement. There is no global restricted-rpc here,
+# or the loopback listener would be restricted too.
 rpc-login=${MONERO_NODE_USERNAME}:${MONERO_NODE_PASSWORD}
 no-igd=1
 

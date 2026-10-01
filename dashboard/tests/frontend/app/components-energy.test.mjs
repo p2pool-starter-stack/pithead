@@ -129,6 +129,14 @@ test('EarningsCard shows Confirmed on-chain under the estimates on both tabs whe
     // Long-run Average table, mirroring the Monero tab's order.
     const tari = html.slice(html.indexOf('id="epanel-tari"'), html.indexOf('id="epanel-xvb"'));
     assert.ok(tari.indexOf('Long-run Average') < tari.indexOf('Confirmed on-chain'));
+    s.earnings.confirmed.down = true;
+    s.earnings.confirmed.since = 1_700_000_000;
+    s.earnings.tari_confirmed.address_match = false;
+    s.earnings.tari_confirmed.configured_address = 'configured-tari';
+    s.earnings.tari_confirmed.wallet_address = 'wallet-tari';
+    html = renderApp({ state: s });
+    assert.match(html, /Payout wallet unreachable since/);
+    assert.match(html, /Payout wallet address differs: configured configured-tari; wallet wallet-tari/);
     // Confirmation off (the default) -> no confirmed block anywhere, estimates stand alone.
     s.earnings.confirmed = { enabled: false };
     s.earnings.tari_confirmed = { enabled: false };

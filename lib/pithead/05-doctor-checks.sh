@@ -111,6 +111,45 @@ check_hugepages_degraded() {
     dr_warn "$(head -n 1 "$marker" | tr '\t' ' ')"
 }
 
+# The Memory section's HugePages verdict. A pool counts as reserved only when it holds this
+# machine's budget (hugepages_decision_pages: the full 3072 pages, or the appliance's recorded
+# reduced pool), and never less than P2Pool's own RandomX pages — any non-zero pool used to read
+# OK, and a bench said OK at 186 pages (#2610). A short pool is a WARN, never a FAIL: the
+# appliance's A/B commit gate takes doctor's exit code. Below P2Pool's dataset the wording states
+# the cost: P2Pool puts its dataset and caches in up to 2592 MiB of ordinary RAM, which its 4 GiB
+# memory limit holds (#2562) but the rest of the machine loses. Above that a short pool says the
+# same conditionally: monerod builds no dataset unless it mines, but its two RandomX caches and a
+# scratchpad page per hashing thread share the pool, so no fixed size short of the budget
+# guarantees P2Pool its 1040.
+# Reads PITHEAD_MEMINFO, the overlay's override, so the stack suite runs it against fixtures.
+check_hugepages_reserved() {
+    local meminfo="${PITHEAD_MEMINFO:-/proc/meminfo}" total free need who="this machine needs for RandomX" short
+    total=$(awk '/^HugePages_Total/{print $2}' "$meminfo" 2>/dev/null || true)
+    free=$(awk '/^HugePages_Free/{print $2}' "$meminfo" 2>/dev/null || true)
+    need=$(hugepages_decision_pages)
+    if [ "$need" -lt "$P2POOL_RANDOMX_PAGES" ]; then
+        need=$P2POOL_RANDOMX_PAGES who="P2Pool's RandomX dataset and its two caches need"
+    fi
+    if [[ ! "$total" =~ ^[0-9]+$ ]]; then
+        dr_warn "Could not read HugePages from $meminfo."
+    elif [ "$total" -ge "$need" ]; then
+        dr_ok "HugePages reserved: ${total} total, ${free:-?} free (RandomX uses these)."
+    else
+        local fallback="P2Pool puts its RandomX dataset (${P2POOL_RANDOMX_DATASET_PAGES} pages) and caches in ordinary RAM instead: up to $((P2POOL_RANDOMX_PAGES * 2)) MiB, which its 4 GiB memory limit holds but the rest of the machine loses."
+        if [ "$total" -eq 0 ]; then
+            short="HugePages_Total is 0: ${fallback}"
+        else
+            short="HugePages reserved: only ${total} of the ${need} pages ${who} ($(((need - total) * 2)) MiB short)."
+            if [ "$total" -lt "$P2POOL_RANDOMX_DATASET_PAGES" ]; then
+                short="${short} That is too few for P2Pool's RandomX dataset: ${fallback}"
+            else
+                short="${short} If monerod's own RandomX pages leave fewer than ${P2POOL_RANDOMX_DATASET_PAGES} free when P2Pool starts, ${fallback}"
+            fi
+        fi
+        dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool. To keep it across reboots, put '$(randomx_boot_params)' on GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub in place of any other hugepages= value, then run 'sudo update-grub' and reboot; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
+    fi
+}
+
 # #1103: on the REDUCED tier, render_local_miner_config and provision_local_miner both refuse to
 # co-locate the built-in miner even though local_miner.enabled is on (see the comment above
 # local_miner_hugepages_blocked for why no headroom value could make that safe). Say so here too,
@@ -152,5 +191,129 @@ check_release_verification() {
         # *signature* failure — which reads as a tampered release rather than as an image this host
         # could not pull (#1084).
         dr_warn_surface "The pinned release verifier image is not on this host yet — the next 'up' or 'upgrade' fetches it. If that fetch fails, the operation reports a signature failure even though nothing was tampered with. Pre-fetch it with: docker pull $COSIGN_IMAGE" "The pinned release verifier image is not on this machine yet — the next update fetches it. If that fetch fails, the update reports a signature failure even though nothing was tampered with."
+    fi
+}
+
+# Tari chain verdict (#2464), read from the dashboard: the node's gRPC has no host-side client, and
+# the dashboard already weighs the signals (tip unchanged 30 min, 0 peers 10 min, behind the public
+# explorer fetched over Tor). The container healthcheck stays process liveness on purpose, and a READY
+# P2Pool merge-mine channel is no proof either. Prints "level<TAB>reasons — next: advice", or nothing
+# when the dashboard has no verdict (not running, Tari off, or the loop has not run yet).
+tari_chain_verdict() {
+    command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
+    curl -fsS --max-time 5 "http://127.0.0.1:8000/api/state" 2>/dev/null |
+        jq -r '.tari.health // empty | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null || true
+}
+
+# doctor: amber WARN, red FAIL (non-zero exit). Advice follows the verdict, never a restart's outcome.
+check_tari_chain() {
+    local v level detail
+    v=$(tari_chain_verdict)
+    [ -n "$v" ] || return 0
+    level=${v%%$'\t'*}
+    detail=${v#*$'\t'}
+    case "$level" in
+    green) dr_ok "Tari node: no degraded signal confirmed (a stale tip, lost peers or explorer lag counts only once sustained; a disabled explorer is not checked)." ;;
+    amber) dr_warn "Tari node may be stalling: $detail" ;;
+    *) dr_fail "Tari node is NOT following the chain; merge-mined Tari work is wasted: $detail" ;;
+    esac
+    return 0
+}
+
+# `pithead status` prints the same verdict as one line; it never changes status's exit code.
+tari_chain_status_line() {
+    local v level
+    v=$(tari_chain_verdict)
+    [ -n "$v" ] || return 0
+    level=${v%%$'\t'*}
+    case "$level" in
+    green) printf '  %b✓%b %-13s no degraded signal confirmed\n' "$C_GREEN" "$C_RESET" "tari chain" ;;
+    amber) printf '  %b⚠%b %-13s %s\n' "$C_YELLOW" "$C_RESET" "tari chain" "${v#*$'\t'}" ;;
+    *) printf '  %b✗%b %-13s NOT following the chain: %s\n' "$C_RED" "$C_RESET" "tari chain" "${v#*$'\t'}" ;;
+    esac
+    return 0
+}
+
+# Monero chain verdict (#2499), the dashboard's peers-and-tip reading of monerod (0 outgoing peers
+# for 10 min, or no new height for 30) from /api/state .monero.health. Same shape as the Tari one:
+# "level<TAB>reasons — next: advice", nothing when there is no verdict (dashboard not answering, a
+# remote node whose peers are not visible, or the loop has not run yet).
+monero_chain_verdict() {
+    command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
+    curl -fsS --max-time 5 "http://127.0.0.1:8000/api/state" 2>/dev/null |
+        jq -r '.monero.health // empty | select(.level == "green" or .level == "red") | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null || true
+}
+
+# doctor: red FAILs (a sustained peerless or stalled monerod mines on a stale tip).
+check_monero_chain() {
+    local v level
+    v=$(monero_chain_verdict)
+    [ -n "$v" ] || return 0
+    level=${v%%$'\t'*}
+    case "$level" in
+    green) dr_ok "Monero node is at the tip with peers (dashboard verdict: outgoing peers within 10 min, height moved within 30)." ;;
+    *) dr_fail "Monero node is NOT following the chain; mining sits on a stale tip: ${v#*$'\t'}" ;;
+    esac
+    return 0
+}
+
+# `pithead status` prints the same verdict as one line; it never changes status's exit code.
+monero_chain_status_line() {
+    local v level
+    v=$(monero_chain_verdict)
+    [ -n "$v" ] || return 0
+    level=${v%%$'\t'*}
+    case "$level" in
+    green) printf '  %b✓%b %-13s at the tip, with peers\n' "$C_GREEN" "$C_RESET" "monero chain" ;;
+    *) printf '  %b✗%b %-13s NOT following the chain: %s\n' "$C_RED" "$C_RESET" "monero chain" "${v#*$'\t'}" ;;
+    esac
+    return 0
+}
+
+# doctor (#2499): the peers and the tip's age next to the sync flag. The published RPC is restricted and
+# answers 0 for the peer counts (#2921), so they come from the fixed helper inside the container, which
+# reads the admin listener on its loopback (`docker exec`; the helper takes its login from the container's
+# environment, so none is passed here). No reading (helper missing, listener down, restricted body) is
+# reported as such and never as zero peers. A point-in-time reading, so zero outgoing peers or a tip older
+# than 30 minutes is a WARN here; the dashboard's verdict (check_monero_chain) is the sustained one.
+monerod_peer_counts() { # print "<out> <in>", or nothing when there is no reading
+    local body out inn
+    body=$(docker exec monerod /usr/local/bin/monerod-peers.sh 2>/dev/null) || return 0
+    out=$(printf '%s' "$body" | jq -r 'if (.outgoing | type) == "number" and .outgoing >= 0 then .outgoing else empty end' 2>/dev/null)
+    inn=$(printf '%s' "$body" | jq -r 'if (.incoming | type) == "number" and .incoming >= 0 then .incoming else empty end' 2>/dev/null)
+    [ -n "$out" ] && [ -n "$inn" ] && printf '%s %s\n' "$out" "$inn"
+    return 0
+}
+monerod_peers_and_tip() { # <user> <pass> <url>
+    local counts out="" inn="" ts age note="" hdr
+    counts=$(monerod_peer_counts)
+    [ -z "$counts" ] || read -r out inn <<<"$counts"
+    if [ -n "$1" ]; then
+        hdr=$(curl -fsS --max-time 8 --digest -u "$1:$2" -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)
+    else
+        hdr=$(curl -fsS --max-time 8 -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)
+    fi
+    # RPC input must be a bounded integer, never an expression for Bash to evaluate.
+    ts=$(printf '%s' "$hdr" | jq -r '.result.block_header.timestamp |
+        select(type == "number" and . >= 0 and . <= 9999999999 and . == floor)' 2>/dev/null)
+    [[ "$ts" =~ ^[0-9]{1,10}$ ]] || ts=""
+    if [ -n "$ts" ]; then
+        age=$(($(date +%s) - 10#$ts))
+        note=", last block ${age}s ago"
+    fi
+    if [ -z "$out" ]; then
+        dr_info "monerod peers: no reading (the in-container helper gave none)${note}."
+        [ -z "$ts" ] || [ "$age" -le 1800 ] ||
+            dr_warn_surface "monerod's last block is ${age}s old — a stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
+                "monerod's last block is ${age}s old — the node may be stale; check its container logs in the dashboard."
+        return 0
+    fi
+    if [ "$out" -eq 0 ] || { [ -n "$ts" ] && [ "$age" -gt 1800 ]; }; then
+        dr_warn_surface "monerod peers: ${out} out / ${inn:-?} in${note} — an isolated or stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
+            "monerod peers: ${out} out / ${inn:-?} in${note} — the node may be isolated or stale; check its container logs in the dashboard."
+    else
+        dr_ok "monerod peers: ${out} out / ${inn:-?} in${note}."
     fi
 }

@@ -23,6 +23,7 @@ transition, not a stream:
 | Alert | When it fires |
 |---|---|
 | 🔴 **Node down** | Your Monero (or Tari) node has been unreachable long enough to be considered down — or the Monero node is reachable but has sat out of sync for 10+ minutes (the stranded-peers state a Tor restart can leave behind). Either way the stack has stopped serving your rigs so they **fail over to their backup pools**. |
+| 🔴 **Monero node isolated / not advancing** | The local Monero node is reachable but has had no outgoing peers for 10+ minutes, or its height has not moved for 30+ minutes (#2499). Two separate messages, each with the numbers; they use the `node_down` toggle, and the recovery note uses `node_recovered`. Nothing is restarted for you: `./pithead restart monerod`. |
 | 🟢 **Node recovered** | The node is back — reachable and in sync — and stable; the stack has readmitted your rigs. |
 | 🔴 **Worker offline** | A rig stopped hashing and hasn't been seen for a few minutes (a reboot, a dropped connection, a dead miner) — it's showing **DOWN** on the dashboard. |
 | 🟢 **Worker back online** | A rig that had gone offline is hashing again. |
@@ -34,7 +35,7 @@ transition, not a stream:
 | 🔄 **DB reset** | The database was found corrupt and auto-healed — the bad file was quarantined and a fresh one started, so history before now was cleared (the stack kept running). |
 | 🔴 **Container trouble** | A stack container is restart-looping (an OOM kill — the per-container memory ceiling doing its job — or a bad config) or running but failing its healthcheck for over 2 minutes. One alert per incident, not one per restart, and a recovery note when it stabilises. Intentional stops (the sync hold, node-down failover) never fire it. |
 | ⚠ **No PPLNS share (XvB)** | You're donating to XvB but hold no share in the PPLNS window, so raffle wins are **skipped** — donations are wasted until you land one. Only fires when XvB is enabled. |
-| ⚠ **Clearnet sync active** | A node is doing its initial sync over **clearnet**, so this host's IP is exposed to that chain's P2P network until it finishes (it reverts to Tor automatically). |
+| ⚠ **Clearnet sync active** | A selected node may expose this host's IP to its P2P peers during initial sync. The warning remains through the Tor transition until the host verifies the running daemon and closed firewall exception. |
 | 🎰 **XvB registration** | XvB auto-registration was rejected (bad payout address) or is failing — raffle wins won't count until it recovers. Only fires when XvB is enabled. |
 | 📉 **Hashrate low for tier** | You picked a fixed XvB donation tier your hashrate can't sustain — lower the tier or add hashrate. Fires on the transition and clears when it recovers. |
 | ⚠️ **Hashrate drop** | Total fleet hashrate fell sharply below its recent normal and **stayed down** — a rig gone dark, a network cut, or a stalled miner. The dashboard also drops a marker on the hashrate chart at the moment it happened. Fires once on the drop and again on recovery. Thresholds are tunable (`dashboard.hashrate_drop_threshold`, `dashboard.hashrate_drop_minutes`). |
@@ -172,7 +173,7 @@ block and set it to `false` — any event you don't list stays on:
 | `db_unhealthy` | `true` | Dashboard database writes failing / recovered |
 | `db_reset` | `true` | Corrupt dashboard database auto-healed (quarantined + reset); history cleared |
 | `xvb_no_share` | `true` | XvB on but no PPLNS share (wins skipped) / restored |
-| `clearnet_exposed` | `true` | A node is syncing over clearnet (IP exposed) / back on Tor |
+| `clearnet_exposed` | `true` | Chosen clearnet sync or Tor transition pending until host verification / verified Tor daemon and closed exception; the host's Tor-only egress firewall is missing / restored |
 | `xvb_registration` | `true` | XvB auto-registration rejected / failing / recovered |
 | `new_release` | `true` | A newer Pithead release is available |
 | `stack_online` | `true` | One-shot "dashboard is up" heartbeat on start |
@@ -186,10 +187,14 @@ block and set it to `false` — any event you don't list stays on:
 | `block_found` | `true` | The P2Pool sidechain found a Monero block (pool-wide — every miner with a PPLNS share gets paid) |
 | `payout_found` | `true` | That block pays you — this node held a share in the PPLNS window when it was found |
 | `payout_confirmed` | `true` | A payout (Monero or Tari) confirmed on-chain by the view-only wallet |
-| `container_unhealthy` | `true` | A stack container is crash-looping or stuck failing its healthcheck / recovered |
+| `container_unhealthy` | `true` | A stack container is crash-looping or stuck failing its healthcheck / recovered. Also a LAN-access node that nothing restarts (restart policy `no`, a `*_lan_access` switch on the Docker install) down for two minutes: held since boot by a failed LAN guard, or exited, with its exit code |
 | `raffle_win` | `true` | This wallet won an XvB raffle round, per XvB's public winners file — fires once per win, with the round type and credited hashrate |
 
 Run `./pithead apply` after editing.
+
+When payout confirmation is enabled, `payout_wallet_down` sends one debounced alert per wallet
+that becomes unreachable or reports a different address. It is sent whenever an alert sink is
+enabled; there is no separate event toggle for this payout-safety signal.
 
 > The dashboard also shows an **AVX2-missing** badge when the CPU lacks AVX2, but it has **no
 > alert** — it's a fixed hardware fact with nothing to do at runtime, so it stays a badge (and shows

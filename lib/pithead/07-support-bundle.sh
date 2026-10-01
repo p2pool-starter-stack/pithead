@@ -34,18 +34,74 @@ TELEGRAM_EVENT_NODE_DOWN TELEGRAM_EVENT_NODE_RECOVERED TELEGRAM_EVENT_PAYOUT_CON
 TELEGRAM_EVENT_PAYOUT_FOUND TELEGRAM_EVENT_RAFFLE_WIN TELEGRAM_EVENT_STACK_ONLINE
 TELEGRAM_EVENT_SYNC_FINISHED TELEGRAM_EVENT_WALLET_CHANGED TELEGRAM_EVENT_WORKER_JOINED
 TELEGRAM_EVENT_WORKER_LEFT TELEGRAM_EVENT_WORKER_OFFLINE TELEGRAM_EVENT_WORKER_RECOVERED
-TELEGRAM_EVENT_XVB_NO_SHARE TELEGRAM_EVENT_XVB_REGISTRATION TOR_AUTO_HEAL TOR_DATA_DIR
+TELEGRAM_EVENT_XVB_NO_SHARE TELEGRAM_EVENT_XVB_REGISTRATION TOR_AUTO_HEAL TOR_COMPOSE_PROFILES TOR_DATA_DIR
 TOR_EGRESS_FIREWALL WALLET_RPC_USERNAME XMRIG_API_AUTH XMRIG_API_PORT XVB_DONATION_LEVEL
 XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 
 # Everything not in PITHEAD_ENV_SURVIVOR_KEYS is redacted — credentials, wallet and view keys,
 # onion identity, capability URLs and the handful of addressing fields the ruling classified as
-# topology rather than structure (MONERO_NODE_HOST, TARI_GRPC_ADDRESS, HOST_IP).
+# topology rather than structure (MONERO_NODE_HOST, MONERO_RPC_URL, TARI_GRPC_ADDRESS, HOST_IP).
+#
+# The allowlist also governs which LINES are read (#2414), and every ambiguity fails closed. A
+# hand-edited .env keeps the previous value commented out above the live one, so an assignment
+# behind `#`, indentation, `export` or spaces around `=` is classified like a live one: the prefix
+# and key stay, the value goes. A survivor keeps its value up to the first unquoted `#`, which
+# becomes `# [redacted]`; a survivor value that opens a quote it never closes, or holds any `=`
+# (a second `KEY=` joined by any separator, or none), is redacted. A comment that is not an
+# assignment keeps its prose, but every `KEY=` inside it that is not a survivor with an `=`-free
+# value loses the rest of the line. Any other line is redacted whole, since it cannot
+# be classified. Plain `[ \t]` rather than `[[:space:]]`: older mawk has no POSIX classes.
+# The Tari explorer URL (#2464) may carry a token, so the bundle's config masks it on top of the
+# control channel's masked copy. Only here: in CONTROL_SECRET_PATHS the commit gate would read the
+# mask as an edit to TARI_EXPLORER_URL and refuse unrelated dashboard changes (KVM job 1397).
+bundle_mask_config() { jq 'if (.tari.explorer_url // "") != "" then .tari.explorer_url = {"__secret__": true} else . end'; }
+
 bundle_redact_env() {
-    awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" -F= '
+    awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" '
+        # The value up to its first unquoted `#`, honouring dotenv_render_value backslash escapes
+        # inside double quotes. Sets CUT when a comment was dropped and OPEN on an unclosed quote.
+        function cut_comment(v,   i, c, q) {
+            q = ""; CUT = 0
+            for (i = 1; i <= length(v); i++) {
+                c = substr(v, i, 1)
+                if (q == "\"" && c == "\\") { i++; continue }
+                if (q != "") { if (c == q) q = ""; continue }
+                if (c == "\"" || c == "\047") q = c
+                else if (c == "#") { CUT = 1; break }
+            }
+            OPEN = (q != "")
+            return substr(v, 1, i - 1)
+        }
         BEGIN { n = split(survivors, list, " "); for (i = 1; i <= n; i++) ok[list[i]] = 1 }
-        /^[A-Z][A-Z0-9_]*=/ { if ($1 in ok) print; else print $1 "=[redacted]"; next }
-        { print }
+        /^[ \t\r]*$/ { print; next }
+        match($0, /^[ \t]*(#[# \t]*)?(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*=/) {
+            lhs = substr($0, 1, RLENGTH)
+            key = lhs
+            sub(/^[ \t]*(#[# \t]*)?(export[ \t]+)?/, "", key)
+            sub(/[ \t]*=$/, "", key)
+            if (!(key in ok)) { print lhs "[redacted]"; next }
+            val = cut_comment(substr($0, RLENGTH + 1))
+            if (OPEN || val ~ /=/) { print lhs "[redacted]"; next }
+            if (CUT) { sub(/[ \t]+$/, "", val); print lhs val " # [redacted]" } else print lhs val
+            next
+        }
+        /^[ \t]*#/ {
+            line = $0; out = ""
+            while (match(line, /[A-Za-z_][A-Za-z0-9_]*[ \t]*=/)) {
+                s = RSTART + RLENGTH
+                key = substr(line, RSTART, RLENGTH)
+                sub(/[ \t]*=$/, "", key)
+                match(substr(line, s), /^[^ \t]*/)
+                if (!(key in ok) || substr(line, s, RLENGTH) ~ /=/) {
+                    out = out substr(line, 1, s - 1) "[redacted]"; line = ""; break
+                }
+                out = out substr(line, 1, s - 1 + RLENGTH)
+                line = substr(line, s + RLENGTH)
+            }
+            print out line
+            next
+        }
+        { print "[redacted]" }
     '
 }
 
@@ -117,7 +173,7 @@ stack_support_bundle() {
     if [ -f "$CONFIG_FILE" ]; then
         render_masked_config "$tmp/scratch" 2>/dev/null || true
         [ -f "$tmp/scratch/masked/config.json" ] &&
-            cp "$tmp/scratch/masked/config.json" "$tmp/bundle/config.masked.json"
+            bundle_mask_config <"$tmp/scratch/masked/config.json" >"$tmp/bundle/config.masked.json"
     fi
     # .env with secret-bearing values stripped by the survivor allowlist above; structure (ports,
     # dirs, modes) stays — that is what support actually needs.

@@ -24,7 +24,7 @@
 # Shape the wizard's served config for remote-node mode. Mirrors provision_browser_config
 # (tests/os/provision-browser-submit.sh) but for the Both-role remote-node answers instead of the
 # all-local defaults, and reuses remote_node_proposal's endpoint shaping
-# (tests/os/appliance-config-approval-leg.sh) rather than re-deriving it.
+# (tests/os/appliance-node-runtime-leg.sh) rather than re-deriving it.
 # $1 served config, $2 monero host, $3 rpc port, $4 zmq port, $5 monero username, $6 monero
 # password, $7 tari host (empty means tari.mode=off, #1855), $8 tari grpc port.
 stack_browser_config() {
@@ -64,7 +64,20 @@ _stack_run_integration() { # <label> <extra args...>
     # The DIY gate's own SSH defaults to ssh-agent/default identities (tests/integration/run.sh's
     # IT_SSH_OPTS carries no -i); the KVM guest only trusts the os battery's test key ($KEY,
     # baked in via PITHEAD_TEST_SSH_PUBKEY), so it must be named explicitly with --identity.
-    "$SCRIPT_DIR/../integration/run.sh" --host "root@$ip" --identity "$KEY" --dir /data/pithead --workers 1 "$@" >"$out" 2>&1
+    # run.sh's own IT_SSH_OPTS default (StrictHostKeyChecking=accept-new) is right for its other
+    # caller, a real bench/rig with a stable host key — wrong here, where $ip is a DHCP lease this
+    # same guest recycles across boots, presenting a different host key each time (#2716). OpenSSH
+    # keeps the FIRST value given for a repeated -o keyword, not the last (verified: `ssh -o
+    # StrictHostKeyChecking=accept-new -o StrictHostKeyChecking=no -G host` still reports
+    # accept-new) — so a --ssh-opt appended after IT_SSH_OPTS cannot itself override
+    # StrictHostKeyChecking, and one is not passed here. Instead, --ssh-opt UserKnownHostsFile=/dev/null
+    # has no earlier default to lose to, so it does apply, and with no known_hosts entry ever
+    # recorded there is no stored key for accept-new to detect a change against — every boot's key
+    # reads as unseen, exactly like the untrusted-by-design os-battery SSH calls this mirrors
+    # (lib/core.sh's _ssh, soak-probe.sh, install-restore.sh), which set the same option.
+    "$SCRIPT_DIR/../integration/run.sh" --host "root@$ip" --identity "$KEY" \
+        --ssh-opt UserKnownHostsFile=/dev/null \
+        --dir /data/pithead --workers 1 "$@" >"$out" 2>&1
     rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "DIY gate vs. appliance channel: $label"
@@ -90,11 +103,142 @@ _stack_run_integration() { # <label> <extra args...>
             sed 's/\x1b\[[0-9;]*m//g' "$f" | head -n 60
         done
     fi
-    grep -a 'of which:' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
+    # The merge-mining round-trip's row rides along on a pass too: it is the one row whose verdict
+    # (a chain_id read from the Tari node, #1397/#2326) is this channel's evidence on its own.
+    grep -a -e 'of which:' -e '(#1397)' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         info "  [$label] ${line#*ITEST] }"
     done
     rm -f "$out"
     return "$rc"
+}
+
+# Provision a remote-node coordinator guest (#2062) from an ALREADY-BUILT image: boot it, submit
+# the remote-node wizard config, wait for the credentials handoff, wait for the stack to release
+# on /api/state, then wait for dashboard+caddy+p2pool to actually be running. Leaves $ip at the
+# guest; sets dash_user/dash_pass (module-global on purpose — every caller reads them straight off
+# this call, the same convention $ip already uses). Two callers now (#2063's rig share leg is the
+# second), which is what earns this its own function rather than living inline in phase_stack.
+# rc 1 = reported via bad(), the caller decides what that costs it.
+_provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user> <password> <tari-host> <grpc>
+    local img="$1" mh="$2" rpc="$3" zmq="$4" mu="$5" mp="$6" th="$7" grpc="$8"
+    _vm_boot_disk "$img" && _wait_ssh 240 || {
+        bad "coordinator guest never answered SSH (ip: ${ip:-none})"
+        return 1
+    }
+    ok "coordinator image boots ($ip)"
+
+    local tries=0 token=""
+    while [ -z "$token" ] && [ "$tries" -lt 40 ]; do
+        token=$(tr -d '\r' <"$SERIAL" | grep -oE 'pit-[A-Z0-9]{6}' | tail -1)
+        [ -n "$token" ] || sleep 3
+        tries=$((tries + 1))
+    done
+    [ -n "$token" ] || {
+        bad "no one-time token ever appeared on the coordinator's console"
+        return 1
+    }
+    _wait_setup_page 120 || {
+        bad "coordinator wizard gate never served"
+        return 1
+    }
+
+    local jar
+    jar=$(mktemp)
+    curl -fsSk -c "$jar" -d "token=$token" "https://$ip/auth" -o /dev/null 2>/dev/null || {
+        bad "coordinator token was not accepted"
+        rm -f "$jar"
+        return 1
+    }
+    grep -q "wizard_session" "$jar" || {
+        bad "coordinator auth returned no session cookie"
+        rm -f "$jar"
+        return 1
+    }
+
+    wizard_state_poll "$ip" "$jar" '.config // empty' || {
+        bad "coordinator wizard never served a config to shape ($WIZ_STATE_WHY)"
+        rm -f "$jar"
+        return 1
+    }
+    local cfg scode sbody
+    cfg=$(stack_browser_config "$WIZ_STATE" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc") || {
+        bad "coordinator remote-node config could not be shaped"
+        rm -f "$jar"
+        return 1
+    }
+    sbody=$(mktemp)
+    scode=$(curl -sSk -b "$jar" --data-urlencode "config=$cfg" --data-urlencode "auth_mode=auto" \
+        "https://$ip/submit" -o "$sbody" -w '%{http_code}' 2>/dev/null)
+    [ "$scode" = "200" ] || {
+        # /submit probes the reserved node's reachability synchronously (wizard_node_probe.py)
+        # and 400s with the probe's own reason — surface it, not just the status code, since a
+        # remote-node submit failure is far more often a bad host/port/firewall than bad JSON.
+        bad "coordinator remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | cut -c1-500))"
+        rm -f "$jar" "$sbody"
+        return 1
+    }
+    rm -f "$sbody"
+    if [ -n "$th" ]; then
+        ok "coordinator: remote-node config submitted (monero.mode=remote, tari.mode=remote)"
+    else
+        ok "coordinator: remote-node config submitted (monero.mode=remote, tari.mode=off, #1855)"
+    fi
+
+    local handoff_body="" htries=0
+    while [ "$htries" -lt 24 ]; do
+        handoff_body=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null)
+        printf '%s' "$handoff_body" | grep -q '"password"' && break
+        sleep 5
+        htries=$((htries + 1))
+    done
+    [ "$htries" -lt 24 ] || {
+        bad "no credentials handoff appeared on the coordinator's page"
+        rm -f "$jar"
+        return 1
+    }
+    curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
+    rm -f "$jar"
+    ok "coordinator: handoff acknowledged — provisioning released"
+
+    dash_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
+    dash_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
+
+    # "Release on /api/state": the dashboard's own live state must answer before anything that
+    # reads it too (the DIY gate, or #2063's share leg) has anything to drive.
+    local deadline=$(($(date +%s) + 900)) released=0
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        curl -sSk -u "$dash_user:$dash_pass" -m 5 "https://$ip/api/state" 2>/dev/null | jq -e '.' >/dev/null 2>&1 && {
+            released=1
+            break
+        }
+        sleep 10
+    done
+    [ "$released" -eq 1 ] || {
+        bad "coordinator /api/state never answered — provisioning did not release the stack"
+        return 1
+    }
+    ok "coordinator: /api/state answers — provisioning released the stack"
+
+    # p2pool takes noticeably longer than dashboard+caddy to report ready (image pull, its own
+    # startup sequence) — job 454 (#2062) measured --check running against a guest whose p2pool
+    # container hadn't started yet, six minutes after dashboard+caddy both had, failing every
+    # p2pool-dependent assertion (container up, workers online, stratum hashes, merge-mining) for
+    # a reason that had nothing to do with any of them. Wait for it explicitly rather than let the
+    # DIY gate's own first invocation discover it missing.
+    local deadline2=$(($(date +%s) + 1500)) names=""
+    while [ "$(date +%s)" -lt "$deadline2" ]; do
+        names=$(SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
+        if [[ "$names" == *dashboard* && "$names" == *caddy* && "$names" == *p2pool* ]]; then
+            break
+        fi
+        sleep 15
+    done
+    if [[ "$names" == *dashboard* && "$names" == *caddy* && "$names" == *p2pool* ]]; then
+        ok "coordinator: containers are running (podman: $names)"
+    else
+        bad "coordinator containers never came up (running: '${names:-none}')"
+        return 1
+    fi
 }
 
 phase_stack() {
@@ -112,125 +256,7 @@ phase_stack() {
         bad "stack: image build failed (/tmp/os-fault-build.log)"
         return 1
     }
-    _vm_boot_disk "$img" && _wait_ssh 240 || {
-        bad "stack: guest never answered SSH (ip: ${ip:-none})"
-        return 1
-    }
-    ok "stack image boots ($ip)"
-
-    local tries=0 token=""
-    while [ -z "$token" ] && [ "$tries" -lt 40 ]; do
-        token=$(tr -d '\r' <"$SERIAL" | grep -oE 'pit-[A-Z0-9]{6}' | tail -1)
-        [ -n "$token" ] || sleep 3
-        tries=$((tries + 1))
-    done
-    [ -n "$token" ] || {
-        bad "stack: no one-time token ever appeared on the console"
-        return 1
-    }
-    _wait_setup_page 120 || {
-        bad "stack: wizard gate never served"
-        return 1
-    }
-
-    local jar
-    jar=$(mktemp)
-    curl -fsSk -c "$jar" -d "token=$token" "https://$ip/auth" -o /dev/null 2>/dev/null || {
-        bad "stack: token was not accepted"
-        rm -f "$jar"
-        return 1
-    }
-    grep -q "wizard_session" "$jar" || {
-        bad "stack: auth returned no session cookie"
-        rm -f "$jar"
-        return 1
-    }
-
-    wizard_state_poll "$ip" "$jar" '.config // empty' || {
-        bad "stack: wizard never served a config to shape ($WIZ_STATE_WHY)"
-        rm -f "$jar"
-        return 1
-    }
-    local cfg scode sbody
-    cfg=$(stack_browser_config "$WIZ_STATE" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc") || {
-        bad "stack: remote-node config could not be shaped"
-        rm -f "$jar"
-        return 1
-    }
-    sbody=$(mktemp)
-    scode=$(curl -sSk -b "$jar" --data-urlencode "config=$cfg" --data-urlencode "auth_mode=auto" \
-        "https://$ip/submit" -o "$sbody" -w '%{http_code}' 2>/dev/null)
-    [ "$scode" = "200" ] || {
-        # /submit probes the reserved node's reachability synchronously (wizard_node_probe.py)
-        # and 400s with the probe's own reason — surface it, not just the status code, since a
-        # remote-node submit failure is far more often a bad host/port/firewall than bad JSON.
-        bad "stack: remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | cut -c1-500))"
-        rm -f "$jar" "$sbody"
-        return 1
-    }
-    rm -f "$sbody"
-    if [ -n "$th" ]; then
-        ok "stack: remote-node config submitted (monero.mode=remote, tari.mode=remote)"
-    else
-        ok "stack: remote-node config submitted (monero.mode=remote, tari.mode=off, #1855)"
-    fi
-
-    local handoff_body="" htries=0
-    while [ "$htries" -lt 24 ]; do
-        handoff_body=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null)
-        printf '%s' "$handoff_body" | grep -q '"password"' && break
-        sleep 5
-        htries=$((htries + 1))
-    done
-    [ "$htries" -lt 24 ] || {
-        bad "stack: no credentials handoff appeared on the page"
-        rm -f "$jar"
-        return 1
-    }
-    curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
-    rm -f "$jar"
-    ok "stack: handoff acknowledged — provisioning released"
-
-    local dash_user dash_pass
-    dash_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
-    dash_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
-
-    # "Release on /api/state": the dashboard's own live state must answer before the DIY gate
-    # (which reads it too) has anything to drive.
-    local deadline=$(($(date +%s) + 900)) released=0
-    while [ "$(date +%s)" -lt "$deadline" ]; do
-        curl -sSk -u "$dash_user:$dash_pass" -m 5 "https://$ip/api/state" 2>/dev/null | jq -e '.' >/dev/null 2>&1 && {
-            released=1
-            break
-        }
-        sleep 10
-    done
-    [ "$released" -eq 1 ] || {
-        bad "stack: /api/state never answered — provisioning did not release the stack"
-        return 1
-    }
-    ok "stack: /api/state answers — provisioning released the stack"
-
-    # p2pool takes noticeably longer than dashboard+caddy to report ready (image pull, its own
-    # startup sequence) — job 454 (#2062) measured --check running against a guest whose p2pool
-    # container hadn't started yet, six minutes after dashboard+caddy both had, failing every
-    # p2pool-dependent assertion (container up, workers online, stratum hashes, merge-mining) for
-    # a reason that had nothing to do with any of them. Wait for it explicitly rather than let the
-    # DIY gate's own first invocation discover it missing.
-    local deadline2=$(($(date +%s) + 1500)) names=""
-    while [ "$(date +%s)" -lt "$deadline2" ]; do
-        names=$(SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
-        if [[ "$names" == *dashboard* && "$names" == *caddy* && "$names" == *p2pool* ]]; then
-            break
-        fi
-        sleep 15
-    done
-    if [[ "$names" == *dashboard* && "$names" == *caddy* && "$names" == *p2pool* ]]; then
-        ok "stack: containers are running (podman: $names)"
-    else
-        bad "stack: containers never came up (running: '${names:-none}')"
-        return 1
-    fi
+    _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
 
     # The DIY gate itself: a non-destructive read, then the destructive phases the appliance
     # channel has never run — its first live coverage of each (#2062). The two parity rows this
@@ -242,7 +268,7 @@ phase_stack() {
     # guest can only run by starting a local monerod from scratch each time. That cost over two
     # hours and starved xvb-routing-smoke of its own budget the first time this ran for real
     # (#2062); the local matrix is the DIY gate's own job on its own bench, not this phase's.
-    local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq" --appliance-channel)
+    local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
     # --check needs the remote endpoints too, not just the scenario runs: run-state.sh reads
     # $REMOTE_MONERO_HOST with no fallback for the ZMQ probe, so without them it dials an empty

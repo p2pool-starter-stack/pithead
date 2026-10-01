@@ -352,16 +352,25 @@ def build_tari(data):
     tari_stats = data.get("tari", {})
     tari_active = tari_stats.get("active", False)
     t_addr = tari_stats.get("address", "Unknown")
+    health = (data.get("tari_sync") or {}).get("health")
+    status = tari_stats.get("status", "Waiting...") if tari_active else "Waiting..."
+    if health and health.get("level") != "green":
+        # A READY channel is not a node on the chain (#2464): the verdict's reasons and next step
+        # replace the channel state, and the client prints this text as it stands.
+        status = f"Not following the chain: {'; '.join(health.get('reasons') or [])}. {health.get('advice', '')}"
 
     return {
         "active": tari_active,
         "connected": bool(tari_stats.get("connected", False)) and tari_active,
-        "status": tari_stats.get("status", "Waiting...") if tari_active else "Waiting...",
+        "status": status,
         "reward": f"{tari_stats.get('reward', 0):.2f} TARI",
         "height": str(tari_stats.get("height", 0)),
         "diff": f"{int(tari_stats.get('difficulty', 0)):,}",
         "wallet": t_addr,
         "wallet_short": _shorten(t_addr),
+        # The node's chain verdict (#2464) — {level, reasons, advice, height, explorer_tip} | None.
+        # `connected` only says P2Pool's gRPC channel answers; this says whether the node follows it.
+        "health": health,
     }
 
 

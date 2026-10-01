@@ -119,7 +119,10 @@ assert_eq "restored database is owner-only" "$(file_mode "$BK/data/dashboard/das
 # Generated files in a backup are compatibility inputs, never runtime policy. A valid config plus
 # stale .env/Caddyfile must land the normal writers' output, while opaque generated identity and
 # secrets still round-trip.
-jq '.p2pool.stratum_password = "fixture.literal-pass"' "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
+# Dashboard auth is generated from the password, so it is built here rather than written literally.
+CR_DASH_FP=$(printf '%s' fixture-dashboard-pass | sha256sum | cut -d' ' -f1)
+CR_DASH_HASH=$(printf '$2y$14$%s' "$(printf 'U%.0s' {1..53})" | openssl base64 -A)
+jq '.p2pool.stratum_password = "fixture.literal-pass" | .dashboard.auth = {"username":"admin","password":"fixture-dashboard-pass"}' "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
 cat >"$ROOTS/${BK#/}/.env" <<'EOF'
 PROXY_AUTH_TOKEN=abcdef0123456789abcdef01
 WALLET_RPC_PASSWORD=111111111111111111111111
@@ -132,10 +135,9 @@ DASHBOARD_ONION_ADDRESS=dddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 DASHBOARD_ONION_CLIENT_PUBKEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 DASHBOARD_ONION_CLIENT_PRIVKEY=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 ARCHIVE_ONLY_VALUE=stale-generated-setting
-DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ==
-DASHBOARD_AUTH_PW_FP=stale-fingerprint
 DEPLOYMENT_COMPLETED=true
 EOF
+printf 'DASHBOARD_AUTH_HASH_B64=%s\nDASHBOARD_AUTH_PW_FP=%s\n' "$CR_DASH_HASH" "$CR_DASH_FP" >>"$ROOTS/${BK#/}/.env"
 printf 'STALE-GENERATED-CADDY\n' >"$ROOTS/${BK#/}/Caddyfile"
 cr_archive "$CR/stale-derived.tar.gz"
 out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/stale-derived.tar.gz" 2>&1)"
@@ -143,13 +145,63 @@ assert_rc "restore accepts valid config while discarding archive-derived policy"
 assert_eq "restore derives literal stratum password from config" "$(sed -n 's/^PROXY_STRATUM_PASSWORD=//p' "$BK/.env")" fixture.literal-pass
 assert_eq "administrative restore retains deployment status" "$(sed -n 's/^DEPLOYMENT_COMPLETED=//p' "$BK/.env")" true
 assert_eq "restore preserves the generated proxy secret" "$(sed -n 's/^PROXY_AUTH_TOKEN=//p' "$BK/.env")" abcdef0123456789abcdef01
+assert_eq "restore preserves the wallet RPC secret" "$(sed -n 's/^WALLET_RPC_PASSWORD=//p' "$BK/.env")" 111111111111111111111111
 assert_eq "restore preserves the wallet database secret" "$(sed -n 's/^TARI_WALLET_PASSWORD=//p' "$BK/.env")" 22222222222222222222222222222222
+assert_eq "restore preserves the dashboard auth hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" "$CR_DASH_HASH"
+assert_eq "restore preserves the dashboard auth fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$CR_DASH_FP"
 assert_eq "restore preserves the Tor onion identity" "$(sed -n 's/^MONERO_ONION_ADDRESS=//p' "$BK/.env")" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 assert_eq "restore preserves onion client-auth identity" "$(sed -n 's/^DASHBOARD_ONION_CLIENT_PRIVKEY=//p' "$BK/.env")" BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+CR_KEPT='^(PROXY_AUTH_TOKEN|WALLET_RPC_PASSWORD|TARI_WALLET_PASSWORD|[A-Z0-9]+_ONION_ADDRESS|DASHBOARD_ONION_CLIENT_(PUB|PRIV)KEY|DASHBOARD_AUTH_(HASH_B64|PW_FP))='
+assert_eq "restore preserves every archived secret and identity exactly" "$(grep -E "$CR_KEPT" "$BK/.env" | sort)" "$(grep -E "$CR_KEPT" "$ROOTS/${BK#/}/.env" | sort)"
 assert_not_contains "restore drops unrecognized archive env policy" "$(cat "$BK/.env")" ARCHIVE_ONLY_VALUE
-assert_eq "restore derives disabled dashboard auth from config" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" ""
 assert_contains "restore regenerates the dashboard proxy target" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_not_contains "restore discards stale generated Caddy policy" "$(cat "$BK/Caddyfile")" STALE-GENERATED-CADDY
+
+# An `auto` stratum password was generated once; restore keeps the archived value, never a new one.
+jq '.p2pool.stratum_password = "auto"' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+sed 's/^PROXY_STRATUM_PASSWORD=.*/PROXY_STRATUM_PASSWORD=333333333333333333333333/' "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/auto-stratum.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/auto-stratum.tar.gz" 2>&1)"
+assert_rc "restore accepts an archived generated stratum password" "$?" 0
+assert_eq "restore preserves the generated stratum password" "$(sed -n 's/^PROXY_STRATUM_PASSWORD=//p' "$BK/.env")" 333333333333333333333333
+jq '.p2pool.stratum_password = "fixture.literal-pass"' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+sed 's/^PROXY_STRATUM_PASSWORD=.*/PROXY_STRATUM_PASSWORD=fixture.literal-pass/' "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+
+# A password changed after the last render leaves a stale pair: the old hash must not survive, or
+# the old password would keep opening the dashboard. The render rehashes through the fake Caddy.
+jq '.dashboard.auth.password = "other-dashboard-pass"' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+cr_archive "$CR/stale-dashboard-auth.tar.gz"
+printf 'services: {caddy: {image: caddy:2.0.0@sha256:%064d}}\n' 0 >"$BK/docker-compose.yml"
+mkdir -p "$CR/hashbin"
+cat >"$CR/hashbin/docker" <<EOF
+#!/usr/bin/env bash
+case "\$*" in *hash-password*) printf '\$2y\$14\$%s\n' "$(printf 'R%.0s' {1..53})" ;; *) exec "$BK/bin/docker" "\$@" ;; esac
+EOF
+chmod +x "$CR/hashbin/docker"
+out="$(cd "$BK" && PATH="$CR/hashbin:$BK/bin:$PATH" ./pithead restore -y "$CR/stale-dashboard-auth.tar.gz" 2>&1)"
+assert_rc "restore accepts a dashboard password changed since the last render" "$?" 0
+assert_not_contains "restore drops a dashboard hash for another password" "$(cat "$BK/.env")" "$CR_DASH_HASH"
+assert_contains "restore rehashes the configured dashboard password" "$(cat "$BK/.env")" "DASHBOARD_AUTH_HASH_B64=$(printf '$2y$14$%s' "$(printf 'R%.0s' {1..53})" | openssl base64 -A)"
+assert_eq "restore fingerprints the configured dashboard password" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$(printf '%s' other-dashboard-pass | sha256sum | cut -d' ' -f1)"
+jq '.dashboard.auth.password = "fixture-dashboard-pass"' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+
+# A hash that is not well-formed bcrypt (an older release's, or a damaged one) must not survive,
+# nor block the restore: it is dropped and the configured password is hashed again.
+CR_REHASH="DASHBOARD_AUTH_HASH_B64=$(printf '$2y$14$%s' "$(printf 'R%.0s' {1..53})" | openssl base64 -A)"
+sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$(printf 'not-bcrypt' | openssl base64 -A)/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/malformed-dashboard-hash.tar.gz"
+out="$(cd "$BK" && PATH="$CR/hashbin:$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore accepts a non-bcrypt dashboard hash" "$?" 0
+assert_contains "restore rehashes over a non-bcrypt dashboard hash" "$(cat "$BK/.env")" "$CR_REHASH"
+assert_eq "restore keeps the matching fingerprint over a non-bcrypt dashboard hash" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$CR_DASH_FP"
+sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$CR_DASH_HASH}/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/malformed-dashboard-hash.tar.gz"
+out="$(cd "$BK" && PATH="$CR/hashbin:$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore accepts a trailing-text dashboard hash" "$?" 0
+assert_contains "restore rehashes over a trailing-text dashboard hash" "$(cat "$BK/.env")" "$CR_REHASH"
+assert_eq "restore keeps the matching fingerprint over a trailing-text dashboard hash" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$CR_DASH_FP"
+rm -f "$BK/docker-compose.yml"
+sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$CR_DASH_HASH/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
 
 printf 'LIVE-ENV\n' >"$BK/.env"
 printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
@@ -171,4 +223,4 @@ out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-pres
 assert_rc "restore rejects malformed preserved-secret values" "$?" 1
 assert_eq "malformed preserved-secret refusal leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
 unset -f cr_archive
-unset CR ROOTS CR_ARCHIVE out
+unset CR ROOTS CR_ARCHIVE CR_DASH_FP CR_DASH_HASH CR_KEPT CR_REHASH out

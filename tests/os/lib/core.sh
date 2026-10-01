@@ -59,14 +59,10 @@ _ssh() {
     timeout "${SSH_TIMEOUT:-5400}" ssh -i "$KEY" -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 "root@$ip" "$@" 2>"$SSH_ERR"
 }
-# Wait for the control spool to hold no in-flight request, before any host-side `pithead apply`
-# this harness drives. `apply` re-provisions the control runner (50-control-runner-provisioning.sh)
-# and nothing drains the spool first, so a request still queued in requests/, or already claimed
-# and running, dies with the runner and never gets a result file — and the row that asked for it
-# reports a product failure that did not happen (#2094; bench-ci job 25 killed the runner 3.4 s
-# into a compose up and still reported "the control request never returned" beside its own
-# `live cost_per_kwh=0.17, want 0.17`). That the apply does this at all is the product's own defect
-# (#2363) and is not fixed here: this only stops the BATTERY from driving it over its own requests.
+# Wait for the control spool to hold no in-flight request before a host-side `pithead apply` this
+# harness drives. This keeps the battery's phase boundary deterministic. The product no longer
+# kills a request (#2363): a re-provisioning apply waits up to 30 seconds for a claimed request, and
+# none of its systemctl calls stops a running one, so it still completes and writes its result.
 # The runner claims a request by moving it out of requests/ to a .claim.* file and removes that
 # claim only AFTER writing results/<id>.json, so neither present is the proof that every request
 # reached a result. staged/ is deliberately not counted: it holds previewed intents waiting for
@@ -203,13 +199,13 @@ _build_image() {
     # never matched, and wiring the guard on with it would have failed every build the harness made.
     local expect
     expect="$(git rev-parse HEAD 2>/dev/null || true)"
-    # PITHEAD_REGISTRY/_CA are forwarded rather than inherited-by-luck: the battery runs under
+    # PITHEAD_REGISTRY/_CA/_COSIGN_PUB are forwarded rather than inherited-by-luck: the battery runs under
     # sudo, whose `env_reset` drops them, so the documented recipe has to be
     # `sudo env PITHEAD_REGISTRY=... tests/os/run.sh`. Without them build-image.sh refuses (#2043)
     # — and that refusal used to land ONLY in the log below, so the phase reported the useless
     # "image build failed" and the reason went unread. Surface it where the operator is looking.
     PITHEAD_UPDATER=rauc PITHEAD_TEST_SSH_PUBKEY="$(cat "$KEY.pub")" PITHEAD_TEST_MARKER="$1" \
-    PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" \
+    PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" PITHEAD_REGISTRY_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}" \
         os/build-image.sh >/tmp/os-fault-build.log 2>&1 || {
         tail -12 /tmp/os-fault-build.log >&2
         return 1
@@ -219,7 +215,8 @@ _build_image() {
     # that matters most is the archive-vs-tree comparison: stale wizard images reached three
     # benches through caching bugs, and this layer catches the next one before a 25-minute
     # phase runs against it.
-    PITHEAD_EXPECT_COMMIT="$expect" tests/os/verify-image.sh os/rauc/build/system.img --test >>/tmp/os-fault-build.log 2>&1 || {
+    PITHEAD_EXPECT_COMMIT="$expect" PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" PITHEAD_REGISTRY_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}" \
+        tests/os/verify-image.sh os/rauc/build/system.img --test >>/tmp/os-fault-build.log 2>&1 || {
         echo "verify-image failed on the freshly built image (see /tmp/os-fault-build.log)" >&2
         return 1
     }
@@ -280,7 +277,7 @@ require_host() {
         exit 2
     }
     # --image is the boot phase's input; update and fault build their own v1/v2 images.
-    if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
+    if [ "$PHASE" = "boot" ] || [ "$PHASE" = "image-upgrade" ] || [ "$PHASE" = "all" ]; then
         [ -n "$IMAGE" ] && [ -f "$IMAGE" ] || {
             echo "--image PATH is required for the boot phase (build with os/build-image.sh)" >&2
             exit 2
@@ -345,12 +342,15 @@ require_clean_bench() {
 }
 cleanup() {
     local approval_cleanup_rc=0
+    package_appliance_cleanup || approval_cleanup_rc=$?
     declare -F approval_fixture_cleanup >/dev/null && approval_fixture_cleanup || approval_cleanup_rc=$?
-    # Preserve the console on failure; an at-assertion no-clobber copy remains authoritative.
-    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then
+    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then # Preserve the console on failure.
         cp "$SERIAL" "$SERIAL.failed" 2>/dev/null &&
             info "console from the failed run kept at $SERIAL.failed"
     fi
+    case "${IMAGE_UPGRADE_HOST_STAGE:-}" in
+    /tmp/pithead-os-image-upgrade.*) rm -rf -- "$IMAGE_UPGRADE_HOST_STAGE" || approval_cleanup_rc=1 ;;
+    esac
     if [ "$KEEP" -eq 1 ]; then
         info "left VM '$VM' and $DISK in place (--keep)"
         [ "$approval_cleanup_rc" -eq 0 ] || exit "$approval_cleanup_rc"
@@ -360,6 +360,8 @@ cleanup() {
     [ "$approval_cleanup_rc" -eq 0 ] || exit "$approval_cleanup_rc"
 }
 trap cleanup EXIT
+# Read the serial file directly: grep -q on a pipe can SIGPIPE its writer under pipefail.
+serial_has() { grep -aEq "$1" "$SERIAL"; }
 # Wait until the serial log matches a pattern, or time out. $1 pattern, $2 seconds.
 wait_serial() {
     local pat="$1" deadline=$(($(date +%s) + ${2:-180}))

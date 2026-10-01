@@ -12,12 +12,17 @@ _phase_provision_initial() {
     local rc=0
     _phase_provision_initial_body || rc=$?
     phase_provision_egress_backstop "$rc"
+    phase_provision_monero_rpc
     # Same placement and the same reason as the backstop above (#2059), learned the same way: this
     # leg first ran inside the body, downstream of the hostname and approval legs, and #2060's
     # known mDNS failures left the dashboard unreadable — so it reported its own precondition
     # failure as if day-two tari switching were broken. Out here it runs on every path and, when
     # the phase is already red, says it was NOT EXERCISED instead of blaming the wrong subject.
     phase_provision_tari_mode_switch "$pv_user" "$pv_pass" "$rc"
+    # After the switch leg restores tari.mode, and before the LAN guard recreates the nodes (#2731).
+    phase_provision_tari_wallet "$rc"
+    # Last, and on every path like the two above: it recreates the node containers (#2616).
+    phase_provision_lan_guard "$rc"
     return "$rc"
 }
 
@@ -154,6 +159,19 @@ _phase_provision_initial_body() {
         return 1
         ;;
     esac
+    # dashboard and caddy start before monerod and tari, which wait for tor's healthcheck. The
+    # wizard's `up` holds the mutation lock until tor is healthy (#1945). In job 944 the control
+    # legs below began while that `up` was still waiting, then read the wizard it reopened when
+    # tor went unhealthy (#2648). Nothing below runs until provisioning has finished, and a
+    # `failed` unit counts as settled but not as provisioned (#2725).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        stack_never_up_evidence # the unit states alone do not name the dependency `up` waits on
+        info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
+        return 1
+    fi
     # Caddy fronts the dashboard once the wizard's window closes; self-signed on :443 by default.
     # Status-based on purpose: the landing response may be a redirect to the login page or an
     # auth challenge, both empty-bodied — any well-formed HTTP answer proves caddy is proxying.
@@ -182,9 +200,11 @@ _phase_provision_initial_body() {
         return 1
     fi
     phase_provision_dashboard_exposure || return 1
+    phase_provision_address_watch
 
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
+    phase_provision_xvb_routing
     if [ -n "$pv_pass" ] && curl -sSk -u "$pv_user:$pv_pass" "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.step' >/dev/null 2>&1; then
         ok "appliance state carries os_update — the dashboard OS-update control renders"
@@ -273,4 +293,12 @@ _phase_provision_initial_body() {
         bad "the built-in miner's config does not dial the machine's own stratum (pools: $(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
     fi
 
+    # Runs LAST, after the fresh-chain sync-gate checks above (#2333): its own local-node login
+    # edits are quick, but its remote-node round trip recreates monerod/tari and can poll up to 10
+    # minutes for the Tari chain_id proof. Placed any earlier, that wall-clock cost — not a bug in
+    # the round trip itself — risks the local chain (KVM's pruned scenario data) catching up before
+    # the sync-gate-hold checks above run, so they'd stop finding the "still syncing" hold they
+    # exist to prove (job 1044/1113/1172/1173: the checks above went red only once this leg's own
+    # round trip completed and consumed several extra minutes before them).
+    phase_provision_remote_node_regressions "$pv_user" "$pv_pass" || bad "reserved-node regression phase aborted before completing required checks"
 }

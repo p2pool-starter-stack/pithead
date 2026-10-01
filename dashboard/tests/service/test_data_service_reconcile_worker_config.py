@@ -130,6 +130,92 @@ class TestReconcileWorkerConfig:
         finally:
             sm.close()
 
+    def test_superseded_change_reconciles_from_control_history(self):
+        # #1702: change A applies, then change B applies on the SAME rig before the dashboard's
+        # next poll. `rigforge.control` (the single-slot mirror) now names only B — without the
+        # rigforge#519 ring, row A would stay 'accepted' forever. Both terminate inside one poll.
+        svc, sm = self._svc_with_real_storage()
+        try:
+            self._seed(sm, "accepted", change_id="cid-a")
+            self._seed(sm, "accepted", change_id="cid-b")
+            worker_results = [
+                {
+                    "rigforge": {
+                        "control": {"change_id": "cid-b", "status": "applied"},
+                        "control_history": [
+                            {"change_id": "cid-a", "status": "applied", "reason": None},
+                            {"change_id": "cid-b", "status": "applied", "reason": None},
+                        ],
+                    }
+                }
+            ]
+            asyncio.run(svc._reconcile_worker_config(self._workers("rig1"), worker_results))
+            assert self._status_of(sm, change_id="cid-a")["status"] == "applied"
+            assert self._status_of(sm, change_id="cid-b")["status"] == "applied"
+            # Both change_ids are the dashboard's own — no rig-edit row for either.
+            assert sm.get_audit_events() == []
+        finally:
+            sm.close()
+
+    def test_unknown_control_history_entry_is_not_flagged_rig_edit(self):
+        # History reconciles existing rows; only `control` (the current slot) creates rig-edit
+        # events for changes this dashboard never spooled.
+        svc, sm = self._svc_with_real_storage()
+        try:
+            worker_results = [
+                {
+                    "rigforge": {
+                        "control": None,
+                        "control_history": [
+                            {"change_id": "cid-unknown", "status": "applied", "reason": None}
+                        ],
+                    }
+                }
+            ]
+            asyncio.run(svc._reconcile_worker_config(self._workers("rig1"), worker_results))
+            assert sm.get_audit_events() == []
+        finally:
+            sm.close()
+
+    def test_malformed_control_history_entry_is_skipped(self):
+        svc, sm = self._svc_with_real_storage()
+        try:
+            self._seed(sm, "accepted")
+            worker_results = [
+                {
+                    "rigforge": {
+                        "control_history": [
+                            None,
+                            {"change_id": "cid-1", "status": "applied", "reason": None},
+                        ]
+                    }
+                }
+            ]
+            asyncio.run(svc._reconcile_worker_config(self._workers("rig1"), worker_results))
+            assert self._status_of(sm)["status"] == "applied"
+        finally:
+            sm.close()
+
+    def test_control_history_stops_at_producer_limit(self):
+        svc, sm = self._svc_with_real_storage()
+        try:
+            self._seed(sm, "accepted", change_id="cid-in")
+            self._seed(sm, "accepted", change_id="cid-over")
+            sm.worker_config_change_known = MagicMock(wraps=sm.worker_config_change_known)
+            sm.reconcile_worker_config_status = MagicMock(wraps=sm.reconcile_worker_config_status)
+            duplicate = {"change_id": "cid-in", "status": "applied", "reason": None}
+            over = {"change_id": "cid-over", "status": "applied", "reason": None}
+            worker_results = [
+                {"rigforge": {"control_history": [None] * 10 + [duplicate] * 10 + [over]}}
+            ]
+            asyncio.run(svc._reconcile_worker_config(self._workers("rig1"), worker_results))
+            assert sm.worker_config_change_known.call_count == 10
+            assert sm.reconcile_worker_config_status.call_count == 10
+            assert self._status_of(sm, change_id="cid-in")["status"] == "applied"
+            assert self._status_of(sm, change_id="cid-over")["status"] == "accepted"
+        finally:
+            sm.close()
+
     def test_multiple_workers_reconciled_independently(self):
         svc, sm = self._svc_with_real_storage()
         try:

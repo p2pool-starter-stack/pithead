@@ -120,6 +120,21 @@ assert_contains "canonical release pipeline uses the final cut commit (#1828)" "
     "Run the pipeline with the final cut commit checked out"
 assert_not_contains "release docs reject the obsolete prep-commit cut (#1828)" "$CUT_DOC$BRANCH_DOC" \
     "prep commit checked out"
+assert_contains "appliance cut exports the release root as the baked keyring (#2825)" "$CUT_DOC" \
+    'export PITHEAD_RAUC_KEYRING=~/.config/pithead-release/rauc-root.pem'
+assert_contains "appliance cut compares the baked keyring to the release root (#2825)" "$CUT_DOC" \
+    'test "$baked" = "$root"'
+assert_contains "appliance cut checks that only the release root is baked (#2825)" "$CUT_DOC" \
+    'cmp -s "$PITHEAD_RAUC_KEYRING" "$work_dir/mnt/etc/rauc/keyring.pem"'
+assert_contains "appliance cut verifies its bundle against the baked keyring (#2825)" "$CUT_DOC" \
+    'rauc info --keyring "$work_dir/mnt/etc/rauc/keyring.pem" os/rauc/build/update.raucb'
+assert_contains "appliance cut signs its disposable probe with the release leaf (#2825)" "$CUT_DOC" \
+    'rauc --cert "$PITHEAD_RAUC_CERT" --key "$PITHEAD_RAUC_KEY" bundle "$work_dir/probe" "$work_dir/probe.raucb"'
+assert_contains "appliance cut verifies a leaf-signed probe against the baked keyring (#2825)" "$CUT_DOC" \
+    'rauc info --keyring "$work_dir/mnt/etc/rauc/keyring.pem" "$work_dir/probe.raucb"'
+CHECKLIST_DOC="$(cat "$ROOT/docs/dev/manual-release-checklist.md")"
+assert_contains "cut checklist requires the root's offline backup (#2825)" "$CHECKLIST_DOC" \
+    'root private key has an offline backup'
 # Bundle completeness: the pull-based bundle must ship every ./build/* path the compose MOUNTS at
 # runtime. A pull install builds nothing and the images don't bake these in, so a missing one mounts an
 # empty dir and breaks the container — the v1.0.0 bundle shipped without monerod's bitmonero.conf.template
@@ -271,9 +286,9 @@ assert_contains "manifest renders the leading-dash Version line (printf --)" "$(
 # the notes regress to naming one of the two. Assert the rendered manifest, which is the artefact an
 # operator reads. A twin-sync conflict on release.sh is a realistic way to lose one of these lines.
 assert_contains "manifest names the tari NODE pin (#1138)" "$(cat "$man_out" 2>/dev/null)" \
-    "- tari node: \`quay.io/tarilabs/minotari_node:"
+    "- tari node: \`ghcr.io/tari-project/minotari_node:"
 assert_contains "manifest names the tari CONSOLE WALLET pin (#1138)" "$(cat "$man_out" 2>/dev/null)" \
-    "- tari console wallet: \`quay.io/tarilabs/minotari_console_wallet:"
+    "- tari console wallet: \`ghcr.io/tari-project/minotari_console_wallet:"
 # The ingredients manifest's component pins must resolve to a real value present in each Dockerfile —
 # a drift guard so a renamed ARG can't silently emit an empty pin in the release notes.
 for svc in p2pool monero xmrig-proxy; do
@@ -306,8 +321,8 @@ done
 # grep -F throughout: these values carry '/' and '.', and a regex match would accept a value that is
 # merely similar to one in the file.
 for row in \
-    "tari|docker-compose.yml|quay.io/tarilabs/minotari_node:" \
-    "tari-wallet|docker-compose.yml|quay.io/tarilabs/minotari_console_wallet:" \
+    "tari|docker-compose.yml|ghcr.io/tari-project/minotari_node:" \
+    "tari-wallet|docker-compose.yml|ghcr.io/tari-project/minotari_console_wallet:" \
     "caddy|docker-compose.yml|caddy:" \
     "socket-proxy|docker-compose.yml|tecnativa/docker-socket-proxy:" \
     "tor-base|build/tor/Dockerfile|:"; do

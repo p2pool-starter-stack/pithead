@@ -1,7 +1,7 @@
 name: Shell
 
-# Split out of ci.yml by #2048, where one serial job decided CI's wall clock. lint-sh (~215 s) and
-# the standalone suites (~110 s) share nothing with `tests/stack/run.sh` (~730 s) but the generated
+# Split out of ci.yml by #2048, where one serial job decided CI's wall clock. lint-sh (~90 s, #2632) and
+# the standalone suites (~110 s) share nothing with `tests/stack/run.sh` (~19 min on develop, #2776) but the generated
 # CLI, which each job builds for itself. run.sh itself is NOT sharded: its domain files are run.sh
 # fragments by design — each opens with a `$STACK_SUITE` guard saying so — and share a sandbox
 # chain, so splitting them is a test-design change, not a YAML one. #2048 has the per-domain table
@@ -27,7 +27,7 @@ jobs:
   shell:
     name: Shell tests (pithead suite)
     runs-on: ubuntu-latest
-    timeout-minutes: 20 # run.sh alone is 692-772 s (#2048); the old 25 min covered all three jobs
+    timeout-minutes: 30 # develop's run.sh now takes ~19 min (#2776); leave room for added tests
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,7 +45,7 @@ jobs:
     timeout-minutes: 15 # ~110 s of the old `shell` job, the first-boot journal suite being 60 s of it (#2048)
     # Each suite is named outright rather than globbed: standalone/ also holds test_compose.sh,
     # which belongs to the `compose` job and which sources test_dotenv.sh itself, so a glob would
-    # run both twice. `make test-stack` names the same four and never runs in CI — a suite added
+    # run both twice. `make test-stack` names these suites and never runs in CI — a suite added
     # to standalone/ must be wired here as well, or it runs nowhere.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,6 +53,12 @@ jobs:
           persist-credentials: false
       - name: Build the generated CLI
         run: make pithead
+      - name: Run Tor recovery contracts
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          bash tests/stack/standalone/test_tor_recovery.sh
+          bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
       - name: Run real-image data-reset suite
         # Real ext4 damage against the product's own repair escalation (#1062). Unprivileged —
         # e2fsprogs on plain files — and it hard-fails rather than skips when CI lacks the tools.
@@ -73,8 +79,8 @@ jobs:
         # git-ignored and read on demand via `make test-inventory`.
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test
-        # Pure-logic checks for the tests/integration/ harness (config rendering, matrix
-        # coverage, redaction). The LIVE matrix (tests/integration/run.sh) needs a real test
+        # Pure logic and bounded local transport fixtures for the tests/integration/
+        # harness (config rendering, matrix coverage, redaction, Digest connection reuse). The LIVE matrix (tests/integration/run.sh) needs a real test
         # server and runs as a gated/manual release gate (#54), not on every PR.
         run: make test-integration-selftest
       - name: Run repository tooling checks
@@ -83,7 +89,7 @@ jobs:
   shell-lint:
     name: Shell lint (shellcheck + shfmt)
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # 198-225 s over the four runs measured in #2048
+    timeout-minutes: 15 # lint-sh took 87 s when measured in #2632
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -6,18 +6,16 @@ render_env() {
     log "Rendering environment configuration ($target)..."
 
     # Mode → host / ports / compose profile
-    local mono_host rpc_port zmq_port profiles
+    local mono_host rpc_port zmq_port mono_rpc_url profiles
     if [ "$MONERO_MODE" == "local" ]; then
-        mono_host="${NETWORK_PREFIX}.26"
-        rpc_port="18081"
-        zmq_port="18083"
-        profiles="local_node"
+        mono_host="${NETWORK_PREFIX}.26" rpc_port="18081" zmq_port="18083" profiles="local_node"
+        mono_rpc_url="http://127.0.0.1:18081" # host loopback, not the bridge IP above
     else
         # Reuse the parse-time validated globals — the validated value IS the rendered value.
-        mono_host="$MONERO_REMOTE_HOST"
-        rpc_port="$MONERO_REMOTE_RPC_PORT"
-        zmq_port="$MONERO_REMOTE_ZMQ_PORT"
+        mono_host="$MONERO_REMOTE_HOST" rpc_port="$MONERO_REMOTE_RPC_PORT" zmq_port="$MONERO_REMOTE_ZMQ_PORT"
         profiles="" # Empty profile disables local monerod
+        # Bracket a literal IPv6 host for URL use (RFC 3986).
+        case "$mono_host" in *:*) mono_rpc_url="http://[$mono_host]:$rpc_port" ;; *) mono_rpc_url="http://$mono_host:$rpc_port" ;; esac
     fi
 
     # Tari mode → gRPC address / compose profile (#103/#1855), mirroring Monero above. local -> the
@@ -32,6 +30,7 @@ render_env() {
         # Reuse the parse-time validated globals (see Monero above) — single source of truth.
         tari_grpc_addr="${TARI_REMOTE_HOST}:${TARI_REMOTE_GRPC_PORT}"
     fi
+    local tor_profiles="$profiles"
 
     # Tari gRPC LAN exposure (#760), mirroring monerod's rpc_lan_access above. Default
     # localhost-only: in-stack consumers reach the node over the internal Docker network
@@ -50,9 +49,8 @@ render_env() {
         profiles="${profiles:+$profiles,}payout_confirm"
     fi
 
-    # Tari on-chain payout confirmation (#462): the view-only tari-wallet service only starts when
-    # its own compose profile is active, which is only when a tari view key is set on the local Tari
-    # node. Separate from monero's payout_confirm so the two features toggle independently.
+    # Tari on-chain payout confirmation (#462) uses its own profile when a view key is set on a
+    # local Tari node, independently of Monero's payout_confirm.
     # TARI_PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config (which also refuses a view key
     # on a remote Tari node and validates the key/spend key/birthday).
     if [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
@@ -64,11 +62,9 @@ render_env() {
     local prune
     prune=$(monero_prune_flag)
 
-    # Optional clearnet initial sync (#183). DEFAULT OFF (privacy-first). When on for a daemon, its
-    # initial blockchain download runs over CLEARNET (fast) instead of Tor — briefly exposing this
-    # host's IP to that P2P network. Per-component, since Monero and Tari sync independently.
-    # config_bool honours an explicit false; normalize_bool then maps the result to true/false.
-    # Monero keeps tx-proxy=tor the whole time. Flip back to false + `apply` once synced.
+    # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
+    # this host's IP (Monero keeps tx-proxy=tor). The host firewall admits only the chosen
+    # chain's container until its sync marker appears (#2678).
     local monero_clearnet tari_clearnet
     monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
     tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
@@ -147,12 +143,10 @@ render_env() {
     xvb_donation_level=$(jq -r '.xvb.donation_level // empty' "$CONFIG_FILE")
     [ -z "$xvb_donation_level" ] && xvb_donation_level="auto"
 
-    # How much Tari blocks the stack (#31/#35/#51/#897). monerod is required and not
-    # configurable. A Tari outage never rejects workers regardless of this flag — p2pool keeps
-    # mining Monero through it — but tari_required (default true) makes the miner wait for Tari's
-    # sync, and the dashboard's sync gate STOPS p2pool and xmrig-proxy while it waits. TARI_MODE
-    # off therefore decides this outright (#1855): there is no Tari node to wait for, and a
-    # machine that declined merge-mining must still mine Monero. local/remote keep the override.
+    # How much Tari blocks the stack (#31/#35/#51/#897); monerod is required, not configurable. A Tari
+    # outage never rejects workers (p2pool mines Monero through it), but tari_required (default true)
+    # makes the miner wait for Tari's sync while the sync gate STOPS p2pool and xmrig-proxy. TARI_MODE
+    # off decides it outright (#1855): no node to wait for, Monero must still mine; local/remote keep it.
     local tari_required
     tari_required=$(jq -r --arg m "$TARI_MODE" 'if $m == "off" then "false" elif .dashboard.tari_required != null then .dashboard.tari_required | tostring else "true" end' "$CONFIG_FILE")
 
@@ -190,14 +184,13 @@ render_env() {
     # reading that miner's own xmrig /1/summary for uptime + per-miner hashrate — ONE configured
     # way, no auto-detection. Defaults match the stock RigForge worker: an open, read-only API
     # (xmrig http.restricted, no access-token) on port 8080, so the standard stack needs no config.
-    #   workers.api_auth: none (default) | name (Bearer = the worker's stratum name) | token
-    #                     (Bearer = workers.api_token, a single shared token for every worker).
-    # Upgrade note: a stack whose miners still set an xmrig access-token should set api_auth "name",
-    # else the no-auth probe 401s and those workers read api_ok=false (see docs/configuration.md).
-    local worker_api_port worker_api_auth worker_api_token
+    #   workers.api_auth: none (default) | name (Bearer=worker's stratum name) | token (Bearer=workers.api_token, one shared token for every worker).
+    # Upgrade note: a stack whose miners still set an xmrig access-token should set api_auth "name", else the no-auth probe 401s and those workers read api_ok=false (see docs/configuration.md).
+    local worker_api_port worker_api_auth worker_api_token worker_api_tokens_json
     worker_api_port=$(jq -r '.workers.api_port // 8080' "$CONFIG_FILE")
     worker_api_auth=$(jq -r '.workers.api_auth // "none"' "$CONFIG_FILE")
     worker_api_token=$(jq -r '.workers.api_token // ""' "$CONFIG_FILE")
+    worker_api_tokens_json=$(jq -c '(.workers.api_port // 8080) as $port | reduce ((.workers.list // [])[] | select((.name // "") != "" and (.host // "") != "" and (.api_token // "") != "")) as $worker ({}; .[$worker.name] //= {host: $worker.host, port: ($worker.port // $port), token: $worker.api_token})' "$CONFIG_FILE") # read-only probe tokens only; control tokens stay host-only
 
     # Telegram operator bot (#121 alerts, #45 commands). Disabled by default. bot_token is a
     # secret: it lives only in this owner-only .env (chmod 600 below) and the dashboard never logs
@@ -324,24 +317,22 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    # Tari view-only wallet secret delivery (#462). The view key, public spend key, and wallet
-    # password must NOT ride the tari-wallet's compose `environment:` (those show in `docker
-    # inspect`). Instead render them into a dedicated owner-only file that compose mounts as a
-    # `secrets:` entry — Docker serves it on a tmpfs at /run/secrets, owner-readable only, and the
-    # wrapper entrypoint exports them into the wallet child process only. Kept under data/ (gitignored
-    # like .env). Written for the REAL .env target only, so a dry-run render never mutates it; the
-    # values are empty (harmless) when the feature is off, so the compose secret always resolves.
-    local tari_secret_file="$PWD/data/tari-wallet-secret.env"
-    if [ "$target" != "${ENV_FILE}.dryrun" ]; then
+    # Tari view-only wallet secret delivery (#462): the view key, spend key and wallet password ride an
+    # owner-only data/ file bind-mounted at /run/secrets (never `environment:`, which `docker inspect`
+    # shows). The mount keeps its owner, so it must be the container's APP_UID (#2731). Built as a temp
+    # file then renamed, so a planted symlink is replaced, not followed. REAL .env target only.
+    local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
+    if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then
         mkdir -p "$PWD/data"
-        (
-            umask 077
-            cat >"$tari_secret_file" <<EOF
-MINOTARI_WALLET_VIEW_PRIVATE_KEY=$TARI_VIEW_KEY
-MINOTARI_WALLET_SPEND_KEY=$TARI_SPEND_PUBLIC_KEY
-MINOTARI_WALLET_PASSWORD=$TARI_WALLET_PASSWORD
-EOF
-        )
+        tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
+        printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
+            "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_tmp" &&
+            tari_foreign=$(find "$tari_secret_tmp" -maxdepth 0 ! -uid "$APP_UID" -print) &&
+            { [ -z "$tari_foreign" ] || chown "$APP_UID:$APP_GID" "$tari_secret_tmp" 2>/dev/null || sudo chown "$APP_UID:$APP_GID" "$tari_secret_tmp"; } &&
+            mv -f "$tari_secret_tmp" "$tari_secret_file" && tari_secret_ok=true
+        # An owner that cannot be checked or corrected keeps the previous file, and fails an enabled wallet.
+        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
+            error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
     fi
 
     # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion
@@ -439,12 +430,14 @@ NETWORK_SUBNET=$(dotenv_render_value "$NETWORK_SUBNET")
 NETWORK_PREFIX=$(dotenv_render_value "$NETWORK_PREFIX")
 TOR_EGRESS_FIREWALL=$(dotenv_render_value "$TOR_EGRESS_FIREWALL")
 TOR_AUTO_HEAL=$(dotenv_render_value "$TOR_AUTO_HEAL")
+TARI_EXPLORER_URL=$(dotenv_render_value "$TARI_EXPLORER_URL")
 P2POOL_CLEARNET=$(dotenv_render_value "$P2POOL_CLEARNET")
 PROXY_API_PORT=3344
 PROXY_AUTH_TOKEN=$(dotenv_render_value "$PROXY_AUTH_TOKEN")
 XMRIG_API_PORT=$(dotenv_render_value "$worker_api_port")
 XMRIG_API_AUTH=$(dotenv_render_value "$worker_api_auth")
 XMRIG_API_TOKEN=$(dotenv_render_value "$worker_api_token")
+WORKER_API_TOKENS=$(dotenv_render_value "$worker_api_tokens_json")
 PROXY_DONATE_LEVEL=$(dotenv_render_value "$DONATE_LEVEL")
 MONERO_PRUNE=$(dotenv_render_value "$prune")
 MONERO_CLEARNET_SYNC=$(dotenv_render_value "$monero_clearnet")
@@ -455,12 +448,14 @@ MONERO_OUT_PEERS=$(dotenv_render_value "$out_peers")
 MONERO_RPC_BIND=$(dotenv_render_value "$rpc_bind")
 MONERO_ZMQ_BIND=$(dotenv_render_value "$zmq_bind")
 MONERO_NODE_HOST=$(dotenv_render_value "$mono_host")
+MONERO_RPC_URL=$(dotenv_render_value "$mono_rpc_url")
 MONERO_RPC_PORT=$(dotenv_render_value "$rpc_port")
 MONERO_ZMQ_PORT=$(dotenv_render_value "$zmq_port")
 TARI_MODE=$(dotenv_render_value "$TARI_MODE")
 TARI_GRPC_ADDRESS=$(dotenv_render_value "$tari_grpc_addr")
 TARI_GRPC_BIND=$(dotenv_render_value "$tari_grpc_bind")
 COMPOSE_PROFILES=$(dotenv_render_value "$profiles")
+TOR_COMPOSE_PROFILES=$(dotenv_render_value "$tor_profiles")
 DASHBOARD_SECURE=$(dotenv_render_value "$DASHBOARD_SECURE")
 DASHBOARD_EXPOSE_PUBLIC_IP=$(dotenv_render_value "$DASHBOARD_EXPOSE_PUBLIC_IP")
 DASHBOARD_ONION_ENABLED=$(dotenv_render_value "$DASHBOARD_ONION_ENABLED")

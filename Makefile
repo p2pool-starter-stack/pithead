@@ -19,6 +19,9 @@ test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% 
 
 test-stack: pithead ## pithead shell test suite
 	bash tests/stack/run.sh
+	bash tests/stack/standalone/test_tor_recovery.sh
+	bash tests/stack/standalone/test_tor_recovery_info.sh
+	bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
 	bash tests/stack/standalone/test_data_reset.sh
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh
@@ -35,16 +38,21 @@ test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-to
 
 test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_compose.sh
+	bash tests/stack/standalone/test_tari_wallet_permissions.sh
 	bash tests/stack/standalone/test_caddyfile.sh
 
-test-integration-selftest: pithead ## Integration harness pure-logic self-test (no server needed)
+test-integration-selftest: pithead ## Integration harness logic and local transport fixtures (no live host needed)
 	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
 	# any self-test added later, and a check that never runs reads exactly like one that passed.
 	for t in tests/integration/selftest/*.sh; do bash "$$t" || exit 1; done
 	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
 
-test-tools: ## Bounded-log sanitizer contract (no services or dependencies)
+test-tools: ## Bounded-log sanitizer and CI workflow guards (no services or dependencies)
 	bash scripts/lint/test-sanitize-test-log.sh
+	bash scripts/lint/test-package-appliance.sh
+	python3 scripts/lint/test-ci-uv-install.py
+	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 30( |$$)'
+	sed -n '/^  pull_request:$$/,/^permissions:$$/p' .github/workflows/integration-mini-stack.yml | grep -Fqx '      - "lib/pithead/**"'
 
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
 	uv run --locked --project dashboard --extra test python -m pytest tests/integration/fakes -q
@@ -92,9 +100,12 @@ print-shfmt-version: ## Print the pinned shfmt version (ci.yml's installer reads
 
 lint: lint-sh lint-py lint-js lint-yaml lint-md lint-docs-voice lint-path-references lint-operator-strings lint-topology lint-file-budget lint-pithead-build lint-trivy-parity lint-proto lint-toml ## Lint/format-check every surface
 
-# Keep tests/stack/run.sh out of the invocation containing its sourced modules.
-# Shellcheck otherwise inlines the entire suite into a single analysis root, which
-# exhausted CI memory (#1333). List every module below so none escapes linting.
+# Shellcheck runs once per file, four at a time (#2632): a single invocation over every
+# script accumulated memory across files (6.1 GB RSS) and used one core for ~351 s. `-x`
+# keeps each file's sourced context, which a single invocation had supplied by following
+# only the files it was handed. tests/stack/run.sh stays a separate call without `-x`:
+# following its sources inlines the entire suite into one analysis root, which exhausted
+# CI memory (#1333). List every module below so none escapes linting.
 lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ container scripts, release + test scripts
 	@# Refuse a version that is not the pin BEFORE linting anything: a different shellcheck reports
 	@# different findings over identical files, so its verdict is not this gate's (#1679).
@@ -110,14 +121,15 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 		[ "$$have" = "$(SHFMT_VERSION)" ] || { \
 			echo "lint-sh: shfmt $${have:-not found} is not the pinned $(SHFMT_VERSION) — its formatting is not this gate's."; \
 			echo "lint-sh: install the pin (see docs/dev/release-server.md) or run the gate in CI."; exit 1; }
-	shellcheck --severity=warning pithead pithead-completion.bash install.sh scripts/*.sh scripts/*/*.sh build/*/*.sh dashboard/*.sh \
+	printf '%s\0' pithead pithead-completion.bash install.sh scripts/*.sh scripts/*/*.sh build/*/*.sh dashboard/*.sh \
 		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/*/*.sh \
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
 		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
-		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages \
-		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-version \
-		tests/os/*.sh tests/os/*/*.sh tests/netwatch/*.sh
+		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-serial-port-present \
+		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version \
+		tests/os/*.sh tests/os/*/*.sh tests/netwatch/*.sh \
+		| xargs -0 -n 1 -P 4 shellcheck -x --severity=warning
 # CLI slices are checked through the generated pithead above: their semantic context
 # depends on concatenation order. Listing them separately duplicates a large analysis
 # and reports false unused-global warnings. shfmt checks every slice independently.

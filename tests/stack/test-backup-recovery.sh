@@ -16,8 +16,15 @@ case "$*" in
   "compose up"*)
     n=0; [ ! -f "${UP_COUNT:?}" ] || n=$(cat "$UP_COUNT")
     n=$((n + 1)); printf '%s' "$n" >"$UP_COUNT"
-    [ "$n" -gt "${UP_FAILS:-0}" ] || exit 1
+    if [ "${SATURATED_STATE_FAIL:-0}" = 1 ] && grep -q '^CircuitBuildAbandonedCount 1000$' "${UP_COUNT%/*}/data/tor/state" 2>/dev/null; then
+      echo "dependency failed to start: container tor is unhealthy" >&2
+      exit 1
+    fi
+    [ "$n" -gt "${UP_FAILS:-0}" ] || { echo "dependency failed to start: container tor is unhealthy" >&2; exit 1; }
     ;;
+  "inspect --format {{.State.Health.Status}} tor") echo unhealthy ;;
+  "inspect"*) echo "{\"Status\":\"unhealthy\",\"Log\":[{\"ExitCode\":1,\"Output\":\"control port refused after attempt $(cat "${UP_COUNT:?}")\"}]}" ;;
+  "logs"*) echo "Bootstrapped 45%: Asking for relay descriptors at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion" ;;
 esac
 exit 0
 EOF
@@ -78,6 +85,40 @@ rc=$?
 assert_rc "backup retries one failed restart (#1965)" "$rc" 0
 assert_contains "restart retry is reported" "$out" "retrying the normal startup path once"
 assert_eq "restart retry makes two up attempts" "$(cat "$FB/up.count")" 2
+assert_contains "failed backup restart retains Tor health" "$out" "unhealthy"
+assert_contains "failed backup restart retains Tor health-check output" "$out" "control port refused"
+assert_contains "failed backup restart retains Tor log" "$out" "Bootstrapped 45%"
+assert_not_contains "failed backup restart redacts onion in Tor log" "$out" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion"
+
+printf 'CircuitBuildAbandonedCount 1000\n' >"$FB/data/tor/state"
+printf 'onion-key\n' >"$FB/data/tor/hs_ed25519_secret_key"
+out="$(backup_case env SATURATED_STATE_FAIL=1 TAR_FAIL=0)"
+assert_rc "backup recovers a saturated Tor circuit history" "$?" 0
+assert_eq "saturated Tor state is discarded before retry" "$([ -e "$FB/data/tor/state" ] || echo absent)" absent
+assert_eq "Tor onion key survives recovery" "$(cat "$FB/data/tor/hs_ed25519_secret_key")" onion-key
+assert_eq "recovery retries startup after stopping Tor" "$(cat "$FB/up.count")" 2
+assert_contains "recovery explains the state reset" "$out" "Tor circuit history was saturated"
+
+printf 'CircuitBuildAbandonedCount 999\n' >"$FB/data/tor/state"
+out="$(backup_case env UP_FAILS=1 TAR_FAIL=0)"
+assert_rc "unrelated first startup failure still retries" "$?" 0
+assert_eq "unsaturated Tor state is preserved" "$(cat "$FB/data/tor/state")" 'CircuitBuildAbandonedCount 999'
+
+printf 'CircuitBuildAbandonedCount 1000\n' >"$FB/data/tor/state-target"
+rm -f "$FB/data/tor/state"
+ln -s state-target "$FB/data/tor/state"
+out="$(backup_case env SATURATED_STATE_FAIL=1 TAR_FAIL=0)"
+assert_rc "symlinked Tor state does not get discarded" "$?" 1
+assert_eq "symlink target survives failed recovery" "$(cat "$FB/data/tor/state-target")" 'CircuitBuildAbandonedCount 1000'
+assert_contains "failed recovery keeps original Compose error" "$out" "dependency failed to start: container tor is unhealthy"
+rm -f "$FB/data/tor/state" "$FB/data/tor/state-target" "$FB/data/tor/hs_ed25519_secret_key"
+
+out="$(backup_case env UP_FAILS=99 TAR_FAIL=0)"
+rc=$?
+assert_rc "backup reports two failed normal restarts" "$rc" 1
+assert_eq "failed normal restart makes two up attempts" "$(cat "$FB/up.count")" 2
+assert_contains "failed final restart retains its own Tor health-check output" "$out" "control port refused after attempt 2"
+assert_contains "failed normal restart keeps the original Compose error" "$out" "dependency failed to start: container tor is unhealthy"
 
 out="$(backup_case env PITHEAD_APPLIANCE=1 UP_FAILS=99 TAR_FAIL=0)"
 rc=$?
@@ -89,5 +130,7 @@ out="$(backup_case env PITHEAD_APPLIANCE=1 UP_FAILS=99 BOOT_FAIL=1 TAR_FAIL=0)"
 rc=$?
 assert_rc "backup reports failed compose and boot-path recovery (#1965)" "$rc" 1
 assert_contains "failed restart says the archive remains valid" "$out" "archive is valid"
+assert_contains "failed restart keeps the original Compose error" "$out" "dependency failed to start: container tor is unhealthy"
+assert_contains "failed restart keeps Tor health-check output" "$out" "control port refused"
 assert_eq "valid archive survives restart failure" "$(ls "$FB"/backups/pithead-backup-* 2>/dev/null | wc -l | tr -d ' ')" 1
 unset -f backup_case

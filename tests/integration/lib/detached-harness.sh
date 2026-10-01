@@ -1,4 +1,12 @@
 # shellcheck shell=bash
+on_bench() {
+    local prefix=""
+    if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+        prefix="export IT_SCRATCH_DIR=$(quote_arg "$IT_SCRATCH_DIR"); export TMPDIR=\"\$IT_SCRATCH_DIR\"; "
+    fi
+    parent_lock_on_bench "$BENCH_HOST" "$prefix$1"
+}
+
 HARNESS_PID=""
 HARNESS_START=""
 HARNESS_DONE=0
@@ -66,11 +74,33 @@ harness_pregate() { # <workers> <no_mining flags>
     # reads with `;`, not `&&`, and sets no `-e` — so the values, and the phase's verdict, are unchanged.
     lock_pair="$(printf '%s\n%s' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}")"
     for phase in readiness check; do
-        on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $2" <<<"$lock_pair" || {
+        on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $2" <<<"$lock_pair" || {
             warn "$phase reported issues (see above) — destructive phases refused"
             return 1
         }
     done
+}
+
+# The detached launch's stdin, one record per line, in the order run_harness reads them: the rig
+# token, the parent lock pair, the two base64 JSON inputs, then the payout-confirm row's wallet keys
+# (#2675). Secrets ride stdin, never the remote command line where ps on the bench shows them. The
+# JSON may span lines, hence base64; a newline in any other record would shift the ones after it.
+harness_launch_records() {
+    local rollback_b64 pools_b64 record
+    rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
+    pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
+    HARNESS_RECORDS=""
+    for record in "${IT_RIG_TOKEN:-}" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" \
+        "${IT_MONERO_VIEW_KEY:-}" "${IT_TARI_VIEW_KEY:-}" "${IT_TARI_SPEND_PUBLIC_KEY:-}"; do
+        [[ "$record" != *$'\n'* ]] || die "A harness launch record contains a newline."
+        HARNESS_RECORDS+="$record"$'\n'
+    done
+    # Names only, never a value: a payout-confirm SKIP then says whether the wrapper had the keys.
+    local name supplied=""
+    for name in IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY; do
+        supplied+=" $name=$([ -n "${!name:-}" ] && echo set || echo unset)"
+    done
+    step "payout-confirm keys forwarded to the harness:$supplied"
 }
 
 # Install the on-bench runner: it records `running <pid> <starttime>` BEFORE exec'ing the harness,
@@ -80,13 +110,28 @@ harness_pregate() { # <workers> <no_mining flags>
 harness_install_runner() {
     local runner
     runner="$(mktemp)" || return 1
-    cat >"$runner" <<'RUNNER'
-#!/usr/bin/env bash
+    # Pin the runner-owned target scratch even when SSH drops ambient variables.
+    printf '#!/usr/bin/env bash\n' >"$runner"
+    if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+        printf 'export IT_SCRATCH_DIR=%s\n' "$(quote_arg "$IT_SCRATCH_DIR")" >>"$runner"
+    fi
+    cat >>"$runner" <<'RUNNER'
 set -uo pipefail
 state="$1"; dir="$2"; target="$3"; workers="$4"; rearm_request="$5"; rearm_ack="$6"; rearm_id="$7"; shift 7
 start=$(awk '{print $22}' "/proc/$$/stat") || exit 1
 printf 'running %s %s\n' "$$" "$start" >"$state.tmp" && mv "$state.tmp" "$state"
 mkdir -p "$dir/results"
+if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+    export TMPDIR="$IT_SCRATCH_DIR"
+    if ! { [ -d "$TMPDIR" ] && [ ! -L "$TMPDIR" ] &&
+        scratch_device=$(stat -c %d "$TMPDIR") && parent_device=$(stat -c %d "$TMPDIR/..") &&
+        [ -n "$scratch_device" ] && [ "$scratch_device" = "$parent_device" ] &&
+        probe=$(mktemp "$TMPDIR/harness-scratch.XXXXXX") && rm -f "$probe"; }; then
+        echo 'e2e: target scratch unavailable or on another filesystem' >"$dir/results/e2e-harness.log"
+        echo 1 >"$dir/results/e2e-harness.done"
+        exit 1
+    fi
+fi
 IT_BORROW_REARM_REQUEST="$rearm_request" IT_BORROW_REARM_ACK="$rearm_ack" IT_BORROW_REARM_TOKEN="$rearm_id" \
     bash "$dir/tests/integration/run.sh" --local --dir "$target" --workers "$workers" "$@" \
     > "$dir/results/e2e-harness.log" 2>&1

@@ -84,10 +84,14 @@ monero_prune_flag() {
 # p2pool outbound SOCKS flags (#165). p2pool's --onion-address only advertises an onion for INBOUND;
 # without --socks5 it dials outbound sidechain peers over clearnet, exposing the home IP. Returns the
 # Tor SOCKS flags by default; empty when the operator opts into clearnet (p2pool.clearnet=true) for
-# max yield. Pure (args only: <clearnet-bool> <network-prefix>) so it unit-tests in isolation.
+# max yield. --no-dns (#2496): the proxy type does not stop p2pool's clearnet seed-node DNS lookups
+# (TXT + getaddrinfo for seeds-mini.p2pool.io), which leave via the host resolver past the FORWARD
+# firewall; with it the peer list comes from the cache, the onion seeds and --addpeers. Safe for the
+# node and Tari legs: with --socks5 set p2pool never resolves --host, and the entrypoint rewrites both
+# to 127.0.0.1. Pure (args only: <clearnet-bool> <network-prefix>) so it unit-tests in isolation.
 p2pool_outbound_flags() {
     [ "$(normalize_bool "${1:-}")" = "true" ] && return 0
-    printf -- '--socks5 %s.25:9050 --socks5-proxy-type tor' "${2:-172.28.0}"
+    printf -- '--socks5 %s.25:9050 --socks5-proxy-type tor --no-dns' "${2:-172.28.0}"
 }
 
 # Keys whose value differs between two env files (added, removed, or changed), one per line.
@@ -144,17 +148,34 @@ require_deployed() {
     is_deployed || error "The stack isn't fully set up yet. Run '$0 setup' first."
 }
 
+# True for a system, home, or bare mount root that must never become a recursive data-operation
+# target. Kept separate so the dashboard's narrower destination allowlist uses the exact same floor.
+_data_dir_is_broad_root() {
+    local d="$1" rest
+    case "$d" in
+    "" | / | // | /. | /root | /home | /etc | /usr | /var | /var/lib | /opt | /srv | /mnt | /media | /tmp | /bin | /sbin | /lib | /lib64 | /boot | /dev | /proc | /sys | /Users | /Applications | "${HOME:-/root}" | "/home/$REAL_USER" | "/Users/$REAL_USER")
+        return 0
+        ;;
+    /home/*)
+        rest="${d#/home/}"
+        case "$rest" in */*) ;; *) return 0 ;; esac
+        ;;
+    /Users/*)
+        rest="${d#/Users/}"
+        case "$rest" in */*) ;; *) return 0 ;; esac
+        ;;
+    esac
+    return 1
+}
+
 # Refuse data directories that would be catastrophic to chown -R / rm -rf.
 assert_safe_dir() {
     local d="$1"
-    # 1) System + top-level roots, the invoking and real user's homes, and the bare mount/parent
-    #    dirs people most often fat-finger a data_dir to. A dedicated SUBfolder of any of these
-    #    (e.g. /srv/pithead, /mnt/disk/monero) is still allowed — only the bare root is refused (#91).
-    case "$d" in
-    "" | / | // | /. | /root | /home | /etc | /usr | /var | /var/lib | /opt | /srv | /mnt | /media | /tmp | /bin | /sbin | /lib | /lib64 | /boot | /dev | /proc | /sys | /Users | /Applications | "${HOME:-/root}" | "/home/$REAL_USER" | "/Users/$REAL_USER")
+    # 1) System + top-level roots, user homes, and the bare mount/parent dirs people most often
+    #    fat-finger a data_dir to. A dedicated SUBfolder (e.g. /srv/pithead) remains allowed (#91).
+    if _data_dir_is_broad_root "$d"; then
         error "Refusing to use '$d' as a data directory — it's a system, home, or bare mount root. Choose a dedicated subfolder in $CONFIG_FILE (e.g. .../pithead-data)."
-        ;;
-    esac
+    fi
     # 2) Data dirs are stored as ABSOLUTE paths in .env; reject anything relative or containing a
     #    '..' traversal so a malformed config.json value can't resolve somewhere unexpected before
     #    a chown -R / rm -rf runs against it (#91).
@@ -164,6 +185,9 @@ assert_safe_dir() {
     esac
     case "$d" in
     *..*) error "Refusing data directory '$d' — '..' path traversal is not allowed." ;;
+    esac
+    case "$d" in
+    *//* | */./* | */.) error "Refusing data directory '$d' — empty and '.' path components are not allowed." ;;
     esac
     # 3) A ':' would split the compose bind-mount short syntax it renders into
     #    (`${MONERO_DATA_DIR}:/dest`) — e.g. a dir ending ':ro' forges a third MODE field, turning a

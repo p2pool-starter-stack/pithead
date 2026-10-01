@@ -238,9 +238,9 @@ CONTROL_RESULTS_DIR = os.environ.get("CONTROL_RESULTS_DIR", "/control/results")
 # written and rotated host-side, and every field read from them is sanitized before serving.
 CONTROL_AUDIT_LOG = os.environ.get("CONTROL_AUDIT_LOG", "/control/audit/control.log")
 ACCESS_LOG_PATH = os.environ.get("ACCESS_LOG_PATH", "/access-log/access.log")
-# The PRE-MASKED config copy, bind-mounted read-only for form prefill (#440): the host renders it
-# with every set secret leaf already replaced by the sentinel, so the container never holds a raw
-# secret. The raw config.json is not mounted into the container at all.
+# PRE-MASKED config, bind-mounted read-only for form prefill (#440): the editor/browser gets no raw
+# value here, though runtime credentials the dashboard consumes still enter its environment. The
+# raw config.json is not mounted into the container.
 HOST_CONFIG_PATH = os.environ.get("HOST_CONFIG_PATH", "/control/masked/config.json")
 # config.reference.json (every key with its default), bind-mounted read-only. read_config merges it
 # UNDER the operator's sparse config.json so the editor form covers the full schema, not just the
@@ -260,11 +260,11 @@ WORKER_READ_TOKENS_PATH, DASHBOARD_WORKERS = "/control/masked/worker-read-tokens
 
 
 def current_worker_endpoints():
-    return (
-        DASHBOARD_WORKERS
-        if DASHBOARD_WORKERS is not None
-        else load_worker_endpoints(HOST_CONFIG_PATH, WORKER_READ_TOKENS_PATH)
-    )
+    # WORKER_API_TOKENS (#2349): endpoint-bound read-only probe credentials, never control tokens.
+    tokens_env = os.environ.get("WORKER_API_TOKENS", "")
+    if DASHBOARD_WORKERS is not None:
+        return DASHBOARD_WORKERS
+    return load_worker_endpoints(HOST_CONFIG_PATH, WORKER_READ_TOKENS_PATH, tokens_env)
 
 
 DASHBOARD_ENERGY = load_energy_config(HOST_CONFIG_PATH)
@@ -497,9 +497,8 @@ MONERO_NODE_HOST = os.environ.get("MONERO_NODE_HOST", "172.28.0.26")
 LOCAL_MONERO_HOST = os.environ.get("LOCAL_MONERO_HOST", "172.28.0.26")
 
 # monerod's get_info RPC, used to read sync height/target directly instead of scraping
-# docker logs (Issue #29). Reachable because the dashboard runs network_mode: host and
-# monerod publishes 127.0.0.1:18081. Credentials are required by monerod's restricted-rpc
-# + rpc-login (digest auth); absent creds simply make the RPC fail and fall back to logs.
+# docker logs (Issue #29). The renderer selects the host-published local node or configured remote
+# node. Configured credentials use digest auth; unauthenticated remote nodes work without them.
 MONERO_RPC_URL = os.environ.get("MONERO_RPC_URL", "http://127.0.0.1:18081")
 MONERO_NODE_USERNAME = os.environ.get("MONERO_NODE_USERNAME", "")
 MONERO_NODE_PASSWORD = os.environ.get("MONERO_NODE_PASSWORD", "")
@@ -513,11 +512,11 @@ MONERO_NODE_PASSWORD = os.environ.get("MONERO_NODE_PASSWORD", "")
 MONERO_PRUNE = os.environ.get("MONERO_PRUNE", "true").strip().lower() in ("true", "1", "yes", "on")
 
 # --- Optional clearnet initial sync auto-transition (#183/#234) ---
-# When monero.clearnet_initial_sync / tari.clearnet_initial_sync is on, the daemon does its initial
-# block download over clearnet (fast) instead of Tor. The supervisor watches the per-chain "synced"
-# signal the data loop already computes and, the first time a clearnet node reports synced, drops a
-# persistent marker in CLEARNET_STATE_DIR and restarts the container — whose entrypoint, seeing the
-# marker, comes back up Tor-only. Default off. Truthy parsing matches MONERO_PRUNE.
+# When a clearnet_initial_sync flag reaches .env, the selected daemon may sync over clearnet with
+# a per-chain host firewall exception. The supervisor writes a persistent marker, waits for host
+# verification that the exception is gone, then restarts the daemon on Tor. A host-owned result
+# attests the live Tor configuration and firewall before the UI clears its warning. Default off.
+# Truthy parsing matches MONERO_PRUNE.
 MONERO_CLEARNET_SYNC = os.environ.get("MONERO_CLEARNET_SYNC", "false").strip().lower() in (
     "true",
     "1",
@@ -544,11 +543,11 @@ TARI_GRPC_ADDRESS = os.environ.get("TARI_GRPC_ADDRESS", "127.0.0.1:18142")
 # and fires the shared payout_confirmed alert. pithead renders TARI_PAYOUT_CONFIRM_ENABLED=true only
 # when a tari view key is set on a LOCAL Tari node, so an unset view key (the default) means the
 # tari-wallet container isn't started and this poll never runs. The wallet gRPC is unauthenticated
-# (like the Tari base node); it is reached over the host loopback publish (127.0.0.1:18143).
 TARI_PAYOUT_CONFIRM_ENABLED = (
     os.environ.get("TARI_PAYOUT_CONFIRM_ENABLED", "false").strip().lower() == "true"
 )
 TARI_WALLET_GRPC_ADDRESS = os.environ.get("TARI_WALLET_GRPC_ADDRESS", "127.0.0.1:18143")
+TARI_WALLET_ADDRESS = os.environ.get("TARI_WALLET_ADDRESS", "")
 
 # --- XvB Donation Controller (Issues #9, #70) ---
 # Closed-loop controller. The raffle pays nothing above a tier threshold, so the

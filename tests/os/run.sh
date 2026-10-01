@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|stack|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -26,7 +26,11 @@
 #           mines from the baked binary with no compile and no stack at all, and takes an A/B
 #           update — install, uncommitted rollback, self-commit — exactly like a coordinator.
 #           A power-cut leg (M13's rig half, #2067) proves the same "returns mining unaided" fact
-#           off a real virsh destroy, not just the reboot leg's clean return.
+#           off a real virsh destroy, not just the reboot leg's clean return. Closes with a share
+#           leg (#2063): a second, concurrent guest provisioned in remote-node mode (the coordinator
+#           #2062's `stack` phase boots), the rig re-pointed at its stratum, and BOTH the rig's own
+#           worker and the coordinator's built-in miner showing an accepted share on
+#           /api/state — a bench with no reserved node counts it a `missing` leg skip.
 #   rigmedia (M14, #1829/#2069) boot the image as removable media, same as install's first leg,
 #           beside a blank internal disk that must stay untouched; answer "RigForge" and never
 #           install. Mines from the stick, no containers, volatile journald, an unaided reboot
@@ -37,8 +41,10 @@
 #           dashboard login, appliance defaults and node credentials survive, old login still works.
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #           Closes with a cut mid first-boot image load on a fresh guest (the #1029 class, #2067).
-#   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
-#           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
+#   reset   config-reset clears config but preserves the chain and onion through reconfiguration;
+#           factory-reset's ESP marker then wipes /data and returns a FRESH machine to the wizard;
+#           a corrupt /data superblock drives wedged-/data recovery.
+#   image-upgrade  signed v1.20.0 -> candidate -> exact rollback on guest-local reflink XFS
 #   crossupdate  a provisioned guest booted from a REAL prior build ($PITHEAD_OLD_IMAGE, bench-ci's
 #           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
@@ -47,7 +53,8 @@
 #           a non-destructive --check, then --lifecycle --fault-injection --hardening
 #           --auth-fail-closed on remote-main-secure-tari. A bench with no reserved node is a
 #           counted `missing` phase skip; #2443 and #2444 run from neither invocation.
-#   all     every phase above except crossupdate, in order (stack since #2062, rigmedia #2069)
+#   all     every phase above except crossupdate, in that order — media, fault and reset included
+#           since #1064; rigmedia added since #2069; image-upgrade added for #2057; stack since #2062
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -66,6 +73,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/zero-container-evidence.sh"
 # shellcheck source=tests/os/bundle-build-evidence.sh
 . "$SCRIPT_DIR/bundle-build-evidence.sh"
+. "$SCRIPT_DIR/package-appliance-verdict.sh"
 # shellcheck source=tests/os/kvm-preflight.sh
 . "$SCRIPT_DIR/kvm-preflight.sh"
 # shellcheck source=tests/os/journal-boot-verdict.sh
@@ -90,10 +98,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-config-approval-leg.sh"
 # shellcheck source=tests/os/appliance-tari-mode-leg.sh
 . "$SCRIPT_DIR/appliance-tari-mode-leg.sh"
+# shellcheck source=tests/os/caddy-failure-evidence.sh
+. "$SCRIPT_DIR/caddy-failure-evidence.sh"
 # shellcheck source=tests/os/appliance-egress-leg.sh
 . "$SCRIPT_DIR/appliance-egress-leg.sh"
+# shellcheck source=tests/os/appliance-xvb-routing-leg.sh
+. "$SCRIPT_DIR/appliance-xvb-routing-leg.sh"
+# shellcheck source=tests/os/appliance-address-watch-leg.sh
+. "$SCRIPT_DIR/appliance-address-watch-leg.sh"
 # shellcheck source=tests/os/appliance-dashboard-exposure-leg.sh
 . "$SCRIPT_DIR/appliance-dashboard-exposure-leg.sh"
+# shellcheck source=tests/os/appliance-lan-guard-leg.sh
+. "$SCRIPT_DIR/appliance-lan-guard-leg.sh"
+# shellcheck source=tests/os/appliance-monero-rpc-leg.sh
+. "$SCRIPT_DIR/appliance-monero-rpc-leg.sh"
+# shellcheck source=tests/os/appliance-tari-wallet-leg.sh
+. "$SCRIPT_DIR/appliance-tari-wallet-leg.sh"
+# shellcheck source=tests/os/appliance-chain-fault-leg.sh
+. "$SCRIPT_DIR/appliance-chain-fault-leg.sh"
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 . "$SCRIPT_DIR/../integration/lib/mergemine-probe.sh"
 # ONLY the it_skip_* vocabulary is wanted from this file (#2064): the missing/by-design/covered
@@ -114,9 +136,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/setup-again-leg.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
 . "$SCRIPT_DIR/rig-control-off-leg.sh"
+# shellcheck source=tests/os/rig-share-leg.sh
+. "$SCRIPT_DIR/rig-share-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
 # shellcheck source=tests/os/fault-boot-verdict.sh
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
+# shellcheck source=tests/os/m10-height-verdict.sh
+. "$SCRIPT_DIR/m10-height-verdict.sh"
 IMAGE=""
 KEEP=0
 PHASE="all"
@@ -160,6 +186,8 @@ source "$SCRIPT_DIR/phases/boot.sh" || exit $?
 source "$SCRIPT_DIR/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh
 source "$SCRIPT_DIR/phases/update-dashboard.sh" || exit $?
+# shellcheck source=tests/os/phases/update-healthgate-leg.sh
+source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$SCRIPT_DIR/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh
@@ -174,6 +202,8 @@ source "$SCRIPT_DIR/phases/rigmedia.sh" || exit $?
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$SCRIPT_DIR/phases/reset.sh" || exit $?
+# shellcheck source=tests/os/phases/image-upgrade.sh
+source "$SCRIPT_DIR/phases/image-upgrade.sh" || exit $?
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
@@ -210,6 +240,7 @@ rigmedia) _run_phase rigmedia phase_rigmedia ;;
 media) _run_phase media phase_media ;;
 fault) _run_phase fault phase_fault ;;
 reset) _run_phase reset phase_reset ;;
+image-upgrade) _run_phase image-upgrade phase_image_upgrade ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
 stack) _run_phase stack phase_stack ;;
 all)
@@ -225,6 +256,7 @@ all)
     _run_phase media phase_media
     _run_phase fault phase_fault
     _run_phase reset phase_reset
+    _run_phase image-upgrade phase_image_upgrade
     _run_phase stack phase_stack
     ;;
 *)

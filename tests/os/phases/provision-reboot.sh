@@ -158,15 +158,22 @@ _phase_provision_reboot() {
     # manual stop), so podman reports it exited — a chain node down. The gate must now REFUSE, so
     # pithead-boot would leave the slot uncommitted and A/B fallback would revert. A curl-only gate
     # PASSES here (the dashboard still answers) — that is the regression this leg catches.
-    _ssh "podman stop -t 5 monerod >/dev/null 2>&1" || true
-    if _gate; then
-        bad "commit gate PASSED with monerod stopped — a mining-dead slot would self-commit (the curl-only gap)"
+    # By compose service, not name (#2556): an interrupted recreate leaves the node running as
+    # "<id>_monerod", and a by-name stop that missed it judged the gate against a live node.
+    local mcid
+    mcid=$(_ssh "podman ps -q --filter label=com.docker.compose.service=monerod" 2>/dev/null | head -n1)
+    if [ -z "$mcid" ] || ! _ssh "podman stop -t 5 $mcid >/dev/null 2>&1"; then
+        bad "could not stop a running monerod (container '${mcid:-none}') — the commit-gate negative controls did not run"
     else
-        ok "commit gate REFUSES a slot whose monerod is down — left uncommitted, A/B fallback stays armed"
+        if _gate; then
+            bad "commit gate PASSED with monerod stopped — a mining-dead slot would self-commit (the curl-only gap)"
+        else
+            ok "commit gate REFUSES a slot whose monerod is down — left uncommitted, A/B fallback stays armed"
+        fi
+        # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
+        phase_provision_failed_doctor_regression "$pv_user" "$pv_pass"
     fi
-    # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
-    phase_provision_failed_doctor_regression "$pv_user" "$pv_pass"
-    _ssh "podman start monerod >/dev/null 2>&1" || true
+    [ -z "$mcid" ] || _ssh "podman start $mcid >/dev/null 2>&1" || true
     unset -f _gate
 
 }

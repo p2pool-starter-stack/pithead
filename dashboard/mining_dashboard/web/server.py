@@ -161,7 +161,7 @@ async def handle_control_preview(request):
     try:
         # The proposal ships as-is: an untouched secret rides as the {"__secret__": true}
         # sentinel, and the HOST swaps it for the live value when it stages the intent (#440) —
-        # this container never holds a secret the operator didn't just type.
+        # this editor route never receives the existing value from the masked config mount.
         rid = control_service.submit("preview", proposed, actor)
         res = await control_service.wait_result(rid)
     except Exception:
@@ -332,8 +332,7 @@ async def handle_worker_apply(request):
     This container never holds the rig's token: it spools ``{worker, changes}`` and the host resolves
     the rig's address + bearer from config.json (workers.list[]), POSTs, and polls the rig's
     ``/status``. Fail-closed — the route only exists when the control channel is on, which itself
-    requires a dashboard password. The change surface is the writable allowlist only. Records the
-    terminal outcome in the per-worker config history."""
+    requires a dashboard password. Only writable keys are accepted; the result is recorded in history."""
     _require_control_header(request)
     try:
         body = await request.json()
@@ -363,6 +362,7 @@ async def handle_worker_apply(request):
     if res is None:
         return web.json_response({"id": rid, "status": "pending"}, status=202)
     _record_worker_result(state_mgr, worker, changes, res)
+    worker_refresh.maybe_refresh_after_apply(request.app, state_mgr, worker, changes, res)
     return web.json_response({"id": rid, **res})
 
 
@@ -617,10 +617,10 @@ def create_app(state_manager, latest_data_ref):
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
                 # Appliance OS update: one route, a closed action set, every judgment host-side.
                 web.post("/api/control/os-update", handle_control_os_update),
-                # Service Diagnostics (#913/#943): read-only asks answered by a host report. Both
-                # poll /api/control/result above — they add no polling route of their own.
+                # Service Diagnostics (#913/#943): read-only, polls /api/control/result above.
                 web.post("/api/control/diag-doctor", diagnostics_views.handle_diag_doctor),
                 web.post("/api/control/diag-logs", diagnostics_views.handle_diag_logs),
+                web.post("/api/control/onion-client-key", diagnostics_views.handle_onion_key),
             ]
         )
 
