@@ -146,10 +146,10 @@ run_rigforge_control() {
             split("\n") | map(select(contains("Worker '\''" + $n + "'\'' (") and contains("xmrig API probe failed")) |
                 if contains("read credential unavailable") or contains("probe token missing") then "credential-unavailable"
                 elif contains("HTTP 401") or contains("HTTP 403") then "http-auth-refusal"
+                elif contains("JSONDecodeError") or contains("body was") then "invalid-body"
                 elif test("HTTP [0-9]{3}") then "http-response"
                 elif contains("TimeoutError") then "timeout"
                 elif contains("ConnectorError") or contains("ConnectionError") then "connection"
-                elif contains("JSONDecodeError") or contains("body was") then "invalid-body"
                 elif contains("body over") then "oversized-body"
                 else "other-probe-failure" end) |
             group_by(.) | {log_read_exit:$rc, classes:map({classification:.[0], count:length})}' \

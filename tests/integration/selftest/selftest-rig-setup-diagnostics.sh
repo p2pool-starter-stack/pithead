@@ -71,6 +71,7 @@ rx() {
         "Worker 'rig1' (private-host-marker): xmrig API probe failed — HTTP 500. credential-marker" \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed — ClientConnectorError: credential-marker" \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed — JSONDecodeError: credential-marker" \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed — HTTP 200 but body was list. credential-marker" \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed — body over 123 bytes. credential-marker" \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed — unknown failure credential-marker" \
         "Worker 'other' (private-host-marker): xmrig API probe failed — HTTP 403. credential-marker" \
@@ -99,7 +100,7 @@ assert_eq "setup failure still counts one failed assertion" "$control_fail" 1
 assert_eq "timeout and cadence remain unchanged" "$(cat "$WORK/wait-bound")" '120|5'
 assert_eq "state record precedes restore" "$(jq -r '.worker_found' "$WORK/before-restore.json")" true
 assert_eq "only selected-rig fixed classes survive" "$(jq -c . "$WORK/before-restore-classes.json")" \
-    '{"log_read_exit":0,"classes":[{"classification":"connection","count":1},{"classification":"credential-unavailable","count":1},{"classification":"http-auth-refusal","count":1},{"classification":"http-response","count":1},{"classification":"invalid-body","count":1},{"classification":"other-probe-failure","count":1},{"classification":"oversized-body","count":1},{"classification":"timeout","count":1}]}'
+    '{"log_read_exit":0,"classes":[{"classification":"connection","count":1},{"classification":"credential-unavailable","count":1},{"classification":"http-auth-refusal","count":1},{"classification":"http-response","count":1},{"classification":"invalid-body","count":2},{"classification":"other-probe-failure","count":1},{"classification":"oversized-body","count":1},{"classification":"timeout","count":1}]}'
 assert_contains "dashboard log read has time and line bounds" "$(cat "$WORK/log-command")" 'timeout 5 docker logs --since 10m --tail=200 dashboard'
 assert_eq "neither artifact contains raw identity or credential text" \
     "$(cat "$WORK/rigforge-control."*.json | grep -Ec 'credential-marker|private-host-marker|rig1' || true)" "0"

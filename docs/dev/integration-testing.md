@@ -764,7 +764,8 @@ the final poll's selected-worker presence, status, API/adoption verdicts and rep
 from the selected rig's dashboard probe warnings in `rigforge-control.probe-classes.json` (at most
 200 log lines, 64 KiB and a five-second read, covering the last ten minutes). These records omit
 worker names, addresses, credentials, raw response bodies and raw log text; an empty class list means
-no matching warning was observed, not that the probe succeeded.
+no matching warning was observed, not that the probe succeeded. An HTTP 200 summary with a
+non-object body is classified as `invalid-body`, rather than a generic HTTP response.
 
 The control legs cover:
 
