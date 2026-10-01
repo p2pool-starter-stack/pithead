@@ -140,10 +140,12 @@ run_rigforge_control() {
         # No raw response/log text is written; Docker reads are time-, line- and byte-bounded.
         printf '%s\n' "$_RIG_SETUP_SAMPLE" >"$OUT_DIR/rigforge-control.selected-rig.json" ||
             it_warn "selected-rig state diagnostics could not be retained"
-        local probe_logs probe_log_rc=0
+        local probe_logs probe_name probe_log_rc=0
         probe_logs="$(rx 'timeout 5 docker logs --since 10m --tail=200 dashboard 2>&1' 2>/dev/null | head -c 65536)" || probe_log_rc=$?
-        printf '%s' "$probe_logs" | jq -Rsc --arg n "$rig" --argjson rc "$probe_log_rc" '
-            split("\n") | map(select(contains("Worker '\''" + $n + "'\'' (") and contains("xmrig API probe failed")) |
+        # Match the producer's %r formatting, including quotes and escaped backslashes.
+        probe_name="$(python3 -c 'import sys; print(repr(sys.argv[1]))' "$rig" 2>/dev/null)" &&
+            printf '%s' "$probe_logs" | jq -Rsc --arg n "$probe_name" --argjson rc "$probe_log_rc" '
+            split("\n") | map(select(contains("Worker " + $n + " (") and contains("xmrig API probe failed")) |
                 if contains("read credential unavailable") or contains("probe token missing") then "credential-unavailable"
                 elif contains("HTTP 401") or contains("HTTP 403") then "http-auth-refusal"
                 elif contains("JSONDecodeError") or contains("body was") then "invalid-body"
@@ -153,7 +155,7 @@ run_rigforge_control() {
                 elif contains("body over") then "oversized-body"
                 else "other-probe-failure" end) |
             group_by(.) | {log_read_exit:$rc, classes:map({classification:.[0], count:length})}' \
-            >"$OUT_DIR/rigforge-control.probe-classes.json" ||
+                >"$OUT_DIR/rigforge-control.probe-classes.json" ||
             it_warn "selected-rig probe classifications could not be retained"
         if [ "$supplied" = 1 ]; then
             it_fail "supplied rig exposes its enriched feed after control setup" "worker '$rig' never appeared"

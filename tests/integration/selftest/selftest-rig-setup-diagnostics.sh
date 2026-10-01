@@ -56,13 +56,30 @@ has_compose_profile() { return 0; }
 push_config() { return 0; }
 pithead() { return 0; }
 wait_status_ok() { return 0; }
-LOG_RC=0 LOG_PAD=0
+LOG_RC=0 LOG_PAD=0 LOG_PRODUCER=0
 rx() {
     if [ "$1" = 'cat config.json' ]; then
         printf '%s' "$BASELINE_CONFIG"
         return
     fi
     printf '%s' "$1" >"$WORK/log-command"
+    if [ "$LOG_PRODUCER" = 1 ]; then
+        python3 - "$HERE/../../../dashboard/mining_dashboard/client/xmrig_client.py" "$RIG_NAME" <<'PYTHON'
+import ast
+import pathlib
+import sys
+
+source = ast.parse(pathlib.Path(sys.argv[1]).read_text())
+formats = [node.value for node in ast.walk(source)
+           if isinstance(node, ast.Constant) and isinstance(node.value, str)
+           and node.value.startswith("Worker %r (")]
+assert len(formats) == 1
+for name, detail in [(sys.argv[2], "HTTP 200 but body was list"),
+                     (sys.argv[2] + "-other", "HTTP 403"), ("other", "TimeoutError")]:
+    print(formats[0] % (name, "private-host-marker", "credential-marker", detail, "credential-marker"))
+PYTHON
+        return "$LOG_RC"
+    fi
     if [ "$LOG_PAD" = 1 ]; then printf '%65536s' ''; fi
     printf '%s\n' \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed — HTTP 401. credential-marker" \
@@ -104,6 +121,24 @@ assert_eq "only selected-rig fixed classes survive" "$(jq -c . "$WORK/before-res
 assert_contains "dashboard log read has time and line bounds" "$(cat "$WORK/log-command")" 'timeout 5 docker logs --since 10m --tail=200 dashboard'
 assert_eq "neither artifact contains raw identity or credential text" \
     "$(cat "$WORK/rigforge-control."*.json | grep -Ec 'credential-marker|private-host-marker|rig1' || true)" "0"
+echo "== actual producer formatting selects accepted names with quotes and escapes =="
+LOG_PRODUCER=1
+for RIG_NAME in "rig'1" 'rig'; do
+    BASELINE_CONFIG="$(jq -nc --arg n "$RIG_NAME" '{workers:{list:[{name:$n,host:"rig"}]}}')"
+    STATE="$(jq -nc --arg n "$RIG_NAME" '{workers:[{name:$n,rigforge:{version:null}}]}')"
+    prior_fail=$IT_FAIL
+    run_rigforge_control >"$WORK/run.log" 2>&1
+    control_rc=$? control_fail=$((IT_FAIL - prior_fail))
+    IT_FAIL=$prior_fail
+    assert_rc "quoted/escaped name preserves setup failure" "$control_rc" 1
+    assert_eq "quoted/escaped name preserves one failed assertion" "$control_fail" 1
+    assert_eq "actual producer selects only the requested name before restore" \
+        "$(jq -c '.classes' "$WORK/before-restore-classes.json")" '[{"classification":"invalid-body","count":1}]'
+    assert_eq "quoted/escaped worker state is captured before restore" \
+        "$(jq -r '.worker_found' "$WORK/before-restore.json")" true
+done
+LOG_PRODUCER=0 RIG_NAME=rig1
+BASELINE_CONFIG='{"workers":{"list":[{"name":"rig1","host":"rig"}]}}'
 LOG_RC=7 STATE=''
 prior_fail=$IT_FAIL
 run_rigforge_control >"$WORK/run.log" 2>&1
