@@ -93,6 +93,8 @@ MATRIX:
                          automatic restart, then green without a restart once the rule is removed (the
                          dashboard detects and alerts only; remediation is #2827). About an hour; opt-in only.
                          DESTRUCTIVE-then-restored.
+  --monero-stranded      also run the stranded-Monero leg (#2499): a DROP rule in monerod's network
+                         namespace cuts it off from tor; every layer must read red, then green. Opt-in.
   --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's
                          testnet-target build of the pinned release runs LocalNet alone on an
                          internal docker network; a throwaway P2Pool (IT_MM_P2POOL_VERSION) mines on
@@ -285,6 +287,10 @@ parse_args() {
             ;;
         --tari-stranded)
             RUN_TARI_STRANDED=1
+            shift
+            ;;
+        --monero-stranded)
+            RUN_MONERO_STRANDED=1
             shift
             ;;
         --mergemine-localnet)

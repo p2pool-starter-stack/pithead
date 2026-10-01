@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# Empty/partial guest output and nonzero SSH exits never credit a runtime proof.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/os/appliance-monero-rpc-leg.sh
+source "$SCRIPT_DIR/appliance-monero-rpc-leg.sh"
+ok() { :; }
+bad() { failed=$((failed + 1)); }
+_ssh() {
+    printf '%s\n' "$reply"
+    return "$ssh_rc"
+}
+for mode in complete empty partial ssh-failure; do
+    failed=0 ssh_rc=0 reply='PASS: native Quadlet RPC proof complete'
+    case "$mode" in
+    empty) reply='' ;;
+    partial) reply='PASS: native Quadlet cold start uses the rendered monerod unit' ;;
+    ssh-failure) ssh_rc=1 ;;
+    esac
+    phase_provision_monero_rpc >/dev/null
+    if [ "$mode" = complete ]; then
+        [ "$failed" -eq 0 ]
+    else
+        [ "$failed" -eq 1 ]
+    fi
+done
+echo 'selftest-monero-rpc: 4 fail-closed tally cases passed'
+# Each resource rewrite is mandatory and unique; renderer drift cannot retain live data.
+fixture=$(mktemp -d)
+trap 'rm -rf "$fixture"' EXIT
+cat >"$fixture/unit" <<'UNIT'
+[Unit]
+After=tor.service
+Requires=tor.service
+[Container]
+ContainerName=monerod
+Image=monero-fixture
+Network=mining.network
+IP=fixture.26
+Volume=live-data:/home/ubuntu/.bitmonero
+Volume=live-template:/home/ubuntu/bitmonero.conf.template:ro
+PublishPort=127.0.0.1:18081:18081
+PublishPort=127.0.0.1:18083:18083
+UNIT
+rewrite() {
+    awk -v data=fixture-data -v template=fixture-template -v image=fixture-image \
+        -v network=fixture-network -v name=fixture-name -f "$SCRIPT_DIR/monero-quadlet-unit.awk" "$1"
+}
+rewrite "$fixture/unit" >"$fixture/output"
+grep -qxF 'Volume=fixture-data:/home/ubuntu/.bitmonero' "$fixture/output"
+! grep -q 'live-' "$fixture/output"
+for drift in missing duplicate readonly publication dependency; do
+    cp "$fixture/unit" "$fixture/drift"
+    case "$drift" in
+    missing) sed -i '/^Volume=live-data/d' "$fixture/drift" ;;
+    duplicate) printf 'Volume=other-data:/home/ubuntu/.bitmonero\n' >>"$fixture/drift" ;;
+    readonly) sed -i 's|live-data:/home/ubuntu/.bitmonero$|live-data:/home/ubuntu/.bitmonero:ro|' "$fixture/drift" ;;
+    publication) printf 'PublishPort=18085:18085\n' >>"$fixture/drift" ;;
+    dependency) printf 'Requires=another.service\n' >>"$fixture/drift" ;;
+    esac
+    if rewrite "$fixture/drift" >/dev/null 2>&1; then
+        echo "FAIL: resource rewrite accepted $drift drift" >&2
+        exit 1
+    fi
+done
+echo 'selftest-monero-rpc: resource isolation and 5 renderer drift cases passed'
+# A failed container/network removal still removes the generated service and scratch.
+mkdir "$fixture/scratch"
+touch "$fixture/proof.container"
+cleanup_source=$(awk '/^cleanup\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+if (
+    # Variables are consumed by the extracted cleanup function.
+    # shellcheck disable=SC2034
+    proof_name=fixture-name proof_dir="$fixture/scratch" unit="$fixture/proof.container"
+    systemctl() { printf 'systemctl %s\n' "$*" >>"$fixture/cleanup.log"; }
+    podman() {
+        printf 'podman %s\n' "$*" >>"$fixture/cleanup.log"
+        case "$1 $2" in 'container exists' | 'network exists') return 0 ;; *) return 1 ;; esac
+    }
+    eval "$cleanup_source"
+    cleanup
+) >/dev/null 2>&1; then
+    echo 'FAIL: cleanup hid container/network removal failure' >&2
+    exit 1
+fi
+[ ! -e "$fixture/proof.container" ]
+[ ! -e "$fixture/scratch" ]
+grep -qxF 'systemctl daemon-reload' "$fixture/cleanup.log"
+grep -qxF 'podman network rm fixture-name' "$fixture/cleanup.log"
+echo 'selftest-monero-rpc: failed removal still cleans the generated unit and scratch'
+# A failed service stop cannot pass even if the container has disappeared.
+mkdir "$fixture/scratch"
+touch "$fixture/proof.container"
+cleanup_source=$(awk '/^cleanup\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+if (
+    # shellcheck disable=SC2034
+    proof_name=fixture-name proof_dir="$fixture/scratch" unit="$fixture/proof.container"
+    systemctl() { case "$1" in stop) return 1 ;; is-active) echo active ;; esac }
+    podman() { return 1; }
+    eval "$cleanup_source"
+    cleanup
+) >"$fixture/active.log" 2>&1; then
+    echo 'FAIL: cleanup hid an active service after failed stop' >&2
+    exit 1
+fi
+grep -qxF 'FAIL: native Quadlet proof service did not stop' "$fixture/active.log"
+[ ! -e "$fixture/proof.container" ]
+[ ! -e "$fixture/scratch" ]
+echo 'selftest-monero-rpc: failed service stop cannot pass with an active unit'
+# The runtime isolation predicate rejects a default route, not a connected bridge route.
+route_source=$(awk '/^no_default_route\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+eval "$route_source"
+cat >"$fixture/routes" <<'ROUTES'
+Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
+eth0 000011AC 00000000 0001 0 0 0 0000FFFF 0 0 0
+ROUTES
+no_default_route "$fixture/routes"
+printf 'eth0 00000000 010011AC 0003 0 0 0 00000000 0 0 0\n' >>"$fixture/routes"
+if no_default_route "$fixture/routes"; then
+    echo 'FAIL: runtime isolation accepted a default route' >&2
+    exit 1
+fi
+echo 'selftest-monero-rpc: runtime isolation rejects an external default route'
+# The fixture's pre-start family guard rejects enabled, missing and malformed IPv6.
+family_source=$(awk '/^ipv4_only\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+eval "$family_source"
+for field in ipv6_enabled EnableIPv6; do
+    printf '[{"%s":false}]\n' "$field" >"$fixture/network.json"
+    ipv4_only "$fixture/network.json"
+    for value in true null '"false"'; do
+        printf '[{"%s":%s}]\n' "$field" "$value" >"$fixture/network.json"
+        if ipv4_only "$fixture/network.json"; then
+            echo 'FAIL: fixture admitted enabled or unreadable IPv6' >&2
+            exit 1
+        fi
+    done
+done
+printf '[{}]\n' >"$fixture/network.json"
+if ipv4_only "$fixture/network.json"; then exit 1; fi
+echo 'selftest-monero-rpc: pre-start family guard requires disabled IPv6'
+# The native caller reports probe diagnostics and never turns a failed command into a pass.
+probe_source=$(awk '/^p2p_advertisement\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+eval "$probe_source"
+# These variables are consumed by the extracted probe function.
+# shellcheck disable=SC2034
+P2P_PROBE_B64='' proof_name=fixture-name network=fixture-network client_image=fixture-image node_ip=fixture
+podman() {
+    printf '%s' "$probe_reply"
+    return "$probe_rc"
+}
+probe_rc=0 probe_reply=18081
+p2p_advertisement >/dev/null
+for probe_reply in 18085 18082 '' malformed 'P2P advertised RPC port unavailable {"stage":"decode_handshake","error":"rpc_port_zero"}'; do
+    probe_rc=0
+    case "$probe_reply" in P2P*) probe_rc=1 ;; esac
+    if p2p_advertisement >"$fixture/probe.log"; then
+        echo 'FAIL: native caller credited an invalid or failed advertisement probe' >&2
+        exit 1
+    fi
+    case "$probe_reply" in P2P*) grep -q 'decode_handshake' "$fixture/probe.log" ;; esac
+done
+echo 'selftest-monero-rpc: native caller fails and reports bounded probe diagnostics'
+# Startup selection is independent of whether the P2P proxy suppresses advertisement.
+selection_source=$(awk '/^restricted_rpc_selected\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/monero-quadlet-proof.sh")
+eval "$selection_source"
+podman() {
+    printf '%s\n' "$startup_line" >&"$startup_fd"
+}
+startup_line='Public RPC port 18081 will be advertised to other peers over P2P'
+for startup_fd in 1 2; do restricted_rpc_selected; done
+for startup_line in 'Public RPC port 18085 will be advertised to other peers over P2P' 'unavailable'; do
+    for startup_fd in 1 2; do
+        if restricted_rpc_selected; then
+            echo 'FAIL: startup selection accepted admin RPC or unavailable evidence' >&2
+            exit 1
+        fi
+    done
+done
+echo 'selftest-monero-rpc: startup must select restricted RPC, never admin RPC'
