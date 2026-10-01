@@ -21,12 +21,12 @@ sb_audit() { # <label> <expected-defect> <run.sh copy> [workflow copy]
     assert_rc "$1 fails the audit" "$?" "1"
     assert_contains "$1 is named" "$out" "$2"
 }
-sb_stanza='_d0=$((PASS + FAIL)) && source "$HERE/test-extra.sh" && domain_ran test-extra.sh "$_d0" "$?" || domain_ran test-extra.sh "$_d0" "$?"'
+sb_stanza='_d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran test-harness-tooling.sh "$_d0" "$?" || domain_ran test-harness-tooling.sh "$_d0" "$?"'
 {
     cat "$SB_RUN"
     printf '%s\n' "$sb_stanza"
 } >"$SB/after-last.sh"
-sb_audit "a stanza below the last block" "test-extra.sh is sourced outside every block" "$SB/after-last.sh"
+sb_audit "a stanza below the last block" "test-harness-tooling.sh is sourced outside every block" "$SB/after-last.sh"
 {
     cat "$SB_RUN"
     printf 'assert_eq "inline" a a\n'

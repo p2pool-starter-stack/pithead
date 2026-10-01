@@ -174,7 +174,7 @@ check_source_set() { # <sourcer> <expected-list> <minimum>
 }
 
 stack_expected=$(
-    printf '%s\n' lib.sh
+    printf '%s\n' lib.sh lib/suite-blocks.sh
     find tests/stack -type f -name 'test-*.sh' -print | sed 's|^tests/stack/||'
 )
 stack_expected=$(printf '%s\n' "$stack_expected" | sort)
