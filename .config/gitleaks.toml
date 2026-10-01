@@ -35,6 +35,8 @@ condition = "AND"
 regexTarget = "line"
 paths = [
   '''^tests/stack/(appliance/test-appliance-(setup|restore|restore-commit)|lifecycle/lock-wiring|test-backup|test-cli-restore-hardening|test-wizard-setup)\.sh$''',
+  # The same reviewed fixture moved from test-backup.sh into its shared builder.
+  '''^tests/stack/lib/backup-fixtures\.sh$''',
 ]
 regexes = [
   '''PROXY_AUTH_TOKEN=(0123456789abcdef01234567|abcdef0123456789abcdef01)[ \t\r\n]*\z''',

@@ -50,3 +50,33 @@ COPY=$(git -C "$SANDBOX/repo" rev-parse HEAD)
 expect_finding "$COPY:$FIXTURE:generic-api-key:59" git "$SANDBOX/repo" "${ARGS[@]}" \
     --gitleaks-ignore-path "$ROOT/.config/gitleaksignore" --log-opts=HEAD
 echo 'PASS: historical Digest finding ignored; missing exception and later copy detected'
+
+# Moving the archive fixture must keep the exception limited to its exact path and line.
+BACKUP=tests/stack/lib/backup-fixtures.sh
+git init -q "$SANDBOX/backup-repo"
+mkdir -p "$SANDBOX/backup-repo/$(dirname "$BACKUP")"
+cp "$ROOT/$BACKUP" "$SANDBOX/backup-repo/$BACKUP"
+git -C "$SANDBOX/backup-repo" add "$BACKUP"
+git -C "$SANDBOX/backup-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false commit -qm 'Reviewed synthetic archive fixture'
+scan git "$SANDBOX/backup-repo" "${ARGS[@]}" --log-opts=HEAD
+
+# The identical token in an unreviewed file must remain a finding.
+grep '^PROXY_AUTH_TOKEN=' "$ROOT/$BACKUP" >"$SANDBOX/backup-repo/unreviewed.sh"
+git -C "$SANDBOX/backup-repo" add unreviewed.sh
+git -C "$SANDBOX/backup-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false commit -qm 'Unreviewed proxy-token control'
+COPY=$(git -C "$SANDBOX/backup-repo" rev-parse HEAD)
+expect_finding "$COPY:unreviewed.sh:generic-api-key:1" git "$SANDBOX/backup-repo" "${ARGS[@]}" \
+    --log-opts="$COPY^..$COPY"
+
+# Even at the reviewed path, a different complete line must remain a finding.
+sed '/^PROXY_AUTH_TOKEN=/s/$/ # not the reviewed fixture line/' "$ROOT/$BACKUP" >"$SANDBOX/backup-repo/$BACKUP"
+LINE=$(grep -n '^PROXY_AUTH_TOKEN=' "$SANDBOX/backup-repo/$BACKUP" | cut -d: -f1)
+git -C "$SANDBOX/backup-repo" add "$BACKUP"
+git -C "$SANDBOX/backup-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false commit -qm 'Changed proxy-token line control'
+COPY=$(git -C "$SANDBOX/backup-repo" rev-parse HEAD)
+expect_finding "$COPY:$BACKUP:generic-api-key:$LINE" git "$SANDBOX/backup-repo" "${ARGS[@]}" \
+    --log-opts="$COPY^..$COPY"
+echo 'PASS: moved archive fixture accepted; other paths and changed lines detected'
