@@ -51,11 +51,11 @@ if isinstance(info, dict):
             and all(isinstance(x, str) and len(x) <= 256 for x in test)):
         record["configured_test_sha256"] = hashlib.sha256(
             json.dumps(test, separators=(",", ":")).encode()).hexdigest()
-        if test == ["CMD", "/usr/local/bin/healthcheck.sh"] and record["container_id"]:
+        if test == ["CMD", "/usr/local/bin/tor-healthcheck.sh"] and record["container_id"]:
             # Sample the configured script in THIS container, not a source ancestor or tag.
             output = run(["docker", "exec", record["container_id"], "sha256sum",
-                          "/usr/local/bin/healthcheck.sh"])
-            match = re.fullmatch(rb"([0-9a-f]{64})  /usr/local/bin/healthcheck.sh\n", output)
+                          "/usr/local/bin/tor-healthcheck.sh"])
+            match = re.fullmatch(rb"([0-9a-f]{64})  /usr/local/bin/tor-healthcheck.sh\n", output)
             if match:
                 record["implementation_sha256"] = match[1].decode()
     checks = info.get("checks")

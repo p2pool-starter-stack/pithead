@@ -80,7 +80,7 @@ contains exactly these fields:
 - `configured_test_sha256`: digest of the compact JSON healthcheck command array.
   No raw command/configuration enters the result.
 - `implementation_sha256`: sampled in-container script digest when the configured
-  command is exactly `CMD /usr/local/bin/healthcheck.sh`; otherwise null.
+  command is exactly `CMD /usr/local/bin/tor-healthcheck.sh`; otherwise null.
 - `checks`: at most five `{start, end, exit_code}` records from Docker health
   history. Health output and raw control replies are excluded before transport.
 

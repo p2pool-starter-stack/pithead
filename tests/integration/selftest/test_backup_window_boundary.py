@@ -23,15 +23,22 @@ class BackupBoundaryTests(unittest.TestCase):
     def test_real_restart_boundary_has_fixed_failure_observations(self):
         with tempfile.TemporaryDirectory() as sandbox:
             docker = Path(sandbox) / "docker"
+            # Pin the sampled implementation to the shipped Compose command and image path.
+            command = '["CMD", "/usr/local/bin/tor-healthcheck.sh"]'
+            self.assertIn(command, (ROOT / "docker-compose.yml").read_text())
+            self.assertIn(
+                "COPY healthcheck.sh /usr/local/bin/tor-healthcheck.sh",
+                (ROOT / "build/tor/Dockerfile").read_text(),
+            )
             snapshot = {
                 "container_id": "b" * 64,
                 "image_id": "sha256:" + "c" * 64,
-                "test": ["CMD", "/usr/local/bin/healthcheck.sh"],
+                "test": ["CMD", "/usr/local/bin/tor-healthcheck.sh"],
                 "health": "unhealthy",
                 "checks": [None],
             }
             docker.write_text(
-                '#!/bin/sh\ncase "$1" in\ninspect) cat "$SNAPSHOT";;\nexec) printf "%s  /usr/local/bin/healthcheck.sh\\n" "'
+                '#!/bin/sh\ncase "$1" in\ninspect) cat "$SNAPSHOT";;\nexec) printf "%s  /usr/local/bin/tor-healthcheck.sh\\n" "'
                 + "d" * 64
                 + '";;\nesac\n'
             )
