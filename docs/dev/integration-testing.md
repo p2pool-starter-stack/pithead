@@ -1108,7 +1108,11 @@ share a 15-second interval and all emissions have a 120-record process limit.
 Absent samples after that limit do not establish a stall. The emission interface
 has no address, transaction, payment, amount, key or credential input; no DEBUG
 category is enabled and no raw debug metadata is collected before filtering.
-The build runs the probe's limiter/privacy checks before compiling the wallet.
+The build checks Ubuntu's static Unbound/libevent link dependencies and runs the
+probe's limiter/privacy checks before compiling the wallet. Both libraries are
+passed to the pinned source's Unbound finder, which otherwise omits libevent.
+The build retains HID support with Ubuntu's libudev development package and copies
+its runtime library into the job-owned image; the runtime version check must pass.
 
 Select only `options.phases: ["wallet-progress"]` with `no_rig: true`. This phase
 requires targeted mode, restoration and no scenario or other phase. It replaces

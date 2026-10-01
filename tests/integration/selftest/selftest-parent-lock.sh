@@ -109,7 +109,7 @@ assert_rc "a free lock is refused even when the holder still matches" "$?" 0
 
 echo "== source wiring checks every mutating boundary =="
 assert_eq "e2e checks both parent-held rigs at every mutating boundary" \
-    "$(cat "$HERE/../e2e.sh" "$HERE/../lib/parent-lock.sh" | grep -Ec 'parent_lock_checkpoint (restore|provision|deploy)|parent_lock_checkpoint "(the first bench touch|miner restore|loaner borrow)"')" 6
+    "$(cat "$HERE/../e2e.sh" "$HERE/../lib/deploy-branch.sh" "$HERE/../lib/parent-lock.sh" | grep -Ec 'parent_lock_checkpoint (restore|provision|deploy)|parent_lock_checkpoint "(the first bench touch|miner restore|loaner borrow)"')" 6
 assert_contains "detached launch reads token and continuity identity from stdin" \
     "$(sed -n '/^harness_launch_records() {$/,/^}$/p' "$HERE/../lib/detached-harness.sh")" \
     'for record in "${IT_RIG_TOKEN:-}" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}"'
