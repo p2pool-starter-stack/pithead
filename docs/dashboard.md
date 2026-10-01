@@ -1141,7 +1141,9 @@ would silently re-seed it, swallowing a payout change bundled with the move. A n
 a copy that fails or doesn't verify, refuses the whole apply instead of guessing which copy is live
 ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)); the other four `data_dir`s
 still only re-point the mount (see [Configuration › Data directories](configuration.md#data-directories)).
-If the recreate fails after the new path is published, `apply` restarts the existing dashboard
+If apply aborts before publishing the new path, it removes its unpublished copy and restarts the
+existing dashboard so the move can be retried. If it aborts after publication, it keeps the copy
+and retry marker. `apply` restarts the existing dashboard
 container, which is still mounted on the old path: rows written until the retried `apply` recreates
 it land in the old database, not the carried copy.
 
