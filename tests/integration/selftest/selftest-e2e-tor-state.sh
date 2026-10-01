@@ -4,6 +4,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 ROOT="$(cd "$HERE/../../.." && pwd)"
+echo "== e2e Tor fixture: preserve the live mount and secret baseline (#2951) =="
 subject="$(sed -n '/^provision() {$/,/^}$/p' "$HERE/../e2e.sh")"
 assert_eq "extract complete fixture provision function" \
     "$(printf '%s\n' "$subject" | sed -n '1p;$p' | tr '\n' ' ')" 'provision() { } '
