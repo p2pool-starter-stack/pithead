@@ -1,7 +1,24 @@
 # shellcheck shell=bash
 # Caller-side collection; result files exist before preflight or candidate deployment.
 backup_window_init() {
-    BACKUP_WINDOW_DIR="$(python3 "$HERE/lib/backup-window.py" init "${IT_BACKUP_WINDOW_DIR:-${CI_ARTIFACTS:-${TMPDIR:-}}}" 2>/dev/null)" || BACKUP_WINDOW_DIR=""
+    local parent="${IT_BACKUP_WINDOW_DIR:-${CI_ARTIFACTS:-${TMPDIR:-}}}"
+    if ! BACKUP_WINDOW_DIR="$(python3 "$HERE/lib/backup-window.py" init "$parent")"; then
+        BACKUP_WINDOW_DIR=""
+        # Fixed storage facts explain a refusal without exposing the caller's path.
+        python3 - "$parent" <<'PY' || true
+import json, os, sys
+from pathlib import Path
+parent = Path(sys.argv[1])
+facts = {"absolute": parent.is_absolute(), "symlink": parent.is_symlink()}
+try:
+    info = parent.stat()
+    facts.update(directory=parent.is_dir(), owned=info.st_uid == os.getuid(),
+                 writable_by_others=bool(info.st_mode & 0o022))
+except OSError:
+    facts["stat_available"] = False
+print("Backup-window storage refused: " + json.dumps(facts, separators=(",", ":")))
+PY
+    fi
     [ -z "$BACKUP_WINDOW_DIR" ] || python3 "$HERE/lib/backup-window.py" emit "$BACKUP_WINDOW_DIR" || true
 }
 

@@ -15,11 +15,17 @@ suffix is the invocation identity, independent of any candidate or runner commit
 The wrapper prints compact JSON lines prefixed `PITHEAD_BACKUP_RESULT_V1` followed by one ASCII space at
 initialization, attempt admission and completion. Collect `result.json` and
 `backup.log` beneath the invocation directory from the caller's artifact root.
-Bench-ci already passes its job-owned `CI_ARTIFACTS`; these files therefore survive
-wrapper EXIT restoration and are collected with the tier's artifacts. Use the last
+Bench-ci passes `CI_ARTIFACTS`; its root must meet the ownership and permission
+requirements above. Collect these files after wrapper EXIT restoration. Use the last
 validated result for that invocation. An interrupted invocation can retain
 `attempted`/`unknown`; never infer completion from a started command. The stdout
 record remains available if the final atomic file write fails.
+
+Initialization refuses an unsafe or unavailable artifact root without changing the
+backup operation. It prints a fixed diagnostic and bounded boolean storage facts
+without the path; no invocation artifacts or backup-window result are available.
+Treat that run's producer outcome and provenance as unknown. Collection requires
+the caller to supply the documented safe artifact root.
 
 `backup.log` contains the complete original command diagnostics after the wrapper's
 existing credential/endpoint redaction and control-character removal, on success

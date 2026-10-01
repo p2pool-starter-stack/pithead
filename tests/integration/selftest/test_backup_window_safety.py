@@ -4,6 +4,8 @@ import copy
 import importlib.util
 import io
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +20,51 @@ SPEC.loader.exec_module(window)
 
 
 class BackupStorageTests(unittest.TestCase):
+    def test_runner_artifact_root_and_refusal_diagnostics(self):
+        script = (
+            'HERE="$PWD/tests/integration"; source "$HERE/lib/backup-window.sh"; backup_window_init'
+        )
+        with tempfile.TemporaryDirectory() as parent:
+            env = {**os.environ, "CI_ARTIFACTS": parent}
+            env.pop("IT_BACKUP_WINDOW_DIR", None)
+            for mode in (0o755, 0o775):
+                os.chmod(parent, mode)  # noqa: S103 - safe/refused storage fixtures
+                process = subprocess.run(  # noqa: S603 - fixed fixture command
+                    ["/bin/bash", "-c", script],
+                    cwd=ROOT,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(process.returncode, 0)
+                if mode == 0o755:
+                    value = json.loads(process.stdout.removeprefix(window.RESULT))
+                    self.assertEqual(value["attempt"], "not_run")
+                    self.assertTrue(
+                        (
+                            Path(parent) / ("backup-window-" + value["invocation"]) / "result.json"
+                        ).is_file()
+                    )
+                else:
+                    self.assertIn("Backup-window diagnostics unavailable.", process.stderr)
+                    facts = json.loads(
+                        process.stdout.removeprefix("Backup-window storage refused: ")
+                    )
+                    self.assertEqual(
+                        facts,
+                        {
+                            "absolute": True,
+                            "symlink": False,
+                            "directory": True,
+                            "owned": True,
+                            "writable_by_others": True,
+                        },
+                    )
+                    self.assertNotIn(parent, process.stdout + process.stderr)
+                    self.assertNotIn(window.RESULT, process.stdout)
+            os.chmod(parent, 0o700)
+
     def test_unsafe_directory_does_not_receive_writes_but_keeps_original_exit(self):
         with tempfile.TemporaryDirectory() as parent:
             outside = Path(parent) / "outside"
