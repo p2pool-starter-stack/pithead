@@ -584,6 +584,13 @@ borrow_miner() {
 # --- Phase 5: run the live harness (detached on the box) --------------------
 run_harness() {
     local phases remote_args="" rearm_id rearm_request rearm_ack
+    if [ "${WALLET_PROGRESS:-0}" = 1 ]; then
+        # Observe only: a scenario/apply would recreate the wallet without the explicit override.
+        local probe_rc=0
+        harness_pregate "$WORKERS" --no-mining-asserts || probe_rc=$?
+        on_bench "cd '$E2E_DIR' && bash tests/integration/diagnostics/wallet-progress/capture.sh" || probe_rc=1
+        return "$probe_rc"
+    fi
     rearm_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
     rearm_request="$E2E_DIR/results/borrow-rearm.$rearm_id.request"
     rearm_ack="$E2E_DIR/results/borrow-rearm.$rearm_id.ack"

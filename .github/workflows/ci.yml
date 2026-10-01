@@ -343,7 +343,7 @@ jobs:
           echo "56de6d5e5ec427e17b74fa48d51271c7fc0d61244bf5c90e828aab8362d55010  /tmp/hadolint" | sha256sum -c -
           sudo install -m 0755 /tmp/hadolint /usr/local/bin/hadolint
       - name: Lint all build/* and dashboard/ Dockerfiles (config in .config/hadolint.yaml)
-        run: hadolint --config .config/hadolint.yaml build/*/Dockerfile dashboard/Dockerfile
+        run: hadolint --config .config/hadolint.yaml build/*/Dockerfile dashboard/Dockerfile tests/integration/diagnostics/*/Dockerfile
 
   python-lint:
     name: Python lint + format (ruff)

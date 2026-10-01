@@ -14,7 +14,7 @@ pithead/
 ├── build/                container build contexts for stack daemons
 ├── tests/
 │   ├── stack/            CLI unit suites, grouped by feature
-│   ├── integration/      live harness, selftests, fakes, and tools
+│   ├── integration/      live harness, selftests, fakes, tools, and job-owned diagnostics
 │   └── os/               appliance harness and phase modules
 ├── scripts/
 │   ├── lint/             repository gates and their selftests
@@ -99,6 +99,7 @@ Keep local code out of `vendor/`.
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
 | `tests/integration/lib/` | Sourced helpers and phase functions for `run.sh` and `e2e.sh`; `deploy-branch.sh` owns branch deployment and post-deploy settling. |
 | `tests/integration/selftest/` | Pure harness checks; `make test-integration-selftest` also checks appliance module loading. |
+| `tests/integration/diagnostics/wallet-progress/` | Pinned-source, numeric-only payout-wallet probe; opt-in job build, privacy/limiter checks, image provenance and capture. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. |

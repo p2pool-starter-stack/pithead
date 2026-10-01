@@ -1,0 +1,60 @@
+--- a/src/wallet/wallet2.cpp
++++ b/src/wallet/wallet2.cpp
+@@ -51,6 +51,7 @@
+ #include "cryptonote_core/tx_sanity_check.h"
+ #include "wallet_rpc_helpers.h"
+ #include "wallet2.h"
++#include "numeric-progress.h"
+ #include "wallet_args.h"
+ #include "cryptonote_basic/cryptonote_format_utils.h"
+ #include "net/parse.h"
+@@ -3053,6 +3054,7 @@
+       LOG_PRINT_L2( "Skipped block by timestamp, height: " << height << ", block time " << b.timestamp << ", account time " << m_account.get_createtime());
+   }
+   m_blockchain.push_back(bl_id);
++  wallet_numeric::sample(2, height + 1);
+
+   if (0 != m_callback)
+     m_callback->on_new_block(height, b);
+@@ -3978,6 +3980,7 @@
+         if (!(current_index % 1024))
+           LOG_PRINT_L2( "Skipped block by height: " << current_index);
+         m_blockchain.push_back(bl_id);
++        wallet_numeric::sample(3, current_index + 1);
+
+         if (0 != m_callback)
+         { // FIXME: this isn't right, but simplewallet just logs that we got a block.
+--- a/src/wallet/wallet_rpc_server.cpp
++++ b/src/wallet/wallet_rpc_server.cpp
+@@ -39,6 +39,7 @@
+
+ #include "version.h"
+ #include "wallet_rpc_server.h"
++#include "numeric-progress.h"
+ #include "wallet/wallet_args.h"
+ #include "common/command_line.h"
+ #include "common/i18n.h"
+@@ -4912,6 +4913,7 @@
+         return false;
+       }
+
++      wallet_numeric::sample(0, 0);
+       LOG_PRINT_L0(tools::wallet_rpc_server::tr("Loading wallet..."));
+       if(!wallet_file.empty())
+       {
+@@ -4946,6 +4948,7 @@
+         wal->set_rpc_client_secret_key(client_secret_key);
+       }
+
++      wallet_numeric::sample(1, wal->get_blockchain_current_height());
+       bool quit = false;
+       tools::signal_handler::install([&wal, &quit](int) {
+         assert(wal);
+@@ -4957,6 +4960,7 @@
+       {
+         if (!no_initial_sync)
+           wal->refresh(wal->is_trusted_daemon());
++        wallet_numeric::sample(4, wal->get_blockchain_current_height());
+       }
+       catch (const std::exception& e)
+       {

@@ -7,14 +7,16 @@
 validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS and HARNESS_SCENARIO_ARGS
     HARNESS_PHASE_ARGS=""
     HARNESS_SCENARIO_ARGS=""
+    WALLET_PROGRESS=0
     [ "${#HARNESS_ARGS[@]}" -eq 0 ] && return 0
     [ "$MODE" != "check" ] || die "--harness-arg is not supported with --mode check."
     local i=0 arg next
     while [ "$i" -lt "${#HARNESS_ARGS[@]}" ]; do
         arg="${HARNESS_ARGS[$i]}"
         case "$arg" in
-        --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke | --alert-egress | --mergemine-submit | --mergemine-localnet | --tari-stranded)
+        --wallet-progress | --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke | --alert-egress | --mergemine-submit | --mergemine-localnet | --tari-stranded)
             HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
+            [ "$arg" != --wallet-progress ] || WALLET_PROGRESS=1
             i=$((i + 1))
             ;;
         --scenario)
@@ -28,4 +30,9 @@ validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS and HA
             ;;
         esac
     done
+    if [ "$WALLET_PROGRESS" = 1 ]; then
+        [ "${#HARNESS_ARGS[@]}" = 1 ] && [ -z "${SCENARIO:-}" ] && [ "$MODE" = targeted ] &&
+            [ "${BORROW_MINER:-1}" = 0 ] && [ "${KEEP:-0}" = 0 ] ||
+            die "--wallet-progress requires targeted mode, --no-miner, restoration and no other phase/scenario."
+    fi
 }

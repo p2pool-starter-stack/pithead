@@ -22,6 +22,10 @@ docker logs --timestamps wallet-rpc 2>&1 | awk '
     /Detaching blockchain on height [0-9]+/ { height=$0; sub(/^.*Detaching blockchain on height /, "", height); sub(/[^0-9].*$/, "", height); detach=height }
     /Re-processing wallet.*starting from height [0-9]+/ { height=$0; sub(/^.*starting from height /, "", height); sub(/[^0-9].*$/, "", height); rescan=height }
     /Transaction extra has unsupported format:/ { processing++ }
+    /wallet_numeric_progress kind=[0-4] count=[0-9]+$/ {
+        numeric=$0; sub(/^.*wallet_numeric_progress /, "", numeric);
+        print "wallet_numeric_progress " numeric
+    }
     END {
         printf "wallet_log_transaction_format_warnings=%d\n", processing;
         printf "wallet_log_detach_height=%s wallet_log_rescan_from_height=%s\n", detach=="" ? "unavailable" : detach, rescan=="" ? "unavailable" : rescan

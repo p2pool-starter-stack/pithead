@@ -136,6 +136,14 @@ assert_contains "transaction work warnings are counted without identifiers" "$bo
 assert_contains "log reader success is explicit" "$body" 'wallet_startup_log_exit=0'
 assert_eq "startup labels omit addresses, identifiers and private log content" "$(printf '%s' "$body" | grep -Ec 'fixture-address|fixture-transaction-id|unpublished')" 0
 cat >>"$WALLET_TEST_LOG" <<'EOF'
+2026-10-01T01:00:05Z wallet_numeric_progress kind=2 count=3774000
+wallet_numeric_progress kind=9 count=777
+wallet_numeric_progress kind=2 count=123 fixture-private-payment
+EOF
+body="$(wallet_startup_sample)"
+assert_contains "numeric emission is retained without a raw prefix" "$body" 'wallet_numeric_progress kind=2 count=3774000'
+assert_eq "numeric near-matches cannot emit trailing metadata or invalid kinds" "$(printf '%s' "$body" | grep -Ec 'fixture-private-payment|kind=9')" 0
+cat >>"$WALLET_TEST_LOG" <<'EOF'
 Creating view-only payout wallet at restore height 0
 wallet cache missing: fixture-private-path
 Failed to open portable binary, trying unportable

@@ -1086,7 +1086,37 @@ remain unavailable. These probes use the
 container credentials without printing responses or credentials. Increasing CPU
 counters for the same process start time establish work, not scan height or
 catch-up; unchanged file-read counters alone cannot establish a stall. When RPC
-is silent throughout startup, wallet height remains unobservable through RPC. Each Docker diagnostic command has a 5-second bound. Samples survive
+is silent throughout startup, wallet height remains unobservable through RPC.
+The opt-in `wallet-progress` bench phase builds a job-owned wallet from Monero
+v0.18.5.1 commit `4f92268d7c16741cfb41e5bbe2aa46cc260a9ea5` and its pinned
+submodules, with a numeric-only probe at the block append and startup boundaries.
+It retains level-0 logging and the existing initial refresh before RPC startup.
+The probe accepts only integer kinds/counts: kind 0 is loading started (count 0 is
+a sentinel), 1 is loaded cache block count, 2 is processed-block count, 3 is
+skipped-block count, and 4 is block count after initial refresh returns. Counts
+are next-block heights, comparable to daemon block count. Progress emissions
+share a 15-second interval and all emissions have a 120-record process limit.
+Absent samples after that limit do not establish a stall. The emission interface
+has no address, transaction, payment, amount, key or credential input; no DEBUG
+category is enabled and no raw debug metadata is collected before filtering.
+The build runs the probe's limiter/privacy checks before compiling the wallet.
+
+Select only `options.phases: ["wallet-progress"]` with `no_rig: true`. This phase
+requires targeted mode, restoration and no scenario or other phase. It replaces
+only the wallet binary through an explicit job-owned image override, then runs
+the unchanged readiness/current-state pre-gate and collects numeric records even
+on failure. It returns before scenarios or lifecycle can recreate the wallet.
+Source revision, patch/header/binary hashes and base/running image IDs are recorded
+in `wallet-progress-provenance.txt`; the production shared-image proof does not
+cover this diagnostic image. Baseline image/ownership restoration checks remain
+binding. Source compilation precedes branch deployment and is bounded to 3600
+seconds; assembling the runtime image after deployment requires that cached build
+and is bounded to 300 seconds. Time before probe activation remains unobserved
+and cannot establish recovery. Ordinary scan waits and memory
+limits are unchanged. Numeric samples and daemon counts establish progression
+and backlog, not recovery or lifecycle execution.
+
+Each Docker diagnostic read has a 5-second bound. Samples survive
 automatic restart in the transcript; a final current-state snapshot alone cannot
 establish whether an earlier process was OOM-killed. Docker retains only a recent
 event buffer, so missing events do not prove that no OOM occurred. Health output
