@@ -852,19 +852,33 @@ cause of recovery. No automatic step
 changes guards or deletes Tor state. The action budget is three per outage; after that the
 monitor warns until egress recovers. The feature remains off by default.
 
-**Saturated Tor circuit history while chains stop advancing.** A completed bootstrap or a failed
-clearnet probe alone cannot authorize a state reset. If Tor repeatedly reports invalid circuit
-build timing and local Monero is peerless and stalled, run `./pithead tor-recover check`. This
-read-only check validates the live Tor data mount and the saturated history signature, then
-compares Monero height, sync and outgoing peers over three minutes. It uses sudo for read-only
-access to Tor-owned state and identity keys. `./pithead tor-recover apply`
-rechecks the same evidence under the mutation lock, verifies onion identity keys, backs up only
-Tor's `state`, and restarts Tor. It re-dials local Monero after the actual restart, verifies Tor
-health and Monero peers, and records the attempt in the control audit. The backup remains for
-inspection. A persistent six-hour cooldown includes failed attempts. The command refuses an
-ambiguous or symlinked Tor mount, an active mutation, ordinary warnings, or an advancing chain.
-It never removes onion keys, wallets, configuration or chain data. If verification fails, the
-command reports failure and leaves the backup for diagnosis; inspect Tor and Monero before retrying.
+**Saturated Tor circuit history while chains stop advancing.** A completed bootstrap, a failed
+clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
+reports invalid circuit build timing, run `./pithead tor-recover check`. This read-only check
+validates the live Tor data mount and the saturated history signature. When local Monero RPC
+answers, it requires peerless, stalled Monero across three minutes. When RPC is unavailable,
+it instead requires two cookie-authenticated Tor observations three minutes apart: bootstrap
+95% at `circuit_create`, no established circuit, and the same running Tor instance. At least
+two invalid circuit-timing warnings must appear in the last 200 log lines from that interval;
+unreadable diagnostics refuse recovery. It uses sudo for read-only access to Tor-owned state
+and identity keys.
+
+`./pithead tor-recover apply` rechecks the evidence under the mutation lock, verifies onion
+identity keys, backs up only Tor's `state`, and restarts Tor. It re-dials a running local Monero
+after the actual restart. If Compose left Monero Created behind unhealthy Tor, recovery starts
+that existing node once Tor is healthy. The command verifies Tor health and Monero peers and
+records the attempt in the control audit; this connectivity result does not prove chain sync.
+Restore the remaining baseline services through the caller's normal workflow and independently
+verify baseline health and authenticated Monero and Tari sync before admitting new work.
+
+The backup remains for inspection. A persistent six-hour cooldown includes failed attempts.
+The command refuses an ambiguous or symlinked Tor mount, an active mutation, ordinary warnings,
+or an advancing chain. It never removes onion keys, wallets, configuration or chain data.
+If verification fails, the command reports failure and leaves the backup for diagnosis;
+inspect Tor and Monero before retrying. This is an explicit operator operation, not an automatic
+watchdog. A trusted CI caller must hold its fleet reservation and exclude active consumers
+through recovery, baseline restoration and independent sync verification. Pithead enforces
+local mutation exclusion; it does not acquire or attest fleet reservations.
 
 **Monero node out of sync after a Tor restart.**
 Anything that restarts or recreates the tor container outside the stack's own operations — a

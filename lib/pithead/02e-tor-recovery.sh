@@ -35,6 +35,33 @@ tor_recovery_signature() { # <state file> <first Monero get_info> <second get_in
     ' <<<"$first" >/dev/null
 }
 
+# Used only when local chain RPC is unavailable. Both observations must name the same
+# running Tor instance; recent warnings alone or unreadable RPC never authorize recovery.
+tor_recovery_bootstrap_sample() {
+    local identity verdict
+    identity=$(docker inspect tor --format '{{.Id}} {{.State.StartedAt}} {{.State.Running}}' 2>/dev/null) || return 1
+    [[ "$identity" = *" true" ]] || return 1
+    verdict=$(timeout 10 docker exec tor /usr/local/bin/tor-recovery-diagnose.sh 2>/dev/null) || return 1
+    [ "$verdict" = bootstrap95-no-circuit ] || return 1
+    printf '%s\n' "$identity"
+}
+
+tor_recovery_bootstrap_stalled() { # <state> <start of observation window>
+    local first second warnings
+    first=$(tor_recovery_bootstrap_sample) || return 1
+    sleep 180
+    second=$(tor_recovery_bootstrap_sample) || return 1
+    [ "$first" = "$second" ] || return 1
+    # A transient RPC outage must not bypass the ordinary chain-evidence refusals.
+    # If it answers now, a fresh invocation must take the running-chain path.
+    if tor_recovery_info >/dev/null 2>&1; then return 1; fi
+    tor_recovery_state_saturated "$1" || return 1
+    # Recent bounded output, collected after the observation window (not historical warnings).
+    warnings=$(timeout 10 docker logs --since "$2" --tail 200 tor 2>&1) || return 1
+    [ "${#warnings}" -le 65536 ] || return 1
+    [ "$(grep -cF 'No valid circuit build time data out of 1000 times' <<<"$warnings")" -ge 2 ]
+}
+
 tor_recovery_mount() { # print the one canonical live Tor data mount, else refuse
     local expected actual label count
     expected=$(env_get TOR_DATA_DIR) || return 1
@@ -137,28 +164,31 @@ tor_recover() { # check | apply; explicit operator action only
         mutation_lock_release
         return 1
     fi
-    if [ "$(docker inspect monerod --format '{{.State.Running}}' 2>/dev/null)" != true ]; then
-        warn "Tor recovery refused: a running local Monero node is required for chain evidence."
-        mutation_lock_release
-        return 1
+    first=
+    if [ "$(docker inspect monerod --format '{{.State.Running}}' 2>/dev/null)" = true ]; then
+        first=$(tor_recovery_info) || first=
     fi
-    first=$(tor_recovery_info) || {
-        warn "Tor recovery refused: Monero RPC unavailable."
-        mutation_lock_release
-        return 1
-    }
-    sleep 180
-    second=$(tor_recovery_info) || {
-        warn "Tor recovery refused: second Monero reading unavailable."
-        mutation_lock_release
-        return 1
-    }
-    if ! tor_recovery_signature "$state" "$first" "$second"; then
-        warn "Tor recovery refused: saturated circuit history and stalled, peerless Monero are not both established."
-        mutation_lock_release
-        return 1
+    if [ -n "$first" ]; then
+        sleep 180
+        second=$(tor_recovery_info) || {
+            warn "Tor recovery refused: second Monero reading unavailable."
+            mutation_lock_release
+            return 1
+        }
+        if ! tor_recovery_signature "$state" "$first" "$second"; then
+            warn "Tor recovery refused: saturated circuit history and stalled, peerless Monero are not both established."
+            mutation_lock_release
+            return 1
+        fi
+        log "Tor circuit history is saturated; local Monero stayed peerless and at one height across three minutes."
+    else
+        if ! tor_recovery_bootstrap_stalled "$state" "$now"; then
+            warn "Tor recovery refused: unavailable Monero RPC is not corroborated by sustained authenticated Tor bootstrap failure."
+            mutation_lock_release
+            return 1
+        fi
+        log "Tor circuit history is saturated; authenticated bootstrap stayed at 95% with no established circuit across three minutes and repeated invalid timing warnings."
     fi
-    log "Tor circuit history is saturated; local Monero stayed peerless and at one height across three minutes."
     identities=$(tor_recovery_identities "$dir") || {
         warn "Tor recovery refused: onion identities cannot be verified."
         mutation_lock_release
@@ -204,7 +234,7 @@ tor_recover() { # check | apply; explicit operator action only
         return 1
     fi
     if [ "$(tor_recovery_mount)" != "$dir" ] || ! sudo test -f "$state" || sudo test -L "$state" ||
-        ! tor_recovery_signature "$state" "$first" "$second" ||
+        ! tor_recovery_state_saturated "$state" ||
         ! sudo mv -n -- "$state" "$backup" || sudo test -e "$state" || ! sudo test -f "$backup"; then
         warn "Tor recovery could not back up circuit state; starting Tor again."
         tor_recovery_restore_start "$dir" "$identities" || true
@@ -235,6 +265,11 @@ tor_recover() { # check | apply; explicit operator action only
     tor_recovery_redial_monerod
     for ((i = 0; i < 60; i++)); do
         if [ "$(docker inspect tor --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ]; then
+            # Compose left the local node Created when Tor could not become healthy.
+            # Start only that existing node; the caller restores the remaining baseline.
+            if [ "$(docker inspect monerod --format '{{.State.Status}}' 2>/dev/null)" = created ]; then
+                docker compose start monerod || break
+            fi
             info=$(tor_recovery_info) || info='{}'
             if jq -e '.status == "OK" and .outgoing_connections_count > 0' <<<"$info" >/dev/null; then
                 healthy=1
