@@ -307,6 +307,46 @@ echo "== failed transport cannot supply an applied history observation =="
     [ "$IT_FAIL" -eq 0 ]
 ) && it_pass "failed dashboard transport is rejected" || it_fail "failed dashboard transport" "failed read supplied a verdict or lacked a failure marker"
 
+echo "== partial decoder output cannot supply an applied history observation =="
+(
+    source "$HERE/../lib.sh"
+    warning_file="$(mktemp)"
+    trap 'rm -f "$warning_file"' EXIT
+    now_s() { printf '0'; }
+    IT_RIG_TOKEN=''
+    api_state() { printf '{}'; }
+    decoder_body='{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}garbage'
+    _worker_detail() { printf '%s' "$decoder_body"; }
+    wait_for() {
+        shift 3
+        "$@"
+    }
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "applied JSON followed by junk cannot pass" "$out" ""
+    assert_eq "failed JSON decoding has an explicit invalid observation" \
+        "$(jq -r '.history_handoff.dashboard.poll' "$warning_file")" invalid_or_failed
+    assert_eq "partial decoder output never supplies a diagnostic history status" \
+        "$(jq -r '.history_handoff.dashboard.history // "absent"' "$warning_file")" absent
+    _HISTORY_ROW_STATUS='' _HISTORY_SAMPLE_COUNT=0
+    decoder_body='{"history":[{"change_id":"0123456789abcdef","status":"accepted"}]}'
+    _pred_history_row_terminal r 0123456789abcdef 2>"$warning_file"
+    assert_eq "the successful accepted observation remains nonterminal" "$?" 1
+    assert_eq "the successful accepted observation is cached" "$_HISTORY_ROW_STATUS" accepted
+    decoder_body='{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}garbage'
+    _pred_history_row_terminal r 0123456789abcdef 2>"$warning_file"
+    assert_eq "a failed decode remains nonterminal" "$?" 1
+    assert_eq "a failed decode preserves the last successfully decoded observation" "$_HISTORY_ROW_STATUS" accepted
+    assert_eq "the failed decode remains explicit after a successful observation" \
+        "$(jq -r '.history_handoff.dashboard.poll' "$warning_file")" invalid_or_failed
+    decoder_body='{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}{}'
+    _pred_history_row_terminal r 0123456789abcdef 2>"$warning_file"
+    assert_eq "multiple JSON documents cannot supply a terminal observation" "$?" 1
+    assert_eq "multiple JSON documents preserve the last valid observation" "$_HISTORY_ROW_STATUS" accepted
+    assert_eq "multiple JSON documents have an explicit invalid observation" \
+        "$(jq -r '.history_handoff.dashboard.poll' "$warning_file")" invalid_or_failed
+    [ "$IT_FAIL" -eq 0 ]
+) && it_pass "partial dashboard decoder output is rejected" || it_fail "partial dashboard decoder output" "invalid JSON supplied a verdict or replaced the last valid observation"
+
 echo ""
 echo "selftest-rigforge-apply-settle: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

@@ -145,10 +145,15 @@ _pred_history_row_terminal() { # <rig> <change_id>
         detail=""
     fi
     if [ -n "${_HISTORY_DEADLINE:-}" ] && [ "$(now_s)" -gt "$_HISTORY_DEADLINE" ]; then return 1; fi
-    # A transport can fail after writing valid JSON. Its body is not an observation.
+    # Transport or decoding failure cannot supply a status, even after emitting valid JSON.
     if [ "$dashboard_poll" = ok ]; then
-        status="$(printf '%s' "$detail" | jq -r --arg c "$2" 'first(.history[]? | select(.change_id == $c)) | .status // empty' 2>/dev/null)"
-        _HISTORY_ROW_STATUS="$status"
+        if status="$(printf '%s' "$detail" | jq -sr --arg c "$2" '
+            if length == 1 and (.[0] | type) == "object" then .[0] else error("invalid response") end |
+            first(.history[]? | select(.change_id == $c)) | .status // empty' 2>/dev/null)"; then
+            _HISTORY_ROW_STATUS="$status"
+        else
+            status=""
+        fi
     fi
     if [ "${_HISTORY_SAMPLE_COUNT:-20}" -lt 20 ]; then
         _HISTORY_SAMPLE_COUNT=$((_HISTORY_SAMPLE_COUNT + 1))
