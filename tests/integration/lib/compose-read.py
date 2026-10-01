@@ -91,7 +91,11 @@ def main():
                         if args.passthrough and key.data == "stdout":
                             sys.stdout.buffer.write(chunk)
                             sys.stdout.buffer.flush()
-            metadata["transport_exit"] = proc.wait()
+            try:
+                remaining = max(0, deadline - time.monotonic()) if deadline else None
+                metadata["transport_exit"] = proc.wait(timeout=remaining)
+            except subprocess.TimeoutExpired:
+                metadata["capture_error"] = "time limit exceeded"
     except OSError:
         metadata["capture_error"] = "could not start or read command"
     finally:
