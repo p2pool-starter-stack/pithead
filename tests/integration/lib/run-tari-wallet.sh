@@ -32,6 +32,7 @@ _pred_payout_wallet_ready() { # <confirmed|tari_confirmed>
 # wallet's own healthcheck retires this marker only once the wallet reaches monerod's tip.
 _pred_monero_wallet_caught_up() {
     # Keep samples in the transcript even when the wallet restarts before final capture.
+    wallet_startup_sample || true
     wallet_scan_sample || true
     rx 'docker exec wallet-rpc test ! -e /home/ubuntu/wallets/.payout-scanning' >/dev/null 2>&1
 }

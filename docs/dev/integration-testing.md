@@ -1062,7 +1062,18 @@ The safety-backup recovery gate runs before scenarios, so if its health wait fai
 redacted `compose-ps.txt` and `health-check.txt` to `results/safety-backup-recovery/` before
 starting restoration. Diagnostic capture is best-effort: it never changes the failed verdict or
 the recovery sequence. Capture also writes `wallet-health.json` and
-`wallet-memory-events.txt`. During the existing 1200-second Monero scan wait, each
+`wallet-memory-events.txt` and `wallet-startup.txt`. Startup sampling reads only the
+retained wallet container log under a 5-second bound and emits allowlisted milestone
+labels, a count of transaction-format warnings, and numeric detach/rescan-start
+heights when those native messages occur. These heights describe a rollback or
+rescan boundary, not the current scan position. Addresses, keys, transaction
+identifiers and raw log lines are not emitted. The log command exit is retained;
+an unreadable log is not evidence that a stage was absent. Polls preserve these
+labels before the final 200-line generic tail can lose them. Log rotation can
+remove earlier milestones or reduce warning counts. A container log can span
+automatic restarts, so labels alone do not identify the current process stage.
+Warnings establish observed transaction work, not numeric scan height or catch-up.
+During the existing 1200-second Monero scan wait, each
 15-second poll records container identity, start time, current exit/OOM/restart
 state, cgroup memory usage/peak/limit/events (v2 or v1), PID 1 RSS/peak/thread count
 and read/write counters, process state, user/system CPU ticks, process start ticks,

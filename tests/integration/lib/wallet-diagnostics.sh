@@ -1,6 +1,38 @@
 # shellcheck shell=bash
 # Bounded payout-wallet diagnostics. Docker's current State loses an OOM on restart;
 # retain filtered recent events and cgroup samples while the prerequisite scan runs.
+# Read the retained wallet log locally on the box; emit labels/counts only.
+# The generic final 200-line log tail loses startup under transaction-warning volume.
+wallet_startup_sample() {
+    rx "$(
+        cat <<'WALLET_STARTUP_DIAGNOSTICS'
+        timeout 5 bash <<'WALLET_STARTUP'
+set -o pipefail
+docker logs --timestamps wallet-rpc 2>&1 | awk '
+    function stage(name) { if (!seen[name]++) print "wallet_startup_stage=" name }
+    /Opening existing view-only payout wallet/ { stage("entrypoint_reopen") }
+    /Creating view-only payout wallet/ { stage("entrypoint_create") }
+    /Loading wallet\.\.\./ { stage("loading") }
+    /Loaded wallet keys file, with public address:/ { stage("keys_loaded") }
+    /wallet cache missing:/ { stage("cache_missing") }
+    /Failed to open portable binary, trying unportable/ { stage("cache_format_fallback") }
+    /Wallet initialization failed:/ { stage("initialization_failed") }
+    /Initial refresh failed:/ { stage("initial_refresh_failed") }
+    /Starting wallet RPC server/ { stage("rpc_started") }
+    /Detaching blockchain on height [0-9]+/ { height=$0; sub(/^.*Detaching blockchain on height /, "", height); sub(/[^0-9].*$/, "", height); detach=height }
+    /Re-processing wallet.*starting from height [0-9]+/ { height=$0; sub(/^.*starting from height /, "", height); sub(/[^0-9].*$/, "", height); rescan=height }
+    /Transaction extra has unsupported format:/ { processing++ }
+    END {
+        printf "wallet_log_transaction_format_warnings=%d\n", processing;
+        printf "wallet_log_detach_height=%s wallet_log_rescan_from_height=%s\n", detach=="" ? "unavailable" : detach, rescan=="" ? "unavailable" : rescan
+    }
+'
+WALLET_STARTUP
+        printf 'wallet_startup_log_exit=%s\n' "$?"
+WALLET_STARTUP_DIAGNOSTICS
+    )" 2>&1 | redact
+}
+
 wallet_scan_sample() {
     rx "$(
         cat <<'WALLET_DIAGNOSTICS'
@@ -62,6 +94,7 @@ WALLET_DIAGNOSTICS
 }
 
 capture_wallet_diagnostics() { # <artifact directory>
+    wallet_startup_sample >"$1/wallet-startup.txt" || true
     rx "timeout 5 docker inspect --format '{{json .State.Health}}' wallet-rpc" 2>&1 | redact >"$1/wallet-health.json" || true
     wallet_scan_sample >"$1/wallet-memory-events.txt" || true
 }

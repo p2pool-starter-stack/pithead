@@ -22,7 +22,15 @@ printf '2147483648\n' >"$TD/cgroup/memory.peak"
 printf '2147483648\n' >"$TD/cgroup/memory.max"
 printf 'oom_kill 1\n' >"$TD/cgroup/memory.events"
 printf 'VmRSS: 1750000 kB\nVmHWM: 1800000 kB\nThreads: 32\n' >"$TD/process-status"
-export WALLET_TEST_COMMANDS="$TD/commands"
+export WALLET_TEST_COMMANDS="$TD/commands" WALLET_TEST_LOG="$TD/wallet.log"
+cat >"$WALLET_TEST_LOG" <<'EOF'
+2026-10-01T01:00:00Z Opening existing view-only payout wallet
+2026-10-01T01:00:01Z W Loading wallet...
+2026-10-01T01:00:02Z W Loaded wallet keys file, with public address: fixture-address
+2026-10-01T01:00:03Z W Transaction extra has unsupported format: fixture-transaction-id
+2026-10-01T01:00:04Z W Transaction extra has unsupported format: fixture-transaction-id
+PASSWORD=unpublished-log-secret PRIVATE_VIEW_KEY=unpublished-view-key
+EOF
 cat >"$TD/bin/docker" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$WALLET_TEST_COMMANDS"
@@ -41,6 +49,9 @@ exec)
        sh -c "$script" ;;
 
     esac ;;
+logs)
+    if [ "${WALLET_TEST_LOG_RC:-0}" != 0 ]; then echo 'docker read error: fixture-private-error' >&2; exit "$WALLET_TEST_LOG_RC"; fi
+    if [ "${WALLET_TEST_LOG_STDERR:-0}" = 1 ]; then cat "$WALLET_TEST_LOG" >&2; else cat "$WALLET_TEST_LOG"; fi ;;
 events) echo '123 action=oom exit='; echo '124 action=die exit=137' ;;
 esac
 EOF
@@ -116,18 +127,57 @@ assert_contains "v1 peak is measured when v2 files are absent" "$body" $'memory.
 rm "$TD/wallet/payout-wallet.keys"
 body="$(wallet_scan_sample)"
 assert_contains "unavailable metadata is explicit" "$body" 'wallet_keys_bytes=unavailable'
+echo "== wallet startup log: labels survive a noisy final tail without raw contents =="
+body="$(wallet_startup_sample)"
+assert_contains "startup records existing-wallet entrypoint" "$body" 'wallet_startup_stage=entrypoint_reopen'
+assert_contains "startup records native loading milestone" "$body" 'wallet_startup_stage=loading'
+assert_contains "startup records loaded keys without the address" "$body" 'wallet_startup_stage=keys_loaded'
+assert_contains "transaction work warnings are counted without identifiers" "$body" 'wallet_log_transaction_format_warnings=2'
+assert_contains "log reader success is explicit" "$body" 'wallet_startup_log_exit=0'
+assert_eq "startup labels omit addresses, identifiers and private log content" "$(printf '%s' "$body" | grep -Ec 'fixture-address|fixture-transaction-id|unpublished')" 0
+cat >>"$WALLET_TEST_LOG" <<'EOF'
+Creating view-only payout wallet at restore height 0
+wallet cache missing: fixture-private-path
+Failed to open portable binary, trying unportable
+Initial refresh failed: fixture-private-error
+Wallet initialization failed: fixture-private-error
+Detaching blockchain on height 1000: fixture-private-value
+Re-processing wallet existing txs starting from height 500: fixture-private-value
+Starting wallet RPC server
+Starting wallet RPC server
+EOF
+for ((i = 0; i < 300; i++)); do echo 'unrelated noisy fixture-private-value'; done >>"$WALLET_TEST_LOG"
+body="$(wallet_startup_sample)"
+assert_eq "a repeated startup milestone is emitted once" "$(printf '%s' "$body" | grep -cx wallet_startup_stage=rpc_started)" 1
+for milestone in entrypoint_create cache_missing cache_format_fallback initial_refresh_failed initialization_failed; do
+    assert_contains "startup milestone $milestone is retained before a noisy tail" "$body" "wallet_startup_stage=$milestone"
+done
+assert_contains "native detach and rescan heights exclude trailing private context" "$body" 'wallet_log_detach_height=1000 wallet_log_rescan_from_height=500'
+assert_eq "all native error details and trailing context are omitted" "$(printf '%s' "$body" | grep -c fixture-private)" 0
+export WALLET_TEST_LOG_STDERR=1
+body="$(wallet_startup_sample)"
+assert_contains "container stderr milestones are retained" "$body" 'wallet_startup_stage=keys_loaded'
+assert_contains "container stderr transaction warnings are counted" "$body" 'wallet_log_transaction_format_warnings=2'
+unset WALLET_TEST_LOG_STDERR
+export WALLET_TEST_LOG_RC=7
+body="$(wallet_startup_sample)"
+assert_contains "unreadable retained log is explicit rather than silent success" "$body" 'wallet_startup_log_exit=7'
+assert_eq "raw Docker reader errors are never emitted" "$(printf '%s' "$body" | grep -c fixture-private-error)" 0
+unset WALLET_TEST_LOG_RC
 capture_wallet_diagnostics "$TD"
 export IT_PITHEAD=true
 api_state() { echo '{}'; }
 capture_artifacts route "$TD/out" >/dev/null 2>&1
 assert_contains "failure capture routes wallet health into its artifact directory" "$(cat "$TD/out/route/wallet-health.json")" 'scan_grace=active'
 assert_contains "failure capture routes retained events into its artifact directory" "$(cat "$TD/out/route/wallet-memory-events.txt")" 'action=die exit=137'
+assert_contains "failure capture retains startup milestones separately" "$(cat "$TD/wallet-startup.txt")" 'wallet_startup_stage=keys_loaded'
 assert_contains "wallet health grace reason is retained" "$(cat "$TD/wallet-health.json")" 'scan_grace=active'
 assert_contains "wallet health output passes through redaction" "$(cat "$TD/wallet-health.json")" 'PASSWORD=<redacted>'
 assert_eq "raw diagnostic secret is absent" "$(grep -c diagnostic-secret "$TD/wallet-health.json")" 0
 body="$(_pred_monero_wallet_caught_up)"
 rc=$?
 assert_rc "marker still present keeps the scan predicate false" "$rc" 1
+assert_contains "scan polls preserve startup evidence before final failure capture" "$body" 'wallet_startup_stage=keys_loaded'
 assert_contains "scan polls retain samples before final failure capture" "$body" 'action=die exit=137'
 export WALLET_TEST_MARKER_RC=0
 _pred_monero_wallet_caught_up >/dev/null
