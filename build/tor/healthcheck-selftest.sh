@@ -29,7 +29,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HC="$HERE/healthcheck.sh"
 
-HC_CMDS=(xxd tr grep nc) # every external command build/tor/healthcheck.sh may use
+HC_CMDS=(xxd tr nc awk) # every external command build/tor/healthcheck.sh may use
 HC_HEX="000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
 HC_DONE='250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 TAG=done SUMMARY="Done"'
 HC_MID='250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=50 TAG=loading_descriptors'
@@ -60,7 +60,8 @@ hc_run() { # <cookie: none|empty|fixed> <control-port reply> <allowed cmd...> ->
             cat >"$d/bin/nc" <<'NCSTUB'
 #!/bin/sh
 while IFS= read -r l; do printf '%s\n' "$l"; done >"$HC_CAP"
-printf '250 OK\r\n%s\r\n250 closing connection\r\n' "$HC_REPLY"
+printf '%s\r\n%s\r\n%s\r\n250 closing connection\r\n' "$HC_AUTH_REPLY" "$HC_REPLY" "$HC_CONTROL_END"
+exit "$HC_NC_EXIT"
 NCSTUB
             chmod +x "$d/bin/nc"
         else
@@ -71,6 +72,7 @@ NCSTUB
     # a non-binary-safe encode would truncate or mangle rather than spell as "00" and "0a".
     case "$cookie" in
     empty) : >"$d/cookie" ;;
+    short) printf short >"$d/cookie" ;;
     fixed)
         for i in $(seq 0 31); do oct="$oct$(printf '\\%03o' "$i")"; done
         printf '%b' "$oct" >"$d/cookie"
@@ -78,7 +80,8 @@ NCSTUB
     esac
     # /bin/sh by absolute path: with PATH stripped to the stub dir, `sh` itself is unresolvable.
     PATH="$d/bin" HC_CAP="$HC_D/sent" HC_REPLY="$reply" TOR_COOKIE_FILE="$d/cookie" \
-        /bin/sh "$HC" >/dev/null 2>&1 || rc=$?
+        HC_AUTH_REPLY="${HC_AUTH_REPLY:-250 OK}" HC_CONTROL_END="${HC_CONTROL_END-250 OK}" \
+        HC_NC_EXIT="${HC_NC_EXIT:-0}" /bin/sh "$HC" >"$HC_D/output" 2>&1 || rc=$?
     if [ "$rc" = 0 ]; then printf 'healthy\n'; else printf 'unhealthy\n'; fi
 }
 
@@ -105,6 +108,7 @@ expect "sends AUTHENTICATE <64 lowercase hex> / GETINFO / QUIT, nothing else" \
     "$(tr -d '\r' <"$HC_D/sent")" "AUTHENTICATE $HC_HEX
 GETINFO status/bootstrap-phase
 QUIT"
+expect "healthy polls leave health history quiet" "$(cat "$HC_D/output")" ""
 expect "unhealthy mid-bootstrap — TAG=done is the gate, not a live port" \
     "$(hc_run fixed "$HC_MID" "${HC_CMDS[@]}")" "unhealthy"
 expect "unhealthy with no cookie file (control port not up yet)" \
@@ -112,12 +116,33 @@ expect "unhealthy with no cookie file (control port not up yet)" \
 expect "unhealthy on an empty cookie file (written but not filled)" \
     "$(hc_run empty "$HC_DONE" "${HC_CMDS[@]}")" "unhealthy"
 
+expect "empty cookie explains failure" "$(cat "$HC_D/output")" "Tor health: invalid control cookie."
+expect "short cookie is unhealthy" "$(hc_run short "$HC_DONE" "${HC_CMDS[@]}")" "unhealthy"
+expect "short cookie explains failure" "$(cat "$HC_D/output")" "Tor health: invalid control cookie."
+expect "missing cookie is unhealthy" "$(hc_run none "$HC_DONE" "${HC_CMDS[@]}")" "unhealthy"
+expect "missing cookie explains failure" "$(cat "$HC_D/output")" "Tor health: control cookie unavailable."
+expect "bootstrap stall is unhealthy" "$(hc_run fixed '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=95 TAG=circuit_create SUMMARY="secret-marker"' "${HC_CMDS[@]}")" "unhealthy"
+expect "stall records progress and tag without raw summary" "$(cat "$HC_D/output")" "Tor health: bootstrap progress=95 tag=circuit_create."
+expect "control transport failure stays unhealthy" "$(HC_NC_EXIT=1 hc_run fixed "$HC_DONE" "${HC_CMDS[@]}")" "unhealthy"
+expect "transport failure explains failure" "$(cat "$HC_D/output")" "Tor health: control query failed."
+expect "rejected authentication stays unhealthy" "$(HC_AUTH_REPLY='515 secret-marker' hc_run fixed "$HC_DONE" "${HC_CMDS[@]}")" "unhealthy"
+expect "authentication failure omits raw reply" "$(cat "$HC_D/output")" "Tor health: control authentication failed."
+expect "missing query completion stays unhealthy" "$(HC_CONTROL_END='' hc_run fixed "$HC_DONE" "${HC_CMDS[@]}")" "unhealthy"
+expect "malformed reply explains failure" "$(cat "$HC_D/output")" "Tor health: bootstrap reply unavailable."
+expect "done in summary cannot make incomplete bootstrap healthy" "$(hc_run fixed '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=50 TAG=loading_descriptors SUMMARY="Bootstrap TAG=done"' "${HC_CMDS[@]}")" "unhealthy"
+expect "summary is omitted" "$(cat "$HC_D/output")" "Tor health: bootstrap progress=50 tag=loading_descriptors."
+expect "duplicate progress is unhealthy" "$(hc_run fixed '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 PROGRESS=95 TAG=done' "${HC_CMDS[@]}")" "unhealthy"
+expect "duplicate field explains failure" "$(cat "$HC_D/output")" "Tor health: bootstrap reply unavailable."
+expect "unsafe tag is unhealthy" "$(hc_run fixed '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=95 TAG=secret-marker' "${HC_CMDS[@]}")" "unhealthy"
+expect "unsafe tag is not published" "$(cat "$HC_D/output")" "Tor health: bootstrap reply unavailable."
+expect "done requires full progress" "$(hc_run fixed '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=50 TAG=done' "${HC_CMDS[@]}")" "unhealthy"
+
 # The controls, and they are what makes everything above evidence rather than decoration: if PATH
 # leaked to the host, every case would pass on the host's own commands and prove nothing. Each
 # declared command is dropped in turn, which also refuses an over-declared allowlist — a name in
 # HC_CMDS the script does not really need would keep passing here and go unnoticed.
 #
-# Read per-command, they are not all the same strength. `grep` and `nc` fail because the script
+# Read per-command, they are not all the same strength. `awk` and `nc` fail because the script
 # genuinely cannot proceed without them. `xxd` fails only because `[ -n "$COOKIE_HEX" ]` rejects the
 # empty result — `xxd -p -c 256 "$f" | tr -d '\n'` reports TR's status, so a missing xxd is not an
 # error the shell sees. Drop that guard and this control flips green, which is how it was found.
