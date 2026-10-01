@@ -12,6 +12,9 @@
 # that worked — that is the #971 incident, and the image check below is the same shape one layer
 # further in.
 
+# shellcheck source=tests/integration/lib/restore-chain-sync.sh
+source "$(dirname "${BASH_SOURCE[0]}")/restore-chain-sync.sh" || return $?
+
 # What the live stack was RUNNING, by service, before this run touched anything. Image IDs, not
 # tags: the defect this catches is a tag that MOVED. Empty is never a restore pass.
 BASELINE_IMAGES=""
@@ -262,7 +265,7 @@ census_get() { # <census> <service>
 #   5. monerod and tari are the same containers they were before the deploy, when the branch left
 #      them unchanged (#2639, chain-keep.sh). Recorded per node; red only when the restore itself
 #      recreated or restarted a node that the deploy kept and the harness left as the baseline's.
-# Returns 0 when all five hold.
+# Returns 0 when all five and independent authenticated daemon sync hold.
 RESTORE_PROOF_VAR="MONERO_NODE_PASSWORD"
 # shellcheck disable=SC2034  # CONTROL_PROOF_FAILED is declared and read by e2e.sh, which sources
 # this file; it is set here because this is where the control-channel verdict is graded.
@@ -386,6 +389,7 @@ PROBE
         fi
     fi
     chain_restore_proof || prc=1
+    verify_chain_sync_proof || prc=1
     restore_egress_boot_unit || prc=1
     restore_egress_check_units || prc=1
     restore_lan_check_units || prc=1

@@ -141,7 +141,7 @@ apply() {
     # after a previous apply committed the config but did not finish recreating containers), so it
     # tracks its own hold rather than acquiring twice — the depth counter would then never reach
     # zero and the lock would outlive the verb inside a single process.
-    local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_published=0 dashboard_carry_target=""
+    local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_target=""
     local assume_yes=0 dry_run=0 porcelain=0 arg
     for arg in "$@"; do
         case "$arg" in
@@ -268,10 +268,11 @@ apply() {
                 dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
                 : >"$apply_marker"
                 dashboard_carry_recovery=1
-                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published" "$incomplete"; rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
+                PITHEAD_DASHBOARD_CARRY_RECOVERY=("$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" 0 "$incomplete") # #2785: EXIT outlives apply's locals after errexit.
+                trap 'recover_dashboard_data_carry "${PITHEAD_DASHBOARD_CARRY_RECOVERY[@]}"; rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
             fi
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
-            [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
+            [ "$dashboard_carry_recovery" -eq 0 ] || PITHEAD_DASHBOARD_CARRY_RECOVERY[4]=1
         fi
         lan_guard_arm_transition "$newenv" || error "The LAN-only source rule could not be armed before changing .env."
         mv "$newenv" "$ENV_FILE"
@@ -369,8 +370,8 @@ apply() {
         exit 1 # leave $apply_marker in place so the retry re-attempts the recreate
     fi
     if [ "$dashboard_carry_recovery" -eq 1 ]; then
-        dashboard_carry_recovery=0
         trap 'rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
+        unset PITHEAD_DASHBOARD_CARRY_RECOVERY
     fi
     reconcile_appliance_hostname
     # Caddy mounts the Caddyfile read-only, so a content change alone won't recreate it.

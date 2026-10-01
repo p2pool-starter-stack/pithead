@@ -205,9 +205,10 @@ starting, which is normal for a minute after a start or upgrade. The Monero payo
 healthy while it scans, on its first run and while it catches up after each restart, but only
 while its scan marker is less than 24 hours old; the marker is cleared once the wallet reaches
 monerod's tip. After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400
-seconds in the wallet-rpc environment. The Tari payout wallet remains process-
-liveness only because its gRPC is a long stream rather than a request/response readiness probe; it
-detects a crashed wallet, not scan progress.
+seconds in the wallet-rpc environment. The Tari payout wallet probes gRPC `GetVersion` instead of
+process liveness. Its first-scan marker survives restarts and allows at most 24 hours of silent
+gRPC (`PAYOUT_SCAN_GRACE_SEC`, default 86400 seconds); a successful probe clears the marker, so
+later silence is unhealthy. This container grace never hides dashboard wallet reachability.
 It exits non-zero when something needs attention, so you can wire it into a cron/monitoring check.
 A stopped `p2pool`/`xmrig-proxy` is reported as intentional, not an error: the dashboard stops it
 either to fail workers over a node-down outage or while the miner is held until the required chains
@@ -837,8 +838,13 @@ confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_he
 A failed request is corroborated against a second target before it counts toward the 15-minute
 outage window. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
 continued failure after accepted refreshes permits one Tor container restart, which also re-dials
-local Monero. A rejected NEWNYM does not advance to that restart: the dashboard warns and retries
-after 30 minutes while the outage persists. Once the host's daily refresh budget is spent, it
+a running local Monero once Tor's start is confirmed. A failed or timed-out stop/start response
+is an uncertain mutation: the restart attempt and cooldown remain spent, including when both
+responses are unconfirmed. A confirmed start after an unconfirmed stop still re-dials a running
+local Monero; a stopped or remote node stays untouched. Logs record each control result and
+retain the distinction between a confirmed restart, a confirmed start with an unconfirmed stop,
+and an unconfirmed restart in the recovery note. A rejected NEWNYM does not advance to that
+restart: the dashboard warns and retries after 30 minutes while the outage persists. Once the host's daily refresh budget is spent, it
 cannot take another automatic action until the host accepts a request. Each step and its probe
 evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
 circuits, duration and preceding action into the Telegram note; the action is not credited as the
@@ -846,19 +852,33 @@ cause of recovery. No automatic step
 changes guards or deletes Tor state. The action budget is three per outage; after that the
 monitor warns until egress recovers. The feature remains off by default.
 
-**Saturated Tor circuit history while chains stop advancing.** A completed bootstrap or a failed
-clearnet probe alone cannot authorize a state reset. If Tor repeatedly reports invalid circuit
-build timing and local Monero is peerless and stalled, run `./pithead tor-recover check`. This
-read-only check validates the live Tor data mount and the saturated history signature, then
-compares Monero height, sync and outgoing peers over three minutes. It uses sudo for read-only
-access to Tor-owned state and identity keys. `./pithead tor-recover apply`
-rechecks the same evidence under the mutation lock, verifies onion identity keys, backs up only
-Tor's `state`, and restarts Tor. It re-dials local Monero after the actual restart, verifies Tor
-health and Monero peers, and records the attempt in the control audit. The backup remains for
-inspection. A persistent six-hour cooldown includes failed attempts. The command refuses an
-ambiguous or symlinked Tor mount, an active mutation, ordinary warnings, or an advancing chain.
-It never removes onion keys, wallets, configuration or chain data. If verification fails, the
-command reports failure and leaves the backup for diagnosis; inspect Tor and Monero before retrying.
+**Saturated Tor circuit history while chains stop advancing.** A completed bootstrap, a failed
+clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
+reports invalid circuit build timing, run `./pithead tor-recover check`. This read-only check
+validates the live Tor data mount and the saturated history signature. When local Monero RPC
+answers, it requires peerless, stalled Monero across three minutes. When RPC is unavailable,
+it instead requires two cookie-authenticated Tor observations three minutes apart: bootstrap
+95% at `circuit_create`, no established circuit, and the same running Tor instance. At least
+two invalid circuit-timing warnings must appear in the last 200 log lines from that interval;
+unreadable diagnostics refuse recovery. It uses sudo for read-only access to Tor-owned state
+and identity keys.
+
+`./pithead tor-recover apply` rechecks the evidence under the mutation lock, verifies onion
+identity keys, backs up only Tor's `state`, and restarts Tor. It re-dials a running local Monero
+after the actual restart. If Compose left Monero Created behind unhealthy Tor, recovery starts
+that existing node once Tor is healthy. The command verifies Tor health and Monero peers and
+records the attempt in the control audit; this connectivity result does not prove chain sync.
+Restore the remaining baseline services through the caller's normal workflow and independently
+verify baseline health and authenticated Monero and Tari sync before admitting new work.
+
+The backup remains for inspection. A persistent six-hour cooldown includes failed attempts.
+The command refuses an ambiguous or symlinked Tor mount, an active mutation, ordinary warnings,
+or an advancing chain. It never removes onion keys, wallets, configuration or chain data.
+If verification fails, the command reports failure and leaves the backup for diagnosis;
+inspect Tor and Monero before retrying. This is an explicit operator operation, not an automatic
+watchdog. A trusted CI caller must hold its fleet reservation and exclude active consumers
+through recovery, baseline restoration and independent sync verification. Pithead enforces
+local mutation exclusion; it does not acquire or attest fleet reservations.
 
 **Monero node out of sync after a Tor restart.**
 Anything that restarts or recreates the tor container outside the stack's own operations — a

@@ -45,7 +45,7 @@ jobs:
     timeout-minutes: 15 # ~110 s of the old `shell` job, the first-boot journal suite being 60 s of it (#2048)
     # Each suite is named outright rather than globbed: standalone/ also holds test_compose.sh,
     # which belongs to the `compose` job and which sources test_dotenv.sh itself, so a glob would
-    # run both twice. `make test-stack` names the same four and never runs in CI — a suite added
+    # run both twice. `make test-stack` names these suites and never runs in CI — a suite added
     # to standalone/ must be wired here as well, or it runs nowhere.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,6 +53,12 @@ jobs:
           persist-credentials: false
       - name: Build the generated CLI
         run: make pithead
+      - name: Run Tor recovery contracts
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          bash tests/stack/standalone/test_tor_recovery.sh
+          bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
       - name: Run real-image data-reset suite
         # Real ext4 damage against the product's own repair escalation (#1062). Unprivileged —
         # e2fsprogs on plain files — and it hard-fails rather than skips when CI lacks the tools.
@@ -73,8 +79,8 @@ jobs:
         # git-ignored and read on demand via `make test-inventory`.
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test
-        # Pure-logic checks for the tests/integration/ harness (config rendering, matrix
-        # coverage, redaction). The LIVE matrix (tests/integration/run.sh) needs a real test
+        # Pure logic and bounded local transport fixtures for the tests/integration/
+        # harness (config rendering, matrix coverage, redaction, Digest connection reuse). The LIVE matrix (tests/integration/run.sh) needs a real test
         # server and runs as a gated/manual release gate (#54), not on every PR.
         run: make test-integration-selftest
       - name: Run repository tooling checks
