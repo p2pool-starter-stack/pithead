@@ -1064,7 +1064,22 @@ constant is read from that file, not duplicated here, so the two cannot drift si
 The safety-backup recovery gate runs before scenarios, so if its health wait fails it writes
 redacted `compose-ps.txt` and `health-check.txt` to `results/safety-backup-recovery/` before
 starting restoration. Diagnostic capture is best-effort: it never changes the failed verdict or
-the recovery sequence.
+the recovery sequence. Capture also writes `wallet-health.json` and
+`wallet-memory-events.txt`. During the existing 1200-second Monero scan wait, each
+15-second poll records container identity, start time, current exit/OOM/restart
+state, cgroup memory usage/peak/limit/events (v2 or v1), PID 1 RSS/peak/thread count
+and read counters, numeric wallet cache/key file sizes, and the last 60 seconds of wallet OOM, exit, start and restart events in the harness
+transcript. Each Docker diagnostic command has a 5-second bound. Samples survive
+automatic restart in the transcript; a final current-state snapshot alone cannot
+establish whether an earlier process was OOM-killed. Docker retains only a recent
+event buffer, so missing events do not prove that no OOM occurred. Health output
+separates answering RPC and numeric scan heights from silent-RPC scan grace;
+grace still does not prove catch-up or payout readiness. The 1200-second scan bound is a binding marker-retirement assertion. With a
+readable daemon height, answering RPC behind the tip keeps the marker and cannot
+satisfy it. The existing healthcheck also retires the marker when daemon height is
+unreadable, switching to strict RPC health; that fallback does not prove numeric
+catch-up. Use the retained wallet/daemon heights to establish catch-up during
+recovery validation. Reachability and configured-address assertions remain binding.
 
 `config.json` and `env.redacted.txt` are the two artifacts that are not streamed straight through
 the generic redactor. Both are documents with an enumerable shape, and the stack classifies each on
