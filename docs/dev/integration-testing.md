@@ -757,7 +757,16 @@ any configuration write or control leg. It then enables `dashboard.control` and 
 `{"__secret__": true}` sentinel, [#440](https://github.com/p2pool-starter-stack/pithead/issues/440);
 the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still
 carrying that key is migrated to `workers.list[]` before the legs run). Missing inputs are recorded
-as `[missing]` rows, while permanent safety refusals are recorded as `[by-design]` rows:
+as `[missing]` rows, while permanent safety refusals are recorded as `[by-design]` rows. If the
+selected rig's enriched feed does not appear within the existing 120-second wait, the phase retains
+the final poll's selected-worker presence, status, API/adoption verdicts and report freshness in
+`rigforge-control.selected-rig.json` before restoration. It also retains fixed failure-class counts
+from the selected rig's dashboard probe warnings in `rigforge-control.probe-classes.json` (at most
+200 log lines, 64 KiB and a five-second read, covering the last ten minutes). These records omit
+worker names, addresses, credentials, raw response bodies and raw log text; an empty class list means
+no matching warning was observed, not that the probe succeeded.
+
+The control legs cover:
 
 - Read with a populated masked descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)):
   `api_ok` and the enriched feed still resolve — the guard for the v1.5.2 regression, where the

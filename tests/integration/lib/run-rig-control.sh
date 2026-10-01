@@ -134,7 +134,27 @@ run_rigforge_control() {
             return 1
         fi
     fi
+    _RIG_SETUP_SAMPLE=null
     if ! wait_for 120 5 "dashboard to re-read the selected rig after control setup" _pred_rig_present "$rig"; then
+        # Retain the final predicate observation and fixed probe classes before restore (#2890).
+        # No raw response/log text is written; Docker reads are time-, line- and byte-bounded.
+        printf '%s\n' "$_RIG_SETUP_SAMPLE" >"$OUT_DIR/rigforge-control.selected-rig.json" ||
+            it_warn "selected-rig state diagnostics could not be retained"
+        local probe_logs probe_log_rc=0
+        probe_logs="$(rx 'timeout 5 docker logs --since 10m --tail=200 dashboard 2>&1' 2>/dev/null | head -c 65536)" || probe_log_rc=$?
+        printf '%s' "$probe_logs" | jq -Rsc --arg n "$rig" --argjson rc "$probe_log_rc" '
+            split("\n") | map(select(contains("Worker '\''" + $n + "'\'' (") and contains("xmrig API probe failed")) |
+                if contains("read credential unavailable") or contains("probe token missing") then "credential-unavailable"
+                elif contains("HTTP 401") or contains("HTTP 403") then "http-auth-refusal"
+                elif test("HTTP [0-9]{3}") then "http-response"
+                elif contains("TimeoutError") then "timeout"
+                elif contains("ConnectorError") or contains("ConnectionError") then "connection"
+                elif contains("JSONDecodeError") or contains("body was") then "invalid-body"
+                elif contains("body over") then "oversized-body"
+                else "other-probe-failure" end) |
+            group_by(.) | {log_read_exit:$rc, classes:map({classification:.[0], count:length})}' \
+            >"$OUT_DIR/rigforge-control.probe-classes.json" ||
+            it_warn "selected-rig probe classifications could not be retained"
         if [ "$supplied" = 1 ]; then
             it_fail "supplied rig exposes its enriched feed after control setup" "worker '$rig' never appeared"
         else
