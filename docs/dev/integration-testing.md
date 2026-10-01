@@ -450,7 +450,16 @@ via an `EXIT` trap):
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
    line — compared as verdict words, values never printed — and monerod must answer a host-side
-   `get_info` authed with the on-disk creds. An e2e run once left the containers on
+   `get_info` authed with the on-disk creds. A separate read-only daemon proof waits up to
+   600 seconds for Monero authenticated through a direct, bounded Digest exchange on the
+   same connection. An unauthenticated response, redirect or closed challenge connection refuses
+   proof; ambient proxies are ignored. It requires `status == OK` and `synchronized == true`, plus direct
+   Tari `GetTipInfo.initial_sync_achieved == true`. It records both predicates without endpoints
+   or credentials; unavailable RPC, missing credentials, missing fields and timeouts refuse
+   restoration proof. A timeout records only the fixed environment, Monero RPC, Monero sync,
+   Tari command or Tari sync stage; exception details and unexpected output are discarded.
+   The source-side probe is streamed to the restored install, so its older
+   CLI cannot omit the assertions. An e2e run once left the containers on
    harness-rendered creds while the on-disk `.env` kept the real ones: internally consistent, so
    the stack mined and looked healthy for a day while every host-side RPC probe 401ed. A failed
    proof exits non-zero and names the recovery (`docker compose up -d` from the install dir
