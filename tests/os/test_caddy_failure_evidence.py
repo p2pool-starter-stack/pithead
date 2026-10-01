@@ -126,6 +126,27 @@ class CaddyEvidenceTests(unittest.TestCase):
             },
         )
 
+    def test_config_byte_boundary_bounds_read_and_reports_truncation(self):
+        # One line avoids the independent 200-line cap hiding byte-truncation defects.
+        for size in (65536, 65537, 80000):
+            with self.subTest(size=size):
+                config = b"bind " + b"x" * (size - 5)
+                opened = mock_open(read_data=config)
+                with (
+                    patch.object(evidence, "probe", return_value=(0, "{}", False)),
+                    patch.object(Path, "open", opened),
+                    patch.object(evidence, "config_shape", wraps=evidence.config_shape) as shape,
+                ):
+                    snapshot = evidence.snapshot()
+                opened().read.assert_called_once_with(65537)
+                self.assertEqual(len(shape.call_args.args[0]), 65536)
+                self.assertEqual(snapshot["config"]["truncated"], size > 65536)
+                self.assertTrue(snapshot["config"]["available"])
+                self.assertEqual(
+                    snapshot["config"]["lines"],
+                    [{"line": 1, "directive": "bind", "tokens": 2}],
+                )
+
     def test_real_capture_bounds_bytes_and_merges_stderr(self):
         with patch.dict(
             evidence.COMMANDS,
