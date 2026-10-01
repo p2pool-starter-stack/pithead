@@ -176,7 +176,7 @@ assert_not_contains "doctor tip: a hostile timestamp yields no calculated age" "
 for TIP_VALUE in '"1000"' -1 1.5 true 10000000000 null; do
     TIP_BODY=$(printf '{"result":{"block_header":{"timestamp":%s}}}' "$TIP_VALUE")
     out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY="$TIP_BODY" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
-    assert_not_contains "doctor tip: malformed timestamp $TIP_VALUE yields no age" "$out" "last block"
+    assert_not_contains "doctor tip: malformed timestamp yields no age" "$out" "last block"
 done
 TIP_BODY=$(jq -nc --argjson ts "$(($(date +%s) - 60))" '{result:{block_header:{timestamp:$ts}}}')
 out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY="$TIP_BODY" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
