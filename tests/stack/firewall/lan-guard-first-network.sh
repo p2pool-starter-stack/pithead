@@ -7,6 +7,8 @@ echo "== a first Docker network holds LAN nodes until live rule readback (#2847)
 rm -f "$LG_JUMP_FILE"
 rm -f "$LGD/data/lan-guard/enforced"
 lg_out="$(LG_LIVE=1 LG_FORWARD_JUMP=after lg 'compose_up -d')"
+lg_rc=$?
+assert_rc "first network reaches the requested LAN binds and returns success" "$lg_rc" 0
 assert_not_contains "first network adds the FORWARD jump: no fallback" "$lg_out" "lan-guard:not-installed"
 assert_eq "...first starts on loopback, then recreates with the LAN bind" "$(cat "$LG_COMPOSE")" $'docker-stop=cid123\ncompose-bind=127.0.0.1\ncompose-bind=0.0.0.0'
 assert_eq "...and marks this boot before the LAN pass" "$(cat "$LGD/data/lan-guard/enforced" 2>/dev/null)" "boot-1"

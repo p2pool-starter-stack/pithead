@@ -667,7 +667,9 @@ and `--list` prints it).
   dial is refused, and doctor names the hold. Then `docker compose start`, `docker compose up
   --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
   is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the nodes
-  running, `remove_lan_guard` refuses and the rule stays live. The restore proof records
+  running, `remove_lan_guard` refuses and the rule stays live. The LAN checks also give the marker
+  directory root ownership and mode 0755, run normal-user startup, and require LAN reachability
+  without recreating healthy nodes, then restore the directory metadata. The restore proof records
   `pithead-lan-guard.service` and `pithead-lan-hold.service` before the run and restores each one
   plus `pithead-lan.timer` and its check service
   as it does the egress units: a unit the run added is removed and checked absent, including from

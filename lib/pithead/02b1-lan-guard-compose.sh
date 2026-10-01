@@ -109,6 +109,7 @@ finish_lan_guard_after_up() { # <original compose up arguments>
         [ "${up_args[$i]}" = --pull ] && up_args[$((i + 1))]=never
     done
     if PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}"; then
+        LAN_GUARD_FALLBACK=0
         log "LAN-only sources enforced on port(s) ${ports[*]} after Docker created its network."
         return 0
     fi
