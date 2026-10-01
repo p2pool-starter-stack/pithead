@@ -78,7 +78,9 @@ _control_request_evidence_self_test() (
         grep -Fq '"queued=1"' "$dir/$shape" && grep -Fq '"NRestarts=2"' "$dir/$shape" || return 1
         ! grep -Fq "$secret" "$dir/$shape" || return 1
     done
-    grep -Fq '"http":"401"' "$dir/refused" && grep -Fq '"error":true' "$dir/refused" || return 1
+    # Pin every published field, not just the presence of a diagnostic line.
+    [ "$(sed -n '1p' "$dir/refused")" = '  control request: {"route":"preview","stage":"post","ts":100,"curl":0,"http":"401","bytes":72,"json":true,"error":true,"id":"unknown","status":"unknown"}' ] || return 1
+    [ "$(sed -n '2p' "$dir/refused")" = '  control guest snapshot: ["ActiveState=active","SubState=running","Result=success","NRestarts=2","ExecMainCode=0","ExecMainStatus=0","queued=1","claimed=1"]' ] || return 1
     grep -Fq '"curl":52' "$dir/lost" && grep -Fq '"http":"000"' "$dir/lost" || return 1
     grep -Fq '"http":"502"' "$dir/malformed" && grep -Fq '"json":false' "$dir/malformed" || return 1
     # Polling retains the real response on stdout, including its id, without leaking it to logs.
@@ -86,6 +88,8 @@ _control_request_evidence_self_test() (
     result=$(dashboard_control_request preview '{"config":{}}' 10 2>"$dir/pending") || return 1
     [ "$(jq -r '.status + ":" + .id' <<<"$result")" = "previewed:$fixture_id" ] || return 1
     grep -Fq '"stage":"poll"' "$dir/pending" && grep -Fq '"http":"200"' "$dir/pending" || return 1
+    jq -e --arg id "$fixture_id" '.id == $id and .status == "accepted"' < <(sed -n '1s/^  control request: //p' "$dir/pending") >/dev/null || return 1
+    jq -e --arg id "$fixture_id" '.id == $id and .status == "previewed"' < <(sed -n '2s/^  control request: //p' "$dir/pending") >/dev/null || return 1
     ! grep -Fq "$secret" "$dir/pending" || return 1
     shape=terminal
     result=$(dashboard_control_request preview '{"config":{}}' 10 2>"$dir/terminal") || return 1
