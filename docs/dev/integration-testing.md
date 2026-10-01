@@ -62,9 +62,13 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
 - No silent coverage drops. Any scenario whose prerequisite is missing (an alt data dir, a
   remote endpoint) is logged as `SKIPPED` with the reason. It never quietly disappears.
 - Secrets hygiene. Secret-preservation is checked by hashing on the box (`sha256sum`) and
-  comparing the hash, so the plaintext never crosses the wire, and every captured artifact passes
-  through a redactor. **What that redactor covers is narrower than "artifacts are redacted"
-  suggests**, and the gap is worth knowing before you trust a bundle. It reaches: a `KEY=value`
+  comparing the hash, so the plaintext never crosses the wire. Captured artifacts pass through
+  the shared redactor. Assertion failure details use its onion-shape rule and the harness-password
+  scrubber before they are written to the harness log. This covers both sides of a failed comparison
+  even after uninstall/setup removes or changes an identity, while preserving already-scrubbed
+  compound diagnostics. Comparisons, failure counts and assertion names remain unchanged.
+  **What the artifact redactor covers is narrower than "artifacts are redacted" suggests**, and the
+  gap is worth knowing before you trust a bundle. It reaches: a `KEY=value`
   line and a JSON `"key": "value"` whose key ends in one of a SINGLE shared list of secret words —
   `password`, `token`, `key`, `username`, `wallet`, `ping_url` and the rest — the JSON side matched
   without regard to case, so `apiKey` and `PASSWORD` are reached alongside `api_key`, the
