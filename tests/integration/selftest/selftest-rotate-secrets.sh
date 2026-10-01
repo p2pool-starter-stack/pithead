@@ -132,6 +132,7 @@ drive_phase() { # <fixture dir> <success|restore-failure|interrupted>
                 printf '%s\n' PROXY_AUTH_TOKEN=new-token PROXY_STRATUM_PASSWORD=new-pass >"$fixture/.env"
                 ;;
             restore)
+                touch "$fixture/restore-attempted"
                 [ "$failure" = success ] || return 1
                 cp "$fixture/original.env" "$fixture/.env"
                 ;;
@@ -148,14 +149,15 @@ drive_phase() { # <fixture dir> <success|restore-failure|interrupted>
             fi
             "$@"
         }
-        trap 'exit 130' TERM
         run_rotate_secrets >/dev/null 2>&1
-        exit "$?"
+        phase_rc=$?
+        touch "$fixture/continued"
+        exit "$phase_rc"
     )
 }
 for scenario in success restore-failure interrupted; do
     mkdir "$d/$scenario"
-    drive_phase "$d/$scenario" "$scenario"
+    drive_phase "$d/$scenario" "$scenario" 2>/dev/null
     phase_rc=$?
     if [ "$scenario" = success ]; then
         assert_rc "the complete successful phase verifies its restoration" "$phase_rc" 0
@@ -166,6 +168,11 @@ for scenario in success restore-failure interrupted; do
         assert_eq "$scenario retains the borrowed-rig recovery anchor" "$(find "$d/$scenario" -name '*.e2e-rotate.*' | wc -l | tr -d ' ')" 1
         assert_eq "$scenario retains the safety archive and runner-owned hold" "$(test -f "$d/$scenario/safety" && test -f "$d/$scenario/runner-hold" && echo retained)" retained
         assert_eq "$scenario retains owner-only rotation safety copies" "$(find "$d/$scenario" -name '*.bak-*' | wc -l | tr -d ' ')" 2
+        if [ "$scenario" = interrupted ]; then
+            assert_rc "SIGTERM terminates the phase rather than resuming it" "$phase_rc" 143
+            assert_eq "the interrupted phase never continues after its signal" "$(test ! -e "$d/$scenario/continued" && echo stopped)" stopped
+            assert_eq "the interrupted phase's EXIT trap attempts restoration" "$(test -e "$d/$scenario/restore-attempted" && echo attempted)" attempted
+        fi
     fi
 done
 

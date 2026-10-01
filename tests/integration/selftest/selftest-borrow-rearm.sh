@@ -94,7 +94,7 @@ assert_eq "the controller cannot observe a partially published request" "$(
 
 assert_eq "a credential-rotation request names its action without the secret" "$(
     d="$(mktemp -d)"
-    trap 'rm -rf "$d"' RETURN
+    trap 'rm -rf "$d"' EXIT
     export IT_BORROW_REARM_REQUEST="$d/request" IT_BORROW_REARM_ACK="$d/ack" IT_BORROW_REARM_TOKEN=run-123
     it_fail() { :; }
     it_pass() { :; }
