@@ -6,7 +6,7 @@
 # selftest-redact.sh covers can never meet it: nothing captured off the box ever contains the
 # string "IT_DASHBOARD_PASSWORD=...". The harness is instead the one place that holds the exact
 # VALUE, so redact_it_password() (lib.sh) scrubs by literal match, independent of shape or key
-# name, wired into both redact() (artifacts) and it_fail() (the console stream a bench-ci job
+# name, wired into both redact() and it_fail() (the console stream a bench-ci job
 # captures as its log — tiers/pithead/tier4-e2e.sh tees it verbatim).
 #
 # A file rather than a line in selftest-redact.sh: that file sits near lint-file-budget.sh's
@@ -58,6 +58,29 @@ OUT="$(it_fail "hypothetical future leak" "response carried $SENTINEL in the cle
 case "$OUT" in *"$SENTINEL"*) it_fail "it_fail detail: raw password absent from console output" "password leaked: $OUT" ;; *) it_pass "it_fail detail: raw password absent from console output" ;; esac
 assert_contains "it_fail detail: a marker replaces it" "$OUT" "<redacted>"
 unset IT_DASHBOARD_PASSWORD
+
+echo "== assertion failures: previous and current onions are scrubbed without changing verdicts =="
+BEFORE="$(printf 'a%.0s' {1..56}).onion"
+AFTER="$(printf 'b%.0s' {1..56}).onion"
+OUT="$(
+    IT_FAIL=0
+    IT_FAILED_NAMES=""
+    IT_CURRENT_SCENARIO=lifecycle
+    assert_eq "setup after uninstall keeps the Monero onion address" "$AFTER" "$BEFORE"
+    printf 'failures=%s names=%b\n' "$IT_FAIL" "$IT_FAILED_NAMES"
+)"
+case "$OUT" in
+*"$BEFORE"* | *"$AFTER"*) it_fail "changed onion identities are absent from assertion output" "raw identity survived" ;;
+*) it_pass "changed onion identities are absent from assertion output" ;;
+esac
+assert_contains "both comparison operands remain visible as markers" "$OUT" "expected [<redacted>.onion], got [<redacted>.onion]"
+assert_contains "the mismatch still records one failure" "$OUT" "failures=1"
+assert_contains "the failed assertion keeps its scenario and name" "$OUT" "lifecycle: setup after uninstall keeps the Monero onion address"
+OUT="$(assert_eq "unchanged onion" "$BEFORE" "$BEFORE")"
+assert_contains "redaction does not turn equal secret operands into failures" "$OUT" "✓ unchanged onion"
+
+OUT="$(it_fail "compound diagnostic" "PROXY_AUTH_TOKEN=<redacted> image unavailable; expected [$BEFORE], got [$AFTER]")"
+assert_contains "pre-redacted diagnostics keep the error after a KEY=value marker" "$OUT" "PROXY_AUTH_TOKEN=<redacted> image unavailable; expected [<redacted>.onion], got [<redacted>.onion]"
 
 echo "selftest-redact-it-password: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
