@@ -4,6 +4,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 export INTEGRATION_RUN_SUITE=1
 source "$HERE/../lib/run-rotate-secrets.sh"
+echo "== rotate-secrets authentication and recovery guards =="
 python3 "$HERE/test_rotate_auth_probe.py" || exit 1
 
 d="$(mktemp -d)"
