@@ -27,7 +27,10 @@ and failure. The unsanitized transcript is not written to the artifact directory
 Artifact diagnostics remain private evidence, not text to interpolate into public
 notifications. The result contains only fixed codes, hashes, UTC timestamps and
 indexes into bounded health observations. A diagnostic failure never replaces the
-original command exit or adds a backup/startup/recovery operation.
+original command exit or adds a backup/startup/recovery operation. Invocation directories
+are opened without following symlinks, and artifact writes replace private temporary
+files through the held directory descriptor. Refused storage leaves the original
+numeric outcome in the stdout result without reading or writing the unsafe target.
 
 ## Result fields
 
@@ -35,7 +38,7 @@ original command exit or adds a backup/startup/recovery operation.
 |---|---|
 | `version`, `invocation` | Integer `1`; fresh 32-character lowercase hex correlation identity. |
 | `attempt` | `not_run` or `attempted`. Check mode and pre-backup refusals remain `not_run`. |
-| `outcome` | `unknown`, `succeeded` or `failed`; success requires command exit 0 and a readable archive that passes `tar -tzf`. |
+| `outcome` | `unknown`, `succeeded` or `failed`; success requires command exit 0 and a new readable archive that passes `tar -tzf`. |
 | `backup_exit_code` | Original numeric command exit (0–255), or null before completion. Archive validation never rewrites it. |
 | `reason` | `not_run`, `interrupted`, `command_failed`, `archive_valid` or `archive_invalid`. |
 | `canonical_product`, `baseline_product` | Separately sampled executable SHA-256, checkout source commit and checkout cleanliness; unavailable fields are null. |
@@ -52,6 +55,11 @@ identity is the candidate identity. A checkout commit is a source claim; a dirty
 checkout, generated executable or release bundle must not be attributed by source
 ancestry alone. The executable digest records the actual sampled file. Missing
 Git metadata remains null, even if an executable digest is available.
+
+The wrapper creates a private scratch marker before invoking backup and requires
+the selected archive to be newer than that marker. A successful command that leaves
+only an older archive, or an archive that fails validation, is a backup failure with
+original exit 0. This rollback-anchor validation is independent of diagnostic storage.
 
 A wallet prerequisite after a successful backup does not change `outcome` or
 `tor_event`. An unsuccessful backup and the runner's final restoration verdict
@@ -99,8 +107,10 @@ unknown. A new wrapper invoking an older canonical executable still records its
 command outcome and archive validation, but has an unavailable observation channel.
 Do not reconstruct events by matching timestamped transcript tails.
 
-The consumer must validate version, invocation, fields, codes and relative artifact
-references before using a record. `tests/integration/lib/backup-window.py` contains
+The consumer must validate version, invocation, fields, codes, relative artifact
+references and semantic consistency before using a record. An outcome must agree
+with attempt/exit/reason, and event/execution claims must be supported by the retained
+observations; contradictory fields cannot establish success or a Tor event. `tests/integration/lib/backup-window.py` contains
 the producer validator. The fixture constructors in
 `tests/integration/selftest/test_backup_window.py` provide accepted and rejected
 observations; `test_backup_window_boundary.py` exercises the shared boundary.

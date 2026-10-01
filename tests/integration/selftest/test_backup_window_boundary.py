@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -161,7 +162,7 @@ backup_restart_stack
             directory, value = window.read(output.call_args.args[0])
             for artifact in (
                 "../backup.log",
-                "/home/operator/backup.log",
+                "/home/user/backup.log",
                 "backup-window-" + "b" * 32 + "/backup.log",
                 "host.internal/key",
                 "cookie=secret",
@@ -193,7 +194,7 @@ case "$FAKE_MODE" in
 error) echo 'original failure'; exit 7;;
 success|diagnostic-failure) mkdir -p backups; tar -czf backups/pithead-backup-fixture.tar.gz pithead;;
 corrupt) mkdir -p backups; echo broken >backups/pithead-backup-fixture.tar.gz;;
-missing) :;;
+missing|stale) :;;
 esac
 """)
             fake.chmod(0o700)
@@ -217,11 +218,18 @@ backup_stack
                 ("error", 7, "failed"),
                 ("success", 0, "succeeded"),
                 ("missing", 0, "failed"),
+                ("stale", 0, "failed"),
                 ("corrupt", 0, "failed"),
                 ("diagnostic-failure", 0, "succeeded"),
             ):
                 for archive in canonical.glob("backups/*"):
                     archive.unlink()
+                if mode == "stale":
+                    archive = canonical / "backups/pithead-backup-old.tar.gz"
+                    archive.parent.mkdir(exist_ok=True)
+                    with tarfile.open(archive, "w:gz") as stream:
+                        stream.add(fake, arcname="pithead")
+                    os.utime(archive, (1, 1))
                 process = subprocess.run(  # noqa: S603 - fixed fixture commands
                     ["/bin/bash", "-c", script],
                     cwd=ROOT,

@@ -21,7 +21,10 @@ backup_window_attempt() {
 backup_window_finish() { # <original exit> <valid|invalid> <original transcript>
     [ -n "${BACKUP_WINDOW_DIR:-}" ] || return 0
     # Failure to collect diagnostics never replaces the backup's numeric exit status.
-    backup_sanitize_output "$3" >"$BACKUP_WINDOW_DIR/backup.log" || rm -f "$BACKUP_WINDOW_DIR/backup.log"
+    local sanitized
+    if sanitized="$(backup_sanitize_output "$3")"; then
+        printf '%s\n' "$sanitized" | python3 "$HERE/lib/backup-window.py" diagnostics "$BACKUP_WINDOW_DIR" || true
+    fi
     printf '%s\n' "$3" | python3 "$HERE/lib/backup-window.py" finish "$BACKUP_WINDOW_DIR" "$1" "$2" || true
 }
 

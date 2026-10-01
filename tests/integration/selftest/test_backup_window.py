@@ -101,7 +101,7 @@ class BackupWindowTests(unittest.TestCase):
         unsafe = [
             "private.internal",
             "192.168.3.4",
-            "/home/operator/key",
+            "/home/user/key",
             "cookie=secret",
             "AUTHENTICATE secret",
             "\x1b[31m",

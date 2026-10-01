@@ -6,8 +6,8 @@ import json
 import os
 import re
 import secrets
+import stat
 import sys
-import tempfile
 from pathlib import Path
 
 PREFIX = "PITHEAD_BACKUP_OBSERVATION_V1 "
@@ -71,7 +71,6 @@ def validate_observation(value, token):
 
 
 def identity(lines):
-    # Source is a checkout claim. The executable digest identifies what will actually run.
     return {
         "source_commit": lines[0] if len(lines) == 3 and match(r"[0-9a-f]{40}", lines[0]) else None,
         "executable_sha256": lines[1] if len(lines) == 3 and match(HEX, lines[1]) else None,
@@ -81,19 +80,39 @@ def identity(lines):
     }
 
 
-def atomic_write(directory, value):
-    destination = directory / "result.json"
-    fd, name = tempfile.mkstemp(prefix=".result-", dir=directory)
+def safe_directory(directory):
+    if not match(r"backup-window-[0-9a-f]{32}", directory.name):
+        raise ValueError("invalid invocation directory")
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    info = os.fstat(fd)
+    if info.st_uid != os.getuid() or info.st_mode & 0o077:
+        os.close(fd)
+        raise ValueError("unsafe invocation directory")
+    return fd
+
+
+def atomic_file(directory, destination, content):
+    directory_fd = safe_directory(directory)
+    name = ".window-" + secrets.token_hex(16)
     try:
+        fd = os.open(
+            name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd
+        )
         with os.fdopen(fd, "w") as stream:
-            json.dump(value, stream, separators=(",", ":"))
-            stream.write("\n")
+            stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(name, destination)
+        os.replace(name, destination, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
     finally:
-        if os.path.exists(name):
-            os.unlink(name)
+        try:
+            os.unlink(name, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+        os.close(directory_fd)
+
+
+def atomic_write(directory, value):
+    atomic_file(directory, "result.json", json.dumps(value, separators=(",", ":")) + "\n")
 
 
 def new_result(token):
@@ -218,16 +237,47 @@ def validate_result(value, directory):
         if artifact.is_symlink() or not artifact.is_file() or artifact.stat().st_uid != os.getuid():
             raise ValueError("unavailable invocation artifact")
 
+    state = value["attempt"], value["outcome"], code, value["reason"]
+    if not (
+        state
+        in {
+            ("not_run", "unknown", None, "not_run"),
+            ("attempted", "unknown", None, "interrupted"),
+            ("attempted", "succeeded", 0, "archive_valid"),
+            ("attempted", "failed", 0, "archive_invalid"),
+        }
+        or (
+            state[:2] == ("attempted", "failed")
+            and code is not None
+            and code > 0
+            and value["reason"] == "command_failed"
+        )
+    ):
+        raise ValueError("contradictory backup outcome")
+    if (value["observation_channel"] == "available") != bool(observations):
+        raise ValueError("contradictory observation channel")
+    if value["outcome"] == "unknown" and (
+        observations or diagnostic["availability"] != "unavailable"
+    ):
+        raise ValueError("unsupported incomplete result")
+    if (value["tor_event"], value["execution"], refs) != qualify(observations):
+        raise ValueError("unsupported event or execution")
+
 
 def read(directory):
     directory = Path(directory)
-    stat = directory.stat()
-    if directory.is_symlink() or stat.st_uid != os.getuid() or stat.st_mode & 0o077:
-        raise ValueError("invalid invocation directory")
-    result_file = directory / "result.json"
-    if result_file.is_symlink() or result_file.stat().st_size > 65536:
-        raise ValueError("unsafe result file")
-    value = json.loads(result_file.read_text())
+    directory_fd = safe_directory(directory)
+    try:
+        fd = os.open(
+            "result.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd
+        )
+        with os.fdopen(fd) as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 65536:
+                raise ValueError("unsafe result file")
+            value = json.load(stream)
+    finally:
+        os.close(directory_fd)
     validate_result(value, directory)
     return directory, value
 
@@ -253,17 +303,24 @@ def finish(value, code, archive, transcript):
             )
         except (ValueError, TypeError):
             rejected = True
-    # A malformed channel cannot establish an event or execution. Diagnostics remain separate.
     value["observations"] = [] if rejected else observations
     value["observation_channel"] = (
         "invalid" if rejected else "available" if observations else "unavailable"
     )
+    value["tor_event"], value["execution"], value["execution_observations"] = qualify(
+        value["observations"]
+    )
+    return value
+
+
+def qualify(observations):
+    event, refs = "unknown", []
     begin = None
-    for index, observation in enumerate(value["observations"]):
+    for index, observation in enumerate(observations):
         if observation["kind"] == "backup_begin" and begin is None:
             begin = timestamp(observation["observed_at"])
         if observation["kind"] == "restart_failed" and observation["health"] == "unhealthy":
-            value["tor_event"] = "tor_restart_failed"
+            event = "tor_restart_failed"
         if begin is None or not all(
             observation[key] for key in ("container_id", "image_id", "configured_test_sha256")
         ):
@@ -271,16 +328,30 @@ def finish(value, code, archive, transcript):
         observed = timestamp(observation["observed_at"])
         for check_index, check in enumerate(observation["checks"]):
             if begin <= timestamp(check["start"]) <= timestamp(check["end"]) <= observed:
-                value["execution_observations"].append({"observation": index, "check": check_index})
-    if value["execution_observations"]:
-        value["execution"] = "observed"
-    return value
+                refs.append({"observation": index, "check": check_index})
+
+    return event, "observed" if refs else "unknown", refs
 
 
 def main():
     action, target = sys.argv[1:3]
     if action == "init":
         initialize(target)
+        return
+    directory = Path(target)
+    # Unsafe directories are never recoverable record corruption.
+    try:
+        os.close(safe_directory(directory))
+    except (OSError, ValueError):
+        if action != "finish":
+            raise
+        value = new_result(directory.name.removeprefix("backup-window-"))
+        finish(value, int(sys.argv[3]), sys.argv[4] == "valid", sys.stdin.read())
+        validate_result(value, directory)
+        print(RESULT + json.dumps(value, separators=(",", ":")), flush=True)
+        return
+    if action == "diagnostics":
+        atomic_file(directory, "backup.log", sys.stdin.read())
         return
     try:
         directory, value = read(target)
