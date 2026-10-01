@@ -266,6 +266,27 @@ class TestRunIteration:
         assert svc.latest_data["monero_sync"]["stale"] is True
         assert svc.alert_service.process.await_args.kwargs["monero_stale"] is True
 
+    async def test_chain_verdict_attached_and_passed_to_the_alerter(self):
+        # #2499: the peers-and-tip verdict rides monero_sync["health"] and reaches the alerter.
+        svc, sm, proxy = _make_service()
+        proxy.get_workers.return_value = {"workers": []}
+        svc.alert_service.process = AsyncMock(return_value=[])
+        await self._run_one_iteration(
+            svc,
+            monero_sync={
+                "is_syncing": False,
+                "reachable": True,
+                "synchronized": True,
+                "height": 10,
+                "peers_out": 0,
+                "peers_in": 1,
+            },
+            tari_sync={"is_syncing": False, "reachable": True},
+        )
+        health = svc.latest_data["monero_sync"]["health"]
+        assert health["level"] == "green" and health["peers_out"] == 0
+        assert svc.alert_service.process.await_args.kwargs["monero_health"] is health
+
     async def test_healthchecks_pinged_when_healthy(self):
         # Enabled + healthy → a plain liveness ping (no args) each cycle.
         svc, sm, proxy = _make_service()

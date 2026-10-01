@@ -108,6 +108,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-dashboard-exposure-leg.sh"
 # shellcheck source=tests/os/appliance-lan-guard-leg.sh
 . "$SCRIPT_DIR/appliance-lan-guard-leg.sh"
+# shellcheck source=tests/os/appliance-monero-rpc-leg.sh
+. "$SCRIPT_DIR/appliance-monero-rpc-leg.sh"
 # shellcheck source=tests/os/appliance-tari-wallet-leg.sh
 . "$SCRIPT_DIR/appliance-tari-wallet-leg.sh"
 # shellcheck source=tests/os/appliance-chain-fault-leg.sh

@@ -430,7 +430,7 @@ single-purpose appliance. One consequence is worth recording explicitly:
   environment-variable or config-file equivalent, so the username/password are visible in the p2pool
   process's argv to any local process that can read it (`ps`, `/proc/<pid>/cmdline`). This is
   local-only (never remotely reachable) and the credential is an auto-generated random secret
-  guarding a `restricted-rpc` (read-only, public-safe) endpoint that by default is bound to localhost
+  guarding the restricted (read-only, public-safe) RPC listener that by default is bound to localhost
   plus the Docker bridge, not the LAN (set `monero.rpc_lan_access: true` to expose it, in which case
   the credential matters more). Moving it off argv isn't possible without removing RPC authentication
   (a worse trade-off, it's defense-in-depth on the internal path) or an upstream p2pool change, so

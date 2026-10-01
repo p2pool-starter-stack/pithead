@@ -852,19 +852,34 @@ cause of recovery. No automatic step
 changes guards or deletes Tor state. The action budget is three per outage; after that the
 monitor warns until egress recovers. The feature remains off by default.
 
-**Saturated Tor circuit history while chains stop advancing.** A completed bootstrap or a failed
-clearnet probe alone cannot authorize a state reset. If Tor repeatedly reports invalid circuit
-build timing and local Monero is peerless and stalled, run `./pithead tor-recover check`. This
-read-only check validates the live Tor data mount and the saturated history signature, then
-compares Monero height, sync and outgoing peers over three minutes. It uses sudo for read-only
-access to Tor-owned state and identity keys. `./pithead tor-recover apply`
-rechecks the same evidence under the mutation lock, verifies onion identity keys, backs up only
-Tor's `state`, and restarts Tor. It re-dials local Monero after the actual restart, verifies Tor
-health and Monero peers, and records the attempt in the control audit. The backup remains for
-inspection. A persistent six-hour cooldown includes failed attempts. The command refuses an
-ambiguous or symlinked Tor mount, an active mutation, ordinary warnings, or an advancing chain.
-It never removes onion keys, wallets, configuration or chain data. If verification fails, the
-command reports failure and leaves the backup for diagnosis; inspect Tor and Monero before retrying.
+**Saturated Tor circuit history while chains stop advancing.** A completed bootstrap, a failed
+clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
+reports invalid circuit build timing, run `./pithead tor-recover check`. This read-only check
+validates the live Tor data mount and the saturated history signature. When local Monero RPC
+answers, it requires peerless, stalled Monero across three minutes, with real outgoing peer
+counts read through the authenticated in-container admin helper. When RPC is unavailable,
+it instead requires two cookie-authenticated Tor observations three minutes apart: bootstrap
+95% at `circuit_create`, no established circuit, and the same running Tor instance. At least
+two invalid circuit-timing warnings must appear in the last 200 log lines from that interval;
+unreadable diagnostics refuse recovery. It uses sudo for read-only access to Tor-owned state
+and identity keys.
+
+`./pithead tor-recover apply` rechecks the evidence under the mutation lock, verifies onion
+identity keys, backs up only Tor's `state`, and restarts Tor. It re-dials a running local Monero
+after the actual restart. If Compose left Monero Created behind unhealthy Tor, recovery starts
+that existing node once Tor is healthy. The command verifies Tor health and Monero peers and
+records the attempt in the control audit; this connectivity result does not prove chain sync.
+Restore the remaining baseline services through the caller's normal workflow and independently
+verify baseline health and authenticated Monero and Tari sync before admitting new work.
+
+The backup remains for inspection. A persistent six-hour cooldown includes failed attempts.
+The command refuses an ambiguous or symlinked Tor mount, an active mutation, ordinary warnings,
+or an advancing chain. It never removes onion keys, wallets, configuration or chain data.
+If verification fails, the command reports failure and leaves the backup for diagnosis;
+inspect Tor and Monero before retrying. This is an explicit operator operation, not an automatic
+watchdog. A trusted CI caller must hold its fleet reservation and exclude active consumers
+through recovery, baseline restoration and independent sync verification. Pithead enforces
+local mutation exclusion; it does not acquire or attest fleet reservations.
 
 **Monero node out of sync after a Tor restart.**
 Anything that restarts or recreates the tor container outside the stack's own operations — a
@@ -884,6 +899,46 @@ restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the fin
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
+
+**Monero node isolated or not advancing.**
+A local monerod can keep `synchronized: true` and a green RPC healthcheck while it has no outgoing
+peers, or while its tip stops moving because every peer sits on the same stale block (#2499). The
+XMR Network card shows **Node Health**, **Peers** and **Height Moved**; the tick means the node is
+at the tip with peers. The published RPC is restricted, and a restricted `get_info` answers 0 for
+every peer count, so the counts come from a second, unrestricted RPC that monerod binds to its own
+container's loopback on an unpublished port (it needs the same login and is not reachable from the
+host, the LAN or other containers). The container's healthcheck reads it and prints one line that
+the dashboard reads from `docker inspect` (`State.Health.Log`); `./pithead doctor` and
+`./pithead tor-recover` read it with `docker exec`. A reading that is missing, older than 90 seconds,
+from before the container's current start, with an end before its start, or malformed shows as
+"peers not visible", never as 0
+peers and never as green; the container healthcheck fails until the local reading returns. A
+restart resets the peerless and height clocks even when it falls between dashboard polls. A
+stalled height still turns the card red without peer visibility. The container healthcheck
+also fails after 30 minutes without a rise past its best height, even with outgoing peers;
+its monotonic height clock resets on a new container run or an unavailable height reading.
+A syncing local node has no at-tip verdict; a node marked stale by the sync monitor is red.
+Doctor omits the last-block age when the RPC timestamp is malformed or outside its integer
+bound. The chain verdict turns red, with the numbers, when monerod has had 0 outgoing peers for
+10 minutes (`NODE_STALE_AFTER_SEC`) or its height has not moved for 30 minutes (Monero blocks
+arrive about every 2). A red local verdict adds a “Monero chain unhealthy” header badge with the
+reason and recovery advice. It also fails `./pithead doctor` (the Monero sync check prints the
+peer counts and last-block age) and adds a `monero chain` line to `./pithead status`.
+Each condition sends a `node_down`-toggle alert and a recovery note. A measured height stall
+alerts and recovers even while peer counts are unavailable; only the peerless edge needs visible
+counts. Remote and unreachable nodes have no chain verdict. The container's `docker inspect`
+health becomes `unhealthy` after 600 seconds without outgoing peers
+(`MONERO_HEALTH_PEERLESS_SEC`) or 30 minutes without height progress; it still prints its peer
+counts, so the card keeps reading them. The stack only reports: it restarts nothing. Fix:
+
+```bash
+./pithead restart monerod
+```
+
+The clocks start when the dashboard first sees the node and again whenever it stops answering, so
+a dashboard restart or a monerod restart never reads as a stall; a node that does not answer shows
+no verdict here, because the node-down alert already covers it. With `monero.mode: remote` the peers of the remote node are not visible to this stack, so the
+card says so and gives no verdict.
 
 **Tari node stuck or forked.**
 A running Tari node can stop following the chain while every healthcheck stays green: the process

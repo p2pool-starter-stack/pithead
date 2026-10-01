@@ -117,6 +117,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-tari-fork-rewind.sh" && domain_ran te
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tari-chain.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-chain.sh" && domain_ran test-tari-chain.sh "$_d0" "$?" || domain_ran test-tari-chain.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-monero-chain.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-monero-chain.sh" && domain_ran test-monero-chain.sh "$_d0" "$?" || domain_ran test-monero-chain.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-clearnet-firewall.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-clearnet-firewall.sh" && domain_ran test-clearnet-firewall.sh "$_d0" "$?" || domain_ran test-clearnet-firewall.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-host-firewall.sh disable=SC2015
@@ -181,6 +183,8 @@ esac
 _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-dashboard-carry.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-dashboard-carry.sh" && domain_ran test-dashboard-carry.sh "$_d0" "$?" || domain_ran test-dashboard-carry.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-deploy-layout.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy-layout.sh" && domain_ran test-control-deploy-layout.sh "$_d0" "$?" || domain_ran test-control-deploy-layout.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-lifecycle-verbs.sh disable=SC2015

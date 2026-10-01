@@ -120,7 +120,7 @@ verdict that means something. The dashboard and frontend unit suites still run f
      lint surfaces already require.
    - **test-stack** — the `pithead` shell test suite.
    - **test-compose** — `docker-compose.yml` interpolation validation.
-   - **test-integration-selftest** — the integration harness's own pure logic.
+   - **test-integration-selftest** — the integration harness's logic and bounded local transport fixtures.
    - **test-tools** — bounded build-log sanitization, the shell suite's 30-minute CI timeout guard,
      and a check that all four CI uv installs pin the same action, uv version, and archive checksum,
      without running a build.
@@ -135,6 +135,21 @@ verdict that means something. The dashboard and frontend unit suites still run f
 5. Update the docs in [`docs/`](docs/) (and the README, if relevant) for any
    user-facing change. To see what the suites cover, `make test-inventory` writes a
    generated (git-ignored) inventory you can read locally.
+
+### Secret-scan findings
+
+The required gitleaks check scans the full history reachable from `HEAD`, using
+`.config/gitleaks.toml` and `.config/gitleaksignore`. Removing a literal from the
+current file does not remove its historical finding. Verify that a reported value
+is synthetic before adding an exact `commit:file:rule:line` fingerprint to the
+ignore file; a squash merge has a different commit and therefore a different
+fingerprint. Keep real credentials out of exceptions and rotate them if exposed.
+
+The history-scan job also runs `bash scripts/lint/selftest-gitleaks-history.sh`.
+It checks the synthetic restore-connection Digest exception, detects the finding
+with that exception removed, and detects an identical fixture in a new commit.
+The connection-bound libcurl fixture remains authenticated and verifies the wire
+response independently with OpenSSL.
 
 ### File budget gate
 
