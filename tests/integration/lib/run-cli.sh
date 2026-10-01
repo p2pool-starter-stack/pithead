@@ -120,13 +120,8 @@ MATRIX:
   --rig-name <name>      exact borrowed rig NAME from its protected RigForge config.
   --rigforge-bootstrap-version <tag>  explicitly bootstrap that rig before feed-dependent checks.
   --rig-control-port <p> the rig's writable control API port (default: 8082, #185).
-  --rotate-secrets       also run the rotate-secrets phase (#2344): forces p2pool.stratum_password=
-                         auto, runs `pithead rotate-secrets -y`, and asserts monerod/proxy actually
-                         RECREATED with the new credentials (not restarted with the old ones) —
-                         host-side RPC/control-API dials, live container argv, and the .bak-<stamp>
-                         safety copies are owner-only and removed. Requires --safety-backup, whose
-                         archive is this phase's own restore anchor. DESTRUCTIVE-then-restored;
-                         works over SSH and locally.
+  --rotate-secrets       verify live new/old credentials and miner reconnection, then restore.
+                         Requires --safety-backup; a reserved rig also needs a runner-owned recovery hold.
   --subnet               also run the moved-subnet phase (#201/#180), local mode only: bring the
                          stack DOWN then UP on a non-default network.subnet (10.84.0.0/24) — the one
                          axis a hot apply can't move — and assert the moved prefix reached .env, the

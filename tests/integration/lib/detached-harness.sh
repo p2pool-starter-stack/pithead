@@ -112,6 +112,7 @@ harness_install_runner() {
     runner="$(mktemp)" || return 1
     # Pin the runner-owned target scratch even when SSH drops ambient variables.
     printf '#!/usr/bin/env bash\n' >"$runner"
+    printf 'export CI_RIG_RECOVERY_HOLD=%s\n' "$(quote_arg "${CI_RIG_RECOVERY_HOLD:-0}")" >>"$runner"
     if [ -n "${IT_SCRATCH_DIR:-}" ]; then
         printf 'export IT_SCRATCH_DIR=%s\n' "$(quote_arg "$IT_SCRATCH_DIR")" >>"$runner"
     fi

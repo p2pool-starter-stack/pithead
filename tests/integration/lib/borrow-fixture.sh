@@ -31,6 +31,7 @@ repoint_miner() {
 # phase asks it to replace the temporary test-pool password; stdin keeps that credential out of
 # command lines and the short-lived file is readable only by the rig owner.
 rotate_borrowed_stratum_password() { # stdin: new password
+    [ "${CI_RIG_RECOVERY_HOLD:-0}" = 1 ] || return 1
     [ -n "${MINER_ROTATE_CFG_BACKUP:-}" ] || return 1
     on_miner "
         umask 077; secret=\$(mktemp) || exit 1; trap 'rm -f \"\$secret\"' EXIT
@@ -46,31 +47,44 @@ rotate_borrowed_stratum_password() { # stdin: new password
 
 restore_borrowed_stratum_password() {
     [ -n "${MINER_ROTATE_CFG_BACKUP:-}" ] || return 1
-    on_miner "cp -a '$MINER_ROTATE_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && cmp -s '$MINER_ROTATE_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && rm -f '$MINER_ROTATE_CFG_BACKUP'" || return 1
+    restore_miner_config "$MINER_ROTATE_CFG_BACKUP" || return 1
     MINER_ROTATE_CFG_BACKUP=""
-    miner_reload
+}
+
+# Keep the recovery anchor until BOTH the exact bytes and the miner service verify. The runner
+# independently restores its original backups and owns the durable hold if any proof fails.
+restore_miner_config() { # <backup>
+    on_miner "cp -a '$1' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && cmp -s '$1' '$MINER_XMRIG_CONFIG'" || return 1
+    miner_reload && wait_for 60 2 "the restored miner service" miner_service_active || return 1
+    on_miner "cmp -s '$1' '$MINER_XMRIG_CONFIG' && rm -f '$1'"
+}
+
+miner_service_active() {
+    on_miner 'sudo -n systemctl is-active --quiet xmrig || systemctl --user is-active --quiet xmrig'
 }
 
 handle_borrow_rearm() { # <request> <ack> <run-id>
-    local request="$1" ack="$2" run_id="$3" action
-    action="$(on_bench "cat '$request'")"
+    local request="$1" ack="$2" run_id="$3" action record owner sequence extra
+    record="$(on_bench "cat '$request'")" || return 1
+    read -r owner action sequence extra <<<"$record"
+    [ "$owner" = "$run_id" ] && [[ "$sequence" =~ ^[0-9]+$ ]] && [ -z "$extra" ] || return 1
     case "$action" in
-    "$run_id rotate-stratum")
+    rotate-stratum)
         step "rotating the reserved miner's temporary stratum credential…"
         MINER_ROTATE_CFG_BACKUP="$MINER_XMRIG_CONFIG.e2e-rotate.$run_id"
         on_bench "sed -n 's/^PROXY_STRATUM_PASSWORD=//p' '$E2E_DIR/.env'" | rotate_borrowed_stratum_password || return 1
         ;;
-    "$run_id restore-stratum")
+    restore-stratum)
         step "restoring the reserved miner's temporary stratum credential…"
         restore_borrowed_stratum_password || return 1
-        printf '%s' "$action" | on_bench "cat > '$ack'"
+        printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
         return
         ;;
-    "$run_id rearm")
+    rearm)
         step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
         repoint_miner || return 1
         ;;
     *) return 1 ;;
     esac
-    wait_workers "$WORKERS" 180 && printf '%s' "$action" | on_bench "cat > '$ack'"
+    wait_workers "$WORKERS" 180 && printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
 }

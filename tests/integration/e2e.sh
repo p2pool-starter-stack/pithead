@@ -179,7 +179,8 @@ SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o Ser
 on_miner() { ssh "${SSH_OPTS[@]}" "$MINER_HOST" "$1"; }
 # State captured for the restore trap.
 SAFETY_ARCHIVE=""
-MINER_CFG_BACKUP=""; RESTORED=0
+MINER_CFG_BACKUP=""
+RESTORED=0
 RESTORE_PROOF_FAILED=0
 # Separate from RESTORE_PROOF_FAILED on purpose (#1085). That flag's message is the #971
 # credential-bake incident's, and its remediation — "re-bake from disk: docker compose up -d" —
@@ -216,16 +217,7 @@ restore_all() {
     # 1. Miner: put its original pool config back and nudge xmrig to reconnect.
     if [ -n "$MINER_CFG_BACKUP" ]; then
         step "restoring $MINER_HOST xmrig config from $MINER_CFG_BACKUP"
-        # cmp, then rm (#1067). Every borrowing run minted a timestamped .e2e-orig.<stamp> and
-        # nothing ever removed it, so the loaner accumulated them and recovery became a guess among
-        # candidates where the newest is not necessarily the true pre-borrow state. The backup is
-        # only safe to delete once the bytes are demonstrably back in place, and the proof runs in
-        # the SAME remote call so a dropped ssh cannot land between proving and deleting.
-        # Deliberately NOT gated on miner_reload: restoring and proving the config bytes is still
-        # required if every reload mechanism fails. The caller keeps the backup until that byte
-        # proof succeeds; miner_reload's status only gates forward test progress.
-        if on_miner "cp -a '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && cmp -s '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && rm -f '$MINER_CFG_BACKUP'"; then
-            miner_reload || RESTORE_PROOF_FAILED=1
+        if restore_miner_config "$MINER_CFG_BACKUP"; then
             if [ -n "${MINER_ROTATE_CFG_BACKUP:-}" ]; then
                 on_miner "rm -f '$MINER_ROTATE_CFG_BACKUP'" || warn "restored miner config but retained its temporary stratum backup for operator repair."
                 MINER_ROTATE_CFG_BACKUP=""
@@ -243,7 +235,8 @@ restore_all() {
                     miner_reload
             fi
         else
-            warn "FAILED to restore $MINER_HOST config — the backup should still be at $MINER_CFG_BACKUP, but check: if the connection dropped after the prune, it is already gone and the live config is the restored one."; RESTORE_PROOF_FAILED=1
+            warn "Miner config or service restoration unverified; retain the reservation and $MINER_CFG_BACKUP for operator recovery."
+            RESTORE_PROOF_FAILED=1
         fi
     fi
 
@@ -641,7 +634,7 @@ run_harness() {
     # Poll the done-marker, printing a heartbeat tail of the log.
     local rc="" waited=0
     while :; do
-        if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test ! -f '$rearm_ack'"; then
+        if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test \"\$(cat '$rearm_request')\" != \"\$(cat '$rearm_ack' 2>/dev/null)\""; then
             handle_borrow_rearm "$rearm_request" "$rearm_ack" "$rearm_id" || die "Failed to apply a borrowed-miner handshake request; reservation retained for operator repair."
         fi
         if on_bench "test -f '$E2E_DIR/results/e2e-harness.done'"; then
