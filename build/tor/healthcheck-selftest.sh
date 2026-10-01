@@ -144,10 +144,8 @@ expect "done requires full progress" "$(hc_run fixed '250-status/bootstrap-phase
 # declared command is dropped in turn, which also refuses an over-declared allowlist — a name in
 # HC_CMDS the script does not really need would keep passing here and go unnoticed.
 #
-# Read per-command, they are not all the same strength. `awk` and `nc` fail because the script
-# genuinely cannot proceed without them. `xxd` fails only because `[ -n "$COOKIE_HEX" ]` rejects the
-# empty result — `xxd -p -c 256 "$f" | tr -d '\n'` reports TR's status, so a missing xxd is not an
-# error the shell sees. Drop that guard and this control flips green, which is how it was found.
+# Missing xxd produces an empty cookie, rejected before querying control; the pipeline itself
+# reports tr's status, so cookie validation supplies that dependency guard.
 for hc_drop in "${HC_CMDS[@]}"; do
     hc_subset=()
     for hc_c in "${HC_CMDS[@]}"; do [ "$hc_c" = "$hc_drop" ] || hc_subset+=("$hc_c"); done
