@@ -12,7 +12,7 @@ Each invocation creates `backup-window-<32 lowercase hex characters>` with mode
 0700; `result.json` is replaced atomically with mode 0600. The directory name's
 suffix is the invocation identity, independent of any candidate or runner commit.
 
-The wrapper prints compact JSON lines prefixed `PITHEAD_BACKUP_RESULT_V1 ` at
+The wrapper prints compact JSON lines prefixed `PITHEAD_BACKUP_RESULT_V1` followed by one ASCII space at
 initialization, attempt admission and completion. Collect `result.json` and
 `backup.log` beneath the invocation directory from the caller's artifact root.
 Bench-ci already passes its job-owned `CI_ARTIFACTS`; these files therefore survive
@@ -69,7 +69,7 @@ failure followed by successful recovery can coexist with backup success.
 ## Shared-boundary observations
 
 With a valid `PITHEAD_BACKUP_WINDOW_TOKEN`, the generated CLI prints compact JSON
-lines prefixed `PITHEAD_BACKUP_OBSERVATION_V1 `. The wrapper supplies the fresh
+lines prefixed `PITHEAD_BACKUP_OBSERVATION_V1` followed by one ASCII space. The wrapper supplies the fresh
 invocation identity; ordinary backups leave observation disabled. Each observation
 contains exactly these fields:
 
