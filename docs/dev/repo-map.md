@@ -95,7 +95,7 @@ Keep local code out of `vendor/`.
 | Directory | How it runs |
 |---|---|
 | `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites. Missing or failed sources fail the run. |
-| `tests/stack/{appliance,control,dashboard,doctor,lifecycle,release,secrets}/` | Feature assertions loaded by the stack runner; retain shared setup and cleanup order. |
+| `tests/stack/{appliance,control,dashboard,doctor,lifecycle,release,secrets}/` | Feature assertions loaded by the stack runner; retain shared setup and cleanup order. Dashboard database-copy checks live in `control/test-dashboard-carry.sh`; apply recovery stays in `control/test-control-deploy.sh`. |
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
 | `tests/integration/lib/` | Sourced helpers and phase functions for `tests/integration/run.sh`. |
 | `tests/integration/selftest/` | Pure harness checks; `make test-integration-selftest` also checks appliance module loading. |
