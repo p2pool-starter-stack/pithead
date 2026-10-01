@@ -8,7 +8,7 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 echo "== numeric-only wallet probe privacy, limits and job isolation =="
 assert_eq "wrapper always sources its deployment owner with a failure guard" \
-    "$(grep -cFx 'source "$HERE/lib/deploy-branch.sh" || exit $?' "$HERE/../e2e.sh")" 1
+    "$(grep -cE '^source .*lib/deploy-branch[.]sh" [|][|] exit [$][?]$' "$HERE/../e2e.sh")" 1
 c++ -std=c++11 -Wall -Wextra -Werror -pthread "$probe/probe-test.cpp" -o "$scratch/probe"
 "$scratch/probe" 2>"$scratch/actual"
 printf 'wallet_numeric_progress kind=2 count=3774000\nwallet_numeric_progress kind=3 count=18446744073709551615\n' >"$scratch/expected"
