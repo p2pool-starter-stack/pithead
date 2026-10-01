@@ -4,31 +4,36 @@ class MoneroHealthEdgesMixin:
     ``monero_peerless`` and ``monero_stalled`` are edge-triggered off the verdict's own debounce
     (0 outgoing peers for NODE_STALE_AFTER_SEC, no new height for 30 min), one message into the
     condition and one out. They ride the ``node_down`` / ``node_recovered`` toggles, like the
-    out-of-sync edge (#972): the same conversation, a different failure mode. A verdict with no
-    peer visibility (remote node) or none yet keeps the last state, so it can neither fake a
-    recovery nor repeat an alarm."""
+    out-of-sync edge (#972): the same conversation, a different failure mode. Each edge needs
+    its own observation: peer counts for peerlessness, measured height and advance age for a
+    stall. Remote or unreachable verdicts keep both states without faking recovery."""
 
     _prev_monero_peerless = None
     _prev_monero_stalled = None
 
     def _monero_health_edges(self, health):
-        if not health or not health.get("peers_visible"):
+        if not health or health.get("reachable") is False:
             return []
-        return self._health_edge(
-            "_prev_monero_peerless",
-            bool(health.get("peerless")),
-            f"Monero node has no outgoing peers ({health.get('peers_out')} out, "
-            f"{health.get('peers_in')} in) — it cannot see new blocks and mining sits on a "
-            "stale tip. Run './pithead restart monerod' to re-dial.",
-            "Monero node has outgoing peers again.",
-        ) + self._health_edge(
-            "_prev_monero_stalled",
-            bool(health.get("stalled")),
-            f"Monero node height {health.get('height')} has not moved for "
-            f"{(health.get('advance_age_sec') or 0) // 60} min (blocks arrive every ~2) — "
-            "it may be on a stale tip or a fork. Run './pithead restart monerod'.",
-            "Monero node is advancing again.",
-        )
+        alerts = []
+        if health.get("peers_visible"):
+            alerts += self._health_edge(
+                "_prev_monero_peerless",
+                bool(health.get("peerless")),
+                f"Monero node has no outgoing peers ({health.get('peers_out')} out, "
+                f"{health.get('peers_in')} in) — it cannot see new blocks and mining sits on a "
+                "stale tip. Run './pithead restart monerod' to re-dial.",
+                "Monero node has outgoing peers again.",
+            )
+        if health.get("height") is not None and health.get("advance_age_sec") is not None:
+            alerts += self._health_edge(
+                "_prev_monero_stalled",
+                bool(health.get("stalled")),
+                f"Monero node height {health.get('height')} has not moved for "
+                f"{health['advance_age_sec'] // 60} min (blocks arrive every ~2) — "
+                "it may be on a stale tip or a fork. Run './pithead restart monerod'.",
+                "Monero node is advancing again.",
+            )
+        return alerts
 
     def _health_edge(self, attr, now, down_text, up_text):
         prev = getattr(self, attr)

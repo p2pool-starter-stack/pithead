@@ -251,6 +251,8 @@ run_monero_stranded() {
     fi
     assert_contains "monero-stranded: the card payload reads red with the numbers (live /api/state)" \
         "$(monero_health_field level)|$(jq_get "$(api_state)" '.monero.health.status')" "red|0 outgoing peers for"
+    assert_eq "monero-stranded: header names the red Monero chain with its reason" \
+        "$(api_state | jq -r 'any(.badges[]; .text == "Monero chain unhealthy" and .variant == "bad" and (.title | contains("0 outgoing peers for")))')" "true"
     if wait_for 240 10 "monerod docker health unhealthy" _pred_monerod_docker_health unhealthy; then
         it_pass "monero-stranded: docker inspect health is unhealthy (the healthcheck read the same zero)"
     else
@@ -280,6 +282,8 @@ run_monero_stranded() {
     else
         it_fail "monero-stranded: green after the fault was removed and monerod restarted" "$(monero_strand_state)"
     fi
+    assert_eq "monero-stranded: header clears the Monero chain warning after recovery" \
+        "$(api_state | jq -r 'any(.badges[]; .text == "Monero chain unhealthy")')" "false"
     if wait_for 300 10 "monerod docker health healthy" _pred_monerod_docker_health healthy; then
         it_pass "monero-stranded: docker inspect health is healthy again"
     else

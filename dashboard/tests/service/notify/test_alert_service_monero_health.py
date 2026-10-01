@@ -3,7 +3,14 @@ from tests.service.notify._alert_service_support import *  # noqa: F403
 
 
 def _h(**kw):
-    base = {"level": "green", "peers_visible": True, "peers_out": 8, "peers_in": 1, "height": 5}
+    base = {
+        "level": "green",
+        "peers_visible": True,
+        "peers_out": 8,
+        "peers_in": 1,
+        "height": 5,
+        "advance_age_sec": 0,
+    }
     return {**base, **kw}
 
 
@@ -70,3 +77,50 @@ class TestMoneroHealthEdges:
         _mh(svc, _h())
         _mh(svc, _h(level="red", peerless=True, peers_out=0))
         assert svc.drain_incidents() == {AlertService.EVT_NODE_DOWN: 1}
+
+    def test_stalled_height_alerts_and_recovers_without_peer_visibility(self):
+        from mining_dashboard.service.health.monero_health import STALLED_SEC, MoneroChainHealth
+
+        now = [0]
+        monitor = MoneroChainHealth(clock=lambda: now[0])
+        svc = _svc()
+        reading = {"reachable": True, "height": 77, "peers_out": None}
+        assert _mh(svc, monitor.observe(reading)) == []
+        now[0] = STALLED_SEC
+        health = monitor.observe(reading)
+        assert health["stalled"] and not health["peers_visible"]
+        out = _mh(svc, health)
+        assert _keys(out) == [AlertService.EVT_NODE_DOWN]
+        assert "height 77 has not moved for 30 min" in out[0][1]
+        assert _mh(svc, monitor.observe(reading)) == []
+        assert _keys(_mh(svc, monitor.observe({**reading, "height": 78}))) == [
+            AlertService.EVT_NODE_RECOVERED
+        ]
+
+    def test_stalled_edge_keeps_state_during_remote_or_unreachable_gap(self):
+        from mining_dashboard.service.health.monero_health import MoneroChainHealth
+
+        svc = _svc()
+        _mh(svc, _h())
+        _mh(svc, _h(level="red", stalled=True, advance_age_sec=1800))
+        monitor = MoneroChainHealth()
+        assert _mh(svc, monitor.observe({"height": 88}, local=False)) == []
+        assert _mh(svc, monitor.observe({"height": 88, "reachable": False})) == []
+        assert _mh(svc, {"level": "unknown", "peers_visible": False}) == []
+        assert _mh(svc, _h(level="red", stalled=True, advance_age_sec=1900)) == []
+
+    def test_missing_peers_do_not_recover_peerless_while_height_stalls(self):
+        svc = _svc()
+        _mh(svc, _h())
+        _mh(svc, _h(level="red", peerless=True, peers_out=0))
+        out = _mh(
+            svc,
+            _h(
+                level="red", peers_visible=False, peers_out=None, stalled=True, advance_age_sec=1800
+            ),
+        )
+        assert _keys(out) == [AlertService.EVT_NODE_DOWN]
+        assert "height" in out[0][1]
+        out = _mh(svc, _h(level="red", stalled=True, advance_age_sec=1900))
+        assert _keys(out) == [AlertService.EVT_NODE_RECOVERED]
+        assert "outgoing peers again" in out[0][1]

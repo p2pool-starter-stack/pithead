@@ -898,14 +898,18 @@ stalled height still turns the card red without peer visibility. The container h
 also fails after 30 minutes without a rise past its best height, even with outgoing peers;
 its monotonic height clock resets on a new container run or an unavailable height reading.
 A syncing local node has no at-tip verdict; a node marked stale by the sync monitor is red.
-Doctor omits the last-block age when the RPC timestamp is malformed or outside its integer bound. It turns red, with the numbers, when monerod has had 0 outgoing peers for 10
-minutes (`NODE_STALE_AFTER_SEC`) or its height has not moved for 30 minutes (Monero blocks arrive
-about every 2). A red verdict also fails `./pithead doctor` (doctor's Monero sync check prints the
-peer counts and the last block's age too), adds a `monero chain` line to `./pithead status`, sends a
-`node_down`-toggle alert for each condition (peerless and stalled are separate messages, each with a
-recovery note), and makes the container's `docker inspect` health `unhealthy` once it has had 0
-outgoing peers for `MONERO_HEALTH_PEERLESS_SEC` (600 s); that run still prints its counts, so the card keeps reading them. The stack only reports: it restarts
-nothing. Fix:
+Doctor omits the last-block age when the RPC timestamp is malformed or outside its integer
+bound. The chain verdict turns red, with the numbers, when monerod has had 0 outgoing peers for
+10 minutes (`NODE_STALE_AFTER_SEC`) or its height has not moved for 30 minutes (Monero blocks
+arrive about every 2). A red local verdict adds a “Monero chain unhealthy” header badge with the
+reason and recovery advice. It also fails `./pithead doctor` (the Monero sync check prints the
+peer counts and last-block age) and adds a `monero chain` line to `./pithead status`.
+Each condition sends a `node_down`-toggle alert and a recovery note. A measured height stall
+alerts and recovers even while peer counts are unavailable; only the peerless edge needs visible
+counts. Remote and unreachable nodes have no chain verdict. The container's `docker inspect`
+health becomes `unhealthy` after 600 seconds without outgoing peers
+(`MONERO_HEALTH_PEERLESS_SEC`) or 30 minutes without height progress; it still prints its peer
+counts, so the card keeps reading them. The stack only reports: it restarts nothing. Fix:
 
 ```bash
 ./pithead restart monerod
