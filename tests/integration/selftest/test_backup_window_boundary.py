@@ -20,6 +20,67 @@ TOKEN = "a" * 32
 
 
 class BackupBoundaryTests(unittest.TestCase):
+    def test_offset_health_history_reaches_window_execution_provenance(self):
+        with tempfile.TemporaryDirectory() as sandbox:
+            docker = Path(sandbox) / "docker"
+            docker.write_text('#!/bin/sh\ncat "$SNAPSHOT"\n')
+            docker.chmod(0o700)
+            data = Path(sandbox) / "snapshot.json"
+            for offset in ("-05:00", "+05:30", "Z", "-00:00", "+05:99", "", "secret\n"):
+                snapshot = {
+                    "container_id": "b" * 64,
+                    "image_id": "sha256:" + "c" * 64,
+                    "test": ["CMD", "check"],
+                    "health": "healthy",
+                    "checks": [
+                        {
+                            "start": "2026-01-01T01:00:02.123456789" + offset,
+                            "end": "2026-01-01T01:00:03.987654321" + offset,
+                            "exit_code": 0,
+                        },
+                        None,
+                    ],
+                }
+                data.write_text(json.dumps(snapshot))
+                process = subprocess.run(  # noqa: S603 - fixed fixture command
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "source lib/pithead/17b-backup-window.sh; backup_window_observe restart_succeeded",
+                    ],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    env={
+                        **os.environ,
+                        "PATH": sandbox + ":" + os.environ["PATH"],
+                        "SNAPSHOT": str(data),
+                        "PITHEAD_BACKUP_WINDOW_TOKEN": TOKEN,
+                    },
+                )
+                self.assertEqual(process.returncode, 0)
+                sample = window.validate_observation(
+                    json.loads(process.stdout.removeprefix(window.PREFIX)), TOKEN
+                )
+                if offset not in ("-05:00", "+05:30", "Z"):
+                    self.assertEqual(sample["checks"], [])
+                    continue
+                check = sample["checks"][0]
+                self.assertTrue(check["start"].endswith(".123456789Z"))
+                self.assertTrue(check["end"].endswith(".987654321Z"))
+                if offset == "-05:00":
+                    self.assertEqual(check["start"], "2026-01-01T06:00:02.123456789Z")
+                if offset == "+05:30":
+                    self.assertEqual(check["start"], "2025-12-31T19:30:02.123456789Z")
+                # Fixture clock bounds bracket the normalized shared-boundary history.
+                sample["observed_at"] = check["end"]
+                begin = dict(sample, kind="backup_begin", observed_at=check["start"], checks=[])
+                text = "\n".join(window.PREFIX + json.dumps(value) for value in (begin, sample))
+                result = window.finish(window.new_result(TOKEN), 0, True, text)
+                self.assertEqual(result["execution_observations"], [{"observation": 1, "check": 0}])
+                self.assertEqual(result["execution"], "observed")
+
     def test_real_restart_boundary_has_fixed_failure_observations(self):
         with tempfile.TemporaryDirectory() as sandbox:
             docker = Path(sandbox) / "docker"

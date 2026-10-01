@@ -88,7 +88,10 @@ contains exactly these fields:
 - `implementation_sha256`: sampled in-container script digest when the configured
   command is exactly `CMD /usr/local/bin/tor-healthcheck.sh`; otherwise null.
 - `checks`: at most five `{start, end, exit_code}` records from Docker health
-  history. Health output and raw control replies are excluded before transport.
+  history. Offset-aware Docker timestamps are normalized to UTC with their
+  fractional precision preserved. Invalid dates, missing offsets and RFC3339's
+  unknown offset `-00:00` supply no execution observation. Health output and raw
+  control replies are excluded before transport.
 
 `backup_begin.observed_at` bounds the start of the window. An execution is observed
 only when its retained Start/End interval lies between that time and the sampling

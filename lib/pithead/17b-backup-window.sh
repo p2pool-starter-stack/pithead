@@ -23,6 +23,20 @@ def digest(value):
     return value if isinstance(value, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", value) else None
 
 
+def utc_timestamp(value):
+    pattern = (r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+               r"(?P<fraction>\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])")
+    match = re.fullmatch(pattern, value) if isinstance(value, str) else None
+    if not match or value.endswith("-00:00"):
+        return None  # RFC3339 -00:00 means the local offset is unknown.
+    try:
+        utc = datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(datetime.timezone.utc)
+    except (ValueError, OverflowError):
+        return None
+    # Preserve Docker's fractional precision rather than truncating nanoseconds.
+    return utc.strftime("%Y-%m-%dT%H:%M:%S") + (match["fraction"] or "") + "Z"
+
+
 kind = sys.argv[2]
 if kind not in {"backup_begin", "restart_before", "restart_succeeded", "restart_failed"}:
     sys.exit(0)
@@ -63,10 +77,9 @@ if isinstance(info, dict):
         for check in checks:
             if not isinstance(check, dict):
                 continue
-            start, end, code = (check.get(k) for k in ("start", "end", "exit_code"))
-            timestamp = r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:Z|\+00:00)"
-            if (isinstance(start, str) and re.fullmatch(timestamp, start)
-                    and isinstance(end, str) and re.fullmatch(timestamp, end)
+            start, end = (utc_timestamp(check.get(k)) for k in ("start", "end"))
+            code = check.get("exit_code")
+            if (start is not None and end is not None
                     and type(code) is int and -1 <= code <= 255):
                 record["checks"].append({"start": start, "end": end, "exit_code": code})
 print("PITHEAD_BACKUP_OBSERVATION_V1 " + json.dumps(record, separators=(",", ":")))
