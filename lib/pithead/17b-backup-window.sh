@@ -30,11 +30,13 @@ def utc_timestamp(value):
     if not match or value.endswith("-00:00"):
         return None  # RFC3339 -00:00 means the local offset is unknown.
     try:
-        utc = datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(datetime.timezone.utc)
+        offset = "+00:00" if value.endswith("Z") else value[-6:]
+        # Parse whole seconds only: Python 3.10 rejects Docker's nanosecond fraction.
+        utc = datetime.datetime.fromisoformat(value[:19] + offset).astimezone(datetime.timezone.utc)
     except (ValueError, OverflowError):
         return None
     # Preserve Docker's fractional precision rather than truncating nanoseconds.
-    return utc.strftime("%Y-%m-%dT%H:%M:%S") + (match["fraction"] or "") + "Z"
+    return utc.isoformat(timespec="seconds")[:-6] + (match["fraction"] or "") + "Z"
 
 
 kind = sys.argv[2]

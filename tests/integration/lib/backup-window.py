@@ -36,7 +36,8 @@ def match(pattern, value):
 def timestamp(value):
     if not match(STAMP, value):
         raise ValueError("invalid timestamp")
-    return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    whole, _, fraction = value.removesuffix("Z").removesuffix("+00:00").partition(".")
+    return datetime.datetime.fromisoformat(whole), int(fraction.ljust(9, "0"))
 
 
 def validate_observation(value, token):
@@ -339,8 +340,7 @@ def main():
         initialize(target)
         return
     directory = Path(target)
-    # Unsafe directories are never recoverable record corruption.
-    try:
+    try:  # Unsafe directories are never recoverable record corruption.
         os.close(safe_directory(directory))
     except (OSError, ValueError):
         if action != "finish":

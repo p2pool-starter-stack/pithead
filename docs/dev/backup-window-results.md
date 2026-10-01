@@ -89,13 +89,16 @@ contains exactly these fields:
   command is exactly `CMD /usr/local/bin/tor-healthcheck.sh`; otherwise null.
 - `checks`: at most five `{start, end, exit_code}` records from Docker health
   history. Offset-aware Docker timestamps are normalized to UTC with their
-  fractional precision preserved. Invalid dates, missing offsets and RFC3339's
+  fractional precision preserved on Python 3.10 and later. Invalid dates, missing offsets and RFC3339's
   unknown offset `-00:00` supply no execution observation. Health output and raw
   control replies are excluded before transport.
 
 `backup_begin.observed_at` bounds the start of the window. An execution is observed
 only when its retained Start/End interval lies between that time and the sampling
 observation's time, with container, image and configured-command identity present.
+Interval validation and window comparison retain all nine fractional digits;
+inverted intervals are invalid and a check wholly before admission remains unknown,
+even when the timestamps fall within the same microsecond.
 The referenced observation ties the execution to that container and configuration.
 A sampled script digest describes the file at sampling time; it does not prove
 those exact bytes executed or that an earlier image refresh exercised the check.

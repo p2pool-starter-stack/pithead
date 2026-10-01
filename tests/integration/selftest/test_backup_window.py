@@ -48,6 +48,72 @@ def transcript(*values):
 
 
 class BackupWindowTests(unittest.TestCase):
+    def test_nanosecond_window_does_not_include_adjacent_executions(self):
+        begin = observation(observed_at="2026-01-01T01:00:01.123456900Z")
+        for start, end, expected in (
+            ("123456100", "123456800", "unknown"),  # Entirely before the window.
+            ("123456800", "123456950", "unknown"),  # Straddles window admission.
+            ("123456950", "123456999", "unknown"),  # Ends after the sample.
+            ("123456900", "123456980", "observed"),
+        ):
+            with self.subTest(start=start, end=end):
+                sample = observation(
+                    "restart_succeeded",
+                    observed_at="2026-01-01T01:00:01.123456980Z",
+                    checks=[
+                        {
+                            "start": "2026-01-01T01:00:01." + start + "Z",
+                            "end": "2026-01-01T01:00:01." + end + "Z",
+                            "exit_code": 0,
+                        }
+                    ],
+                )
+                result = window.finish(initial(), 0, True, transcript(begin, sample))
+                self.assertEqual(result["execution"], expected)
+                self.assertEqual(
+                    result["execution_observations"],
+                    [{"observation": 1, "check": 0}] if expected == "observed" else [],
+                )
+
+    def test_inverted_nanosecond_interval_invalidates_observations(self):
+        sample = observation(
+            "restart_failed",
+            health="unhealthy",
+            checks=[
+                {
+                    "start": "2026-01-01T01:00:01.123456900Z",
+                    "end": "2026-01-01T01:00:01.123456800Z",
+                    "exit_code": 1,
+                }
+            ],
+        )
+        with self.assertRaises(ValueError):
+            window.validate_observation(sample, TOKEN)
+        result = window.finish(initial(), 7, False, transcript(observation(), sample))
+        self.assertEqual(result["observation_channel"], "invalid")
+        self.assertEqual(result["execution"], "unknown")
+        self.assertEqual(result["tor_event"], "unknown")
+        self.assertEqual(result["backup_exit_code"], 7)
+
+    def test_timestamp_ordering_preserves_precision_and_equivalent_forms(self):
+        self.assertLess(
+            window.timestamp("2026-01-01T01:00:01.123456800Z"),
+            window.timestamp("2026-01-01T01:00:01.123456900Z"),
+        )
+        self.assertLess(
+            window.timestamp("2026-01-01T01:00:01.999999999Z"),
+            window.timestamp("2026-01-01T01:00:02Z"),
+        )
+        for fraction in ("", ".0", ".000000000"):
+            self.assertEqual(
+                window.timestamp("2026-01-01T01:00:01" + fraction + "Z"),
+                window.timestamp("2026-01-01T01:00:01.000000000+00:00"),
+            )
+        self.assertEqual(
+            window.timestamp("2026-01-01T01:00:01.1Z"),
+            window.timestamp("2026-01-01T01:00:01.100000000+00:00"),
+        )
+
     def test_stable_event_despite_changing_diagnostics(self):
         events = []
         for day, tail in (("01", "control connections"), ("02", "bootstrap stalled")):
