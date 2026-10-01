@@ -26,7 +26,7 @@ WAIT_SRC="$(sed -n '/^wait_synced() {/,/^}$/p' "$E2E_SRC")"
 assert_eq "wait_synced extraction is the whole function (opens and closes)" \
     "$(printf '%s\n' "$WAIT_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "wait_synced() { # <timeout_s> } "
 
-DEPLOY_SRC="$(sed -n '/^deploy_branch() {$/,/^}$/p' "$E2E_SRC")"
+DEPLOY_SRC="$(sed -n '/^deploy_branch() {$/,/^}$/p' "$HERE/../lib/deploy-branch.sh")"
 assert_eq "deploy_branch extraction is the whole function (opens and closes)" \
     "$(printf '%s\n' "$DEPLOY_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "deploy_branch() { } "
 

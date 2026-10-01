@@ -332,7 +332,7 @@ run_all() {
 run_all
 
 echo "== e2e.sh wiring =="
-DEPLOY_SRC="$(sed -n '/^deploy_branch() {$/,/^}$/p' "$E2E_SRC")"
+DEPLOY_SRC="$(sed -n '/^deploy_branch() {$/,/^}$/p' "$HERE/../lib/deploy-branch.sh")"
 assert_contains "deploy_branch deploys through deploy_keeping_chain" "$DEPLOY_SRC" "deploy_keeping_chain || die"
 assert_eq "deploy_branch no longer runs a bare upgrade itself" "$(printf '%s\n' "$DEPLOY_SRC" | grep -c "./pithead upgrade\"")" "0"
 assert_eq "e2e.sh sources chain-keep.sh" "$(grep -cE '^source .*/lib/chain-keep\.sh" (\|\||&&)' "$E2E_SRC")" "1"
