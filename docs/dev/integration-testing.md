@@ -1065,8 +1065,17 @@ the recovery sequence. Capture also writes `wallet-health.json` and
 `wallet-memory-events.txt`. During the existing 1200-second Monero scan wait, each
 15-second poll records container identity, start time, current exit/OOM/restart
 state, cgroup memory usage/peak/limit/events (v2 or v1), PID 1 RSS/peak/thread count
-and read counters, numeric wallet cache/key file sizes, and the last 60 seconds of wallet OOM, exit, start and restart events in the harness
-transcript. Each Docker diagnostic command has a 5-second bound. Samples survive
+and read/write counters, process state, user/system CPU ticks, process start ticks,
+kernel wait channel, numeric wallet cache/key file sizes, and the last 60 seconds
+of wallet OOM, exit, start and restart events in the harness transcript. Each sample
+also probes wallet height and daemon block count directly with a 1-second limit
+per RPC, accepting the pinned Monero JSON-RPC response shapes and emitting only
+numeric heights or `unavailable`. Errors, malformed replies and unexpected shapes
+remain unavailable. These probes use the
+container credentials without printing responses or credentials. Increasing CPU
+counters for the same process start time establish work, not scan height or
+catch-up; unchanged file-read counters alone cannot establish a stall. When RPC
+is silent throughout startup, wallet height remains unobservable through RPC. Each Docker diagnostic command has a 5-second bound. Samples survive
 automatic restart in the transcript; a final current-state snapshot alone cannot
 establish whether an earlier process was OOM-killed. Docker retains only a recent
 event buffer, so missing events do not prove that no OOM occurred. Health output

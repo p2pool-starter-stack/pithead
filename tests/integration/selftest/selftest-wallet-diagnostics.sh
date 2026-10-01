@@ -9,8 +9,12 @@ TD="$(mktemp -d)"
 trap 'rm -rf "$TD"' EXIT
 mkdir -p "$TD/bin" "$TD/wallet" "$TD/cgroup/memory"
 export WALLET_TEST_CGROUP="$TD/cgroup" WALLET_TEST_PROC_STATUS="$TD/process-status"
-export WALLET_TEST_PROC_IO="$TD/process-io" WALLET_DIR="$TD/wallet"
-printf 'rchar: 2000000000\nread_bytes: 400000000\n' >"$TD/process-io"
+export WALLET_TEST_PROC_IO="$TD/process-io" WALLET_TEST_PROC_STAT="$TD/process-stat"
+export WALLET_TEST_PROC_WCHAN="$TD/process-wchan" WALLET_DIR="$TD/wallet"
+printf 'rchar: 2000000000\nread_bytes: 400000000\nwchar: 8000\nwrite_bytes: 4096\n' >"$TD/process-io"
+# A comm with spaces and parentheses must not shift the CPU/starttime fields.
+printf '1 (wallet (fixture)) R 0 0 0 0 0 0 0 0 0 0 12345 678 0 0 0 0 0 0 98765\n' >"$TD/process-stat"
+printf '0\n' >"$TD/process-wchan"
 printf 'cache-fixture' >"$TD/wallet/payout-wallet"
 printf 'keys-fixture' >"$TD/wallet/payout-wallet.keys"
 printf '1800000000\n' >"$TD/cgroup/memory.current"
@@ -32,7 +36,8 @@ inspect)
 exec)
     case "$*" in
     *'test ! -e'*) exit "${WALLET_TEST_MARKER_RC:-1}" ;;
-    *) script=$(printf '%s' "$5" | sed "s|/sys/fs/cgroup|$WALLET_TEST_CGROUP|g; s|/proc/1/status|$WALLET_TEST_PROC_STATUS|g; s|/proc/1/io|$WALLET_TEST_PROC_IO|g")
+    *) raw=$(cat); printf '%s\n' "$raw" >>"$WALLET_TEST_COMMANDS"
+       script=$(printf '%s' "$raw" | sed "s|/sys/fs/cgroup|$WALLET_TEST_CGROUP|g; s|/proc/1/status|$WALLET_TEST_PROC_STATUS|g; s|/proc/1/io|$WALLET_TEST_PROC_IO|g; s|/proc/1/stat\\b|$WALLET_TEST_PROC_STAT|g; s|/proc/1/wchan|$WALLET_TEST_PROC_WCHAN|g")
        sh -c "$script" ;;
 
     esac ;;
@@ -42,8 +47,9 @@ EOF
 cat >"$TD/bin/curl" <<'EOF'
 #!/bin/sh
 case "$*" in
-*get_block_count*) echo '{"result":{"count":1000}}' ;;
-*get_height*) echo "{\"result\":{\"height\":${WALLET_TEST_HEIGHT:-10}}}" ;;
+*get_block_count*) [ "${WALLET_TEST_DAEMON_RC:-0}" = 0 ] || exit "$WALLET_TEST_DAEMON_RC"; echo '{"id":"0","jsonrpc":"2.0","result":{"count":1000,"status":"OK","untrusted":false}}' ;;
+*get_height*) if [ -n "${WALLET_TEST_HEIGHT_BODY:-}" ]; then echo "$WALLET_TEST_HEIGHT_BODY"; exit "${WALLET_TEST_HEIGHT_RC:-0}"; fi
+    [ "${WALLET_TEST_HEIGHT_RC:-0}" = 0 ] || exit "$WALLET_TEST_HEIGHT_RC"; echo "{\"id\":\"0\",\"jsonrpc\":\"2.0\",\"result\":{\"height\":${WALLET_TEST_HEIGHT:-10}}}" ;;
 *get_version*) exit "${WALLET_TEST_RPC_RC:-0}" ;;
 esac
 EOF
@@ -61,6 +67,38 @@ assert_contains "scan position survives restart in the sampled health history" "
 assert_contains "cache size is measured without exposing content" "$body" 'wallet_cache_bytes=13'
 assert_contains "key file size is measured without exposing content" "$body" 'wallet_keys_bytes=12'
 assert_contains "read demand is measured" "$body" 'rchar: 2000000000'
+assert_contains "CPU work and identity are sampled without the command name" "$body" 'process_state=R cpu_user_ticks=12345 cpu_system_ticks=678 process_start_ticks=98765'
+printf '1 (changed name) S 0 0 0 0 0 0 0 0 0 0 12445 690 0 0 0 0 0 0 98765\n' >"$TD/process-stat"
+body="$(wallet_scan_sample)"
+assert_contains "later polls distinguish increasing CPU from a sleeping process" "$body" 'process_state=S cpu_user_ticks=12445 cpu_system_ticks=690 process_start_ticks=98765'
+assert_contains "kernel wait channel is sampled" "$body" 'process_wait_channel=0'
+assert_contains "write demand is measured" "$body" 'write_bytes: 4096'
+assert_contains "numeric scan and daemon heights are sampled directly" "$body" 'sample_wallet_height=10 sample_daemon_height=1000'
+export WALLET_TEST_HEIGHT_RC=7
+body="$(wallet_scan_sample)"
+assert_contains "silent wallet RPC retains readable daemon height" "$body" 'sample_wallet_height=unavailable sample_daemon_height=1000'
+export WALLET_TEST_DAEMON_RC=7
+body="$(wallet_scan_sample)"
+assert_contains "failed RPC probes are explicit rather than zero heights" "$body" 'sample_wallet_height=unavailable sample_daemon_height=unavailable'
+unset WALLET_TEST_HEIGHT_RC WALLET_TEST_DAEMON_RC
+for payload in '{"error":{"code":-1,"data":{"height":9999}}}' '{"result":{"height":10.5}}' 'not-json' '{"id":"0","jsonrpc":"2.0","result":{"height":1 0}}' '{"id":" 0","jsonrpc":"2.0","result":{"height":10}}' '{"id":"0","jsonrpc":"2.0","result":{"height":01}}' '{"id":"0","jsonrpc":"2.0","result":{"height":10}' '{"id":"0","jsonrpc":"2.0","result":{"metadata":{"height":10}}}' '{"error":{"code":-1},"id":"0","jsonrpc":"2.0","result":{"height":10}}'; do
+    export WALLET_TEST_HEIGHT_BODY="$payload"
+    body="$(wallet_scan_sample)"
+    assert_contains "invalid or error RPC responses cannot become a numeric height" "$body" 'sample_wallet_height=unavailable sample_daemon_height=1000'
+done
+export WALLET_TEST_HEIGHT_BODY=$'{\n  "id": "0", "jsonrpc": "2.0", "result": {"height": 20}\n}'
+body="$(wallet_scan_sample)"
+assert_contains "formatted valid JSON retains its numeric height" "$body" 'sample_wallet_height=20 sample_daemon_height=1000'
+export WALLET_TEST_HEIGHT_RC=7
+body="$(wallet_scan_sample)"
+assert_contains "failed curl with a response body cannot establish a height" "$body" 'sample_wallet_height=unavailable sample_daemon_height=1000'
+unset WALLET_TEST_HEIGHT_BODY WALLET_TEST_HEIGHT_RC
+printf 'malformed stat\n' >"$TD/process-stat"
+body="$(wallet_scan_sample)"
+assert_contains "malformed CPU metadata is explicitly unavailable" "$body" 'process_cpu=unavailable'
+rm "$TD/process-stat"
+body="$(wallet_scan_sample)"
+assert_contains "missing CPU metadata is explicitly unavailable" "$body" 'process_cpu=unavailable'
 assert_eq "cache content is never emitted" "$(printf '%s' "$body" | grep -c cache-fixture)" 0
 assert_contains "process demand is captured" "$body" 'Threads: 32'
 commands="$(cat "$WALLET_TEST_COMMANDS")"
