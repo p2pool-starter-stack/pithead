@@ -136,6 +136,21 @@ verdict that means something. The dashboard and frontend unit suites still run f
    user-facing change. To see what the suites cover, `make test-inventory` writes a
    generated (git-ignored) inventory you can read locally.
 
+### Secret-scan findings
+
+The required gitleaks check scans the full history reachable from `HEAD`, using
+`.config/gitleaks.toml` and `.config/gitleaksignore`. Removing a literal from the
+current file does not remove its historical finding. Verify that a reported value
+is synthetic before adding an exact `commit:file:rule:line` fingerprint to the
+ignore file; a squash merge has a different commit and therefore a different
+fingerprint. Keep real credentials out of exceptions and rotate them if exposed.
+
+The history-scan job also runs `bash scripts/lint/selftest-gitleaks-history.sh`.
+It checks the synthetic restore-connection Digest exception, detects the finding
+with that exception removed, and detects an identical fixture in a new commit.
+The connection-bound libcurl fixture remains authenticated and verifies the wire
+response independently with OpenSSL.
+
 ### File budget gate
 
 The file-budget ratchet (issue #1105 Phase 0). A new tracked file has a hard ceiling of 800 lines, target

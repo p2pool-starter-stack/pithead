@@ -26,3 +26,5 @@ c79b0581536b5f059fca1c643a93333f6b928965:tests/os/appliance-tari-wallet-leg.sh:g
 # Public HTTP Digest HA2 of the fixed string GET:/get_info, not an API key or credential.
 # The CI-only server independently verifies the libcurl fixture response with this protocol constant.
 29c753378adb57a5e99b11a1687601468cfeb18e:tests/integration/selftest/test_restore_curl_connection.py:generic-api-key:59
+# The same HA2 protocol constant after the restore-connection test was squash-merged onto develop.
+051add657bebb7f744aef9e0622ad2ea9591d96b:tests/integration/selftest/test_restore_curl_connection.py:generic-api-key:59
