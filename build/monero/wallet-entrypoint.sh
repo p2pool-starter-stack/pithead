@@ -63,6 +63,7 @@ fi
 
 mkdir -p "$WALLET_DIR"
 
+# Bound parallel wallet work to one worker; host CPU count is not a memory budget.
 # Shared server flags. --rpc-login (dashboard→wallet-rpc) authenticates the loopback-published RPC so
 # even a mining-net peer that reaches the bridge IP can't read payout history; --daemon-login is the
 # monerod RPC cred (same value p2pool already passes on its command line). The ringdb default is
@@ -77,6 +78,7 @@ set -- \
     --rpc-login "${WALLET_RPC_USERNAME:-wallet}:${WALLET_RPC_PASSWORD:-}" \
     --password "" \
     --shared-ringdb-dir "$WALLET_DIR/.shared-ringdb" \
+    --max-concurrency 1 \
     --log-level 0 \
     --non-interactive
 
