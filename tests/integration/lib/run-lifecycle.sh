@@ -8,7 +8,7 @@ run_lifecycle() {
     local lifecycle_ok=1
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
-
+    tor_recovery_healthy_probe
     # restart brings the stack back healthy.
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1

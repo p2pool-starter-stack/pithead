@@ -46,7 +46,7 @@ Inspection:
                             webhook, and ntfy sink. Reports each result without printing its
                             URL or token; Healthchecks is excluded because a ping moves its
                             dead-man switch.
-  tor-recover check|apply   Check saturated Tor circuit history with stalled local Monero;
+  tor-recover check|apply   Check saturated Tor history with stalled Monero or bootstrap;
                             apply backs up only circuit state and restarts Tor after a
                             persistent cooldown. Requires explicit operator action.
   doctor [--json]           Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk,
