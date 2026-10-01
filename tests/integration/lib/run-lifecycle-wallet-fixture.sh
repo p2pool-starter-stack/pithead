@@ -146,4 +146,8 @@ record_uninstall_secrets() { # <before|after>
             return 1
         fi
     fi
+    if [ "$stage" = after ] && ! cmp -s "$OUT_DIR/uninstall-before.secrets.txt" "$artifact"; then
+        it_fail "setup after uninstall preserves every secret category (#2951)" "categorized secrets or kept onion identity changed"
+        return 1
+    fi
 }

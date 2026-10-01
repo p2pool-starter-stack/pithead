@@ -138,7 +138,12 @@ drive() { # <case> -> round-trip-rc|failures
         upgrade_secret_fingerprints() {
             [ "$FAKE_CASE" != unreadable-secrets ] || return 1
             [ "$FAKE_CASE" != unreadable-after ] || [ ! -e "$B/.uninstalled" ] || return 1
-            printf 'proxy=%064d\nonion-files=%064d\n' 1 2
+            local proxy=1 onion=2
+            if [ -e "$B/.uninstalled" ]; then
+                [ "$FAKE_CASE" != changed-proxy ] || proxy=3
+                [ "$FAKE_CASE" != changed-onion-keys ] || onion=3
+            fi
+            printf 'proxy=%064d\nonion-files=%064d\n' "$proxy" "$onion"
             if [ "$FAKE_CASE" = unwritable-hostname-after ] && [ -e "$B/.uninstalled" ]; then
                 chmod 400 "$B/uninstall-after.secrets.txt"
             fi
@@ -206,7 +211,9 @@ drive() { # <case> -> round-trip-rc|failures
 }
 
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
-assert_eq "stale rendered onion is isolated without weakening identity assertion" "$(drive stale-onion-env)" "1|1"
+assert_eq "stale rendered onion fails both the category and exact identity assertions" "$(drive stale-onion-env)" "1|2"
+assert_eq "a changed proxy category fails even when the Monero address matches" "$(drive changed-proxy)" "1|1"
+assert_eq "changed onion keys fail even when the Monero address matches" "$(drive changed-onion-keys)" "1|1"
 assert_eq "unreadable categories fail before uninstall" "$(drive unreadable-secrets)" "1|1"
 assert_eq "unreadable post-setup categories still fail the round trip" "$(drive unreadable-after)" "1|1"
 assert_eq "failed post-setup hostname artifact append fails the round trip" "$(drive unwritable-hostname-after)" "1|1"

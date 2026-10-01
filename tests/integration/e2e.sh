@@ -441,8 +441,6 @@ preflight() {
 provision() {
     parent_lock_checkpoint provision || die "Parent-held bench lock was lost before provision."
     log "Provisioning the dedicated e2e checkout ($E2E_DIR) on $BENCH_HOST"
-    # Clone from the local canonical checkout (fast, no network) the first time, then point origin
-    # at GitHub so we can fetch arbitrary branches.
     on_bench "
         set -e
         if [ ! -d '$E2E_DIR/.git' ]; then
@@ -451,12 +449,8 @@ provision() {
         fi
         git -C '$E2E_DIR' remote set-url origin '$GIT_REMOTE_URL'
         git -C '$E2E_DIR' fetch --quiet origin '$BRANCH'
-        # The e2e checkout is DEDICATED and disposable, so force a pristine tree instead of assuming
-        # one (#454): drop stray untracked files (e.g. a leftover bench script) that would otherwise
-        # abort 'checkout' with \"would be overwritten\". -x clears ignored build cruft too; the -e
-        # excludes keep data/backups and results/, so chains and rollback anchors are never touched.
-        # config.json/.env ARE wiped (gitignored, no -e) — the next step re-seeds them, so don't drop
-        # that seed thinking clean spares them.
+        # Disposable checkout: remove build cruft, retaining data, backups and results (#454).
+        # config.json/.env are wiped and re-seeded below.
         git -C '$E2E_DIR' checkout -q -f -B '$BRANCH' FETCH_HEAD
         git -C '$E2E_DIR' reset -q --hard FETCH_HEAD
         git -C '$E2E_DIR' clean -qfdx -e /results -e /backups -e /data && bash '$E2E_DIR/scripts/build-pithead.sh' >/dev/null
@@ -465,8 +459,6 @@ provision() {
     head="$(on_bench "git -C '$E2E_DIR' rev-parse --short HEAD")"
     ok "e2e checkout on $BRANCH @ $head"
 
-    # Seed from the live bundle (#880), since canonical config can lag deployed config.
-    # Resolve its symlink so the log identifies which bundle supplied config.json/.env.
     local live_link live_cfg=""
     live_link="$(dirname "$CANONICAL_DIR")/current"
     live_cfg="$(on_bench "readlink -f '$live_link' 2>/dev/null" || true)"
@@ -476,9 +468,6 @@ provision() {
         on_bench "cp -a '$live_cfg/config.json' '$E2E_DIR/config.json' && cp -a '$live_cfg/.env' '$E2E_DIR/.env'" ||
             die "Failed to seed config.json/.env from $live_cfg into $E2E_DIR."
         ok "config seeded from the live bundle (data dirs point at the shared chains)"
-        # Drift diff (#880), ALWAYS printed when both configs exist: canonical is read-only and can
-        # lag the bundle for months. Full dotted key paths, not just top-level keys — the drift that
-        # bit dropped nested keys (monero.view_key, dashboard.energy) whose parents exist in both.
         local live_keys canon_keys key_diff
         live_keys="$(on_bench "jq -r '$CONFIG_KEY_PATHS_JQ' '$live_cfg/config.json' 2>/dev/null")"
         canon_keys="$(on_bench "jq -r '$CONFIG_KEY_PATHS_JQ' '$CANONICAL_DIR/config.json' 2>/dev/null")"
@@ -494,7 +483,17 @@ provision() {
         on_bench "cp -a '$CANONICAL_DIR/config.json' '$E2E_DIR/config.json' && cp -a '$CANONICAL_DIR/.env' '$E2E_DIR/.env'" ||
             die "Failed to seed config.json/.env into $E2E_DIR."
         ok "config seeded from the canonical checkout (data dirs point at the shared chains)"
+        live_cfg="$CANONICAL_DIR"
     fi
+    # Keep the live Tor mount with the copied onion addresses, including default/relative paths.
+    on_bench "cd '$live_cfg' && . '$E2E_DIR/pithead' && d=\$(env_get_file '$live_cfg/.env' TOR_DATA_DIR) &&
+        [ -n \"\$d\" ] && d=\$(readlink -f -- \"\$d\") && [ -d \"\$d\" ] &&
+        jq -r --arg d \"\$d\" --arg default '$E2E_DIR/data/tor' '
+            if ((.tor.data_dir // \"auto\") | IN(\"\", \"auto\", \"DYNAMIC_DATA\")) and \$d != \$default
+            then \"Tor fixture: default path would change the live mount (#2951)\"
+            else \"Tor fixture: live mount preserved (#2951)\" end' '$E2E_DIR/config.json' &&
+        jq --arg d \"\$d\" '.tor.data_dir = \$d' '$E2E_DIR/config.json' > '$E2E_DIR/config.json.e2e' &&
+        mv '$E2E_DIR/config.json.e2e' '$E2E_DIR/config.json'" || die "Could not preserve the live Tor data directory."
 }
 # --- Phase 2: safety backup of the live stack -------------------------------
 backup_stack() {
