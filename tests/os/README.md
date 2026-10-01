@@ -169,6 +169,17 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   runner's per-boot guest journals and control timeline before attributing a missing preview to
   the guest or the harness. Request bodies, free-text errors, preview values and credentials are
   excluded; diagnostic output never substitutes for the preview or typed approval assertions.
+  The day-two Tari-mode prerequisite records a read-only Caddy baseline snapshot, and another
+  if its existing config-read retries fail, before later reboots replace the evidence (#3001).
+  The snapshot includes container running/restarting/OOM/exit state, the last 40 daemon log
+  lines classified by allowlisted error phrases and Caddyfile line numbers, and the first 200
+  configuration lines represented only by directive names and token counts. Config reads stop
+  at 64 KiB, as does each Podman capture; truncation and unavailable probes are explicit. Both
+  Podman probes have a four-second
+  deadline inside the normal 20-second SSH probe deadline. Auth entries, config operands,
+  arbitrary error text and local topology are excluded. An unclassified log line retains only
+  its level and byte count; this snapshot does not establish an original cause or repair.
+  The unreadable-config verdict and switching assertions remain binding.
   Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
   no queued or claimed request and reds the row if it never drains, keeping the harness's phase
   boundary deterministic. Apply does not stop an in-flight runner (#2363). Then the

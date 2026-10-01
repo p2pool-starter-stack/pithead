@@ -98,6 +98,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-config-approval-leg.sh"
 # shellcheck source=tests/os/appliance-tari-mode-leg.sh
 . "$SCRIPT_DIR/appliance-tari-mode-leg.sh"
+# shellcheck source=tests/os/caddy-failure-evidence.sh
+. "$SCRIPT_DIR/caddy-failure-evidence.sh"
 # shellcheck source=tests/os/appliance-egress-leg.sh
 . "$SCRIPT_DIR/appliance-egress-leg.sh"
 # shellcheck source=tests/os/appliance-xvb-routing-leg.sh
