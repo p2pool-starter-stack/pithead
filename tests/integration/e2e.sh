@@ -270,7 +270,10 @@ restore_all() {
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade"
     fi
-    wallet_fixture_restore || { RESTORE_PROOF_FAILED=1; exit 1; }
+    wallet_fixture_restore || {
+        RESTORE_PROOF_FAILED=1
+        exit 1
+    }
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
         # A scenario can recreate a test-checkout container after the branch deploy.
         if ! recreate_test_checkout_containers; then
