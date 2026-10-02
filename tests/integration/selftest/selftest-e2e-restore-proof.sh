@@ -201,6 +201,7 @@ proof_probe() { # <baseline-census> <live-census> [fail-census] -> verify_restor
         env_bake_verdict() { echo match; }
         control_units_verdict() { echo on-target; }
         chain_restore_proof() { return 0; }
+        verify_chain_sync_proof() { [ "${PROBE_SYNC_FAIL:-}" != yes ]; }
         restore_egress_boot_unit() { return 0; }
         restore_egress_check_units() { return 0; }
         restore_lan_check_units() { return 0; }
@@ -213,11 +214,12 @@ proof_probe() { # <baseline-census> <live-census> [fail-census] -> verify_restor
             *"is-enabled pithead-control.path"*) return 0 ;;
             esac
         }
-        PROBE_LIVE="$2" PROBE_FAIL="${3:-}"
+        PROBE_LIVE="$2" PROBE_FAIL="${3:-}" PROBE_SYNC_FAIL="${4:-}"
         verify_restore_proof >/dev/null 2>&1
         printf '%s' "$?"
     )
 }
+assert_eq "failed independent daemon sync fails the full restoration proof" "$(proof_probe "$BASE" "$LIVE" no yes)" "1"
 assert_eq "the full proof accepts baseline images and owners" "$(proof_probe "$BASE" "$LIVE")" "0"
 assert_eq "the full proof rejects a missing preflight image census" "$(proof_probe '' "$LIVE")" "1"
 assert_eq "the full proof rejects a late test-checkout owner" "$(proof_probe "$BASE" "$LATE_OWNER")" "1"

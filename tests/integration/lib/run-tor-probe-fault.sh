@@ -100,3 +100,13 @@ fault_tor_probe_egress() {
 _tor_probe_recovered() { # <epoch>
     rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following NEWNYM:'
 }
+
+# Lifecycle proves the branch image includes the diagnostic and rejects ordinary healthy Tor.
+tor_recovery_healthy_probe() {
+    rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
+    assert_rc "Tor recovery lifecycle proof keeps the egress firewall enforced" "$?" "0"
+    rx 'docker exec tor test -x /usr/local/bin/tor-recovery-diagnose.sh' >/dev/null 2>&1
+    assert_rc "Tor image carries the authenticated recovery diagnostic" "$?" "0"
+    rx 'docker exec tor /usr/local/bin/tor-recovery-diagnose.sh' >/dev/null 2>&1
+    assert_rc "healthy Tor refuses bootstrap-stall recovery diagnosis" "$?" "1"
+}

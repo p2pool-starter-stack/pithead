@@ -23,6 +23,7 @@ transition, not a stream:
 | Alert | When it fires |
 |---|---|
 | 🔴 **Node down** | Your Monero (or Tari) node has been unreachable long enough to be considered down — or the Monero node is reachable but has sat out of sync for 10+ minutes (the stranded-peers state a Tor restart can leave behind). Either way the stack has stopped serving your rigs so they **fail over to their backup pools**. |
+| 🔴 **Monero node isolated / not advancing** | The local Monero node is reachable but has had no outgoing peers for 10+ minutes, or its height has not moved for 30+ minutes (#2499). Two separate messages, each with the numbers; they use the `node_down` toggle, and the recovery note uses `node_recovered`. Nothing is restarted for you: `./pithead restart monerod`. |
 | 🟢 **Node recovered** | The node is back — reachable and in sync — and stable; the stack has readmitted your rigs. |
 | 🔴 **Worker offline** | A rig stopped hashing and hasn't been seen for a few minutes (a reboot, a dropped connection, a dead miner) — it's showing **DOWN** on the dashboard. |
 | 🟢 **Worker back online** | A rig that had gone offline is hashing again. |
