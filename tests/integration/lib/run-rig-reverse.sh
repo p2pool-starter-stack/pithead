@@ -3,6 +3,8 @@
 _pred_rig_present() { # <rig-name>
     local s rc=0
     s="$(api_state)" || rc=$?
+    # Correlate normalized warning identities in memory only; never persist this raw poll.
+    _RIG_SETUP_STATE="$s"
     # Keep only typed, allowlisted observations from this exact poll, never a raw worker/name.
     _RIG_SETUP_SAMPLE="$(printf '%s' "$s" | jq -Rsc --arg n "$1" --argjson rc "$rc" \
         --arg utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '

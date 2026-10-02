@@ -767,8 +767,13 @@ worker names, addresses, credentials, raw response bodies and raw log text; an e
 no matching warning was observed, not that the probe succeeded. An HTTP 200 summary with a
 non-object body is classified as `invalid-body`, rather than a generic HTTP response. Selection
 matches the dashboard’s Python representation of the worker name, including apostrophes and
-escaped backslashes, without restricting accepted names. Classification follows the producer’s
-failure or exception prefix. Worker identity, host, URL, embedded exception text and remedy hints
+escaped backslashes, without restricting accepted names. Ordinary warnings use the full name.
+The two credential warnings use the producer’s normalized name and resolved probe endpoint
+(normalized-name descriptor first, then connecting-address fallback). Credential counts require
+exactly one matching worker in the final poll; ambiguous shared identities or unavailable state
+are omitted. Identity correlation has a five-second bound; raw correlation state stays in memory
+and is never written to an artifact. Classification follows the producer’s failure or exception
+prefix. Worker identity, host, URL, embedded exception text and remedy hints
 (including periods) do not supply failure-class keywords.
 
 The control legs cover:

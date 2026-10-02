@@ -56,6 +56,10 @@ has_compose_profile() { return 0; }
 push_config() { return 0; }
 pithead() { return 0; }
 wait_status_ok() { return 0; }
+timeout() {
+    printf '%s|%s\n' "$1" "$2" >"$WORK/correlation-bound"
+    command timeout "$@"
+}
 LOG_RC=0 LOG_PAD=0 LOG_PRODUCER=0
 LOG_DETAIL='HTTP 200 but body was list' LOG_HOST=private-host-marker LOG_URL=credential-marker LOG_HINT=credential-marker LOG_AUTH=''
 rx() {
@@ -64,6 +68,59 @@ rx() {
         return
     fi
     printf '%s' "$1" >"$WORK/log-command"
+    if [ "$LOG_PRODUCER" = 2 ]; then
+        python3 - "$HERE/../../../dashboard/mining_dashboard" "$WORK" "$BASELINE_CONFIG" "$STATE" <<'PYTHON'
+import ast
+import asyncio
+import importlib.util
+import ipaddress
+import json
+import logging
+import pathlib
+import sys
+import time
+
+root, work = map(pathlib.Path, sys.argv[1:3])
+config = json.loads(sys.argv[3])
+source = ast.parse((root / "client/xmrig_client.py").read_text())
+nodes = [node for node in source.body
+         if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+         and node.name in {"_safe_probe_host", "_worker_override", "XMRigWorkerClient"}]
+nodes += [node for node in source.body if isinstance(node, ast.Assign)
+          and any(isinstance(target, ast.Name) and target.id in
+                  {"_MAX_NAME_TOKEN", "_WARN_INTERVAL_S"} for target in node.targets)]
+nodes += [node for node in source.body if isinstance(node, ast.Try)
+          and any(isinstance(child, ast.Name) and child.id == "_INTERNAL_NET"
+                  for child in ast.walk(node))]
+namespace = {"ipaddress": ipaddress, "logging": logging, "time": time,
+             "MINING_NET_CIDR": "invalid-test-value", "XMRIG_API_AUTH": "none",
+             "XMRIG_API_PORT": config["workers"].get("api_port", 8080)}
+future = ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0)
+exec(compile(ast.fix_missing_locations(ast.Module(body=[future, *nodes], type_ignores=[])),
+             "<production worker client>", "exec"), namespace)
+spec = importlib.util.spec_from_file_location("worker_endpoints", root / "config/worker_endpoints.py")
+loader = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(loader)
+path = work / "producer-config.json"
+path.write_text(json.dumps(config))
+namespace["WORKER_ENDPOINTS"] = loader.load_worker_endpoints(path)
+assert len(namespace["WORKER_ENDPOINTS"]) == len(config["workers"]["list"])
+logger = logging.getLogger("WorkerClient")
+logger.handlers = [logging.StreamHandler(sys.stdout)]
+logger.propagate = False
+logger.setLevel(logging.WARNING)
+
+class NoNetwork:
+    def get(self, *args, **kwargs):
+        raise AssertionError("credential refusal must not reach the network")
+
+for worker in json.loads(sys.argv[4])["workers"]:
+    client = namespace["XMRigWorkerClient"](NoNetwork())
+    result = asyncio.run(client.get_stats(worker["ip"], worker["name"]))
+    assert result["api_ok"] is False
+PYTHON
+        return "$LOG_RC"
+    fi
     if [ "$LOG_PRODUCER" = 1 ]; then
         python3 - "$HERE/../../../dashboard/mining_dashboard/client/xmrig_client.py" "$RIG_NAME" "$LOG_DETAIL" "$LOG_HOST" "$LOG_URL" "$LOG_HINT" "$LOG_AUTH" <<'PYTHON'
 import ast
@@ -93,8 +150,8 @@ PYTHON
     printf '%s\n' \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 401. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — TimeoutError: credential-marker. credential-marker." \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — probe token missing. credential-marker." \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — adopted rig's read credential unavailable. credential-marker." \
+        "Worker 'rig1' (rig): xmrig API probe failed at http://rig:8080/1/summary — probe token missing. credential-marker." \
+        "Worker 'rig1' (rig): xmrig API probe failed at http://rig:8080/1/summary — adopted rig's read credential unavailable. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 500. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — ClientConnectorError: credential-marker. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — JSONDecodeError: credential-marker. credential-marker." \
@@ -129,6 +186,7 @@ assert_eq "state record precedes restore" "$(jq -r '.worker_found' "$WORK/before
 assert_eq "only selected-rig fixed classes survive" "$(jq -c . "$WORK/before-restore-classes.json")" \
     '{"log_read_exit":0,"classes":[{"classification":"connection","count":1},{"classification":"credential-unavailable","count":2},{"classification":"http-auth-refusal","count":1},{"classification":"http-response","count":1},{"classification":"invalid-body","count":2},{"classification":"other-probe-failure","count":1},{"classification":"oversized-body","count":1},{"classification":"timeout","count":1}]}'
 assert_contains "dashboard log read has time and line bounds" "$(cat "$WORK/log-command")" 'timeout 5 docker logs --since 10m --tail=200 dashboard'
+assert_eq "identity correlation has a five-second bound" "$(cat "$WORK/correlation-bound")" '5|python3'
 assert_eq "neither artifact contains raw identity or credential text" \
     "$(cat "$WORK/rigforge-control."*.json | grep -Ec 'credential-marker|private-host-marker|rig1' || true)" "0"
 echo "== actual producer formatting selects accepted names with quotes and escapes =="
@@ -182,6 +240,42 @@ for LOG_AUTH in none name; do
         "$(jq -c '.classes' "$WORK/before-restore-classes.json")" \
         "$(jq -nc --arg c "$expected_class" '[{classification:$c,count:1}]')"
 done
+echo "== actual get_stats credential identities retain endpoint isolation =="
+LOG_PRODUCER=2 RIG_NAME=rig1+suffix
+for credential in api_token token; do
+    for collision in none other-endpoint same-endpoint name-first name-first-collision; do
+        BASELINE_CONFIG="$(jq -nc --arg key "$credential" '{workers:{api_port:8081,list:[{name:"rig1+suffix",host:"192.0.2.24",($key):{__secret__:true}},{name:"rig1+other",host:"192.0.2.25",($key):{__secret__:true}}]}}')"
+        STATE='{"workers":[{"name":"rig1+suffix","ip":"192.0.2.24","rigforge":{"version":null}}]}'
+        expected_classes='[{"classification":"credential-unavailable","count":1}]'
+        case "$collision" in
+        other-endpoint) STATE="$(printf '%s' "$STATE" | jq '.workers += [{name:"rig1+other",ip:"192.0.2.25"}]')" ;;
+        same-endpoint)
+            STATE="$(printf '%s' "$STATE" | jq '.workers += [{name:"rig1+other",ip:"192.0.2.24"}]')"
+            expected_classes='[]'
+            ;;
+        name-first | name-first-collision)
+            BASELINE_CONFIG="$(printf '%s' "$BASELINE_CONFIG" | jq --arg key "$credential" '.workers.list += [{name:"rig1",host:"192.0.2.26",port:8091,($key):{__secret__:true}}]')"
+            if [ "$collision" = name-first-collision ]; then
+                STATE="$(printf '%s' "$STATE" | jq '.workers += [{name:"rig1+other",ip:"192.0.2.25"}]')"
+                expected_classes='[]'
+            fi
+            ;;
+        esac
+        prior_fail=$IT_FAIL
+        run_rigforge_control >"$WORK/run.log" 2>&1
+        IT_FAIL=$prior_fail
+        assert_eq "get_stats $credential/$collision warning has only attributable credential classes" \
+            "$(jq -c '.classes' "$WORK/before-restore-classes.json")" "$expected_classes"
+    done
+done
+LOG_PRODUCER=1 LOG_AUTH='' LOG_DETAIL='HTTP 500'
+BASELINE_CONFIG='{"workers":{"list":[{"name":"rig1+suffix","host":"rig"}]}}'
+STATE='{"workers":[{"name":"rig1+suffix","rigforge":{"version":null}}]}'
+prior_fail=$IT_FAIL
+run_rigforge_control >"$WORK/run.log" 2>&1
+IT_FAIL=$prior_fail
+assert_eq "ordinary suffix warnings still match the full name" \
+    "$(jq -c '.classes' "$WORK/before-restore-classes.json")" '[{"classification":"http-response","count":1}]'
 LOG_AUTH=''
 LOG_PRODUCER=0 RIG_NAME=rig1
 BASELINE_CONFIG='{"workers":{"list":[{"name":"rig1","host":"rig"}]}}'
