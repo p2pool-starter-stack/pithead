@@ -95,8 +95,9 @@ Keep local code out of `vendor/`.
 
 | Directory | How it runs |
 |---|---|
-| `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites. Missing or failed sources fail the run. |
+| `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites, cut into four blocks that CI runs as parallel jobs. Missing or failed sources fail the run. |
 | `tests/stack/{appliance,control,dashboard,doctor,lifecycle,release,secrets}/` | Feature assertions loaded by the stack runner; retain shared setup and cleanup order. Dashboard database-copy checks live in `control/test-dashboard-carry.sh`; apply recovery stays in `control/test-control-deploy.sh`. |
+| `tests/stack/lib/` | Shared harness modules and sandbox builders used by feature fragments; `control-fixtures.sh` and `backup-fixtures.sh` initialize independent prerequisite runs. |
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
 | `tests/integration/lib/` | Sourced helpers and phase functions for the live harness. `restore-chain-sync.sh` streams the read-only `restore-chain-sync.py` daemon proof to the restored baseline. The restoration transport uses libcurl Digest; `tests/integration/selftest/selftest-restore-curl-connection.sh` exercises its challenged connection against a bounded synthetic server in CI. |
 | `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `make test-integration-selftest` also checks appliance module loading. |

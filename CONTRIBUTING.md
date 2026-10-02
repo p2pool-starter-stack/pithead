@@ -121,7 +121,7 @@ verdict that means something. The dashboard and frontend unit suites still run f
    - **test-stack** — the `pithead` shell test suite.
    - **test-compose** — `docker-compose.yml` interpolation validation.
    - **test-integration-selftest** — the integration harness's logic and bounded local transport fixtures.
-   - **test-tools** — bounded build-log sanitization, the shell suite's 30-minute CI timeout guard,
+   - **test-tools** — bounded build-log sanitization, the shell suite's block and aggregation timeout guards,
      and a check that all four CI uv installs pin the same action, uv version, and archive checksum,
      without running a build.
    - **test-fakes** — the tier-2 contract test (real dashboard clients vs controllable fakes).

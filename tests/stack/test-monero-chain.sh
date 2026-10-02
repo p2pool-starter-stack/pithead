@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # Monero chain health (#2499): the container healthcheck, doctor and status read the same peers and
-# tip fields the dashboard does. Reuses test-doctor.sh's DRBIN stubs (curl prints CURL_BODY).
+# tip fields the dashboard does. Builds the shared doctor stubs (curl prints CURL_BODY)
+# inside this process, independently of the doctor fragment in another CI block.
+build_doctor_stubs
 
 echo "== unit: monerod healthcheck fails a peerless node past the bound (#2499, #2921) =="
 # A stub curl answers the liveness call; a stub helper stands in for monerod-peers.sh (which reads the
