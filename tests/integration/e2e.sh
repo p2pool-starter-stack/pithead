@@ -6,13 +6,10 @@
 #   tests/integration/e2e.sh <branch> [options]
 #   tests/integration/e2e.sh claude/my-feature --mode matrix
 #
-#   4. Borrows a miner (set MINER_HOST): backs up its xmrig config and repoints it at the test bench so
-#      the live matrix has a real worker mining through this stack.
-#   5. Deploys the branch (`pithead upgrade` — re-renders configs AND rebuilds the branch's first-party
-#      images from build/, so a Dockerfile/entrypoint change is actually tested #272) and runs the live
-#      harness (tests/integration/run.sh) DETACHED on the box so an SSH drop can't kill a long matrix.
-#   6. ALWAYS restores the miner, canonical stack and prepared wallet cache through the EXIT trap.
-#      Unchanged chain containers keep running; authenticated baseline proofs are binding.
+#   4. Borrows a miner (set MINER_HOST), backs up its xmrig config and repoints it at the test bench.
+#   5. Deploys the branch (`pithead upgrade`, including its first-party images; #272), then runs the
+#      live harness detached on the box so an SSH drop cannot kill a long matrix.
+#   6. ALWAYS restores the miner, canonical stack and prepared wallet cache; baseline proofs are binding.
 #
 # The Compose project name is pinned to "pithead", so the e2e and canonical checkouts drive the SAME containers and shared chains — two
 # code copies of one stack, run one at a time. That's why borrow→test→restore is a code/image swap, not a re-sync.
