@@ -259,10 +259,23 @@ class FixtureTest(unittest.TestCase):
         fixture.receipt(self.root, "READY")
         fixture.receipt(self.root, "VERIFIED")
         self.assertEqual(path.read_bytes(), b"VERIFIED\n")
+        fixture.receipt(
+            self.root, "ARMED"
+        )  # normal same-job readiness retry after proved restoration
+        self.assertEqual(path.read_bytes(), b"ARMED\n")
         self.root.chmod(0o777)
         with self.assertRaises(ValueError):
             fixture.receipt(self.root, "ARMED")
         self.root.chmod(0o700)
+
+    def test_restarting_wallet_never_allows_a_volume_import(self):
+        directory = self.capture()
+        self.docker.item["State"].update(Running=False, Restarting=True)
+        before = len(self.docker.calls)
+        with patch.object(fixture.time, "monotonic", side_effect=[0, 121]):
+            with self.assertRaises(ValueError):
+                fixture.restore(directory, self.baseline, self.root / "branch")
+        self.assertFalse(any(call[0] == "run" for call in self.docker.calls[before:]))
 
 
 if __name__ == "__main__":

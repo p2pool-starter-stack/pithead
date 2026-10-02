@@ -126,7 +126,7 @@ def stop_wallet(item):
     deadline = time.monotonic() + 120
     while True:
         item = inspect("container", item["Id"])
-        if not item["State"]["Running"]:
+        if not item["State"]["Running"] and not item["State"].get("Restarting"):
             return item
         if time.monotonic() >= deadline:
             raise ValueError("wallet did not stop gracefully; no forced kill attempted")
@@ -216,7 +216,7 @@ def receipt(directory, stage):
                 raise ValueError("wallet restoration receipt is unsafe")
             previous = stream.read(12).decode("ascii")
     permitted = {
-        "ARMED": {None},
+        "ARMED": {None, "VERIFIED\n"},
         "READY": {"ARMED\n", "READY\n"},
         "VERIFIED": {"READY\n"},
         "NOT_PROVEN": {"ARMED\n", "READY\n", "NOT_PROVEN\n"},
@@ -363,7 +363,7 @@ def restore(directory, baseline, branch):
     )
     local_volume()
     current = wallet_container({baseline, branch})
-    if current and current["State"]["Running"]:
+    if current and (current["State"]["Running"] or current["State"].get("Restarting")):
         raise ValueError("wallet consumer restarted before fixture import")
     state["stage"] = "restoring"
     write_state(directory, state)
