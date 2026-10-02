@@ -243,7 +243,7 @@ done
 echo "== actual get_stats credential identities retain endpoint isolation =="
 LOG_PRODUCER=2 RIG_NAME=rig1+suffix
 for credential in api_token token; do
-    for collision in none other-endpoint same-endpoint name-first name-first-collision; do
+    for collision in none other-endpoint same-endpoint name-first name-first-collision selected-absent-name-first; do
         BASELINE_CONFIG="$(jq -nc --arg key "$credential" '{workers:{api_port:8081,list:[{name:"rig1+suffix",host:"192.0.2.24",($key):{__secret__:true}},{name:"rig1+other",host:"192.0.2.25",($key):{__secret__:true}}]}}')"
         STATE='{"workers":[{"name":"rig1+suffix","ip":"192.0.2.24","rigforge":{"version":null}}]}'
         expected_classes='[{"classification":"credential-unavailable","count":1}]'
@@ -253,10 +253,14 @@ for credential in api_token token; do
             STATE="$(printf '%s' "$STATE" | jq '.workers += [{name:"rig1+other",ip:"192.0.2.24"}]')"
             expected_classes='[]'
             ;;
-        name-first | name-first-collision)
+        name-first | name-first-collision | selected-absent-name-first)
             BASELINE_CONFIG="$(printf '%s' "$BASELINE_CONFIG" | jq --arg key "$credential" '.workers.list += [{name:"rig1",host:"192.0.2.26",port:8091,($key):{__secret__:true}}]')"
             if [ "$collision" = name-first-collision ]; then
                 STATE="$(printf '%s' "$STATE" | jq '.workers += [{name:"rig1+other",ip:"192.0.2.25"}]')"
+                expected_classes='[]'
+            fi
+            if [ "$collision" = selected-absent-name-first ]; then
+                STATE='{"workers":[{"name":"rig1+other","ip":"192.0.2.25"}]}'
                 expected_classes='[]'
             fi
             ;;
@@ -270,12 +274,15 @@ for credential in api_token token; do
 done
 LOG_PRODUCER=1 LOG_AUTH='' LOG_DETAIL='HTTP 500'
 BASELINE_CONFIG='{"workers":{"list":[{"name":"rig1+suffix","host":"rig"}]}}'
-STATE='{"workers":[{"name":"rig1+suffix","rigforge":{"version":null}}]}'
-prior_fail=$IT_FAIL
-run_rigforge_control >"$WORK/run.log" 2>&1
-IT_FAIL=$prior_fail
-assert_eq "ordinary suffix warnings still match the full name" \
-    "$(jq -c '.classes' "$WORK/before-restore-classes.json")" '[{"classification":"http-response","count":1}]'
+for presence in present absent; do
+    STATE='{"workers":[{"name":"rig1+suffix","rigforge":{"version":null}}]}'
+    if [ "$presence" = absent ]; then STATE='{"workers":[]}'; fi
+    prior_fail=$IT_FAIL
+    run_rigforge_control >"$WORK/run.log" 2>&1
+    IT_FAIL=$prior_fail
+    assert_eq "ordinary suffix warnings still match the full name when selection is $presence" \
+        "$(jq -c '.classes' "$WORK/before-restore-classes.json")" '[{"classification":"http-response","count":1}]'
+done
 LOG_AUTH=''
 LOG_PRODUCER=0 RIG_NAME=rig1
 BASELINE_CONFIG='{"workers":{"list":[{"name":"rig1","host":"rig"}]}}'

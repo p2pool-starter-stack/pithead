@@ -770,8 +770,10 @@ matches the dashboard’s Python representation of the worker name, including ap
 escaped backslashes, without restricting accepted names. Ordinary warnings use the full name.
 The two credential warnings use the producer’s normalized name and resolved probe endpoint
 (normalized-name descriptor first, then connecting-address fallback). Credential counts require
-exactly one matching worker in the final poll; ambiguous shared identities or unavailable state
-are omitted. Identity correlation has a five-second bound; raw correlation state stays in memory
+the actual selected worker to be present in the final poll and to be the unique match for its
+normalized identity and endpoint. An absent selection, ambiguous shared identities or unavailable
+state omit credential counts; ordinary full-name warnings still match. Identity correlation has
+a five-second bound; raw correlation state stays in memory
 and is never written to an artifact. Classification follows the producer’s failure or exception
 prefix. Worker identity, host, URL, embedded exception text and remedy hints
 (including periods) do not supply failure-class keywords.

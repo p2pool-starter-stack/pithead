@@ -170,9 +170,9 @@ def endpoint(worker):
         override = next((e for e in entries if ip and e.get("host") == ip), {})
     return override.get("host", ip), override.get("port", port)
 name = sys.argv[1]
-selected = next((w for w in workers if w["name"] == name), {"name": name})
-host, effective_port = endpoint(selected)
-matches = sum(token(w["name"]) == token(name) and endpoint(w) == (host, effective_port) for w in workers)
+selected = next((w for w in workers if w["name"] == name), None)
+host, effective_port = endpoint(selected) if selected is not None else ("", port)
+matches = sum(token(w["name"]) == token(name) and endpoint(w) == (host, effective_port) for w in workers) if selected is not None else 0
 print(json.dumps({"full": repr(name), "token": repr(token(name)), "host": host,
                   "url": f"http://{host}:{effective_port}/1/summary", "unique": bool(host) and matches == 1}))
 ' "$rig" 2>/dev/null)" &&
