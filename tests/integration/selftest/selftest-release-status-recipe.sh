@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Execute the documented submissions without GitHub or a bench.
 set -euo pipefail
+echo "== release status recipe =="
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 recipe_doc="${1:-$ROOT/docs/dev/releasing.md}"
 RECIPE_TEST_DIR=$(mktemp -d)
