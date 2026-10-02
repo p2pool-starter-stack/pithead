@@ -51,6 +51,52 @@ expect_finding "$COPY:$FIXTURE:generic-api-key:59" git "$SANDBOX/repo" "${ARGS[@
     --gitleaks-ignore-path "$ROOT/.config/gitleaksignore" --log-opts=HEAD
 echo 'PASS: historical Digest finding ignored; missing exception and later copy detected'
 
+# Only complete stale dashboard-hash fixture lines in reviewed paths are exempt.
+HASH_PATHS=(tests/stack/appliance/test-appliance-setup.sh
+    tests/stack/appliance/test-appliance-restore.sh tests/stack/test-cli-restore-hardening.sh)
+HASH_LINE=$(sed -n '/^DASHBOARD_AUTH_HASH_B64=[[:alnum:]]/p' "$ROOT/${HASH_PATHS[1]}")
+[[ -n $HASH_LINE && $HASH_LINE != *$'\n'* ]]
+git init -q "$SANDBOX/hash-repo"
+for HASH_FILE in "${HASH_PATHS[@]}"; do
+    mkdir -p "$SANDBOX/hash-repo/$(dirname "$HASH_FILE")"
+    printf '# Synthetic archive fixture\n%s\n' "$HASH_LINE" >"$SANDBOX/hash-repo/$HASH_FILE"
+done
+git -C "$SANDBOX/hash-repo" add .
+git -C "$SANDBOX/hash-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false commit -qm 'Reviewed stale dashboard-hash fixtures'
+scan git "$SANDBOX/hash-repo" "${ARGS[@]}" --log-opts=HEAD
+
+# A fixture suffix must not exempt another credential on the same line.
+HASH_FILE=${HASH_PATHS[2]}
+PREFIX=$(printf 'stale-hash-prefix-control' | sha256sum | cut -d' ' -f1)
+printf '# Synthetic archive fixture\nAPI_KEY=%s # %s\n' "$PREFIX" "$HASH_LINE" >"$SANDBOX/hash-repo/$HASH_FILE"
+git -C "$SANDBOX/hash-repo" add "$HASH_FILE"
+git -C "$SANDBOX/hash-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false commit -qm 'Prefixed stale dashboard-hash control'
+COPY=$(git -C "$SANDBOX/hash-repo" rev-parse HEAD)
+EXPECTED_FINDINGS=2 expect_finding "$COPY:$HASH_FILE:generic-api-key:2" git "$SANDBOX/hash-repo" "${ARGS[@]}" \
+    --log-opts="$COPY^..$COPY"
+jq -e 'map(.StartColumn) | unique | length == 2' "$SANDBOX/report.json" >/dev/null
+
+# Changed lines and lookalike paths must remain findings.
+for CONTROL in suffix value path; do
+    CONTROL_FILE=$HASH_FILE
+    CONTROL_LINE=$HASH_LINE
+    case $CONTROL in
+    suffix) CONTROL_LINE+=" # changed fixture line" ;;
+    value) CONTROL_LINE="${HASH_LINE/c3RhbGUtZml4dHVyZQ==/YWx0ZXJlZC1maXh0dXJl}" ;;
+    path) CONTROL_FILE="$HASH_FILE.unreviewed" ;;
+    esac
+    printf '# Synthetic archive fixture\n%s\n' "$CONTROL_LINE" >"$SANDBOX/hash-repo/$CONTROL_FILE"
+    git -C "$SANDBOX/hash-repo" add "$CONTROL_FILE"
+    git -C "$SANDBOX/hash-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+        -c commit.gpgsign=false commit -qm "Changed stale dashboard-hash $CONTROL control"
+    COPY=$(git -C "$SANDBOX/hash-repo" rev-parse HEAD)
+    expect_finding "$COPY:$CONTROL_FILE:generic-api-key:2" git "$SANDBOX/hash-repo" "${ARGS[@]}" \
+        --log-opts="$COPY^..$COPY"
+done
+echo 'PASS: stale dashboard-hash fixtures accepted; prefixes, changed lines and other paths detected'
+
 # Moving the archive fixture must keep the exception limited to its exact path and line.
 BACKUP=tests/stack/lib/backup-fixtures.sh
 git init -q "$SANDBOX/backup-repo"
