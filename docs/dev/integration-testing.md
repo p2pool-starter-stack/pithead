@@ -416,6 +416,15 @@ via an `EXIT` trap):
      `--lifecycle`. So until that phase leaves unchanged nodes alone, every deploying job still
      needs bench-ci's node guard
      ([#2676](https://github.com/p2pool-starter-stack/pithead/issues/2676)).
+   Before deploying, the wrapper also captures the prepared view-only Monero wallet cache and
+   its exact helper image in owner-only private scratch. The wallet must stop gracefully and
+   have no scan marker; an unprepared fixture refuses deployment. The snapshot binds the baseline
+   wallet identity and archive contents. It is separate from the normal safety backup and public
+   artifacts: product backup does not include named wallet volumes, and uninstall must still
+   prove those volumes are removed.
+   Bench CI stores the snapshot on the job filesystem and the wrapper durably arms an owner-only
+   restoration receipt before deployment. Failed restoration preserves the receipt and private
+   scratch; a lost job refuses another forward run. Standalone snapshots use `/var/tmp`.
 6. Restores the miner's original pool config and the baseline stack. Restore targets the directory
    the live stack actually ran from — read at preflight off the running container's
    `com.docker.compose.project.working_dir` label — which on a release box is the per-version bundle
@@ -430,6 +439,12 @@ via an `EXIT` trap):
    attached bridge, so the restore then runs the baseline's own `pithead down` first. Preflight
    reads the live install's directory from the dashboard's label, never from the e2e checkout's,
    because containers the restore left alone can still carry an older directory.
+   Before starting the baseline wallet, the wrapper imports the saved cache through an isolated,
+   unprivileged container with only the local wallet volume writable, then proves exact file
+   contents. After baseline restoration it repeats the original 1200-second Monero catch-up and
+   420-second authenticated dashboard/address gates. Only successful proof removes the private
+   snapshot. Failed or interrupted preservation leaves the reservation held; generic stack health
+   cannot replace that proof. `--keep` does not capture or restore this fixture.
    How the baseline comes back depends on what it is. A release bundle gets `pithead apply` then
    `pithead up`: its images are versioned tags the branch never touched, so rebuilding them would be
    waste. A **source checkout** gets `pithead upgrade` instead, and the difference is not an

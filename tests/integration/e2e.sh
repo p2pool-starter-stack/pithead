@@ -11,11 +11,8 @@
 #   5. Deploys the branch (`pithead upgrade` — re-renders configs AND rebuilds the branch's first-party
 #      images from build/, so a Dockerfile/entrypoint change is actually tested #272) and runs the live
 #      harness (tests/integration/run.sh) DETACHED on the box so an SSH drop can't kill a long matrix.
-#   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even on failure or Ctrl-C
-#      (an EXIT trap), with no `pithead down`: chain nodes the branch left unchanged keep running throughout (#2639),
-#      and the synced chains are never touched. The restore then PROVES the live stack matches the on-disk
-#      config (#971): a credential marker baked into a running container must equal the on-disk .env's line, and
-#      monerod must answer a host-side authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
+#   6. ALWAYS restores the miner, canonical stack and prepared wallet cache through the EXIT trap.
+#      Unchanged chain containers keep running; authenticated baseline proofs are binding.
 #
 # The Compose project name is pinned to "pithead", so the e2e and canonical checkouts drive the SAME containers and shared chains — two
 # code copies of one stack, run one at a time. That's why borrow→test→restore is a code/image swap, not a re-sync.
@@ -35,6 +32,7 @@ source "$HERE/lib/borrow-fixture.sh" || exit $?
 source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" || exit $? # chain-keep: #2639
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" || exit $?
+source "$HERE/lib/wallet-fixture.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -272,6 +270,7 @@ restore_all() {
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade"
     fi
+    wallet_fixture_restore || { RESTORE_PROOF_FAILED=1; exit 1; }
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
         # A scenario can recreate a test-checkout container after the branch deploy.
         if ! recreate_test_checkout_containers; then
@@ -287,7 +286,7 @@ restore_all() {
         fi
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
-        verify_restore_proof || RESTORE_PROOF_FAILED=1
+        verify_restore_proof && wallet_fixture_verify || RESTORE_PROOF_FAILED=1
     else
         warn "baseline restore command failed in $RESTORE_DIR — check the command output above."
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
@@ -669,6 +668,7 @@ main() {
     # --check is a read-only assessment of the LIVE stack: no backup, no borrowed miner, no deploy.
     if [ "$MODE" != "check" ]; then
         backup_stack
+        wallet_fixture_capture
         borrow_miner
         deploy_branch
     fi
