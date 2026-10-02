@@ -30,6 +30,7 @@ render_env() {
         # Reuse the parse-time validated globals (see Monero above) — single source of truth.
         tari_grpc_addr="${TARI_REMOTE_HOST}:${TARI_REMOTE_GRPC_PORT}"
     fi
+    local tor_profiles="$profiles"
 
     # Tari gRPC LAN exposure (#760), mirroring monerod's rpc_lan_access above. Default
     # localhost-only: in-stack consumers reach the node over the internal Docker network
@@ -48,9 +49,8 @@ render_env() {
         profiles="${profiles:+$profiles,}payout_confirm"
     fi
 
-    # Tari on-chain payout confirmation (#462): the view-only tari-wallet service only starts when
-    # its own compose profile is active, which is only when a tari view key is set on the local Tari
-    # node. Separate from monero's payout_confirm so the two features toggle independently.
+    # Tari on-chain payout confirmation (#462) uses its own profile when a view key is set on a
+    # local Tari node, independently of Monero's payout_confirm.
     # TARI_PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config (which also refuses a view key
     # on a remote Tari node and validates the key/spend key/birthday).
     if [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
@@ -322,7 +322,7 @@ render_env() {
     # shows). The mount keeps its owner, so it must be the container's APP_UID (#2731). Built as a temp
     # file then renamed, so a planted symlink is replaced, not followed. REAL .env target only.
     local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
-    if [ "$target" != "${ENV_FILE}.dryrun" ]; then
+    if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then
         mkdir -p "$PWD/data"
         tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
         printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
@@ -455,6 +455,7 @@ TARI_MODE=$(dotenv_render_value "$TARI_MODE")
 TARI_GRPC_ADDRESS=$(dotenv_render_value "$tari_grpc_addr")
 TARI_GRPC_BIND=$(dotenv_render_value "$tari_grpc_bind")
 COMPOSE_PROFILES=$(dotenv_render_value "$profiles")
+TOR_COMPOSE_PROFILES=$(dotenv_render_value "$tor_profiles")
 DASHBOARD_SECURE=$(dotenv_render_value "$DASHBOARD_SECURE")
 DASHBOARD_EXPOSE_PUBLIC_IP=$(dotenv_render_value "$DASHBOARD_EXPOSE_PUBLIC_IP")
 DASHBOARD_ONION_ENABLED=$(dotenv_render_value "$DASHBOARD_ONION_ENABLED")

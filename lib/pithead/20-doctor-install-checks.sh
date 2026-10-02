@@ -217,7 +217,7 @@ check_appliance_cert() {
     local base missing=""
     base=$(appliance_base_name)
     case ",$san," in
-    *",DNS:$base,"* | *",IP:$base,"*) ;;
+    *",DNS:$base,"* | *",IP:$base,"* | *",IP:$(ipv6_canonical "$base"),"*) ;;
     *) missing="$base" ;;
     esac
 
@@ -259,7 +259,7 @@ check_appliance_cert() {
             for h in $extras; do
                 case "$bridge_gws" in *" $h "*) continue ;; esac
                 case ",$san," in
-                *",DNS:$h,"* | *",IP:$h,"*) ;;
+                *",DNS:$h,"* | *",IP:$h,"* | *",IP:$(ipv6_canonical "$h"),"*) ;;
                 *) missing="${missing:+$missing }$h" ;;
                 esac
             done
@@ -267,7 +267,7 @@ check_appliance_cert() {
     fi
 
     if [ -n "$missing" ]; then
-        dr_fail_surface "The dashboard certificate does not cover: $missing — Caddy serves those names without a certificate for them. Run './pithead apply' to re-mint." "The dashboard certificate does not cover: $missing — those names are served without a certificate for them. This machine re-mints the certificate whenever it renders its web configuration, so saving any change from the dashboard renews it."
+        dr_fail_surface "The dashboard certificate does not cover: $missing — Caddy serves those names without a certificate for them. Run './pithead apply' to re-mint." "The dashboard certificate does not cover: $missing — those names are served without a certificate for them. This machine's address watch re-mints the certificate within five minutes of an address change, so if an address just arrived, wait and check again."
     else
         dr_ok "The dashboard certificate covers every name Caddy serves."
     fi

@@ -30,6 +30,8 @@ def rigforge_display(rf, proxy_online=False):
         )
         row = {"label": "Agent report", "value": value, "variant": "warn", "title": title}
         return {
+            "generated_at": rf.get("generated_at"),
+            "stale": True,
             "version": None,
             "miner_down": False,
             "chips": [{"text": f"agent {value}", "variant": "warn", "title": title}],
@@ -131,6 +133,8 @@ def rigforge_display(rf, proxy_online=False):
             add("Temp / max", text, text, "outline", "Watchdog temperature / ceiling.")
 
     return {
+        "generated_at": rf.get("generated_at"),
+        "stale": False,
         "version": rf.get("version"),
         "miner_down": bool(rf.get("miner_down")),
         "chips": [

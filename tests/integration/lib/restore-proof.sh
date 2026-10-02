@@ -12,6 +12,9 @@
 # that worked — that is the #971 incident, and the image check below is the same shape one layer
 # further in.
 
+# shellcheck source=tests/integration/lib/restore-chain-sync.sh
+source "$(dirname "${BASH_SOURCE[0]}")/restore-chain-sync.sh" || return $?
+
 # What the live stack was RUNNING, by service, before this run touched anything. Image IDs, not
 # tags: the defect this catches is a tag that MOVED. Empty is never a restore pass.
 BASELINE_IMAGES=""
@@ -21,9 +24,12 @@ BASELINE_IMAGES=""
 EGRESS_UNIT_BEFORE=""
 # The same record for pithead-egress.timer and its pithead-egress-check.service (#2599).
 EGRESS_CHECK_BEFORE=""
+LAN_CHECK_BEFORE=""
 
+# absent only when systemd itself answers not-found: a failed lookup is "" (unknown), never absent.
 egress_boot_unit_state() { # [unit] -> present | absent | "" (the bench could not be asked)
-    on_bench "if systemctl cat ${1:-pithead-egress.service} >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
+    local u="${1:-pithead-egress.service}"
+    on_bench "if systemctl cat $u >/dev/null 2>&1; then echo present; elif [ \"\$(systemctl show -p LoadState --value $u 2>/dev/null)\" = not-found ]; then echo absent; fi" 2>/dev/null || true
 }
 
 # The egress check pair (#2599), restored on the same rule as the boot unit below.
@@ -43,6 +49,52 @@ restore_egress_check_units() {
         return 0
     fi
     warn "restore proof: pithead-egress.timer or pithead-egress-check.service is still on the bench after the restore, and neither was there before this run (#2599)."
+    return 1
+}
+
+restore_lan_check_units() {
+    case "$LAN_CHECK_BEFORE" in
+    present) return 0 ;;
+    absent) ;;
+    *)
+        warn "restore proof: whether pithead-lan.timer predated this run was never recorded (#2846)."
+        return 1
+        ;;
+    esac
+    on_bench "sudo systemctl disable --now pithead-lan.timer >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-lan.timer /etc/systemd/system/pithead-lan-check.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state pithead-lan.timer)" = absent ] &&
+        [ "$(egress_boot_unit_state pithead-lan-check.service)" = absent ]; then
+        ok "restore proof: pithead-lan.timer and its check removed (#2846)"
+        return 0
+    fi
+    warn "restore proof: pithead-lan.timer or its check service remains after restore (#2846)."
+    return 1
+}
+
+# pithead-lan-guard.service and pithead-lan-hold.service (#2749), recorded and restored one by one on
+# the egress unit's rule: a unit the run added is removed and proved gone, wants included; one the
+# bench already had stays. present | absent; empty = never read, which the restore refuses.
+LAN_UNIT_BEFORE=""
+HOLD_UNIT_BEFORE=""
+restore_lan_unit() { # <unit> <state before the run>
+    case "$2" in
+    present)
+        step "restore proof: $1 was already on the bench before this run — left in place, not removed (#2749)"
+        return 0
+        ;;
+    absent) ;;
+    *)
+        warn "restore proof: whether $1 predates this run was never recorded, so the restore cannot say it left the bench as found (#2749)."
+        return 1
+        ;;
+    esac
+    on_bench "sudo systemctl disable --now $1 >/dev/null 2>&1; sudo rm -f /etc/systemd/system/$1; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state "$1")" = absent ] &&
+        on_bench "w=\$(systemctl show -p Wants --value docker.service multi-user.target) && ! grep -qw $1 <<<\"\$w\"" >/dev/null 2>&1; then
+        ok "restore proof: $1 removed — no trace of this run's boot unit on the bench (#2749)"
+        return 0
+    fi
+    warn "restore proof: $1 is still on the bench after the restore, and it was not there before this run (#2749)."
     return 1
 }
 
@@ -213,7 +265,7 @@ census_get() { # <census> <service>
 #   5. monerod and tari are the same containers they were before the deploy, when the branch left
 #      them unchanged (#2639, chain-keep.sh). Recorded per node; red only when the restore itself
 #      recreated or restarted a node that the deploy kept and the harness left as the baseline's.
-# Returns 0 when all five hold.
+# Returns 0 when all five and independent authenticated daemon sync hold.
 RESTORE_PROOF_VAR="MONERO_NODE_PASSWORD"
 # shellcheck disable=SC2034  # CONTROL_PROOF_FAILED is declared and read by e2e.sh, which sources
 # this file; it is set here because this is where the control-channel verdict is graded.
@@ -337,7 +389,11 @@ PROBE
         fi
     fi
     chain_restore_proof || prc=1
+    verify_chain_sync_proof || prc=1
     restore_egress_boot_unit || prc=1
     restore_egress_check_units || prc=1
+    restore_lan_check_units || prc=1
+    restore_lan_unit pithead-lan-guard.service "$LAN_UNIT_BEFORE" || prc=1
+    restore_lan_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE" || prc=1
     return "$prc"
 }

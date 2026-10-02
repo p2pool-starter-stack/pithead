@@ -29,8 +29,8 @@ Lifecycle:
                             hand after replacing the program under an existing config.
   up                        Start the stack.
   down                      Stop the stack.
-  restart [tor|monerod]     Restart the stack — or one container: 'tor' picks fresh
-                            guards when Tor clearnet egress is stuck (drops and rebuilds
+  restart [tor|monerod]     Restart the stack — or one container: 'tor' rebuilds
+                            circuits when Tor clearnet egress is stuck (drops and rebuilds
                             all Tor circuits; a local monerod restarts alongside);
                             'monerod' re-dials peers when the node reports not
                             synchronized after a Tor restart.
@@ -46,6 +46,9 @@ Inspection:
                             webhook, and ntfy sink. Reports each result without printing its
                             URL or token; Healthchecks is excluded because a ping moves its
                             dead-man switch.
+  tor-recover check|apply   Check saturated Tor history with stalled Monero or bootstrap;
+                            apply backs up only circuit state and restarts Tor after a
+                            persistent cooldown. Requires explicit operator action.
   doctor [--json]           Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk,
                             .env/onion state, and container status — a paste-able health report.
                               --json           machine-readable report on stdout (the human
@@ -169,6 +172,9 @@ Maintenance:
   egress-status             Check the Tor-only egress firewall and write the verdict to
                             the dashboard (control results dir). Read-only. Normally
                             fired every 2 minutes by the pithead-egress timer.
+  lan-guard-check           Check the live LAN-only source rule. If it is missing,
+                            invalidate the node start marker and stop nodes that
+                            publish LAN ports. Fired by pithead-lan.timer.
 
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a

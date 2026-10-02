@@ -301,6 +301,15 @@
   "last_update": "00:00:00",
   "monero": {
     "db_size": "\u2014",
+    "health": {
+      "advice": "",
+      "level": "unknown",
+      "moved": "\u2014",
+      "peers": "\u2014",
+      "reasons": [],
+      "status": "Peers not visible \u2014 no health verdict for this node",
+      "tooltip": "Green means monerod is at the network tip with peers: it has outgoing peers and its height has moved in the last 30 minutes (Monero blocks arrive about every 2). Red means it has had no outgoing peers for 10 minutes or its height has not moved for 30 minutes, with the numbers shown. A remote node's peers are not visible to this stack, so no verdict is given."
+    },
     "mode": "Pruned"
   },
   "network": {
@@ -702,7 +711,9 @@
             "variant": "outline"
           }
         ],
+        "generated_at": "2025-01-01T00:00:00Z",
         "miner_down": false,
+        "stale": false,
         "stats": [
           {
             "label": "Power / efficiency",
@@ -743,7 +754,9 @@
             "variant": "outline"
           }
         ],
+        "generated_at": "2025-01-01T00:00:00Z",
         "miner_down": false,
+        "stale": false,
         "stats": [
           {
             "label": "Power / efficiency",

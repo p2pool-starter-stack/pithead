@@ -3,8 +3,27 @@
 Tier-4 tests for the `pithead-os` appliance image (#77 phase 2): the properties only real
 firmware and a real A/B updater can prove. The compose/CLI stack is covered by the other
 tiers ([`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md)); this harness
-covers what the flashed image adds — EFI boot, the first-boot wizard window, install-to-disk,
-the rig role, and the update → commit → rollback cycle that is the phase-2 exit criterion.
+also runs a native Quadlet Monero RPC fixture during `provision`. The rendered unit uses the
+guest’s current Monero image, with separate data, a separate container name and loopback host
+ports on a private IPv4-only managed bridge without a default route or external DNS.
+Routing and disabled IPv6 are verified before the daemon starts. Outgoing peers are disabled,
+and the fixture advertises no existing onion identity; its real zero exercises cold-start
+visibility, not synchronization. It checks authenticated local admin access, the restricted
+network listener, restricted public-RPC selection, P2P advertisement, fresh and expired health
+observations, and a fresh run after restart. A failed P2P probe reports a bounded stage and
+error code, with numeric header metadata; it prints no address, credential or raw response.
+An unavailable or malformed probe remains failed proof.
+The bounded P2P decoder validates up to four txpool notifications that Monero can send
+before the handshake response; none can substitute for that response. Required node identity
+and core sync fields must decode before an omitted or zero RPC port can mean suppression.
+The Compose leg accepts that suppression only with an active P2P proxy and separately proves
+restricted public-RPC selection; this unproxied native fixture requires port 18081.
+Cleanup removes only the fixture unit, container, its client container, private network and
+scratch files. The healthy-baseline
+fault and recovery proof remains the Compose
+`monero-stranded` job. The appliance harness covers EFI boot, the first-boot wizard window,
+install-to-disk, the rig role, and the update → commit → rollback cycle that is the phase-2
+exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
 
@@ -77,7 +96,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd
   banner reaches the serial console, the first-boot wizard announces its URL + one-time token,
-  and the token gate answers. Also asserts machine-id is stable across a plain reboot (#895) —
+  and the token gate answers. Assert serial getty is active on the guest's UART; give its installed
+  condition a type-0 port for five minutes and require an inactive unit with no restarts or terminal
+  errors, then restore the UART, require the unit active again and check a clean hangup respawns
+  the login prompt. Also assert
+  machine-id is stable across a plain reboot (#895) —
   the empty-baked image with no restore mechanism would regenerate a new one every boot — and,
   across that same reboot, that journald follows the restored id (#1659) and writes the one
   persistent journal home, the `/data/pithead/journal` bind, with the boot list intact (#1791:
@@ -138,6 +161,25 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   and closing A/B migration update. A dashboard-password edit commits through the panel behind
   typed `APPLY` and the approval envelope, after its preview names the lockout and console-login
   costs; the new login must read the dashboard, and the fixture password is restored the same way.
+  The shared dashboard control poller records POST and poll metadata on stderr: timestamp, route,
+  curl exit code, HTTP status, response size, JSON/error presence, UUID and allowlisted result
+  status. A refused or untrackable POST and an exhausted deadline also capture the guest control
+  unit's state, restart/exit counters and queued/claimed request counts, with the existing
+  20-second SSH probe deadline (`SSH_PROBE_TIMEOUT` overrides it). Correlate these with the
+  runner's per-boot guest journals and control timeline before attributing a missing preview to
+  the guest or the harness. Request bodies, free-text errors, preview values and credentials are
+  excluded; diagnostic output never substitutes for the preview or typed approval assertions.
+  The day-two Tari-mode prerequisite records a read-only Caddy baseline snapshot, and another
+  if its existing config-read retries fail, before later reboots replace the evidence (#3001).
+  The snapshot includes container running/restarting/OOM/exit state, the last 40 daemon log
+  lines classified by allowlisted error phrases and Caddyfile line numbers, and the first 200
+  configuration lines represented only by directive names and token counts. Config reads stop
+  at 64 KiB, as does each Podman capture; truncation and unavailable probes are explicit. Both
+  Podman probes have a four-second
+  deadline inside the normal 20-second SSH probe deadline. Auth entries, config operands,
+  arbitrary error text and local topology are excluded. An unclassified log line retains only
+  its level and byte count; this snapshot does not establish an original cause or repair.
+  The unreadable-config verdict and switching assertions remain binding.
   Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
   no queued or claimed request and reds the row if it never drains, keeping the harness's phase
   boundary deterministic. Apply does not stop an in-flight runner (#2363). Then the
@@ -190,7 +232,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   bootloader path (#1318) and is not this leg's job.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
-  reboots. Asserts the exact diff appears on the console (the changed wallet address in full, a
+  reboots. Asserts the exact diff appears on the console (the changed wallet address in full, read
+  directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
   the stick mid-countdown cancels the change instead.

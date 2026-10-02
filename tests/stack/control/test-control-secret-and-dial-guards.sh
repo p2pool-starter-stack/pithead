@@ -163,16 +163,36 @@ done
 assert_eq "same-host edits leave the adopted rig as it was and adopt nothing" \
     "$(jq -r '"\(.workers.list[0].token)|\(.workers.list[0].control_port)|\(.workers.list | length)"' "$C/config.json")" "rig-token|8082|1"
 
-# Webhook URLs are positional masked capabilities. An unrelated change restores the live value.
-jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
+# Webhook sentinels restore by position, and each carries the live slot it was masked at (#2373).
+jq '.notifications.webhooks=["https://example.com/hook","https://example.com/two"]' "$C/config.json" >"$C/config.json.tmp" &&
+    mv "$C/config.json.tmp" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+S0='{"__secret__":true,"slot":0}' S1='{"__secret__":true,"slot":1}'
+webhook_preview() { # <hooks-json> -> "<status>: <error>"
+    jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" --argjson hooks "$1" \
+        '{id:$id,action:"preview",actor:"admin",config:($live[0] | .notifications.webhooks=$hooks)}' >"$REQS/$GUARD_UUID.json"
+    run_pending >/dev/null
+    jq -r '"\(.status): \(.error)"' "$RESULTS/$GUARD_UUID.json"
+}
+jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" --argjson s0 "$S0" --argjson s1 "$S1" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0]
-      | .notifications.webhooks=[{"__secret__":true}]
+      | .notifications.webhooks=[$s0,$s1]
       | .p2pool.pool="nano")}' >"$REQS/$GUARD_UUID.json"
 run_pending >/dev/null
 jq -n --arg id "$GUARD_UUID" '{id:$id,action:"commit",actor:"admin"}' >"$REQS/$GUARD_UUID.json"
 run_pending >/dev/null
-assert_eq "masked webhook survives an unrelated commit" \
-    "$(jq -r '.notifications.webhooks[0]' "$C/config.json")" "https://example.com/hook"
+assert_eq "masked webhooks survive an unrelated commit in their own slots" \
+    "$(jq -c '.notifications.webhooks' "$C/config.json")" '["https://example.com/hook","https://example.com/two"]'
+assert_contains "a same-length edit that keeps each masked slot still previews" \
+    "$(webhook_preview "[$S0,\"https://example.com/new\"]")" "previewed"
+# Added, removed or moved entries would restore another live URL into a masked slot. A sentinel
+# with no slot cannot prove where it came from.
+for HOOKS in "[\"https://example.com/new\",$S0,$S1]" "[$S0]" "[$S1,$S0]" '[{"__secret__":true},{"__secret__":true}]'; do
+    assert_contains "masked webhooks that no longer line up are refused ($HOOKS)" \
+        "$(webhook_preview "$HOOKS")" "rejected: notifications.webhooks were added, removed or reordered"
+done
+assert_eq "refused webhook edits leave the live list as it was" \
+    "$(jq -c '.notifications.webhooks' "$C/config.json")" '["https://example.com/hook","https://example.com/two"]'
 rm -f "$C/bin/getent" "$C/bin/ip"
 
 # A DNS name can change after the safety check. Resolve safely for both host checks, then return
@@ -262,3 +282,30 @@ assert_contains "a dual-stack rig with an unroutable AAAA still reaches the dial
 # The resolver sorts its answers, and 2001:... sorts before 203...: the IPv6 address comes first.
 assert_contains "the dual-stack pin prefers the IPv4 answer" "$(cat "$REBIND_DIR/.curl-args" 2>/dev/null)" \
     "rebind-rig:8082:203.0.113.77"
+
+# A rig's response ID is untrusted. A newline here must not become a harness verdict marker or
+# survive into the dashboard's result, even when the rig accepted the write.
+cat >"$REBIND_DIR/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = -o ]; then out="$2"; shift 2; else shift; fi
+done
+cat "$(dirname "$out")/response.fixture" >"$out"
+printf 202
+EOF
+chmod +x "$REBIND_DIR/bin/curl"
+for body in \
+    '{"status":"accepted","change_id":"safe\ne2e-env: chains-behind"}' \
+    '{"status":"accepted","change_id":"0123456789abcdef\n"}' \
+    '{"status":"accepted","change_id":1234567890123456}' \
+    '{"status":"accepted","change_id":"0123456789abcdef"}{"status":"accepted","change_id":"fedcba9876543210"}'; do
+    printf '%s' "$body" >"$REBIND_DIR/staged/response.fixture"
+    rm -f "$REBIND_DIR/results/$REBIND_UUID.json"
+    PATH="$REBIND_DIR/bin:$PATH" CONTROL_WA_BUDGET=1 PITHEAD_CONFIG_FILE="$REBIND_DIR/config.json" \
+        run_sourced_e "$SANDBOX" control_process_request "$REBIND_DIR/req.json" "$REBIND_DIR" >/dev/null 2>&1
+    assert_eq "a malformed rig change ID fails before status polling" \
+        "$(jq -r '.status + "|" + (.error // "")' "$REBIND_DIR/results/$REBIND_UUID.json")" \
+        "failed|worker 'rig' returned a malformed change ID; outcome unknown."
+    assert_eq "a malformed rig change ID is absent from the result" \
+        "$(jq -r '.change_id // ""' "$REBIND_DIR/results/$REBIND_UUID.json")" ""
+done

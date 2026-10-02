@@ -84,7 +84,7 @@ phase_update() {
         return
     }
     ok "built v2 bundle: $(basename "$bundle")"
-
+    package_appliance_verdict os/rauc/build/system.img "$bundle" || return
     # Install failures MUST be surfaced. Both candidates failed silently for several rounds
     # because the install was fired with `|| true` and only the marker was checked afterwards —
     # the harness reported "update did not take" when the real story was "install never ran".

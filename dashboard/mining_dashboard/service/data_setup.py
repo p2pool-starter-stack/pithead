@@ -17,11 +17,13 @@ from mining_dashboard.config.config import (
     TOR_SOCKS_PROXY,
     UPDATE_CHECK_INTERVAL,
     WORKER_FALLOFF_SEC,
+    monero_is_local,
 )
 from mining_dashboard.service.data_helpers import (
     WorkerLifecycle,
 )
 from mining_dashboard.service.health.degradation import DegradationMonitor
+from mining_dashboard.service.health.monero_health import MoneroChainHealth
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
 from mining_dashboard.service.health.tari_health import TariChainHealth
 from mining_dashboard.service.health.tor_heal import TorEgressHealer
@@ -145,6 +147,13 @@ class DataSetupMixin:
         self.docker_control = DockerControl()
         self.monero_health = NodeHealthMonitor()
         self.tari_health = NodeHealthMonitor()
+        # Isolated / stalled monerod (#2499): the peers-and-tip verdict for the card, doctor, alerts.
+        self.monero_chain = MoneroChainHealth()
+        # A configured payout wallet that never answered is still a failure after the debounce.
+        self.monero_wallet_health = NodeHealthMonitor(ever_up=True)
+        self.tari_wallet_health = NodeHealthMonitor(ever_up=True)
+        self.monero_wallet_scan_answered = None
+        self.tari_wallet_scan_answered = None
         # Peer-loss staleness (#972): the same debounce machine, fed monerod's own
         # `synchronized` flag instead of reachability. "Ever synchronized" plays the ever-up
         # guard, so a node mid-initial-sync (synchronized false for days) never alarms; only a
@@ -248,6 +257,12 @@ class DataSetupMixin:
         if os.path.exists(_runtime().SYNC_GATE_RESET_PATH):
             self.miner_released = False
             self.latest_data["miner_released"] = False
+
+    def _observe_monero(self, monero_sync):
+        """Attach the monerod peers-and-tip verdict (#2499) as ``monero_sync["health"]`` for the
+        card, /api/state, doctor and the alert edges. A remote node gets the "peers not visible"
+        verdict: its peer set is not ours to judge."""
+        monero_sync["health"] = self.monero_chain.observe(monero_sync, local=monero_is_local())
 
     async def _observe_tari(self, tari_client, tari_sync):
         """One cycle of Tari health: the debounced node-down flag (#31), returned, and the chain

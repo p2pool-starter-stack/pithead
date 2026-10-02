@@ -6,6 +6,34 @@ _worker_apply() { # <worker> <changes-json>  -> echoes the dashboard result JSON
     printf '%s' "$body" | rx "curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' --data-binary @- http://127.0.0.1:8000/api/control/worker-apply" --stdin 2>/dev/null
 }
 
+# The #513 leg: nudge max_temp_c by +1 through the dashboard, then revert it. Its own function so the
+# refusal of an unrecordable original (#2668) is driven through the real caller in
+# selftest-rig-key-refusal.sh.
+_max_temp_round_trip() { # <rig> <orig-max_temp_c-or-empty>
+    local rig="$1" orig_maxt="$2" new_maxt res status ckeys change_id
+    if [ -z "$orig_maxt" ]; then
+        it_skip_leg "reversible write, max_temp_c (#513)" "rig '$rig' watchdog isn't reporting a max_temp_c in the feed — can't read the original to restore it"
+    # On the books before the write; a refused mark means an abort could not restore it, so no write (#1379, #2668).
+    elif ! rig_key_mark dash "$rig" max_temp_c "$orig_maxt"; then
+        it_skip_leg "reversible write, max_temp_c (#513)" "the original max_temp_c on rig '$rig' cannot be recorded for the abort-safe unwind, so no write is sent"
+    else
+        new_maxt=$((orig_maxt + 1))
+        it_step "Worker Inspect edit: max_temp_c $orig_maxt -> $new_maxt via /api/control/worker-apply…"
+        res="$(_worker_apply "$rig" "{\"max_temp_c\":$new_maxt}")"
+        IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_maxt "$rig" "$new_maxt" "$res")"
+        assert_eq "Worker Inspect edit applied on the rig (#513)" "$status" "applied"
+        assert_contains "the rig's /status confirms max_temp_c changed (#513)" "$ckeys" "max_temp_c"
+        # By change_id, not "the newest row", and WAITED to terminal: the rig publishes its config
+        # before it decides the outcome, so reading the row straight after the settle raced it (#1471).
+        assert_eq "worker-apply recorded in the per-worker history (#185/#1471)" "$(_settle_history_row "$rig" "$change_id")" "applied"
+        it_step "reverting max_temp_c $new_maxt -> ${orig_maxt}…"
+        res="$(_worker_apply "$rig" "{\"max_temp_c\":$orig_maxt}")"
+        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
+        assert_eq "reversible edit reverted on the rig (#513)" "$status" "applied"
+        [ "$status" = "applied" ] && rig_key_clear dash "$rig" max_temp_c # (#1379)
+    fi
+}
+
 _restore_rig_control_baseline() {
     if ! push_config "$BASELINE_CONFIG"; then
         it_fail "write baseline after RigForge control" "could not restore config.json"
@@ -50,8 +78,16 @@ run_rigforge_control() {
         return 0
     fi
 
-    local have_host inject=0
-    have_host="$(printf '%s' "$BASELINE_CONFIG" | jq -r --arg n "$rig" 'first((.workers.list // [])[] | select(.name==$n) | .host) // empty' 2>/dev/null)"
+    local current_config have_host inject=0
+    if ! current_config="$(rx 'cat config.json')"; then
+        it_fail "read current config before RigForge control" "could not read config.json"
+        return 1
+    fi
+    if ! printf '%s' "$current_config" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        it_fail "read current config before RigForge control" "config.json is not a JSON object"
+        return 1
+    fi
+    have_host="$(printf '%s' "$current_config" | jq -r --arg n "$rig" 'first((.workers.list // [])[] | select(.name==$n) | .host) // empty' 2>/dev/null)"
     if [ -z "$have_host" ]; then
         if [ -n "$RIG_HOST" ] && [ -n "${IT_RIG_TOKEN:-}" ]; then
             inject=1
@@ -67,7 +103,7 @@ run_rigforge_control() {
 
     # Enable control while preserving any existing login.
     local ctrl_config
-    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.control.enabled = true')"
+    ctrl_config="$(printf '%s' "$current_config" | jq '.dashboard.control.enabled = true')"
     if [ -z "$(env_on_box DASHBOARD_AUTH_HASH_B64)" ]; then
         ctrl_config="$(printf '%s' "$ctrl_config" | jq '.dashboard.auth = {username:"admin",password:"a tier4 rigforge-control passphrase"}')"
     fi
@@ -98,7 +134,71 @@ run_rigforge_control() {
             return 1
         fi
     fi
+    _RIG_SETUP_SAMPLE=null
+    local _RIG_SETUP_STATE=''
     if ! wait_for 120 5 "dashboard to re-read the selected rig after control setup" _pred_rig_present "$rig"; then
+        # Retain the final predicate observation and fixed probe classes before restore (#2890).
+        # No raw response/log text is written; Docker reads are time-, line- and byte-bounded.
+        printf '%s\n' "$_RIG_SETUP_SAMPLE" >"$OUT_DIR/rigforge-control.selected-rig.json" ||
+            it_warn "selected-rig state diagnostics could not be retained"
+        local probe_logs probe_names probe_log_rc=0
+        probe_logs="$(rx 'timeout 5 docker logs --since 10m --tail=200 dashboard 2>&1' 2>/dev/null | head -c 65536)" || probe_log_rc=$?
+        # Credential warnings normalize the name; attribute them only to a unique endpoint.
+        probe_names="$(printf '%s\n%s' "$ctrl_config" "$_RIG_SETUP_STATE" | timeout 5 python3 -c '
+import json
+import sys
+
+text = sys.stdin.read().lstrip()
+config, end = json.JSONDecoder().raw_decode(text)
+try:
+    state = json.loads(text[end:])
+except ValueError:
+    state = {}
+workers = state.get("workers", []) if isinstance(state, dict) else []
+workers = [w for w in workers if isinstance(w, dict) and isinstance(w.get("name"), str)] if isinstance(workers, list) else []
+entries = config.get("workers", {}).get("list", [])
+port = config.get("workers", {}).get("api_port", 8080)
+def token(name):
+    return name.split("+")[0].strip()[:128]
+def endpoint(worker):
+    ip = worker.get("ip", "")
+    ip = ip.strip() if isinstance(ip, str) else ""
+    if ip.count(":") == 1 and ip.rpartition(":")[2].isdigit():
+        ip = ip.rpartition(":")[0]
+    override = next((e for e in entries if e.get("name") == token(worker["name"])), None)
+    if override is None:
+        override = next((e for e in entries if ip and e.get("host") == ip), {})
+    return override.get("host", ip), override.get("port", port)
+name = sys.argv[1]
+selected = next((w for w in workers if w["name"] == name), None)
+host, effective_port = endpoint(selected) if selected is not None else ("", port)
+matches = sum(token(w["name"]) == token(name) and endpoint(w) == (host, effective_port) for w in workers) if selected is not None else 0
+print(json.dumps({"full": repr(name), "token": repr(token(name)), "host": host,
+                  "url": f"http://{host}:{effective_port}/1/summary", "unique": bool(host) and matches == 1}))
+' "$rig" 2>/dev/null)" &&
+            printf '%s' "$probe_logs" | jq -Rsc --argjson names "$probe_names" --argjson rc "$probe_log_rc" '
+            split("\n") | map(index("Worker ") as $start | select($start != null) |
+                .[$start + 7:] |
+                (if startswith($names.full + " (") then $names.full
+                 elif startswith($names.token + " (") then $names.token else empty end) as $matched |
+                .[($matched | length) + 2:] |
+                capture("^(?<host>[^)]*)\\): xmrig API probe failed at (?<url>\\S+) — (?<failure>.*)") as $probe |
+                $probe.failure |
+                (if startswith("adopted rig\u0027s read credential unavailable.") or startswith("probe token missing.") then "credential-unavailable"
+                elif test("^HTTP (401|403)(\\.|$)") then "http-auth-refusal"
+                elif startswith("JSONDecodeError:") or startswith("HTTP 200 but body was ") then "invalid-body"
+                elif test("^HTTP [0-9]{3}(\\.|$)") then "http-response"
+                elif test("^\\w*TimeoutError:") then "timeout"
+                elif test("^\\w*(ConnectorError|ConnectionError):") then "connection"
+                elif test("^body over [0-9]+ bytes(\\.|$)") then "oversized-body"
+                else "other-probe-failure" end) as $class |
+                select(if $class == "credential-unavailable" then
+                    $matched == $names.token and $names.unique and $probe.host == $names.host and $probe.url == $names.url
+                    else $matched == $names.full end) | $class) |
+            group_by(.) | {log_read_exit:$rc, classes:map({classification:.[0], count:length})}' \
+                >"$OUT_DIR/rigforge-control.probe-classes.json" ||
+            it_warn "selected-rig probe classifications could not be retained"
+        _RIG_SETUP_STATE=''
         if [ "$supplied" = 1 ]; then
             it_fail "supplied rig exposes its enriched feed after control setup" "worker '$rig' never appeared"
         else
@@ -137,27 +237,9 @@ run_rigforge_control() {
     # enriched feed echoes (watchdog Temp/max), so read the current ceiling from the feed FIRST — if
     # the rig's watchdog isn't reporting it we can't safely restore it, so skip the write rather than
     # leave the rig mis-tuned.
-    local orig_maxt new_maxt res status ckeys change_id
+    local orig_maxt
     orig_maxt="$(printf '%s' "$st" | jq -r --arg n "$rig" 'first(.workers[]? | select(.name==$n) | .rigforge.stats[]? | select(.label=="Temp / max") | .value) // empty' 2>/dev/null | sed -n 's#.*/ *\([0-9][0-9]*\).*#\1#p')"
-    if [ -z "$orig_maxt" ]; then
-        it_skip_leg "reversible write, max_temp_c (#513)" "rig '$rig' watchdog isn't reporting a max_temp_c in the feed — can't read the original to restore it"
-    else
-        new_maxt=$((orig_maxt + 1))
-        it_step "Worker Inspect edit: max_temp_c $orig_maxt -> $new_maxt via /api/control/worker-apply…"
-        rig_key_mark dash "$rig" max_temp_c "$orig_maxt" # abort-safe unwind (#1379)
-        res="$(_worker_apply "$rig" "{\"max_temp_c\":$new_maxt}")"
-        IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_maxt "$rig" "$new_maxt" "$res")"
-        assert_eq "Worker Inspect edit applied on the rig (#513)" "$status" "applied"
-        assert_contains "the rig's /status confirms max_temp_c changed (#513)" "$ckeys" "max_temp_c"
-        # By change_id, not "the newest row", and WAITED to terminal: the rig publishes its config
-        # before it decides the outcome, so reading the row straight after the settle raced it (#1471).
-        assert_eq "worker-apply recorded in the per-worker history (#185/#1471)" "$(_settle_history_row "$rig" "$change_id")" "applied"
-        it_step "reverting max_temp_c $new_maxt -> ${orig_maxt}…"
-        res="$(_worker_apply "$rig" "{\"max_temp_c\":$orig_maxt}")"
-        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
-        assert_eq "reversible edit reverted on the rig (#513)" "$status" "applied"
-        [ "$status" = "applied" ] && rig_key_clear dash "$rig" max_temp_c # (#1379)
-    fi
+    _max_temp_round_trip "$rig" "$orig_maxt"
 
     # Lives in rigforge-writable-keys.sh: the legs read each original from the rig's OWN reported
     # config (.rig_config, #1235/rigforge#253) rather than from a record of what we last pushed, and

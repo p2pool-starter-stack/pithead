@@ -29,12 +29,10 @@ services:
     environment:
       # Subnet prefix (#180): the entrypoint envsubst's it into the rendered torrc's bridge IPs.
       - NETWORK_PREFIX=${NETWORK_PREFIX:-172.28.0}
-      # Node onions (#103): the entrypoint publishes the monerod / Tari inbound hidden services only
-      # when their profile is active, so a remote node leaves no onion pointing at nothing. Passing
-      # the profile list itself (rather than a parallel flag) keeps the gate and the containers that
-      # actually start reading from one value; a change here also recreates tor, which is required
-      # for the new torrc to take effect.
-      - COMPOSE_PROFILES=${COMPOSE_PROFILES:-}
+      # Node onions (#103): the entrypoint publishes inbound services only for local nodes.
+      # This list derives from the same node modes as COMPOSE_PROFILES, so a node-mode change
+      # recreates Tor to reread torrc. Payout profiles do not affect its onion services (#2859).
+      - COMPOSE_PROFILES=${TOR_COMPOSE_PROFILES:-}
       # Dashboard onion (#343): opt-in, default off. When true the entrypoint appends a hidden
       # service for the dashboard (fronting Caddy on the bridge gateway, never the LAN).
       - DASHBOARD_ONION_ENABLED=${DASHBOARD_ONION_ENABLED:-false}
@@ -87,7 +85,10 @@ services:
     # verification never trips it — raise it if a low-RAM host OOMs monerod during IBD.
     mem_limit: ${MONERO_MEM_LIMIT:-6g}
     memswap_limit: ${MONERO_MEM_LIMIT:-6g}
-    restart: unless-stopped
+    # "no" on a DIY Docker host that publishes a *_lan_access port: pithead-lan-hold.service starts
+    # it at boot once the LAN-only source rule is back (#2749). apply_lan_guard exports it on every
+    # pithead start. Any start without the live rule is refused by the entrypoint's gate.
+    restart: ${MONERO_RESTART:-no}
     stop_grace_period: 1m
     logging: *default-logging
     environment:
@@ -103,6 +104,9 @@ services:
       - MONERO_OUT_PEERS=${MONERO_OUT_PEERS:-48}
       # Subnet prefix (#180): the entrypoint envsubst's it into the Tor SOCKS IP in bitmonero.conf.
       - NETWORK_PREFIX=${NETWORK_PREFIX:-172.28.0}
+      # The published binds, for the entrypoint's LAN-only gate (#2749), with ./data/lan-guard below.
+      - MONERO_RPC_BIND=${MONERO_RPC_BIND:-127.0.0.1}
+      - MONERO_ZMQ_BIND=${MONERO_ZMQ_BIND:-127.0.0.1}
     # Immutable root filesystem (#377). The entrypoint renders bitmonero.conf INTO the bind-mounted
     # data dir (/home/ubuntu/.bitmonero/bitmonero.conf), and monerod keeps everything — chain DB,
     # logs, p2pstate — under that same data-dir mount, so /tmp scratch is the only tmpfs needed.
@@ -117,6 +121,8 @@ services:
       # Read-only view of the shared clearnet-state dir (#234): the entrypoint reads the
       # dashboard-written "sync complete" marker to decide clearnet-vs-Tor at startup.
       - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
+      # pithead's "LAN-only source rule is live" marker (#2749): without it a LAN bind never starts.
+      - ./data/lan-guard:/lan-guard:ro
     ports:
       # Default 127.0.0.1 = host-local only (no LAN exposure); p2pool reaches monerod over
       # the internal Docker network regardless. Set monero.rpc_lan_access:true in config.json
@@ -160,10 +166,9 @@ services:
     image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-monero:${STACK_VERSION:-dev}
     build: ./build/monero
     container_name: wallet-rpc
-    # Memory ceiling (#132 — see monerod). Steady-state a view-only scanner is light (~0.1 GiB), but
-    # the one-time genesis scan (the payout_scan_height: auto default — full payout history) peaks
-    # well above 0.5 GiB and OOM-loops under a 512m cap. 2 GiB gives that scan headroom; it's a
-    # ceiling not a reservation, so idle use stays low. memswap == mem => zero swap, clean OOM-kill.
+    # Fixed 2 GiB safety ceiling (#132). Existing-wallet catch-up can exceed it; scan-grace
+    # health does not establish RPC readiness. Retain OOM/restart and memory diagnostics before
+    # selecting recovery. memswap == mem disables swap and protects the other services.
     mem_limit: 2g
     memswap_limit: 2g
     restart: unless-stopped
@@ -229,7 +234,8 @@ services:
     # uid pithead chowns ${TARI_DATA_DIR} to. The wrapper entrypoint reads the canonical config
     # read-only and writes its runtime copy to /tmp, so only the data dir needs to be owned by 1000.
     user: "1000:1000"
-    restart: unless-stopped
+    # See monerod's restart (#2749).
+    restart: ${TARI_RESTART:-no}
     stop_grace_period: 1m
     # An init as PID 1 (#2627): it reaps, and forwards the stop signal to the wrapper entrypoint,
     # which forwards it to the minotari_node it supervises (#2618). Without an init the wrapper is
@@ -252,8 +258,10 @@ services:
     # Tari needs NO clearnet DNS: dns_seeds = [] (config.toml), onion peer_seeds resolve via Tor, and
     # the Tor SOCKS is reached by IP (this container already overrode Docker's 127.0.0.11, so nothing
     # here depends on service discovery). The one OS-resolver lookup left is the Tari Pulse service's
-    # checkpoints.tari.com TXT (~every 120 s) — an ADVISORY deep-reorg check, no in-binary off-switch,
-    # that TOLERATES a DNS failure (returns "passed", verified in tari_pulse_service/mod.rs). Point the
+    # checkpoints.tari.com TXT (~every 120 s) — an ADVISORY deep-reorg check. Pinned Tari 6
+    # supports base_node.tari_pulse_enabled=false, but this stack keeps Pulse enabled and the
+    # resolver isolated. DNS query errors warn and skip the check; timeouts return "passed"
+    # (verified in tari_pulse_service/mod.rs). Point the
     # resolver at a dead local address so that lookup fails WITHOUT a packet leaving the host — zero
     # clearnet DNS, no functional impact (#162; #160 decision-4). Trade-off: lose the Pulse deep-reorg
     # advisory, the same class as monerod's disable-dns-checkpoints (#161).
@@ -265,6 +273,8 @@ services:
       # shared marker to decide clearnet-vs-Tor per start. Surfaced here so a flag change recreates
       # tari (a bind-mount content change alone won't trigger a recreate).
       - TARI_CLEARNET_SYNC=${TARI_CLEARNET_SYNC:-false}
+      # The published bind, for the entrypoint's LAN-only gate (#2749), with ./data/lan-guard below.
+      - TARI_GRPC_BIND=${TARI_GRPC_BIND:-127.0.0.1}
     # Immutable root filesystem (#377). The wrapper entrypoint copies the canonical config to
     # /tmp/tari-runtime-config.toml, then runs minotari_node as upstream's start_tari_app.sh would
     # (APP_NAME=node → TARI_BASE=/var/tari/node) with --base-path /var/tari/node — the data bind
@@ -275,6 +285,8 @@ services:
     volumes:
       - ${TARI_DATA_DIR}:/var/tari/node
       - ./build/tari:/var/tari/config
+      # pithead's "LAN-only source rule is live" marker (#2749), as for monerod.
+      - ./data/lan-guard:/lan-guard:ro
       # Read-only view of the shared clearnet-state dir (#234): the wrapper entrypoint reads the
       # dashboard-written "sync complete" marker to decide clearnet-vs-Tor at startup.
       - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
@@ -326,6 +338,10 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     restart: unless-stopped
+    # An init as PID 1 (#2657): the wrapper execs minotari_console_wallet, so without it the wallet
+    # is PID 1, reaps no children, and a zombie PID 1 cannot be signalled, so `docker stop` fails.
+    # The init forwards the stop signal and reaps. The quadlet renderer carries it as RunInit=true.
+    init: true
     logging: *default-logging
     # Wrapper entrypoint (mounted from the build dir, since this is a pulled image — same pattern as
     # the Tari node): reads the three secrets from the bind-mounted `secrets:` file and exports them into
@@ -359,6 +375,7 @@ services:
       - TARI_WALLET_BIRTHDAY=${TARI_WALLET_BIRTHDAY:-auto}
       - TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143
       - WALLET_DIR=/var/tari/wallet
+      - PAYOUT_SCAN_GRACE_SEC=${PAYOUT_SCAN_GRACE_SEC:-86400}
     secrets:
       # Docker bind-mounts the owner-only host file read-only at /run/secrets/tari_wallet_secret; the
       # wrapper sources it. The secret VALUES never appear in `docker inspect` (only the mount path).
@@ -366,9 +383,10 @@ services:
     ports:
       # Loopback-only host publish (mirror wallet-rpc): the host-networked dashboard reaches the
       # wallet gRPC at 127.0.0.1:18143; no LAN exposure. Unlike monero-wallet-rpc, the minotari
-      # console-wallet gRPC has no built-in login — so the access controls are this loopback-only
-      # publish plus the mining_net-internal bridge (the same trust boundary as the unauthenticated
-      # Tari node gRPC at .27:18142, the operator's own containers).
+      # console-wallet gRPC is unauthenticated in this stack, though pinned Tari 6 supports
+      # wallet.grpc_authentication and TLS. The host publish is loopback-only; all containers
+      # attached to the shared mining_net bridge can reach gRPC. View-only prevents spending,
+      # but callers can read wallet metadata. Enabling auth requires updating the dashboard client.
       - "127.0.0.1:18143:18143"
     networks:
       mining_net:
@@ -377,12 +395,7 @@ services:
       tari:
         condition: service_healthy
     healthcheck:
-      # Process-liveness (like the Tari node) rather than a gRPC probe: the wallet's own gRPC is a
-      # long stream, and a liveness ps is enough to catch a crashed daemon. `ps -e` sees the wallet
-      # after the wrapper drops to uid 1000 (#2454). The long start_period tolerates the first
-      # scan. The pattern is capped at 15 chars — procps' ps truncates the CMD column, so the full
-      # 'minotari_console_wallet' can never match (#777).
-      test: ["CMD-SHELL", "ps -e | grep '[m]inotari_consol' || exit 1"]
+      test: ["CMD", "/wallet-config/wallet-healthcheck.sh"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -720,6 +733,7 @@ services:
       # (like the Tari base node); reached over the host-loopback publish (network_mode: host).
       - TARI_PAYOUT_CONFIRM_ENABLED=${TARI_PAYOUT_CONFIRM_ENABLED:-false}
       - TARI_WALLET_GRPC_ADDRESS=${TARI_WALLET_GRPC_ADDRESS:-127.0.0.1:18143}
+      - TARI_WALLET_ADDRESS=${TARI_WALLET_ADDRESS}
       - XVB_ENABLED=${XVB_ENABLED}
       - XVB_POOL_URL=${XVB_POOL_URL}
       - XVB_DONOR_ID=${XVB_DONOR_ID}

@@ -205,6 +205,7 @@ stack_status() {
             ;;
         esac
     done <<<"$expected"
+    monero_chain_status_line
     tari_chain_status_line
 
     # A genuinely stopped p2pool/xmrig-proxy is normally intentional: the dashboard stops it to

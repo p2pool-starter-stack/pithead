@@ -1,46 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Every key on CONTROL_DASHBOARD_EDITABLE_KEYS must actually round-trip a real preview->commit
-# through the approval gate and land in config.json (#522) — not just pass a describe_change unit
-# check. Split out of run.sh by #1105 R14; the section's own contract is stated at its header below.
-#
-# WHY THE CONTROL FAMILY, AND NOT THE CONFIG FAMILY THE CUT MAP GUESSED. The map homed this row
-# with the config family on the strength of its subject: it flips config keys and reads them back
-# out of config.json. Its FIXTURE says otherwise, and the fixture is what a domain file actually
-# has to reproduce. Every assertion here goes through gate_try() against the control channel's
-# sandbox and its request/result spool, so this section's dependencies are the control channel's,
-# and it is homed with them. The map's row left the target to be decided at cut time by fixture
-# affinity; this is that decision, recorded rather than assumed.
-#
-# AMBIENT BY DESIGN — AND THE REASON IS NOT THAT ARMING WOULD BREAK IT. This file inherits $C,
-# $CTRL_LOG and $WALLET from the build_control_sandbox() call a control-family domain file makes
-# ahead of it, and re-derives only its own spool path from $C. Calling the builder here would most
-# likely be harmless — it creates rather than clears and never touches the control spool — but it
-# would add a call that does not exist today, and it would buy nothing, because gate_try() is a
-# function defined in another domain file and no arm written here can supply it. The cut that
-# changes nothing about what executes is the one whose proof is strongest, so that is the one
-# taken; the ambient inheritance is disclosed here instead, which is the shipped
-# test-control-add-only-ssrf.sh precedent. $VALID_TARI is a top-level lib.sh constant.
-#
-# POSITION-LOCKED IN run.sh's SOURCE ORDER, not merely position-preferring. gate_try() and $UUID5
-# are defined by test-control-add-only-ssrf.sh and deliberately outlive its source; run.sh sources
-# that file immediately ahead of this one. That is the other half of the dependency its own header
-# already discloses from its side. The carry-over guard below fails by name rather than silently,
-# but it cannot make this file sourceable standalone — a missing gate_try() is loud (command not
-# found, then the status assertions fail by name) and that is the honest state of it.
-#
-# WHAT THE INHERITANCE COSTS, stated so the next cut near here need not re-derive it: the gate_try()
-# calls below write result files into the shared control spool, and a control-family file run.sh
-# sources AHEAD of this one asserts that spool's exact result count. That assertion runs before this
-# section writes anything, so it is untouched while this file stays where run.sh sources it.
-#
-# CONCURRENCY PROVENANCE, carried across the move because it is exactly what a move loses: this is
-# the fork-heavy section — a per-key round-trip, each one a real preview->commit through the spool —
-# that the fleet's notes name as the contention point when two suite runs share a box. A concurrent
-# pair that reddens like cross-talk should be looked for here first.
+# Every dashboard-editable key round-trips through preview and commit against the control gate.
+# The shared fixture seeds fresh processes and preserves existing config and spool state.
 
-: "${C:?}" "${CTRL_LOG:?}" "${WALLET:?}" "${VALID_TARI:?}" "${UUID5:?}"
-RESULTS="$C/data/control/results"
+ensure_control_fixture
 
 echo "== black-box: editable-allowlist commit round-trip, every key (#522) =="
 # Every key on CONTROL_DASHBOARD_EDITABLE_KEYS must actually round-trip a real preview->commit
@@ -108,22 +71,22 @@ env_now() { run_sourced "$C" env_get_file "$C/.env" "$1"; }
 
 # TARI_MODE, the #1929 subject: an operator turns merge-mining off and back on from the dashboard.
 # Asserted on the RENDERED .env rather than config.json alone — config.json is what the gate wrote,
-# the .env is what the containers are actually launched from, and only the second can show that the
-# profile and the sync-gate flag followed the mode.
+# .env shows the launched profile and sync-gate flag.
 assert_eq "baseline renders the bundled Tari node" "$(env_now TARI_MODE)" "local"
 tari_data_before="$(ls -A "$C/data/tari" 2>/dev/null | wc -l | tr -d ' ')"
-roundtrip_confirm "TARI_MODE/COMPOSE_PROFILES" '.tari.mode="off"' '.tari.mode' "off"
+roundtrip_confirm "TARI_MODE/COMPOSE_PROFILES/TOR_COMPOSE_PROFILES" '.tari.mode="off"' '.tari.mode' "off"
 assert_eq "off renders TARI_MODE=off" "$(env_now TARI_MODE)" "off"
 assert_not_contains "off drops the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
+assert_not_contains "off drops the Tari onion profile" "$(env_now TOR_COMPOSE_PROFILES)" "local_tari"
 assert_eq "off releases the sync gate — a machine that declined Tari still mines Monero" "$(env_now TARI_REQUIRED)" "false"
-# The operator's own requirement: turning Tari off must not destroy the chain. Nothing in the
-# commit path may touch the data dir — remove_deactivated_profile_containers removes the CONTAINER.
+# Turning Tari off must preserve its chain data; remove_deactivated_profile_containers removes only the container.
 assert_eq "off leaves the Tari data dir untouched" "$(ls -A "$C/data/tari" 2>/dev/null | wc -l | tr -d ' ')" "$tari_data_before"
 assert_eq "off leaves tari.data_dir pointing at the same chain" "$(jq -r '.tari.data_dir // "auto"' "$C/config.json")" "auto"
 # ...and back on, the direction that proves this is a switch and not a one-way door.
 roundtrip_confirm "TARI_MODE" '.tari.mode="local"' '.tari.mode' "local"
 assert_eq "back on renders TARI_MODE=local" "$(env_now TARI_MODE)" "local"
 assert_contains "back on restores the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
+assert_contains "back on restores the Tari onion profile" "$(env_now TOR_COMPOSE_PROFILES)" "local_tari"
 
 # The remaining confirm keys that need no live endpoint. TARI_CLEARNET_SYNC is asserted here as a
 # ROUND TRIP; test-confirm-approval.sh asserts its refusal semantics on the Monero twin.

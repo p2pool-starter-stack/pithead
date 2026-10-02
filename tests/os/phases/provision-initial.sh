@@ -12,6 +12,7 @@ _phase_provision_initial() {
     local rc=0
     _phase_provision_initial_body || rc=$?
     phase_provision_egress_backstop "$rc"
+    phase_provision_monero_rpc
     # Same placement and the same reason as the backstop above (#2059), learned the same way: this
     # leg first ran inside the body, downstream of the hostname and approval legs, and #2060's
     # known mDNS failures left the dashboard unreadable — so it reported its own precondition
@@ -199,6 +200,7 @@ _phase_provision_initial_body() {
         return 1
     fi
     phase_provision_dashboard_exposure || return 1
+    phase_provision_address_watch
 
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)

@@ -11,10 +11,11 @@ from mining_dashboard.config.config import (
     TELEGRAM_EVENTS,
 )
 from mining_dashboard.helper.utils import format_hashrate
-from mining_dashboard.service.health.container_health import ContainerHealthMonitor
+from mining_dashboard.service.health.container_health import EDGE_MESSAGES, ContainerHealthMonitor
 from mining_dashboard.service.network.egress_status import live_firewall_state
 from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_hhmm
 from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
+from mining_dashboard.service.notify.monero_health_edges import MoneroHealthEdgesMixin
 from mining_dashboard.service.notify.notify_sinks import config_sinks
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 from mining_dashboard.service.workers.worker_presence import WorkerPresenceMonitor
@@ -37,7 +38,7 @@ def build_default_notifier():
     )
 
 
-class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
+class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesMixin):
     """
     Turns the data loop's per-cycle signals into a small set of debounced operator alerts and
     fans them out to the configured sinks: Telegram (Issue #121) plus any webhook/ntfy sinks
@@ -117,6 +118,8 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
     EVT_BLOCK_FOUND = "block_found"
     EVT_PAYOUT_FOUND = "payout_found"
     EVT_PAYOUT_CONFIRMED = "payout_confirmed"
+    # Wallet-down follows the payout feature and alerting, without an event-specific toggle.
+    EVT_PAYOUT_WALLET_DOWN = "payout_wallet_down"
     EVT_CONTAINER_UNHEALTHY = "container_unhealthy"
     EVT_RAFFLE_WIN = "raffle_win"
 
@@ -126,25 +129,6 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         "recovered": (EVT_WORKER_RECOVERED, "\U0001f7e2 ⛏️ Worker back online: {name}"),
         "joined": (EVT_WORKER_JOINED, "\U0001f389 New worker joined: {name}"),
         "left": (EVT_WORKER_LEFT, "\U0001f44b Worker left: {name}"),
-    }
-
-    # ContainerHealthMonitor edge -> (event key, message template). One toggle for all three
-    # edges (#337) — problem and recovery are the same conversation.
-    _CONTAINER_EDGES = {
-        "crash_loop": (
-            EVT_CONTAINER_UNHEALTHY,
-            "\U0001f534 \U0001f4e6 Container {name} is crash-looping — restarting repeatedly "
-            "(OOM or bad config?). Check: docker logs {name}",
-        ),
-        "unhealthy": (
-            EVT_CONTAINER_UNHEALTHY,
-            "\U0001f7e0 \U0001f4e6 Container {name} is running but unhealthy — its healthcheck "
-            "keeps failing.",
-        ),
-        "recovered": (
-            EVT_CONTAINER_UNHEALTHY,
-            "\U0001f7e2 \U0001f4e6 Container {name} recovered.",
-        ),
     }
 
     def __init__(
@@ -226,6 +210,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         *,
         monero_down,
         monero_stale=False,
+        monero_health=None,
         tari_down,
         tari_required,
         miner_released,
@@ -269,6 +254,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         # --- Node down / recovered (consume NodeHealthMonitor edges) ---
         alerts += self._node_edges("Monero", monero_down, "_prev_monero_down")
         alerts += self._stale_edges(monero_stale)
+        alerts += self._monero_health_edges(monero_health)
         if tari_required:
             alerts += self._node_edges("Tari", tari_down, "_prev_tari_down")
         else:
@@ -307,10 +293,14 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         # skipped), which is no verdict — the monitor isn't fed, so streaks stay put.
         if containers is not None:
             for name, edge in self.containers.update(containers, now=now):
-                evt, template = self._CONTAINER_EDGES[edge]
+                # One toggle for every container edge (#337): problem and recovery are the same
+                # conversation.
+                evt, template = self.EVT_CONTAINER_UNHEALTHY, EDGE_MESSAGES[edge]
                 if edge != "recovered":
                     self._record_incident(self.EVT_CONTAINER_UNHEALTHY)
-                alerts.append((evt, self._fmt(template.format(name=name))))
+                alerts.append(
+                    (evt, self._fmt(template.format(name=name, **containers.get(name, {}))))
+                )
 
         # --- Host health: data disk filling up, dashboard DB write failing / reset ---
         alerts += self._disk_edges(disk_percent)
@@ -444,6 +434,16 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         )
         for sink in sinks:
             await asyncio.to_thread(sink.send, text, self.EVT_PAYOUT_CONFIRMED)
+        return text
+
+    async def payout_wallet_down_alert(self, chain, reason):
+        """One debounced edge per enabled payout wallet; no event-specific opt-out."""
+        if not self.enabled:
+            return None
+        text = self._fmt(f"\U0001f534 {chain.title()} payout wallet {reason}.")
+        for sink in self.sinks:
+            if sink.enabled:
+                await asyncio.to_thread(sink.send, text, self.EVT_PAYOUT_WALLET_DOWN)
         return text
 
     async def raffle_win_alert(self, tier, hashrate):

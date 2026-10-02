@@ -32,6 +32,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- **The XMR Network card now says whether monerod is at the tip with peers.** It shows the outgoing and
+  incoming peer counts and the age of the last height change, and goes red with the numbers after 10
+  minutes with no outgoing peers or 30 minutes with no new height. `./pithead doctor` and `status`
+  name the same condition, the monerod container reports `unhealthy` after 10 minutes with no outgoing
+  peers, and each condition sends one alert through the `node_down` toggle. Nothing is restarted for
+  you ([#2499](https://github.com/p2pool-starter-stack/pithead/issues/2499)).
+
 - **The dashboard onion's client key without a shell.** With Tor client authorization on — the
   default, and mandatory whenever the config editor is on — a published `.onion` does not answer a
   browser that has no client key, and the key was printed by exactly one thing: `pithead
@@ -136,6 +143,19 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   source that could route to the host. See
   [LAN-only sources](docs/configuration.md#lan-only-sources).
 
+- **The LAN-only source rule now survives a DIY host reboot.** A reboot cleared the rule while
+  Docker restarted the node containers still published on every interface, so `18081`, `18083`
+  and `18142` took any source until `./pithead up`. `pithead-lan-guard.service`, ordered before
+  `docker.service`, now restores the rule. The node containers that publish a LAN port run with
+  restart policy `no`, and `pithead-lan-hold.service` starts them only after the guard succeeds, so
+  a guard that fails at boot leaves them stopped instead of exposed. While the rule is missing, the
+  nodes refuse to start with a LAN bind however they are started (`docker start`, a compose run
+  outside pithead), and `./pithead restart` and the Tor auto-heal do not try. Docker no longer restarts a
+  crashed `monerod` or `tari` on such a host; `./pithead doctor` and a `container_unhealthy` alert
+  name the node and the reason, and `./pithead up` recovers. The first `up` after upgrading
+  recreates those containers once. If either unit cannot be installed, the ports stay on `127.0.0.1`
+  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)).
+
 - **The dashboard alerts when the Tor-only egress firewall is missing.** The dashboard took the
   firewall's state from `network.tor_egress_firewall`, so it reported "blocked by the egress
   firewall" over an open egress. `pithead-egress.timer` now runs `pithead egress-status` every two
@@ -177,6 +197,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **An IPv6 address that arrives after boot no longer leaves a permanent doctor FAIL (#2463).** A new
+  timer checks the machine's addresses every five minutes and, when they changed since the last
+  render, re-renders the dashboard certificate and Caddyfile and restarts Caddy if either changed.
+  The certificate check also compared an IPv6 address's two spellings (openssl's expanded form and
+  `hostname -I`'s compressed one) as different strings, so any IPv6 address was reported uncovered and
+  re-minted the certificate on every render; both sides are now canonicalised.
 
 - **Clearnet initial sync works behind the default egress firewall
   ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649),

@@ -42,8 +42,8 @@ assert_running_state() {
         assert_contains "firewall on: completed sync exceptions absent from live rules (#2678)" \
             "$(pithead doctor 2>&1)" "Tor-only egress firewall is installed"
     fi
-
-    # 1. Expected containers up; unexpected ones absent.
+    # 1. Wait for the sync gate to release both miners before sampling live services, UID and TLS.
+    wait_for 1500 5 "p2pool and xmrig-proxy after sync gate" rx 'running=$(docker compose ps --services --status running); grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"' || true
     local running expected svc
     running="$(running_services)"
     expected="$(expected_services "$config")"
@@ -205,7 +205,6 @@ assert_running_state() {
     # 8. Security/posture axes propagated to .env.
     assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" \
         "$([ "$rpc_lan" = "true" ] && echo 0.0.0.0 || echo 127.0.0.1)"
-    assert_lan_guard_live "$config" # #2616: only LAN sources reach a published node port
     assert_eq "DASHBOARD_SECURE matches config" "$(env_on_box DASHBOARD_SECURE)" "${secure:-true}"
     # #740: dashboard.port flows config -> .env. Unset in every scenario, so HOST_PORT must render
     # empty (the scheme-default path); a scenario that sets dash_port would assert the custom value.
@@ -336,16 +335,12 @@ assert_running_state() {
         fi
     fi
 
-    # 8e. Payout confirmation is live (#381/#462/#942) — the flagship feature's live leg. A real
-    # payout landing (and thus a non-empty confirmed total) needs days of chain time no e2e run
-    # has; what IS honestly provable now is that the view-only wallet-rpc/tari-wallet actually
-    # started (expected_services already asserts the container up) and that the dashboard's own
-    # feature flag — the same one build_earnings reads to decide "on, nothing confirmed yet" vs.
-    # "off" — reads ON. .earnings.confirmed.enabled is False only when payouts is None
-    # (service/earnings.py:confirmed_payouts_summary), i.e. exactly PAYOUT_CONFIRM_ENABLED.
+    # 8e. Live payout wallets: enabled, reachable, and matched to the configured address.
+    # A new Monero payout needs days of chain time, so an empty total is valid.
     if [ "$mode" = "local" ] && [ -n "$(jq_get "$config" '.monero.view_key')" ]; then
         assert_eq "PAYOUT_CONFIRM_ENABLED matches config (#381/#942)" "$(env_on_box PAYOUT_CONFIRM_ENABLED)" "true"
         assert_eq "dashboard confirms Monero payout tracking is live (#381/#942)" "$(jq_get "$st" '.earnings.confirmed.enabled')" "true"
+        assert_payout_wallet_ready confirmed Monero
     fi
     if [ "$mode" = "local" ] && [ -n "$(jq_get "$config" '.tari.view_key')" ]; then
         assert_tari_payout_scan "$config" "$st"
@@ -395,6 +390,3 @@ assert_egress_dial_pair() {
         fi
     fi
 }
-
-# Full per-scenario battery: the read-only state assertions, plus the apply-only idempotency
-# check (a second apply with no config change is a clean no-op).

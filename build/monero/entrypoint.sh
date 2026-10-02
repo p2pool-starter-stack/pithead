@@ -46,11 +46,35 @@ clearnet_sync_active() {
     [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ] && [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]
 }
 
+# LAN-only sources (#2749). A bind other than 127.0.0.1 publishes this port on every host interface,
+# and only pithead's LAN-only source rule limits who can reach it. While that rule is live, pithead
+# keeps the host's boot id in the marker; it deletes the marker when it removes the rule, and a
+# reboot changes the boot id. Without a current marker this start exits before anything listens,
+# however the container was started: `docker start`, `docker compose up` or `start` outside pithead,
+# a restart policy.
+lan_guard_gate() { # <bind>...
+    local bind boot
+    for bind in "$@"; do
+        case "$bind" in
+        "" | 127.0.0.1) ;;
+        *)
+            # An unreadable boot id must not match a missing marker.
+            boot=$(cat "${BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null) || boot=""
+            [ -n "$boot" ] && [ "$(cat "${LAN_GUARD_MARKER:-/lan-guard/enforced}" 2>/dev/null)" = "$boot" ] && continue
+            echo "Refusing to start: a port is published on $bind, but the host's LAN-only source rule is not in place (#2749). Run ./pithead up." >&2
+            exit 78
+            ;;
+        esac
+    done
+}
+
 # When sourced by the test harness (PITHEAD_TEST_SOURCE=1), expose the functions and stop —
 # don't render or exec. `return` works when sourced; the `|| exit` guards a direct run.
 if [ "${PITHEAD_TEST_SOURCE:-0}" = "1" ]; then
     return 0 2>/dev/null || exit 0
 fi
+
+lan_guard_gate "${MONERO_RPC_BIND:-127.0.0.1}" "${MONERO_ZMQ_BIND:-127.0.0.1}"
 
 # Ensure the data directory exists
 mkdir -p "$(dirname "$CONFIG_PATH")"

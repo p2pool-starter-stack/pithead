@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Sourced by test-backup.sh: running-stack recovery and archive finalization failures.
+# Running-stack recovery and archive finalization failures use their own fixture.
+WALLET="${WALLET:-$VALID_PRIMARY}"
 echo "== black-box: backup failures recover a previously running stack (#551, #1965) =="
 FB="$SANDBOX/failbackup"
 mkdir -p "$FB/build/tari" "$FB/data/tor" "$FB/data/dashboard" "$FB/bin"
@@ -16,8 +17,13 @@ case "$*" in
   "compose up"*)
     n=0; [ ! -f "${UP_COUNT:?}" ] || n=$(cat "$UP_COUNT")
     n=$((n + 1)); printf '%s' "$n" >"$UP_COUNT"
+    if [ "${SATURATED_STATE_FAIL:-0}" = 1 ] && grep -q '^CircuitBuildAbandonedCount 1000$' "${UP_COUNT%/*}/data/tor/state" 2>/dev/null; then
+      echo "dependency failed to start: container tor is unhealthy" >&2
+      exit 1
+    fi
     [ "$n" -gt "${UP_FAILS:-0}" ] || { echo "dependency failed to start: container tor is unhealthy" >&2; exit 1; }
     ;;
+  "inspect --format {{.State.Health.Status}} tor") echo unhealthy ;;
   "inspect"*) echo "{\"Status\":\"unhealthy\",\"Log\":[{\"ExitCode\":1,\"Output\":\"control port refused after attempt $(cat "${UP_COUNT:?}")\"}]}" ;;
   "logs"*) echo "Bootstrapped 45%: Asking for relay descriptors at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion" ;;
 esac
@@ -84,6 +90,29 @@ assert_contains "failed backup restart retains Tor health" "$out" "unhealthy"
 assert_contains "failed backup restart retains Tor health-check output" "$out" "control port refused"
 assert_contains "failed backup restart retains Tor log" "$out" "Bootstrapped 45%"
 assert_not_contains "failed backup restart redacts onion in Tor log" "$out" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion"
+
+printf 'CircuitBuildAbandonedCount 1000\n' >"$FB/data/tor/state"
+printf 'onion-key\n' >"$FB/data/tor/hs_ed25519_secret_key"
+out="$(backup_case env SATURATED_STATE_FAIL=1 TAR_FAIL=0)"
+assert_rc "backup recovers a saturated Tor circuit history" "$?" 0
+assert_eq "saturated Tor state is discarded before retry" "$([ -e "$FB/data/tor/state" ] || echo absent)" absent
+assert_eq "Tor onion key survives recovery" "$(cat "$FB/data/tor/hs_ed25519_secret_key")" onion-key
+assert_eq "recovery retries startup after stopping Tor" "$(cat "$FB/up.count")" 2
+assert_contains "recovery explains the state reset" "$out" "Tor circuit history was saturated"
+
+printf 'CircuitBuildAbandonedCount 999\n' >"$FB/data/tor/state"
+out="$(backup_case env UP_FAILS=1 TAR_FAIL=0)"
+assert_rc "unrelated first startup failure still retries" "$?" 0
+assert_eq "unsaturated Tor state is preserved" "$(cat "$FB/data/tor/state")" 'CircuitBuildAbandonedCount 999'
+
+printf 'CircuitBuildAbandonedCount 1000\n' >"$FB/data/tor/state-target"
+rm -f "$FB/data/tor/state"
+ln -s state-target "$FB/data/tor/state"
+out="$(backup_case env SATURATED_STATE_FAIL=1 TAR_FAIL=0)"
+assert_rc "symlinked Tor state does not get discarded" "$?" 1
+assert_eq "symlink target survives failed recovery" "$(cat "$FB/data/tor/state-target")" 'CircuitBuildAbandonedCount 1000'
+assert_contains "failed recovery keeps original Compose error" "$out" "dependency failed to start: container tor is unhealthy"
+rm -f "$FB/data/tor/state" "$FB/data/tor/state-target" "$FB/data/tor/hs_ed25519_secret_key"
 
 out="$(backup_case env UP_FAILS=99 TAR_FAIL=0)"
 rc=$?

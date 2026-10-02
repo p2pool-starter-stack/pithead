@@ -15,13 +15,16 @@ source "$HERE/../lib/run-tari-wallet.sh"
 echo "== selftest: Tari payout-scan leg (#2731) =="
 # The payout row's gate: the Tari pair alone enables it, with a past birthday; one var does not.
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
+# shellcheck disable=SC2034  # consumed by resolve_overrides from lib.sh
 IT_MONERO_VIEW_KEY="deadbeef"
+# shellcheck disable=SC2034  # consumed by resolve_overrides from lib.sh
 IT_TARI_VIEW_KEY="tvk"
 resolve_overrides "payout_confirm=env"
 assert_rc "payout confirm still ok with the monero key and one tari var" "$?" "0"
 unset IT_MONERO_VIEW_KEY
 resolve_overrides "payout_confirm=env"
 assert_rc "one tari env var alone does not enable the row (#2731)" "$?" "1"
+# shellcheck disable=SC2034  # consumed by resolve_overrides from lib.sh
 IT_TARI_SPEND_PUBLIC_KEY="tspk"
 resolve_overrides "payout_confirm=env"
 assert_rc "the tari pair alone enables the row (#2731)" "$?" "0"
@@ -43,15 +46,21 @@ assert_eq "public_remotes_in_proc_tcp: all-local is empty" "$(public_remotes_in_
 # configured one, or an unreadable socket table fails; the local argv with payouts found passes.
 env_on_box() { case "$1" in TARI_GRPC_ADDRESS) echo 172.28.0.27:18142 ;; *) echo true ;; esac }
 wait_for() { return 0; }
-STUB_ARGV="" STUB_TCP_RC=0
+STUB_ARGV="" STUB_TCP_RC=0 STUB_HEALTH_RC=0 STUB_MARKER_RC=0 STUB_CMDS="$(mktemp)"
+STUB_STATE='{"earnings":{"tari_confirmed":{"enabled":true,"count":39,"reachable":true,"address_match":true},"confirmed":{"reachable":true,"address_match":true}}}'
 rx() {
     case "$1" in
-    *cmdline*) printf '%s ' "$STUB_ARGV" | tr ' ' '\0' ;;
+    *cmdline*)
+        printf '%s\n' "$1" >>"$STUB_CMDS"
+        printf '%s ' "$STUB_ARGV" | tr ' ' '\0'
+        ;;
     *net/tcp*)
         [ "$STUB_TCP_RC" -eq 0 ] || return "$STUB_TCP_RC"
         printf '%s\n' "$PT" | head -3
         ;;
-    *api/state*) echo '{"earnings":{"tari_confirmed":{"enabled":true,"count":39}}}' ;;
+    *PAYOUT_SCAN_GRACE_SEC=0*) return "$STUB_HEALTH_RC" ;;
+    *'.payout-scanning'*) return "$STUB_MARKER_RC" ;;
+    *api/state*) echo "$STUB_STATE" ;;
     esac
 }
 CFG='{"tari":{"view_key":"k","payout_scan_birthday":"1425"}}'
@@ -68,6 +77,45 @@ run_leg() { # <argv> -> "<pass> <fail>" added by one leg run
 }
 got="$(run_leg "$LOCAL_ARGV")"
 assert_eq "local argv, payouts found: every row passes" "${got#* }" "0"
+assert_rc "real-wallet status predicate accepts reachable matching Tari" "$(
+    _pred_payout_wallet_ready tari_confirmed
+    echo $?
+)" "0"
+assert_rc "real-wallet status predicate accepts reachable matching Monero" "$(
+    _pred_payout_wallet_ready confirmed
+    echo $?
+)" "0"
+STUB_MARKER_RC=0
+assert_rc "a Monero wallet with no scan marker counts as caught up" "$(
+    _pred_monero_wallet_caught_up
+    echo $?
+)" "0"
+STUB_MARKER_RC=1
+assert_rc "a Monero wallet still holding its scan marker is not caught up" "$(
+    _pred_monero_wallet_caught_up
+    echo $?
+)" "1"
+STUB_MARKER_RC=0
+STUB_STATE='{"earnings":{"tari_confirmed":{"enabled":true,"count":39,"reachable":false,"address_match":true}}}'
+got="$(run_leg "$LOCAL_ARGV")"
+assert_ne "unreachable Tari wallet fails the payout leg" "${got#* }" "0"
+STUB_STATE='{"earnings":{"tari_confirmed":{"enabled":true,"count":39,"reachable":true,"address_match":false}}}'
+got="$(run_leg "$LOCAL_ARGV")"
+assert_ne "Tari address mismatch fails the payout leg" "${got#* }" "0"
+STUB_STATE='{"earnings":{"tari_confirmed":{"enabled":true,"count":39}}}'
+got="$(run_leg "$LOCAL_ARGV")"
+assert_ne "missing real-wallet verdict fails the payout leg" "${got#* }" "0"
+STUB_STATE='{"earnings":{"tari_confirmed":{"enabled":true,"count":39,"reachable":true,"address_match":true},"confirmed":{"reachable":true,"address_match":true}}}'
+STUB_HEALTH_RC=1
+got="$(run_leg "$LOCAL_ARGV")"
+assert_ne "failed real-image gRPC probe fails the payout leg" "${got#* }" "0"
+STUB_HEALTH_RC=0 STUB_MARKER_RC=1
+got="$(run_leg "$LOCAL_ARGV")"
+assert_ne "first-scan marker left behind fails the payout leg" "${got#* }" "0"
+STUB_MARKER_RC=0
+# Under the init (#2657) the wallet is not PID 1: the leg reads every process's argv, never /proc/1 alone.
+assert_num_ge "the argv read covers every process (#2657)" "$(grep -c '/proc/\[0-9\]\*/cmdline' "$STUB_CMDS")" 1
+assert_eq "the argv read never uses only PID 1 (#2657)" "$(grep -c '/proc/1/' "$STUB_CMDS")" "0"
 got="$(run_leg "${LOCAL_ARGV%%-p *}-p wallet.fallback_http_server_url=https://rpc.tari.com")"
 assert_ne "public fallback fails the leg" "${got#* }" "0"
 got="$(run_leg "${LOCAL_ARGV/1425/20000}")"

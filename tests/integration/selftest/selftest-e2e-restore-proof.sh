@@ -65,8 +65,18 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         parent_lock_checkpoint() { :; }
         parent_lock_miner_restore() { :; }
         control_units_verdict() { echo on-target; }
-        wait_bench_healthy() { return 0; }
-        verify_restore_proof() { return 0; }
+        wait_synced() {
+            echo "sync:$1:$2" >>"${ALL_LOG:-/dev/null}"
+            return "${SYNC_RESULT:-0}"
+        }
+        wait_bench_healthy() {
+            echo health >>"${ALL_LOG:-/dev/null}"
+            return 0
+        }
+        verify_restore_proof() {
+            echo proof >>"${ALL_LOG:-/dev/null}"
+            return 0
+        }
         chain_restore_prepare() { echo chain_restore_prepare >>"${ALL_LOG:-/dev/null}"; }
         on_bench() {
             echo "$1" >>"${ALL_LOG:-/dev/null}"
@@ -84,6 +94,7 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         eval "$RESTORE_SRC"
         restore_all
     ) >/dev/null 2>&1
+    echo "restore_rc:$?" >>"${ALL_LOG:-/dev/null}"
     cat "$cf"
     rm -f "$cf"
 }
@@ -134,6 +145,19 @@ assert_eq "a failed cd fails the restore and executes nothing" "$(grouping_probe
 
 assert_contains "restore calls recreation after upgrade" "$RESTORE_SRC" "recreate_test_checkout_containers"
 
+# Job 1677: upgrade starts p2pool, then the dashboard's sync gate stops it while the
+# restored nodes show loading/loading. The proof must run only after the gate releases.
+ALL_LOG="$(mktemp)"
+ALL_LOG="$ALL_LOG" drive_restore yes >/dev/null
+assert_eq "restore waits for chain sync before service health and identity proof" \
+    "$(grep -E '^(sync:|health|proof)' "$ALL_LOG")" $'sync:1500:restore\nhealth\nproof'
+rm -f "$ALL_LOG"
+ALL_LOG="$(mktemp)"
+ALL_LOG="$ALL_LOG" SYNC_RESULT=1 drive_restore yes >/dev/null
+assert_eq "a sync timeout cannot be mistaken for a completed restore" \
+    "$(grep -E '^(sync:|health|proof|restore_rc:)' "$ALL_LOG")" $'sync:1500:restore\nproof\nrestore_rc:1'
+rm -f "$ALL_LOG"
+
 echo "== a post-census branch recreation must not pass restoration =="
 DECLARED="$BASE"
 LIVE='dashboard=sha256:aaa|/baseline|running
@@ -177,8 +201,11 @@ proof_probe() { # <baseline-census> <live-census> [fail-census] -> verify_restor
         env_bake_verdict() { echo match; }
         control_units_verdict() { echo on-target; }
         chain_restore_proof() { return 0; }
+        verify_chain_sync_proof() { [ "${PROBE_SYNC_FAIL:-}" != yes ]; }
         restore_egress_boot_unit() { return 0; }
         restore_egress_check_units() { return 0; }
+        restore_lan_check_units() { return 0; }
+        restore_lan_unit() { return 0; }
         ok() { :; }
         warn() { :; }
         on_bench() {
@@ -187,11 +214,12 @@ proof_probe() { # <baseline-census> <live-census> [fail-census] -> verify_restor
             *"is-enabled pithead-control.path"*) return 0 ;;
             esac
         }
-        PROBE_LIVE="$2" PROBE_FAIL="${3:-}"
+        PROBE_LIVE="$2" PROBE_FAIL="${3:-}" PROBE_SYNC_FAIL="${4:-}"
         verify_restore_proof >/dev/null 2>&1
         printf '%s' "$?"
     )
 }
+assert_eq "failed independent daemon sync fails the full restoration proof" "$(proof_probe "$BASE" "$LIVE" no yes)" "1"
 assert_eq "the full proof accepts baseline images and owners" "$(proof_probe "$BASE" "$LIVE")" "0"
 assert_eq "the full proof rejects a missing preflight image census" "$(proof_probe '' "$LIVE")" "1"
 assert_eq "the full proof rejects a late test-checkout owner" "$(proof_probe "$BASE" "$LATE_OWNER")" "1"
@@ -321,6 +349,9 @@ assert_eq "an unrecorded baseline fails closed and removes nothing" "$(egress_re
 assert_contains "verify_restore_proof runs the egress unit restore" "$(declare -f verify_restore_proof)" "restore_egress_boot_unit"
 assert_contains "e2e.sh records the unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"'
 
+# shellcheck source=tests/integration/tools/restore-lan-unit-proof-cases.sh
+source "$HERE/../tools/restore-lan-unit-proof-cases.sh"
+
 # --- #2599: the egress check pair goes back the same way ------------------------------------------
 check_restore() { # <before> <units now> [sticky] -> "<rc> <units after> <removal commands sent>"
     (
@@ -346,6 +377,10 @@ assert_eq "a check pair that survives the removal fails the restore proof" "$(ch
 assert_eq "an unrecorded baseline fails closed and removes nothing" "$(check_restore "" present)" "1 present 0"
 assert_contains "verify_restore_proof runs the check pair restore" "$(declare -f verify_restore_proof)" "restore_egress_check_units"
 assert_contains "e2e.sh records the timer before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"'
+assert_contains "e2e.sh records the LAN timer before deploy_branch installs it" "$(cat "$E2E_SRC")" 'LAN_CHECK_BEFORE="$(egress_boot_unit_state pithead-lan.timer)"'
+assert_contains "restore proof removes a LAN timer added by the run" "$(declare -f verify_restore_proof)" "restore_lan_check_units"
+# shellcheck source=tests/integration/tools/restore-lan-check-proof-cases.sh
+source "$HERE/../tools/restore-lan-check-proof-cases.sh"
 
 echo ""
 printf 'restore-proof self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"

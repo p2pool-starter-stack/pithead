@@ -9,32 +9,12 @@
 # R13 brings the rest here, order preserved exactly: what ran BEFORE the old source stanza sits
 # above the add-only battery, what ran AFTER it sits below, run.sh sources it from that position.
 #
-# SELF-ARMING, AND WHY THAT IS SAFE IN POSITION. This file builds its own control sandbox and
-# derives its own spool paths, so it is sourceable standalone: of the names it reads but never
-# assigns, $ROOT and $VALID_TARI are top-level lib.sh constants, and $C, $CTRL_LOG and $WALLET are
-# assigned inside build_control_sandbox(), which this file now calls itself. In position the arm
-# changes nothing — $C is the fixed path "$SANDBOX/control", the builder's mkdir -p only creates,
-# its copies are static repo inputs no earlier section rewrites, and seed_control_env/control_config
-# are DEFINED inside it and never called, so it writes no config.json and touches nothing under
-# data/control/; the spool paths below re-derive to the values test-control-core.sh already set, and
-# the baseline this domain depends on is seeded by its own first block from the host CLI. It
-# therefore does not borrow another section's ambient fixtures. An earlier header here claimed it
-# shared them "exactly like test-control-deploy.sh shares its own section's"; that precedent was
-# false — that file's own header states its sections are fully self-contained (#1462).
-#
-# WHAT OUTLIVES THE SOURCE. gate_try() and $UUID5 are defined here and not unset at the end, so they
-# outlive the source as they outlived the old in-run.sh position: the editable-allowlist domain file
-# run.sh sources next reads both, as test-spool-audit.sh reuses $UUID5. Hence the stanza stays put.
-#
-# MUTATION PROOF: dropping the adopt's typed APPLY, prefix match or duplicate-name check turns its rows
-# red; weakening _control_host_is_internal lets a confirmed unsafe append apply.
-# Round 5's resolve-and-check battery (below) names its own mutation kills.
+# Initializes the shared fixture without replacing an existing config or spool. Each fragment
+# can start in a fresh process with lib.sh; the ordered blocks keep their accumulated state.
+# Mutation proof: dropping the adopt's typed APPLY, prefix match or duplicate-name check turns
+# its rows red; weakening _control_host_is_internal lets a confirmed unsafe append apply.
 
-build_control_sandbox
-REQS="$C/data/control/requests"
-RESULTS="$C/data/control/results"
-STAGED="$C/data/control/staged"
-AUDIT="$C/data/control/audit/control.log"
+ensure_control_fixture
 
 echo "== black-box: sensitive changes require confirmation; physical paths still refuse (#1959) =="
 # describe_change flags only the ENABLE/CHANGE direction of security controls as DEST — disabling
@@ -50,18 +30,6 @@ jq -n --arg w "$WALLET" \
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},
                control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview then commit via the spool
-    # Second arg: a typed "APPLY", so a PERIMETER case can prove refusal EVEN WITH a valid token.
-    # Third: the approval ENVELOPE (2026-09-13 perimeter audit). Without one, every case here proved only that a
-    # TOKEN-LESS commit is refused — and a self-written envelope walked past four (the container
-    # writes the spool: its own actor, APPLY and suffix). test-control-perimeter-tier3.sh sends them.
-    jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$1" >"$REQS/$UUID5.json"
-    run_pending >/dev/null
-    jq -n --arg id "$UUID5" --arg c "${2:-}" --argjson a "${3:-null}" \
-        '{id:$id,action:"commit",actor:"admin"} + (if $c == "" then {} else {confirm:$c} end)
-         + (if $a == null then {} else {approval:$a} end)' >"$REQS/$UUID5.json"
-    run_pending >/dev/null
-}
 
 . "$ROOT/tests/stack/control/control-sensitive-preview.sh"
 assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
