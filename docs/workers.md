@@ -349,8 +349,8 @@ watchdog temperatures. Point that rig's descriptor `port` at it to pick the bloc
 ```
 
 Nothing else changes — the enriched feed is a superset, so uptime and per-miner hashrate come from
-the same response. The dashboard then shows a RigForge version badge and health/power/tune/watchdog
-chips for that rig (see [Dashboard › Workers Alive](dashboard.md#workers-alive)). A plain-xmrig rig
+the same response. The dashboard then shows attention and live chips (alarm states, power, temperature) in the
+list and the full health/power/tune/watchdog detail in Worker Inspect for that rig (see [Dashboard › Workers Alive](dashboard.md#workers-alive)). A plain-xmrig rig
 on `8080` sends no `rigforge` block and reads exactly as before — no chips, no error. The feed is
 open when the rig has no `ACCESS_TOKEN`. For an adopted token-protected rig, RigForge 1.17.2 or
 newer accepts the read-only bearer Pithead derives; an older release needs a RigForge upgrade before

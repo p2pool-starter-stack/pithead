@@ -124,7 +124,7 @@ test('WorkersTable surfaces the per-rig api-unreadable and reject badges, and th
     assert.match(html, /badge-bad">Unknown/);
 });
 
-test('WorkersTable renders the RigForge version badge + chips when present, nothing when absent (#235)', () => {
+test('WorkersTable renders the RigForge chips (no version badge) when present, nothing when absent (#235)', () => {
     // A plain-xmrig worker has no `rigforge` (the server sends null) -> no chips, no error.
     const plain = clone();
     plain.workers.forEach((w) => (w.rigforge = null));
@@ -145,7 +145,7 @@ test('WorkersTable renders the RigForge version badge + chips when present, noth
     };
     rf.workers[1].rigforge = null; // the other rig is plain xmrig
     const html = renderApp({ state: rf });
-    assert.match(html, /rf 1\.7\.0/); // version badge
+    assert.doesNotMatch(html, /rf 1\.7\.0/); // version is Worker Inspect's InfoCard, not the row (#3031)
     assert.match(html, /badge-bad" title="hot">throttling/); // a bad chip
     assert.match(html, /gov: performance/);
     assert.match(html, /142 W · 86.9 H\/s·W/);
