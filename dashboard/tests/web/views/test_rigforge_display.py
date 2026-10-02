@@ -12,8 +12,8 @@ def _fresh(report):
 class TestRigForgeDisplay:
     """The RigForge enriched-feed builder (#235). Parsed block in → {version, chips, stats} out;
     each metric emitted only when its data is present, so nothing renders for a plain-xmrig worker.
-    ``chips`` feeds the compact badge row; ``stats`` is the same metrics split into label/value for
-    the Worker Inspect detail table (#507). Both come from one pass, so they stay row-for-row."""
+    ``stats`` carries every metric as label/value for the Worker Inspect detail table (#507);
+    ``chips`` is the subset the worker list shows (#3031): alarms plus live power and temperature."""
 
     def _chip_texts(self, disp):
         return [c["text"] for c in disp["chips"]]
@@ -210,5 +210,12 @@ class TestRigForgeDisplay:
         assert "thermal hold" in texts
         assert not any("°C" in t for t in texts)  # the hold chip replaces the temp chip
 
-
-# --- Tari -----------------------------------------------------------------------------
+    def test_list_chip_for_efficiency_only_and_temp_without_ceiling(self):
+        disp = self._display(
+            {
+                "power": {"watts": None, "hs_per_watt": 86.9},
+                "watchdog": {"enabled": True, "temp_c": 62},
+            }
+        )
+        assert self._chip_texts(disp) == ["86.9 H/s·W", "62°C"]
+        assert self._stats(disp)["Temp / max"]["value"] == "62°C"

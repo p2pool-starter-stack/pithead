@@ -357,6 +357,9 @@ class TestRejectFlag:
         assert _reject_flag(0, 3) is not None
 
 
+# --- Tari -----------------------------------------------------------------------------
+
+
 class TestTari:
     def test_active(self):
         t = build_tari(
