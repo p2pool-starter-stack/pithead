@@ -80,6 +80,16 @@ assertions; `tests/stack/run.sh` itself is the tier-1 shell **suite** — it sou
 file rather than holding assertions of its own (see the test-inventory note under
 [Production-readiness posture](#production-readiness-posture) for how that sourcing is checked).
 
+`run.sh` cuts its source order into four contiguous blocks, and the Shell workflow runs each block
+as its own job (#2631). `bash tests/stack/run.sh 2` runs block 2 alone. With no argument it runs
+all four in turn, each in a fresh process, and prints the summed count. A block starts with nothing
+but `lib.sh`. Shared control and backup builders initialize the nine #2048 prerequisite fragments
+without sourcing predecessors; a separate Shell matrix runs each with only `lib.sh` in a fresh
+process. Both matrices must pass for the required Shell status to pass. Before any block runs,
+`run.sh` checks that every suite file sits in exactly one block, that sourced fragments have domain
+accounting, and that the workflow matrix lists every block. Audit parser failures stop execution;
+tally producer failures and counts that are not nonnegative integers stop the full-run verdict.
+
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the
 55 — a domain reporting success having executed nothing, and building its fixtures in the caller's
@@ -136,6 +146,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Tari down (required or not) → **never rejects**; p2pool keeps mining Monero (#897) | `tari_down` | 1 ✅ · 3 ▶ |
 | Recovery hysteresis — readmit only after monerod stable `NODE_RECOVERY_AFTER_SEC` | reachable again | 1 ✅ |
 | Transient blip / never-reachable → **no** false reject | debounce / `ever_up` | 1 ✅ |
+| Monero node **isolated or not advancing** — the "at tip, with peers" contract for monerod (#2499): the real peer counts (the published RPC is restricted and answers 0, so an in-container helper reads the loopback-only admin RPC, #2921), `MoneroChainHealth` (0 outgoing peers `NODE_STALE_AFTER_SEC`, no new height 30 min), the card's Node Health / Peers / Height Moved, `node_down`-toggle alerts for each condition, `build/monero/healthcheck.sh` failing past `MONERO_HEALTH_PEERLESS_SEC`, doctor peers/tip age + FAIL, a `monero chain` status line, and the tier-4 strand leg (`run.sh --monero-stranded`) | red on both conditions with the numbers; remote node: no verdict | 1 ✅ (`test_monero_health.py`, `test_alert_service_monero_health.py`, `test_monero_client.py`, `monero-health-card.test.mjs`; healthcheck/doctor/status: `tests/stack/test-monero-chain.sh` covers restricted vs real zero vs no reading in the healthcheck, helper and doctor; `standalone/test_tor_recovery_info.sh` in tor-recover; `test_containers.py` the fresh/stale/malformed observation; `selftest-monero-peer-wait.sh` the peer predicates, the peer-wait capture and the RPC-boundary rows; `selftest-monero-p2p.sh` the bounded P2P advertisement decoder and non-secret failure diagnostics) · 4 ▶ (`run.sh --monero-stranded`, which checks the actual P2P advertisement, RPC boundary, current-run observation after deployment and restart, and the live tor-recover peer provider; bench-ci phase `monero-stranded`, about an hour, opt-in; KVM `provision` also runs the native Quadlet cold-start/restart RPC fixture) |
 | Monero node reachable but **out of sync** — the post-tor-restart 0-peer strand (#972): raw `synchronized` passthrough, debounced stale flag, alert via the `node_down` toggle, monerod restarted alongside an actual tor container restart (compose `depends_on: restart` + the final #424 auto-heal step), `restart monerod` leg, doctor WARN | `synchronized: false` ≥ `NODE_STALE_AFTER_SEC` after being in sync once | 1 ✅ (client/data_service/alert/tor_heal pytest, `tests/stack` doctor + restart + compose invariants) · 2 ✅ (flag over the wire) · 4 (real strand + re-peer needs the bench) |
 | Double outage; readmit follows monerod alone — Tari's state doesn't gate it either way | both down → monerod up | 1 ✅ (added) · 3 ▶ |
 | #35 latch × #31 failover coexist after release | down post-release | 1 ✅ (added) · 3 ▶ |
@@ -759,7 +770,7 @@ Keep each situation at the lowest honest tier; don't re-prove logic with a heavi
 
 ## Framework choice: hand-rolled, not bats/ShellSpec (#1338)
 
-`tests/stack/run.sh` line 3 says the suite is dependency-free — "no bats required". That traces to
+`tests/stack/run.sh`'s header says the suite is dependency-free — "no bats required". That traces to
 PR #37 and was never revisited until the question came up again, so it was measured instead of
 argued.
 

@@ -639,6 +639,12 @@ detail: **My P2Pool Node Stats**, **Global P2Pool Stats**, **XvB Donation Stats*
 **P2Pool Earnings (estimated)** calculator below. The
 expected-vs-actual table stays in both views. The choice is remembered across reloads.
 
+The **XMR Network** card's tick means monerod is at the tip with peers: **Node Health**, **Peers**
+(outgoing / incoming) and **Height Moved** (the age of the last height change) sit in its headline,
+and hovering them says what green means. It goes red with the numbers after 10 minutes with no
+outgoing peers or 30 minutes with no new height. A remote node's peers are not visible, so the card
+says so instead of guessing.
+
 **XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
 sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
 remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or

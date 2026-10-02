@@ -266,3 +266,31 @@ class _FakeFile:
 
     async def read(self):
         return self._content
+
+
+class TestLocalMoneroPeers:
+    """#2921: the restricted RPC cannot give peer counts; they come from the healthcheck."""
+
+    async def test_peer_counts_come_from_the_observation_not_the_rpc(self):
+        rpc_status = {"is_syncing": False, "db_size": 1, "synchronized": True, "height": 5}
+        with (
+            patch.object(logs._monero_client, "get_sync_status", return_value=rpc_status),
+            patch.object(
+                logs, "get_monero_peers", AsyncMock(return_value={"peers_in": 1, "peers_out": 9})
+            ),
+        ):
+            status = await logs._get_local_monero_sync_status()
+        assert (status["peers_out"], status["peers_in"]) == (9, 1)
+
+    async def test_an_unavailable_observation_stays_none(self):
+        rpc_status = {"is_syncing": False, "db_size": 1, "synchronized": True, "height": 5}
+        with (
+            patch.object(logs._monero_client, "get_sync_status", return_value=rpc_status),
+            patch.object(
+                logs,
+                "get_monero_peers",
+                AsyncMock(return_value={"peers_in": None, "peers_out": None}),
+            ),
+        ):
+            status = await logs._get_local_monero_sync_status()
+        assert status["peers_out"] is None and status["peers_in"] is None

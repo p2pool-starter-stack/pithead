@@ -104,12 +104,21 @@ class MoneroClient:
         target = int(info.get("target_height", 0) or 0)
         db_size = int(info.get("database_size", 0) or 0)
         synchronized = bool(info.get("synchronized", False))
+        # Peer counts are NOT read here (#2921): this endpoint is restricted, and a restricted
+        # get_info answers 0 for them. They come from the healthcheck's observation
+        # (collector.containers.get_monero_peers), attached by the caller.
+        health = {"height": height}
 
         # `synchronized` is monerod's authoritative "caught up" flag; once synced it also
         # reports target_height: 0. Trust it over the height comparison (mirrors how the
         # Tari client trusts initial_sync_achieved).
         if synchronized or target == 0 or height >= target:
-            return {"is_syncing": False, "db_size": db_size, "synchronized": synchronized}
+            return {
+                "is_syncing": False,
+                "db_size": db_size,
+                "synchronized": synchronized,
+                **health,
+            }
 
         percent = int((height / target) * 100)
         return {
@@ -119,4 +128,5 @@ class MoneroClient:
             "percent": percent,
             "db_size": db_size,
             "synchronized": synchronized,
+            **health,
         }

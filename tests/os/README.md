@@ -3,8 +3,27 @@
 Tier-4 tests for the `pithead-os` appliance image (#77 phase 2): the properties only real
 firmware and a real A/B updater can prove. The compose/CLI stack is covered by the other
 tiers ([`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md)); this harness
-covers what the flashed image adds — EFI boot, the first-boot wizard window, install-to-disk,
-the rig role, and the update → commit → rollback cycle that is the phase-2 exit criterion.
+also runs a native Quadlet Monero RPC fixture during `provision`. The rendered unit uses the
+guest’s current Monero image, with separate data, a separate container name and loopback host
+ports on a private IPv4-only managed bridge without a default route or external DNS.
+Routing and disabled IPv6 are verified before the daemon starts. Outgoing peers are disabled,
+and the fixture advertises no existing onion identity; its real zero exercises cold-start
+visibility, not synchronization. It checks authenticated local admin access, the restricted
+network listener, restricted public-RPC selection, P2P advertisement, fresh and expired health
+observations, and a fresh run after restart. A failed P2P probe reports a bounded stage and
+error code, with numeric header metadata; it prints no address, credential or raw response.
+An unavailable or malformed probe remains failed proof.
+The bounded P2P decoder validates up to four txpool notifications that Monero can send
+before the handshake response; none can substitute for that response. Required node identity
+and core sync fields must decode before an omitted or zero RPC port can mean suppression.
+The Compose leg accepts that suppression only with an active P2P proxy and separately proves
+restricted public-RPC selection; this unproxied native fixture requires port 18081.
+Cleanup removes only the fixture unit, container, its client container, private network and
+scratch files. The healthy-baseline
+fault and recovery proof remains the Compose
+`monero-stranded` job. The appliance harness covers EFI boot, the first-boot wizard window,
+install-to-disk, the rig role, and the update → commit → rollback cycle that is the phase-2
+exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
 
@@ -150,6 +169,17 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   runner's per-boot guest journals and control timeline before attributing a missing preview to
   the guest or the harness. Request bodies, free-text errors, preview values and credentials are
   excluded; diagnostic output never substitutes for the preview or typed approval assertions.
+  The day-two Tari-mode prerequisite records a read-only Caddy baseline snapshot, and another
+  if its existing config-read retries fail, before later reboots replace the evidence (#3001).
+  The snapshot includes container running/restarting/OOM/exit state, the last 40 daemon log
+  lines classified by allowlisted error phrases and Caddyfile line numbers, and the first 200
+  configuration lines represented only by directive names and token counts. Config reads stop
+  at 64 KiB, as does each Podman capture; truncation and unavailable probes are explicit. Both
+  Podman probes have a four-second
+  deadline inside the normal 20-second SSH probe deadline. Auth entries, config operands,
+  arbitrary error text and local topology are excluded. An unclassified log line retains only
+  its level and byte count; this snapshot does not establish an original cause or repair.
+  The unreadable-config verdict and switching assertions remain binding.
   Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
   no queued or claimed request and reds the row if it never drains, keeping the harness's phase
   boundary deterministic. Apply does not stop an in-flight runner (#2363). Then the
