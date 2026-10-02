@@ -757,7 +757,28 @@ any configuration write or control leg. It then enables `dashboard.control` and 
 `{"__secret__": true}` sentinel, [#440](https://github.com/p2pool-starter-stack/pithead/issues/440);
 the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still
 carrying that key is migrated to `workers.list[]` before the legs run). Missing inputs are recorded
-as `[missing]` rows, while permanent safety refusals are recorded as `[by-design]` rows:
+as `[missing]` rows, while permanent safety refusals are recorded as `[by-design]` rows. If the
+selected rig's enriched feed does not appear within the existing 120-second wait, the phase retains
+the final poll's selected-worker presence, status, API/adoption verdicts and report freshness in
+`rigforge-control.selected-rig.json` before restoration. It also retains fixed failure-class counts
+from the selected rig's dashboard probe warnings in `rigforge-control.probe-classes.json` (at most
+200 log lines, 64 KiB and a five-second read, covering the last ten minutes). These records omit
+worker names, addresses, credentials, raw response bodies and raw log text; an empty class list means
+no matching warning was observed, not that the probe succeeded. An HTTP 200 summary with a
+non-object body is classified as `invalid-body`, rather than a generic HTTP response. Selection
+matches the dashboard’s Python representation of the worker name, including apostrophes and
+escaped backslashes, without restricting accepted names. Ordinary warnings use the full name.
+The two credential warnings use the producer’s normalized name and resolved probe endpoint
+(normalized-name descriptor first, then connecting-address fallback). Credential counts require
+the actual selected worker to be present in the final poll and to be the unique match for its
+normalized identity and endpoint. An absent selection, ambiguous shared identities or unavailable
+state omit credential counts; ordinary full-name warnings still match. Identity correlation has
+a five-second bound; raw correlation state stays in memory
+and is never written to an artifact. Classification follows the producer’s failure or exception
+prefix. Worker identity, host, URL, embedded exception text and remedy hints
+(including periods) do not supply failure-class keywords.
+
+The control legs cover:
 
 - Read with a populated masked descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)):
   `api_ok` and the enriched feed still resolve — the guard for the v1.5.2 regression, where the
