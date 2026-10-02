@@ -144,7 +144,6 @@ for context in name host url hint; do
     RIG_NAME=rig1 LOG_HOST=private-host-marker LOG_URL=credential-marker LOG_HINT=credential-marker
     case "$context" in
     name) RIG_NAME=JSONDecodeError ;;
-    name-delimiter) RIG_NAME='JSONDecodeError — marker' ;;
     host) LOG_HOST=JSONDecodeError ;;
     url) LOG_URL='http://JSONDecodeError:8081/1/summary' ;;
     hint) LOG_HINT=JSONDecodeError ;;
