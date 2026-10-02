@@ -45,7 +45,7 @@ RECOVERY_CONFIRM_PROBES = 2  # ~10 min sustained egress before the budget resets
 TOR_STOP_GRACE_SEC = 15
 TOR_STOP_REQUEST_TIMEOUT_SEC = 120
 # An API stop is not undone by `restart: unless-stopped`, so the heal must end with Tor running:
-# an unconfirmed start is re-inspected and retried a bounded number of times.
+# an unconfirmed start is retried a bounded number of times (start is idempotent: 304 if running).
 TOR_START_ATTEMPTS = 3
 TOR_START_RETRY_DELAY_SEC = 5
 
@@ -172,15 +172,13 @@ class TorEgressHealer:
         """Start Tor after the stop, whatever the stop reported (#3032).
 
         A stop whose response is lost may still have stopped the container, and Docker leaves a
-        stopped container down. Start it, and when the start is unconfirmed, re-inspect: a
-        container that is running counts as started, otherwise try again, bounded.
+        stopped container down. Start it and retry an unconfirmed start, bounded. A "running"
+        inspect is not trusted: after a timed-out stop it may predate the in-flight stop.
         """
         for attempt in range(TOR_START_ATTEMPTS):
             if attempt:
                 await asyncio.sleep(TOR_START_RETRY_DELAY_SEC)
             if await self._docker.start(self.CONTAINER, request_timeout=60):
-                return True
-            if (await get_container_health()).get(self.CONTAINER, {}).get("running"):
                 return True
         return False
 

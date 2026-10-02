@@ -71,10 +71,12 @@ class TestTorRestartEndsRunning:
         assert [c for c in docker.calls if c[0] == "start"] == [("start", "tor")] * 3
         assert h._recovery_step == "Tor start (stop unconfirmed)"
 
-    async def test_unconfirmed_start_of_a_running_tor_is_not_repeated(self):
+    async def test_a_running_inspect_does_not_stand_in_for_a_confirmed_start(self):
+        # After a timed-out stop the container may still read "running" while the stop is in flight.
         docker = _FlakyDocker(fail_starts=5)
-        await _heal_to_restart(docker, AsyncMock(return_value={"tor": {"running": True}}))
-        assert [c for c in docker.calls if c[0] == "start"] == [("start", "tor")]
+        h = await _heal_to_restart(docker, AsyncMock(return_value={"tor": {"running": True}}))
+        assert len([c for c in docker.calls if c[0] == "start"]) == 3
+        assert h._recovery_step == "Tor restart unconfirmed"
 
     async def test_start_retries_are_bounded(self):
         docker = _FlakyDocker(fail_starts=99)
