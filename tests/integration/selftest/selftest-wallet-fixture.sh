@@ -37,6 +37,7 @@ wait_for() {
     "$@"
 }
 
+echo "== wallet fixture: capture, import and readiness gates before cleanup =="
 KEEP=1 wallet_fixture_capture >"$WORK/log"
 assert_eq "keep mode does not capture a fixture" "$(cat "$WORK/log")" ""
 wallet_fixture_capture >"$WORK/log"
@@ -49,6 +50,7 @@ assert_eq "successful capture/import/gates removes the private archives" "$(cat 
 assert_eq "the original catch-up and dashboard waits are reused" "$(cat "$WORK/waits")" $'1200/15\n420/10'
 assert_contains "proved restore emits the exact runner marker" "$(cat "$WORK/log")" " ✓ WALLET FIXTURE RESTORE VERIFIED"
 
+echo "== wallet fixture: a failed gate refuses the restore and keeps the snapshot =="
 for failure in scan address cleanup; do
     : >"$WORK/actions"
     FAIL_SCAN=0 FAIL_ADDRESS=0 FAIL_CLEANUP=0
@@ -63,6 +65,7 @@ for failure in scan address cleanup; do
     esac
 done
 
+echo "== wallet fixture: an uncertain import blocks baseline wallet startup =="
 # Exercise the shipped EXIT restore, not a duplicate ordering implementation.
 RESTORE_SRC="$(sed -n '/^restore_all() {$/,/^}$/p' "$HERE/e2e.sh")"
 (
