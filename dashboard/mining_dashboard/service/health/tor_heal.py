@@ -40,6 +40,14 @@ MAX_ATTEMPTS = 3  # two circuit refreshes, then one container restart
 # lucky 204 must NOT close the outage: under the issue's own scenario (overloaded Tor, egress
 # flapping) that would refill the budget and clear the cooldown every blip.
 RECOVERY_CONFIRM_PROBES = 2  # ~10 min sustained egress before the budget resets
+# Tor's stop: SIGTERM, `t` seconds of grace, then SIGKILL. Docker holds the request open until the
+# container is down, and a wedged Tor took over 60 s (#3032). The HTTP timeout outlasts grace + kill.
+TOR_STOP_GRACE_SEC = 15
+TOR_STOP_REQUEST_TIMEOUT_SEC = 120
+# An API stop is not undone by `restart: unless-stopped`, so the heal must end with Tor running:
+# an unconfirmed start is re-inspected and retried a bounded number of times.
+TOR_START_ATTEMPTS = 3
+TOR_START_RETRY_DELAY_SEC = 5
 
 
 class TorEgressHealer:
@@ -160,6 +168,22 @@ class TorEgressHealer:
         would publish its ports on 0.0.0.0 without it."""
         return bool((await get_container_health()).get(self.MONEROD, {}).get("running"))
 
+    async def _ensure_tor_running(self) -> bool:
+        """Start Tor after the stop, whatever the stop reported (#3032).
+
+        A stop whose response is lost may still have stopped the container, and Docker leaves a
+        stopped container down. Start it, and when the start is unconfirmed, re-inspect: a
+        container that is running counts as started, otherwise try again, bounded.
+        """
+        for attempt in range(TOR_START_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(TOR_START_RETRY_DELAY_SEC)
+            if await self._docker.start(self.CONTAINER, request_timeout=60):
+                return True
+            if (await get_container_health()).get(self.CONTAINER, {}).get("running"):
+                return True
+        return False
+
     async def check(self) -> None:
         """Probe (throttled) and act. Called every data-loop cycle; never raises."""
         if not self.enabled:
@@ -219,9 +243,11 @@ class TorEgressHealer:
                     evidence,
                 )
                 stopped = await self._docker.stop(
-                    self.CONTAINER, stop_timeout=15, request_timeout=60
+                    self.CONTAINER,
+                    stop_timeout=TOR_STOP_GRACE_SEC,
+                    request_timeout=TOR_STOP_REQUEST_TIMEOUT_SEC,
                 )
-                started = await self._docker.start(self.CONTAINER, request_timeout=60)
+                started = await self._ensure_tor_running()
                 # False means unconfirmed, not unissued: a timed-out POST may have mutated
                 # the daemon. Keep the attempt and cooldown even when both responses are lost.
                 self._recovery_step = (

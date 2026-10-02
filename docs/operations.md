@@ -842,7 +842,10 @@ outage window. The host control runner permits NEWNYM at most twice per 24 hours
 continued failure after accepted refreshes permits one Tor container restart, which also re-dials
 a running local Monero once Tor's start is confirmed. A failed or timed-out stop/start response
 is an uncertain mutation: the restart attempt and cooldown remain spent, including when both
-responses are unconfirmed. A confirmed start after an unconfirmed stop still re-dials a running
+responses are unconfirmed. The stop request waits up to two minutes (15 seconds of grace, then the
+kill), and the dashboard issues the start even when the stop times out, because an API stop is not
+undone by the restart policy; an unconfirmed start is re-inspected and retried up to three times,
+five seconds apart (#3032). A confirmed start after an unconfirmed stop still re-dials a running
 local Monero; a stopped or remote node stays untouched. Logs record each control result and
 retain the distinction between a confirmed restart, a confirmed start with an unconfirmed stop,
 and an unconfirmed restart in the recovery note. A rejected NEWNYM does not advance to that
