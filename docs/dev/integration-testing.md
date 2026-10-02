@@ -63,9 +63,13 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
 - No silent coverage drops. Any scenario whose prerequisite is missing (an alt data dir, a
   remote endpoint) is logged as `SKIPPED` with the reason. It never quietly disappears.
 - Secrets hygiene. Secret-preservation is checked by hashing on the box (`sha256sum`) and
-  comparing the hash, so the plaintext never crosses the wire, and every captured artifact passes
-  through a redactor. **What that redactor covers is narrower than "artifacts are redacted"
-  suggests**, and the gap is worth knowing before you trust a bundle. It reaches: a `KEY=value`
+  comparing the hash, so the plaintext never crosses the wire. Captured artifacts pass through
+  the shared redactor. Assertion failure details use its onion-shape rule and the harness-password
+  scrubber before they are written to the harness log. This covers both sides of a failed comparison
+  even after uninstall/setup removes or changes an identity, while preserving already-scrubbed
+  compound diagnostics. Comparisons, failure counts and assertion names remain unchanged.
+  **What the artifact redactor covers is narrower than "artifacts are redacted" suggests**, and the
+  gap is worth knowing before you trust a bundle. It reaches: a `KEY=value`
   line and a JSON `"key": "value"` whose key ends in one of a SINGLE shared list of secret words —
   `password`, `token`, `key`, `username`, `wallet`, `ping_url` and the rest — the JSON side matched
   without regard to case, so `apiKey` and `PASSWORD` are reached alongside `api_key`, the
@@ -242,7 +246,7 @@ Useful flags (full list in `run.sh --help`):
 | `--candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>` | Name the private candidate, detached signature, and its externally anchored bundle public key. All are absolute local paths; the signed archive's `PITHEAD_COMMIT` must equal `<new-sha>`. Before staging, the harness uses private snapshots to verify the bundle signature, requires every Compose image to be digest-pinned, and verifies the active service profile's Pithead-built image signatures and exact OCI revisions against `--candidate-image-key` when provided (otherwise the bundle key). The public key inside the candidate must match that external image trust root before the candidate CLI may use it. Registry trust follows `verify_release_images`: a `cosign.registry-ca.crt` inside the signed candidate is passed to cosign, otherwise a debug variant verifies from a non-ghcr registry over HTTP. A refusal names the trust sub-step it stopped at. |
 | `--candidate-image-key <trusted-cosign.pub>` | Name the separate externally anchored image-signing public key. This permits an ephemeral test key for the candidate bundle while retaining the project image trust root. |
 | `--xvb-routing-smoke` | From a known live `xvb.enabled=true`, `xvb.tor=true` baseline with hooked kernel DROP rules, prove the candidate wallet-bearing client in a temporary Tor-only Docker network, then use a strict apply that refuses to start containers unless those rules are installed. Observe the real proxy/dashboard move from P2Pool to XvB and naturally return, then restore exact enabled config, route, worker identities, hashes, and secrets. The isolated fetch proves the candidate client/network leg, not process attribution for the host-network dashboard. Requires `--safety-backup`; no recent PPLNS share is a failure. Every poll is bounded; worst case is about 45 minutes. |
-| `--auth-fail-closed` | Also empty `PROXY_AUTH_TOKEN` in `.env` and assert `pithead up` refuses to start (the live counterpart to the tier-1 compose-config check, [#153](https://github.com/p2pool-starter-stack/pithead/issues/153)/[#203](https://github.com/p2pool-starter-stack/pithead/issues/203)), then restore the exact token and recover. Destructive-then-restored; ssh or local mode. |
+| `--auth-fail-closed` | Also empty `PROXY_AUTH_TOKEN` in `.env` and assert `pithead up` refuses to start (the live counterpart to the tier-1 compose-config check, [#153](https://github.com/p2pool-starter-stack/pithead/issues/153)/[#203](https://github.com/p2pool-starter-stack/pithead/issues/203)), then restore the exact token and recover. Token edits keep the temporary and replacement `.env` owner-only (0600), preserve its owner and group, and remove the temporary file on failure. Restore mismatches report no token values. `selftest-auth-fail-closed.sh` covers permissions under a 022 umask and a failed-restore negative control without a live stack. Destructive-then-restored; ssh or local mode. |
 | `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`, and leaves the rig on it); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). A failed phase stops every later requested phase, and the summary lists each of them under "did NOT run". |
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
 | `--subnet` | Also bring the stack down then up on a non-default `network.subnet` (`10.84.0.0/24`) and assert the moved prefix reached `.env`, the docker bridge, Tor's render-at-start IP, monerod's proxy IP, the dashboard SSRF CIDR, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344) onion vhost, then run the standard battery ([#201](https://github.com/p2pool-starter-stack/pithead/issues/201)/[#180](https://github.com/p2pool-starter-stack/pithead/issues/180)). Destructive-then-restored; local mode only. |
@@ -447,7 +451,16 @@ via an `EXIT` trap):
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
    line — compared as verdict words, values never printed — and monerod must answer a host-side
-   `get_info` authed with the on-disk creds. An e2e run once left the containers on
+   `get_info` authed with the on-disk creds. A separate read-only daemon proof waits up to
+   600 seconds for Monero authenticated through a direct, bounded Digest exchange on the
+   same connection. An unauthenticated response, redirect or closed challenge connection refuses
+   proof; ambient proxies are ignored. It requires `status == OK` and `synchronized == true`, plus direct
+   Tari `GetTipInfo.initial_sync_achieved == true`. It records both predicates without endpoints
+   or credentials; unavailable RPC, missing credentials, missing fields and timeouts refuse
+   restoration proof. A timeout records only the fixed environment, Monero RPC, Monero sync,
+   Tari command or Tari sync stage; exception details and unexpected output are discarded.
+   The source-side probe is streamed to the restored install, so its older
+   CLI cannot omit the assertions. An e2e run once left the containers on
    harness-rendered creds while the on-disk `.env` kept the real ones: internally consistent, so
    the stack mined and looked healthy for a day while every host-side RPC probe 401ed. A failed
    proof exits non-zero and names the recovery (`docker compose up -d` from the install dir
@@ -747,7 +760,28 @@ any configuration write or control leg. It then enables `dashboard.control` and 
 `{"__secret__": true}` sentinel, [#440](https://github.com/p2pool-starter-stack/pithead/issues/440);
 the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still
 carrying that key is migrated to `workers.list[]` before the legs run). Missing inputs are recorded
-as `[missing]` rows, while permanent safety refusals are recorded as `[by-design]` rows:
+as `[missing]` rows, while permanent safety refusals are recorded as `[by-design]` rows. If the
+selected rig's enriched feed does not appear within the existing 120-second wait, the phase retains
+the final poll's selected-worker presence, status, API/adoption verdicts and report freshness in
+`rigforge-control.selected-rig.json` before restoration. It also retains fixed failure-class counts
+from the selected rig's dashboard probe warnings in `rigforge-control.probe-classes.json` (at most
+200 log lines, 64 KiB and a five-second read, covering the last ten minutes). These records omit
+worker names, addresses, credentials, raw response bodies and raw log text; an empty class list means
+no matching warning was observed, not that the probe succeeded. An HTTP 200 summary with a
+non-object body is classified as `invalid-body`, rather than a generic HTTP response. Selection
+matches the dashboard’s Python representation of the worker name, including apostrophes and
+escaped backslashes, without restricting accepted names. Ordinary warnings use the full name.
+The two credential warnings use the producer’s normalized name and resolved probe endpoint
+(normalized-name descriptor first, then connecting-address fallback). Credential counts require
+the actual selected worker to be present in the final poll and to be the unique match for its
+normalized identity and endpoint. An absent selection, ambiguous shared identities or unavailable
+state omit credential counts; ordinary full-name warnings still match. Identity correlation has
+a five-second bound; raw correlation state stays in memory
+and is never written to an artifact. Classification follows the producer’s failure or exception
+prefix. Worker identity, host, URL, embedded exception text and remedy hints
+(including periods) do not supply failure-class keywords.
+
+The control legs cover:
 
 - Read with a populated masked descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)):
   `api_ok` and the enriched feed still resolve — the guard for the v1.5.2 regression, where the

@@ -233,3 +233,87 @@ tari_chain_status_line() {
     esac
     return 0
 }
+
+# Monero chain verdict (#2499), the dashboard's peers-and-tip reading of monerod (0 outgoing peers
+# for 10 min, or no new height for 30) from /api/state .monero.health. Same shape as the Tari one:
+# "level<TAB>reasons — next: advice", nothing when there is no verdict (dashboard not answering, a
+# remote node whose peers are not visible, or the loop has not run yet).
+monero_chain_verdict() {
+    command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
+    curl -fsS --max-time 5 "http://127.0.0.1:8000/api/state" 2>/dev/null |
+        jq -r '.monero.health // empty | select(.level == "green" or .level == "red") | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null || true
+}
+
+# doctor: red FAILs (a sustained peerless or stalled monerod mines on a stale tip).
+check_monero_chain() {
+    local v level
+    v=$(monero_chain_verdict)
+    [ -n "$v" ] || return 0
+    level=${v%%$'\t'*}
+    case "$level" in
+    green) dr_ok "Monero node is at the tip with peers (dashboard verdict: outgoing peers within 10 min, height moved within 30)." ;;
+    *) dr_fail "Monero node is NOT following the chain; mining sits on a stale tip: ${v#*$'\t'}" ;;
+    esac
+    return 0
+}
+
+# `pithead status` prints the same verdict as one line; it never changes status's exit code.
+monero_chain_status_line() {
+    local v level
+    v=$(monero_chain_verdict)
+    [ -n "$v" ] || return 0
+    level=${v%%$'\t'*}
+    case "$level" in
+    green) printf '  %b✓%b %-13s at the tip, with peers\n' "$C_GREEN" "$C_RESET" "monero chain" ;;
+    *) printf '  %b✗%b %-13s NOT following the chain: %s\n' "$C_RED" "$C_RESET" "monero chain" "${v#*$'\t'}" ;;
+    esac
+    return 0
+}
+
+# doctor (#2499): the peers and the tip's age next to the sync flag. The published RPC is restricted and
+# answers 0 for the peer counts (#2921), so they come from the fixed helper inside the container, which
+# reads the admin listener on its loopback (`docker exec`; the helper takes its login from the container's
+# environment, so none is passed here). No reading (helper missing, listener down, restricted body) is
+# reported as such and never as zero peers. A point-in-time reading, so zero outgoing peers or a tip older
+# than 30 minutes is a WARN here; the dashboard's verdict (check_monero_chain) is the sustained one.
+monerod_peer_counts() { # print "<out> <in>", or nothing when there is no reading
+    local body out inn
+    body=$(docker exec monerod /usr/local/bin/monerod-peers.sh 2>/dev/null) || return 0
+    out=$(printf '%s' "$body" | jq -r 'if (.outgoing | type) == "number" and .outgoing >= 0 then .outgoing else empty end' 2>/dev/null)
+    inn=$(printf '%s' "$body" | jq -r 'if (.incoming | type) == "number" and .incoming >= 0 then .incoming else empty end' 2>/dev/null)
+    [ -n "$out" ] && [ -n "$inn" ] && printf '%s %s\n' "$out" "$inn"
+    return 0
+}
+monerod_peers_and_tip() { # <user> <pass> <url>
+    local counts out="" inn="" ts age note="" hdr
+    counts=$(monerod_peer_counts)
+    [ -z "$counts" ] || read -r out inn <<<"$counts"
+    if [ -n "$1" ]; then
+        hdr=$(curl -fsS --max-time 8 --digest -u "$1:$2" -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)
+    else
+        hdr=$(curl -fsS --max-time 8 -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)
+    fi
+    # RPC input must be a bounded integer, never an expression for Bash to evaluate.
+    ts=$(printf '%s' "$hdr" | jq -r '.result.block_header.timestamp |
+        select(type == "number" and . >= 0 and . <= 9999999999 and . == floor)' 2>/dev/null)
+    [[ "$ts" =~ ^[0-9]{1,10}$ ]] || ts=""
+    if [ -n "$ts" ]; then
+        age=$(($(date +%s) - 10#$ts))
+        note=", last block ${age}s ago"
+    fi
+    if [ -z "$out" ]; then
+        dr_info "monerod peers: no reading (the in-container helper gave none)${note}."
+        [ -z "$ts" ] || [ "$age" -le 1800 ] ||
+            dr_warn_surface "monerod's last block is ${age}s old — a stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
+                "monerod's last block is ${age}s old — the node may be stale; check its container logs in the dashboard."
+        return 0
+    fi
+    if [ "$out" -eq 0 ] || { [ -n "$ts" ] && [ "$age" -gt 1800 ]; }; then
+        dr_warn_surface "monerod peers: ${out} out / ${inn:-?} in${note} — an isolated or stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
+            "monerod peers: ${out} out / ${inn:-?} in${note} — the node may be isolated or stale; check its container logs in the dashboard."
+    else
+        dr_ok "monerod peers: ${out} out / ${inn:-?} in${note}."
+    fi
+}

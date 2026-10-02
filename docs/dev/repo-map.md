@@ -51,6 +51,7 @@ The LAN source rule and old-listener stop are in `02b-lan-guard.sh`; the staged 
 and scoped node restarts are in `02b1-lan-guard-compose.sh`. Transition prearm and the periodic
 live-rule check are in `02c-lan-guard-check.sh`.
 Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
+its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`.
 
 ## Dashboard feature folders
@@ -94,22 +95,29 @@ Keep local code out of `vendor/`.
 
 | Directory | How it runs |
 |---|---|
-| `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites. Missing or failed sources fail the run. |
-| `tests/stack/{appliance,control,dashboard,doctor,lifecycle,release,secrets}/` | Feature assertions loaded by the stack runner; retain shared setup and cleanup order. |
+| `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites, cut into four blocks that CI runs as parallel jobs. Missing or failed sources fail the run. |
+| `tests/stack/{appliance,control,dashboard,doctor,lifecycle,release,secrets}/` | Feature assertions loaded by the stack runner; retain shared setup and cleanup order. Dashboard database-copy checks live in `control/test-dashboard-carry.sh`; apply recovery stays in `control/test-control-deploy.sh`. |
+| `tests/stack/lib/` | Shared harness modules and sandbox builders used by feature fragments; `control-fixtures.sh` and `backup-fixtures.sh` initialize independent prerequisite runs. |
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
-| `tests/integration/lib/` | Sourced helpers and phase functions for `tests/integration/run.sh`. |
-| `tests/integration/selftest/` | Pure harness checks; `make test-integration-selftest` also checks appliance module loading. |
+| `tests/integration/lib/` | Sourced helpers and phase functions for the live harness. `restore-chain-sync.sh` streams the read-only `restore-chain-sync.py` daemon proof to the restored baseline. The restoration transport uses libcurl Digest; `tests/integration/selftest/selftest-restore-curl-connection.sh` exercises its challenged connection against a bounded synthetic server in CI. |
+| `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `make test-integration-selftest` also checks appliance module loading. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. |
-| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Each carries a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
+| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
 | `tests/runner/` | The pinned Linux image `make test-container` runs the other tiers inside, so a macOS or Windows host reaches CI's verdict. Built and CVE-scanned by `test-images.yml`; reaches no user. |
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
+The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
+transport metadata and failure snapshots; its selftest runs through
+`tests/os/provision-browser-submit.sh --self-test`.
+The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.py`
+through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
+`tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
 

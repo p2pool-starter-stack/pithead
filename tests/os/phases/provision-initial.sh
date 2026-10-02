@@ -12,6 +12,7 @@ _phase_provision_initial() {
     local rc=0
     _phase_provision_initial_body || rc=$?
     phase_provision_egress_backstop "$rc"
+    phase_provision_monero_rpc
     # Same placement and the same reason as the backstop above (#2059), learned the same way: this
     # leg first ran inside the body, downstream of the hostname and approval legs, and #2060's
     # known mDNS failures left the dashboard unreadable — so it reported its own precondition
