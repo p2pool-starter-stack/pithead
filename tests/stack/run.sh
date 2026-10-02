@@ -110,6 +110,8 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release.sh" && domain_ran test-release.sh "$_d0" "$?" || domain_ran test-release.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-publish.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-publish.sh" && domain_ran test-release-publish.sh "$_d0" "$?" || domain_ran test-release-publish.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/release/test-release-rootfs-publish.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-rootfs-publish.sh" && domain_ran test-release-rootfs-publish.sh "$_d0" "$?" || domain_ran test-release-rootfs-publish.sh "$_d0" "$?"
 
     # shellcheck source=tests/stack/test-unit-helpers.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-unit-helpers.sh" && domain_ran test-unit-helpers.sh "$_d0" "$?" || domain_ran test-unit-helpers.sh "$_d0" "$?"

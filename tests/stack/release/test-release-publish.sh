@@ -1,23 +1,14 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Release-PUBLISH domain (#1105 Phase 1): what a cut DOES against a registry — the GHCR
-# read-after-push retry, the release-toolchain preflight, release-smoke's upgraded-install
-# resolution, pull-vs-build mode detection, and the bundle's macOS-xattr hygiene guard. Split from
-# test-release.sh, which keeps the side-effect-free helpers. Sourced by tests/stack/run.sh after it.
-#
-# The four script paths are re-derived here rather than inherited from test-release.sh, the same
-# reason test-release-signing.sh re-derives its own: a fragment that depends on an earlier
-# fragment's variables breaks silently when the suite is reordered, and `source "$REL" 2>/dev/null`
-# hides exactly that failure as a pile of "command not found".
+# Release-publish tests: registry retries, toolchain preflight, release smoke and bundle hygiene.
+# Paths are re-derived so this fragment remains independent of suite order.
 REL="$ROOT/scripts/release/release.sh"
 REL_IMAGES="$ROOT/scripts/release/images.sh"
 REL_BUNDLE="$ROOT/scripts/release/bundle.sh"
 STACK_VERSION="v$(cat "$ROOT/VERSION")"
 echo "== unit: release.sh registry read retries GHCR read-after-push lag (#429) =="
-# manifest_digest reads a tag GHCR just accepted, which can 404 or serve a STALE digest for a few
-# seconds (read-after-push lag) — this killed stage-4 digest capture twice on the v1.3.1 cut. So the
-# retry is not only for empty reads: it loops until the EXPECTED digest appears, and the counter
-# proves it stayed bounded. Backoff is forced to 0 to keep the test instant.
+# GHCR can briefly 404 or serve a stale digest after push. Prove the retry reaches the expected
+# digest and stays bounded; zero backoff keeps the test instant.
 RETRY_CNT="$SANDBOX/inspect.count"
 # shellcheck disable=SC1090,SC2034  # dynamic source; REGISTRY_READ_* are read by the sourced retry helper
 retry_out="$(
@@ -60,7 +51,6 @@ assert_contains "exhausted retries -> empty digest (caller dies)" "$exhaust_out"
 # The smoke stage's raw manifest read has the same read-after-push exposure — wire it through the retry.
 assert_contains "smoke stage reads the captured digest via retry_registry_read (#429)" \
     "$(cat "$REL_IMAGES")" 'retry_registry_read buildx_inspect "$digest" --raw'
-
 # #557: the test above disables errexit (`set +eu`, right after sourcing) to observe the bare helper
 # in isolation, which happens to mask a real bug in stage_push itself: the bare
 # `digest="$(manifest_digest ...)"` assignment aborts under release.sh's own `set -euo pipefail`
@@ -75,6 +65,7 @@ stage_push_out="$(
         source "$REL" 2>/dev/null
         DRY_RUN=0
         IMAGES=(tor)
+        PUBLISHED_IMAGES=(tor)
         REGISTRY="ghcr.io/test"
         REGISTRY_READ_RETRIES=1
         REGISTRY_READ_BACKOFF=0
