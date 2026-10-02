@@ -37,6 +37,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         env_on_box() { :; }
         has_compose_profile() { return 1; }
         run_source_image_reconcile() { :; }
+        tor_recovery_healthy_probe() { :; }
         run_uninstall_round_trip() { :; }
         assert_scenario() { :; }
         restore_firewall_after_clearnet() { :; }
@@ -56,8 +57,8 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         wait_pool_ready() { printf 'ready:%s:%s\n' "$1" "$2" >>"$TRACE"; }
         assert_pool_switched() { printf 'switch:%s:%s\n' "$1" "$2" >>"$TRACE"; }
         case "$1" in
-        scenario) run_scenario sparse-pool "${3:-}" >/dev/null ;;
-        lifecycle) run_lifecycle >/dev/null ;;
+        scenario) run_scenario sparse-pool "${3:-}" >/dev/null 2>>"$TRACE" ;;
+        lifecycle) run_lifecycle >/dev/null 2>>"$TRACE" ;;
         *) exit 2 ;;
         esac
         cat "$TRACE"
