@@ -51,7 +51,9 @@ test-tools: ## Bounded-log sanitizer and CI workflow guards (no services or depe
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
-	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 30( |$$)'
+	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
+	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
+	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'
 	sed -n '/^  pull_request:$$/,/^permissions:$$/p' .github/workflows/integration-mini-stack.yml | grep -Fqx '      - "lib/pithead/**"'
 
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
