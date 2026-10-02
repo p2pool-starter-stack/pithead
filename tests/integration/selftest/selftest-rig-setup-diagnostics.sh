@@ -57,6 +57,7 @@ push_config() { return 0; }
 pithead() { return 0; }
 wait_status_ok() { return 0; }
 LOG_RC=0 LOG_PAD=0 LOG_PRODUCER=0
+LOG_DETAIL='HTTP 200 but body was list' LOG_HOST=private-host-marker LOG_URL=credential-marker LOG_HINT=credential-marker
 rx() {
     if [ "$1" = 'cat config.json' ]; then
         printf '%s' "$BASELINE_CONFIG"
@@ -64,7 +65,7 @@ rx() {
     fi
     printf '%s' "$1" >"$WORK/log-command"
     if [ "$LOG_PRODUCER" = 1 ]; then
-        python3 - "$HERE/../../../dashboard/mining_dashboard/client/xmrig_client.py" "$RIG_NAME" <<'PYTHON'
+        python3 - "$HERE/../../../dashboard/mining_dashboard/client/xmrig_client.py" "$RIG_NAME" "$LOG_DETAIL" "$LOG_HOST" "$LOG_URL" "$LOG_HINT" <<'PYTHON'
 import ast
 import pathlib
 import sys
@@ -74,24 +75,25 @@ formats = [node.value for node in ast.walk(source)
            if isinstance(node, ast.Constant) and isinstance(node.value, str)
            and node.value.startswith("Worker %r (")]
 assert len(formats) == 1
-for name, detail in [(sys.argv[2], "HTTP 200 but body was list"),
-                     (sys.argv[2] + "-other", "HTTP 403"), ("other", "TimeoutError")]:
-    print(formats[0] % (name, "private-host-marker", "credential-marker", detail, "credential-marker"))
+for name, detail in [(sys.argv[2], sys.argv[3]),
+                     (sys.argv[2] + "-other", "HTTP 403"), ("other", "TimeoutError"),
+                     (f"decoy Worker {sys.argv[2]!r} (suffix", "HTTP 403")]:
+    print(formats[0] % (name, sys.argv[4], sys.argv[5], detail, sys.argv[6]))
 PYTHON
         return "$LOG_RC"
     fi
     if [ "$LOG_PAD" = 1 ]; then printf '%65536s' ''; fi
     printf '%s\n' \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed — HTTP 401. credential-marker" \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed — TimeoutError: credential-marker" \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed — probe token missing. credential-marker" \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed — HTTP 500. credential-marker" \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed — ClientConnectorError: credential-marker" \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed — JSONDecodeError: credential-marker" \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed — HTTP 200 but body was list. credential-marker" \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed — body over 123 bytes. credential-marker" \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed — unknown failure credential-marker" \
-        "Worker 'other' (private-host-marker): xmrig API probe failed — HTTP 403. credential-marker" \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 401. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — TimeoutError: credential-marker. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — probe token missing. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 500. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — ClientConnectorError: credential-marker. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — JSONDecodeError: credential-marker. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 200 but body was list. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — body over 123 bytes. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — unknown failure credential-marker. credential-marker." \
+        "Worker 'other' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 403. credential-marker." \
         'unrelated log credential-marker'
     return "$LOG_RC"
 }
@@ -136,6 +138,24 @@ for RIG_NAME in "rig'1" 'rig\1'; do
         "$(jq -c '.classes' "$WORK/before-restore-classes.json")" '[{"classification":"invalid-body","count":1}]'
     assert_eq "quoted/escaped worker state is captured before restore" \
         "$(jq -r '.worker_found' "$WORK/before-restore.json")" true
+done
+LOG_DETAIL='HTTP 500'
+for context in name host url hint; do
+    RIG_NAME=rig1 LOG_HOST=private-host-marker LOG_URL=credential-marker LOG_HINT=credential-marker
+    case "$context" in
+    name) RIG_NAME=JSONDecodeError ;;
+    name-delimiter) RIG_NAME='JSONDecodeError — marker' ;;
+    host) LOG_HOST=JSONDecodeError ;;
+    url) LOG_URL='http://JSONDecodeError:8081/1/summary' ;;
+    hint) LOG_HINT=JSONDecodeError ;;
+    esac
+    BASELINE_CONFIG="$(jq -nc --arg n "$RIG_NAME" '{workers:{list:[{name:$n,host:"rig"}]}}')"
+    STATE="$(jq -nc --arg n "$RIG_NAME" '{workers:[{name:$n,rigforge:{version:null}}]}')"
+    prior_fail=$IT_FAIL
+    run_rigforge_control >"$WORK/run.log" 2>&1
+    IT_FAIL=$prior_fail
+    assert_eq "failure class comes from producer detail, independently of $context" \
+        "$(jq -c '.classes' "$WORK/before-restore-classes.json")" '[{"classification":"http-response","count":1}]'
 done
 LOG_PRODUCER=0 RIG_NAME=rig1
 BASELINE_CONFIG='{"workers":{"list":[{"name":"rig1","host":"rig"}]}}'

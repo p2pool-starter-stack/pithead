@@ -145,7 +145,9 @@ run_rigforge_control() {
         # Match the producer's %r formatting, including quotes and escaped backslashes.
         probe_name="$(python3 -c 'import sys; print(repr(sys.argv[1]))' "$rig" 2>/dev/null)" &&
             printf '%s' "$probe_logs" | jq -Rsc --arg n "$probe_name" --argjson rc "$probe_log_rc" '
-            split("\n") | map(select(contains("Worker " + $n + " (") and contains("xmrig API probe failed")) |
+            split("\n") | map(index("Worker ") as $start | select($start != null) |
+                .[$start + 7:] | select(startswith($n + " (")) | .[($n | length) + 2:] |
+                capture("^[^)]*\\): xmrig API probe failed at \\S+ — (?<detail>.*)\\. [^.]*\\.$").detail |
                 if contains("read credential unavailable") or contains("probe token missing") then "credential-unavailable"
                 elif contains("HTTP 401") or contains("HTTP 403") then "http-auth-refusal"
                 elif contains("JSONDecodeError") or contains("body was") then "invalid-body"
