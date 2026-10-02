@@ -57,7 +57,7 @@ push_config() { return 0; }
 pithead() { return 0; }
 wait_status_ok() { return 0; }
 LOG_RC=0 LOG_PAD=0 LOG_PRODUCER=0
-LOG_DETAIL='HTTP 200 but body was list' LOG_HOST=private-host-marker LOG_URL=credential-marker LOG_HINT=credential-marker
+LOG_DETAIL='HTTP 200 but body was list' LOG_HOST=private-host-marker LOG_URL=credential-marker LOG_HINT=credential-marker LOG_AUTH=''
 rx() {
     if [ "$1" = 'cat config.json' ]; then
         printf '%s' "$BASELINE_CONFIG"
@@ -65,7 +65,7 @@ rx() {
     fi
     printf '%s' "$1" >"$WORK/log-command"
     if [ "$LOG_PRODUCER" = 1 ]; then
-        python3 - "$HERE/../../../dashboard/mining_dashboard/client/xmrig_client.py" "$RIG_NAME" "$LOG_DETAIL" "$LOG_HOST" "$LOG_URL" "$LOG_HINT" <<'PYTHON'
+        python3 - "$HERE/../../../dashboard/mining_dashboard/client/xmrig_client.py" "$RIG_NAME" "$LOG_DETAIL" "$LOG_HOST" "$LOG_URL" "$LOG_HINT" "$LOG_AUTH" <<'PYTHON'
 import ast
 import pathlib
 import sys
@@ -75,10 +75,17 @@ formats = [node.value for node in ast.walk(source)
            if isinstance(node, ast.Constant) and isinstance(node.value, str)
            and node.value.startswith("Worker %r (")]
 assert len(formats) == 1
+hint = sys.argv[6]
+if sys.argv[7]:
+    fn = next(node for node in ast.walk(source)
+              if isinstance(node, ast.FunctionDef) and node.name == "_fix_hint")
+    namespace = {"XMRIG_API_AUTH": sys.argv[7], "XMRIG_API_PORT": 8081}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), "<production _fix_hint>", "exec"), namespace)
+    hint = namespace["_fix_hint"](None)
 for name, detail in [(sys.argv[2], sys.argv[3]),
                      (sys.argv[2] + "-other", "HTTP 403"), ("other", "TimeoutError"),
                      (f"decoy Worker {sys.argv[2]!r} (suffix", "HTTP 403")]:
-    print(formats[0] % (name, sys.argv[4], sys.argv[5], detail, sys.argv[6]))
+    print(formats[0] % (name, sys.argv[4], sys.argv[5], detail, hint))
 PYTHON
         return "$LOG_RC"
     fi
@@ -87,12 +94,13 @@ PYTHON
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 401. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — TimeoutError: credential-marker. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — probe token missing. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — adopted rig's read credential unavailable. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 500. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — ClientConnectorError: credential-marker. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — JSONDecodeError: credential-marker. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 200 but body was list. credential-marker." \
         "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — body over 123 bytes. credential-marker." \
-        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — unknown failure credential-marker. credential-marker." \
+        "Worker 'rig1' (private-host-marker): xmrig API probe failed at credential-marker — ValueError: read credential unavailable HTTP 401 JSONDecodeError TimeoutError ClientConnectorError body over 123 bytes. credential-marker." \
         "Worker 'other' (private-host-marker): xmrig API probe failed at credential-marker — HTTP 403. credential-marker." \
         'unrelated log credential-marker'
     return "$LOG_RC"
@@ -119,7 +127,7 @@ assert_eq "setup failure still counts one failed assertion" "$control_fail" 1
 assert_eq "timeout and cadence remain unchanged" "$(cat "$WORK/wait-bound")" '120|5'
 assert_eq "state record precedes restore" "$(jq -r '.worker_found' "$WORK/before-restore.json")" true
 assert_eq "only selected-rig fixed classes survive" "$(jq -c . "$WORK/before-restore-classes.json")" \
-    '{"log_read_exit":0,"classes":[{"classification":"connection","count":1},{"classification":"credential-unavailable","count":1},{"classification":"http-auth-refusal","count":1},{"classification":"http-response","count":1},{"classification":"invalid-body","count":2},{"classification":"other-probe-failure","count":1},{"classification":"oversized-body","count":1},{"classification":"timeout","count":1}]}'
+    '{"log_read_exit":0,"classes":[{"classification":"connection","count":1},{"classification":"credential-unavailable","count":2},{"classification":"http-auth-refusal","count":1},{"classification":"http-response","count":1},{"classification":"invalid-body","count":2},{"classification":"other-probe-failure","count":1},{"classification":"oversized-body","count":1},{"classification":"timeout","count":1}]}'
 assert_contains "dashboard log read has time and line bounds" "$(cat "$WORK/log-command")" 'timeout 5 docker logs --since 10m --tail=200 dashboard'
 assert_eq "neither artifact contains raw identity or credential text" \
     "$(cat "$WORK/rigforge-control."*.json | grep -Ec 'credential-marker|private-host-marker|rig1' || true)" "0"
@@ -156,6 +164,25 @@ for context in name host url hint; do
     assert_eq "failure class comes from producer detail, independently of $context" \
         "$(jq -c '.classes' "$WORK/before-restore-classes.json")" '[{"classification":"http-response","count":1}]'
 done
+echo "== source-derived remedies and connector errors retain their failure prefix =="
+for LOG_AUTH in none name; do
+    RIG_NAME=rig1 LOG_DETAIL='HTTP 500' LOG_HOST=private-host-marker LOG_URL=credential-marker
+    expected_class=http-response
+    if [ "$LOG_AUTH" = name ]; then
+        LOG_HOST=JSONDecodeError LOG_URL='http://JSONDecodeError:8081/1/summary'
+        LOG_DETAIL='ClientConnectorError: Cannot connect to host JSONDecodeError:8081 ssl:False [None]'
+        expected_class=connection
+    fi
+    BASELINE_CONFIG="$(jq -nc --arg h "$LOG_HOST" '{workers:{list:[{name:"rig1",host:$h}]}}')"
+    STATE='{"workers":[{"name":"rig1","rigforge":{"version":null}}]}'
+    prior_fail=$IT_FAIL
+    run_rigforge_control >"$WORK/run.log" 2>&1
+    IT_FAIL=$prior_fail
+    assert_eq "source-derived $LOG_AUTH warning preserves its failure prefix" \
+        "$(jq -c '.classes' "$WORK/before-restore-classes.json")" \
+        "$(jq -nc --arg c "$expected_class" '[{classification:$c,count:1}]')"
+done
+LOG_AUTH=''
 LOG_PRODUCER=0 RIG_NAME=rig1
 BASELINE_CONFIG='{"workers":{"list":[{"name":"rig1","host":"rig"}]}}'
 LOG_RC=7 STATE=''

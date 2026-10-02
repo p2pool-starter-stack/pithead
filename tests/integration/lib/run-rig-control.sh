@@ -147,14 +147,14 @@ run_rigforge_control() {
             printf '%s' "$probe_logs" | jq -Rsc --arg n "$probe_name" --argjson rc "$probe_log_rc" '
             split("\n") | map(index("Worker ") as $start | select($start != null) |
                 .[$start + 7:] | select(startswith($n + " (")) | .[($n | length) + 2:] |
-                capture("^[^)]*\\): xmrig API probe failed at \\S+ — (?<detail>.*)\\. [^.]*\\.$").detail |
-                if contains("read credential unavailable") or contains("probe token missing") then "credential-unavailable"
-                elif contains("HTTP 401") or contains("HTTP 403") then "http-auth-refusal"
-                elif contains("JSONDecodeError") or contains("body was") then "invalid-body"
-                elif test("HTTP [0-9]{3}") then "http-response"
-                elif contains("TimeoutError") then "timeout"
-                elif contains("ConnectorError") or contains("ConnectionError") then "connection"
-                elif contains("body over") then "oversized-body"
+                capture("^[^)]*\\): xmrig API probe failed at \\S+ — (?<failure>.*)").failure |
+                if startswith("adopted rig\u0027s read credential unavailable.") or startswith("probe token missing.") then "credential-unavailable"
+                elif test("^HTTP (401|403)(\\.|$)") then "http-auth-refusal"
+                elif startswith("JSONDecodeError:") or startswith("HTTP 200 but body was ") then "invalid-body"
+                elif test("^HTTP [0-9]{3}(\\.|$)") then "http-response"
+                elif test("^\\w*TimeoutError:") then "timeout"
+                elif test("^\\w*(ConnectorError|ConnectionError):") then "connection"
+                elif test("^body over [0-9]+ bytes(\\.|$)") then "oversized-body"
                 else "other-probe-failure" end) |
             group_by(.) | {log_read_exit:$rc, classes:map({classification:.[0], count:length})}' \
                 >"$OUT_DIR/rigforge-control.probe-classes.json" ||

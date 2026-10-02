@@ -767,8 +767,9 @@ worker names, addresses, credentials, raw response bodies and raw log text; an e
 no matching warning was observed, not that the probe succeeded. An HTTP 200 summary with a
 non-object body is classified as `invalid-body`, rather than a generic HTTP response. Selection
 matches the dashboard’s Python representation of the worker name, including apostrophes and
-escaped backslashes, without restricting accepted names. Classification examines only the producer’s
-failure detail; worker identity, host, URL and remedy hint do not supply failure-class keywords.
+escaped backslashes, without restricting accepted names. Classification follows the producer’s
+failure or exception prefix. Worker identity, host, URL, embedded exception text and remedy hints
+(including periods) do not supply failure-class keywords.
 
 The control legs cover:
 
