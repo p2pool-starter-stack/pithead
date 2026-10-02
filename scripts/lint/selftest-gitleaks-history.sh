@@ -83,9 +83,9 @@ for CONTROL in suffix value path; do
     CONTROL_FILE=$HASH_FILE
     CONTROL_LINE=$HASH_LINE
     case $CONTROL in
-        suffix) CONTROL_LINE+=" # changed fixture line" ;;
-        value) CONTROL_LINE="${HASH_LINE/c3RhbGUtZml4dHVyZQ==/YWx0ZXJlZC1maXh0dXJl}" ;;
-        path) CONTROL_FILE="$HASH_FILE.unreviewed" ;;
+    suffix) CONTROL_LINE+=" # changed fixture line" ;;
+    value) CONTROL_LINE="${HASH_LINE/c3RhbGUtZml4dHVyZQ==/YWx0ZXJlZC1maXh0dXJl}" ;;
+    path) CONTROL_FILE="$HASH_FILE.unreviewed" ;;
     esac
     printf '# Synthetic archive fixture\n%s\n' "$CONTROL_LINE" >"$SANDBOX/hash-repo/$CONTROL_FILE"
     git -C "$SANDBOX/hash-repo" add "$CONTROL_FILE"
