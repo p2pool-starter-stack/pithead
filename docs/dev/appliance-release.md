@@ -489,11 +489,12 @@ channels share the final cut commit, one version and one GitHub Release.
    operator-visible change included since prep and set its heading to the current UTC date.
    `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
    cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
-   submit it as a bench-ci `tier4-kvm` job with `phases: ["all"]` against this exact SHA
-   (`~/code/pithead-ci/AGENTS.md`) and record the job id in the release issue —
-   [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not)
-   already blocks stage 1 without a green `bench-ci/tier4` status on this SHA, so this step just
-   surfaces that early rather than at `release.sh`. `make lint-sh`
+   submit two independent bench-ci `tier4-kvm` jobs on this exact SHA, with
+   `timeout_minutes=240` each: `boot,update,install,provision` and
+   `rig,rigmedia,media,fault,reset,image-upgrade,stack`. Record both job IDs in the release issue.
+   Follow [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not)
+   for wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel
+   either KVM group. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
    refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
    A distro build reports different findings over the same files, so a skew reds the cut for
