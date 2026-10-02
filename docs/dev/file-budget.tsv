@@ -35,7 +35,7 @@ dashboard/tests/service/test_data_helpers.py	618
 dashboard/tests/service/test_metrics.py	463
 dashboard/tests/service/test_storage_worker.py	451
 dashboard/tests/web/test_worker_detail_meta.py	425
-dashboard/tests/web/views/test_infra_views.py	768
+dashboard/tests/web/views/test_infra_views.py	580
 dashboard/tests/web/views/test_views.py	750
 docs/tools/recovery-config-builder.html	424
 lib/pithead/12-firstboot-wizard.sh	543

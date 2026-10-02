@@ -340,10 +340,12 @@ card so columns stay readable. Until the first worker ever connects, the card sh
 [Connecting Miners](workers.md).
 
 A [RigForge](https://github.com/p2pool-starter-stack/rigforge) rig that serves its enriched read API
-adds a version badge and a row of chips next to its name — CPU governor and throttling state,
-firmware board, HugePages, power draw and H/s-per-watt, the active tuning target and next autotune,
-and watchdog temperature. Alarming states (throttling, thermal hold, a non-performance governor) read
-red or amber; the rest are muted read-outs. Each chip shows only when the rig reports that field, so
+adds chips next to its name for what needs attention or changes minute to minute: alarming states
+(throttling, thermal hold, a non-performance governor) read red or amber, and power draw in watts and
+watchdog temperature are muted read-outs, with the efficiency and temperature ceiling in each chip's
+tooltip. The static detail (agent version, firmware board, HugePages, governor when healthy, tuning
+target, next autotune) lives in the worker's Inspect dialog, so the table fits a 1280px viewport
+without scrolling sideways. Each chip shows only when the rig reports that field, so
 a partial reading never leaves a blank, and a plain-xmrig rig shows no chips at all. If RigForge is up
 but its miner isn't, the rig stays in the table with a **miner down** chip rather than dropping to
 offline. Point the rig's descriptor at the enriched feed to turn this on — see
