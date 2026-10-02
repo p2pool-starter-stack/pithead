@@ -1,12 +1,13 @@
 name: Shell
 
 # Split out of ci.yml by #2048, where one serial job decided CI's wall clock. lint-sh (~90 s, #2632) and
-# the standalone suites (~110 s) share nothing with `tests/stack/run.sh` (~19 min on develop, #2776) but the generated
-# CLI, which each job builds for itself. run.sh itself is NOT sharded: its domain files are run.sh
-# fragments by design — each opens with a `$STACK_SUITE` guard saying so — and share a sandbox
-# chain, so splitting them is a test-design change, not a YAML one. #2048 has the per-domain table
-# and the coupling map. No `schedule:` here: the Monday CVE sweep stays in ci.yml, which is what
-# every shell job used to gate itself off one `if:` at a time.
+# the standalone suites (~110 s) share nothing with `tests/stack/run.sh` but the generated CLI,
+# which each job builds for itself. run.sh itself runs as a matrix of contiguous blocks (#2631):
+# each leg is `run.sh <block>` in a fresh runner. The nine #2048 prerequisite fragments also
+# run individually with lib.sh, independently of the ordered battery. run.sh refuses to start when
+# this matrix and its STACK_BLOCKS disagree.
+# No `schedule:` here: the Monday CVE sweep stays in ci.yml, which is what every shell job used to
+# gate itself off one `if:` at a time.
 
 on:
   push:
@@ -24,10 +25,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  shell:
-    name: Shell tests (pithead suite)
+  shell-block:
+    name: Shell tests (pithead suite, block ${{ matrix.block }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30 # develop's run.sh now takes ~19 min (#2776); leave room for added tests
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false # a red block should not hide the verdicts of the other three
+      matrix:
+        block: [1, 2, 3, 4] # run.sh's STACK_BLOCKS; stack_blocks_audit holds the two equal
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,8 +41,62 @@ jobs:
         # run.sh sources the generated root `pithead` (git-ignored). Until #2048 split `lint-sh`
         # off, the build came in free as that target's prerequisite.
         run: make pithead
-      - name: Run pithead test suite
-        run: bash tests/stack/run.sh
+      - name: Run pithead test suite block
+        run: bash tests/stack/run.sh "$BLOCK"
+        env:
+          BLOCK: ${{ matrix.block }}
+
+  shell-fragment:
+    name: Shell prerequisite (${{ matrix.fragment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        fragment:
+          - control/test-control-editable-allowlist.sh
+          - control/test-control-add-only-ssrf.sh
+          - secrets/test-secrets-masking.sh
+          - test-backup-recovery.sh
+          - test-cli-restore-hardening.sh
+          - test-confirm-approval.sh
+          - test-data-management.sh
+          - test-spool-audit.sh
+          - test-worker-config.sh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the generated CLI
+        run: make pithead
+      - name: Run prerequisite fragment in a fresh process
+        shell: bash
+        run: |
+          set -uo pipefail
+          source tests/stack/lib.sh
+          if ! source "tests/stack/$FRAGMENT"; then
+            echo "prerequisite fragment failed to complete: $FRAGMENT" >&2
+            exit 1
+          fi
+          printf 'Independent fragment: %s passed, %s failed\n' "$PASS" "$FAIL"
+          [ "$PASS" -gt 0 ] && [ "$FAIL" -eq 0 ]
+        env:
+          FRAGMENT: ${{ matrix.fragment }}
+
+  shell:
+    # The required status check. Branch protection names this context, so it stays one job that is
+    # green only when every block and independent prerequisite passes.
+    name: Shell tests (pithead suite)
+    needs: [shell-block, shell-fragment]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every block passed
+        run: '[ "$RESULT" = success ] && [ "$FRAGMENTS" = success ] || { echo "the pithead suite ended: blocks=$RESULT prerequisites=$FRAGMENTS"; exit 1; }'
+        env:
+          RESULT: ${{ needs.shell-block.result }}
+          FRAGMENTS: ${{ needs.shell-fragment.result }}
 
   shell-standalone:
     name: Shell tests (standalone suites + tooling)
@@ -45,7 +104,7 @@ jobs:
     timeout-minutes: 15 # ~110 s of the old `shell` job, the first-boot journal suite being 60 s of it (#2048)
     # Each suite is named outright rather than globbed: standalone/ also holds test_compose.sh,
     # which belongs to the `compose` job and which sources test_dotenv.sh itself, so a glob would
-    # run both twice. `make test-stack` names the same four and never runs in CI — a suite added
+    # run both twice. `make test-stack` names these suites and never runs in CI — a suite added
     # to standalone/ must be wired here as well, or it runs nowhere.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,6 +112,12 @@ jobs:
           persist-credentials: false
       - name: Build the generated CLI
         run: make pithead
+      - name: Run Tor recovery contracts
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          bash tests/stack/standalone/test_tor_recovery.sh
+          bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
       - name: Run real-image data-reset suite
         # Real ext4 damage against the product's own repair escalation (#1062). Unprivileged —
         # e2fsprogs on plain files — and it hard-fails rather than skips when CI lacks the tools.
@@ -73,8 +138,8 @@ jobs:
         # git-ignored and read on demand via `make test-inventory`.
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test
-        # Pure-logic checks for the tests/integration/ harness (config rendering, matrix
-        # coverage, redaction). The LIVE matrix (tests/integration/run.sh) needs a real test
+        # Pure logic and bounded local transport fixtures for the tests/integration/
+        # harness (config rendering, matrix coverage, redaction, Digest connection reuse). The LIVE matrix (tests/integration/run.sh) needs a real test
         # server and runs as a gated/manual release gate (#54), not on every PR.
         run: make test-integration-selftest
       - name: Run repository tooling checks

@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Reuses test-doctor.sh's DRBIN stubs (curl prints CURL_BODY) and test-tor-network.sh's apply
-# sandbox ($V, seed_env): both fragments run before this one.
+# Builds the shared doctor stubs (curl prints CURL_BODY) and its own apply sandbox.
+# Neither fixture depends on another CI block having run.
+build_doctor_stubs
+build_val_sandbox
 
 echo "== unit: doctor + status Tari chain verdict (#2464) =="
 # The verdict is the dashboard's (/api/state .tari.health): amber WARNs, red FAILs doctor, and status

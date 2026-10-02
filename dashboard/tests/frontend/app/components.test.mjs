@@ -248,7 +248,7 @@ test('XMR Network collapses to the headline stats by default', () => {
     assert.doesNotMatch(card, /Current Block Hash/);
     assert.doesNotMatch(card, /Network Time/);
     assert.match(card, /class="more-stats-toggle" aria-expanded="false"/);
-    assert.match(card, /Show all \(8\)/); // 7 + the node's local/remote location (#1040)
+    assert.match(card, /Show all \(11\)/); // 7 + the node location (#1040) + health, peers and last-advance (#2499)
 });
 
 test('THE WIDER POOL label is gated like its own cards, not shown over an empty grid in Simple view (#1862)', () => {

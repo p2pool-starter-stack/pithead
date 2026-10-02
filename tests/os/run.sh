@@ -98,6 +98,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-config-approval-leg.sh"
 # shellcheck source=tests/os/appliance-tari-mode-leg.sh
 . "$SCRIPT_DIR/appliance-tari-mode-leg.sh"
+# shellcheck source=tests/os/caddy-failure-evidence.sh
+. "$SCRIPT_DIR/caddy-failure-evidence.sh"
 # shellcheck source=tests/os/appliance-egress-leg.sh
 . "$SCRIPT_DIR/appliance-egress-leg.sh"
 # shellcheck source=tests/os/appliance-xvb-routing-leg.sh
@@ -108,6 +110,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-dashboard-exposure-leg.sh"
 # shellcheck source=tests/os/appliance-lan-guard-leg.sh
 . "$SCRIPT_DIR/appliance-lan-guard-leg.sh"
+# shellcheck source=tests/os/appliance-monero-rpc-leg.sh
+. "$SCRIPT_DIR/appliance-monero-rpc-leg.sh"
 # shellcheck source=tests/os/appliance-tari-wallet-leg.sh
 . "$SCRIPT_DIR/appliance-tari-wallet-leg.sh"
 # shellcheck source=tests/os/appliance-chain-fault-leg.sh
