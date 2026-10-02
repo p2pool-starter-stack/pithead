@@ -606,7 +606,7 @@ channels share the final cut commit, one version and one GitHub Release.
    attached. Published release assets are immutable — v1.18.0 burned its tag this way — so
    the release publishes exactly once, with both channels' artifacts aboard. The bundle's
    signature is what devices verify.
-6. `main` fast-forwards to the tag automatically when `release.sh` creates the draft; if the push was
+6. `main` fast-forwards to the tag automatically when `release.sh` publishes; if the push was
    refused, run the command it prints (see
    [After publishing](manual-release-checklist.md#after-publishing)).
 

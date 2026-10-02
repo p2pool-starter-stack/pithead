@@ -134,8 +134,56 @@ anonymous_digest="$(
 )"
 assert_eq "the public-package check resolves the rootfs anonymously" "$anonymous_digest" \
     "sha256:$(printf '%064d' 7)"
-assert_contains "rootfs smoke refuses a private first GHCR push" "$(cat "$REL_IMAGES")" \
-    "New GHCR packages default to private"
+# Drive the real smoke_test on the os-rootfs entry with stubbed docker and registry reads.
+# shellcheck disable=SC1090,SC2034,SC2329  # dynamic source; globals and stubs are used by the sourced smoke_test
+rootfs_smoke() { # <export-tar> <inspect-output> <anonymous-digest> [export-rc]
+    (
+        export SMOKE_TAR="$1" SMOKE_INSPECT="$2" SMOKE_ANON="$3" SMOKE_EXPORT_RC="${4:-0}"
+        cd "$ROOT" || exit
+        set --
+        source "$REL" 2>/dev/null
+        set +eu
+        DRY_RUN=0 SKIP_SMOKE=0 PUBLISHED_IMAGES=(os-rootfs) REGISTRY=ghcr.io/test
+        PLATFORMS=linux/amd64 STAGING_TAG=v9.9.9-rc.1 STACK_VERSION=v9.9.9 RELEASE_SMOKE_CMD=
+        WORKDIR="$SANDBOX/rootfs-smoke"
+        mkdir -p "$WORKDIR"
+        printf 'ghcr.io/test/pithead-os-rootfs@sha256:%064d\n' 7 >"$WORKDIR/digest.os-rootfs"
+        anonymous_ghcr_digest() { printf '%s' "$SMOKE_ANON"; }
+        docker() {
+            case "$1" in
+            create) echo cid ;;
+            export)
+                [ "$SMOKE_EXPORT_RC" -eq 0 ] || return "$SMOKE_EXPORT_RC"
+                cp "$SMOKE_TAR" "$3"
+                ;;
+            inspect) printf '%s\n' "$SMOKE_INSPECT" ;;
+            esac
+            return 0
+        }
+        smoke_test
+    ) 2>&1
+}
+smoke_ok="v9.9.9 linux/amd64"
+smoke_digest="sha256:$(printf '%064d' 7)"
+rootfs_smoke "$ROOTFS_GUARD/release.tar" "$smoke_ok" "$smoke_digest" >/dev/null
+assert_rc "rootfs smoke passes a public release export with matching label and platform" "$?" "0"
+smoke_out="$(rootfs_smoke "$ROOTFS_GUARD/debug-dot.tar" "$smoke_ok" "$smoke_digest")"
+assert_rc "rootfs smoke refuses a pulled image carrying a root SSH key" "$?" "1"
+assert_contains "the keyed pull is refused by the shell-less check" "$smoke_out" "not a shell-less release rootfs"
+smoke_out="$(rootfs_smoke "$ROOTFS_GUARD/release.tar" "$smoke_ok" "$smoke_digest" 7)"
+assert_rc "rootfs smoke refuses an image it cannot export" "$?" "1"
+smoke_out="$(rootfs_smoke "$ROOTFS_GUARD/release.tar" "v0.0.1 linux/amd64" "$smoke_digest")"
+assert_rc "rootfs smoke refuses a wrong version label" "$?" "1"
+assert_contains "the wrong label is named" "$smoke_out" "reports version/platform 'v0.0.1 linux/amd64'"
+smoke_out="$(rootfs_smoke "$ROOTFS_GUARD/release.tar" "v9.9.9 linux/arm64" "$smoke_digest")"
+assert_rc "rootfs smoke refuses a wrong platform" "$?" "1"
+assert_contains "the wrong platform is named" "$smoke_out" "reports version/platform 'v9.9.9 linux/arm64'"
+smoke_out="$(rootfs_smoke "$ROOTFS_GUARD/release.tar" "$smoke_ok" "")"
+assert_rc "rootfs smoke refuses a private package (anonymous read does not resolve)" "$?" "1"
+assert_contains "the private package is named" "$smoke_out" "New GHCR packages default to private"
+smoke_out="$(rootfs_smoke "$ROOTFS_GUARD/release.tar" "$smoke_ok" "sha256:$(printf '%064d' 8)")"
+assert_rc "rootfs smoke refuses an anonymous digest that differs from the captured one" "$?" "1"
+unset -f rootfs_smoke
 echo "== unit: release.sh registry read retries GHCR read-after-push lag (#429) =="
 # GHCR can briefly 404 or serve a stale digest after push. Prove the retry reaches the expected
 # digest and stays bounded; zero backoff keeps the test instant.
