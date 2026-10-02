@@ -59,7 +59,7 @@ assert_eq "failed import refuses the restore" "$?" 1
 assert_eq "failed import marks the baseline restore proof failed" "$RESTORE_PROOF_FAILED" 1
 assert_eq "failed import durably records NOT_PROVEN" "$(cat "$WORK/wallet-fixture-restore.state")" NOT_PROVEN
 assert_eq "failed import retains the private archives" "$(cat "$WORK/actions")" restore
-FAIL_IMPORT=0
+FAIL_IMPORT=0 WALLET_CACHE_IMPORTED=1
 for failure in scan address cleanup; do
     : >"$WORK/actions"
     FAIL_SCAN=0 FAIL_ADDRESS=0 FAIL_CLEANUP=0
@@ -71,6 +71,7 @@ for failure in scan address cleanup; do
     assert_contains "$failure failure emits the binding failure marker" "$(cat "$WORK/log")" " ! WALLET FIXTURE RESTORE NOT PROVEN"
     case "$failure" in
     scan | address) assert_eq "readiness failure retains snapshot" "$(cat "$WORK/actions")" "" ;;
+    cleanup) assert_eq "cleanup failure exercises the cleanup path" "$(cat "$WORK/actions")" cleanup ;;
     esac
 done
 
