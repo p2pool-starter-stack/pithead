@@ -19,7 +19,7 @@ SPEC.loader.exec_module(fixture)
 IMAGE = "sha256:" + "a" * 64
 
 
-def archive(extra=None):
+def archive(extra=None, keys=None):
     data = io.BytesIO()
     with tarfile.open(fileobj=data, mode="w") as output:
         for name, contents in {
@@ -30,6 +30,9 @@ def archive(extra=None):
             item = tarfile.TarInfo(name)
             item.uid = item.gid = 1000
             item.mode = 0o600
+            if name == "payout-wallet.keys":
+                for field, value in (keys or {}).items():
+                    setattr(item, field, value)
             item.size = len(contents)
             output.addfile(item, io.BytesIO(contents))
     return data.getvalue()
@@ -223,15 +226,12 @@ class FixtureTest(unittest.TestCase):
             output.addfile(item)
         with self.assertRaises(ValueError):
             fixture.manifest(path)
-        path = self.root / "public-keys.tar"
-        with tarfile.open(path, "w") as output:
-            item = tarfile.TarInfo("payout-wallet.keys")
-            item.uid = item.gid = 1000
-            item.mode = 0o644
-            item.size = 1
-            output.addfile(item, io.BytesIO(b"x"))
-        with self.assertRaises(ValueError):
-            fixture.manifest(path)
+        # Otherwise complete archives, so only the ownership/mode guard can refuse them.
+        for keys in ({"mode": 0o644}, {"uid": 0}, {"gid": 0}):
+            path = self.root / "foreign-owner.tar"
+            path.write_bytes(archive(keys=keys))
+            with self.assertRaisesRegex(ValueError, "ownership or mode"):
+                fixture.manifest(path)
         with self.assertRaises(ValueError):
             fixture.cleanup(directory, self.baseline)
         self.assertTrue((directory / "wallet.tar").exists())
@@ -256,6 +256,9 @@ class FixtureTest(unittest.TestCase):
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         with self.assertRaises(ValueError):
             fixture.receipt(self.root, "ARMED")
+        with self.assertRaises(ValueError):
+            fixture.receipt(self.root, "VERIFIED")  # verification needs durable readiness first
+        self.assertEqual(path.read_bytes(), b"ARMED\n")
         fixture.receipt(self.root, "READY")
         fixture.receipt(self.root, "VERIFIED")
         self.assertEqual(path.read_bytes(), b"VERIFIED\n")

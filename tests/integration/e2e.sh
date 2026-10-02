@@ -9,7 +9,11 @@
 #   4. Borrows a miner (set MINER_HOST), backs up its xmrig config and repoints it at the test bench.
 #   5. Deploys the branch (`pithead upgrade`, including its first-party images; #272), then runs the
 #      live harness detached on the box so an SSH drop cannot kill a long matrix.
-#   6. ALWAYS restores the miner, canonical stack and prepared wallet cache; baseline proofs are binding.
+#   6. ALWAYS restores, even on failure or Ctrl-C (an EXIT trap): the miner's pool config, the prepared
+#      wallet cache, then the canonical stack with no `pithead down`, so unchanged chain nodes keep running
+#      and the synced chains are never touched (#2639). It then PROVES the live stack matches the on-disk
+#      config (#971): a container's baked credential marker must equal the on-disk .env line, and monerod
+#      must answer an authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
 #
 # The Compose project name is pinned to "pithead", so the e2e and canonical checkouts drive the SAME containers and shared chains — two
 # code copies of one stack, run one at a time. That's why borrow→test→restore is a code/image swap, not a re-sync.
@@ -28,8 +32,7 @@ source "$HERE/lib/borrow-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/restore-proof.sh
 source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" || exit $? # chain-keep: #2639
 # shellcheck source=tests/integration/lib/detached-harness.sh
-source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" || exit $?
-source "$HERE/lib/wallet-fixture.sh" || exit $?
+source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" && source "$HERE/lib/wallet-fixture.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -267,10 +270,7 @@ restore_all() {
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade"
     fi
-    wallet_fixture_restore || {
-        RESTORE_PROOF_FAILED=1
-        exit 1
-    }
+    wallet_fixture_restore || exit 1 # an uncertain import must never let the baseline wallet start
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
         # A scenario can recreate a test-checkout container after the branch deploy.
         if ! recreate_test_checkout_containers; then

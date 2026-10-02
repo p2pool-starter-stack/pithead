@@ -51,6 +51,15 @@ assert_eq "the original catch-up and dashboard waits are reused" "$(cat "$WORK/w
 assert_contains "proved restore emits the exact runner marker" "$(cat "$WORK/log")" " ✓ WALLET FIXTURE RESTORE VERIFIED"
 
 echo "== wallet fixture: a failed gate refuses the restore and keeps the snapshot =="
+: >"$WORK/actions"
+wallet_fixture_receipt ARMED
+RESTORE_PROOF_FAILED=0 WALLET_CACHE_IMPORTED=0 FAIL_IMPORT=1
+wallet_fixture_restore >"$WORK/log" 2>&1
+assert_eq "failed import refuses the restore" "$?" 1
+assert_eq "failed import marks the baseline restore proof failed" "$RESTORE_PROOF_FAILED" 1
+assert_eq "failed import durably records NOT_PROVEN" "$(cat "$WORK/wallet-fixture-restore.state")" NOT_PROVEN
+assert_eq "failed import retains the private archives" "$(cat "$WORK/actions")" restore
+FAIL_IMPORT=0
 for failure in scan address cleanup; do
     : >"$WORK/actions"
     FAIL_SCAN=0 FAIL_ADDRESS=0 FAIL_CLEANUP=0

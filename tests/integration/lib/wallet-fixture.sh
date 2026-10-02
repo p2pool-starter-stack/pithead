@@ -26,6 +26,8 @@ wallet_fixture_restore() {
         WALLET_CACHE_IMPORTED=1
         ok "prepared wallet fixture contents restored exactly"
     else
+        # shellcheck disable=SC2034 # read by e2e.sh restore_all
+        RESTORE_PROOF_FAILED=1
         wallet_fixture_receipt NOT_PROVEN || true
         warn "WALLET FIXTURE RESTORE NOT PROVEN"
         warn "Private wallet snapshot retained at $WALLET_CACHE_SNAPSHOT; leave its reservation held."
