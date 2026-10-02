@@ -173,6 +173,12 @@ def local_volume():
     volume = inspect("volume", VOLUME)
     if volume["Driver"] != "local" or volume.get("Options"):
         raise ValueError("wallet fixture requires an independent local Docker volume")
+    labels = volume.get("Labels") or {}
+    if (
+        labels.get("com.docker.compose.project") != "pithead"
+        or labels.get("com.docker.compose.volume") != "wallet_data"
+    ):
+        raise ValueError("wallet volume belongs to another project")
 
 
 def sync_directory(directory):
@@ -194,7 +200,7 @@ def write_state(directory, data):
 
 
 def receipt(directory, stage):
-    if stage not in {"ARMED", "VERIFIED", "NOT_PROVEN"}:
+    if stage not in {"ARMED", "READY", "VERIFIED", "NOT_PROVEN"}:
         raise ValueError("unknown wallet restoration receipt")
     info = directory.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
@@ -211,8 +217,9 @@ def receipt(directory, stage):
             previous = stream.read(12).decode("ascii")
     permitted = {
         "ARMED": {None},
-        "VERIFIED": {"ARMED\n"},
-        "NOT_PROVEN": {"ARMED\n", "NOT_PROVEN\n"},
+        "READY": {"ARMED\n", "READY\n"},
+        "VERIFIED": {"READY\n"},
+        "NOT_PROVEN": {"ARMED\n", "READY\n", "NOT_PROVEN\n"},
     }
     if previous not in permitted[stage]:
         raise ValueError("wallet restoration receipt transition refused")
@@ -285,28 +292,43 @@ def capture(baseline):
             },
         )
         sync_directory(directory.parent)
+    except Exception:
+        # No branch was deployed; remove only this capture's known private files.
+        for name in ("wallet.tar", "image.tar", "state.tmp", "state.json"):
+            path = directory / name
+            if path.exists() or path.is_symlink():
+                private(path.lstat())
+                path.unlink()
+        directory.rmdir()
+        sync_directory(directory.parent)
+        raise
     finally:
         if was_running:
             docker("start", item["Id"], stdout=subprocess.DEVNULL)
     print(directory)
 
 
-def load(directory, baseline):
+def load(directory, baseline, cleanup_only=False):
     if directory.name == "" or not directory.name.startswith("pithead-wallet-fixture-"):
         raise ValueError("unexpected wallet fixture snapshot path")
     private(directory.lstat(), True)
     private((directory / "state.json").lstat())
-    private((directory / "wallet.tar").lstat())
-    private((directory / "image.tar").lstat())
     state = json.loads((directory / "state.json").read_text())
     if state["directory"] != str(directory) or state["stage"] not in {
         "captured",
         "restoring",
         "import_verified",
+        "ready",
     }:
         raise ValueError("wallet fixture receipt changed")
     if state["baseline"] != str(baseline) or state["identity"] != identity(baseline):
         raise ValueError("baseline wallet identity changed")
+    if state["stage"] == "ready":
+        if cleanup_only:
+            return state
+        raise ValueError("proved fixture is awaiting cleanup; do not import it again")
+    private((directory / "wallet.tar").lstat())
+    private((directory / "image.tar").lstat())
     if state["archive_sha256"] != digest(directory / "wallet.tar") or state["contents"] != manifest(
         directory / "wallet.tar"
     ):
@@ -345,7 +367,7 @@ def restore(directory, baseline, branch):
         raise ValueError("wallet consumer restarted before fixture import")
     state["stage"] = "restoring"
     write_state(directory, state)
-    command = f"find {WALLET_DIR} -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} + && tar -C {WALLET_DIR} --no-same-owner -xf -"
+    command = f"find {WALLET_DIR} -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} + && tar -C {WALLET_DIR} --no-same-owner -xf - && sync {WALLET_DIR}/payout-wallet {WALLET_DIR}/payout-wallet.keys {WALLET_DIR}"
     with (directory / "wallet.tar").open("rb") as stream:
         docker(
             *helper(state["image"], False, directory, "import"),
@@ -368,15 +390,19 @@ def restore(directory, baseline, branch):
 
 
 def cleanup(directory, baseline):
-    state = load(directory, baseline)
-    if state["stage"] != "import_verified":
+    state = load(directory, baseline, cleanup_only=True)
+    if state["stage"] not in {"import_verified", "ready"}:
         raise ValueError("wallet import has not been proved")
-    if set(p.name for p in directory.iterdir()) != {"state.json", "wallet.tar", "image.tar"}:
+    if not set(p.name for p in directory.iterdir()) <= {"state.json", "wallet.tar", "image.tar"}:
         raise ValueError("unexpected files in wallet fixture snapshot")
-    (directory / "wallet.tar").unlink()
-    (directory / "image.tar").unlink()
-    (directory / "state.json").unlink()
-    directory.rmdir()
+    state["stage"] = "ready"
+    write_state(directory, state)
+    for name in ("wallet.tar", "image.tar"):
+        path = directory / name
+        if path.exists() or path.is_symlink():
+            private(path.lstat())
+            path.unlink()
+    sync_directory(directory)
 
 
 if __name__ == "__main__":

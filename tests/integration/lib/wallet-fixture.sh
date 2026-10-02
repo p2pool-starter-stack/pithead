@@ -47,7 +47,7 @@ wallet_fixture_verify() {
         source "$HERE/lib/run-tari-wallet.sh" || exit $?
         assert_payout_wallet_ready confirmed Monero
         [ "$IT_FAIL" = 0 ]
-    ) && wallet_fixture_command cleanup && wallet_fixture_receipt VERIFIED; then
+    ) && wallet_fixture_receipt READY && wallet_fixture_command cleanup && wallet_fixture_receipt VERIFIED; then
         ok "WALLET FIXTURE RESTORE VERIFIED"
     else
         wallet_fixture_receipt NOT_PROVEN || true

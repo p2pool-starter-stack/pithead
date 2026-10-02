@@ -41,6 +41,10 @@ class Docker:
     def __init__(self, baseline):
         self.calls = []
         self.contents = archive()
+        self.volume_labels = {
+            "com.docker.compose.project": "pithead",
+            "com.docker.compose.volume": "wallet_data",
+        }
         self.item = {
             "Id": "source",
             "Image": IMAGE,
@@ -66,7 +70,15 @@ class Docker:
         elif args[:2] == ("container", "inspect"):
             value = json.dumps([self.item]).encode()
         elif args[:2] == ("volume", "inspect"):
-            value = json.dumps([{"Driver": "local", "Options": None}]).encode()
+            value = json.dumps(
+                [
+                    {
+                        "Driver": "local",
+                        "Options": None,
+                        "Labels": self.volume_labels,
+                    }
+                ]
+            ).encode()
         elif args[:2] == ("image", "inspect"):
             value = json.dumps([{"Id": IMAGE}]).encode()
         elif args[0] == "kill":
@@ -128,7 +140,13 @@ class FixtureTest(unittest.TestCase):
             self.assertEqual(call[call.index("--cap-drop") + 1], "ALL")
             self.assertEqual(call[-3], IMAGE)
         fixture.cleanup(directory, self.baseline)
-        self.assertFalse(directory.exists())
+        self.assertEqual({path.name for path in directory.iterdir()}, {"state.json"})
+        self.assertEqual(
+            fixture.load(directory, self.baseline, cleanup_only=True)["stage"], "ready"
+        )
+        fixture.cleanup(
+            directory, self.baseline
+        )  # replay completes even after archives were removed
 
     def test_identity_or_snapshot_changes_refuse_before_any_restore_mutation(self):
         directory = self.capture()
@@ -161,8 +179,18 @@ class FixtureTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.capture()
         self.assertTrue(self.docker.item["State"]["Running"])
+        self.assertFalse(list(self.root.glob("pithead-wallet-fixture-*")))
         self.docker.contents = archive()
         self.docker.item["Config"]["Labels"]["com.docker.compose.project.working_dir"] = "/other"
+        before = len(self.docker.calls)
+        with self.assertRaises(ValueError):
+            self.capture()
+        self.assertFalse(any(call[0] in {"kill", "run"} for call in self.docker.calls[before:]))
+        self.docker.item["Config"]["Labels"]["com.docker.compose.project.working_dir"] = str(
+            self.baseline
+        )
+        self.docker.item["Config"]["Env"] = self.env.read_text().splitlines()
+        self.docker.volume_labels["com.docker.compose.project"] = "another-project"
         before = len(self.docker.calls)
         with self.assertRaises(ValueError):
             self.capture()
@@ -208,6 +236,19 @@ class FixtureTest(unittest.TestCase):
             fixture.cleanup(directory, self.baseline)
         self.assertTrue((directory / "wallet.tar").exists())
 
+    def test_partial_cleanup_can_be_replayed_after_durable_readiness(self):
+        directory = self.capture()
+        fixture.restore(directory, self.baseline, self.root / "branch")
+        state = fixture.load(directory, self.baseline)
+        state["stage"] = "ready"
+        fixture.write_state(directory, state)
+        (directory / "wallet.tar").unlink()  # power loss between the two archive removals
+        fixture.cleanup(directory, self.baseline)
+        self.assertEqual({path.name for path in directory.iterdir()}, {"state.json"})
+        self.assertEqual(
+            fixture.load(directory, self.baseline, cleanup_only=True)["stage"], "ready"
+        )
+
     def test_durable_receipt_precedes_destructive_work_and_is_owner_only(self):
         fixture.receipt(self.root, "ARMED")
         path = self.root / "wallet-fixture-restore.state"
@@ -215,6 +256,7 @@ class FixtureTest(unittest.TestCase):
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         with self.assertRaises(ValueError):
             fixture.receipt(self.root, "ARMED")
+        fixture.receipt(self.root, "READY")
         fixture.receipt(self.root, "VERIFIED")
         self.assertEqual(path.read_bytes(), b"VERIFIED\n")
         self.root.chmod(0o777)

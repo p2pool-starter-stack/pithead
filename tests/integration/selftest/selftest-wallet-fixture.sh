@@ -45,7 +45,7 @@ assert_contains "capture arms the binding runner protocol" "$(cat "$WORK/log")" 
 wallet_fixture_restore >>"$WORK/log"
 wallet_fixture_verify >>"$WORK/log"
 assert_eq "successful gates durably verify the job" "$(cat "$WORK/wallet-fixture-restore.state")" VERIFIED
-assert_eq "successful capture/import/gates removes the private snapshot" "$(cat "$WORK/actions")" $'capture\nrestore\ncleanup'
+assert_eq "successful capture/import/gates removes the private archives" "$(cat "$WORK/actions")" $'capture\nrestore\ncleanup'
 assert_eq "the original catch-up and dashboard waits are reused" "$(cat "$WORK/waits")" $'1200/15\n420/10'
 assert_contains "proved restore emits the exact runner marker" "$(cat "$WORK/log")" " ✓ WALLET FIXTURE RESTORE VERIFIED"
 

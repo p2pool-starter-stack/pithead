@@ -442,8 +442,10 @@ via an `EXIT` trap):
    Before starting the baseline wallet, the wrapper imports the saved cache through an isolated,
    unprivileged container with only the local wallet volume writable, then proves exact file
    contents. After baseline restoration it repeats the original 1200-second Monero catch-up and
-   420-second authenticated dashboard/address gates. Only successful proof removes the private
-   snapshot. Failed or interrupted preservation leaves the reservation held; generic stack health
+   420-second authenticated dashboard/address gates. Before removing private archives it durably
+   records readiness; cleanup keeps the identity/content receipt so an interrupted cleanup can be
+   replayed. Only completed cleanup marks restoration verified. Failed or interrupted preservation
+   leaves the reservation held; generic stack health
    cannot replace that proof. `--keep` does not capture or restore this fixture.
    How the baseline comes back depends on what it is. A release bundle gets `pithead apply` then
    `pithead up`: its images are versioned tags the branch never touched, so rebuilding them would be
