@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Sourced by test-backup.sh: running-stack recovery and archive finalization failures.
+# Running-stack recovery and archive finalization failures use their own fixture.
+WALLET="${WALLET:-$VALID_PRIMARY}"
 echo "== black-box: backup failures recover a previously running stack (#551, #1965) =="
 FB="$SANDBOX/failbackup"
 mkdir -p "$FB/build/tari" "$FB/data/tor" "$FB/data/dashboard" "$FB/bin"

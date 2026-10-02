@@ -73,6 +73,9 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # literal, and one passing `${ev}` from test-control-editable-allowlist.sh's loop over 25
 # spelled-out event names. That one is a loop variable over a fixed list, so the whole class is
 # run-invariant today. #2671 later added two wrappers with 15 calls, all bare literals.
+# #2631 adds sb_audit with eight call sites, all bare string-literal labels. Its invalid-block
+# labels interpolate arg over five fixed inputs (one derived from the committed STACK_BLOCKS),
+# so both additions are invariant for a given tree. No measured or sandbox value reaches them.
 #   * COUNT THE WRAPPERS, NOT THE ROWS. The first pass said "eight wrappers, 55 calls" because it
 #     counted ROWS: a row is <file>|<index>, so test-config.sh|2 collapses three wrappers and
 #     test-rig-worker.sh|3 three more. Twelve and 87 are the numbers the imperative below is about;
@@ -130,6 +133,8 @@ test-secrets.sh|host_ram_mb
 test-secrets.sh|mem
 test-spool-audit.sh|audit_lines
 test-spool-audit.sh|audit_size
+test-suite-blocks.sh|1
+test-suite-blocks.sh|arg
 test-tor-network.sh|v
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
