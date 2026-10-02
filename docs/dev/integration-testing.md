@@ -663,7 +663,7 @@ and `--list` prints it).
   `*_lan_access` switches). Each published node port is dialled from a network namespace on a veth
   to the host: from `198.51.100.2` the dial must fail, from `10.254.254.2` it must connect
   ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)). With the boot marker
-  still present, the row stops `pithead-lan.timer` (waiting out a running check) so the flush
+  still present, the row stops `pithead-lan.timer` (waiting until the check service is inactive or failed, never while it is activating) so the flush
   cannot race a legitimate marker removal, flushes the live rule, proves the marker is intact and
   the non-private dial opens, then restarts the timer and waits, from that start, for it to
   invalidate the marker and close each port within its check interval

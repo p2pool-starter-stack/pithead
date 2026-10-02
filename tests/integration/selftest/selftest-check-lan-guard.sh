@@ -96,7 +96,8 @@ echo "== the timer flush row holds the check timer off from before the flush unt
 timer_flush_trace() {
     (
         source "$HERE/../lib/run-lan-guard.sh" # the real function, not the stub above
-        states="$(mktemp)" # rx runs in command substitutions, so its position lives in a file
+        # rx runs in command substitutions, so its position in the sequence lives in a file
+        states="$(mktemp)"
         printf '%s\n' "$1" >"$states"
         sleep() { :; }
         _lan_probe() { echo closed; }
