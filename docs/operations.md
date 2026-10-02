@@ -858,8 +858,9 @@ monitor warns until egress recovers. The feature remains off by default.
 clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
 reports invalid circuit build timing, run `./pithead tor-recover check`. This read-only check
 validates the live Tor data mount and the saturated history signature. When local Monero RPC
-answers, it requires peerless, stalled Monero across three minutes, with real outgoing peer
-counts read through the authenticated in-container admin helper. When RPC is unavailable,
+answers, it requires peerless, stalled Monero across three minutes (0 outgoing peers at one height,
+whatever `synchronized` says: monerod keeps its last value after losing every peer), with real
+outgoing peer counts read through the authenticated in-container admin helper. When RPC is unavailable,
 it instead requires two cookie-authenticated Tor observations three minutes apart: bootstrap
 95% at `circuit_create`, no established circuit, and the same running Tor instance. At least
 two invalid circuit-timing warnings must appear in the last 200 log lines from that interval;

@@ -32,13 +32,15 @@ tor_recovery_state_saturated() { # <state file>
     ! sudo grep -q '^CircuitBuildTimeBin ' "$state" || return 1
 }
 
+# monerod keeps its last `synchronized` value after losing every peer, so the flag is not part of the
+# signature: zero outgoing peers at one height across the window is the stall (#3033).
 tor_recovery_signature() { # <state file> <first Monero get_info> <second get_info>
     local first="$2" second="$3"
     tor_recovery_state_saturated "$1" || return 1
     jq -e --argjson next "$second" '
-        .status == "OK" and .synchronized == false and
+        .status == "OK" and
         (.outgoing_connections_count == 0) and
-        ($next.status == "OK") and ($next.synchronized == false) and
+        ($next.status == "OK") and
         ($next.outgoing_connections_count == 0) and
         (.height == $next.height) and (.height | type == "number")
     ' <<<"$first" >/dev/null
