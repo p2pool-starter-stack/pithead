@@ -99,14 +99,14 @@ order="$(
     _lan_probe() { echo closed; }
     rx() {
         case "$1" in
-            *'stop pithead-lan.timer'*) echo timer-stop >>"$TRACE" ;;
-            *'start pithead-lan.timer'*) echo timer-start >>"$TRACE" ;;
-            *'iptables'*) echo flush >>"$TRACE" ;;
-            *'is-active pithead-lan.timer'*) echo inactive ;;
-            *'is-active pithead-lan-check'*) echo inactive ;;
-            *'container_engine'*) echo docker ;;
-            *'test -e data'*) ;; # marker gone: the timer ran
-            *) echo present ;;
+        *'stop pithead-lan.timer'*) echo timer-stop >>"$TRACE" ;;
+        *'start pithead-lan.timer'*) echo timer-start >>"$TRACE" ;;
+        *'iptables'*) echo flush >>"$TRACE" ;;
+        *'is-active pithead-lan.timer'*) echo inactive ;;
+        *'is-active pithead-lan-check'*) echo inactive ;;
+        *'container_engine'*) echo docker ;;
+        *'test -e data'*) ;; # marker gone: the timer ran
+        *) echo present ;;
         esac
     }
     assert_lan_guard_timer_flush 18081
