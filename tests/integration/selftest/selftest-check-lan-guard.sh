@@ -91,4 +91,29 @@ pithead apply -y" ] || {
     echo 'scenario without LAN ports ran LAN guard exercises' >&2
     exit 1
 }
+echo "== the timer flush row holds the check timer off from before the flush until the deadline starts (#3034) =="
+: >"$TRACE"
+order="$(
+    source "$HERE/../lib/run-lan-guard.sh" # the real function, not the stub above
+    sleep() { :; }
+    _lan_probe() { echo closed; }
+    rx() {
+        case "$1" in
+            *'stop pithead-lan.timer'*) echo timer-stop >>"$TRACE" ;;
+            *'start pithead-lan.timer'*) echo timer-start >>"$TRACE" ;;
+            *'iptables'*) echo flush >>"$TRACE" ;;
+            *'is-active pithead-lan.timer'*) echo inactive ;;
+            *'is-active pithead-lan-check'*) echo inactive ;;
+            *'container_engine'*) echo docker ;;
+            *'test -e data'*) ;; # marker gone: the timer ran
+            *) echo present ;;
+        esac
+    }
+    assert_lan_guard_timer_flush 18081
+    tr '\n' ' ' <"$TRACE"
+)"
+[ "$order" = "timer-stop flush timer-start " ] || {
+    echo "timer flush order is [$order], want timer-stop flush timer-start" >&2
+    exit 1
+}
 echo 'selftest-check-lan-guard: PASS'
