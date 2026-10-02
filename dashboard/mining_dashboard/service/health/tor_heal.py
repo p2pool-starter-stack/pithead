@@ -48,6 +48,10 @@ TOR_STOP_REQUEST_TIMEOUT_SEC = 120
 # an unconfirmed start is retried a bounded number of times (start is idempotent: 304 if running).
 TOR_START_ATTEMPTS = 3
 TOR_START_RETRY_DELAY_SEC = 5
+# After an unconfirmed stop Docker may still be stopping Tor, and a start then answers 304 "already
+# running" while Tor goes down behind it. Wait (bounded: grace + kill + slack) for it to read down.
+TOR_SETTLE_SEC = 30
+TOR_SETTLE_POLL_SEC = 5
 
 
 class TorEgressHealer:
@@ -168,13 +172,24 @@ class TorEgressHealer:
         would publish its ports on 0.0.0.0 without it."""
         return bool((await get_container_health()).get(self.MONEROD, {}).get("running"))
 
-    async def _ensure_tor_running(self) -> bool:
+    async def _wait_tor_down(self) -> None:
+        """Poll until Tor reads not running, at most TOR_SETTLE_SEC (an in-flight stop settles)."""
+        for _ in range(TOR_SETTLE_SEC // TOR_SETTLE_POLL_SEC):
+            if not (await get_container_health()).get(self.CONTAINER, {}).get("running"):
+                return
+            await asyncio.sleep(TOR_SETTLE_POLL_SEC)
+
+    async def _ensure_tor_running(self, stopped: bool) -> bool:
         """Start Tor after the stop, whatever the stop reported (#3032).
 
         A stop whose response is lost may still have stopped the container, and Docker leaves a
         stopped container down. Start it and retry an unconfirmed start, bounded. A "running"
-        inspect is not trusted: after a timed-out stop it may predate the in-flight stop.
+        inspect is not trusted: after a timed-out stop it may predate the in-flight stop, and a 304
+        to an early start would be answered by a container about to go down, so an unconfirmed
+        stop is given time to settle before the start.
         """
+        if not stopped:
+            await self._wait_tor_down()
         for attempt in range(TOR_START_ATTEMPTS):
             if attempt:
                 await asyncio.sleep(TOR_START_RETRY_DELAY_SEC)
@@ -245,7 +260,7 @@ class TorEgressHealer:
                     stop_timeout=TOR_STOP_GRACE_SEC,
                     request_timeout=TOR_STOP_REQUEST_TIMEOUT_SEC,
                 )
-                started = await self._ensure_tor_running()
+                started = await self._ensure_tor_running(stopped)
                 # False means unconfirmed, not unissued: a timed-out POST may have mutated
                 # the daemon. Keep the attempt and cooldown even when both responses are lost.
                 self._recovery_step = (

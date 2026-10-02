@@ -42,6 +42,7 @@ async def _heal_to_restart(docker, health):
     )
     with (
         patch("mining_dashboard.service.health.tor_heal.TOR_START_RETRY_DELAY_SEC", 0),
+        patch("mining_dashboard.service.health.tor_heal.asyncio.sleep", AsyncMock()),
         patch("mining_dashboard.service.health.tor_heal.get_container_health", health),
         patch("mining_dashboard.service.health.tor_heal.control_service.submit", return_value="i"),
         patch(
@@ -63,7 +64,8 @@ class TestTorRestartEndsRunning:
         assert docker.calls == [("stop", "tor"), ("start", "tor")]
         # HTTP timeout must outlast the grace period plus the kill time (#3032).
         kw = docker.kwargs["stop"]
-        assert kw["request_timeout"] >= kw["stop_timeout"] + 60
+        assert kw["stop_timeout"] == 15
+        assert kw["request_timeout"] == 120  # 15 s grace + SIGKILL + a wedged daemon's slack
 
     async def test_unconfirmed_start_is_retried_until_it_lands(self):
         docker = _FlakyDocker(fail_starts=2)
@@ -83,3 +85,44 @@ class TestTorRestartEndsRunning:
         h = await _heal_to_restart(docker, AsyncMock(return_value={}))
         assert len([c for c in docker.calls if c[0] == "start"]) == 3
         assert h._recovery_step == "Tor restart unconfirmed"
+
+
+class _AnswersAlreadyRunning(_FlakyDocker):
+    """A start while the stop is in flight gets 304 (True) and is then undone by that stop."""
+
+    def __init__(self, tor_state):
+        super().__init__()
+        self.tor_state = tor_state  # list of polled "running" values, popped per inspect
+        self.polls_at_start = None
+
+    async def start(self, container, **kwargs):
+        self.polls_at_start = len(self.tor_state)
+        return await _FakeDocker.start(self, container, **kwargs)
+
+
+async def test_start_waits_for_an_in_flight_stop_to_finish():
+    states = [True, True, False]
+    docker = _AnswersAlreadyRunning(states)
+
+    async def health():
+        return {"tor": {"running": states.pop(0) if states else False}}
+
+    await _heal_to_restart(docker, health)
+    assert docker.polls_at_start == 0  # all three inspects happened before the one start
+    assert docker.calls == [("stop", "tor"), ("start", "tor")]
+
+
+async def test_settle_wait_is_bounded_when_tor_never_reads_down():
+    docker = _FlakyDocker()
+    health = AsyncMock(return_value={"tor": {"running": True}})
+    await _heal_to_restart(docker, health)
+    assert docker.calls == [("stop", "tor"), ("start", "tor")]
+    assert health.await_count == 6  # TOR_SETTLE_SEC // TOR_SETTLE_POLL_SEC polls, then start
+
+
+async def test_confirmed_stop_starts_without_waiting():
+    docker = _FakeDocker()
+    health = AsyncMock(return_value={"tor": {"running": True}})
+    await _heal_to_restart(docker, health)
+    assert docker.calls == [("stop", "tor"), ("start", "tor")]
+    assert health.await_count == 0
