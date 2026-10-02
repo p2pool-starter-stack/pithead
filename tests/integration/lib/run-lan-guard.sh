@@ -67,10 +67,23 @@ assert_lan_guard_timer_flush() { # <port>...
         "$(rx 'systemctl show -p Triggers --value pithead-lan.timer')" pithead-lan-check.service
     assert_eq "marker exists before an external flush (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
     rx 'sudo systemctl stop pithead-lan.timer' >/dev/null 2>&1 || true
+    # A oneshot check without RemainAfterExit reports activating while it runs: only inactive or
+    # failed proves it finished. Never flush into a check that is still running or unreadable.
+    idle=0
     for _ in $(seq 30); do
-        [ "$(rx 'systemctl is-active pithead-lan-check.service 2>/dev/null')" = active ] || break
+        case "$(rx 'systemctl is-active pithead-lan-check.service 2>/dev/null')" in
+        inactive | failed)
+            idle=1
+            break
+            ;;
+        esac
         sleep 1
     done
+    if [ "$idle" != 1 ]; then
+        rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
+        it_fail "LAN check service finished before the flush (#3034)" "still running or unreadable after 30s; flush skipped"
+        return 0
+    fi
     assert_eq "LAN check timer is stopped for the flush (#3034)" "$(rx 'systemctl is-active pithead-lan.timer 2>/dev/null')" inactive
     assert_eq "marker survives the check finishing (#3034)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
     _lan_flush_rules

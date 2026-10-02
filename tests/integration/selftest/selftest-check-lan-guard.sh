@@ -92,28 +92,45 @@ pithead apply -y" ] || {
     exit 1
 }
 echo "== the timer flush row holds the check timer off from before the flush until the deadline starts (#3034) =="
-: >"$TRACE"
-order="$(
-    source "$HERE/../lib/run-lan-guard.sh" # the real function, not the stub above
-    sleep() { :; }
-    _lan_probe() { echo closed; }
-    rx() {
-        case "$1" in
-        *'stop pithead-lan.timer'*) echo timer-stop >>"$TRACE" ;;
-        *'start pithead-lan.timer'*) echo timer-start >>"$TRACE" ;;
-        *'iptables'*) echo flush >>"$TRACE" ;;
-        *'is-active pithead-lan.timer'*) echo inactive ;;
-        *'is-active pithead-lan-check'*) echo inactive ;;
-        *'container_engine'*) echo docker ;;
-        *'test -e data'*) ;; # marker gone: the timer ran
-        *) echo present ;;
-        esac
-    }
-    assert_lan_guard_timer_flush 18081
-    tr '\n' ' ' <"$TRACE"
-)"
-[ "$order" = "timer-stop flush timer-start " ] || {
-    echo "timer flush order is [$order], want timer-stop flush timer-start" >&2
-    exit 1
+# <check state sequence, space separated; the last repeats> -> trace of timer/flush actions
+timer_flush_trace() {
+    (
+        source "$HERE/../lib/run-lan-guard.sh" # the real function, not the stub above
+        states="$(mktemp)" # rx runs in command substitutions, so its position lives in a file
+        printf '%s\n' "$1" >"$states"
+        sleep() { :; }
+        _lan_probe() { echo closed; }
+        it_fail() { echo "fail" >>"$TRACE"; }
+        rx() {
+            case "$1" in
+            *'stop pithead-lan.timer'*) echo timer-stop >>"$TRACE" ;;
+            *'start pithead-lan.timer'*) echo timer-start >>"$TRACE" ;;
+            *'iptables'*) echo flush >>"$TRACE" ;;
+            *'is-active pithead-lan.timer'*) echo inactive ;;
+            *'is-active pithead-lan-check'*)
+                read -r head tail <"$states"
+                echo "$head"
+                [ -z "$tail" ] || echo "$tail" >"$states"
+                ;;
+            *'container_engine'*) echo docker ;;
+            *'test -e data'*) ;; # marker gone: the timer ran
+            *) echo present ;;
+            esac
+        }
+        : >"$TRACE"
+        assert_lan_guard_timer_flush 18081
+        tr '\n' ' ' <"$TRACE"
+        rm -f "$states"
+    )
 }
+for case_ in "inactive|timer-stop flush timer-start " \
+    "activating activating inactive|timer-stop flush timer-start " \
+    "activating|timer-stop timer-start fail " \
+    "|timer-stop timer-start fail "; do
+    got="$(timer_flush_trace "${case_%%|*}")"
+    [ "$got" = "${case_#*|}" ] || {
+        echo "check states [${case_%%|*}]: trace is [$got], want [${case_#*|}]" >&2
+        exit 1
+    }
+done
 echo 'selftest-check-lan-guard: PASS'
