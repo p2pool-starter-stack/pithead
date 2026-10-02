@@ -9,7 +9,8 @@ test("buildSections: high-consequence fields carry their inline warning", () => 
   const tg = { bot_token: { __secret__: true }, chat_id: "1111" };
   tg.events = { wallet_changed: true, clearnet_exposed: true };
   const cfg = {
-    p2pool: { pool: "mini" },
+    p2pool: { pool: "mini", clearnet: false },
+    xvb: { tor: true },
     monero: { wallet_address: "4AAAA", prune: true },
     dashboard: { auth: { password: { __secret__: true } }, host: "box.lan" },
     telegram: { ...tg, enabled: true },
@@ -21,6 +22,8 @@ test("buildSections: high-consequence fields carry their inline warning", () => 
       .map((f) => [f.key, f]),
   );
   assert.match(fields["p2pool.pool"].warning, /PPLNS window resets/);
+  assert.match(fields["p2pool.clearnet"].warning, /10%.*home IP/);
+  assert.match(fields["xvb.tor"].warning, /home IP.*XvB/);
   assert.match(fields["monero.wallet_address"].warning, /payout address/);
   assert.equal(fields["monero.prune"].warning, undefined);
   // #2367: the password and hostname name their consequence before the operator confirms.

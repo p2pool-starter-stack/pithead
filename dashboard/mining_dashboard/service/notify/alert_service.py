@@ -15,6 +15,7 @@ from mining_dashboard.service.health.container_health import EDGE_MESSAGES, Cont
 from mining_dashboard.service.network.egress_status import live_firewall_state
 from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_hhmm
 from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
+from mining_dashboard.service.notify.monero_health_edges import MoneroHealthEdgesMixin
 from mining_dashboard.service.notify.notify_sinks import config_sinks
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 from mining_dashboard.service.workers.worker_presence import WorkerPresenceMonitor
@@ -37,7 +38,7 @@ def build_default_notifier():
     )
 
 
-class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
+class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesMixin):
     """
     Turns the data loop's per-cycle signals into a small set of debounced operator alerts and
     fans them out to the configured sinks: Telegram (Issue #121) plus any webhook/ntfy sinks
@@ -117,6 +118,8 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
     EVT_BLOCK_FOUND = "block_found"
     EVT_PAYOUT_FOUND = "payout_found"
     EVT_PAYOUT_CONFIRMED = "payout_confirmed"
+    # Wallet-down follows the payout feature and alerting, without an event-specific toggle.
+    EVT_PAYOUT_WALLET_DOWN = "payout_wallet_down"
     EVT_CONTAINER_UNHEALTHY = "container_unhealthy"
     EVT_RAFFLE_WIN = "raffle_win"
 
@@ -207,6 +210,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         *,
         monero_down,
         monero_stale=False,
+        monero_health=None,
         tari_down,
         tari_required,
         miner_released,
@@ -250,6 +254,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         # --- Node down / recovered (consume NodeHealthMonitor edges) ---
         alerts += self._node_edges("Monero", monero_down, "_prev_monero_down")
         alerts += self._stale_edges(monero_stale)
+        alerts += self._monero_health_edges(monero_health)
         if tari_required:
             alerts += self._node_edges("Tari", tari_down, "_prev_tari_down")
         else:
@@ -429,6 +434,16 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         )
         for sink in sinks:
             await asyncio.to_thread(sink.send, text, self.EVT_PAYOUT_CONFIRMED)
+        return text
+
+    async def payout_wallet_down_alert(self, chain, reason):
+        """One debounced edge per enabled payout wallet; no event-specific opt-out."""
+        if not self.enabled:
+            return None
+        text = self._fmt(f"\U0001f534 {chain.title()} payout wallet {reason}.")
+        for sink in self.sinks:
+            if sink.enabled:
+                await asyncio.to_thread(sink.send, text, self.EVT_PAYOUT_WALLET_DOWN)
         return text
 
     async def raffle_win_alert(self, tier, hashrate):

@@ -23,6 +23,7 @@ transition, not a stream:
 | Alert | When it fires |
 |---|---|
 | 🔴 **Node down** | Your Monero (or Tari) node has been unreachable long enough to be considered down — or the Monero node is reachable but has sat out of sync for 10+ minutes (the stranded-peers state a Tor restart can leave behind). Either way the stack has stopped serving your rigs so they **fail over to their backup pools**. |
+| 🔴 **Monero node isolated / not advancing** | The local Monero node is reachable but has had no outgoing peers for 10+ minutes, or its height has not moved for 30+ minutes (#2499). Two separate messages, each with the numbers; they use the `node_down` toggle, and the recovery note uses `node_recovered`. Nothing is restarted for you: `./pithead restart monerod`. |
 | 🟢 **Node recovered** | The node is back — reachable and in sync — and stable; the stack has readmitted your rigs. |
 | 🔴 **Worker offline** | A rig stopped hashing and hasn't been seen for a few minutes (a reboot, a dropped connection, a dead miner) — it's showing **DOWN** on the dashboard. |
 | 🟢 **Worker back online** | A rig that had gone offline is hashing again. |
@@ -190,6 +191,10 @@ block and set it to `false` — any event you don't list stays on:
 | `raffle_win` | `true` | This wallet won an XvB raffle round, per XvB's public winners file — fires once per win, with the round type and credited hashrate |
 
 Run `./pithead apply` after editing.
+
+When payout confirmation is enabled, `payout_wallet_down` sends one debounced alert per wallet
+that becomes unreachable or reports a different address. It is sent whenever an alert sink is
+enabled; there is no separate event toggle for this payout-safety signal.
 
 > The dashboard also shows an **AVX2-missing** badge when the CPU lacks AVX2, but it has **no
 > alert** — it's a fixed hardware fact with nothing to do at runtime, so it stays a badge (and shows

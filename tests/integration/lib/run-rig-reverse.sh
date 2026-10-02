@@ -1,8 +1,27 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 _pred_rig_present() { # <rig-name>
-    local s
-    s="$(api_state)"
+    local s rc=0
+    s="$(api_state)" || rc=$?
+    # Correlate normalized warning identities in memory only; never persist this raw poll.
+    _RIG_SETUP_STATE="$s"
+    # Keep only typed, allowlisted observations from this exact poll, never a raw worker/name.
+    _RIG_SETUP_SAMPLE="$(printf '%s' "$s" | jq -Rsc --arg n "$1" --argjson rc "$rc" \
+        --arg utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+        def bool: if type == "boolean" then . else null end;
+        (try fromjson catch null) as $s |
+        (if ($s | type) == "object" and ($s.workers | type) == "array"
+         then first($s.workers[] | objects | select(.name == $n)) // null else null end) as $w |
+        {sampled_utc:$utc, state_transport_exit:$rc,
+         state_valid:(($s | type) == "object" and ($s.workers | type) == "array"),
+         worker_found:($w != null),
+         status:($w.status | if . == "online" or . == "offline" then . else null end),
+         api_ok:($w.api_ok | bool), adopted:($w.adopted | bool),
+         rigforge_present:(($w.rigforge | type) == "object"),
+         version_present:($w.rigforge.version != null), stale:($w.rigforge.stale | bool),
+         generated_at:($w.rigforge.generated_at | if type == "string" then
+             if test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$") then . else null end
+             else null end)}' 2>/dev/null)" || _RIG_SETUP_SAMPLE='{"state_valid":false}'
     [ -n "$s" ] || return 1
     [ -n "$(printf '%s' "$s" | jq -r --arg n "$1" 'first(.workers[]? | select(.name==$n and .rigforge.version != null) | .name) // empty' 2>/dev/null)" ]
 }
@@ -64,7 +83,7 @@ run_rigforge_reverse() { # <rig-name> <orig-max_temp_c-or-empty>
         if wait_for 90 5 "dashboard feed to reflect the rig-side max_temp_c=$reflect (#516)" _pred_feed_maxt "$rig" "$reflect"; then
             it_pass "rig-side edit reflected in the dashboard's enriched feed (#516)"
         else
-            it_fail "rig-side edit reflected in the dashboard's enriched feed (#516)" "feed never showed max_temp_c=$reflect"
+            it_fail "rig-side edit reflected in the dashboard's enriched feed (#516)" "$(_reverse_feed_failure_detail "$reflect")"
         fi
         # Revert the rig to its original ceiling.
         change_id="$(_rig_control_apply "{\"max_temp_c\":$orig_maxt}")"
@@ -74,11 +93,76 @@ run_rigforge_reverse() { # <rig-name> <orig-max_temp_c-or-empty>
 }
 
 # POST straight to the rig's control API from the bench (the host runner's dial, minus the dashboard); used only by #516.
-_rig_control_apply() { # <changes-json> -> echoes change_id
-    local config
+_rig_control_apply() { # <changes-json> -> only a validated change_id on stdout
+    local config script result id diagnostic started
     config="$(printf '%s' "$1" | jq -er 'if type == "object" then tojson | @json else error("changes") end')" || return 1
     printf -v config 'header = %s\ndata-binary = %s' "$(printf 'Authorization: Bearer %s' "${IT_RIG_TOKEN:-}" | jq -Rs .)" "$config"
-    printf '%s\n' "$config" | rx "curl -fsS --max-time 15 -K - -X POST -H 'Content-Type: application/json' $(quote_arg "http://$RIG_HOST:$RIG_CONTROL_PORT/apply")" --stdin 2>/dev/null | jq -r '.change_id // empty' 2>/dev/null
+    started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    # Execute capture where curl runs. Only the constrained envelope crosses rx;
+    # credentials stay on stdin, and raw response bytes never enter the transcript.
+    script="$(
+        cat <<'CAPTURE'
+set -uo pipefail
+umask 077
+d="$(mktemp -d)" || exit 1
+trap 'rm -rf "$d"' EXIT
+stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# The file-size limit also bounds chunked responses on older curl versions.
+# No retry: even a transport error may follow a staged POST.
+http="$( (ulimit -c 0; ulimit -f 16 || exit 1
+    curl -q -sS --max-time 15 --max-filesize 16384 -K - -X POST \
+        -H 'Content-Type: application/json' -o "$d/body" -w '%{http_code}' "$1"
+) 2>/dev/null)"
+rc=$?
+[[ "$http" =~ ^[0-9]{3}$ ]] || http=000
+id='' status=absent
+if [ "$rc" -ne 0 ]; then
+    classification=transport-failure
+elif [[ ! "$http" =~ ^2[0-9]{2}$ ]]; then
+    classification=http-refusal
+elif [ ! -s "$d/body" ]; then
+    classification=empty-body
+elif ! jq -cs . "$d/body" >"$d/json" 2>/dev/null; then
+    classification=invalid-json
+elif [ "$(jq 'length' "$d/json")" = 0 ]; then
+    classification=empty-body
+else
+    # Exactly one object; no coercion, multiline IDs or arbitrary response text.
+    id="$(jq -r 'if length == 1 and (.[0] | type) == "object" then
+        .[0].change_id | select(type == "string") |
+        select(length == 16 and test("^[0-9a-f]{16}$")) else empty end' "$d/json" 2>/dev/null)"
+    status="$(jq -r 'if length == 1 and (.[0] | type) == "object" then
+        .[0].status | select(. == "accepted" or . == "applied" or . == "rejected" or
+        . == "failed" or . == "rolled_back" or . == "noop") else empty end' "$d/json" 2>/dev/null)"
+    status="${status:-absent}"
+    classification=missing-valid-id
+    [ -z "$id" ] || classification=success
+fi
+jq -cn --arg request_utc "$stamp" --arg http_status "$http" --arg curl_exit "$rc" \
+    --arg classification "$classification" --arg change_id "$id" --arg response_status "$status" \
+    '$ARGS.named'
+CAPTURE
+    )"
+    result="$(printf '%s\n' "$config" | rx "bash -c $(quote_arg "$script") -- $(quote_arg "http://$RIG_HOST:$RIG_CONTROL_PORT/apply")" --stdin 2>/dev/null)" || result=''
+    id="$(printf '%s' "$result" | jq -er 'select(.classification == "success" and .curl_exit == "0") |
+        select(.http_status | test("^2[0-9]{2}$")) | .change_id |
+        select(type == "string") | select(length == 16 and test("^[0-9a-f]{16}$"))' 2>/dev/null)" || id=''
+    if [ -n "$id" ]; then
+        printf '%s\n' "$id"
+        return 0
+    fi
+    diagnostic="$(printf '%s' "$result" | jq -er '
+        select(.request_utc | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) |
+        select(.http_status | test("^[0-9]{3}$")) |
+        select(.curl_exit | test("^[0-9]{1,3}$")) |
+        select(.classification == "http-refusal" or .classification == "transport-failure" or
+            .classification == "empty-body" or .classification == "invalid-json" or .classification == "missing-valid-id") |
+        select(.response_status == "absent" or .response_status == "accepted" or .response_status == "applied" or
+            .response_status == "rejected" or .response_status == "failed" or .response_status == "rolled_back" or .response_status == "noop") |
+        "request_utc=\(.request_utc) http_status=\(.http_status) curl_exit=\(.curl_exit) classification=\(.classification) response_status=\(.response_status)"' 2>/dev/null)" || diagnostic="request_utc=$started http_status=000 curl_exit=unknown classification=transport-failure response_status=absent"
+    it_log "direct rig control apply diagnostic: $diagnostic" >&2
+    # Preserve the caller's direct acceptance assertion even under errexit.
+    return 0
 }
 # Poll the rig's /status for <change_id> reaching <want-status>. Returns 0 on match within the window.
 _rig_control_await() { # <change_id> <want-status> [timeout-s=30]
@@ -95,12 +179,40 @@ _rig_control_await() { # <change_id> <want-status> [timeout-s=30]
 }
 
 # Predicate: the dashboard feed's watchdog Temp/max stat shows <want> as the ceiling for <rig>.
+# _FEED_MAXT_SEEN keeps the rig's status, report freshness and temperature rows from the last poll so a
+# timeout names what the feed showed: a stale report, a missing temperature, or the old ceiling (#2741).
 _pred_feed_maxt() { # <rig-name> <want-max_temp_c>
     local s v
+    _FEED_MAXT_SEEN="no response from /api/state"
     s="$(api_state)"
     [ -n "$s" ] || return 1
+    _FEED_MAXT_SEEN="$(printf '%s' "$s" | jq -r --arg n "$1" '[.workers[]? | select(.name==$n)][0] | if . == null then "rig not in the feed" else "status=\(.status // "?"), stats: " + ([.rigforge.stats[]? | select(.label == "Agent report" or .label == "Temp / max") | "\(.label)=\(.value)"] | join("; ")) end' 2>/dev/null)" ||
+        _FEED_MAXT_SEEN=""
+    [ -n "$_FEED_MAXT_SEEN" ] || _FEED_MAXT_SEEN="unparseable /api/state"
     v="$(printf '%s' "$s" | jq -r --arg n "$1" 'first(.workers[]? | select(.name==$n) | .rigforge.stats[]? | select(.label=="Temp / max") | .value) // empty' 2>/dev/null | sed -n 's#.*/ *\([0-9][0-9]*\).*#\1#p')"
     [ "$v" = "$2" ]
+}
+
+# The rig's own enriched feed, read straight from the bench (the dashboard bypassed): its generation stamp
+# and watchdog ceiling, or why the read failed. No curl stderr is kept: it names the rig's address (#2741).
+_rig_direct_summary() {
+    local body
+    body="$(printf 'header = %s\n' "$(printf 'Authorization: Bearer %s' "${IT_RIG_TOKEN:-}" | jq -Rs .)" | rx "curl -fsS --max-time 10 -K - $(quote_arg "http://$RIG_HOST:8081/1/summary")" --stdin 2>/dev/null)" ||
+        {
+            echo "direct /1/summary read failed"
+            return 0
+        }
+    [ -n "$body" ] || {
+        echo "direct /1/summary returned an empty body"
+        return 0
+    }
+    printf '%s' "$body" | jq -r '"generated_at=\(.generated_at // "absent"), watchdog max_temp_c=\(.rigforge.watchdog.max_temp_c // "absent")"' 2>/dev/null ||
+        echo "direct /1/summary unparseable"
+}
+
+# The #516 failure detail, taken before the rig is reverted.
+_reverse_feed_failure_detail() { # <wanted-max_temp_c>
+    printf 'feed never showed max_temp_c=%s; last poll: %s; rig direct: %s' "$1" "${_FEED_MAXT_SEEN:-}" "$(_rig_direct_summary)"
 }
 
 # #517: an auto-rollback (rigforge#236) recorded end-to-end from the dashboard. A change that tanks the

@@ -4,7 +4,7 @@ FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffb
 # Install system dependencies required for downloading, verifying, and configuring the node
 # 'gettext-base' provides 'envsubst' for template processing in entrypoint.sh
 RUN apt-get update && apt-get install -y \
-    wget bzip2 ca-certificates curl gettext-base \
+    wget bzip2 ca-certificates curl gettext-base jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Define Monero version and SHA256 hash for binary verification
@@ -33,9 +33,14 @@ COPY wallet-entrypoint.sh /usr/local/bin/wallet-entrypoint.sh
 COPY wallet-healthcheck.sh /usr/local/bin/wallet-healthcheck.sh
 RUN chmod +x /usr/local/bin/wallet-entrypoint.sh /usr/local/bin/wallet-healthcheck.sh
 
-# RPC liveness healthcheck — reads creds from env so they stay off the compose command line (#90)
+# RPC, peer and height-progress healthcheck — reads creds from env, never from compose argv (#90, #2499)
 COPY healthcheck.sh /usr/local/bin/monerod-healthcheck.sh
 RUN chmod +x /usr/local/bin/monerod-healthcheck.sh
+
+# The peer counts (#2921): the published RPC is restricted and hides them, so this fixed helper reads the
+# admin RPC on the container's own loopback. The healthcheck and host tools (docker exec) call it.
+COPY peers.sh /usr/local/bin/monerod-peers.sh
+RUN chmod +x /usr/local/bin/monerod-peers.sh
 
 # Run non-root (#255). Reuse ubuntu:24.04's built-in 'ubuntu' user (uid 1000) and keep monerod's
 # data under that user's home — /home/ubuntu/.bitmonero, which is also monerod's native

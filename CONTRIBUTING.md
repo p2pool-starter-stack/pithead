@@ -26,7 +26,11 @@ uv run --project dashboard pre-commit install
 
 `make test` and `make lint-py` run through uv automatically (no venv to activate); `pre-commit`
 runs `ruff` (plus a few hygiene hooks) on your changed files. If you change dependencies in
-`dashboard/pyproject.toml`, run `uv lock` and commit the updated `uv.lock`.
+`dashboard/pyproject.toml`, run `uv lock --project dashboard` and commit the updated `uv.lock`.
+For a transitive security fix, update only the affected package with
+`uv lock --project dashboard --upgrade-package urllib3==2.8.0` (substitute the package and
+verified fixed version). Review the lockfile diff, run the dashboard tests, and require the
+built dashboard image's Trivy scan to pass without adding an ignore entry.
 
 The root `pithead` executable is generated and git-ignored. Plain `make` builds it from the
 numbered `lib/pithead/*.sh` sources; the test targets also build it when needed. Edit the slices,
@@ -82,10 +86,11 @@ verdict that means something. The dashboard and frontend unit suites still run f
      keep the plain path),
      `lint-topology` (no real-looking IPv6/IPv4 literal, `/home/<name>` path, `.lan`/`.internal`/
      `.local` hostname, or `user@host` string — a public repo, so every one of those has to stay a
-     generic class, not a trace of whoever's actual box; `tests/` and `docs/` are an accepted
-     exemption boundary for illustrative/fixture content, and each class also carries a small,
-     explicit value-level allowlist — see the script's own header — never a per-file exemption
-     comment), `lint-file-budget` (the file-budget ratchet, issue #1105 Phase 0 — see
+     generic class, not a trace of whoever's actual box; an instantiated service drop-in under
+     `/systemd/system/` is a unit name, not an address; `tests/` and `docs/` are an
+     accepted exemption boundary for illustrative/fixture content, and each class also carries a
+     small, explicit allowlist — see the script's own header — never a per-file exemption comment),
+     `lint-file-budget` (the file-budget ratchet, issue #1105 Phase 0 — see
      [File budget gate](#file-budget-gate)),
      `lint-pithead-build` (the generated `pithead` must build from `lib/pithead/*.sh` in a clean
      checkout — issue #1105 Phase 2), `lint-trivy-parity` (the CVE gate installs trivy once per
@@ -115,8 +120,8 @@ verdict that means something. The dashboard and frontend unit suites still run f
      lint surfaces already require.
    - **test-stack** — the `pithead` shell test suite.
    - **test-compose** — `docker-compose.yml` interpolation validation.
-   - **test-integration-selftest** — the integration harness's own pure logic.
-   - **test-tools** — bounded build-log sanitization, the shell suite's 30-minute CI timeout guard,
+   - **test-integration-selftest** — the integration harness's logic and bounded local transport fixtures.
+   - **test-tools** — bounded build-log sanitization, the shell suite's block and aggregation timeout guards,
      and a check that all four CI uv installs pin the same action, uv version, and archive checksum,
      without running a build.
    - **test-fakes** — the tier-2 contract test (real dashboard clients vs controllable fakes).
@@ -130,6 +135,24 @@ verdict that means something. The dashboard and frontend unit suites still run f
 5. Update the docs in [`docs/`](docs/) (and the README, if relevant) for any
    user-facing change. To see what the suites cover, `make test-inventory` writes a
    generated (git-ignored) inventory you can read locally.
+
+### Secret-scan findings
+
+The required gitleaks check scans the full history reachable from `HEAD`, using
+`.config/gitleaks.toml` and `.config/gitleaksignore`. Removing a literal from the
+current file does not remove its historical finding. Verify that a reported value
+is synthetic before adding an exact `commit:file:rule:line` fingerprint to the
+ignore file; a squash merge has a different commit and therefore a different
+fingerprint. Keep real credentials out of exceptions and rotate them if exposed.
+
+The history-scan job also runs `bash scripts/lint/selftest-gitleaks-history.sh`.
+It checks the synthetic restore-connection Digest exception, detects the finding
+with that exception removed, and detects an identical fixture in a new commit.
+The stale dashboard-hash exception accepts only the complete reviewed fixture
+line in its exact test paths. The selftest requires both findings at distinct
+columns when another credential precedes that fixture, and detects altered
+lines and copies in unreviewed paths. The connection-bound libcurl fixture
+remains authenticated and verifies the wire response independently with OpenSSL.
 
 ### File budget gate
 

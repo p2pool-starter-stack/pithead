@@ -16,6 +16,8 @@ dependencies = [
   "aiohttp>=3.14.3",
   # [socks] pulls in PySocks for external requests routed through the Tor SOCKS proxy.
   "requests[socks]>=2.34.2",
+  # Security floor for HTTPS proxy TLS and bounded chunk-size parsing.
+  "urllib3>=2.8.0",
   # grpcio/protobuf floors are dictated by the checked-in Tari gRPC stubs
   # (mining_dashboard/client/tari/generated/*_pb2*.py), which assert these at
   # import time. Do not resolve lower; regenerate the stubs if bumping.
@@ -38,7 +40,7 @@ test = [
 ]
 # Developer tooling (Wave 7, #280). Pinned so local, pre-commit, and CI all run the SAME ruff
 # — lint output is version-sensitive, so a floor would let CI and a contributor disagree.
-dev = ["ruff==0.16.8", "pre-commit>=4.6.2"]
+dev = ["ruff==0.16.9", "pre-commit>=4.6.2"]
 
 [tool.setuptools.packages.find]
 include = ["mining_dashboard*"]

@@ -3,6 +3,8 @@
 assert_scenario() {
     local name="$1" config="$2"
     assert_running_state "$name" "$config"
+    # Namespace probes, rule flushes and node restarts belong only to deploying scenarios.
+    assert_lan_guard_live "$config"
     local again
     again="$(pithead apply -y 2>&1)"
     assert_contains "re-apply is a no-op" "$again" "No configuration changes detected"
@@ -16,7 +18,7 @@ assert_scenario() {
 # direct-dial. Reuses bench-verify-egress.sh (the #256 verifier) in its persistent-only mode so
 # post-restart startup transients don't false-positive. Skipped only while a clearnet initial sync
 # is genuinely UNFINISHED (#183): a node is then intentionally on clearnet.
-assert_egress_posture() { # [tor-down|node-sync]
+assert_egress_posture() { # [tor-down|node-sync|p2pool-choice]
     local mc tc sdir prefix out waive="" arm=tor polls=3 interval=8 row="no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)"
     [ "${1:-}" != "tor-down" ] || waive=" --allow-tor-down"
     if [ "${1:-}" = node-sync ]; then
@@ -24,6 +26,12 @@ assert_egress_posture() { # [tor-down|node-sync]
         polls=6
         interval=10
         row="firewall-on clearnet peers and other app isolation (#2678)"
+    fi
+    if [ "${1:-}" = p2pool-choice ]; then
+        arm=p2pool-choice
+        polls=6
+        interval=10
+        row="P2Pool clearnet peers and every other app Tor-only (#2790)"
     fi
     mc="$(env_on_box MONERO_CLEARNET_SYNC)"
     tc="$(env_on_box TARI_CLEARNET_SYNC)"

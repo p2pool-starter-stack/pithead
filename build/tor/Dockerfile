@@ -20,6 +20,11 @@ RUN chmod +x /usr/local/bin/tor-entrypoint.sh
 # Control-port bootstrap healthcheck (see docker-compose.yml healthcheck)
 COPY healthcheck.sh /usr/local/bin/tor-healthcheck.sh
 RUN chmod +x /usr/local/bin/tor-healthcheck.sh
+COPY control-signal.sh /usr/local/bin/tor-control-signal.sh
+RUN chmod +x /usr/local/bin/tor-control-signal.sh
+
+COPY recovery-diagnose.sh /usr/local/bin/tor-recovery-diagnose.sh
+RUN chmod +x /usr/local/bin/tor-recovery-diagnose.sh
 
 # Create the data directory and ensure the 'tor' user has ownership
 # This is critical because we switch to a non-root user below

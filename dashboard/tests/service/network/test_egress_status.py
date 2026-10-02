@@ -106,10 +106,12 @@ def test_a_missing_firewall_warns_and_claims_nothing_is_blocked():
     assert s["label"].startswith("Tor-only egress firewall MISSING")
     assert "blocked by the egress firewall" not in s["label"]
     assert s["blocked_by_firewall"] == 0
-    assert s["leaks"] == 1  # p2pool's clearnet sidechain dial is live without the DROP
+    assert (
+        s["leaks"] == 0
+    )  # selected P2Pool clearnet remains a choice; missing firewall still warns
     assert not any(c.get("blocked_by_firewall") for comp in p["components"] for c in comp["conns"])
     badge = _egress_badge(s)
-    assert badge["variant"] == "bad"
+    assert badge["variant"] == "warn"
     assert "MISSING" in badge["text"]
 
 

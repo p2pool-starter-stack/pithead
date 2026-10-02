@@ -101,6 +101,8 @@ Setup walks through five stages. It's interactive on the first run and safe to r
 
 2. **Interactive configuration.** Asks only what only you can answer, in two short stages, then
    fills in the rest and writes a minimal `config.json`, locked down to owner-only (`chmod 600`).
+   Use a dedicated Monero mining wallet: P2Pool payout addresses are public
+   ([P2Pool's guidance](https://github.com/SChernykh/p2pool/releases/tag/v4.18.1)).
    - **Required:** your Monero wallet address; whether you're running a local Monero node (the
      default — the stack runs its own) or connecting to a remote one, with a local node's RPC
      credentials auto-generated; and your P2Pool pool tier (`main`/`mini`/`nano` — pick low if

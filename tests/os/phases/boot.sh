@@ -73,6 +73,70 @@ phase_boot() {
         return
     }
 
+    # Exercise the installed unit under systemd. The guest has a real emulated UART; a temporary
+    # runtime drop-in gives the SAME ExecCondition a type-0 fixture, then is removed before reboot.
+    # Keep the dead-port state for five minutes, long enough to expose the original 10 s loop.
+    local getty_type getty_state getty_restarts getty_result getty_errors
+    getty_type=$(_ssh 'cat /sys/class/tty/ttyS0/type' 2>/dev/null | tr -d '\r\n')
+    getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+    getty_restarts=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+    if [[ "$getty_type" =~ ^[1-9][0-9]*$ ]] && [ "$getty_state" = active ] && [ "$getty_restarts" = 0 ]; then
+        ok "serial getty runs on the guest's real UART without a restart"
+    else
+        bad "serial getty did not start cleanly on the guest UART (type ${getty_type:-unreadable}, state ${getty_state:-unreadable}, NRestarts ${getty_restarts:-unreadable})"
+    fi
+    if _ssh 'mkdir -p /run/systemd/system/serial-getty@ttyS0.service.d && printf "0\n" >/run/pithead-test-serial-type && cat >/run/systemd/system/serial-getty@ttyS0.service.d/pithead-test.conf && systemctl daemon-reload && systemctl restart serial-getty@ttyS0.service' <<'GETTY_DROPIN'; then
+[Service]
+ExecCondition=
+ExecCondition=/usr/local/sbin/pithead-serial-port-present /run/pithead-test-serial-type
+GETTY_DROPIN
+        sleep 300
+        getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        getty_result=$(_ssh 'systemctl show -P Result serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        getty_restarts=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        getty_errors=$(_ssh "journalctl -b -u serial-getty@ttyS0.service -g 'failed to get terminal attributes' -q --no-pager | wc -l" 2>/dev/null | tr -d '\r\n ')
+        if [ "$getty_state" = inactive ] && [ "$getty_result" = exec-condition ] && [ "$getty_restarts" = 0 ] && [ "$getty_errors" = 0 ]; then
+            ok "serial getty skips a type-0 port without restarts or terminal errors for five minutes"
+        else
+            bad "serial getty did not stay skipped on a type-0 port (state ${getty_state:-unreadable}, result ${getty_result:-unreadable}, NRestarts ${getty_restarts:-unreadable}, terminal errors ${getty_errors:-unreadable})"
+        fi
+    else
+        bad "could not stage a type-0 port for the serial getty's systemd condition"
+    fi
+    if _ssh 'rm -f /run/systemd/system/serial-getty@ttyS0.service.d/pithead-test.conf /run/pithead-test-serial-type && systemctl daemon-reload && systemctl start serial-getty@ttyS0.service'; then
+        getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        [ "$getty_state" = active ] && ok "serial getty resumes on the real UART after the type-0 check" ||
+            bad "serial getty did not resume after removing the type-0 fixture (state ${getty_state:-unreadable})"
+    else
+        bad "could not restore the guest's serial getty after the type-0 check"
+    fi
+    # systemctl kill can refuse a unit with no main process during the start transition. Read a
+    # concrete PID first so this row names that state and signals the process actually under test.
+    local getty_deadline getty_pid="" getty_restarts_before=""
+    getty_deadline=$(($(date +%s) + 20))
+    while [ "$(date +%s)" -lt "$getty_deadline" ]; do
+        getty_pid=$(_ssh 'systemctl show -P MainPID serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        [[ "$getty_pid" =~ ^[1-9][0-9]*$ ]] && break
+        sleep 1
+    done
+    getty_restarts_before=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+    if [[ "$getty_pid" =~ ^[1-9][0-9]*$ && "$getty_restarts_before" =~ ^[0-9]+$ ]] && _ssh "kill -HUP $getty_pid"; then
+        getty_deadline=$(($(date +%s) + 20))
+        while [ "$(date +%s)" -lt "$getty_deadline" ]; do
+            getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+            getty_restarts=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+            [ "$getty_state" = active ] && [[ "$getty_restarts" =~ ^[0-9]+$ ]] &&
+                [ "$getty_restarts" -eq "$((getty_restarts_before + 1))" ] && break
+            sleep 1
+        done
+        [ "$getty_state" = active ] && [[ "$getty_restarts" =~ ^[0-9]+$ ]] &&
+            [ "$getty_restarts" -eq "$((getty_restarts_before + 1))" ] &&
+            ok "a clean hangup respawns the serial login prompt" ||
+            bad "the serial login did not respawn after a clean hangup (state ${getty_state:-unreadable}, NRestarts ${getty_restarts:-unreadable}, before ${getty_restarts_before:-unreadable})"
+    else
+        bad "could not send a clean hangup to the serial getty (MainPID ${getty_pid:-unreadable}, state ${getty_state:-unreadable})"
+    fi
+
     # Hugepages are load-bearing (the RandomX dataset must land in hugetlbfs, not the cgroup —
     # the Dockerfile's own words): the baked sysctl reserves 3072 2M pages, and a boot that
     # silently lost them starves the miner while everything else looks healthy. Since #977 this

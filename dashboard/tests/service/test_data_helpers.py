@@ -605,7 +605,7 @@ class TestReadHostConfig:
         out = _read_host_config()
         assert out["notifications"]["ntfy"]["url"] == {"__secret__": True}
         assert out["notifications"]["ntfy"]["token"] == {"__secret__": True}
-        assert out["notifications"]["webhooks"][0] == {"__secret__": True}
+        assert out["notifications"]["webhooks"][0] == {"__secret__": True, "slot": 0}
         assert out["notifications"]["webhooks"][1] == ""
         assert "leaked" not in json.dumps(out)
 

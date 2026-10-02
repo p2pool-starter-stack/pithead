@@ -5,6 +5,10 @@
 export const FIELD_WARNINGS = {
   "p2pool.pool":
     "P2Pool sidechain changing — p2pool re-syncs the new sidechain and your PPLNS window resets (XvB shares reset too).",
+  "p2pool.clearnet":
+    "Tor is private by default but costs about 10% of P2Pool yield on mini. Clearnet exposes your home IP to P2Pool peers.",
+  "xvb.tor":
+    "Tor hides your home IP from the XvB donation pool. Turning it off connects directly and exposes your home IP to that pool.",
   "monero.wallet_address":
     "Monero payout address is changing — future mining rewards go to the new address.",
   "tari.wallet_address":

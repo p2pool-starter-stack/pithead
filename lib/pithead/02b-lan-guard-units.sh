@@ -4,6 +4,85 @@
 # a crash (doctor, dashboard say so). The appliance needs neither: pithead-boot runs `up` first.
 LAN_GUARD_BOOT_UNIT="pithead-lan-guard.service"
 LAN_GUARD_HOLD_UNIT="pithead-lan-hold.service"
+LAN_GUARD_CHECK_SERVICE="pithead-lan-check.service"
+LAN_GUARD_CHECK_TIMER="pithead-lan.timer"
+
+render_lan_guard_check_service() { # <install dir> <engine>
+    cat <<EOF
+[Unit]
+Description=Stop LAN-publishing pithead nodes if their source rule disappears
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=$1
+Environment=PITHEAD_ENGINE=$2
+ExecStart=$1/pithead lan-guard-check
+EOF
+}
+
+render_lan_guard_check_timer() {
+    cat <<EOF
+[Unit]
+Description=Check the pithead LAN-only source rule every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=1s
+Unit=$LAN_GUARD_CHECK_SERVICE
+
+[Install]
+WantedBy=timers.target
+EOF
+}
+
+provision_lan_guard_check_units() { # [steal]
+    [ "$OS_TYPE" = Linux ] && command -v systemctl >/dev/null 2>&1 || return 0
+    local unit_dir owner svc timer
+    unit_dir=$(control_unit_dir)
+    if [ -z "$(lan_guard_watched_ports)" ]; then
+        remove_lan_guard_check_units || warn "lan-guard:check-removal-incomplete — $LAN_GUARD_CHECK_TIMER could not be removed."
+        return 0
+    fi
+    if [ -e "$unit_dir/$LAN_GUARD_CHECK_SERVICE" ] && [ "${1:-}" != steal ] &&
+        [ "${PITHEAD_STEAL_CONTROL_UNITS:-0}" != 1 ]; then
+        owner=$(control_units_owner_dir "$LAN_GUARD_CHECK_SERVICE" lan-guard-check)
+        if [ -z "$owner" ] || { [ "$owner" != "$(pwd -P)" ] && [ -d "$owner" ]; }; then
+            warn "lan-guard:foreign-check — $LAN_GUARD_CHECK_SERVICE belongs to another install."
+            return 1
+        fi
+    fi
+    [[ "$PWD" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
+    svc=$(render_lan_guard_check_service "$PWD" "$(container_engine)")
+    timer=$(render_lan_guard_check_timer)
+    if [ "$(cat "$unit_dir/$LAN_GUARD_CHECK_SERVICE" 2>/dev/null)" = "$svc" ] &&
+        [ "$(cat "$unit_dir/$LAN_GUARD_CHECK_TIMER" 2>/dev/null)" = "$timer" ] &&
+        systemctl is-active "$LAN_GUARD_CHECK_TIMER" >/dev/null 2>&1; then return 0; fi
+    local -a enable_args=(enable --now)
+    case "$unit_dir" in /run/*) enable_args=(enable --runtime --now) ;; esac
+    if printf '%s\n' "$svc" | sudo tee "$unit_dir/$LAN_GUARD_CHECK_SERVICE" >/dev/null &&
+        printf '%s\n' "$timer" | sudo tee "$unit_dir/$LAN_GUARD_CHECK_TIMER" >/dev/null &&
+        sudo systemctl daemon-reload && sudo systemctl "${enable_args[@]}" "$LAN_GUARD_CHECK_TIMER" >/dev/null 2>&1; then
+        log "The LAN-only source rule is checked every 2 minutes ($LAN_GUARD_CHECK_TIMER)."
+    else
+        warn "lan-guard:check-install-failed — could not start $LAN_GUARD_CHECK_TIMER."
+        return 1
+    fi
+}
+
+remove_lan_guard_check_units() {
+    local unit_dir rc=0
+    unit_dir=$(control_unit_dir)
+    [ -e "$unit_dir/$LAN_GUARD_CHECK_SERVICE" ] || [ -e "$unit_dir/$LAN_GUARD_CHECK_TIMER" ] || return 0
+    if [ -e "$unit_dir/$LAN_GUARD_CHECK_SERVICE" ] &&
+        [ "$(control_units_owner_dir "$LAN_GUARD_CHECK_SERVICE" lan-guard-check)" != "$(pwd -P)" ]; then return 0; fi
+    sudo systemctl disable --now "$LAN_GUARD_CHECK_TIMER" >/dev/null 2>&1 || rc=1
+    sudo rm -f "$unit_dir/$LAN_GUARD_CHECK_TIMER" "$unit_dir/$LAN_GUARD_CHECK_SERVICE" || rc=1
+    sudo systemctl daemon-reload >/dev/null 2>&1 || rc=1
+    [ ! -e "$unit_dir/$LAN_GUARD_CHECK_TIMER" ] && [ ! -e "$unit_dir/$LAN_GUARD_CHECK_SERVICE" ] || rc=1
+    return "$rc"
+}
 
 lan_guard_container() { if [ "$1" = 18142 ]; then echo tari; else echo monerod; fi; } # <port> -> its node
 
@@ -17,9 +96,9 @@ render_lan_guard_boot_unit() { # <iptables> <marker path> <port>...
     cat <<EOF
 [Unit]
 Description=pithead LAN-only sources on the *_lan_access node ports, restored before containers start
-Before=docker.service
-# After firewall loaders (they could flush our rules) and the egress unit (our jumps land above it).
-After=ufw.service firewalld.service netfilter-persistent.service nftables.service pithead-egress.service
+Before=docker.service pithead-egress.service
+# After firewall loaders (they could flush our rules); egress inserts its DROP above our jumps.
+After=ufw.service firewalld.service netfilter-persistent.service nftables.service
 
 [Service]
 Type=oneshot
@@ -127,4 +206,10 @@ remove_lan_guard_boot_unit() {
         ! grep -qE 'pithead-lan-(guard|hold)\.service' <<<"$lg_unit" || rc=1
     fi
     return "$rc"
+}
+
+# Egress check only reports dashboard status; a LAN check failure blocks apply.
+provision_firewall_check_units() {
+    provision_egress_check_units || true
+    provision_lan_guard_check_units
 }

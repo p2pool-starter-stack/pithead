@@ -1,14 +1,5 @@
-"""XvB, earnings and top-bar badges for the dashboard: the ``/api/state`` sections that turn
-raffle status, donation tiers and expected payouts into display values (Issues #12, #27, #118).
-
-Split out of ``web/views/views.py`` (#1105). Everything here is presentation: the badge list the top bar
-renders, the expected-XMR/XTM inputs the earnings calculator shows, the measured-vs-published
-realization band, and the tier calculator's copy. ``views.py`` stays the facade — ``build_state``
-assembles these sections and ``service/notify/telegram_commands.py`` imports :func:`build_badges` from
-there — so the move is invisible to consumers.
-
-Nothing here formats HTML; it emits tokens and display strings and lets the client render.
-"""
+"""XvB, earnings and header badges emitted through ``/api/state``.
+Presentation data only; the client renders the tokens and display strings."""
 
 import time
 
@@ -163,6 +154,15 @@ def build_badges(data, metrics, mode_variant, db_healthy=True, wallet_change=Non
     # Node-down badges (Issue #31) — shown whenever a node is unreachable, regardless of sync.
     if metrics.monero.down:
         badges.append({"text": "monerod DOWN", "variant": "bad"})
+    health = (data.get("monero_sync") or {}).get("health") or {}
+    if monero_is_local() and not metrics.monero.down and health.get("level") == "red":
+        badges.append(
+            {
+                "text": "Monero chain unhealthy",
+                "variant": "bad",
+                "title": "; ".join([*(health.get("reasons") or []), health.get("advice") or ""]),
+            }
+        )
     if metrics.tari.down:
         badges.append({"text": "Tari DOWN", "variant": "bad"})
     if data.get("workers_rejected"):
@@ -547,19 +547,19 @@ def build_earnings(data, metrics, payouts=None, tari_payouts=None, xvb_day=None)
         "tari_reward": metrics.tari_reward,  # full XTM paid per Tari block (solo, lumpy)
         # Current-tier XvB expected reward, XMR/day, folded into the net-profit estimate (#712).
         # None unless XvB is on with a fresh published estimate for the tier the fleet holds now.
-        # build_state tempers this by measured delivery (xvb_tempered_day, #902) before the
-        # payload ships — clients never see the raw published figure.
+        # build_state tempers this by measured delivery before publishing.
         "xvb_day": xvb_day,
         "pool_difficulty": metrics.pool_difficulty,  # for expected time-to-share (diff/hr)
         "block_reward": f"{reward_atomic / 1e12:.4f} XMR",  # context, server-formatted like NetworkCard
         "disclaimer": _EARNINGS_DISCLAIMER,
-        # Confirmed on-chain payouts (#381), beside the estimate above. {"enabled": False} when the
-        # view-only wallet feature is off — the UI then shows only the estimate.
-        "confirmed": confirmed_payouts_summary(payouts),
-        # Confirmed Tari payouts (#462), beside the Tari time-to-block estimate. XTM (microTari),
-        # {"enabled": False} when the Tari view-only wallet feature is off.
+        "confirmed": confirmed_payouts_summary(
+            payouts, wallet_status=(data.get("payout_wallet") or {}).get("monero")
+        ),
         "tari_confirmed": confirmed_payouts_summary(
-            tari_payouts, divisor=MICRO_PER_XTM, unit="xtm"
+            tari_payouts,
+            divisor=MICRO_PER_XTM,
+            unit="xtm",
+            wallet_status=(data.get("payout_wallet") or {}).get("tari"),
         ),
     }
 

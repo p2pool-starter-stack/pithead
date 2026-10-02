@@ -233,6 +233,7 @@ questions.
 single wrong character pays a stranger. The page checks the address as you paste it and tells
 you immediately if it is the wrong kind: p2pool cannot pay a subaddress (starting `8`) or an
 integrated address, only your **primary** address, which starts with `4`.
+Use a dedicated mining wallet: P2Pool payout addresses are public ([P2Pool's guidance](https://github.com/SChernykh/p2pool/releases/tag/v4.18.1)).
 
 Then a handful of choices, all with sensible defaults:
 

@@ -288,9 +288,8 @@ COPY os/overlay/pithead-sync.service /etc/systemd/system/pithead-sync.service
 COPY os/overlay/pithead-sync /usr/local/sbin/pithead-sync
 # State mounts derive from the boot disk every boot, never labels: every pithead disk carries the same labels, and two at once made LABEL= mount the wrong /data.
 COPY os/overlay/pithead-mount-generator /usr/lib/systemd/system-generators/pithead-mount-generator
-COPY os/overlay/pithead-boot.service /etc/systemd/system/pithead-boot.service
-COPY os/overlay/pithead-setup-again.service /etc/systemd/system/pithead-setup-again.service
-COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version /usr/local/sbin/
+COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/overlay/pithead-address-watch.service os/overlay/pithead-address-watch.timer /etc/systemd/system/
+COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch /usr/local/sbin/
 # Physical-presence configuration channel (#786 sub-issue D): pithead-boot's one stage before render; no unit of its own.
 COPY os/overlay/pithead-media-config /usr/local/sbin/pithead-media-config
 # Hugepages sizing (#977): the sysctl.d reservation above is sized for the supported 16 GB machine;
@@ -300,6 +299,9 @@ COPY os/overlay/pithead-hugepages.service /etc/systemd/system/pithead-hugepages.
 COPY os/overlay/pithead-hugepages /usr/local/sbin/pithead-hugepages
 # The pool's SECOND writer (#1724): xmrig runs as root and grows nr_hugepages through sysfs; this drop-in fences the miner unit off both subtrees.
 COPY os/overlay/pithead-xmrig-hugepages.conf /etc/systemd/system/xmrig.service.d/pithead-hugepages.conf
+COPY os/overlay/pithead-serial-port-present /usr/local/sbin/pithead-serial-port-present
+ARG SERIAL_GETTY_UNIT_PREFIX=serial-getty
+COPY os/overlay/pithead-serial-getty.conf /etc/systemd/system/${SERIAL_GETTY_UNIT_PREFIX}@ttyS0.service.d/override.conf
 # The two-tier reset's deep tier and the wedged-/data recovery path: reformats /data before it
 # mounts, on a `pithead factory-reset` request (ESP marker) or a genuinely unmountable partition.
 # Ordered before data.mount by its unit; fail-safe — a healthy, unmarked partition is never touched.
@@ -336,7 +338,7 @@ RUN mkdir -p /etc/ssh/sshd_config.d \
 RUN mkdir -p /etc/systemd/system-preset \
     && printf 'disable *\n' > /etc/systemd/system-preset/00-pithead.preset \
     && systemctl mask systemd-firstboot.service
-RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
+RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
 # The updater is chosen per image. The package install above includes RAUC only when selected;
 # leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
 # NB: `rauc` is the CLI ONLY. Debian splits the D-Bus daemon into `rauc-service`, which is not even
@@ -367,6 +369,7 @@ RUN systemctl enable podman.socket pithead-boot.service pithead-cpu-governor.ser
         systemd-networkd systemd-networkd-wait-online pithead-sync.service pithead-firstboot.service \
         pithead-data-reset.service pithead-machine-id.service pithead-hugepages.service \
         pithead-journal-persist.service pithead-setup-again.service pithead-boot-version.service \
+        pithead-address-watch.timer \
     && systemctl disable ssh
 # systemd-repart.service is static — it is pulled in by sysinit.target, and `systemctl enable` on a
 # static unit is an error that would fail the build. Assert it is present instead.

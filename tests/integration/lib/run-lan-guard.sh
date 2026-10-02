@@ -22,10 +22,14 @@ _lan_probe() { # <a.b.c> <port>
 
 # Empty the rule the way a reboot does: our jumps, the chain, and the nodes' marker (a new boot id
 # invalidates it). Raw iptables, not remove_lan_guard, which refuses while the nodes run (#2749).
-_lan_strip() {
+_lan_flush_rules() {
     rx 'sudo iptables -S DOCKER-USER 2>/dev/null | grep -F pithead-lan-guard | tr -d "\"" | sed "s/^-A /-D /" |
             while read -r r; do sudo iptables $r; done
-        sudo iptables -F PITHEAD-LAN 2>/dev/null; sudo iptables -X PITHEAD-LAN 2>/dev/null; rm -f data/lan-guard/enforced' >/dev/null 2>&1 || true
+        sudo iptables -F PITHEAD-LAN 2>/dev/null; sudo iptables -X PITHEAD-LAN 2>/dev/null' >/dev/null 2>&1 || true
+}
+_lan_strip() {
+    _lan_flush_rules
+    rx 'rm -f data/lan-guard/enforced' >/dev/null 2>&1 || true
 }
 
 assert_lan_guard_live() { # <config>
@@ -42,10 +46,50 @@ assert_lan_guard_live() { # <config>
         assert_eq "LAN port $p: a non-private source cannot connect (#2616)" "$(_lan_probe 198.51.100 "$p")" closed
         assert_eq "LAN port $p: a private source can (#2616)" "$(_lan_probe 10.254.254 "$p")" open
     done
+    # shellcheck disable=SC2086
+    assert_lan_guard_timer_flush $ports
     # shellcheck disable=SC2086 # one argument per port
     assert_lan_guard_boot_restore $ports
     # shellcheck disable=SC2086
     assert_lan_guard_boot_failure $ports
+}
+
+# Flush only the kernel rule while the boot marker still says this boot. The timer must remove the
+# marker and stop the running LAN nodes before its next two-minute interval ends (#2846).
+assert_lan_guard_timer_flush() { # <port>...
+    local p since deadline closed=0 rc=0
+    [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
+    assert_eq "LAN check timer is active (#2846)" "$(rx 'systemctl is-active pithead-lan.timer 2>/dev/null')" active
+    assert_eq "LAN timer targets the check service (#2846)" \
+        "$(rx 'systemctl show -p Triggers --value pithead-lan.timer')" pithead-lan-check.service
+    assert_eq "marker exists before an external flush (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
+    since=$(date +%s)
+    _lan_flush_rules
+    assert_eq "flush left the boot marker intact (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
+    assert_eq "control: a non-private source reaches the unguarded port (#2846)" "$(_lan_probe 198.51.100 "$1")" open
+    deadline=$((since + 150))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if [ "$(rx 'test -e data/lan-guard/enforced && echo present')" != present ]; then
+            closed=1
+            for p in "$@"; do
+                [ "$(_lan_probe 198.51.100 "$p")" = closed ] || {
+                    closed=0
+                    break
+                }
+            done
+            [ "$closed" = 0 ] || break
+        fi
+        sleep 5
+    done
+    assert_eq "timer invalidated the marker and closed every port within its interval (#2846)" "$closed" 1
+    for p in "$@"; do
+        assert_eq "LAN port $p is closed after the timer check (#2846)" "$(_lan_probe 198.51.100 "$p")" closed
+    done
+    rx './pithead up' >/dev/null 2>&1 || rc=$?
+    assert_rc "up restores the rule and nodes after the flush (#2846)" "$rc" 0
+    for p in "$@"; do
+        assert_eq "LAN port $p admits a private source after recovery (#2846)" "$(_lan_probe 10.254.254 "$p")" open
+    done
 }
 
 # DIY reboot restore (#2749), without rebooting the bench: a reboot empties PITHEAD-LAN and its
@@ -66,6 +110,18 @@ assert_lan_guard_boot_restore() { # <port>...
     assert_eq "control: with the rule gone, a non-private source reaches port $1" "$(_lan_probe 198.51.100 "$1")" open
     rx 'sudo systemctl restart pithead-lan-guard.service' >/dev/null 2>&1 || rc=$?
     assert_rc "the boot unit starts cleanly on the real kernel (#2749)" "$rc" "0"
+    if [ "$(env_on_box TOR_EGRESS_FIREWALL)" != false ]; then
+        assert_contains "boot orders LAN guard before Tor egress (#2901)" \
+            "$(rx 'systemctl show -p Before --value pithead-lan-guard.service')" "pithead-egress.service"
+        assert_contains "Docker waits for Tor egress too (#2901)" \
+            "$(rx 'systemctl show -p After --value docker.service')" "pithead-egress.service"
+        rc=0
+        rx 'sudo systemctl restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
+        assert_rc "the Tor-egress boot unit starts after the LAN guard (#2901)" "$rc" "0"
+        rc=0
+        rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?
+        assert_rc "post-boot live Tor-egress verdict is enforced above the LAN jump (#2901)" "$rc" "0"
+    fi
     for p in "$@"; do
         assert_eq "after the boot unit, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
         assert_eq "after the boot unit, port $p: a private source can (#2749)" "$(_lan_probe 10.254.254 "$p")" open

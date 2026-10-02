@@ -13,7 +13,7 @@
 
 # Keep in sync with PITHEAD_COMMANDS in the pithead script — tests/stack/run.sh fails if the
 # two lists drift.
-_pithead_commands="setup apply render up down restart upgrade logs status test-alert doctor support-bundle reset-dashboard config-reset factory-reset backup restore uninstall firstboot-wizard load-images local-miner os-update control-run-pending egress-run-pending egress-status onion-client-key rotate-dashboard-onion rotate-secrets render-quadlet version help"
+_pithead_commands="setup apply render up down restart tor-recover upgrade logs status test-alert doctor support-bundle reset-dashboard config-reset factory-reset backup restore uninstall firstboot-wizard load-images local-miner os-update control-run-pending egress-run-pending egress-status lan-guard-check onion-client-key rotate-dashboard-onion rotate-secrets render-quadlet version help"
 
 # Service names = the top-level keys under `services:` in the docker-compose.yml next to the
 # pithead being completed. $1 = path to that compose file.
@@ -52,11 +52,16 @@ _pithead() {
         COMPREPLY=($(compgen -W "$(_pithead_services "$compose")" -- "$cur"))
         return
     fi
-    # `restart` takes exactly one optional argument: tor (fresh guard selection, #424) or
+    # `restart` takes exactly one optional argument: tor (circuit rebuild, #424) or
     # monerod (re-dial peers after a tor restart left the node out of sync, #972).
     if [ "$prev" = "restart" ]; then
         # shellcheck disable=SC2207
         COMPREPLY=($(compgen -W "tor monerod" -- "$cur"))
+        return
+    fi
+    if [ "$prev" = "tor-recover" ]; then
+        # shellcheck disable=SC2207  # command names have no whitespace
+        COMPREPLY=($(compgen -W "check apply" -- "$cur"))
         return
     fi
     # shellcheck disable=SC2207  # command names never contain whitespace

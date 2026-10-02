@@ -639,6 +639,12 @@ detail: **My P2Pool Node Stats**, **Global P2Pool Stats**, **XvB Donation Stats*
 **P2Pool Earnings (estimated)** calculator below. The
 expected-vs-actual table stays in both views. The choice is remembered across reloads.
 
+The **XMR Network** card's tick means monerod is at the tip with peers: **Node Health**, **Peers**
+(outgoing / incoming) and **Height Moved** (the age of the last height change) sit in its headline,
+and hovering them says what green means. It goes red with the numbers after 10 minutes with no
+outgoing peers or 30 minutes with no new height. A remote node's peers are not visible, so the card
+says so instead of guessing.
+
 **XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
 sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
 remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or
@@ -815,8 +821,20 @@ The dashboard polls the wallet on a slow cadence (about every 5 minutes) and rec
 payout to a small local table, so a restart never re-alerts. Coinbase outputs become spendable only
 after 60 blocks; a payout is recorded and announced when it's **confirmed in a block**, not when it
 matures — once, never twice. A pruned node confirms payouts fine (coinbase outputs are never pruned). If the
-wallet is still doing its first scan or is briefly unreachable, the confirmed figure stays put
-rather than erroring.
+wallet is still doing its first scan or is briefly unreachable, the confirmed totals stay put.
+The card checks each enabled payout wallet every dashboard cycle and remembers whether its slower
+payout scan answered. A wallet whose address probe or payout scan stops answering turns the card red
+after the node-down debounce (`NODE_DOWN_AFTER_SEC`, default 90 seconds),
+with the time it became unreachable; an empty answered scan leaves the card normal. The outage
+time stays visible until answers remain healthy through `NODE_RECOVERY_AFTER_SEC` (default 60
+seconds). A wallet whose own address differs from the configured payout address shows both
+addresses and a red warning.
+Each enabled wallet emits one debounced `payout_wallet_down` alert per outage when alert delivery
+is configured. If sending that alert raises an error, the card still turns red and the dashboard
+retries the alert on the next checks while the failure persists, up to three attempts per outage.
+Healthy answers during the recovery debounce do not retry the down alert. This alert has no
+event-specific opt-out. The Tari container's bounded first-scan
+health grace does not delay the card or alert.
 
 > **The view key is a secret. Treat it like a password.** A view key **cannot spend** — it can only
 > scan — but it reveals every incoming payout amount and its timing to anyone who can read it. The
@@ -843,7 +861,12 @@ Monero one — owner-only `.env`, never logged or on a container command line, a
 Configuration editor/browser only as a masked sentinel; replacement requires typed `APPLY`. The
 running wallet necessarily receives the key. As an extra safeguard, because Tari has no key-import
 file, the three wallet secrets are delivered in an owner-only host file bind-mounted read-only into
-the wallet container, so their values never appear in `docker inspect`.
+the wallet container, so their values never appear in `docker inspect`. The pinned wallet does not
+shut down on SIGTERM or SIGINT ([upstream issue](https://github.com/tari-project/tari/issues/8063)),
+so a container stop kills it after 10 seconds. The appliance test requires the pinned wallet to
+reopen the same SQLite database after this stop, retain its nonempty public identity (compared by
+fingerprint without logging the address) and reported state,
+and provide readable logs with no database-integrity errors before the forced stop is accepted.
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
 2022-01-01, as Tari Universe's `wallet_birthday`), not a block height. The wallet scans only through
 the local node's wallet HTTP service on the internal network, never Tari's public fallback node. Leave `tari.view_key` empty and none of the Tari half runs.
@@ -1030,7 +1053,9 @@ The flow mirrors the CLI's `apply`:
 2. **Save & preview changes** stages the edited config on the host, which dry-runs it and returns
    the same change preview `./pithead apply` prints — one row per changed setting, disruptive rows
    (⚠) styled as warnings. A config that fails validation is rejected here with pithead's own
-   error message; nothing is applied. Sensitive changes also show complete old and new non-secret
+   error message; nothing is applied. The host validates and stages from one private copy of the
+   claimed request, so a writer holding the original spool file open cannot change it mid-preview.
+   Sensitive changes also show complete old and new non-secret
    values; secret values remain masked.
 3. Confirm. If the preview flags any change disruptive (⚠), you must type `APPLY` first. A payout
    change also requires the final eight characters of the new address. The
@@ -1116,7 +1141,9 @@ would silently re-seed it, swallowing a payout change bundled with the move. A n
 a copy that fails or doesn't verify, refuses the whole apply instead of guessing which copy is live
 ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)); the other four `data_dir`s
 still only re-point the mount (see [Configuration › Data directories](configuration.md#data-directories)).
-If the recreate fails after the new path is published, `apply` restarts the existing dashboard
+If apply aborts before publishing the new path, it removes its unpublished copy and restarts the
+existing dashboard so the move can be retried. If it aborts after publication, it keeps the copy
+and retry marker. `apply` restarts the existing dashboard
 container, which is still mounted on the old path: rows written until the retried `apply` recreates
 it land in the old database, not the carried copy.
 

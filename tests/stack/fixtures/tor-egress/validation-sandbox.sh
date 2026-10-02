@@ -1,8 +1,9 @@
 # shellcheck shell=bash
-# The shared validation sandbox has no kernel. Keep the transaction's inserted rules as its live
-# readback, so an active first-sync apply must install its scoped ACCEPT before the DROP.
+# The shared validation sandbox has no kernel. Keep both rule sets as live readback, so an
+# active first-sync apply and a LAN bind change must prove their own installed rules.
 CNFW_DIR="${1:-$V}"
 : >"$CNFW_DIR/fw-rules"
+: >"$CNFW_DIR/fw-lan-rules"
 cat >"$CNFW_DIR/bin/sudo" <<'SUDO'
 #!/usr/bin/env bash
 [ "${1:-}" != -n ] || shift
@@ -13,17 +14,25 @@ cat >"$CNFW_DIR/bin/iptables-save" <<'SAVE'
 #!/usr/bin/env bash
 printf '*filter\n-N DOCKER-USER\n'
 cat "${0%/*}/../fw-rules"
+cat "${0%/*}/../fw-lan-rules"
 printf 'COMMIT\n'
 SAVE
 cat >"$CNFW_DIR/bin/iptables-restore" <<'RESTORE'
 #!/usr/bin/env bash
-awk '/^-I DOCKER-USER [0-9]+ / {sub(/^-I DOCKER-USER [0-9]+ /, "-A DOCKER-USER "); print}' >"${0%/*}/../fw-rules"
+txn="${0%/*}/../fw-transaction"
+cat >"$txn"
+if grep -q '^:PITHEAD-LAN ' "$txn"; then
+    awk '/^-A PITHEAD-LAN / {print} /^-I DOCKER-USER [0-9]+ .*pithead-lan-guard/ {sub(/^-I DOCKER-USER [0-9]+ /, "-A DOCKER-USER "); print}' "$txn" >"${0%/*}/../fw-lan-rules"
+else
+    awk '/^-I DOCKER-USER [0-9]+ / {sub(/^-I DOCKER-USER [0-9]+ /, "-A DOCKER-USER "); print}' "$txn" >"${0%/*}/../fw-rules"
+fi
 RESTORE
 cat >"$CNFW_DIR/bin/iptables" <<'IPT'
 #!/usr/bin/env bash
 case "$*" in
 "-S FORWARD") echo '-A FORWARD -j DOCKER-USER' ;;
-"-S DOCKER-USER") printf '%s\n' '-N DOCKER-USER'; cat "${0%/*}/../fw-rules" ;;
+"-S DOCKER-USER") printf '%s\n' '-N DOCKER-USER'; cat "${0%/*}/../fw-rules"; grep '^-A DOCKER-USER ' "${0%/*}/../fw-lan-rules" || : ;;
+"-S PITHEAD-LAN") printf '%s\n' '-N PITHEAD-LAN'; grep '^-A PITHEAD-LAN ' "${0%/*}/../fw-lan-rules" ;;
 "-S") echo '-P FORWARD ACCEPT' ;;
 esac
 IPT

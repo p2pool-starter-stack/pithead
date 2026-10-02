@@ -32,6 +32,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- **The XMR Network card now says whether monerod is at the tip with peers.** It shows the outgoing and
+  incoming peer counts and the age of the last height change, and goes red with the numbers after 10
+  minutes with no outgoing peers or 30 minutes with no new height. `./pithead doctor` and `status`
+  name the same condition, the monerod container reports `unhealthy` after 10 minutes with no outgoing
+  peers, and each condition sends one alert through the `node_down` toggle. Nothing is restarted for
+  you ([#2499](https://github.com/p2pool-starter-stack/pithead/issues/2499)).
+
 - **The dashboard onion's client key without a shell.** With Tor client authorization on — the
   default, and mandatory whenever the config editor is on — a published `.onion` does not answer a
   browser that has no client key, and the key was printed by exactly one thing: `pithead
@@ -190,6 +197,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **An IPv6 address that arrives after boot no longer leaves a permanent doctor FAIL (#2463).** A new
+  timer checks the machine's addresses every five minutes and, when they changed since the last
+  render, re-renders the dashboard certificate and Caddyfile and restarts Caddy if either changed.
+  The certificate check also compared an IPv6 address's two spellings (openssl's expanded form and
+  `hostname -I`'s compressed one) as different strings, so any IPv6 address was reported uncovered and
+  re-minted the certificate on every render; both sides are now canonicalised.
 
 - **Clearnet initial sync works behind the default egress firewall
   ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649),
