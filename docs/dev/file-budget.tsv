@@ -45,6 +45,7 @@ lib/pithead/33-render-env.sh	481
 lib/pithead/36-quadlet-units.sh	406
 scripts/watch/trivyignore-watch.sh	599
 tests/integration/e2e.sh	686
+tests/integration/lib/run-cli.sh	410
 tests/integration/fakes/test_contract.py	437
 tests/integration/lib.sh	690
 tests/integration/lib/live-upgrade-support.sh	413
