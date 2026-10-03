@@ -260,7 +260,7 @@ chain_out="$({
     set +eu
     DRY_RUN=0 SKIP_SMOKE=0 ASSUME_YES=1
     STACK_VERSION=v2.0.0 TAG=v2.0.0 STAGING_TAG=v2.0.0-rc.1
-    PLATFORMS=linux/amd64 REGISTRY=ghcr.io/test IMAGES=(tor)
+    PLATFORMS=linux/amd64 REGISTRY=ghcr.io/test IMAGES=(tor) PUBLISHED_IMAGES=(tor)
     WORKDIR="$CHAIN"
     set_digest tor "ghcr.io/test/pithead-tor@$CHAIN_DIGEST"
     docker() {
@@ -291,7 +291,7 @@ mismatch_out="$({
     cd "$ROOT" || exit
     set --
     source "$REL" 2>/dev/null
-    DRY_RUN=0 ASSUME_YES=1 TAG=v2.0.0 REGISTRY=ghcr.io/test IMAGES=(tor)
+    DRY_RUN=0 ASSUME_YES=1 TAG=v2.0.0 REGISTRY=ghcr.io/test IMAGES=(tor) PUBLISHED_IMAGES=(tor)
     WORKDIR="$CHAIN-mismatch"
     mkdir -p "$WORKDIR"
     set_digest tor "ghcr.io/test/pithead-tor@$CHAIN_DIGEST"
@@ -317,6 +317,8 @@ assert_contains "promotion mismatch names latest and the captured digest" "$mism
 assert_rc "manifest_digest refuses uppercase hex" "$?" "1"
 
 echo "== wiring: the build stages, the Dockerfile copies, verify-image compares (#1215) =="
+assert_contains "rootfs images link back to the public source package" "$(cat "$ROOT/os/build-image.sh")" \
+    'org.opencontainers.image.source=https://github.com/p2pool-starter-stack/pithead'
 # The three scripts cannot be run together at this tier; what CAN be proven is that each end
 # speaks the other's path — the shape #1064's guard failed on when the two ends disagreed.
 CS_BI="$(cat "$ROOT/os/build-image.sh")"

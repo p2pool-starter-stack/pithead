@@ -15,7 +15,7 @@ Rugix candidate is preserved on the `reference/rugix-candidate` branch.
 
 | Artifact | Built by | Contents |
 |---|---|---|
-| `os/build/pithead-root.tar` | `os/build-image.sh` | the OS as a container build, exported |
+| `pithead-os-rootfs:vX.Y.Z` + `os/build/pithead-root.tar` | `scripts/release/release.sh` | the published OS container image and its exported rootfs |
 | `pithead-os-vX.Y.Z.img.xz` | `scripts/release/package-appliance.sh` after `os/rauc/mkimage.sh` | compressed bootable image: ESP + slot A only |
 | `pithead-os-vX.Y.Z.raucb` | `os/rauc/mkbundle.sh`, then `scripts/release/package-appliance.sh` | signed A/B update bundle |
 
@@ -503,7 +503,12 @@ channels share the final cut commit, one version and one GitHub Release.
    The compose file the image ships comes from that tag whenever it already exists and from the tree only while it does not;
    at this step it does not, so the release build bakes the tree's copy, and the tag `release.sh`
    then creates on this commit names those same bytes.
-3. Build the image and bundle with the **release root and signing leaf**, never the throwaway
+3. Run the release pipeline with `--draft` first. It builds and publishes `pithead-os-rootfs:vX.Y.Z` by
+   digest, refuses a rootfs carrying the debug SSH key, and leaves the exact exported bytes in
+   `os/build/pithead-root.tar` with its `.sha256` handoff. The production image and bundle builders
+   require that digest and refuse a changed or debug-keyed tar. Do not run `os/build-image.sh`
+   again: rebuilding would re-resolve apt and make the published rootfs differ from the appliance.
+   Then build the image and bundle from that tar with the **release root and signing leaf**, never the throwaway
    `--dev` chain. Point `PITHEAD_RAUC_KEYRING` at the root baked into the image and
    `PITHEAD_RAUC_CERT` / `PITHEAD_RAUC_KEY` at the leaf that signs the bundle. Without the
    keyring export, `populate-slot.sh` defaults to baking the leaf as the trust anchor:
@@ -512,7 +517,7 @@ channels share the final cut commit, one version and one GitHub Release.
    export PITHEAD_RAUC_KEYRING=~/.config/pithead-release/rauc-root.pem
    export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem
    export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
-   os/build-image.sh && sudo -E os/rauc/mkimage.sh && sudo -E os/rauc/mkbundle.sh
+   sudo -E os/rauc/mkimage.sh && sudo -E os/rauc/mkbundle.sh
    ```
 
    Key generation, storage, the trust model and the rotation runbook are in
