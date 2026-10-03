@@ -694,11 +694,11 @@ unset tor_both_local tor_remote_tari tor_both_remote
 
 echo "== unit: onion provisioning follows node mode (#103) =="
 # pithead's half of the same gate: a hidden service that is never published has no hostname to wait
-# for, so provision_tor must not block on a remote node's onion (a 60s timeout, then a fatal error),
-# and the address stays a placeholder. wait_for_onion is stubbed — the polling itself is the docker
-# layer, and it runs in a command substitution, so the probe records asks in a file.
+# for, so provision_tor must not block on it. wait_for_onion is stubbed, and the probe records asks.
 ONP="$SANDBOX/onion-prov"
 mkdir -p "$ONP"
+MONERO_V3="$(printf '%*s.onion' 56 '' | tr ' ' a)"
+TARI_V3="$(printf '%*s.onion' 56 '' | tr ' ' b)"
 prov_probe() { # <MONERO_MODE> <TARI_MODE> -> "<onions asked for>|<MONERO_ONION>|<TARI_ONION>|<P2POOL_ONION>"
     (
         cd "$ONP" || exit
@@ -759,12 +759,17 @@ node_onion_probe() { # provision_node_onions recreates tor and captures a newly 
         # shellcheck disable=SC2034  # read by the sourced provision_node_onions, unseen here
         TARI_MODE="$3"
         TARI_ONION="$4"
+        TOR_DATA_DIR="$ONP/tor-data"
+        rm -rf "$TOR_DATA_DIR"
+        mkdir -p "$TOR_DATA_DIR/monero" "$TOR_DATA_DIR/tari"
+        [ "$MONERO_MODE" != local ] || onion_missing "$MONERO_ONION" || printf '%s\n' "$MONERO_ONION" >"$TOR_DATA_DIR/monero/hostname"
+        [ "$TARI_MODE" != local ] || onion_missing "$TARI_ONION" || printf '%s\n' "$TARI_ONION" >"$TOR_DATA_DIR/tari/hostname"
         provision_node_onions
         printf '%s|%s|%s|%s|%s' "$(cat dockerlog)" "$(cat asked)" "$MONERO_ONION" "$TARI_ONION" "$(cat renders)"
     )
 }
 assert_eq "provision_node_onions is a free no-op once every local node has its onion (#103)" \
-    "$(node_onion_probe local mona.onion local taria.onion)" "||mona.onion|taria.onion|"
+    "$(node_onion_probe local "$MONERO_V3" local "$TARI_V3")" "||$MONERO_V3|$TARI_V3|"
 assert_eq "provision_node_onions ignores a remote node with no onion (#103)" \
     "$(node_onion_probe remote placeholder remote placeholder)" "||placeholder|placeholder|"
 assert_eq "provision_node_onions mints + captures the onion of a node that just went local (#103)" \

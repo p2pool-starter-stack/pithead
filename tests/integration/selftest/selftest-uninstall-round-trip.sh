@@ -101,12 +101,19 @@ setup)
 esac
 EOF
 chmod +x "$T/bin/docker" "$T/fake-pithead"
+cat >"$T/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" != -n ] || shift
+exec "$@"
+EOF
+chmod +x "$T/bin/sudo"
 export PATH="$T/bin:$PATH"
 
 drive() { # <case> -> round-trip-rc|failures
     (
         B="$T/box-$1"
-        mkdir -p "$B/data/monero/lmdb" "$B/data/tor/keys" "$B/data/control" "$B/backups"
+        mkdir -p "$B/data/monero/lmdb" "$B/data/tor/keys" "$B/data/tor/monero" "$B/data/control" "$B/backups"
+        printf 'abc.onion\n' >"$B/data/tor/monero/hostname"
         printf chain >"$B/data/monero/p2pstate.bin"
         truncate -s 70M "$B/data/monero/lmdb/data.mdb"
         printf '{}' >"$B/config.json"
@@ -121,15 +128,54 @@ drive() { # <case> -> round-trip-rc|failures
         esac
         [ "$1" != active-wallet-profile ] || sed -i 's/COMPOSE_PROFILES=local_node,local_tari/COMPOSE_PROFILES=local_node,local_tari,tari_payout_confirm/' "$B/.env"
         # shellcheck disable=SC2034 # read by rx and the extracted functions
-        IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0
+        OUT_DIR="$B" IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0
         export FAKE_CASE="$1"
         it_step() { :; }
         it_skip_leg() { printf '%s|%s|%s' "$1" "$2" "$3" >"$B/skip"; }
         wait_status_ok() { :; }
         env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
         has_compose_profile() { case ",$1," in *",$2,"*) return 0 ;; *) return 1 ;; esac }
+        upgrade_secret_fingerprints() {
+            [ "$FAKE_CASE" != unreadable-secrets ] || return 1
+            [ "$FAKE_CASE" != unreadable-after ] || [ ! -e "$B/.uninstalled" ] || return 1
+            local proxy=1 onion=2
+            if [ -e "$B/.uninstalled" ]; then
+                [ "$FAKE_CASE" != changed-proxy ] || proxy=3
+                [ "$FAKE_CASE" != changed-onion-keys ] || onion=3
+            fi
+            printf 'proxy=%064d\nonion-files=%064d\n' "$proxy" "$onion"
+            if [ "$FAKE_CASE" = unwritable-hostname-after ] && [ -e "$B/.uninstalled" ]; then
+                chmod 400 "$B/uninstall-after.secrets.txt"
+            fi
+        }
+        [ "$1" != stale-onion-env ] || sed -i 's/abc.onion/old.onion/' "$B/.env"
+        [ "$1" != missing-onion-file ] || rm "$B/data/tor/monero/hostname"
+        if [ "$1" = unwritable-env-after ]; then
+            eval "$(declare -f rx | sed '1s/rx/fixture_rx/')"
+            rx() {
+                local rc
+                fixture_rx "$@"
+                rc=$?
+                if [[ "$1" == *"v=\$(grep '^MONERO_ONION_ADDRESS='"* ]] && [ -e "$B/.uninstalled" ]; then
+                    chmod 400 "$B/uninstall-after.secrets.txt"
+                fi
+                return "$rc"
+            }
+        fi
         run_uninstall_round_trip >"$B/run.log"
         result=$?
+        if [ "$1" = clean ] || [ "$1" = stale-onion-env ]; then
+            before_env="$(sed -n 's/^monero-env=//p' "$B/uninstall-before.secrets.txt")"
+            before_key="$(sed -n 's/^monero-hostname=//p' "$B/uninstall-before.secrets.txt")"
+            after_key="$(sed -n 's/^monero-hostname=//p' "$B/uninstall-after.secrets.txt")"
+            [ -n "$before_key" ] && [ "$before_key" = "$after_key" ] || it_fail "diagnostics retain kept identity" "missing or changed digest"
+            if [ "$1" = clean ]; then
+                [ "$before_env" = "$before_key" ] || it_fail "matching rendered onion has matching digest" "digests differ"
+            else
+                [ "$before_env" != "$before_key" ] || it_fail "stale rendered onion has a distinct digest" "digests match"
+            fi
+            ! grep -Eq 'abc.onion|old.onion|tok' "$B"/uninstall-*.secrets.txt || it_fail "diagnostics contain no plaintext secrets" "secret leaked"
+        fi
         if [ "$1" = no-wallet-seed ]; then
             grep -q 'image unavailable' "$B/run.log" &&
                 ! grep -q 'early detail\|PROXY_AUTH_TOKEN=leak\|split-leak\|osc-leak' "$B/run.log" &&
@@ -165,6 +211,14 @@ drive() { # <case> -> round-trip-rc|failures
 }
 
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
+assert_eq "stale rendered onion fails both the category and exact identity assertions" "$(drive stale-onion-env)" "1|2"
+assert_eq "a changed proxy category fails even when the Monero address matches" "$(drive changed-proxy)" "1|1"
+assert_eq "changed onion keys fail even when the Monero address matches" "$(drive changed-onion-keys)" "1|1"
+assert_eq "unreadable categories fail before uninstall" "$(drive unreadable-secrets)" "1|1"
+assert_eq "unreadable post-setup categories still fail the round trip" "$(drive unreadable-after)" "1|1"
+assert_eq "failed post-setup hostname artifact append fails the round trip" "$(drive unwritable-hostname-after)" "1|1"
+assert_eq "failed post-setup rendered-address artifact append fails the round trip" "$(drive unwritable-env-after)" "1|1"
+assert_eq "missing kept hostname fails before uninstall" "$(drive missing-onion-file)" "1|1"
 assert_eq "remote Tari mode skips wallet creation and still completes uninstall" "$(drive remote-tari)" "0|0"
 assert_eq "a preexisting owned wallet volume is reset, then Compose creates it" "$(drive owned-preexisting)" "0|0"
 assert_eq "failure to seed a wallet volume fails the pre-uninstall row" "$(drive no-wallet-seed)" "1|1"
