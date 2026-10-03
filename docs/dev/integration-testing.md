@@ -1111,12 +1111,15 @@ probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the fir
 failed missing-image `up` or dashboard data-dir carry, before cleanup can replace
 Tor's failing state. The end-of-run summary lists each failed assertion and points
 at these. The `doctor.txt` snapshot runs doctor again; it does not describe an earlier
-asserted invocation. Before each doctor assertion, the check phase saves that invocation's
-redacted stdout/stderr in `results/check/doctor-asserted.*/output.txt` and its exact exit code in
-`exit-code.txt`. Each invocation gets a separate directory, including successful invocations,
-so later diagnostics cannot replace failing evidence. Capture failures add a failed evidence row;
-the original doctor exit code is still asserted. This adds no retry or readiness wait and does
-not establish the cause of a transient failure. The pure regression is
+asserted invocation. Before each doctor assertion, the check phase emits its exact exit code as
+`doctor-asserted exit-code:` and its redacted stdout/stderr as `doctor-asserted output:` lines.
+These prefixes keep doctor diagnostics separate from harness verdict rows. The wrapper retains
+this transcript across phase cleanup. The same invocation is also saved under
+`results/check/doctor-asserted.*/output.txt` with `exit-code.txt`, in a separate directory per
+invocation. Later diagnostic snapshots cannot replace it, but the next phase's preflight clears
+the results directory; use the retained transcript for successful pregate evidence. Capture
+failures add a failed evidence row; the original doctor exit code is still asserted. This adds
+no retry or readiness wait and does not establish the cause of a transient failure. The pure regression is
 `tests/integration/selftest/selftest-doctor-evidence.sh`.
 
 Every destructive run also samples the HugePages that monerod and p2pool hold

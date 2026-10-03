@@ -6,8 +6,10 @@ source "$HERE/../lib.sh"
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-scenario.sh
 source "$HERE/../lib/run-scenario.sh"
-OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/doctor-evidence.XXXXXX")"
-trap 'rm -rf "$OUT_DIR"' EXIT
+TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/doctor-evidence.XXXXXX")"
+OUT_DIR="$TEST_DIR/results"
+mkdir -p "$OUT_DIR"
+trap 'rm -rf "$TEST_DIR"' EXIT
 
 echo "== asserted doctor evidence survives later healthy diagnostics =="
 IT_PITHEAD=pithead
@@ -127,5 +129,29 @@ for failure in redact mkdir mktemp write; do
         exit 1
     }
 done
+
+echo "== asserted transcript survives the next phase's real preflight cleanup =="
+cp "$OUT_DIR/assertion.log" "$TEST_DIR/doctor-transcript.log"
+# shellcheck source=tests/integration/lib/run-matrix.sh
+source "$HERE/../lib/run-matrix.sh"
+# Stub target I/O; exercise the actual preflight and its results cleanup.
+rx() { case "$1" in 'cat config.json') echo '{}' ;; esac }
+env_on_box() { echo 1; }
+secret_fingerprint() { echo fixture-fingerprint; }
+record_manifest() { echo manifest >"$OUT_DIR/manifest.txt"; }
+IT_MODE=local IT_SSH_DEST='' IT_REMOTE_DIR=.
+SAFETY_BACKUP=0
+preflight >"$TEST_DIR/preflight.log" || exit 1
+[ ! -e "${first[0]}" ] || {
+    echo 'preflight did not clean old results'
+    exit 1
+}
+[ -f "$OUT_DIR/manifest.txt" ] || exit 1
+grep -Fxq 'doctor-asserted exit-code: 7' "$TEST_DIR/doctor-transcript.log" || exit 1
+[ "$(sed -n 's/^doctor-asserted output: //p' "$TEST_DIR/doctor-transcript.log")" = "$expected" ] || {
+    echo 'asserted transcript did not retain the exact redacted invocation'
+    exit 1
+}
+grep -q 'expected rc 0, got 7' "$TEST_DIR/doctor-transcript.log" || exit 1
 
 echo 'selftest-doctor-evidence: PASS'

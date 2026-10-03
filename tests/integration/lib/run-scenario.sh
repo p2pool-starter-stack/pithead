@@ -154,6 +154,10 @@ assert_doctor_ok() {
         it_fail "doctor assertion evidence captured" "could not redact doctor output"
         out=""
     fi
+    # The wrapper retains its transcript across the next phase's results cleanup.
+    # Prefix every line so doctor output cannot be parsed as a harness verdict row.
+    printf 'doctor-asserted exit-code: %s\n' "$rc"
+    printf '%s\n' "$out" | sed 's/^/doctor-asserted output: /'
     if mkdir -p "$OUT_DIR/check" && evidence_dir="$(mktemp -d "$OUT_DIR/check/doctor-asserted.XXXXXX")"; then
         if ! { printf '%s\n' "$out" >"$evidence_dir/output.txt" && printf '%s\n' "$rc" >"$evidence_dir/exit-code.txt"; }; then
             it_fail "doctor assertion evidence captured" "could not write doctor evidence"
