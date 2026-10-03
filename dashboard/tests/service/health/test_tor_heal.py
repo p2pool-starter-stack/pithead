@@ -164,12 +164,13 @@ class TestDecide:
         h = _healer(clock, docker=docker)
         h._attempts = MAX_ATTEMPTS - 1
         _break_egress(h, clock)
-        with caplog.at_level("INFO", logger="TorHeal"):
+        retry_delay = "mining_dashboard.service.health.tor_heal.TOR_START_RETRY_DELAY_SEC"
+        with caplog.at_level("INFO", logger="TorHeal"), patch(retry_delay, 0):
             await h.check()
             assert h._attempts == MAX_ATTEMPTS
             assert h._last_attempt == clock.t
             assert docker.start.await_args_list[0].args == ("tor",)
-            assert docker.start.await_count == (2 if started else 1)
+            assert docker.start.await_count == (2 if started else 3)
             if started:
                 assert docker.start.await_args_list[1].args == ("monerod",)
             expected = (
@@ -182,7 +183,7 @@ class TestDecide:
             assert h._recovery_step == expected
             clock.t += COOLDOWN_SEC
             await h.check()
-            assert docker.start.await_count == (2 if started else 1)
+            assert docker.start.await_count == (2 if started else 3)
             h._probe = lambda: (True, "fresh circuit answered")
             for _ in range(RECOVERY_CONFIRM_PROBES):
                 clock.t += PROBE_INTERVAL_SEC

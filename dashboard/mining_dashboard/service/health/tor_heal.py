@@ -40,6 +40,18 @@ MAX_ATTEMPTS = 3  # two circuit refreshes, then one container restart
 # lucky 204 must NOT close the outage: under the issue's own scenario (overloaded Tor, egress
 # flapping) that would refill the budget and clear the cooldown every blip.
 RECOVERY_CONFIRM_PROBES = 2  # ~10 min sustained egress before the budget resets
+# Tor's stop: SIGTERM, `t` seconds of grace, then SIGKILL. Docker holds the request open until the
+# container is down, and a wedged Tor took over 60 s (#3032). The HTTP timeout outlasts grace + kill.
+TOR_STOP_GRACE_SEC = 15
+TOR_STOP_REQUEST_TIMEOUT_SEC = 120
+# An API stop is not undone by `restart: unless-stopped`, so the heal must end with Tor running:
+# an unconfirmed start is retried a bounded number of times (start is idempotent: 304 if running).
+TOR_START_ATTEMPTS = 3
+TOR_START_RETRY_DELAY_SEC = 5
+# After an unconfirmed stop Docker may still be stopping Tor, and a start then answers 304 "already
+# running" while Tor goes down behind it. Wait (bounded: grace + kill + slack) for it to read down.
+TOR_SETTLE_SEC = 30
+TOR_SETTLE_POLL_SEC = 5
 
 
 class TorEgressHealer:
@@ -160,6 +172,31 @@ class TorEgressHealer:
         would publish its ports on 0.0.0.0 without it."""
         return bool((await get_container_health()).get(self.MONEROD, {}).get("running"))
 
+    async def _wait_tor_down(self) -> None:
+        """Poll until Tor reads not running, at most TOR_SETTLE_SEC (an in-flight stop settles)."""
+        for _ in range(TOR_SETTLE_SEC // TOR_SETTLE_POLL_SEC):
+            if not (await get_container_health()).get(self.CONTAINER, {}).get("running"):
+                return
+            await asyncio.sleep(TOR_SETTLE_POLL_SEC)
+
+    async def _ensure_tor_running(self, stopped: bool) -> bool:
+        """Start Tor after the stop, whatever the stop reported (#3032).
+
+        A stop whose response is lost may still have stopped the container, and Docker leaves a
+        stopped container down. Start it and retry an unconfirmed start, bounded. A "running"
+        inspect is not trusted: after a timed-out stop it may predate the in-flight stop, and a 304
+        to an early start would be answered by a container about to go down, so an unconfirmed
+        stop is given time to settle before the start.
+        """
+        if not stopped:
+            await self._wait_tor_down()
+        for attempt in range(TOR_START_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(TOR_START_RETRY_DELAY_SEC)
+            if await self._docker.start(self.CONTAINER, request_timeout=60):
+                return True
+        return False
+
     async def check(self) -> None:
         """Probe (throttled) and act. Called every data-loop cycle; never raises."""
         if not self.enabled:
@@ -219,9 +256,11 @@ class TorEgressHealer:
                     evidence,
                 )
                 stopped = await self._docker.stop(
-                    self.CONTAINER, stop_timeout=15, request_timeout=60
+                    self.CONTAINER,
+                    stop_timeout=TOR_STOP_GRACE_SEC,
+                    request_timeout=TOR_STOP_REQUEST_TIMEOUT_SEC,
                 )
-                started = await self._docker.start(self.CONTAINER, request_timeout=60)
+                started = await self._ensure_tor_running(stopped)
                 # False means unconfirmed, not unissued: a timed-out POST may have mutated
                 # the daemon. Keep the attempt and cooldown even when both responses are lost.
                 self._recovery_step = (
