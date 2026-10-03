@@ -16,6 +16,11 @@ printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$WORK/tor/sta
 bad='{"status":"OK","synchronized":false,"height":42,"outgoing_connections_count":0}'
 good='{"status":"OK","synchronized":true,"height":43,"outgoing_connections_count":2}'
 tor_recovery_signature "$WORK/tor/state" "$bad" "$bad"
+# monerod keeps synchronized=true after losing every peer (#3033): peerless at one height is still stalled.
+stale_sync='{"status":"OK","synchronized":true,"height":42,"outgoing_connections_count":0}'
+tor_recovery_signature "$WORK/tor/state" "$stale_sync" "$stale_sync"
+moved='{"status":"OK","synchronized":true,"height":43,"outgoing_connections_count":0}'
+if tor_recovery_signature "$WORK/tor/state" "$stale_sync" "$moved"; then exit 1; fi
 if tor_recovery_signature "$WORK/tor/state" "$bad" "$good"; then exit 1; fi
 printf 'CircuitBuildTimeBin 1 2\n' >>"$WORK/tor/state"
 if tor_recovery_signature "$WORK/tor/state" "$bad" "$bad"; then exit 1; fi

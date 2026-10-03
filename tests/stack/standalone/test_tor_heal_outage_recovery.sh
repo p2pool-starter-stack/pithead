@@ -37,8 +37,8 @@ env_get() {
     esac
 }
 docker() { case "$*" in *'.State.Running'*) printf 'true\n' ;; esac }
-# monerod stays synchronized and peerless: the stalled-Monero class must NOT qualify.
-tor_recovery_info() { printf '{"status":"OK","synchronized":true,"height":42,"outgoing_connections_count":0}\n'; }
+# Monero has outgoing peers: the stalled-Monero class must not qualify (#3033).
+tor_recovery_info() { printf '{"status":"OK","synchronized":true,"height":42,"outgoing_connections_count":3}\n'; }
 tor_recovery_bootstrap_stalled() { return 1; }
 # Fake curl: egress is down unless EGRESS=up.
 cat >"$WORK/bin/curl" <<'SH'
