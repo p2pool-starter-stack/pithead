@@ -118,6 +118,8 @@ transport metadata and failure snapshots; its selftest runs through
 The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.py`
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
+Bundle staging into the guest is bounded and reports through `staging-failure-evidence.sh`; the
+floor-fallback leg stages separately from `os-update` (`selftest-floor-staging.sh`, #3049).
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
 

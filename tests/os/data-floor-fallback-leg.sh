@@ -89,9 +89,22 @@ _floor_fallback_wait() {
     return 1
 }
 
-# Install $1 through the real os-update path; prints its output, returns its rc.
+# Stage $1 on the guest. A failure here is an environment/transport fault and os-update is never
+# invoked (#3049): the old shape mapped it to a synthetic rc 99 and reported "os-update failed".
+# Prints the evidence and returns 1; the caller turns that into its own row.
+_floor_stage() {
+    local rc
+    STAGE_ERR="${STAGE_ERR:-$SERIAL.stage-error}"
+    : >"$STAGE_ERR"
+    _stage_bundle "$1"
+    rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    staging_failure_evidence "$rc" "$1"
+    return 1
+}
+
+# Install the staged bundle through the real os-update path; prints its output, returns its rc.
 _floor_os_update() {
-    _stage_bundle "$1" || return 99
     _ssh "cd /data/pithead && ./pithead os-update /data/update.bundle --yes 2>&1"
 }
 
@@ -112,7 +125,11 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     ok "built a data_migration bundle stamped $vfail (floor $vfail): $(basename "$bundle")"
 
     # ---- positive case: record present -> the fallback boot restores the floor ----
-    out=$(_floor_os_update "$bundle")
+    _floor_stage "$bundle" || {
+        bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
+        return
+    }
+    out=$(_floor_os_update)
     rc=$?
     if [ "$rc" -ne 0 ]; then
         osupdate_failure_evidence "$rc" "$out"
@@ -154,8 +171,13 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     fi
     # Issue step 3's last clause: a bundle at the restored floor installs again. Before the restore
     # this same install was below a $vfail floor — the negative case below proves that refusal.
-    out=$(_floor_os_update "$good_bundle")
-    rc=$?
+    if ! _floor_stage "$good_bundle"; then
+        bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
+        rc=1
+    else
+        out=$(_floor_os_update)
+        rc=$?
+    fi
     if [ "$rc" -eq 0 ]; then
         ok "a bundle at the restored floor ($floor0) installs again through os-update"
     else
@@ -164,7 +186,11 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
 
     # ---- negative control: record deleted before the fallback boot -> the floor stays ----
     info "negative control — the same failed update with the record deleted must leave the floor alone"
-    out=$(_floor_os_update "$bundle")
+    _floor_stage "$bundle" || {
+        bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
+        return
+    }
+    out=$(_floor_os_update)
     rc=$?
     if [ "$rc" -ne 0 ]; then
         osupdate_failure_evidence "$rc" "$out"
@@ -199,7 +225,11 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     fi
     # The guard's honest refusal (#1393 part 3): floor above the running version, bundle below the
     # floor — names the failed-update premise and the open route, never a reset or a restore.
-    out=$(_floor_os_update "$good_bundle")
+    _floor_stage "$good_bundle" || {
+        bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
+        return
+    }
+    out=$(_floor_os_update)
     rc=$?
     if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "a migrating update to $vfail failed its gate and fell back before its migration ran"; then
         ok "os-update refuses a bundle below the stale floor with the failed-update premise"
