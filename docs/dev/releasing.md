@@ -181,8 +181,11 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    ([#58](https://github.com/p2pool-starter-stack/pithead/issues/58)); a release build must pass
    `PITHEAD_RELEASE=1` (and `PITHEAD_VERSION` from `VERSION`) so the badge shows the clean
    `vX.Y.Z` rather than the `dev · branch @ hash` it shows for working-tree builds. Then build the
-   appliance rootfs with that staged dashboard digest baked in. Its push guard reads the exported
-   rootfs and refuses any artifact carrying the debug SSH key. It records that tar's SHA-256; the
+   appliance rootfs with that staged dashboard digest baked in. The rootfs builder receives
+   `PITHEAD_PIN_TAG=$STAGING_TAG` and resolves all five first-party index digests from that tag,
+   while the baked Compose references retain their version tags. Without an override, the
+   builder resolves the version tag; an empty override uses that same default. Its push guard
+   reads the exported rootfs and refuses any artifact carrying the debug SSH key. It records that tar's SHA-256; the
    production appliance image and RAUC bundle refuse any other export.
 4. Push to staging: push to a staging tag on GHCR (e.g. `:vX.Y.Z-rc.N`) and capture the
    immutable digests. Nothing user-facing points here yet. The digests exist only for this pipeline
