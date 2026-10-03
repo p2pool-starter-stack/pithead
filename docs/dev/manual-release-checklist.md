@@ -10,7 +10,8 @@ green suite proves each piece works on its own, and only a person using the prod
 notices a confusing message, a missing button, or two screens that disagree. The hardware
 sections further down keep their original rule: each item says **why it cannot be automated**,
 an item that becomes automatable should move off that list, and anything that keeps biting
-should get a harness leg.
+should get a harness leg. Walkthrough steps that could be automated but are not yet are tracked
+under [#3068](https://github.com/p2pool-starter-stack/pithead/issues/3068).
 
 Contents:
 
@@ -760,8 +761,10 @@ the sections above, on whichever machine fits.
 - [ ] **S3 — Power cut overnight.** Pull the plug on a DIY box mid-mining. Power it back on.
   Expect: the stack and its firewall come back without anyone running a command (the firewall
   check is 9.2), and miners reconnect.
-- [ ] **S4 — A rig dies.** Unplug a miner's network for 10 minutes, then reconnect it. Expect:
-  offline and recovered messages arrive once each, and the dashboard history marks both events.
+- [ ] **S4 — A rig dies.** Unplug a miner's network for 10 minutes, then reconnect it. Expect: one
+  worker-offline and one back-online message, and the worker's row goes offline and comes back.
+  The chart marks a hashrate drop only when the loss is large enough for the drop alert, so a
+  one-rig loss in a big fleet may leave no marker.
 - [ ] **S5 — Moving to a new machine.** Back up the upgrade box, then stop it with
   `./pithead down` so the two machines never mine under the same identity. Restore the archive
   onto the fresh box with `./pithead restore`. Expect: the same onion address, login and
