@@ -181,6 +181,11 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   egress firewall, the setup wizard refuses a dual-stack hostname and names the private-address
   remedy.
 
+- **The worker list keeps RigForge status chips short**
+  ([#3031](https://github.com/p2pool-starter-stack/pithead/issues/3031)). Power and temperature
+  stay in the list alongside warnings; version, mainboard, HugePages, a healthy governor, tune
+  target and autotune details move to Worker Inspect, which keeps every existing row.
+
 - **Every mutating `pithead` verb runs behind one mutation lock ([#1342](https://github.com/p2pool-starter-stack/pithead/issues/1342), [#1482](https://github.com/p2pool-starter-stack/pithead/issues/1482)).** Setup,
   apply, upgrade, the resets, rotate-secrets and the OS-update verbs serialise; a second invocation
   that arrives while one holds the lock is refused and told why, instead of two writers racing on
