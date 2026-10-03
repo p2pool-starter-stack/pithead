@@ -1,12 +1,8 @@
 """Opt-in Tor clearnet recovery without changing guards by default.
 
-Each failed probe is corroborated on a fresh SOCKS-auth circuit and a second target. After a
-sustained outage, two bounded NEWNYM requests go through the audited host control runner. A
-final container restart is disruptive and re-dials local Monero; neither NEWNYM nor a clearnet
-failure authorizes DROPGUARDS or deletion of Tor state. Saturated circuit-history recovery is
-an explicit operator command (`./pithead tor-recover`). When NEWNYM is unconfirmed or ineffective
-the healer only reads the saturated signature through a read-only host request and alerts the
-operator; it never moves state aside itself (#3052).
+Corroborate failed probes on isolated circuits and two targets before bounded NEWNYM requests.
+A final restart re-dials local Monero. Neither action authorizes changing guards or deleting
+state: saturated history is read and alerted; only an operator runs `./pithead tor-recover`.
 """
 
 import asyncio
@@ -126,23 +122,17 @@ class TorEgressHealer:
         return False, "; ".join(evidence)
 
     def decide(self, ok, now):
-        """Fold one probe result into the outage state; return the action to take.
+        """Fold a probe into outage state; return heal, exhausted, recovered, or None.
 
-        Returns ``None``, ``"heal"`` (one recovery attempt), ``"exhausted"``, or
-        ``"recovered"`` after two corroborated successes.
-        """
+        Recovery requires two corroborated successes."""
         if ok:
             if self._attempts == 0 and not self._newnym_unconfirmed and not self.saturated_history:
-                # No restart spent yet — a single healthy probe just clears a sub-threshold
-                # blip. Nothing to protect, so reset immediately (unchanged blip semantics).
+                # A healthy probe clears a blip that never reached a recovery action.
                 self._failing_since = None
                 self._ok_streak = 0
                 return None
-            # We have already restarted this outage. Require SUSTAINED recovery before
-            # refilling the budget and clearing the cooldown: a lone 204 during a flapping,
-            # overloaded-Tor outage must not reset the cap (#424 review). Budget and cooldown
-            # anchor are preserved until the streak confirms, so a relapse resumes where it
-            # left off instead of getting a fresh set of restarts.
+            # Two successes confirm recovery; a lone response during a flapping outage
+            # preserves the attempt budget and cooldown, including rejected NEWNYM rounds.
             self._ok_streak += 1
             if self._ok_streak < RECOVERY_CONFIRM_PROBES:
                 return None
@@ -280,8 +270,6 @@ class TorEgressHealer:
                 self._pending_refresh = None
                 self._pending_since = None
                 if result.get("status") != "applied":
-                    status = result.get("status")
-                    error = result.get("error")
                     # An unconfirmed NEWNYM never escalates to the disruptive restart; the
                     # saturated-history reading below tells the operator what will help.
                     self.refund_attempt()
@@ -289,8 +277,8 @@ class TorEgressHealer:
                     self._newnym_unconfirmed = True
                     logger.warning(
                         "Tor NEWNYM was not confirmed by the host control runner (%s: %s)",
-                        status,
-                        error,
+                        result.get("status"),
+                        result.get("error"),
                     )
                     self._request_history()
                     return
@@ -356,11 +344,8 @@ class TorEgressHealer:
                     MAX_ATTEMPTS,
                 )
                 if started and self._restart_monerod and await self._monerod_running():
-                    # The tor restart just killed every SOCKS connection; monerod holds its
-                    # dead peer sockets and can sit at 0 in / 0 out peers for hours while
-                    # looking healthy (#972). Cycle it so it re-dials through the fresh tor.
-                    # monerod's stop_grace_period is 1m, so the stop timeout matches it and the
-                    # HTTP timeout outlasts the stop (#234's lesson).
+                    # Tor killed the SOCKS connections; cycle Monero's dead peer sockets (#972).
+                    # Match its 1m stop grace and let the HTTP timeout outlast it (#234).
                     logger.warning(
                         "Restarting monerod alongside tor so it re-dials its peers through "
                         "the fresh Tor (#972)."
