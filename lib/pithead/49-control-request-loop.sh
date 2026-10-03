@@ -71,7 +71,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
     # matches a member of its own fixed allowlist, and clamps the count host-side.
-    if [ "$(jq -r '[keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain")] | length' "$file")" != "0" ]; then
+    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys in request",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
@@ -95,6 +95,18 @@ control_process_request() { # <claimed-file> <control-dir>
         elif ! control_tor_newnym "$cdir" "$id" "$actor"; then
             control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"host mutation lock unavailable",ts:(now|floor)}')"
             control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        fi
+        ;;
+    tor-history)
+        # Read-only (#3052): reports only whether Tor's circuit-history state is saturated.
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id","observed_at","outage"]' "$file")" != true ] ||
+            ! jq -e '.actor == "tor-heal" and (.outage | type == "string" and (. == "" or test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"))) and (.observed_at | type == "number" and . == floor and . >= 0)' "$file" >/dev/null; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid history request",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        elif ! control_tor_history "$cdir" "$id" "$actor" "$(jq -r .outage "$file")" "$(jq -r .observed_at "$file")"; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"history observation unavailable",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "failed"
         fi
         ;;
     preview) control_preview "$file" "$id" "$actor" "$cdir" ;;
@@ -187,7 +199,7 @@ control_prune_results() { # <control-dir>
     # had no way to see that pairing and could orphan an in-window archive's own status/passphrase.
     [ -n "$active_result" ] && [ -f "$dir/$active_result" ] && n=1
     for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null || true); do
-        case "$result" in os-update-state.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
+        case "$result" in os-update-state.json | tor-heal-outage.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
         [ "$result" == "$active_result" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
         n=$((n + 1))
@@ -202,7 +214,7 @@ control_prune_results() { # <control-dir>
     if [ "$total" -gt "$max_bytes" ]; then
         for f in $(cd "$dir" 2>/dev/null && ls -1tr 2>/dev/null || true); do
             [ "$total" -le "$max_bytes" ] && break
-            case "$f" in os-update-state.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
+            case "$f" in os-update-state.json | tor-heal-outage.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
             [ "$f" == "$active_result" ] && continue
             case "$f" in
             *.tar.gz.enc)

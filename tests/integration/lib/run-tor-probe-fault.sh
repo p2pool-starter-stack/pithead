@@ -27,8 +27,14 @@ fault_tor_probe_egress() {
         it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
     fi
-    pithead tor-recover check >/dev/null 2>&1 || rc=$?
-    assert_ne "ordinary Tor state refused by read-only recovery check" "$rc" "0"
+    # A saturated history legitimately qualifies for recovery once the heal has recorded a sustained
+    # outage (#3052), so name that precondition instead of misreading the accepted check as a defect.
+    if rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_state_saturated \"\$dir/state\""' >/dev/null 2>&1; then
+        it_fail "Tor circuit history is ordinary before the fault" "saturated signature already present (CircuitBuildAbandonedCount and TotalBuildTimes at 1000, no CircuitBuildTimeBin); earlier faults in this run left it so"
+    else
+        pithead tor-recover check >/dev/null 2>&1 || rc=$?
+        assert_ne "ordinary Tor state refused by read-only recovery check" "$rc" "0"
+    fi
     rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && sudo grep -q . \"\$dir/state\" && tor_recovery_identities \"\$dir\" >/dev/null"' >/dev/null 2>&1
     assert_rc "read-only recovery can inspect the live Tor state and onion identities" "$?" "0"
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
