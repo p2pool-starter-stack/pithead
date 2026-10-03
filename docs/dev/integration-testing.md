@@ -1109,8 +1109,20 @@ On a scenario failure, the harness captures fresh diagnostic snapshots (redacted
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
 probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the first
 failed missing-image `up` or dashboard data-dir carry, before cleanup can replace
-Tor's failing state. The end-of-run summary lists each failed assertion and points
-at these. The `doctor.txt` snapshot runs doctor again; it does not describe an earlier
+Tor's failing state. The shared Tor-egress control also records each original SOCKS
+request in `results/tor-egress-probes/probe-<sequence>.txt` and the harness transcript,
+before the caller reports its verdict or restores the stack. Each record contains the
+per-run sequence, original target/SSH exit status, harness-observed elapsed seconds and
+an exit-code class. The curl command, 30-second limit and pass/fail row are unchanged;
+no second request supplies its evidence. Silent curl exposes no error text or request
+stage, so a timeout remains `timeout-stage-unknown`; exit 255 remains ambiguous between
+target and SSH failure. Healthy Tor or a later successful request does not diagnose the
+failed request. Records contain only numbers and fixed labels, without endpoints, raw
+stderr or response bodies. An unavailable artifact is reported in the transcript and
+never replaces the original status. The end-of-run summary lists each failed assertion
+and points at the scenario artifacts.
+
+The `doctor.txt` snapshot runs doctor again; it does not describe an earlier
 asserted invocation. Before each doctor assertion, the check phase emits its exact exit code as
 `doctor-asserted exit-code:` and its redacted stdout/stderr as `doctor-asserted output:` lines.
 These prefixes keep doctor diagnostics separate from harness verdict rows. The wrapper retains
@@ -1120,7 +1132,8 @@ invocation. The e2e wrapper sends the check pregate to its collected
 `results/pregate-check/` directory, separate from the destructive harness's results.
 Its `check/doctor-asserted.*/output.txt` and `exit-code.txt` survive the destructive
 preflight. The wrapper clears prior check results at preflight in every mode and again before
-readiness, so a refused job or a read-only check cannot collect prior doctor evidence. Later diagnostic snapshots cannot replace an asserted invocation. Capture
+readiness, so a refused job or a read-only check cannot collect prior doctor evidence.
+Later diagnostic snapshots cannot replace an asserted invocation. Capture
 failures add a failed evidence row; the original doctor exit code is still asserted. This adds
 no retry or readiness wait and does not establish the cause of a transient failure. The pure regressions are
 `tests/integration/selftest/selftest-doctor-evidence.sh` and
