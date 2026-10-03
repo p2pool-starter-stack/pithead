@@ -177,3 +177,50 @@ async def test_healthy_egress_never_requests_history():
     with p_submit, p_result:
         await healer.check()
     assert submits == []
+
+
+async def test_second_outage_alerts_again_and_late_reading_is_dropped_on_recovery():
+    now = [1000.0]
+    notify = AsyncMock()
+    submits = []
+    ok = [False]
+    results = {"tor-newnym": {"status": "failed"}, "tor-history": SATURATED}
+    healer = TorEgressHealer(
+        AsyncMock(), enabled=True, probe=lambda: (ok[0], "p"), notify=notify, clock=lambda: now[0]
+    )
+    p_submit, p_result = _heal_patches(results, submits)
+    with p_submit, p_result:
+        await healer.check()
+        now[0] += BROKEN_AFTER_SEC
+        await _run_rounds(healer, now, 4)
+        assert notify.await_count == 1
+        # Recover, with a history request still unanswered: the late reading must stay silent.
+        healer._attempts = 1
+        ok[0] = True
+        healer._pending_history = "tor-history"
+        results["tor-history"] = None
+        for _ in range(3):
+            now[0] += PROBE_INTERVAL_SEC
+            await healer.check()
+        assert healer._pending_history is None
+        results["tor-history"] = SATURATED
+        # A fresh outage re-arms the once-per-outage alert.
+        ok[0] = False
+        await _run_rounds(healer, now, 6)
+    assert notify.await_count >= 2
+
+
+async def test_lost_history_request_is_dropped_after_one_probe_interval():
+    now = [1000.0]
+    healer = TorEgressHealer(
+        AsyncMock(), enabled=True, probe=lambda: (True, "p"), clock=lambda: now[0]
+    )
+    submits = []
+    p_submit, p_result = _heal_patches({"tor-history": None}, submits)
+    with p_submit, p_result:
+        healer._request_history()
+        await healer._read_history()
+        assert healer._pending_history == "tor-history"
+        now[0] += PROBE_INTERVAL_SEC
+        await healer._read_history()
+    assert healer._pending_history is None

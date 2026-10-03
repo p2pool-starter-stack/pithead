@@ -80,6 +80,7 @@ class TorEgressHealer:
         self._failure_evidence = ""
         self._recovery_step = None
         self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
+        self._history_since = None
         self._pending_history = None  # read-only tor-history request awaiting its result
         self._warned_saturated = False  # saturated-history alert is sent once per outage
         self.saturated_history = False  # latest host reading, for status surfaces
@@ -166,6 +167,7 @@ class TorEgressHealer:
             return
         try:
             self._pending_history = control_service.submit("tor-history", actor="tor-heal")
+            self._history_since = self._clock()
         except OSError:
             logger.warning("Tor circuit-history check could not be submitted to the host runner")
 
@@ -175,6 +177,9 @@ class TorEgressHealer:
             return
         result = control_service.result(self._pending_history)
         if result is None:
+            # A lost request must not block every later reading: drop it after one probe interval.
+            if self._clock() - self._history_since >= PROBE_INTERVAL_SEC:
+                self._pending_history = None
             return
         self._pending_history = None
         saturated = result.get("status") == "applied" and result.get("saturated") is True
@@ -339,6 +344,7 @@ class TorEgressHealer:
                 self._recovery_step = None
                 self._newnym_unconfirmed = False
                 self._warned_saturated = False
+                self._pending_history = None  # a late reading must not alert on a healthy egress
                 self.saturated_history = False
         except Exception as exc:  # never let the healer break the data loop
             logger.debug("Tor heal cycle failed (%s)", type(exc).__name__)

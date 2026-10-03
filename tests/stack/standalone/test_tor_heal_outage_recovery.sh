@@ -13,7 +13,7 @@ echo "== tor-recover accepts a sustained heal outage on a synchronized Monero ==
 mkdir -p "$WORK/tor/p2pool" "$WORK/control/audit" "$WORK/bin"
 printf 'identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"
 printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
-sudo() { "$@"; }
+sudo() { [ "${1:-}" != -n ] || shift; "$@"; }
 sleep() { :; }
 log() { :; }
 warn() { :; }
@@ -48,7 +48,7 @@ now=$(date +%s)
 # One accepted round is not two heal rounds.
 printf '%s 1\n' "$((now - 3600))" >"$WORK/control/tor-newnym-budget"
 if tor_recover check; then exit 1; fi
-# Two rounds but the outage is younger than BROKEN_AFTER.
+# Two rounds but a hand-edited record younger than the minimum outage age (the host cannot write one).
 printf '%s 2\n' "$((now - 60))" >"$WORK/control/tor-newnym-budget"
 if tor_recover check; then exit 1; fi
 # A stale record outside the 24h window.
@@ -73,6 +73,26 @@ if tor_recover check; then exit 1; fi
 rm "$WORK/control/tor-newnym-budget"
 mv "$WORK/budget-real" "$WORK/control/tor-newnym-budget"
 
+echo "== apply on the heal-outage class keeps cooldown, identity and audit =="
+docker() {
+    case "$*" in
+    'compose stop tor') : >"$WORK/stopped" ;;
+    'compose start tor') rm -f "$WORK/stopped" ;;
+    'compose restart monerod') ;;
+    *'.State.Running'*) if [ -e "$WORK/stopped" ]; then printf 'false\n'; else printf 'true\n'; fi ;;
+    *'.State.Health.Status'*) printf 'healthy\n' ;;
+    esac
+}
+tor_recovery_info() { printf '{"status":"OK","synchronized":true,"height":42,"outgoing_connections_count":%s}\n' "$([ -e "$WORK/stopped" ] && echo 0 || echo 3)"; }
+before=$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key")
+tor_recover apply
+[ "$before" = "$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key")" ]
+[ ! -e "$WORK/tor/state" ] && ls "$WORK"/tor/state.backup.* >/dev/null
+[ -s "$WORK/control/tor-recovery-at" ] && [ "$(tail -1 "$WORK/audit")" = applied ]
+if tor_recover apply; then exit 1; fi
+rm -f "$WORK"/tor/state.backup.* "$WORK/control/tor-recovery-at" "$WORK/audit"
+printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
+
 echo "== tor-history reports the saturated signature read-only =="
 id=12345678-1234-4123-8123-123456789abc
 jq -n --arg id "$id" '{id:$id,action:"tor-history",actor:"tor-heal"}' >"$WORK/request.json"
@@ -82,6 +102,17 @@ control_process_request "$WORK/request.json" "$WORK/control"
 printf 'CircuitBuildAbandonedCount 3\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .saturated "$WORK/result")" = false ]
+AUTO_HEAL_OFF=1
+env_get() {
+    case "$1" in
+    CONTROL_DIR) printf '%s\n' "$WORK/control" ;;
+    TOR_AUTO_HEAL) if [ "${AUTO_HEAL_OFF:-0}" = 1 ]; then printf 'false\n'; else printf 'true\n'; fi ;;
+    NETWORK_PREFIX) printf '172.28.0\n' ;;
+    esac
+}
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = rejected ]
+AUTO_HEAL_OFF=0
 jq '.extra="x"' "$WORK/request.json" >"$WORK/extra.json"
 control_process_request "$WORK/extra.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]

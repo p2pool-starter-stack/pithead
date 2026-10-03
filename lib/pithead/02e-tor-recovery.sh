@@ -47,9 +47,11 @@ control_tor_history() { # <control-dir> <id> <actor>
 
 # Third qualifying evidence class (#3052): the dashboard heal's own NEWNYM record. The host
 # writes `tor-newnym-budget` (first-round time, accepted rounds) only for heal requests, and the
-# heal asks only after a 15-minute outage and 30 minutes apart, so two rounds inside the 24h
-# window record a sustained outage that NEWNYM did not clear. A synchronized, peerless Monero
-# does not contradict it. The live probe below keeps a healthy Tor refused.
+# heal asks only after a 15-minute outage and the host spaces rounds 30 minutes apart, so two
+# accepted rounds inside the 24h window record a sustained outage that NEWNYM did not clear (the
+# count is requests the host accepted, not proof the signal landed). The minimum age below is
+# implied by that spacing and only defends a hand-edited record. A synchronized, peerless Monero
+# does not contradict the class; the live probe keeps a healthy Tor refused.
 TOR_RECOVERY_OUTAGE_MIN_SEC=900
 tor_recovery_heal_outage() { # <control dir>; read-only
     local stamp="$1/tor-newnym-budget" first count now

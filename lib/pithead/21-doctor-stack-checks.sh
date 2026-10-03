@@ -353,6 +353,8 @@ check_tor_clearnet_egress() {
 check_tor_circuit_history() {
     local dir
     container_is_running tor || return 0
+    # Never stop doctor at a password prompt: skip unless root or passwordless sudo.
+    [ "$(id -u)" = 0 ] || sudo -n true 2>/dev/null || return 0
     dir=$(tor_recovery_mount 2>/dev/null) || return 0
     tor_recovery_state_saturated "$dir/state" || return 0
     tor_recovery_heal_outage "$(env_get CONTROL_DIR)" || return 0
