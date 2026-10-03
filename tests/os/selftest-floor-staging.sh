@@ -27,7 +27,10 @@ mkdir "$T/bin"
 printf '#!/bin/sh\necho running\n' >"$T/bin/virsh"
 chmod +x "$T/bin/virsh"
 PATH="$T/bin:$PATH"
-fail() { echo "FAIL: $1"; exit 1; }
+fail() {
+    echo "FAIL: $1"
+    exit 1
+}
 
 # The staging bound is real: a hung scp is killed at STAGE_TIMEOUT with rc 124.
 printf '#!/bin/sh\nsleep 30\n' >"$T/bin/scp"
