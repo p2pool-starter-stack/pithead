@@ -109,6 +109,9 @@ assert_rc "#2043 zero-container evidence self-test passes" "$?" "0"
 echo "== unit: #2871 serial verdict self-test =="
 bash "$ROOT/tests/os/selftest-serial-has.sh" >/dev/null 2>&1
 assert_rc "#2871 serial match survives a large log under pipefail" "$?" "0"
+echo "== unit: #3049 floor-fallback staging self-test =="
+bash "$ROOT/tests/os/selftest-floor-staging.sh" >/dev/null 2>&1
+assert_rc "#3049 failed bundle staging never invokes os-update; success still does" "$?" "0"
 echo "== unit: #1676 version-aging helper self-test =="
 # tests/os/run.sh's leg 4 must make the guest claim a version OLDER than the bundle it is about to
 # install, and every minor release-prep tip is x.y.0 — the shape the helper used to refuse, which

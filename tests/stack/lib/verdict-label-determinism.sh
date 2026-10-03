@@ -84,6 +84,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 #   * `lib.sh|1` is not a call site at all — it is assert_eq/assert_contains/assert_not_contains/
 #     assert_rc forwarding their <label> to ok(); every label funnels through it, so it is listed
 #     for completeness and says nothing about any one domain.
+# #3043 adds pin_case over the fixed staging/unset/empty/synthetic list; no measured value.
 # WHAT THIS ROW STILL DOES NOT PROVE: it pins the SET of interpolating labels, not the VALUES. A new
 # caller handing one of these wrappers a measured value keeps the set identical and the row green —
 # the caller audit above is a point-in-time reading, not a standing instrument. Re-run it when a
@@ -122,6 +123,7 @@ test-doctor-surface.sh|_s
 test-doctor.sh|ip
 test-recovery-address-gates.sh|_rag_v
 test-recovery-address-gates.sh|label
+test-release-verify.sh|pin_case
 test-release.sh|comp
 test-release.sh|pin_rel
 test-release.sh|svc

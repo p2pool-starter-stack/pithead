@@ -45,6 +45,7 @@
       "reason": "miner did not return to a live hashrate; rolled back and live",
       "status": "rolled_back"
     },
+    "control_history": [],
     "health": {
       "clock_pct_of_boost": null,
       "firmware": {

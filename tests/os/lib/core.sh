@@ -233,9 +233,18 @@ _build_bundle() {
 
 # Bundles are signed with the dev chain and RAUC verifies them against the keyring baked into the
 # slot, so nothing but the bundle itself needs staging.
+#
+# Bounded, and loud on failure (#3049): an unbounded quiet scp that closed mid-transfer left rc=255
+# and nothing else. STAGE_TIMEOUT caps the copy (default 3600 s, deliberately far above any bundle
+# copy, as _ssh's ceiling is) and the keepalive makes a dead peer fail rather than hang. scp's
+# stderr stays on the console so the job log keeps "Connection closed"; a caller that wants it for
+# its own evidence sets STAGE_ERR (the floor leg does, locally). Returns scp's rc; 124 is the
+# timeout kill.
 _stage_bundle() { # $1 bundle path
-    scp -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q \
-        "$1" "root@$ip:/data/update.bundle"
+    local errto="${STAGE_ERR:-/dev/stderr}"
+    timeout "${STAGE_TIMEOUT:-3600}" scp -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=8 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+        "$1" "root@$ip:/data/update.bundle" 2>>"$errto"
 }
 
 # Per-updater command vocabulary — the ONLY updater-specific part of the battery.

@@ -186,8 +186,8 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # The built-in miner (#796): a pinned RigForge tree plus everything it needs, baked at image
 # build because nothing can be installed later — apt cannot run on the read-only root, and even
 # a rw-remount install leaves its /etc state (alternatives, ld.so.cache) on the volatile overlay
-# where the first reboot breaks the compiler. RIGFORGE_REF pins rigforge's v1.17.3 release
-# (by commit, not tag name, so a moved tag cannot change the bake); bump it release by release.
+# where the first reboot breaks the compiler. RIGFORGE_REF pins rigforge's develop commit
+# f5ff0479, the code that becomes v1.18.0 after the 2.0.0 soak; then pin releases by commit.
 # v1.16.0 is the floor for the HugePages pool ceiling: hugepages_pool_ceiling_mb (rigforge#398,
 # filed from #1103) is absent from v1.15.1's tree entirely, and declaring it into one fails OPEN —
 # parse_config never reads the key, so the rendered config would look capped and behave as today.
@@ -201,7 +201,7 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
-ARG RIGFORGE_REF=dcdbc7e47c16779c58163d7b9d8650a1b5ff6854
+ARG RIGFORGE_REF=f5ff0479473ad5fb2c0605a1219dd3721517a171
 RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
     && mkdir -p /opt/rigforge \
