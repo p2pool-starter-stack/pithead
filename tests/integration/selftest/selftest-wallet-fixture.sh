@@ -13,7 +13,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 CI_JOB_DIR="$WORK"
 KEEP=0 BENCH_HOST=dummy-bench RESTORE_DIR=/dummy/baseline E2E_DIR=/dummy/branch
-SSH_OPTS=() FAIL_SCAN=0 FAIL_ADDRESS=0 FAIL_IMPORT=0 FAIL_CLEANUP=0
+SSH_OPTS=() FAIL_SCAN=0 FAIL_ADDRESS=0 FAIL_IMPORT=0 FAIL_CLEANUP=0 FAIL_CATCHUP=0
 ok() { printf ' ✓ %s\n' "$*"; }
 warn() { printf ' ! %s\n' "$*"; }
 die() {
@@ -29,6 +29,10 @@ wallet_fixture_command() {
     esac
 }
 wallet_scan_sample() { :; }
+on_bench() {
+    echo catchup >>"$WORK/actions"
+    [ "$FAIL_CATCHUP" = 0 ]
+}
 rx() { [ "$FAIL_SCAN" = 0 ]; }
 api_state() { printf '{"earnings":{"confirmed":{"reachable":true,"address_match":%s}}}' "$([ "$FAIL_ADDRESS" = 0 ] && echo true || echo false)"; }
 wait_for() {
@@ -46,9 +50,16 @@ assert_contains "capture arms the binding runner protocol" "$(cat "$WORK/log")" 
 wallet_fixture_restore >>"$WORK/log"
 wallet_fixture_verify >>"$WORK/log"
 assert_eq "successful gates durably verify the job" "$(cat "$WORK/wallet-fixture-restore.state")" VERIFIED
-assert_eq "successful capture/import/gates removes the private archives" "$(cat "$WORK/actions")" $'capture\nrestore\ncleanup'
+assert_eq "successful capture/import/gates removes the private archives" "$(cat "$WORK/actions")" $'catchup\ncapture\nrestore\ncleanup'
 assert_eq "the original catch-up and dashboard waits are reused" "$(cat "$WORK/waits")" $'1200/15\n420/10'
 assert_contains "proved restore emits the exact runner marker" "$(cat "$WORK/log")" " ✓ WALLET FIXTURE RESTORE VERIFIED"
+
+echo "== wallet fixture: a wallet still catching up after the backup is never captured =="
+: >"$WORK/actions"
+(FAIL_CATCHUP=1 wallet_fixture_capture) >"$WORK/log" 2>&1
+assert_eq "an unfinished catch-up refuses the deployment" "$?" 1
+assert_eq "an unfinished catch-up never snapshots the wallet" "$(cat "$WORK/actions")" catchup
+assert_contains "an unfinished catch-up names its cause" "$(cat "$WORK/log")" "did not catch up after the safety backup"
 
 echo "== wallet fixture: a failed gate refuses the restore and keeps the snapshot =="
 : >"$WORK/actions"

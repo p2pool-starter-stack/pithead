@@ -14,6 +14,11 @@ wallet_fixture_receipt() {
 
 wallet_fixture_capture() {
     [ "$KEEP" != 1 ] || return 0
+    # backup_stack just restarted the wallet: its entrypoint re-touches the scan marker, which only the
+    # healthcheck clears at the tip, and capture refuses a marked cache. Wait (<= 20 min) like #2976 does.
+    on_bench '[ "$(docker inspect -f "{{.State.Running}}" wallet-rpc 2>/dev/null)" = true ] || exit 0
+        for _ in $(seq 80); do docker exec wallet-rpc test ! -e /home/ubuntu/wallets/.payout-scanning && exit 0; sleep 15; done
+        exit 1' || die "Prepared wallet did not catch up after the safety backup; branch not deployed."
     WALLET_CACHE_SNAPSHOT="$(wallet_fixture_command capture)" || die "Prepared wallet cache snapshot failed; branch not deployed."
     [ -n "$WALLET_CACHE_SNAPSHOT" ] || return 0
     wallet_fixture_receipt ARMED || die "Wallet fixture reservation receipt failed; branch not deployed."
