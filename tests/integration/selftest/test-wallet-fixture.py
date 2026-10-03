@@ -236,7 +236,9 @@ class FixtureTest(unittest.TestCase):
         before = len(self.docker.calls)
         with self.assertRaises(ValueError):
             self.capture()
-        self.assertFalse(any(call[0] in {"stop", "run"} for call in self.docker.calls[before:]))
+        self.assertFalse(
+            any(call[0] in {"kill", "stop", "run"} for call in self.docker.calls[before:])
+        )
         self.docker.item["Config"]["Labels"]["com.docker.compose.project.working_dir"] = str(
             self.baseline
         )
@@ -245,7 +247,9 @@ class FixtureTest(unittest.TestCase):
         before = len(self.docker.calls)
         with self.assertRaises(ValueError):
             self.capture()
-        self.assertFalse(any(call[0] in {"stop", "run"} for call in self.docker.calls[before:]))
+        self.assertFalse(
+            any(call[0] in {"kill", "stop", "run"} for call in self.docker.calls[before:])
+        )
         self.docker.item["Config"]["Labels"]["com.docker.compose.project.working_dir"] = str(
             self.baseline
         )
@@ -253,7 +257,9 @@ class FixtureTest(unittest.TestCase):
         before = len(self.docker.calls)
         with self.assertRaises(ValueError):
             self.capture()
-        self.assertFalse(any(call[0] in {"stop", "run"} for call in self.docker.calls[before:]))
+        self.assertFalse(
+            any(call[0] in {"kill", "stop", "run"} for call in self.docker.calls[before:])
+        )
 
     def test_private_snapshot_and_archive_types_are_binding(self):
         directory = self.capture()
