@@ -3,10 +3,6 @@ from tests.service._data_service_support import *  # noqa: F403
 
 
 class TestWorkerRejection:
-    """The rejection decision table (#31, narrowed by #897): monerod-down is the only thing
-    that ever rejects workers. Tari — required or not — never does; a Tari-only outage stays
-    admitted and surfaces through the Tari panel/alerts instead."""
-
     def _svc(self):
         sm = MagicMock()
         sm.load_snapshot.return_value = None
@@ -16,56 +12,118 @@ class TestWorkerRejection:
         svc.docker_control.start = AsyncMock(return_value=True)
         return svc
 
-    async def test_stop_when_monero_down(self):
-        # monerod is required, so its outage always rejects.
+    @pytest.mark.parametrize("required", [True, False])
+    @pytest.mark.parametrize(
+        "monero_down,tari_down", [(True, False), (False, True), (True, True), (False, False)]
+    )
+    async def test_rejection_decision_table(self, required, monero_down, tari_down):
         svc = self._svc()
-        with patch.object(ds_mod, "REJECT_WORKERS_CONTAINER", "xmrig-proxy"):
-            await svc._apply_worker_rejection(monero_down=True)
-        svc.docker_control.stop.assert_awaited_once_with("xmrig-proxy")
+        with patch.object(ds_mod, "TARI_REQUIRED", required):
+            await svc._apply_worker_rejection(monero_down, tari_down)
+        expected = monero_down or (required and tari_down)
+        assert svc.workers_rejected is expected
+        assert svc.docker_control.stop.await_count == int(expected)
+        svc.docker_control.start.assert_not_called()
+
+    async def test_stop_failure_retries(self):
+        svc = self._svc()
+        svc.docker_control.stop.side_effect = [False, True]
+        with patch.object(ds_mod, "TARI_REQUIRED", True):
+            await svc._apply_worker_rejection(False, True)
+            assert svc.workers_rejected is False
+            await svc._apply_worker_rejection(False, True)
         assert svc.workers_rejected is True
+        assert svc.docker_control.stop.await_count == 2
 
-    async def test_stop_failure_keeps_flag_false_for_retry(self):
-        svc = self._svc()
-        svc.docker_control.stop = AsyncMock(return_value=False)
-        await svc._apply_worker_rejection(monero_down=True)
-        assert svc.workers_rejected is False  # so the next cycle retries
-
-    async def test_no_double_stop_when_already_rejected(self):
+    @pytest.mark.parametrize("required", [True, False])
+    @pytest.mark.parametrize(
+        "monero_healthy,tari_healthy", [(True, True), (True, False), (False, True), (False, False)]
+    )
+    async def test_readmission_requires_confirmed_health(
+        self, required, monero_healthy, tari_healthy
+    ):
         svc = self._svc()
         svc.workers_rejected = True
-        await svc._apply_worker_rejection(monero_down=True)
+        svc.monero_health.healthy = monero_healthy
+        svc.tari_health.healthy = tari_healthy
+        with patch.object(ds_mod, "TARI_REQUIRED", required):
+            await svc._apply_worker_rejection(False, False)
+        expected = monero_healthy and (tari_healthy or not required)
+        assert svc.workers_rejected is not expected
+        assert svc.docker_control.start.await_count == int(expected)
+
+    async def test_no_double_stop_or_readmit_during_outage(self):
+        svc = self._svc()
+        svc.workers_rejected = True
+        svc.monero_health.healthy = svc.tari_health.healthy = True
+        with patch.object(ds_mod, "TARI_REQUIRED", True):
+            await svc._apply_worker_rejection(False, True)
         svc.docker_control.stop.assert_not_called()
         svc.docker_control.start.assert_not_called()
 
-    async def test_readmit_when_monero_healthy(self):
+    async def test_start_failure_retries_then_no_double_start(self):
         svc = self._svc()
         svc.workers_rejected = True
-        svc.monero_health.healthy = True
-        await svc._apply_worker_rejection(monero_down=False)
-        svc.docker_control.start.assert_awaited_once()
-        assert svc.workers_rejected is False
+        svc.monero_health.healthy = svc.tari_health.healthy = True
+        svc.docker_control.start.side_effect = [False, True]
+        for expected in (True, False, False):
+            await svc._apply_worker_rejection(False, False)
+            assert svc.workers_rejected is expected
+        assert svc.docker_control.start.await_count == 2
 
-    async def test_no_readmit_until_monero_healthy(self):
-        # monerod is mandatory: never readmit while it's unconfirmed.
+    async def test_required_tari_uses_outage_and_recovery_debounce(self):
         svc = self._svc()
-        svc.workers_rejected = True
-        svc.monero_health.healthy = False
-        await svc._apply_worker_rejection(monero_down=False)
-        svc.docker_control.start.assert_not_called()
-        assert svc.workers_rejected is True
-
-    async def test_readmit_ignores_tari_state_entirely(self):
-        # Tari can no longer be the reason workers were rejected, so a required Tari that's
-        # unhealthy — or has never been reachable this run — must not hold a healthy monerod's
-        # workers off. This is what's left of the readmission ever-up guard after #897: the
-        # guard itself (in NodeHealthMonitor) still protects monerod-down detection, but Tari's
-        # copy of it is now moot for readmission because Tari can't gate rejection either.
-        svc = self._svc()
-        svc.workers_rejected = True
+        now = [0]
+        svc.tari_health._clock = lambda: now[0]
+        svc.tari_health.down_after = 4
+        svc.tari_health.recovery_after = 3
         svc.monero_health.healthy = True
-        svc.tari_health.healthy = False
-        assert svc.tari_health.ever_up is False
         with patch.object(ds_mod, "TARI_REQUIRED", True):
-            await svc._apply_worker_rejection(monero_down=False)
+            for time, reachable, rejected in (
+                (0, True, False),
+                (1, False, False),
+                (4, False, False),
+                (5, False, True),
+                (6, True, True),
+                (8, True, True),
+                (9, True, False),
+            ):
+                now[0] = time
+                await svc._apply_worker_rejection(False, svc.tari_health.update(reachable))
+                assert svc.workers_rejected is rejected
+        svc.docker_control.stop.assert_awaited_once()
         svc.docker_control.start.assert_awaited_once()
-        assert svc.workers_rejected is False
+
+    @pytest.mark.parametrize("local", [True, False])
+    @pytest.mark.parametrize("required", [True, False])
+    async def test_local_and_remote_rpc_outages_reject(self, local, required):
+        from mining_dashboard.collector import logs
+
+        svc = self._svc()
+        svc.monero_health.down_after = 0
+        with (
+            patch.object(ds_mod, "TARI_REQUIRED", required),
+            patch.object(logs, "LOCAL_MONERO_HOST", "local.example"),
+            patch.object(logs, "MONERO_NODE_HOST", "local.example" if local else "remote.example"),
+            patch.object(logs, "get_monero_peers", AsyncMock(return_value={})),
+            patch.object(
+                logs,
+                "_get_monero_sync_status_from_logs",
+                AsyncMock(return_value={"is_syncing": False}),
+            ),
+            patch.object(
+                logs,
+                "_get_remote_monero_sync_status",
+                AsyncMock(return_value={"is_syncing": False}),
+            ),
+            patch.object(
+                logs._monero_client, "get_sync_status", side_effect=[{"is_syncing": False}, None]
+            ),
+        ):
+            for _ in range(2):
+                sync = await logs.get_monero_sync_status()
+                await svc._apply_worker_rejection(
+                    svc.monero_health.update(sync["reachable"]), False
+                )
+        svc.docker_control.stop.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
+        assert svc.workers_rejected is True

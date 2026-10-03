@@ -321,19 +321,15 @@ DOCKER_TIMEOUT = int(os.environ.get("DOCKER_TIMEOUT", 5))
 #     can't mine against an unsynced node, and p2pool's merge-mining chatter would just flood
 #     the logs during the hours-long initial sync (Issue #35).
 #
-# Tari is merge-mining gravy — you can mine Monero on p2pool without it — so a Tari outage
-# NEVER rejects workers, regardless of `dashboard.tari_required`; p2pool keeps mining Monero
-# through it and the outage surfaces in the Tari panel/alerts instead (Issue #897). What
-# `tari_required` (default true) still decides is how much Tari blocks the *rest* of the
-# stack: true makes the miner wait for Tari's initial sync too, and drives the full Sync-Mode
-# dashboard for a Tari-only (re)sync. Set it false to make Tari NON-BLOCKING there as well:
-# start the miner as soon as monerod is synced (Tari finishes in the background), and keep
-# the operational dashboard — with a "Tari syncing" indicator — instead of the takeover
-# screen (Issue #51).
+# `tari_required` (default true) requires Tari for the initial-sync hold, the full-screen
+# Sync Mode and runtime worker failover. A sustained Tari outage stops xmrig-proxy until
+# both required nodes recover. This costs Monero revenue during a Tari-only outage even
+# though p2pool could keep mining Monero. Set false to keep mining Monero through Tari
+# outages and syncs, with Tari's progress and alerts in the operational dashboard.
 TARI_MODE = os.environ.get("TARI_MODE", "local").strip().lower()
 TARI_REQUIRED = os.environ.get("TARI_REQUIRED", "true").strip().lower() == "true"
 
-# Container the dashboard stops/starts to reject/readmit workers on a monerod outage.
+# Container stopped/started to reject/readmit workers on a required-node outage.
 REJECT_WORKERS_CONTAINER = os.environ.get("REJECT_WORKERS_CONTAINER", "xmrig-proxy")
 
 # Containers held stopped until the required chain(s) finish syncing, then started together

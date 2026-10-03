@@ -217,3 +217,22 @@ class TestGetSyncStatus:
     def test_unreachable_returns_none(self):
         client = self._client_with_info(None)
         assert client.get_sync_status() is None
+
+
+@pytest.mark.parametrize("field", ["height", "target_height", "database_size"])
+@pytest.mark.parametrize(
+    "value", [[], {}, "secret-response-value", None, True, -1, 1.5, float("inf"), 2**64]
+)
+def test_malformed_sync_fields_are_unreachable_without_logging_values(field, value, caplog):
+    client = MoneroClient()
+    client.get_info = MagicMock(return_value={"height": 50, "target_height": 100, field: value})
+    assert client.get_sync_status() is None
+    assert f"invalid {field}" in caplog.text
+    assert "secret-response-value" not in caplog.text
+
+
+@pytest.mark.parametrize("value", ["false", 0, 1, None, []])
+def test_malformed_synchronized_flag_is_unreachable(value):
+    client = MoneroClient()
+    client.get_info = MagicMock(return_value={"synchronized": value})
+    assert client.get_sync_status() is None

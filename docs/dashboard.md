@@ -224,20 +224,18 @@ serves them as `blocks`, `disk_growth`, and `xvb_history`, range-filtered the sa
 overlay reads `xvb_history`; only `disk_growth` is persistence and API exposure alone, no
 renderer yet.
 
-While monerod is down, the dashboard rejects workers so they fail over to the backup pools you've
-configured, rather than sitting idle on a stack that can't mine. A sustained outage stops the
-`xmrig-proxy` container (a `Workers rejected` badge shows) and a confirmed recovery restarts it.
-monerod is required to mine, so a monerod outage always rejects. Rejection never triggers for a
-remote monerod — the stack doesn't probe a node it doesn't run, so that node always reads as
-reachable and p2pool manages the connection itself. Readmission waits for monerod to be
-confirmed healthy, not merely no-longer-down, so a dashboard restart mid-outage doesn't wave
-workers back onto a stack that still can't mine.
+A sustained outage of a required node stops `xmrig-proxy` so workers fail over to their
+configured backup pools. A `Workers rejected` badge shows; confirmed recovery restarts the
+proxy. Monero is always required, for local and remote nodes. The dashboard probes the
+configured Monero RPC; stale P2Pool stats do not count as reachability. Outage detection and
+readmission use the same debounce for both nodes. Readmission waits for every required node
+to be confirmed healthy, so a dashboard restart mid-outage does not admit workers prematurely.
 
-A Tari outage never rejects workers, regardless of [`dashboard.tari_required`](configuration.md):
-p2pool keeps mining Monero through a Tari-only outage, so kicking workers to their backup pools
-over Tari alone would trade partial revenue for none. The outage still shows up — the Tari panel
-and its alerts track it independently — but the fleet keeps mining. That holds for a remote Tari
-node too, which the dashboard reaches over gRPC at `tari.remote.host`.
+With [`dashboard.tari_required: true`](configuration.md) (the default), a Tari outage also
+rejects workers, for local and remote Tari nodes. This costs Monero revenue until Tari recovers:
+p2pool could keep mining Monero through a Tari-only outage. Set `dashboard.tari_required: false`
+to keep accepting workers and earning Monero during Tari outages. Tari's panel and alerts
+continue to report the outage either way.
 
 **Non-blocking Tari.** With `tari_required: false`, a Tari-only (re)sync doesn't take over the
 screen: the operational view stays up, mining continues, and a `Tari syncing` badge shows Tari's
