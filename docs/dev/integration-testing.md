@@ -912,10 +912,10 @@ control-apply, before it has decided the outcome at all. The terminal status goe
 at the end, after the apply, an xmrig restart and a bounded wait for the miner to come back, and
 the reconciler cannot move the row off `accepted` until it has read that one. Settling on the
 config therefore ends at the start of that window rather than after it, and reading the row there
-raced it by up to ninety seconds. The claim survived because two of the three keys that reach that
+raced it by up to ninety seconds. The claim survived because two of the four keys that reach that
 assertion, `max_temp_c` and `watchdog_interval_min`, are on RigForge's restart-free fast path, where
-the window is too small to see. The third, `DONATION`, is off that list and takes the full path —
-which is where the ninety-second bound comes from, and where a hardware run would have hit this.
+the window is too small to see. `DONATION` and `pools` take the full path; their config readback
+does not prove the rig has published a terminal outcome or that the dashboard has consumed it.
 
 For scalar round trips, both the forward change and the revert retain their exact change ID and
 wait for that history row to become terminal, each with the existing ninety-second bound. A
@@ -925,6 +925,27 @@ config readback and the revert history report `applied`; `failed` or `rolled_bac
 keeps the original value on the cleanup ledger. If the revert row is still `accepted` or absent
 at the deadline, the control phase captures artifacts, restores the stack baseline and stops
 before sending another key or control edit. The abort-safe unwind retains the rig cleanup duty.
+
+The row is polled to a terminal status within a ninety-second observation budget.
+The result is the last history status whose transport and JSON decoding succeeded within that
+budget; reads or decoding finishing later cannot pass. A nonzero transport exit discards even valid JSON
+and records `dashboard.poll=failed`. Decoding must succeed with one JSON object; trailing junk
+or multiple documents produce `dashboard.poll=invalid_or_failed`. Partial decoder output is
+discarded, preserving the last successfully decoded status. Diagnostics may finish after the
+deadline, but cannot change the cached verdict. There is no fresh history read after timeout.
+Each history wait retains at most twenty `history_handoff` JSON samples in the harness log:
+the exact change ID, UTC sample time, dashboard history status, snapshot time, feed generation
+time and stale verdict; direct `/1/summary` generation time and exact-ID current/history
+statuses; direct `/status` for that ID; and the matching worker's collector `api_ok` verdict
+and feed generation time from `/api/state` (`false` means the configured probe failed;
+`unavailable` means no verdict). Direct probes require the existing rig host and token
+inputs, run sequentially with three-second HTTP limits, and report unavailable or failed reads.
+The sample time is the end of that checkpoint, not a simultaneous cross-host measurement.
+Only allowlisted scalars are emitted; pool config, credentials, reasons and topology are excluded.
+Read these samples with the phase's dashboard logs for collector warnings and the
+runner's exact-ID apply diagnostic before assigning a stale handoff. A rig terminal record alone
+does not prove its enriched feed published that record during the wait, and a passing rerun does
+not resolve an earlier propagation failure.
 
 Waiting for terminal rather than `applied` keeps the assertion honest in both directions: a rig that genuinely rejected a change publishes its terminal row at once, so the leg
 reds on the real status instead of spending the whole bound on a verdict already known, and a row

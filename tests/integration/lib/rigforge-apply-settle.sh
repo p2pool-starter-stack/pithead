@@ -26,10 +26,10 @@
 # bounded at 20 tries x 3s; the reconciler cannot move the row off "accepted" until it has read
 # that second file, which costs up to one further UPDATE_INTERVAL. A settle on the readback
 # surface therefore ends at the START of that gap, not after it. The claim survived because two of
-# the three keys that reach the row, max_temp_c and watchdog_interval_min, are on RigForge's
+# the four keys that reach the row, max_temp_c and watchdog_interval_min, are on RigForge's
 # restart-free fast path (CONTROL_FAST_PATH_KEYS, rigforge.sh:4203 at v1.16.0), where the gap is
-# too small to see. The third, DONATION, is off that list and takes the full path — which is where
-# the 90s bound below comes from, and where a hardware run would have hit this.
+# too small to see. DONATION and pools take the full path; their config readback is not proof
+# that the rig has published a terminal outcome or that the dashboard has consumed it.
 # Callers asserting on the row go through _settle_history_row below, which waits for it.
 # Fails loudly (leaves status/ckeys at their dial-time "accepted"/empty) on a real
 # rejected/failed/timeout, exactly like a "the change never actually happened" bug would.
@@ -88,8 +88,79 @@ _history_row_status() { # <rig> <change_id> -> that row's status, or empty when 
 # and let the caller's assert_eq name it. An allowlist would turn a newly added rig status into a
 # 90s timeout reported as "the row never settled" — the wrong diagnosis, and one that costs the
 # full bound to reach. Empty is non-terminal because there is no row yet, not because it is stuck.
+# Bounded scalar-only observations support tracing a stale publication/consumption hop (#2761).
+# Never print config, reasons, host names or arbitrary producer strings: pools carry credentials.
+_history_handoff_sample() { # <change_id> <detail-json> [rig] [dashboard-poll]
+    local id="$1" detail="$2" feed='{}' outcome='{}' direct_poll=unavailable status_poll=unavailable auth fields collector
+    [[ "$id" =~ ^[0-9a-f]{16}$ ]] || return 0
+    if [ -n "${IT_RIG_TOKEN:-}" ] && [ -n "${RIG_HOST:-}" ]; then
+        auth="$(printf 'Authorization: Bearer %s' "$IT_RIG_TOKEN" | jq -Rs .)"
+        direct_poll=failed
+        if feed="$(printf 'header = %s\n' "$auth" | rx "curl -q -fsS --max-time 3 -K - $(quote_arg "http://$RIG_HOST:8081/1/summary")" --stdin 2>/dev/null)"; then
+            direct_poll=ok
+        fi
+        status_poll=failed
+        if outcome="$(printf 'header = %s\n' "$auth" | rx "curl -q -fsS --max-time 3 -K - $(quote_arg "http://$RIG_HOST:$RIG_CONTROL_PORT/status?change_id=$id")" --stdin 2>/dev/null)"; then
+            status_poll=ok
+        fi
+    fi
+    # Parse separately so a failed/malformed response cannot hide the other side's observation.
+    fields='def stamp: if type != "string" then "invalid_or_absent" elif test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$") then . else "invalid_or_absent" end;
+        def status: if . == null then "absent" elif IN("accepted","pending","started","running","applied","rejected","rolled_back","failed","noop","throttled") then . else "unrecognized" end;
+        def exact($rows): (first($rows[]? | select(.change_id == $id) | .status) // null) | status;
+        if length == 1 and (.[0] | type) == "object" then .[0] else error("invalid response") end |'
+    if [ "${4:-ok}" = failed ]; then
+        detail='{"poll":"failed"}'
+    else
+        detail="$(printf '%s' "$detail" | jq -sc --arg id "$id" "$fields"'
+        {history:exact(.history),feed_at:(.rigforge.generated_at | stamp),
+         stale:(if (.rigforge.stale | type) == "boolean" then .rigforge.stale else "invalid_or_absent" end),
+         snapshot_at:(if (.snapshot_at | type) == "number" then .snapshot_at else null end),
+         worker_status:(if (.status | IN("online","offline","down")) then .status else "unrecognized" end)}' 2>/dev/null)" || detail='{"poll":"invalid_or_failed"}'
+    fi
+    feed="$(printf '%s' "$feed" | jq -sc --arg id "$id" "$fields"'
+        {feed_at:(.generated_at | stamp),history:exact(.rigforge.control_history),
+         current:(if .rigforge.control.change_id == $id then .rigforge.control.status | status else "absent" end)}' 2>/dev/null)" || feed='{"poll":"invalid_or_failed"}'
+    collector="$(api_state | jq -sc --arg id "$id" --arg rig "${3:-}" "$fields"'
+        first(.workers[]? | select(.name == $rig)) // {} |
+        {api_ok:(if (.api_ok | type) == "boolean" then .api_ok else "unavailable" end),
+         feed_at:(.rigforge.generated_at | stamp)}' 2>/dev/null)" || collector='{"poll":"invalid_or_failed"}'
+    [ -n "$collector" ] || collector='{"poll":"invalid_or_failed"}'
+    outcome="$(printf '%s' "$outcome" | jq -sc --arg id "$id" "$fields"'
+        {status:(if .change_id == $id then .status | status else "absent" end)}' 2>/dev/null)" || outcome='{"poll":"invalid_or_failed"}'
+    [ -n "$detail" ] || detail='{"poll":"invalid_or_failed"}'
+    [ -n "$feed" ] || feed='{"poll":"invalid_or_failed"}'
+    [ -n "$outcome" ] || outcome='{"poll":"invalid_or_failed"}'
+    jq -nc --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg id "$id" \
+        --arg direct_poll "$direct_poll" --arg status_poll "$status_poll" \
+        --argjson dashboard "$detail" --argjson direct "$feed" --argjson outcome "$outcome" --argjson collector "$collector" \
+        '{history_handoff:{at:$at,change_id:$id,dashboard:$dashboard,direct_poll:$direct_poll,direct:$direct,status_poll:$status_poll,outcome:$outcome,collector:$collector}}' >&2
+}
+
 _pred_history_row_terminal() { # <rig> <change_id>
-    case "$(_history_row_status "$1" "$2")" in
+    local detail status="" dashboard_poll=ok
+    if [ -n "${_HISTORY_DEADLINE:-}" ] && [ "$(now_s)" -gt "$_HISTORY_DEADLINE" ]; then return 1; fi
+    if ! detail="$(_worker_detail "$1")"; then
+        dashboard_poll=failed
+        detail=""
+    fi
+    if [ -n "${_HISTORY_DEADLINE:-}" ] && [ "$(now_s)" -gt "$_HISTORY_DEADLINE" ]; then return 1; fi
+    # Transport or decoding failure cannot supply a status, even after emitting valid JSON.
+    if [ "$dashboard_poll" = ok ]; then
+        if status="$(printf '%s' "$detail" | jq -sr --arg c "$2" '
+            if length == 1 and (.[0] | type) == "object" then .[0] else error("invalid response") end |
+            first(.history[]? | select(.change_id == $c)) | .status // empty' 2>/dev/null)"; then
+            if [ -n "${_HISTORY_DEADLINE:-}" ] && [ "$(now_s)" -gt "$_HISTORY_DEADLINE" ]; then return 1; fi
+            _HISTORY_ROW_STATUS="$status"
+        else
+            status=""
+        fi
+    fi
+    if [ "${_HISTORY_SAMPLE_COUNT:-20}" -lt 20 ]; then
+        _HISTORY_SAMPLE_COUNT=$((_HISTORY_SAMPLE_COUNT + 1))
+        _history_handoff_sample "$2" "$detail" "$1" "$dashboard_poll"
+    fi
+    case "$status" in
     "" | accepted) return 1 ;;
     *) return 0 ;;
     esac
@@ -101,16 +172,19 @@ _pred_history_row_terminal() { # <rig> <change_id>
 # the caller reds immediately instead of burning the bound on a verdict already known; a row that
 # never settles stays "accepted" and reds too. The one answer it must never invent is "applied"
 # for a row nobody has confirmed — which is what reading the row unwaited did, across a window of
-# up to ~90s (_wait_miner_live + one UPDATE_INTERVAL), and why the bound here is that same 90s.
+# the rig apply and the next dashboard poll. The 90s assertion remains a bounded check;
+# exact-ID samples correlate publication/consumption delays from an unfinished rig apply.
 #
 # The `>&2` is this module's #1454 discipline, for the same reason: stdout is the return value and
-# wait_for opens with an it_step banner on stdout. The wait's rc is deliberately NOT guarded: the
-# read below runs either way (run.sh:20 — "NOT -e: we deliberately continue-on-error"), and on a
-# timeout reporting the status the row is STUCK at is what lets the caller's assert_eq name it.
-_settle_history_row() { # <rig> <change_id> -> the row's terminal status, or what it is stuck at
+# wait_for opens with an it_step banner on stdout. Cache the history observation before the
+# diagnostic reads: those may finish after the deadline, but cannot change the verdict. Never
+# perform a fresh result read after timeout, which could falsely pass a later convergence.
+_settle_history_row() { # <rig> <change_id> -> the last status observed within the 90s budget
+    local _HISTORY_SAMPLE_COUNT=0 _HISTORY_ROW_STATUS="" _HISTORY_DEADLINE
+    _HISTORY_DEADLINE=$(($(now_s) + 90))
     wait_for 90 5 "the #185 history row for $2 to reach a terminal status (#1471)" \
         _pred_history_row_terminal "$1" "$2" >&2
-    _history_row_status "$1" "$2"
+    printf '%s' "$_HISTORY_ROW_STATUS"
 }
 
 # Config visibility is not completion. Keep the unwind entry unless BOTH surfaces confirm the
