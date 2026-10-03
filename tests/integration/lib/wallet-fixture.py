@@ -122,7 +122,10 @@ def wallet_container(allowed):
 
 def stop_wallet(item):
     if item["State"]["Running"]:
-        docker("kill", "--signal", "TERM", item["Id"], stdout=subprocess.DEVNULL)
+        # `docker stop` marks the stop as manual, so the wallet's `restart: unless-stopped`
+        # policy does not revive it (a bare `docker kill` does, and the wait below never ended).
+        # A wallet that outlives the window is killed and exits nonzero; capture then refuses it.
+        docker("stop", "--time", "120", item["Id"], stdout=subprocess.DEVNULL)
     deadline = time.monotonic() + 120
     while True:
         item = inspect("container", item["Id"])

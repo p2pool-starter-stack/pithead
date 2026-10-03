@@ -84,7 +84,7 @@ class Docker:
             ).encode()
         elif args[:2] == ("image", "inspect"):
             value = json.dumps([{"Id": IMAGE}]).encode()
-        elif args[0] == "kill":
+        elif args[0] == "stop":
             self.item["State"]["Running"] = False
         elif args[0] == "start":
             self.item["State"]["Running"] = True
@@ -125,6 +125,13 @@ class FixtureTest(unittest.TestCase):
         with patch("sys.stdout", io.StringIO()) as output:
             fixture.capture(self.baseline)
         return Path(output.getvalue().strip())
+
+    def test_capture_stops_the_wallet_manually_so_its_restart_policy_cannot_revive_it(self):
+        self.capture()
+        stops = [call for call in self.docker.calls if call[0] == "stop"]
+        self.assertEqual(len(stops), 1)
+        self.assertIn("--time", stops[0])
+        self.assertFalse(any(call[0] == "kill" for call in self.docker.calls))
 
     def test_uninstall_recreates_cold_volume_then_exact_fixture_returns(self):
         directory = self.capture()
@@ -188,7 +195,7 @@ class FixtureTest(unittest.TestCase):
         before = len(self.docker.calls)
         with self.assertRaises(ValueError):
             self.capture()
-        self.assertFalse(any(call[0] in {"kill", "run"} for call in self.docker.calls[before:]))
+        self.assertFalse(any(call[0] in {"stop", "run"} for call in self.docker.calls[before:]))
         self.docker.item["Config"]["Labels"]["com.docker.compose.project.working_dir"] = str(
             self.baseline
         )
@@ -197,7 +204,7 @@ class FixtureTest(unittest.TestCase):
         before = len(self.docker.calls)
         with self.assertRaises(ValueError):
             self.capture()
-        self.assertFalse(any(call[0] in {"kill", "run"} for call in self.docker.calls[before:]))
+        self.assertFalse(any(call[0] in {"stop", "run"} for call in self.docker.calls[before:]))
         self.docker.item["Config"]["Labels"]["com.docker.compose.project.working_dir"] = str(
             self.baseline
         )
@@ -205,7 +212,7 @@ class FixtureTest(unittest.TestCase):
         before = len(self.docker.calls)
         with self.assertRaises(ValueError):
             self.capture()
-        self.assertFalse(any(call[0] in {"kill", "run"} for call in self.docker.calls[before:]))
+        self.assertFalse(any(call[0] in {"stop", "run"} for call in self.docker.calls[before:]))
 
     def test_private_snapshot_and_archive_types_are_binding(self):
         directory = self.capture()
