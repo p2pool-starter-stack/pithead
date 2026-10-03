@@ -1,8 +1,4 @@
-// The hashrate chart. A Preact class component wraps the Chart.js instance imperatively:
-// Preact owns the card markup (range buttons + <canvas>), while Chart.js owns the canvas
-// pixels. The instance is created on mount and updated in place on each data tick, so it
-// survives re-renders (scroll/zoom/animation state intact). It only mounts in the operational
-// view, so the canvas is never built into a hidden/zero-size element during Sync Mode.
+// Preact owns the controls; Chart.js keeps its canvas instance across data refreshes.
 //
 // Points carry their real timestamp as the x value (epoch ms) on a linear scale, so time is to
 // scale and outages render as proportional gaps (Issue #65) — a linear scale (not Chart.js's
@@ -472,12 +468,15 @@ export class ChartCard extends Component {
 
   render(props) {
     const zoomed = !!props.window;
+    const Options = props.compact ? "details" : "div";
     return html`
         <div class="card">
             <div class="chart-controls chart-controls-collapsible" role="group" aria-label="Chart range">
                 <span class="chart-control-label text-small mr-1">Range:</span>
                 ${rangeControls(RANGES, zoomed, props)}
             </div>
+            <${Options} class=${props.compact ? "chart-options" : ""}>
+            ${props.compact ? html`<summary>Chart options · ${props.avgWindow || "10m"} average</summary>` : null}
             <div class="chart-controls chart-controls-collapsible" role="group" aria-label="Hashrate averaging window">
                 <span class="chart-control-label text-small mr-1" title="Which hashrate-averaging window the chart plots">Avg:</span>
                 ${avgControls(WINDOWS, WINDOW_HINT, props)}
@@ -495,6 +494,7 @@ export class ChartCard extends Component {
                     </button>`;
                 })}
             </div>
+            <//>
             <div class="chart-wrap"><canvas role="img" aria-label=${chartAriaLabel(props.chart, props.avgWindow, WINDOWS)} ref=${this.canvasRef}></canvas></div>
         </div>`;
   }

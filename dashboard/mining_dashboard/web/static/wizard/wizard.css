@@ -1,3 +1,4 @@
+@import url("./sovereign.css");
 /* First-boot wizard styles. Everything visual comes from dashboard.css — palette variables,
  * .card, .config-field, buttons — so the first page anyone sees matches the dashboard they
  * live in afterwards. Only layout the dashboard has no equivalent for lives here. */

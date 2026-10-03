@@ -5,6 +5,7 @@ import { needsNodeProbe } from "../network/nodeprobe.mjs";
 import { renderRestore, renderRigFields } from "./formparts.mjs";
 import { savedRoleOrSetup } from "./savedrole.mjs";
 import { renderSetup } from "./setup.mjs";
+import { SovereignWizard } from "./sovereign.mjs";
 import { Done, Gate, Installing } from "./stages.mjs";
 import * as failure from "./wizardfailure.mjs";
 
@@ -362,13 +363,16 @@ export class WizardApp extends Component {
         installer=${this.state.installer} stick=${this.state.chosen === "usb"}
         rig=${this.state.role === "rig"} onAck=${this.ack} />`;
     else view = savedRoleOrSetup(this);
-    return view;
+    return this.props.sovereign ? html`<${SovereignWizard} state=${this.state}>${view}<//>` : view;
   }
 }
 
 // Mount only in a browser (node --test imports this module; a bare `document` would break that).
 if (typeof document !== "undefined") {
-  render(html`<${WizardApp} />`, document.getElementById("app"));
+  const sovereign = new URLSearchParams(location.search).get("ui") === "sovereign";
+  const root = document.getElementById("app");
+  if (sovereign) root.replaceChildren();
+  render(html`<${WizardApp} sovereign=${sovereign} />`, root);
 }
 
 export { Done, Gate, Installing, InstallSection, RestoreSection } from "./stages.mjs";
