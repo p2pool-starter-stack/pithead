@@ -49,7 +49,7 @@ tests/integration/e2e.sh	686
 tests/integration/fakes/test_contract.py	437
 tests/integration/lib.sh	690
 tests/integration/lib/live-upgrade-support.sh	413
-tests/integration/lib/wallet-fixture.py	426
+tests/integration/lib/wallet-fixture.py	429
 tests/integration/selftest/selftest-e2e-phases.sh	501
 tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest-zmq-probe.sh	431
