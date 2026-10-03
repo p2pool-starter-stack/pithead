@@ -105,6 +105,11 @@ fault_body=$(declare -f fault_tor_probe_egress)
     exit 1
 }
 
+# shellcheck source=tests/integration/lib.sh
+source "$ROOT/lib.sh"
+OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/doctor-modules.XXXXXX")"
+trap 'rm -rf "$OUT_DIR"' EXIT
+
 pithead() {
     printf '%s\n' \
         'OK   Tor-only egress firewall is installed — clearnet dials are fail-closed' \
