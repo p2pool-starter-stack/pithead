@@ -1104,13 +1104,20 @@ hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it
 Each run writes a manifest (`results/manifest.txt`) recording exactly what was under test: the
 stack `VERSION`, git revision, and `docker compose images`. A run is reproducible.
 
-On a scenario failure, the harness captures (redacted) to `results/<scenario>/`:
+On a scenario failure, the harness captures fresh diagnostic snapshots (redacted) to `results/<scenario>/`:
 `compose-ps.txt`, `status.txt`, `doctor.txt`, `config.json`, `env.redacted.txt`,
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
 probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the first
 failed missing-image `up` or dashboard data-dir carry, before cleanup can replace
 Tor's failing state. The end-of-run summary lists each failed assertion and points
-at these.
+at these. The `doctor.txt` snapshot runs doctor again; it does not describe an earlier
+asserted invocation. Before each doctor assertion, the check phase saves that invocation's
+redacted stdout/stderr in `results/check/doctor-asserted.*/output.txt` and its exact exit code in
+`exit-code.txt`. Each invocation gets a separate directory, including successful invocations,
+so later diagnostics cannot replace failing evidence. Capture failures add a failed evidence row;
+the original doctor exit code is still asserted. This adds no retry or readiness wait and does
+not establish the cause of a transient failure. The pure regression is
+`tests/integration/selftest/selftest-doctor-evidence.sh`.
 
 Every destructive run also samples the HugePages that monerod and p2pool hold
 ([#2685](https://github.com/p2pool-starter-stack/pithead/issues/2685)), every 10 s from the end of

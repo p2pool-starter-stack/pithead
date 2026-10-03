@@ -145,9 +145,22 @@ assert_metrics_via_caddy() {
 # decision logic against stubs; this proves the real toolchain (docker/sudo/iptables/ss/curl)
 # feeds them on a healthy box. The firewall line is config-gated the same way doctor itself is.
 assert_doctor_ok() {
-    local out rc
+    local out rc evidence_dir
     out="$(pithead doctor 2>&1)"
     rc=$?
+    # Capture the asserted invocation before a later diagnostic can observe another state.
+    # Redact once, before both artifact publication and assertion failure details.
+    if ! out="$(printf '%s\n' "$out" | redact)"; then
+        it_fail "doctor assertion evidence captured" "could not redact doctor output"
+        out=""
+    fi
+    if mkdir -p "$OUT_DIR/check" && evidence_dir="$(mktemp -d "$OUT_DIR/check/doctor-asserted.XXXXXX")"; then
+        if ! { printf '%s\n' "$out" >"$evidence_dir/output.txt" && printf '%s\n' "$rc" >"$evidence_dir/exit-code.txt"; }; then
+            it_fail "doctor assertion evidence captured" "could not write doctor evidence"
+        fi
+    else
+        it_fail "doctor assertion evidence captured" "could not create doctor evidence directory"
+    fi
     assert_rc "doctor exits 0 on a healthy box (#383)" "$rc" "0"
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
         it_log "   doctor: egress firewall opted out — skipping that OK line"
