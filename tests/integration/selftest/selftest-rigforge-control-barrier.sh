@@ -101,6 +101,20 @@ assert_eq "late failure reaches the writable control leg" "$WRITABLE_CALLED" "1"
 assert_eq "a late RigForge assertion returns nonzero to main" "$late_rc" "1"
 late_ok=$([ "$WRITABLE_CALLED" -eq 1 ] && [ "$late_rc" -eq 1 ] && [ "$IT_FAIL" -eq 1 ] && echo 1 || echo 0)
 
+echo "== a pending scalar revert stops all later control writes and restores baseline =="
+for pending in max_temp writable; do
+    IT_FAIL=0 PUSHES=0 LATER_WRITES=0
+    _max_temp_round_trip() { [ "$pending" != max_temp ]; }
+    run_rigforge_writable_keys() { [ "$pending" != writable ]; }
+    run_rigforge_pools() { LATER_WRITES=$((LATER_WRITES + 1)); }
+    push_config() { PUSHES=$((PUSHES + 1)); }
+    run_rigforge_control >/dev/null 2>&1
+    pending_rc=$?
+    assert_eq "[$pending] pending revert stops phase and restores baseline" \
+        "$pending_rc,$LATER_WRITES,$PUSHES" "1,0,2"
+done
+pending_ok=$([ "$IT_FAIL" -eq 0 ] && echo 1 || echo 0)
+
 echo "== a failed current config read rejects even valid JSON stdout =="
 IT_FAIL=0 PUSHES=0 WRITABLE_CALLED=0 APPLIES=0
 rx() {
@@ -126,5 +140,5 @@ MAIN_SRC="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../run.sh")"
 assert_contains "main gates later fault injection on successful RigForge control" "$MAIN_SRC" 'if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then'
 assert_contains "main gates later fault injection on a successful lifecycle" "$MAIN_SRC" 'if [ "$lifecycle_ok" = 1 ]; then'
 # The forced failures above are product-counter stimuli, not selftest failures.
-[ "$early_ok" = 1 ] && [ "$unreadable_ok" = 1 ] && [ "$late_ok" = 1 ] && [ "$failed_read_ok" = 1 ] && [ "$IT_FAIL" -eq 1 ] || exit 1
+[ "$early_ok" = 1 ] && [ "$unreadable_ok" = 1 ] && [ "$late_ok" = 1 ] && [ "$pending_ok" = 1 ] && [ "$failed_read_ok" = 1 ] && [ "$IT_FAIL" -eq 1 ] || exit 1
 printf '\nselftest-rigforge-control-barrier: PASS\n'
