@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+source "${BASH_SOURCE[0]%/*}/egress-probe.sh" || return $?
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     local name="$1" config="$2"
@@ -383,7 +384,7 @@ assert_egress_dial_pair() {
         else
             it_pass "clearnet dial is DROPPED with the firewall on (#270/#2059)"
         fi
-        if rx "docker exec monerod curl -s -o /dev/null -m 30 --socks5-hostname $tor_socks http://1.1.1.1/" >/dev/null 2>&1; then
+        if run_egress_socks_probe "$tor_socks"; then
             it_pass "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)"
         else
             it_fail "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)" \
