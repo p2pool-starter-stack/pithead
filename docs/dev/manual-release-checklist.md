@@ -9,7 +9,8 @@ Most of what the walkthrough touches is also covered by automated tests. It is h
 green suite proves each piece works on its own, and only a person using the product end to end
 notices a confusing message, a missing button, or two screens that disagree. The hardware
 sections further down keep their original rule: each item says **why it cannot be automated**,
-and an item that becomes automatable should move off that list.
+an item that becomes automatable should move off that list, and anything that keeps biting
+should get a harness leg.
 
 Contents:
 
@@ -78,6 +79,12 @@ Each sample is a complete `config.json`. Replace every `PASTE_...` value with yo
 before you use it; a sample with a placeholder left in is refused, which is correct. Every key is
 documented in [Configuration](../configuration.md).
 
+When a step says to set or add a key inside a block (for example "add `"rpc_lan_access": true`
+inside the `monero` block"), edit that block in the existing `config.json`. Never paste a second
+block with the same name: JSON keeps only the last one, so the first block's settings vanish
+without a warning. After any hand edit, `python3 -m json.tool config.json` must print the file
+without an error.
+
 **Config A — defaults.** This is `config.minimal.json` with QA addresses: the shape a new user
 starts from.
 
@@ -91,7 +98,7 @@ starts from.
 
 **Config B — everything on.** Login, browser configuration, Telegram with commands, stratum TLS,
 on-chain payout confirmation for both chains, energy prices, and the dashboard as a Tor onion
-(which needs a password of 16 characters or more).
+(which needs a dashboard password of 16 characters or more; make one up for QA).
 
 ```json
 {
@@ -106,7 +113,7 @@ on-chain payout confirmation for both chains, energy prices, and the dashboard a
     },
     "p2pool": { "pool": "mini", "stratum_password": "auto", "stratum_tls": true },
     "dashboard": {
-        "auth": { "username": "admin", "password": "qa-only-correct-horse-battery" },
+        "auth": { "username": "admin", "password": "PASTE_QA_DASHBOARD_PASSPHRASE" },
         "control": { "enabled": true },
         "onion": { "enabled": true, "client_auth": true },
         "energy": { "cost_per_kwh": 0.25, "currency": "USD" }
@@ -120,15 +127,20 @@ on-chain payout confirmation for both chains, energy prices, and the dashboard a
 }
 ```
 
-**Config C — small miner, Monero only.** No Tari, the `nano` sidechain for low hashrate, and no
-XvB raffle.
+**Config C — small miner, Monero only.** No Tari merge-mining, the `nano` sidechain for low
+hashrate, and no XvB raffle. The Tari address stays in the file so Tari can be turned back on by
+changing `mode` alone.
 
 ```json
 {
     "monero": { "wallet_address": "PASTE_QA_MONERO_PRIMARY_ADDRESS" },
-    "tari": { "mode": "off" },
+    "tari": { "mode": "off", "wallet_address": "PASTE_QA_TARI_ADDRESS" },
     "p2pool": { "pool": "nano", "stratum_password": "auto" },
-    "xvb": { "enabled": false }
+    "xvb": { "enabled": false },
+    "dashboard": {
+        "auth": { "username": "admin", "password": "PASTE_QA_DASHBOARD_PASSWORD" },
+        "control": { "enabled": true }
+    }
 }
 ```
 
@@ -136,13 +148,14 @@ XvB raffle.
 LAN use its Monero node; the second machine mines against it. Put the node machine's LAN address
 in `host`, and copy `node_username`/`node_password` from the node machine's `config.json`.
 
-On the node machine, add:
+On the node machine, add these two keys inside the existing `monero` block:
 
 ```json
-"monero": { "rpc_lan_access": true, "zmq_lan_access": true }
+"rpc_lan_access": true,
+"zmq_lan_access": true
 ```
 
-On the second machine:
+On the second machine, use this complete file:
 
 ```json
 {
@@ -154,14 +167,19 @@ On the second machine:
         "remote": { "host": "192.168.1.10", "rpc_port": 18081, "zmq_port": 18083 }
     },
     "tari": { "mode": "off" },
-    "p2pool": { "stratum_password": "auto" }
+    "p2pool": { "stratum_password": "auto" },
+    "dashboard": {
+        "auth": { "username": "admin", "password": "PASTE_QA_DASHBOARD_PASSWORD" },
+        "control": { "enabled": true }
+    }
 }
 ```
 
 ### Broken configs
 
-Make one change at a time to a working config, run `./pithead apply`, and check the refusal. Each one must stop before anything changes, print a message that contains the
-text in the second column, and leave the running stack untouched.
+Make one change at a time to a working config, run `./pithead apply`, and check the refusal.
+Each one must stop before anything changes, print a message that contains the text in the second
+column, and leave the running stack untouched.
 
 | Change | The message contains |
 |---|---|
@@ -204,14 +222,17 @@ syncing stack. Build the candidate from source so a failure here does not spend 
 - [ ] **1.4 Setup wizard.** Do: `./pithead setup` with no `config.json` present. At the payout
   prompt paste the QA **subaddress** first, then the primary address. Answer: local Monero node,
   pool `mini`, merge-mine Tari with the bundled node (paste the Tari address), set a dashboard
-  password, accept the default hostname, decline clearnet sync, decline Tor dashboard access,
-  decline Telegram, decline local mining. Expect: the subaddress is refused with an explanation
-  and you are asked again; setup checks dependencies, warns (but does not stop) if disk or RAM is
-  below the documented floor, writes `config.json`, provisions Tor, and asks before any GRUB
-  change. Run `ls -l config.json`: it is `-rw-------`.
-- [ ] **1.5 HugePages reboot.** Do: if setup changed GRUB, reboot, then `./pithead up`.
-  Expect: the stack starts, and the first start prints a short note that the miner is held until
-  both chains sync. It does not print that note on later starts.
+  password, decline clearnet sync, decline Tor dashboard access, decline Telegram, decline local
+  mining, and accept the default at `Enter Hostname`. Answer `y` to
+  `Modify GRUB for persistent HugePages now?` and `n` to `Start Pithead now?`. If setup does not
+  ask about GRUB (HugePages are already persistent), answer `y` to `Start Pithead now?` and skip
+  the reboot in 1.5. Expect: the subaddress is refused with an explanation and you are asked
+  again; setup checks dependencies, warns (but does not stop) if disk or RAM is below the
+  documented floor, writes `config.json`, and provisions Tor. Run `ls -l config.json`: it is
+  `-rw-------`.
+- [ ] **1.5 HugePages reboot.** Do: reboot, then `./pithead up`. Expect: the stack starts, and
+  this first start prints a short note that the miner is held until both chains sync. A later
+  `./pithead restart` does not print the note again.
 - [ ] **1.6 Status while syncing.** Do: `./pithead status`. Expect: the node and support services
   show `✓ running`; `p2pool` and `xmrig-proxy` show `⚠` with
   `held until the required chains finish syncing`; under
@@ -234,8 +255,8 @@ syncing stack. Build the candidate from source so a failure here does not spend 
 ## 2. Upgrade from the previous release
 
 Run on the **upgrade box**, which runs the previous release with synced chains. Before you start,
-write down the payout addresses, the dashboard login, the Tor onion address shown by
-`./pithead status`, the worker count, and a screenshot of the hashrate chart.
+write down the payout addresses, the dashboard login, the dashboard's onion address if the onion
+is on (`./pithead status` prints it), the worker count, and a screenshot of the hashrate chart.
 
 - [ ] **2.1 Backup first.** Do: `./pithead backup`. Choose a passphrase and keep it. Expect: a
   file `backups/pithead-backup-<date>-<time>.tar.gz.enc` exists; the stack was stopped for the
@@ -285,10 +306,10 @@ Run on the upgrade box with the miner machine. Get the stratum password with
   ```
 
   Expect: XMRig logs `accepted` shares within a few minutes, and `qa-rig-01` appears in the
-  dashboard's **Workers Alive** table within seconds of connecting.
+  dashboard's **Workers Alive** table within a minute (the page refreshes every 30 seconds).
 - [ ] **4.2 Wrong password.** Do: change `pass` to something wrong and restart XMRig. Expect: the
   stack rejects the miner; it does not appear in Workers Alive. Put the right password back.
-- [ ] **4.3 TLS.** Do: set `"stratum_tls": true` (Config B does), `./pithead apply`, and copy the
+- [ ] **4.3 TLS.** Do: set `"stratum_tls": true` inside the `p2pool` block, run `./pithead apply`, and copy the
   fingerprint it prints (also in `./pithead status`). Add `"tls": true` and
   `"tls-fingerprint": "<fingerprint>"` to the miner's pool entry. Expect: the miner connects over
   TLS and mines; a miner without `tls` keeps mining in cleartext on the same port.
@@ -318,9 +339,9 @@ each panel means.
   sort, then reload the page. Expect: all of them are kept.
 - [ ] **5.6 Live refresh.** Do: leave the page open for two minutes without touching it. Expect:
   the panels refresh in place about every 30 seconds; scroll position stays put.
-- [ ] **5.7 Disconnected banner.** Do: `./pithead restart` while the page is open. Expect: a red
-  `Disconnected — showing data from …` banner appears, then clears by itself once the stack is
-  back, with no manual reload.
+- [ ] **5.7 Disconnected banner.** Do: with the page open, run `./pithead down`, wait 60 seconds,
+  then `./pithead up`. Expect: a red `Disconnected — showing data from …` banner appears while the
+  stack is down, then clears by itself once it is back, with no manual reload.
 - [ ] **5.8 Phone.** Do: open the dashboard on the phone. Expect: one column, a stacked header,
   and a worker table that scrolls sideways. Nothing is cut off and nothing overlaps.
 - [ ] **5.9 Light and dark.** Do: switch the laptop's system theme between light and dark.
@@ -355,15 +376,17 @@ and restore it at the end.
   Expect: each refusal matches, and `./pithead status` stays healthy throughout.
 - [ ] **6.6 Render.** Do: `./pithead render`. Expect: it finishes and no container restarts.
 - [ ] **6.7 Rotate secrets.** Do: `./pithead rotate-secrets` and confirm. Expect: it names what
-  changes, keeps `.bak-` copies, and recreates the affected containers. Miners with the old
-  stratum password are now rejected; give each miner the new one from `.env` and they mine again.
+  changes, keeps `.bak-` copies, and recreates the affected containers. If `p2pool.stratum_password`
+  is `"auto"`, miners with the old password are now rejected; give each miner the new one from
+  `.env` and they mine again. With a password you set yourself, the stratum password does not
+  change.
 - [ ] **6.8 Restore.** Do: `cp config.json.qa config.json && ./pithead apply`. Expect: the
   original settings are back.
 
 ## 7. Change settings from the dashboard
 
-Run on the upgrade box with Config B's `dashboard` block applied (password plus
-`"control": { "enabled": true }`).
+Run on the upgrade box. Inside its `dashboard` block, make sure `auth.password` is set and add
+`"control": { "enabled": true }`, then `./pithead apply`.
 
 - [ ] **7.1 Configuration view.** Do: open **Configuration** from the toggle above the chart.
   Expect: a form with grouped sections and an Advanced JSON pane. Secrets show as
@@ -391,7 +414,9 @@ Run on the upgrade box with Config B's `dashboard` block applied (password plus
 
 ## 8. Alerts and Telegram
 
-Run on the upgrade box with Config B's `telegram` block applied. See [Telegram](../telegram.md).
+Run on the upgrade box. Add Config B's `telegram` block to its `config.json` as a top-level block
+(replace the existing `telegram` block if there is one), fill in the bot token and chat id, and
+`./pithead apply`. See [Telegram](../telegram.md).
 
 - [ ] **8.1 Test alert.** Do: `./pithead test-alert`. Expect: one marked test message arrives in
   the test chat, and the command reports each sink's result without printing the token.
@@ -404,8 +429,9 @@ Run on the upgrade box with Config B's `telegram` block applied. See [Telegram](
   message after about 5 minutes, and the row badged offline on the dashboard. Start it again:
   a back-online message about 2 minutes after it reconnects.
 - [ ] **8.5 Node down.** Do: `docker stop monerod` and wait 2 minutes. Expect: the dashboard shows the monerod DOWN badge after about 90 seconds and a
-  node-down message arrives; miners are rejected and fail over to their backup pool. Run
-  `./pithead up`: the badge clears and a node-recovered message arrives.
+  node-down message arrives. xmrig-proxy is stopped, so XMRig logs that it lost the pool (with
+  a backup pool in its config it would switch to it). Run `./pithead up`: the badge clears, a
+  node-recovered message arrives, and the miners reconnect.
 - [ ] **8.6 Daily summary.** Do: set `telegram.daily_summary_time` a few minutes ahead and apply.
   Expect: the summary arrives at that time with 24h hashrate and earnings.
 - [ ] **8.7 Stack online.** Do: `./pithead restart`. Expect: one "Pithead online" message when the
@@ -422,7 +448,9 @@ Run on the upgrade box. See [Privacy](../privacy.md).
   not survive a reboot.
 - [ ] **9.3 Topology panel.** Expect: **Stack Topology & Egress** shows unselected clearnet routes
   as blocked, and the header shows no firewall warning.
-- [ ] **9.4 Onion dashboard.** Do: apply Config B's `onion` block. Copy the `.onion` address from
+- [ ] **9.4 Onion dashboard.** Do: inside the `dashboard` block add
+  `"onion": { "enabled": true, "client_auth": true }` (the dashboard password must be 16 or more
+  characters) and `./pithead apply`. Copy the `.onion` address from
   the dashboard header and get the key with `./pithead onion-client-key`. In Tor Browser open
   `http://<address>.onion`, accept the certificate prompt, and paste the bare key when asked.
   Expect: the dashboard login appears; the same login works. Without the key, the address does
@@ -432,8 +460,8 @@ Run on the upgrade box. See [Privacy](../privacy.md).
 - [ ] **9.6 Tor recovery check.** Do: `./pithead tor-recover check`. Expect: on a healthy
   machine it prints `Tor recovery refused: circuit history is not saturated.` and changes nothing.
   Do not run `tor-recover apply` on a healthy machine.
-- [ ] **9.7 Clearnet sync warning.** Only on the fresh box before its sync finishes: set
-  `"monero": { "clearnet_initial_sync": true }` and apply. Expect: apply flags the change ⚠ and
+- [ ] **9.7 Clearnet sync warning.** Only on the fresh box before its sync finishes: add
+  `"clearnet_initial_sync": true` inside the `monero` block and apply. Expect: apply flags the change ⚠ and
   asks first; `./pithead status` prints a `CLEARNET INITIAL SYNC OR TOR TRANSITION PENDING`
   banner; `./pithead doctor` shows a WARN; the dashboard shows a warning badge. When the sync
   completes the node returns to Tor by itself, and doctor then reports `all node P2P is Tor-only`.
@@ -442,13 +470,16 @@ Run on the upgrade box. See [Privacy](../privacy.md).
 
 ## 10. Node and pool modes
 
-- [ ] **10.1 Monero only.** Do: apply Config C on the fresh box. Expect: the preview says Tari
+- [ ] **10.1 Monero only.** Do: on the fresh box, replace `config.json` with Config C (same
+  dashboard password as before) and `./pithead apply`. Expect: the preview says Tari
   merge-mining goes OFF and that its chain data is kept; afterwards no `tari` container runs,
   mining continues, and the five XvB raffle tiles are gone from the dashboard.
 - [ ] **10.2 Back to Tari.** Do: set `tari.mode` back to `local` and apply. Expect: the Tari node
   resumes from the chain it already had instead of starting from zero.
-- [ ] **10.3 Remote Monero node.** Do: set up Config D across the two machines. Expect: on the
-  second machine no monerod container runs, the dashboard says the node is remote, the topology
+- [ ] **10.3 Remote Monero node.** Do: on the upgrade box (the node machine), add the two Config D
+  keys inside its `monero` block and apply; the preview flags them ⚠ and asks first. On the fresh
+  box (the second machine), replace `config.json` with Config D's second-machine file and apply.
+  Expect: on the second machine no monerod container runs, the dashboard says the node is remote, the topology
   labels it LAN, and mining works.
 - [ ] **10.4 Bad remote node.** Do: on the second machine, with the Configuration view on, change
   the Monero node host to a LAN address where nothing listens and click
@@ -456,8 +487,8 @@ Run on the upgrade box. See [Privacy](../privacy.md).
   answering), and nothing is applied. Repeat with a public IP address: refused because the
   firewall allows only private addresses. Repeat with a misspelt hostname: reported as a name
   that does not resolve, not as a firewall problem.
-- [ ] **10.5 Tari not required.** Do: set `"dashboard": { "tari_required": false }`, apply, and
-  run `docker stop tari`. Expect: Monero mining continues and a Tari badge shows the problem.
+- [ ] **10.5 Tari not required.** Do: on the upgrade box, add `"tari_required": false` inside the
+  `dashboard` block, apply, and run `docker stop tari`. Expect: Monero mining continues and a Tari badge shows the problem.
   Run `./pithead up` afterwards.
 
 ## 11. Backup, restore and resets
@@ -485,13 +516,18 @@ Run on the upgrade box unless stated. The steps are destructive; run them in thi
 
 ## 12. Upgrade from the dashboard
 
-Needs the published release, so do it during [After publishing](#after-publishing) on a box that
-runs the previous release with `dashboard.control.enabled: true`.
+Needs the published release, so do it during [After publishing](#after-publishing): 12.1 and 12.2
+on a DIY box that runs the previous release with `dashboard.control.enabled: true`, 12.3 on an
+appliance that runs the previous release.
 
 - [ ] **12.1 Badge.** Expect: the header shows `New release vX.Y.Z available` linking to the
   release, and an **Upgrade to vX.Y.Z** button.
 - [ ] **12.2 Upgrade.** Do: click it and type `UPGRADE`. Expect: the page disconnects briefly,
   comes back on the new version, and the badge clears. Config, wallets and chains are unchanged.
+- [ ] **12.3 Appliance OS update.** Do: in the header's **OS updates** control: Check, Download,
+  Verify, Install, then Reboot (type `REBOOT`). Expect: Check offers the new release; mining keeps
+  running until the reboot; the page reconnects; a banner says it updated; the boot menu shows
+  the new version as **current** and the old one as **previous**.
 
 ## 13. Appliance
 
@@ -500,6 +536,11 @@ Run on the **appliance box**. Each step names the battery row it serves (M1–M1
 [the hardware battery](#the-manual-hardware-battery-m1m10) below. Follow
 [the appliance guide](../appliance.md) as a user would, and file anything you had to know rather
 than read.
+
+Steps 13.10–13.12 copy update bundles to the box over SSH, which only the debug image has (see
+[Know which image you are holding](#know-which-image-you-are-holding)). Run those three on a
+debug image and everything else on the release image. The dashboard's own update path checks for
+the latest *published* release, so it is tested after publishing, in 12.3.
 
 - [ ] **13.1 Verify and flash (M1).** Do:
 
@@ -532,24 +573,31 @@ than read.
   switches itself off. Remove the stick and switch it on: it boots from the disk, the console
   narrates provisioning, and within 10–30 minutes the dashboard answers with the saved login. A
   second disk, if present, still holds its data.
-- [ ] **13.8 The same checks as DIY.** Do: repeat sections 4, 5, 7 and 8 against the appliance.
-  Expect: the same results. The built-in miner appears as a worker.
+- [ ] **13.8 The same checks as DIY.** Do: repeat sections 4 and 5 and steps 7.1–7.8 against the
+  appliance (its Configuration view is always on). Set up Telegram in Configuration, then repeat
+  8.2–8.4. Skip anything that needs a shell (`./pithead`, `docker`, editing `config.json`): the
+  appliance has none apart from its console. Expect: the same results. The built-in miner
+  appears as a worker.
 - [ ] **13.9 Boot menu.** Do: reboot with a monitor attached. Expect: a five-second menu that
   names the version, its slot and **current**, plus **Set up again**; it boots by itself.
-- [ ] **13.10 Update (M7).** Do: from the header's **OS updates** control: Check, Download, Verify,
-  Install, then Reboot (type `REBOOT`). Expect: mining keeps running until the reboot; the page
-  reconnects; a banner says it updated; the boot menu shows the new version as **current** and
-  the old one as **previous**.
-- [ ] **13.11 Pull the plug during an update (M8).** Do: start another install and pull the plug
-  while it writes. Repeat three times. Expect: the machine boots the old version every time.
+- [ ] **13.10 Update (M7).** Do: as M7 describes, copy a debug-variant bundle with a higher
+  version to the box and run `pithead os-update <bundle>`. Never add `--yes` when the bundle's
+  variant differs from the box's (see [Cutting](#cutting), item 3). Expect: it says the update is
+  written to the spare slot, that the machine keeps running the current version until it
+  reboots, and prints the exact reboot command. Run that command. After the reboot, the boot menu
+  shows the new version as **current** and the old one as **previous**.
+- [ ] **13.11 Pull the plug during an update (M8).** Do: start another `pithead os-update` and pull
+  the plug while it writes. Repeat three times. Expect: the machine boots the old version every
+  time.
 - [ ] **13.12 Bad release rolls back (M9).** Do: install the deliberately broken bundle M9
-  describes and reboot. Expect: the machine returns to the previous version without anyone
-  touching it, and the banner says it rolled back.
+  describes with `pithead os-update` and reboot. Expect: the machine returns to the previous
+  version without anyone touching it. Then, from a good version, run
+  `rauc status mark-bad booted && reboot`: the machine comes back on the other slot.
 - [ ] **13.13 Backup (M15, first half).** Do: write down the payout address, the onion address and
   the time. In **Backup**, click **Back up now** and save both downloads: the archive and its
   emergency kit. Expect: the dashboard disconnects briefly and comes back.
-- [ ] **13.14 Restore (M15, second half).** Do: boot the stick on a second machine (or on this
-  one), and on the setup page choose **Restoring an existing Pithead? Upload its backup
+- [ ] **13.14 Restore (M15, second half).** Do: boot the stick on a second machine (not this one:
+  later steps need this box's chain), and on the setup page choose **Restoring an existing Pithead? Upload its backup
   instead.** Enter a wrong passphrase first, then the right one. Expect: the wrong passphrase is
   rejected with the reason and the form stays open; with the right one the machine provisions
   itself, and its payout address and onion address match your notes.
@@ -618,9 +666,10 @@ the sections above, on whichever machine fits.
   check is 9.2), and miners reconnect.
 - [ ] **S4 — A rig dies.** Unplug a miner's network for 10 minutes, then reconnect it. Expect:
   offline and recovered messages arrive once each, and the dashboard history marks both events.
-- [ ] **S5 — Moving to a new machine.** Back up the upgrade box, restore that archive onto the
-  fresh box. Expect: the same onion address, login and settings; the chains resync (or are copied
-  across); the old machine is stopped first so the two never mine under the same identity.
+- [ ] **S5 — Moving to a new machine.** Back up the upgrade box, then stop it with
+  `./pithead down` so the two machines never mine under the same identity. Restore the archive
+  onto the fresh box with `./pithead restore`. Expect: the same onion address, login and
+  settings; the chains resync (or are copied across).
 - [ ] **S6 — Bad change, undo it.** Change the pool from the dashboard, then change it back
   10 minutes later. Expect: both changes are in the change history with the right user and
   outcome, and mining continues throughout.
