@@ -188,7 +188,7 @@ integration_expected=$(
         ! -name rig-supply.sh ! -name restore-proof.sh ! -name restore-chain-sync.sh ! -name chain-keep.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
         ! -name harness-args.sh ! -name run-lifecycle-wallet-fixture.sh \
-        ! -name redact-it-password.sh ! -name wallet-diagnostics.sh \
+        ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh \
         ! -name remote-endpoints.sh ! -name wallet-fixture.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh -print |
         sed 's|^tests/integration/||'
