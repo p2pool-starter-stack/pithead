@@ -854,8 +854,8 @@ cause of recovery. No automatic step
 changes guards or deletes Tor state. When NEWNYM is unconfirmed or did not restore egress, the
 monitor asks the host for a read-only reading of Tor's circuit-history state. A saturated
 history (abandoned count and total build times both at 1000, no `CircuitBuildTimeBin`) is logged
-on each such round, sent once per outage to the alert sinks, and names `./pithead tor-recover`;
-`./pithead doctor` reports it as a FAIL. The action budget is three per outage; after that the
+on each such round, sent once per outage to the alert sinks (failed delivery retries on later rounds), and names `./pithead tor-recover`;
+`./pithead doctor` reports it as a FAIL, also shown in the Tor section of Service diagnostics after a health check. Appliance diagnostics name the need for an operator with host shell access. The action budget is three per outage; after that the
 monitor warns until egress recovers. The feature remains off by default.
 
 **Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed
@@ -867,11 +867,14 @@ counts read through the authenticated in-container admin helper. When RPC is una
 it instead requires two cookie-authenticated Tor observations three minutes apart: bootstrap
 95% at `circuit_create`, no established circuit, and the same running Tor instance. At least
 two invalid circuit-timing warnings must appear in the last 200 log lines from that interval;
-unreadable diagnostics refuse recovery. A third class covers a synchronized Monero that stays
-peerless behind a dead egress: the heal's own record of two accepted NEWNYM rounds (the host
-writes it only for heal requests, 15 minutes into an outage and 30 minutes apart) inside the
-24-hour window, plus a live check that both clearnet probe targets still fail through Tor's
-SOCKS. A Tor whose egress answers is refused. It uses sudo for read-only access to Tor-owned state
+unreadable diagnostics refuse recovery. A third class covers a synchronized Monero behind dead
+egress: two failed heal rounds from the same sustained outage, recorded by the host at least
+15 minutes apart, plus a live check that both clearnet targets still fail through Tor's SOCKS.
+The healer requests these readings only after 15 minutes of corroborated failure and an
+unconfirmed or ineffective NEWNYM. Recovery clears the outage evidence; the persistent 24-hour
+NEWNYM budget remains separate. After the automatic action budget is spent, read-only observations continue every 30 minutes.
+The host retains the last two spaced rounds. Evidence older than one hour since the last observation is
+refused. A Tor whose egress answers is refused. It uses sudo for read-only access to Tor-owned state
 and identity keys.
 
 `./pithead tor-recover apply` rechecks the evidence under the mutation lock, verifies onion

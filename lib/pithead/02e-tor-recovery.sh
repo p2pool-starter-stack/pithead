@@ -33,8 +33,22 @@ tor_recovery_state_saturated() { # <state file>
 }
 
 # Read-only saturated-history reading for the dashboard's heal (#3052); it never changes state.
-control_tor_history() { # <control-dir> <id> <actor>
-    local cdir="$1" id="$2" actor="$3" dir saturated=false
+control_tor_history() ( # <control-dir> <id> <actor> <outage> <observed-at>
+    local cdir="$1" id="$2" actor="$3" dir saturated=false record="$1/results/tor-heal-outage.json" old='{}' next now
+    PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-history || return 1
+    [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || return 1
+    now=$(date +%s)
+    [ ! -L "$record" ] || return 1
+    if [ -f "$record" ]; then old=$(cat "$record") || return 1; fi
+    # Keep a recovery tombstone: a delayed request cannot resurrect a recovered outage.
+    next=$(printf '%s' "$old" | jq -ce --arg outage "$4" --argjson at "$5" --argjson now "$now" '
+        if $at > $now + 60 or $at < $now - 300 then error("stale observation")
+        elif $at < (.observed_at // 0) or ($at == (.observed_at // 0) and $outage != "") then .
+        elif $outage == "" then {outage:"",first:0,last:0,rounds:0,observed_at:$at}
+        elif .outage != $outage then {outage:$outage,first:$now,last:$now,rounds:1,observed_at:$at}
+        elif $now - .last >= 900 then .first=.last | .last=$now | .rounds=2 | .observed_at=$at
+        else .observed_at=$at end') || return 1
+    control_write_result "$cdir/results" tor-heal-outage "$next" || return 1
     if ! dir=$(tor_recovery_mount 2>/dev/null); then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"Tor data mount is ambiguous",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" tor-history failed
@@ -43,33 +57,31 @@ control_tor_history() { # <control-dir> <id> <actor>
     tor_recovery_state_saturated "$dir/state" && saturated=true
     control_write_result "$cdir/results" "$id" "$(jq -n --argjson s "$saturated" '{status:"applied",action:"tor-history",saturated:$s,ts:(now|floor)}')"
     control_audit "$cdir/audit/control.log" "$id" "$actor" tor-history applied
-}
+)
 
-# Third qualifying evidence class (#3052): the dashboard heal's own NEWNYM record. The host
-# writes `tor-newnym-budget` (first-round time, accepted rounds) only for heal requests, and the
-# heal asks only after a 15-minute outage and the host spaces rounds 30 minutes apart, so two
-# accepted rounds inside the 24h window record a sustained outage that NEWNYM did not clear (the
-# count is requests the host accepted, not proof the signal landed). The minimum age below is
-# implied by that spacing and only defends a hand-edited record. A synchronized, peerless Monero
-# does not contradict the class; the live probe keeps a healthy Tor refused.
-TOR_RECOVERY_OUTAGE_MIN_SEC=900
+# Third class: two failed heal rounds from the SAME sustained outage. The host records its own
+# times, independent of the persistent NEWNYM budget, and recovery invalidates the evidence.
 tor_recovery_heal_outage() { # <control dir>; read-only
-    local stamp="$1/tor-newnym-budget" first count now
-    [ -f "$stamp" ] && [ ! -L "$stamp" ] || return 1
-    read -r first count <"$stamp" || return 1
-    [[ "$first" =~ ^[0-9]+$ && "$count" =~ ^[0-9]+$ ]] || return 1
-    now=$(date +%s)
-    [ "$count" -ge 2 ] && [ $((now - first)) -ge "$TOR_RECOVERY_OUTAGE_MIN_SEC" ] && [ $((now - first)) -lt 86400 ]
+    local record="$1/results/tor-heal-outage.json"
+    [ -f "$record" ] && [ ! -L "$record" ] || return 1
+    jq -e --argjson now "$(date +%s)" '
+        (.outage | type == "string" and test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")) and
+        ([.first,.last,.rounds,.observed_at] | all(type == "number" and . == floor and . >= 0)) and
+        .rounds >= 2 and .last - .first >= 900 and .first <= .last and
+        .last <= $now and $now - .first < 86400 and $now - .observed_at <= 3600 and
+        .observed_at <= $now + 60' "$record" >/dev/null 2>&1
 }
 
 # Clearnet egress must still be down now: both independent targets fail through Tor's SOCKS.
 tor_recovery_egress_down() {
-    local prefix url
+    local prefix url auth
     command -v curl >/dev/null 2>&1 || return 1
     prefix=$(env_get NETWORK_PREFIX 2>/dev/null) || prefix=
     [ -n "$prefix" ] || prefix=172.28.0
     for url in https://www.google.com/generate_204 https://www.cloudflare.com/cdn-cgi/trace; do
-        if curl -fsS --max-time 15 --socks5-hostname "${prefix}.25:9050" -o /dev/null "$url" 2>/dev/null; then
+        auth="tor-recover-$$-$RANDOM-$RANDOM"
+        # Any HTTP response proves egress, including a target's 4xx/5xx; isolate fresh circuits.
+        if curl -sS --max-time 15 --proxy-user "$auth:isolate" --socks5-hostname "${prefix}.25:9050" -o /dev/null "$url" 2>/dev/null; then
             return 1
         fi
     done
@@ -224,7 +236,7 @@ tor_recover() { # check | apply; explicit operator action only
         first=$(tor_recovery_info) || first=
     fi
     if [ "$outage" -eq 1 ]; then
-        log "Tor circuit history is saturated; the dashboard heal recorded two unanswered NEWNYM rounds over a sustained outage and clearnet egress is still down."
+        log "Tor circuit history is saturated; the dashboard heal recorded two failed recovery rounds over a sustained outage and clearnet egress is still down."
     elif [ -n "$first" ]; then
         sleep 180
         second=$(tor_recovery_info) || {

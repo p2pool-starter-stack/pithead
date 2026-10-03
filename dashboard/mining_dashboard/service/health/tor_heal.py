@@ -24,7 +24,7 @@ from mining_dashboard.config.config import (
     TOR_SOCKS_PROXY,
 )
 from mining_dashboard.helper.http import bounded_get
-from mining_dashboard.service import control_service
+from mining_dashboard.service import control_service, request_spool
 
 logger = logging.getLogger("TorHeal")
 
@@ -81,6 +81,8 @@ class TorEgressHealer:
         self._recovery_step = None
         self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
         self._history_since = None
+        self._history_outage = None
+        self._clear_history = False
         self._pending_history = None  # read-only tor-history request awaiting its result
         self._warned_saturated = False  # saturated-history alert is sent once per outage
         self.saturated_history = False  # latest host reading, for status surfaces
@@ -118,7 +120,7 @@ class TorEgressHealer:
         ``"recovered"`` after two corroborated successes.
         """
         if ok:
-            if self._attempts == 0:
+            if self._attempts == 0 and not self._newnym_unconfirmed and not self.saturated_history:
                 # No restart spent yet — a single healthy probe just clears a sub-threshold
                 # blip. Nothing to protect, so reset immediately (unchanged blip semantics).
                 self._failing_since = None
@@ -166,7 +168,17 @@ class TorEgressHealer:
         if self._pending_history is not None:
             return
         try:
-            self._pending_history = control_service.submit("tor-history", actor="tor-heal")
+            if not self._clear_history and self._history_outage is None:
+                self._history_outage = str(uuid.uuid4())
+            self._pending_history = request_spool.write(
+                {
+                    "id": str(uuid.uuid4()),
+                    "action": "tor-history",
+                    "actor": "tor-heal",
+                    "outage": "" if self._clear_history else self._history_outage,
+                    "observed_at": int(time.time()),
+                }
+            )
             self._history_since = self._clock()
         except OSError:
             logger.warning("Tor circuit-history check could not be submitted to the host runner")
@@ -182,6 +194,10 @@ class TorEgressHealer:
                 self._pending_history = None
             return
         self._pending_history = None
+        if self._clear_history:
+            if result.get("status") == "applied":
+                self._clear_history = False
+            return
         saturated = result.get("status") == "applied" and result.get("saturated") is True
         self.saturated_history = saturated
         if not saturated:
@@ -192,11 +208,12 @@ class TorEgressHealer:
             "Run './pithead tor-recover check' then './pithead tor-recover apply'."
         )
         if not self._warned_saturated and self._notify is not None:
-            self._warned_saturated = True
-            await self._notify(
-                "\U0001f9c5 Tor clearnet egress is down and its circuit-build-time history is "
-                "saturated; NEWNYM cannot clear it. Run './pithead tor-recover check', then "
-                "'./pithead tor-recover apply'."
+            self._warned_saturated = bool(
+                await self._notify(
+                    "\U0001f9c5 Tor clearnet egress is down and its circuit-build-time history is "
+                    "saturated; NEWNYM cannot clear it. Run './pithead tor-recover check', then "
+                    "'./pithead tor-recover apply'."
+                )
             )
 
     async def _monerod_running(self) -> bool:
@@ -215,6 +232,8 @@ class TorEgressHealer:
         self._last_probe = now
         try:
             await self._read_history()
+            if self._clear_history:
+                self._request_history()
             if self._pending_refresh is not None:
                 result = control_service.result(self._pending_refresh)
                 if result is None:
@@ -318,6 +337,9 @@ class TorEgressHealer:
                             "monerod' (#972)."
                         )
             elif action == "exhausted":
+                # Keep diagnostics and undelivered warnings alive without another mutation.
+                if self._history_since is None or now - self._history_since >= COOLDOWN_SEC:
+                    self._request_history()
                 if not self._warned_exhausted:
                     self._warned_exhausted = True
                     logger.warning(
@@ -333,6 +355,14 @@ class TorEgressHealer:
                     self._failure_evidence,
                     evidence,
                 )
+                self._newnym_unconfirmed = False
+                self._warned_saturated = False
+                self._pending_history = None
+                self.saturated_history = False
+                if self._history_outage is not None:
+                    self._history_outage = None
+                    self._clear_history = True
+                    self._request_history()
                 if self._notify is not None:
                     await self._notify(
                         f"\U0001f9c5 Tor clearnet egress recovered following "
@@ -342,9 +372,5 @@ class TorEgressHealer:
                     )
                 self._failure_evidence = ""
                 self._recovery_step = None
-                self._newnym_unconfirmed = False
-                self._warned_saturated = False
-                self._pending_history = None  # a late reading must not alert on a healthy egress
-                self.saturated_history = False
         except Exception as exc:  # never let the healer break the data loop
             logger.debug("Tor heal cycle failed (%s)", type(exc).__name__)

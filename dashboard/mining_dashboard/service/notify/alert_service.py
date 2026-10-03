@@ -465,9 +465,9 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesM
 
     async def tor_heal_alert(self, text):
         """Push the Tor guard self-heal note (#424). Deliberately not behind a per-event toggle:
-        it fires at most once per outage, only after a heal restored the very path the alert
-        sinks ride (so a broken egress can never even attempt it), and an operator who opted
-        into the heal wants to know it acted. No-op when every sink is off.
+        it reports recovery and saturated circuit history to an operator who opted into the
+        heal. Saturation warnings may fail while egress is broken; the healer retries those
+        until a sink delivers. No-op when every sink is off.
 
         Returns the text when at least one sink reported delivery, else None: every sink's
         ``send`` returns True only on success, so a caller can retry an undelivered alert (#2464)."""

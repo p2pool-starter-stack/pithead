@@ -359,7 +359,7 @@ check_tor_circuit_history() {
     tor_recovery_state_saturated "$dir/state" || return 0
     tor_recovery_heal_outage "$(env_get CONTROL_DIR)" || return 0
     tor_recovery_egress_down || return 0
-    dr_fail "Tor's circuit-build-time history is saturated and clearnet egress stays down after the heal's NEWNYM rounds — NEWNYM cannot clear it. Run './pithead tor-recover check', then './pithead tor-recover apply'."
+    dr_fail_surface "Tor's circuit-build-time history is saturated and clearnet egress stays down after the heal's NEWNYM rounds — NEWNYM cannot clear it. Run './pithead tor-recover check', then './pithead tor-recover apply'." "Tor's circuit-build-time history is saturated and clearnet egress stays down after recovery rounds. State recovery requires an operator with host shell access; the dashboard never deletes Tor state."
 }
 
 # doctor (#972): a monerod that survived a tor restart with every SOCKS peer dead looks healthy —
