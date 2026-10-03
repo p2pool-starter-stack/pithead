@@ -62,28 +62,34 @@ Contents:
 |---|---|
 | **Fresh box** | Ubuntu Server 24.04, AVX2 CPU, 16 GB RAM, 600 GB SSD, nothing of Pithead on it. Section 1. |
 | **Upgrade box** | A machine already running the previous release, with both chains synced and the dashboard password set. Sections 2–12. |
-| **Appliance box** | An x86-64 UEFI PC with 16 GB RAM, ethernet, firmware settings you can change, and an internal disk you may erase. A second internal disk for the wrong-disk check. Section 13. |
+| **Appliance box** | An x86-64 UEFI PC with 16 GB RAM, ethernet, firmware settings you can change, and an internal disk you may erase. A second internal disk for the wrong-disk check, and a second PC for the restore test. Section 13. |
 | **USB stick** | 8 GB or larger, contents expendable. The image writes 5 GiB. |
 | **Miner** | A separate machine running XMRig, or a RigForge loaner rig (never a production rig). Sections 4 and 14. |
 | **Laptop** | On the same network, with a normal browser and Tor Browser. |
 | **Phone** | For the narrow-screen check and Telegram. |
 | **QA wallets** | A Monero wallet used only for QA: its **primary** address (starts with `4`, 95 characters), one **subaddress** from it (starts with `8`), and its private view key. The primary address of a second Monero QA wallet, for the payout-change step. A Tari **mainnet** QA wallet: its address, private view key and public spend key. Payouts go here, so never use a real person's or a donation address. |
 | **Telegram test bot** | A bot made with @BotFather, its token, and the chat id of a test chat. See [Telegram](../telegram.md). |
-| **Release artifacts** | The candidate's full commit SHA, the previous release tag, and for the appliance the candidate `.img.xz` with its `.sha256` plus a signed `.raucb` with a higher version for the update test ([appliance-release.md](appliance-release.md)). |
+| **Release artifacts** | The candidate's full commit SHA, the previous release tag, and for the appliance: the candidate release `.img.xz` with its `.sha256`, a debug image of the candidate, a debug-variant `.raucb` with a higher version, and the deliberately broken `.raucb` M9 describes ([appliance-release.md](appliance-release.md)). |
 
 Reserve shared machines before you start: see [Reserve the hardware](#reserve-the-hardware).
 
 ## Sample configs
 
 Each sample is a complete `config.json`. Replace every `PASTE_...` value with your QA value
-before you use it; a sample with a placeholder left in is refused, which is correct. Every key is
+before you use it. A wallet placeholder left in is refused, but the others (passwords, the bot
+token, node credentials) are accepted as plain text, so after filling a sample,
+`grep -n PASTE_ config.json` must print nothing. Every key is
 documented in [Configuration](../configuration.md).
 
 When a step says to set or add a key inside a block (for example "add `"rpc_lan_access": true`
 inside the `monero` block"), edit that block in the existing `config.json`. Never paste a second
 block with the same name: JSON keeps only the last one, so the first block's settings vanish
-without a warning. After any hand edit, `python3 -m json.tool config.json` must print the file
-without an error.
+without a warning. After any hand edit, run this check. It prints `config.json OK`, or lists the
+keys when a block is duplicated, or fails on a syntax error:
+
+```bash
+python3 -c 'import json; json.load(open("config.json"), object_pairs_hook=lambda kv: exit("duplicate key: " + str([k for k, _ in kv])) if len(kv) != len(dict(kv)) else dict(kv)); print("config.json OK")'
+```
 
 **Config A — defaults.** This is `config.minimal.json` with QA addresses: the shape a new user
 starts from.
@@ -224,15 +230,15 @@ syncing stack. Build the candidate from source so a failure here does not spend 
   pool `mini`, merge-mine Tari with the bundled node (paste the Tari address), set a dashboard
   password, decline clearnet sync, decline Tor dashboard access, decline Telegram, decline local
   mining, and accept the default at `Enter Hostname`. Answer `y` to
-  `Modify GRUB for persistent HugePages now?` and `n` to `Start Pithead now?`. If setup does not
-  ask about GRUB (HugePages are already persistent), answer `y` to `Start Pithead now?` and skip
-  the reboot in 1.5. Expect: the subaddress is refused with an explanation and you are asked
-  again; setup checks dependencies, warns (but does not stop) if disk or RAM is below the
-  documented floor, writes `config.json`, and provisions Tor. Run `ls -l config.json`: it is
-  `-rw-------`.
-- [ ] **1.5 HugePages reboot.** Do: reboot, then `./pithead up`. Expect: the stack starts, and
-  this first start prints a short note that the miner is held until both chains sync. A later
-  `./pithead restart` does not print the note again.
+  `Modify GRUB for persistent HugePages now?`. Expect: the subaddress is refused with an
+  explanation and you are asked again; setup checks dependencies, warns (but does not stop) if
+  disk or RAM is below the documented floor, writes `config.json`, provisions Tor, and ends with
+  `System optimization requires a reboot.` and the commands to run next. If setup does not ask
+  about GRUB (HugePages are already persistent), it asks `Start Pithead now? (Y/n)` instead:
+  answer `y` and skip the reboot in 1.5. Run `ls -l config.json`: it is `-rw-------`.
+- [ ] **1.5 HugePages reboot.** Do: `sudo reboot`, then `./pithead up`. Expect: the stack starts,
+  and this first start prints a short note that the miner is held until both chains sync. A
+  later `./pithead restart` does not print the note again.
 - [ ] **1.6 Status while syncing.** Do: `./pithead status`. Expect: the node and support services
   show `✓ running`; `p2pool` and `xmrig-proxy` show `⚠` with
   `held until the required chains finish syncing`; under
@@ -471,8 +477,9 @@ Run on the upgrade box. See [Privacy](../privacy.md).
 ## 10. Node and pool modes
 
 - [ ] **10.1 Monero only.** Do: on the fresh box, replace `config.json` with Config C (same
-  dashboard password as before) and `./pithead apply`. Expect: the preview says Tari
-  merge-mining goes OFF and that its chain data is kept; afterwards no `tari` container runs,
+  dashboard password as before) and `./pithead apply`. Expect: the preview marks
+  `Tari merge-mining OFF` with `⚠`, says its chain data is kept, and asks `(y/N)`; answer `y`.
+  Afterwards no `tari` container runs,
   mining continues, and the five XvB raffle tiles are gone from the dashboard.
 - [ ] **10.2 Back to Tari.** Do: set `tari.mode` back to `local` and apply. Expect: the Tari node
   resumes from the chain it already had instead of starting from zero.
@@ -487,9 +494,13 @@ Run on the upgrade box. See [Privacy](../privacy.md).
   answering), and nothing is applied. Repeat with a public IP address: refused because the
   firewall allows only private addresses. Repeat with a misspelt hostname: reported as a name
   that does not resolve, not as a firewall problem.
-- [ ] **10.5 Tari not required.** Do: on the upgrade box, add `"tari_required": false` inside the
-  `dashboard` block, apply, and run `docker stop tari`. Expect: Monero mining continues and a Tari badge shows the problem.
-  Run `./pithead up` afterwards.
+- [ ] **10.5 Tari outage.** Do: on the upgrade box, `docker stop tari` and wait 3 minutes.
+  Expect: miners keep mining Monero (a Tari outage never rejects workers); the Tari panel and a
+  Telegram alert show the outage. Run `./pithead up` afterwards.
+- [ ] **10.6 Tari not required.** Only on the fresh box while Monero has finished its first sync
+  and Tari has not: add `"tari_required": false` inside the `dashboard` block and apply. Expect:
+  the miner starts without waiting for Tari, and the normal dashboard shows a `Tari syncing`
+  indicator instead of the full-screen Sync view. Skip it if the timing never lines up.
 
 ## 11. Backup, restore and resets
 
@@ -524,7 +535,8 @@ appliance that runs the previous release.
   release, and an **Upgrade to vX.Y.Z** button.
 - [ ] **12.2 Upgrade.** Do: click it and type `UPGRADE`. Expect: the page disconnects briefly,
   comes back on the new version, and the badge clears. Config, wallets and chains are unchanged.
-- [ ] **12.3 Appliance OS update.** Do: in the header's **OS updates** control: Check, Download,
+- [ ] **12.3 Appliance OS update.** Skip it, recording SKIP, when the previous release shipped no
+  appliance image, as for the first appliance release. Do: in the header's **OS updates** control: Check, Download,
   Verify, Install, then Reboot (type `REBOOT`). Expect: Check offers the new release; mining keeps
   running until the reboot; the page reconnects; a banner says it updated; the boot menu shows
   the new version as **current** and the old one as **previous**.
@@ -538,8 +550,10 @@ Run on the **appliance box**. Each step names the battery row it serves (M1–M1
 than read.
 
 Steps 13.10–13.12 copy update bundles to the box over SSH, which only the debug image has (see
-[Know which image you are holding](#know-which-image-you-are-holding)). Run those three on a
-debug image and everything else on the release image. The dashboard's own update path checks for
+[Know which image you are holding](#know-which-image-you-are-holding)). Before 13.10, reinstall
+the box from a debug-image stick and choose **Keep everything**, the same way as 13.18. After
+13.12, reinstall from the release-image stick the same way. Everything else runs on the release
+image. The dashboard's own update path checks for
 the latest *published* release, so it is tested after publishing, in 12.3.
 
 - [ ] **13.1 Verify and flash (M1).** Do:
@@ -562,7 +576,7 @@ the latest *published* release, so it is tested after publishing, in 12.3.
   console.
 - [ ] **13.5 Role and disk (M3, M4).** Do: choose **Pithead + RigForge**. Expect: each disk is
   listed with model, size and serial; the USB stick is not offered; nothing is preselected. A
-  second disk holding unrelated data is listed as `will be erased`.
+  second disk holding unrelated data is listed with `ERASES everything on it`.
 - [ ] **13.6 Answers (M6).** Do: paste the QA subaddress first, then the primary address; keep
   every default except merge-mine Tari = yes (paste the Tari address). Press
   **Validate, then install**. Expect: the subaddress is refused with an explanation before you
@@ -573,8 +587,11 @@ the latest *published* release, so it is tested after publishing, in 12.3.
   switches itself off. Remove the stick and switch it on: it boots from the disk, the console
   narrates provisioning, and within 10–30 minutes the dashboard answers with the saved login. A
   second disk, if present, still holds its data.
-- [ ] **13.8 The same checks as DIY.** Do: repeat sections 4 and 5 and steps 7.1–7.8 against the
-  appliance (its Configuration view is always on). Set up Telegram in Configuration, then repeat
+- [ ] **13.8 The same checks as DIY.** Do: first, using only the setup page, the dashboard and
+  [the appliance guide](../appliance.md), find the stratum password an outside miner must send
+  (the appliance sets `p2pool.stratum_password` to `"auto"`). If you cannot find it, file it,
+  because 4.1 and 14.1 need it. Then repeat sections 4 and 5, pointing XMRig at
+  `pithead.local:3333`, and steps 7.1–7.8 (the appliance's Configuration view is always on). Set up Telegram in Configuration, then repeat
   8.2–8.4. Skip anything that needs a shell (`./pithead`, `docker`, editing `config.json`): the
   appliance has none apart from its console. Expect: the same results. The built-in miner
   appears as a worker.
@@ -586,21 +603,27 @@ the latest *published* release, so it is tested after publishing, in 12.3.
   written to the spare slot, that the machine keeps running the current version until it
   reboots, and prints the exact reboot command. Run that command. After the reboot, the boot menu
   shows the new version as **current** and the old one as **previous**.
-- [ ] **13.11 Pull the plug during an update (M8).** Do: start another `pithead os-update` and pull
-  the plug while it writes. Repeat three times. Expect: the machine boots the old version every
+- [ ] **13.11 Pull the plug during an update (M8).** Do: start `pithead os-update` again with the
+  same bundle and pull the plug while it writes. Repeat three times. Expect: the machine boots the old version every
   time.
 - [ ] **13.12 Bad release rolls back (M9).** Do: install the deliberately broken bundle M9
   describes with `pithead os-update` and reboot. Expect: the machine returns to the previous
-  version without anyone touching it. Then, from a good version, run
-  `rauc status mark-bad booted && reboot`: the machine comes back on the other slot.
+  version without anyone touching it, and the dashboard serves. The spare slot now holds the
+  broken release, so do not mark anything bad yet. Do: install the good 13.10 bundle again with
+  `pithead os-update`, reboot, and wait until `rauc status` no longer reads the booted slot as
+  `bad` (it commits after its health check, about 3 minutes into the boot). Then run
+  `rauc status mark-bad booted && reboot`. Expect: the machine comes back on the other slot, on a
+  good version, with the dashboard serving.
 - [ ] **13.13 Backup (M15, first half).** Do: write down the payout address, the onion address and
   the time. In **Backup**, click **Back up now** and save both downloads: the archive and its
   emergency kit. Expect: the dashboard disconnects briefly and comes back.
-- [ ] **13.14 Restore (M15, second half).** Do: boot the stick on a second machine (not this one:
-  later steps need this box's chain), and on the setup page choose **Restoring an existing Pithead? Upload its backup
+- [ ] **13.14 Restore (M15, second half).** Do: power off the appliance box, so two machines
+  never run the same identity at once. Boot the stick on the second PC (not this box: later steps
+  need its chain), and on the setup page choose **Restoring an existing Pithead? Upload its backup
   instead.** Enter a wrong passphrase first, then the right one. Expect: the wrong passphrase is
   rejected with the reason and the form stays open; with the right one the machine provisions
-  itself, and its payout address and onion address match your notes.
+  itself, and its payout address and onion address match your notes. Then power the second PC
+  off and the appliance box back on.
 - [ ] **13.15 Settings after setup (M16).** Do: follow M16: a benign energy change, then a node
   endpoint change that needs `APPLY`. Expect: as M16 describes, and the page reconnects by itself
   after the containers restart.
@@ -611,8 +634,8 @@ the latest *published* release, so it is tested after publishing, in 12.3.
   the setup page. Then add `pithead-config.json` holding Config A: the setup page opens with
   every answer filled in, and only the disk choice is left to you.
 - [ ] **13.18 Reinstall keeps the chain (M5).** Do: continue from 13.17, choose the same disk, and
-  pick **Keep everything**. Expect: the disk is listed as `reinstall, keeps existing data`;
-  after the install the chain is intact and only the blocks missed during the test download.
+  pick **Keep everything**. Expect: the disk is listed with `holds a previous install`, and
+  **Keep everything** is the default choice; after the install the chain is intact and only the blocks missed during the test download.
 - [ ] **13.19 Power loss while mining (M10).** Do: pull the plug at the wall while mining, wait
   30 seconds, plug it back in, and do not touch the machine. Expect: it powers on by itself and
   returns to mining; the dashboard answers.
@@ -623,8 +646,8 @@ Run on a loaner rig, with the appliance from section 13 as the coordinator. Thes
 hands-on rows M11–M13 in [the rig battery](#the-rig-role-manual-battery-m11m13).
 
 - [ ] **14.1 Install a rig (M11).** Do: boot the stick on the rig, choose **RigForge**, accept the
-  pool address it fills in (`pithead.local:3333`), name the worker, choose the internal disk, and
-  copy the control token. Expect: the rig mines; the coordinator lists the worker badged
+  pool address it fills in (`pithead.local:3333`), enter the stratum password from 13.8, name
+  the worker, choose the internal disk, and copy the control token. Expect: the rig mines; the coordinator lists the worker badged
   `not adopted`; `doctor` on the rig reports MSR applied and HugePages reserved.
 - [ ] **14.2 Adopt (M12).** Do: on the coordinator's dashboard, click the worker and fill the adopt
   form with the rig's address, port `8082` and the token. Then change the donation level and
