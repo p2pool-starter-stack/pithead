@@ -29,6 +29,7 @@ services:
     environment:
       # Subnet prefix (#180): the entrypoint envsubst's it into the rendered torrc's bridge IPs.
       - NETWORK_PREFIX=${NETWORK_PREFIX:-172.28.0}
+      - P2POOL_PORT=${P2POOL_PORT:-37888}
       # Node onions (#103): the entrypoint publishes inbound services only for local nodes.
       # This list derives from the same node modes as COMPOSE_PROFILES, so a node-mode change
       # recreates Tor to reread torrc. Payout profiles do not affect its onion services (#2859).

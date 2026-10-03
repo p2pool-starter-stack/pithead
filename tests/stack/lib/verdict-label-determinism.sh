@@ -91,6 +91,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # wrapper gains callers; that is the residual #1740 could not close and this row does not either.
 # No label in tests/stack uses $* or $#, the special parameters past $@. They are seeded below
 # anyway, so all three have a control that can fail, not two branches that pass by construction.
+# #2936's invalid_port labels use the five literal inputs in test-tor-port-validation.sh.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -138,6 +139,7 @@ test-spool-audit.sh|audit_size
 test-suite-blocks.sh|1
 test-suite-blocks.sh|arg
 test-tor-network.sh|v
+test-tor-port-validation.sh|invalid_port
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
