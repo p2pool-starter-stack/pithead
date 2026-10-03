@@ -1092,8 +1092,12 @@ bind-mounted by path, never on the docker network, so they are untouched), asser
 reached the live `.env`, the docker bridge, Tor's rendered torrc, monerod's envsubst'd proxy IP, the
 dashboard's SSRF CIDR + Tor SOCKS, `P2POOL_URL`, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344)
 onion vhost gateway, waits up to 1500 seconds for the sync gate to release p2pool and xmrig-proxy,
-runs the standard running-state battery including live UID and TLS checks, then brings the box back
-to its baseline subnet. A release timeout leaves those checks binding and records the wait timeout.
+runs the standard running-state battery, then brings the box back to its baseline subnet.
+Immediately before each mining-service UID probe and the live TLS probes, it rechecks both mining
+services for two consecutive running samples 5 seconds apart, with a 1500-second bound per check.
+Each Compose query is bounded to 10 seconds. This handles a second sync-gate hold after the initial release. Each prerequisite reports its own
+pass or failure row; a timeout still runs every existing UID, TLS and certificate assertion with
+fresh values. The initial release timeout also leaves all existing checks binding.
 The matrix carries a `local-pruned-main-subnet` row for axis bookkeeping; the
 hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it for real.
 

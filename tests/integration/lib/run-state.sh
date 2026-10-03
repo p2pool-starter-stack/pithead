@@ -240,6 +240,10 @@ assert_running_state() {
             "dashboard=1000" "caddy=0" "docker-proxy=0" "docker-control=0"; do
             svc="${pair%%=*}"
             uid_want="${pair#*=}"
+            # The initial release can be followed by another hold during this battery (#926).
+            if [ "$name" = subnet ] && { [ "$svc" = p2pool ] || [ "$svc" = xmrig-proxy ]; }; then
+                assert_mining_probe_ready "subnet $svc UID probe"
+            fi
             uid_got="$(rx "docker exec $svc id -u" 2>/dev/null)"
             assert_eq "runtime uid of $svc is $uid_want (#255/#91)" "$uid_got" "$uid_want"
         done
@@ -293,6 +297,7 @@ assert_running_state() {
     # a rig-configuration step outside this harness's control, deferred like the stratum-password
     # headless-probe gap (docs/dev/testing-strategy.md).
     if [ "$mode" = "local" ] && [ "$(jq_get "$config" '.p2pool.stratum_tls')" = "true" ]; then
+        [ "$name" != subnet ] || assert_mining_probe_ready "subnet TLS probes"
         local tls_port tls_dir served_fp announced_fp
         tls_port="$(env_on_box STRATUM_PORT)"
         [ -n "$tls_port" ] || tls_port=3333
