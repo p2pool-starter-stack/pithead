@@ -255,8 +255,12 @@ fi
 # version no registry ever published on purpose — tests/os/data-floor-fallback-leg.sh relies on
 # `pithead up` failing to pull it at guest runtime, not on the build refusing to produce the
 # bundle. Pinning digests here would turn that into a build-time failure instead.
+# PITHEAD_PIN_TAG: the tag the digests are read from. release.sh builds the rootfs at stage 3, when the
+# five images exist only under the staging tag (vX.Y.Z-rc.N) and vX.Y.Z is created at promotion, by
+# digest, so it passes the staging tag: the same digests, which stage 6b then signs. Every other build
+# reads the version tag, as before.
 if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then
-    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
+    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "${PITHEAD_PIN_TAG:-$STACK_VERSION}" || exit 1
 fi
 if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
     [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {

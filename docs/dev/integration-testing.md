@@ -917,6 +917,15 @@ assertion, `max_temp_c` and `watchdog_interval_min`, are on RigForge's restart-f
 the window is too small to see. `DONATION` and `pools` take the full path; their config readback
 does not prove the rig has published a terminal outcome or that the dashboard has consumed it.
 
+For scalar round trips, both the forward change and the revert retain their exact change ID and
+wait for that history row to become terminal, each with the existing ninety-second bound. A
+terminal refusal without a change ID returns immediately; a missing ID cannot confirm success.
+Config convergence alone never confirms a successful revert. The unwind entry is cleared only when both
+config readback and the revert history report `applied`; `failed` or `rolled_back` stays red and
+keeps the original value on the cleanup ledger. If the revert row is still `accepted` or absent
+at the deadline, the control phase captures artifacts, restores the stack baseline and stops
+before sending another key or control edit. The abort-safe unwind retains the rig cleanup duty.
+
 The row is polled to a terminal status within a ninety-second observation budget.
 The result is the last history status whose transport and JSON decoding succeeded within that
 budget; reads or decoding finishing later cannot pass. A nonzero transport exit discards even valid JSON

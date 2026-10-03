@@ -186,3 +186,24 @@ _settle_history_row() { # <rig> <change_id> -> the last status observed within t
         _pred_history_row_terminal "$1" "$2" >&2
     printf '%s' "$_HISTORY_ROW_STATUS"
 }
+
+# Config visibility is not completion. Keep the unwind entry unless BOTH surfaces confirm the
+# revert; a nonterminal predecessor must stop subsequent writes rather than queue another key.
+_finish_worker_revert() { # <rig> <key> <config-status> <change_id>
+    local row
+    if [ -n "$4" ]; then
+        row="$(_settle_history_row "$1" "$4")"
+    else
+        # Pre-dial refusals have no transaction to poll. Missing IDs never confirm success.
+        case "$3" in
+        rejected | failed | rolled_back | noop | throttled) row="$3" ;;
+        *) row='' ;;
+        esac
+    fi
+    assert_eq "$2 revert reached terminal applied in per-worker history (#2968)" "$row" applied
+    [ "$3" = applied ] && [ "$row" = applied ] && rig_key_clear dash "$1" "$2"
+    case "$row" in
+    "" | accepted) return 1 ;;
+    esac
+    return 0
+}
