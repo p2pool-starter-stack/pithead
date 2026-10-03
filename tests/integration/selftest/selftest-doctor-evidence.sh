@@ -12,8 +12,8 @@ trap 'rm -rf "$OUT_DIR"' EXIT
 echo "== asserted doctor evidence survives later healthy diagnostics =="
 IT_PITHEAD=pithead
 IT_CURRENT_SCENARIO=check
-IT_DASHBOARD_PASSWORD='fixture-doctor-password'
-IT_SECRET_SENTINEL='fixture-doctor-token'
+IT_DASHBOARD_PASSWORD="$(printf '%s-%s' fixture doctor-password)"
+IT_SECRET_SENTINEL="$(printf '%s-%s' fixture doctor-token)"
 DOCTOR_RC=7
 pithead() {
     echo invocation >>"$OUT_DIR/calls"
