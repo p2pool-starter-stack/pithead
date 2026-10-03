@@ -347,6 +347,19 @@ check_tor_clearnet_egress() {
     return 0
 }
 
+# doctor (#3052): Tor's circuit-build-time history saturated while the dashboard heal's NEWNYM
+# rounds went unanswered. NEWNYM cannot clear it; the explicit operator recovery can. Read-only,
+# and silent when the state is not readable (no sudo) or the heal has no sustained-outage record.
+check_tor_circuit_history() {
+    local dir
+    container_is_running tor || return 0
+    dir=$(tor_recovery_mount 2>/dev/null) || return 0
+    tor_recovery_state_saturated "$dir/state" || return 0
+    tor_recovery_heal_outage "$(env_get CONTROL_DIR)" || return 0
+    tor_recovery_egress_down || return 0
+    dr_fail "Tor's circuit-build-time history is saturated and clearnet egress stays down after the heal's NEWNYM rounds — NEWNYM cannot clear it. Run './pithead tor-recover check', then './pithead tor-recover apply'."
+}
+
 # doctor (#972): a monerod that survived a tor restart with every SOCKS peer dead looks healthy —
 # container up, healthcheck green (it only probes the RPC), height even creeping on occasional
 # lucky dials — while `get_info` reports `synchronized: false` and mining sits on a stale tip.

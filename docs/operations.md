@@ -851,11 +851,15 @@ cannot take another automatic action until the host accepts a request. Each step
 evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
 circuits, duration and preceding action into the Telegram note; the action is not credited as the
 cause of recovery. No automatic step
-changes guards or deletes Tor state. The action budget is three per outage; after that the
+changes guards or deletes Tor state. When NEWNYM is unconfirmed or did not restore egress, the
+monitor asks the host for a read-only reading of Tor's circuit-history state. A saturated
+history (abandoned count and total build times both at 1000, no `CircuitBuildTimeBin`) is logged
+on each such round, sent once per outage to the alert sinks, and names `./pithead tor-recover`;
+`./pithead doctor` reports it as a FAIL. The action budget is three per outage; after that the
 monitor warns until egress recovers. The feature remains off by default.
 
-**Saturated Tor circuit history while chains stop advancing.** A completed bootstrap, a failed
-clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
+**Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed
+bootstrap, a failed clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
 reports invalid circuit build timing, run `./pithead tor-recover check`. This read-only check
 validates the live Tor data mount and the saturated history signature. When local Monero RPC
 answers, it requires peerless, stalled Monero across three minutes, with real outgoing peer
@@ -863,7 +867,11 @@ counts read through the authenticated in-container admin helper. When RPC is una
 it instead requires two cookie-authenticated Tor observations three minutes apart: bootstrap
 95% at `circuit_create`, no established circuit, and the same running Tor instance. At least
 two invalid circuit-timing warnings must appear in the last 200 log lines from that interval;
-unreadable diagnostics refuse recovery. It uses sudo for read-only access to Tor-owned state
+unreadable diagnostics refuse recovery. A third class covers a synchronized Monero that stays
+peerless behind a dead egress: the heal's own record of two accepted NEWNYM rounds (the host
+writes it only for heal requests, 15 minutes into an outage and 30 minutes apart) inside the
+24-hour window, plus a live check that both clearnet probe targets still fail through Tor's
+SOCKS. A Tor whose egress answers is refused. It uses sudo for read-only access to Tor-owned state
 and identity keys.
 
 `./pithead tor-recover apply` rechecks the evidence under the mutation lock, verifies onion

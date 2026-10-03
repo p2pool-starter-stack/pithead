@@ -341,11 +341,11 @@ class TestCheck:
             for _ in range(MAX_ATTEMPTS):
                 clock.t += max(BROKEN_AFTER_SEC, COOLDOWN_SEC)
                 await h.check()
-        assert len(docker.calls) == 4  # two circuit refreshes and one container restart
-        with caplog.at_level("WARNING", logger="TorHeal"):
-            clock.t += COOLDOWN_SEC
-            await h.check()
-        assert len(docker.calls) == 4  # no further restarts, ever
+            assert len(docker.calls) == 4  # two circuit refreshes and one container restart
+            with caplog.at_level("WARNING", logger="TorHeal"):
+                clock.t += COOLDOWN_SEC
+                await h.check()
+            assert len(docker.calls) == 4  # no further restarts, ever
         assert any("STILL broken" in r.message for r in caplog.records)
 
     async def test_recovery_sends_the_one_time_notify(self):

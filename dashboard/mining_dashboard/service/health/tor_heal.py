@@ -4,7 +4,9 @@ Each failed probe is corroborated on a fresh SOCKS-auth circuit and a second tar
 sustained outage, two bounded NEWNYM requests go through the audited host control runner. A
 final container restart is disruptive and re-dials local Monero; neither NEWNYM nor a clearnet
 failure authorizes DROPGUARDS or deletion of Tor state. Saturated circuit-history recovery is
-an explicit operator command with independent chain-connectivity evidence.
+an explicit operator command (`./pithead tor-recover`). When NEWNYM is unconfirmed or ineffective
+the healer only reads the saturated signature through a read-only host request and alerts the
+operator; it never moves state aside itself (#3052).
 """
 
 import asyncio
@@ -77,6 +79,10 @@ class TorEgressHealer:
         self._pending_since = None
         self._failure_evidence = ""
         self._recovery_step = None
+        self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
+        self._pending_history = None  # read-only tor-history request awaiting its result
+        self._warned_saturated = False  # saturated-history alert is sent once per outage
+        self.saturated_history = False  # latest host reading, for status surfaces
         if self.enabled:
             logger.info(
                 "Tor egress self-heal enabled: probing every %ds; recovery after %dm "
@@ -154,6 +160,40 @@ class TorEgressHealer:
             self._attempts -= 1
         self._last_attempt = None
 
+    def _request_history(self):
+        """Ask the host for the saturated-history reading; one request in flight, never raises."""
+        if self._pending_history is not None:
+            return
+        try:
+            self._pending_history = control_service.submit("tor-history", actor="tor-heal")
+        except OSError:
+            logger.warning("Tor circuit-history check could not be submitted to the host runner")
+
+    async def _read_history(self) -> None:
+        """Log (once per heal round) and alert (once per outage) a saturated circuit history."""
+        if self._pending_history is None:
+            return
+        result = control_service.result(self._pending_history)
+        if result is None:
+            return
+        self._pending_history = None
+        saturated = result.get("status") == "applied" and result.get("saturated") is True
+        self.saturated_history = saturated
+        if not saturated:
+            return
+        logger.warning(
+            "Tor circuit-build-time history is saturated (CircuitBuildAbandonedCount and "
+            "TotalBuildTimes at the cap, no CircuitBuildTimeBin) and NEWNYM does not clear it. "
+            "Run './pithead tor-recover check' then './pithead tor-recover apply'."
+        )
+        if not self._warned_saturated and self._notify is not None:
+            self._warned_saturated = True
+            await self._notify(
+                "\U0001f9c5 Tor clearnet egress is down and its circuit-build-time history is "
+                "saturated; NEWNYM cannot clear it. Run './pithead tor-recover check', then "
+                "'./pithead tor-recover apply'."
+            )
+
     async def _monerod_running(self) -> bool:
         """Only a running monerod is cycled (#2749). A stopped one stays stopped: with LAN access on
         a DIY Docker host it may be held because its LAN-only source rule is missing, and a start
@@ -169,6 +209,7 @@ class TorEgressHealer:
             return
         self._last_probe = now
         try:
+            await self._read_history()
             if self._pending_refresh is not None:
                 result = control_service.result(self._pending_refresh)
                 if result is None:
@@ -178,10 +219,21 @@ class TorEgressHealer:
                 self._pending_refresh = None
                 self._pending_since = None
                 if result.get("status") != "applied":
+                    status = result.get("status")
+                    error = result.get("error")
+                    # An unconfirmed NEWNYM never escalates to the disruptive restart; the
+                    # saturated-history reading below tells the operator what will help.
                     self.refund_attempt()
                     self._last_attempt = now
-                    logger.warning("Tor NEWNYM was not confirmed by the host control runner")
+                    self._newnym_unconfirmed = True
+                    logger.warning(
+                        "Tor NEWNYM was not confirmed by the host control runner (%s: %s)",
+                        status,
+                        error,
+                    )
+                    self._request_history()
                     return
+                self._newnym_unconfirmed = False
                 self._recovery_step = "NEWNYM"
             probe = await asyncio.to_thread(self._probe)
             ok, evidence = probe
@@ -190,6 +242,8 @@ class TorEgressHealer:
             outage_minutes = (now - self._failing_since) / 60 if self._failing_since else 0
             action = self.decide(ok, now)
             if action == "heal":
+                if self._recovery_step == "NEWNYM" or self._newnym_unconfirmed:
+                    self._request_history()  # NEWNYM did not help: is the history saturated?
                 if self._attempts < MAX_ATTEMPTS:
                     logger.warning(
                         "Tor clearnet egress failed for %.0f minutes: %s. "
@@ -283,5 +337,8 @@ class TorEgressHealer:
                     )
                 self._failure_evidence = ""
                 self._recovery_step = None
+                self._newnym_unconfirmed = False
+                self._warned_saturated = False
+                self.saturated_history = False
         except Exception as exc:  # never let the healer break the data loop
             logger.debug("Tor heal cycle failed (%s)", type(exc).__name__)
