@@ -187,6 +187,7 @@ mkdir -p "$SIG/opt/pithead"
 SIG_BI="$(cat "$ROOT/os/build-image.sh")"
 SIG_DF="$(cat "$ROOT/os/rootfs/Dockerfile")"
 assert_contains "the staged five-image compose is digest-pinned before the rootfs build" "$SIG_BI" 'pin_first_party_images os/build/stage/docker-compose.yml'
+assert_contains "the pin tag defaults to the version and release.sh may name its staging tag" "$SIG_BI" '"${PITHEAD_PIN_TAG:-$STACK_VERSION}"'
 assert_contains "a synthetic-compose build (unresolvable version, by design) skips digest pinning" \
     "$SIG_BI" $'if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then\n    pin_first_party_images'
 assert_contains "a debug registry requires its alternate cosign public key" "$SIG_BI" 'PITHEAD_REGISTRY_COSIGN_PUB: a readable alternate public key is required'

@@ -105,7 +105,7 @@ build_rootfs_image() {
     local repo dashboard_digest rootfs_tar=os/build/pithead-root.tar
     repo="$(image_for os-rootfs)"
     if [ "$DRY_RUN" -eq 1 ]; then
-        run env PITHEAD_ROOTFS_TAG="$repo:$STAGING_TAG" PITHEAD_WIZARD_IMAGE="$(image_for dashboard)@sha256:$(printf '%064d' 0)" os/build-image.sh
+        run env PITHEAD_ROOTFS_TAG="$repo:$STAGING_TAG" PITHEAD_PIN_TAG="$STAGING_TAG" PITHEAD_WIZARD_IMAGE="$(image_for dashboard)@sha256:$(printf '%064d' 0)" os/build-image.sh
         run docker push "$repo:$STAGING_TAG"
         return
     fi
@@ -114,6 +114,7 @@ build_rootfs_image() {
         die "Could not resolve the staged dashboard digest needed by the appliance rootfs."
     run env DOCKER_DEFAULT_PLATFORM="${PLATFORMS%%,*}" \
         PITHEAD_ROOTFS_TAG="$repo:$STAGING_TAG" \
+        PITHEAD_PIN_TAG="$STAGING_TAG" \
         PITHEAD_WIZARD_IMAGE="$(image_for dashboard)@$dashboard_digest" \
         os/build-image.sh
     verify_release_rootfs_tar "$rootfs_tar" ||
