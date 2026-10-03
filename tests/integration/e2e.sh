@@ -376,6 +376,7 @@ preflight() {
     parent_lock_checkpoint "the first bench touch" || die "Parent-held bench lock is not continuous."
     on_bench 'echo ok >/dev/null' || die "Cannot SSH to test-bench host '$BENCH_HOST'."
     ok "SSH to $BENCH_HOST"
+    harness_clear_check_evidence || die "Cannot clear prior doctor check evidence."
     on_bench "test -x '$CANONICAL_DIR/pithead'" || die "No pithead at $CANONICAL_DIR on $BENCH_HOST."
     on_bench "cd '$CANONICAL_DIR' && ./pithead status >/dev/null 2>&1" &&
         ok "canonical stack is currently healthy" ||
@@ -659,7 +660,6 @@ run_harness() {
     on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/  /'
     return "${rc:-1}"
 }
-
 # --- Main -------------------------------------------------------------------
 main() {
     log "Pithead e2e — branch '$BRANCH' → $BENCH_HOST (mode=$MODE)$([ "$KEEP" = 1 ] && echo '  [--keep: no restore]')"

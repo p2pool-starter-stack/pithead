@@ -1104,7 +1104,7 @@ hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it
 Each run writes a manifest (`results/manifest.txt`) recording exactly what was under test: the
 stack `VERSION`, git revision, and `docker compose images`. A run is reproducible.
 
-On a scenario failure, the harness captures (redacted) to `results/<scenario>/`:
+On a scenario failure, the harness captures fresh diagnostic snapshots (redacted) to `results/<scenario>/`:
 `compose-ps.txt`, `status.txt`, `doctor.txt`, `config.json`, `env.redacted.txt`,
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
 probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the first
@@ -1121,6 +1121,23 @@ failed request. Records contain only numbers and fixed labels, without endpoints
 stderr or response bodies. An unavailable artifact is reported in the transcript and
 never replaces the original status. The end-of-run summary lists each failed assertion
 and points at the scenario artifacts.
+
+The `doctor.txt` snapshot runs doctor again; it does not describe an earlier
+asserted invocation. Before each doctor assertion, the check phase emits its exact exit code as
+`doctor-asserted exit-code:` and its redacted stdout/stderr as `doctor-asserted output:` lines.
+These prefixes keep doctor diagnostics separate from harness verdict rows. The wrapper retains
+this transcript across phase cleanup. The same invocation is also saved under
+`results/check/doctor-asserted.*/output.txt` with `exit-code.txt`, in a separate directory per
+invocation. The e2e wrapper sends the check pregate to its collected
+`results/pregate-check/` directory, separate from the destructive harness's results.
+Its `check/doctor-asserted.*/output.txt` and `exit-code.txt` survive the destructive
+preflight. The wrapper clears prior check results at preflight in every mode and again before
+readiness, so a refused job or a read-only check cannot collect prior doctor evidence.
+Later diagnostic snapshots cannot replace an asserted invocation. Capture
+failures add a failed evidence row; the original doctor exit code is still asserted. This adds
+no retry or readiness wait and does not establish the cause of a transient failure. The pure regressions are
+`tests/integration/selftest/selftest-doctor-evidence.sh` and
+`tests/integration/selftest/selftest-doctor-pregate-retention.sh`.
 
 Every destructive run also samples the HugePages that monerod and p2pool hold
 ([#2685](https://github.com/p2pool-starter-stack/pithead/issues/2685)), every 10 s from the end of
