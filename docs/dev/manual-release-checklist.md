@@ -16,6 +16,8 @@ Contents:
 
 - [How to use this checklist](#how-to-use-this-checklist), [What you need](#what-you-need),
   [Sample configs](#sample-configs)
+- [Route coverage](#route-coverage): where each feature is checked on the self-hosted (DIY) route
+  and on the appliance route
 - The walkthrough: sections [1](#1-fresh-diy-install) to [15](#15-appliance-rename-and-resets)
 - [Scenarios](#scenarios): short end-to-end stories that cross sections
 - Hardware and release-cut checks: [Before the cut](#before-the-cut),
@@ -203,6 +205,34 @@ column, and leave the running stack untouched.
 | With the onion on, set the password to `"changeme-but-longer"` | `contains a well-known weak pattern` |
 
 ---
+
+## Route coverage
+
+Pithead ships two ways: the self-hosted (DIY) Compose stack, driven by `./pithead` and
+`config.json`, and the appliance, driven by its setup page, dashboard, boot menu and USB stick.
+Every feature is checked on both routes, or the table says why one route has nothing to check.
+Sections 1–12 are written for the DIY route; section 13 runs the appliance route and repeats the
+DIY steps that apply there.
+
+| Feature | Self-hosted (DIY) | Appliance |
+|---|---|---|
+| Install | 1.1–1.9 | 13.1–13.7 |
+| First sync and Sync Mode | 1.6–1.13 | 13.8 (repeats 1.8 and 1.13) |
+| Upgrade from the previous release | 2.1–2.4, 12.1–12.2 | 12.3, 13.10 |
+| Everyday commands | 3.1–3.7 | No shell. The health check and recent log (7.7, through 13.8) and the boot menu (13.9) stand in. |
+| Miners | 4.1–4.5 | 13.8 (repeats section 4), 14.1–14.4 |
+| Mining on the stack machine itself | 6.9 | 13.8 (the built-in miner) |
+| Dashboard | 5.1–5.11 | 13.8 (repeats section 5) |
+| Settings | 6.1–6.9, 7.1–7.8 | 13.8 (repeats 7.1–7.8), 13.15, 13.23 |
+| Alerts and Telegram | 8.1–8.7 | 13.8 (repeats 8.2–8.4) |
+| Privacy and Tor | 1.10, 9.1–9.7 | 13.20, 13.21 |
+| Node and pool modes | 10.1–10.5 | 13.15, 13.22 |
+| Backup and restore | 11.1–11.4, S5 | 13.13, 13.14 |
+| Resets and removal | 11.5–11.7 | 15.2, 15.3 |
+| Power loss | S3 | 13.19 |
+| Machine name | 1.4 (the hostname prompt) | 15.1 |
+| Headless setup and recovery | Not applicable: a DIY host has its own shell. | 13.16, 13.17, 13.23 |
+| Rigs | Not applicable: a DIY rig is a RigForge install, tested in that project. | 14.1–14.4 |
 
 ## 1. Fresh DIY install
 
@@ -402,6 +432,11 @@ and restore it at the end.
   change.
 - [ ] **6.8 Restore.** Do: `cp config.json.qa config.json && ./pithead apply`. Expect: the
   original settings are back.
+- [ ] **6.9 Mine on the stack machine.** Do: add `"local_miner": { "enabled": true }` as a
+  top-level block and `./pithead apply`. Expect: apply prints the pool URL and stratum password a
+  RigForge install on this machine needs (see
+  [Connecting Miners](../workers.md)). If you install RigForge with those values, the worker
+  appears in Workers Alive. Remove the block and apply again afterwards.
 
 ## 7. Change settings from the dashboard
 
@@ -598,7 +633,8 @@ the latest *published* release, so it is tested after publishing, in 12.3.
 - [ ] **13.8 The same checks as DIY.** Do: first, using only the setup page, the dashboard and
   [the appliance guide](../appliance.md), find the stratum password an outside miner must send
   (the appliance sets `p2pool.stratum_password` to `"auto"`). If you cannot find it, file it,
-  because 4.1 and 14.1 need it. Then repeat sections 4 and 5, pointing XMRig at
+  because 4.1 and 14.1 need it. While the appliance's chains sync, check 1.8; when they finish,
+  check 1.13. Then repeat sections 4 and 5, pointing XMRig at
   `pithead.local:3333`, and steps 7.1–7.8 (the appliance's Configuration view is always on). Set up Telegram in Configuration, then repeat
   8.2–8.4. Skip anything that needs a shell (`./pithead`, `docker`, editing `config.json`): the
   appliance has none apart from its console. Expect: the same results. The built-in miner
@@ -650,6 +686,27 @@ the latest *published* release, so it is tested after publishing, in 12.3.
 - [ ] **13.19 Power loss while mining (M10).** Do: pull the plug at the wall while mining, wait
   30 seconds, plug it back in, and do not touch the machine. Expect: it powers on by itself and
   returns to mining; the dashboard answers.
+- [ ] **13.20 Tor egress on the appliance.** Do: in Configuration click **Run health check**, then
+  open **Stack Topology & Egress** in the Advanced view. Expect: the health check reports
+  `Tor-only egress firewall is installed` and `Tor clearnet egress works`; the topology shows
+  unselected clearnet routes as blocked; the header shows no firewall warning.
+- [ ] **13.21 Onion dashboard on the appliance.** Do: in Configuration turn on
+  `dashboard.onion.enabled`, leaving `dashboard.onion.client_auth` on, preview, type `APPLY`
+  and confirm. Expect: the `.onion` address appears under the machine name with a **Copy**
+  button. **Show client key** reveals the key once, and the reveal appears in the change history.
+  With that key, Tor Browser opens the dashboard as in 9.4. Turning `client_auth` off while the
+  onion is on is refused.
+- [ ] **13.22 Node modes on the appliance.** Do: in Configuration set Tari's mode to `off`,
+  preview, type `APPLY` and confirm; then set it back to `local` the same way. Expect: the preview
+  marks each change ⚠; with Tari off, mining continues; switching back resumes the Tari chain it
+  already had. (The remote Monero node change is 13.15.)
+- [ ] **13.23 Settings by USB stick.** Do: on the laptop, write a FAT32 stick holding only a
+  `pithead-config.json` with `{"p2pool": {"pool": "nano"}}`. Insert it into the running
+  appliance. Expect: nothing happens until a reboot. Reboot with a monitor attached. Expect: the
+  console prints the pool change (old and new value) and counts down 60 seconds. Pull the stick
+  during the countdown: the console says the change was cancelled, and nothing changes. Write the
+  file again, reboot, and let the countdown run out. Expect: the change applies; the file is gone
+  from the stick; the dashboard shows the `nano` sidechain. Put `mini` back the same way.
 
 ## 14. RigForge rig
 
