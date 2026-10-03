@@ -54,6 +54,15 @@ assert_eq "successful capture/import/gates removes the private archives" "$(cat 
 assert_eq "the original catch-up and dashboard waits are reused" "$(cat "$WORK/waits")" $'1200/15\n420/10'
 assert_contains "proved restore emits the exact runner marker" "$(cat "$WORK/log")" " ✓ WALLET FIXTURE RESTORE VERIFIED"
 
+echo "== wallet fixture: a bench-ci job directory (0775) still takes a private receipt =="
+chmod 775 "$WORK"
+rm -f "$WORK/wallet-fixture-restore.state"
+wallet_fixture_receipt ARMED >"$WORK/log" 2>&1
+assert_eq "a group-writable job directory still records the receipt" "$?" 0
+assert_eq "the receipt is written" "$(cat "$WORK/wallet-fixture-restore.state")" ARMED
+assert_eq "the job directory is no longer group or world writable" "$((8#$(stat -c %a "$WORK" 2>/dev/null || stat -f %Lp "$WORK") & 8#22))" 0
+rm -f "$WORK/wallet-fixture-restore.state"
+
 echo "== wallet fixture: a wallet still catching up after the backup is never captured =="
 : >"$WORK/actions"
 (FAIL_CATCHUP=1 wallet_fixture_capture) >"$WORK/log" 2>&1

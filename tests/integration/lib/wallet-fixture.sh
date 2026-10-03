@@ -9,6 +9,8 @@ wallet_fixture_command() {
 
 wallet_fixture_receipt() {
     [ -n "${CI_JOB_DIR:-}" ] || return 0
+    # bench-ci creates job directories 0775; the receipt refuses a group/world-writable parent.
+    chmod go-w "$CI_JOB_DIR" || return 1
     python3 "$HERE/lib/wallet-fixture.py" receipt "$CI_JOB_DIR" "$1"
 }
 
