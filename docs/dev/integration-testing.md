@@ -1072,7 +1072,26 @@ hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it
 Each run writes a manifest (`results/manifest.txt`) recording exactly what was under test: the
 stack `VERSION`, git revision, and `docker compose images`. A run is reproducible.
 
-On a scenario failure, the harness captures (redacted) to `results/<scenario>/`:
+Each running-service assertion retains its original `docker compose ps --services --status
+running` read in `results/<scenario>/running-services.stdout`, `running-services.stderr` and
+`running-services.json`. The streams pass through the shared redactor; the JSON records the
+UTC capture time, Compose's own exit status and the transport exit status. A failed transport
+without a Compose status records a capture error. The assertion still uses the full original
+stdout, sorted, with no retry or new readiness timeout.
+
+The first failed `container up: <service>` membership row immediately captures `docker compose
+ps -a`, before later assertions or restoration. It writes `compose-ps-all.stdout`,
+`compose-ps-all.stderr`, `compose-ps-all.json` and `service-read.txt` in the same directory.
+The latter identifies the scenario, first missing service and capture time. The extra read runs
+once per snapshot, with a 5-second command bound and an 8-second transport bound. Both reads
+retain at most 65536 bytes per stream before redaction, using complete lines; oversized lines
+are omitted so truncation cannot expose a secret prefix. Each JSON records truncation or capture
+errors. Failed captures preserve completed safe output and the original failed row. No environment
+or full inspect configuration is collected by this path. The pure
+`tests/integration/selftest/selftest-compose-read.sh` regression covers these diagnostics;
+live causal evidence comes from the next organic failure, not an unchanged rerun.
+
+On a scenario failure, the harness also captures (redacted) to `results/<scenario>/`:
 `compose-ps.txt`, `status.txt`, `doctor.txt`, `config.json`, `env.redacted.txt`,
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
 probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the first
