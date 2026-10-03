@@ -301,10 +301,10 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 - **The Tor self-heal no longer leaves Tor stopped after a restart
   ([#3032](https://github.com/p2pool-starter-stack/pithead/issues/3032)).** With `tor.auto_heal`
   on, the heal's stop request gave up after 60 seconds, just before a wedged Tor finished stopping.
-  The start that followed was skipped or answered "already running" by the Tor that was still going
+  The start that followed was answered "already running" by the Tor that was still going
   down, so Tor stayed stopped and monerod sat with no outgoing peers until someone started it. The
   stop now waits up to two minutes, an unconfirmed stop gets up to 30 seconds to settle before the
-  start, and an unconfirmed start is retried up to three times, five seconds apart.
+  start, and an unconfirmed start is tried up to three times, five seconds apart.
 
 - **`./pithead tor-recover check` accepts a peerless Monero node that still reads synchronized
   ([#3033](https://github.com/p2pool-starter-stack/pithead/issues/3033)).** The check, which
