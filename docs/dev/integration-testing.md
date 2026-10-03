@@ -43,7 +43,8 @@ which:
 
 For each scenario it writes a `config.json`, applies it, then waits on real readiness signals
 (container health, `pithead status`, dashboard sync %, miner-released) with timeouts. Never a
-fixed `sleep`. It then runs the assertion battery below. All reads happen on the box
+fixed `sleep`. Pool readiness uses the configured sidechain, defaulting to mini when
+`p2pool.pool` is omitted. It then runs the assertion battery below. All reads happen on the box
 (`pithead status`/`doctor` and `curl http://127.0.0.1:8000/api/state`), so SSH and `--local`
 behave identically and never depend on resolving the box's dashboard hostname.
 
@@ -724,7 +725,9 @@ For one representative config:
   The restore must also return every wallet, proxy, dashboard, RPC, and onion secret category
   exactly, the same per-category comparison a safety rollback makes.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
-  secrets; the dashboard reflects the new pool; then it's reverted.
+  secrets; the dashboard reflects the new pool; then it's reverted. An omitted
+  `p2pool.pool` means mini, so the alternate is main. Explicit main and nano baselines
+  switch to mini; an explicit mini baseline switches to main.
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
   stop `monerod` → `status` returns non-zero (node down) and the dashboard rejects workers
   (stops `xmrig-proxy`) → start `monerod` → workers readmitted → `status` → `0`.
