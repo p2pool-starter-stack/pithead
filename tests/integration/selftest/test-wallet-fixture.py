@@ -43,6 +43,7 @@ class Docker:
 
     def __init__(self, baseline):
         self.calls = []
+        self.dropped_terms = 0
         self.contents = archive()
         self.volume_labels = {
             "com.docker.compose.project": "pithead",
@@ -84,8 +85,13 @@ class Docker:
             ).encode()
         elif args[:2] == ("image", "inspect"):
             value = json.dumps([{"Id": IMAGE}]).encode()
-        elif args[0] == "stop":
-            self.item["State"]["Running"] = False
+        elif args[0] == "kill":
+            if self.dropped_terms > 0:  # TERM to a PID 1 that has no handler yet is discarded
+                self.dropped_terms -= 1
+            else:
+                self.item["State"]["Running"] = False
+        elif args[0] == "logs":
+            value = b"Loading wallet...\n"
         elif args[0] == "start":
             self.item["State"]["Running"] = True
         elif args[:2] == ("image", "save"):
@@ -114,8 +120,11 @@ class FixtureTest(unittest.TestCase):
         self.mock_docker.start()
         self.mock_tmp = patch.dict(os.environ, {"IT_SCRATCH_DIR": str(self.root)})
         self.mock_tmp.start()
+        self.mock_sleep = patch.object(fixture.time, "sleep")
+        self.mock_sleep.start()
 
     def tearDown(self):
+        self.mock_sleep.stop()
         self.mock_tmp.stop()
         self.mock_docker.stop()
         self.temporary.cleanup()
@@ -126,12 +135,27 @@ class FixtureTest(unittest.TestCase):
             fixture.capture(self.baseline)
         return Path(output.getvalue().strip())
 
-    def test_capture_stops_the_wallet_manually_so_its_restart_policy_cannot_revive_it(self):
-        self.capture()
-        stops = [call for call in self.docker.calls if call[0] == "stop"]
-        self.assertEqual(len(stops), 1)
-        self.assertIn("--time", stops[0])
-        self.assertFalse(any(call[0] == "kill" for call in self.docker.calls))
+    def test_capture_resends_term_until_the_wallet_installs_its_handler_and_never_kills(self):
+        self.docker.dropped_terms = 2
+        clock = iter(range(0, 1000, 5))
+        with patch.object(fixture.time, "monotonic", side_effect=lambda: next(clock)):
+            self.capture()
+        kills = [call for call in self.docker.calls if call[0] == "kill"]
+        self.assertEqual(len(kills), 3)
+        self.assertTrue(all(call[1:3] == ("--signal", "TERM") for call in kills))
+        self.assertFalse(any(call[0] == "stop" for call in self.docker.calls))
+
+    def test_capture_gives_up_without_a_forced_kill_and_dumps_the_wallet_log(self):
+        self.docker.dropped_terms = 10**6
+        clock = iter(range(0, 10000, 5))
+        with patch.object(fixture.time, "monotonic", side_effect=lambda: next(clock)):
+            with patch("sys.stderr", io.StringIO()) as err:
+                with self.assertRaisesRegex(ValueError, "no forced kill attempted"):
+                    fixture.capture(self.baseline)
+        self.assertIn("Loading wallet...", err.getvalue())
+        self.assertFalse(any(call[0] == "stop" for call in self.docker.calls))
+        kills = [call for call in self.docker.calls if call[0] == "kill"]
+        self.assertTrue(kills and all(call[1:3] == ("--signal", "TERM") for call in kills))
 
     def test_uninstall_recreates_cold_volume_then_exact_fixture_returns(self):
         directory = self.capture()
@@ -282,7 +306,7 @@ class FixtureTest(unittest.TestCase):
         directory = self.capture()
         self.docker.item["State"].update(Running=False, Restarting=True)
         before = len(self.docker.calls)
-        with patch.object(fixture.time, "monotonic", side_effect=[0, 121]):
+        with patch.object(fixture.time, "monotonic", side_effect=[0, 601]):
             with self.assertRaises(ValueError):
                 fixture.restore(directory, self.baseline, self.root / "branch")
         self.assertFalse(any(call[0] == "run" for call in self.docker.calls[before:]))

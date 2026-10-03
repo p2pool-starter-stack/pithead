@@ -26,7 +26,8 @@ IDENTITY_FIELDS = {
 
 def docker(*args, **kwargs):
     # Only fixed native Docker operations; snapshot image/mount arguments are validated below.
-    return subprocess.run(["docker", *args], check=True, stderr=subprocess.DEVNULL, **kwargs)  # noqa: S603,S607
+    kwargs.setdefault("stderr", subprocess.DEVNULL)
+    return subprocess.run(["docker", *args], check=True, **kwargs)  # noqa: S603,S607
 
 
 def inspect(kind, name):
@@ -120,19 +121,31 @@ def wallet_container(allowed):
     return item
 
 
+STOP_WINDOW = 600
+TERM_INTERVAL = 5
+
+
 def stop_wallet(item):
-    if item["State"]["Running"]:
-        # `docker stop` marks the stop as manual, so the wallet's `restart: unless-stopped`
-        # policy does not revive it (a bare `docker kill` does, and the wait below never ended).
-        # A wallet that outlives the window is killed and exits nonzero; capture then refuses it.
-        docker("stop", "--time", "120", item["Id"], stdout=subprocess.DEVNULL)
-    deadline = time.monotonic() + 120
+    # Never SIGKILL: a kill can land mid-refresh or mid-store() and damage the prepared cache.
+    # A TERM sent while the wallet is still `Loading wallet...` (PID 1, no handler yet) is
+    # discarded by the kernel, so re-send it until the container stops; repeats are harmless.
+    start = time.monotonic()
+    next_term = start
     while True:
         item = inspect("container", item["Id"])
-        if not item["State"]["Running"] and not item["State"].get("Restarting"):
+        running = item["State"]["Running"]
+        if not running and not item["State"].get("Restarting"):
             return item
-        if time.monotonic() >= deadline:
+        now = time.monotonic()
+        if now - start >= STOP_WINDOW:
+            tail = docker(
+                "logs", "--tail", "20", item["Id"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            ).stdout.decode(errors="replace")
+            print(f"wallet did not stop on SIGTERM; last log lines:\n{tail}", file=sys.stderr)
             raise ValueError("wallet did not stop gracefully; no forced kill attempted")
+        if running and now >= next_term:
+            docker("kill", "--signal", "TERM", item["Id"], stdout=subprocess.DEVNULL)
+            next_term = now + TERM_INTERVAL
         time.sleep(1)
 
 
