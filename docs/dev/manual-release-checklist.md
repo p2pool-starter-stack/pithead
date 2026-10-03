@@ -172,7 +172,7 @@ On the second machine, use this complete file:
         "node_password": "PASTE_FROM_NODE_MACHINE",
         "remote": { "host": "192.168.1.10", "rpc_port": 18081, "zmq_port": 18083 }
     },
-    "tari": { "mode": "off" },
+    "tari": { "mode": "off", "wallet_address": "PASTE_QA_TARI_ADDRESS" },
     "p2pool": { "stratum_password": "auto" },
     "dashboard": {
         "auth": { "username": "admin", "password": "PASTE_QA_DASHBOARD_PASSWORD" },
@@ -557,8 +557,8 @@ than read.
 
 Steps 13.10–13.12 copy update bundles to the box over SSH, which only the debug image has (see
 [Know which image you are holding](#know-which-image-you-are-holding)). Before 13.10, write the
-debug image to the stick with the 13.1 commands, reinstall the box from it, and choose
-**Keep everything**, the same way as 13.18. Reach it as `root` over SSH with the bench key from
+debug image to the stick with the 13.1 commands (skip the `sha256sum` line if the debug image has
+no `.sha256` file), boot the box from it, choose the same disk, and pick **Keep everything**. Reach it as `root` over SSH with the bench key from
 the private handoff. After 13.12, write the release image to the stick and reinstall the same
 way. Everything else runs on the release
 image. The dashboard's own update path checks for
