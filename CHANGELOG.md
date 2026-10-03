@@ -11,7 +11,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
-## [2.0.0]
+## [2.0.0] - 2026-10-03
 
 ### Upgrading from 1.20.x
 
@@ -88,6 +88,18 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   name the same condition, the monerod container reports `unhealthy` after 10 minutes with no outgoing
   peers, and each condition sends one alert through the `node_down` toggle. Nothing is restarted for
   you ([#2499](https://github.com/p2pool-starter-stack/pithead/issues/2499)).
+
+- **A saturated Tor circuit history is reported, and `tor-recover` can reset it while Monero stays
+  synchronized ([#3052](https://github.com/p2pool-starter-stack/pithead/issues/3052)).** Tor can
+  finish bootstrapping with its circuit-build-time history full and still fail every clearnet
+  request; a NEWNYM refresh does not clear it. With `tor.auto_heal` on, when a refresh is
+  unconfirmed or does not bring egress back, the dashboard reads Tor's circuit-history state, logs a
+  saturated history on each round and sends one alert per outage naming `./pithead tor-recover`,
+  retrying until a channel delivers it. `./pithead doctor` reports the same condition as a FAIL,
+  which the Tor section of Service Diagnostics shows after a health check. `tor-recover check` and
+  `apply` now also accept two failed heal rounds from the same outage at least 15 minutes apart,
+  with both clearnet probes still failing through Tor, so a synchronized Monero node no longer
+  blocks the reset. Nothing deletes Tor state on its own; the reset stays an operator command.
 
 - **The dashboard onion's client key without a shell.** With Tor client authorization on — the
   default, and mandatory whenever the config editor is on — a published `.onion` does not answer a
@@ -277,6 +289,31 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   sooner is marked healthy at its next 30-second check, as before. A Tor that never bootstraps
   now fails `up` after about 12.5 minutes instead of 3.5.
 
+- **Inbound peers reach the Monero onion, and the P2Pool onion on main and nano
+  ([#2936](https://github.com/p2pool-starter-stack/pithead/issues/2936)).** The bundled monerod
+  bound its anonymous P2P listener to its own container's loopback, which the Tor container cannot
+  reach, so the Monero onion answered no peer. It now listens on the stack's container bridge at
+  `:18084`; the port is still not published on the host. The P2Pool onion always forwarded to
+  `37888`, the mini sidechain's port, so on main or nano it led nowhere. It now forwards the
+  selected sidechain's P2P port: `37889` main, `37888` mini, `37890` nano. RPC access and remote
+  nodes are unchanged.
+
+- **The Tor self-heal no longer leaves Tor stopped after a restart
+  ([#3032](https://github.com/p2pool-starter-stack/pithead/issues/3032)).** With `tor.auto_heal`
+  on, the heal's stop request gave up after 60 seconds, just before a wedged Tor finished stopping.
+  The start that followed was skipped or answered "already running" by the Tor that was still going
+  down, so Tor stayed stopped and monerod sat with no outgoing peers until someone started it. The
+  stop now waits up to two minutes, an unconfirmed stop gets up to 30 seconds to settle before the
+  start, and an unconfirmed start is retried up to three times, five seconds apart.
+
+- **`./pithead tor-recover check` accepts a peerless Monero node that still reads synchronized
+  ([#3033](https://github.com/p2pool-starter-stack/pithead/issues/3033)).** The check, which
+  `tor-recover apply` repeats before it resets a saturated Tor circuit history, looks for a local
+  Monero node stalled with no peers. It required `synchronized: false`, but monerod keeps its last
+  value after losing every peer, so a node held at one height with 0 outgoing peers for three
+  minutes was refused. The check now takes 0 outgoing peers at an unchanged height as the stall,
+  whatever `synchronized` says. Every other guard is unchanged.
+
 - **The Monero payout wallet stays healthy while a restarted wallet catches up
   ([#2756](https://github.com/p2pool-starter-stack/pithead/issues/2756)).** The scan grace applied
   only to a newly created wallet. A reopened wallet that had to catch up, for example after the
@@ -322,6 +359,11 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   built, not pulled. The digest-pinned Tari, Caddy and socket-proxy images have no build context, so
   once `uninstall` had removed them only `tor` started. `pithead` now pulls the missing images that
   have no build context before it starts the stack. An explicit `PITHEAD_PULL` still overrides this.
+
+- **`pithead` no longer logs a false `pithead aborted unexpectedly (exit 2)`
+  ([#3047](https://github.com/p2pool-starter-stack/pithead/issues/3047)).** Tidying the dashboard's
+  control results printed that error whenever there was no backup archive to prune, for example at
+  every appliance boot, while the command carried on and finished. What is pruned is unchanged.
 
 - **A restore at setup that fails while writing its files no longer leaves the machine half
   restored ([#2689](https://github.com/p2pool-starter-stack/pithead/issues/2689)).** It used to
