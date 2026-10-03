@@ -56,7 +56,7 @@ run_lifecycle() {
     # secrets. We flip main<->mini and assert the token/onions are untouched, then revert.
     local cur_pool fp_before
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
-    cur_pool="${cur_pool:-main}"
+    cur_pool="${cur_pool:-mini}"
     local other
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
     fp_before="$(secret_fingerprint)"

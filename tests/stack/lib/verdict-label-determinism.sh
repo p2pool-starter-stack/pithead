@@ -84,12 +84,14 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 #   * `lib.sh|1` is not a call site at all — it is assert_eq/assert_contains/assert_not_contains/
 #     assert_rc forwarding their <label> to ok(); every label funnels through it, so it is listed
 #     for completeness and says nothing about any one domain.
+# #3043 adds pin_case over the fixed staging/unset/empty/synthetic list; no measured value.
 # WHAT THIS ROW STILL DOES NOT PROVE: it pins the SET of interpolating labels, not the VALUES. A new
 # caller handing one of these wrappers a measured value keeps the set identical and the row green —
 # the caller audit above is a point-in-time reading, not a standing instrument. Re-run it when a
 # wrapper gains callers; that is the residual #1740 could not close and this row does not either.
 # No label in tests/stack uses $* or $#, the special parameters past $@. They are seeded below
 # anyway, so all three have a control that can fail, not two branches that pass by construction.
+# #2936's invalid_port labels use the five literal inputs in test-tor-port-validation.sh.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -122,6 +124,7 @@ test-doctor-surface.sh|_s
 test-doctor.sh|ip
 test-recovery-address-gates.sh|_rag_v
 test-recovery-address-gates.sh|label
+test-release-verify.sh|pin_case
 test-release.sh|comp
 test-release.sh|pin_rel
 test-release.sh|svc
@@ -136,6 +139,7 @@ test-spool-audit.sh|audit_size
 test-suite-blocks.sh|1
 test-suite-blocks.sh|arg
 test-tor-network.sh|v
+test-tor-port-validation.sh|invalid_port
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val

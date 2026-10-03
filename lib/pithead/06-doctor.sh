@@ -150,6 +150,7 @@ doctor() {
     check_egress_firewall_installed
     check_lan_guard
     check_tor_clearnet_egress
+    check_tor_circuit_history
     # Clearnet initial sync (#183): warn until the host attests both live Tor and the closed
     # exception; a dashboard-written marker alone does not clear the warning.
     if [ -f "$ENV_FILE" ] && clearnet_sync_active; then

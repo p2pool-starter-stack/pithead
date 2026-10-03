@@ -43,7 +43,8 @@ which:
 
 For each scenario it writes a `config.json`, applies it, then waits on real readiness signals
 (container health, `pithead status`, dashboard sync %, miner-released) with timeouts. Never a
-fixed `sleep`. It then runs the assertion battery below. All reads happen on the box
+fixed `sleep`. Pool readiness uses the configured sidechain, defaulting to mini when
+`p2pool.pool` is omitted. It then runs the assertion battery below. All reads happen on the box
 (`pithead status`/`doctor` and `curl http://127.0.0.1:8000/api/state`), so SSH and `--local`
 behave identically and never depend on resolving the box's dashboard hostname.
 
@@ -416,6 +417,15 @@ via an `EXIT` trap):
      `--lifecycle`. So until that phase leaves unchanged nodes alone, every deploying job still
      needs bench-ci's node guard
      ([#2676](https://github.com/p2pool-starter-stack/pithead/issues/2676)).
+   Before deploying, the wrapper also captures the prepared view-only Monero wallet cache and
+   its exact helper image in owner-only private scratch. The wallet must stop gracefully and
+   have no scan marker; an unprepared fixture refuses deployment. The snapshot binds the baseline
+   wallet identity and archive contents. It is separate from the normal safety backup and public
+   artifacts: product backup does not include named wallet volumes, and uninstall must still
+   prove those volumes are removed.
+   Bench CI stores the snapshot on the job filesystem and the wrapper durably arms an owner-only
+   restoration receipt before deployment. Failed restoration preserves the receipt and private
+   scratch; a lost job refuses another forward run. Standalone snapshots use `/var/tmp`.
 6. Restores the miner's original pool config and the baseline stack. Restore targets the directory
    the live stack actually ran from — read at preflight off the running container's
    `com.docker.compose.project.working_dir` label — which on a release box is the per-version bundle
@@ -430,6 +440,14 @@ via an `EXIT` trap):
    attached bridge, so the restore then runs the baseline's own `pithead down` first. Preflight
    reads the live install's directory from the dashboard's label, never from the e2e checkout's,
    because containers the restore left alone can still carry an older directory.
+   Before starting the baseline wallet, the wrapper imports the saved cache through an isolated,
+   unprivileged container with only the local wallet volume writable, then proves exact file
+   contents. After baseline restoration it repeats the original 1200-second Monero catch-up and
+   420-second authenticated dashboard/address gates. Before removing private archives it durably
+   records readiness; cleanup keeps the identity/content receipt so an interrupted cleanup can be
+   replayed. Only completed cleanup marks restoration verified. Failed or interrupted preservation
+   leaves the reservation held; generic stack health
+   cannot replace that proof. `--keep` does not capture or restore this fixture.
    How the baseline comes back depends on what it is. A release bundle gets `pithead apply` then
    `pithead up`: its images are versioned tags the branch never touched, so rebuilding them would be
    waste. A **source checkout** gets `pithead upgrade` instead, and the difference is not an
@@ -663,9 +681,12 @@ and `--list` prints it).
   `*_lan_access` switches). Each published node port is dialled from a network namespace on a veth
   to the host: from `198.51.100.2` the dial must fail, from `10.254.254.2` it must connect
   ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)). With the boot marker
-  still present, the row flushes the live rule, proves the non-private dial opens, then waits for
-  `pithead-lan.timer` to invalidate the marker and close each port within its check interval
-  ([#2846](https://github.com/p2pool-starter-stack/pithead/issues/2846)). `up` restores the nodes.
+  still present, the row stops `pithead-lan.timer` (waiting until the check service is inactive or failed, never while it is activating) so the flush
+  cannot race a legitimate marker removal, flushes the live rule, proves the marker is intact and
+  the non-private dial opens, then restarts the timer and waits, from that start, for it to
+  invalidate the marker and close each port within its check interval
+  ([#2846](https://github.com/p2pool-starter-stack/pithead/issues/2846),
+  [#3034](https://github.com/p2pool-starter-stack/pithead/issues/3034)). `up` restores the nodes.
   The row then strips the
   rule as a reboot does, checks that the non-private dial now connects, runs
   `pithead-lan-guard.service` before `pithead-egress.service` on the bench, verifies the live
@@ -721,7 +742,9 @@ For one representative config:
   The restore must also return every wallet, proxy, dashboard, RPC, and onion secret category
   exactly, the same per-category comparison a safety rollback makes.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
-  secrets; the dashboard reflects the new pool; then it's reverted.
+  secrets; the dashboard reflects the new pool; then it's reverted. An omitted
+  `p2pool.pool` means mini, so the alternate is main. Explicit main and nano baselines
+  switch to mini; an explicit mini baseline switches to main.
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
   stop `monerod` → `status` returns non-zero (node down) and the dashboard rejects workers
   (stops `xmrig-proxy`) → start `monerod` → workers readmitted → `status` → `0`.
@@ -916,6 +939,15 @@ raced it by up to ninety seconds. The claim survived because two of the four key
 assertion, `max_temp_c` and `watchdog_interval_min`, are on RigForge's restart-free fast path, where
 the window is too small to see. `DONATION` and `pools` take the full path; their config readback
 does not prove the rig has published a terminal outcome or that the dashboard has consumed it.
+
+For scalar round trips, both the forward change and the revert retain their exact change ID and
+wait for that history row to become terminal, each with the existing ninety-second bound. A
+terminal refusal without a change ID returns immediately; a missing ID cannot confirm success.
+Config convergence alone never confirms a successful revert. The unwind entry is cleared only when both
+config readback and the revert history report `applied`; `failed` or `rolled_back` stays red and
+keeps the original value on the cleanup ledger. If the revert row is still `accepted` or absent
+at the deadline, the control phase captures artifacts, restores the stack baseline and stops
+before sending another key or control edit. The abort-safe unwind retains the rig cleanup duty.
 
 The row is polled to a terminal status within a ninety-second observation budget.
 The result is the last history status whose transport and JSON decoding succeeded within that

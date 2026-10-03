@@ -81,6 +81,7 @@ drive_rootfs_build() { # <fixture-tar> <push-log>
         manifest_digest() { printf 'sha256:%064d\n' 4; }
         run() {
             if [[ "$*" == *os/build-image.sh ]]; then
+                printf '%s\n' "$*" >"$PUSH_LOG.build"
                 cp "$SOURCE_TAR" "$rootfs_tar"
             elif [ "$1 $2" = "docker push" ]; then
                 printf 'push=%s final=%s temporary=%s\n' "$3" \
@@ -108,6 +109,10 @@ assert_contains "the push starts with only a temporary digest handoff" "$(cat "$
     "final=no temporary=exact"
 assert_contains "a successful push atomically finalizes the digest handoff" "$(cat "$PUSH_LOG")" \
     "finalized=yes"
+# The five images exist only under the staging tag at stage 3; vX.Y.Z is made at promotion. Pinning from
+# vX.Y.Z here failed every real cut since #2241 (2026-09-21) at "could not resolve an immutable digest".
+assert_contains "the rootfs build pins the five images from the staging tag" "$(cat "$PUSH_LOG.build")" \
+    "PITHEAD_PIN_TAG=v2.0.0-rc.1"
 : >"$PUSH_LOG"
 PUSH_FAIL=1 drive_rootfs_build "$ROOTFS_GUARD/release.tar" "$PUSH_LOG" >/dev/null 2>&1
 assert_rc "a failed rootfs registry push fails the producer" "$?" "1"

@@ -180,6 +180,8 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-fork-rewind.sh" && domain_ran test-tari-fork-rewind.sh "$_d0" "$?" || domain_ran test-tari-fork-rewind.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-tor-port-validation.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-tor-port-validation.sh" && domain_ran test-tor-port-validation.sh "$_d0" "$?" || domain_ran test-tor-port-validation.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-chain.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-chain.sh" && domain_ran test-tari-chain.sh "$_d0" "$?" || domain_ran test-tari-chain.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-monero-chain.sh disable=SC2015
