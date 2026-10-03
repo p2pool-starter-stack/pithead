@@ -44,6 +44,8 @@ class Docker:
     def __init__(self, baseline):
         self.calls = []
         self.dropped_terms = 0
+        self.kills = 0
+        self.race_on_kill = 0  # the Nth TERM finds the wallet already exiting from an earlier one
         self.contents = archive()
         self.volume_labels = {
             "com.docker.compose.project": "pithead",
@@ -86,6 +88,12 @@ class Docker:
         elif args[:2] == ("image", "inspect"):
             value = json.dumps([{"Id": IMAGE}]).encode()
         elif args[0] == "kill":
+            self.kills += 1
+            if self.kills == self.race_on_kill:
+                self.item["State"]["Running"] = False
+                if kwargs.get("check", True):
+                    raise subprocess.CalledProcessError(1, ["docker", *args])
+                return subprocess.CompletedProcess(args, 1, b"")
             if self.dropped_terms > 0:  # TERM to a PID 1 that has no handler yet is discarded
                 self.dropped_terms -= 1
             else:
@@ -143,6 +151,15 @@ class FixtureTest(unittest.TestCase):
         kills = [call for call in self.docker.calls if call[0] == "kill"]
         self.assertEqual(len(kills), 3)
         self.assertTrue(all(call[1:3] == ("--signal", "TERM") for call in kills))
+        self.assertFalse(any(call[0] == "stop" for call in self.docker.calls))
+
+    def test_a_resend_racing_the_wallet_exit_is_not_a_capture_failure(self):
+        self.docker.dropped_terms = 1
+        self.docker.race_on_kill = 2
+        clock = iter(range(0, 1000, 5))
+        with patch.object(fixture.time, "monotonic", side_effect=lambda: next(clock)):
+            self.capture()
+        self.assertEqual(len([call for call in self.docker.calls if call[0] == "kill"]), 2)
         self.assertFalse(any(call[0] == "stop" for call in self.docker.calls))
 
     def test_capture_gives_up_without_a_forced_kill_and_dumps_the_wallet_log(self):

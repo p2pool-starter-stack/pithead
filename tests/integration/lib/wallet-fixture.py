@@ -26,8 +26,8 @@ IDENTITY_FIELDS = {
 
 def docker(*args, **kwargs):
     # Only fixed native Docker operations; snapshot image/mount arguments are validated below.
-    kwargs.setdefault("stderr", subprocess.DEVNULL)
-    return subprocess.run(["docker", *args], check=True, **kwargs)  # noqa: S603,S607
+    kwargs = {"stderr": subprocess.DEVNULL, "check": True, **kwargs}
+    return subprocess.run(["docker", *args], **kwargs)  # noqa: S603,S607
 
 
 def inspect(kind, name):
@@ -144,7 +144,7 @@ def stop_wallet(item):
             print(f"wallet did not stop on SIGTERM; last log lines:\n{tail}", file=sys.stderr)
             raise ValueError("wallet did not stop gracefully; no forced kill attempted")
         if running and now >= next_term:
-            docker("kill", "--signal", "TERM", item["Id"], stdout=subprocess.DEVNULL)
+            docker("kill", "--signal", "TERM", item["Id"], stdout=subprocess.DEVNULL, check=False)
             next_term = now + TERM_INTERVAL
         time.sleep(1)
 
