@@ -31,7 +31,7 @@ rx() {
     esac
 }
 
-# === A failed original control remains red, with its own one-shot record ===
+echo "== A failed original control remains red, with its own one-shot record =="
 before=$IT_FAIL
 assert_egress_dial_pair >"$TD/failed.log"
 observed=$IT_FAIL
@@ -59,7 +59,7 @@ else
     it_pass "diagnostic record excludes raw output and topology"
 fi
 
-# === A later successful request cannot overwrite the original failure ===
+echo "== A later successful request cannot overwrite the original failure =="
 PROBE_RC=0
 assert_egress_dial_pair >"$TD/passed.log"
 assert_eq "later success retains original failure evidence" "$(cat "$OUT_DIR/tor-egress-probes/probe-1.txt")" "$record"
@@ -68,7 +68,7 @@ assert_contains "success still passes the same control" "$(cat "$TD/passed.log")
     '✓ the same container still reaches clearnet THROUGH Tor'
 assert_eq "two controls issued exactly two SOCKS requests" "$SOCKS_CALLS" 2
 
-# === Target/transport ambiguity and artifact errors preserve original status ===
+echo "== Target/transport ambiguity and artifact errors preserve original status =="
 PROBE_RC=255
 OUT_DIR="$TD/not-a-directory"
 printf x >"$OUT_DIR"
@@ -91,7 +91,7 @@ assert_eq "missing artifact never converts failed proxy control to pass" "$obser
 assert_contains "handshake failure keeps original exit" "$(cat "$TD/unavailable-row.log")" 'exit=97'
 assert_eq "diagnostics never issue a replacement probe" "$SOCKS_CALLS" 4
 
-# === Exit classes do not reinterpret the original status ===
+echo "== Exit classes do not reinterpret the original status =="
 OUT_DIR="$TD/classes"
 while read -r PROBE_RC expected_class; do
     probe_rc=0
