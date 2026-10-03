@@ -83,13 +83,13 @@ _floor_state() {
 }
 _ssh() {
     case "$*" in
-        *os-update*)
-            echo x >>"$T/osupdate-calls"
-            echo "a migrating update to 99.0.0 failed its gate and fell back before its migration ran"
-            [ "$(wc -l <"$T/osupdate-calls")" -ne 4 ] || return 1
-            ;;
-        *.os-data-floor*) echo 1.0.0 ;;
-        *"floor is back to'"*) return 1 ;;
+    *os-update*)
+        echo x >>"$T/osupdate-calls"
+        echo "a migrating update to 99.0.0 failed its gate and fell back before its migration ran"
+        [ "$(wc -l <"$T/osupdate-calls")" -ne 4 ] || return 1
+        ;;
+    *.os-data-floor*) echo 1.0.0 ;;
+    *"floor is back to'"*) return 1 ;;
     esac
     return 0
 }
