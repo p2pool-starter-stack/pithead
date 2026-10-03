@@ -255,6 +255,10 @@ main() {
             [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
         done
     fi
+    # Subnet runs before lifecycle: its running-state battery asserts the Monero payout wallet is
+    # caught up, and lifecycle's uninstall removes wallet_data by design, so after lifecycle the
+    # wallet is mid-rescan (#3026). The phase restores the baseline subnet itself (down/up).
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
         run_lifecycle || lifecycle_ok=0
     fi
@@ -275,9 +279,6 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_TARI_STRANDED" = "1" ] && run_tari_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MONERO_STRANDED" = "1" ] && run_monero_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
-    # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
-    # baseline stack cleanly before the end-of-run restore.
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
 
     # An image gate always returns the exact old release and its quiesced writable state. Other runs
     # roll back only on failure, then put config.json back where it started. Drop the archive only
