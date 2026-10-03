@@ -167,8 +167,10 @@ control_prune_results() { # <control-dir>
     # backup kit's plaintext passphrase; remove it only after the download window, never while a
     # normal atomic rename can still be in flight.
     find "$dir" -maxdepth 1 -type f -name '.*.tmp' -mmin +"$window_min" -delete 2>/dev/null || true
-
-    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz.enc 2>/dev/null); do
+    # A listing that matches nothing makes ls exit 2. Inside the loop-list substitution that fires the
+    # inherited ERR trap ("pithead aborted unexpectedly (exit 2)", #3047) although the run carries on,
+    # so each listing swallows its own status.
+    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz.enc 2>/dev/null || true); do
         [ -f "$dir/$archive" ] || continue
         # Still inside its download window: untouchable, and does not count against the cap below.
         [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
@@ -184,7 +186,7 @@ control_prune_results() { # <control-dir>
     # evicted here while its archive is still protected above — a separate age-only find/-delete
     # had no way to see that pairing and could orphan an in-window archive's own status/passphrase.
     [ -n "$active_result" ] && [ -f "$dir/$active_result" ] && n=1
-    for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null); do
+    for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null || true); do
         case "$result" in os-update-state.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
         [ "$result" == "$active_result" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
@@ -198,7 +200,7 @@ control_prune_results() { # <control-dir>
     total=$(du -sk "$dir" 2>/dev/null | awk '{print $1 * 1024}')
     [ -n "$total" ] || total=0
     if [ "$total" -gt "$max_bytes" ]; then
-        for f in $(cd "$dir" 2>/dev/null && ls -1tr 2>/dev/null); do
+        for f in $(cd "$dir" 2>/dev/null && ls -1tr 2>/dev/null || true); do
             [ "$total" -le "$max_bytes" ] && break
             case "$f" in os-update-state.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
             [ "$f" == "$active_result" ] && continue

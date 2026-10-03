@@ -201,6 +201,18 @@ run_sourced "$SANDBOX" control_prune_results "$PRP" >/dev/null 2>&1
 [ ! -f "$PRP/results/$pair_id.json" ] && [ ! -f "$PRP/results/$pair_id.tar.gz.enc" ] &&
     ok "byte eviction removes an expired backup result and archive together" ||
     bad "byte eviction removes an expired backup result and archive together" "json: $([ -f "$PRP/results/$pair_id.json" ] && echo present || echo missing), archive: $([ -f "$PRP/results/$pair_id.tar.gz.enc" ] && echo present || echo missing)"
+
+# #3047: boot prunes a results/ dir with no archive or JSON in it. `ls` of an unmatched glob exits 2,
+# which inside the loop-list substitution fired the inherited ERR trap and logged "pithead aborted
+# unexpectedly (exit 2)" on a run that carried on. Run it under the production trap and options.
+PRE="$SANDBOX/ctrl3047"
+mkdir -p "$PRE/results"
+empty_err=$(bash -Eeuo pipefail -c 'cd "$1"; source "$2"; trap on_err ERR; control_prune_results "$3"' _ "$SANDBOX" "$STACK" "$PRE" 2>&1 >/dev/null)
+empty_rc=$?
+[ "$empty_rc" -eq 0 ] && [ -z "$empty_err" ] &&
+    ok "pruning an empty results/ neither fails nor trips the ERR trap (#3047)" ||
+    bad "pruning an empty results/ neither fails nor trips the ERR trap (#3047)" "rc=$empty_rc stderr=$empty_err"
+unset PRE empty_err empty_rc
 unset CONTROL_RESULTS_MAX_BYTES CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S
 unset CONTROL_BACKUP_DOWNLOAD_WINDOW_S
 unset -f backdate
