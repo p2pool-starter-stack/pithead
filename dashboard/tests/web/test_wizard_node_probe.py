@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import socket
 import threading
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -257,6 +258,85 @@ async def test_loopback_spellings_are_refused_before_a_probe(host):
 
 async def test_tor_firewall_policy_accepts_the_private_ranges_the_consumer_can_dial():
     assert await wizard_node_probe._resolved_address("10.20.30.40", 18081, True) == "10.20.30.40"
+
+
+@contextmanager
+def _fake_resolver(*addresses, error=None):
+    """Stand in for DNS: getaddrinfo answers with the given addresses, no network involved."""
+    loop = asyncio.get_running_loop()
+    original = loop.getaddrinfo
+
+    async def fake(host, port, type=None):  # noqa: A002 — matches asyncio's own signature
+        if error:
+            raise error
+        return [(0, 0, 0, "", (address, port)) for address in addresses]
+
+    loop.getaddrinfo = fake
+    try:
+        yield
+    finally:
+        loop.getaddrinfo = original
+
+
+async def test_a_name_resolving_only_to_a_private_ipv4_is_accepted():
+    with _fake_resolver("10.20.30.40"):
+        assert (
+            await wizard_node_probe._resolved_address("node.example", 18142, True) == "10.20.30.40"
+        )
+
+
+async def test_a_dual_stack_name_is_accepted_and_pins_its_private_ipv4():
+    """The AAAA answer beside a private A record used to reach the egress refusal outright."""
+    with _fake_resolver("10.20.30.40", "fd00::1"):
+        assert (
+            await wizard_node_probe._resolved_address("node.example", 18142, True) == "10.20.30.40"
+        )
+
+
+async def test_a_name_answering_only_over_ipv6_keeps_the_egress_refusal():
+    with _fake_resolver("fd00::1"):
+        failure = await wizard_node_probe._resolved_address("node.example", 18142, True)
+    assert failure[0] == "address"
+    assert "IPv4 ranges" in failure[1]
+
+
+async def test_a_name_resolving_to_a_public_address_keeps_the_egress_refusal():
+    with _fake_resolver("203.0.113.5"):
+        failure = await wizard_node_probe._resolved_address("node.example", 18142, True)
+    assert failure == (
+        "address",
+        "The Tor egress firewall lets mining containers dial remote nodes only on private "
+        "LAN or VPN IPv4 ranges. Use that node's private address.",
+    )
+
+
+async def test_a_name_resolving_to_a_mix_of_private_and_public_keeps_the_egress_refusal():
+    with _fake_resolver("10.20.30.40", "203.0.113.5"):
+        failure = await wizard_node_probe._resolved_address("node.example", 18142, True)
+    assert failure[0] == "address"
+
+
+async def test_an_unresolvable_name_keeps_the_dns_refusal():
+    with _fake_resolver(error=socket.gaierror("nodename nor servname provided")):
+        failure = await wizard_node_probe._resolved_address("node.example", 18142, True)
+    assert failure == ("dns", "The node name did not resolve to an address.")
+
+
+async def test_a_name_resolving_to_a_private_ipv4_is_pinned_into_the_rendered_candidate(
+    monkeypatch,
+):
+    monkeypatch.setattr(wizard_node_probe, "_monero_rpc", lambda *_args: (True, "ok", "rpc"))
+
+    async def zmq(*_args):
+        return True, "ok", "zmq"
+
+    monkeypatch.setattr(wizard_node_probe, "_monero_zmq", zmq)
+    with _fake_resolver("10.20.30.40"):
+        cfg = _candidate()
+        cfg["monero"]["remote"]["host"] = "node.example"
+        report = await wizard_node_probe.probe_remote_nodes(cfg)
+    assert report["ok"] is True
+    assert cfg["monero"]["remote"]["host"] == "10.20.30.40"
 
 
 @pytest.fixture
