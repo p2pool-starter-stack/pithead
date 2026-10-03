@@ -64,12 +64,14 @@ Contents:
 | Item | What it is for |
 |---|---|
 | **Fresh box** | Ubuntu Server 24.04, AVX2 CPU, 16 GB RAM, 600 GB SSD, nothing of Pithead on it. Section 1. |
-| **Upgrade box** | A machine already running the previous release, with both chains synced and the dashboard password set. Sections 2–12. |
-| **Appliance box** | An x86-64 UEFI PC with 16 GB RAM, ethernet, firmware settings you can change, and an internal disk you may erase. A second internal disk for the wrong-disk check, and a second PC whose disk may be erased, for the restore test. Section 13. |
+| **Upgrade box** | A machine already running the previous release, with both chains synced and the dashboard password set. Sections 2–11; it runs the candidate from 2.2 on. Its Monero node also serves as the test node for 13.15 (M16), opened to the LAN as in Config D. |
+| **Appliance box** | An x86-64 UEFI PC with 16 GB RAM, ethernet, firmware settings you can change (Secure Boot off), and an internal SSD or NVMe of **600 GB or more** that may be erased; a smaller disk cannot hold both chains ([the appliance guide](../appliance.md)). A second internal disk for the wrong-disk check. Section 13. |
+| **Restore PC** | A second x86-64 UEFI PC with Secure Boot off and a disk that may be erased, for the restore test in 13.14. |
 | **USB sticks** | One of **16 GB or larger** for the image (a smaller stick stops the first boot at an emergency console), contents expendable. A second stick of any size for the settings file in 13.23, so writing it does not erase the image. |
-| **Miner** | A separate machine running XMRig, or a RigForge loaner rig (never a production rig). Sections 4 and 14. |
-| **Laptop** | On the same network, with a normal browser and Tor Browser. |
-| **Phone** | For the narrow-screen check and Telegram. |
+| **Miners** | Two machines running XMRig, for section 4 (4.4 needs a second worker). Your own PCs are fine: nothing in section 4 changes them. |
+| **Rigs** | Two rig-class loaner machines (never a production rig, never someone's own PC), with Secure Boot off, for section 14. 14.1 **erases** the first one's internal disk; 14.3 runs the second from the stick. |
+| **Laptop** | On the same network, with a normal browser and Tor Browser. A Linux machine (this laptop or another) for writing the image in 13.1. |
+| **Phone** | For the narrow-screen check and Telegram, with Tor Browser (or Orbot) for S7. |
 | **QA wallets** | A Monero wallet used only for QA: its **primary** address (starts with `4`, 95 characters), one **subaddress** from it (starts with `8`), and its private view key. The primary address of a second Monero QA wallet, for the payout-change step. A Tari **mainnet** QA wallet: its address, private view key and public spend key. Payouts go here, so never use a real person's or a donation address. |
 | **Telegram test bot** | A bot made with @BotFather, its token, and the chat id of a test chat. See [Telegram](../telegram.md). |
 | **Release artifacts** | The candidate's full commit SHA, the previous release tag, and for the appliance: the candidate release `.img.xz` with its `.sha256`, a debug image of the candidate, a debug-variant `.raucb` with a higher version, the deliberately broken `.raucb` M9 describes (also debug-variant, with a version above the good one), and the bench SSH key for debug images, kept in the private handoff ([appliance-release.md](appliance-release.md)). |
@@ -576,8 +578,9 @@ Run on the upgrade box unless stated. The steps are destructive; run them in thi
 ## 12. Upgrade from the dashboard
 
 Needs the published release, so do it during [After publishing](#after-publishing): 12.1 and 12.2
-on a DIY box that runs the previous release with `dashboard.control.enabled: true`, 12.3 on an
-appliance that runs the previous release.
+on a DIY box that still runs the previous release with `dashboard.control.enabled: true` (the
+upgrade box no longer does after 2.2; after 11.7, install the previous release's bundle on the
+fresh box), 12.3 on an appliance that runs the previous release.
 
 - [ ] **12.1 Badge.** Expect: the header shows `New release vX.Y.Z available` linking to the
   release, and an **Upgrade to vX.Y.Z** button.
@@ -606,7 +609,7 @@ way. Everything else runs on the release
 image. The dashboard's own update path checks for
 the latest *published* release, so it is tested after publishing, in 12.3.
 
-- [ ] **13.1 Verify and flash (M1).** Do:
+- [ ] **13.1 Verify and flash (M1).** Do, on a Linux machine:
 
   ```bash
   sha256sum -c pithead-os-vX.Y.Z.img.xz.sha256
@@ -671,15 +674,16 @@ the latest *published* release, so it is tested after publishing, in 12.3.
   the time. In **Backup**, click **Back up now** and save both downloads: the archive and its
   emergency kit. Expect: the dashboard disconnects briefly and comes back.
 - [ ] **13.14 Restore (M15, second half).** Do: power off the appliance box, so two machines
-  never run the same identity at once. Boot the stick on the second PC (not this box: later steps
+  never run the same identity at once. Boot the stick on the restore PC (not this box: later steps
   need its chain), and on the setup page choose **Restoring an existing Pithead? Upload its backup
-  instead.** Choose the second PC's disk (it is erased) and type its name as the page asks. Enter
+  instead.** Choose the restore PC's disk (it is erased) and type its name as the page asks. Enter
   a wrong passphrase first, then the right one, and follow the page to the end. Expect: the wrong
   passphrase is rejected with the reason and the form stays open; with the right one the machine
-  provisions itself, and its payout address and onion address match your notes. Then power the second PC
+  provisions itself, and its payout address and onion address match your notes. Then power the restore PC
   off and the appliance box back on.
 - [ ] **13.15 Settings after setup (M16).** Do: follow M16: a benign energy change, then a node
-  endpoint change that needs `APPLY`. Expect: as M16 describes, and the page reconnects by itself
+  endpoint change that needs `APPLY`. For the test node, use the upgrade box's Monero node opened
+  to the LAN as in Config D, with the RPC login from that box's `config.json`. Expect: as M16 describes, and the page reconnects by itself
   after the containers restart.
 - [ ] **13.16 Set up again.** Do: choose **Set up again** in the boot menu. Expect: the setup page
   opens with the saved answers filled in, secrets left blank; finishing it keeps the chains.
@@ -707,8 +711,9 @@ the latest *published* release, so it is tested after publishing, in 12.3.
   preview, type `APPLY` and confirm; then set it back to `local` the same way. Expect: the preview
   marks each change ⚠; with Tari off, mining continues; switching back resumes the Tari chain it
   already had. (The remote Monero node change is 13.15.)
-- [ ] **13.23 Settings by USB stick.** Do: on the laptop, format the second stick as FAT32 and
-  write to it only a
+- [ ] **13.23 Settings by USB stick.** Do: on the laptop, give the second stick one partition
+  formatted FAT32 (not exFAT, and not FAT written across the whole device without a partition:
+  the appliance reads neither) and write to it only a
   `pithead-config.json` with `{"p2pool": {"pool": "nano"}}`. Insert it into the running
   appliance. Expect: nothing happens until a reboot. Reboot with a monitor attached. Expect: the
   console prints the pool change, old and new value (the old one may read `(unset)` while the
@@ -719,7 +724,8 @@ the latest *published* release, so it is tested after publishing, in 12.3.
 
 ## 14. RigForge rig
 
-Run on a loaner rig, with the appliance from section 13 as the coordinator. These are the
+Run on the two loaner rigs from "What you need", with the appliance from section 13 as the
+coordinator. 14.1 erases the first rig's internal disk. These are the
 hands-on rows M11–M13 in [the rig battery](#the-rig-role-manual-battery-m11m13).
 
 - [ ] **14.1 Install a rig (M11).** Do: boot the stick on the rig, choose **RigForge**, accept the
