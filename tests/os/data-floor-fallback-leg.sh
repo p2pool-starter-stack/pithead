@@ -93,8 +93,7 @@ _floor_fallback_wait() {
 # invoked (#3049): the old shape mapped it to a synthetic rc 99 and reported "os-update failed".
 # Prints the evidence and returns 1; the caller turns that into its own row.
 _floor_stage() {
-    local rc
-    STAGE_ERR="${STAGE_ERR:-$SERIAL.stage-error}"
+    local rc STAGE_ERR="$SERIAL.stage-error"
     : >"$STAGE_ERR"
     _stage_bundle "$1"
     rc=$?
@@ -171,13 +170,12 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     fi
     # Issue step 3's last clause: a bundle at the restored floor installs again. Before the restore
     # this same install was below a $vfail floor — the negative case below proves that refusal.
-    if ! _floor_stage "$good_bundle"; then
+    _floor_stage "$good_bundle" || {
         bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
-        rc=1
-    else
-        out=$(_floor_os_update)
-        rc=$?
-    fi
+        return
+    }
+    out=$(_floor_os_update)
+    rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "a bundle at the restored floor ($floor0) installs again through os-update"
     else
