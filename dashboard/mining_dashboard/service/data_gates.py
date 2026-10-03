@@ -1,5 +1,6 @@
 import logging
 import os
+import stat
 
 from mining_dashboard.config.config import DISK_PATH
 
@@ -11,7 +12,8 @@ logger = logging.getLogger("DataService")
 # `apply` when a required chain moves to another node (#2763). Either way the snapshot's #35
 # sync-gate latch was earned on other chains, so while this file exists the dashboard ignores
 # the persisted release and re-derives it from the chains it now dials. Removed once the gate
-# releases here.
+# releases here. A typed Tari-only marker retains the earned Monero-only policy; a full
+# reset, including every restore marker, takes precedence.
 SYNC_GATE_RESET_PATH = os.path.join(DISK_PATH, "sync-gate-reset")
 
 
@@ -42,6 +44,27 @@ def chain_synced(sync):
 
 
 class DataGateMixin:
+    def _restore_sync_gate(self):
+        """Only an earned release may make a Tari-only reset non-blocking."""
+        self.sync_gate_monero_only = bool(self.latest_data.get("sync_gate_monero_only", False))
+        marker = _runtime().SYNC_GATE_RESET_PATH
+        if not os.path.exists(marker):
+            return
+        try:
+            fd = os.open(marker, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as stream:
+                tari_only = stat.S_ISREG(os.fstat(stream.fileno()).st_mode) and (
+                    stream.read(32) == b"tari-only\n"
+                )
+        except OSError:
+            tari_only = False
+        self.sync_gate_monero_only = tari_only and (
+            self.miner_released or self.sync_gate_monero_only
+        )
+        self.miner_released = False
+        self.latest_data["miner_released"] = False
+        self.latest_data["sync_gate_monero_only"] = self.sync_gate_monero_only
+
     async def _apply_worker_rejection(self, monero_down):
         """
         Reject workers (stop the proxy) when monerod is DOWN so miners fail over to their

@@ -115,6 +115,8 @@ and appliance runs require a reserved host; local selftests do not start a VM.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata and failure snapshots; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.
+The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to prove
+continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
 The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.py`
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.

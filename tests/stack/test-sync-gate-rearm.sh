@@ -30,9 +30,27 @@ rm -f "$RG_MARK"
 assert_eq "a new tari remote host re-arms the gate" "$(rg_apply '"mode":"local"' ',"mode":"remote","remote":{"host":"tari2.example.com"}' mini)" "rc=0 marked"
 rm -f "$RG_MARK"
 assert_eq "tari remote -> local re-arms the gate" "$(rg_apply '"mode":"local"' '' mini)" "rc=0 marked"
+assert_eq "Tari-only reset is typed" "$(cat "$RG_MARK")" tari-only
+rm -f "$RG_MARK"
+assert_eq "Tari off keeps a scoped reset" "$(rg_apply '"mode":"local"' ',"mode":"off"' mini)" "rc=0 marked"
+assert_eq "Tari off uses a Tari-only reset" "$(cat "$RG_MARK")" tari-only
+rm -f "$RG_MARK"
+assert_eq "Tari enable succeeds" "$(rg_apply '"mode":"local"' '' mini)" "rc=0 marked"
+assert_eq "Tari enable uses a Tari-only reset" "$(cat "$RG_MARK")" tari-only
+# A pending full reset is never weakened by a later Tari-only change.
+: >"$RG_MARK"
+assert_eq "pending full reset survives a Tari-only apply" "$(rg_apply '"mode":"local"' ',"mode":"remote","remote":{"host":"tari.example.com"}' mini)" "rc=0 marked"
+assert_eq "pending full reset stays full" "$(cat "$RG_MARK")" ""
+rm -f "$RG_MARK"
+assert_eq "simultaneous changes re-arm" "$(rg_apply '"mode":"remote","remote":{"host":"node.example"}' '' mini)" "rc=0 marked"
+assert_eq "Monero reset wins over Tari" "$(cat "$RG_MARK")" ""
 rm -f "$RG_MARK"
 # A recreate that failed after the commit is retried on an unchanged .env: the retry marker carries
 # the re-arm, so the retry still plants it; a retry with nothing to re-arm plants nothing.
+printf 'rearm-tari-only\n' >"$V/.env.apply-incomplete"
+assert_eq "a retried Tari recreate succeeds" "$(rg_apply '"mode":"remote","remote":{"host":"node.example"}' '' mini)" "rc=0 marked"
+assert_eq "retry preserves Tari-only scope" "$(cat "$RG_MARK")" tari-only
+rm -f "$RG_MARK"
 printf 'rearm-sync-gate\n' >"$V/.env.apply-incomplete"
 assert_eq "a retried recreate keeps the re-arm" "$(rg_apply '"mode":"local"' '' mini)" "rc=0 marked"
 assert_eq "the successful retry clears its retry marker" "$([ -e "$V/.env.apply-incomplete" ] && echo kept || echo none)" none
@@ -53,3 +71,7 @@ assert_eq "a directory at the marker path fails the apply" "$(rg_apply '"mode":"
 assert_eq "the failed re-arm is kept for the retry" "$(cat "$V/.env.apply-incomplete" 2>/dev/null)" rearm-sync-gate
 assert_eq "the planted directory is untouched" "$(ls "$RG_MARK")" keep
 rm -rf "$RG_MARK" "$V/.env.apply-incomplete"
+
+for RG_KEY in TARI_MODE TARI_GRPC_ADDRESS; do
+    assert_contains "Tari preview explains continued Monero mining ($RG_KEY)" "$(run_sourced "$SANDBOX" describe_change "$RG_KEY" off local)" "Monero mining continues; merge-mining starts when Tari has synced"
+done
