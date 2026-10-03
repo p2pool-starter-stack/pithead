@@ -109,6 +109,8 @@ _RIGFORGE_BLOCK = {
         "status": "rolled_back",
         "reason": "miner did not return to a live hashrate; rolled back and live",
     },
+    # Recent control outcomes, newest last; the producer serves an empty list when none is recorded.
+    "control_history": [],
 }
 
 
