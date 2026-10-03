@@ -11,59 +11,38 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
-### Removed
+## [2.0.0] - 2026-10-03
 
-- **Release images no longer accept the `ssh.*` configuration options.** SSH is now a debug-build
-  property; a carried 1.x `ssh.enabled: true` setting is ignored and reported rather than blocking
-  an update.
+### Upgrading from 1.20.x
 
-- **Telegram is a read-only notification channel.** The bot still answers `/status`, `/info`,
-  `/hashrate`, `/workers`, `/sync`, `/system`, `/pool`, `/xvb`, `/earnings`, `/luck` and `/help`,
-  and still sends every event alert and the daily summary. Its two write surfaces are gone
-  ([#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076)):
-  - The `/restart` and `/apply` control commands ([#338](https://github.com/p2pool-starter-stack/pithead/issues/338)),
-    with the `telegram.control` config block (`enabled`, `allowed_ids`, `confirm_timeout`).
-  - The Telegram approval tap on a sensitive Configuration-view commit ([#911](https://github.com/p2pool-starter-stack/pithead/issues/911)).
-    Changing a payout wallet, a node endpoint or any other sensitive setting no longer sends a
-    prompt to Telegram and no longer waits for anyone to tap a button.
+- Take `./pithead backup --with-chains` before upgrading.
+- Leave free space for the Tari migration: both database copies occupy the data volume at its
+  peak. The upgrade requires the current `data.mdb` size plus 5 GiB free.
+- Tari reads "loading" for about 2.5 hours during its first-start migration. Do not stop, restart
+  or `apply` the stack until the migration finishes.
+- If `tari.mode` is `remote`, upgrade the serving node to v6.0.1-pre.0 before this stack.
+- The node and wallet database migrations are one-way. There is no way back to 1.x Tari.
 
-  `apply` drops `telegram.control` from an existing `config.json` on the next run, so no manual
-  edit is needed. If you had the control commands enabled, it says so once as it removes the key.
+Pithead 2.0.0 is the first release of **Pithead OS**, the appliance: a bootable image that
+installs itself on a machine you dedicate to it, is set up from a browser, and updates as one
+signed image that goes back to the previous version on its own when an update does not boot.
+The Docker-Compose install (the DIY path) ships in the same release, with the same stack, the
+same dashboard and the same configuration. Entries below apply to both channels unless they say
+otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
-### Added
+### Tari / P2Pool
 
-- **The XMR Network card now says whether monerod is at the tip with peers.** It shows the outgoing and
-  incoming peer counts and the age of the last height change, and goes red with the numbers after 10
-  minutes with no outgoing peers or 30 minutes with no new height. `./pithead doctor` and `status`
-  name the same condition, the monerod container reports `unhealthy` after 10 minutes with no outgoing
-  peers, and each condition sends one alert through the `node_down` toggle. Nothing is restarted for
-  you ([#2499](https://github.com/p2pool-starter-stack/pithead/issues/2499)).
-
-- **The dashboard onion's client key without a shell.** With Tor client authorization on — the
-  default, and mandatory whenever the config editor is on — a published `.onion` does not answer a
-  browser that has no client key, and the key was printed by exactly one thing: `pithead
-  onion-client-key`, on a host shell. An appliance has none, so turning the onion on there produced
-  an address that was published, shown in the dashboard header, and impossible to open, under a
-  note naming a command the reader could not run
-  ([#1882](https://github.com/p2pool-starter-stack/pithead/issues/1882)). The header's
-  client-authorization note now carries a **Show client key** button wherever the config editor is
-  on. The host answers once — both Tor client forms — and wipes its own copy on the same timer the
-  backup kit uses; every reveal is recorded in the config-change audit log. The key is still not in
-  the dashboard container's environment
-  ([#1880](https://github.com/p2pool-starter-stack/pithead/issues/1880) stands): the container
-  asks, the host decides, and the answer crosses once through the read-only results spool.
-
-### Changed
-
-- **Tari 6.0.0 and P2Pool 4.18.1, upgraded together
-  ([#1129](https://github.com/p2pool-starter-stack/pithead/issues/1129)).** Tari 6.0.0 is a hard
-  fork that activates at mainnet block **350,000**; a node on an older version forks off the
+- **Tari v6.0.1-pre.0 and P2Pool 4.18.1, upgraded together
+  ([#1129](https://github.com/p2pool-starter-stack/pithead/issues/1129)).** The Tari 6.0 hard
+  fork activates at mainnet block **350,000**; a node on an older version forks off the
   network at that height. P2Pool 4.18.1 changes how it sends Tari merge-mined work and requires a
   Tari node on 6.0.0 or newer, so the two move as one pair. The node and console wallet images now
   come from `ghcr.io/tari-project`, pinned by digest to the `v6.0.1-pre.0-mainnet` indexes: a
-  6.0.0 node rejects canonical block 350,008 as below target difficulty and stays on a dead fork,
-  and 6.0.1-pre.0 carries the upstream fix
-  ([#2604](https://github.com/p2pool-starter-stack/pithead/issues/2604)).
+  6.0.0 node on a database migrated from 5.3.1 rejects canonical block 350,008 as below target
+  difficulty and stays on a dead fork, and 6.0.1-pre.0 carries the upstream fix
+  ([#2604](https://github.com/p2pool-starter-stack/pithead/issues/2604),
+  [tari#8046](https://github.com/tari-project/tari/pull/8046)). Pre-2.0.0 installs are off the
+  canonical chain until they upgrade.
   - **The first start migrates the Tari database, and there is no way back.** The node runs a
     one-time migration in two phases: a JMT v1 → v2 rebuild
     (`[MIGRATIONS] Blockchain database is at v6`, then `v6: Starting JMT v1 → v2 rebuild`, ending at
@@ -101,10 +80,107 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
     (a mined output that has not matured yet), so a payout is still recorded when it is mined.
 
+### Added
+
+- **The XMR Network card now says whether monerod is at the tip with peers.** It shows the outgoing and
+  incoming peer counts and the age of the last height change, and goes red with the numbers after 10
+  minutes with no outgoing peers or 30 minutes with no new height. `./pithead doctor` and `status`
+  name the same condition, the monerod container reports `unhealthy` after 10 minutes with no outgoing
+  peers, and each condition sends one alert through the `node_down` toggle. Nothing is restarted for
+  you ([#2499](https://github.com/p2pool-starter-stack/pithead/issues/2499)).
+
+- **A saturated Tor circuit history is reported, and `tor-recover` can reset it while Monero stays
+  synchronized ([#3052](https://github.com/p2pool-starter-stack/pithead/issues/3052)).** Tor can
+  finish bootstrapping with its circuit-build-time history full and still fail every clearnet
+  request; a NEWNYM refresh does not clear it. With `tor.auto_heal` on, when a refresh is
+  unconfirmed or does not bring egress back, the dashboard reads Tor's circuit-history state, logs a
+  saturated history on each round and sends one alert per outage naming `./pithead tor-recover`,
+  retrying until a channel delivers it. `./pithead doctor` reports the same condition as a FAIL,
+  which the Tor section of Service Diagnostics shows after a health check. `tor-recover check` and
+  `apply` now also accept two failed heal rounds from the same outage at least 15 minutes apart,
+  with both clearnet probes still failing through Tor, so a synchronized Monero node no longer
+  blocks the reset. Nothing deletes Tor state on its own; the reset stays an operator command.
+
+- **The dashboard onion's client key without a shell.** With Tor client authorization on — the
+  default, and mandatory whenever the config editor is on — a published `.onion` does not answer a
+  browser that has no client key, and the key was printed by exactly one thing: `pithead
+  onion-client-key`, on a host shell. An appliance has none, so turning the onion on there produced
+  an address that was published, shown in the dashboard header, and impossible to open, under a
+  note naming a command the reader could not run
+  ([#1882](https://github.com/p2pool-starter-stack/pithead/issues/1882)). The header's
+  client-authorization note now carries a **Show client key** button wherever the config editor is
+  on. The host answers once — both Tor client forms — and wipes its own copy on the same timer the
+  backup kit uses; every reveal is recorded in the config-change audit log. The key is still not in
+  the dashboard container's environment
+  ([#1880](https://github.com/p2pool-starter-stack/pithead/issues/1880) stands): the container
+  asks, the host decides, and the answer crosses once through the read-only results spool.
+
+- **Per-worker authentication reaches the dashboard's read probes**
+  ([#2349](https://github.com/p2pool-starter-stack/pithead/issues/2349),
+  [#1950](https://github.com/p2pool-starter-stack/pithead/issues/1950),
+  [#2415](https://github.com/p2pool-starter-stack/pithead/pull/2415)). An explicit
+  `workers.list[].api_token` supplies a read-only probe credential bound to that worker's host and
+  API port. RigForge's write-capable `workers.list[].token` stays on the host; the dashboard receives
+  only its separately derived read bearer. Missing or stale credentials fail closed, and the
+  editor's config copy keeps both fields masked.
+
+- **Pithead OS, the appliance.** Verify `pithead-os-v2.0.0.img.xz`, write its decompressed image
+  to a USB stick, and boot the machine from it: it installs itself and serves a one-page setup
+  wizard to your browser. The page asks
+  what the machine is — a full coordinator, a coordinator that also mines with its own CPU, or a
+  mining rig ([#797](https://github.com/p2pool-starter-stack/pithead/issues/797)) — which disk
+  to use, and the same questions the DIY installer asks. A machine without a monitor can be set up
+  from a file dropped on the stick ([#924](https://github.com/p2pool-starter-stack/pithead/issues/924)), and settings can be changed later the same way; a
+  stick rewrite changes only the settings it names ([#910](https://github.com/p2pool-starter-stack/pithead/issues/910), [#965](https://github.com/p2pool-starter-stack/pithead/issues/965)).
+- **Updates that fall back on their own.** The appliance keeps two copies of the system and writes
+  an update to the idle one. It reboots into the new version, checks that the stack came up, and
+  returns to the previous copy by itself when it did not. Updates are signed with a release key
+  the machine verifies before installing; a release build refuses to run without an explicit key.
+  An update is checked for, downloaded and installed from the dashboard's OS-update control
+  ([#976](https://github.com/p2pool-starter-stack/pithead/issues/976)), or applied from a downloaded bundle with `pithead os-update`; the chain services start only
+  after the new slot has committed, so a forward-only database migration never runs on a slot that
+  might be rolled back.
+- **Backups and restores.** `pithead backup` exports an encrypted archive ([#908](https://github.com/p2pool-starter-stack/pithead/issues/908)), and the setup
+  wizard can restore one on a fresh machine ([#909](https://github.com/p2pool-starter-stack/pithead/issues/909)). A restored machine keeps its own identity:
+  the machine-id and SSH host keys live on the data partition ([#894](https://github.com/p2pool-starter-stack/pithead/issues/894), [#895](https://github.com/p2pool-starter-stack/pithead/issues/895)), and the
+  journal follows the machine rather than the boot ([#1659](https://github.com/p2pool-starter-stack/pithead/issues/1659)).
+- **Two resets instead of an uninstall.** A config reset clears the settings and reopens the setup
+  wizard, keeping the synced chain, the wallet and the Tor keys; a factory reset wipes the data
+  partition. A data partition damaged by a power cut is repaired rather than erased ([#1062](https://github.com/p2pool-starter-stack/pithead/issues/1062)),
+  and a container store left inconsistent by an interrupted write is rebuilt on the next boot
+  ([#1029](https://github.com/p2pool-starter-stack/pithead/issues/1029)).
+- **Host tuning baked into the image.** Hugepages are reserved at boot in proportion to the fitted
+  RAM ([#977](https://github.com/p2pool-starter-stack/pithead/issues/977)) up to a declared ceiling that, on a single-socket machine, neither the host nor the miner unit
+  can grow past ([#1103](https://github.com/p2pool-starter-stack/pithead/issues/1103), [#1724](https://github.com/p2pool-starter-stack/pithead/issues/1724)); the CPU governor is set to performance; a hardware watchdog resets a
+  box whose kernel or init has hung, with nobody present. The Tor-only egress firewall is enforced under the
+  appliance's own container engine, and IPv6 fails closed. The mining-rig role ships RigForge
+  1.18.0 code at commit
+  `f5ff0479473ad5fb2c0605a1219dd3721517a171`, before its release tag
+  ([#1826](https://github.com/p2pool-starter-stack/pithead/issues/1826),
+  [#3029](https://github.com/p2pool-starter-stack/pithead/issues/3029)).
+- **Service Diagnostics in the dashboard ([#913](https://github.com/p2pool-starter-stack/pithead/issues/913), [#943](https://github.com/p2pool-starter-stack/pithead/issues/943)):** the host doctor's detail and a
+  bounded, redacted tail of each service's log, without a shell.
+- **The dashboard says where a rig's running configuration came from ([#1345](https://github.com/p2pool-starter-stack/pithead/issues/1345)),** persists the
+  revision each rig serves ([#1551](https://github.com/p2pool-starter-stack/pithead/issues/1551)), detects a rig running something other than what was
+  applied ([#1367](https://github.com/p2pool-starter-stack/pithead/issues/1367)), and records a rig configuration change nothing else had recorded
+  ([#1558](https://github.com/p2pool-starter-stack/pithead/issues/1558)). Worker Inspect is prefilled from the rig's own configuration ([#1235](https://github.com/p2pool-starter-stack/pithead/issues/1235)), and each
+  node card says whether that node runs locally or remotely ([#1040](https://github.com/p2pool-starter-stack/pithead/issues/1040)). The XvB decision table is
+  rebuilt as per-tier blocks ([#1316](https://github.com/p2pool-starter-stack/pithead/issues/1316)).
+- **The boot menu says what each entry boots, and offers "Set up again" ([#1318](https://github.com/p2pool-starter-stack/pithead/issues/1318), [#1838](https://github.com/p2pool-starter-stack/pithead/issues/1838)).**
+  A set-up-again boot opens the setup page beside the saved role; the page opens by naming what the
+  machine already is, with its rig data kept and offered back.
+- **An appliance rig mints its own control token and shows it once ([#1836](https://github.com/p2pool-starter-stack/pithead/issues/1836)),** beside the
+  address to adopt it at; it serves the sister feed and pins control to its coordinator.
+- **`pithead doctor --json` and `pithead support-bundle`:** a machine-readable doctor report, and a
+  redacted bundle for a support request that masks wallet and onion addresses as well as
+  credentials ([#1585](https://github.com/p2pool-starter-stack/pithead/issues/1585)).
+
+### Changed
+
 - **The Configuration view works the same, minus the Telegram round-trip.** A disruptive change
-  still asks you to type `APPLY`. (A payout change asked for the last characters of the new address
-  as well; the perimeter fix below made payout addresses host-only again, so that prompt no longer
-  appears.) The action button reads
+  still asks you to type `APPLY`. A payout change also asks for the last characters of the new
+  address, after the host validates its checksum and network. Future rewards go to the new
+  address. The action button reads
   "Confirm & apply" in every case — there is no longer an "Approve & apply" variant. A sensitive
   commit no longer depends on Telegram being set up at all: on a stack that never configured the
   bot, these changes used to fail with an approval-unavailable error and now apply normally.
@@ -112,89 +188,54 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   field had exactly one writer, the Telegram verifier, so sensitive commits now record as `commit`
   or `commit-confirmed` against the signed-in dashboard user. Existing log rows are unchanged.
 
-### Security
+- **Remote nodes on a dual-stack LAN must be entered by their private IPv4 address**
+  ([#2351](https://github.com/p2pool-starter-stack/pithead/issues/2351)). With the default Tor
+  egress firewall, the setup wizard refuses a dual-stack hostname and names the private-address
+  remedy.
 
-- **The Tor-only egress firewall now survives a DIY host reboot.** A reboot emptied `DOCKER-USER`
-  while the containers restarted on their own, so a DIY host mined without the fail-closed rules
-  until someone ran `./pithead up`. `up`, `apply` and `upgrade` now install
-  `pithead-egress.service`, ordered before `docker.service`, which restores the rules before any
-  container starts; `doctor` warns when it is not enabled
-  ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
-- **The Tari node no longer runs its own Tor
-  ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)).** The upstream
-  `minotari_node` image is built with Tari's `libtor` feature, and `use_libtor` defaults to on.
-  Under the `tor` transport the node therefore started an in-process Tor, gave it its control port
-  and hidden service, and let it dial Tor relays straight from the tari container rather than
-  through the stack's `tor` container. Tari's source shows the same default in the released 5.3.1
-  pin. The egress firewall drops those dials. A tier-4 run found one still open after a fault test
-  briefly removed and reinstalled the rules; the firewall's established-flow accept kept it
-  ([#2672](https://github.com/p2pool-starter-stack/pithead/issues/2672)). With the firewall off,
-  nothing stopped them. Tari now uses the `socks5` transport through the stack's Tor SOCKS port
-  with `use_libtor = false`. Onion and `/ip4` peers are both dialled through Tor, and inbound peers
-  reach the node through the stack Tor's Tari onion, which now has a listener behind it. A node
-  upgraded from the `tor` transport keeps its old onion in `config/base_node_id.json` under the
-  Tari data dir, next to the stack's one. Nothing serves the old onion any more. That is harmless:
-  peers still reach the node through the stack's onion.
+- **The worker list keeps RigForge status chips short**
+  ([#3031](https://github.com/p2pool-starter-stack/pithead/issues/3031)). Power and temperature
+  stay in the list alongside warnings; version, mainboard, HugePages, a healthy governor, tune
+  target and autotune details move to Worker Inspect, which keeps every existing row.
 
-- **The LAN switches now enforce LAN sources**
-  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)).
-  `monero.rpc_lan_access`, `monero.zmq_lan_access` and `tari.grpc_lan_access` accept connections
-  only from loopback, private and CGNAT (`100.64.0.0/10`) addresses; before, their ports took any
-  source that could route to the host. See
-  [LAN-only sources](docs/configuration.md#lan-only-sources).
+- **Every mutating `pithead` verb runs behind one mutation lock ([#1342](https://github.com/p2pool-starter-stack/pithead/issues/1342), [#1482](https://github.com/p2pool-starter-stack/pithead/issues/1482)).** Setup,
+  apply, upgrade, the resets, rotate-secrets and the OS-update verbs serialise; a second invocation
+  that arrives while one holds the lock is refused and told why, instead of two writers racing on
+  the same files.
+- **The Tari disk budget is 200 GiB ([#1011](https://github.com/p2pool-starter-stack/pithead/issues/1011)),** which raises the free space setup and
+  `doctor` ask for.
+- **The appliance builds docker-compose and cosign from source in its rootfs** instead of
+  downloading release binaries.
+- **A failed setup keeps the machine's existing configuration ([#1059](https://github.com/p2pool-starter-stack/pithead/issues/1059))** rather than discarding
+  it, and the CLI degrades instead of aborting when the optional dashboard auth key is absent
+  ([#1246](https://github.com/p2pool-starter-stack/pithead/issues/1246)).
+- **The setup wizard opens on Pithead + RigForge, and the miner select is the switch ([#1830](https://github.com/p2pool-starter-stack/pithead/issues/1830)).**
+- **The dashboard's Configuration view never shows `ssh.*` and never changes it ([#1850](https://github.com/p2pool-starter-stack/pithead/issues/1850)),** and
+  its Advanced pane says what it does with a key.
 
-- **The LAN-only source rule now survives a DIY host reboot.** A reboot cleared the rule while
-  Docker restarted the node containers still published on every interface, so `18081`, `18083`
-  and `18142` took any source until `./pithead up`. `pithead-lan-guard.service`, ordered before
-  `docker.service`, now restores the rule. The node containers that publish a LAN port run with
-  restart policy `no`, and `pithead-lan-hold.service` starts them only after the guard succeeds, so
-  a guard that fails at boot leaves them stopped instead of exposed. While the rule is missing, the
-  nodes refuse to start with a LAN bind however they are started (`docker start`, a compose run
-  outside pithead), and `./pithead restart` and the Tor auto-heal do not try. Docker no longer restarts a
-  crashed `monerod` or `tari` on such a host; `./pithead doctor` and a `container_unhealthy` alert
-  name the node and the reason, and `./pithead up` recovers. The first `up` after upgrading
-  recreates those containers once. If either unit cannot be installed, the ports stay on `127.0.0.1`
-  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)).
+### Removed
 
-- **The dashboard alerts when the Tor-only egress firewall is missing.** The dashboard took the
-  firewall's state from `network.tor_egress_firewall`, so it reported "blocked by the egress
-  firewall" over an open egress. `pithead-egress.timer` now runs `pithead egress-status` every two
-  minutes and writes the host's live verdict for the dashboard. A missing firewall turns the egress
-  badge and panel into a warning and sends one `clearnet_exposed` alert, with one more when the
-  rules are back. A missing or stale verdict reads as unverified, not as green
-  ([#2599](https://github.com/p2pool-starter-stack/pithead/issues/2599)).
+- **Release images no longer accept the `ssh.*` configuration options.** SSH is now a debug-build
+  property; a carried 1.x `ssh.enabled: true` setting is ignored and reported rather than blocking
+  an update.
 
-- **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
-  Between
-  [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a
-  configuration key that was on neither the freely-editable nor the confirm-gated allowlist did not
-  fail closed: it asked for the approval tier instead, so that every configuration leaf had some
-  route from a machine with no host shell. That tier's second identity was the Telegram tap, which
-  [#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076) removed — leaving the typed
-  confirmation alone in it. The dashboard container writes its own request spool, so it could
-  supply that confirmation itself. Payout addresses, view keys, node and stratum credentials, the
-  Tor egress firewall, onion exposure, webhook and Healthchecks URLs and the control channel's own
-  switch were all reachable that way. **The approval tier is now a short named list**, so a key
-  nobody enumerated is refused outright again, and the perimeter [`SECURITY.md`](SECURITY.md)
-  describes holds as written. The gap opened and closed inside this Unreleased section: #1978 is in
-  no release tag, so no tagged release carries it. A build cut from `develop` between those two
-  commits does — check the commit an RC image was built from before trusting it.
-- **What this means for the Configuration view.** Settings outside the three tiers render greyed
-  as host-only, as they did before #1978 — change them on the host with `./pithead apply`, or on
-  an appliance with a configuration stick, which may set anything. The settings that lose their
-  dashboard route include the payout addresses, the view keys, the node RPC credentials, the
-  stratum password, the Telegram bot token and chat id, the XvB pool URL and donor id, the
-  Healthchecks ping URL, the ntfy URL and token, `notifications.webhooks`, the onion toggles, the
-  Tor egress firewall, the RPC/gRPC LAN-access and bind settings, `dashboard.control.enabled`, and
-  repointing or removing a per-rig worker descriptor (`workers.list[]`). Adopting a new rig was
-  closed in the same round-2 pass and reopened, behind the typed confirmation, by
-  [#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641) (see Fixed).
-- The Telegram tap was the only second identity on a sensitive configuration commit, and nothing
-  replaces it in this release. What still gates such a change is the signed-in dashboard operator,
-  the default-deny env allowlist, the typed `APPLY`, and the payout-suffix check — deliberate
-  friction and typo protection, not a second identity. The physical-presence boundary is unchanged:
-  `dashboard.auth.password` and the two tamper-alarm event toggles still cannot be changed
-  from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
+- **Telegram is a read-only notification channel.** The bot still answers `/status`, `/info`,
+  `/hashrate`, `/workers`, `/sync`, `/system`, `/pool`, `/xvb`, `/earnings`, `/luck` and `/help`,
+  and still sends every event alert and the daily summary. Its two write surfaces are gone
+  ([#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076)):
+  - The `/restart` and `/apply` control commands ([#338](https://github.com/p2pool-starter-stack/pithead/issues/338)),
+    with the `telegram.control` config block (`enabled`, `allowed_ids`, `confirm_timeout`).
+  - The Telegram approval tap on a sensitive Configuration-view commit ([#911](https://github.com/p2pool-starter-stack/pithead/issues/911)).
+    Changing a payout wallet, a node endpoint or any other sensitive setting no longer sends a
+    prompt to Telegram and no longer waits for anyone to tap a button.
+
+  `apply` drops `telegram.control` from an existing `config.json` on the next run, so no manual
+  edit is needed. If you had the control commands enabled, it says so once as it removes the key.
+
+- **The two 1.x configuration aliases ([#1832](https://github.com/p2pool-starter-stack/pithead/issues/1832)).** `dashboard.workers[]` is `workers.list[]`, and
+  `xmrig_proxy.{enabled,url,donor_id}` is `xvb.*`. A 1.x configuration is migrated in place once, the
+  first time 2.0.0 reads it; after that the old names are unknown to the product. A configuration that
+  sets a non-default old value and its replacement to different values is refused.
 
 ### Fixed
 
@@ -248,6 +289,31 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   sooner is marked healthy at its next 30-second check, as before. A Tor that never bootstraps
   now fails `up` after about 12.5 minutes instead of 3.5.
 
+- **Inbound peers reach the Monero onion, and the P2Pool onion on main and nano
+  ([#2936](https://github.com/p2pool-starter-stack/pithead/issues/2936)).** The bundled monerod
+  bound its anonymous P2P listener to its own container's loopback, which the Tor container cannot
+  reach, so the Monero onion answered no peer. It now listens on the stack's container bridge at
+  `:18084`; the port is still not published on the host. The P2Pool onion always forwarded to
+  `37888`, the mini sidechain's port, so on main or nano it led nowhere. It now forwards the
+  selected sidechain's P2P port: `37889` main, `37888` mini, `37890` nano. RPC access and remote
+  nodes are unchanged.
+
+- **The Tor self-heal no longer leaves Tor stopped after a restart
+  ([#3032](https://github.com/p2pool-starter-stack/pithead/issues/3032)).** With `tor.auto_heal`
+  on, the heal's stop request gave up after 60 seconds, just before a wedged Tor finished stopping.
+  The start that followed was answered "already running" by the Tor that was still going
+  down, so Tor stayed stopped and monerod sat with no outgoing peers until someone started it. The
+  stop now waits up to two minutes, an unconfirmed stop gets up to 30 seconds to settle before the
+  start, and an unconfirmed start is tried up to three times, five seconds apart.
+
+- **`./pithead tor-recover check` accepts a peerless Monero node that still reads synchronized
+  ([#3033](https://github.com/p2pool-starter-stack/pithead/issues/3033)).** The check, which
+  `tor-recover apply` repeats before it resets a saturated Tor circuit history, looks for a local
+  Monero node stalled with no peers. It required `synchronized: false`, but monerod keeps its last
+  value after losing every peer, so a node held at one height with 0 outgoing peers for three
+  minutes was refused. The check now takes 0 outgoing peers at an unchanged height as the stall,
+  whatever `synchronized` says. Every other guard is unchanged.
+
 - **The Monero payout wallet stays healthy while a restarted wallet catches up
   ([#2756](https://github.com/p2pool-starter-stack/pithead/issues/2756)).** The scan grace applied
   only to a newly created wallet. A reopened wallet that had to catch up, for example after the
@@ -261,8 +327,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   marker's age, so a wallet that never catches up still turns unhealthy after 24 hours. Its ring
   database moved into the wallet volume, off the read-only root filesystem.
 - **Worker Inspect can adopt a rig again
-  ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
-  pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
+  ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The former perimeter
+  policy refused every change to `workers.list[]`, including the append the **Adopt this rig**
   form sends, so the form always failed at the preview. An appliance rig set up by the wizard had
   no way to be adopted short of a configuration stick. The host now lets an append through: every
   existing descriptor must come back unchanged, a new rig may not reuse an existing rig's name,
@@ -293,6 +359,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   built, not pulled. The digest-pinned Tari, Caddy and socket-proxy images have no build context, so
   once `uninstall` had removed them only `tor` started. `pithead` now pulls the missing images that
   have no build context before it starts the stack. An explicit `PITHEAD_PULL` still overrides this.
+
+- **`pithead` no longer logs a false `pithead aborted unexpectedly (exit 2)`
+  ([#3047](https://github.com/p2pool-starter-stack/pithead/issues/3047)).** Tidying the dashboard's
+  control results printed that error whenever there was no backup archive to prune, for example at
+  every appliance boot, while the command carried on and finished. What is pruned is unchanged.
 
 - **A restore at setup that fails while writing its files no longer leaves the machine half
   restored ([#2689](https://github.com/p2pool-starter-stack/pithead/issues/2689)).** It used to
@@ -352,90 +423,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   writing the archive's; it now merges the archive's files in instead, so the target's already-
   synced chain data survives a restore that carries none of its own.
 
-## [2.0.0] - 2026-09-06
-
-Pithead 2.0.0 is the first release of **Pithead OS**, the appliance: a bootable image that
-installs itself on a machine you dedicate to it, is set up from a browser, and updates as one
-signed image that goes back to the previous version on its own when an update does not boot.
-The Docker-Compose install (the DIY path) ships in the same release, with the same stack, the
-same dashboard and the same configuration. Entries below apply to both channels unless they say
-otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
-
-### Added
-
-- **Pithead OS, the appliance.** Verify `pithead-os-v2.0.0.img.xz`, write its decompressed image
-  to a USB stick, and boot the machine from it: it installs itself and serves a one-page setup
-  wizard to your browser. The page asks
-  what the machine is — a full coordinator, a coordinator that also mines with its own CPU, or a
-  mining rig ([#797](https://github.com/p2pool-starter-stack/pithead/issues/797)) — which disk
-  to use, and the same questions the DIY installer asks. A machine without a monitor can be set up
-  from a file dropped on the stick ([#924](https://github.com/p2pool-starter-stack/pithead/issues/924)), and settings can be changed later the same way; a
-  stick rewrite changes only the settings it names ([#910](https://github.com/p2pool-starter-stack/pithead/issues/910), [#965](https://github.com/p2pool-starter-stack/pithead/issues/965)).
-- **Updates that fall back on their own.** The appliance keeps two copies of the system and writes
-  an update to the idle one. It reboots into the new version, checks that the stack came up, and
-  returns to the previous copy by itself when it did not. Updates are signed with a release key
-  the machine verifies before installing; a release build refuses to run without an explicit key.
-  An update is checked for, downloaded and installed from the dashboard's OS-update control
-  ([#976](https://github.com/p2pool-starter-stack/pithead/issues/976)), or applied from a downloaded bundle with `pithead os-update`; the chain services start only
-  after the new slot has committed, so a forward-only database migration never runs on a slot that
-  might be rolled back.
-- **Backups and restores.** `pithead backup` exports an encrypted archive ([#908](https://github.com/p2pool-starter-stack/pithead/issues/908)), and the setup
-  wizard can restore one on a fresh machine ([#909](https://github.com/p2pool-starter-stack/pithead/issues/909)). A restored machine keeps its own identity:
-  the machine-id and SSH host keys live on the data partition ([#894](https://github.com/p2pool-starter-stack/pithead/issues/894), [#895](https://github.com/p2pool-starter-stack/pithead/issues/895)), and the
-  journal follows the machine rather than the boot ([#1659](https://github.com/p2pool-starter-stack/pithead/issues/1659)).
-- **Two resets instead of an uninstall.** A config reset clears the settings and reopens the setup
-  wizard, keeping the synced chain, the wallet and the Tor keys; a factory reset wipes the data
-  partition. A data partition damaged by a power cut is repaired rather than erased ([#1062](https://github.com/p2pool-starter-stack/pithead/issues/1062)),
-  and a container store left inconsistent by an interrupted write is rebuilt on the next boot
-  ([#1029](https://github.com/p2pool-starter-stack/pithead/issues/1029)).
-- **Host tuning baked into the image.** Hugepages are reserved at boot in proportion to the fitted
-  RAM ([#977](https://github.com/p2pool-starter-stack/pithead/issues/977)) up to a declared ceiling that, on a single-socket machine, neither the host nor the miner unit
-  can grow past ([#1103](https://github.com/p2pool-starter-stack/pithead/issues/1103), [#1724](https://github.com/p2pool-starter-stack/pithead/issues/1724)); the CPU governor is set to performance; a hardware watchdog resets a
-  box whose kernel or init has hung, with nobody present. The Tor-only egress firewall is enforced under the
-  appliance's own container engine, and IPv6 fails closed. The mining-rig role ships RigForge
-  v1.17.0 ([#1826](https://github.com/p2pool-starter-stack/pithead/issues/1826)).
-- **Service Diagnostics in the dashboard ([#913](https://github.com/p2pool-starter-stack/pithead/issues/913), [#943](https://github.com/p2pool-starter-stack/pithead/issues/943)):** the host doctor's detail and a
-  bounded, redacted tail of each service's log, without a shell.
-- **The dashboard says where a rig's running configuration came from ([#1345](https://github.com/p2pool-starter-stack/pithead/issues/1345)),** persists the
-  revision each rig serves ([#1551](https://github.com/p2pool-starter-stack/pithead/issues/1551)), detects a rig running something other than what was
-  applied ([#1367](https://github.com/p2pool-starter-stack/pithead/issues/1367)), and records a rig configuration change nothing else had recorded
-  ([#1558](https://github.com/p2pool-starter-stack/pithead/issues/1558)). Worker Inspect is prefilled from the rig's own configuration ([#1235](https://github.com/p2pool-starter-stack/pithead/issues/1235)), and each
-  node card says whether that node runs locally or remotely ([#1040](https://github.com/p2pool-starter-stack/pithead/issues/1040)). The XvB decision table is
-  rebuilt as per-tier blocks ([#1316](https://github.com/p2pool-starter-stack/pithead/issues/1316)).
-- **The boot menu says what each entry boots, and offers "Set up again" ([#1318](https://github.com/p2pool-starter-stack/pithead/issues/1318), [#1838](https://github.com/p2pool-starter-stack/pithead/issues/1838)).**
-  A set-up-again boot opens the setup page beside the saved role; the page opens by naming what the
-  machine already is, with its rig data kept and offered back.
-- **An appliance rig mints its own control token and shows it once ([#1836](https://github.com/p2pool-starter-stack/pithead/issues/1836)),** beside the
-  address to adopt it at; it serves the sister feed and pins control to its coordinator.
-- **`pithead doctor --json` and `pithead support-bundle`:** a machine-readable doctor report, and a
-  redacted bundle for a support request that masks wallet and onion addresses as well as
-  credentials ([#1585](https://github.com/p2pool-starter-stack/pithead/issues/1585)).
-
-### Changed
-
-- **Every mutating `pithead` verb runs behind one mutation lock ([#1342](https://github.com/p2pool-starter-stack/pithead/issues/1342), [#1482](https://github.com/p2pool-starter-stack/pithead/issues/1482)).** Setup,
-  apply, upgrade, the resets, rotate-secrets and the OS-update verbs serialise; a second invocation
-  that arrives while one holds the lock is refused and told why, instead of two writers racing on
-  the same files.
-- **The Tari disk budget is 200 GiB ([#1011](https://github.com/p2pool-starter-stack/pithead/issues/1011)),** which raises the free space setup and
-  `doctor` ask for.
-- **The appliance builds docker-compose and cosign from source in its rootfs** instead of
-  downloading release binaries.
-- **A failed setup keeps the machine's existing configuration ([#1059](https://github.com/p2pool-starter-stack/pithead/issues/1059))** rather than discarding
-  it, and the CLI degrades instead of aborting when the optional dashboard auth key is absent
-  ([#1246](https://github.com/p2pool-starter-stack/pithead/issues/1246)).
-- **The setup wizard opens on Pithead + RigForge, and the miner select is the switch ([#1830](https://github.com/p2pool-starter-stack/pithead/issues/1830)).**
-- **The dashboard's Configuration view never shows `ssh.*` and never changes it ([#1850](https://github.com/p2pool-starter-stack/pithead/issues/1850)),** and
-  its Advanced pane says what it does with a key.
-
-### Removed
-
-- **The two 1.x configuration aliases ([#1832](https://github.com/p2pool-starter-stack/pithead/issues/1832)).** `dashboard.workers[]` is `workers.list[]`, and
-  `xmrig_proxy.{enabled,url,donor_id}` is `xvb.*`. A 1.x configuration is migrated in place once, the
-  first time 2.0.0 reads it; after that the old names are unknown to the product. A configuration that
-  sets an old name and its replacement to different values is refused.
-
-### Fixed
+- **An editor-saved 1.x configuration upgrades without a false XvB conflict**
+  ([#2690](https://github.com/p2pool-starter-stack/pithead/issues/2690),
+  [#2699](https://github.com/p2pool-starter-stack/pithead/pull/2699)). Untouched `xmrig_proxy.*`
+  reference defaults no longer conflict with customised `xvb.*` values in either CLI migration or
+  wizard restore; `xvb.*` wins and the removed block is dropped. A non-default legacy value that
+  differs from its replacement is still refused.
 
 - **The boot health gate re-mints a TLS certificate that the machine's address outran
   ([#1265](https://github.com/p2pool-starter-stack/pithead/issues/1265)),** `apply` reaches that re-mint on an unchanged configuration, and a rollback names
@@ -477,6 +470,86 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   longer fails the boot when it meets a journal bind that is still mounted ([#1817](https://github.com/p2pool-starter-stack/pithead/issues/1817)).
 
 ### Security
+
+- **The Tor-only egress firewall now survives a DIY host reboot.** A reboot emptied `DOCKER-USER`
+  while the containers restarted on their own, so a DIY host mined without the fail-closed rules
+  until someone ran `./pithead up`. `up`, `apply` and `upgrade` now install
+  `pithead-egress.service`, ordered before `docker.service`, which restores the rules before any
+  container starts; `doctor` warns when it is not enabled
+  ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
+- **The Tari node no longer runs its own Tor
+  ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)).** The upstream
+  `minotari_node` image is built with Tari's `libtor` feature, and `use_libtor` defaults to on.
+  Under the `tor` transport the node therefore started an in-process Tor, gave it its control port
+  and hidden service, and let it dial Tor relays straight from the tari container rather than
+  through the stack's `tor` container. Tari's source shows the same default in the released 5.3.1
+  pin. The egress firewall drops those dials. A tier-4 run found one still open after a fault test
+  briefly removed and reinstalled the rules; the firewall's established-flow accept kept it
+  ([#2672](https://github.com/p2pool-starter-stack/pithead/issues/2672)). With the firewall off,
+  nothing stopped them. Tari now uses the `socks5` transport through the stack's Tor SOCKS port
+  with `use_libtor = false`. Onion and `/ip4` peers are both dialled through Tor, and inbound peers
+  reach the node through the stack Tor's Tari onion, which now has a listener behind it. A node
+  upgraded from the `tor` transport keeps its old onion in `config/base_node_id.json` under the
+  Tari data dir, next to the stack's one. Nothing serves the old onion any more. That is harmless:
+  peers still reach the node through the stack's onion.
+
+- **The LAN switches now enforce LAN sources**
+  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)).
+  `monero.rpc_lan_access`, `monero.zmq_lan_access` and `tari.grpc_lan_access` accept connections
+  only from loopback, private and CGNAT (`100.64.0.0/10`) addresses; before, their ports took any
+  source that could route to the host. See
+  [LAN-only sources](docs/configuration.md#lan-only-sources).
+
+- **The LAN-only source rule now survives a DIY host reboot.** A reboot cleared the rule while
+  Docker restarted the node containers still published on every interface, so `18081`, `18083`
+  and `18142` took any source until `./pithead up`. `pithead-lan-guard.service`, ordered before
+  `docker.service`, now restores the rule. The node containers that publish a LAN port run with
+  restart policy `no`, and `pithead-lan-hold.service` starts them only after the guard succeeds, so
+  a guard that fails at boot leaves them stopped instead of exposed. While the rule is missing, the
+  nodes refuse to start with a LAN bind however they are started (`docker start`, a compose run
+  outside pithead), and `./pithead restart` and the Tor auto-heal do not try. Docker no longer restarts a
+  crashed `monerod` or `tari` on such a host; `./pithead doctor` and a `container_unhealthy` alert
+  name the node and the reason, and `./pithead up` recovers. The first `up` after upgrading
+  recreates those containers once. If either unit cannot be installed, the ports stay on `127.0.0.1`
+  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)).
+
+- **The dashboard alerts when the Tor-only egress firewall is missing.** The dashboard took the
+  firewall's state from `network.tor_egress_firewall`, so it reported "blocked by the egress
+  firewall" over an open egress. `pithead-egress.timer` now runs `pithead egress-status` every two
+  minutes and writes the host's live verdict for the dashboard. A missing firewall turns the egress
+  badge and panel into a warning and sends one `clearnet_exposed` alert, with one more when the
+  rules are back. A missing or stale verdict reads as unverified, not as green
+  ([#2599](https://github.com/p2pool-starter-stack/pithead/issues/2599)).
+
+- **Dashboard authentication is the configuration-editing perimeter**
+  ([#1959](https://github.com/p2pool-starter-stack/pithead/issues/1959),
+  [#2305](https://github.com/p2pool-starter-stack/pithead/pull/2305),
+  [#2428](https://github.com/p2pool-starter-stack/pithead/pull/2428)). Low-risk operational
+  settings commit directly; other reference settings use the typed confirmation. A signed-in
+  operator can change payout addresses, view keys, node and stratum credentials, XvB destinations,
+  notification credentials and URLs, onion exposure, LAN binds, the control-channel switch and the
+  Tor egress firewall. The dashboard password and the wallet-change and clearnet-exposure alarm
+  toggles also confirm behind typed `APPLY` and the confirmation envelope. The preview names the
+  password's session-lockout cost (on the appliance it also changes the console `root` login),
+  silenced alarms and changed exposure. `ssh.*` is absent from release images.
+- **Confirmation prevents mistakes; it is not a second identity.** The Telegram tap is gone.
+  A compromised dashboard process can supply its own actor, `APPLY`, confirmation envelope and
+  payout suffix. The audit records the signed-in actor but cannot prove that actor approved a
+  request created after compromise. Host-side schema and payout-address validation, authenticated
+  node reachability checks, credential-to-destination binding and data-root confinement still
+  apply. A payout change cannot share a commit with `dashboard.data_dir`, preserving the
+  wallet-change alarm's baseline through the supported commit path. The dashboard's own database
+  and notifiers are not independent protection against a full process compromise.
+- **Existing rig descriptors remain host-only.** The dashboard may append a new rig behind typed
+  `APPLY` and host-side target validation, but cannot edit, repoint, reorder or remove an adopted
+  rig, including its credentials. Those changes use `./pithead apply` on a DIY host or a
+  configuration stick on an appliance. Host-side bearer requests are pinned to the numeric address
+  that passed validation. See [`SECURITY.md`](SECURITY.md).
+- **Dashboard passwords stay out of process arguments**
+  ([#2799](https://github.com/p2pool-starter-stack/pithead/issues/2799),
+  [#2803](https://github.com/p2pool-starter-stack/pithead/pull/2803)). Setup, apply, dashboard
+  password changes and restore feed the password to Caddy's hash command through Docker stdin,
+  rather than `--plaintext` in a command line readable by another local user.
 
 - **Secrets stay out of what the product prints.** A Monero address in log body text is redacted,
   not only on the launch line ([#1750](https://github.com/p2pool-starter-stack/pithead/issues/1750)); the p2pool entrypoint's audit line masks secret values
