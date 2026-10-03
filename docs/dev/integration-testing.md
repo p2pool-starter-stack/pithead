@@ -1116,11 +1116,15 @@ asserted invocation. Before each doctor assertion, the check phase emits its exa
 These prefixes keep doctor diagnostics separate from harness verdict rows. The wrapper retains
 this transcript across phase cleanup. The same invocation is also saved under
 `results/check/doctor-asserted.*/output.txt` with `exit-code.txt`, in a separate directory per
-invocation. Later diagnostic snapshots cannot replace it, but the next phase's preflight clears
-the results directory; use the retained transcript for successful pregate evidence. Capture
+invocation. The e2e wrapper sends the check pregate to its collected
+`results/pregate-check/` directory, separate from the destructive harness's results.
+Its `check/doctor-asserted.*/output.txt` and `exit-code.txt` survive the destructive
+preflight. The wrapper clears prior check results at preflight in every mode and again before
+readiness, so a refused job or a read-only check cannot collect prior doctor evidence. Later diagnostic snapshots cannot replace an asserted invocation. Capture
 failures add a failed evidence row; the original doctor exit code is still asserted. This adds
-no retry or readiness wait and does not establish the cause of a transient failure. The pure regression is
-`tests/integration/selftest/selftest-doctor-evidence.sh`.
+no retry or readiness wait and does not establish the cause of a transient failure. The pure regressions are
+`tests/integration/selftest/selftest-doctor-evidence.sh` and
+`tests/integration/selftest/selftest-doctor-pregate-retention.sh`.
 
 Every destructive run also samples the HugePages that monerod and p2pool hold
 ([#2685](https://github.com/p2pool-starter-stack/pithead/issues/2685)), every 10 s from the end of
