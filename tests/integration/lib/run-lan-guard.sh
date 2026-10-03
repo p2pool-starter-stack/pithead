@@ -55,7 +55,10 @@ assert_lan_guard_live() { # <config>
 }
 
 # Flush only the kernel rule while the boot marker still says this boot. The timer must remove the
-# marker and stop the running LAN nodes before its next two-minute interval ends (#2846).
+# marker and stop the running LAN nodes before its next two-minute interval ends (#2846). The timer
+# is stopped (and a running check awaited) around the flush so the precondition reads cannot race
+# the check legitimately removing the marker (#3034); it restarts unconditionally before the
+# deadline, which is measured from that start. Assertions record and continue, so no path skips it.
 assert_lan_guard_timer_flush() { # <port>...
     local p since deadline closed=0 rc=0
     [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
@@ -63,10 +66,31 @@ assert_lan_guard_timer_flush() { # <port>...
     assert_eq "LAN timer targets the check service (#2846)" \
         "$(rx 'systemctl show -p Triggers --value pithead-lan.timer')" pithead-lan-check.service
     assert_eq "marker exists before an external flush (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
-    since=$(date +%s)
+    rx 'sudo systemctl stop pithead-lan.timer' >/dev/null 2>&1 || true
+    # A oneshot check without RemainAfterExit reports activating while it runs: only inactive or
+    # failed proves it finished. Never flush into a check that is still running or unreadable.
+    idle=0
+    for _ in $(seq 30); do
+        case "$(rx 'systemctl is-active pithead-lan-check.service 2>/dev/null')" in
+        inactive | failed)
+            idle=1
+            break
+            ;;
+        esac
+        sleep 1
+    done
+    if [ "$idle" != 1 ]; then
+        rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
+        it_fail "LAN check service finished before the flush (#3034)" "still running or unreadable after 30s; flush skipped"
+        return 0
+    fi
+    assert_eq "LAN check timer is stopped for the flush (#3034)" "$(rx 'systemctl is-active pithead-lan.timer 2>/dev/null')" inactive
+    assert_eq "marker survives the check finishing (#3034)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
     _lan_flush_rules
     assert_eq "flush left the boot marker intact (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
     assert_eq "control: a non-private source reaches the unguarded port (#2846)" "$(_lan_probe 198.51.100 "$1")" open
+    rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
+    since=$(date +%s)
     deadline=$((since + 150))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         if [ "$(rx 'test -e data/lan-guard/enforced && echo present')" != present ]; then
