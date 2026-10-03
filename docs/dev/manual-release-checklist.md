@@ -66,7 +66,7 @@ Contents:
 | **Fresh box** | Ubuntu Server 24.04, AVX2 CPU, 16 GB RAM, 600 GB SSD, nothing of Pithead on it. Section 1. |
 | **Upgrade box** | A machine already running the previous release, with both chains synced and the dashboard password set. Sections 2–12. |
 | **Appliance box** | An x86-64 UEFI PC with 16 GB RAM, ethernet, firmware settings you can change, and an internal disk you may erase. A second internal disk for the wrong-disk check, and a second PC whose disk may be erased, for the restore test. Section 13. |
-| **USB stick** | 8 GB or larger, contents expendable. The image writes 5 GiB. |
+| **USB sticks** | One of **16 GB or larger** for the image (a smaller stick stops the first boot at an emergency console), contents expendable. A second stick of any size for the settings file in 13.23, so writing it does not erase the image. |
 | **Miner** | A separate machine running XMRig, or a RigForge loaner rig (never a production rig). Sections 4 and 14. |
 | **Laptop** | On the same network, with a normal browser and Tor Browser. |
 | **Phone** | For the narrow-screen check and Telegram. |
@@ -439,13 +439,14 @@ and restore it at the end.
   top-level block and `./pithead apply`. Expect: apply prints the pool URL and stratum password a
   RigForge install on this machine needs (see
   [Connecting Miners](../workers.md)). If you install RigForge with those values, the worker
-  appears in Workers Alive. Remove the block and apply again afterwards.
+  appears in Workers Alive. Remove the block and apply again afterwards. Removing it does not
+  uninstall RigForge; if you installed it, it stays as an extra worker in later sections.
 
 ## 7. Change settings from the dashboard
 
 Run on the upgrade box. Inside its `dashboard` block, make sure `auth.password` is set and add
-`"control": { "enabled": true }`, then `./pithead apply`. The preview marks turning the
-Configuration view on with ⚠ and asks `(y/N)`; answer `y`.
+`"control": { "enabled": true }`, then `./pithead apply`. If the Configuration view was off, the
+preview marks turning it on with ⚠ and asks `(y/N)`; answer `y`.
 
 - [ ] **7.1 Configuration view.** Do: open **Configuration** from the toggle above the chart.
   Expect: a form with grouped sections and an Advanced JSON pane. Secrets show as
@@ -698,18 +699,20 @@ the latest *published* release, so it is tested after publishing, in 12.3.
   unselected clearnet routes as blocked; the header shows no firewall warning.
 - [ ] **13.21 Onion dashboard on the appliance.** Do: in Configuration turn on
   `dashboard.onion.enabled`, leaving `dashboard.onion.client_auth` on, preview, type `APPLY`
-  and confirm. Expect: the `.onion` address appears under the machine name with a **Copy**
-  button. **Show client key** reveals the key once, and the reveal appears in the change history.
+  and confirm. Expect: the `.onion` address appears under the machine name with a
+  **Copy address** button. **Show client key** reveals the key once, and the reveal appears in the change history.
   With that key, Tor Browser opens the dashboard as in 9.4. Turning `client_auth` off while the
   onion is on is refused.
 - [ ] **13.22 Node modes on the appliance.** Do: in Configuration set Tari's mode to `off`,
   preview, type `APPLY` and confirm; then set it back to `local` the same way. Expect: the preview
   marks each change ⚠; with Tari off, mining continues; switching back resumes the Tari chain it
   already had. (The remote Monero node change is 13.15.)
-- [ ] **13.23 Settings by USB stick.** Do: on the laptop, write a FAT32 stick holding only a
+- [ ] **13.23 Settings by USB stick.** Do: on the laptop, format the second stick as FAT32 and
+  write to it only a
   `pithead-config.json` with `{"p2pool": {"pool": "nano"}}`. Insert it into the running
   appliance. Expect: nothing happens until a reboot. Reboot with a monitor attached. Expect: the
-  console prints the pool change (old and new value) and counts down 60 seconds. Pull the stick
+  console prints the pool change, old and new value (the old one may read `(unset)` while the
+  pool is still at its default), and counts down 60 seconds. Pull the stick
   during the countdown: the console says the change was cancelled, and nothing changes. Write the
   file again, reboot, and let the countdown run out. Expect: the change applies; the file is gone
   from the stick; the dashboard shows the `nano` sidechain. Put `mini` back the same way.
