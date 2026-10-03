@@ -1109,8 +1109,18 @@ On a scenario failure, the harness captures (redacted) to `results/<scenario>/`:
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
 probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the first
 failed missing-image `up` or dashboard data-dir carry, before cleanup can replace
-Tor's failing state. The end-of-run summary lists each failed assertion and points
-at these.
+Tor's failing state. The shared Tor-egress control also records each original SOCKS
+request in `results/tor-egress-probes/probe-<sequence>.txt` and the harness transcript,
+before the caller reports its verdict or restores the stack. Each record contains the
+per-run sequence, original target/SSH exit status, harness-observed elapsed seconds and
+an exit-code class. The curl command, 30-second limit and pass/fail row are unchanged;
+no second request supplies its evidence. Silent curl exposes no error text or request
+stage, so a timeout remains `timeout-stage-unknown`; exit 255 remains ambiguous between
+target and SSH failure. Healthy Tor or a later successful request does not diagnose the
+failed request. Records contain only numbers and fixed labels, without endpoints, raw
+stderr or response bodies. An unavailable artifact is reported in the transcript and
+never replaces the original status. The end-of-run summary lists each failed assertion
+and points at the scenario artifacts.
 
 Every destructive run also samples the HugePages that monerod and p2pool hold
 ([#2685](https://github.com/p2pool-starter-stack/pithead/issues/2685)), every 10 s from the end of
