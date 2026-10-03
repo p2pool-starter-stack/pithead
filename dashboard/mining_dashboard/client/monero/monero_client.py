@@ -56,8 +56,8 @@ class MoneroClient:
 
         try:
             data = resp.json()
-        except ValueError:
-            logger.error("monerod get_info returned a non-JSON body")
+        except (ValueError, RecursionError):
+            logger.error("monerod get_info returned an invalid JSON body")
             return None
 
         # A JSON body is not necessarily a JSON OBJECT. An array, string, number or null parses

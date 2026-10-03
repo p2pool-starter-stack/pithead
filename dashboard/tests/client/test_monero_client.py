@@ -236,3 +236,9 @@ def test_malformed_synchronized_flag_is_unreachable(value):
     client = MoneroClient()
     client.get_info = MagicMock(return_value={"synchronized": value})
     assert client.get_sync_status() is None
+
+
+def test_deeply_nested_remote_json_is_unreachable():
+    body = b'{"status":"OK","height":' + b"[" * 2000 + b"0" + b"]" * 2000 + b"}"
+    with patch.object(requests, "get", return_value=_resp(body=body)):
+        assert MoneroClient().get_sync_status() is None
