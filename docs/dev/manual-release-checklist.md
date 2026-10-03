@@ -185,8 +185,8 @@ On the second machine, use this complete file:
 
 ### Broken configs
 
-Make one change at a time to a working config, run `./pithead apply`, and check the refusal.
-Each one must stop before anything changes, print a message that contains the text in the second
+Make one change at a time to a working config, run `./pithead apply`, check the refusal, and undo
+the change before the next row. Each one must stop before anything changes, print a message that contains the text in the second
 column, and leave the running stack untouched.
 
 | Change | The message contains |
@@ -201,8 +201,8 @@ column, and leave the running stack untouched.
 | Set `p2pool.stratum_password` to `"has space"` | `p2pool.stratum_password must be "auto", empty, or 1–128 chars` |
 | Add `"proxy": { "donate_level": 150 }` | `proxy.donate_level must be an integer 0–99` |
 | Set `dashboard.auth.password` to `"short"` | `dashboard.auth.password must be 8–128 printable characters` |
-| With the onion on, set the password to `"fifteen-chars-x"` (15 characters) | `must be at least 16 characters when dashboard.onion.enabled is true` |
-| With the onion on, set the password to `"changeme-but-longer"` | `contains a well-known weak pattern` |
+| Set `dashboard.onion.enabled` to `true` and the password to `"fifteen-chars-x"` (15 characters) | `must be at least 16 characters when dashboard.onion.enabled is true` |
+| Set `dashboard.onion.enabled` to `true` and the password to `"changeme-but-longer"` | `contains a well-known weak pattern` |
 
 ---
 
@@ -273,8 +273,8 @@ syncing stack. Build the candidate from source so a failure here does not spend 
 - [ ] **1.5 HugePages reboot.** Do: `sudo reboot`, then `./pithead up`. Expect: the stack starts,
   and this first start prints a short note that the miner is held until both chains sync. A
   later `./pithead restart` does not print the note again.
-- [ ] **1.6 Status while syncing.** Do: `./pithead status`. Expect: the node and support services
-  show `✓ running`; `p2pool` and `xmrig-proxy` show `⚠` with
+- [ ] **1.6 Status while syncing.** Do: `./pithead status`. Expect: each node and support service
+  shows a `✓` line ending in `running`; `p2pool` and `xmrig-proxy` show `⚠` with
   `held until the required chains finish syncing`; under
   `Chain sync in progress — the miner is held until it completes:` each chain shows its percent
   and blocks remaining. No `✗` line.
@@ -308,7 +308,8 @@ Run on the **upgrade box**, which runs the previous release with synced chains. 
 write down the payout addresses, the dashboard login, the dashboard's onion address if the onion
 is on (`./pithead status` prints it), the worker count, and a screenshot of the hashrate chart.
 
-- [ ] **2.1 Backup first.** Do: `./pithead backup`. Choose a passphrase and keep it. Expect: a
+- [ ] **2.1 Backup first.** Do: `./pithead backup`. Choose a passphrase and keep it, and answer `y`
+  to `Stop the stack, back up, then start it again?`. Expect: a
   file `backups/pithead-backup-<date>-<time>.tar.gz.enc` exists; the stack was stopped for the
   copy and is running again.
 - [ ] **2.2 Upgrade.** Do, on a source checkout: `git fetch`, `git checkout <full candidate SHA>`,
@@ -431,6 +432,7 @@ and restore it at the end.
   `.env` and they mine again. With a password you set yourself, the stratum password does not
   change.
 - [ ] **6.8 Restore.** Do: `cp config.json.qa config.json && ./pithead apply`. Expect: the
+  preview marks the node RPC login change ⚠ (6.7 rotated it) and asks `(y/N)`; answer `y`, and the
   original settings are back.
 - [ ] **6.9 Mine on the stack machine.** Do: add `"local_miner": { "enabled": true }` as a
   top-level block and `./pithead apply`. Expect: apply prints the pool URL and stratum password a
@@ -441,7 +443,8 @@ and restore it at the end.
 ## 7. Change settings from the dashboard
 
 Run on the upgrade box. Inside its `dashboard` block, make sure `auth.password` is set and add
-`"control": { "enabled": true }`, then `./pithead apply`.
+`"control": { "enabled": true }`, then `./pithead apply`. The preview marks turning the
+Configuration view on with ⚠ and asks `(y/N)`; answer `y`.
 
 - [ ] **7.1 Configuration view.** Do: open **Configuration** from the toggle above the chart.
   Expect: a form with grouped sections and an Advanced JSON pane. Secrets show as
@@ -456,8 +459,9 @@ Run on the upgrade box. Inside its `dashboard` block, make sure `auth.password` 
   refused until you type `APPLY`. After it applies, miners on 3333 disconnect. Change it back to
   `3333` the same way and confirm the miners reconnect.
 - [ ] **7.5 Payout change.** Do: change the Monero payout address to the second QA primary
-  address. Expect: the confirmation asks for the last eight characters of the new address (the
-  command line asks for the first eight), and a wrong suffix is refused. After it applies, the **Payout wallet changed** badge appears. Change
+  address. Expect: the change is marked ⚠; the confirmation asks you to type `APPLY` and the last
+  eight characters of the new address (the command line asks for the first eight), and a wrong
+  suffix is refused. After it applies, the **Payout wallet changed** badge appears. Change
   it back.
 - [ ] **7.6 Bad value.** Do: paste the QA subaddress into the Monero address field and preview.
   Expect: refused with the same message as the command line; nothing is applied.
@@ -505,7 +509,8 @@ Run on the upgrade box. See [Privacy](../privacy.md).
   as blocked, and the header shows no firewall warning.
 - [ ] **9.4 Onion dashboard.** Do: inside the `dashboard` block add
   `"onion": { "enabled": true, "client_auth": true }` (the dashboard password must be 16 or more
-  characters) and `./pithead apply`. Copy the `.onion` address from
+  characters) and `./pithead apply`; the preview marks it ⚠ and asks `(y/N)`, so answer `y`. Copy
+  the `.onion` address from
   the dashboard header and get the key with `./pithead onion-client-key`. In Tor Browser open
   `http://<address>.onion`, accept the certificate prompt, and paste the bare key when asked.
   Expect: the dashboard login appears; the same login works. Without the key, the address does
