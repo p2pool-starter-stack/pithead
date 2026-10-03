@@ -126,7 +126,11 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
 - Continue-on-error. A failing assertion doesn't abort the run. The whole matrix is collected
   and summarized, with per-scenario artifacts for the failures. A failed pre-run safety backup
   stops before candidate deployment and leaves its complete redacted, control-free output in the harness log;
-  the failure row also names the exit status and its last 20 lines.
+  the failure row also names the exit status and its last 20 lines. The wrapper emits a
+  [version 1 backup-window result](backup-window-results.md) before restoration, separating the
+  backup command's original exit from archive validation, Tor restart observations and later
+  wallet/candidate failures. Its result and sanitized diagnostics use a fresh caller-side directory;
+  they do not depend on the candidate creating its results directory.
 
 ---
 
@@ -142,7 +146,7 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
    an external node (see `--remote-monero-host`).
 3. Tools on the box: `jq`, `curl`, `docker` (with compose v2), and `sha256sum`. The first three
    are already Pithead prerequisites; `sha256sum` ships with coreutils. The machine running
-   `tests/integration/e2e.sh` also needs `python3` to sanitize failed safety-backup output.
+   `tests/integration/e2e.sh` also needs `python3` to sanitize safety-backup output and emit its structured result.
 4. Access. Key-based SSH from wherever you run the suite, or run it on the box with `--local`.
    If Docker needs root there, use `--pithead "sudo ./pithead"`.
 5. Optional: a second synced data dir for the opposite prune mode if you want to cover both

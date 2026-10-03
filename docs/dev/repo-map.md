@@ -110,6 +110,12 @@ Keep local code out of `vendor/`.
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
 
+The safety-backup wrapper is `tests/integration/lib/safety-backup.sh`.
+Its result producer is `tests/integration/lib/backup-window.sh` and
+`backup-window.py`; `lib/pithead/17b-backup-window.sh` observes the shared restart
+boundary. Its [versioned result contract](backup-window-results.md) is consumed
+before wrapper restoration and tested by the backup-window selftests.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted

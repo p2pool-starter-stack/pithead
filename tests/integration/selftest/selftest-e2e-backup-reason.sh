@@ -2,7 +2,7 @@
 #
 # Self-test for #2757/#2815: a failed safety backup names its exit status and preserves its
 # redacted output. Job 1283 died on a bare "pithead backup failed." because backup_stack sent
-# output to /dev/null. backup_stack is extracted out of the shipped e2e.sh; on_bench runs its REAL command
+# output to /dev/null. backup_stack is extracted out of the shipped safety-backup.sh; on_bench runs its REAL command
 # string against a fake `pithead`, so a redirection put back into that command empties the reason.
 #
 set -uo pipefail
@@ -12,9 +12,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 # shellcheck source=tests/integration/lib/remote-endpoints.sh
 source "$HERE/../lib/remote-endpoints.sh"
+# HERE is the selftest directory; the helper uses it only when collection is enabled.
+source "$HERE/../lib/backup-window.sh"
 
 echo "== backup_stack names why the safety backup failed =="
-SRC="$(sed -n '/^backup_stack() {$/,/^}$/p' "$HERE/../e2e.sh")"
+SRC="$(sed -n '/^backup_stack() {$/,/^}$/p' "$HERE/../lib/safety-backup.sh")"
 assert_eq "the extraction is the whole function (opens and closes)" \
     "$(printf '%s\n' "$SRC" | sed -n '1p;$p' | tr '\n' ' ')" "backup_stack() { } "
 

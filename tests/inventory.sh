@@ -190,6 +190,7 @@ integration_expected=$(
         ! -name harness-args.sh ! -name run-lifecycle-wallet-fixture.sh \
         ! -name redact-it-password.sh ! -name wallet-diagnostics.sh \
         ! -name remote-endpoints.sh \
+        ! -name backup-window.sh ! -name safety-backup.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh -print |
         sed 's|^tests/integration/||'
 )
