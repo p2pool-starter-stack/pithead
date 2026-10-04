@@ -190,6 +190,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   until the slot commits, then start, with the pending marker consumed. Tari is then stopped on the
   committed slot (`appliance-chain-fault-leg.sh`, #2588): `pithead status`, `pithead doctor` and
   the dashboard's `Tari DOWN` badge must report it, and `./pithead up` must bring all three back.
+  The badge must stay absent before the running dashboard's `TARI_NODE_DOWN_AFTER_SEC`
+  debounce (900 seconds when unset) and appear within that debounce plus 180 seconds.
+  Unreadable state fails the negative control. Unreadable, invalid or out-of-range debounce
+  settings (the test accepts 1–3600 seconds) fail before fault injection; the guest policy
+  is never shortened.
   After it, the floor-fallback leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating
   bundle stamped with a version no release carries. Its copied build tree opts into the
   harness-only synthetic compose path, names its compose file explicitly, uses the resolved

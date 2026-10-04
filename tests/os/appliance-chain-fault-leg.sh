@@ -17,9 +17,9 @@
 # be restarted by podman within seconds and prove nothing about reporting. The recovery is the one
 # the boot path's FAULT line documents: `./pithead up` from /data/pithead.
 #
-# THE DASHBOARD HALF HAS A PRECONDITION. Its `Tari DOWN` badge is debounced (90 s unreachable) and
-# fires only for a node the dashboard has reached at least once since it started (NodeHealthMonitor's
-# ever-up guard). The migration hold kept Tari away until the release, so the leg first waits until
+# THE DASHBOARD HALF HAS A PRECONDITION. `Tari DOWN` is debounced (15 minutes by default).
+# Configured Tari detects even cold outages; this leg requires a healthy starting point to time
+# the controlled stop. The migration hold kept Tari away until release, so the leg waits until
 # the dashboard has read the released node: both containers up for a whole window with no
 # `Tari gRPC GetTipInfo error` and no `Data Collection Error` (a cycle that raised before its Tari
 # call) in the dashboard's log over it. Only a successful GetTipInfo leaves a poll clean, so one Tari
@@ -29,6 +29,9 @@
 # row would then go red, never green. Without that wait a
 # missing badge would say nothing about reporting. A dashboard restarted by the recovery `up` starts
 # a fresh monitor with no badge, so its clear counts only if the dashboard kept its start time.
+
+# shellcheck source=tests/os/chain-fault-timing.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/chain-fault-timing.sh"
 
 CHAIN_FAULT_SERVICE=tari
 # Several times the usual gap between two dashboard Tari polls (see above).
@@ -142,7 +145,7 @@ chain_fault_evidence() { # <status-output> <doctor-json> <api-state-json>
 # shellcheck disable=SC2034
 phase_provision_chain_fault_after_release() { # <dashboard-user> <dashboard-password>
     local DASH_USER="$1" DASH_PASS="$2" svc="$CHAIN_FAULT_SERVICE" probe="" cid status_out status_rc doctor state tries
-    local dash_before dash_after
+    local dash_before dash_after down_after fault_started badge_rc
     info "post-commit chain fault — stop $svc after 'chain services released', read status, doctor and the dashboard, recover"
     # The release `up` holds the mutation lock through its tor-health wait; a fault injected under it
     # races the boot path, and the recovery `up` would queue behind it.
@@ -162,6 +165,16 @@ phase_provision_chain_fault_after_release() { # <dashboard-user> <dashboard-pass
     ok "post-commit $svc fault: the dashboard reads the $svc node the release started"
     dash_before=$(awk '{print $2}' <<<"$probe")
 
+    if ! down_after=$(chain_fault_down_after); then
+        bad "post-commit $svc fault: dashboard debounce is unreadable or outside the 1–3600 second test bound — the fault was not injected"
+        return 1
+    fi
+    state=$(chain_fault_state)
+    if ! chain_fault_dashboard_verdict "$state" recovered; then
+        bad "post-commit $svc fault: dashboard state is unreadable or already shows Tari DOWN — the fault was not injected"
+        return 1
+    fi
+    fault_started=$(chain_fault_now)
     cid=$(_ssh "podman ps -q --filter label=com.docker.compose.service=$svc" 2>/dev/null | head -n1 | tr -d '\r')
     if [ -z "$cid" ] || ! _ssh "podman stop -t 10 $cid >/dev/null 2>&1"; then
         bad "post-commit $svc fault: could not stop a running $svc (container '${cid:-none}') — the fault was not injected"
@@ -172,12 +185,8 @@ phase_provision_chain_fault_after_release() { # <dashboard-user> <dashboard-pass
     status_out=$(chain_fault_status)
     status_rc=$?
     doctor=$(chain_fault_doctor)
-    # The badge is debounced 90 s; allow two more polls and slack.
-    for tries in $(seq 60); do
-        state=$(chain_fault_state)
-        chain_fault_dashboard_verdict "$state" faulted && break
-        sleep 5
-    done
+    # Match the running dashboard's debounce, plus 180 s for collection/publish slack.
+    chain_fault_wait_badge "$down_after" "$fault_started" && badge_rc=0 || badge_rc=1
     if chain_fault_status_verdict "$status_out" "$status_rc" "$svc" faulted; then
         ok "post-commit $svc fault: pithead status reports it ($(chain_fault_status_row "$status_out" "$svc" | sed 's/^ *//'), exit $status_rc)"
     else
@@ -188,10 +197,10 @@ phase_provision_chain_fault_after_release() { # <dashboard-user> <dashboard-pass
     else
         bad "post-commit $svc fault: pithead doctor did not FAIL on the stopped $svc ($(chain_fault_evidence "$status_out" "$doctor" "$state"))"
     fi
-    if chain_fault_dashboard_verdict "$state" faulted; then
+    if [ "$badge_rc" = 0 ] && chain_fault_dashboard_verdict "$state" faulted; then
         ok "post-commit $svc fault: the dashboard shows Tari DOWN"
     else
-        bad "post-commit $svc fault: the dashboard never showed Tari DOWN within 60 polls ($(chain_fault_evidence "$status_out" "$doctor" "$state"))"
+        bad "post-commit $svc fault: the dashboard never showed Tari DOWN within $((down_after + 180)) seconds of the stop ($(chain_fault_evidence "$status_out" "$doctor" "$state"))"
     fi
 
     # The documented supported start: the boot path's FAULT line names exactly this command.
@@ -200,7 +209,7 @@ phase_provision_chain_fault_after_release() { # <dashboard-user> <dashboard-pass
     else
         bad "post-commit $svc fault: ./pithead up failed — the documented recovery did not run"
     fi
-    # Healthcheck start_period is 90 s and the badge clears after 60 s of reachability.
+    # Recovery has its own window: 90 s healthcheck start_period, 60 s reachable to clear DOWN.
     for tries in $(seq 120); do
         status_out=$(chain_fault_status)
         status_rc=$?
@@ -255,7 +264,6 @@ _chain_fault_self_test() {
     chain_fault_status_verdict "$down" 1 tari recovered && f=$((f + 1))
     chain_fault_status_verdict $'  ✓ tari-wallet   running\n  ✗ tari          exited' 1 tari recovered && f=$((f + 1))
     chain_fault_status_verdict "" 1 tari recovered && f=$((f + 1))
-
     doc_down='{"exit":1,"checks":[{"status":"ok","message":"x"},{"status":"fail","message":"tari is down (Exited (0) 5 seconds ago) — a chain node down means the slot is not healthy to commit"}]}'
     doc_hold='{"exit":1,"checks":[{"status":"info","message":"A data migration is pending — chain services are deliberately held until this slot commits."},{"status":"fail","message":"tari is down (Exited (0))"}]}'
     doc_ok='{"exit":0,"checks":[{"status":"ok","message":"Revenue containers are healthy or holding for sync — none crashed."}]}'
@@ -274,7 +282,6 @@ _chain_fault_self_test() {
     chain_fault_doctor_verdict '{"exit":0,"checks":[]}' tari recovered && f=$((f + 1))
     chain_fault_doctor_verdict "$(printf '%s' "$doc_ok" | jq -c '.checks += [{status:"fail",message:"tari is not ready (Up 5s (starting))"}]')" tari recovered && f=$((f + 1))
     chain_fault_doctor_verdict "" tari recovered && f=$((f + 1))
-
     chain_fault_dashboard_verdict '{"badges":[{"text":"Tari DOWN","variant":"bad"}]}' faulted || f=$((f + 1))
     chain_fault_dashboard_verdict '{"badges":[{"text":"monerod DOWN"}]}' faulted && f=$((f + 1))
     chain_fault_dashboard_verdict '' faulted && f=$((f + 1))
@@ -283,7 +290,6 @@ _chain_fault_self_test() {
     chain_fault_dashboard_verdict '' recovered && f=$((f + 1))
     chain_fault_dashboard_verdict '{"error":"unauthorized"}' recovered && f=$((f + 1))
     chain_fault_dashboard_verdict '<html>login</html>' recovered && f=$((f + 1))
-
     chain_fault_dashboard_reached '1000 900 1180 0' || f=$((f + 1))
     chain_fault_dashboard_reached '1000 900 1179 0' && f=$((f + 1))
     chain_fault_dashboard_reached '900 1000 1179 0' && f=$((f + 1))
@@ -316,7 +322,6 @@ STUB
         rm -rf "$bin"
         [ "$probe" = '1000 900 2000 3' ] && [ "$unread" = '1000 900 2000 none' ]
     ) || f=$((f + 1))
-
     # The live leg against a stubbed guest: all green when every surface reports the fault and the
     # recovery, and exactly one red row when any one surface, in either half, does not.
     (
@@ -326,6 +331,7 @@ STUB
         _ssh() {
             printf '%s\n' "$*" >>"$log"
             case "$*" in
+            *'podman inspect --format'*) printf '[]\n' ;;
             *'podman ps -q --filter'*) printf 'abc123\n' ;;
             *'podman stop'*) stopped=1 ;;
             *'pithead up'*) stopped=0 upped=1 ;;
@@ -342,14 +348,15 @@ STUB
             esac
         }
         chain_fault_probe() { if [ "$upped" = 1 ]; then printf '%s' "${P_UP:-1000 900 2000 0}"; else printf '%s' "${P_PRE:-1000 900 2000 0}"; fi; }
-        dashboard_curl() { if [ "$stopped" = 1 ]; then printf '%s' "${B_DOWN:-$b_down}"; else printf '%s' "${B_UP:-$b_up}"; fi; }
+        chain_fault_now() { printf '%s\n' "$tick"; }
+        dashboard_curl() { if [ "$stopped" = 1 ] && [ "$tick" -ge 900 ]; then printf '%s' "${B_DOWN:-$b_down}"; elif [ "$upped" = 1 ]; then printf '%s' "${B_UP:-$b_up}"; else printf '%s' "$b_up"; fi; }
         provisioning_settled() { return 0; }
-        sleep() { :; }
+        sleep() { tick=$((tick + $1)); }
         info() { :; }
         ok() { PASS=$((PASS + 1)); }
         bad() { FAIL=$((FAIL + 1)); }
         scenario() { # <want PASS/FAIL> [VAR=value ...]
-            local want="$1" stopped=0 upped=0 PASS=0 FAIL=0 a
+            local want="$1" stopped=0 upped=0 PASS=0 FAIL=0 tick=0 a
             shift
             for a in "$@"; do local "$a"; done
             : >"$log"
@@ -362,19 +369,18 @@ STUB
             [ "$want" != 0/1 ] || ! grep -q 'podman stop' "$log"
         }
         rc=0
-        scenario 9/0 || rc=1
-        scenario 8/1 "S_DOWN=$held" || rc=1
-        scenario 8/1 "D_DOWN=$doc_ok" || rc=1
-        scenario 8/1 "B_DOWN=$b_up" || rc=1
-        scenario 8/1 "S_UP=$down" || rc=1
-        scenario 8/1 "D_UP=$doc_down" || rc=1
-        scenario 8/1 "B_UP=$b_down" || rc=1
-        scenario 8/1 "P_UP=1000 950 2000 0" || rc=1
+        scenario 10/0 || rc=1
+        scenario 9/1 "S_DOWN=$held" || rc=1
+        scenario 9/1 "D_DOWN=$doc_ok" || rc=1
+        scenario 9/1 "B_DOWN=$b_up" || rc=1
+        scenario 9/1 "S_UP=$down" || rc=1
+        scenario 9/1 "D_UP=$doc_down" || rc=1
+        scenario 9/1 "B_UP=$b_down" || rc=1
+        scenario 9/1 "P_UP=1000 950 2000 0" || rc=1
         scenario 0/1 "P_PRE=1000 900 2000 1" || rc=1
         rm -f "$log"
         exit "$rc"
     ) || f=$((f + 1))
-
     # The leg is wired into the migration leg AFTER the marker check and BEFORE the floor fallback.
     local mig
     mig="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-migration.sh"
@@ -388,7 +394,6 @@ STUB
     }
     printf 'appliance-chain-fault-leg self-test passed\n'
 }
-
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = --self-test ]; then
     set -uo pipefail
     _chain_fault_self_test
