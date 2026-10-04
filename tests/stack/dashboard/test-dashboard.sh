@@ -32,23 +32,23 @@ echo "== unit: dashboard auth (#8) =="
 assert_contains "dash login enable is DEST" "$(run_sourced "$SANDBOX" describe_change DASHBOARD_AUTH_HASH_B64 '' aGFzaA==)" "DEST"
 assert_contains "dash login disable is INFO" "$(run_sourced "$SANDBOX" describe_change DASHBOARD_AUTH_HASH_B64 aGFzaA== '')" "INFO"
 case "$(run_sourced "$SANDBOX" describe_change DASHBOARD_AUTH_HASH_B64 b2xkSA== bmV3SA==)" in
-    *b2xkSA==* | *bmV3SA==*) bad "dash login change hides the hash" "hash value leaked into the change preview" ;;
-    *DEST*) ok "dash login change hides the hash (DEST, no value shown)" ;;
-    *) bad "dash login change hides the hash" "expected DEST" ;;
+*b2xkSA==* | *bmV3SA==*) bad "dash login change hides the hash" "hash value leaked into the change preview" ;;
+*DEST*) ok "dash login change hides the hash (DEST, no value shown)" ;;
+*) bad "dash login change hides the hash" "expected DEST" ;;
 esac
 assert_contains "dash login username change is shown" "$(run_sourced "$SANDBOX" describe_change DASHBOARD_AUTH_USER admin bob)" "admin → bob"
 case "$(run_sourced "$SANDBOX" describe_change DASHBOARD_AUTH_PW_FP aaa bbb)" in
-    *PW_FP* | *updated* | *fingerprint*) bad "dash login fingerprint stays silent" "internal fingerprint surfaced in the preview" ;;
-    INFO*) ok "dash login fingerprint stays silent (no preview line)" ;;
-    *) bad "dash login fingerprint stays silent" "unexpected message emitted" ;;
+*PW_FP* | *updated* | *fingerprint*) bad "dash login fingerprint stays silent" "internal fingerprint surfaced in the preview" ;;
+INFO*) ok "dash login fingerprint stays silent (no preview line)" ;;
+*) bad "dash login fingerprint stays silent" "unexpected message emitted" ;;
 esac
 
 # Dashboard onion (#343): enabling is DEST (tor+caddy recreated); the client PRIVATE key must never
 # surface in the change preview, even though a fresh key co-changes with the toggle.
 assert_contains "onion enable is DEST" "$(run_sourced "$SANDBOX" describe_change DASHBOARD_ONION_ENABLED false true)" "DEST"
 case "$(run_sourced "$SANDBOX" describe_change DASHBOARD_ONION_CLIENT_PRIVKEY OLDPRIVKEYVALUE NEWPRIVKEYVALUE)" in
-    *OLDPRIVKEYVALUE* | *NEWPRIVKEYVALUE*) bad "onion client privkey hidden in preview" "the client private key leaked into the change preview" ;;
-    *) ok "onion client privkey hidden in preview (no value shown)" ;;
+*OLDPRIVKEYVALUE* | *NEWPRIVKEYVALUE*) bad "onion client privkey hidden in preview" "the client private key leaked into the change preview" ;;
+*) ok "onion client privkey hidden in preview (no value shown)" ;;
 esac
 
 # New-release check toggle (#224): enabling/disabling is INFO, and the message names GitHub + Tor.
@@ -79,8 +79,8 @@ caddy_off="$(
     cat Caddyfile
 )"
 case "$caddy_off" in
-    *basic_auth*) bad "caddy stays open when no login set" "basic_auth rendered without a password" ;;
-    *) ok "caddy stays open when no login set (no basic_auth)" ;;
+*basic_auth*) bad "caddy stays open when no login set" "basic_auth rendered without a password" ;;
+*) ok "caddy stays open when no login set (no basic_auth)" ;;
 esac
 
 echo "== unit: generate_caddyfile scheme (#140) =="
@@ -104,8 +104,8 @@ caddy_http="$(
 )"
 assert_contains "caddyfile insecure uses http" "$caddy_http" "http://box.lan"
 case "$caddy_http" in
-    *"tls internal"*) bad "caddyfile insecure has no TLS" "'tls internal' present on a plain-HTTP site" ;;
-    *) ok "caddyfile insecure has no TLS" ;;
+*"tls internal"*) bad "caddyfile insecure has no TLS" "'tls internal' present on a plain-HTTP site" ;;
+*) ok "caddyfile insecure has no TLS" ;;
 esac
 
 echo "== unit: generate_caddyfile never publishes or binds a globally-routable address =="
@@ -133,8 +133,8 @@ _caddy_appliance() { # $1 = value for DASHBOARD_EXPOSE_PUBLIC_IP
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_default="$(_caddy_appliance false)"
 case "$caddy_default" in
-    *2001:db8:*) bad "the global v6 is not published as a site" "the global address appears in the Caddyfile" ;;
-    *) ok "the global v6 is not published as a site" ;;
+*2001:db8:*) bad "the global v6 is not published as a site" "the global address appears in the Caddyfile" ;;
+*) ok "the global v6 is not published as a site" ;;
 esac
 assert_contains "the LAN address is still published" "$caddy_default" "192.168.1.10"
 assert_contains "the ULA is still published — private scope, not routable" "$caddy_default" "fd00::1"
@@ -143,24 +143,24 @@ assert_contains "bind keeps loopback for the host-networked dashboard" "$caddy_d
 # The bind line is the boundary — it specifically must not carry the global address.
 bindline=$(printf '%s' "$caddy_default" | grep '^    bind ')
 case "$bindline" in
-    *2001:db8:*) bad "the bind line excludes the global v6" "global address present in: $bindline" ;;
-    *) ok "the bind line excludes the global v6" ;;
+*2001:db8:*) bad "the bind line excludes the global v6" "global address present in: $bindline" ;;
+*) ok "the bind line excludes the global v6" ;;
 esac
 # The bind directive must stand ALONE on its line. `$(...)` strips trailing newlines, so emitting
 # one inside the helper silently glued the next directive on: `bind ... ::1    basic_auth {`,
 # which Caddy will not parse — a config that would have taken the dashboard down. Caught on the
 # bench, not here, so pin the shape: nothing may follow the last bound address.
 case "$bindline" in
-    *"::1") ok "the bind directive stands alone on its line" ;;
-    *) bad "the bind directive stands alone on its line" "another directive was glued on: $bindline" ;;
+*"::1") ok "the bind directive stands alone on its line" ;;
+*) bad "the bind directive stands alone on its line" "another directive was glued on: $bindline" ;;
 esac
 # Opt-in restores the old behaviour for a deployment that genuinely wants it.
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_optin="$(_caddy_appliance true)"
 assert_contains "the opt-in publishes the global v6 again" "$caddy_optin" "2001:db8::1"
 case "$caddy_optin" in
-    *"    bind "*) bad "the opt-in leaves the listener open" "a bind line was still emitted" ;;
-    *) ok "the opt-in leaves the listener open" ;;
+*"    bind "*) bad "the opt-in leaves the listener open" "a bind line was still emitted" ;;
+*) ok "the opt-in leaves the listener open" ;;
 esac
 # An operator who PINS dashboard.host is the most deliberately-configured box there is, and the
 # first cut of this fix left exactly those boxes wide open: the bind was derived from the
@@ -189,8 +189,8 @@ caddy_pinned="$(
 )"
 assert_contains "a pinned dashboard.host still gets a bind" "$caddy_pinned" "    bind "
 case "$(printf '%s' "$caddy_pinned" | grep '^    bind ')" in
-    *2001:db8:*) bad "a pinned host does not reopen the global v6" "global address is bound" ;;
-    *) ok "a pinned host does not reopen the global v6" ;;
+*2001:db8:*) bad "a pinned host does not reopen the global v6" "global address is bound" ;;
+*) ok "a pinned host does not reopen the global v6" ;;
 esac
 # The bind must come from the BOX's own addresses, never from the (name-only) site list —
 # #1021-class regression. Assert the bind line names the box's actual LAN address; under
@@ -306,9 +306,9 @@ assert_eq "DIY secure+onion+provisioned: no site block binds" \
 # these two assertions together are the cheap tier-1 stand-in for the real `caddy adapt` gate
 # tracked in #1037.
 _dupe_sites() {
-    printf '%s' "$1" | grep -E '^[^[:space:]{].*\{[[:space:]]*$' \
-        | sed 's/[[:space:]]*{[[:space:]]*$//' | tr ',' '\n' | tr -d ' ' | grep -v '^$' \
-        | sort | uniq -d
+    printf '%s' "$1" | grep -E '^[^[:space:]{].*\{[[:space:]]*$' |
+        sed 's/[[:space:]]*{[[:space:]]*$//' | tr ',' '\n' | tr -d ' ' | grep -v '^$' |
+        sort | uniq -d
 }
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_insecure_onion_gw="$(
@@ -329,8 +329,8 @@ assert_eq "insecure+onion on a real appliance: no duplicate site definition" \
     "$(_dupe_sites "$caddy_insecure_onion_gw")" ""
 # The gateway belongs to the onion vhost alone — it must not appear in the LAN block at all.
 case "$(printf '%s' "$caddy_insecure_onion_gw" | head -1)" in
-    *172.28.0.1*) bad "the bridge gateway stays out of the LAN site list" "gateway present in: $(printf '%s' "$caddy_insecure_onion_gw" | head -1)" ;;
-    *) ok "the bridge gateway stays out of the LAN site list" ;;
+*172.28.0.1*) bad "the bridge gateway stays out of the LAN site list" "gateway present in: $(printf '%s' "$caddy_insecure_onion_gw" | head -1)" ;;
+*) ok "the bridge gateway stays out of the LAN site list" ;;
 esac
 # And with binding off, NEITHER may bind — the mirror of the case above.
 # shellcheck disable=SC1090  # STACK path is dynamic by design
@@ -374,8 +374,8 @@ caddy_port_http="$(
 )"
 assert_contains "custom http port binds the site" "$caddy_port_http" "http://box.lan:8080 {"
 case "$caddy_port_http" in
-    *"disable_redirects"*) bad "plain-HTTP custom port has no redirect global" "'disable_redirects' present on a plain-HTTP site" ;;
-    *) ok "plain-HTTP custom port has no redirect global" ;;
+*"disable_redirects"*) bad "plain-HTTP custom port has no redirect global" "'disable_redirects' present on a plain-HTTP site" ;;
+*) ok "plain-HTTP custom port has no redirect global" ;;
 esac
 # A port that equals the scheme default (443 secure / unset) renders the same site address as an
 # unset one — no port suffix. It still takes :80 over from auto_https (see #1123 below), which is
@@ -389,8 +389,8 @@ caddy_port_default="$(
 )"
 assert_contains "explicit default port keeps the bare site address" "$caddy_port_default" "https://box.lan {"
 case "$caddy_port_default" in
-    *":443"*) bad "default port emits no explicit suffix" "':443' suffix present at the scheme default" ;;
-    *) ok "default port renders the bare site address" ;;
+*":443"*) bad "default port emits no explicit suffix" "':443' suffix present at the scheme default" ;;
+*) ok "default port renders the bare site address" ;;
 esac
 
 echo "== unit: the :80 redirect cannot be steered by the Host header (#1123) =="
@@ -427,8 +427,8 @@ assert_contains "everything else lands on this box, by name" "$caddy_redir" "red
 caddy_catchall="$(printf '%s\n' "$caddy_redir" | sed -n '/^http:\/\/ {/,/^}/p')"
 assert_contains "the catch-all exists" "$caddy_catchall" "redir https://"
 case "$caddy_catchall" in
-    *"{host}"* | *"{http.request.host}"*) bad "the catch-all target never comes from the request" "it interpolates the request host: $caddy_catchall" ;;
-    *) ok "the catch-all target never comes from the request" ;;
+*"{host}"* | *"{http.request.host}"*) bad "the catch-all target never comes from the request" "it interpolates the request host: $caddy_catchall" ;;
+*) ok "the catch-all target never comes from the request" ;;
 esac
 # #1021: a site block with NO bind asks Caddy for a WILDCARD listener, which reopens every address
 # the bound blocks exclude — the globally-routable one included. All new catch-alls are site blocks.
@@ -439,13 +439,13 @@ assert_eq "every site block carries the bind, including both :80 catch-alls and 
 # A custom port means a fronting proxy owns :80 (#740). Claiming it there breaks the co-hosting the
 # option exists for.
 case "$caddy_port_https" in
-    *"http:// {"*) bad "a custom port leaves :80 to the fronting proxy" "the render claimed :80 anyway" ;;
-    *) ok "a custom port leaves :80 to the fronting proxy" ;;
+*"http:// {"*) bad "a custom port leaves :80 to the fronting proxy" "the render claimed :80 anyway" ;;
+*) ok "a custom port leaves :80 to the fronting proxy" ;;
 esac
 # Plain-HTTP mode has no redirect to steer: :80 IS the dashboard there.
 case "$caddy_http" in
-    *"redir"*) bad "plain-HTTP mode renders no redirect at all" "a redir line appeared on a plain-HTTP site" ;;
-    *) ok "plain-HTTP mode renders no redirect at all" ;;
+*"redir"*) bad "plain-HTTP mode renders no redirect at all" "a redir line appeared on a plain-HTTP site" ;;
+*) ok "plain-HTTP mode renders no redirect at all" ;;
 esac
 
 echo "== unit: the :443 catch-all replaces Caddy's empty-200 default for an unmatched Host (#1132) =="
@@ -462,8 +462,8 @@ echo "== unit: the :443 catch-all replaces Caddy's empty-200 default for an unma
 caddy_https_catchall="$(printf '%s\n' "$caddy_redir" | sed -n '/^https:\/\/ {/,/^}/p')"
 assert_contains "the :443 catch-all exists" "$caddy_https_catchall" "redir https://"
 case "$caddy_https_catchall" in
-    *"{host}"* | *"{http.request.host}"*) bad "the :443 catch-all target never comes from the request" "it interpolates the request host: $caddy_https_catchall" ;;
-    *) ok "the :443 catch-all target never comes from the request" ;;
+*"{host}"* | *"{http.request.host}"*) bad "the :443 catch-all target never comes from the request" "it interpolates the request host: $caddy_https_catchall" ;;
+*) ok "the :443 catch-all target never comes from the request" ;;
 esac
 # No `tls` directive of its own: proven against real Caddy (`caddy adapt`) that a hostless catch-all
 # falls through to the file's default TLS connection policy — the SAME certificate the named vhost
@@ -472,13 +472,13 @@ esac
 # An explicit `tls` line here would ask Caddy to manage a SEPARATE certificate for a site address
 # with no hostname to manage one against.
 case "$caddy_https_catchall" in
-    *"    tls "*) bad "the :443 catch-all carries no tls directive of its own" "a tls line appeared: $caddy_https_catchall" ;;
-    *) ok "the :443 catch-all carries no tls directive of its own" ;;
+*"    tls "*) bad "the :443 catch-all carries no tls directive of its own" "a tls line appeared: $caddy_https_catchall" ;;
+*) ok "the :443 catch-all carries no tls directive of its own" ;;
 esac
 # A custom port means a fronting proxy owns :443 too (#740), the same reasoning as :80 above.
 case "$caddy_port_https" in
-    *"https:// {"*) bad "a custom port leaves :443 to the fronting proxy" "the render claimed the bare :443 catch-all anyway" ;;
-    *) ok "a custom port leaves :443 to the fronting proxy" ;;
+*"https:// {"*) bad "a custom port leaves :443 to the fronting proxy" "the render claimed the bare :443 catch-all anyway" ;;
+*) ok "a custom port leaves :443 to the fronting proxy" ;;
 esac
 
 # Onion + custom LAN port together (#740 × #343): the LAN vhost moves to the custom port and the
@@ -497,8 +497,8 @@ assert_contains "onion+custom-port: LAN vhost moves to the custom port" "$caddy_
 assert_contains "onion+custom-port: redirect global still emitted" "$caddy_port_onion" "auto_https disable_redirects"
 assert_contains "onion+custom-port: onion vhost stays on the bridge's bare :80" "$caddy_port_onion" "http://172.28.0.1 {"
 case "$caddy_port_onion" in
-    *"172.28.0.1:8443"* | *"172.28.0.1:80 "*) bad "onion vhost keeps its bare bridge port" "custom LAN port leaked onto the onion vhost" ;;
-    *) ok "onion vhost keeps its bare bridge port (no custom-port leak)" ;;
+*"172.28.0.1:8443"* | *"172.28.0.1:80 "*) bad "onion vhost keeps its bare bridge port" "custom LAN port leaked onto the onion vhost" ;;
+*) ok "onion vhost keeps its bare bridge port (no custom-port leak)" ;;
 esac
 
 echo "== unit: dashboard_sync_progress re-renders per-chain sync from /api/state (#384) =="
@@ -554,8 +554,8 @@ assert_contains "auth hashed via the pinned caddy image" "$(cat "$AUTH_LOG")" "h
 assert_not_contains "auth password stays out of docker argv" "$(cat "$AUTH_LOG")" "hunter2hunter2"
 assert_contains "Caddyfile gains basic_auth" "$(cat "$V/Caddyfile")" "basic_auth"
 case "$(cat "$V/.env" "$V/Caddyfile")" in
-    *hunter2hunter2*) bad "auth plaintext never persisted" "password leaked into .env/Caddyfile" ;;
-    *) ok "auth plaintext never persisted" ;;
+*hunter2hunter2*) bad "auth plaintext never persisted" "password leaked into .env/Caddyfile" ;;
+*) ok "auth plaintext never persisted" ;;
 esac
 
 # (2) REUSE: re-applying (here nudging an unrelated knob) keeps the SAME hash and does NOT re-hash —
@@ -565,8 +565,8 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "unchanged password keeps the same hash" "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_HASH_B64)" "$hash1"
 case "$(cat "$AUTH_LOG")" in
-    *hash-password*) bad "unchanged password is not re-hashed" "caddy hash-password was called again" ;;
-    *) ok "unchanged password is not re-hashed (stable hash)" ;;
+*hash-password*) bad "unchanged password is not re-hashed" "caddy hash-password was called again" ;;
+*) ok "unchanged password is not re-hashed (stable hash)" ;;
 esac
 
 # (3) CHANGE: a new password re-hashes (fingerprint changes) and recreates the caddy container.
@@ -582,8 +582,8 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "auth disable clears the hash" "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_HASH_B64)" ""
 case "$(cat "$V/Caddyfile")" in
-    *basic_auth*) bad "auth disable drops basic_auth" "basic_auth still present in the Caddyfile" ;;
-    *) ok "auth disable drops basic_auth" ;;
+*basic_auth*) bad "auth disable drops basic_auth" "basic_auth still present in the Caddyfile" ;;
+*) ok "auth disable drops basic_auth" ;;
 esac
 
 # Required Tari failover distinguishes long RPC outages from live progress.

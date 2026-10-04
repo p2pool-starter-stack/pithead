@@ -218,8 +218,8 @@ print("OK level=%s nodes=%d edges=%d db_healthy=%s"
 PY
 )"
 case "$contract" in
-    OK*) c_ok "/api/state #170 contract — $contract" ;;
-    *) c_bad "/api/state #170 topology+egress contract" "$contract" ;;
+OK*) c_ok "/api/state #170 contract — $contract" ;;
+*) c_bad "/api/state #170 topology+egress contract" "$contract" ;;
 esac
 
 # 1. Booting mid-sync → the gate holds both miner containers (stops them). (#35)
