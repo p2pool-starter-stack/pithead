@@ -534,7 +534,8 @@ channels share the final cut commit, one version and one GitHub Release.
    reference must be byte-identical to the tree, the shipped compose file must be byte-identical
    to the source its own `COMPOSE_SOURCE` stamp names (the tree at a cut; the staged tag's commit
    in a dev build), and the baked container archive is unpacked to confirm it carries this
-   tree's `wizard/server.py`.
+   tree's `wizard/server.py`. RigForge's `RIGFORGE_REF` record must match the Dockerfile's
+   immutable pin and the version in the baked tree's `VERSION` file.
 
    Before publication, compare the baked keyring's SHA-256 fingerprint with the release root.
    Check the keyring's complete contents too: the root fingerprint alone would miss an extra
