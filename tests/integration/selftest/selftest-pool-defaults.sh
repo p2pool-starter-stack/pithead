@@ -36,6 +36,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         upgrade_secret_fingerprints() { printf 'test-fingerprint'; }
         env_on_box() { :; }
         has_compose_profile() { return 1; }
+        run_cli_wizard_defaults() { :; }
         run_source_image_reconcile() { :; }
         tor_recovery_healthy_probe() { :; }
         run_uninstall_round_trip() { :; }
