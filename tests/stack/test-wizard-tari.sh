@@ -71,7 +71,7 @@ assert_eq "small-disk Enter-through: tari.mode off" "$(jq -r '.tari.mode' <<<"$c
 assert_eq "small-disk Enter-through: NO tari.wallet_address — nothing merge-mines, so nothing is paid" \
     "$(jq -r '.tari | has("wallet_address")' <<<"$c")" "false"
 assert_eq "small-disk Enter-through: tari carries the mode and nothing else" \
-    "$(jq -rc '.tari | keys' <<<"$c")" '["mode"]'
+    "$(jq -rc '.tari | keys' <<<"$c")" '["clearnet_initial_sync","mode"]'
 assert_contains "the decline says what it turned off and how to turn it back on" "$out" "Tari merge-mining is OFF"
 assert_contains "and points at the key that does it" "$out" "tari.mode"
 
@@ -129,6 +129,18 @@ assert_contains "and the refusal names the answer that avoids it" "$out" "Answer
     ok "a refused Tari answer writes no config.json" ||
     bad "a refused Tari answer writes no config.json" "a file was written at $WT/yes-no-address/config.json"
 
+echo "== unit: wizard fast sync warns for local chains and excludes remote chains =="
+out="$(wt_run fast "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n2\n$VALID_TARI\n\n\n\ny\n\n\n\n")"
+assert_contains "fast sync warns about both networks" "$out" "exposes your IP address to the Monero network and the Tari network until the initial sync finishes"
+out="$(wt_run private "$WT_SMALL_KB" "$WT_SMALL_H" "$WALLET\n\n1\n\n\nnone\n\n\n\n\n")"
+c="$(wt_cfg private)"
+assert_eq "explicit no-login choice remains available" "$(jq -r '.dashboard | has("auth")' <<<"$c")" "false"
+assert_eq "new install writes private keys for both chains" "$(jq -rc '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$c")" '[false,false]'
+assert_not_contains "private sync has no exposure warning" "$out" "Fast sync exposes"
+budget=$(PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$SANDBOX" wizard_disk_budget)
+assert_eq "host publishes the measured data filesystem bytes" "$(jq -r '.available_bytes' <<<"$budget")" "$((WT_SMALL_KB * 1024))"
+assert_eq "both wizards share the local and remote budgets" "$(jq -rc '[.local_need_bytes,.remote_need_bytes]' <<<"$budget")" '[566935683072,223338299392]'
+
 echo "== black-box: 'pithead setup' completes on a config that declined Tari (#1916) =="
 # The assertion the wizard-level cases cannot make. parse_and_validate_config already drops the
 # Tari address from the required set when the mode is "off" (#1855), so the wizard's own check was
@@ -139,6 +151,7 @@ STO="$WT/setup-tari-off"
 mkdir -p "$STO/build/tari" "$STO/dashboard" "$STO/bin"
 : >"$STO/dashboard/Dockerfile"
 cp "$STACK" "$STO/pithead"
+cp "$ROOT/docker-compose.yml" "$STO/docker-compose.yml"
 cp "$ROOT/build/tari/config.toml.template" "$STO/build/tari/"
 make_stubs "$STO/bin"
 cp "$WT/bin/df" "$STO/bin/df"

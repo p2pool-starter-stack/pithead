@@ -332,9 +332,8 @@ wizard_mint_cert() { # <spool-dir>  -> prints the fingerprint
 # An appliance gets a dashboard login whether or not the onion is on.
 #
 # ensure_onion_password only fires for the onion, so a LAN appliance shipped an UNAUTHENTICATED
-# dashboard — and the setup page told the operator a login had been generated. On DIY that is a
-# defensible default: the operator ran the CLI wizard, was asked, and pressed Enter to skip. A
-# headless appliance was never asked, so the safe answer is the one it gets. The credential is
+# dashboard — and the setup page told the operator a login had been generated. Both setup
+# wizards now generate a login by default; the appliance honors its explicit opt-out. The credential is
 # generated on the machine and printed to its console; it never crosses the setup page.
 ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_FILE]
     local config="${2:-$CONFIG_FILE}"

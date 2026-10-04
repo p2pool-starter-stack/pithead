@@ -4,7 +4,7 @@ import { NodeProbeProgress, NodeProbeReport } from "../network/nodeprobe.mjs";
 import { InstallSection } from "./stages.mjs";
 import * as failure from "./wizardfailure.mjs";
 import { MachineName } from "./wizardhostname.mjs";
-import { TariSection, tariAnswer, XvbField } from "./wizardmining.mjs";
+import { fastSyncWarning, TariSection, tariAnswer } from "./wizardmining.mjs";
 import { Err, Field, Note, RadioField } from "./wizardparts.mjs";
 
 const FIELDS = {
@@ -22,7 +22,6 @@ const FIELDS = {
   tariRemoteGrpc: { path: "tari.remote.grpc_port" },
   pool: { path: "p2pool.pool" },
   localMiner: { path: "local_miner.enabled" },
-  xvb: { path: "xvb.enabled" },
   clearnetSync: { path: "monero.clearnet_initial_sync" },
   healthchecks: { path: "healthchecks.ping_url" },
   telegramToken: { path: "telegram.bot_token" },
@@ -128,7 +127,7 @@ export function renderSetup(app) {
               installer &&
               html`<${InstallSection} disks=${disks} chosen=${chosen} confirm=${confirm}
                 wipe=${wipe} allowStick=${rig}
-                onPick=${(e) => app.setState({ chosen: e.target.value, wipe: "keep" })}
+                onPick=${app.pickDisk}
                 onConfirm=${(e) => app.setState({ confirm: e.target.value })}
                 onWipe=${(e) => app.setState({ wipe: e.target.value })} />`
             }
@@ -213,19 +212,24 @@ export function renderSetup(app) {
                 CPU governor, memory reservations — which is exactly what a dedicated
                 appliance is for.<//>`
             }
-            <${XvbField} v=${v} on=${on} />
 
             <h2>First sync</h2>
-            <${RadioField} label="Downloading the chain the first time" name="clearnet-sync"
-                  value=${String(v("clearnetSync") ?? false)} onChange=${on("clearnetSync")} options=${[
-                    ["false", "Private, over Tor", "Takes days."],
+            <${RadioField} label="Fast initial sync for locally run chains" name="clearnet-sync"
+                  value=${String(app.state.fastSync)} onChange=${on("clearnetSync")} options=${[
+                    [
+                      "false",
+                      "Private, over Tor",
+                      "Default: all traffic goes over Tor. Takes days.",
+                    ],
                     [
                       "true",
                       "Faster, over clearnet",
-                      "Takes hours instead of days. Your IP is visible to peers during sync; this node switches to Tor automatically afterwards.",
+                      "Takes hours instead of days. Each local chain switches to Tor automatically afterwards.",
                     ],
                   ]} />
 
+
+            ${fastSyncWarning(cfg) && html`<p class="c-bad">${fastSyncWarning(cfg)}</p>`}
 
             <h2>Dashboard login</h2>
             <${RadioField} label="How should the dashboard be protected?" name="auth-mode"

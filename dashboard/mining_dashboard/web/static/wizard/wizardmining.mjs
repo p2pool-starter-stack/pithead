@@ -33,7 +33,7 @@ export function tariAnswer(mode) {
 export const TariSection = ({ answer, v, on }) => html`<h2>Tari merge-mining</h2>
     <${RadioField} label="Merge-mine Tari?" name="tari-mode" value=${answer}
         onChange=${on("tariMode")} options=${[
-          ["off", "No", "Mine Monero only (default)."],
+          ["off", "No", "Mine Monero only."],
           ["local", "Yes, with the bundled node", "Run a Tari node on this machine."],
           ["remote", "Yes, with my node", "Use a Tari node I already run."],
         ]} />
@@ -68,15 +68,31 @@ export const TariSection = ({ answer, v, on }) => html`<h2>Tari merge-mining</h2
       </div>`
     }`;
 
-// The raffle switch (#1848). Opt-OUT, unlike Tari: `xvb.enabled` is true in the reference, so the
-// default answer here is the one a machine already had, and only a No changes anything. There is
-// no follow-up question by design — the donor id and tier keep their defaults and stay editable
-// from the dashboard, which is where the raffle's own decision table lives.
-export const XvbField = ({ v, on }) => html`<${RadioField} label="Join the XMRvsBeast raffle?"
-        name="xvb" value=${String(v("xvb") ?? true)} onChange=${on("xvb")} options=${[
-          ["true", "Yes", "Donate a slice of hashrate to the raffle (default)."],
-          ["false", "No", "Send everything to P2Pool."],
-        ]} />
-    <${Note}>The switching engine donates only enough hashrate to hold your target tier and routes
-    everything else to P2Pool. Donating above a tier's threshold earns nothing extra, because the
-    raffle picks its winners at random.<//>`;
+// Measurements come from the host, including the target's future data partition.
+export function tariDiskDefault(budget, disks, target, moneroMode) {
+  const available = disks.length
+    ? disks.find((disk) => disk.name === target)?.data_bytes
+    : budget.available_bytes;
+  const need = moneroMode === "remote" ? budget.remote_need_bytes : budget.local_need_bytes;
+  return Number.isFinite(available) && Number.isFinite(need) && available < need ? "off" : "local";
+}
+
+export function syncInitialChains(cfg, fast) {
+  cfg.monero.clearnet_initial_sync = fast && cfg.monero.mode !== "remote";
+  cfg.tari.clearnet_initial_sync = fast && cfg.tari.mode === "local";
+}
+
+export function fastSyncWarning(cfg) {
+  const networks = ["monero", "tari"]
+    .filter((chain) => cfg[chain]?.clearnet_initial_sync)
+    .map((chain) => `the ${chain === "monero" ? "Monero" : "Tari"} network`);
+  return networks.length
+    ? `Fast sync exposes your IP address to ${networks.join(" and ")} until the initial sync finishes.`
+    : "";
+}
+
+export function applyDiskDefault(app, cfg, chosen = app.state.chosen) {
+  if (app.state.newMachine && !app.state.tariTouched) {
+    cfg.tari.mode = tariDiskDefault(app.state.diskBudget, app.state.disks, chosen, cfg.monero.mode);
+  }
+}
