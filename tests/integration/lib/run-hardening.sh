@@ -211,6 +211,35 @@ run_hardening() {
     if [ -z "$cdir" ]; then
         it_skip_leg "control spool round-trips" "CONTROL_DIR not set on the box"
     else
+        # Raw refusal must survive the real systemd control runner, before staging via jq.
+        local raw_doc raw_id raw_path raw_kind raw_error raw_before
+        raw_before="$(rx 'sha256sum config.json .env')"
+        for raw_kind in top nested placeholder; do
+            case "$raw_kind" in
+                top)
+                    raw_doc='{"monero":{},"monero":{}}'
+                    raw_path=monero
+                    ;;
+                nested)
+                    raw_doc='{"dashboard":{"auth":{"password":"first","password":"last"}}}'
+                    raw_path=dashboard.auth.password
+                    ;;
+                placeholder)
+                    raw_doc='{"dashboard":{"auth":{"password":"PASTE_secret"}}}'
+                    raw_path=dashboard.auth.password
+                    ;;
+            esac
+            raw_id="$(_uuid4)"
+            _spool_write "$cdir/requests/$raw_id.json" \
+                "$(printf '{"id":"%s","action":"preview","actor":"itest","config":%s}' "$raw_id" "$raw_doc")"
+            st="$(_wait_control_status "$cdir" "$raw_id" "" 60 || echo timeout)"
+            assert_eq "raw config $raw_kind refused by systemd control runner (#3098)" "$st" rejected
+            raw_error="$(rx "jq -r '.error // empty' $(quote_arg "$cdir/results/$raw_id.json") 2>/dev/null")"
+            assert_contains "raw config $raw_kind refusal names its path (#3098)" "$raw_error" "$raw_path"
+        done
+        assert_eq "raw config refusals preserve config.json and env (#3098)" \
+            "$(rx 'sha256sum config.json .env')" "$raw_before"
+
         # 3a. A NON-sensitive change (an allowlisted alert toggle) committed via the spool must be
         #     applied BY THE PATH UNIT — not by us calling control-run-pending.
         # Use an allowlisted key that renders UNCONDITIONALLY: DASHBOARD_CHECK_UPDATES is always

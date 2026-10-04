@@ -40,6 +40,9 @@ pithead/
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--dry-run"` previews the plan. |
 
+Raw config checks live in `lib/pithead/22a-config-document.sh` and dashboard `config/documents.py`.
+Both reject duplicate members before normalization and placeholders before staging or masking.
+
 The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
