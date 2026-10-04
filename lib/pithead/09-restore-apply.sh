@@ -220,12 +220,14 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>] [<dest
     fi
 
     if [ -n "$cfg_dest" ]; then
-        # Installer door: the credentials card needs the config while the full tree stays in the
-        # volatile encrypted archive until the installer applies it to target data.
-        restore_setup_publish_file "$staged_cfg" "$cfg_dest" || {
+        # The private installer card needs the preserved generated password as well as config.
+        if ! restore_card_stratum_seed "$staged_cfg" "$tree/$root$ENV_FILE" "$tmp/stratum-password" ||
+            ! restore_setup_publish_file "$tmp/stratum-password" "$cfg_dest.stratum-password" ||
+            ! restore_setup_publish_file "$staged_cfg" "$cfg_dest"; then
+            rm -f "$cfg_dest.stratum-password"
             printf 'could not apply the backup files' >"$errf"
             return 1
-        }
+        fi
         return 0
     fi
     if ! restore_canonicalize_derived "$staged_cfg" "$tree/$root$ENV_FILE" "$tree/${root}Caddyfile"; then

@@ -8,6 +8,8 @@ is reached. ``wizard.py`` re-imports the name, so ``wizard.build_config`` still 
 the tests and for the one call site in ``submit``.
 """
 
+import secrets
+
 
 def build_config(form: dict) -> dict:
     """Form fields as a pithead config — the fallback for a client that never populated the
@@ -27,7 +29,12 @@ def build_config(form: dict) -> dict:
     cfg: dict = {
         "dashboard": {"host": s_("machine_name") or "pithead"},
         "monero": {"wallet_address": s_("monero_wallet")},
-        "p2pool": {"pool": s_("pool") or "mini", "stratum_password": "auto"},
+        "p2pool": {
+            "pool": s_("pool") or "mini",
+            "stratum_password": secrets.token_hex(12)
+            if form.get("stratum_password") == "true"
+            else "",
+        },
     }
 
     # Merge-mining Tari is opt-in, and "off" is what a new machine gets (#1855). The mode is

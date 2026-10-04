@@ -275,6 +275,17 @@ wizard_ask_shape() {
     read -r -p "Also mine on this machine with its spare CPU (co-locate a RigForge worker)? (y/N): " IN_LOCAL_MINER || true
     LOCAL_MINER=false
     [[ "$IN_LOCAL_MINER" =~ ^[Yy] ]] && LOCAL_MINER=true
+
+    wizard_ask_stratum_password
+}
+
+wizard_ask_stratum_password() {
+    read -r -p "Enable stratum password? (y/N): " IN_STRATUM_AUTH || true
+    WIZ_STRATUM_PASSWORD=""
+    if [[ "$IN_STRATUM_AUTH" =~ ^[Yy] ]]; then
+        WIZ_STRATUM_PASSWORD=$(openssl rand -hex 12) || error "Could not generate the stratum password. Setup stopped."
+        [[ "$WIZ_STRATUM_PASSWORD" =~ ^[0-9a-f]{24}$ ]] || error "Could not generate the stratum password. Setup stopped."
+    fi
 }
 
 # Assembles config.json from the globals wizard_ask_core/wizard_ask_shape set, and writes it.
@@ -287,9 +298,10 @@ wizard_write_config() {
         --arg mp "$IN_MONERO_PASS" \
         --arg tmode "$TARI_MODE_WIZ" \
         --arg pool "$POOL_TIER" \
+        --arg stratum_password "${WIZ_STRATUM_PASSWORD:-}" \
         '{monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: $mp},
           tari: {mode: $tmode},
-          p2pool: {pool: $pool, stratum_password: "auto"},
+          p2pool: {pool: $pool, stratum_password: $stratum_password},
           dashboard: {secure: true}}')
 
     # tari.mode is written EXPLICITLY, and it is the one key here that departs from the rest of the

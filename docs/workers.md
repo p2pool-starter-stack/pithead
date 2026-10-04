@@ -129,17 +129,19 @@ the internal wiring is untouched.
 
 ### Authentication
 
-New installs ship with stratum authentication **on** (#208): the setup wizard and
-`config.minimal.json` both write `p2pool.stratum_password: "auto"` into the new `config.json`, the
-stack generates a stable secret and prints it after `setup`/`apply` (also shown by
-`pithead status`), and RigForge's own setup prompts for it — a fresh stack plus fresh rigs
-authenticate end-to-end with no manual config edits. The proxy rejects any rig whose stratum
-`pass` doesn't match, so only devices you've configured can mine. That also means only they can
-register a worker name, which shrinks the worker-name SSRF surface (a malicious worker name is
-how an untrusted device could otherwise probe the dashboard's internals).
+New installs have **no stratum password**. The CLI and appliance setup wizards ask
+**Enable stratum password?**, default off. Choose Yes to generate one. Existing and restored
+configurations retain their password setting; `"auto"` continues to reuse its saved secret.
+The proxy rejects a miner whose `pass` does not match a configured password.
 
-An install that predates this default keeps its open `:3333` on upgrade — the key is written
-explicitly into new configs, never assumed for old ones. To adopt it on an existing fleet, update
+`setup`, `up` and `apply` print the connection details. The appliance setup hand-off shows the
+password before provisioning. The dashboard's **Connect a miner** block shows the LAN pool URL,
+password with Reveal and Copy, and the TLS fingerprint when enabled. A dashboard without a
+login also shows the password: anyone on that LAN can retrieve it. Enable dashboard authentication
+before sharing access. When no password is set, all these surfaces say so and miners connect
+without one.
+
+To adopt it on an existing fleet, update
 the rigs first (set each rig's `pass`, or push it over the rigs' control API from the dashboard's
 Worker Inspect), then set the password on the stack — a rig with the wrong `pass` is rejected the
 moment the stack enforces it.

@@ -263,6 +263,10 @@ configuration — every key, with its default filled in — and it *is* what the
 answering a question above (or one of the Advanced fields) rewrites it, and editing it directly
 wins. Paste a whole `config.json` in there if you have one.
 
+The Mining section asks **Enable stratum password?**, default **No**. Choose Yes to generate
+one and save it from the hand-off card. Existing and restored configurations keep their current
+setting. The form-submit fallback uses the same opt-in rule.
+
 ### Press "Validate, then install"
 
 The machine checks your answers first — including dialing any remote node you named, so a
@@ -277,6 +281,8 @@ Only when everything passes does the page show the things you must save:
 - the **dashboard login** (generated, or the one you chose)
 - the **dashboard address** (`https://pithead.local`)
 - where to **point your miners** (`stratum+tcp://pithead.local:3333`)
+- the **stratum password**, or **No stratum password** when it is off
+- the **TLS fingerprint** when stratum TLS is enabled
 
 A remote node's address and RPC login are not one-time answers. The dashboard's Configuration view
 changes either on a running machine: type `APPLY` to confirm, and the host checks the staged
@@ -285,7 +291,12 @@ endpoint with the staged login before it commits the pair
 local-node mode preserves its masked partner and applies the pair to the local services together. A changed endpoint needs explicit replacement
 credentials: a masked login never follows it to a new node.
 
-**Copy the login somewhere safe, then press "I saved these — erase the disk and install."**
+After provisioning, **Connect a miner** in the dashboard shows the LAN pool URL and the TLS
+fingerprint when enabled. The block offers Reveal and Copy for a configured stratum password,
+including on a dashboard without a login: anyone on that LAN can retrieve it. If it is off,
+the block says **No stratum password**.
+
+**Copy the login and any stratum password somewhere safe, then press "I saved these — erase the disk and install."**
 Nothing touches the disk until that press. The install takes a few minutes, and when it
 finishes **the machine switches itself off.** That is the end of the install, not a crash.
 
