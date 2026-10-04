@@ -29,6 +29,8 @@ test("buildSections: high-consequence fields carry their inline warning", () => 
   // #2367: the password and hostname name their consequence before the operator confirms.
   assert.match(fields["dashboard.auth.password"].warning, /logged out|locks this session/);
   assert.match(fields["dashboard.host"].warning, /approval-gated day-two rename/);
+  assert.match(fields["dashboard.host"].warning, /Rigs using the old name stop mining/);
+  assert.match(fields["dashboard.host"].warning, /Set up again on each rig.*new name/);
   assert.match(fields["telegram.events.wallet_changed"].warning, /wallet swap could go unnoticed/);
   assert.match(fields["telegram.events.clearnet_exposed"].warning, /exposing this machine's IP/);
   assert.match(fields["telegram.enabled"].warning, /stops every Telegram alert.*tamper alarms/);

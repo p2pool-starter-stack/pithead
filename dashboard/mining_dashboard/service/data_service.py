@@ -304,7 +304,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
 
                     # 3. Node-down detection + worker rejection (Issue #31). Debounce each
                     # node's live reachability into a stable DOWN flag; monerod-down always
-                    # rejects, Tari-down never does — Tari stays visible in its own panel/alerts.
+                    # rejects; Tari-down rejects when Tari is required.
                     monero_down = self.monero_health.update(monero_sync.get("reachable", True))
                     tari_down = await self._observe_tari(tari_client, tari_sync)
                     monero_sync["down"] = monero_down
@@ -313,7 +313,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # 3b. Peer-loss staleness (#972): monerod can survive a tor restart with
                     # every SOCKS peer dead — reachable, healthcheck green, height creeping,
                     # but `synchronized: false` for hours. The RPC path is the only one that
-                    # carries the flag; absence (log-scrape fallback, remote node) is no
+                    # carries the flag; absence (log/stats fallback) is no
                     # verdict, so the monitor isn't fed and its streaks stay put.
                     monero_reports_synced = monero_sync.get("synchronized")
                     if monero_reports_synced is not None:
@@ -331,7 +331,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         monero_synced and (tari_synced or not TARI_REQUIRED)
                     )
                     if self.miner_released:
-                        await self._apply_worker_rejection(monero_down)
+                        await self._apply_worker_rejection(monero_down, tari_down)
 
                     # 5. Operator alerts (Issues #121/#45): push debounced node/worker/sync/host
                     # edges to Telegram. Consumes the flags computed above; worker presence is only

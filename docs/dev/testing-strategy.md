@@ -141,14 +141,14 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 
 | Situation | Trigger | Tier |
 |---|---|---|
-| monerod down → **reject workers** (stop `xmrig-proxy`) | unreachable ≥ `NODE_DOWN_AFTER_SEC` | 1 ✅ · 3 ▶ · 4 ▶ |
+| Local or remote monerod down → **reject workers** (stop `xmrig-proxy`) | unreachable ≥ `NODE_DOWN_AFTER_SEC` | 1 ✅ · 3 ▶ · 4 ▶ |
 | monerod busy / mid-reorg (HTTP 200, `status≠OK`) → **reject workers** | RPC answers but distrusted | 1 ✅ · 3 ▶ |
-| Tari down (required or not) → **never rejects**; p2pool keeps mining Monero (#897) | `tari_down` | 1 ✅ · 3 ▶ |
-| Recovery hysteresis — readmit only after monerod stable `NODE_RECOVERY_AFTER_SEC` | reachable again | 1 ✅ |
-| Transient blip / never-reachable → **no** false reject | debounce / `ever_up` | 1 ✅ |
+| Configured Tari RPC unreachable for 15 minutes, including after dashboard restart → rejects when required; optional Tari keeps mining Monero; alerts either way | `tari_down` | 1 ✅ · 3 ▶ |
+| Recovery hysteresis — readmit only after every required node stable `NODE_RECOVERY_AFTER_SEC` | reachable again | 1 ✅ |
+| Transient blip / never-reachable Monero → **no** false reject | debounce / `ever_up` | 1 ✅ |
 | Monero node **isolated or not advancing** — the "at tip, with peers" contract for monerod (#2499): the real peer counts (the published RPC is restricted and answers 0, so an in-container helper reads the loopback-only admin RPC, #2921), `MoneroChainHealth` (0 outgoing peers `NODE_STALE_AFTER_SEC`, no new height 30 min), the card's Node Health / Peers / Height Moved, `node_down`-toggle alerts for each condition, `build/monero/healthcheck.sh` failing past `MONERO_HEALTH_PEERLESS_SEC`, doctor peers/tip age + FAIL, a `monero chain` status line, and the tier-4 strand leg (`run.sh --monero-stranded`) | red on both conditions with the numbers; remote node: no verdict | 1 ✅ (`test_monero_health.py`, `test_alert_service_monero_health.py`, `test_monero_client.py`, `monero-health-card.test.mjs`; healthcheck/doctor/status: `tests/stack/test-monero-chain.sh` covers restricted vs real zero vs no reading in the healthcheck, helper and doctor; `standalone/test_tor_recovery_info.sh` in tor-recover; `test_containers.py` the fresh/stale/malformed observation; `selftest-monero-peer-wait.sh` the peer predicates, the peer-wait capture and the RPC-boundary rows; `selftest-monero-p2p.sh` the bounded P2P advertisement decoder and non-secret failure diagnostics) · 4 ▶ (`run.sh --monero-stranded`, which checks the actual P2P advertisement, RPC boundary, current-run observation after deployment and restart, and the live tor-recover peer provider; bench-ci phase `monero-stranded`, about an hour, opt-in; KVM `provision` also runs the native Quadlet cold-start/restart RPC fixture) |
 | Monero node reachable but **out of sync** — the post-tor-restart 0-peer strand (#972): raw `synchronized` passthrough, debounced stale flag, alert via the `node_down` toggle, monerod restarted alongside an actual tor container restart (compose `depends_on: restart` + the final #424 auto-heal step), `restart monerod` leg, doctor WARN | `synchronized: false` ≥ `NODE_STALE_AFTER_SEC` after being in sync once | 1 ✅ (client/data_service/alert/tor_heal pytest, `tests/stack` doctor + restart + compose invariants) · 2 ✅ (flag over the wire) · 4 (real strand + re-peer needs the bench) |
-| Double outage; readmit follows monerod alone — Tari's state doesn't gate it either way | both down → monerod up | 1 ✅ (added) · 3 ▶ |
+| Double outage; readmit only after both required nodes recover | both down → both up | 1 ✅ (added) · 3 ▶ |
 | #35 latch × #31 failover coexist after release | down post-release | 1 ✅ (added) · 3 ▶ |
 | Stop/start fails → retry next cycle (idempotent) | docker error | 1 ✅ |
 | `dashboard.fail_closed` (#490): default off never holds on an unrecoverable failure (alert-only); `true` holds (reusing #35's stop/start), releases once it clears (not a one-way latch), no-op before the sync gate releases | `is_db_unrecoverable() ∨ containers.is_confirmed_bad("dashboard")` | 1 ✅ · 3 ▶ |
@@ -695,24 +695,20 @@ tier 3/4:
   root-owned file under the dashboard data dir and asserts the pool-flip `apply` (which runs
   `ensure_directories` → `ensure_owner`) chowns it to uid 1000 — the #255 "scan contents, not just
   the dir" regression. Runs at the release gate only (needs root to create a foreign-uid inode).
-- **Real-container monerod failover in PR CI.** ✅ Now tier-3 scenarios 6/7 in the mini-stack: the
-  compose env had a fake `monerod` container wired at the network level (`MONERO_RPC_URL`) but the
-  dashboard's `LOCAL_MONERO_HOST` default didn't match it, so `MONERO_NODE_HOST != LOCAL_MONERO_HOST`
-  put the dashboard on the "remote" code path, which never probes reachability — a monerod outage
-  was a silent no-op end-to-end. Setting `LOCAL_MONERO_HOST` to the fake's hostname fixed the wiring;
-  scenarios 6/7 down/readmit the real `itest-xmrig-proxy` container against it. The tier-4
-  `--fault-injection` box run still covers the real binary/real kernel leg.
-- **Required Tari outage keeps mining, with real containers.** ✅ Mini-stack scenario 4: with the
-  default `dashboard.tari_required=true`, asserts `itest-xmrig-proxy` stays running through a Tari
-  outage — the path that silently killed 22 measured minutes of revenue before it was fixed.
+- **Real-container Monero failover in PR CI.** ✅ Mini-stack scenarios 6/7 exercise local
+  Monero rejection/readmission; scenario 11 uses remote RPC and proves outages reject with
+  Tari optional. The tier-4 `--fault-injection` run covers the real binary/kernel leg.
+- **Required Tari outage with real containers.** ✅ Mini-stack scenario 4 stops the Tari
+  container and asserts the proxy stops; scenario 5 proves recovery. Live startup, migration
+  and sync readings leave the proxy running. The mini-stack shortens the 15-minute debounce
+  to four seconds; unit tests prove the production window.
 - **Non-blocking-Tari sync-gate path with real containers.** ✅ Mini-stack scenario 11: recreates
   the stack with `dashboard.tari_required=false` (baked in at container boot, so it needs its own
   compose cycle) and asserts the sync gate releases on monerod alone.
 - **monerod busy / mid-reorg failover.** ✅ Mini-stack scenario 8: the fake's `busy` mode (HTTP 200,
   `status≠OK`) drives the same reject/readmit cycle as a clean outage.
-- **Double outage, readmission follows monerod alone.** ✅ Mini-stack scenario 9: monerod and Tari
-  both down → rejected; recovering monerod readmits immediately even with Tari still down — proven
-  end-to-end, not just at the unit level.
+- **Double outage, both required nodes recover.** ✅ Mini-stack scenario 9: both down →
+  rejected; Monero recovery alone does not readmit while required Tari is still down.
 - **Partial-start / stop-failure idempotency.** The control loop's "container fails to start/stop →
   retry next cycle" is unit-only; no tier-3/4 scenario injects a docker start/stop error.
 - **`pithead doctor` on a real box.** ✅ The `--check` phase now runs `doctor` and asserts exit 0
