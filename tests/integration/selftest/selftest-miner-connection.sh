@@ -2,6 +2,7 @@
 # Endpoint verdict mutations, without a service or network.
 set -euo pipefail
 source "${BASH_SOURCE[0]%/*}/../lib/miner-connection.sh"
+echo "== unit: miner connection credential and TLS identity verdict (#3092) =="
 fingerprint=$(printf 'a%.0s' {1..64})
 body=$(jq -nc --arg fp "$fingerprint" '{url:"stratum+ssl://fixture:3333",password:"fixture-secret",password_set:true,tls:true,fingerprint:$fp}')
 miner_connection_matches "$body" fixture-secret true "$fingerprint" 3333 >/dev/null
