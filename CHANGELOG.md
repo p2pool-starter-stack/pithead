@@ -15,6 +15,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Upgrading from 1.20.x
 
+- Upgrading from 1.x.x is best-effort; a fresh setup may be required.
+
 - Take `./pithead backup --with-chains` before upgrading.
 - Leave free space for the Tari migration: both database copies occupy the data volume at its
   peak. The upgrade requires the current `data.mdb` size plus 5 GiB free.
@@ -81,6 +83,9 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
     (a mined output that has not matured yet), so a payout is still recorded when it is mined.
 
 ### Added
+
+- Read-only `config_version` in `config.json`, shown in Configuration. Newer configs warn;
+  restoring a backup from a newer release requires updating first.
 
 - **The XMR Network card now says whether monerod is at the tip with peers.** It shows the outgoing and
   incoming peer counts and the age of the last height change, and goes red with the numbers after 10

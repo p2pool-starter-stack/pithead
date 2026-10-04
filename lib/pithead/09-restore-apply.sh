@@ -211,6 +211,11 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>] [<dest
         printf 'archive does not contain a usable configuration' >"$errf"
         return 1
     fi
+    err=$(restore_config_version_error "$staged_cfg")
+    if [ -n "$err" ]; then
+        printf '%s' "$err" >"$errf"
+        return 1
+    fi
     # Validated through the COPY — parse_and_validate_config fills in generated fields as it
     # goes (consume_preseed_config's own reasoning), and only a config that survives this is
     # ever promoted to the real config.json.

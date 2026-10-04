@@ -104,8 +104,8 @@ media_find_config() {
 media_merge_config() { # <running-json> <candidate-json>
     local out
     out=$(mktemp) || return 1
-    if ! jq -s '.[0] * .[1]' "$1" "$2" >"$out" 2>/dev/null; then
-        cp "$2" "$out" 2>/dev/null || {
+    if ! jq -s '.[0] * (.[1] | del(.config_version))' "$1" "$2" >"$out" 2>/dev/null; then
+        jq 'del(.config_version)' "$2" >"$out" 2>/dev/null || {
             rm -f "$out"
             return 1
         }
@@ -167,7 +167,7 @@ media_config_diff() { # <old-json> <new-json> — requires SECRET_PATHS_JSON (se
         def show($v): if $v == null then "(unset)" else ($v | tostring) end;
         ($o[0]) as $O | ($n[0]) as $N |
         (([$O | paths(scalars)] + [$N | paths(scalars)]) | unique) as $leaves |
-        $leaves[] as $p |
+        $leaves[] as $p | select($p != ["config_version"]) |
         ($O | getpath($p)) as $ov | ($N | getpath($p)) as $nv |
         select($ov != $nv) |
         ($p | join(".")) as $dotted |
