@@ -24,6 +24,11 @@ env_get() {
 stratum_port_effective() { echo 3333; }
 config_bool() { echo true; }
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    if [ "$1" = setup ] && [ "${FAIL_SETUP:-0}" = 1 ]; then
+        echo 'Initializing Tor service'
+        echo 'fixture-secret-must-not-be-retained'
+        exit 42
+    fi
     probe_command=$1
     if [ "$1" = apply ]; then
         count=$(cat apply-count 2>/dev/null || echo 0)
@@ -61,3 +66,24 @@ if (cd "$fixture" && OMIT_COMMAND=no-change OMIT_FIELD=unchanged bash -c "$probe
     exit 1
 fi
 echo 'PASS: missing no-change-path assertion fails closed'
+
+# Drive the outer harness too: a failed CLI must leave useful, credential-free evidence.
+IT_FAIL=0
+OUT_DIR=$fixture
+rx() { (cd "$fixture" && FAIL_SETUP=1 bash -c "$1"); }
+it_step() { :; }
+assert_rc() { [ "$2" -eq "$3" ] || IT_FAIL=$((IT_FAIL + 1)); }
+it_pass() { :; }
+it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
+if run_connection_announcements; then
+    echo 'FAIL: failed setup command was accepted' >&2
+    exit 1
+fi
+grep -Fxq 'connection announcement probe exit: 42' "$fixture/connection-announcements.log"
+grep -Fxq 'Failed at: setup' "$fixture/connection-announcements.log"
+grep -Fxq 'Setup reached: Initializing Tor service' "$fixture/connection-announcements.log"
+if grep -q 'fixture-secret' "$fixture/connection-announcements.log"; then
+    echo 'FAIL: setup diagnostic retained a credential' >&2
+    exit 1
+fi
+echo 'PASS: failed setup retains only the exit code and whitelisted stage labels'
