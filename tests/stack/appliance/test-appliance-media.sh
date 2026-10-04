@@ -132,7 +132,7 @@ rm -f "$merged"
 
 echo "== unit: media_validate_config (reuses the pre-seed validation engine) =="
 cat >"$MC/good.json" <<EOF
-{"monero":{"wallet_address":"$VALID_PRIMARY","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"}}
+{"config_version":"$(sed 's/[-+].*//' "$ROOT/VERSION")","monero":{"wallet_address":"$VALID_PRIMARY","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"}}
 EOF
 cat >"$MC/bad.json" <<'EOF'
 {"monero":{"wallet_address":"nope"},"tari":{"wallet_address":"t"}}
@@ -148,9 +148,9 @@ else
     bad "a valid candidate validates and yields a scratch file" "no output"
 fi
 if cmp -s "$MC/good.json" "$validated"; then
-    ok "a candidate that already carries its node credentials validates byte-identical"
+    ok "a candidate with node credentials and an equal stamp validates byte-identical"
 else
-    bad "a candidate that already carries its node credentials validates byte-identical" "$(diff "$MC/good.json" "$validated" 2>&1 | head -3)"
+    bad "a candidate with node credentials and an equal stamp validates byte-identical" "$(diff "$MC/good.json" "$validated" 2>&1 | head -3)"
 fi
 rm -f "$validated"
 

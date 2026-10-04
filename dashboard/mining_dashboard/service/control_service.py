@@ -304,7 +304,7 @@ def read_config():
     cfg["_approval_keys"] = approval
     cfg["_default_keys"] = config_operations.missing_default_paths(reference, host, _get)
     cfg["_last_apply"] = config_operations.last_apply_state(audit_service.recent_changes())
-    return cfg
+    return config_operations.config_version_metadata(cfg, host)
 
 
 def submit(action, cfg=None, actor="", intent_id=None, version=None, confirm=None, approval=None):
