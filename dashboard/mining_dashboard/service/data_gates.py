@@ -28,11 +28,11 @@ def chain_synced(sync):
     (``reachable is True``) and said it isn't syncing (``is_syncing is False``). An empty,
     partial or unreachable result is not synced (#2472).
 
-    When the reading carries monerod's own ``synchronized`` flag (the local RPC path), that flag
+    When the reading carries monerod's own ``synchronized`` flag (the RPC path), that flag
     must be True too. A monerod that has just restarted and has no peers yet reports
     ``target_height: 0`` with ``synchronized: false``, which the client maps to "not syncing".
     Before this check the gate took that as synced and released the miner on a chain that had
-    never synced. A reading without the key (a remote node, Tari) has no such verdict to wait on.
+    never synced. A reading without the key (the log/stats fallback, Tari) has no such verdict to wait on.
     """
     return (
         sync.get("reachable") is True
@@ -42,33 +42,29 @@ def chain_synced(sync):
 
 
 class DataGateMixin:
-    async def _apply_worker_rejection(self, monero_down):
-        """
-        Reject workers (stop the proxy) when monerod is DOWN so miners fail over to their
-        backup pools; readmit them (start the proxy) once monerod is confirmed healthy again.
+    async def _apply_worker_rejection(self, monero_down, tari_down=False):
+        """Stop the proxy on a debounced required-node outage; readmit only after
+        every required node is confirmed healthy. Tari is required by default;
+        opting out preserves Monero mining through a Tari-only outage.
 
-        monerod is required to mine, so a monerod outage always rejects. Tari never rejects
-        workers (Issue #897): it's merge-mining gravy, and p2pool keeps mining Monero through
-        a Tari-only outage, so stopping the proxy over Tari alone traded partial revenue for
-        none. `TARI_REQUIRED` (dashboard.tari_required) still gates the initial-sync hold and
-        the full-screen sync view (see `_apply_sync_gate`); a Tari outage still surfaces
-        through the Tari panel and alerts. Only acts on transitions (tracked by
-        `workers_rejected`), and Docker treats a repeat stop/start as already-done (HTTP 304),
-        so it's safe every cycle.
+        Act only on transitions. Failed Docker operations leave the flag unchanged
+        so the next cycle retries; repeat operations are safe (HTTP 304).
         """
-        if monero_down and not self.workers_rejected:
-            logger.warning(
-                f"Required node unreachable — stopping {_runtime().REJECT_WORKERS_CONTAINER} so workers "
-                f"fail over to their backup pools."
-            )
-            if await self.docker_control.stop(_runtime().REJECT_WORKERS_CONTAINER):
-                self.workers_rejected = True
+        required_down = monero_down or (_runtime().TARI_REQUIRED and tari_down)
+        if required_down:
+            if not self.workers_rejected:
+                logger.warning(
+                    f"Required node unreachable — stopping {_runtime().REJECT_WORKERS_CONTAINER} so workers "
+                    f"fail over to their backup pools."
+                )
+                if await self.docker_control.stop(_runtime().REJECT_WORKERS_CONTAINER):
+                    self.workers_rejected = True
             return
 
-        # Readmit once monerod is confirmed healthy (not merely 'not down'), so a dashboard
-        # restart mid-outage doesn't bring workers back to a stack that can't mine. Tari can no
-        # longer be the reason workers were rejected, so its health plays no part in readmission.
-        recovered = self.monero_health.healthy
+        # Not-down is insufficient after a dashboard restart or during recovery.
+        recovered = self.monero_health.healthy and (
+            not _runtime().TARI_REQUIRED or self.tari_health.healthy
+        )
         if self.workers_rejected and recovered:
             logger.info(
                 f"Required nodes recovered — starting {_runtime().REJECT_WORKERS_CONTAINER} to readmit workers."

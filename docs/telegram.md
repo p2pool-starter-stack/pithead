@@ -200,10 +200,11 @@ enabled; there is no separate event toggle for this payout-safety signal.
 > alert** — it's a fixed hardware fact with nothing to do at runtime, so it stays a badge (and shows
 > in `/status`) rather than a push you can't act on.
 
-> **Tari note.** A node-down/recovered alert fires for **Tari only when Tari is treated as
-> required** (`dashboard.tari_required: true`, the default). If you've made Tari non-blocking, a
-> Tari outage doesn't stop your Monero mining, so it isn't alerted as a node-down — matching how
-> the rest of the stack treats a non-blocking Tari. Monero is always alerted.
+> **Tari note.** Tari node-down/recovered alerts fire whether `dashboard.tari_required` is
+> true or false. Tari's RPC must remain unreachable for 15 minutes to count as down;
+> Monero keeps its 90-second debounce. Both use 60 seconds of confirmed reachability
+> for recovery. Startup, migration and syncing raise progress alerts instead of rejecting
+> workers. Required Tari outages reject workers; optional Tari outages keep mining Monero.
 
 ---
 

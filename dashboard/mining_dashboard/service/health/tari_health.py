@@ -86,6 +86,7 @@ class TariChainHealth:
         self.explorer_url = TARI_EXPLORER_URL if explorer_url is None else explorer_url
         self._explorer = explorer
         self._notify = notify  # optional async callable(text) -> text, or None when undelivered
+        self._progress_alerted = None
         self._alerted = None  # set once a red alert went out, so recovery is noted once
         self._clock = clock
         self._height = None
@@ -162,8 +163,27 @@ class TariChainHealth:
             # A failed fetch drops the reference rather than keeping an old one alive past its hour.
             self._explorer_tip = tip
         verdict = self.observe(sync, connections, now)
+        await self._alert_progress(sync)
         await self._alert(verdict)
         return verdict
+
+    async def _alert_progress(self, sync):
+        """Notify once per live initialization/sync phase, retrying failed delivery.
+        These are progress states, not RPC outages and never worker-rejection signals.
+        """
+        if self._notify is None:
+            return
+        if not sync.get("reachable"):
+            return  # an unknown cycle is no evidence the last live phase ended
+        phase = sync.get("initializing") or ("syncing" if sync.get("is_syncing") else None)
+        if phase is None:
+            self._progress_alerted = None
+        elif phase != self._progress_alerted:
+            if await self._send(
+                f"Tari node is {phase} — this is not a node-down outage. "
+                "Workers are not rejected for this state."
+            ):
+                self._progress_alerted = phase
 
     async def _alert(self, verdict):
         """One red alert per entry into red, retried every cycle while red until a send succeeds;

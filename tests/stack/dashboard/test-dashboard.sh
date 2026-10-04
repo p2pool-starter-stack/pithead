@@ -1,14 +1,10 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Dashboard domain (#1105 Phase 1, appliance lane): the dashboard's own login (Caddy basic_auth
-# enable/disable/change previews plus the actual basic_auth block in the rendered Caddyfile, #8),
-# generate_caddyfile's scheme/port/Host-header render (secure vs. plain HTTP; a custom HOST_PORT
-# moving the vhost off 80/443; the :80 redirect's and :443's own catch-alls so an unmatched Host
-# never falls through to Caddy's silent empty-200 default, #1123/#1132/#740), the v2 global-address
-# guard that keeps a globally-routable address off both the site list AND the `bind` line — Caddy
-# runs a single wildcard listener that matches on Host content alone, so filtering the site list is
-# not sufficient — and dashboard_sync_progress's one-curl re-render of /api/state behind `pithead
-# status` (#384).
+# Dashboard login previews, rendered Caddy auth/vhosts, and status sync progress.
+# Custom ports and catch-alls prevent an unmatched Host from returning an empty 200.
+# The global-address guard fences both site names AND bind addresses: Caddy's wildcard
+# listener matches Host content, so filtering only the site list is insufficient.
+# dashboard_sync_progress re-renders /api/state with one curl (#384).
 #
 # The dashboard-onion cluster (vhost render, client-auth crypto, rotate/upgrade/apply capture
 # flows, status) is its own domain in test-dashboard-onion.sh, conventionally sourced after this
@@ -589,3 +585,7 @@ case "$(cat "$V/Caddyfile")" in
 *basic_auth*) bad "auth disable drops basic_auth" "basic_auth still present in the Caddyfile" ;;
 *) ok "auth disable drops basic_auth" ;;
 esac
+
+# Required Tari failover distinguishes long RPC outages from live progress.
+assert_contains "Tari-required preview names the outage window" "$(run_sourced "$SANDBOX" describe_change TARI_REQUIRED false true)" "15-minute Tari RPC outage"
+assert_contains "Tari-required preview exempts progress states" "$(run_sourced "$SANDBOX" describe_change TARI_REQUIRED false true)" "startup, migration and syncing only alert"
