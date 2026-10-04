@@ -120,7 +120,7 @@ jobs:
         run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
       - name: Prove offline Tor saturated-state recovery
         if: matrix.service == 'tor'
-        env: { TMPDIR: "${{ runner.temp }}" }
+        env: {TMPDIR: "${{ runner.temp }}"}
         run: bash tests/stack/standalone/test_tor_saturated_image.sh pithead-tor:ci
       - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
         with:
