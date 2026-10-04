@@ -47,9 +47,8 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesM
     It *consumes* signals the loop already computes rather than re-collecting anything:
 
     - **node down / recovered** — transitions of ``NodeHealthMonitor``'s debounced ``down``
-      flag per node (#31). Tari is only alerted when it's treated as required; a non-blocking
-      Tari going down isn't operator-critical (we keep mining Monero), matching the
-      worker-rejection rule.
+      flag per node (#31). A configured Tari node alerts independently of the required
+      policy; optional Tari keeps workers mining Monero during its outage.
     - **node out of sync / back in sync** — the debounced peer-loss strand (#972): monerod
       reachable and healthy-looking but reporting ``synchronized: false`` past the stale
       threshold (a tor restart kills its SOCKS peers and it doesn't re-dial). Rides the

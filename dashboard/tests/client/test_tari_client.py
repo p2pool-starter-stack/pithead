@@ -144,3 +144,11 @@ async def test_absent_ready_or_unknown_readiness_cannot_mask_tip_rpc_failure(sta
     stub.GetTipInfo = AsyncMock(side_effect=RuntimeError("down"))
     stub.GetNetworkState = AsyncMock(return_value=reply)
     assert await client.get_sync_status() == {"is_syncing": False, "reachable": False}
+
+
+async def test_channel_creation_failure_is_unreachable():
+    client = TariClient()
+    client._ensure_channel = MagicMock(side_effect=RuntimeError("channel unavailable"))
+    client._fetch_initializing_status = AsyncMock()
+    assert await client.get_sync_status() == {"is_syncing": False, "reachable": False}
+    client._fetch_initializing_status.assert_not_awaited()

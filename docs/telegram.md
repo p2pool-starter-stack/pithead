@@ -206,7 +206,6 @@ enabled; there is no separate event toggle for this payout-safety signal.
 > for recovery. Startup, migration and syncing raise progress alerts instead of rejecting
 > workers. Required Tari outages reject workers; optional Tari outages keep mining Monero.
 
-
 ---
 
 ## Commands

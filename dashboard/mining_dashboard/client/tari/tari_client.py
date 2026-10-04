@@ -78,14 +78,17 @@ class TariClient:
         GetSyncProgress.tip_height is the height the node is working toward. Using the
         node's own state means there's no external block explorer to fail.
         """
+        stub = None
         try:
             stub = self._ensure_channel()
             tip = await stub.GetTipInfo(empty_pb2.Empty(), timeout=5)
         except Exception as e:
             logger.error(f"Tari gRPC GetTipInfo error: {e}")
-            initializing = await self._fetch_initializing_status(stub)
+            initializing = await self._fetch_initializing_status(stub) if stub is not None else None
             await self._reset_channel()
-            return initializing
+            if initializing is not None:
+                return initializing
+            return None
 
         local_height = tip.metadata.best_block_height
 
@@ -117,7 +120,7 @@ class TariClient:
         percent = int((local_height / target) * 100)
         return {"is_syncing": True, "current": local_height, "target": target, "percent": percent}
 
-    async def _fetch_initializing_status(self, stub):
+    async def _fetch_initializing_status(self, stub) -> dict | None:
         """Tari's readiness server answers GetNetworkState during startup/migration,
         even when GetTipInfo returns UNAVAILABLE. Only a live readiness reply counts;
         a cached sync reading or an RPC error is no evidence of initialization.
