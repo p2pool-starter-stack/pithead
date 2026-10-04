@@ -115,7 +115,7 @@ def _heal_patches(results, submits):
     )
     stack.enter_context(
         patch(
-            "mining_dashboard.service.health.tor_heal.request_spool.write",
+            "mining_dashboard.service.health.tor_heal_history.request_spool.write",
             lambda req: submit(req["action"]),
         )
     )

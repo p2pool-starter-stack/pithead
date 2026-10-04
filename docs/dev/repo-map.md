@@ -52,7 +52,8 @@ and scoped node restarts are in `02b1-lan-guard-compose.sh`. Transition prearm a
 live-rule check are in `02c-lan-guard-check.sh`.
 Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
-the dashboard's clearnet healer stays in `service/health/tor_heal.py`.
+the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
+history observations in `service/health/tor_heal_history.py`.
 
 ## Dashboard feature folders
 

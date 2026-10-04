@@ -8,7 +8,6 @@ state: saturated history is read and alerted; only an operator runs `./pithead t
 import asyncio
 import logging
 import time
-import uuid
 
 import requests
 
@@ -20,7 +19,8 @@ from mining_dashboard.config.config import (
     TOR_SOCKS_PROXY,
 )
 from mining_dashboard.helper.http import bounded_get
-from mining_dashboard.service import control_service, request_spool
+from mining_dashboard.service import control_service
+from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
 
 logger = logging.getLogger("TorHeal")
 
@@ -52,9 +52,10 @@ TOR_SETTLE_SEC = 30
 TOR_SETTLE_POLL_SEC = 5
 
 
-class TorEgressHealer:
+class TorEgressHealer(TorHistoryMixin):
     """Probe and recover Tor egress under a fixed cadence, cooldown and attempt cap."""
 
+    HISTORY_TIMEOUT_SEC = PROBE_INTERVAL_SEC
     CONTAINER = "tor"
     MONEROD = "monerod"
 
@@ -164,59 +165,6 @@ class TorEgressHealer:
         if self._attempts > 0:
             self._attempts -= 1
         self._last_attempt = None
-
-    def _request_history(self):
-        """Ask the host for the saturated-history reading; one request in flight, never raises."""
-        if self._pending_history is not None:
-            return
-        try:
-            if not self._clear_history and self._history_outage is None:
-                self._history_outage = str(uuid.uuid4())
-            self._pending_history = request_spool.write(
-                {
-                    "id": str(uuid.uuid4()),
-                    "action": "tor-history",
-                    "actor": "tor-heal",
-                    "outage": "" if self._clear_history else self._history_outage,
-                    "observed_at": int(time.time()),
-                }
-            )
-            self._history_since = self._clock()
-        except OSError:
-            logger.warning("Tor circuit-history check could not be submitted to the host runner")
-
-    async def _read_history(self) -> None:
-        """Log (once per heal round) and alert (once per outage) a saturated circuit history."""
-        if self._pending_history is None:
-            return
-        result = control_service.result(self._pending_history)
-        if result is None:
-            # A lost request must not block every later reading: drop it after one probe interval.
-            if self._clock() - self._history_since >= PROBE_INTERVAL_SEC:
-                self._pending_history = None
-            return
-        self._pending_history = None
-        if self._clear_history:
-            if result.get("status") == "applied":
-                self._clear_history = False
-            return
-        saturated = result.get("status") == "applied" and result.get("saturated") is True
-        self.saturated_history = saturated
-        if not saturated:
-            return
-        logger.warning(
-            "Tor circuit-build-time history is saturated (CircuitBuildAbandonedCount and "
-            "TotalBuildTimes at the cap, no CircuitBuildTimeBin) and NEWNYM does not clear it. "
-            "Run './pithead tor-recover check' then './pithead tor-recover apply'."
-        )
-        if not self._warned_saturated and self._notify is not None:
-            self._warned_saturated = bool(
-                await self._notify(
-                    "\U0001f9c5 Tor clearnet egress is down and its circuit-build-time history is "
-                    "saturated; NEWNYM cannot clear it. Run './pithead tor-recover check', then "
-                    "'./pithead tor-recover apply'."
-                )
-            )
 
     async def _monerod_running(self) -> bool:
         """Only a running monerod is cycled (#2749). A stopped one stays stopped: with LAN access on
