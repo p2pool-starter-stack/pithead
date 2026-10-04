@@ -876,7 +876,9 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
 - [ ] **13.8 The same checks as DIY.** Do: first, using only the setup page, the dashboard and
   [the appliance guide](../appliance.md), find the stratum password an outside miner must send.
   Expect, per #3092: signed in, the dashboard shows a **Connect a miner** block with the LAN pool
-  URL and the same stratum password as the 13.6 hand-off card; signed out, nothing shows it.
+  URL and the same stratum password as the 13.6 hand-off card; signed out, nothing shows it. On a
+  box with no dashboard login, the block shows it to anyone on the LAN (owner, 2026-10-04: the risk
+  is accepted; an onion-published dashboard always has a login).
   (test RC 459847441a9f: nothing without a shell shows it. Record FAIL linked to #3090 and #3092
   first; only then use the value noted over SSH to carry on with 4.1 and 14.1, and mark those
   "unblocked by the debug shell". See the box above.) While the appliance's chains sync, check
