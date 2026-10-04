@@ -218,8 +218,8 @@ print("OK level=%s nodes=%d edges=%d db_healthy=%s"
 PY
 )"
 case "$contract" in
-OK*) c_ok "/api/state #170 contract — $contract" ;;
-*) c_bad "/api/state #170 topology+egress contract" "$contract" ;;
+    OK*) c_ok "/api/state #170 contract — $contract" ;;
+    *) c_bad "/api/state #170 topology+egress contract" "$contract" ;;
 esac
 
 # 1. Booting mid-sync → the gate holds both miner containers (stops them). (#35)
@@ -244,9 +244,16 @@ assert_state "released: itest-xmrig-proxy running" itest-xmrig-proxy running 90
 log "scenario 3b: the dashboard fires a real healthchecks heartbeat"
 wait_hc "healthchecks: real loop fired a liveness heartbeat" '^/ph$' 40
 
+# Live readiness and sync progress never reject, even beyond the shortened outage window.
+for tari_phase in starting migrating syncing; do
+    set_tari "$tari_phase"
+    assert_stays "Tari $tari_phase never rejects workers" itest-xmrig-proxy running 8
+done
+set_tari synced
+
 # 4. Required Tari down rejects workers after the same debounce as Monero.
-log "scenario 4: Tari down while required rejects workers"
-set_tari down
+log "scenario 4: stopped Tari while required rejects workers"
+compose stop fake-tari >/dev/null 2>&1
 assert_state "Tari outage (required) stops itest-xmrig-proxy" itest-xmrig-proxy exited 90
 if [ "$(cstate itest-p2pool)" = "running" ]; then
     c_ok "Tari outage (required) leaves itest-p2pool running"
@@ -256,7 +263,17 @@ fi
 
 # 5. Confirmed Tari recovery readmits workers.
 log "scenario 5: Tari recovers and readmits workers"
-set_tari synced
+compose start fake-tari >/dev/null 2>&1
+# A running container is not yet proof its HTTP control listener is ready.
+tari_control_ready=0
+for ((try = 0; try < 30; try++)); do
+    if ctl "http://$HOST_ADDR:28152/control" '{"mode":"synced"}'; then
+        tari_control_ready=1
+        break
+    fi
+    sleep 1
+done
+[ "$tari_control_ready" = 1 ] && c_ok "Tari control ready after restart" || c_bad "Tari control ready after restart" "no control reply within 30s"
 assert_state "itest-xmrig-proxy readmitted after Tari recovers" itest-xmrig-proxy running 90
 
 # 6. Monero down rejects for both local and remote nodes; p2pool keeps running.

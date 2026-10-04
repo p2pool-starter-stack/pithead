@@ -190,9 +190,9 @@ there is no history to show.
 
 ### Node status & failover
 
-If a local node becomes unreachable, a red `monerod DOWN` or `Tari DOWN` badge appears in the top
-bar (after 90 seconds continuously unreachable, clearing after 60 seconds of confirmed
-reachability, so a momentary blip doesn't flap). Sync state is read from monerod's
+If a local or remote node becomes unreachable, a red `monerod DOWN` or `Tari DOWN` badge
+appears in the top bar: Monero after 90 seconds, Tari after 15 minutes continuously
+unreachable. Both clear after 60 seconds of confirmed reachability. Sync state is read from monerod's
 `get_info` RPC and Tari's gRPC, so "down" means the node itself is unreachable, not just that a log
 line changed.
 
@@ -227,15 +227,18 @@ renderer yet.
 A sustained outage of a required node stops `xmrig-proxy` so workers fail over to their
 configured backup pools. A `Workers rejected` badge shows; confirmed recovery restarts the
 proxy. Monero is always required, for local and remote nodes. The dashboard probes the
-configured Monero RPC; stale P2Pool stats do not count as reachability. Outage detection and
-readmission use the same debounce for both nodes. Readmission waits for every required node
+configured Monero RPC; stale P2Pool stats do not count as reachability. Monero uses a 90-second outage debounce; Tari uses 15 minutes. Both require 60 seconds
+of confirmed reachability for recovery. Readmission waits for every required node
 to be confirmed healthy, so a dashboard restart mid-outage does not admit workers prematurely.
 
 With [`dashboard.tari_required: true`](configuration.md) (the default), a Tari outage also
 rejects workers, for local and remote Tari nodes. This costs Monero revenue until Tari recovers:
 p2pool could keep mining Monero through a Tari-only outage. Set `dashboard.tari_required: false`
-to keep accepting workers and earning Monero during Tari outages. Tari's panel and alerts
-continue to report the outage either way.
+to keep accepting workers and earning Monero during Tari outages. Tari-down alerts fire
+either way. A live Tari readiness reply that reports startup or migration, or a live sync
+reading, is progress rather than an outage: it alerts but never rejects workers. The dashboard
+checks `GetNetworkState` readiness when `GetTipInfo` fails; stale cached progress cannot hide
+an RPC outage. The initial-sync hold still waits for required chains on a new stack.
 
 **Non-blocking Tari.** With `tari_required: false`, a Tari-only (re)sync doesn't take over the
 screen: the operational view stays up, mining continues, and a `Tari syncing` badge shows Tari's

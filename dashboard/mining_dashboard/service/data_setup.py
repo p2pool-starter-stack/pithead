@@ -35,6 +35,9 @@ from mining_dashboard.service.xvb.price_feed import CoinGeckoClient, PriceFeed
 
 logger = logging.getLogger("DataService")
 
+# Tari initialization can take hours; only a sustained RPC outage rejects workers.
+TARI_NODE_DOWN_AFTER_SEC = int(os.environ.get("TARI_NODE_DOWN_AFTER_SEC", 15 * 60))
+
 
 def _runtime():
     from mining_dashboard.service import data_service
@@ -146,7 +149,7 @@ class DataSetupMixin:
         # Node-down detection + optional worker rejection (Issue #31).
         self.docker_control = DockerControl()
         self.monero_health = NodeHealthMonitor()
-        self.tari_health = NodeHealthMonitor()
+        self.tari_health = NodeHealthMonitor(down_after=TARI_NODE_DOWN_AFTER_SEC)
         # Isolated / stalled monerod (#2499): the peers-and-tip verdict for the card, doctor, alerts.
         self.monero_chain = MoneroChainHealth()
         # A configured payout wallet that never answered is still a failure after the debounce.
@@ -271,7 +274,11 @@ class DataSetupMixin:
         if TARI_MODE != "off":
             try:
                 reachable = tari_sync.get("reachable", False)
-                connections = await tari_client.get_connections() if reachable else None
+                connections = (
+                    await tari_client.get_connections()
+                    if reachable and not tari_sync.get("initializing")
+                    else None
+                )
                 tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
             except Exception as exc:  # the verdict must never break the data loop
                 logger.warning("Tari chain health check failed (%s)", type(exc).__name__)

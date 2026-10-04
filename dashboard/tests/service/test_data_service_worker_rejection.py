@@ -127,3 +127,22 @@ class TestWorkerRejection:
                 )
         svc.docker_control.stop.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
         assert svc.workers_rejected is True
+
+    def test_tari_outage_default_is_fifteen_minutes_without_changing_monero(self):
+        from mining_dashboard.config.config import NODE_DOWN_AFTER_SEC
+
+        svc = self._svc()
+        assert svc.tari_health.down_after == 15 * 60
+        assert svc.monero_health.down_after == NODE_DOWN_AFTER_SEC
+
+    async def test_long_tari_outage_requires_the_full_default_window(self):
+        svc = self._svc()
+        now = [0]
+        svc.tari_health._clock = lambda: now[0]
+        svc.monero_health.healthy = True
+        with patch.object(ds_mod, "TARI_REQUIRED", True):
+            svc.tari_health.update(True)
+            for time, rejected in ((0, False), (90, False), (899, False), (900, True)):
+                now[0] = time
+                await svc._apply_worker_rejection(False, svc.tari_health.update(False))
+                assert svc.workers_rejected is rejected

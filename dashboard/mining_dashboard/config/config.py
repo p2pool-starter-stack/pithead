@@ -323,7 +323,8 @@ DOCKER_TIMEOUT = int(os.environ.get("DOCKER_TIMEOUT", 5))
 #
 # `tari_required` (default true) requires Tari for the initial-sync hold, the full-screen
 # Sync Mode and runtime worker failover. A sustained Tari outage stops xmrig-proxy until
-# both required nodes recover. This costs Monero revenue during a Tari-only outage even
+# both required nodes recover. Tari uses a 15-minute RPC outage debounce; live startup,
+# migration and syncing alert but never reject. This costs Monero revenue during an outage even
 # though p2pool could keep mining Monero. Set false to keep mining Monero through Tari
 # outages and syncs, with Tari's progress and alerts in the operational dashboard.
 TARI_MODE = os.environ.get("TARI_MODE", "local").strip().lower()
