@@ -184,11 +184,13 @@ control_process_request "$WORK/bad.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 echo "== doctor FAILs saturated history without an outage record or auto-heal =="
 rm "$record"
+[ ! -e "$WORK/control/tor-recovery-at" ]
+backups_before=$(find "$WORK/tor" -name 'state.backup.*' | wc -l)
 AUTO_HEAL_OFF=1
 control_process_request "$WORK/recover.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 AUTO_HEAL_OFF=0
-for payload in '.actor="operator"' '.container="tor"' '.outage="x"' '.extra="x"'; do
+for payload in '.actor="operator"' '.config={}' '.container="tor"' '.outage="x"' '.extra="x"'; do
     jq "$payload" "$WORK/recover.json" >"$WORK/bad-recover.json"
     control_process_request "$WORK/bad-recover.json" "$WORK/control"
     [ "$(jq -r .status "$WORK/result")" = rejected ]
@@ -199,6 +201,8 @@ printf 'CircuitBuildTimeBin 100 1\n' >>"$WORK/tor/state"
 control_process_request "$WORK/recover.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = failed ]
 jq -e '.error | contains("history is not saturated")' "$WORK/result" >/dev/null
+[ ! -e "$WORK/control/tor-recovery-at" ]
+[ "$(find "$WORK/tor" -name 'state.backup.*' | wc -l)" = "$backups_before" ]
 AUTO_HEAL_OFF=1
 # shellcheck source=lib/pithead/21-doctor-stack-checks.sh
 source "$ROOT/lib/pithead/21-doctor-stack-checks.sh"

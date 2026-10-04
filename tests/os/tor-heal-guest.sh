@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# Guest-only Tor saturation fault. Never run against a shared stack.
+set -euo pipefail
+cd /data/pithead
+control=$(sed -n 's/^CONTROL_DIR=//p' .env)
+data=$(sed -n 's/^TOR_DATA_DIR=//p' .env)
+[ -d "$control" ] && [ -d "$data" ]
+export TMPDIR="$control/work"
+mkdir -p "$TMPDIR"
+work=$(mktemp -d "$TMPDIR/tor-heal.XXXXXX")
+cp config.json "$work/config.json"
+cp "$data/state" "$work/original-state"
+identities() {
+    find "$data" -type f -name hs_ed25519_secret_key -exec sha256sum {} + | sort
+}
+identities >"$work/identities"
+[ -s "$work/identities" ]
+restore() {
+    local rc=$?
+    trap - EXIT
+    systemctl stop pithead-test-tor-alert.service >/dev/null 2>&1 || rc=1
+    cp "$work/config.json" config.json
+    docker compose stop tor >/dev/null 2>&1 || rc=1
+    cp "$work/original-state" "$data/state" || rc=1
+    docker compose start tor >/dev/null 2>&1 || rc=1
+    ./pithead apply >"$work/restore.log" 2>&1 || rc=1
+    printf 'Guest restoration exit: %s\n' "$rc"
+    exit "$rc"
+}
+trap restore EXIT
+# An isolated guest-local webhook proves delivery while Tor egress is disabled.
+gateway=$(docker inspect dashboard --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}')
+[ -n "$gateway" ]
+cat >"$work/sink.py" <<'PYTHON'
+import json
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        if not 0 < length <= 65536:
+            self.send_error(400)
+            return
+        payload = json.loads(self.rfile.read(length))
+        with open(sys.argv[2], "a") as output:
+            output.write(json.dumps(payload) + "\n")
+        self.send_response(200)
+        self.end_headers()
+    def log_message(self, *_):
+        pass
+
+HTTPServer((sys.argv[1], 18918), Handler).serve_forever()
+PYTHON
+systemd-run --unit pithead-test-tor-alert --property Type=exec \
+    python3 "$work/sink.py" "$gateway" "$work/alerts.jsonl" >/dev/null
+saturated() {
+    grep -qx 'CircuitBuildAbandonedCount 1000' "$1" &&
+        grep -qx 'TotalBuildTimes 1000' "$1" &&
+        ! grep -q '^CircuitBuildTimeBin ' "$1"
+}
+configure() {
+    jq --argjson enabled "$1" --arg webhook "http://$gateway:18918/" \
+        '.tor.auto_heal=$enabled | .notifications.tor=false | .notifications.webhooks=[$webhook]' config.json >"$work/next-config"
+    cp "$work/next-config" config.json
+    ./pithead apply >"$work/apply.log" 2>&1
+}
+poison() {
+    docker compose stop tor >"$work/stop.log" 2>&1
+    awk '!/^CircuitBuild/ && !/^TotalBuildTimes /' "$work/original-state" >"$data/state"
+    printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >>"$data/state"
+    docker compose start tor >"$work/start.log" 2>&1
+    # SETCONF is in-memory only: a recovery stop/start lifts DisableNetwork.
+    local reply
+    for ((attempt = 0; attempt < 30; attempt++)); do
+        reply=$(docker exec tor sh -c '
+            cookie=$(xxd -p -c 256 /var/lib/tor/control_auth_cookie)
+            printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\nQUIT\r\n" "$cookie" |
+                nc -w 3 127.0.0.1 9051' 2>/dev/null | tr -d '\r') || reply=""
+        if [ "$(printf '%s\n' "$reply" | grep -c '^250 OK$')" = 2 ]; then
+            saturated "$data/state"
+            return
+        fi
+        sleep 1
+    done
+    return 1
+}
+backup_count() {
+    find "$data" -maxdepth 1 -name 'state.backup.*' -type f | wc -l
+}
+configure false
+before=$(backup_count)
+poison
+deadline=$(($(date +%s) + 90 * 60))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    saturated "$data/state"
+    [ "$(backup_count)" = "$before" ]
+    sleep 30
+done
+echo 'PASS: auto-heal off preserves saturated state throughout the full recovery window (#3118)'
+: >"$work/alerts.jsonl"
+configure true
+before=$(backup_count)
+poison
+started=$(date +%s)
+deadline=$((started + 25 * 60))
+diagnosed=0
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    if jq -e 'select(.text | contains("circuit-build-time history is saturated"))' \
+        "$work/alerts.jsonl" >/dev/null 2>&1; then
+        diagnosed=1
+        break
+    fi
+    sleep 30
+done
+[ "$diagnosed" = 1 ]
+echo 'PASS: first-round saturated alert is delivered within 25 minutes (#3118)'
+deadline=$((started + 95 * 60))
+applied=0
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    if find "$control/results" -maxdepth 1 -name '*.json' -type f -exec \
+        jq -e --argjson started "$started" 'select(.action == "tor-recover" and .status == "applied" and .ts >= $started)' {} \; 2>/dev/null |
+        grep 'tor-recover' >/dev/null; then
+        applied=1
+        break
+    fi
+    sleep 30
+done
+[ "$applied" = 1 ]
+[ "$(backup_count)" -gt "$before" ]
+stamp=$(cat "$control/tor-recovery-at")
+saturated "$data/state.backup.$stamp"
+[ -s "$data/state" ] && ! saturated "$data/state"
+identities >"$work/after-identities"
+cmp "$work/identities" "$work/after-identities"
+docker exec tor /usr/local/bin/tor-healthcheck.sh
+# Both diagnosis and confirmed-reset notes must be delivered once for this outage.
+deadline=$(($(date +%s) + 10 * 60))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    if jq -e 'select(.text | contains("reset saturated circuit history and guards"))' "$work/alerts.jsonl" >/dev/null; then
+        break
+    fi
+    sleep 30
+done
+jq -s -e '
+    [.[] | select(.text | contains("circuit-build-time history is saturated"))] | length == 1' "$work/alerts.jsonl" >/dev/null
+jq -s -e '
+    [.[] | select(.text | contains("reset saturated circuit history and guards"))] | length == 1' "$work/alerts.jsonl" >/dev/null
+echo 'PASS: guest host-gated recovery backs up saturation, clears state, preserves identities and restores Tor health (#3118)'

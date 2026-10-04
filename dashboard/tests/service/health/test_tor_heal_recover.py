@@ -126,3 +126,39 @@ async def test_recovery_notice_retries_failed_delivery():
         await healer._read_recovery(1300)
         await healer._read_recovery(1600)
     assert healer._notify.await_count == 2
+
+
+async def test_failed_history_read_does_not_replace_confirmed_saturation():
+    healer = TorEgressHealer(AsyncMock(), enabled=True)
+    healer._pending_history = "history"
+    healer.saturated_history = True
+    with patch(
+        "mining_dashboard.service.control_service.result", return_value={"status": "failed"}
+    ):
+        await healer._read_history()
+    assert healer.saturated_history is True
+
+
+async def test_failed_recovery_submission_alerts_without_docker_fallback():
+    docker, notify = AsyncMock(), AsyncMock(return_value=True)
+    healer = TorEgressHealer(
+        docker,
+        enabled=True,
+        notify=notify,
+        clock=lambda: 1000,
+        probe=lambda: (False, "failed"),
+    )
+    healer._failing_since = 0
+    healer._attempts = 2
+    healer.saturated_history = True
+    with (
+        patch("mining_dashboard.service.control_service.submit", side_effect=OSError("unwritable")),
+        patch("mining_dashboard.service.request_spool.write", return_value="history"),
+    ):
+        await healer.check()
+    assert healer._attempts == 3
+    assert healer._pending_recovery is None
+    notify.assert_awaited_once()
+    assert "could not be submitted" in notify.await_args.args[0]
+    docker.stop.assert_not_awaited()
+    docker.start.assert_not_awaited()

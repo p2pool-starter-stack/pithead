@@ -47,7 +47,10 @@ class TorHistoryMixin:
             if result.get("status") == "applied":
                 self._clear_history = False
             return
-        saturated = result.get("status") == "applied" and result.get("saturated") is True
+        if result.get("status") != "applied":
+            logger.warning("Tor circuit-history reading was refused or unavailable")
+            return
+        saturated = result.get("saturated") is True
         self.saturated_history = saturated
         if not saturated:
             return

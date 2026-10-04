@@ -27,6 +27,12 @@ exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
 
+The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
+It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes
+with it enabled. It requires the first-round diagnosis within 25 minutes, a host recovery
+result, a saturated state backup, cleared new state, unchanged onion keys and healthy Tor.
+The guest restores its original config and state on exit; no shared Tor is poisoned.
+
 It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 
 ```bash
