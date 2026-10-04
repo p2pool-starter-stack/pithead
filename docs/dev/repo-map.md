@@ -53,7 +53,9 @@ live-rule check are in `02c-lan-guard-check.sh`.
 Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
-history observations in `service/health/tor_heal_history.py`.
+history observations and recovery results in `service/health/tor_heal_history.py`.
+The automatic `tor-recover` control wrapper is `48b-control-tor-recover.sh`; it calls
+the same host-gated recovery as the CLI.
 
 ## Dashboard feature folders
 

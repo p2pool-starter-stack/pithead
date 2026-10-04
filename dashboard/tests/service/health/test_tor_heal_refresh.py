@@ -104,10 +104,10 @@ def _heal_patches(results, submits):
 
     def submit(action, **_):
         submits.append(action)
-        return action if action == "tor-history" else "00000000-0000-4000-8000-000000000000"
+        return action
 
     def result(rid):
-        return results["tor-history" if rid == "tor-history" else "tor-newnym"]
+        return results.get(rid)
 
     stack = ExitStack()
     stack.enter_context(
@@ -274,7 +274,7 @@ async def test_exhausted_heal_keeps_history_and_undelivered_alerts_alive():
     now = [1000.0]
     docker = AsyncMock()
     docker.stop.return_value = docker.start.return_value = True
-    notify = AsyncMock(side_effect=[None, None, "delivered"])
+    notify = AsyncMock(side_effect=[None, None, "recovery delivered", "history delivered"])
     healer = TorEgressHealer(
         docker,
         enabled=True,
@@ -292,6 +292,7 @@ async def test_exhausted_heal_keeps_history_and_undelivered_alerts_alive():
     assert submits.count("tor-newnym") == 2
     assert submits.count("tor-history") >= 3
     assert healer._warned_saturated is True
-    assert notify.await_count == 3
-    docker.stop.assert_awaited_once()
-    docker.start.assert_awaited_once()
+    assert notify.await_count == 4
+    assert submits.count("tor-recover") == 1
+    docker.stop.assert_not_awaited()
+    docker.start.assert_not_awaited()

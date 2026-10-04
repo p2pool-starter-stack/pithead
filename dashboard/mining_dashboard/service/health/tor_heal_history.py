@@ -65,3 +65,26 @@ class TorHistoryMixin:
                 )
             )
 
+    async def _read_recovery(self, now):
+        """Report the host result without retrying a mutation or falling back to a restart."""
+        pending = self._pending_recovery is not None
+        if pending:
+            result = control_service.result(self._pending_recovery)
+            if result is None and now - self._recovery_requested_at < 15 * 60:
+                return True
+            self._pending_recovery = None
+            if result is not None and result.get("status") == "applied":
+                self._recovery_step = "host-gated Tor state recovery"
+                self._recovery_notice = (
+                    "Tor heal reset saturated circuit history and guards through tor-recover; "
+                    "the host verified its evidence, onion identities and six-hour cooldown."
+                )
+            else:
+                detail = (result or {}).get("error", "host result unconfirmed")
+                self._recovery_step = "Tor state recovery unconfirmed"
+                self._recovery_notice = f"Tor state recovery refused or failed: {detail}. No fallback restart was attempted."
+        if self._recovery_notice is not None:
+            logger.warning("%s", self._recovery_notice)
+            if self._notify is not None and await self._notify(self._recovery_notice):
+                self._recovery_notice = None
+        return pending

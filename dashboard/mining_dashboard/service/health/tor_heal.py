@@ -1,13 +1,14 @@
-"""Opt-in Tor clearnet recovery without changing guards by default.
+"""Bounded Tor clearnet recovery when tor.auto_heal is enabled.
 
 Corroborate failed probes on isolated circuits and two targets before bounded NEWNYM requests.
-A final restart re-dials local Monero. Neither action authorizes changing guards or deleting
-state: saturated history is read and alerted; only an operator runs `./pithead tor-recover`.
+For saturated history, the final step requests host-gated tor-recover, including its persistent
+six-hour cooldown and identity checks. Otherwise a final restart re-dials local Monero.
 """
 
 import asyncio
 import logging
 import time
+import uuid
 
 import requests
 
@@ -84,6 +85,8 @@ class TorEgressHealer(TorHistoryMixin):
         self._last_attempt = None  # cooldown anchor
         self._ok_streak = 0  # consecutive OK probes (sustained-recovery counter, post-restart)
         self._warned_exhausted = False  # give-up warning is logged once per outage, not every probe
+        self._pending_recovery = None
+        self._recovery_notice = None
         self._pending_refresh = None
         self._pending_since = None
         self._failure_evidence = ""
@@ -206,6 +209,8 @@ class TorEgressHealer(TorHistoryMixin):
             return
         self._last_probe = now
         try:
+            if await self._read_recovery(now):
+                return
             await self._read_history()
             if self._clear_history:
                 self._request_history()
@@ -239,8 +244,7 @@ class TorEgressHealer(TorHistoryMixin):
             outage_minutes = (now - self._failing_since) / 60 if self._failing_since else 0
             action = self.decide(ok, now)
             if action == "heal":
-                if self._recovery_step == "NEWNYM" or self._newnym_unconfirmed:
-                    self._request_history()  # NEWNYM did not help: is the history saturated?
+                self._request_history()  # Read on the first round, then refresh each round.
                 if self._attempts < MAX_ATTEMPTS:
                     logger.warning(
                         "Tor clearnet egress failed for %.0f minutes: %s. "
@@ -262,6 +266,18 @@ class TorEgressHealer(TorHistoryMixin):
                         )
                         return
                     self._pending_since = now
+                    return
+                if self.saturated_history:
+                    try:
+                        self._pending_recovery = control_service.submit(
+                            "tor-recover", actor="tor-heal"
+                        )
+                        self._recovery_requested_at = now
+                    except OSError:
+                        self._recovery_notice = (
+                            "Tor state recovery could not be submitted; no restart was attempted."
+                        )
+                        await self._read_recovery(now)
                     return
                 logger.warning(
                     "Tor clearnet egress failed for %.0f minutes after circuit "
