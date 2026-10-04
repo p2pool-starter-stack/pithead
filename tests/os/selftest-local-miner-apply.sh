@@ -2,6 +2,7 @@
 # Check the guest probe's failure verdict and restoration without a VM or a host service.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+echo "== local-miner guest probe convergence and restoration =="
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 mkdir -p "$fixture/stack" "$fixture/rigforge" "$fixture/bin"

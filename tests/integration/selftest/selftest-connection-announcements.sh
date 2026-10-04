@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 # shellcheck source=tests/integration/lib/run-connection-announcements.sh
 source "$ROOT/tests/integration/lib/run-connection-announcements.sh"
+echo "== connection announcement probe fails closed =="
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/key.pem" -out "$fixture/cert.pem" -days 1 -subj /CN=fixture >/dev/null 2>&1
