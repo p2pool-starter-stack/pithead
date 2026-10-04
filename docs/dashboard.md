@@ -190,9 +190,9 @@ there is no history to show.
 
 ### Node status & failover
 
-If a local node becomes unreachable, a red `monerod DOWN` or `Tari DOWN` badge appears in the top
-bar (after 90 seconds continuously unreachable, clearing after 60 seconds of confirmed
-reachability, so a momentary blip doesn't flap). Sync state is read from monerod's
+If a local or remote node becomes unreachable, a red `monerod DOWN` or `Tari DOWN` badge
+appears in the top bar: Monero after 90 seconds, Tari after 15 minutes continuously
+unreachable. Both clear after 60 seconds of confirmed reachability. Sync state is read from monerod's
 `get_info` RPC and Tari's gRPC, so "down" means the node itself is unreachable, not just that a log
 line changed.
 
@@ -224,20 +224,21 @@ serves them as `blocks`, `disk_growth`, and `xvb_history`, range-filtered the sa
 overlay reads `xvb_history`; only `disk_growth` is persistence and API exposure alone, no
 renderer yet.
 
-While monerod is down, the dashboard rejects workers so they fail over to the backup pools you've
-configured, rather than sitting idle on a stack that can't mine. A sustained outage stops the
-`xmrig-proxy` container (a `Workers rejected` badge shows) and a confirmed recovery restarts it.
-monerod is required to mine, so a monerod outage always rejects. Rejection never triggers for a
-remote monerod — the stack doesn't probe a node it doesn't run, so that node always reads as
-reachable and p2pool manages the connection itself. Readmission waits for monerod to be
-confirmed healthy, not merely no-longer-down, so a dashboard restart mid-outage doesn't wave
-workers back onto a stack that still can't mine.
+A sustained outage of a required node stops `xmrig-proxy` so workers fail over to their
+configured backup pools. A `Workers rejected` badge shows; confirmed recovery restarts the
+proxy. Monero is always required, for local and remote nodes. The dashboard probes the
+configured Monero RPC; stale P2Pool stats do not count as reachability. Monero uses a 90-second outage debounce; Tari uses 15 minutes. Both require 60 seconds
+of confirmed reachability for recovery. Readmission waits for every required node
+to be confirmed healthy, so a dashboard restart mid-outage does not admit workers prematurely.
 
-A Tari outage never rejects workers, regardless of [`dashboard.tari_required`](configuration.md):
-p2pool keeps mining Monero through a Tari-only outage, so kicking workers to their backup pools
-over Tari alone would trade partial revenue for none. The outage still shows up — the Tari panel
-and its alerts track it independently — but the fleet keeps mining. That holds for a remote Tari
-node too, which the dashboard reaches over gRPC at `tari.remote.host`.
+With [`dashboard.tari_required: true`](configuration.md) (the default), a Tari outage also
+rejects workers, for local and remote Tari nodes. This costs Monero revenue until Tari recovers:
+p2pool could keep mining Monero through a Tari-only outage. Set `dashboard.tari_required: false`
+to keep accepting workers and earning Monero during Tari outages. Tari-down alerts fire
+either way. A live Tari readiness reply that reports startup or migration, or a live sync
+reading, is progress rather than an outage: it alerts but never rejects workers. The dashboard
+checks `GetNetworkState` readiness when `GetTipInfo` fails; stale cached progress cannot hide
+an RPC outage. The initial-sync hold still waits for required chains on a new stack.
 
 **Non-blocking Tari.** With `tari_required: false`, a Tari-only (re)sync doesn't take over the
 screen: the operational view stays up, mining continues, and a `Tari syncing` badge shows Tari's
@@ -1296,7 +1297,7 @@ other three hidden services — the Monero node's, the Tari node's and P2Pool's 
 than by address, so there is nothing of theirs on this page to hide.
 
 The two surfaces disagree about your dashboard's **own** onion on purpose: the header shows it in
-full, with a **Copy** button, because a machine you cannot reach is a machine you cannot fix — and,
+full, with a **Copy address** button, because a machine you cannot reach is a machine you cannot fix — and,
 when client authorization is on and the config editor with it, a **Show client key** button beside
 it, because on a machine with no shell an address nothing can open is the same as no address at
 all. The key is not in this container: the button asks the host, the host answers once through the
@@ -1464,10 +1465,13 @@ re-derives and re-verifies every step itself.
    needed and the size free, and keeps the file: free space, then verify and install again. The
    install step runs the same check again.
 4. **Install.** The verified bundle is written to the idle system slot, with progress shown.
-   Mining keeps running; nothing about the running system changes yet.
-5. **Reboot.** Nothing reboots on its own. The reboot is its own confirmed action (type
-   `REBOOT`), and it is the only step that pauses mining — typically under five minutes. The
-   page waits and reconnects when the dashboard returns.
+   Mining keeps running, and the downloaded bundle is deleted. The idle slot is now armed:
+   **any reboot boots the update**, including a power cut, watchdog restart or **Set up again**.
+5. **Reboot.** Install does not order a reboot. The dashboard action is separately confirmed
+   (type `REBOOT`) and expires 24 hours after install; expiry does not disarm the slot.
+   After expiry, check, download, verify and install again to re-arm that dashboard action,
+   or reboot at the console. Reboot pauses mining — typically under five minutes. The page
+   waits and reconnects when the dashboard returns.
 
 After the reboot the machine health-checks itself before committing the new version — the same
 gate every appliance boot runs. A banner reports the outcome: updated to the new version, or
