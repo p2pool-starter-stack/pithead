@@ -49,7 +49,10 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         dashboard_durable_rows() { printf 'blocks -'; }
         telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
         telemetry_rows_diff() { :; }
-        run_cli_wizard_defaults() { [ "$RESTORE_CASE" != wizard-defaults-fails ] || { it_fail; return 1; }; }
+        run_cli_wizard_defaults() { [ "$RESTORE_CASE" != wizard-defaults-fails ] || {
+            it_fail
+            return 1
+        }; }
         run_source_image_reconcile() { :; }
         run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
