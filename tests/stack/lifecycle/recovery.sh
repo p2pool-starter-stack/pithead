@@ -28,7 +28,6 @@
 #   carries the results-dir-pollution risk the rig-worker cut's token-mask pair hit.
 build_val_sandbox
 DOCKER_LOG="$V/docker.log"
-
 echo "== unit: stack_restart — scoped tor restart (#424) =="
 # `restart` bare restarts the whole stack; `restart tor` restarts ONLY tor (fresh guard
 # selection when clearnet egress is stuck); anything else is rejected — other containers must
@@ -56,7 +55,6 @@ rc=$?
 assert_rc "restart rejects any service but tor/monerod" "$rc" "1"
 assert_contains "restart rejection names the contract" "$out" "takes no argument, 'tor'"
 assert_eq "rejected restart touches no container" "$(cat "$RSTLOG")" ""
-
 echo "== regression: mkdir runs before chown -R of the same tree (#550) =="
 # prepare_directories and reset_dashboard used to `sudo chown -R` a data dir tree and only THEN
 # `mkdir -p` inside it (the p2pool stats subdir) — EACCES for any operator uid != APP_UID, since
@@ -173,6 +171,7 @@ exit 0
 EOF
 chmod +x "$HCB/docker"
 HOLD_LOG=$(mktemp)
+printf '{}\n' >"$V/config.json"
 seed_env
 out="$(cd "$V" && DOCKER_LOG="$HOLD_LOG" PATH="$HCB:$V/bin:$PATH" PITHEAD_HOLD_CHAIN=1 ./pithead up 2>&1)"
 assert_rc "up succeeds under the hold" "$?" "0"
@@ -344,6 +343,7 @@ RL="$SANDBOX/reloc"
 mkdir -p "$RL/bin"
 cp "$STACK" "$RL/pithead"
 make_stubs "$RL/bin"
+printf '{}\n' >"$RL/config.json"
 # Deployed, but .env names data dirs that don't exist — as if the install was moved/copied or a
 # second checkout is being run. The stack would silently re-sync; `up` must warn first.
 cat >"$RL/.env" <<EOF

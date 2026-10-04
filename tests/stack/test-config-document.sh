@@ -2,6 +2,9 @@
 : "${STACK_SUITE:?source through tests/stack/run.sh}"
 
 echo "== raw config document refusals =="
+parser_out="$(python3 "$ROOT/tests/stack/lib/config-document-parser.py" 2>&1)"
+assert_rc "CLI raw parser cases pass (duplicates, secrets, valid, request and malformed)" "$?" 0
+if [ "$FAIL" -ne 0 ]; then printf '%s\n' "$parser_out"; fi
 build_val_sandbox
 for raw in \
     '{"monero":{},"monero":{}}' \
