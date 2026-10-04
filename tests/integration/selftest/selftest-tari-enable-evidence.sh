@@ -8,7 +8,7 @@ source "$HERE/../lib.sh"
 INTEGRATION_RUN_SUITE=1 source "$HERE/../lib/run-tari-background-sync.sh"
 
 echo "== Tari enable evidence distinguishes stopped and recreated proxies =="
-fixture="$(mktemp -d "${TMPDIR:?}/tari-enable-selftest.XXXXXX")"
+fixture="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/tari-enable-selftest.XXXXXX")" || exit 1
 trap 'rm -rf "$fixture"' EXIT
 bad=0
 for CASE in recreated stopped unchanged; do
