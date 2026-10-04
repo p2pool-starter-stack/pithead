@@ -4,21 +4,9 @@
 // confirm modal (destructive changes need a typed APPLY) → POST /api/control/commit → result.
 // The view only ever ASKS — every request rides the X-Pithead-Control header (CSRF guard) and
 // the host decides. When the channel is off the routes 404 and this view explains how to enable.
-//
-// ONE editing surface, the wizard's pattern (#785): the form sections on top and the candidate
-// config beneath as a collapsed JSON pane — both live, both views of a single `candidate`
-// object. Editing a field rewrites the candidate (typed by the field, via configsync's shared
-// coerceForType) and the pane re-renders; editing the pane replaces it and the fields refill.
-//
-// The form pins a `core` group — the wizard's own shortlist, `_core_keys` on the fetched config,
-// sourced from config.core-keys.json so the two never drift apart — above LOGICAL sections
-// (#611, buildSections) an operator recognizes, each a native <details> collapsed by default;
-// noisy clusters nest one deeper (#612, nestSection). A field the control gate won't commit —
-// `_editable_keys` (#613, markEditable) — renders disabled with no listener wired, so the FORM
-// can never change it; the pane can (it always could, as the old JSON mode), and the
-// closed-schema gate on the host remains the only validation authority. Secrets arrive masked as
-// sentinels, render blank with a keep-hint, and an untouched or re-blanked secret keeps its
-// sentinel — "blank means keep" survives the model change.
+// The form and JSON pane edit one candidate. Core keys come from config.core-keys.json;
+// other fields are grouped by logical section. The host's closed-schema gate validates both.
+// Disabled form fields have no listener. Masked secrets stay unchanged when left blank.
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
@@ -94,10 +82,10 @@ const APPROVAL_TITLE = "Editable — this sensitive change is recorded under you
 // AND tari.*) gets full keys too, or monero.view_key and tari.view_key would both render as a
 // bare "view_key" (and System / advanced would show four identical "data_dir" rows).
 //
-// `field.editable` (#613): a physical-presence-only field renders disabled, with no
-// onChange/onInput wired, so it cannot enter the form's staged edits. Preact skips an event prop
-// entirely when it is `undefined`, so passing `undefined` rather than a no-op is what actually removes the listener.
+// A host-only field has no event listener; it cannot enter staged edits.
 const Field = ({ field, value, onEdit, full }) => {
+  // The host derives this public key from the dual address; ask only for the private view key.
+  if (field.key === "tari.spend_public_key") return null;
   const editable = field.editable !== false;
   const label = full ? field.key : field.path.slice(1).join(".") || field.path[0];
   const title = !editable
@@ -193,20 +181,23 @@ export class ConfigView extends Component {
 
   // Field -> candidate -> pane. The field's declared type drives coercion (shared
   // configsync.coerceForType), so a port stays a number and a toggle a boolean in the JSON.
-  // A secret blanked out returns to what the server sent — the sentinel for a set secret —
-  // because blank has always meant KEEP, and the model change must not quietly turn it into
-  // "set to empty string".
   onFieldEdit(field, raw) {
     const { candidate, cfg } = this.state;
     const value =
       field.type === "secret" && raw === ""
         ? pathGet(cfg, field.key)
         : coerceForType(field.type, raw);
+    if (
+      field.key === "tari.wallet_address" &&
+      value !== pathGet(candidate, field.key) &&
+      pathGet(candidate, "tari.spend_public_key") === pathGet(cfg, "tari.spend_public_key")
+    ) {
+      pathSet(candidate, "tari.spend_public_key", "");
+    }
     pathSet(candidate, field.key, value);
     this.setState({ candidate, editText: JSON.stringify(candidate, null, 2), jsonError: null });
   }
 
-  // Pane -> candidate -> fields. Invalid pane text leaves the last good candidate as Save input.
   onJsonInput(text) {
     const err = jsonSyntaxError(text);
     if (err) {

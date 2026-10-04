@@ -562,6 +562,13 @@ and `--list` prints it).
 | `network.tor_egress_firewall` | `true` (default) / `false` | the kernel actually acts on the rules, both directions: on the default a direct clearnet dial from a `mining_net` container is DROPPED while the same container still reaches clearnet through Tor's SOCKS; on the opt-out that dial SUCCEEDS and no rule is installed. Neither is inferable from the rendered or installed ruleset ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)/[#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)) |
 | `monero.view_key` / `tari.view_key` | unset (default) / a real key | payout-confirmation wallet-rpc / tari-wallet wiring ([#381](https://github.com/p2pool-starter-stack/pithead/issues/381)/[#462](https://github.com/p2pool-starter-stack/pithead/issues/462)) — needs `IT_MONERO_VIEW_KEY` (env; the box's own real Monero view key), `IT_TARI_VIEW_KEY` + `IT_TARI_SPEND_PUBLIC_KEY`, or both; the Tari pair also sets `tari.payout_scan_birthday` to `IT_TARI_BIRTHDAY` (default 1425, the bench wallet's first known payout day) and makes the row wait for the dashboard to report past Tari payouts, with the wallet on the local node only ([#2731](https://github.com/p2pool-starter-stack/pithead/issues/2731)). `e2e.sh` reads all three from its own environment and passes them to the detached harness on stdin, never on the remote command line ([#2675](https://github.com/p2pool-starter-stack/pithead/issues/2675)) |
 
+The `local-pruned-main-payout-pairs` scenario additionally runs an isolated confirmation fixture
+using synthetic matching address/key pairs, separate wallet volumes and the candidate apply,
+wallet services and dashboard. It checks near-tip creation, caught-up card recovery and reopening
+the retained wallet after reverting the pair. It leaves the mining stack’s payout configuration
+unchanged and needs no private view-key input. Select that scenario with the `lifecycle` phase
+and `no_rig: true` for its bench-ci proof; the required safety backup runs automatically.
+
 ### What each scenario asserts
 
 - Expected containers up, unexpected absent. Every service for that config is running and

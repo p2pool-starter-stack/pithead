@@ -170,6 +170,8 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-mode-off.sh" && domain_ran test-tari-mode-off.sh "$_d0" "$?" || domain_ran test-tari-mode-off.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-lmdb.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-lmdb.sh" && domain_ran test-tari-lmdb.sh "$_d0" "$?" || domain_ran test-tari-lmdb.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-payout-wallet-pairs.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-payout-wallet-pairs.sh" && domain_ran test-payout-wallet-pairs.sh "$_d0" "$?" || domain_ran test-payout-wallet-pairs.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-wallet.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-wallet.sh" && domain_ran test-tari-wallet.sh "$_d0" "$?" || domain_ran test-tari-wallet.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-xmrig-proxy-entrypoint.sh disable=SC2015

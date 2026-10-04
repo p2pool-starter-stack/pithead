@@ -97,8 +97,9 @@ parse_and_validate_config() {
             error "monero.view_key must be the 64-character hex PRIVATE VIEW KEY for monero.wallet_address (get it from your wallet: 'View Key' / 'wallet_secret_view_key'). Got ${#MONERO_VIEW_KEY} chars."
         fi
         case "$PAYOUT_SCAN_HEIGHT" in
-        '' | auto | [0-9]*) ;;
-        *) error "monero.payout_scan_height must be \"auto\" or a block height (integer). Got \"$PAYOUT_SCAN_HEIGHT\"." ;;
+        '' | auto) ;;
+        *[!0-9]*) error "monero.payout_scan_height must be \"auto\" or a block height (integer)." ;;
+        *) ;;
         esac
         PAYOUT_CONFIRM_ENABLED=true
     fi
@@ -125,10 +126,6 @@ parse_and_validate_config() {
         if ! printf '%s' "$TARI_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
             error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (from your Tari wallet: 'export-view-key-and-spend-key'). Got ${#TARI_VIEW_KEY} chars."
         fi
-        # A view-only Tari wallet needs the PUBLIC spend key too — require both together.
-        if ! printf '%s' "$TARI_SPEND_PUBLIC_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "tari.spend_public_key must be the 64-character hex PUBLIC SPEND KEY for the Tari payout address (exported alongside the view key). Set it whenever tari.view_key is set."
-        fi
         # "auto" or a day no later than today: a future day scans from the tip, missing past payouts.
         local tari_today=$((($(date +%s) - 1640995200) / 86400))
         case "$TARI_WALLET_BIRTHDAY" in
@@ -138,6 +135,8 @@ parse_and_validate_config() {
         esac
         TARI_PAYOUT_CONFIRM_ENABLED=true
     fi
+
+    validate_payout_keys
 
     # Bridge network subnet (#180): configurable so the stack can avoid colliding with a 172.28.0.0/24
     # already in use on the host (Docker else errors "Pool overlaps with other one on this address

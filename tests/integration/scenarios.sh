@@ -72,6 +72,7 @@ remote-tari-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb
 tari-off-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true tari.mode=off
 local-pruned-main-stratum-tls	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true p2pool.stratum_tls=true
 local-pruned-main-firewall-off	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.tor_egress_firewall=false
+local-pruned-main-payout-pairs	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-payout-confirm	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true payout_confirm=env
 local-pruned-main-insecure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=false dashboard.tari_required=true
 EOF
