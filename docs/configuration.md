@@ -52,7 +52,9 @@ only the keys you want to override.
 - It previews what will change, diffing your edited `config.json` against the running configuration.
 - It prompts to confirm before anything disruptive: switching the Monero node local↔remote, switching
   `tari.mode` between `local`, `remote` and `off`, toggling pruning, changing a payout address,
-  exposing the RPC to your LAN, or moving a data directory.
+  exposing the RPC to your LAN, or moving a data directory. For a Monero or Tari payout-address
+  change, type the last 8 characters of each new address. A wrong suffix or missing input cancels
+  the apply; `-y` skips confirmation for scripting.
 - It regenerates the `.env`, Caddy, and Tari configs and recreates only the containers that need it.
   Enabling or disabling payout confirmation does not restart Tor; its onion services follow the
   local Monero and Tari node modes.
