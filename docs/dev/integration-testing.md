@@ -566,8 +566,8 @@ The `local-pruned-main-payout-pairs` scenario additionally runs an isolated conf
 using synthetic matching address/key pairs, separate wallet volumes and the candidate apply,
 wallet services and dashboard. It checks near-tip creation, caught-up card recovery and reopening
 the retained wallet after reverting the pair. It leaves the mining stack’s payout configuration
-unchanged and needs no private view-key input. Select only that scenario and safety backup for its
-bench-ci proof.
+unchanged and needs no private view-key input. Select that scenario with the `lifecycle` phase
+and `no_rig: true` for its bench-ci proof; the required safety backup runs automatically.
 
 ### What each scenario asserts
 
