@@ -32,6 +32,10 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Tari / P2Pool
 
+- Tari outage alerts now describe the required policy and actual worker rejection state.
+  Optional Tari keeps mining Monero; recovery claims readmission only after workers were
+  rejected and the proxy successfully restarted. Monero alert texts are unchanged (#3119).
+
 - **Tari v6.0.1-pre.0 and P2Pool 4.18.1, upgraded together
   ([#1129](https://github.com/p2pool-starter-stack/pithead/issues/1129)).** The Tari 6.0 hard
   fork activates at mainnet block **350,000**; a node on an older version forks off the

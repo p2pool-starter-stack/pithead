@@ -17,6 +17,7 @@ from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_
 from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
 from mining_dashboard.service.notify.monero_health_edges import MoneroHealthEdgesMixin
 from mining_dashboard.service.notify.notify_sinks import config_sinks
+from mining_dashboard.service.notify.tari_node_edges import TariNodeEdgesMixin
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 from mining_dashboard.service.workers.worker_presence import WorkerPresenceMonitor
 
@@ -38,7 +39,9 @@ def build_default_notifier():
     )
 
 
-class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesMixin):
+class AlertService(
+    AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesMixin, TariNodeEdgesMixin
+):
     """
     Turns the data loop's per-cycle signals into a small set of debounced operator alerts and
     fans them out to the configured sinks: Telegram (Issue #121) plus any webhook/ntfy sinks
@@ -161,6 +164,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesM
         self._prev_monero_down = None
         self._prev_monero_stale = None
         self._prev_tari_down = None
+        self._tari_outage_rejected = False
         self._prev_released = None
         self._prev_disk_level = None
         self._prev_db_healthy = None
@@ -215,6 +219,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesM
         miner_released,
         workers,
         workers_expected,
+        workers_rejected=False,
         disk_percent=0,
         db_healthy=True,
         db_reset_seq=0,
@@ -255,7 +260,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesM
         alerts += self._stale_edges(monero_stale)
         alerts += self._monero_health_edges(monero_health)
         # Required controls worker failover, never whether a Tari outage alerts.
-        alerts += self._node_edges("Tari", tari_down, "_prev_tari_down")
+        alerts += self._tari_node_edges(tari_down, tari_required, workers_rejected)
 
         # --- Sync finished (one-shot when the gate first opens) ---
         if self._prev_released is None:
