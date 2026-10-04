@@ -25,7 +25,7 @@ ip=fixture PASS=0 FAIL=0
 ok() { PASS=$((PASS + 1)); }
 bad() { FAIL=$((FAIL + 1)); }
 FIXTURE_CERT_DIGEST=$(printf 'a%.0s' {1..64})
-FIXTURE_ROOT=$(mktemp -d "${TMPDIR:?}/miner-connection-card.XXXXXX")
+FIXTURE_ROOT=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/miner-connection-card.XXXXXX")
 trap 'rm -rf "$FIXTURE_ROOT"' EXIT
 printf 'PROXY_STRATUM_PASSWORD=%s\n' "$seed" >"$FIXTURE_ROOT/.env"
 printf '{"p2pool":{"stratum_password":"auto"}}\n' >"$FIXTURE_ROOT/config.json"
