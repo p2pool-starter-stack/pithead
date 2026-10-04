@@ -5,12 +5,12 @@
 # operator's PRIVATE VIEW KEY with NO spend key, so it can see incoming payouts but CANNOT
 # spend. The view key is written to a JSON file on tmpfs and handed to --generate-from-json — it is
 # NEVER put on the command line, where `docker inspect` / `ps` would expose it (#90 discipline,
-# same as monerod's RPC creds). First run creates the wallet from keys at PAYOUT_SCAN_HEIGHT; later
-# runs reopen the existing wallet file from the named volume.
+# same as monerod's RPC creds). Each address/key pair keeps a wallet in the named volume. Reverting a pair reopens
+# its saved scan progress. New wallets use PAYOUT_SCAN_HEIGHT or the local tip minus 100 blocks.
 set -eu
 
 WALLET_DIR="${WALLET_DIR:-/home/ubuntu/wallets}"
-WALLET_FILE="$WALLET_DIR/payout-wallet"
+WALLET_FILE="" # selected after the test-source guard
 # Marker (#718, #2756, #2720): touched on every start, cleared by the healthcheck once the wallet has
 # scanned to monerod's tip. While it exists, an unreachable RPC means "still scanning": for the
 # genesis default the first scan is HOURS, and a reopened wallet catches up on every block it missed
@@ -20,18 +20,54 @@ SCAN_MARKER="$WALLET_DIR/.payout-scanning"
 GEN_JSON="${GEN_JSON:-/tmp/gen.json}" # tmpfs; holds the view key for the create-from-keys step only
 DAEMON_ADDRESS="${MONERO_NODE_HOST:-127.0.0.1}:${MONERO_RPC_PORT:-18081}"
 
-# Resolve the restore height: an explicit number is used verbatim; "auto"/empty means genesis (0),
-# scanning the whole chain so the wallet captures the FULL payout history — every p2pool payout this
-# address ever received, not just those after the wallet was set up. The initial scan is long (years
-# of blocks) but one-time: the wallet file persists its progress, so reopens only scan new blocks. A
-# pruned node scans fine — outputs are never pruned. Set PAYOUT_SCAN_HEIGHT to a block number to
-# start later and skip the long scan.
+# Fresh wallets start 100 blocks behind the local tip (about 200 minutes).
+# Never fall back to genesis when the node is unavailable: restart and retry instead.
 resolve_scan_height() {
-    local want="${PAYOUT_SCAN_HEIGHT:-auto}"
+    local want="${PAYOUT_SCAN_HEIGHT:-auto}" count
     case "$want" in
-    '' | auto) printf '0\n' ;;
+    '' | auto)
+        count=$(curl -fsS --digest --max-time 10 \
+            -u "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}' \
+            "http://$DAEMON_ADDRESS/json_rpc" | jq -er '.result.count | select(type == "number" and . > 0 and floor == .)') || {
+            echo "Cannot read the local Monero height; refusing a genesis fallback." >&2
+            return 1
+        }
+        if [ "$count" -gt 100 ]; then printf '%s\n' "$((count - 100))"; else printf '0\n'; fi
+        ;;
+    *[!0-9]*)
+        echo "Invalid payout scan height." >&2
+        return 1
+        ;;
     *) printf '%s\n' "$want" ;;
     esac
+}
+
+select_wallet() {
+    local identity legacy owner suffix
+    identity=$(printf '%s\n%s\n' "${MONERO_WALLET_ADDRESS:-}" "${MONERO_VIEW_KEY:-}" | sha256sum)
+    identity="${identity%% *}"
+    WALLET_FILE="$WALLET_DIR/payout-wallet-$identity"
+    legacy="$WALLET_DIR/payout-wallet"
+    owner="$WALLET_DIR/.legacy-wallet-identity"
+    # Record the adoption owner first; a interrupted rename resumes for this pair only.
+    if [ -f "$legacy" ] && [ ! -f "$owner" ]; then
+        (
+            umask 077
+            printf '%s\n' "$identity" >"$owner"
+        )
+    fi
+    if [ -f "$owner" ] && [ "$(cat "$owner")" = "$identity" ]; then
+        for suffix in .keys .address.txt .unportable ''; do
+            [ ! -f "$legacy$suffix" ] || mv "$legacy$suffix" "$WALLET_FILE$suffix"
+        done
+    fi
+    # A different wallet gets its own catch-up grace; restarts of the same one keep its age.
+    if [ "$(cat "$WALLET_DIR/.payout-active" 2>/dev/null || true)" != "$identity" ]; then
+        rm -f "$SCAN_MARKER"
+        printf '%s\n' "$identity" >"$WALLET_DIR/.payout-active"
+    fi
 }
 
 # Write the create-from-keys JSON for a VIEW-ONLY wallet ($1 = restore height). The spend key is
@@ -62,6 +98,7 @@ if [ "${PITHEAD_TEST_SOURCE:-0}" = "1" ]; then
 fi
 
 mkdir -p "$WALLET_DIR"
+select_wallet
 
 # Bound parallel wallet work to one worker; host CPU count is not a memory budget.
 # Shared server flags. --rpc-login (dashboard→wallet-rpc) authenticates the loopback-published RPC so
@@ -92,7 +129,6 @@ set -- \
 
 if [ ! -f "$WALLET_FILE" ]; then
     height="$(resolve_scan_height)"
-    [ -n "$height" ] || height=0
     echo "Creating view-only payout wallet at restore height $height (#381)..."
     # The view key lives ONLY in this tmpfs file, never on argv.
     write_gen_json "$height"

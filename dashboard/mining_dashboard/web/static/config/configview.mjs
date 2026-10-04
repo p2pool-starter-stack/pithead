@@ -98,6 +98,8 @@ const APPROVAL_TITLE = "Editable — this sensitive change is recorded under you
 // onChange/onInput wired, so it cannot enter the form's staged edits. Preact skips an event prop
 // entirely when it is `undefined`, so passing `undefined` rather than a no-op is what actually removes the listener.
 const Field = ({ field, value, onEdit, full }) => {
+  // The host derives this public key from the dual address; ask only for the private view key.
+  if (field.key === "tari.spend_public_key") return null;
   const editable = field.editable !== false;
   const label = full ? field.key : field.path.slice(1).join(".") || field.path[0];
   const title = !editable

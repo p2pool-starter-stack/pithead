@@ -145,3 +145,7 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 [testing guide](testing-guide.md). For configuration values, read
 [configuration](../configuration.md). The wizard spool-file protocol is in
 [appliance wizard](appliance-wizard.md#host-and-page-spool-files).
+
+Payout confirmation validates private view scalars in `lib/pithead/25b-payout-keys.sh`; the wallet
+entrypoints select storage by address/key fingerprint. `tests/stack/test-payout-wallet-pairs.sh`
+proves matching keys, derivation, selection and legacy adoption.

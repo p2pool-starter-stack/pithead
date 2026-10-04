@@ -266,3 +266,10 @@ test("the fill button is a no-op when the file picker is dismissed with no file"
   inst.onFilePick({ target: { files: [] } });
   assert.equal(inst.state.editText, before);
 });
+
+
+test("payout form asks only for Tari's view key; the spend key is derived from its address", () => {
+  const out = renderToString(readyView({ tari: { view_key: "", spend_public_key: "" } }, []).render());
+  assert.match(out, /view_key/);
+  assert.doesNotMatch(out, /config-field-name">[^<]*spend_public_key/);
+});

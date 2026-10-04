@@ -125,15 +125,14 @@ assert_eq "wallet gen.json carries the view key (#381)" "$(printf '%s' "$WGEN" |
 assert_eq "wallet gen.json scan_from_height verbatim (#381)" "$(printf '%s' "$WGEN" | jq -r .scan_from_height)" "3000000"
 # THE REGRESSION GUARD: a revert to "spendkey":"" crashes monero-wallet-rpc (#714). Field must be absent.
 assert_eq "wallet gen.json OMITS spendkey — monero rejects an empty one (#714)" "$(printf '%s' "$WGEN" | jq 'has("spendkey")')" "false"
-# Restore height: "auto"/empty means genesis (0) so the wallet scans the FULL payout history; an
-# explicit height is used verbatim to skip the long scan.
+# Auto height fails closed without a readable local tip; explicit heights skip that query.
 rsh() { (
     export PITHEAD_TEST_SOURCE=1 PAYOUT_SCAN_HEIGHT="$1"
     source "$ROOT/build/monero/wallet-entrypoint.sh"
     resolve_scan_height
 ); }
-assert_eq "scan height: auto -> genesis 0 (full payout history)" "$(rsh auto)" "0"
-assert_eq "scan height: empty -> genesis 0" "$(rsh '')" "0"
+assert_eq "scan height: auto refuses an unreadable local tip" "$(rsh auto 2>/dev/null)" ""
+assert_eq "scan height: empty refuses an unreadable local tip" "$(rsh '' 2>/dev/null)" ""
 assert_eq "scan height: explicit block kept verbatim" "$(rsh 2500000)" "2500000"
 
 # Wallet healthcheck (#718/#2268): stub `curl` on PATH to control RPC up/down.
@@ -157,7 +156,7 @@ if [ -f "$HCDIR/.payout-scanning" ]; then bad "healthcheck: RPC up clears the sc
 mk_curl 7 # RPC down + NO marker (scan already finished once): a real fault, not scan tolerance.
 assert_eq "healthcheck: RPC down after scan done -> unhealthy (#718)" "$(run_hc)" "1"
 printf '#!/bin/sh\nexit 0\n' >"$HCBIN/monero-wallet-rpc" && chmod +x "$HCBIN/monero-wallet-rpc"
-run_wep() { rm -f "$HCDIR/.payout-scanning" && PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/wgen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1; } # every start marks a scan (#718): a reopen's catch-up blocks the RPC too (#2756)
+run_wep() { rm -f "$HCDIR/.payout-scanning" && PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/wgen.json" PAYOUT_SCAN_HEIGHT=2500000 bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1; } # every start marks a scan (#718): a reopen's catch-up blocks the RPC too (#2756)
 run_wep
 if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on create"; else bad "wallet-entrypoint marks the scan on create" "no marker"; fi
 : >"$HCDIR/payout-wallet" && run_wep
@@ -224,7 +223,11 @@ assert_rc "real value kept" "$?" "1"
 echo "== black-box: payout confirmation view key (#381) =="
 # A local node's private view key enables payout_confirm and wallet-rpc. The key and generated
 # credentials land only in the 600 .env, never in apply output (BOTSECRET pattern).
-VIEWKEY="$(printf 'a%.0s' $(seq 64))" # 64 hex chars — a well-formed private view key
+# shellcheck source=tests/integration/fixtures/payout-pairs.sh
+source "$ROOT/tests/integration/fixtures/payout-pairs.sh"
+WALLET="$PAYOUT_MONERO1"
+VALID_TARI="$PAYOUT_TARI1"
+VIEWKEY="$PAYOUT_VIEW1"
 # (1) OFF by default: no view key, profile or wallet-rpc container.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
@@ -276,8 +279,8 @@ assert_contains "malformed view-key message" "$out" "64-character hex"
 echo "== black-box: Tari payout confirmation view key (#462) =="
 # Tari's local view and spend keys enable tari_payout_confirm and its view-only wallet.
 # The secret file is 600; the view key never appears in apply output. Dummy keys avoid gitleaks.
-TVIEW="$(printf 'a%.0s' $(seq 64))"  # 64 hex — a well-formed Tari private view key
-TSPEND="$(printf 'b%.0s' $(seq 64))" # 64 hex — a well-formed Tari public spend key
+TVIEW="$PAYOUT_VIEW1"
+TSPEND="$PAYOUT_TARI_PUBLIC1"
 # (1) OFF by default: no view key or tari-wallet profile.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
@@ -312,12 +315,12 @@ esac
 tpw1="$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_PASSWORD)"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "tari wallet password preserved across apply" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_PASSWORD)" "$tpw1"
-# (3) A view key WITHOUT the spend key -> refused (a view-only wallet needs both).
+# (3) Only the view key is required; the public spend key comes from the address.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "tari view key without spend key rejected" "$?" "1"
-assert_contains "missing-spend-key message" "$out" "tari.spend_public_key"
+assert_rc "tari view key without spend key accepted" "$?" "0"
+assert_eq "spend key derived from the address" "$(run_sourced "$V" env_get_file "$V/.env" TARI_SPEND_PUBLIC_KEY)" "$TSPEND"
 # (4) A malformed tari view key (not 64 hex) is rejected before it reaches the wallet.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"nope","spend_public_key":"%s"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TSPEND" >"$V/config.json"
