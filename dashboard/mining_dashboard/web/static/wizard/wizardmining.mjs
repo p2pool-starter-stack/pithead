@@ -69,17 +69,23 @@ export const TariSection = ({ answer, v, on }) => html`<h2>Tari merge-mining</h2
     }`;
 
 // Measurements come from the host, including the target's future data partition.
-export function tariDiskDefault(budget, disks, target, moneroMode) {
-  const available = disks.length
-    ? disks.find((disk) => disk.name === target)?.data_bytes
-    : budget.available_bytes;
+export function tariDiskDefault(budget, disks, target, moneroMode, wipe = "keep") {
+  const disk = disks.find((item) => item.name === target);
+  const key =
+    disk?.state === "pithead-with-data" && wipe === "data" ? "data_available_bytes" : "data_bytes";
+  const available = disks.length ? disk?.[key] : budget.available_bytes;
   const need = moneroMode === "remote" ? budget.remote_need_bytes : budget.local_need_bytes;
   return Number.isFinite(available) && Number.isFinite(need) && available < need ? "off" : "local";
 }
 
 export function syncInitialChains(cfg, fast) {
-  cfg.monero.clearnet_initial_sync = fast && cfg.monero.mode !== "remote";
-  cfg.tari.clearnet_initial_sync = fast && cfg.tari.mode === "local";
+  for (const chain of ["monero", "tari"]) {
+    if (!Object.hasOwn(cfg, chain)) cfg[chain] = {};
+    const section = cfg[chain];
+    if (section && typeof section === "object" && !Array.isArray(section)) {
+      section.clearnet_initial_sync = fast && (section.mode ?? "local") === "local";
+    }
+  }
 }
 
 export function fastSyncWarning(cfg) {
@@ -91,8 +97,23 @@ export function fastSyncWarning(cfg) {
     : "";
 }
 
-export function applyDiskDefault(app, cfg, chosen = app.state.chosen) {
+export function applyDiskDefault(app, cfg, chosen = app.state.chosen, wipe = app.state.wipe) {
   if (app.state.newMachine && !app.state.tariTouched) {
-    cfg.tari.mode = tariDiskDefault(app.state.diskBudget, app.state.disks, chosen, cfg.monero.mode);
+    cfg.tari ||= {};
+    cfg.monero ||= {};
+    cfg.tari.mode = tariDiskDefault(
+      app.state.diskBudget,
+      app.state.disks,
+      chosen,
+      cfg.monero.mode,
+      wipe,
+    );
   }
+}
+
+export function selectTarget(app, chosen, wipe) {
+  const cfg = app.state.cfg;
+  applyDiskDefault(app, cfg, chosen, wipe);
+  syncInitialChains(cfg, app.state.fastSync);
+  app.setState({ chosen, wipe, cfg, jsonText: JSON.stringify(cfg, null, 2) });
 }

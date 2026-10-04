@@ -47,8 +47,26 @@ disk_in_use() { # $1 disk name (no /dev/)
 # NB parsed from lsblk's JSON via jq, never its column output: a model with spaces ("Samsung SSD
 # 990 PRO") shifts every column right and an EMPTY model (all virtio, some NVMe) shifts them
 # left, so `read name size model serial type` silently drops real disks either way.
+# Read unmounted ext4 free space without mounting or changing the target. The data-wipe
+# option keeps chains; its budget must account for the space they already occupy.
+available_data_bytes() { # <disk-name>
+    local part
+    part=$(lsblk -Jpo NAME,PARTLABEL,FSTYPE "/dev/$1" | jq -r \
+        '.. | objects | select(.partlabel == "data" and .fstype == "ext4") | .name' | head -1)
+    [ -n "$part" ] || return 1
+    LC_ALL=C dumpe2fs -h "$part" 2>/dev/null | awk '
+        /^Free blocks:/ { free=$3; have_free=1 }
+        /^Reserved block count:/ { reserved=$4; have_reserved=1 }
+        /^Block size:/ { size=$3; have_size=1 }
+        END {
+            if (!have_free || !have_reserved || !have_size || size <= 0) exit 1
+            available=free-reserved; if (available < 0) available=0
+            printf "%.0f", available*size
+        }'
+}
+
 list_disks() {
-    local boot name size model serial bytes data_bytes
+    local boot name size model serial bytes data_bytes available
     boot=$(boot_disk || true)
     lsblk -Jdno NAME,SIZE,MODEL,SERIAL,TYPE |
         jq -r '.blockdevices[] | select(.type == "disk")
@@ -63,9 +81,13 @@ list_disks() {
             if [[ "$bytes" =~ ^[0-9]+$ ]]; then
                 data_bytes=$((bytes - 2 * SLOT_GIB * 1073741824 - ESP_MIB * 1048576))
                 [ "$data_bytes" -ge 0 ] || data_bytes=0
+                # A lower bound before formatting: reserve 5% for ext4 root blocks and
+                # another 2% for metadata/journal. First boot can reclaim the root reserve.
+                data_bytes=$((data_bytes * 93 / 100))
             fi
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-                "$name" "$size" "$model" "$serial" "$(layout_state "/dev/$name")" "$data_bytes"
+            available=$(available_data_bytes "$name") || available=""
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$name" "$size" "$model" "$serial" "$(layout_state "/dev/$name")" "$data_bytes" "$available"
         done
 }
 

@@ -119,7 +119,8 @@ wizard_ask_core() {
             break
         }
         if [ -z "$IN_DASH_PASS" ]; then
-            IN_DASH_PASS=$(generate_node_password)
+            IN_DASH_PASS=$(generate_node_password) || error "Could not generate a dashboard password. Setup aborted."
+            [[ "$IN_DASH_PASS" =~ ^[A-Za-z0-9]{32}$ ]] || error "Could not generate a dashboard password. Setup aborted."
             echo "Dashboard login: $IN_DASH_USER"
             echo "Generated dashboard password: $IN_DASH_PASS"
             echo "Save it now — it is also stored in your owner-only config.json."
@@ -257,9 +258,12 @@ wizard_ask_shape() {
     CLEARNET_SYNC=false
     if [[ "$IN_CLEARNET" =~ ^[Yy] ]]; then
         CLEARNET_SYNC=true
-        local networks="the Monero network"
-        [ "$TARI_MODE_WIZ" == "off" ] || networks="$networks and the Tari network"
-        warn "Fast sync exposes your IP address to $networks until the initial sync finishes."
+        local networks=""
+        [ "$MONERO_MODE_WIZ" == "local" ] && networks="the Monero network"
+        if [ "$TARI_MODE_WIZ" == "local" ]; then
+            networks="${networks:+$networks and }the Tari network"
+        fi
+        [ -z "$networks" ] || warn "Fast sync exposes your IP address to $networks until the initial sync finishes."
     fi
 
     read -r -p "Reach the dashboard from outside your LAN over Tor? (y/N): " IN_ONION || true

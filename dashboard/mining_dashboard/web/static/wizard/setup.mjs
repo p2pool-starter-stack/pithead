@@ -129,7 +129,7 @@ export function renderSetup(app) {
                 wipe=${wipe} allowStick=${rig}
                 onPick=${app.pickDisk}
                 onConfirm=${(e) => app.setState({ confirm: e.target.value })}
-                onWipe=${(e) => app.setState({ wipe: e.target.value })} />`
+                onWipe=${app.changeWipe} />`
             }
             ${diskPicked && !keepEverything && rig && app.renderRigFields()}
             ${diskPicked && !keepEverything && !rig && html`<${MachineName} cfg=${cfg} edit=${app.edit} />`}

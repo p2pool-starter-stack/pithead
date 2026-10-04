@@ -325,3 +325,24 @@ test("fast sync updates both local chains, warns, and clears remote or disabled 
   assert.equal(inst.state.cfg.tari.clearnet_initial_sync, false);
   assert.doesNotMatch(renderToString(inst.renderSetup()), /exposes your IP address/);
 });
+
+
+test("sparse JSON preserves reference-local modes when fast sync is edited", () => {
+  const { inst } = setupOn("local");
+  inst.editJson({ target: { value: '{"monero":{"wallet_address":""}}' } });
+  inst.edit("monero.clearnet_initial_sync")({ target: { value: "true" } });
+  assert.equal(inst.state.cfg.monero.clearnet_initial_sync, true);
+  assert.equal(inst.state.cfg.tari.clearnet_initial_sync, true);
+  inst.edit("monero.mode")({ target: { value: "remote" } });
+  assert.equal(inst.state.cfg.monero.clearnet_initial_sync, false);
+});
+
+test("keeping chains measures current free space and wiping everything uses the fresh estimate", () => {
+  const { inst } = setupOn("local");
+  Object.assign(inst.state, { newMachine: true, diskBudget: { local_need_bytes: 528 }, disks: [{ name: "old", state: "pithead-with-data", data_bytes: 900, data_available_bytes: 100 }] });
+  inst.pickDisk({ target: { value: "old" } });
+  inst.changeWipe({ target: { value: "data" } });
+  assert.equal(inst.state.cfg.tari.mode, "off");
+  inst.changeWipe({ target: { value: "all" } });
+  assert.equal(JSON.parse(inst.state.jsonText).tari.mode, "local");
+});

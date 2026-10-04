@@ -409,6 +409,7 @@ async def _submit_locked(request: web.Request) -> web.Response:
                     _disks(),
                     str(form.get("disk", "")),
                     str(form.get("monero_mode", "local")),
+                    str(form.get("wipe", "keep")),
                 ),
             )
         )

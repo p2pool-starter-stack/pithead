@@ -1,11 +1,19 @@
 """New-install defaults based on disk measurements published by the host."""
 
 
-def tari_disk_default(budget: dict, disks: list[dict], target: str, monero_mode: str) -> str:
+def tari_disk_default(
+    budget: dict, disks: list[dict], target: str, monero_mode: str, wipe: str = "keep"
+) -> str:
     """Match the CLI: unknown capacity keeps local; insufficient capacity declines Tari."""
     available = budget.get("available_bytes")
     if disks:
-        available = next((d.get("data_bytes") for d in disks if d["name"] == target), None)
+        disk = next((d for d in disks if d["name"] == target), {})
+        key = (
+            "data_available_bytes"
+            if disk.get("state") == "pithead-with-data" and wipe == "data"
+            else "data_bytes"
+        )
+        available = disk.get(key)
     need = budget.get("remote_need_bytes" if monero_mode == "remote" else "local_need_bytes")
     if type(available) is int and type(need) is int:
         return "local" if available >= need else "off"
@@ -15,7 +23,8 @@ def tari_disk_default(budget: dict, disks: list[dict], target: str, monero_mode:
 def fast_sync_warning(cfg: dict) -> str:
     networks = []
     for chain, name in (("monero", "Monero"), ("tari", "Tari")):
-        if cfg.get(chain, {}).get("clearnet_initial_sync"):
+        section = cfg.get(chain)
+        if isinstance(section, dict) and section.get("clearnet_initial_sync") is True:
             networks.append(f"the {name} network")
     if not networks:
         return ""
@@ -41,7 +50,7 @@ def explicit_wizard_config(cfg: dict, ref: dict) -> dict:
         ("xvb", ("enabled",)),
     ):
         for key in keys:
-            if key in cfg.get(block, {}):
+            if isinstance(cfg.get(block), dict) and key in cfg[block]:
                 written.setdefault(block, {})[key] = cfg[block][key]
     return written
 
@@ -58,5 +67,7 @@ def disk_inventory(raw: str) -> list[dict]:
         disk = {"name": name, "size": size, "model": model, "serial": serial, "state": state}
         if len(parts) > 5 and parts[5].isdigit():
             disk["data_bytes"] = int(parts[5])
+        if len(parts) > 6 and parts[6].isdigit():
+            disk["data_available_bytes"] = int(parts[6])
         out.append(disk)
     return out

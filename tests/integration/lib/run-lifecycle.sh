@@ -2,8 +2,6 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
-# shellcheck source=tests/integration/lib/run-wizard-defaults.sh
-source "$(dirname "${BASH_SOURCE[0]}")/run-wizard-defaults.sh" || exit $?
 run_lifecycle() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"

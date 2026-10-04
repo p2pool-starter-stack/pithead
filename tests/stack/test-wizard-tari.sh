@@ -141,6 +141,54 @@ budget=$(PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sour
 assert_eq "host publishes the measured data filesystem bytes" "$(jq -r '.available_bytes' <<<"$budget")" "$((WT_SMALL_KB * 1024))"
 assert_eq "both wizards share the local and remote budgets" "$(jq -rc '[.local_need_bytes,.remote_need_bytes]' <<<"$budget")" '[566935683072,223338299392]'
 
+echo "== unit: failed randomness cannot disable the default dashboard login =="
+_wf_rng_rejected() {
+    openssl() { return 1; }
+    if generate_node_password; then return 1; fi
+}
+run_sourced "$SANDBOX" _wf_rng_rejected >/dev/null 2>&1
+assert_rc "shared generator rejects failed OpenSSL even in a conditional" "$?" "0"
+_wf_empty_password() {
+    generate_node_password() { :; }
+    run_wizard
+}
+mkdir -p "$WT/failed-password"
+out=$(printf '%b' "$WALLET\n\n1\n\n\n\n" | run_sourced "$WT/failed-password" _wf_empty_password 2>&1)
+assert_contains "default login aborts if generation produces an empty password" "$out" "Could not generate a dashboard password"
+[ ! -f "$WT/failed-password/config.json" ] && ok "failed password generation writes no config" || bad "failed password generation writes no config" "config.json exists"
+unset -f _wf_rng_rejected _wf_empty_password
+
+# Drive only the shape stage so every local/remote/off combination is isolated from address prompts.
+for mono in local remote; do
+    for tari in local remote off; do
+        out=$(printf 'y\n\n\n\n' | run_sourced "$SANDBOX" bash -c 'source "$1"; MONERO_MODE_WIZ="$2"; TARI_MODE_WIZ="$3"; wizard_ask_shape' _ "$STACK" "$mono" "$tari" 2>&1)
+        if [ "$mono" = local ]; then assert_contains "fast warning includes local Monero ($mono/$tari)" "$out" "the Monero network"; else assert_not_contains "fast warning excludes remote Monero ($mono/$tari)" "$out" "the Monero network"; fi
+        if [ "$tari" = local ]; then assert_contains "fast warning includes local Tari ($mono/$tari)" "$out" "the Tari network"; else assert_not_contains "fast warning excludes nonlocal Tari ($mono/$tari)" "$out" "the Tari network"; fi
+    done
+done
+
+echo "== unit: installer reports conservative fresh capacity and ext4 free space =="
+sed '$d' "$ROOT/os/installer/pithead-install" >"$WT/installer-functions"
+cat >"$WT/inventory-fixture" <<'EOF'
+#!/usr/bin/env bash
+source "$1"
+findmnt() { return 1; }
+lsblk() {
+    case "$*" in
+    '-Jdno NAME,SIZE,MODEL,SERIAL,TYPE') printf '%s' '{"blockdevices":[{"name":"fixture","size":"600G","type":"disk"}]}' ;;
+    '-Jpo NAME,PARTLABEL,FSTYPE /dev/fixture') printf '%s' '{"blockdevices":[{"name":"/dev/fixture1","partlabel":"data","fstype":"ext4"}]}' ;;
+    '-no PARTLABEL /dev/fixture') echo 'system-a data' ;;
+    esac
+}
+blockdev() { echo "$fixture_bytes"; }
+dumpe2fs() { printf 'Free blocks: 110\nReserved block count: 10\nBlock size: 4096\n'; }
+fixture_bytes="$2"
+list_disks
+EOF
+inventory=$(bash "$WT/inventory-fixture" "$WT/installer-functions" "$((600 * 1073741824))")
+assert_eq "installer fresh estimate reserves slots and filesystem overhead" "$(cut -f6 <<<"$inventory")" "$(((600 * 1073741824 - 8 * 1073741824 - 256 * 1048576) * 93 / 100))"
+assert_eq "installer retained-data measurement excludes occupied and reserved blocks" "$(cut -f7 <<<"$inventory")" "409600"
+
 echo "== black-box: 'pithead setup' completes on a config that declined Tari (#1916) =="
 # The assertion the wizard-level cases cannot make. parse_and_validate_config already drops the
 # Tari address from the required set when the mode is "off" (#1855), so the wizard's own check was

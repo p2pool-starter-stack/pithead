@@ -7,7 +7,7 @@ import { savedRoleOrSetup } from "./savedrole.mjs";
 import { renderSetup } from "./setup.mjs";
 import { Done, Gate, Installing } from "./stages.mjs";
 import * as failure from "./wizardfailure.mjs";
-import { applyDiskDefault, syncInitialChains } from "./wizardmining.mjs";
+import { applyDiskDefault, selectTarget, syncInitialChains } from "./wizardmining.mjs";
 
 const RESTORE_MAX_BYTES = 64 * 1024 * 1024;
 
@@ -148,13 +148,8 @@ export class WizardApp extends Component {
     }
   };
 
-  pickDisk = (e) => {
-    const chosen = e.target.value;
-    const cfg = this.state.cfg;
-    applyDiskDefault(this, cfg, chosen);
-    syncInitialChains(cfg, this.state.fastSync);
-    this.setState({ chosen, wipe: "keep", cfg, jsonText: JSON.stringify(cfg, null, 2) });
-  };
+  pickDisk = (e) => selectTarget(this, e.target.value, "keep");
+  changeWipe = (e) => selectTarget(this, this.state.chosen, e.target.value);
 
   edit = (path) => (e) => {
     const raw = e.target.type === "checkbox" ? String(e.target.checked) : e.target.value;

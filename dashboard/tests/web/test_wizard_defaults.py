@@ -102,3 +102,27 @@ async def test_no_javascript_fast_sync_response_warns_for_both_local_networks(
             (await response.json())["warning"]
             == "Fast sync exposes your IP address to the Monero network and the Tari network until the initial sync finishes."
         )
+
+
+@pytest.mark.parametrize("block", ["monero", "tari", "xvb"])
+@pytest.mark.parametrize("invalid", [None, 1, "invalid", []])
+async def test_wrong_known_section_types_are_spooled_for_host_rejection_without_a_500(
+    tmp_path, monkeypatch, block, invalid
+):
+    monkeypatch.setenv("WIZARD_SPOOL", str(tmp_path))
+    monkeypatch.setenv("WIZARD_TOKEN", "fixture-token")
+    reference = {"monero": {"mode": "local"}, "tari": {"mode": "local"}, "xvb": {"enabled": True}}
+    tmp_path.joinpath("config.reference.json").write_text(json.dumps(reference))
+    async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
+        await client.post("/auth", data={"token": "fixture-token"}, allow_redirects=False)
+        response = await client.post("/submit", data={"config": json.dumps({block: invalid})})
+        assert response.status == 200
+        assert json.loads(tmp_path.joinpath("config.json").read_text())[block] == invalid
+        assert tmp_path.joinpath("submission-active").exists()
+        assert (await response.json())["warning"] == ""
+
+
+def test_preserved_chains_use_existing_free_space_instead_of_fresh_capacity():
+    disks = disk_inventory(f"target\t1T\tm\ts\tpithead-with-data\t{900 * GIB}\t{100 * GIB}")
+    assert tari_disk_default(BUDGET, disks, "target", "local", "all") == "local"
+    assert tari_disk_default(BUDGET, disks, "target", "local", "data") == "off"
