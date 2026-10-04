@@ -4,8 +4,14 @@
 # the baseline; the runner owns restoration of the deployment after this lifecycle phase.
 run_cli_wizard_defaults() {
     local monero tari cfg out rc expected
-    monero=$(jq -r '.monero.wallet_address' <<<"$BASELINE_JSON")
-    tari=$(jq -r '.tari.wallet_address // ""' <<<"$BASELINE_JSON")
+    monero=$(jq -er '.monero.wallet_address | select(type == "string" and length > 0)' <<<"${BASELINE_CONFIG:-null}") || {
+        it_fail "CLI defaults fixture supplies a Monero wallet"
+        return 1
+    }
+    tari=$(jq -r '.tari.wallet_address // ""' <<<"$BASELINE_CONFIG") || {
+        it_fail "CLI defaults fixture has a readable Tari section"
+        return 1
+    }
     out=$(rx "PITHEAD_CONFIG_FILE=\"\$PWD/.itest-wizard-defaults.json\"
         source $(quote_arg "$IT_PITHEAD")
         wizard_tari_disk_default local >/dev/null
@@ -23,6 +29,12 @@ run_cli_wizard_defaults() {
     expected=$(rx "source $(quote_arg "$IT_PITHEAD"); wizard_tari_disk_default local >/dev/null; printf '%s' \"\$WIZ_TARI_DEFAULT\"")
     assert_eq "fresh CLI Tari answer follows the measured data disk" "$(jq -r '.tari.mode' <<<"$cfg")" "$expected"
     assert_eq "fresh CLI generated password is printed once" "$(grep -Fc "$(jq -r '.dashboard.auth.password' <<<"$cfg")" <<<"$out")" 1
+    # Keep the runner's prepared data locations; the wizard's feature/auth choices stay intact.
+    # A default auto path in this dedicated checkout would start a new chain instead of the fixture.
+    cfg=$(jq --argjson baseline "$BASELINE_CONFIG" '
+        reduce ["monero", "tari", "p2pool", "dashboard", "tor"][] as $service (.;
+            if $baseline[$service].data_dir then .[$service].data_dir = $baseline[$service].data_dir else . end)
+    ' <<<"$cfg") || return 1
     push_config "$cfg" || return 1
     rx "sed -i 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' .env && grep -qx 'DEPLOYMENT_COMPLETED=false' .env" || return 1
     out=$(rx "printf '\\nn\\n' | $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)
@@ -35,6 +47,6 @@ run_cli_wizard_defaults() {
     wait_status_ok 300
     assert_rc "fresh CLI defaults report a healthy stack" "$?" 0
     # Keep the general lifecycle's secret-preservation tests on their original fixture.
-    push_config "$BASELINE_JSON" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 300
+    push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 300
     assert_rc "CLI defaults proof restores the baseline config for lifecycle" "$?" 0
 }

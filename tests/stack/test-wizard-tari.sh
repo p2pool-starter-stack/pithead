@@ -162,8 +162,8 @@ unset -f _wf_rng_rejected _wf_empty_password
 for mono in local remote; do
     for tari in local remote off; do
         out=$(printf 'y\n\n\n\n' | run_sourced "$SANDBOX" bash -c 'source "$1"; MONERO_MODE_WIZ="$2"; TARI_MODE_WIZ="$3"; wizard_ask_shape' _ "$STACK" "$mono" "$tari" 2>&1)
-        if [ "$mono" = local ]; then assert_contains "fast warning includes local Monero ($mono/$tari)" "$out" "the Monero network"; else assert_not_contains "fast warning excludes remote Monero ($mono/$tari)" "$out" "the Monero network"; fi
-        if [ "$tari" = local ]; then assert_contains "fast warning includes local Tari ($mono/$tari)" "$out" "the Tari network"; else assert_not_contains "fast warning excludes nonlocal Tari ($mono/$tari)" "$out" "the Tari network"; fi
+        if [ "$mono" = local ]; then assert_contains "fast warning includes local Monero (${mono}/${tari})" "$out" "the Monero network"; else assert_not_contains "fast warning excludes remote Monero (${mono}/${tari})" "$out" "the Monero network"; fi
+        if [ "$tari" = local ]; then assert_contains "fast warning includes local Tari (${mono}/${tari})" "$out" "the Tari network"; else assert_not_contains "fast warning excludes nonlocal Tari (${mono}/${tari})" "$out" "the Tari network"; fi
     done
 done
 

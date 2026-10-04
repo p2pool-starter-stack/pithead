@@ -77,7 +77,7 @@ for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
 # Execute the wizard harness initialization with the generated CLI: CONFIG_FILE is readonly.
 (
-    BASELINE_JSON='{"monero":{"wallet_address":"fixture"},"tari":{"wallet_address":"fixture"}}'
+    BASELINE_CONFIG='{"monero":{"wallet_address":"fixture"},"tari":{"wallet_address":"fixture"}}'
     IT_PITHEAD="$ROOT/../../pithead"
     quote_arg() { printf '%q' "$1"; }
     rx() {

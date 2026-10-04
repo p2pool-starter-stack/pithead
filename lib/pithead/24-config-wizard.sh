@@ -287,6 +287,7 @@ wizard_ask_shape() {
     read -r -p "Also mine on this machine with its spare CPU (co-locate a RigForge worker)? (y/N): " IN_LOCAL_MINER || true
     LOCAL_MINER=false
     [[ "$IN_LOCAL_MINER" =~ ^[Yy] ]] && LOCAL_MINER=true
+    return 0
 }
 
 # Assembles config.json from the globals wizard_ask_core/wizard_ask_shape set, and writes it.
