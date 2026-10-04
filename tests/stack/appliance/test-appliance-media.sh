@@ -314,12 +314,12 @@ cp "$MC/changed.json" "$STICK4/pithead-config.json"
     media_confirm_gate() { echo apply; }
     main
 ) >"$MC/apply.out" 2>&1
-# jq-level equality, not cmp: the merge stage reformats, and changed.json names every key
-# good.json has, so the merged result must equal changed.json setting-for-setting.
-if [ "$(jq -S . "$MC/changed.json")" = "$(jq -S . "$RUN_CFG")" ]; then
+# The merged result must contain every candidate setting and the host-owned stamp.
+expected=$(jq -S --arg stamp "$(sed 's/[-+].*//' "$ROOT/VERSION")" '.config_version=$stamp' "$MC/changed.json")
+if [ "$expected" = "$(jq -S . "$RUN_CFG")" ]; then
     ok "a confirmed change is written to the running config.json — the changed setting took effect"
 else
-    bad "a confirmed change is written to the running config.json" "$(diff <(jq -S . "$MC/changed.json") <(jq -S . "$RUN_CFG") 2>&1 | head -3)"
+    bad "a confirmed change is written to the running config.json" "$(diff <(printf '%s\n' "$expected") <(jq -S . "$RUN_CFG") 2>&1 | head -3)"
 fi
 mounted_at=$(tail -1 "$MC/mount.log")
 [ -n "$mounted_at" ] && [ ! -f "$mounted_at/pithead-config.json" ] &&
