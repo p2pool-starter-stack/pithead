@@ -15,10 +15,10 @@ for raw in \
     for verb in preview apply setup up; do
         seed_env
         case "$verb" in
-            preview) args=(apply --dry-run) ;;
-            apply) args=(apply -y) ;;
-            setup) args=(setup --skip-deps --skip-optimize) && rm "$V/.env" ;;
-            up) args=(up) ;;
+        preview) args=(apply --dry-run) ;;
+        apply) args=(apply -y) ;;
+        setup) args=(setup --skip-deps --skip-optimize) && rm "$V/.env" ;;
+        up) args=(up) ;;
         esac
         printf '%s\n' "$raw" >"$V/config.json"
         cp "$V/config.json" "$V/config.before"
@@ -26,14 +26,14 @@ for raw in \
         out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead "${args[@]}" 2>&1)"
         assert_rc "$verb refuses $raw" "$?" 1
         case "$raw" in
-            *'first'*) expected='dashboard.auth.password' ;;
-            *'"monero":{},'*) expected='monero' ;;
-            *'"password"'*) expected='dashboard.auth.password' ;;
-            *'"bot_token"'*) expected='telegram.bot_token' ;;
-            *'"chat_id"'*) expected='telegram.chat_id' ;;
-            *'"node_username"'*) expected='monero.node_username' ;;
-            *'"node_password"'*) expected='monero.node_password' ;;
-            *) expected='workers.list[0].token' ;;
+        *'first'*) expected='dashboard.auth.password' ;;
+        *'"monero":{},'*) expected='monero' ;;
+        *'"password"'*) expected='dashboard.auth.password' ;;
+        *'"bot_token"'*) expected='telegram.bot_token' ;;
+        *'"chat_id"'*) expected='telegram.chat_id' ;;
+        *'"node_username"'*) expected='monero.node_username' ;;
+        *'"node_password"'*) expected='monero.node_password' ;;
+        *) expected='workers.list[0].token' ;;
         esac
         assert_contains "$verb names the rejected path" "$out" "$expected"
         assert_not_contains "$verb never reveals the placeholder" "$out" 'PASTE_secret'
@@ -64,8 +64,8 @@ for raw in \
     result="$(cat "$C/data/control/results/$id.json")"
     assert_contains "host refuses before staging" "$result" 'rejected'
     case "$raw" in
-        *first*) assert_contains "host names duplicate path" "$result" 'dashboard.auth.password' ;;
-        *) assert_contains "host names placeholder path" "$result" 'telegram.bot_token' ;;
+    *first*) assert_contains "host names duplicate path" "$result" 'dashboard.auth.password' ;;
+    *) assert_contains "host names placeholder path" "$result" 'telegram.bot_token' ;;
     esac
     assert_eq "invalid request was never staged" "$(test -e "$C/data/control/staged/$id.json" && echo staged || echo absent)" absent
     rm -f "$C/data/control/results/$id.json"

@@ -216,18 +216,18 @@ run_hardening() {
         raw_before="$(rx 'sha256sum config.json .env')"
         for raw_kind in top nested placeholder; do
             case "$raw_kind" in
-                top)
-                    raw_doc='{"monero":{},"monero":{}}'
-                    raw_path=monero
-                    ;;
-                nested)
-                    raw_doc='{"dashboard":{"auth":{"password":"first","password":"last"}}}'
-                    raw_path=dashboard.auth.password
-                    ;;
-                placeholder)
-                    raw_doc='{"dashboard":{"auth":{"password":"PASTE_secret"}}}'
-                    raw_path=dashboard.auth.password
-                    ;;
+            top)
+                raw_doc='{"monero":{},"monero":{}}'
+                raw_path=monero
+                ;;
+            nested)
+                raw_doc='{"dashboard":{"auth":{"password":"first","password":"last"}}}'
+                raw_path=dashboard.auth.password
+                ;;
+            placeholder)
+                raw_doc='{"dashboard":{"auth":{"password":"PASTE_secret"}}}'
+                raw_path=dashboard.auth.password
+                ;;
             esac
             raw_id="$(_uuid4)"
             _spool_write "$cdir/requests/$raw_id.json" \
