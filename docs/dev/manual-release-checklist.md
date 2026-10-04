@@ -16,10 +16,11 @@ under [#3068](https://github.com/p2pool-starter-stack/pithead/issues/3068).
 Contents:
 
 - [How to use this checklist](#how-to-use-this-checklist),
-  [Known on the 2026-10-03 test RC](#known-on-the-2026-10-03-test-rc-459847441a9f),
-  [What you need](#what-you-need), [Sample configs](#sample-configs)
+  [Known on the re-cut RC](#known-on-the-re-cut-rc), [Run sheet](#run-sheet): the order to run
+  it in, [What you need](#what-you-need), [Sample configs](#sample-configs)
 - [Route coverage](#route-coverage): where each feature is checked on the self-hosted (DIY) route
-  and on the appliance route
+  and on the appliance route; [Re-cut coverage](#re-cut-coverage): which steps prove each issue
+  the 2.0.0 re-cut fixed
 - The walkthrough: sections [1](#1-fresh-diy-install) to [15](#15-appliance-rename-and-resets)
 - [Scenarios](#scenarios): short end-to-end stories that cross sections
 - Hardware and release-cut checks: [Before the cut](#before-the-cut),
@@ -40,12 +41,14 @@ Contents:
   or **BLOCKED** (name the earlier failure that stopped you).
 - Copy the sections you run into the release issue and tick the boxes there. At the top, record
   the full commit SHA you tested and, for the appliance, the image checksum.
-- Run the sections in order. Later sections assume earlier ones passed, and the destructive
-  steps (resets, uninstall, factory reset) come last on purpose.
+- Follow the [Run sheet](#run-sheet) for the order of sessions, and run the steps within a session
+  in order. Later steps assume earlier ones passed, and the destructive steps (resets, uninstall,
+  factory reset) come last on purpose.
 - `./pithead` commands run from the install directory on the stack machine. Commands that start
   with `sudo` ask for the machine's administrator password.
-- Plan for about three days. A first chain sync takes hours to days, so start section 1 on day
-  one and work through the other sections on the already-synced upgrade machine meanwhile.
+- Plan for about six working days of hands-on time, then the 7-day soak. A first chain sync takes
+  hours to days, so start session 2 of the Run sheet on day one and work through the other
+  sessions on the already-synced upgrade machine meanwhile.
 
 ### When a step fails
 
@@ -60,27 +63,47 @@ Contents:
    private handoff.
 5. Carry on with the next step that does not depend on the failed one.
 
-### Known on the 2026-10-03 test RC (459847441a9f)
+### Known on the re-cut RC
 
-> The test release candidate built from `459847441a9f` predates the owner's rulings of
-> 2026-10-03, and 2.0.0 is being re-cut with the fixes. The **Expect** texts describe the ruled
-> behaviour; where the test RC differs, the step says what it does instead in a parenthesis
-> `(test RC 459847441a9f: …)`. On the test RC, record each step below as FAIL linked to the
-> issue named here, and do not file a duplicate. 1.12 is expected to pass on the test RC: the
-> #3091 difference shows in 10.5 and 10.6. Once the re-cut RC carries the fixes, delete this box,
-> its Contents link, every `(test RC 459847441a9f: …)` parenthesis (grep for `459847441a9f`, since
-> some wrap across lines) and the `Once #3098 lands` sentence in [Sample configs](#sample-configs).
+> Filled in at the freeze.
 >
-> | Step | Issue |
-> |---|---|
-> | 6.9: apply prints the pool URL and stratum password | #3090 |
-> | 13.8 and the 13.6 hand-off card: the stratum password, opt-in and shown without a shell | #3090, #3092 |
-> | 10.5 and 10.6: when a Tari or Monero outage rejects workers | #3091 |
-> | 7.5 and 6.4: the typed characters of a new payout address (the last 8, on both routes) | #3097 |
-> | [Broken configs](#broken-configs): the duplicate-key and `PASTE_` placeholder rows | #3098 |
-> | The payout wallet after an address or view-key change (7.5, with a view key set) | #3096 |
-> | 10.2 and 13.22: turning Tari on for a box that is already mining | #3094 |
-> | The wizard defaults in 1.4 and 13.6 | #3099 |
+> A step that fails for a reason listed here is linked to the issue listed, not filed again. An
+> **Expect** line marked `(confirm wording at the freeze)` was written from the owner's ruling,
+> because its fix had not merged when this page was last edited. If the behaviour matches and only
+> the wording differs, record PASS and write down the text you saw. At the freeze, replace each one
+> with the text the release candidate prints and delete the mark
+> (`grep -n 'confirm wording' docs/dev/manual-release-checklist.md`).
+
+## Run sheet
+
+The order for one tester with the soak appliance, a fresh DIY box, an upgrade DIY box (sections 1
+and 2–11 need one machine each) and the rest of [What you need](#what-you-need). The restore PC is
+the second appliance. Where this order differs from the section order below, this order wins.
+Sessions 1–13 run before the soak; session 14 starts it. Times are hands-on time plus the waits you
+cannot shorten. Test files are named by role: the RC image, the RC update bundle, the good
+higher-version test bundle, the broken (health-gate fault) test bundle and the floor-fallback test
+bundle.
+
+| # | Session | About | Steps | Needs |
+|---|---|---|---|---|
+| 1 | Prepare | 1 h | [Reserve the hardware](#reserve-the-hardware); fill in the sample configs; check the LAN test registry | Every release artifact, the QA wallets, the test bot |
+| 2 | Fresh install | 2 h, then days of sync | 1.1–1.11 | Fresh box, laptop |
+| 3 | Upgrade | 1 h and a 3 h wait | 2.1–2.4 | Upgrade box, a USB disk for the backup |
+| 4 | Use it | 3 h | 3.1–3.7, 4.1–4.5, 5.1–5.12 | Upgrade box, two miners, laptop, phone |
+| 5 | Change it | 3 h | 6.1–6.10, 7.1–7.9 | Upgrade box, the second Monero QA wallet, a single-key Tari address, the Monero GUI wallet and Tari Universe |
+| 6 | Alerts and Tor | 4 h | 8.1–8.7, 9.1–9.8, and 9.6a's DIY half | Upgrade box, test bot, Tor Browser |
+| 7 | Soak appliance: install | 4 h and 30 min of provisioning | 13.1–13.9 (not 13.6a), 13.7a, 13.8a, 13.20 | The RC image, 16 GB stick, soak appliance, a second disk, laptop |
+| 8 | Soak appliance: updates and power | 4 h | 13.10–13.12a, 13.19 | The good higher-version test bundle (the RC update bundle if you have none), the broken test bundle, the floor-fallback test bundle, the debug SSH key |
+| 9 | DIY node modes and backups | 4 h, once the fresh box has synced | 1.12, 1.13, 10.1–10.7, 11.1–11.5 | Fresh box, upgrade box, a miner |
+| 10 | Second appliance | 7 h | 13.1–13.8 with 13.6a, then 9.6a, 13.15–13.18, 13.21–13.25, 15.1, 15.2 | The RC image, restore PC, second stick, laptop |
+| 11 | Backup and restore (M15) | 4 h | 13.13, 13.14, 15.3 on the restore PC, then 13.14a | Soak appliance, restore PC, upgrade box (down for 13.14a), the plain 1.x backup |
+| 12 | Rigs | 2 h | 14.1–14.4 | The RC image, the RC update bundle, two loaner rigs |
+| 13 | Scenarios, then the fresh box's end | 3 h | S1–S8 (S4 and S7 may wait for the soak), then 11.6 and 11.7 last | Fresh box, upgrade box, a clean machine for S1 |
+| 14 | Start the soak | 1 h | [The soak preface](#testing-a-debug-rc-on-the-soak-box): record the box, freeze its state, remove every stick, run `--start` | Build host, a new log directory |
+
+The 7-day clock starts when `tests/os/soak-probe.sh <box IPv4> <logdir> --start` writes
+`<logdir>/started`; day 7 is seven days after that time. After it, nothing touches the soak
+appliance but the daily probe. After publishing: 12.1–12.3 and [After publishing](#after-publishing).
 
 ## What you need
 
@@ -95,33 +118,32 @@ Contents:
 | **Rigs** | Two rig-class loaner machines (never a production rig, never someone's own PC), with Secure Boot off, for section 14. 14.1 **erases** the first one's internal disk; 14.3 runs the second from the stick. |
 | **Laptop** | On the same network, with a normal browser and Tor Browser. A Linux machine (this laptop or another) for writing the image in 13.1. |
 | **Phone** | For the narrow-screen check and Telegram, with Tor Browser (or Orbot) for S7. |
-| **QA wallets** | A Monero wallet used only for QA: its **primary** address (starts with `4`, 95 characters), one **subaddress** from it (starts with `8`), and its private view key. The primary address of a second Monero QA wallet, for the payout-change step. A Tari **mainnet** QA wallet: its address, private view key and public spend key. Payouts go here, so never use a real person's or a donation address. |
+| **QA wallets** | A Monero wallet used only for QA: its **primary** address (starts with `4`, 95 characters), one **subaddress** from it (starts with `8`), and its private view key (the Monero GUI calls it *Secret view key*). A second Monero QA wallet: its primary address and private view key, for the payout-change steps (6.4, 6.4a, 7.5). A Tari **mainnet** QA wallet with a dual-key address, which is what Tari Universe creates: its address and private view key. The public spend key is read from the address, so no spend key is needed (#3096). A single-key Tari address (about 46 characters, never funded) for the refusal in 6.4b. The two QA wallets should open in the official Monero GUI wallet and Tari Universe, for the view-key docs walk in 7.9. Payouts go here, so never use a real person's or a donation address. |
 | **Telegram test bot** | A bot made with @BotFather, its token, and the chat id of a test chat. See [Telegram](../telegram.md). |
-| **Release artifacts** | The candidate's full commit SHA, the previous release tag, and for the appliance: the candidate release `.img.xz` with its `.sha256`, a debug image of the candidate, a debug-variant `.raucb` with a higher version, the deliberately broken `.raucb` M9 describes (also debug-variant, with a version above the good one), and the bench SSH key for debug images, kept in the private handoff ([appliance-release.md](appliance-release.md)). |
+| **Release artifacts** | The candidate's full commit SHA, the previous release tag, and for the appliance: the RC image (the candidate's debug image; the release `.img.xz` with its `.sha256` joins it at GA), the RC update bundle (the candidate's own `.raucb`), the good higher-version test bundle (a debug-variant `.raucb` with a higher version), the broken (health-gate fault) test bundle M9 describes (also debug-variant, with a version above the good one), the floor-fallback test bundle (a debug-variant `.raucb` that declares a data migration and carries a version no release will carry, for 13.12a), and the bench SSH key for debug images, kept in the private handoff ([appliance-release.md](appliance-release.md)). |
 
 Reserve shared machines before you start: see [Reserve the hardware](#reserve-the-hardware).
 
 ## Sample configs
 
 Each sample is a complete `config.json`. Replace every `PASTE_...` value with your QA value
-before you use it. A wallet placeholder left in is refused, but the others (passwords, the bot
-token, node credentials) are accepted as plain text, so after filling a sample,
-`grep -n PASTE_ config.json` must print nothing. Once #3098 lands, apply also refuses any
-`PASTE_` or `YOUR_` value; keep the grep anyway. Every key is
-documented in [Configuration](../configuration.md).
+before you use it. `./pithead apply` refuses a `PASTE_` or `YOUR_` value in any field and names
+the key (#3098); after filling a sample, `grep -n PASTE_ config.json` should still print nothing.
+Every key is documented in [Configuration](../configuration.md).
 
 When a step says to set or add a key inside a block (for example "add `"rpc_lan_access": true`
 inside the `monero` block"), edit that block in the existing `config.json`. Never paste a second
-block with the same name: JSON keeps only the last one, so the first block's settings vanish
-without a warning. After any hand edit, run this check. It prints `config.json OK`, or lists the
-keys when a block is duplicated, or fails on a syntax error:
+block with the same name: apply refuses a duplicated key at any depth and names it (#3098). After
+any hand edit, run this check, which finds the same fault before apply does. It prints
+`config.json OK`, or lists the keys when a block is duplicated, or fails on a syntax error:
 
 ```bash
 python3 -c 'import json; json.load(open("config.json"), object_pairs_hook=lambda kv: exit("duplicate key: " + str([k for k, _ in kv])) if len(kv) != len(dict(kv)) else dict(kv)); print("config.json OK")'
 ```
 
-**Config A — defaults.** This is `config.minimal.json` with QA addresses: the shape a new user
-starts from.
+**Config A — defaults.** This is `config.minimal.json` with QA addresses: the file a hand-written
+install starts from. The wizards no longer write its `stratum_password` line: a new install has no
+stratum password unless the user opts in (#3092).
 
 ```json
 {
@@ -132,8 +154,9 @@ starts from.
 ```
 
 **Config B — everything on.** Login, browser configuration, Telegram with commands, stratum TLS,
-on-chain payout confirmation for both chains, energy prices, and the dashboard as a Tor onion
-(which needs a dashboard password of 16 characters or more; make one up for QA).
+on-chain payout confirmation for both chains (Tari needs only the view key: the spend key is read
+from the dual-key address, #3096), energy prices, and the dashboard as a Tor onion (which needs a
+dashboard password of 16 characters or more; make one up for QA).
 
 ```json
 {
@@ -143,8 +166,7 @@ on-chain payout confirmation for both chains, energy prices, and the dashboard a
     },
     "tari": {
         "wallet_address": "PASTE_QA_TARI_ADDRESS",
-        "view_key": "PASTE_QA_TARI_PRIVATE_VIEW_KEY",
-        "spend_public_key": "PASTE_QA_TARI_PUBLIC_SPEND_KEY"
+        "view_key": "PASTE_QA_TARI_PRIVATE_VIEW_KEY"
     },
     "p2pool": { "pool": "mini", "stratum_password": "auto", "stratum_tls": true },
     "dashboard": {
@@ -230,8 +252,11 @@ column, and leave the running stack untouched.
 | Set `dashboard.auth.password` to `"short"` | `dashboard.auth.password must be 8–128 printable characters` |
 | Set `dashboard.onion.enabled` to `true` and the password to `"fifteen-chars-x"` (15 characters) | `must be at least 16 characters when dashboard.onion.enabled is true` |
 | Set `dashboard.onion.enabled` to `true` and the password to `"changeme-but-longer"` | `contains a well-known weak pattern` |
-| Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | A refusal that names the duplicated key, per #3098 (test RC 459847441a9f: accepted, the last block wins, see the box above) |
-| Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"` | A refusal that names the placeholder value, per #3098 (test RC 459847441a9f: accepted as the password, see the box above) |
+| Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | A refusal that names the duplicated key and says where it is, for example `duplicate key "p2pool" at the top level` (confirm wording at the freeze) |
+| Add a second `"wallet_address"` line inside the `monero` block | A refusal that names `monero.wallet_address` as a duplicated key (confirm wording at the freeze) |
+| Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"` | A refusal that names `dashboard.auth.password` as a placeholder and does not print the value (confirm wording at the freeze) |
+| Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case) | A refusal that names `telegram.bot_token` as a placeholder (confirm wording at the freeze) |
+| Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block | `dashboard.onion.enabled is true but dashboard.auth.password is empty` |
 
 ---
 
@@ -245,23 +270,49 @@ DIY steps that apply there.
 
 | Feature | Self-hosted (DIY) | Appliance |
 |---|---|---|
-| Install | 1.1–1.9 | 13.1–13.7 |
+| Install | 1.1–1.9, 1.4a | 13.1–13.7, 13.6a, 13.7a |
 | First sync and Sync Mode | 1.6–1.13 | 13.8 (repeats 1.8 and 1.13) |
 | Upgrade from the previous release | 2.1–2.4, 12.1–12.2 | 12.3, 13.10 |
 | Everyday commands | 3.1–3.7 | No shell. The health check and recent log (7.7, through 13.8) and the boot menu (13.9) stand in. |
 | Miners | 4.1–4.5 | 13.8 (repeats section 4), 14.1–14.4 |
-| Mining on the stack machine itself | 6.9 | 13.8 (the built-in miner) |
-| Dashboard | 5.1–5.11 | 13.8 (repeats section 5) |
-| Settings | 6.1–6.9, 7.1–7.8 | 13.8 (repeats 7.1–7.8), 13.15, 13.23, 13.24 |
+| Mining on the stack machine itself | 6.9 | 13.8 (the built-in miner), 13.8a |
+| Dashboard | 5.1–5.12 | 13.8 (repeats section 5) |
+| Settings | 6.1–6.10, 7.1–7.9 | 13.8 (repeats 7.1–7.9), 13.15, 13.23, 13.24 |
 | Alerts and Telegram | 8.1–8.7 | 13.8 (repeats 8.2–8.4) |
-| Privacy and Tor | 1.10, 9.1–9.8 | 13.20, 13.21 |
-| Node and pool modes | 10.1–10.6 | 13.15, 13.22 |
+| Privacy and Tor | 1.10, 9.1–9.8 | 9.6a, 13.20, 13.21 |
+| Node and pool modes | 10.1–10.7 | 13.15, 13.22 |
 | Backup and restore | 11.1–11.4, S5 | 13.13, 13.14, 13.14a |
 | Resets and removal | 11.5–11.7 | 15.2, 15.3 |
 | Power loss | S3 | 13.19 |
 | Machine name | 1.4 (the hostname prompt) | 15.1 |
 | Headless setup and recovery | Not applicable: a DIY host has its own shell. | 13.16, 13.17, 13.23 |
 | Rigs | Not applicable: a DIY rig is a RigForge install, tested in that project. | 14.1–14.4 |
+
+## Re-cut coverage
+
+Which steps prove each issue the 2.0.0 re-cut fixed or added, as of 2026-10-04 UTC. **Shipped**
+means the **Expect** lines quote merged code. **Confirm** means they follow the owner's ruling and
+carry `(confirm wording at the freeze)`.
+
+| Issue | What it requires | Steps | Wording |
+|---|---|---|---|
+| [#3090](https://github.com/p2pool-starter-stack/pithead/issues/3090) | `setup`, `up` and `apply` always print the pool URL and the stratum password (`none set` when there is none); a toggle-only `apply` still converges the local miner | 1.4, 1.5, 6.9, 13.8a | Confirm |
+| [#3091](https://github.com/p2pool-starter-stack/pithead/issues/3091) | A required Tari rejects workers only after its RPC has been unreachable 10–15 minutes (15 shipped); migrating, starting and syncing only alert; Tari alerts ignore `tari_required`; an unreachable Monero node, local or remote, always rejects | 1.12, 2.3a, 8.5, 10.5, 10.6 | Shipped (#3093) |
+| [#3092](https://github.com/p2pool-starter-stack/pithead/issues/3092) | The stratum password is opt-in (default off) in both wizards and shows on the hand-off card, in **Connect a miner** and in CLI output, also on a LAN dashboard with no login; an onion dashboard always has a login | 1.4, 1.4a, 5.12, 10.7, 13.6, 13.6a, 13.8, last row of [Broken configs](#broken-configs) | Confirm |
+| [#3094](https://github.com/p2pool-starter-stack/pithead/issues/3094) | Enabling Tari on a box that is already mining keeps Monero mining while Tari syncs | 10.2, 13.22 | Confirm |
+| [#3096](https://github.com/p2pool-starter-stack/pithead/issues/3096) and [#2732](https://github.com/p2pool-starter-stack/pithead/issues/2732) | One view-only wallet per (address, view key), adopted on upgrade; a fresh wallet starts near the tip; a key that does not match the address is refused; Tari confirmation needs a dual-key address and asks for the view key only | 2.3, 6.4a, 6.4b, 7.5 | Confirm |
+| [#3097](https://github.com/p2pool-starter-stack/pithead/issues/3097) | A payout-address change is confirmed by typing its last 8 characters, everywhere | 6.4, 7.5, 13.8 | Shipped (#3105) |
+| [#3098](https://github.com/p2pool-starter-stack/pithead/issues/3098) | `apply` and the dashboard refuse duplicate JSON keys and `PASTE_` or `YOUR_` values | [Broken configs](#broken-configs), 6.5, 7.6 | Confirm |
+| [#3099](https://github.com/p2pool-starter-stack/pithead/issues/3099) | New-install defaults in both wizards: Tari by disk, XvB off and not asked, a generated dashboard login, Tor first sync with an opt-in fast sync that warns; upgrades keep their config | 1.4, 1.4a, 2.3, 7.3a, 13.6, 13.6a | Confirm |
+| [#3109](https://github.com/p2pool-starter-stack/pithead/issues/3109) | A read-only `config_version` stamp, shown but not editable; a newer config warns; a restore of a newer config is refused; the 1.x release-notes line | 1.4a, 2.3, 6.10, 7.1, 7.1a, 11.2a, and the 1.x note in section 2 | Confirm |
+| [#3112](https://github.com/p2pool-starter-stack/pithead/issues/3112) | Docs for getting the view keys from the Monero GUI wallet and Tari Universe | 7.9 | Confirm |
+| [#3100](https://github.com/p2pool-starter-stack/pithead/issues/3100) | Appliance docs corrections | 12.3, 13.10, 13.21, 13.25, 15.1 | Shipped (#3104) |
+| [#3116](https://github.com/p2pool-starter-stack/pithead/issues/3116) | The image pins RigForge at the develop tip that becomes v1.18.0 | 13.7a, 13.8, 14.1 | Confirm |
+| [#3118](https://github.com/p2pool-starter-stack/pithead/issues/3118) | Tor recovers from a saturated circuit-build state: early alert, self-heal under `tor.auto_heal`, advice and doctor name `tor-recover` | 9.6a | Confirm |
+
+No step re-points Tari at another node (#3094) or changes a Tari payout address (#3097): both need
+equipment that [What you need](#what-you-need) does not list, a second Tari node and a second Tari
+QA wallet.
 
 ## 1. Fresh DIY install
 
@@ -287,20 +338,22 @@ syncing stack. Build the candidate from source so a failure here does not spend 
 - [ ] **1.3 Before setup.** Do: `./pithead status`. Expect: `No .env found. Run './pithead setup' first.`
 - [ ] **1.4 Setup wizard.** Do: `./pithead setup` with no `config.json` present. At the payout
   prompt paste the QA **subaddress** first, then the primary address. Answer: local Monero node,
-  pool `mini`, the Tari default (yes, with the bundled node, when the disk fits both chains; if it
-  offers no, answer yes) and paste the Tari address, the default (off) at
+  pool `mini`, the Tari default and, if it asks, the Tari address, the default (off) at
   `Enable stratum password?`, decline the faster first sync, decline Tor dashboard access, decline
   Telegram, decline local mining, and accept the default at `Enter Hostname`. Answer `y` to
   `Modify GRUB for persistent HugePages now?`. Expect: the subaddress is refused with an
-  explanation and you are asked again. Per #3099 and #3092, setup does not ask about the XvB
-  raffle and leaves it off, generates a dashboard login and shows it once (save it for 1.8),
-  keeps the first sync on Tor unless you opt in, and its fast-sync offer warns that it exposes your
-  IP to the Monero and Tari networks; at the end it prints the LAN pool URL and says that no
-  stratum password is set. (test RC 459847441a9f: there is no stratum question and it writes
-  `"stratum_password": "auto"`; it asks `Dashboard password (8+ chars, Enter to skip)`, so set
-  one; it never asks about XvB and leaves it on; the first-sync question reads
-  `First sync: private over Tor (days), or clearnet (hours; your IP visible to peers, then auto-switches to Tor)? (y/N = private)`.
-  See the box above.) Setup checks dependencies, warns (but does not stop) if
+  explanation and you are asked again. Per #3099, #3092 and #3090 (confirm wording at the freeze):
+
+  - Tari is on when the disk fits both chains and off when it does not, and the wizard says
+    which; on a fitting disk it asks for the Tari address.
+  - The wizard does not ask about the XvB raffle and leaves it off.
+  - It generates a dashboard login and shows it once (save it for 1.8).
+  - It keeps the first sync on Tor unless you opt in. The fast-sync offer covers each chain the
+    stack runs locally and warns that it exposes your IP to the Monero network and, if Tari is
+    on, the Tari network.
+  - At the end it prints the LAN pool URL and says `none set` for the stratum password.
+
+  Setup also checks dependencies, warns (but does not stop) if
   disk or RAM is below the documented floor, writes `config.json`, provisions Tor, and ends with
   `System optimization requires a reboot.` and the commands to run next. If setup does not ask
   about GRUB (HugePages are already persistent), it asks `Start Pithead now? (Y/n)` instead:
@@ -308,9 +361,17 @@ syncing stack. Build the candidate from source so a failure here does not spend 
   machine where setup has just installed Docker, it may stop first with
   `Docker daemon is not reachable` and tell you to join the `docker` group: run
   `sudo usermod -aG docker $USER`, log out and back in, and run `./pithead setup` again.
+- [ ] **1.4a The wizard wrote the new-install defaults.** Do: run
+  `jq '{xvb, tari_mode: .tari.mode, stratum_set: ((.p2pool.stratum_password // "") != ""), dashboard_login: (.dashboard.auth.password // "" | length > 0), fast_sync: [.monero.clearnet_initial_sync, .tari.clearnet_initial_sync]}' config.json`.
+  It prints booleans and modes only, never a secret. Expect, per #3099 and #3092
+  (confirm wording at the freeze): `"xvb": { "enabled": false }`, `tari_mode` `local` on a fitting disk and `off`
+  otherwise, `stratum_set` `false`, `dashboard_login` `true`, and both `fast_sync` entries `false`
+  or `null`. `jq -r .config_version config.json` prints the candidate's release number (2.3
+  explains the stamp).
 - [ ] **1.5 HugePages reboot.** Do: `sudo reboot`, then `./pithead up`. Expect: the stack starts,
   and this first start prints a short note that the miner is held until both chains sync. A
-  later `./pithead restart` does not print the note again.
+  later `./pithead restart` does not print the note again. Per #3090, `up` also prints the LAN pool
+  URL and `none set` for the stratum password, every time (confirm wording at the freeze).
 - [ ] **1.6 Status while syncing.** Do: `./pithead status`. Expect: each node and support service
   shows a `✓` line ending in `running`; `p2pool` and `xmrig-proxy` show `⚠` with
   `held until the required chains finish syncing`; under
@@ -335,10 +396,10 @@ syncing stack. Build the candidate from source so a failure here does not spend 
   add `"tari_required": false` inside the `dashboard` block and apply. Expect: the miner starts
   without waiting for Tari, and the normal dashboard shows a `Tari syncing` indicator instead of
   the full-screen Sync view. Per #3091, a Tari node that is syncing is never treated as down: no
-  worker is rejected for it while it catches up, and only an unreachable Tari node (10.5) can
-  reject workers, and then only with `tari_required` true. (test RC 459847441a9f: the same, so
-  1.12 is expected to pass; the #3091 difference shows in 10.5.) Record SKIP if the timing never
-  lines up.
+  worker is rejected for it while it catches up, whatever `tari_required` says, and no `Tari DOWN`
+  badge shows. If the test chat is set up on this box, one message that starts
+  `Tari node is syncing` arrives, once. Only an unreachable Tari node (10.5) can reject workers,
+  and then only with `tari_required` true. Record SKIP if the timing never lines up.
 - [ ] **1.13 Sync finishes.** Expect: once both chains are synced the dashboard shows the full
   operational view by itself (from Sync Mode, or from the `Tari syncing` indicator after 1.12)
   and the miner runs without anyone touching it. Monero returns to Tor by itself: the status
@@ -348,7 +409,16 @@ syncing stack. Build the candidate from source so a failure here does not spend 
 
 Run on the **upgrade box**, which runs the previous release with synced chains. Before you start,
 write down the payout addresses, the dashboard login, the dashboard's onion address if the onion
-is on (`./pithead status` prints it), the worker count, and a screenshot of the hashrate chart.
+is on (`./pithead status` prints it), the worker count, whether XvB is on, Tari's mode, whether a
+stratum password is set (`grep PROXY_STRATUM_PASSWORD .env` shows an empty value when none is),
+whether payout confirmation is on (`monero.view_key` set), and a screenshot of the hashrate chart.
+
+An upgrade from 1.x.x keeps `config.json` as faithfully as it can: a key the old file lacked
+(`xvb.enabled`, `tari.mode`, `p2pool.stratum_password`, a dashboard login) behaves as it did on
+1.x, because the new-install defaults of #3099 come only from the wizards. Config versioning
+starts with 2.0.0 and has no 1.x migration (#3109). If the upgrade refuses or misreads a 1.x
+config, the 2.0.0 release notes say so: a fresh setup may be required when upgrading from 1.x.x.
+Record what broke, take a backup, run setup again, and carry on from 2.3 on the fresh config.
 
 - [ ] **2.1 Backup first.** Do: `./pithead backup --with-chains`, as the 2.0.0 upgrading notes
   ask, because the Tari migration in 2.2 is one-way. Choose a passphrase and keep it in the private
@@ -393,12 +463,19 @@ is on (`./pithead status` prints it), the worker count, and a screenshot of the 
   `make`, `./pithead upgrade`. On a release-bundle install, use the bundle command in
   [Operations › Updating the stack](../operations.md#updating-the-stack) once the candidate is
   published. Expect: it finishes without errors and recreates only what changed.
-- [ ] **2.3 Nothing lost.** Expect: `./pithead version` shows the candidate; the dashboard login,
-  payout addresses, onion address, and worker list match your notes, with `qa-1x-migration` from
-  2.1b as the one expected extra `workers.list` entry; the hashrate chart still
-  shows the history from before; Monero is still synced and the miners reconnected by themselves.
-  Tari reads loading, with no progress, until its one-way database migration ends (2.3a): that
-  is expected for hours, not a failure.
+- [ ] **2.3 Nothing lost.** Do: compare the box with your notes, then run
+  `jq -r .config_version config.json` and `ls -l config.json`. Expect: `./pithead version` shows
+  the candidate; the dashboard login, payout addresses, onion address, and worker list match your
+  notes, with `qa-1x-migration` from 2.1b as the one expected extra `workers.list` entry; XvB,
+  Tari's mode and the stratum password setting are as you noted, because an upgrade keeps what it
+  had (#3099); the hashrate chart still shows the history from before; Monero is still synced and
+  the miners reconnected by themselves. Per #3109 the first `jq` line prints the candidate's
+  release number without any `-pre` or build suffix, and `config.json` is still `-rw-------` with
+  its owner unchanged (confirm wording at the freeze). If payout confirmation was on before the
+  upgrade, the payout card is green again with no rescan: #3096 adopts the old wallet as the one
+  for your current address and view key (confirm wording at the freeze). Tari reads loading, with
+  no progress, until its one-way database migration ends (2.3a): that is expected for hours, not a
+  failure.
 - [ ] **2.3a Wait out the Tari migration and the fork rewind.** Do: right after 2.2, run
   `docker logs -f tari` and leave the box alone. Do not run any command that stops or recreates a
   container (`restart`, `down`, `up`, `apply`, `upgrade`, `backup`, a reboot): a stopped Tari
@@ -413,7 +490,10 @@ is on (`./pithead status` prints it), the worker count, and a screenshot of the 
   `[pithead fork-check] header 350000 is canonical (…); nothing to rewind`, or `… dead 5.3.1 branch`
   followed by `stopping the node to rewind to 349900`, `rewound to …` and
   `starting the node normally`. No `[pithead fork-check] ERROR:` line appears. Tari then catches up
-  to the tip, and the Tari card shows its progress again.
+  to the tip, and the Tari card shows its progress again. Per #3091, a migrating or starting node
+  is never down: `docker ps` shows `xmrig-proxy` running throughout, no `Tari DOWN` or
+  `Workers rejected` badge shows, and if the box already has Telegram set up, a message that
+  starts `Tari node is migrating` or `Tari node is starting` arrives instead.
 - [ ] **2.4 Health after upgrade.** Run this only once 2.3a has ended and Tari is at the tip.
   Do: `./pithead status` and `./pithead doctor`. Expect: all healthy, no FAIL.
 
@@ -446,7 +526,9 @@ ended and Tari reports progress again.
 ## 4. Connect a miner
 
 Run on the upgrade box with the miner machine. Get the stratum password with
-`grep PROXY_STRATUM_PASSWORD .env`.
+`grep PROXY_STRATUM_PASSWORD .env`. 4.2 needs one: if the value is empty (a box that never had
+one; a new install has none unless its wizard was told to), add `"stratum_password": "auto"` inside
+the `p2pool` block and `./pithead apply` first.
 
 - [ ] **4.1 Plain stratum.** Do: point XMRig at the stack, using
   [Connecting Miners](../workers.md):
@@ -501,6 +583,13 @@ each panel means.
 - [ ] **5.11 Metrics.** Do: from the laptop, `curl -k -u admin:<dashboard password> https://<host>/metrics`.
   Expect: Prometheus text with `pithead_` lines, including `pithead_shares_accepted_total`.
   Without `-u`, the request is refused.
+- [ ] **5.12 Connect a miner.** Do: signed in, find the **Connect a miner** block in the Simple
+  view. Then open the dashboard in a private window and do not sign in. Expect, per #3092
+  (confirm wording at the freeze): signed in, the block shows the LAN pool URL (`<host>:3333`),
+  the stratum password or the words `no stratum password`, and the TLS fingerprint when stratum
+  TLS is on (4.3). The password matches `grep PROXY_STRATUM_PASSWORD .env`. Signed out, the
+  private window shows the login and none of those values. A dashboard with no login shows the
+  block to anyone on the LAN (10.7).
 
 ## 6. Change settings from the command line
 
@@ -518,11 +607,36 @@ and restore it at the end.
   `Some of the changes above (⚠) are disruptive.` and a `(y/N)` question; `n` prints
   `Apply cancelled. No changes were made.` Remove the key again.
 - [ ] **6.4 Payout change asks for the address.** Do: set `monero.wallet_address` to the second QA
-  primary address and run `./pithead apply`. Type the wrong characters first, then run it again
-  and type the last 8 characters of the new address, as the prompt asks (#3097). Expect: the
-  warning says all future rewards go to the new address; the wrong answer cancels with no change;
-  the right one applies. Put the original address back the same way. (test RC 459847441a9f: the
-  prompt reads `Confirm by typing the first 8 characters of the new address`, see the box above.)
+  primary address and run `./pithead apply`. Run it three times, answering the prompt differently
+  each time: wrong characters, then the first 8 characters of the new address, then its last 8
+  (#3097). If `monero.view_key` is set on this box, change it to the second wallet's key in the
+  same edit and do 6.4a with this step. Expect: the warning
+  `The Monero payout wallet address is changing — ALL future Monero rewards go to the new address.`
+  and the prompt `Confirm by typing the last 8 characters of the new address (<last 8>).` The
+  wrong answer and the first 8 characters each cancel with no change; the last 8 apply. Put the
+  original address back the same way.
+- [ ] **6.4a Payout wallet follows the address and view key.** Needs `monero.view_key` set to the
+  first QA wallet's key, as in Config B, and the payout card green on **Earnings**. Do: (1) set
+  `monero.wallet_address` to the second QA primary address and leave the first wallet's view key,
+  then run `./pithead apply`. (2) Set the second wallet's view key as well, apply, and type the
+  last 8 characters. Watch the Earnings card. (3) Put both the address and the view key back,
+  apply, and type the last 8 characters again. Expect, per #3096 (confirm wording at the freeze):
+  (1) is refused before anything changes, and the message says the view key does not belong to the
+  address. (2) The preview says a new view-only wallet is opened for this address and the previous
+  one is kept; the card turns green after the new wallet catches up within minutes, because a
+  fresh wallet starts near the chain tip and does not rescan from the first block. (3) The first
+  wallet reopens, and the card is green again with no rescan.
+- [ ] **6.4b Tari payout confirmation needs a dual-key address and asks only for the view key.**
+  Needs Config B's `tari` block (the address and `view_key`, no `spend_public_key`) and a green Tari
+  payout card. Do: (1) set `tari.spend_public_key` to 64 zeros and run `./pithead apply`, then
+  remove the key. (2) Set `tari.wallet_address` to the single-key Tari address, keep `view_key`,
+  and apply. (3) Put the QA address back, apply, and type the last 8 characters if asked. Expect,
+  per #3096 and #2732 (confirm wording at the freeze): the block in Config B is accepted without a
+  spend key, because the public spend key is read from the address. (1) is refused, naming
+  `tari.spend_public_key` as not belonging to the address. (2) is refused with an explanation that
+  payout confirmation needs a dual-key address (Tari Universe creates one by default) and that a
+  single-key address carries no public view key to check the view key against; mining payouts to
+  a single-key address are unaffected. (3) applies, and the card is green again with no rescan.
 - [ ] **6.5 Broken configs.** Do: work through every row of [Broken configs](#broken-configs).
   Expect: each refusal matches, and `./pithead status` stays healthy throughout.
 - [ ] **6.6 Render.** Do: `./pithead render`. Expect: it finishes and no container restarts.
@@ -535,15 +649,24 @@ and restore it at the end.
   preview marks the node RPC login change ⚠ (6.7 rotated it) and asks `(y/N)`; answer `y`, and the
   original settings are back.
 - [ ] **6.9 Mine on the stack machine.** Do: add `"local_miner": { "enabled": true }` as a
-  top-level block and `./pithead apply`. Expect: apply converges the built-in miner in the same
-  run and prints the LAN pool URL and the stratum password (or says that none is set) a
-  RigForge install on this machine needs, per #3090 (see
-  [Connecting Miners](../workers.md)). (test RC 459847441a9f: apply prints
-  `No configuration changes detected. Nothing to apply.` and neither value, see the box above;
-  run `./pithead up` and read both values from its `Local miner opt-in is ON` lines to carry on.)
-  If you install RigForge with those values, the worker
-  appears in Workers Alive. Remove the block and apply again afterwards. Removing it does not
-  uninstall RigForge; if you installed it, it stays as an extra worker in later sections.
+  top-level block and `./pithead apply`. Then run `./pithead apply` again with nothing changed.
+  Expect, per #3090 (confirm wording at the freeze): the first apply changes no rendered setting,
+  yet it still announces the local miner, and it prints the LAN pool URL and the stratum password
+  (or `none set`) that a RigForge install on this machine needs (see
+  [Connecting Miners](../workers.md)). The second apply reports no configuration changes and
+  still prints the pool URL and the stratum password (or `none set`). On the appliance the toggle
+  also starts or stops the built-in miner in the same apply (13.8a). If you install RigForge with
+  those values, the worker appears in Workers Alive. Remove the block and apply again afterwards.
+  Removing it does not uninstall RigForge; if you installed it, it stays as an extra worker in
+  later sections.
+- [ ] **6.10 A config newer than the code warns.** Do: note `jq -r .config_version config.json`,
+  then edit `config.json` and change the `config_version` value to `"9.9.9"`. Run
+  `./pithead render`, then `jq -r .config_version config.json`. Then put the noted value back by
+  hand and run `./pithead render` again. Expect, per #3109 (confirm wording at the freeze): the
+  first render exits 0 and prints a warning that the file was written by a newer pithead than this
+  one and that settings added after this version are ignored until you update; the stamp still
+  reads `9.9.9` (a stamp is never rewritten downward); the second render prints no warning.
+  7.1a shows the same condition in the dashboard.
 
 ## 7. Change settings from the dashboard
 
@@ -553,33 +676,57 @@ preview marks turning it on with ⚠ and asks `(y/N)`; answer `y`.
 
 - [ ] **7.1 Configuration view.** Do: open **Configuration** from the toggle above the chart.
   Expect: a form with grouped sections and an Advanced JSON pane. Secrets show as
-  "set — leave blank to keep", never their values.
+  "set — leave blank to keep", never their values. The config file version (`config_version`)
+  shows as plain text, not as a field (#3109; confirm wording at the freeze).
+- [ ] **7.1a The config version is read-only.** Do: look for `config_version` in the Advanced JSON
+  pane. Add `"config_version": "1.0.0"` at the top level of the pane, change an energy price in the
+  form, click **Save & preview changes**, confirm, then run `jq -r .config_version config.json`.
+  Next, DIY only: edit `config.json` by hand to `"9.9.9"` as in 6.10 and reload the Configuration
+  view, then put the stamp back by hand. Expect, per #3109 (confirm wording at the freeze): the
+  pane never shows `config_version`; the pasted value is ignored, so the preview has no row for
+  it, the stamp on disk is unchanged and **Recent config changes** has no `config_version` row.
+  With the stamp at 9.9.9 the view shows a warning that the file was written by a newer version
+  and says what that means for saving.
 - [ ] **7.2 Benign change.** Do: set an energy price, click **Save & preview changes**, then
   confirm. Expect: a preview with one row per changed setting; after confirming, the value shows
   on the Energy tab, survives a reload, and appears in **Recent config changes**.
 - [ ] **7.3 Ordinary change.** Do: change the P2Pool sidechain to `nano`, preview, and confirm.
   Expect: no typing needed; it applies and the dashboard follows. Change it back.
+- [ ] **7.3a Turn the XvB raffle on and off.** Do: in Configuration flip `xvb.enabled`, preview
+  and confirm (type `APPLY` if asked), then flip it back the same way. Expect: the preview names
+  the change; with XvB on, the five XvB raffle tiles show within a few minutes, and with it off
+  they are gone (10.1). A new install leaves XvB off and never asks (#3099), so this panel is
+  where a user turns it on.
 - [ ] **7.4 Disruptive change.** Do: change the stratum port to `3334`, preview, and try to confirm
   without typing. Expect: the row is marked ⚠ and says every rig must repoint; the commit is
   refused until you type `APPLY`. After it applies, miners on 3333 disconnect. Change it back to
   `3333` the same way and confirm the miners reconnect.
 - [ ] **7.5 Payout change.** Do: change the Monero payout address to the second QA primary
-  address. Expect: the change is marked ⚠; the confirmation asks you to type `APPLY` and the last
-  eight characters of the new address (the command line asks for the same, #3097), and a wrong
-  suffix is refused. After it applies, the **Payout wallet changed** badge appears. Change
-  it back. If the box has `monero.view_key` set, #3096 applies: a view key that does not belong
-  to the new address is refused, a change of address and matching view key opens a fresh
-  view-only wallet near the tip, and changing back reopens the old wallet without a rescan.
-  (test RC 459847441a9f: the command line asks for the first eight characters; with a view key
-  set, the change is accepted, the old wallet is reopened and the Earnings card reports
-  `Payout wallet address differs: configured <address>; wallet <address>`; see the box above.)
+  address, and its view key too if `monero.view_key` is set. Expect: the change is marked ⚠; the
+  confirmation asks you to type `APPLY` and the last eight characters of the new address (the
+  command line asks for the same, 6.4, #3097), and a wrong suffix is refused. After it applies,
+  the **Payout wallet changed** badge appears. Change it back. With a view key set, the form
+  refuses a key that does not belong to the new address, as 6.4a does (#3096; confirm wording at the freeze).
 - [ ] **7.6 Bad value.** Do: paste the QA subaddress into the Monero address field and preview.
-  Expect: refused with the same message as the command line; nothing is applied.
+  Then add a second top-level `"p2pool"` block in the Advanced pane and preview, and type
+  `PASTE_QA_X` into the dashboard password field and preview. Expect: the subaddress is refused
+  with the same message as the command line; the duplicated block and the placeholder are refused
+  too, each naming the key, per #3098 (confirm wording at the freeze); nothing is applied.
 - [ ] **7.7 Health check and log.** Do: click **Run health check**, then **Show recent log**.
   Expect: the doctor rows appear grouped with remedies; the log shows recent lines with
   credentials redacted.
 - [ ] **7.8 Access log.** Expect: the **Access log** lists your recent requests and counts the
   wrong password from step 5.10.
+- [ ] **7.9 Get the view keys from the docs alone.** Do: with only the two QA wallets open in the
+  official Monero GUI wallet and in Tari Universe, and the payout-confirmation instructions in
+  [The Dashboard](../dashboard.md) (the section on getting your view keys), find the Monero secret
+  view key and restore height and the Tari view key and wallet birthday, with no other help. Enter
+  them in Configuration's payout settings, preview and confirm. Then paste the Monero *public*
+  view key into the Monero view key field and preview. Expect, per #3112
+  (confirm wording at the freeze): the docs name every menu or file you needed, and you never needed the spend key, the
+  seed words or a wallet password; the matching values are accepted; the public key is refused
+  with a message that points at the docs section, not at a label either wallet lacks. Write down
+  every place you hesitated.
 
 ## 8. Alerts and Telegram
 
@@ -599,10 +746,14 @@ Run on the upgrade box. Add Config B's `telegram` block to its `config.json` as 
 - [ ] **8.4 Worker offline.** Do: stop `qa-rig-02` and wait 6 minutes. Expect: a worker-offline
   message after about 5 minutes, and the row badged offline on the dashboard. Start it again:
   a back-online message about 2 minutes after it reconnects.
-- [ ] **8.5 Node down.** Do: `docker stop monerod` and wait 2 minutes. Expect: the dashboard shows the monerod DOWN badge after about 90 seconds and a
-  node-down message arrives. xmrig-proxy is stopped, so XMRig logs that it lost the pool (with
-  a backup pool in its config it would switch to it). Run `./pithead up`: the badge clears, a
-  node-recovered message arrives, and the miners reconnect.
+- [ ] **8.5 Node down.** Do: `docker stop monerod` and wait 2 minutes. Expect: the dashboard shows
+  the `monerod DOWN` badge after about 90 seconds, then a `Workers rejected` badge, and a node-down
+  message arrives (`Monero node is DOWN — workers failing over to backup pools.`). xmrig-proxy is
+  stopped, so XMRig logs that it lost the pool (with a backup pool in its config it would switch
+  to it). Run `./pithead up`: the badges clear, a node-recovered message arrives
+  (`Monero node recovered — workers readmitted.`), and the miners reconnect. Monero always alerts
+  and always rejects, local or remote (10.6). The Tari outage alert, which does not depend on
+  `tari_required` (#3091), is checked in 10.5.
 - [ ] **8.6 Daily summary.** Do: set `telegram.daily_summary_time` a few minutes ahead and apply.
   Expect: the summary arrives at that time with 24h hashrate and earnings.
 - [ ] **8.7 Stack online.** Do: `./pithead restart`. Expect: one "Pithead online" message when the
@@ -632,6 +783,42 @@ Run on the upgrade box. See [Privacy](../privacy.md).
 - [ ] **9.6 Tor recovery check.** Do: `./pithead tor-recover check`. Expect: on a healthy
   machine it prints `Tor recovery refused: circuit history is not saturated.` and changes nothing.
   Do not run `tor-recover apply` on a healthy machine.
+- [ ] **9.6a Tor recovers from a saturated circuit-build state (#3118).** Where: on the second
+  appliance, or on the soak appliance before `--start`, over SSH on the debug image; never inside
+  the soak window. The DIY half, with `tor.auto_heal` off, runs on the upgrade box. This step
+  stops Tor and cuts the stack's network for up to an hour, so set up the test chat first
+  (section 8) and run nothing else meanwhile. Do: from the install directory (`cd /data/pithead`
+  on the appliance), stop Tor first, because a state file moved under a running Tor is written
+  straight back, then seed the saturated history and cut Tor's network:
+
+  ```bash
+  T=$(grep '^TOR_DATA_DIR=' .env | cut -d= -f2-)
+  docker compose stop tor
+  sudo cp -p "$T/state" "$T/state.qa-orig"
+  sudo sh -c "grep -v -e '^CircuitBuildTimeBin ' -e '^TotalBuildTimes ' -e '^CircuitBuildAbandonedCount ' '$T/state.qa-orig' > '$T/state.qa-new'; printf 'TotalBuildTimes 1000\nCircuitBuildAbandonedCount 1000\n' >> '$T/state.qa-new'; cat '$T/state.qa-new' > '$T/state'; rm '$T/state.qa-new'"
+  docker compose start tor
+  docker exec tor sh -c 'c=$(xxd -p -c 256 /var/lib/tor/control_auth_cookie | tr -d "\n"); printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\n" "$c" | nc -w 3 127.0.0.1 9051'
+  ```
+
+  Then wait, watching the test chat, **Stack Topology & Egress** and the Monero card. Expect, per
+  #3118 (confirm wording at the freeze):
+
+  - The last command prints `250 OK` twice. The stack loses its circuits, as in the real outage.
+  - Within about 20 minutes one alert says Tor's circuit history is saturated. The Monero card's
+    advice names `./pithead tor-recover check` as well as restarting monerod.
+  - With `tor.auto_heal` on (the appliance default), the heal's last step resets Tor through
+    tor-recover, within about an hour, and an alert says that it did and why.
+    `$T/state.backup.<timestamp>` exists and still holds the two `1000` lines; the new `$T/state`
+    lacks them; the P2Pool onion address is unchanged; Tor is healthy again; monerod regains
+    outgoing peers and its height catches up.
+  - A second saturation within 6 hours is refused by the persistent cooldown, and an alert says
+    so. Repeat the block above without its `cp` line: no new `state.backup.<timestamp>` appears.
+    To end the test, stop Tor, copy `state.qa-orig` back over `state` with
+    `sudo sh -c "cat '$T/state.qa-orig' > '$T/state'"`, and start Tor.
+  - DIY with `tor.auto_heal` off: nothing resets Tor by itself, however long you wait.
+    `./pithead doctor` FAILs the circuit-history check and names `./pithead tor-recover check`.
+    `./pithead tor-recover check`, then `./pithead tor-recover apply`, recovers it, and
+    `state.backup.<timestamp>` exists afterwards.
 - [ ] **9.7 Public IP warning.** If the test network gives the box a public IP: Expect: setup and
   doctor warn that stratum port 3333 is exposed.
 - [ ] **9.8 Missing egress firewall.** DESTRUCTIVE: it opens clearnet egress until `up`. Run it
@@ -653,11 +840,13 @@ Run on the upgrade box. See [Privacy](../privacy.md).
   `Tari merge-mining OFF` with `⚠`, says its chain data is kept, and asks `(y/N)`; answer `y`.
   Afterwards no `tari` container runs,
   mining continues, and the five XvB raffle tiles are gone from the dashboard.
-- [ ] **10.2 Back to Tari.** Do: set `tari.mode` back to `local` and apply. Expect: the preview
-  marks `Tari merge-mining ON` with `⚠` and asks `(y/N)`; answer `y`. The Tari node resumes from
-  the chain it already had instead of starting from zero. Monero mining carries on while Tari
-  catches up: only a first install waits for both chains (#3094). (test RC 459847441a9f: the miner
-  is held again until the Tari node is synced, see the box above.)
+- [ ] **10.2 Back to Tari.** Do: set `tari.mode` back to `local` and apply, then watch `docker ps`
+  and a miner's log while Tari catches up. Expect: the preview marks `Tari merge-mining ON` with
+  `⚠` and asks `(y/N)`; answer `y`. Per #3094 its row says that Monero mining continues and that
+  merge-mining starts when Tari has synced (confirm wording at the freeze). The Tari node resumes
+  from the chain it already had instead of starting from zero. `xmrig-proxy` and p2pool stay up,
+  the miners keep hashing, no `Workers rejected` badge shows, and the Tari card reads syncing until
+  Tari is at the tip. Only a first install waits for both chains.
 - [ ] **10.3 Remote Monero node.** Do: on the upgrade box (the node machine), add the two Config D
   keys inside its `monero` block and apply; the preview flags them ⚠ and asks first. On the fresh
   box (the second machine), replace `config.json` with Config D's second-machine file and apply;
@@ -681,22 +870,32 @@ Run on the upgrade box. See [Privacy](../privacy.md).
   firewall allows only private addresses. Repeat with a misspelt hostname: reported as a name
   that does not resolve, not as a firewall problem.
 - [ ] **10.5 Tari outage.** Do: on the upgrade box, with `dashboard.tari_required` at its default
-  (`true`), `docker stop tari` and wait 20 minutes, watching a miner's log. Run `./pithead up`.
-  Then add `"tari_required": false` inside the `dashboard` block, apply, and repeat. Expect, per
-  #3091: the Tari panel and a Telegram alert show the outage within minutes, both times. With
-  `tari_required` true, miners keep mining for the first 10 minutes, and once Tari's RPC has been
-  unreachable for 10–15 minutes the workers are rejected (xmrig-proxy is stopped, so XMRig logs
-  that it lost the pool); after `./pithead up` they are readmitted and mine again. With
-  `tari_required` false, miners keep mining Monero throughout. Remove the key afterwards. (test RC
-  459847441a9f: a Tari outage never rejects workers, whatever `tari_required` is, see the box
-  above.)
+  (`true`), `docker stop tari` and wait 20 minutes, watching the dashboard, the test chat and a
+  miner's log. Run `./pithead up`. Then add `"tari_required": false` inside the `dashboard` block,
+  apply, and repeat. Expect, per #3091: with `tari_required` true, the Tari panel reports the node
+  unreachable within minutes and the miners keep mining at the 10-minute mark. After 15 minutes of
+  unreachable Tari RPC the `Tari DOWN` and `Workers rejected` badges show, a node-down alert
+  arrives, and the workers are rejected (xmrig-proxy is stopped, so XMRig logs that it lost the
+  pool). After `./pithead up` and 60 seconds of confirmed reachability the workers are readmitted
+  and mine again, and a node-recovered alert arrives. With `tari_required` false the `Tari DOWN`
+  badge and the alert arrive at the same 15 minutes, but no worker is rejected: the miners keep
+  mining Monero throughout and xmrig-proxy stays up. If the alert text says that workers are
+  failing over to backup pools while `tari_required` is false, file it: they are not. Remove the
+  key afterwards.
 - [ ] **10.6 Remote Monero node outage.** Do: with the second machine on Config D (10.3) and a
   miner pointed at it, run `docker stop monerod` on the node machine and wait 5 minutes. Look at
   the second machine's dashboard and the miner's log. Then run `./pithead up` on the node machine.
   Expect, per #3091: an unreachable Monero node, local or remote, always rejects workers, so the
-  second machine stops its xmrig-proxy and XMRig logs that it lost the pool. After `./pithead up`
-  on the node machine, the workers are readmitted and mine again. (test RC 459847441a9f: a remote
-  monerod never triggers rejection and the workers stay connected, see the box above.)
+  second machine shows the `monerod DOWN` and `Workers rejected` badges, stops its xmrig-proxy,
+  and XMRig logs that it lost the pool. After `./pithead up` on the node machine, the workers are
+  readmitted and mine again.
+- [ ] **10.7 A dashboard with no login.** Do: on the fresh box, keep a copy of `config.json`,
+  remove its `dashboard.auth` and `dashboard.control` blocks, and `./pithead apply`; answer `y` to
+  what it asks. Open the dashboard in a private window, then put the copy back and apply. Expect,
+  per #3092 (confirm wording at the freeze): no login prompt appears, and the **Connect a miner**
+  block shows the LAN pool URL and the stratum password, or `no stratum password`, to anyone on
+  the LAN (the owner accepts that risk). A dashboard published as an onion always has a login: the
+  last row of [Broken configs](#broken-configs) is that refusal.
 
 ## 11. Backup, restore and resets
 
@@ -706,6 +905,13 @@ Run on the upgrade box unless stated. The steps are destructive; run them in thi
   `backups/`, mode 600.
 - [ ] **11.2 Wrong passphrase.** Do: `./pithead restore backups/<file>` with a wrong passphrase.
   Expect: refused before anything changes.
+- [ ] **11.2a A backup from a newer version is refused.** Do: edit `config.json` and set
+  `config_version` to `"9.9.9"` as in 6.10, run `./pithead backup`, and put the stamp back by hand.
+  Then run `./pithead restore backups/<that newest file>` with the right passphrase. Do not use
+  that archive in 11.3. Expect, per #3109 (confirm wording at the freeze): the restore is refused
+  before anything is promoted, with a message that the backup's configuration was written by a
+  newer pithead than this machine runs and that you should update first; `config.json`, the data
+  and the running stack are unchanged.
 - [ ] **11.3 Restore.** Do: change the energy price in the dashboard, then restore the backup with
   the right passphrase. Expect: the energy price is back to its earlier value, the onion address
   and login are unchanged, and the hashrate history is there.
@@ -736,8 +942,9 @@ fresh box), 12.3 on an appliance that runs the previous release.
   appliance image, as for the first appliance release. Never on the soak box while it carries a
   soak. Do: in the header's **OS updates** control: Check, Download,
   Verify, Install, then Reboot (type `REBOOT`). Expect: Check offers the new release; mining keeps
-  running until the reboot; the page reconnects; a banner says it updated; the boot menu shows
-  the new version as **current** and the old one as **previous**.
+  running until the reboot, but Install arms the spare slot, so any reboot boots the update (#3100)
+  and the **Reboot** button expires 24 hours after Install; the page reconnects; a banner says it
+  updated; the boot menu shows the new version as **current** and the old one as **previous**.
 
 ## 13. Appliance
 
@@ -771,21 +978,23 @@ soak probe scores one boot, flat container restarts, every day-0 container runni
 and exactly one SSH login a day, its own. Anything else spends a soak day.
 
 - **The image.** No release image exists before GA, so every appliance step runs on the debug
-  image. Skip the instruction above to write the release image after 13.12, and record the variant
+  image. Skip the instruction above to write the release image after 13.12a, and record the variant
   (debug, and its commit) on every M row. `verify-image.sh` without `--test`, the release-keyring
   checks and "Signing must be ON" in [Cutting](#cutting) refuse a debug image by design: record
   them N/A here. They run at GA against the release artifacts.
 - **Before `soak-probe --start`: record the box.** Over SSH, copy `/data/pithead/config.json`
   off the box into the private handoff, never into an issue or the release thread (it holds the
-  dashboard password, the view keys and the bot token), and note `cat /opt/pithead/BUILD_COMMIT`, `rauc status`, the payout addresses, the
-  machine name, its IPv4 address and both chain heights. Keep the stratum password from
+  dashboard password, the view keys and the bot token), and note `cat /opt/pithead/BUILD_COMMIT`,
+  `cat /opt/rigforge/RIGFORGE_REF` (13.7a), `rauc status`, the payout addresses, the machine name,
+  its IPv4 address and both chain heights. If the box has a stratum password, keep it from
   `grep PROXY_STRATUM_PASSWORD /data/pithead/.env` in the private handoff, for 4.x and 14.1 (see
   13.8). The machine name replaces `pithead` in every `pithead.local` address below.
-- **Before `--start`: the hardware battery.** Run M1–M10 (13.1–13.12 and 13.19; M5, in 13.18,
+- **Before `--start`: the hardware battery.** Run M1–M10 (13.1–13.12a and 13.19; M5, in 13.18,
   may run on the second appliance instead). Cut power (M8 in 13.11, M10 in 13.19) only before the
   window opens. M15 (13.13 and 13.14) runs before `--start`
-  or after day 7, never inside the window. After 13.7, and again after each reboot in
-  13.10–13.12, wait until the dashboard's Tari card shows progress before the next reboot,
+  or after day 7, never inside the window. The Tor drill (9.6a) runs on either appliance, before
+  `--start` only. After 13.7, and again after each reboot in
+  13.10–13.12a, wait until the dashboard's Tari card shows progress before the next reboot,
   boot-menu test or power cut: a disk that kept its chains may hold a Tari database that migrates
   on its first start, for hours, and an interrupted migration loses it (see 2.3a). M8 and M10
   never run while Tari reads loading.
@@ -801,22 +1010,23 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   IPv4 and log directory:
   `0 6 * * * <checkout>/tests/os/soak-probe.sh <box IPv4> <logdir> >><logdir>/cron.log 2>&1`.
   The day-0 line carries a rule-4 FAIL from the setup logins; that is the baseline, not a soak day.
-- **Allowed during the soak (read-only).** 5.1–5.6 and 5.8–5.11; 7.1 and 7.8 as views only; 7.7;
+- **Allowed during the soak (read-only).** 5.1–5.6 and 5.8–5.12; 7.1 and 7.8 as views only; 7.7;
   13.20; 8.2 and 8.3; 4.1, 4.2, 4.4, 4.5 and 8.4 with outside miners and no Configuration commit;
   S4; S7; and 14.1, 14.3 and 14.4 on the rigs, rig side only. Anything not listed here is
   forbidden during the window.
 - **Forbidden after `--start` until day 7.** Any SSH or `scp` except the probe's own, including
   agent and operator sessions (tell them the box is held); any reboot or power cut, the boot-menu
   reboot (13.9) included; `down` and `up` (5.7); the dashboard upgrade (12.2); any
-  Configuration commit, benign ones included (7.2–7.6, 13.15, 13.21, 13.22, 13.24, Telegram
-  setup); **Back up now** (13.13); OS updates (12.3, 13.10–13.12); inserting a USB stick (13.17,
-  13.18, 13.23); adopting a rig (14.2); renames and resets (15.x); S6 and S8.
+  Configuration commit, benign ones included (7.1a, 7.2–7.6, 7.9, 13.8a, 13.15, 13.21, 13.22,
+  13.24, Telegram setup); **Back up now** (13.13); OS updates (12.3, 13.10–13.12a); the Tor drill
+  (9.6a); inserting a USB stick (13.17, 13.18, 13.23); adopting a rig (14.2); renames and resets
+  (15.x); S6 and S8.
 - **On a second appliance.** Flash the restore PC with the same debug RC and give it a machine
   name other than `pithead`, so rigs and mDNS never land on it by accident. Run there: 13.8's
-  Sync Mode checks (1.8 and 1.13; the soak box's chains are already synced), 7.2–7.6, 13.14a,
-  13.15–13.18, 13.21–13.24, 15.1–15.3, S6 and S8, and 14.2 with it as the coordinator if 14.2 was
-  not done before `--start`. For M15, only before `--start` or after day 7, run 13.13 on the soak
-  box, power the soak box off, and run 13.14 on the restore PC; then factory-reset the restore PC
+  Sync Mode checks (1.8 and 1.13; the soak box's chains are already synced), 13.6a, 7.1a–7.6,
+  7.9, 9.6a, 13.14a, 13.15–13.18, 13.21–13.25, 15.1–15.3, S6 and S8, and 14.2 with it as the
+  coordinator if 14.2 was not done before `--start`. For M15, only before `--start` or after
+  day 7, run 13.13 on the soak box, power the soak box off, and run 13.14 on the restore PC; then factory-reset the restore PC
   (15.3) before the soak box is powered on again, so the two never run the same identity. Inside
   the window, skip M15 or run it between two other machines.
 - **The LAN test registry.** A debug image pulls its stack images from the LAN test registry at
@@ -855,55 +1065,79 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   **Fresh start** ("Keep the blockchains; wipe settings and wallets.") so the answers form appears;
   never **Wipe everything** on the soak box, which costs days of resync. **Keep everything** asks
   nothing, so M6 would be N/A there: run it on the second appliance. Paste the QA subaddress
-  first, then the primary address; keep every default (merge-mine Tari defaults to yes on a disk
-  that fits both chains: paste the Tari address), and answer yes to `Enable stratum password?`.
-  Press **Validate, then install**. Expect: the subaddress is refused with an explanation before
-  you submit. Per #3099 the page does not ask about the XvB raffle and leaves it off, always
-  generates a dashboard login, and keeps the first sync on Tor unless you opt in to the faster
-  sync for every local chain, which warns that it exposes your IP to the Monero and Tari networks.
-  After validation the page shows the dashboard login, the address `https://pithead.local`, the
-  miner address `stratum+tcp://pithead.local:3333`, and, per #3092, the stratum password. On a
-  box with another machine name, read that name for `pithead`. (test RC 459847441a9f: Tari
-  defaults to `Mine Monero only (default).`; the page asks `Join the XMRvsBeast raffle?` and
-  offers `No login`; `Faster, over clearnet` warns only that `Your IP is visible to peers during sync`,
-  with no word on the Monero and Tari networks; there is no stratum question,
-  and the card shows no stratum password. See the box above.)
+  first, then the primary address; keep every default, paste the Tari address if the page asks
+  for one, and answer yes to `Enable stratum password?` (its default is no). Press
+  **Validate, then install**. Expect: the subaddress is refused with an explanation before you
+  submit. Per #3099 and #3092 (confirm wording at the freeze):
+
+  - Merge-mining Tari is on by default when the target disk fits both chains and off when it does
+    not.
+  - The page does not ask about the XvB raffle and leaves it off.
+  - It generates a dashboard login by default.
+  - It keeps the first sync on Tor unless you opt in to the faster sync. That choice covers every
+    chain the stack runs locally and warns that it exposes your IP to the Monero network and, if
+    Tari is on, the Tari network (13.6a).
+  - After validation the page shows the dashboard login, the address `https://pithead.local`, the
+    miner address `stratum+tcp://pithead.local:3333` and, because you answered yes, the stratum
+    password. On a box with another machine name, read that name for `pithead`.
+- [ ] **13.6a Stratum default and fast sync.** Do: on the second appliance's setup page, on its
+  first install, keep every default (the stratum question stays no), turn on the faster first
+  sync, and press **Validate, then install**. If that disk is too small for both chains, note
+  that Tari is off. After the install open Configuration. Expect, per #3099 and #3092
+  (confirm wording at the freeze): the hand-off card says `no stratum password`; the faster-sync choice
+  warns as in 13.6; Configuration shows `monero.clearnet_initial_sync` on and, when Tari is on,
+  `tari.clearnet_initial_sync` on too; on a disk too small for both chains the page turns Tari
+  off and says why.
 - [ ] **13.7 Install (M3).** Do: save the login, type the disk name, and press
   **I saved these — erase the disk and install.** Expect: progress is shown, then the machine
   switches itself off. Remove the stick and switch it on: it boots from the disk, the console
   narrates provisioning, and within 10–30 minutes the dashboard answers with the saved login. A
   second disk, if present, still holds its data.
+- [ ] **13.7a RigForge is pinned to the 1.18.0 commit (#3116).** Do: over SSH on the debug image,
+  before `--start`, run `cat /opt/rigforge/RIGFORGE_REF`. After the RigForge v1.18.0 tag exists
+  (it is cut after the soak), run
+  `git ls-remote https://github.com/p2pool-starter-stack/rigforge refs/tags/v1.18.0`. Expect:
+  `ref=<sha> version=1.18.0`, where `<sha>` is the commit the release notes name as the one
+  RigForge v1.18.0 is tagged from; once the tag exists, `git ls-remote` prints the same `<sha>`
+  (confirm wording at the freeze).
 - [ ] **13.8 The same checks as DIY.** Do: first, using only the setup page, the dashboard and
-  [the appliance guide](../appliance.md), find the stratum password an outside miner must send.
-  Expect, per #3092: signed in, the dashboard shows a **Connect a miner** block with the LAN pool
-  URL and the same stratum password as the 13.6 hand-off card; signed out, nothing shows it. On a
-  box with no dashboard login, the block shows it to anyone on the LAN (owner, 2026-10-04: the risk
-  is accepted; an onion-published dashboard always has a login).
-  (test RC 459847441a9f: nothing without a shell shows it. Record FAIL linked to #3090 and #3092
-  first; only then use the value noted over SSH to carry on with 4.1 and 14.1, and mark those
-  "unblocked by the debug shell". See the box above.) While the appliance's chains sync, check
-  1.8; when they finish,
-  check 1.13. Then repeat sections 4 and 5, pointing XMRig at
-  `pithead.local:3333`, and steps 7.1–7.8 (the appliance's Configuration view is always on). Set up Telegram in Configuration, then repeat
-  8.2–8.4. Skip anything that needs a shell (`./pithead`, `docker`, editing `config.json`): the
-  appliance has none apart from its console. Expect: the same results. The built-in miner
-  appears as a worker.
+  [the appliance guide](../appliance.md), find the pool URL and, if one is set, the stratum
+  password an outside miner must send. Expect, per #3092 (confirm wording at the freeze): signed
+  in, the dashboard shows a **Connect a miner** block with the LAN pool URL and the same stratum
+  password as the 13.6 hand-off card, or `no stratum password`; signed out, nothing shows it. On a
+  box with no dashboard login, the block shows it to anyone on the LAN (owner, 2026-10-04: the
+  risk is accepted; an onion-published dashboard always has a login). Then, while the appliance's
+  chains sync, check 1.8; when they finish, check 1.13. Then repeat sections 4 and 5 (5.12
+  included), pointing XMRig at `pithead.local:3333`, and steps 7.1–7.9 (the appliance's
+  Configuration view is always on; skip the second half of 7.1a, which edits `config.json`). Set
+  up Telegram in Configuration, then repeat 8.2–8.4. Skip anything else that needs a shell
+  (`./pithead`, `docker`, editing `config.json`): the appliance has none apart from its console.
+  Expect: the same results. The built-in miner appears as a worker, and it reports RigForge
+  1.18.0 (#3116; confirm wording at the freeze).
+- [ ] **13.8a The built-in miner follows its toggle.** Do: with the chains synced and the built-in
+  worker mining, turn `local_miner.enabled` off in Configuration, preview and confirm (type
+  `APPLY` if asked), and watch Workers Alive without rebooting; then turn it on the same way.
+  Expect, per #3090 (confirm wording at the freeze): the built-in worker leaves Workers Alive
+  within a few minutes of the first apply and returns within a few minutes of the second, with no
+  reboot in between, even if an apply reports no configuration changes.
 - [ ] **13.9 Boot menu.** Do: reboot with a monitor attached. Expect: a five-second menu that
   names the version, its slot and **current**, plus **Set up again**; it boots by itself.
-- [ ] **13.10 Update (M7).** Do: as M7 describes, copy a debug-variant bundle with a higher
-  version to the box and run `cd /data/pithead && ./pithead os-update <bundle>`. Never add `--yes`
-  when the bundle's variant differs from the box's (see [Cutting](#cutting), item 3). Expect: it
-  says the update is written to the spare slot, that the machine keeps running the current
-  version until it reboots, and prints the exact reboot command. Run that command. After the
-  reboot, the boot menu shows the new version as **current** and the old one as **previous**.
-  On a debug RC there is no higher-version bundle: install the RC's own `.raucb` over the RC (the
-  same version is accepted; if the bundle's version is not a plain `X.Y.Z`, os-update refuses
-  with `Refusing a possible downgrade`, so add `--allow-downgrade` and record that), and score M7 by the booted slot letter in `rauc status` and by
-  `cat /opt/pithead/BUILD_COMMIT`, before and after the reboot, not by the version label, since
-  both menu entries read the same version. Two things are expected, not defects: the bundle
-  declares a data migration, so a Tari volume without room is refused with
-  `Refusing: this update declares a chain data migration` (free space and retry), and after the
-  reboot the chain services wait until the new slot commits.
+- [ ] **13.10 Update (M7).** Do: as M7 describes, copy the good higher-version test bundle (a
+  debug-variant bundle with a higher version) to the box and run
+  `cd /data/pithead && ./pithead os-update <bundle>`. Never add `--yes` when the bundle's variant
+  differs from the box's (see [Cutting](#cutting), item 3). Expect: it says the update is written
+  to the spare slot, that the machine keeps running the current version until it reboots, and
+  prints the exact reboot command. The spare slot is now armed: any reboot boots the update, a
+  power cut included (#3100). Run that command. After the reboot, the boot menu shows the new
+  version as **current** and the old one as **previous**.
+  With no higher-version bundle, install the RC update bundle (the RC's own `.raucb`) over the RC:
+  the same version is accepted, but if the bundle's version is not a plain `X.Y.Z`, os-update
+  refuses with `Refusing a possible downgrade`, so add `--allow-downgrade` and record that. Score
+  M7 by the booted slot letter in `rauc status` and by `cat /opt/pithead/BUILD_COMMIT`, before and
+  after the reboot, not by the version label, since both menu entries read the same version. Two
+  things are expected, not defects: the bundle declares a data migration, so a Tari volume
+  without room is refused with `Refusing: this update declares a chain data migration` (free space
+  and retry), and after the reboot the chain services wait until the new slot commits.
 - [ ] **13.11 Pull the plug during an update (M8).** Do: start
   `cd /data/pithead && ./pithead os-update <bundle>` again with the same bundle and pull the plug
   while it writes. Repeat three times. If the box is a laptop, hold the power button instead, at
@@ -911,8 +1145,8 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   machine boots the 13.10 version on its slot, marked **current**, and the dashboard serves. Do
   not pick the other slot from the boot menu: it holds a half-written copy and may still show
   its old label.
-- [ ] **13.12 Bad release rolls back (M9).** Do: install the deliberately broken bundle M9
-  describes with `cd /data/pithead && ./pithead os-update <bundle>` and reboot. Build that bundle
+- [ ] **13.12 Bad release rolls back (M9).** Do: install the broken (health-gate fault) test
+  bundle M9 describes with `cd /data/pithead && ./pithead os-update <bundle>` and reboot. Build that bundle
   from the candidate's own commit. The rollback is decided by the gate inside the new slot, so
   never use an older broken bundle whose gate code predates #2383: it tests the old gate, not the
   candidate's. Expect: without anyone touching it, the machine
@@ -922,6 +1156,24 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   `bad` (it commits after its health check, about 3 minutes into the boot). Then run
   `rauc status mark-bad booted && reboot`. Expect: the machine comes back on the other slot, on a
   good version, with the dashboard serving.
+- [ ] **13.12a A migrating update that fails its gate gives the `/data` floor back (#1393).**
+  Before `--start` only. Needs the floor-fallback test bundle: a debug-variant bundle that
+  declares a data migration and carries a version no release will carry, so its slot cannot bring
+  the stack up. The free-space refusal from 13.10 can apply here too. Do: over SSH, note
+  `cat /data/pithead/.os-data-floor` (it may be absent). Install the bundle with
+  `cd /data/pithead && ./pithead os-update <bundle>`, and before any reboot run
+  `cat /data/pithead/.os-data-floor /data/pithead/.os-data-floor.prev /data/pithead/.os-migration-pending`.
+  Reboot with the command os-update printed, touch nothing, and give the box up to 30 minutes to
+  answer. Then run `rauc status`, `cat /data/pithead/.os-data-floor`,
+  `ls /data/pithead/.os-migration-pending` and
+  `journalctl -u pithead-boot -b | grep 'the /data floor is back to'`. Finally install the good
+  13.10 bundle again with os-update. Expect: before the reboot, the floor reads the failing
+  bundle's version, `.os-data-floor.prev` holds the floor you noted (`none` if there was none)
+  and `.os-migration-pending` holds the failing bundle's version. After the reboot, with nobody
+  touching the box, it runs the slot it ran before, the failing slot is not committed, the floor
+  is back to the value you noted, `.os-migration-pending` is gone, and the journal line starts
+  `pithead-boot: the data migration never ran`. The good bundle then installs with no floor
+  refusal.
 - [ ] **13.13 Backup (M15, first half).** Do: write down the payout address, the onion address and
   the time. In **Backup**, click **Back up now** and save both downloads: the archive and its
   emergency kit. Expect: the dashboard disconnects briefly and comes back.
@@ -971,14 +1223,15 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
 - [ ] **13.21 Onion dashboard on the appliance.** Do: in Configuration turn on
   `dashboard.onion.enabled`, leaving `dashboard.onion.client_auth` on, preview, type `APPLY`
   and confirm. Expect: the `.onion` address appears under the machine name with a
-  **Copy address** button. **Show client key** reveals the key once, and the reveal appears in the change history.
-  With that key, Tor Browser opens the dashboard as in 9.4. Turning `client_auth` off while the
-  onion is on is refused.
+  **Copy address** button. **Show client key** reveals the key, pressing it again reveals the same
+  key (**Set up again** keeps it too, #3100), and each reveal appears in the change history. With
+  that key, Tor Browser opens the dashboard as in 9.4. Turning `client_auth` off while the onion
+  is on is refused.
 - [ ] **13.22 Node modes on the appliance.** Do: in Configuration set Tari's mode to `off`,
   preview, type `APPLY` and confirm; then set it back to `local` the same way. Expect: the preview
   marks each change ⚠; with Tari off, mining continues; switching back resumes the Tari chain it
-  already had, and Monero mining carries on while Tari catches up (#3094). (test RC
-  459847441a9f: the miner is held again until Tari is synced, see the box above.) (The remote
+  already had, and Monero mining carries on while Tari catches up (#3094; confirm wording at the freeze): the `Tari merge-mining ON` row says so, Workers Alive keeps its workers (the built-in
+  miner included), no `Workers rejected` badge shows, and the Tari card reads syncing. (The remote
   Monero node change is 13.15.)
 - [ ] **13.23 Settings by USB stick.** Do: on the laptop, give the second stick one partition
   formatted FAT32 (not exFAT, and not FAT written across the whole device without a partition:
@@ -1003,6 +1256,19 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   the new one works, in the browser and at the console. With the stick, the console shows
   `dashboard.auth.password: changed (value hidden)`, never the value, counts down, and applies;
   the third password then works in both places.
+- [ ] **13.25 Walk the appliance guide against the device (#3100).** Do: on the second appliance,
+  read [the appliance guide](../appliance.md) from top to bottom beside the box. For every
+  instruction that names a button, a label, a command or an outcome, check that the device matches.
+  Do not repeat the destructive ones: they have their own steps. Expect: every label and command
+  is real. In particular: console commands read `cd /data/pithead && ./pithead <verb>` (13.24, 15.2
+  and 15.3 use them); the wizard labels are `ERASES everything on it` and `holds a previous
+  install`; the onion button is **Copy address**; **Show client key** shows the same key twice
+  (13.21); an installed OS update boots at any reboot and the dashboard's Reboot button expires
+  after 24 hours (12.3); **Config reset** keeps the machine's identity, and **Fresh start, keep the
+  blockchains** is the way to hand a machine over (15.2); a restore says to switch the old machine
+  off first (13.14); a rename warns that rigs using the old name stop mining (15.1). File every
+  sentence the device contradicts, and every place you had to know something the guide does not
+  say.
 
 ## 14. RigForge rig
 
@@ -1013,9 +1279,11 @@ hands-on rows M11–M13 in [the rig battery](#the-rig-role-manual-battery-m11m13
 - [ ] **14.1 Install a rig (M11).** Do: boot the stick on the rig, choose **RigForge**, accept the
   pool address it fills in (`pithead.local:3333`). It fills one in only when a coordinator named
   `pithead` answers there; otherwise the field opens empty, so type `<name>.local:3333` with the
-  coordinator's machine name. Enter the stratum password from 13.8, name
-  the worker, choose the internal disk, and copy the control token. Expect: the rig mines; the coordinator lists the worker badged
-  `not adopted`; `doctor` on the rig reports MSR applied and HugePages reserved.
+  coordinator's machine name. Enter the stratum password from 13.8 (leave it empty if the
+  coordinator has none), name the worker, choose the internal disk, and copy the control token.
+  Expect: the rig mines; the coordinator lists the worker badged `not adopted`; `doctor` on the rig
+  reports MSR applied and HugePages reserved; the coordinator's Worker Inspect shows RigForge
+  1.18.0 for it (#3116; confirm wording at the freeze).
 - [ ] **14.2 Adopt (M12).** Do: on the coordinator's dashboard, click the worker and fill the adopt
   form with the rig's address, port `8082` and the token. Then change the donation level and
   click **Apply to rig**. Expect: the change reaches `applied`; the pool settings are untouched.
@@ -1030,8 +1298,11 @@ hands-on rows M11–M13 in [the rig battery](#the-rig-role-manual-battery-m11m13
 Run last, on the appliance box. These change the machine's identity or erase it.
 
 - [ ] **15.1 Rename.** Do: in Configuration set the machine name (`dashboard.host`) to `qa-box` and
-  confirm. Expect: the dashboard answers at `https://qa-box.local` after one new certificate
-  warning, and keeps that name after a reboot.
+  confirm. Expect: the preview warns that rigs using the old name stop mining and that each needs
+  **Set up again** to point it at the new name (#3100); the dashboard answers at
+  `https://qa-box.local` after one new certificate warning, and keeps that name after a reboot. A
+  rig that used the old name stops mining until it is set up again; a rig that used an IP address
+  keeps mining.
 - [ ] **15.2 Config reset.** Do: at the console, log in as `root` with the dashboard password and
   run `cd /data/pithead && ./pithead config-reset`. Expect: you must type to confirm; the machine reboots into the setup
   wizard, and after you answer again the chains are still synced.
@@ -1197,9 +1468,9 @@ hardware: #2350, #2352, #2364, #2365, #2366, #2382 and #2383.
 - Confirming once that the dashboard refuses the real box's ISP-assigned IPv6 address. The
   provision battery proves the listener boundary with an unrouted RFC 3849 address; this check
   confirms that the physical network presents the same address shape.
-- Configuring **by paste** for both addresses (M6, which now needs a yes to merge-mining first —
-  a new machine is asked for the Monero address only): a wallet address typed by hand is a support
-  ticket waiting to happen.
+- Configuring **by paste** for both addresses (M6: a new machine on a disk that fits both chains
+  is asked for both, and on a smaller disk for the Monero address only, #3099): a wallet address
+  typed by hand is a support ticket waiting to happen.
 
 ---
 
