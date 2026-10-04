@@ -94,8 +94,7 @@ jobs:
 
   build-images:
     # Build first-party images, including dashboard; catch Dockerfile, COPY, entrypoint and pin errors (#124).
-    # Tari uses an upstream image and stays outside this matrix.
-    # fail-fast: false keeps other images visible; empty build-args permit a bare dashboard build.
+    # Exclude upstream Tari; fail-fast: false keeps other images visible, and empty args permit a bare dashboard build.
     name: Build image (${{ matrix.service }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -121,6 +120,7 @@ jobs:
         run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
       - name: Prove offline Tor saturated-state recovery
         if: matrix.service == 'tor'
+        env: { TMPDIR: "${{ runner.temp }}" }
         run: bash tests/stack/standalone/test_tor_saturated_image.sh pithead-tor:ci
       - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
         with:
