@@ -1028,7 +1028,7 @@ wizard's pattern — the first page and the config tab now behave identically.) 
   it retunes the *rig's own* settings (pools, donation, autotune, watchdog, temperature cap)
   through that rig's control API, never the stack's descriptor list.
 
-  Ordinary fields are editable directly. Every other reference field below the physical-presence
+  Ordinary fields are editable directly. Other editable settings below the physical-presence
   boundary renders **editable but confirm-gated**, tooltipped "you'll type `APPLY` to confirm at
   Save". This includes disruptive settings and values that redirect funds, traffic, credentials or
   control. All three policy sets are surfaced on `GET /api/config`
