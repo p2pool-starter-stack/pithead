@@ -38,9 +38,11 @@ stack's address filled in.
   LAN, set a DHCP reservation (or a static IP) for the stack host.
 - Add a backup pool for failover. List a second entry in `pools` (a public pool, or another stack).
   If the Monero node goes down or is still syncing, the stack stops accepting work so rigs fail over
-  to the backup, then switch back when it recovers. A Tari outage or resync does the same while
-  `dashboard.tari_required` is `true` (the default); set it to `false` and only Monero gates the
-  work.
+  to the backup, then switch back when it recovers. An unreachable Tari RPC also rejects
+  workers after 10–15 minutes while `dashboard.tari_required` is `true` (the default), costing
+  Monero revenue until Tari returns. Set it to `false` to keep mining through Tari outages.
+  Tari migrating, starting or syncing raises an alert rather than rejecting workers; Tari-down
+  alerts fire with either setting. See [worker rejection](dashboard.md#node-status--failover).
 
 ### Miner version & compatibility
 

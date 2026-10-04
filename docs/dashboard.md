@@ -1296,7 +1296,7 @@ other three hidden services — the Monero node's, the Tari node's and P2Pool's 
 than by address, so there is nothing of theirs on this page to hide.
 
 The two surfaces disagree about your dashboard's **own** onion on purpose: the header shows it in
-full, with a **Copy** button, because a machine you cannot reach is a machine you cannot fix — and,
+full, with a **Copy address** button, because a machine you cannot reach is a machine you cannot fix — and,
 when client authorization is on and the config editor with it, a **Show client key** button beside
 it, because on a machine with no shell an address nothing can open is the same as no address at
 all. The key is not in this container: the button asks the host, the host answers once through the
@@ -1464,10 +1464,13 @@ re-derives and re-verifies every step itself.
    needed and the size free, and keeps the file: free space, then verify and install again. The
    install step runs the same check again.
 4. **Install.** The verified bundle is written to the idle system slot, with progress shown.
-   Mining keeps running; nothing about the running system changes yet.
-5. **Reboot.** Nothing reboots on its own. The reboot is its own confirmed action (type
-   `REBOOT`), and it is the only step that pauses mining — typically under five minutes. The
-   page waits and reconnects when the dashboard returns.
+   Mining keeps running, and the downloaded bundle is deleted. The idle slot is now armed:
+   **any reboot boots the update**, including a power cut, watchdog restart or **Set up again**.
+5. **Reboot.** Install does not order a reboot. The dashboard action is separately confirmed
+   (type `REBOOT`) and expires 24 hours after install; expiry does not disarm the slot.
+   After expiry, check, download, verify and install again to re-arm that dashboard action,
+   or reboot at the console. Reboot pauses mining — typically under five minutes. The page
+   waits and reconnects when the dashboard returns.
 
 After the reboot the machine health-checks itself before committing the new version — the same
 gate every appliance boot runs. A banner reports the outcome: updated to the new version, or
