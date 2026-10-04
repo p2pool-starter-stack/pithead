@@ -954,17 +954,17 @@ Run on the **appliance box**. Each step names the battery row it serves (M1–M1
 [the appliance guide](../appliance.md) as a user would, and file anything you had to know rather
 than read.
 
-Steps 13.10–13.12 copy update bundles to the box over SSH, which only the debug image has (see
+Steps 13.10–13.12a copy update bundles to the box over SSH, which only the debug image has (see
 [Know which image you are holding](#know-which-image-you-are-holding)). Before 13.10, write the
 debug image to the stick with the 13.1 commands (skip the `sha256sum` line if the debug image has
 no `.sha256` file), boot the box from it, choose the same disk, and pick **Keep everything**. Reach it as `root` over SSH with the bench key from
-the private handoff. After 13.12, write the release image to the stick and reinstall the same
+the private handoff. After 13.12a, write the release image to the stick and reinstall the same
 way. Everything else runs on the release
 image. The dashboard's own update path checks for
 the latest *published* release, so it is tested after publishing, in 12.3. On a debug release
 candidate, [the preface below](#testing-a-debug-rc-on-the-soak-box) overrides this paragraph:
 every step already runs on the debug image, so there is no reinstall before 13.10 and none after
-13.12.
+13.12a.
 
 The appliance's command line runs as `cd /data/pithead && ./pithead <verb>`, at the console or
 over SSH. `/opt/pithead/pithead` changes into its own read-only directory before it reads
