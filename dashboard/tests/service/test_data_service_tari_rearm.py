@@ -44,7 +44,7 @@ async def test_tari_rearm_requires_an_earned_release(
     svc = service({"miner_released": earned})
     await _Loop()._iterate(svc, TARI_SYNCING, monero_sync=MONERO_SYNCED, network_height=800000)
     assert svc.miner_released is released
-    assert marker.exists() is not released
+    assert marker.exists()  # typed policy survives until a full reset replaces it
     if released:
         svc.docker_control.stop.assert_not_awaited()
         assert svc.latest_data["tari_syncing_passive"] is True
@@ -75,18 +75,52 @@ async def test_first_install_waits_for_tari(tmp_path, monkeypatch):
     }
 
 
-async def test_tari_only_still_waits_for_monero_across_restart(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "monero_sample", [{"reachable": False}, {"reachable": True, "is_syncing": True}]
+)
+async def test_tari_only_preserves_release_through_monero_startup_and_restart(
+    tmp_path, monkeypatch, monero_sample
+):
     marker = tmp_path / "sync-gate-reset"
     marker.write_text("tari-only\n")
     monkeypatch.setattr(ds_mod, "SYNC_GATE_RESET_PATH", str(marker))
     svc = service({"miner_released": True})
-    await _Loop()._iterate(svc, TARI_SYNCING, monero_sync={"reachable": True, "is_syncing": True})
-    assert not svc.miner_released
+    assert svc.miner_released
+    await _Loop()._iterate(svc, TARI_SYNCING, monero_sync=monero_sample)
+    assert svc.miner_released
+    svc.docker_control.stop.assert_not_awaited()
+    svc.docker_control.start.assert_not_awaited()
     restarted = _restored(svc.state_manager)
-    await _Loop()._iterate(restarted, TARI_SYNCING, monero_sync=MONERO_SYNCED)
+    await _Loop()._iterate(restarted, TARI_SYNCING, monero_sync=monero_sample)
     assert restarted.miner_released
     restarted.docker_control.stop.assert_not_awaited()
-    assert not marker.exists()
+    assert marker.exists()
+
+
+async def test_tari_only_cold_monero_outage_uses_worker_failover(tmp_path, monkeypatch):
+    marker = tmp_path / "sync-gate-reset"
+    marker.write_text("tari-only\n")
+    monkeypatch.setattr(ds_mod, "SYNC_GATE_RESET_PATH", str(marker))
+    svc = service({"miner_released": True})
+    now = [0]
+    svc.monero_health._clock = svc.tari_health._clock = lambda: now[0]
+    for tick in (0, 89):
+        now[0] = tick
+        await _Loop()._iterate(svc, TARI_SYNCING, monero_sync={"reachable": False})
+        assert svc.miner_released
+        assert not svc.workers_rejected
+        svc.docker_control.stop.assert_not_awaited()
+    now[0] = 90
+    await _Loop()._iterate(svc, TARI_SYNCING, monero_sync={"reachable": False})
+    assert svc.miner_released
+    assert svc.workers_rejected
+    svc.docker_control.stop.assert_awaited_once_with("xmrig-proxy")
+    for tick in (91, 152):
+        now[0] = tick
+        await _Loop()._iterate(svc, TARI_SYNCING, monero_sync=MONERO_SYNCED)
+    assert svc.miner_released
+    assert not svc.workers_rejected
+    svc.docker_control.start.assert_awaited_once_with("xmrig-proxy")
 
 
 @pytest.mark.parametrize("kind", ["symlink", "dangling", "fifo", "directory"])

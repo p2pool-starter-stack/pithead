@@ -6,14 +6,10 @@ from mining_dashboard.config.config import DISK_PATH
 
 logger = logging.getLogger("DataService")
 
-# Written by the cross-hardware restore doors — the wizard and carried restores through
-# restore_apply(), never `./pithead restore`'s same-box recovery (#2626 operator ruling: that
-# door's chains never desynced, so it keeps whatever gate state the backup carried) — and by
-# `apply` when a required chain moves to another node (#2763). Either way the snapshot's #35
-# sync-gate latch was earned on other chains, so while this file exists the dashboard ignores
-# the persisted release and re-derives it from the chains it now dials. Removed once the gate
-# releases here. A typed Tari-only marker retains the earned Monero-only policy; a full
-# reset, including every restore marker, takes precedence.
+# Full markers come from cross-hardware restore or a changed Monero endpoint. They
+# revoke the snapshot's release until these chains are ready; the gate then removes them.
+# Same-box recovery preserves its latch (#2626). A typed Tari-only marker preserves an
+# earned release and remains as durable background scope until a full reset replaces it.
 SYNC_GATE_RESET_PATH = os.path.join(DISK_PATH, "sync-gate-reset")
 
 
@@ -45,7 +41,7 @@ def chain_synced(sync):
 
 class DataGateMixin:
     def _restore_sync_gate(self):
-        """Only an earned release may make a Tari-only reset non-blocking."""
+        """Tari-only resets preserve an earned release; full resets revoke it."""
         self.sync_gate_monero_only = bool(self.latest_data.get("sync_gate_monero_only", False))
         marker = _runtime().SYNC_GATE_RESET_PATH
         if not os.path.lexists(marker):
@@ -61,8 +57,12 @@ class DataGateMixin:
         self.sync_gate_monero_only = tari_only and (
             self.miner_released or self.sync_gate_monero_only
         )
-        self.miner_released = False
-        self.latest_data["miner_released"] = False
+        self.miner_released = self.sync_gate_monero_only
+        if self.miner_released:
+            # This unchanged endpoint was reachable when the release was earned;
+            # a cold outage after apply still uses the debounced worker-failover path.
+            self.monero_health.ever_up = True
+        self.latest_data["miner_released"] = self.miner_released
         self.latest_data["sync_gate_monero_only"] = self.sync_gate_monero_only
 
     async def _apply_worker_rejection(self, monero_down, tari_down=False):

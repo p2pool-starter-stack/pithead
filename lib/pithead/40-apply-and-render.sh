@@ -339,7 +339,7 @@ apply() {
     esac
     migrate_dashboard_data
     # Write after data migration and before recreation. Tari-only resets retain the earned
-    # Monero release; a full reset waits for both required chains. Atomic replacement does
+    # mining release; a full reset waits for both required chains. Atomic replacement does
     # not follow a planted symlink; a directory fails closed and leaves the retry marker.
     if [ "$rearm_sync_gate" -ne 0 ]; then
         rearm_sync_gate_marker "$DASHBOARD_DIR" "$rearm_sync_gate" 2>/dev/null ||

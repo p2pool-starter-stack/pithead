@@ -55,10 +55,12 @@ after such a restore the dashboard holds the miner again until this machine's ch
 `./pithead restore`, the same-box recovery command, is not this door — its box's chains never
 desynced, so it keeps whatever gate state the backup carried. An applied Monero node host or RPC-port change also re-arms the full hold until the
 required chains are ready. A change only to Tari's mode or endpoint on an already-mining
-machine re-arms on Monero alone: Monero mining continues; merge-mining starts when Tari
-has synced. The Tari card shows its progress in the operational dashboard. This policy
-survives dashboard restarts, but a later Monero change or setup restore restores the full
-hold. A machine that has never released mining still waits for both chains by default.
+machine preserves its earned release: Monero mining continues; merge-mining starts when Tari
+has synced. A transient unavailable sample of the unchanged Monero endpoint during apply
+does not re-hold mining; a sustained outage uses the debounced worker-failover path. The Tari
+card shows its progress in the operational dashboard. This policy survives dashboard restarts,
+but a later Monero change or setup restore restores the full hold. A machine that has never
+released mining still waits for both chains by default.
 With [`dashboard.tari_required: false`](configuration.md) the initial hold waits only for
 Monero and mines while Tari finishes syncing in the background.
 
