@@ -6,6 +6,24 @@
 # $RCARRY, $RPSEED, $rarchive): hostile live links and archive modes, removed 1.x keys, unexpected
 # members refused by every door, and accepted restores whose private cleanup fails (rc 3).
 echo "== unit: restore_apply publication — links, modes, 1.x keys, members, failed cleanup (#909, #1854) =="
+# Drive the installer acceptance door, not only the seed extractor: removing publication from
+# restore_apply must fail even if the helper can still parse a seed in isolation (#3092).
+RCON="$RS/connection-card"
+mkdir -p "$RCON/archive"
+jq '.p2pool.stratum_password = "auto" | .p2pool.stratum_tls = false' "$RS/config.json" >"$RCON/archive/config.json"
+printf 'PROXY_STRATUM_PASSWORD=0123456789abcdef01234567\n' >"$RCON/archive/.env"
+tar -czf "$RCON/backup.tar.gz" -C "$RCON/archive" config.json .env
+run_sourced "$RS" restore_apply "$RCON/backup.tar.gz" '' "$RCON/error" "$RCON/candidate.json"
+assert_rc "config-only restore accepts the archived auto identity (#3092)" "$?" 0
+assert_eq "config-only restore publishes the archived seed (#3092)" "$(cat "$RCON/candidate.json.stratum-password")" 0123456789abcdef01234567
+assert_eq "config-only restore seed remains private (#3092)" "$(file_mode "$RCON/candidate.json.stratum-password")" 600
+cp "$RS/.env" "$RCON/original.env"
+out=$(run_sourced "$RS" wizard_prepare_miner_connection "$RCON/candidate.json" 0)
+assert_rc "restored candidate produces its connection card (#3092)" "$?" 0
+assert_eq "restored hand-off keeps the archived auto password (#3092)" "$(jq -r '.stratum_password' <<<"$out")" 0123456789abcdef01234567
+assert_eq "restored config still records auto (#3092)" "$(jq -r '.p2pool.stratum_password' "$RCON/candidate.json")" auto
+assert_eq "connection card consumes the private seed sidecar (#3092)" "$([ ! -e "$RCON/candidate.json.stratum-password" ] && echo consumed)" consumed
+cp "$RCON/original.env" "$RS/.env"
 # Restore publication replaces hostile live links and clamps archive-provided modes.
 chmod 644 "$RS/data/dashboard/dashboard.db"
 tar -czf "$RS/hostile-live.tar.gz" -C / "${RS#/}/config.json" "${RS#/}/data/dashboard/dashboard.db"

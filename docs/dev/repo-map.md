@@ -84,6 +84,9 @@ installer's TLS identity to target data and computes the public fingerprint. The
 `web/static/workers/minerconnection.mjs` renders the block. Its API and frontend tests live in
 `tests/web/test_miner_connection.py` and `tests/frontend/workers/minerconnection.test.mjs`.
 `tests/os/selftest-miner-connection.sh` proves the host carry and hostile-target guards without a guest.
+`tests/os/miner-connection-leg.sh` checks hand-off identity after setup and installation;
+`tests/integration/lib/miner-connection.sh` checks the running dashboard against the installed
+password and certificate. Both have mutation self-tests beside their harnesses.
 
 `python -m mining_dashboard.wizard` remains the appliance's wizard launch command;
 the package's `__main__.py` delegates to its server.

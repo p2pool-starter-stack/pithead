@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+source "$SCRIPT_DIR/miner-connection-leg.sh" || return $?
 _phase_install_initial() {
     info "phase: disk install (USB-style boot -> pithead-install -> boot from the target)"
 
@@ -172,8 +173,11 @@ _phase_install_initial() {
         return 1
     fi
 
-    body="monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini&disk=vda&confirm=vda&wipe=keep"
-    scode=$(curl -sSk -b "$jar" --data "$body" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
+    local install_config install_handoff=""
+    install_config=$(jq -nc --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" \
+        '{monero:{wallet_address:$m},tari:{wallet_address:$t},p2pool:{pool:"mini",stratum_password:"auto",stratum_tls:true}}')
+    scode=$(curl -sSk -b "$jar" --data-urlencode "config=$install_config" --data 'disk=vda&confirm=vda&wipe=keep' \
+        "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "combined submit (config + disk) did not return 200 (got ${scode:-none})"
         rm -f "$jar"
@@ -182,7 +186,8 @@ _phase_install_initial() {
     ok "ONE submission carried config + disk + confirmation"
     tries2=0
     while [ "$tries2" -lt 24 ]; do
-        curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null | grep -q '"password"' && break
+        install_handoff=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null)
+        grep -q '"password"' <<<"$install_handoff" && break
         sleep 5
         tries2=$((tries2 + 1))
     done
@@ -192,6 +197,11 @@ _phase_install_initial() {
         return 1
     }
     ok "credentials published BEFORE anything touched the disk"
+    if wizard_miner_connection_card_valid "$install_handoff" auto true; then
+        ok "installer hand-off includes the auto stratum password and TLS fingerprint (#3092)"
+    else
+        bad "installer hand-off includes the auto stratum password and TLS fingerprint (#3092)"
+    fi
     curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
     rm -f "$jar"
     # The ack releases the erase; the machine installs and powers ITSELF off.
@@ -279,6 +289,11 @@ _phase_install_initial() {
         bad "the consumed pre-seed (with credentials) is still on the installed system's ESP"
     else
         ok "consumed pre-seed removed from the installed system's ESP"
+    fi
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        phase_miner_connection_installed "$install_handoff"
+    else
+        bad "installed connection identity cannot be checked before provisioning succeeds (#3092)"
     fi
 
     # ---- M4: the disk left alone stays alone -----------------------------------------------
