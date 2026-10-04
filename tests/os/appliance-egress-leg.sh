@@ -359,12 +359,12 @@ _egress_self_test() {
 
     # The property #2059 is actually about: the backstop runs even when the provision body ABORTS,
     # and the body's rc still propagates (so an abort keeps stopping the reboot/migration legs).
-    # Driven through the real caller with both halves stubbed — a source grep would still pass on a
-    # wrapper that called the leg and then swallowed the rc, or that was never called at all.
+    # Drive the real caller with stubbed halves; a source grep cannot prove execution or rc propagation.
     local caller
     caller="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh"
     (
-        OS_RUN_SUITE=1 ran=0
+        # shellcheck disable=SC2034 # sourced phase reads the suite marker and runner path.
+        OS_RUN_SUITE=1 SCRIPT_DIR="${caller%/phases/*}" ran=0
         # shellcheck source=tests/os/phases/provision-initial.sh
         . "$caller" # an unreachable caller fails here, which is the same verdict
         _phase_provision_initial_body() { return 7; }
