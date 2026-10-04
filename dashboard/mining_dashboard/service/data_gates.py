@@ -48,7 +48,7 @@ class DataGateMixin:
         """Only an earned release may make a Tari-only reset non-blocking."""
         self.sync_gate_monero_only = bool(self.latest_data.get("sync_gate_monero_only", False))
         marker = _runtime().SYNC_GATE_RESET_PATH
-        if not os.path.exists(marker):
+        if not os.path.lexists(marker):
             return
         try:
             fd = os.open(marker, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)

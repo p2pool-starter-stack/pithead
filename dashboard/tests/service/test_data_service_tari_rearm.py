@@ -89,13 +89,15 @@ async def test_tari_only_still_waits_for_monero_across_restart(tmp_path, monkeyp
     assert not marker.exists()
 
 
-@pytest.mark.parametrize("kind", ["symlink", "fifo", "directory"])
+@pytest.mark.parametrize("kind", ["symlink", "dangling", "fifo", "directory"])
 def test_nonregular_marker_cannot_relax_the_hold(tmp_path, monkeypatch, kind):
     marker = tmp_path / "sync-gate-reset"
     if kind == "symlink":
         target = tmp_path / "target"
         target.write_text("tari-only\n")
         marker.symlink_to(target)
+    elif kind == "dangling":
+        marker.symlink_to(tmp_path / "absent")
     elif kind == "fifo":
         os.mkfifo(marker)
     else:

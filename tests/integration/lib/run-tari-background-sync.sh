@@ -7,7 +7,12 @@ run_tari_background_sync() {
         it_skip_leg "Tari-only apply keeps Monero mining (#3094)" "requires a local Tari baseline" "missing"
         return 0
     fi
-    local saved_config proxy_start deadline state syncing_hashes=0 synced=0 failed=0
+    local saved_config proxy_start deadline state syncing_hashes=0 synced=0 failed=0 previous_hashes="" hashes height_before
+    height_before="$(jq_get "$(api_state)" '.tari.height | tonumber')"
+    [[ "$height_before" =~ ^[0-9]+$ ]] || {
+        it_fail "pre-enable Tari template height is readable (#3094)" "no numeric template baseline"
+        return 1
+    }
     saved_config="$(rx 'cat config.json')" || return 1
     if ! push_config "$(render_scenario_config "$saved_config" 'tari.mode=off' 'dashboard.tari_required=true')" ||
         ! pithead apply -y >/dev/null 2>&1 || ! wait_stratum_hashes 240; then
@@ -36,14 +41,18 @@ run_tari_background_sync() {
                         break
                     fi
                     state="$(api_state)"
+                    hashes="$(jq_get "$state" '.stratum.total_hashes')"
                     if [ "$(jq_get "$state" '.sync.tari.state')" = syncing ] &&
                         [ "$(jq_get "$state" '.proxy_workers')" -ge 1 ] 2>/dev/null &&
-                        [ "$(jq_get "$state" '.stratum.total_hashes')" -gt 0 ] 2>/dev/null; then
-                        syncing_hashes=1
+                        [[ "$hashes" =~ ^[0-9]+$ ]]; then
+                        if [ -n "$previous_hashes" ] && [ "$hashes" -gt "$previous_hashes" ]; then syncing_hashes=1; fi
+                        previous_hashes="$hashes"
+                    else
+                        previous_hashes=""
                     fi
                     if [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] &&
                         [ "$(jq_get "$state" '.tari.connected')" = true ] &&
-                        [ "$(jq_get "$state" '.tari.height | tonumber')" -gt 0 ] 2>/dev/null; then
+                        [ "$(jq_get "$state" '.tari.height | tonumber')" -gt "$height_before" ] 2>/dev/null; then
                         synced=1
                         break
                     fi
