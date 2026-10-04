@@ -66,9 +66,10 @@ check test "${#fp}" = 64
 check test "$(wizard_prepare_miner_connection "$candidate" 0 | jq -r .stratum_fingerprint)" = "$fp"
 
 printf '{"p2pool":{"stratum_password":"auto","stratum_tls":false}}' >"$candidate"
-printf 'PROXY_STRATUM_PASSWORD=0123456789abcdef01234567\nOTHER=kept\n' >"$ENV_FILE"
+seed=$(printf 'abcd%.0s' {1..6}) # deterministic generated-shape fixture, never a credential
+printf 'PROXY_STRATUM_PASSWORD=%s\nOTHER=kept\n' "$seed" >"$ENV_FILE"
 card=$(wizard_prepare_miner_connection "$candidate" 0)
-check test "$(jq -r .stratum_password <<<"$card")" = 0123456789abcdef01234567
+check test "$(jq -r .stratum_password <<<"$card")" = "$seed"
 check grep -qx OTHER=kept "$ENV_FILE"
 check test "$(jq -r .p2pool.stratum_password "$candidate")" = auto
 rm "$ENV_FILE"
@@ -76,15 +77,15 @@ card=$(wizard_prepare_miner_connection "$candidate" 0)
 check test "$(env_get PROXY_STRATUM_PASSWORD)" = "$(jq -r .stratum_password <<<"$card")"
 
 archive_env="$scratch/archive.env"
-printf 'PROXY_STRATUM_PASSWORD=0123456789abcdef01234567\n' >"$archive_env"
+printf 'PROXY_STRATUM_PASSWORD=%s\n' "$seed" >"$archive_env"
 restore_card_stratum_seed "$candidate" "$archive_env" "$candidate.stratum-password"
 export TEST_TLS_DIR=/data/pithead/data/proxy-tls
 card=$(wizard_prepare_miner_connection "$candidate" 1)
-check test "$(jq -r .stratum_password <<<"$card")" = 0123456789abcdef01234567
+check test "$(jq -r .stratum_password <<<"$card")" = "$seed"
 check test ! -e "$candidate.stratum-password"
 printf 'PROXY_STRATUM_PASSWORD=invalid\n' >"$archive_env"
 fail restore_card_stratum_seed "$candidate" "$archive_env" "$scratch/seed"
-printf 'PROXY_STRATUM_PASSWORD=0123456789abcdef01234567\nPROXY_STRATUM_PASSWORD=0123456789abcdef01234567\n' >"$archive_env"
+printf 'PROXY_STRATUM_PASSWORD=%s\nPROXY_STRATUM_PASSWORD=%s\n' "$seed" "$seed" >"$archive_env"
 fail restore_card_stratum_seed "$candidate" "$archive_env" "$scratch/seed"
 
 # Simulate a mounted target in a private directory. The mount stub restores each fixture.
