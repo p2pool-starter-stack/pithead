@@ -30,14 +30,10 @@ trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at
         [[ "$out" == *"Local miner opt-in is ON"* || "$out" == *"built-in RigForge worker"* ]]
     fi
 }
-# setup on an already deployed box requires a real terminal. Confirm that supported rerun,
-# preserve the hostname at its optional prompt, and decline stack startup. Skip host tuning.
-inputs=$'y\n'
-configured_host=$(jq -r '.dashboard.host // "auto"' config.json)
-if [ "$configured_host" = auto ] || [ -z "$configured_host" ]; then inputs+=$'\n'; fi
-inputs+=$'n\n'
+# Confirm the supported terminal rerun, preserve the hostname, and decline startup.
+# Answer each prompt as it appears: setup's subprocesses may consume pre-fed stdin.
 stage=setup
-out=$(printf '%s' "$inputs" | timeout 300 script -qec './pithead setup --skip-deps --skip-optimize' /dev/null) || {
+out=$(python3 tests/integration/tools/connection-setup-pty.py) || {
     rc=$?
     printf '%s\n' 'connections: diagnostic: failed at setup'
     printf 'connections: diagnostic: setup command exit %s\n' "$rc"

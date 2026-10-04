@@ -10,6 +10,8 @@ trap 'rm -rf -- "$fixture"' EXIT
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/key.pem" -out "$fixture/cert.pem" -days 1 -subj /CN=fixture >/dev/null 2>&1
 printf 'PROXY_TLS_DIR=%s\n' "$fixture" >"$fixture/.env"
 printf '{"dashboard":{"host":"fixture-box"}}\n' >"$fixture/config.json"
+mkdir -p "$fixture/tests/integration/tools"
+cp "$ROOT/tests/integration/tools/connection-setup-pty.py" "$fixture/tests/integration/tools/"
 cat >"$fixture/pithead" <<'FAKE'
 #!/usr/bin/env bash
 env_get() {
@@ -28,6 +30,25 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
         echo 'Initializing Tor service'
         echo 'fixture-secret-must-not-be-retained'
         exit 42
+    fi
+    if [ "$1" = setup ]; then
+        [ -t 0 ] || exit 1
+        read -r -p 'Re-run setup (re-provisions Tor and may modify GRUB)? (y/N): ' answer
+        [ "$answer" = y ] || exit 1
+        if [ "${HANG_SETUP:-0}" = 1 ]; then
+            echo "$$" >setup-child.pid
+            exec sleep 600
+        fi
+        # Model a setup child draining queued answers. Never let a fake that reads nothing
+        # stand in for the real terminal transaction again.
+        python3 -c 'import termios; termios.tcflush(0, termios.TCIFLUSH)'
+        if [ "${SKIP_HOST_PROMPT:-0}" != 1 ]; then
+            read -r -p 'Enter Hostname [fixture-box]: ' answer
+            [ -z "$answer" ] || exit 1
+        fi
+        python3 -c 'import termios; termios.tcflush(0, termios.TCIFLUSH)'
+        read -r -p 'Start Pithead now? (Y/n): ' answer
+        [ "$answer" = n ] || exit 1
     fi
     probe_command=$1
     if [ "$1" = apply ]; then
@@ -50,6 +71,9 @@ probe=$(connection_announcements_snippet)
 (cd "$fixture" && bash -c "$probe") >"$fixture/output" 2>&1
 grep -Fq 'connections: no-change apply matches rendered credentials and preserves env' "$fixture/output"
 echo 'PASS: complete connection probe executes its final assertion'
+rm -f "$fixture/apply-count"
+(cd "$fixture" && SKIP_HOST_PROMPT=1 bash -c "$probe") >"$fixture/output" 2>&1
+echo 'PASS: setup answers the startup prompt when no hostname prompt appears'
 for command in setup up apply no-change; do
     for field in pool password tls miner; do
         rm -f "$fixture/apply-count"
@@ -87,3 +111,20 @@ if grep -q 'fixture-secret' "$fixture/connection-announcements.log"; then
     exit 1
 fi
 echo 'PASS: failed setup retains only the exit code and whitelisted stage labels'
+
+for trial in deadline cancellation; do
+    rm -f "$fixture/setup-child.pid"
+    if [ "$trial" = deadline ]; then
+        (cd "$fixture" && HANG_SETUP=1 python3 tests/integration/tools/connection-setup-pty.py --timeout 2) >"$fixture/output" 2>&1 && rc=0 || rc=$?
+        [ "$rc" = 124 ]
+    else
+        (cd "$fixture" && HANG_SETUP=1 timeout --preserve-status --signal=TERM 2 python3 tests/integration/tools/connection-setup-pty.py) >"$fixture/output" 2>&1 && rc=0 || rc=$?
+        [ "$rc" = 143 ]
+    fi
+    child=$(cat "$fixture/setup-child.pid")
+    if kill -0 "$child" 2>/dev/null; then
+        echo "FAIL: setup child survived $trial" >&2
+        exit 1
+    fi
+    echo "PASS: $trial terminates and reaps the setup child"
+done

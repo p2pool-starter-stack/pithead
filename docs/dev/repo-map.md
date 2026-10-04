@@ -115,6 +115,8 @@ and appliance runs require a reserved host; local selftests do not start a VM.
 Coordinator connection announcements and unchanged-apply miner calls are covered by
 `tests/stack/test-connection-announce.sh`; the lifecycle phase runs
 `tests/integration/lib/run-connection-announcements.sh` against the deployed CLI.
+Its `tests/integration/tools/connection-setup-pty.py` driver answers the real setup prompts
+and bounds the child process and captured output.
 The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
 both local-miner toggles converge without rebooting.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted

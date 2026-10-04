@@ -31,6 +31,8 @@ else echo 0; fi
 FAKE
 chmod +x "$fixture/stack/pithead" "$fixture/bin/systemctl"
 export FIXTURE_ROOT="$fixture" FIXTURE_PARENT_PID=$$ PATH="$fixture/bin:$PATH"
+# The guest sets TMPDIR explicitly; a GitHub unit runner need not have it exported.
+export TMPDIR="$fixture"
 cp "$fixture/original.json" "$fixture/stack/config.json"
 echo active >"$fixture/active"
 bash "$fixture/probe.sh" >"$fixture/output" 2>&1
