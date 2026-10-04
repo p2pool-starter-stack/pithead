@@ -163,7 +163,7 @@ HugePages and P2Pool don't shrink. Full sizing and the per-mode totals are in
 ### How do I know a payout actually arrived?
 
 Give the stack a private view key and it confirms payouts on-chain. Set `monero.view_key` (and for
-Tari, `tari.view_key` + `tari.spend_public_key`) and a view-only wallet scans your local node for
+Tari, `tari.view_key` with a dual-key payout address) and a view-only wallet scans your local node for
 incoming payouts; the dashboard's earnings card then shows confirmed totals beside the estimate,
 and a `payout_confirmed` alert fires once per payout. A view key can see incoming amounts but never
 spend. Payout confirmation needs the local node for that chain: a view key set alongside

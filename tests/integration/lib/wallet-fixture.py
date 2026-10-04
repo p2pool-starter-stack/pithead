@@ -8,10 +8,12 @@ import shlex
 import stat
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
-from pathlib import Path, PurePosixPath
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from wallet_archive import archive_command, manifest  # noqa: E402
 
 WALLET_DIR = "/home/ubuntu/wallets"
 VOLUME = "pithead_wallet_data"
@@ -68,32 +70,6 @@ def stream_digest(stream):
 def digest(path):
     with path.open("rb") as stream:
         return stream_digest(stream)
-
-
-def manifest(path):
-    result = {}
-    size = 0
-    with tarfile.open(path, "r|") as archive:
-        for member in archive:
-            name = PurePosixPath(member.name)
-            if name.is_absolute() or ".." in name.parts or not member.isfile():
-                raise ValueError("unsafe wallet archive member")
-            name = str(name)
-            # ponytail: cap fixture contents at 2 GiB; raise only for measured larger caches.
-            size += member.size
-            if size > 2 * 1024**3:
-                raise ValueError("wallet fixture archive is too large")
-            if name in result or member.uid != 1000 or member.gid != 1000 or member.mode != 0o600:
-                raise ValueError("unexpected wallet archive ownership or mode")
-            stream = archive.extractfile(member)
-            if stream is None:
-                raise ValueError("unreadable wallet archive member")
-            result[name] = [member.mode, member.size, stream_digest(stream)]
-    if set(result) != {"payout-wallet", "payout-wallet.keys"} or not all(
-        value[1] for value in result.values()
-    ):
-        raise ValueError("wallet archive must contain only the prepared cache and keys")
-    return result
 
 
 def wallet_container(allowed):
@@ -284,7 +260,7 @@ def capture(baseline):
             raise ValueError("source wallet has no graceful save proof")
         archive = directory / "wallet.tar"
         with archive.open("xb") as stream:
-            command = f"test ! -e {WALLET_DIR}/.payout-scanning && tar -C {WALLET_DIR} -cf - payout-wallet payout-wallet.keys"
+            command = f"test ! -e {WALLET_DIR}/.payout-scanning && " + archive_command(WALLET_DIR)
             docker(*helper(item["Image"], True, directory, "capture"), command, stdout=stream)
             stream.flush()
             os.fsync(stream.fileno())
@@ -383,7 +359,7 @@ def restore(directory, baseline, branch):
         raise ValueError("wallet consumer restarted before fixture import")
     state["stage"] = "restoring"
     write_state(directory, state)
-    command = f"find {WALLET_DIR} -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} + && tar -C {WALLET_DIR} --no-same-owner -xf - && sync {WALLET_DIR}/payout-wallet {WALLET_DIR}/payout-wallet.keys {WALLET_DIR}"
+    command = f"find {WALLET_DIR} -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} + && tar -C {WALLET_DIR} --no-same-owner -xf - && find {WALLET_DIR} -maxdepth 1 -type f -exec sync {{}} + && sync {WALLET_DIR}"
     with (directory / "wallet.tar").open("rb") as stream:
         docker(
             *helper(state["image"], False, directory, "import"),
@@ -395,7 +371,7 @@ def restore(directory, baseline, branch):
     with check.open("wb") as stream:
         docker(
             *helper(state["image"], True, directory, "verify"),
-            f"tar -C {WALLET_DIR} -cf - payout-wallet payout-wallet.keys",
+            archive_command(WALLET_DIR),
             stdout=stream,
         )
     if manifest(check) != state["contents"]:

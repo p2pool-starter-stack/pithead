@@ -1,3 +1,4 @@
+# shellcheck shell=bash disable=SC2034
 # Public synthetic vectors: private scalars 1 and 2; no funds use these keys.
 # Edwards encodings and Ristretto encodings agree with RFC 8032 / RFC 9496 vectors.
 PAYOUT_VIEW1=0100000000000000000000000000000000000000000000000000000000000000

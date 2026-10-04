@@ -98,6 +98,7 @@ parse_and_validate_config() {
         fi
         case "$PAYOUT_SCAN_HEIGHT" in
         '' | auto) ;;
+        *[!0-9]*) error "monero.payout_scan_height must be \"auto\" or a block height (integer)." ;;
         *) ;;
         esac
         PAYOUT_CONFIRM_ENABLED=true

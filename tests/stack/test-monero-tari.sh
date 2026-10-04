@@ -278,7 +278,6 @@ assert_contains "malformed view-key message" "$out" "64-character hex"
 
 echo "== black-box: Tari payout confirmation view key (#462) =="
 # Tari's local view and spend keys enable tari_payout_confirm and its view-only wallet.
-# The secret file is 600; the view key never appears in apply output. Dummy keys avoid gitleaks.
 TVIEW="$PAYOUT_VIEW1"
 TSPEND="$PAYOUT_TARI_PUBLIC1"
 # (1) OFF by default: no view key or tari-wallet profile.
@@ -327,8 +326,7 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "malformed tari view key rejected" "$?" "1"
 assert_contains "malformed tari view-key message" "$out" "64-character hex"
-# (5) A spend key PRESENT but malformed (not 64 hex) is rejected — the require-both check keys off
-# the same 64-hex shape as the view key, so a garbage spend key fails just like a missing one (#523).
+# (5) An explicit spend key must match the address.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"deadbeef"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"

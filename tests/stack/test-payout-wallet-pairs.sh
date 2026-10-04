@@ -1,8 +1,10 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034
 : "${STACK_SUITE:?source via tests/stack/run.sh}"
 # Payout identities, matching keys and migration use the real CLI and entrypoints.
 # shellcheck source=tests/integration/fixtures/payout-pairs.sh
 source "$ROOT/tests/integration/fixtures/payout-pairs.sh"
+
+echo "== payout wallets: matching keys, retained identities and legacy adoption =="
 
 for chain in monero tari; do
     for k in 1 2; do
@@ -55,6 +57,13 @@ jq 'del(.tari.view_key)' "$V/config.json" >"$V/candidate"
 mv "$V/candidate" "$V/config.json"
 out="$(pair_apply)"
 assert_rc "single-key Tari mining remains accepted without confirmation" "$?" 0
+
+pair_config
+jq '.monero.payout_scan_height="123oops"' "$V/config.json" >"$V/candidate"
+mv "$V/candidate" "$V/config.json"
+out="$(pair_apply)"
+assert_rc "Monero scan height rejects a numeric prefix followed by text" "$?" 1
+assert_contains "invalid Monero height names the field" "$out" monero.payout_scan_height
 
 # Exercise real startup with stub binaries, preserving each wallet's recorded progress.
 PB="$SANDBOX/pair-bin" PD="$SANDBOX/pair-wallets"
@@ -118,7 +127,12 @@ for chain in monero tari; do
     first="$(cat "$PD/path")" first_inode="$(/usr/bin/stat -c %i "$(cat "$PD/path")")"
     assert_eq "$chain first pair creates" "$(cat "$PD/action")" create
     if [ "$chain" = monero ]; then assert_eq 'auto Monero starts 100 blocks behind tip' "$(cat "$first")" 3200000; fi
+    touch -t 200001010000.00 "$dir/.payout-scanning"
+    age="$(/usr/bin/stat -c %Y "$dir/.payout-scanning")"
+    pair_start "$chain" 1 "$dir"
+    assert_eq "$chain same-pair restart preserves scan grace age" "$(/usr/bin/stat -c %Y "$dir/.payout-scanning")" "$age"
     pair_start "$chain" 2 "$dir"
+    assert_eq "$chain switching pairs starts new scan grace" "$([ "$(/usr/bin/stat -c %Y "$dir/.payout-scanning")" -gt "$age" ] && echo yes)" yes
     assert_eq "$chain changed pair creates a separate wallet" "$(cat "$PD/action")" create
     assert_eq "$chain old wallet kept" "$([ -f "$first" ] && echo yes)" yes
     pair_start "$chain" 1 "$dir"
@@ -146,3 +160,15 @@ for chain in monero tari; do
 done
 PAIR_NODE_DOWN=1 pair_start monero 1 "$PD/down"
 assert_rc 'fresh auto wallet refuses an unavailable node without genesis fallback' "$?" 1
+
+for field in MONERO_VIEW_KEY TARI_VIEW_KEY; do
+    preview="$(run_sourced "$SANDBOX" describe_change "$field" "$PAYOUT_VIEW1" "$PAYOUT_VIEW2")"
+    assert_contains "$field preview promises retained previous wallet" "$preview" 'a new view-only wallet is opened for this address (the previous one is kept)'
+    assert_not_contains "$field preview no longer promises a rescan" "$preview" rescans
+    assert_not_contains "$field preview hides the view key" "$preview" "$PAYOUT_VIEW2"
+done
+
+assert_eq "Monero explicit leading-zero height becomes valid JSON integer" \
+    "$(PAYOUT_SCAN_HEIGHT=00042 PITHEAD_TEST_SOURCE=1 bash -c 'source "$1"; resolve_scan_height' _ "$ROOT/build/monero/wallet-entrypoint.sh")" 42
+assert_eq "Monero explicit all-zero height becomes genesis zero" \
+    "$(PAYOUT_SCAN_HEIGHT=000 PITHEAD_TEST_SOURCE=1 bash -c 'source "$1"; resolve_scan_height' _ "$ROOT/build/monero/wallet-entrypoint.sh")" 0

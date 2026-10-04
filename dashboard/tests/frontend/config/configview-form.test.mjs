@@ -273,3 +273,16 @@ test("payout form asks only for Tari's view key; the spend key is derived from i
   assert.match(out, /view_key/);
   assert.doesNotMatch(out, /config-field-name">[^<]*spend_public_key/);
 });
+
+
+test("changing Tari's address clears an inherited spend key but preserves a JSON override", () => {
+  const cfg = { tari: { wallet_address: "old", spend_public_key: "old-key", view_key: "" } };
+  const field = { key: "tari.wallet_address", type: "string" };
+  const inst = readyView(cfg, []);
+  inst.onFieldEdit(field, "new");
+  assert.equal(inst.state.candidate.tari.spend_public_key, "");
+  const explicit = readyView(cfg, []);
+  explicit.state.candidate.tari.spend_public_key = "new-explicit-key";
+  explicit.onFieldEdit(field, "new");
+  assert.equal(explicit.state.candidate.tari.spend_public_key, "new-explicit-key");
+});

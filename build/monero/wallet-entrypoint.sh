@@ -8,6 +8,7 @@
 # same as monerod's RPC creds). Each address/key pair keeps a wallet in the named volume. Reverting a pair reopens
 # its saved scan progress. New wallets use PAYOUT_SCAN_HEIGHT or the local tip minus 100 blocks.
 set -eu
+umask 077
 
 WALLET_DIR="${WALLET_DIR:-/home/ubuntu/wallets}"
 WALLET_FILE="" # selected after the test-source guard
@@ -40,7 +41,7 @@ resolve_scan_height() {
         echo "Invalid payout scan height." >&2
         return 1
         ;;
-    *) printf '%s\n' "$want" ;;
+    *) printf '%s\n' "$want" | sed 's/^0*//; s/^$/0/' ;;
     esac
 }
 
