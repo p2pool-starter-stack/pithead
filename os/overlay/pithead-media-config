@@ -99,13 +99,13 @@ media_find_config() {
 # chose — and unset the appliance defaults (dashboard.control.enabled, tor.auto_heal) while
 # regenerating node credentials on every apply. Naming a key still changes it, so the channel's
 # can-change-ANY-setting contract holds. When either side does not parse as an object the
-# stick's file goes to validation as-is: a malformed stick gets the validator's real error, and
+# stick's settings go to validation without its stamp: malformed bytes reach the validator, and
 # a corrupt running config cannot block the recovery path. Prints the merged scratch path.
 media_merge_config() { # <running-json> <candidate-json>
     local out
     out=$(mktemp) || return 1
     if ! jq -s '.[0] * (.[1] | del(.config_version))' "$1" "$2" >"$out" 2>/dev/null; then
-        jq 'del(.config_version)' "$2" >"$out" 2>/dev/null || {
+        jq 'if type == "object" then del(.config_version) else . end' "$2" >"$out" 2>/dev/null || cp "$2" "$out" || {
             rm -f "$out"
             return 1
         }

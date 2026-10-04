@@ -2,8 +2,9 @@
 : "${STACK_SUITE:?source through tests/stack/run.sh}"
 echo "== unit: control carries the live config version =="
 cp "$ROOT/VERSION" "$C/VERSION"
-seed_control_env
 control_config main
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+assert_rc "version control baseline renders" "$?" 0
 jq '.config_version="2.0.0"' "$C/config.json" >"$C/with-version"
 mv "$C/with-version" "$C/config.json"
 CV_ID=88888888-8888-4888-8888-888888888888
@@ -26,3 +27,5 @@ jq --arg id "$CV_ID" '{id:$id,action:"preview",actor:"admin",config:(.config_ver
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead control-run-pending >/dev/null 2>&1)
 assert_eq "unstamped live file ignores supplied stamp" "$(jq 'has("config_version")' "$STAGED/$CV_ID.json")" false
 rm -f "$RESULTS/$CV_ID.json" "$STAGED/$CV_ID.json"
+control_config mini
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)

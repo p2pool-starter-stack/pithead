@@ -8,6 +8,7 @@ source "$HERE/lib.sh"
 source "$HERE/lib/live-gates.sh"
 # shellcheck disable=SC2034 # read by the sourced assertion helper
 UPGRADE_CANDIDATE_DIR=/candidate
+echo "== unit: configuration version upgrade proof =="
 rx() {
     case "$1" in
     *jq*) printf '%s' "$TEST_STAMP" ;;

@@ -95,3 +95,12 @@ out=$(
 )
 assert_eq "USB diff shows only real setting" "$out" "  p2pool.pool: mini -> main"
 rm -f "$merged"
+
+# Recovery from an unreadable running config still ignores the stick's stamp.
+merged=$(
+    source "$ROOT/os/overlay/pithead-media-config"
+    media_merge_config "$CV/no-running-config" "$CV/media-candidate"
+)
+assert_eq "USB recovery drops supplied stamp" "$(jq 'has("config_version")' "$merged")" false
+assert_eq "USB recovery retains real setting" "$(jq -r .p2pool.pool "$merged")" main
+rm -f "$merged"
