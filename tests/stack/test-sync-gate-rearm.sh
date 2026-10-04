@@ -72,6 +72,5 @@ assert_eq "the failed re-arm is kept for the retry" "$(cat "$V/.env.apply-incomp
 assert_eq "the planted directory is untouched" "$(ls "$RG_MARK")" keep
 rm -rf "$RG_MARK" "$V/.env.apply-incomplete"
 
-for RG_KEY in TARI_MODE TARI_GRPC_ADDRESS; do
-    assert_contains "Tari preview explains continued Monero mining ($RG_KEY)" "$(run_sourced "$SANDBOX" describe_change "$RG_KEY" off local)" "Monero mining continues; merge-mining starts when Tari has synced"
-done
+assert_contains "Tari mode preview explains continued Monero mining" "$(run_sourced "$SANDBOX" describe_change TARI_MODE off local)" "Monero mining continues; merge-mining starts when Tari has synced"
+assert_contains "Tari endpoint preview explains continued Monero mining" "$(run_sourced "$SANDBOX" describe_change TARI_GRPC_ADDRESS old.example:18142 new.example:18142)" "Monero mining continues; merge-mining starts when Tari has synced"

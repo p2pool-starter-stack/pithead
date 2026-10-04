@@ -50,6 +50,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
         telemetry_rows_diff() { :; }
         run_source_image_reconcile() { :; }
+        run_tari_background_sync() { :; } # driven by its own runtime leg and selftest
+        tor_recovery_healthy_probe() { :; }
         run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
