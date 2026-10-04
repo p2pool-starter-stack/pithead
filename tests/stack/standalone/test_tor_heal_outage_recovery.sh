@@ -7,6 +7,8 @@ WORK=$(mktemp -d "${TMPDIR:?}/pithead-tor-heal-outage.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+# shellcheck source=lib/pithead/22a-config-document.sh
+source "$ROOT/lib/pithead/22a-config-document.sh"
 # shellcheck source=lib/pithead/49-control-request-loop.sh
 source "$ROOT/lib/pithead/49-control-request-loop.sh"
 echo "== tor-recover accepts a sustained heal outage on a synchronized Monero =="

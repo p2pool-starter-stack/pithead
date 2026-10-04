@@ -194,6 +194,8 @@ grep -q '^SIGNAL NEWNYM' "$WORK/signal"
 [ "$(cat "$WORK/signal-result")" = 'NEWNYM accepted' ]
 
 # The dashboard can request only the fixed circuit signal; the host validates the shape.
+# shellcheck source=lib/pithead/22a-config-document.sh
+source "$ROOT/lib/pithead/22a-config-document.sh"
 # shellcheck source=lib/pithead/49-control-request-loop.sh
 source "$ROOT/lib/pithead/49-control-request-loop.sh"
 control_write_result() { printf '%s\n' "$3" >"$WORK/result"; }
