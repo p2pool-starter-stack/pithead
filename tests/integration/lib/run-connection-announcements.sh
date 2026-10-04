@@ -5,7 +5,8 @@ connection_announcements_snippet() {
 set -Eeuo pipefail
 source ./pithead
 stage=initialization
-trap 'printf "connections: diagnostic: failed at %s\n" "$stage" >&2' ERR
+# EXIT alone preserves the integration harness's abort/unwind contract.
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at %s\n" "$stage" >&2; fi' EXIT
     check_output() {
     local out=$1 bind host secret fp dir
     bind=$(env_get STRATUM_BIND)
