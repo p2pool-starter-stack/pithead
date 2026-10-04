@@ -81,8 +81,7 @@ and 2–11 need one machine each) and the rest of [What you need](#what-you-need
 the second appliance. Where this order differs from the section order below, this order wins.
 Sessions 1–13 run before the soak; session 14 starts it. Times are hands-on time plus the waits you
 cannot shorten. Test files are named by role: the RC image, the RC update bundle, the good
-higher-version test bundle, the broken (health-gate fault) test bundle and the floor-fallback test
-bundle.
+higher-version test bundle and the broken (health-gate fault) test bundle.
 
 | # | Session | About | Steps | Needs |
 |---|---|---|---|---|
@@ -93,7 +92,7 @@ bundle.
 | 5 | Change it | 3 h | 6.1–6.10, 7.1–7.9 | Upgrade box, the second Monero QA wallet, a single-key Tari address, the Monero GUI wallet and Tari Universe |
 | 6 | Alerts and Tor | 4 h | 8.1–8.7, 9.1–9.8, and 9.6a's DIY half | Upgrade box, test bot, Tor Browser |
 | 7 | Soak appliance: install | 4 h and 30 min of provisioning | 13.1–13.9 (not 13.6a), 13.7a, 13.8a, 13.20 | The RC image, 16 GB stick, soak appliance, a second disk, laptop |
-| 8 | Soak appliance: updates and power | 4 h | 13.10–13.12a, 13.19 | The good higher-version test bundle (the RC update bundle if you have none), the broken test bundle, the floor-fallback test bundle, the debug SSH key |
+| 8 | Soak appliance: updates and power | 4 h | 13.10–13.12, 13.19 | The good higher-version test bundle (the RC update bundle if you have none), the broken test bundle, the debug SSH key |
 | 9 | DIY node modes and backups | 4 h, once the fresh box has synced | 1.12, 1.13, 10.1–10.7, 11.1–11.5 | Fresh box, upgrade box, a miner |
 | 10 | Second appliance | 7 h | 13.1–13.8 with 13.6a, then 9.6a, 13.15–13.18, 13.21–13.25, 15.1, 15.2 | The RC image, restore PC, second stick, laptop |
 | 11 | Backup and restore (M15) | 4 h | 13.13, 13.14, 15.3 on the restore PC, then 13.14a | Soak appliance, restore PC, upgrade box (down for 13.14a), the plain 1.x backup |
@@ -120,7 +119,7 @@ appliance but the daily probe. After publishing: 12.1–12.3 and [After publishi
 | **Phone** | For the narrow-screen check and Telegram, with Tor Browser (or Orbot) for S7. |
 | **QA wallets** | A Monero wallet used only for QA: its **primary** address (starts with `4`, 95 characters), one **subaddress** from it (starts with `8`), and its private view key (the Monero GUI calls it *Secret view key*). A second Monero QA wallet: its primary address and private view key, for the payout-change steps (6.4, 6.4a, 7.5). A Tari **mainnet** QA wallet with a dual-key address, which is what Tari Universe creates: its address and private view key. The public spend key is read from the address, so no spend key is needed (#3096). A single-key Tari address (about 46 characters, never funded) for the refusal in 6.4b. The two QA wallets should open in the official Monero GUI wallet and Tari Universe, for the view-key docs walk in 7.9. Payouts go here, so never use a real person's or a donation address. |
 | **Telegram test bot** | A bot made with @BotFather, its token, and the chat id of a test chat. See [Telegram](../telegram.md). |
-| **Release artifacts** | The candidate's full commit SHA, the previous release tag, and for the appliance: the RC image (the candidate's debug image; the release `.img.xz` with its `.sha256` joins it at GA), the RC update bundle (the candidate's own `.raucb`), the good higher-version test bundle (a debug-variant `.raucb` with a higher version), the broken (health-gate fault) test bundle M9 describes (also debug-variant, with a version above the good one), the floor-fallback test bundle (a debug-variant `.raucb` that declares a data migration and carries a version no release will carry, for 13.12a), and the bench SSH key for debug images, kept in the private handoff ([appliance-release.md](appliance-release.md)). |
+| **Release artifacts** | The candidate's full commit SHA, the previous release tag, and for the appliance: the RC image (the candidate's debug image; the release `.img.xz` with its `.sha256` joins it at GA), the RC update bundle (the candidate's own `.raucb`), the good higher-version test bundle (a debug-variant `.raucb` with a higher version), the broken (health-gate fault) test bundle M9 describes (also debug-variant, with a version above the good one), and the bench SSH key for debug images, kept in the private handoff ([appliance-release.md](appliance-release.md)). |
 
 Reserve shared machines before you start: see [Reserve the hardware](#reserve-the-hardware).
 
@@ -954,17 +953,17 @@ Run on the **appliance box**. Each step names the battery row it serves (M1–M1
 [the appliance guide](../appliance.md) as a user would, and file anything you had to know rather
 than read.
 
-Steps 13.10–13.12a copy update bundles to the box over SSH, which only the debug image has (see
+Steps 13.10–13.12 copy update bundles to the box over SSH, which only the debug image has (see
 [Know which image you are holding](#know-which-image-you-are-holding)). Before 13.10, write the
 debug image to the stick with the 13.1 commands (skip the `sha256sum` line if the debug image has
 no `.sha256` file), boot the box from it, choose the same disk, and pick **Keep everything**. Reach it as `root` over SSH with the bench key from
-the private handoff. After 13.12a, write the release image to the stick and reinstall the same
+the private handoff. After 13.12, write the release image to the stick and reinstall the same
 way. Everything else runs on the release
 image. The dashboard's own update path checks for
 the latest *published* release, so it is tested after publishing, in 12.3. On a debug release
 candidate, [the preface below](#testing-a-debug-rc-on-the-soak-box) overrides this paragraph:
 every step already runs on the debug image, so there is no reinstall before 13.10 and none after
-13.12a.
+13.12.
 
 The appliance's command line runs as `cd /data/pithead && ./pithead <verb>`, at the console or
 over SSH. `/opt/pithead/pithead` changes into its own read-only directory before it reads
@@ -978,7 +977,7 @@ soak probe scores one boot, flat container restarts, every day-0 container runni
 and exactly one SSH login a day, its own. Anything else spends a soak day.
 
 - **The image.** No release image exists before GA, so every appliance step runs on the debug
-  image. Skip the instruction above to write the release image after 13.12a, and record the variant
+  image. Skip the instruction above to write the release image after 13.12, and record the variant
   (debug, and its commit) on every M row. `verify-image.sh` without `--test`, the release-keyring
   checks and "Signing must be ON" in [Cutting](#cutting) refuse a debug image by design: record
   them N/A here. They run at GA against the release artifacts.
@@ -989,12 +988,12 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   its IPv4 address and both chain heights. If the box has a stratum password, keep it from
   `grep PROXY_STRATUM_PASSWORD /data/pithead/.env` in the private handoff, for 4.x and 14.1 (see
   13.8). The machine name replaces `pithead` in every `pithead.local` address below.
-- **Before `--start`: the hardware battery.** Run M1–M10 (13.1–13.12a and 13.19; M5, in 13.18,
+- **Before `--start`: the hardware battery.** Run M1–M10 (13.1–13.12 and 13.19; M5, in 13.18,
   may run on the second appliance instead). Cut power (M8 in 13.11, M10 in 13.19) only before the
   window opens. M15 (13.13 and 13.14) runs before `--start`
   or after day 7, never inside the window. The Tor drill (9.6a) runs on either appliance, before
   `--start` only. After 13.7, and again after each reboot in
-  13.10–13.12a, wait until the dashboard's Tari card shows progress before the next reboot,
+  13.10–13.12, wait until the dashboard's Tari card shows progress before the next reboot,
   boot-menu test or power cut: a disk that kept its chains may hold a Tari database that migrates
   on its first start, for hours, and an interrupted migration loses it (see 2.3a). M8 and M10
   never run while Tari reads loading.
@@ -1018,7 +1017,7 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   agent and operator sessions (tell them the box is held); any reboot or power cut, the boot-menu
   reboot (13.9) included; `down` and `up` (5.7); the dashboard upgrade (12.2); any
   Configuration commit, benign ones included (7.1a, 7.2–7.6, 7.9, 13.8a, 13.15, 13.21, 13.22,
-  13.24, Telegram setup); **Back up now** (13.13); OS updates (12.3, 13.10–13.12a); the Tor drill
+  13.24, Telegram setup); **Back up now** (13.13); OS updates (12.3, 13.10–13.12); the Tor drill
   (9.6a); inserting a USB stick (13.17, 13.18, 13.23); adopting a rig (14.2); renames and resets
   (15.x); S6 and S8.
 - **On a second appliance.** Flash the restore PC with the same debug RC and give it a machine
@@ -1156,24 +1155,9 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   `bad` (it commits after its health check, about 3 minutes into the boot). Then run
   `rauc status mark-bad booted && reboot`. Expect: the machine comes back on the other slot, on a
   good version, with the dashboard serving.
-- [ ] **13.12a A migrating update that fails its gate gives the `/data` floor back (#1393).**
-  Before `--start` only. Needs the floor-fallback test bundle: a debug-variant bundle that
-  declares a data migration and carries a version no release will carry, so its slot cannot bring
-  the stack up. The free-space refusal from 13.10 can apply here too. Do: over SSH, note
-  `cat /data/pithead/.os-data-floor` (it may be absent). Install the bundle with
-  `cd /data/pithead && ./pithead os-update <bundle>`, and before any reboot run
-  `cat /data/pithead/.os-data-floor /data/pithead/.os-data-floor.prev /data/pithead/.os-migration-pending`.
-  Reboot with the command os-update printed, touch nothing, and give the box up to 30 minutes to
-  answer. Then run `rauc status`, `cat /data/pithead/.os-data-floor`,
-  `ls /data/pithead/.os-migration-pending` and
-  `journalctl -u pithead-boot -b | grep 'the /data floor is back to'`. Finally install the good
-  13.10 bundle again with os-update. Expect: before the reboot, the floor reads the failing
-  bundle's version, `.os-data-floor.prev` holds the floor you noted (`none` if there was none)
-  and `.os-migration-pending` holds the failing bundle's version. After the reboot, with nobody
-  touching the box, it runs the slot it ran before, the failing slot is not committed, the floor
-  is back to the value you noted, `.os-migration-pending` is gone, and the journal line starts
-  `pithead-boot: the data migration never ran`. The good bundle then installs with no floor
-  refusal.
+  The `/data` floor fallback after a migrating update fails its gate (#1393) is not hand-run:
+  the KVM battery's floor-fallback leg (`tests/os/data-floor-fallback-leg.sh`) proves it on the
+  candidate's commit at every gate.
 - [ ] **13.13 Backup (M15, first half).** Do: write down the payout address, the onion address and
   the time. In **Backup**, click **Back up now** and save both downloads: the archive and its
   emergency kit. Expect: the dashboard disconnects briefly and comes back.
