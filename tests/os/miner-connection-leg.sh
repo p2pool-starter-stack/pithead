@@ -30,8 +30,14 @@ phase_miner_connection_installed() { # <hand-off>
     else
         bad "installed Connect a miner credentials are not cached (#3092)"
     fi
-    password=$(_ssh "sed -n 's/^PROXY_STRATUM_PASSWORD=//p' /data/pithead/.env")
-    password_mode=$(_ssh "jq -r '.p2pool.stratum_password // \"\"' /data/pithead/config.json")
+    password=$(_ssh "sed -n 's/^PROXY_STRATUM_PASSWORD=//p' /data/pithead/.env") || {
+        bad "installed stratum password state is readable (#3092)"
+        return 1
+    }
+    password_mode=$(_ssh "jq -r '.p2pool.stratum_password // \"\"' /data/pithead/config.json") || {
+        bad "installed stratum password configuration is readable (#3092)"
+        return 1
+    }
     expected=$(jq -r '.stratum_password' <<<"$card")
     tls=$(jq -r '.stratum_tls' <<<"$card")
     if [ "$tls" = true ]; then
@@ -42,7 +48,7 @@ phase_miner_connection_installed() { # <hand-off>
         }
     fi
     if [ "$password" = "$expected" ] && [ "$fingerprint" = "$(jq -r '.stratum_fingerprint' <<<"$card")" ] &&
-        { [ -z "$expected" ] && [ "$password_mode" = "" ] || [ -n "$expected" ] && [ "$password_mode" = auto ]; }; then
+        { [ "$password_mode" = "$expected" ] || { [ -n "$expected" ] && [ "$password_mode" = auto ]; }; }; then
         ok "hand-off password and TLS identity survive setup and installation (#3092)"
     else
         bad "hand-off password and TLS identity survive setup and installation (#3092)"
