@@ -4,7 +4,7 @@ connection_announcements_snippet() {
     cat <<'PROBE'
 set -Eeuo pipefail
 source ./pithead
-check_output() {
+    check_output() {
     local out=$1 bind host secret fp dir
     bind=$(env_get STRATUM_BIND)
     case "$bind" in
