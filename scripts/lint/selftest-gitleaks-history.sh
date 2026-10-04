@@ -139,23 +139,36 @@ expect_finding "$COPY:$BACKUP:generic-api-key:$LINE" git "$SANDBOX/backup-repo" 
     --log-opts="$COPY^..$COPY"
 echo 'PASS: moved archive fixture accepted; other paths, prefixes and changed lines detected'
 
-# Stratum seed exceptions bind only the original commits; removing one must expose its finding,
-# and the identical literal copied into another commit must still fail the required scan.
-STRATUM_COMMIT=be95cee9f654b55eff157c89350913921fdb23ab
+# Stratum seed exceptions bind only one commit/path/line, including after squash merges.
+# Derive the original deterministic fixture instead of depending on unmerged branch objects.
 STRATUM_FILE=tests/os/selftest-miner-connection.sh
-STRATUM_FINDING="$STRATUM_COMMIT:$STRATUM_FILE:generic-api-key:69"
-sed "\|^$STRATUM_FINDING$|d" "$ROOT/.config/gitleaksignore" >"$SANDBOX/without-stratum.ignore"
-expect_finding "$STRATUM_FINDING" git "$ROOT" "${ARGS[@]}" \
-    --gitleaks-ignore-path "$SANDBOX/without-stratum.ignore" --log-opts="$STRATUM_COMMIT^..$STRATUM_COMMIT"
-scan git "$ROOT" "${ARGS[@]}" --gitleaks-ignore-path "$ROOT/.config/gitleaksignore" \
-    --log-opts="$STRATUM_COMMIT^..$STRATUM_COMMIT"
+STRATUM_SEED=$(printf '%x' {0..15} {0..7})
 git init -q "$SANDBOX/stratum-repo"
 mkdir -p "$SANDBOX/stratum-repo/$(dirname "$STRATUM_FILE")"
-git -C "$ROOT" show "$STRATUM_COMMIT:$STRATUM_FILE" | sed -n '69p' >"$SANDBOX/stratum-repo/$STRATUM_FILE"
+printf 'PROXY_STRATUM_PASSWORD=%s\n' "$STRATUM_SEED" >"$SANDBOX/stratum-repo/$STRATUM_FILE"
+git -C "$SANDBOX/stratum-repo" add "$STRATUM_FILE"
+git -C "$SANDBOX/stratum-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false commit -qm 'Synthetic stratum seed negative control'
+COPY=$(git -C "$SANDBOX/stratum-repo" rev-parse HEAD)
+STRATUM_FINDING="$COPY:$STRATUM_FILE:generic-api-key:1"
+expect_finding "$STRATUM_FINDING" git "$SANDBOX/stratum-repo" "${ARGS[@]}" \
+    --gitleaks-ignore-path "$ROOT/.config/gitleaksignore" --log-opts=HEAD
+cp "$ROOT/.config/gitleaksignore" "$SANDBOX/with-stratum.ignore"
+printf '%s\n' "$STRATUM_FINDING" >>"$SANDBOX/with-stratum.ignore"
+scan git "$SANDBOX/stratum-repo" "${ARGS[@]}" \
+    --gitleaks-ignore-path "$SANDBOX/with-stratum.ignore" --log-opts=HEAD
+sed "\|^$STRATUM_FINDING$|d" "$SANDBOX/with-stratum.ignore" >"$SANDBOX/without-stratum.ignore"
+expect_finding "$STRATUM_FINDING" git "$SANDBOX/stratum-repo" "${ARGS[@]}" \
+    --gitleaks-ignore-path "$SANDBOX/without-stratum.ignore" --log-opts=HEAD
+git -C "$SANDBOX/stratum-repo" rm -q "$STRATUM_FILE"
+git -C "$SANDBOX/stratum-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false commit -qm 'Remove synthetic stratum fixture'
+mkdir -p "$SANDBOX/stratum-repo/$(dirname "$STRATUM_FILE")"
+printf 'PROXY_STRATUM_PASSWORD=%s\n' "$STRATUM_SEED" >"$SANDBOX/stratum-repo/$STRATUM_FILE"
 git -C "$SANDBOX/stratum-repo" add "$STRATUM_FILE"
 git -C "$SANDBOX/stratum-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
     -c commit.gpgsign=false commit -qm 'Copied stratum seed negative control'
 COPY=$(git -C "$SANDBOX/stratum-repo" rev-parse HEAD)
 expect_finding "$COPY:$STRATUM_FILE:generic-api-key:1" git "$SANDBOX/stratum-repo" "${ARGS[@]}" \
-    --gitleaks-ignore-path "$ROOT/.config/gitleaksignore" --log-opts=HEAD
-echo 'PASS: historical stratum fixture ignored; missing exception and later copy detected'
+    --gitleaks-ignore-path "$SANDBOX/with-stratum.ignore" --log-opts="$COPY^..$COPY"
+echo 'PASS: exact stratum fixture ignored; missing exception and later copy detected'
