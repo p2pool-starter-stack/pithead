@@ -340,7 +340,7 @@ def _diff_config_keys(old, new):
     _flatten_config_keys(new, new_flat)
     changed = set(old_flat) ^ set(new_flat)  # added or removed entirely
     changed |= {k for k in old_flat.keys() & new_flat.keys() if old_flat[k] != new_flat[k]}
-    return sorted(k for k in changed if k != "config_version" and not k.startswith("config_version."))
+    return sorted(k for k in changed if k.split(".", 1)[0] != "config_version")
 
 
 def _parse_audit_ts(ts) -> float | None:
