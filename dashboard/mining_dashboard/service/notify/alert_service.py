@@ -47,9 +47,8 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesM
     It *consumes* signals the loop already computes rather than re-collecting anything:
 
     - **node down / recovered** — transitions of ``NodeHealthMonitor``'s debounced ``down``
-      flag per node (#31). Tari is only alerted when it's treated as required; a non-blocking
-      Tari going down isn't operator-critical (we keep mining Monero), matching the
-      worker-rejection rule.
+      flag per node (#31). A configured Tari node alerts independently of the required
+      policy; optional Tari keeps workers mining Monero during its outage.
     - **node out of sync / back in sync** — the debounced peer-loss strand (#972): monerod
       reachable and healthy-looking but reporting ``synchronized: false`` past the stale
       threshold (a tor restart kills its SOCKS peers and it doesn't re-dial). Rides the
@@ -255,12 +254,8 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesM
         alerts += self._node_edges("Monero", monero_down, "_prev_monero_down")
         alerts += self._stale_edges(monero_stale)
         alerts += self._monero_health_edges(monero_health)
-        if tari_required:
-            alerts += self._node_edges("Tari", tari_down, "_prev_tari_down")
-        else:
-            # Keep the baseline current while Tari is non-blocking, so flipping it back to
-            # required later doesn't fire a stale edge from a state we never alerted on.
-            self._prev_tari_down = tari_down
+        # Required controls worker failover, never whether a Tari outage alerts.
+        alerts += self._node_edges("Tari", tari_down, "_prev_tari_down")
 
         # --- Sync finished (one-shot when the gate first opens) ---
         if self._prev_released is None:

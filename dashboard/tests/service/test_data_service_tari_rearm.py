@@ -114,3 +114,35 @@ def test_full_reset_revokes_background_policy(tmp_path, monkeypatch):
     monkeypatch.setattr(ds_mod, "SYNC_GATE_RESET_PATH", str(marker))
     svc = service({"miner_released": True, "sync_gate_monero_only": True})
     assert not svc.sync_gate_monero_only
+
+
+@pytest.mark.parametrize("phase", ["starting", "migrating", "syncing"])
+async def test_earned_tari_rearm_preserves_required_node_failover(tmp_path, monkeypatch, phase):
+    marker = tmp_path / "sync-gate-reset"
+    marker.write_text("tari-only\n")
+    monkeypatch.setattr(ds_mod, "SYNC_GATE_RESET_PATH", str(marker))
+    svc = service({"miner_released": True})
+    now = [0]
+    svc.tari_health._clock = svc.monero_health._clock = lambda: now[0]
+    progress = dict(TARI_SYNCING)
+    if phase != "syncing":
+        progress["initializing"] = phase
+    for tick in (0, 901, 9600):
+        now[0] = tick
+        await _Loop()._iterate(svc, progress, monero_sync=MONERO_SYNCED)
+        assert svc.miner_released
+        assert not svc.workers_rejected
+        svc.docker_control.stop.assert_not_awaited()
+
+    # The background sync exemption never disables #3091's unreachable-RPC policy.
+    for tick in (9601, 10501):
+        now[0] = tick
+        await _Loop()._iterate(svc, {"reachable": False}, monero_sync=MONERO_SYNCED)
+    assert svc.workers_rejected
+    svc.docker_control.stop.assert_awaited_once_with("xmrig-proxy")
+    svc.docker_control.start.reset_mock()
+    for tick in (10600, 10661):
+        now[0] = tick
+        await _Loop()._iterate(svc, progress, monero_sync=MONERO_SYNCED)
+    assert not svc.workers_rejected
+    svc.docker_control.start.assert_awaited_once_with("xmrig-proxy")

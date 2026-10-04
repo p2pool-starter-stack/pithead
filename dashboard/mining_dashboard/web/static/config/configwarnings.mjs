@@ -28,5 +28,5 @@ export const FIELD_WARNINGS = {
   "telegram.events.clearnet_exposed":
     "Clearnet-exposure alarm — turning it off means a node exposing this machine's IP over clearnet no longer alerts Telegram.",
   "dashboard.host":
-    "Machine hostname changing — this is the approval-gated day-two rename: it reissues the local certificate and changes the appliance's mDNS identity.",
+    "Machine hostname changing — this is the approval-gated day-two rename: it reissues the local certificate and changes the appliance's mDNS identity. Rigs using the old name stop mining; use Set up again on each rig to point it at the new name.",
 };

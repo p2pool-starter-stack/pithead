@@ -4,6 +4,8 @@ that never got out."""
 
 import asyncio
 
+import pytest
+
 from mining_dashboard.service.health.tari_health import TariChainHealth
 from tests.service.health.test_tari_health import MIN, SYNCED, Clock
 from tests.service.notify._alert_service_support import _svc
@@ -78,3 +80,21 @@ def test_no_recovery_note_after_a_red_that_no_sink_delivered():
     sink.ok = True
     _cycles(mon, clock, 1, sync={**SYNCED, "current": SYNCED["current"] + 1}, connections=5)
     assert _recovery(sink) == []
+
+
+@pytest.mark.parametrize("phase", ["starting", "migrating", "syncing"])
+def test_progress_alert_retries_then_sends_once_per_live_phase(phase):
+    sink = Sink(ok=False)
+    mon, clock = _monitor(sink)
+    sync = {"reachable": True, "is_syncing": True}
+    if phase != "syncing":
+        sync["initializing"] = phase
+    _cycles(mon, clock, 2, sync=sync, connections=None)
+    sink.ok = True
+    _cycles(mon, clock, 2, sync=sync, connections=None)
+    messages = [t for t in sink.attempts if f"node is {phase}" in t]
+    assert len(messages) == 3
+    assert all("not rejected" in t for t in messages)
+    _cycles(mon, clock, 1, sync=SYNCED, connections=5)
+    _cycles(mon, clock, 1, sync=sync, connections=None)
+    assert len([t for t in sink.attempts if f"node is {phase}" in t]) == 4

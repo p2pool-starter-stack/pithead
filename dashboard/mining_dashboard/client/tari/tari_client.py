@@ -11,7 +11,7 @@ logger = logging.getLogger("TariClient")
 # See README.md for generation instructions (requires grpcio-tools)
 from google.protobuf import empty_pb2
 
-from .generated import base_node_pb2_grpc
+from .generated import base_node_pb2, base_node_pb2_grpc
 
 
 class TariClient:
@@ -78,12 +78,16 @@ class TariClient:
         GetSyncProgress.tip_height is the height the node is working toward. Using the
         node's own state means there's no external block explorer to fail.
         """
+        stub = None
         try:
             stub = self._ensure_channel()
             tip = await stub.GetTipInfo(empty_pb2.Empty(), timeout=5)
         except Exception as e:
             logger.error(f"Tari gRPC GetTipInfo error: {e}")
+            initializing = await self._fetch_initializing_status(stub) if stub is not None else None
             await self._reset_channel()
+            if initializing is not None:
+                return initializing
             return None
 
         local_height = tip.metadata.best_block_height
@@ -115,6 +119,35 @@ class TariClient:
 
         percent = int((local_height / target) * 100)
         return {"is_syncing": True, "current": local_height, "target": target, "percent": percent}
+
+    async def _fetch_initializing_status(self, stub) -> dict | None:
+        """Tari's readiness server answers GetNetworkState during startup/migration,
+        even when GetTipInfo returns UNAVAILABLE. Only a live readiness reply counts;
+        a cached sync reading or an RPC error is no evidence of initialization.
+        """
+        try:
+            response = await stub.GetNetworkState(base_node_pb2.GetNetworkStateRequest(), timeout=5)
+            readiness = response.readiness_status
+            kind = readiness.WhichOneof("status")
+            if kind == "migration":
+                phase = "migrating"
+            elif kind == "state" and readiness.state in (
+                base_node_pb2.ReadinessStatus.NOT_READY,
+                base_node_pb2.ReadinessStatus.STARTING_UP,
+                base_node_pb2.ReadinessStatus.DATABASE_INITIALIZING,
+                base_node_pb2.ReadinessStatus.RECOVERING_PREPARING,
+                base_node_pb2.ReadinessStatus.RECOVERING_REBUILDING,
+                base_node_pb2.ReadinessStatus.RECOVERING_REBUILDING_DATABASE,
+                base_node_pb2.ReadinessStatus.BUILDING_CONTEXT_BLOCKCHAIN,
+                base_node_pb2.ReadinessStatus.BUILDING_CONTEXT_BOOTSTRAP,
+            ):
+                phase = "starting"
+            else:
+                return None
+            return {"is_syncing": True, "initializing": phase, "percent": 0}
+        except Exception as exc:
+            logger.debug("Tari readiness unavailable (%s)", type(exc).__name__)
+            return None
 
     async def get_connections(self) -> int | None:
         """The node's live peer-connection count (``GetNetworkStatus``), or None when it did not
