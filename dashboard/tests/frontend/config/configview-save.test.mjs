@@ -48,3 +48,47 @@ test("save preserves explicit config and posts no untouched placeholder defaults
     xvb: { enabled: false },
   });
 });
+
+for (const [text, path] of [
+  ['{"monero":{},"monero":{}}', "monero"],
+  ['{"dashboard":{"auth":{"password":"first","password":"last"}}}', "dashboard.auth.password"],
+  ['{"workers":{"list":[{"token":"first","token":"last"}]}}', "workers.list[0].token"],
+  ['{"monero":{},"\\u006donero":{}}', "monero"],
+]) {
+  test(`JSON editor refuses duplicate ${path} before Save can normalize it`, async () => {
+    const view = new ConfigView({});
+    view.setState = (patch) => Object.assign(view.state, patch);
+    const original = { monero: { mode: "local" } };
+    view.state.candidate = original;
+    view.onJsonInput(text);
+    assert.match(view.state.jsonError, /duplicate key/);
+    assert.ok(view.state.jsonError.includes(path));
+    assert.equal(view.state.candidate, original);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () => assert.fail("invalid JSON must never reach the preview spool");
+    try {
+      await view.save();
+      assert.ok(view.state.error.includes(path));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+}
+
+test("a form placeholder refusal displays the backend path", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  view.state.candidate = { dashboard: { auth: { password: "PASTE_secret" } } };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false, status: 400, text: async () => "placeholder value at dashboard.auth.password",
+  });
+  try {
+    await view.save();
+    assert.equal(view.state.phase, "form");
+    assert.match(view.state.error, /placeholder value at dashboard.auth.password/);
+    assert.doesNotMatch(view.state.error, /PASTE_secret/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
