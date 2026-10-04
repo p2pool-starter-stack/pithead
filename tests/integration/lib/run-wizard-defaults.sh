@@ -6,8 +6,8 @@ run_cli_wizard_defaults() {
     local monero tari cfg out rc expected
     monero=$(jq -r '.monero.wallet_address' <<<"$BASELINE_JSON")
     tari=$(jq -r '.tari.wallet_address // ""' <<<"$BASELINE_JSON")
-    out=$(rx "source $(quote_arg "$IT_PITHEAD")
-        CONFIG_FILE=\"\$PWD/.itest-wizard-defaults.json\"
+    out=$(rx "PITHEAD_CONFIG_FILE=\"\$PWD/.itest-wizard-defaults.json\"
+        source $(quote_arg "$IT_PITHEAD")
         wizard_tari_disk_default local >/dev/null
         {
             printf '%s\\n\\n\\n' $(quote_arg "$monero")

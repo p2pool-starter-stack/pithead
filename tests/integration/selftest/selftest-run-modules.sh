@@ -75,6 +75,24 @@ source "$ROOT/lib/run-monero-stranded.sh" || exit $?
 source "$ROOT/lib/run-mergemine-localnet.sh" || exit $?
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
+# Execute the wizard harness initialization with the generated CLI: CONFIG_FILE is readonly.
+(
+    BASELINE_JSON='{"monero":{"wallet_address":"fixture"},"tari":{"wallet_address":"fixture"}}'
+    IT_PITHEAD="$ROOT/../../pithead"
+    quote_arg() { printf '%q' "$1"; }
+    rx() {
+        local initialization="${1%%wizard_tari_disk_default*}"
+        bash -c "$initialization"'test "$CONFIG_FILE" = "$PWD/.itest-wizard-defaults.json"' || return 2
+        # Stop before the live wizard/deployment; only its initialization belongs in a selftest.
+        return 1
+    }
+    assert_rc() { [ "$2" = 1 ] || exit 1; }
+    if run_cli_wizard_defaults; then exit 1; fi
+) || {
+    echo "wizard defaults harness could not initialize the generated CLI config override" >&2
+    exit 1
+}
+
 # The Tor fault must enter the dashboard namespace; host OUTPUT misses same-bridge traffic.
 namespace_cmd="$(
     rx() { printf '%s' "$1"; }
