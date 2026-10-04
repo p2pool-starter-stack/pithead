@@ -689,6 +689,9 @@ services:
         bind:
           create_host_path: false
     environment:
+      - PROXY_STRATUM_PASSWORD=${PROXY_STRATUM_PASSWORD:-}
+      - PROXY_STRATUM_TLS=${PROXY_STRATUM_TLS:-false}
+      - STRATUM_TLS_FINGERPRINT=${STRATUM_TLS_FINGERPRINT:-}
       - HOST_IP=${HOST_IP:-127.0.0.1}
       # Timezone for dashboard timestamps/charts. Set via `dashboard.timezone` in config.json
       # (`auto` = the host's timezone, auto-detected); pithead renders it to DASHBOARD_TZ in

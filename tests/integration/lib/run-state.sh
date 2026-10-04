@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 source "${BASH_SOURCE[0]%/*}/egress-probe.sh" || return $?
+source "${BASH_SOURCE[0]%/*}/miner-connection.sh" || return $?
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     local name="$1" config="$2"
@@ -105,6 +106,7 @@ assert_running_state() {
         return 0
     fi
     it_pass "dashboard /api/state reachable"
+    assert_miner_connection_live
 
     wait_for 150 5 "monerod caught up (RPC)" monero_caught_up || true
     if monero_caught_up; then it_pass "monerod reports synced (RPC)"; elif [ $? = 1 ]; then it_fail "monerod reports synced (RPC)" "get_info answered: not synchronized"; else it_fail "monerod reports synced (RPC)" "get_info could not be asked — unreachable, refused, timed out or rejected"; fi

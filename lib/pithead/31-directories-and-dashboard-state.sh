@@ -121,8 +121,7 @@ announce_stratum_tls() {
     [ "$enabled" = "true" ] && [ -n "$dir" ] && [ -f "$dir/cert.pem" ] || return 0
     command -v openssl >/dev/null 2>&1 || return 0
     local fp
-    fp=$(openssl x509 -in "$dir/cert.pem" -noout -fingerprint -sha256 2>/dev/null |
-        cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+    fp=$(STRATUM_TLS="$enabled" PROXY_TLS_DIR="$dir" stratum_tls_fingerprint)
     [ -n "$fp" ] || return 0
     log "Stratum TLS is ON: rigs may connect with TLS on the same stratum port (cleartext still accepted). Pin this fingerprint on each rig (pools[].tls-fingerprint): $fp"
 }

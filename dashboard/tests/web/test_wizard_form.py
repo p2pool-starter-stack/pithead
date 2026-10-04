@@ -164,3 +164,14 @@ def test_leaving_the_raffle_writes_the_key_and_staying_in_writes_nothing():
     assert build_config({**BASE, "xvb": "false"})["xvb"] == {"enabled": False}
     assert "xvb" not in build_config({**BASE, "xvb": "true"})
     assert "xvb" not in build_config(BASE)
+
+
+def test_stratum_password_is_opt_in_and_generated_only_for_yes():
+    assert build_config(BASE)["p2pool"]["stratum_password"] == ""
+    for answer in ("false", "", "on"):
+        assert (
+            build_config({**BASE, "stratum_password": answer})["p2pool"]["stratum_password"] == ""
+        )
+    password = build_config({**BASE, "stratum_password": "true"})["p2pool"]["stratum_password"]
+    assert len(password) == 24
+    assert all(c in "0123456789abcdef" for c in password)

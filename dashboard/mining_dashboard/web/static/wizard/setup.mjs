@@ -2,6 +2,7 @@ import { html } from "../app/preact.mjs";
 import { classifyMoneroAddress, pathGet, telegramPairReady } from "../config/configsync.mjs";
 import { NodeProbeProgress, NodeProbeReport } from "../network/nodeprobe.mjs";
 import { InstallSection } from "./stages.mjs";
+import { StratumPasswordChoice } from "./stratumpassword.mjs";
 import * as failure from "./wizardfailure.mjs";
 import { MachineName } from "./wizardhostname.mjs";
 import { TariSection, tariAnswer, XvbField } from "./wizardmining.mjs";
@@ -213,6 +214,7 @@ export function renderSetup(app) {
                 CPU governor, memory reservations — which is exactly what a dedicated
                 appliance is for.<//>`
             }
+            <${StratumPasswordChoice} value=${pathGet(cfg, "p2pool.stratum_password")} onChange=${app.edit("p2pool.stratum_password")} />
             <${XvbField} v=${v} on=${on} />
 
             <h2>First sync</h2>

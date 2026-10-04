@@ -28,3 +28,11 @@ c79b0581536b5f059fca1c643a93333f6b928965:tests/os/appliance-tari-wallet-leg.sh:g
 29c753378adb57a5e99b11a1687601468cfeb18e:tests/integration/selftest/test_restore_curl_connection.py:generic-api-key:59
 # The same HA2 protocol constant after the restore-connection test was squash-merged onto develop.
 051add657bebb7f744aef9e0622ad2ea9591d96b:tests/integration/selftest/test_restore_curl_connection.py:generic-api-key:59
+# Deterministic stratum seed fixtures in the original #3092 commits. Current tests derive a
+# repeating hex seed; these exact historical fingerprints exempt no later copies or values.
+be95cee9f654b55eff157c89350913921fdb23ab:tests/os/selftest-miner-connection.sh:generic-api-key:69
+be95cee9f654b55eff157c89350913921fdb23ab:tests/os/selftest-miner-connection.sh:generic-api-key:79
+be95cee9f654b55eff157c89350913921fdb23ab:tests/os/selftest-miner-connection.sh:generic-api-key:87
+473fab771dba8966de137dc5c307d994dbcdb0d7:tests/os/selftest-miner-connection-card.sh:generic-api-key:6
+473fab771dba8966de137dc5c307d994dbcdb0d7:tests/os/selftest-miner-connection-card.sh:generic-api-key:38
+473fab771dba8966de137dc5c307d994dbcdb0d7:tests/stack/appliance/test-appliance-restore-publish.sh:generic-api-key:14

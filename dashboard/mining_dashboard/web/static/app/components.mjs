@@ -6,6 +6,7 @@ import { DiagnosticsPanel } from "../system/diagview.mjs";
 import { OsVerdictBanner } from "../system/osupdate.mjs";
 import { SecurityPanel } from "../system/securityview.mjs";
 import { SyncView } from "../system/syncview.mjs";
+import { MinerConnection } from "../workers/minerconnection.mjs";
 import { WorkersTable } from "../workers/workertable.mjs";
 import { WorkerInspect } from "../workers/workerview.mjs";
 import { ChartCard } from "./chart.mjs";
@@ -171,6 +172,7 @@ export function App({
         <${Header} state=${state} theme=${ui.theme} onTheme=${onTheme} />
         <main id="dashboard-main">
             <${OsVerdictBanner} os=${state.os_update} />
+            <${MinerConnection} />
             ${!connected ? html`<div class="disconnected-banner" role="status" aria-live="polite">Disconnected — showing data from ${state.last_update}. Retrying…</div>` : null}
             ${
               state.syncing

@@ -374,22 +374,22 @@ firstboot_wizard() {
                 fi
                 # Rename BEFORE the handoff below (#2350): `(setup)` further down applied it too
                 # late — after the operator had already seen and acked the card naming the OLD box.
-                local DASHBOARD_HOST stratum_addr dash_user dash_pass
+                local DASHBOARD_HOST stratum_addr dash_user dash_pass miner_connection
+                miner_connection=$(wizard_prepare_miner_connection "$candidate" "$installer" "$spool") || error "Could not prepare miner connection credentials safely."
                 DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$candidate" 2>/dev/null)" "")
                 reconcile_appliance_hostname
-                stratum_addr="stratum+tcp://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$candidate" 2>/dev/null || echo 3333)"
+                stratum_addr="stratum+$(jq -r 'if .p2pool.stratum_tls == true then "ssl" else "tcp" end' "$candidate")://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$candidate" 2>/dev/null || echo 3333)"
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$candidate")
                 dash_pass=$(jq -r '.dashboard.auth.password // ""' "$candidate")
                 _console "" "Point your miners at this machine:" "    $stratum_addr"
-                # The handoff: credentials and addresses ON THE PAGE, over the same TLS the
-                # operator just typed secrets into — a 32-character random password transcribed
-                # from a console was never realistic. Provisioning holds until they confirm
+                # Publish over the setup TLS session and hold provisioning until they confirm
                 # they saved it (or 10 minutes pass — an unattended pre-seeded run must not
                 # hang forever), because the page goes DARK during provisioning and the
                 # credentials must not vanish with it.
                 jq -n --arg u "$dash_user" --arg p "$dash_pass" \
                     --arg d "https://$(hostname).local" --arg s "$stratum_addr" \
-                    '{username:$u,password:$p,dashboard:$d,stratum:$s}' | write_handoff_card "$card_spool"
+                    --argjson miner "$miner_connection" \
+                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
