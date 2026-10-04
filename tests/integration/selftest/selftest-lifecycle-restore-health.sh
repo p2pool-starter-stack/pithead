@@ -49,6 +49,10 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         dashboard_durable_rows() { printf 'blocks -'; }
         telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
         telemetry_rows_diff() { :; }
+        run_cli_wizard_defaults() { [ "$RESTORE_CASE" != wizard-defaults-fails ] || {
+            it_fail
+            return 1
+        }; }
         run_source_image_reconcile() { :; }
         run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
@@ -91,6 +95,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
     )
 }
 
+assert_eq "a failed wizard defaults proof stops lifecycle" "$(drive_restore yes wizard-defaults-fails)" "1|1"
 assert_eq "a healthy restore succeeds" "$(drive_restore yes)" "0|0"
 assert_eq "an unhealthy restore fails lifecycle" "$(drive_restore no)" "1|1"
 assert_eq "a failed backup fails lifecycle" "$(drive_restore yes backup-fails)" "1|1"

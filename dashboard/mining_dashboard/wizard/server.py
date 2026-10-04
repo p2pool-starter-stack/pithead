@@ -37,12 +37,17 @@ import sys
 
 from aiohttp import web
 
+from mining_dashboard.wizard.defaults import (
+    disk_inventory,
+    explicit_wizard_config,
+    fast_sync_warning,
+    new_machine_answers,
+    tari_disk_default,
+)
 from mining_dashboard.wizard.form import build_config
 from mining_dashboard.wizard_config import (
-    NEW_MACHINE_ANSWERS,
     deep_merge,
     prepare_config,
-    strip_defaults,
     validate_machine_name,
 )
 from mining_dashboard.wizard_install import validate_install_request
@@ -189,16 +194,7 @@ def installer_mode() -> bool:
 
 
 def _disks() -> list[dict]:
-    """The host's inventory, as data. Parsing stays server-side so the client renders objects,
-    never splits strings — and a model containing markup is just a JSON string to it."""
-    out = []
-    for line in (_spool_read("disks.tsv") or "").splitlines():
-        parts = line.split("\t")
-        if len(parts) < 5:
-            continue
-        name, size, model, serial, state = parts[:5]
-        out.append({"name": name, "size": size, "model": model, "serial": serial, "state": state})
-    return out
+    return disk_inventory(_spool_read("disks.tsv") or "")
 
 
 def _authed(request: web.Request) -> bool:
@@ -260,14 +256,17 @@ async def wizard_state(request: web.Request) -> web.Response:
     remembered, install_attempt, auth_mode = recovery_state(_spool_json, _spool_read, _disks())
     if changes:
         remember_changes(spool_dir(), changes, _spool_json, _spool_write_text)
+    budget = _spool_json("disk-budget.json") or {}
     raw_handoff = _spool_read("handoff.json", handoff_dir()) if stage == "handoff" else None
     return web.json_response(
         {
             "stage": stage,
             # Kept for the field's original meaning; `stage` is what the client renders from.
             "mode": "installer" if installer_mode() else "setup",
-            "config": deep_merge(ref, attempt or NEW_MACHINE_ANSWERS),
+            "config": deep_merge(ref, attempt or new_machine_answers(budget, _disks())),
             "reference": ref,
+            "new_machine": not bool(attempt),
+            "disk_budget": budget,
             "error": _spool_read("error.txt"),
             "disks": _disks(),
             "rig_defaults": _rig_defaults(),
@@ -400,7 +399,20 @@ async def _submit_locked(request: web.Request) -> web.Response:
     # The JSON pane IS the configuration — what the operator can see is exactly what gets
     # applied. build_config remains the fallback for a client with no JavaScript.
     try:
-        cfg = json.loads(raw) if raw else build_config(dict(form))
+        cfg = (
+            json.loads(raw)
+            if raw
+            else build_config(
+                dict(form),
+                tari_default=tari_disk_default(
+                    _spool_json("disk-budget.json") or {},
+                    _disks(),
+                    str(form.get("disk", "")),
+                    str(form.get("monero_mode", "local")),
+                    str(form.get("wipe", "keep")),
+                ),
+            )
+        )
         if not isinstance(cfg, dict):
             raise ValueError("the top level must be a JSON object")
     except (ValueError, TypeError) as exc:
@@ -437,11 +449,13 @@ async def _submit_locked(request: web.Request) -> web.Response:
     _spool_write_text("submission-staging", "1")
     remember_changes(spool_dir(), changes, _spool_json, _spool_write_text)
     _spool_write_text("last-attempt.json", json.dumps(cfg))
-    _spool_write_config(strip_defaults(cfg, ref) if ref else cfg)
+    _spool_write_config(explicit_wizard_config(cfg, ref))
     if install:
         _publish_install_request(install)
     _spool_write_text("submission-active", "1")
-    return web.json_response({"status": "accepted", "config_changes": changes})
+    return web.json_response(
+        {"status": "accepted", "config_changes": changes, "warning": fast_sync_warning(cfg)}
+    )
 
 
 async def submit_restore(request: web.Request) -> web.Response:

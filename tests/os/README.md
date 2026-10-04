@@ -123,6 +123,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   both the fixture's and the target's chain-data sentinels survive. The fixture's removed 1.x
   `xmrig_proxy` settings must move to `xvb` unchanged without leaving a `config.json.bak-1x`,
   and `telegram.control` must be dropped.
+- **setup-defaults** — a fresh 40 GiB guest accepts the wizard defaults without a Tari override; proves Tor sync, XvB off, persisted choices and a generated working dashboard login.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
   served, built-in miner up. The Tor-only egress enforcement backstop — a real clearnet dial from a
