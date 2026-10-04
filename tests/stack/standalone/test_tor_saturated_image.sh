@@ -16,18 +16,32 @@ saturated() {
         grep -qx 'TotalBuildTimes 1000' "$dir/state" &&
         ! grep -q '^CircuitBuildTimeBin ' "$dir/state"
 }
-start() { tor -f "$dir/offline.torrc"; }
-stop() {
-    process=$(cat "$dir/pid")
-    kill -TERM "$process"
+start() {
+    tor -f "$dir/offline.torrc"
     for i in $(seq 1 30); do
-        if ! kill -0 "$process" 2>/dev/null; then
-            [ ! -e "$dir/pid" ]
-            ! nc -z -w 1 127.0.0.1 9051
+        cookie=$(xxd -p -c 256 "$dir/control_auth_cookie" 2>/dev/null) || cookie=""
+        reply=$(printf 'AUTHENTICATE %s\r\nGETINFO version\r\nQUIT\r\n' "$cookie" |
+            nc -w 3 127.0.0.1 9051 2>/dev/null) || reply=""
+        if [ -s "$dir/pid" ] && kill -0 "$(cat "$dir/pid")" 2>/dev/null &&
+            [ "$(printf '%s\n' "$reply" | grep -c '^250 OK')" = 2 ]; then
             return 0
         fi
         sleep 1
     done
+    echo 'Tor offline start did not become ready' >&2
+    return 1
+}
+stop() {
+    process=$(cat "$dir/pid")
+    kill -TERM "$process"
+    for i in $(seq 1 30); do
+        if ! kill -0 "$process" 2>/dev/null && [ ! -e "$dir/pid" ] &&
+            ! nc -z -w 1 127.0.0.1 9051; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo 'Tor offline stop did not fully settle' >&2
     return 1
 }
 seed
