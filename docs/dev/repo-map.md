@@ -112,6 +112,11 @@ Keep local code out of `vendor/`.
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
+Coordinator connection announcements and unchanged-apply miner calls are covered by
+`tests/stack/test-connection-announce.sh`; the lifecycle phase runs
+`tests/integration/lib/run-connection-announcements.sh` against the deployed CLI.
+The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
+both local-miner toggles converge without rebooting.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata and failure snapshots; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.

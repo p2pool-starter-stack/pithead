@@ -50,7 +50,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
         telemetry_rows_diff() { :; }
         run_source_image_reconcile() { :; }
-        run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
+        run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
+        run_uninstall_round_trip() { :; }     # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
         secret_fingerprint() { printf fingerprint; }
