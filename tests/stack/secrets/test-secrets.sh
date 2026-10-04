@@ -221,10 +221,10 @@ assert_not_contains "full new address not echoed by apply" "$out" "$WALLET2"
 for reply in '44AFFq5k' 'wrongend' ''; do
     : >"$DOCKER_LOG"
     out="$(cd "$V" && printf '%s' "$reply" | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
-    assert_rc "Monero refuses prefix/wrong suffix/EOF ($reply) cleanly" "$?" "0"
-    assert_contains "Monero refuses prefix/wrong suffix/EOF ($reply)" "$out" "Apply cancelled"
-    assert_eq "Monero wallet unchanged after refusal ($reply)" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_WALLET_ADDRESS)" "$WALLET"
-    assert_eq "Monero refusal does not call Docker ($reply)" "$(cat "$DOCKER_LOG")" ""
+    assert_rc "Monero refuses prefix/wrong suffix/EOF cleanly" "$?" "0"
+    assert_contains "Monero refuses prefix/wrong suffix/EOF" "$out" "Apply cancelled"
+    assert_eq "Monero wallet unchanged after refusal" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_WALLET_ADDRESS)" "$WALLET"
+    assert_eq "Monero refusal does not call Docker" "$(cat "$DOCKER_LOG")" ""
 done
 # (2) Typing the last 8 chars confirms and applies.
 out="$(cd "$V" && printf 'VGQBEP3A\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
@@ -247,10 +247,10 @@ assert_eq "tari wallet unchanged in .env after abort" "$(run_sourced "$V" env_ge
 for reply in '12KQktz7' 'wrongend' ''; do
     : >"$DOCKER_LOG"
     out="$(cd "$V" && printf '%s' "$reply" | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
-    assert_rc "Tari refuses prefix/wrong suffix/EOF ($reply) cleanly" "$?" "0"
-    assert_contains "Tari refuses prefix/wrong suffix/EOF ($reply)" "$out" "Apply cancelled"
-    assert_eq "Tari wallet unchanged after refusal ($reply)" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_ADDRESS)" "$VALID_TARI"
-    assert_eq "Tari refusal does not call Docker ($reply)" "$(cat "$DOCKER_LOG")" ""
+    assert_rc "Tari refuses prefix/wrong suffix/EOF cleanly" "$?" "0"
+    assert_contains "Tari refuses prefix/wrong suffix/EOF" "$out" "Apply cancelled"
+    assert_eq "Tari wallet unchanged after refusal" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_ADDRESS)" "$VALID_TARI"
+    assert_eq "Tari refusal does not call Docker" "$(cat "$DOCKER_LOG")" ""
 done
 out="$(cd "$V" && printf 'hYZ748JT\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
 assert_rc "tari typed confirm applies" "$?" "0"
