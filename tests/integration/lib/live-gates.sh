@@ -308,7 +308,11 @@ assert_upgrade_config_version() {
     config_stamp=$(rx "cd '$UPGRADE_CANDIDATE_DIR' && jq -r '.config_version // empty' config.json")
     code_version=$(rx "cd '$UPGRADE_CANDIDATE_DIR' && cat VERSION")
     code_version=${code_version%%[-+]*}
-    assert_eq "upgraded config stamp matches candidate VERSION core" "$config_stamp" "$code_version"
+    if [[ "$code_version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]] && [ "$config_stamp" = "$code_version" ]; then
+        it_pass "upgraded config stamp matches candidate VERSION core"
+    else
+        it_fail "upgraded config stamp matches candidate VERSION core" "release version unavailable or stamp mismatch"
+    fi
     local payload
     payload=$(base64 <"$HERE/lib/config-version-audit.py" | tr -d '\n')
     recent_changes=$(rx "printf %s $(quote_arg "$payload") | base64 -d | docker exec -i dashboard python3 -" 2>/dev/null)

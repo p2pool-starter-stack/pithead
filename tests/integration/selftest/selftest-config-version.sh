@@ -11,22 +11,24 @@ UPGRADE_CANDIDATE_DIR=/candidate
 rx() {
     case "$1" in
     *jq*) printf '%s' "$TEST_STAMP" ;;
-    *VERSION*) printf '%s' '2.0.0-pre.1+build' ;;
+    *VERSION*) printf '%s' "$TEST_CODE_VERSION" ;;
     *docker\ exec*) printf '%s' "$TEST_AUDIT" ;;
     *) return 1 ;;
     esac
 }
-for TEST_STAMP in 2.0.0 9.9.9; do
-    for TEST_AUDIT in clean stamp-recorded '' bad; do
-        IT_FAIL=0
-        assert_upgrade_config_version >/dev/null 2>&1
-        expected=0
-        [ "$TEST_STAMP" = 2.0.0 ] || expected=$((expected + 1))
-        [ "$TEST_AUDIT" = clean ] || expected=$((expected + 1))
-        [ "$IT_FAIL" = "$expected" ] || {
-            printf 'FAIL: upgrade config assertions failed to detect fixture\n'
-            exit 1
-        }
+for TEST_CODE_VERSION in 2.0.0-pre.1+build bad ''; do
+    for TEST_STAMP in 2.0.0 9.9.9 ''; do
+        for TEST_AUDIT in clean stamp-recorded '' bad; do
+            IT_FAIL=0
+            assert_upgrade_config_version >/dev/null 2>&1
+            expected=0
+            { [ "$TEST_STAMP" = 2.0.0 ] && [ "$TEST_CODE_VERSION" = 2.0.0-pre.1+build ]; } || expected=$((expected + 1))
+            [ "$TEST_AUDIT" = clean ] || expected=$((expected + 1))
+            [ "$IT_FAIL" = "$expected" ] || {
+                printf 'FAIL: upgrade config assertions failed to detect fixture\n'
+                exit 1
+            }
+        done
     done
 done
 printf 'PASS: upgrade stamp and audit assertions detect missing, malformed and stamp-bearing evidence\n'

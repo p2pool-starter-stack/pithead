@@ -132,7 +132,7 @@ top of its form. Both read the exact same list, [`config.core-keys.json`](../con
 Below the core group, the Configuration view and `config.reference.json` follow the same
 operator-purpose order: **Mining, Payouts, Monero node, Tari node, Workers, Dashboard & access,
 Notifications, Energy, Alerts, Advanced**. Each group says in one line what its settings affect.
-Every reference key belongs to one of those named groups; the frontend test fails if a new key
+Every setting apart from the read-only version stamp belongs to one of those named groups; the frontend test fails if a new key
 would otherwise fall into an unlabeled catch-all.
 
 Ordinary settings apply after the preview. Disruptive settings also require typed `APPLY`.
@@ -143,7 +143,7 @@ which the host re-checks against the staged file. These are typo protection and 
 friction, not a second identity — a signed-in session that can set a field can also fill the
 confirm box. The Telegram approval that once sat here was removed in #2076. The preview shows full
 old and new non-secret values, while credentials and capability URLs stay masked and never echo
-back after commit. No field is refused from the dashboard (#2367). The high-consequence ones
+back after commit. No setting is refused from the dashboard (#2367); `config_version` is the read-only exception. The high-consequence ones
 warn in the form and name their cost again in the host preview before you confirm: the dashboard
 password; the Telegram bot token, chat id and Healthchecks ping URL, where a wrong value stops
 delivery or sends alerts and pings to an unintended destination; and the
