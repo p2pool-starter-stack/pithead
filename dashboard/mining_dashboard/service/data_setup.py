@@ -35,6 +35,9 @@ from mining_dashboard.service.xvb.price_feed import CoinGeckoClient, PriceFeed
 
 logger = logging.getLogger("DataService")
 
+# Tari initialization can take hours; only a sustained RPC outage rejects workers.
+TARI_NODE_DOWN_AFTER_SEC = int(os.environ.get("TARI_NODE_DOWN_AFTER_SEC", 15 * 60))
+
 
 def _runtime():
     from mining_dashboard.service import data_service
@@ -146,7 +149,9 @@ class DataSetupMixin:
         # Node-down detection + optional worker rejection (Issue #31).
         self.docker_control = DockerControl()
         self.monero_health = NodeHealthMonitor()
-        self.tari_health = NodeHealthMonitor()
+        self.tari_health = NodeHealthMonitor(
+            down_after=TARI_NODE_DOWN_AFTER_SEC, ever_up=TARI_MODE != "off"
+        )
         # Isolated / stalled monerod (#2499): the peers-and-tip verdict for the card, doctor, alerts.
         self.monero_chain = MoneroChainHealth()
         # A configured payout wallet that never answered is still a failure after the debounce.
@@ -268,14 +273,19 @@ class DataSetupMixin:
         """One cycle of Tari health: the debounced node-down flag (#31), returned, and the chain
         verdict (#2464) attached as ``tari_sync["health"]`` for the panel, /api/state and doctor.
         Off mode has no node to judge; the peer count is asked only of a node that answered."""
-        if TARI_MODE != "off":
-            try:
-                reachable = tari_sync.get("reachable", False)
-                connections = await tari_client.get_connections() if reachable else None
-                tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
-            except Exception as exc:  # the verdict must never break the data loop
-                logger.warning("Tari chain health check failed (%s)", type(exc).__name__)
-                # Serve the last verdict: a failed cycle must not make a red node vanish from
-                # the panel, doctor and status.
-                tari_sync["health"] = dict(self.tari_chain.verdict)
+        if TARI_MODE == "off":
+            return False
+        try:
+            reachable = tari_sync.get("reachable", False)
+            connections = (
+                await tari_client.get_connections()
+                if reachable and not tari_sync.get("initializing")
+                else None
+            )
+            tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
+        except Exception as exc:  # the verdict must never break the data loop
+            logger.warning("Tari chain health check failed (%s)", type(exc).__name__)
+            # Serve the last verdict: a failed cycle must not make a red node vanish from
+            # the panel, doctor and status.
+            tari_sync["health"] = dict(self.tari_chain.verdict)
         return self.tari_health.update(tari_sync.get("reachable", True))
