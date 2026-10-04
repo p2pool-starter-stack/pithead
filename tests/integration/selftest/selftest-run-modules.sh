@@ -71,7 +71,7 @@ source "$ROOT/lib/run-tari-stranded.sh" || exit $?
 source "$ROOT/lib/run-monero-stranded.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
 source "$ROOT/lib/run-mergemine-localnet.sh" || exit $?
-for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
+for fn in $expected_functions tari_enable_snapshot run_tari_background_sync; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
 # The Tor fault must enter the dashboard namespace; host OUTPUT misses same-bridge traffic.
 namespace_cmd="$(

@@ -53,17 +53,19 @@ with merge-mining chatter. Releasing the miner is one-way: once it starts it sta
 are exceptions. A restore at setup: the release belongs to the machine the backup was taken on, so
 after such a restore the dashboard holds the miner again until this machine's chains are ready.
 `./pithead restore`, the same-box recovery command, is not this door — its box's chains never
-desynced, so it keeps whatever gate state the backup carried. And an applied change to the node a
-chain uses (`monero.mode` or `tari.mode`, or a remote node's host or port): the release was earned on
-the old node, so the miner holds again until the new one is ready, which is at once when it already
-is. By default the stack waits for both Monero and Tari. With
-[`dashboard.tari_required: false`](configuration.md) it waits only for Monero and mines while Tari
-finishes syncing in the background.
+desynced, so it keeps whatever gate state the backup carried. An applied Monero node host or RPC-port change also re-arms the full hold until the
+required chains are ready. A change only to Tari's mode or endpoint on an already-mining
+machine re-arms on Monero alone: Monero mining continues; merge-mining starts when Tari
+has synced. The Tari card shows its progress in the operational dashboard. This policy
+survives dashboard restarts, but a later Monero change or setup restore restores the full
+hold. A machine that has never released mining still waits for both chains by default.
+With [`dashboard.tari_required: false`](configuration.md) the initial hold waits only for
+Monero and mines while Tari finishes syncing in the background.
 
-With `tari.mode: remote` the wait is on that node: the dashboard reads sync state from
-`tari.remote.host` over gRPC, so a remote node still catching up holds the miner exactly as a local
-one would. Set `dashboard.tari_required: false` if you'd rather not have someone else's node gate
-your Monero mining.
+With `tari.mode: remote` the dashboard reads sync state from `tari.remote.host` over gRPC.
+A remote node still catching up holds the first mining release or a full re-arm, just as a
+local node would. An earned Tari-only endpoint change keeps Monero mining while that node
+catches up. Set `dashboard.tari_required: false` to omit Tari from the first-install/full-reset hold.
 
 > **Want to skip most of the wait?** Point the stack at an existing synced blockchain, or connect
 > to a remote node. See [Configuration › Reusing an existing node](configuration.md#reusing-an-existing-node).

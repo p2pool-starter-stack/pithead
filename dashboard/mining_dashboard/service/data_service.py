@@ -283,13 +283,13 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                                 self._last_monero_sync or {"percent": 0, "current": 0, "target": 1}
                             )
 
-                    # 2. Global Sync Logic. monerod always drives the full-screen Sync Mode;
-                    # Tari does so only when it's required (Issue #51). A non-blocking Tari
-                    # (dashboard.tari_required:false) keeps the operational view and surfaces
-                    # its progress in the Tari panel instead of hijacking the whole dashboard.
+                    # Monero drives Sync Mode; optional Tari and an earned Tari-only re-arm
+                    # keep Tari progress in its card instead of taking over the dashboard.
                     is_monero_syncing = monero_sync.get("is_syncing", False)
                     is_tari_syncing = tari_sync.get("is_syncing", False)
-                    global_sync = is_monero_syncing or (is_tari_syncing and TARI_REQUIRED)
+                    global_sync = is_monero_syncing or (
+                        is_tari_syncing and TARI_REQUIRED and not self.sync_gate_monero_only
+                    )
                     # True when Tari is syncing but we're staying in the operational view — the
                     # UI shows a "Tari syncing" indicator rather than the takeover screen.
                     tari_syncing_passive = is_tari_syncing and not global_sync
@@ -328,7 +328,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # once released — before that there are no workers to fail over, and it
                     # keeps the two features from both driving xmrig-proxy.
                     await self._apply_sync_gate(
-                        monero_synced and (tari_synced or not TARI_REQUIRED)
+                        monero_synced
+                        and (tari_synced or not TARI_REQUIRED or self.sync_gate_monero_only)
                     )
                     if self.miner_released:
                         await self._apply_worker_rejection(monero_down, tari_down)
@@ -488,6 +489,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                             "tari_syncing_passive": tari_syncing_passive,
                             "workers_rejected": self.workers_rejected,
                             "miner_released": self.miner_released,
+                            "sync_gate_monero_only": self.sync_gate_monero_only,
                             "miner_held": self.miner_held,
                             "fail_closed_held": self.fail_closed_held,
                             "clearnet_sync": self.clearnet_sync_state,
