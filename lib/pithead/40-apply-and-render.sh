@@ -127,22 +127,6 @@ recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-
         warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
 }
 
-rearm_sync_gate_marker() { # <dashboard-dir> <scope>: atomically plant the reset
-    local t marker="$1/sync-gate-reset"
-    t=$(mktemp "$1/.sync-gate-reset.XXXXXX") || return 1
-    # Never relax an outstanding full reset (including a restore or an older apply).
-    if [ "${2:-1}" -eq 2 ] && {
-        { [ ! -e "$marker" ] && [ ! -L "$marker" ]; } ||
-            { [ -f "$marker" ] && [ ! -L "$marker" ] && grep -qx tari-only "$marker"; }
-    }; then
-        echo tari-only >"$t"
-    fi
-    mv -f -T "$t" "$1/sync-gate-reset" || {
-        rm -f "$t"
-        return 1
-    }
-}
-
 apply() {
     # apply reaches its mutating window down two different paths (a normal change, and the retry
     # after a previous apply committed the config but did not finish recreating containers), so it
