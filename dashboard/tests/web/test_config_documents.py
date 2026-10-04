@@ -83,3 +83,10 @@ async def test_invalid_body_is_bad_request(control_client, control_spool, text):
     response = await control_client.post("/api/control/preview", data=text, headers=HEADERS)
     assert response.status == 400
     assert not list((control_spool / "requests").iterdir())
+
+
+async def test_deep_document_is_bad_request(control_client, control_spool):
+    text = '{"config":{"value":' + "[" * 1200 + "0" + "]" * 1200 + "}}"
+    response = await control_client.post("/api/control/preview", data=text, headers=HEADERS)
+    assert response.status == 400
+    assert not list((control_spool / "requests").iterdir())

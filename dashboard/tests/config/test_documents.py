@@ -168,3 +168,9 @@ def test_untrusted_key_diagnostics_escape_controls(tmp_path):
     assert result.returncode == 1
     assert len(result.stdout.splitlines()) == 1
     assert "YOUR_value" not in result.stdout
+
+
+def test_cli_deep_document_refused(tmp_path):
+    result = cli_error(tmp_path, '{"value":' + "[" * 1200 + "0" + "]" * 1200 + "}")
+    assert result.returncode == 1
+    assert "nested too deeply" in result.stdout
