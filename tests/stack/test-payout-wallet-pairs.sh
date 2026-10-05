@@ -41,6 +41,17 @@ out="$(pair_apply)"
 assert_rc "both matching pairs apply with the Tari view key only" "$?" 0
 assert_eq "Tari spend key derived in the secret file" \
     "$(sed -n 's/^MINOTARI_WALLET_SPEND_KEY=//p' "$V/data/tari-wallet-secret.env")" "$PAYOUT_TARI_PUBLIC1"
+# The appliance's Tari wallet leg applies its own synthetic address and keys; they must pass.
+leg="$ROOT/tests/os/appliance-tari-wallet-leg.sh"
+leg_var() { sed -n "s/^$1=//p" "$leg"; }
+pair_config
+jq --arg t "$(leg_var TARI_WALLET_TEST_ADDRESS)" --arg k "$(leg_var TARI_WALLET_TEST_VIEW_KEY)" \
+    --arg s "$(leg_var TARI_WALLET_TEST_SPEND_KEY)" \
+    '.tari.wallet_address=$t | .tari.view_key=$k | .tari.spend_public_key=$s' "$V/config.json" >"$V/candidate"
+mv "$V/candidate" "$V/config.json"
+out="$(pair_apply)"
+assert_rc "the appliance Tari wallet leg's address, view key and spend key apply" "$?" 0
+pair_config
 jq --arg s "$PAYOUT_TARI_PUBLIC2" '.tari.spend_public_key=$s' "$V/config.json" >"$V/candidate"
 mv "$V/candidate" "$V/config.json"
 out="$(pair_apply)"
