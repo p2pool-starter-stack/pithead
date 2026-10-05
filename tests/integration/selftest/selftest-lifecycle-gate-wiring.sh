@@ -9,6 +9,7 @@ fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 OUT_DIR=$fixture
 IT_FAIL=0
+wallet_proof_calls=0
 # Execute the original lifecycle prefix through the real source-image runner; later pool/wallet
 # legs do not concern these diagnostics and have their own complete lifecycle selftests.
 eval "$(sed -n '/^run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d')
@@ -43,6 +44,10 @@ assert_contains() { [[ "$2" == *"$3"* ]] || it_fail; }
 pithead() { :; }
 wait_status_ok() { :; }
 tor_recovery_healthy_probe() { :; }
+prove_wallet_supersession() {
+    [ "$(tail -n 1 "$fixture/lifecycle-gate.log" | awk '{print $2}')" = before-wizard-defaults ]
+    wallet_proof_calls=$((wallet_proof_calls + 1))
+}
 run_connection_announcements() { :; }
 run_cli_wizard_defaults() { :; }
 assert_mining_probe_ready() { [ "$1" = "source image fixture (bench-ci#1276)" ]; }
@@ -50,5 +55,6 @@ service_state() { echo 'running none'; }
 svc_state_of() { printf '%s' "${1%% *}"; }
 run_lifecycle
 [ "$IT_FAIL" = 0 ]
+[ "$wallet_proof_calls" = 1 ]
 [ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = $'before-wizard-defaults\nbefore-restart\nafter-restart\nbefore-image-down\nafter-image-up\nbefore-source-image' ]
 echo 'selftest-lifecycle-gate-wiring: all six lifecycle/image boundaries passed'
