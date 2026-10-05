@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # Run the real CLI on the deployed candidate, keeping credentials inside the target shell.
 connection_announcements_snippet() {
+    lifecycle_gate_snippet
     cat <<'PROBE'
 set -Eeuo pipefail
 source ./pithead
@@ -32,6 +33,7 @@ trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at
 }
 # Confirm the supported terminal rerun, preserve the hostname, and decline startup.
 # Answer each prompt as it appears: setup's subprocesses may consume pre-fed stdin.
+lifecycle_gate_sample_target before-setup
 stage=setup
 out=$(python3 tests/integration/tools/connection-setup-pty.py) || {
     rc=$?
@@ -48,14 +50,17 @@ out=$(python3 tests/integration/tools/connection-setup-pty.py) || {
     exit "$rc"
 }
 [[ "$out" == *"You can start the stack later with:"* ]]
+lifecycle_gate_sample_target after-setup
 check_output "$out"
 printf '%s\n' 'connections: setup with startup declined matches rendered credentials'
 stage=up
 out=$(./pithead up 2>&1)
+lifecycle_gate_sample_target after-up
 check_output "$out"
 printf '%s\n' 'connections: up matches rendered credentials'
 stage=apply
 out=$(./pithead apply -y 2>&1)
+lifecycle_gate_sample_target after-apply
 check_output "$out"
 printf '%s\n' 'connections: apply matches rendered credentials'
 before=$(sha256sum .env)
@@ -63,6 +68,7 @@ stage=no-change
 out=$(./pithead apply -y 2>&1)
 [[ "$out" == *"No configuration changes detected"* ]]
 check_output "$out"
+lifecycle_gate_sample_target after-no-change
 [ "$(sha256sum .env)" = "$before" ]
 printf '%s\n' 'connections: no-change apply matches rendered credentials and preserves env'
 PROBE
@@ -88,6 +94,7 @@ run_connection_announcements() {
             printf 'Setup reached: %s\n' "$marker" >>"$OUT_DIR/connection-announcements.log"
         fi
     done
+    printf '%s\n' "$out" | retain_lifecycle_gate_samples >>"$OUT_DIR/lifecycle-gate.log"
     assert_rc "coordinator connection announcement probe succeeds (#3090)" "$rc" 0
     for marker in \
         'setup with startup declined matches rendered credentials' \

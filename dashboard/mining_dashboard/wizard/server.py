@@ -1,14 +1,12 @@
 """First-boot setup wizard (#77 phase 3) — the server half.
 
-A deliberately tiny aiohttp app the host runs pre-provisioning via
-``pithead firstboot-wizard``: token gate -> the wizard SPA -> an atomically written candidate
-config in the spool. The HOST does everything privileged (validation, ``pithead setup``,
-disk installs) — this server only asks, the same trust shape as the #33 control channel.
+The host runs this aiohttp app via ``pithead firstboot-wizard`` before provisioning:
+token gate -> wizard SPA -> atomically written candidate config in the spool. The host owns
+privileged validation, ``pithead setup`` and disk installs, as in the #33 control channel.
 
-The frontend is the dashboard's stack (``web/templates/wizard.html`` +
-``web/static/wizard/wizard.mjs`` — preact/htm, shared CSS, shared pure logic), so the first page
-anyone sees matches the dashboard they live in afterwards. This module serves the shell, the
-static assets, and a small state API; it renders no HTML of its own.
+The dashboard frontend (``web/templates/wizard.html`` + ``web/static/wizard/wizard.mjs``)
+shares preact/htm, CSS and pure logic. This server serves the shell, assets and state API;
+it renders no HTML.
 
 Env contract (set by ``pithead firstboot-wizard``):
   WIZARD_TOKEN     one-time token printed on the console (case/prefix-insensitive to enter)
@@ -427,9 +425,8 @@ async def _submit_locked(request: web.Request) -> web.Response:
     except ValueError as exc:
         return web.json_response({"error": f"Invalid configuration: {exc}"}, status=400)
     clear_submission_sidecars()
-    # The dashboard-login choice travels BESIDE the config: "no login" is an empty password,
-    # which is also what "not chosen yet" looks like, so the config alone cannot express intent.
-    # The host reads this to decide whether to generate one.
+    # The host needs a separate login choice: an empty password means either no login
+    # or no choice yet, so config alone cannot tell it whether to generate one.
     mode = str(form.get("auth_mode", "")).strip()
     if mode in ("auto", "set", "none"):
         _spool_write_text("auth-mode", mode)
@@ -598,9 +595,8 @@ async def status(request: web.Request) -> web.Response:
 def make_app(exit_fn=sys.exit, restore_enabled=False, secure_cookie=False) -> web.Application:
     if not clear_page_temps():
         raise RuntimeError("temporary wizard files could not be cleared safely")
-    # Some minimal hosts lack /etc/mime.types, so ES modules would be served as
-    # application/octet-stream, which browsers refuse to execute. Same fix as the dashboard's
-    # server.py — the wizard serves the same static tree.
+    # Hosts without /etc/mime.types mislabel ES modules as application/octet-stream.
+    # Use the dashboard fix for the same static tree so browsers can execute them.
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("text/javascript", ".js")
     # aiohttp's default (1 MiB) refuses a restore upload before submit_restore's own, clearer

@@ -125,7 +125,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   then boot the target and prove the copied system is COMPLETE — the `/var` overlay made an
   incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:
   `/data` must survive a second install over the same disk, and the three-way wipe choice
-  (`keep`/`data`/`all`) is asserted on the raw partition. A previous 1.x `xmrig_proxy` setting
+  (`keep`/`data`/`all`) is asserted on the raw partition. After Fresh Start returns to the
+  installer, wait up to 180 seconds for the setup page before the remaining wipe and plant
+  writes; SSH readiness alone precedes firstboot's read-only target probes. A previous 1.x `xmrig_proxy` setting
   must appear under `xvb` in the reinstall pre-fill, never survive under its removed name. The
   restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk and
   requires its running stack to carry the prior-release wallet, Tor identity and secrets while
@@ -200,6 +202,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   until the slot commits, then start, with the pending marker consumed. Tari is then stopped on the
   committed slot (`appliance-chain-fault-leg.sh`, #2588): `pithead status`, `pithead doctor` and
   the dashboard's `Tari DOWN` badge must report it, and `./pithead up` must bring all three back.
+  The badge must stay absent before the running dashboard's `TARI_NODE_DOWN_AFTER_SEC`
+  debounce (900 seconds when unset) and appear within that debounce plus 180 seconds.
+  Clock readings require successful numeric output; a failed initial clock refuses injection,
+  and a failed or backward clock during polling fails timing and proceeds to recovery.
+  Unreadable state fails the negative control. Unreadable, invalid or out-of-range debounce
+  settings (the test accepts 1–3600 seconds) fail before fault injection; the guest policy
+  is never shortened.
   After it, the floor-fallback leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating
   bundle stamped with a version no release carries. Its copied build tree opts into the
   harness-only synthetic compose path, names its compose file explicitly, uses the resolved
