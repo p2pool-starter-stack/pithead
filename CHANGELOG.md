@@ -32,6 +32,10 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Tari / P2Pool
 
+- Tari outage alerts now describe the required policy and actual worker rejection state.
+  Optional Tari keeps mining Monero; recovery claims readmission only after workers were
+  rejected and the proxy successfully restarted. Monero alert texts are unchanged (#3119).
+
 - **Tari v6.0.1-pre.0 and P2Pool 4.18.1, upgraded together
   ([#1129](https://github.com/p2pool-starter-stack/pithead/issues/1129)).** The Tari 6.0 hard
   fork activates at mainnet block **350,000**; a node on an older version forks off the
@@ -155,9 +159,10 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   box whose kernel or init has hung, with nobody present. The Tor-only egress firewall is enforced under the
   appliance's own container engine, and IPv6 fails closed. The mining-rig role ships RigForge
   1.18.0 code at commit
-  `f5ff0479473ad5fb2c0605a1219dd3721517a171`, before its release tag
+  `b2d4c3d9ca1da74d0e6d5ccce772d401acc8be03`, before its release tag
   ([#1826](https://github.com/p2pool-starter-stack/pithead/issues/1826),
-  [#3029](https://github.com/p2pool-starter-stack/pithead/issues/3029)).
+  [#3029](https://github.com/p2pool-starter-stack/pithead/issues/3029),
+  [#3116](https://github.com/p2pool-starter-stack/pithead/issues/3116)).
 - **Service Diagnostics in the dashboard ([#913](https://github.com/p2pool-starter-stack/pithead/issues/913), [#943](https://github.com/p2pool-starter-stack/pithead/issues/943)):** the host doctor's detail and a
   bounded, redacted tail of each service's log, without a shell.
 - **The dashboard says where a rig's running configuration came from ([#1345](https://github.com/p2pool-starter-stack/pithead/issues/1345)),** persists the
