@@ -25,7 +25,10 @@ provision_rc=1
 if phase_tor_heal; then exit 1; fi
 [ ! -e "$work/guest-script" ]
 provision_rc=0 guest_rc=17
-phase_tor_heal
+SSH_ERR="$work/ssh-err"
+echo 'Tor heal guest failed at fixture-stage (line 1, exit 17)' >"$SSH_ERR"
+phase_tor_heal >"$work/phase-output"
+grep -q 'Guest stderr: Tor heal guest failed at fixture-stage' "$work/phase-output"
 [ "$(wc -l <"$work/fail")" = 2 ]
 # A Docker command that accepts no stdin must not make the offline test pass.
 docker() {
