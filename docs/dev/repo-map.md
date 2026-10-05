@@ -121,7 +121,9 @@ Coordinator connection announcements and unchanged-apply miner calls are covered
 Its `tests/integration/tools/connection-setup-pty.py` driver answers the real setup prompts
 and bounds the child process and captured output.
 The source-image module supplies shared read-only lifecycle latch/marker diagnostics to the
-connection probe and lifecycle runner. Its diagnostic and image selftests use fake Docker I/O.
+connection probe and lifecycle runner. The image fixture uses the shared
+`assert_mining_probe_ready` in `run-matrix.sh` to settle a legitimate restore-induced hold.
+Its diagnostic, readiness and image selftests use fake Docker I/O.
 The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
 both local-miner toggles converge without rebooting.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted

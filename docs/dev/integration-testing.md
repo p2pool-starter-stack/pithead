@@ -771,7 +771,14 @@ For one representative config:
   with the `missing` pull policy must
   then return healthy on the same chain files and the same Monero onion address.
 
-A source checkout retains the original image under a temporary tag, builds a label-only
+A source checkout first reuses `assert_mining_probe_ready`: both P2Pool and xmrig-proxy
+must be running for two consecutive samples, five seconds apart, with a 1500-second
+readiness deadline. Each Docker probe has a 10-second TERM deadline and two-second
+forced-kill grace.
+The wizard-defaults baseline apply can legitimately reset the gate when it changes the
+required Tari mode; healthy status alone does not establish mining-service readiness.
+A failed prerequisite records a binding failure and still executes every image assertion.
+The fixture retains the original image under a temporary tag, builds a label-only
 `xmrig-proxy` image while the old container stays running, then calls the upgrade image
 reconciler. The regression requires guarded recreation,
 the declared immutable image ID and checkout Compose owner, and restoration of the original

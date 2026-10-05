@@ -120,6 +120,7 @@ run_source_image_reconcile() {
     fi
     local out rc before="$IT_FAIL"
     lifecycle_gate_sample before-source-image
+    assert_mining_probe_ready "source image fixture (#1276)"
     it_step "building a new proxy declaration while its old image remains live (#2934)…"
     out="$(rx "$(source_image_reconcile_snippet)" 2>&1)"
     rc=$?
