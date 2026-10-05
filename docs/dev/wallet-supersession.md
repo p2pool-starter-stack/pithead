@@ -100,4 +100,5 @@ retries and archive preservation. The tier-4 lifecycle proof uses a separate
 private snapshot, exercises the real offline opener twice, proves live ciphertext
 identity, checks idempotence and retained evidence, and requires restoration
 replay to refuse. It retains its proof archives in private job scratch and never
-retires another job's fixture.
+retires another job's fixture. On failure its JSON names a fixed `failed_stage`
+label to identify the refused step without printing exception text or wallet data.

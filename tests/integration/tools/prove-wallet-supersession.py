@@ -21,11 +21,13 @@ def load(name, filename):
     return value
 
 
-def prove(baseline):
+def prove(baseline, progress):
     fixture = load("fixture", "wallet-fixture.py")
     retirement = load("retirement", "wallet_fixture_supersession.py")
+    progress("configured_identity")
     if fixture.identity(baseline) is None:
         raise ValueError("lifecycle supersession proof requires a prepared wallet")
+    progress("scratch")
     scratch = Path(
         tempfile.mkdtemp(
             prefix="pithead-wallet-supersession-proof-", dir=os.environ["IT_SCRATCH_DIR"]
@@ -33,6 +35,7 @@ def prove(baseline):
     )
     # Retain this proof's archives privately, just like the recovery evidence.
     os.environ["IT_SCRATCH_DIR"] = str(scratch)
+    progress("capture")
     with redirect_stdout(io.StringIO()) as output:
         fixture.capture(baseline)
     snapshot = Path(output.getvalue().strip())
@@ -54,29 +57,36 @@ def prove(baseline):
         }
     ).encode()
     before = {p.name: fixture.digest(p) for p in snapshot.iterdir()}
+    progress("validate_snapshot")
     state = fixture.load(snapshot, baseline)
     # Exercise the real offline opener even when encrypted keys match. Unit
     # tests independently require both fields and drive differing ciphertext.
+    progress("isolated_open_archive")
     first = retirement.open_copy(
         fixture, state["image"], snapshot / "wallet.tar", snapshot, "proof-a"
     )
+    progress("isolated_open_control")
     second = retirement.open_copy(
         fixture, state["image"], snapshot / "wallet.tar", snapshot, "proof-b"
     )
     if first != second:
         raise ValueError("isolated copies did not prove equal address and view key")
+    progress("supersede_live")
     result = retirement.supersede(fixture, snapshot, baseline, job, request)
     if (
         result["proof"]["encrypted_keys_match"] is not True
         or result["proof"]["identity_proven"] is not True
     ):
         raise ValueError("live fixture identity was not proved")
+    progress("retry")
     if retirement.supersede(fixture, snapshot, baseline, job, request) != result:
         raise ValueError("supersession retry changed its result")
+    progress("preserved_evidence")
     if (job / "wallet-fixture-restore.state").read_bytes() != b"ARMED\n" or any(
         fixture.digest(snapshot / name) != digest for name, digest in before.items()
     ):
         raise ValueError("supersession changed the original evidence")
+    progress("replay_refusal")
     try:
         fixture.restore(snapshot, baseline, baseline)
     except ValueError:
@@ -93,11 +103,23 @@ def prove(baseline):
     }
 
 
+def run_proof(baseline):
+    stage = "load_helpers"
+
+    def progress(value):
+        nonlocal stage
+        stage = value
+
+    try:
+        return 0, prove(baseline, progress)
+    except (ValueError, OSError, subprocess.SubprocessError, tarfile.TarError, KeyError, TypeError):
+        # Fixed stage labels only: never echo exceptions, wallet data or paths.
+        return 1, {"schema": 1, "identity_proven": False, "failed_stage": stage}
+
+
 if __name__ == "__main__":
     os.umask(0o077)
     load("retirement", "wallet_fixture_supersession.py").install_signal_handlers()
-    try:
-        print(json.dumps(prove(Path(sys.argv[1]).resolve()), sort_keys=True))
-    except (ValueError, OSError, subprocess.SubprocessError, tarfile.TarError, KeyError, TypeError):
-        print(json.dumps({"schema": 1, "identity_proven": False}))
-        sys.exit(1)
+    code, result = run_proof(Path(sys.argv[1]).resolve())
+    print(json.dumps(result, sort_keys=True))
+    sys.exit(code)
