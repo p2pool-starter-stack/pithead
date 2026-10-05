@@ -2,7 +2,6 @@
 # Bounded XvB actuation smoke for the throwaway KVM appliance. The appliance is
 # intentionally unsynchronised, so this injects the controller's existing switch
 # method rather than pretending a PPLNS share or routed hashrate exists.
-
 # shellcheck source=tests/os/appliance-xvb-proxy-diag.sh
 . "$(dirname "${BASH_SOURCE[0]}")/appliance-xvb-proxy-diag.sh"
 _xvb_payload() { # <mode> -> base64 Python that actuates then reads the live route
@@ -147,7 +146,8 @@ _xvb_routing_actuation() {
         bad "controller actuator could not restore the live proxy to P2Pool within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
         return 1
     fi
-    ok "bounded controller injection restored the live proxy to P2Pool"; printf '     %s\n' "$(_xvb_proxy_diag)" # #2733: the diagnostic runs green too
+    ok "bounded controller injection restored the live proxy to P2Pool"
+    printf '     %s\n' "$(_xvb_proxy_diag)" # #2733: the diagnostic runs green too
 }
 
 # NOT a subshell body: ok/bad must count in the harness's own PASS/FAIL, and a bare `return` after
