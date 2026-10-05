@@ -16,6 +16,7 @@ run_lifecycle() {
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after restart" "$?" "0"
+    run_connection_announcements || return 1
 
     # #2654: a source checkout ups with --pull never, so a digest-pinned third-party image that is
     # gone from the engine (after `uninstall`, or on a new host) left its services down. Remove the
@@ -54,7 +55,6 @@ run_lifecycle() {
 
     run_source_image_reconcile || return 1
     run_tari_background_sync || return 1
-    # Flip sidechains and assert secrets survive the scoped recreation.
     local cur_pool fp_before
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
