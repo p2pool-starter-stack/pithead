@@ -1,8 +1,8 @@
-"""Opt-in Tor clearnet recovery without changing guards by default.
+"""Bounded Tor clearnet recovery when tor.auto_heal is enabled.
 
 Corroborate failed probes on isolated circuits and two targets before bounded NEWNYM requests.
-A final restart re-dials local Monero. Neither action authorizes changing guards or deleting
-state: saturated history is read and alerted; only an operator runs `./pithead tor-recover`.
+For saturated history, the final step requests host-gated tor-recover, including its persistent
+six-hour cooldown and identity checks. Otherwise a final restart re-dials local Monero.
 """
 
 import asyncio
@@ -20,7 +20,8 @@ from mining_dashboard.config.config import (
     TOR_SOCKS_PROXY,
 )
 from mining_dashboard.helper.http import bounded_get
-from mining_dashboard.service import control_service, request_spool
+from mining_dashboard.service import control_service
+from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
 
 logger = logging.getLogger("TorHeal")
 
@@ -52,9 +53,10 @@ TOR_SETTLE_SEC = 30
 TOR_SETTLE_POLL_SEC = 5
 
 
-class TorEgressHealer:
+class TorEgressHealer(TorHistoryMixin):
     """Probe and recover Tor egress under a fixed cadence, cooldown and attempt cap."""
 
+    HISTORY_TIMEOUT_SEC = PROBE_INTERVAL_SEC
     CONTAINER = "tor"
     MONEROD = "monerod"
 
@@ -83,6 +85,8 @@ class TorEgressHealer:
         self._last_attempt = None  # cooldown anchor
         self._ok_streak = 0  # consecutive OK probes (sustained-recovery counter, post-restart)
         self._warned_exhausted = False  # give-up warning is logged once per outage, not every probe
+        self._pending_recovery = None
+        self._recovery_notice = None
         self._pending_refresh = None
         self._pending_since = None
         self._failure_evidence = ""
@@ -165,59 +169,6 @@ class TorEgressHealer:
             self._attempts -= 1
         self._last_attempt = None
 
-    def _request_history(self):
-        """Ask the host for the saturated-history reading; one request in flight, never raises."""
-        if self._pending_history is not None:
-            return
-        try:
-            if not self._clear_history and self._history_outage is None:
-                self._history_outage = str(uuid.uuid4())
-            self._pending_history = request_spool.write(
-                {
-                    "id": str(uuid.uuid4()),
-                    "action": "tor-history",
-                    "actor": "tor-heal",
-                    "outage": "" if self._clear_history else self._history_outage,
-                    "observed_at": int(time.time()),
-                }
-            )
-            self._history_since = self._clock()
-        except OSError:
-            logger.warning("Tor circuit-history check could not be submitted to the host runner")
-
-    async def _read_history(self) -> None:
-        """Log (once per heal round) and alert (once per outage) a saturated circuit history."""
-        if self._pending_history is None:
-            return
-        result = control_service.result(self._pending_history)
-        if result is None:
-            # A lost request must not block every later reading: drop it after one probe interval.
-            if self._clock() - self._history_since >= PROBE_INTERVAL_SEC:
-                self._pending_history = None
-            return
-        self._pending_history = None
-        if self._clear_history:
-            if result.get("status") == "applied":
-                self._clear_history = False
-            return
-        saturated = result.get("status") == "applied" and result.get("saturated") is True
-        self.saturated_history = saturated
-        if not saturated:
-            return
-        logger.warning(
-            "Tor circuit-build-time history is saturated (CircuitBuildAbandonedCount and "
-            "TotalBuildTimes at the cap, no CircuitBuildTimeBin) and NEWNYM does not clear it. "
-            "Run './pithead tor-recover check' then './pithead tor-recover apply'."
-        )
-        if not self._warned_saturated and self._notify is not None:
-            self._warned_saturated = bool(
-                await self._notify(
-                    "\U0001f9c5 Tor clearnet egress is down and its circuit-build-time history is "
-                    "saturated; NEWNYM cannot clear it. Run './pithead tor-recover check', then "
-                    "'./pithead tor-recover apply'."
-                )
-            )
-
     async def _monerod_running(self) -> bool:
         """Only a running monerod is cycled (#2749). A stopped one stays stopped: with LAN access on
         a DIY Docker host it may be held because its LAN-only source rule is missing, and a start
@@ -258,6 +209,8 @@ class TorEgressHealer:
             return
         self._last_probe = now
         try:
+            if await self._read_recovery(now):
+                return
             await self._read_history()
             if self._clear_history:
                 self._request_history()
@@ -291,8 +244,7 @@ class TorEgressHealer:
             outage_minutes = (now - self._failing_since) / 60 if self._failing_since else 0
             action = self.decide(ok, now)
             if action == "heal":
-                if self._recovery_step == "NEWNYM" or self._newnym_unconfirmed:
-                    self._request_history()  # NEWNYM did not help: is the history saturated?
+                self._request_history()  # Read on the first round, then refresh each round.
                 if self._attempts < MAX_ATTEMPTS:
                     logger.warning(
                         "Tor clearnet egress failed for %.0f minutes: %s. "
@@ -314,6 +266,18 @@ class TorEgressHealer:
                         )
                         return
                     self._pending_since = now
+                    return
+                if self.saturated_history:
+                    try:
+                        self._pending_recovery = control_service.submit(
+                            "tor-recover", actor="tor-heal"
+                        )
+                        self._recovery_requested_at = now
+                    except OSError:
+                        self._recovery_notice = (
+                            "Tor state recovery could not be submitted; no restart was attempted."
+                        )
+                        await self._read_recovery(now)
                     return
                 logger.warning(
                     "Tor clearnet egress failed for %.0f minutes after circuit "

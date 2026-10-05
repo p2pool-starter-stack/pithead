@@ -11,6 +11,9 @@ source "$ROOT/lib/pithead/02e-tor-recovery.sh"
 source "$ROOT/lib/pithead/22a-config-document.sh"
 # shellcheck source=lib/pithead/49-control-request-loop.sh
 source "$ROOT/lib/pithead/49-control-request-loop.sh"
+# shellcheck source=lib/pithead/48b-control-tor-recover.sh
+source "$ROOT/lib/pithead/48b-control-tor-recover.sh"
+bundle_redact_log() { cat; }
 echo "== tor-recover accepts a sustained heal outage on a synchronized Monero =="
 mkdir -p "$WORK/tor/p2pool" "$WORK/control/audit" "$WORK/control/results" "$WORK/bin"
 printf 'identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"
@@ -21,7 +24,7 @@ sudo() {
 }
 sleep() { :; }
 log() { :; }
-warn() { :; }
+warn() { printf '%s\n' "$*"; }
 require_deployed() { :; }
 mutation_lock_acquire() { _PITHEAD_LOCK_OWNED=1; }
 mutation_lock_release() { :; }
@@ -105,11 +108,15 @@ docker() {
 }
 tor_recovery_info() { printf '{"status":"OK","synchronized":true,"height":42,"outgoing_connections_count":%s}\n' "$([ -e "$WORK/stopped" ] && echo 0 || echo 3)"; }
 before=$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key")
-tor_recover apply
+jq -n --arg id "$id" '{id:$id,action:"tor-recover",actor:"tor-heal"}' >"$WORK/recover.json"
+control_process_request "$WORK/recover.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = applied ]
 [ "$before" = "$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key")" ]
 [ ! -e "$WORK/tor/state" ] && ls "$WORK"/tor/state.backup.* >/dev/null
 [ -s "$WORK/control/tor-recovery-at" ] && [ "$(tail -1 "$WORK/audit")" = applied ]
-if tor_recover apply; then exit 1; fi
+control_process_request "$WORK/recover.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = failed ]
+jq -e '.error | contains("six-hour cooldown")' "$WORK/result" >/dev/null
 rm -f "$WORK"/tor/state.backup.* "$WORK/control/tor-recovery-at" "$WORK/audit"
 printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
 
@@ -177,7 +184,28 @@ control_process_request "$WORK/stale.json" "$WORK/control"
 jq '.outage=42' "$WORK/request.json" >"$WORK/bad.json"
 control_process_request "$WORK/bad.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
-echo "== doctor FAILs a saturated history under a sustained heal outage =="
+echo "== doctor FAILs saturated history without an outage record or auto-heal =="
+rm "$record"
+[ ! -e "$WORK/control/tor-recovery-at" ]
+backups_before=$(find "$WORK/tor" -name 'state.backup.*' | wc -l)
+AUTO_HEAL_OFF=1
+control_process_request "$WORK/recover.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = rejected ]
+AUTO_HEAL_OFF=0
+for payload in '.actor="operator"' '.config={}' '.container="tor"' '.outage="x"' '.extra="x"'; do
+    jq "$payload" "$WORK/recover.json" >"$WORK/bad-recover.json"
+    control_process_request "$WORK/bad-recover.json" "$WORK/control"
+    [ "$(jq -r .status "$WORK/result")" = rejected ]
+done
+control_process_request "$WORK/recover.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = failed ]
+printf 'CircuitBuildTimeBin 100 1\n' >>"$WORK/tor/state"
+control_process_request "$WORK/recover.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = failed ]
+jq -e '.error | contains("history is not saturated")' "$WORK/result" >/dev/null
+[ ! -e "$WORK/control/tor-recovery-at" ]
+[ "$(find "$WORK/tor" -name 'state.backup.*' | wc -l)" = "$backups_before" ]
+AUTO_HEAL_OFF=1
 # shellcheck source=lib/pithead/21-doctor-stack-checks.sh
 source "$ROOT/lib/pithead/21-doctor-stack-checks.sh"
 container_is_running() { return 0; }
@@ -189,7 +217,7 @@ rm "$WORK/doctor"
 export EGRESS=up
 check_tor_circuit_history
 export EGRESS=down
-rm "$record"
+printf 'CircuitBuildTimeBin 100 1\n' >>"$WORK/tor/state"
 check_tor_circuit_history
 [ ! -e "$WORK/doctor" ]
 echo 'tor heal outage recovery PASS'
