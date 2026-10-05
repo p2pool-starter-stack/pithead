@@ -30,6 +30,26 @@ env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
 # monerod is absent in remote mode.
 running_services() { rx "docker compose ps --services --status running 2>/dev/null | sort"; }
 
+# Two consecutive running samples reject a transient release before a second sync-gate hold.
+_pred_mining_probe_running() {
+    if rx 'running=$(timeout 10 docker compose ps --services --status running) && grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"'; then
+        mining_probe_samples=$((mining_probe_samples + 1))
+    else
+        mining_probe_samples=0
+    fi
+    [ "$mining_probe_samples" -ge 2 ]
+}
+
+assert_mining_probe_ready() {
+    local probe="$1" mining_probe_samples=0
+    if wait_for 1500 5 "mining services running before $probe" _pred_mining_probe_running; then
+        it_pass "mining services running before $probe"
+    else
+        it_fail "mining services running before $probe" "both services did not remain running for two consecutive samples within 1500s"
+    fi
+    # A failed prerequisite never suppresses the caller's UID or TLS assertions.
+}
+
 # Print "<state> <health>" for one service, exactly as stack_status reads it: state is the
 # container State.Status (running/exited/paused/restarting/…) and health is the healthcheck
 # verdict (healthy/unhealthy/starting/none), or "missing none" when absent. The fault-injection
