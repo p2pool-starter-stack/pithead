@@ -5,10 +5,8 @@
 // The view only ever ASKS — every request rides the X-Pithead-Control header (CSRF guard) and
 // the host decides. When the channel is off the routes 404 and this view explains how to enable.
 //
-// ONE editing surface, the wizard's pattern (#785): the form sections on top and the candidate
-// config beneath as a collapsed JSON pane — both live, both views of a single `candidate`
-// object. Editing a field rewrites the candidate (typed by the field, via configsync's shared
-// coerceForType) and the pane re-renders; editing the pane replaces it and the fields refill.
+// The form and JSON pane share one candidate. Edits use configsync's coerceForType;
+// pane edits replace the candidate and refill the fields.
 //
 // The form pins a `core` group — the wizard's own shortlist, `_core_keys` on the fetched config,
 // sourced from config.core-keys.json so the two never drift apart — above LOGICAL sections
@@ -36,6 +34,7 @@ import {
 } from "./configlogic.mjs";
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
+import { ConfigVersion } from "./configversion.mjs";
 import { controlCommitResult, requirePreviewResponse } from "./controlclient.mjs";
 
 export { editableCandidate, PreviewModal };
@@ -426,6 +425,7 @@ export class ConfigView extends Component {
       coreKeys,
     );
     return html`<div class="config-view">
+        <${ConfigVersion} cfg=${this.state.cfg} />
         ${error ? previewFailure(error, this.props.appliance) : null}
         ${
           lastApply?.status === "failed"

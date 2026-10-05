@@ -5,7 +5,7 @@
 # propagating telegram/webhook/ntfy secrets into .env while never printing them in the change
 # preview (alongside the rest of apply's field-propagation regression, which this section also
 # carries), the payout-wallet change's typed-confirm gate on both chains (a bare 'y' no longer
-# passes; the address's first 8 characters must be typed back; -y still bypasses it for automation,
+# passes; the address's last 8 characters must be typed back; -y still bypasses it for automation,
 # #375), secret-bearing files being owner-only from the moment they are created rather than chmod'd
 # after the fact (#368), and rotate-secrets regenerating the local Monero RPC password, the "auto"
 # stratum password, and PROXY_AUTH_TOKEN — recreating containers via compose up (never restart),
@@ -13,25 +13,6 @@
 # nothing, and a failed recreate leaving the retry marker plus recoverable owner-only safety copies
 # of the old values (#378).
 # Sourced by tests/stack/run.sh, stacked on test-backup.sh.
-#
-# This file merges TWO clusters that sat apart in run.sh, on either side of the backup domain's
-# black-box round-trip cluster (test-backup.sh): the apply/payout-wallet/secret-file cluster used to
-# run first, and the rotate-secrets cluster used to run roughly 350 lines later, after the whole
-# backup round-trip + reset-dashboard block. With that block now extracted to test-backup.sh, the two
-# clusters below are adjacent again in the same relative order they always ran in — nothing here
-# reads or writes backup's fixtures ($BK/$FB/$R/$RD557), so pulling its cluster out from between them
-# changes nothing this file depends on.
-#
-# Left behind, code-checked (not markers): the "xmrig-proxy entrypoint" pair (unset/set stratum
-# access-password, then the TLS cert-flag pair, #152/#261) sits immediately after "rotate-secrets
-# failure path" in run.sh, under the same run of secrets-domain markers. It is rig/worker content —
-# it drives build/xmrig-proxy/entrypoint.sh's stratum-password and TLS-keypair flag rendering, not
-# secret storage/rotation/confirms — and the test-rig-worker.sh cut's own header already declined it
-# as "not this domain" and left it in run.sh pending this cut's decision. Code-checked again here: it
-# does not belong to secrets either. Line count corroborates the split — this file lands at 353 lines
-# of moved content against the #1252 map's ~359-line estimate for test-secrets.sh; folding the
-# xmrig-proxy pair in as well would land at 393, well past it. It stays in run.sh, still unclaimed by
-# either domain (most likely a future rig/worker-domain follow-up, since that is what its code does).
 #
 # Re-derivations:
 # - $V / $WALLET: lib.sh's build_val_sandbox() sets both; the "config validation" black-box calls it
@@ -220,9 +201,9 @@ out="$(cd "$V" && DOCKER_LOG="$V/docker.log" PATH="$V/bin:$PATH" ./pithead apply
 assert_contains "omitted p2pool.pool defaults to the mini sidechain flag (#502)" "$(run_sourced "$V" env_get_file "$V/.env" P2POOL_FLAGS)" "--mini"
 
 echo "== black-box: payout-wallet change needs a typed confirm (#375) =="
-# Swapping the payout wallet is the highest-value tamper: apply must demand the first 8 chars of
+# Swapping the payout wallet is the highest-value tamper: apply must demand the last 8 chars of
 # the new address typed back (a pasted 'y' can't wave it through), while -y keeps automation alive.
-WALLET2="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A" # a second checksum-valid primary (the Monero project's legacy donation address); first 8 chars = 44AFFq5k
+WALLET2="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A" # a second checksum-valid primary (the Monero project's legacy donation address); last 8 chars = VGQBEP3A
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)" # baseline .env
@@ -231,13 +212,22 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && printf 'y\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
 rc=$?
 assert_rc "wallet change with 'y' aborts cleanly" "$rc" "0"
-assert_contains "wallet prompt shows the new address's first 8 chars" "$out" "(44AFFq5k)"
+assert_contains "wallet prompt asks for the last 8 chars" "$out" "last 8 characters of the new address (VGQBEP3A)"
 assert_contains "wallet change cancelled" "$out" "Apply cancelled"
 assert_eq "wallet unchanged in .env after abort" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_WALLET_ADDRESS)" "$WALLET"
-# The preview/prompt never echoes the full new address (only its first 8 chars).
+# The preview and prompt show truncated address excerpts.
 assert_not_contains "full new address not echoed by apply" "$out" "$WALLET2"
-# (2) Typing the first 8 chars confirms and applies.
-out="$(cd "$V" && printf '44AFFq5k\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
+# The old prefix, a wrong suffix, and EOF must leave the active wallet and containers alone.
+for reply in '44AFFq5k' 'wrongend' ''; do
+    : >"$DOCKER_LOG"
+    out="$(cd "$V" && printf '%s' "$reply" | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
+    assert_rc "Monero refuses prefix/wrong suffix/EOF cleanly" "$?" "0"
+    assert_contains "Monero refuses prefix/wrong suffix/EOF" "$out" "Apply cancelled"
+    assert_eq "Monero wallet unchanged after refusal" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_WALLET_ADDRESS)" "$WALLET"
+    assert_eq "Monero refusal does not call Docker" "$(cat "$DOCKER_LOG")" ""
+done
+# (2) Typing the last 8 chars confirms and applies.
+out="$(cd "$V" && printf 'VGQBEP3A\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
 assert_rc "typed confirm applies" "$?" "0"
 assert_eq "wallet updated in .env after typed confirm" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_WALLET_ADDRESS)" "$WALLET2"
 # (3) -y still bypasses the prompt for automation.
@@ -247,28 +237,37 @@ assert_rc "apply -y skips the typed confirm" "$?" "0"
 assert_eq "wallet updated with -y" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_WALLET_ADDRESS)" "$WALLET"
 
 # A TARI-only wallet change demands the same typed confirm (the suite above only drove Monero).
-TARI2="12KQktz75n4MDh12q8CSV2evxAHrPFAMo29tZqsgKhyHXqP17Tz9jkVhE3T7bB5qAcHQu2kFoXi78EgwfzDhYZ748JT" # checksum-valid (reference keys swapped); first 8 chars = 12KQktz7
+TARI2="12KQktz75n4MDh12q8CSV2evxAHrPFAMo29tZqsgKhyHXqP17Tz9jkVhE3T7bB5qAcHQu2kFoXi78EgwfzDhYZ748JT" # checksum-valid (reference keys swapped); last 8 chars = hYZ748JT
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"%s"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" "$TARI2" >"$V/config.json"
 out="$(cd "$V" && printf 'y\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
 assert_rc "tari wallet change with 'y' aborts cleanly" "$?" "0"
-assert_contains "tari wallet prompt shows the new address's first 8 chars" "$out" "(12KQktz7)"
+assert_contains "tari wallet prompt asks for the last 8 chars" "$out" "last 8 characters of the new address (hYZ748JT)"
 assert_eq "tari wallet unchanged in .env after abort" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_ADDRESS)" "$VALID_TARI"
-out="$(cd "$V" && printf '12KQktz7\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
+# The old prefix, a wrong suffix, and EOF must leave the active wallet and containers alone.
+for reply in '12KQktz7' 'wrongend' ''; do
+    : >"$DOCKER_LOG"
+    out="$(cd "$V" && printf '%s' "$reply" | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
+    assert_rc "Tari refuses prefix/wrong suffix/EOF cleanly" "$?" "0"
+    assert_contains "Tari refuses prefix/wrong suffix/EOF" "$out" "Apply cancelled"
+    assert_eq "Tari wallet unchanged after refusal" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_ADDRESS)" "$VALID_TARI"
+    assert_eq "Tari refusal does not call Docker" "$(cat "$DOCKER_LOG")" ""
+done
+out="$(cd "$V" && printf 'hYZ748JT\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
 assert_rc "tari typed confirm applies" "$?" "0"
 assert_eq "tari wallet updated in .env after typed confirm" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_ADDRESS)" "$TARI2"
 
-# BOTH wallets changing in one apply needs TWO typed confirms — one prefix must never wave both
+# BOTH wallets changing in one apply needs TWO typed confirms — one suffix must never wave both
 # through (env_changed_keys sorts, so Monero prompts first, then Tari).
-TARI3="16beoiD8FT6Ty7q9fyGVk7BmstB3rrtAb7FLFUnJ66deCkAUNsh3suMDQ1CTnhkNKfAjMF2UHJQDVjYJ57wmdMPpwqJfi2i3" # checksum-valid (payment-id form); first 8 chars = 16beoiD8
+TARI3="16beoiD8FT6Ty7q9fyGVk7BmstB3rrtAb7FLFUnJ66deCkAUNsh3suMDQ1CTnhkNKfAjMF2UHJQDVjYJ57wmdMPpwqJfi2i3" # checksum-valid (payment-id form); last 8 chars = wqJfi2i3
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"%s"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET2" "$TARI3" >"$V/config.json"
-out="$(cd "$V" && printf '44AFFq5k\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
-assert_rc "both-wallet change with one prefix aborts cleanly" "$?" "0"
-assert_contains "both-wallet change prompts for the Monero prefix" "$out" "(44AFFq5k)"
-assert_contains "both-wallet change prompts for the Tari prefix too" "$out" "(16beoiD8)"
-assert_contains "both-wallet change with one prefix is cancelled" "$out" "Apply cancelled"
-assert_eq "monero wallet unchanged after one-prefix abort" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_WALLET_ADDRESS)" "$WALLET"
-assert_eq "tari wallet unchanged after one-prefix abort" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_ADDRESS)" "$TARI2"
-out="$(cd "$V" && printf '44AFFq5k\n16beoiD8\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
+out="$(cd "$V" && printf 'VGQBEP3A\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
+assert_rc "both-wallet change with one suffix aborts cleanly" "$?" "0"
+assert_contains "both-wallet change prompts for the Monero suffix" "$out" "(VGQBEP3A)"
+assert_contains "both-wallet change prompts for the Tari suffix too" "$out" "(wqJfi2i3)"
+assert_contains "both-wallet change with one suffix is cancelled" "$out" "Apply cancelled"
+assert_eq "monero wallet unchanged after one-suffix abort" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_WALLET_ADDRESS)" "$WALLET"
+assert_eq "tari wallet unchanged after one-suffix abort" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_ADDRESS)" "$TARI2"
+out="$(cd "$V" && printf 'VGQBEP3A\nwqJfi2i3\n' | DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply 2>&1)"
 assert_rc "both typed confirms apply" "$?" "0"
 assert_eq "monero wallet updated after both confirms" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_WALLET_ADDRESS)" "$WALLET2"
 assert_eq "tari wallet updated after both confirms" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_ADDRESS)" "$TARI3"

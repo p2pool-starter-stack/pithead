@@ -58,7 +58,9 @@ only the keys you want to override.
 - It previews what will change, diffing your edited `config.json` against the running configuration.
 - It prompts to confirm before anything disruptive: switching the Monero node local↔remote, switching
   `tari.mode` between `local`, `remote` and `off`, toggling pruning, changing a payout address,
-  exposing the RPC to your LAN, or moving a data directory.
+  exposing the RPC to your LAN, or moving a data directory. For a Monero or Tari payout-address
+  change, type the last 8 characters of each new address. A wrong suffix or missing input cancels
+  the apply; `-y` skips confirmation for scripting.
 - It regenerates the `.env`, Caddy, and Tari configs and recreates only the containers that need it.
   Enabling or disabling payout confirmation does not restart Tor; its onion services follow the
   local Monero and Tari node modes.
@@ -102,10 +104,28 @@ show every answer as a radio choice. The target-disk inventory remains a select 
 ## Configuration reference
 
 > Only `monero.wallet_address` is always required; `tari.wallet_address` is required unless
-> `tari.mode` is `off`, which merge-mines nothing and so needs nowhere to be paid. Everything below
-> is optional and has a default. Add a key only when you want to change its behavior. Editing `config.json`
+> `tari.mode` is `off`, which merge-mines nothing and so needs nowhere to be paid. Settings below
+> are optional and have defaults. Add a setting only when you want to change its behavior. Editing `config.json`
 > changes nothing by itself — run `./pithead apply` afterward (see
 > [Changing settings later](#changing-settings-later)).
+
+`config_version` is a read-only host stamp, not a setting. After successful non-dry validation
+(apply, setup or boot render), the host writes the release `X.Y.Z` from `VERSION`, without a
+prerelease or build suffix. An equal stamp leaves the file untouched; a dry run never stamps.
+An absent stamp means 2.0.0. Configuration versioning starts at 2.0.0, with no 1.x migrations.
+A failed stamp write warns and validation continues. `pithead backup` validates first, so it
+stamps before archiving.
+
+A newer stamp is kept. Apply, render and boot show a warning; the media, pre-seed, firstboot and
+restore validators discard warnings on success. Pre-seed rewrites an older stamp. Both restore
+doors refuse a newer backup before promotion: update to that version or later, then restore.
+The dashboard shows the stamp and warns that saving is blocked while unknown settings remain.
+Dashboard form, JSON editor, control API and USB edits ignore this key; previews, diffs and
+recent changes omit it. The appliance wizard drops it and the host stamps the result.
+
+| Key | Baseline | Meaning |
+|---|---|---|
+| `config_version` | `2.0.0` | Release that last validated and stamped the file; read-only in Configuration. |
 
 The table below has ~90 keys across 14 sections — every leaf key of
 [`config.reference.json`](../config.reference.json) — most of it you'll never touch. A handful of keys
@@ -120,7 +140,7 @@ top of its form. Both read the exact same list, [`config.core-keys.json`](../con
 Below the core group, the Configuration view and `config.reference.json` follow the same
 operator-purpose order: **Mining, Payouts, Monero node, Tari node, Workers, Dashboard & access,
 Notifications, Energy, Alerts, Advanced**. Each group says in one line what its settings affect.
-Every reference key belongs to one of those named groups; the frontend test fails if a new key
+Every setting apart from the read-only version stamp belongs to one of those named groups; the frontend test fails if a new key
 would otherwise fall into an unlabeled catch-all.
 
 Ordinary settings apply after the preview. Disruptive settings also require typed `APPLY`.
@@ -131,7 +151,7 @@ which the host re-checks against the staged file. These are typo protection and 
 friction, not a second identity — a signed-in session that can set a field can also fill the
 confirm box. The Telegram approval that once sat here was removed in #2076. The preview shows full
 old and new non-secret values, while credentials and capability URLs stay masked and never echo
-back after commit. No field is refused from the dashboard (#2367). The high-consequence ones
+back after commit. No setting is refused from the dashboard (#2367); `config_version` is the read-only exception. The high-consequence ones
 warn in the form and name their cost again in the host preview before you confirm: the dashboard
 password; the Telegram bot token, chat id and Healthchecks ping URL, where a wrong value stops
 delivery or sends alerts and pings to an unintended destination; and the
@@ -173,14 +193,14 @@ the desired value is not presented as proof of what the still-running services u
 | `p2pool.stratum_tls` | `false` | Serve TLS on the stratum port (#261). Same port, per-connection detection: cleartext rigs keep mining while rigs opt in one at a time (`pools[].tls: true` + pinning the certificate's SHA-256 fingerprint, printed after `apply` and by `status`). The self-signed cert lives under the data root and keeps its fingerprint across upgrades; regenerating it (delete + `apply`) is the rotation. Confidentiality only — pair with `stratum_password` for access control. See [Connecting Miners › Stratum over TLS](workers.md#stratum-over-tls). |
 | `p2pool.clearnet` | `false` | Privacy-relevant, default off (Tor). P2Pool's `--onion-address` only advertises an onion for inbound peers; its outbound sidechain dials need a SOCKS proxy or they go over clearnet, exposing your home IP. Default (`false`) routes those dials through the bundled Tor proxy (`--socks5 <tor>:9050 --socks5-proxy-type tor`) and turns off P2Pool's clearnet seed-node DNS lookups (`--no-dns`). Set `true` to dial peers directly over clearnet with the default firewall still on: only P2Pool gets an IPv4 exception, removed when the flag is turned off and applied. Tor costs about 10 % of P2Pool yield on `mini`; Tor latency raises the stale/uncle-share rate and onion-only shrinks the peer set, both worse on `--mini`/`--nano`, so a high-variance small rig may prefer clearnet (at the cost of IP exposure). Full threat model: [Privacy › P2Pool outbound peers](privacy.md#p2pool-outbound-peers-165---tor-by-default). |
 | `proxy.donate_level` | `0` | xmrig-proxy's built-in dev-fee donation to the xmrig developers, as a percentage of submitted hashrate. Defaults to `0`, no donation (xmrig-proxy's own compiled-in default, which the stack now renders explicitly so it's visible rather than invisible). Set an integer `1`–`99` to donate that share to the xmrig devs if you want to support them. This is not the XvB donation; that's the separate `xvb.*` mechanism the optimizer steers, never this dev fee. |
-| `local_miner.enabled` | `false` | Also mine on the stack host itself with its spare CPU: a RigForge worker co-located on this box, pointed at the stack's own stratum over loopback. `setup` asks about it; `setup`/`apply` then print the pool URL and stratum password a RigForge install needs. See [Connecting Miners › Mine on the stack host itself](workers.md#mine-on-the-stack-host-itself). |
+| `local_miner.enabled` | `false` | Also mine on the stack host itself with its spare CPU: a RigForge worker co-located on this box, pointed at the stack's own stratum over loopback. `setup` asks about it; `setup`/`up`/`apply` print the pool URL and stratum password, or state that none is set, including an unchanged apply. On the appliance, apply starts or stops the built-in miner in the same invocation without rebooting. On DIY, install and manage RigForge separately. See [Connecting Miners › Mine on the stack host itself](workers.md#mine-on-the-stack-host-itself). |
 | `xvb.enabled` | `true` | Enable XMRvsBeast bonus-round hashrate switching. |
 | `xvb.url` | `na.xmrvsbeast.com:4247` | XMRvsBeast pool endpoint. |
 | `xvb.donor_id` | `auto` | XvB donor id. `auto` = the first 8 characters of your Monero address. |
 | `xvb.donation_level` | `auto` | Donation tier to target: `auto` (the highest tier your hashrate can sustain) or a specific tier: `donor` (1 kH/s) / `vip` (10 kH/s) / `whale` (100 kH/s) / `mega` (1 MH/s), where the figure is the donation hashrate you must hold on both your 1h and 24h averages. A specific tier is honored even if your hashrate can't hold it; the dashboard shows a warning badge in that case. (The `vip` tier is a donation level, not the dashboard's separate Raffle Eligible status; see [Architecture › Algorithmic switching](architecture.md#algorithmic-switching).) |
 | `xvb.tor` | `true` | Privacy-relevant, default on (Tor). While donating, the proxy connects to `na.xmrvsbeast.com`, which would otherwise expose your home IP to XvB. Default (`true`) routes that connection through the bundled Tor proxy (a per-pool `socks5` on the XvB pool; DNS resolved proxy-side). Set `false` to dial direct over clearnet while XvB is enabled: only xmrig-proxy gets an IPv4 firewall exception, removed when Tor is restored or XvB disabled and applied. The XvB pool sees your home IP. Stratum-over-Tor adds latency that can raise rejected shares (scales with hashrate). Only the XvB pool is affected; your local p2pool stratum is unaffected. Full threat model: [Privacy › XvB donation mining](privacy.md#xvb-donation-mining-166---tor-by-default). |
 | `xvb.standby.source` | `""` (off) | Backup-stack warm standby for a two-host failover pair (same wallet, workers listing both hosts in `pools[]`). Set this on the **backup** to the **primary** dashboard's read-only `/api/xvb-standby` URL (its onion, e.g. `https://<primary-onion>/api/xvb-standby`, or a LAN address like `http://192.168.1.10:8000/api/xvb-standby`). The backup periodically pulls the primary's XvB controller state and holds it as standby, so when your fleet fails over the donation split resumes warm instead of cold-ramping for hours. One-way and inert by default; the backup never donates while it has no workers. The URL may carry the primary's dashboard basic-auth (`https://user:pass@…`), so it is treated as a secret (owner-only `.env`, masked in the config editor). An `.onion` source is fetched over Tor and a LAN source dials direct — neither adds a new clearnet egress. |
-| `dashboard.tari_required` | `true` | How much a Tari problem holds up the rest of the stack. Monero is required to mine, so its behavior isn't configurable: a monerod outage always rejects workers (stops `xmrig-proxy` so miners fail over to their backup pools), and the miner is always held until monerod finishes syncing. Tari is only needed for merge-mining, and p2pool keeps mining Monero through a Tari-only outage, so a Tari outage never rejects workers — the fleet keeps mining Monero either way, and the outage shows up in the Tari panel and alerts instead. This flag decides Tari's two other holds: `true` (default): the miner also waits for Tari's initial sync, and a Tari-only (re)sync shows the full-screen Sync view. `false` (non-blocking): start mining as soon as Monero is synced (Tari finishes in the background), and keep the normal dashboard, with a `Tari syncing` indicator, instead of the takeover screen. |
+| `dashboard.tari_required` | `true` | Whether Tari is required for mining. Monero is always required: a sustained local or remote Monero outage stops `xmrig-proxy` so workers fail over to their backup pools, and the miner waits for Monero's initial sync. `true` (default): the miner also waits for Tari's initial sync, a Tari-only (re)sync shows the full-screen Sync view, and 15 minutes of unreachable local or remote Tari RPC rejects workers until both required nodes are confirmed healthy. This costs Monero revenue during a Tari-only outage, although p2pool could keep mining Monero. `false`: keep accepting workers through Tari outages, start mining once Monero is synced, and show Tari's sync progress in the normal dashboard. Live startup, migration and syncing states alert but never reject workers. Tari-down alerts fire regardless of this flag. Tari's panel reports its health either way. |
 | `dashboard.fail_closed` | `false` _(off)_ | Whether an **unrecoverable** dashboard health failure holds the miner, not just alerts (#490). The dashboard is an observability layer, not the mining datapath (`xmrig-proxy` → `p2pool` → `monerod` runs independently of it), so the default (`false`) is alert-only: a loud Telegram/Healthchecks alert plus a dashboard badge, and mining keeps running. `true` reuses the same hold the sync gate uses (stops `p2pool` and `xmrig-proxy`) the moment one of two narrow conditions hits, and starts them again once it clears — no restart needed: the dashboard's SQLite database failed to self-heal after its own auto-recovery attempt (disk full, permissions — see `db_reset` in [Dashboard › Node status & failover](dashboard.md#node-status--failover)), or the `dashboard` container itself is crash-looping. A transient write blip, a slow query, or a single failed external fetch never trips it — only these two genuinely non-transient failures do. Set it `true` only if a stale dashboard is a bigger risk to you than a held miner; a false positive here idles the fleet. |
 | **Payouts** |  | _Set payout destinations and the read-only wallet data used to confirm payments._ |
 | `monero.wallet_address` | _required_ | Your Monero payout address. Use a dedicated mining wallet because P2Pool payout addresses are public ([P2Pool's guidance](https://github.com/SChernykh/p2pool/releases/tag/v4.18.1)). Must be a primary/standard address (starts with `4`, 95 chars). Subaddresses (`8…`) and integrated addresses are not supported: p2pool pays via coinbase, which can't send to them, and XvB credits by this address. A wrong type mines but is never paid. The address's built-in checksum is verified too — a single mistyped character fails it, and p2pool crashes on such an address instead of mining. `setup`/`apply` reject both, and `doctor` flags them. |
