@@ -45,7 +45,6 @@ jobs:
         run: bash tests/stack/run.sh "$BLOCK"
         env:
           BLOCK: ${{ matrix.block }}
-          TMPDIR: ${{ runner.temp }}
 
   shell-fragment:
     name: Shell prerequisite (${{ matrix.fragment }})
@@ -144,8 +143,6 @@ jobs:
         # harness (config rendering, matrix coverage, redaction, Digest connection reuse). The LIVE matrix (tests/integration/run.sh) needs a real test
         # server and runs as a gated/manual release gate (#54), not on every PR.
         run: make test-integration-selftest
-        env:
-          TMPDIR: ${{ runner.temp }}
       - name: Run repository tooling checks
         run: make test-tools
 

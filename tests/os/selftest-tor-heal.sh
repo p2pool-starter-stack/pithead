@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Pure harness controls: no containers, guests or network service.
 set -euo pipefail
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?}}"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 work=$(mktemp -d "${TMPDIR:?}/tor-heal-selftest.XXXXXX")
 trap 'rm -rf "$work"' EXIT
