@@ -49,6 +49,8 @@ The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
+The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
+part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
 its shell regressions are in `tests/stack/config/version.sh`. The Configuration stamp card is
 `web/static/config/configversion.mjs`, with response metadata in `service/config_operations.py`.
@@ -127,7 +129,7 @@ Keep local code out of `vendor/`.
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. `fakes/test_masked_config_read.py` exercises raw host config through the CLI renderer and dashboard reader. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. |
-| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The post-commit fault leg uses `chain-fault-timing.sh` to read the live dashboard debounce and prove the before/after window; `selftest-chain-fault-timing.sh` covers its deadlines and negative controls. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
+| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The installer restore uses `restore-live-state-verdict.sh` for the configured-wallet comparison and bounded P2Pool startup window, with controller restoration and crash cases checked by `selftest-restore-p2pool-startup.sh`. The post-commit fault leg uses `chain-fault-timing.sh` to read the live dashboard debounce and prove the before/after window; `selftest-chain-fault-timing.sh` covers its deadlines and negative controls. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
 | `tests/runner/` | The pinned Linux image `make test-container` runs the other tiers inside, so a macOS or Windows host reaches CI's verdict. Built and CVE-scanned by `test-images.yml`; reaches no user. |
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
@@ -152,6 +154,8 @@ both local-miner toggles converge without rebooting.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata, failure snapshots and bounded preview transport recovery; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.
+The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to prove
+continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
 The provision and setup-defaults phases check firstboot and system journals for bcrypt credentials with
 `tests/os/credential-journals.sh`; `selftest-credential-journals.sh` covers leaks and unreadable journals.
 Password fixture cleanup lives in `tests/os/appliance-password-fixture.sh`, sourced and selftested by the config-approval leg.

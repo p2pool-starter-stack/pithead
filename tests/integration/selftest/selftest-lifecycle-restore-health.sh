@@ -61,6 +61,14 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }; }
         lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
+        run_tari_background_sync() { :; } # driven by its own runtime leg and selftest
+        sync_gate_marker_state() {
+            case "$RESTORE_CASE:$RESTORED" in
+            marker-before-fails:* | marker-after-fails:yes) return 1 ;;
+            marker-preserved:* | marker-changed:no | marker-introduced:yes) printf tari-only ;;
+            *) printf absent ;;
+            esac
+        }
         prove_wallet_supersession() { :; }    # Identity proof has its own selftest.
         tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
         run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
@@ -110,6 +118,11 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
     )
 }
 
+assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"
+assert_eq "restore rejects a newly introduced marker" "$(drive_restore yes marker-introduced)" "1|1"
+assert_eq "restore rejects a changed marker" "$(drive_restore yes marker-changed)" "1|1"
+assert_eq "an unreadable pre-restore marker fails closed" "$(drive_restore yes marker-before-fails)" "1|1"
+assert_eq "an unreadable restored marker fails closed" "$(drive_restore yes marker-after-fails)" "1|1"
 # A missing helper must survive shell contexts that can mask its status or stderr.
 for missing_call in \
     'pithead_restore_fixture_missing' \

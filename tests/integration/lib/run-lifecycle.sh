@@ -2,6 +2,8 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-background-sync.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 run_lifecycle() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"
@@ -55,6 +57,7 @@ run_lifecycle() {
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
     run_source_image_reconcile || return 1
+    run_tari_background_sync || return 1
     local cur_pool fp_before
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
@@ -114,9 +117,12 @@ run_lifecycle() {
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
         if [ -n "$arch" ]; then
-            local fp_b backed_pool fp_after
+            local fp_b backed_pool fp_after gate_marker_before gate_marker_after
             if ! fp_b="$(upgrade_secret_fingerprints)" || [ -z "$fp_b" ]; then
                 it_fail "backup secrets fingerprint readable" "could not fingerprint backed-up secrets"
+                lifecycle_ok=0
+            elif ! gate_marker_before="$(sync_gate_marker_state)"; then
+                it_fail "backed-up sync-gate policy readable" "missing path or invalid marker"
                 lifecycle_ok=0
             elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
                 it_fail "backed-up pool state readable" "dashboard did not report pool.type before restore"
@@ -133,16 +139,11 @@ run_lifecycle() {
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
                     lifecycle_ok=0
                 fi
-                # Operator ruling on #2626: `./pithead restore` is same-box recovery, not the
-                # cross-hardware carry restore_apply() handles, so it must NOT hold the miner behind
-                # the sync gate — this bench's chains never desynced. No marker, and p2pool comes
-                # back up on `up`'s own schedule rather than sitting stopped behind a hold `status`
-                # wouldn't flag (it treats a gate-stopped p2pool as intentional).
-                local ddir
-                ddir="$(env_on_box DASHBOARD_DATA_DIR)"
-                if [ -n "$ddir" ]; then
-                    assert_eq "restore plants no sync-gate marker (#2626, same-box recovery)" \
-                        "$(rx "sudo test -e $(quote_arg "$ddir/sync-gate-reset")" 2>/dev/null && echo present || echo none)" none
+                if ! gate_marker_after="$(sync_gate_marker_state)" || [ "$gate_marker_after" != "$gate_marker_before" ]; then
+                    it_fail "restore preserves sync-gate policy without a new hold (#2626)" "marker changed or unreadable"
+                    lifecycle_ok=0
+                else
+                    it_pass "restore preserves sync-gate policy without a new hold (#2626)"
                 fi
                 if wait_for 60 5 "p2pool running after restore, not held (#2626)" \
                     _pred_p2pool_running; then

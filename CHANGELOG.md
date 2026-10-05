@@ -89,7 +89,12 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 ### Added
 
 - Read-only `config_version` in `config.json`, shown in Configuration. Newer configs warn;
-  restoring a backup from a newer release requires updating first.
+  restoring a backup from a newer release requires updating first ([#3109](https://github.com/p2pool-starter-stack/pithead/issues/3109)).
+
+- **Stratum password is opt-in, and its connection details are shown wherever the pool URL is.**
+  Both wizards ask `Enable stratum password?` and default to no. The setup hand-off card, the
+  **Connect a miner** block (signed in, or on a dashboard with no login) and the CLI show the LAN
+  pool URL and the password, or that none is set ([#3092](https://github.com/p2pool-starter-stack/pithead/issues/3092)).
 
 - **The XMR Network card now says whether monerod is at the tip with peers.** It shows the outgoing and
   incoming peer counts and the age of the last height change, and goes red with the numbers after 10
@@ -187,6 +192,23 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Changed
 
+- **Enabling or re-pointing Tari on a mining box keeps Monero mining while Tari syncs.** The
+  preview row says so. The sync hold then applies to Monero only, so the miner and workers carry
+  on; merge-mining starts when Tari has synced. The first-install hold on both chains is
+  unchanged ([#3094](https://github.com/p2pool-starter-stack/pithead/issues/3094)).
+- **New installs start from safer defaults in both wizards.** Tari is on when the disk fits both
+  chains and off when it does not, the XvB raffle is off and not asked about, a dashboard login is
+  generated and shown once, and the first sync runs over Tor. The faster sync is an opt-in that
+  covers each chain run locally and warns that it exposes your IP. Upgrades keep their config
+  ([#3099](https://github.com/p2pool-starter-stack/pithead/issues/3099)).
+- **`setup`, `up` and `apply` always print the pool URL and the stratum password state.** The
+  password reads `none set` when there is none. An `apply` that only toggles `local_miner`
+  converges the local miner instead of reporting no changes ([#3090](https://github.com/p2pool-starter-stack/pithead/issues/3090)).
+- **A payout address change is confirmed by typing its last 8 characters**, in the command line
+  and in the dashboard ([#3097](https://github.com/p2pool-starter-stack/pithead/issues/3097)).
+- **`apply` and the dashboard refuse a config with a duplicate JSON key or a `PASTE_` or `YOUR_`
+  placeholder value.** The refusal names the key and never prints the value ([#3098](https://github.com/p2pool-starter-stack/pithead/issues/3098)).
+- **Appliance documentation corrections** for identity and update recovery ([#3100](https://github.com/p2pool-starter-stack/pithead/issues/3100)).
 - **The Configuration view works the same, minus the Telegram round-trip.** A disruptive change
   still asks you to type `APPLY`. A payout change also asks for the last characters of the new
   address, after the host validates its checksum and network. Future rewards go to the new
@@ -249,6 +271,12 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Fixed
 
+- **A Tari outage no longer rejects workers at once.** With `tari_required`, workers are rejected
+  only after a sustained Tari RPC outage; migrating, starting and syncing only alert. A Monero
+  outage, local or remote, always rejects ([#3091](https://github.com/p2pool-starter-stack/pithead/issues/3091)).
+- **Tor recovers from a saturated circuit-build history.** An early alert, and under
+  `tor.auto_heal` a self-heal, reset Tor through the gated `./pithead tor-recover`; the doctor and
+  the Monero card's advice name it ([#3118](https://github.com/p2pool-starter-stack/pithead/issues/3118)).
 - **An IPv6 address that arrives after boot no longer leaves a permanent doctor FAIL (#2463).** A new
   timer checks the machine's addresses every five minutes and, when they changed since the last
   render, re-renders the dashboard certificate and Caddyfile and restarts Caddy if either changed.
@@ -481,6 +509,7 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Security
 
+- **The dashboard password hash no longer reaches the appliance journal** ([#3131](https://github.com/p2pool-starter-stack/pithead/issues/3131)).
 - **The Tor-only egress firewall now survives a DIY host reboot.** A reboot emptied `DOCKER-USER`
   while the containers restarted on their own, so a DIY host mined without the fail-closed rules
   until someone ran `./pithead up`. `up`, `apply` and `upgrade` now install
