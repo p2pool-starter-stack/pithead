@@ -44,9 +44,10 @@ pithead() { :; }
 wait_status_ok() { :; }
 tor_recovery_healthy_probe() { :; }
 run_connection_announcements() { :; }
+run_cli_wizard_defaults() { :; }
 service_state() { echo 'running none'; }
 svc_state_of() { printf '%s' "${1%% *}"; }
 run_lifecycle
 [ "$IT_FAIL" = 0 ]
-[ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = $'before-restart\nafter-restart\nbefore-image-down\nafter-image-up\nbefore-source-image' ]
-echo 'selftest-lifecycle-gate-wiring: all five lifecycle/image boundaries passed'
+[ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = $'before-wizard-defaults\nbefore-restart\nafter-restart\nbefore-image-down\nafter-image-up\nbefore-source-image' ]
+echo 'selftest-lifecycle-gate-wiring: all six lifecycle/image boundaries passed'

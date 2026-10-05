@@ -740,7 +740,8 @@ For one representative config:
 
 - `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run.
   `lifecycle-gate.log` samples the reset marker, persisted `miner_released` boolean and running
-  mining services before/after restart, around setup/up/apply connection probes, around the
+  mining services before the wizard-defaults workload, after its startup and around its baseline
+  restore apply, before/after restart, around setup/up/apply connection probes, around the
   missing-image down/up and before the source-image fixture. Each target command has a
   10-second TERM deadline plus a 2-second forced-kill grace; unreadable state is explicitly
   unavailable. The snapshot query is read-only and retains no other database values. These samples diagnose re-holds; healthy status alone

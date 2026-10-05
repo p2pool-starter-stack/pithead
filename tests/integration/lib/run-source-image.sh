@@ -32,7 +32,7 @@ SAMPLE
 }
 
 retain_lifecycle_gate_samples() { # Only the sampler's fixed grammar is publishable.
-    grep -E '^lifecycle-gate: (before-restart|after-restart|before-setup|after-setup|after-up|after-apply|after-no-change|before-image-down|after-image-up|before-source-image) marker=(present|absent|unknown) snapshot_release=(true|false|missing|unavailable) p2pool=(running|stopped|unknown) proxy=(running|stopped|unknown)$' | head -n 10 || true
+    grep -E '^lifecycle-gate: (before-wizard-defaults|after-wizard-up|before-wizard-restore|after-wizard-restore-apply|before-restart|after-restart|before-setup|after-setup|after-up|after-apply|after-no-change|before-image-down|after-image-up|before-source-image) marker=(present|absent|unknown) snapshot_release=(true|false|missing|unavailable) p2pool=(running|stopped|unknown) proxy=(running|stopped|unknown)$' | head -n 10 || true
 }
 
 lifecycle_gate_sample() {
