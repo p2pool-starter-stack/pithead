@@ -176,6 +176,11 @@ restore_stage_archive() { # <archive> <encrypted:0|1> <passphrase>
     staged_env="$RESTORE_STAGE_DIR/${RESTORE_FIXED_PATHS[1]#/}"
     staged_caddy="$RESTORE_STAGE_DIR/${RESTORE_FIXED_PATHS[2]#/}"
     paths_file="$RESTORE_STAGE_DIR/.validated-data-paths"
+    err=$(restore_config_version_error "$staged_cfg")
+    if [ -n "$err" ]; then
+        restore_discard_stage
+        error "$err"
+    fi
     # Validate against the archive's own .env: the live one belongs to another render, so a dashboard
     # password that differs from it would force a Caddy rehash that this read-only check must not need.
     if [ ! -f "$staged_cfg" ] || [ ! -f "$staged_env" ] || { [ -e "$staged_caddy" ] && [ ! -f "$staged_caddy" ]; } ||

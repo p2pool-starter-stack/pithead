@@ -22,6 +22,42 @@ control_request_evidence() { # <route> <stage> <curl-rc> <response-with-HTTP-foo
         2>/dev/null | sed 's/^/  control request: /' >&2
 }
 
+# Only preview staging is repeatable after an untrackable transport/proxy loss. A commit needs
+# the returned preview and its approval envelope; mutating POSTs and received refusals stay single.
+control_request_post() { # <route> <body> <deadline>
+    local route="$1" body="$2" deadline="$3" out http crc=0 attempts=0 cap=45 remaining
+    while :; do
+        crc=0
+        out=$(dashboard_control_post "$route" "$body" "$cap") || crc=$?
+        control_request_evidence "$route" post "$crc" "$out"
+        [ "$route" = preview ] || break
+        http=${out##*$'\n'}
+        case "$http" in 1* | 3* | 4*) break ;; esac
+        # A complete authenticated 2xx preview survives a trailing transport error. Keep its
+        # canonical server id rather than staging another intent; diagnostics retain curl's exit.
+        if [[ $http =~ ^2[0-9]{2}$ ]] && printf '%s' "${out%$'\n'*}" | jq -e '
+            type == "object" and (has("error") | not) and
+            (.id | type == "string" and test("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) and
+            (.status | IN("previewed","pending","accepted","running"))' >/dev/null 2>&1; then
+            crc=0
+            break
+        fi
+        if [ "$crc" -eq 0 ]; then
+            case "$http" in 000 | 5*) ;; *) break ;; esac
+        fi
+        printf '%s' "${out%$'\n'*}" | jq -e 'type == "object" and has("error")' >/dev/null 2>&1 && break
+        attempts=$((attempts + 1))
+        [ "$attempts" -lt 3 ] && [ "$(date +%s)" -lt "$deadline" ] || break
+        sleep 3
+        remaining=$((deadline - $(date +%s)))
+        [ "$remaining" -gt 0 ] || break
+        cap=45
+        [ "$remaining" -ge "$cap" ] || cap="$remaining"
+    done
+    printf '%s' "$out"
+    return "$crc"
+}
+
 # A failed request keeps its normal failure verdict. Sample only unit state and spool counts;
 # the runner's per-boot journals and control timeline retain the detailed guest history.
 control_request_guest_evidence() {

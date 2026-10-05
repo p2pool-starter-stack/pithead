@@ -44,6 +44,9 @@ The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
+The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
+its shell regressions are in `tests/stack/config/version.sh`. The Configuration stamp card is
+`web/static/config/configversion.mjs`, with response metadata in `service/config_operations.py`.
 The host firewall installer is `02b-tor-egress-apply.sh`; the host-owned clearnet
 sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
 readback helpers are in `02d-tor-egress-verify.sh`.
@@ -74,7 +77,7 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `service/xvb/` | XvB switching, calculations, and outcomes | `tests/service/xvb/` |
 | `web/views/` | HTTP views and response construction | `tests/web/views/` |
 | `web/server.py` | HTTP application setup and route registration | `tests/web/` |
-| `wizard/server.py`, `wizard/form.py` | Appliance wizard server, form translation, and install handoff | `tests/web/test_wizard*.py` |
+| `wizard/server.py`, `wizard/form.py`, `wizard/defaults.py` | Appliance wizard server, disk-based defaults, form translation, and install handoff | `tests/web/test_wizard*.py` |
 | `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
 
 Keep polling order, database locks, and transaction scopes intact when extracting
@@ -103,7 +106,7 @@ Keep local code out of `vendor/`.
 | `tests/stack/lib/` | Shared harness modules and sandbox builders used by feature fragments; `control-fixtures.sh` and `backup-fixtures.sh` initialize independent prerequisite runs. |
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
 | `tests/integration/lib/` | Sourced helpers and phase functions for the live harness. `restore-chain-sync.sh` streams the read-only `restore-chain-sync.py` daemon proof to the restored baseline. The restoration transport uses libcurl Digest; `tests/integration/selftest/selftest-restore-curl-connection.sh` exercises its challenged connection against a bounded synthetic server in CI. `wallet-fixture.sh` and `wallet-fixture.py` preserve the prepared Monero cache through destructive tests and verify it before releasing the reservation. |
-| `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `make test-integration-selftest` also checks appliance module loading. |
+| `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `selftest-wizard-defaults.sh` runs the real CLI wizard with the runner baseline contract and stubbed deployment I/O. `make test-integration-selftest` also checks appliance module loading. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. |
@@ -115,9 +118,17 @@ Keep local code out of `vendor/`.
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
+Coordinator connection announcements and unchanged-apply miner calls are covered by
+`tests/stack/test-connection-announce.sh`; the lifecycle phase runs
+`tests/integration/lib/run-connection-announcements.sh` against the deployed CLI.
+Its `tests/integration/tools/connection-setup-pty.py` driver answers the real setup prompts
+and bounds the child process and captured output.
+The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
+both local-miner toggles converge without rebooting.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
-transport metadata and failure snapshots; its selftest runs through
+transport metadata, failure snapshots and bounded preview transport recovery; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.
+Password fixture cleanup lives in `tests/os/appliance-password-fixture.sh`, sourced and selftested by the config-approval leg.
 The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.py`
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
@@ -152,3 +163,9 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 [testing guide](testing-guide.md). For configuration values, read
 [configuration](../configuration.md). The wizard spool-file protocol is in
 [appliance wizard](appliance-wizard.md#host-and-page-spool-files).
+
+The setup wizards share host disk budgets through `lib/pithead/11b-wizard-disk-budget.sh`;
+the appliance publishes them beside the disk inventory for both submission paths.
+
+`tests/os/phases/setup-defaults.sh` proves a fresh appliance with the wizard defaults,
+without the explicit Tari opt-in used by the general provision phase.

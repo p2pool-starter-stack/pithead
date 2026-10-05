@@ -127,6 +127,50 @@ consume_preseed_restore() { return 3; }
 error() { exit 12; }"
 PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBP_STUBS; firstboot_wizard" >/dev/null 2>&1
 assert_rc "legacy applied-stage cleanup failure stops first boot" "$?" 12
+# Exercise the real firstboot caller and credential helper: host/setup effects alone are
+# stubbed. A helper-only test missed both callers swallowing its failure (#3099).
+WBC_STUBS=${WBK_STUBS/'ensure_appliance_dashboard_password() { :; }; '/}
+WBC_STUBS="$WBC_STUBS
+record_machine_role() { :; }; control_consume_provisioning_marker() { :; }
+setup() { touch setup-reached; }; bash() { return 0; }
+wizard_spool_publish() { [ \"\$2\" != handoff.json ] || { touch handoff-reached; exit 7; }; }
+firstboot_consume_spool() { printf '{}' >config.json; return 0; }"
+for credential_path in preseed browser; do
+    for credential_fault in openssl write; do
+        mkdir -p "$WBK/credentials/preseed"
+        rm -f "$WBK/credentials/config.json" "$WBK/credentials/setup-reached" "$WBK/credentials/handoff-reached"
+        [ "$credential_path" != preseed ] || printf '{}' >"$WBK/credentials/config.json"
+        if [ "$credential_fault" = openssl ]; then
+            credential_stub='openssl() { return 9; }'
+        else
+            credential_stub='jq() { case "$*" in *".dashboard.auth.password = "*) return 9 ;; *) command jq "$@" ;; esac; }'
+        fi
+        echo "== firstboot credential failure: $credential_path / $credential_fault =="
+        out=$(PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
+            eval "$WBC_STUBS; $credential_stub; firstboot_wizard" 2>&1)
+        assert_rc "firstboot credential failure stops provisioning" "$?" 1
+        assert_contains "firstboot credential failure reports the login refusal" "$out" 'Could not prepare the dashboard login'
+        assert_eq "firstboot credential failure reaches neither setup nor handoff" \
+            "$(find "$WBK/credentials" -name '*-reached')" ""
+        assert_eq "firstboot credential failure preserves the passwordless candidate" "$(cat "$WBK/credentials/config.json")" '{}'
+    done
+done
+# Explicit opt-out is still accepted even when the generator cannot run.
+mkdir -p "$WBK/credentials/data/firstboot"
+printf none >"$WBK/credentials/data/firstboot/auth-mode"
+rm -f "$WBK/credentials/config.json"
+PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
+    eval "$WBC_STUBS; openssl() { return 9; }; firstboot_consume_spool() { printf '{}' >config.json; printf none >data/firstboot/auth-mode; }; firstboot_wizard" >/dev/null 2>&1
+assert_rc "explicit no-login reaches handoff without generating a password" "$?" 7
+assert_eq "explicit no-login publishes a handoff" "$([ -f "$WBK/credentials/handoff-reached" ] && echo yes)" yes
+printf '{"dashboard":{"auth":{"password":"existing-password-kept"}}}' >"$WBK/credentials/config.json"
+PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
+    eval "$WBC_STUBS; openssl() { return 9; }; firstboot_wizard" >/dev/null 2>&1
+assert_rc "an existing pre-seeded login does not require password generation" "$?" 0
+assert_eq "an existing pre-seeded login reaches setup" "$([ -f "$WBK/credentials/setup-reached" ] && echo yes)" yes
+assert_eq "firstboot preserves an existing pre-seeded login" \
+    "$(jq -r '.dashboard.auth.password' "$WBK/credentials/config.json")" existing-password-kept
+unset WBC_STUBS credential_path credential_fault credential_stub
 rm -rf "$WBK"
 unset WBK WBK_STUBS WBR_STUBS WBF_STUBS WBP_STUBS
 mk_tmpdir WRS

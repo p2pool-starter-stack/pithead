@@ -8,17 +8,16 @@ run_lifecycle() {
     local lifecycle_ok=1
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
+    run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
-    # restart brings the stack back healthy.
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after restart" "$?" "0"
+    run_connection_announcements || return 1
 
-    # #2654: a source checkout ups with --pull never, so a digest-pinned third-party image that is
-    # gone from the engine (after `uninstall`, or on a new host) left its services down. Remove the
-    # socket-proxy image (docker-proxy and docker-control, both profile-free) and prove `up` fetches it.
+    # Remove the socket-proxy image and prove up fetches a missing pinned image (#2654).
     if rx 'test -f dashboard/Dockerfile'; then
         local proxy_ref proxy_id proxy_fails="$IT_FAIL"
         proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"
@@ -52,8 +51,6 @@ run_lifecycle() {
     fi
 
     run_source_image_reconcile || return 1
-    # apply that changes the sidechain recreates only the affected containers, preserving
-    # secrets. We flip main<->mini and assert the token/onions are untouched, then revert.
     local cur_pool fp_before
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"

@@ -385,3 +385,5 @@ rm -f "$RESULTS/$UUID3.json" "$STAGED/$UUID3.json"
 # right after this file, reads that exact state rather than re-establishing it itself.
 control_config mini
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+# shellcheck source=tests/stack/control/config-version.sh
+source "$HERE/control/config-version.sh"

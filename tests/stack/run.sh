@@ -153,6 +153,8 @@ if in_block 2; then
 
     # shellcheck source=tests/stack/test-rig-worker.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig-worker.sh "$_d0" "$?" || domain_ran test-rig-worker.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-connection-announce.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-connection-announce.sh" && domain_ran test-connection-announce.sh "$_d0" "$?" || domain_ran test-connection-announce.sh "$_d0" "$?"
 
     # shellcheck source=tests/stack/control/test-control-status-vocabulary.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-status-vocabulary.sh" && domain_ran test-control-status-vocabulary.sh "$_d0" "$?" || domain_ran test-control-status-vocabulary.sh "$_d0" "$?"

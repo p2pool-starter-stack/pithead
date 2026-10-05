@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -194,6 +194,8 @@ source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
 source "$SCRIPT_DIR/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh
 source "$SCRIPT_DIR/phases/provision.sh" || exit $?
+# shellcheck source=tests/os/phases/setup-defaults.sh
+source "$SCRIPT_DIR/phases/setup-defaults.sh" || exit $?
 # shellcheck source=tests/os/phases/media.sh
 source "$SCRIPT_DIR/phases/media.sh" || exit $?
 # shellcheck source=tests/os/phases/rig.sh
@@ -239,6 +241,7 @@ boot) _run_phase boot phase_boot ;;
 update) _run_phase update phase_update ;;
 install) _run_phase install phase_install ;;
 provision) _run_phase provision phase_provision ;;
+setup-defaults) _run_phase setup-defaults phase_setup_defaults ;;
 rig) _run_phase rig phase_rig ;;
 rigmedia) _run_phase rigmedia phase_rigmedia ;;
 media) _run_phase media phase_media ;;
@@ -256,6 +259,7 @@ all)
     _run_phase update phase_update
     _run_phase install phase_install
     _run_phase provision phase_provision
+    _run_phase setup-defaults phase_setup_defaults
     _run_phase rig phase_rig
     _run_phase rigmedia phase_rigmedia
     _run_phase media phase_media
