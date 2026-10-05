@@ -233,7 +233,7 @@ skipped once both chains are synced, or when the dashboard app isn't answering y
 nothing is written or recreated. `--porcelain` makes the output machine-readable
 (`FLAG<TAB>KEY<TAB>MESSAGE` per row); the dashboard control runner uses exactly this.
 
-**Changing the payout wallet:** `apply` asks you to type the first 8 characters of the new address
+**Changing the payout wallet:** `apply` asks you to type the last 8 characters of the new address
 (a bare `y` is not enough for the one change that redirects every future reward; `apply -y` skips
 the prompt for automation). Changing both the Monero and Tari addresses in one `apply` prompts
 once per address. The dashboard also watches the wallet p2pool actually mines to: any

@@ -95,7 +95,7 @@ Keep local code out of `vendor/`.
 
 | Directory | How it runs |
 |---|---|
-| `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites, cut into four blocks that CI runs as parallel jobs. Missing or failed sources fail the run. The Tor section includes `test-tor-port-validation.sh` for entrypoint rejection before rendering or launch. |
+| `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites, cut into five blocks that CI runs as parallel jobs. Missing or failed sources fail the run. The Tor section includes `test-tor-port-validation.sh` for entrypoint rejection before rendering or launch. |
 | `tests/stack/{appliance,control,dashboard,doctor,lifecycle,release,secrets}/` | Feature assertions loaded by the stack runner; retain shared setup and cleanup order. Dashboard database-copy checks live in `control/test-dashboard-carry.sh`; apply recovery stays in `control/test-control-deploy.sh`. |
 | `tests/stack/lib/` | Shared harness modules and sandbox builders used by feature fragments; `control-fixtures.sh` and `backup-fixtures.sh` initialize independent prerequisite runs. |
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
@@ -113,6 +113,13 @@ Keep local code out of `vendor/`.
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
+Coordinator connection announcements and unchanged-apply miner calls are covered by
+`tests/stack/test-connection-announce.sh`; the lifecycle phase runs
+`tests/integration/lib/run-connection-announcements.sh` against the deployed CLI.
+Its `tests/integration/tools/connection-setup-pty.py` driver answers the real setup prompts
+and bounds the child process and captured output.
+The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
+both local-miner toggles converge without rebooting.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata and failure snapshots; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.

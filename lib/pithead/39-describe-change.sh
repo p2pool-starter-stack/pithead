@@ -166,7 +166,7 @@ describe_change() {
         ;;
     TARI_REQUIRED)
         if [ "$new" == "true" ]; then
-            msg="Tari → required — a Tari outage rejects workers, the miner waits for Tari's sync, and a Tari-only sync takes over the dashboard."
+            msg="Tari → required — a 15-minute Tari RPC outage rejects workers (startup, migration and syncing only alert), the miner waits for Tari's sync, and a Tari-only sync takes over the dashboard."
         else
             msg="Tari → non-blocking — keep mining Monero through a Tari outage, start as soon as Monero is synced, and keep the operational dashboard while Tari syncs."
         fi

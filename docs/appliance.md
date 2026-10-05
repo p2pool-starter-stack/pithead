@@ -298,8 +298,8 @@ Then the last three steps you will ever do at this machine:
 The machine boots from its own disk and **provisions itself with the configuration you just
 confirmed** — no second setup page, no second token. Pulling and starting the stack takes
 10–30 minutes on a home connection, its console narrates the progress, and when it finishes
-the dashboard is at the address above, behind the login you saved. (The login is also in
-`config.json` on the machine if you lose it.)
+the dashboard is at the address above, behind the login you saved. If you lose the login,
+use **Set up again** or [a settings USB stick](#changing-settings-with-a-usb-stick) to replace it.
 
 There is nothing to click before the power-off, on purpose: until it goes dark the machine is
 running *from* the stick, so the stick cannot come out while it runs. (If you pull it out
@@ -345,14 +345,16 @@ to publish a config editor behind nothing but a password on an anonymously-reach
 an appliance onion always runs with Tor **client authorization**: it does not answer at all unless
 your browser holds the machine's client key. Next to the address is a **Show client key** button —
 press it and the machine hands the key over **once**, in both the forms a Tor client might want.
-Save it there and then; the machine wipes its own copy moments later, and pressing the button
-again gives you a fresh reveal rather than the old one. Every reveal is written to the
+Save it there and then; the machine wipes the temporary result moments later. Pressing the
+button again reveals the same client key; **Set up again** also keeps it. Every reveal is written to the
 configuration history, so you can see whether anyone else has asked for it.
 
 Then follow [connecting with client
 authorization](configuration.md#remote-access-over-tor-onion-service) for your Tor client. A
-leaked key cannot be rotated from the dashboard — `rotate-dashboard-onion` is a host command, and
-on this machine rotating means setting it up again.
+leaked key cannot be rotated from the dashboard. At the console, run
+`cd /data/pithead && ./pithead rotate-dashboard-onion` to replace both the onion address and
+client key. Without a console, reinstall with **Fresh start, keep the blockchains** or
+**Wipe everything**; both erase the old Tor identity.
 
 ## What the machine does on its own
 
@@ -394,10 +396,12 @@ available. Start it again once the other operation has finished.
 Updates are applied from the dashboard: an **OS updates** control in the header checks
 for a new release, downloads its signed image to the data partition (over Tor, resumable
 — mining keeps running), verifies the file on the machine before anything is written to
-the idle copy, installs it, and then waits for you: **nothing reboots on its own**. The
-reboot is a separately confirmed step, the only one that pauses mining — typically under
-five minutes — and after it the machine runs its normal health checks before keeping the
-new version. A banner reports the outcome, including an automatic return to the previous
+the idle copy, installs it, and arms that copy for the next reboot. Install does not order a
+reboot, but **any reboot boots the update**, including a power cut, watchdog restart or
+**Set up again**. The dashboard reboot action expires after 24 hours; that does not disarm
+the installed slot. The downloaded bundle is deleted after a successful install. Confirm
+the dashboard reboot separately; mining pauses typically under five minutes, then the
+machine runs its normal health checks before keeping the new version. A banner reports the outcome, including an automatic return to the previous
 version if the new one failed — and, when those health checks were what held it back,
 which check it was, so a return is never mistaken for a bad release. One thing the machine
 repairs on its own during that wait: a network address that arrived after the certificate
@@ -405,9 +409,11 @@ was made gets a fresh certificate minted there and then, instead of failing the 
 and returning to the previous version. If the certificate still does not match after that,
 the machine keeps the new version and notes the gap in its boot log and with the update's
 recorded outcome: the mismatch is about this machine's addresses, not the update, and
-running `pithead apply` on the machine mints the certificate — that command now does so
+running `cd /data/pithead && ./pithead apply` at the console mints the certificate — that command now does so
 even when the configuration is unchanged. The machine refuses images that are unsigned, built for
-different hardware, or older than what it runs; there is no override. It also refuses an update
+different hardware, or older than what it runs. The dashboard has no downgrade override.
+At the console, `cd /data/pithead && ./pithead os-update BUNDLE --allow-downgrade` installs
+an older signed image, but never one below the `/data` migration floor. It also refuses an update
 that migrates the chain data when the data partition lacks room for the Tari migration. That
 migration writes a compacted copy of the Tari database beside the old one, so the machine needs
 free space of the database's current size plus 5 GiB. The refusal names the size needed and the
@@ -511,15 +517,16 @@ There are two ways to reset the machine, and the difference between them is days
 time. Both run from a shell — log in at the console as `root` with the dashboard password
 (the appliance has no uninstall; these resets are its equivalents).
 
-**Config reset** clears your settings and reopens the setup wizard, and keeps everything
-else. The synced chain, your wallet, the Tor onion keys and your dashboard history all
-stay on the machine, so the wizard opens on a box that is still fully synced — you re-enter
+**Config reset** starts over from a blank form; this machine's identity is kept. The synced
+chain, your wallet, the Tor onion keys and your dashboard history all stay on the machine, so the wizard opens on a box that is still fully synced — you re-enter
 your answers and it is running again in minutes, at the same onion address. Reach for this
-when you want to change a setting the wizard owns, or hand the machine to someone else
-without a resync.
+when you want to re-enter the wizard answers. To hand the machine to someone else without
+a resync, reinstall with **Fresh start, keep the blockchains**: it erases settings, wallets,
+Tor identities and dashboard history while keeping the chains. Without a shell, use
+**Set up again** to change answers, or [a settings USB stick](#changing-settings-with-a-usb-stick).
 
 ```
-pithead config-reset
+cd /data/pithead && ./pithead config-reset
 ```
 
 **Factory reset** erases the whole data area — chain, wallet, Tor keys, settings, all of
@@ -527,7 +534,7 @@ it — and reboots to a blank setup wizard, exactly as the machine shipped. The 
 follows takes days, so use config reset first unless you truly want nothing kept.
 
 ```
-pithead factory-reset
+cd /data/pithead && ./pithead factory-reset
 ```
 
 Both ask you to type the reset name before they do anything. The machine reboots itself
@@ -538,7 +545,7 @@ event: the data area would not mount, and the machine repaired it or, failing th
 reinitialized it to get itself back. Repair is tried first and goes as far as rebuilding
 the filesystem's superblock from a backup copy — a data area is only ever erased when
 nothing could mount it. When that does happen the setup page itself says so, dated, and
-`pithead doctor` reports the same fact for a support conversation on a machine with a
+`cd /data/pithead && ./pithead doctor` reports the same fact for a support conversation on a machine with a
 shell. If you have a backup, restore it instead of setting up as a fresh machine — a
 factory reset you asked for never shows this notice.
 
@@ -553,7 +560,7 @@ archive it downloads and the passphrase from its kit are exactly what restore as
 console works too — log in as `root` with the dashboard password and run:
 
 ```
-pithead backup
+cd /data/pithead && ./pithead backup
 ```
 
 This writes the same kind of encrypted archive under `backups/`, with a passphrase you type
@@ -563,6 +570,10 @@ re-syncs — and restore opens it with whichever passphrase sealed it: the kit's
 Copy the archive off the machine and keep the passphrase somewhere else — the archive is
 useless without it, and the machine you are backing up is exactly the thing you might lose
 next.
+
+**Switch the old machine off first, and keep it off.** Restore reproduces its full identity,
+including the machine name, Tor onion keys and dashboard login. Running both machines
+with that identity causes name and onion-service conflicts.
 
 **Restore it at setup.** Write a fresh image, boot the machine, and on the setup page choose
 "Restoring an existing Pithead? Upload its backup instead." above the form. Upload the archive
@@ -659,7 +670,7 @@ stack mines mainnet.
 
 **"Wrong passphrase or corrupt archive."** Confirm you copied the whole `.tar.gz.enc` file (a
 partial copy fails the same way) and typed the passphrase exactly as it was set when you ran
-`pithead backup`. Nothing is written until this check passes — retry from the same page.
+`cd /data/pithead && ./pithead backup`. Nothing is written until this check passes — retry from the same page.
 
 **It came back on the old version after an update.** That is the safety mechanism working:
 the new version did not come up healthy, so the machine restarted itself and went back.

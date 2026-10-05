@@ -20,3 +20,11 @@ class TestNodeEdges:
         _ev(svc, monero_down=False)
         _, text = _ev(svc, monero_down=True)[0]
         assert "Monero" in text
+
+    def test_monero_texts_are_unchanged(self):
+        svc = _svc()
+        _ev(svc)
+        assert _ev(svc, monero_down=True)[0][1] == (
+            "🔴 ⛓️ Monero node is DOWN — workers failing over to backup pools."
+        )
+        assert _ev(svc)[0][1] == "🟢 ⛓️ Monero node recovered — workers readmitted."
