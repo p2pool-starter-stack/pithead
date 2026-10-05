@@ -59,6 +59,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
+        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
         tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
         run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.

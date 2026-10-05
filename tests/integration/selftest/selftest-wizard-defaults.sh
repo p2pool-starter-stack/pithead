@@ -42,16 +42,19 @@ push_config() {
 }
 pithead() { printf '%s\n' "$*" >>"$WORK/operations"; }
 wait_status_ok() { return 0; }
+lifecycle_gate_sample() { printf '%s\n' "$1" >>"$WORK/gate-stages"; }
 
 for expected in off local; do
     if [ "$expected" = off ]; then export WIZARD_TEST_FREE_KB=$((100 * 1048576)); else export WIZARD_TEST_FREE_KB=$((600 * 1048576)); fi
     printf 'DEPLOYMENT_COMPLETED=true\n' >"$WORK/.env"
     : >"$WORK/operations"
+    : >"$WORK/gate-stages"
     pushes=0
     run_cli_wizard_defaults || {
         sed -E 's/(Generated dashboard password: ).*/\1<redacted>/' "$WORK/rx.log" >&2
         it_fail "wizard defaults harness completed for $expected"
     }
+    assert_eq "wizard gate diagnostics cover startup and baseline restore ($expected)" "$(cat "$WORK/gate-stages")" $'after-wizard-up\nbefore-wizard-restore\nafter-wizard-restore-apply'
     generated=$(cat "$WORK/generated.json")
     assert_eq "harness carries the runner's Monero wallet ($expected)" "$(jq -r '.monero.wallet_address' <<<"$generated")" "$monero"
     assert_eq "harness carries disk-derived Tari mode ($expected)" "$(jq -r '.tari.mode' <<<"$generated")" "$expected"
@@ -63,6 +66,19 @@ for expected in off local; do
     assert_eq "harness deploys defaults then restores ($expected)" "$pushes" 2
     assert_eq "harness runs service startup and baseline apply ($expected)" "$(cat "$WORK/operations")" $'up\napply -y'
 done
+
+# Sampling after a refused baseline apply must not replace that command's failure with success
+# or run its post-apply healthy-status wait. Keep this deliberate failure isolated.
+failed_apply_result=$(
+    IT_FAIL=0
+    pushes=0
+    waits=0
+    pithead() { [ "$1" != apply ] || return 17; }
+    wait_status_ok() { waits=$((waits + 1)); }
+    run_cli_wizard_defaults >/dev/null
+    printf '%s|%s' "$IT_FAIL" "$waits"
+)
+assert_eq "wizard restore diagnostics preserve failed apply and omit its status wait" "$failed_apply_result" '1|1'
 
 # Missing fixture inputs must count a failure before any remote wizard or deployment runs.
 missing_result=$(
