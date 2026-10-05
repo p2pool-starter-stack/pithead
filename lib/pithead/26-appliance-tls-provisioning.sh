@@ -334,7 +334,7 @@ wizard_mint_cert() { # <spool-dir>  -> prints the fingerprint
 # ensure_onion_password only fires for the onion, so a LAN appliance shipped an UNAUTHENTICATED
 # dashboard — and the setup page told the operator a login had been generated. Both setup
 # wizards now generate a login by default; the appliance honors its explicit opt-out. The credential is
-# generated on the machine and printed to its console; it never crosses the setup page.
+# generated on the machine and printed to its console and the authenticated handoff page.
 ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_FILE]
     local config="${2:-$CONFIG_FILE}"
     [ -f "$config" ] || return 0
@@ -355,6 +355,6 @@ ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_F
         return 0
     fi
     rm -f "$tmp"
-    warn "Could not save a generated dashboard password; the dashboard will have no login."
+    warn "Could not save a generated dashboard password."
     return 1
 }

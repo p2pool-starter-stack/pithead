@@ -249,6 +249,8 @@ Then a handful of choices, all with sensible defaults:
 | Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
 
 XvB is off on a new install and is not asked. Enable it later from the Configuration view.
+If the machine cannot generate or save its dashboard login, first boot stops before handing
+off credentials or provisioning. The explicit "No login" choice still bypasses generation.
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
 with a default that is right for almost every home rig lives one level down, in **Advanced**,
