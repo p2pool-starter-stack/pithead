@@ -29,7 +29,7 @@ set -euo pipefail
 case "$*" in
 'compose config --format json') printf '%s\n' '{"services":{"xmrig-proxy":{"image":"proxy:dev"}}}' ;;
 'compose config --services') echo xmrig-proxy ;;
-'compose ps -q xmrig-proxy'|'compose ps -a -q xmrig-proxy') cat "$STATE/cid" ;;
+'compose ps -q xmrig-proxy'|'compose ps -a -q xmrig-proxy') [ "$CASE" != missing-container ] || exit 0; cat "$STATE/cid" ;;
 'image inspect --format {{.Id}} proxy:dev') cat "$STATE/declared" ;;
 'inspect --format {{.Image}} '*) cat "$STATE/live" ;;
 'inspect --format {{.State.Running}} '*) echo true ;;
@@ -49,7 +49,7 @@ esac
 DOCKER
 chmod +x "$td/bin/docker"
 source_image_reconcile_snippet >"$td/probe.sh"
-for CASE in success no-recreate wrong-owner build-fails; do
+for CASE in success no-recreate wrong-owner build-fails missing-container; do
     export CASE STATE="$td/state-$CASE"
     mkdir "$STATE"
     printf old >"$STATE/declared"
@@ -59,6 +59,12 @@ for CASE in success no-recreate wrong-owner build-fails; do
     rc=0
     (cd "$td/stack" && PATH="$td/bin:$PATH" TMPDIR="$td/scratch" bash "$td/probe.sh") >"$td/$CASE.log" 2>&1 || rc=$?
     [ "$(cat "$STATE/declared")" = old ] && [ "$(cat "$STATE/live")" = old ]
+    if [ "$CASE" = missing-container ]; then
+        [ "$rc" -ne 0 ]
+        grep -Fxq 'source-image: diagnostic: failed at live-container' "$td/$CASE.log"
+        [ ! -f "$STATE/pinned" ] && [ ! -f "$STATE/removed" ]
+        continue
+    fi
     grep -q 'source-image: original image restored' "$td/$CASE.log"
     if [ "$CASE" = success ]; then
         [ "$rc" -eq 0 ]
@@ -69,8 +75,11 @@ for CASE in success no-recreate wrong-owner build-fails; do
         [ "$rc" -ne 0 ]
         ! grep -q 'source-image: guarded recreate matches declared image and Compose owner' "$td/$CASE.log"
     fi
+    if [ "$CASE" = build-fails ]; then
+        grep -Fxq 'source-image: diagnostic: failed at build' "$td/$CASE.log"
+    fi
     [ "$CASE" = build-fails ] || [ -f "$STATE/removed" ]
     [ -f "$STATE/backup-removed" ] && [ ! -f "$STATE/pinned" ]
 done
 [ -z "$(ls -A "$td/scratch")" ]
-echo 'selftest-source-image: 4 cases passed (success, missing recreate, wrong owner, build failure)'
+echo 'selftest-source-image: 5 cases passed (success, missing recreate, wrong owner, build failure, missing container)'

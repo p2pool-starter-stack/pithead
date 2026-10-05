@@ -739,6 +739,15 @@ and `--list` prints it).
 For one representative config:
 
 - `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run.
+  `lifecycle-gate.log` samples the reset marker, persisted `miner_released` boolean and running
+  mining services before/after restart, around setup/up/apply connection probes, around the
+  missing-image down/up and before the source-image fixture. Each target command has a
+  10-second TERM deadline plus a 2-second forced-kill grace; unreadable state is explicitly
+  unavailable. The snapshot query is read-only and retains no other database values. These samples diagnose re-holds; healthy status alone
+  does not establish a released sync gate or prove running miners.
+  Source-image initialization failures report a fixed stage in `source-image-reconcile.log`,
+  including failures before the cleanup trap can be armed. The real image mutation, guarded
+  recreation, immutable image/Compose-owner assertions and cleanup remain binding.
   The restore must also return every wallet, proxy, dashboard, RPC, and onion secret category
   exactly, the same per-category comparison a safety rollback makes.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
