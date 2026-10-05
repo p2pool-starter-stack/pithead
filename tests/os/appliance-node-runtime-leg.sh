@@ -148,6 +148,7 @@ jq -e ".p2pool.clearnet == true" config.json >/dev/null'
 phase_provision_remote_node_regressions() { # <dashboard-user> <dashboard-password>
     local DASH_USER="$1" DASH_PASS="$2" rc=0
     _reserved_node_regressions || rc=$?
+    phase_provision_xvb_routing # #2733: the approved synced nodes release the #35 gate until the restore below
     # Every exit, early or not, hands the later legs the original config, not the edited login.
     [ -n "${APPROVAL_RESTORE_SNAPSHOT:-}" ] || return "$rc"
     if approval_restore_pending; then
@@ -396,8 +397,7 @@ _startup_since_self_test() (
 # The proposal changes only monero.* and tari.* against the config live at preview (default-deny refused p2pool.clearnet, job 1044); an early failure still restores the snapshot.
 _reserved_node_proposal_scope_self_test() (
     local out clearnet=false restored=0
-    PITHEAD_OS_MONERO_NODE_HOST=mh PITHEAD_OS_MONERO_RPC_PORT=1 PITHEAD_OS_MONERO_ZMQ_PORT=2
-    PITHEAD_OS_TARI_NODE_HOST=th PITHEAD_OS_TARI_GRPC_PORT=3
+    PITHEAD_OS_MONERO_NODE_HOST=mh PITHEAD_OS_MONERO_RPC_PORT=1 PITHEAD_OS_MONERO_ZMQ_PORT=2 PITHEAD_OS_TARI_NODE_HOST=th PITHEAD_OS_TARI_GRPC_PORT=3
     PITHEAD_OS_MONERO_NODE_USERNAME="" PITHEAD_OS_MONERO_NODE_PASSWORD=""
     sensitive_live_config() { [ -n "${DASH_USER:-}" ] && printf '{"p2pool":{"clearnet":%s},"monero":{"mode":"local"},"tari":{"mode":"local"}}' "$clearnet"; }
     approval_capture_restore_snapshot() { APPROVAL_RESTORE_SNAPSHOT=snap; }
@@ -410,8 +410,7 @@ _reserved_node_proposal_scope_self_test() (
             '.config | del(.monero, .tari) == ($live | del(.monero, .tari))' >/dev/null && out=scoped
         return 1
     }
-    ok() { :; }
-    bad() { :; }
+    ok() { :; } && bad() { :; } && phase_provision_xvb_routing() { :; }
     phase_provision_remote_node_regressions fixture-user fixture-pass
     [ "${out:-}" = scoped ] && [ "$restored" -eq 1 ]
 )

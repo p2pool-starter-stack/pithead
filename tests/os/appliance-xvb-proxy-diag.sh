@@ -80,7 +80,7 @@ _xvb_diag_self_test() {
 
 # Self-test helper: <msgs-file> -> 0 when every row that names an unreachable proxy carries the diagnostic.
 _xvb_diag_rows_ok() {
-    ! grep -E '^(controller actuator could not|bounded controller injection did not leave|xmrig-proxy API never|guest left routed)' "$1" |
+    ! grep -E '^(controller actuator could not|bounded controller injection did not leave|xmrig-proxy API never|guest left routed|sync gate never read released)' "$1" |
         grep -qv 'proxy diag: state\[' || {
         printf 'xvb self-test: a proxy-unreachable red row lacks the proxy diagnostic (#2733)\n' >&2
         return 1

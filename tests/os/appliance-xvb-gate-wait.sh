@@ -1,0 +1,139 @@
+# shellcheck shell=bash
+# Sourced by appliance-xvb-routing-leg.sh; kept apart to hold that file under its budget.
+
+# #2733: on this unsynced guest the #35 sync gate holds p2pool and xmrig-proxy stopped and re-stops
+# the proxy every cycle (jobs 130, 2241: a stop every 30-45s for the whole leg). A leg that restarts
+# the proxy against that hold fights the product and loses whenever the restarted proxy is not
+# reachable before the next stop. The leg therefore runs only where the gate is released: after the
+# reserved-node approval dials synced nodes (job 2241: the gate started both at 15:11:13, 6s after
+# the commit) and before its restore re-holds them. This reads the gate the way the dashboard does:
+# its persisted latch says released and no sync-gate-reset marker overrides it.
+_xvb_gate_payload() {
+    printf '%s\n' "import os" \
+        "from mining_dashboard.service.data_gates import SYNC_GATE_RESET_PATH" \
+        "from mining_dashboard.service.storage_service import StateManager" \
+        "snap = StateManager().load_snapshot() or {}" \
+        "marker = os.path.exists(SYNC_GATE_RESET_PATH)" \
+        "print('released' if snap.get('miner_released') is True and not marker else 'held' + (' marker' if marker else ''))" |
+        base64 | tr -d '\n'
+}
+
+# Two consecutive samples, as assert_mining_probe_ready does for the integration harness: one
+# released reading with the proxy up can still be the instant before a re-hold. Never starts or
+# stops a container: the gate owns them. Prints the last sample on timeout.
+_xvb_wait_for_gate_release() { # -> 0 once released with xmrig-proxy running twice in a row
+    local deadline payload gate running samples=0 last="unread"
+    payload="$(_xvb_gate_payload)"
+    deadline=$(($(date +%s) + ${XVB_GATE_RELEASE_TIMEOUT:-300}))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        gate="$(_xvb_guest_python "$payload" 2>/dev/null | tr -d '\r\n')"
+        running="$(_ssh "podman inspect -f '{{.State.Running}}' xmrig-proxy" 2>/dev/null | tr -d '\r\n')"
+        last="gate=${gate:-unreadable} proxy-running=${running:-unreadable}"
+        if [ "$gate" = released ] && [ "$running" = true ]; then
+            samples=$((samples + 1))
+            [ "$samples" -ge 2 ] && return 0
+        else
+            samples=0
+        fi
+        sleep 5
+    done
+    printf '%s' "$last"
+    return 1
+}
+
+# The order is the fix, so it is pinned: the leg runs after the approval and before the restore,
+# and nowhere else in the provision phase.
+_xvb_gate_order_self_test() {
+    local here node call approval restore
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    node="$here/appliance-node-runtime-leg.sh"
+    call=$(grep -n '^    phase_provision_xvb_routing' "$node" | cut -d: -f1 | head -1)
+    approval=$(grep -n '_reserved_node_regressions || rc=' "$node" | cut -d: -f1 | head -1)
+    restore=$(grep -n 'if approval_restore_pending; then' "$node" | cut -d: -f1 | head -1)
+    [ -n "$call" ] && [ -n "$approval" ] && [ -n "$restore" ] && [ "$call" -gt "$approval" ] && [ "$call" -lt "$restore" ] &&
+        ! grep -q 'phase_provision_xvb_routing' "$here/phases/provision-initial.sh" || {
+        printf 'xvb self-test: the XvB leg is not between the reserved-node approval and its restore (#2733)\n' >&2
+        return 1
+    }
+}
+
+# The REAL payload against the real dashboard modules: a seeded snapshot and marker in a temp dir.
+_xvb_gate_payload_self_test() {
+    local root out
+    root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    out="$(PAYLOAD="$(_xvb_gate_payload | base64 -d)" PYTHONPATH="$root/dashboard" python3 -c '
+import os, subprocess, sys, tempfile
+d = tempfile.mkdtemp()
+def run(snapshot, marker):
+    db, mk = os.path.join(d, "s.db"), os.path.join(d, "reset")
+    for p in (db, mk):
+        if os.path.exists(p):
+            os.remove(p)
+    if marker:
+        open(mk, "w").close()
+    pre = "import mining_dashboard.service.data_gates as g, mining_dashboard.service.storage_service as s\n"
+    pre += "g.SYNC_GATE_RESET_PATH = %r\ns.DB_FILE_PATH = %r\n" % (mk, db)
+    if snapshot is not None:
+        pre += "s.StateManager(%r).save_snapshot(%r)\n" % (db, snapshot)
+    r = subprocess.run([sys.executable, "-c", pre + os.environ["PAYLOAD"]], capture_output=True, text=True)
+    return r.stdout.strip() or "no-output rc=%s %s" % (r.returncode, r.stderr.strip()[-120:].replace("\n", ";"))
+print(run({"miner_released": True}, False))
+print(run({"miner_released": True}, True))
+print(run({"miner_released": False}, False))
+print(run(None, False))
+' 2>&1)"
+    [ "$out" = "$(printf 'released\nheld marker\nheld\nheld')" ] || {
+        printf 'xvb self-test: the real gate payload misread the latch: %s\n' "$(printf '%s' "$out" | tr '\n' '|')" >&2
+        return 1
+    }
+}
+
+# The wait itself, over stubbed guest reads: <gate answers> <proxy answers> <want-rc> <label>.
+# Each answers string is consumed one word per sample; the last word repeats.
+_xvb_gate_wait_self_test() {
+    local f=0 dir rc XVB_GATE_RELEASE_TIMEOUT=2 out saved
+    saved="$(declare -f _xvb_guest_python _ssh)" # redefined below; put back for the caller's own tests
+    dir="$(mktemp -d)"
+    sleep() { command sleep 0.05; }
+    _xvb_next() { # <file> <words>: the sample counter lives in a file, outside the $(...) subshells
+        local n words
+        n=$(($(cat "$1" 2>/dev/null || echo 0) + 1)) && printf '%s' "$n" >"$1"
+        read -ra words <<<"$2"
+        [ "$n" -le "${#words[@]}" ] || n=${#words[@]}
+        printf '%s\n' "${words[$((n - 1))]}"
+    }
+    _xvb_guest_python() { _xvb_next "$dir/g" "$XVBT_GATE"; }
+    _ssh() {
+        case "$1" in *"podman inspect"*"xmrig-proxy"*) _xvb_next "$dir/p" "$XVBT_PROXY" ;; *"podman start"* | *"podman stop"*) echo "$1" >>"$dir/touched" ;; esac
+    }
+    while IFS='|' read -r XVBT_GATE XVBT_PROXY want label; do
+        rm -f "$dir/g" "$dir/p"
+        rc=0 && out="$(_xvb_wait_for_gate_release)" || rc=$?
+        [ "$rc" = "$want" ] || {
+            printf 'xvb self-test: gate wait — %s: rc=%s want %s (%s)\n' "$label" "$rc" "$want" "$out" >&2
+            f=$((f + 1))
+        }
+    done <<'CASES'
+released|true|0|released with the proxy up from the start
+held held released|false true|0|released one poll after the caller arrived (the restore race itself)
+released held released held|true|1|a release that flickers never holds for two samples
+released|true false true false|1|a proxy that keeps dropping never runs for two samples
+held marker|true|1|a sync-gate-reset marker keeps the gate held
+held|false|1|a gate that never releases times out
+CASES
+    out="$(XVBT_GATE=held XVBT_PROXY=false && rm -f "$dir/g" "$dir/p" && _xvb_wait_for_gate_release)"
+    [ "$out" = "gate=held proxy-running=false" ] || {
+        printf 'xvb self-test: the timed-out gate wait did not name its last sample (%s)\n' "$out" >&2
+        f=$((f + 1))
+    }
+    [ ! -e "$dir/touched" ] || {
+        printf 'xvb self-test: the gate wait started or stopped a container the gate owns\n' >&2
+        f=$((f + 1))
+    }
+    unset -f sleep _xvb_next _xvb_guest_python _ssh
+    eval "$saved"
+    rm -rf "$dir"
+    _xvb_gate_order_self_test || f=$((f + 1))
+    _xvb_gate_payload_self_test || f=$((f + 1))
+    [ "$f" -eq 0 ]
+}

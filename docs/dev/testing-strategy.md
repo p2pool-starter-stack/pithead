@@ -670,7 +670,8 @@ Not yet covered. The road to full production confidence.
   tier-4 run at all, and why — is now the [CLI verb ledger](#cli-verb-ledger-2348) (#2348) rather
   than one bullet here.
 - Soak / longevity. The nightly KVM provision battery proves the appliance Tor stats fetch and a
-  bounded injected controller/proxy route transition; the bounded `--xvb-routing-smoke` additionally
+  bounded injected controller/proxy route transition, run while the reserved-node approval has
+  released the sync gate (#2733); the bounded `--xvb-routing-smoke` additionally
   observes one real controller/proxy transition and restore on a synced stack. Multi-hour leak,
   log/DB growth, and long-term convergence coverage remains absent.
 - Load / capacity. No test drives many workers or high share rates to find limits.
