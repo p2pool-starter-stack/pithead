@@ -1,10 +1,10 @@
 # When the dashboard onion is enabled but no password is set, generate a strong one and save it to
 # config.json (#343). Keeps the fail-closed onion usable without forcing the operator to invent a
 # 16+ char secret; the plaintext lives in owner-only config.json, exactly like a hand-set password
-# (login stays "admin"). Runs only on the config-writing paths (setup/apply), before parse validates
-# — never on read-only commands, which must not mutate config.json.
+# (login stays "admin"). Validate before writing on setup/apply; read-only commands never write.
 ensure_onion_password() {
     [ -f "$CONFIG_FILE" ] || return 0
+    validate_config_document
     [ "$(config_bool '.dashboard.onion.enabled' false)" == "true" ] || return 0
     [ -z "$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")" ] || return 0
     local gen tmp

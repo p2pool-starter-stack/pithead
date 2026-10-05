@@ -1,5 +1,26 @@
 """Typed payout confirmation for a sensitive Configuration-view commit."""
 
+from aiohttp import web
+
+from mining_dashboard.config import documents
+
+
+async def config_request(request):
+    """Check the raw control body before decoding can hide duplicates or staging an intent."""
+    try:
+        body = await request.json(loads=documents.loads)
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest(text="Body must be a JSON object.")
+        if "config" in body:
+            documents.reject_placeholders(body["config"])
+    except documents.ConfigDocumentError as exc:
+        raise web.HTTPBadRequest(text=exc.diagnostic()) from None
+    except web.HTTPBadRequest:
+        raise
+    except Exception:
+        raise web.HTTPBadRequest(text="Body must be JSON.") from None
+    return body
+
 
 def approval_envelope(body):
     """Pass only typed payout suffixes to the host gate, which re-checks them against the staged

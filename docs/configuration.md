@@ -6,6 +6,17 @@ for what only you can answer plus a few high-level shape questions — see
 keeps its default below; edit `config.json` directly for anything the wizard doesn't ask. To change
 the stack afterward, edit `config.json` and run `./pithead apply`.
 
+Every JSON object must have unique keys, including nested objects and objects in arrays.
+`setup`, `apply`, `up`, and dashboard configuration previews refuse duplicate keys and name
+their path. Dashboard control requests return HTTP 400 with the duplicate or placeholder path;
+malformed JSON returns `Body must be JSON.` without parser or exception details.
+Edit the existing block when adding settings. Every string value beginning with
+`PASTE_` or `YOUR_` (case-insensitive) is a placeholder and is refused, including secrets,
+hosts, and optional fields. Replace it with a real value, or omit the key to use its default.
+The host checks raw config before refreshing the dashboard’s masked copy. Invalid input
+replaces the editor prefill with a path-only refusal and removes cached worker read credentials;
+the Configuration view shows that refusal until valid config is rendered again.
+
 ## The minimal config
 
 The two wallet addresses are the only required keys. Every other key is optional and falls back to a

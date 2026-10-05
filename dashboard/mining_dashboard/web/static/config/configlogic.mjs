@@ -16,6 +16,7 @@
 
 import { pathGet } from "./configsync.mjs";
 import { FIELD_WARNINGS } from "./configwarnings.mjs";
+import { parseConfigDocument } from "./jsondocument.mjs";
 
 export const SECRET_HINT = "set — leave blank to keep";
 
@@ -337,9 +338,9 @@ export function markEditable(sections, editableKeys, confirmKeys, approvalKeys, 
 export function parseConfigJson(text) {
   let cfg;
   try {
-    cfg = JSON.parse(text);
-  } catch {
-    return { error: "Not valid JSON." };
+    cfg = parseConfigDocument(text);
+  } catch (error) {
+    return { error: error.message };
   }
   if (cfg === null || typeof cfg !== "object" || Array.isArray(cfg)) {
     return { error: "Enter a JSON object." };
