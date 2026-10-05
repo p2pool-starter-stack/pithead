@@ -61,7 +61,10 @@ restore_p2pool_startup() {
     fi
     for sample in 0 1 2 3; do
         [ "$failed" -eq 0 ] || break
-        [ "$sample" -eq 0 ] || sleep 10
+        if [ "$sample" -ne 0 ] && ! sleep 10; then
+            failed=1
+            break
+        fi
         state=$(_ssh "$inspect") || failed=1
         read -r id running exit_code restarts extra <<<"$state"
         [ "$id" = "$initial_id" ] && [ "$running" = true ] && [ "$exit_code" = 0 ] &&

@@ -5,7 +5,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/restore-live-state-verdict.sh"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-sleep() { printf '%s\n' "$1" >>"$scratch/sleeps"; }
+sleep() {
+    printf '%s\n' "$1" >>"$scratch/sleeps"
+    [ "$mode" != sleep-fails ]
+}
 _ssh() {
     printf '%s\n' "$1" >>"$scratch/commands"
     case "$1" in
@@ -33,7 +36,7 @@ _ssh() {
     *) return 1 ;;
     esac
 }
-for mode in clean stop-fails start-fails cleanup-fails unreadable crash-before restarted-before crash-during restarted-during replaced stopped malformed; do
+for mode in clean sleep-fails stop-fails start-fails cleanup-fails unreadable crash-before restarted-before crash-during restarted-during replaced stopped malformed; do
     printf '0\n' >"$scratch/sample"
     : >"$scratch/commands"
     : >"$scratch/sleeps"
