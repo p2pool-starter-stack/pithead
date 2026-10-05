@@ -24,6 +24,7 @@ import {
 } from "./configlogic.mjs";
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
+import { ConfigVersion } from "./configversion.mjs";
 import { controlCommitResult } from "./controlclient.mjs";
 
 export { editableCandidate, PreviewModal };
@@ -417,6 +418,7 @@ export class ConfigView extends Component {
       coreKeys,
     );
     return html`<div class="config-view">
+        <${ConfigVersion} cfg=${this.state.cfg} />
         ${error ? previewFailure(error, this.props.appliance) : null}
         ${
           lastApply?.status === "failed"

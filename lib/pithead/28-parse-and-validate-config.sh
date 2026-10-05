@@ -445,4 +445,6 @@ parse_and_validate_config() {
     if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_CLIENT_AUTH" != "true" ]; then
         error "dashboard.control.enabled is true on a published onion (dashboard.onion.enabled) but dashboard.onion.client_auth is false. A root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable .onion. Set dashboard.onion.client_auth: true (the default) and re-run."
     fi
+    stamp_config_version
+
 }

@@ -171,7 +171,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         return 0
     fi
     # Restore masked secrets from live config host-side (#440); unset secrets become "".
-    # The staged copy is host-only and created under umask 077 (#33 hardening).
     # Per-worker token sentinels (#172) get the same swap, but out of the fixed-path walk: they
     # live in the variable-length descriptor array at workers.list[] (#506) — so restore each from
     # the LIVE token matched by worker name (first-declared wins on duplicate names, matching the
@@ -197,6 +196,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             | if ($v | type) == "object" and $v.__secret__ == true
               then setpath($p; (($live[0] | try getpath($p) catch null) // ""))
               else . end)
+        | if ($live[0] | has("config_version")) then .config_version = $live[0].config_version else del(.config_version) end
         | if (.workers | type) == "object" and (.workers.list | type) == "array"
           then .workers.list |= map(
               if (.token | type) == "object" and .token.__secret__ == true
