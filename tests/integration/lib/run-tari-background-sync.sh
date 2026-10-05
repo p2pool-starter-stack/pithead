@@ -12,6 +12,18 @@ tari_enable_mining_sample() {
     rx "docker exec dashboard python3 -c 'import json;from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient;from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN;s=XMRigProxyClient(PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN).get_summary();print(json.dumps({\"workers\":s.get(\"miners\",{}).get(\"now\"),\"hashes\":s.get(\"results\",{}).get(\"hashes_total\")}))'" 2>/dev/null
 }
 
+sync_gate_marker_state() {
+    local ddir
+    ddir="$(env_on_box DASHBOARD_DATA_DIR)"
+    [ -n "$ddir" ] || return 1
+    rx "sudo python3 -c 'import os,stat,sys;p=sys.argv[1];
+if not os.path.lexists(p): print(\"absent\");sys.exit(0)
+f=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+with os.fdopen(f,\"rb\") as s:
+ if not stat.S_ISREG(os.fstat(s.fileno()).st_mode) or s.read(32)!=b\"tari-only\\n\": sys.exit(1)
+print(\"tari-only\")' $(quote_arg "$ddir/sync-gate-reset")" 2>/dev/null
+}
+
 run_tari_background_sync() {
     # Only a local Tari baseline can prove off -> local without changing the node fixture.
     if [ "$(env_on_box TARI_MODE)" != local ]; then
