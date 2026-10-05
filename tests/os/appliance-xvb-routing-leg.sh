@@ -3,6 +3,8 @@
 # intentionally unsynchronised, so this injects the controller's existing switch
 # method rather than pretending a PPLNS share or routed hashrate exists.
 
+# shellcheck source=tests/os/appliance-xvb-proxy-diag.sh
+. "$(dirname "${BASH_SOURCE[0]}")/appliance-xvb-proxy-diag.sh"
 _xvb_payload() { # <mode> -> base64 Python that actuates then reads the live route
     case "$1" in P2POOL | XVB) ;; *) return 2 ;; esac
     printf '%s\n' "import asyncio, json" "from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient" \
@@ -134,15 +136,15 @@ _xvb_routing_actuation() {
     local pools
     if ! pools="$(_xvb_actuate XVB true)"; then
         if [ -z "$pools" ]; then
-            bad "controller actuator could not switch the live proxy to XvB within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr))"
+            bad "controller actuator could not switch the live proxy to XvB within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
         else
-            bad "bounded controller injection did not leave XvB as the live Tor-routed proxy route (route: $pools)"
+            bad "bounded controller injection did not leave XvB as the live Tor-routed proxy route (route: $pools; guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
         fi
         return 1
     fi
     ok "bounded controller injection moved the live proxy to Tor-routed XvB"
     if ! _xvb_actuate P2POOL false >/dev/null; then
-        bad "controller actuator could not restore the live proxy to P2Pool within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr))"
+        bad "controller actuator could not restore the live proxy to P2Pool within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
         return 1
     fi
     ok "bounded controller injection restored the live proxy to P2Pool"
@@ -168,7 +170,7 @@ phase_provision_xvb_routing() {
         return 1
     }
     if ! _xvb_wait_for_proxy_api; then
-        bad "xmrig-proxy API never answered within ${XVB_PROXY_READY_TIMEOUT:-150}s of starting — the actuator was never attempted"
+        bad "xmrig-proxy API never answered within ${XVB_PROXY_READY_TIMEOUT:-150}s of starting — the actuator was never attempted $(_xvb_proxy_diag)"
         _ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true
         return 1
     fi
@@ -181,7 +183,7 @@ phase_provision_xvb_routing() {
     # named diagnostic instead, so nothing downstream mistakes a still-misrouted guest for a clean one.
     if [ "$rc" -ne 0 ]; then
         _xvb_actuate P2POOL false >/dev/null ||
-            bad "guest left routed to XvB after the leg failed — P2POOL restore did not confirm within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr))"
+            bad "guest left routed to XvB after the leg failed — P2POOL restore did not confirm within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
     fi
     _ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true
     return "$rc"
@@ -231,13 +233,14 @@ _xvb_self_test() {
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     local p2p_ok='{"mode":"P2POOL","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     ok() { PASS=$((PASS + 1)); }
-    bad() { FAIL=$((FAIL + 1)); }
+    bad() { FAIL=$((FAIL + 1)) && printf '%s\n' "$*" >>"$XVBT_MSGS"; }
     info() { :; }
     sleep() { command sleep 0.05; } # the polls' own pacing, shortened so the self-test does not idle
-    XVBT_STARTS="$(mktemp)" XVBT_CALLS="$(mktemp)"
+    XVBT_STARTS="$(mktemp)" XVBT_CALLS="$(mktemp)" XVBT_MSGS="$(mktemp)"
     _ssh() {
         case "$1" in
         *"podman inspect"*" tor") printf '%s\n' "$XVBT_TOR_HEALTH" ;;
+        *"podman inspect"*"xmrig-proxy"* | *"podman logs"*) printf 'stub-proxy-state\n' ;;
         *"podman start"*) printf x >>"$XVBT_STARTS" && return "$XVBT_START_RC" ;;
         esac
         return 0
@@ -250,6 +253,7 @@ _xvb_self_test() {
         *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
         *"switch_miners('P2POOL')"*) printf '%s' "$XVBT_P2P_JSON" ;;
         *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
+        *"socket.create_connection"*) printf 'tcp-timeout:timed out\n' ;;
         esac
     }
     _xvb_case() { # <label> <want-pass> <want-fail> <want-rc>
@@ -316,8 +320,9 @@ _xvb_self_test() {
     # fallback restore — now also retrying/confirming instead of a silent `|| true` (#2708) — retries
     # against the SAME broken stub, times out too, and is a second, distinct counted red row: the
     # guest really is left misrouted, not just the first attempt.
-    XVBT_P2P_JSON=""
+    XVBT_P2P_JSON="" && : >"$XVBT_MSGS"
     _xvb_case "an actuator that cannot restore P2Pool is a counted red row, twice over" 2 2 1
+    _xvb_diag_rows_ok "$XVBT_MSGS" 2 || f=$((f + 1)) # #2733: both restore rows carry the proxy diagnostic
     XVBT_P2P_JSON='{"mode":"XVB","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     _xvb_case "a dashboard left persisting XVB after the restore is a counted red row, twice over" 2 2 1
     XVBT_P2P_JSON='{"mode":"P2POOL","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
@@ -396,7 +401,7 @@ _xvb_self_test() {
     fi
     unset -f sleep
 
-    unset -f ok bad info _ssh _xvb_real_tor_fetch _xvb_guest_python _xvb_case && rm -f "$XVBT_FETCH_CALLS" "$XVBT_STARTS" "$XVBT_CALLS"
+    unset -f ok bad info _ssh _xvb_real_tor_fetch _xvb_guest_python _xvb_case && rm -f "$XVBT_FETCH_CALLS" "$XVBT_STARTS" "$XVBT_CALLS" "$XVBT_MSGS"
     [ "$f" -eq 0 ]
 }
 
