@@ -51,29 +51,29 @@ class Policy:
 
     def container_allowed(self, body):
         host = body.get("HostConfig", {})
-        if "ALL" not in host.get("CapDrop", []) or any(
+        if "ALL" not in (host.get("CapDrop") or []) or any(
             host.get(k)
             for k in ("Privileged", "Devices", "DeviceRequests", "DeviceCgroupRules", "VolumesFrom")
         ):
             return False
         if host.get("VolumeDriver") not in (None, "", "local"):
             return False
-        if set(host.get("CapAdd", [])) - {"CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"}:
+        if set(host.get("CapAdd") or []) - {"CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"}:
             return False
         if any(
             host.get(k) not in (None, "", "private") for k in ("PidMode", "IpcMode", "UsernsMode")
         ):
             return False
-        if host.get("NetworkMode") in ("host",) or host.get("NetworkMode", "").startswith(
+        if host.get("NetworkMode") in ("host",) or (host.get("NetworkMode") or "").startswith(
             "container:"
         ):
             return False
-        for mount in host.get("Mounts", []):
-            if mount.get("VolumeOptions", {}).get("DriverConfig"):
+        for mount in host.get("Mounts") or []:
+            if (mount.get("VolumeOptions") or {}).get("DriverConfig"):
                 return False
             if not self.mount_allowed(mount.get("Type"), mount.get("Source", "")):
                 return False
-        for bind in host.get("Binds", []):
+        for bind in host.get("Binds") or []:
             source = bind.split(":", 1)[0]
             if not self.mount_allowed("bind" if source.startswith("/") else "volume", source):
                 return False

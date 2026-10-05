@@ -157,6 +157,17 @@ class GuardTest(unittest.TestCase):
         link.symlink_to("/opt")
         self.assertFalse(self.policy.mount_allowed("bind", str(link / "pithead")))
 
+    def test_null_host_config_lists_are_treated_as_empty(self):
+        # Compose serialises unset list fields as JSON null, not as absent keys.
+        host = {"CapDrop": ["ALL"], "CapAdd": None, "Binds": None, "Mounts": [{"Type": "tmpfs"}]}
+        path = "/containers/create?name=fixture_wallet-1"
+        self.assertTrue(self.policy.allows("POST", path, {"Labels": LABEL, "HostConfig": host}))
+        self.assertFalse(
+            self.policy.allows(
+                "POST", path, {"Labels": LABEL, "HostConfig": {**host, "CapDrop": None}}
+            )
+        )
+
     def test_external_network_reads_and_owned_connects_only(self):
         self.assertTrue(self.policy.allows("GET", "/networks/mining_net", {}))
         self.assertFalse(
