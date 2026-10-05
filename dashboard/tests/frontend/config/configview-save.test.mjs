@@ -92,3 +92,23 @@ test("a form placeholder refusal displays the backend path", async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+
+test("host read refusal keeps its path in the Configuration view", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    status: 500,
+    ok: false,
+    text: async () => '{"error":"placeholder value at dashboard.auth.password"}',
+  });
+  try {
+    await view.load();
+    assert.equal(view.state.phase, "error");
+    assert.match(view.state.error, /dashboard.auth.password/);
+    assert.equal(view.state.cfg, null);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

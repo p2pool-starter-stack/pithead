@@ -11,6 +11,9 @@ Every JSON object must have unique keys, including nested objects and objects in
 their path. Edit the existing block when adding settings. Every string value beginning with
 `PASTE_` or `YOUR_` (case-insensitive) is a placeholder and is refused, including secrets,
 hosts, and optional fields. Replace it with a real value, or omit the key to use its default.
+The host checks raw config before refreshing the dashboard’s masked copy. Invalid input
+replaces the editor prefill with a path-only refusal and removes cached worker read credentials;
+the Configuration view shows that refusal until valid config is rendered again.
 
 ## The minimal config
 

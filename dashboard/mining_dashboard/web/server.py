@@ -9,7 +9,7 @@ from aiohttp import web
 
 from mining_dashboard.client.rigforge_freshness import feed_stale
 from mining_dashboard.client.xmrig_client import strip_sentinel_credentials
-from mining_dashboard.config import config
+from mining_dashboard.config import config, documents
 from mining_dashboard.service import audit_service, control_service
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
@@ -137,6 +137,8 @@ async def handle_config(request):
     """The live config for form prefill, every set secret masked to the sentinel."""
     try:
         return web.json_response(control_service.read_config())
+    except documents.HostConfigError as exc:
+        return web.json_response({"error": f"Invalid configuration: {exc}"}, status=500)
     except Exception:
         logger.exception("Error reading host config")
         return web.json_response({"error": "Failed to read the stack config."}, status=500)

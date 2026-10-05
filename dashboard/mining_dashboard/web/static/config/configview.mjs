@@ -166,7 +166,7 @@ export class ConfigView extends Component {
         this.setState({ phase: "disabled" });
         return;
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await requirePreviewResponse(res);
       const cfg = await res.json();
       const candidate = editableCandidate(cfg);
       const text = JSON.stringify(candidate, null, 2);

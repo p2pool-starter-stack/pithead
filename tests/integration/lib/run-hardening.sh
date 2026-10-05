@@ -240,6 +240,30 @@ run_hardening() {
         assert_eq "raw config refusals preserve config.json and env (#3098)" \
             "$(rx 'sha256sum config.json .env')" "$raw_before"
 
+        # A hand-edited raw host file must fail before the renderer can hide its defects.
+        local bad_host host_read host_rc
+        for raw_kind in duplicate placeholder; do
+            if [ "$raw_kind" = duplicate ]; then
+                bad_host="${ctrl_config%\}} , \"p2pool\":{} }"
+                raw_path=p2pool
+            else
+                bad_host="$(printf '%s' "$ctrl_config" | jq '.dashboard.auth.password="PASTE_private"')"
+                raw_path=dashboard.auth.password
+            fi
+            push_config "$bad_host"
+            pithead control-run-pending >/dev/null 2>&1 || true
+            if host_read="$(rx 'docker exec dashboard python3 -c "from mining_dashboard.service.control_service import read_config; read_config()"' 2>&1)"; then host_rc=0; else host_rc=$?; fi
+            assert_rc "invalid raw host $raw_kind blocks dashboard read (#3098)" "$host_rc" 1
+            assert_contains "invalid raw host $raw_kind read names its path (#3098)" "$host_read" "$raw_path"
+        done
+        push_config "$ctrl_config"
+        pithead control-run-pending >/dev/null 2>&1
+        assert_rc "corrected raw host config restores dashboard read (#3098)" \
+            "$(
+                rx 'docker exec dashboard python3 -c "from mining_dashboard.service.control_service import read_config; read_config()"' >/dev/null 2>&1
+                echo $?
+            )" 0
+
         # 3a. A NON-sensitive change (an allowlisted alert toggle) committed via the spool must be
         #     applied BY THE PATH UNIT — not by us calling control-run-pending.
         # Use an allowlisted key that renders UNCONDITIONALLY: DASHBOARD_CHECK_UPDATES is always

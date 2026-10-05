@@ -90,3 +90,13 @@ async def test_deep_document_is_bad_request(control_client, control_spool):
     response = await control_client.post("/api/control/preview", data=text, headers=HEADERS)
     assert response.status == 400
     assert not list((control_spool / "requests").iterdir())
+
+
+async def test_read_config_reports_host_render_refusal(control_client, control_spool):
+    (control_spool / "config.json").write_text(
+        json.dumps({"_config_document_error": "placeholder value at dashboard.auth.password"})
+    )
+    response = await control_client.get("/api/config")
+    assert response.status == 500
+    assert "dashboard.auth.password" in await response.text()
+    assert "placeholder value" in await response.text()

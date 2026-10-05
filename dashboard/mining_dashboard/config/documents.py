@@ -50,3 +50,16 @@ def load_config(stream):
     cfg = loads(stream.read())
     reject_placeholders(cfg)
     return cfg
+
+
+class HostConfigError(ValueError):
+    """The host refused the raw source before rendering its masked copy."""
+
+
+def load_host_config(stream):
+    """Refuse the renderer's path-only error record before merging defaults or masking."""
+    cfg = load_config(stream)
+    if isinstance(cfg, dict) and "_config_document_error" in cfg:
+        reason = cfg["_config_document_error"]
+        raise HostConfigError(reason if isinstance(reason, str) else "Invalid host configuration")
+    return cfg
