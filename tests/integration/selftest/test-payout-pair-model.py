@@ -58,7 +58,13 @@ class ModelTest(unittest.TestCase):
 
     def assert_model(self, model):
         self.assertEqual(model["name"], "fixture-private")
-        self.assertEqual(set(model["services"]), {"wallet-rpc", "tari-wallet", "dashboard"})
+        self.assertEqual(
+            set(model["services"]), {"wallet-rpc", "tari-wallet", "dashboard", "caddy"}
+        )
+        caddy = model["services"].pop("caddy")
+        self.assertEqual(caddy["network_mode"], "none")
+        self.assertEqual(caddy["cap_drop"], ["ALL"])
+        self.assertNotIn("volumes", caddy)
         for service in model["services"].values():
             env = service["environment"]
             self.assertEqual(env["UNCHANGED"], "${TEMPLATE:-a=b}")

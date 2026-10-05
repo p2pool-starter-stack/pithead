@@ -41,6 +41,18 @@ env.update(
 services["dashboard"]["volumes"] = [
     {"type": "bind", "source": "${DASHBOARD_DATA_DIR}", "target": "/data"}
 ]
+# A real apply restarts caddy when its Caddyfile changes. The fixture serves no proxy, so give
+# that restart an inert target: no network, no mounts, no capabilities.
+services["caddy"] = {
+    "image": "pithead-payout-pair-tools:itest",
+    "command": ["sleep", "infinity"],
+    "init": True,
+    "network_mode": "none",
+    "read_only": True,
+    "cap_drop": ["ALL"],
+    "security_opt": ["no-new-privileges:true"],
+    "pull_policy": "never",
+}
 result = {
     "name": project,
     "services": services,

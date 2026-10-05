@@ -186,6 +186,11 @@ class GuardTest(unittest.TestCase):
             body = {"Labels": LABEL, "HostConfig": host}
             self.assertEqual(self.policy.allows("POST", path, body), allowed)
 
+    def test_inert_caddy_stub_with_no_network_may_be_created(self):
+        host = {"CapDrop": ["ALL"], "NetworkMode": "none", "ReadonlyRootfs": True}
+        path = "/containers/create?name=fixture-caddy-1"
+        self.assertTrue(self.policy.allows("POST", path, {"Labels": LABEL, "HostConfig": host}))
+
     def test_external_network_reads_and_owned_connects_only(self):
         self.assertTrue(self.policy.allows("GET", "/networks/mining_net", {}))
         self.assertFalse(
