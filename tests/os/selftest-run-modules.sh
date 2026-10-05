@@ -465,5 +465,5 @@ bash "$HERE/appliance-xvb-routing-leg.sh" --self-test >/dev/null || {
     echo "#1998 appliance XvB routing leg self-test failed" >&2
     exit 1
 }
-bash "$HERE/selftest-install-keep-plant.sh" || exit $?
+bash "$HERE/selftest-install-keep-plant.sh" && bash "$HERE/selftest-install-fresh-start.sh" || exit $?
 echo "os-run-modules: PASS"
