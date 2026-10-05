@@ -8,11 +8,12 @@ _XVB_ALIASES = ("enabled", "url", "donor_id")
 # these values beside the operator's xvb.*, so they are schema defaults, never a conflict (#2690).
 _XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
 _WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "watts"}
-# A missing config means a genuinely new machine. Tari is opt-in there, while the reference
-# remains ``local`` so an older config that never carried the switch keeps merge-mining.
+# Wizard-only defaults. The reference and absent-key behavior remain unchanged for upgrades.
 NEW_MACHINE_ANSWERS = {
     "local_miner": {"enabled": True},
-    "tari": {"mode": "off"},
+    "xvb": {"enabled": False},
+    "monero": {"clearnet_initial_sync": False},
+    "tari": {"mode": "local", "clearnet_initial_sync": False},
     "dashboard": {"host": "pithead"},
 }
 
