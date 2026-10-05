@@ -113,7 +113,8 @@ default_node_username() { printf '%s' "admin"; }
 # under `set -o pipefail`); we over-generate and truncate in the shell instead.
 generate_node_password() {
     local raw
-    raw=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9')
+    raw=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9') || return 1
+    [ "${#raw}" -ge 32 ] || return 1
     printf '%s' "${raw:0:32}"
 }
 

@@ -8,6 +8,7 @@ run_lifecycle() {
     local lifecycle_ok=1
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
+    run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
     it_step "pithead restart…"
@@ -17,9 +18,7 @@ run_lifecycle() {
     assert_rc "status OK after restart" "$?" "0"
     run_connection_announcements || return 1
 
-    # #2654: a source checkout ups with --pull never, so a digest-pinned third-party image that is
-    # gone from the engine (after `uninstall`, or on a new host) left its services down. Remove the
-    # socket-proxy image (docker-proxy and docker-control, both profile-free) and prove `up` fetches it.
+    # Remove the socket-proxy image and prove up fetches a missing pinned image (#2654).
     if rx 'test -f dashboard/Dockerfile'; then
         local proxy_ref proxy_id proxy_fails="$IT_FAIL"
         proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"

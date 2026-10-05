@@ -216,11 +216,11 @@ async def test_form_fields_still_work_without_the_pane(client, seeded):
     assert cfg["monero"]["wallet_address"].startswith("4")
 
 
-def test_a_machine_that_never_answered_the_tari_question_declines_it():
+def test_an_unmeasured_disk_keeps_the_cli_local_default():
     # This read "tari.mode is local|remote only" until #1855 made that false: off is what a new
     # machine gets, written EXPLICITLY because an omitted key still parses as local.
     cfg = wizard.build_config({"monero_wallet": "4" + "A" * 94, "tari_wallet": ""})
-    assert cfg["tari"] == {"mode": "off"}
+    assert cfg["tari"] == {"mode": "local", "wallet_address": "", "clearnet_initial_sync": False}
 
 
 def test_remote_monero_carries_ports_and_defaults_them():
