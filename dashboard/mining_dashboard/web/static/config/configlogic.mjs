@@ -26,7 +26,8 @@ export function isSecretSentinel(v) {
 export const editableCandidate = (cfg) =>
   JSON.parse(
     JSON.stringify(cfg, (key, value) =>
-      key !== "__secret__" && (key[0] === "_" || ["ssh", "__proto__", "constructor"].includes(key))
+      key !== "__secret__" &&
+      (key[0] === "_" || ["config_version", "ssh", "__proto__", "constructor"].includes(key))
         ? undefined
         : value,
     ),

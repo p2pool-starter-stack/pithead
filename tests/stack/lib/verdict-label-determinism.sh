@@ -92,6 +92,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # No label in tests/stack uses $* or $#, the special parameters past $@. They are seeded below
 # anyway, so all three have a control that can fail, not two branches that pass by construction.
 # #2936's invalid_port labels use the five literal inputs in test-tor-port-validation.sh.
+# #3090's ca_enabled labels use only the fixed true/false toggle loop.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -109,6 +110,7 @@ test-config.sh|bad_port
 test-config.sh|checked
 test-config.sh|core_checked
 test-confirm-approval.sh|secret_key
+test-connection-announce.sh|ca_enabled
 test-control-add-only-ssrf.sh|2
 test-control-add-only-ssrf.sh|3
 test-control-core.sh|reowned

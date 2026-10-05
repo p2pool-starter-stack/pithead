@@ -1,7 +1,29 @@
 """Pure classification helpers for the day-two configuration surface."""
 
+import os
+import re
+
+from .health.update_checker import parse_semver
+
+
+def config_version_metadata(cfg, host):
+    """Compare the live stamp against the image VERSION, without inventing an absent stamp."""
+    stamp = host.get("config_version")
+    if stamp is None:
+        cfg.pop("config_version", None)
+    current = parse_semver(os.environ.get("PITHEAD_VERSION", ""))
+    stamped = (
+        parse_semver(stamp)
+        if isinstance(stamp, str) and re.fullmatch(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}", stamp)
+        else None
+    )
+    cfg["_config_version_newer"] = bool(current and stamped and stamped > current)
+    return cfg
+
+
 EDITOR_METADATA = frozenset(
     {
+        "_config_version_newer",
         "_core_keys",
         "_editable_keys",
         "_confirm_keys",
@@ -19,7 +41,7 @@ def _is_secret_sentinel(value):
 def leaf_paths(node, prefix=()):
     """Yield scalar schema paths; arrays use their dedicated/JSON surfaces."""
     for key, value in node.items():
-        if key.startswith("_"):
+        if key.startswith("_") or (not prefix and key == "config_version"):
             continue
         path = (*prefix, key)
         if isinstance(value, dict) and not _is_secret_sentinel(value):
