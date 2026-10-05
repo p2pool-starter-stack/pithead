@@ -168,8 +168,12 @@ phase_provision_xvb_routing() {
     # silent-swallow that issue exists to kill — a fallback restore that also fails is a counted,
     # named diagnostic instead, so nothing downstream mistakes a still-misrouted guest for a clean one.
     if [ "$rc" -ne 0 ]; then
-        _xvb_actuate P2POOL false >/dev/null ||
-            bad "guest left routed to XvB after the leg failed — P2POOL restore did not confirm within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
+        if ! gate="$(_xvb_wait_for_gate_release)"; then
+            bad "guest left routed to XvB after the leg failed — sync gate never read released with xmrig-proxy running twice within ${XVB_GATE_RELEASE_TIMEOUT:-300}s before fallback P2POOL restore (last: $gate) $(_xvb_proxy_diag)"
+        else
+            _xvb_actuate P2POOL false >/dev/null ||
+                bad "guest left routed to XvB after the leg failed — P2POOL restore did not confirm within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
+        fi
     fi
     return "$rc"
 }
@@ -227,7 +231,6 @@ _xvb_self_test() {
         *"podman inspect"*" tor") printf '%s\n' "$XVBT_TOR_HEALTH" ;;
         *"{{.State.Running}}"*) printf 'true\n' ;;
         *"podman inspect"*"xmrig-proxy"* | *"podman logs"*) printf 'stub-proxy-state\n' ;;
-        *"podman start xmrig-proxy 2>&1 >/dev/null") ;; # the failure diagnostic's own start[...] field
         *"podman "*start*xmrig-proxy* | *"podman "*stop*xmrig-proxy*) printf x >>"$XVBT_STARTS" ;; # #2733: the gate owns it
         esac
         return 0
@@ -269,7 +272,7 @@ _xvb_self_test() {
     XVBT_GATE=held
     _xvb_case "a sync gate that never releases is a counted red row before any actuation" 1 1 1
     XVBT_GATE=released XVBT_REHOLD=1
-    _xvb_case "a gate that re-holds before the P2POOL restore is a counted red row" 2 1 1
+    _xvb_case "a gate that re-holds blocks both normal and fallback P2POOL confirmation" 2 2 1
     XVBT_REHOLD=0
 
     # #2253: the leg must WAIT for Tor rather than race it, and must say so when it never arrives.

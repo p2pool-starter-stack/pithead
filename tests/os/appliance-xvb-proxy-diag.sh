@@ -3,11 +3,10 @@
 
 # #2733 (jobs 1211, 1863, 1920, 2183): the restore died to a ConnectTimeout / "No route to host" on
 # the proxy API while the journal showed the container running for most of the window, and the
-# leg's own `podman start` output was thrown away, so the retained evidence could not say whether
-# the start failed, the container was down, or the address was unreachable from the dashboard. One
-# bounded read per red row names which: the container's state, what a fresh `podman start` says,
-# a plain TCP connect from the dashboard container to the same address the actuator dials, and the
-# proxy's own last log lines. Read-only apart from the start the leg already re-asserts every poll.
+# retained evidence could not say whether the container was down or its address was unreachable
+# from the dashboard. Bounded read-only diagnostics name the container's state, a plain TCP connect
+# from the dashboard to the same address the actuator dials, and the proxy's last log lines.
+# Never restart the proxy for diagnostics: the sync gate owns its lifecycle.
 _xvb_proxy_diag_payload() {
     printf '%s\n' "import socket" \
         "from mining_dashboard.config.config import PROXY_API_PORT, PROXY_HOST" \
@@ -36,10 +35,9 @@ _xvb_diag_field() { # <text-when-empty> <lines> <cmd...>
     fi
 }
 
-_xvb_proxy_diag() { # -> one line: state | start | tcp | proxy log tail
-    printf 'proxy diag: state[%s] start[%s] tcp[%s] log[%s]' \
+_xvb_proxy_diag() { # -> one line: state | tcp | proxy log tail
+    printf 'proxy diag: state[%s] tcp[%s] log[%s]' \
         "$(_xvb_diag_field empty 1 _ssh "podman inspect -f '{{.State.Status}} exit={{.State.ExitCode}} err={{.State.Error}}' xmrig-proxy 2>&1")" \
-        "$(_xvb_diag_field ok 2 _ssh "podman start xmrig-proxy 2>&1 >/dev/null")" \
         "$(_xvb_diag_field empty 1 _xvb_guest_python "$(_xvb_proxy_diag_payload)")" \
         "$(_xvb_diag_field empty 3 _ssh "podman logs --tail 3 xmrig-proxy 2>&1")"
 }
@@ -54,20 +52,19 @@ _xvb_diag_self_test() {
     _xvb_wire_noexec() {
         case "$1" in
         *"podman exec"*) printf 'Error: dashboard is not running\n' >&2 && return 125 ;;
-        *"podman start"*) return 0 ;;
         *) printf 'live\n' ;;
         esac
     }
     XVBT_WIRE=_xvb_wire_dead
     out="$(_xvb_proxy_diag)"
     [ "$(printf '%s' "$out" | grep -o 'collect-failed rc=255 .*No route to host' | wc -l)" -ge 1 ] &&
-        [[ "$out" != *'start[ok]'* ]] || {
+        [[ "$out" == *'tcp[collect-failed rc=255 '* ]] || {
         printf 'xvb self-test: a dead transport is not named in the diagnostic: %s\n' "$out" >&2
         f=$((f + 1))
     }
     XVBT_WIRE=_xvb_wire_noexec
     out="$(_xvb_proxy_diag)"
-    [[ "$out" == *'start[ok]'* && "$out" == *'tcp[collect-failed rc=125 '*'dashboard is not running'*']'* &&
+    [[ "$out" == *'state[live]'* && "$out" == *'tcp[collect-failed rc=125 '*'dashboard is not running'*']'* &&
         "$out" == *'log[live]'* ]] || {
         printf 'xvb self-test: a dead dashboard exec is not named in the tcp field: %s\n' "$out" >&2
         f=$((f + 1))

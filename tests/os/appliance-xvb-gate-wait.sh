@@ -11,13 +11,20 @@
 # one keeps an earned release, data_gates.py). Read-only, as the integration sampler reads it: the
 # dashboard's StateManager would open the live database for writing every poll.
 _xvb_gate_payload() {
-    printf '%s\n' "import json, os, sqlite3" \
+    printf '%s\n' "import json, os, sqlite3, stat" \
         "from mining_dashboard.config.config import DB_FILE_PATH" \
         "from mining_dashboard.service.data_gates import SYNC_GATE_RESET_PATH as m" \
         "with sqlite3.connect('file:' + DB_FILE_PATH + '?mode=ro', uri=True, timeout=1) as db:" \
         "    row = db.execute('SELECT value FROM kv_store WHERE key = ?', ('snapshot_latest_data',)).fetchone()" \
         "snap = json.loads(row[0]) if row and row[0] else {}" \
-        "marker = os.path.exists(m) and open(m, 'rb').read(32) != b'tari-only\\n'" \
+        "marker = os.path.lexists(m)" \
+        "if marker:" \
+        "    try:" \
+        "        fd = os.open(m, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)" \
+        "        with os.fdopen(fd, 'rb') as stream:" \
+        "            marker = not (stat.S_ISREG(os.fstat(stream.fileno()).st_mode) and stream.read(32) == b'tari-only\\n')" \
+        "    except OSError:" \
+        "        marker = True" \
         "print('released' if snap.get('miner_released') is True and not marker else 'held' + (' marker' if marker else ''))" |
         base64 | tr -d '\n'
 }
@@ -83,9 +90,17 @@ d = tempfile.mkdtemp()
 def run(snapshot, marker):
     db, mk = os.path.join(d, "s.db"), os.path.join(d, "reset")
     for p in (db, mk):
-        if os.path.exists(p):
+        if os.path.lexists(p):
             os.remove(p)
-    if marker:
+    if marker == "dangling":
+        os.symlink(os.path.join(d, "absent"), mk)
+    elif marker == "linked-tari":
+        target = os.path.join(d, "target")
+        open(target, "w").write("tari-only\n")
+        os.symlink(target, mk)
+    elif marker == "fifo":
+        os.mkfifo(mk)
+    elif marker:
         open(mk, "w").write("" if marker is True else marker)
     pre = "import mining_dashboard.service.data_gates as g, mining_dashboard.config.config as c, mining_dashboard.service.storage_service as s\n"
     pre += "g.SYNC_GATE_RESET_PATH = %r\nc.DB_FILE_PATH = %r\ns.StateManager(%r)\n" % (mk, db, db)
@@ -98,8 +113,11 @@ print(run({"miner_released": True}, True))
 print(run({"miner_released": True}, "tari-only\n"))
 print(run({"miner_released": False}, False))
 print(run(None, False))
+print(run({"miner_released": True}, "dangling"))
+print(run({"miner_released": True}, "linked-tari"))
+print(run({"miner_released": True}, "fifo"))
 ' 2>&1)"
-    [ "$out" = "$(printf 'released\nheld marker\nreleased\nheld\nheld')" ] && _xvb_gate_payload | base64 -d | grep -q "mode=ro'" || {
+    [ "$out" = "$(printf 'released\nheld marker\nreleased\nheld\nheld\nheld marker\nheld marker\nheld marker')" ] && _xvb_gate_payload | base64 -d | grep -q "mode=ro'" || {
         printf 'xvb self-test: the real gate payload misread the latch: %s\n' "$(printf '%s' "$out" | tr '\n' '|')" >&2
         return 1
     }
