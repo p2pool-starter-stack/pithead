@@ -113,6 +113,10 @@ Keep local code out of `vendor/`.
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
 
+`tests/os/install-keep-plant.sh` stages the reinstall dashboard image in the guest,
+with sub-step failure diagnostics and cleanup; `tests/os/selftest-install-keep-plant.sh`
+drives command failures without mounting a disk or starting Podman.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 Coordinator connection announcements and unchanged-apply miner calls are covered by
