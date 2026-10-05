@@ -625,7 +625,9 @@ Every scenario, at every tier, holds to the same rules.
 - Reproducible. The live run records a manifest (stack `VERSION`, git rev, image digests).
 - Test code is real code. The same lint (shellcheck) and coverage gate apply to the tests
   themselves, and the inventory generator fails CI if a suite stops enumerating or shrinks past
-  its floor.
+  its floor. The lifecycle restore-health selftest stubs the unrelated live Tor recovery probe;
+  it does not prove that probe. Missing commands fail its fixture even inside command
+  substitutions, conditions or redirected calls, rather than leaving a complete PASS summary.
 - An assertion reads its haystack directly, never through a pipe. The KVM serial checks read the
   serial file with `serial_has`; its tier-1 self-test puts a match before a megabyte of later
   output, and the rig and media phases prove their respective console rows on a guest. `grep -q`
