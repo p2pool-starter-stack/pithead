@@ -1,6 +1,7 @@
 """Keep the prepared, view-only Monero cache across destructive bench scenarios."""
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -12,6 +13,7 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 WALLET_DIR = "/home/ubuntu/wallets"
 VOLUME = "pithead_wallet_data"
@@ -263,66 +265,16 @@ def private(info, directory=False):
 
 
 def capture(baseline):
-    fingerprint = identity(baseline)
-    if fingerprint is None:
-        return
-    item = wallet_container({baseline})
-    if item is None:
-        raise ValueError("configured wallet container is missing")
-    if identity_values(item["Config"]["Env"]) != fingerprint:
-        raise ValueError("source container wallet identity differs from the baseline")
-    local_volume()
-    directory = Path(
-        tempfile.mkdtemp(
-            prefix="pithead-wallet-fixture-",
-            dir=os.environ.get("IT_SCRATCH_DIR") or "/var/tmp",  # noqa: S108 -- mkdtemp creates an owner-only directory under the persistent sticky temp root.
+    if "capture_fixture" in globals():
+        operation = globals()["capture_fixture"]  # Streamed by wallet-fixture.sh.
+    else:
+        spec = importlib.util.spec_from_file_location(
+            "wallet_capture", Path(__file__).with_name("wallet_fixture_capture.py")
         )
-    )
-    was_running = item["State"]["Running"]
-    try:
-        stopped = stop_wallet(item)
-        if stopped["State"]["ExitCode"] != 0 or stopped["State"].get("OOMKilled"):
-            raise ValueError("source wallet has no graceful save proof")
-        archive = directory / "wallet.tar"
-        with archive.open("xb") as stream:
-            command = f"test ! -e {WALLET_DIR}/.payout-scanning && tar -C {WALLET_DIR} -cf - payout-wallet payout-wallet.keys"
-            docker(*helper(item["Image"], True, directory, "capture"), command, stdout=stream)
-            stream.flush()
-            os.fsync(stream.fileno())
-        contents = manifest(archive)
-        # Uninstall also removes owned images. Keep the exact tar-capable image offline.
-        with (directory / "image.tar").open("xb") as stream:
-            docker("image", "save", item["Image"], stdout=stream)
-            stream.flush()
-            os.fsync(stream.fileno())
-        write_state(
-            directory,
-            {
-                "baseline": str(baseline),
-                "directory": str(directory),
-                "identity": fingerprint,
-                "image": item["Image"],
-                "archive_sha256": digest(archive),
-                "image_sha256": digest(directory / "image.tar"),
-                "contents": contents,
-                "stage": "captured",
-            },
-        )
-        sync_directory(directory.parent)
-    except Exception:
-        # No branch was deployed; remove only this capture's known private files.
-        for name in ("wallet.tar", "image.tar", "state.tmp", "state.json"):
-            path = directory / name
-            if path.exists() or path.is_symlink():
-                private(path.lstat())
-                path.unlink()
-        directory.rmdir()
-        sync_directory(directory.parent)
-        raise
-    finally:
-        if was_running:
-            docker("start", item["Id"], stdout=subprocess.DEVNULL)
-    print(directory)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        operation = module.capture_fixture
+    return operation(SimpleNamespace(**globals()), baseline)
 
 
 def load(directory, baseline, cleanup_only=False, supersession=False):

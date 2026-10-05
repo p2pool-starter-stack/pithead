@@ -8,7 +8,7 @@ receipt, snapshot metadata, archives, logs or artifacts.
 ## Caller contract
 
 Invoke `tests/integration/lib/wallet_fixture_supersession.py` from its source
-checkout, with the adjacent `wallet-fixture.py` available. Run as the snapshot
+checkout, with the adjacent `wallet-fixture.py` and `wallet_fixture_capture.py` available. Run as the snapshot
 owner under bench-ci's idle exclusive reservation. The caller must first validate
 commit-qualified original and successor jobs, same-bench ownership, a later
 VERIFIED successor with `baseline_verified=true`, fresh baseline verification and
