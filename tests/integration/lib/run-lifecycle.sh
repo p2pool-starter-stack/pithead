@@ -273,6 +273,7 @@ run_uninstall_round_trip() {
     onion_before="$(env_on_box MONERO_ONION_ADDRESS)"
     local local_node=""
     has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node && local_node=1
+    record_uninstall_secrets before || return 1
     snippet="$(kept_data_snapshot_snippet "${kept[@]}")"
     if ! pithead down >/dev/null 2>&1 || ! rx 'cp -p .env .env.itest-round-trip' ||
         ! before="$(rx "$snippet")" || [ -z "$before" ] ||
@@ -322,7 +323,6 @@ run_uninstall_round_trip() {
     local left=""
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
     assert_eq "uninstall removes every derived path and .env" "$left" ""
-
     # An operator's setup here generates the secrets that lived only in .env anew (docs/operations.md).
     # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
     # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
@@ -341,8 +341,7 @@ run_uninstall_round_trip() {
     else
         it_fail "status OK after setup-after-uninstall" "pithead status did not recover within 600s"
     fi
-    # The chains' large files are the same files after setup, and the kept Tor keys give back the
-    # same onion address.
+    # Setup reuses the large chain files and recovers the same onion from kept Tor keys.
     if [ -n "$local_node" ]; then
         big_after="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"
         if [ -n "$big_before" ] && [ "$big_after" = "$big_before" ]; then
@@ -353,6 +352,7 @@ run_uninstall_round_trip() {
     else
         it_skip_leg "setup after uninstall reuses the kept chain files" "remote mode: no local chain" "by-design"
     fi
+    record_uninstall_secrets after || true # it_fail records the error; still run the exact identity assertion
     assert_eq "setup after uninstall keeps the Monero onion address" "$(env_on_box MONERO_ONION_ADDRESS)" "$onion_before"
     [ "$IT_FAIL" -le "$fails_before" ]
 }

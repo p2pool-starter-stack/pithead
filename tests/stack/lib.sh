@@ -61,6 +61,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STACK="$ROOT/pithead"
 PASS=0
 FAIL=0
+TEST_MONERO_ONION="$(printf '%*s.onion' 56 '' | tr ' ' a)"
+TEST_TARI_ONION="$(printf '%*s.onion' 56 '' | tr ' ' b)"
+
+seed_node_onion_state() { # <tor-data-dir>
+    mkdir -p "$1/monero" "$1/tari"
+    printf '%s\n' "$TEST_MONERO_ONION" >"$1/monero/hostname"
+    printf '%s\n' "$TEST_TARI_ONION" >"$1/tari/hostname"
+}
 
 ok() {
     PASS=$((PASS + 1))
@@ -191,8 +199,8 @@ echo "[docker] $*" >> "${DOCKER_LOG:-/dev/null}"
 case "$*" in
   "compose version"|"info") exit 0 ;;
   "exec tor test -f "*) exit 0 ;;
-  "exec tor cat /var/lib/tor/monero/hostname") echo "mona.onion" ;;
-  "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion" ;;
+  "exec tor cat /var/lib/tor/monero/hostname") printf '%*s.onion\n' 56 '' | tr ' ' a ;;
+  "exec tor cat /var/lib/tor/tari/hostname")   printf '%*s.onion\n' 56 '' | tr ' ' b ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion" ;;
   "exec p2pool cat /proc/1/cmdline") printf '%s' "${P2POOL_PROC1:-}" ;;  # #273: tests set the running p2pool argv
   *hash-password*)
@@ -309,9 +317,10 @@ build_val_sandbox() {
     cp "$ROOT/build/tari/config.toml.template" "$V/build/tari/"
     mkdir -p "$V/data/monero" "$V/data/tari" "$V/data/p2pool" "$V/data/tor" "$V/data/dashboard" "$V/data/p2pool/stats"
     seed_env() {
+        seed_node_onion_state "$V/data/tor"
         cat >"$V/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
+MONERO_ONION_ADDRESS=$TEST_MONERO_ONION
+TARI_ONION_ADDRESS=$TEST_TARI_ONION
 P2POOL_ONION_ADDRESS=p2pa.onion
 PROXY_AUTH_TOKEN=ORIGINALTOKEN
 HOST_IP=box.lan
@@ -350,9 +359,10 @@ build_control_sandbox() {
     cp "$ROOT/docker-compose.yml" "$C/docker-compose.yml"
     CTRL_LOG="$C/docker.log"
     seed_control_env() {
+        seed_node_onion_state "$C/data/tor"
         cat >"$C/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
+MONERO_ONION_ADDRESS=$TEST_MONERO_ONION
+TARI_ONION_ADDRESS=$TEST_TARI_ONION
 P2POOL_ONION_ADDRESS=p2pa.onion
 PROXY_AUTH_TOKEN=ORIGINALTOKEN
 HOST_IP=box.lan

@@ -211,16 +211,17 @@ mkdir -p "$U/build/tari" "$U/dashboard" "$U/data/monero" "$U/data/tari" "$U/data
 cp "$STACK" "$U/pithead"
 make_stubs "$U/bin"
 cp "$ROOT/build/tari/config.toml.template" "$U/build/tari/"
-# Stale .env: secrets present, but STRATUM_BIND (a rendered var) is missing — the upgrade must fill it.
+# STRATUM_BIND is stale/missing; upgrade must fill it while preserving the seeded identity.
 cat >"$U/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
+MONERO_ONION_ADDRESS=$TEST_MONERO_ONION
+TARI_ONION_ADDRESS=$TEST_TARI_ONION
 P2POOL_ONION_ADDRESS=p2pa.onion
 PROXY_AUTH_TOKEN=ORIGINALTOKEN
 HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 EOF
+seed_node_onion_state "$U/data/tor"
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$U/config.json"
 UL="$U/docker.log"
 : >"$UL"
@@ -240,7 +241,6 @@ assert_contains "upgrade still rebuilds images (source mode)" "$(cat "$UL")" "co
 assert_contains "upgrade pulls missing non-buildable images first (digest bumps)" "$(cat "$UL")" "compose pull --policy missing --ignore-buildable"
 
 echo "== black-box: apply recovers from a failed 'compose up' (#125) =="
-# A docker stub that fails `compose up -d --remove-orphans` only when FAIL_UP=1 (else succeeds).
 A="$SANDBOX/applyfail"
 mkdir -p "$A/build/tari" "$A/dashboard" "$A/bin" "$A/data/monero" "$A/data/tari" "$A/data/p2pool/stats" "$A/data/tor" "$A/data/dashboard"
 : >"$A/dashboard/Dockerfile" # source-checkout marker → pithead builds (--pull never), #44
@@ -261,14 +261,15 @@ EOF
 printf '#!/usr/bin/env bash\nexit 0\n' >"$A/bin/sudo"
 chmod +x "$A/bin/docker" "$A/bin/sudo"
 cat >"$A/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
+MONERO_ONION_ADDRESS=$TEST_MONERO_ONION
+TARI_ONION_ADDRESS=$TEST_TARI_ONION
 P2POOL_ONION_ADDRESS=p2pa.onion
 PROXY_AUTH_TOKEN=ORIGINALTOKEN
 HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 EOF
+seed_node_onion_state "$A/data/tor"
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$A/config.json"
 # First apply: real config delta committed, but `compose up` FAILS -> marker left, rc 1, guidance.
 out="$(cd "$A" && FAIL_UP=1 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -286,9 +287,7 @@ if [ -f "$A/.env.apply-incomplete" ]; then mk=present; else mk=absent; fi
 assert_eq "marker cleared after a successful retry" "$mk" "absent"
 
 echo "== black-box: compose_up_checked retries a transient container-state race once (#2293) =="
-# A docker stub that fails `compose up` with the exact state-conflict shape observed on bench-ci job
-# 388 (a container still mid-transition from its own prior start) on the FIRST call only, then
-# succeeds — proving the retry happens inside a single apply, not across a second dashboard commit.
+# Job 388's mid-transition conflict occurs once, proving retry stays inside a single apply.
 R2="$SANDBOX/racecompose"
 mkdir -p "$R2/build/tari" "$R2/dashboard" "$R2/bin" "$R2/data/monero" "$R2/data/tari" "$R2/data/p2pool/stats" "$R2/data/tor" "$R2/data/dashboard"
 : >"$R2/dashboard/Dockerfile"
@@ -319,8 +318,8 @@ EOF
 printf '#!/usr/bin/env bash\nexit 0\n' >"$R2/bin/sudo"
 chmod +x "$R2/bin/docker" "$R2/bin/sudo"
 cat >"$R2/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
+MONERO_ONION_ADDRESS=$TEST_MONERO_ONION
+TARI_ONION_ADDRESS=$TEST_TARI_ONION
 P2POOL_ONION_ADDRESS=p2pa.onion
 PROXY_AUTH_TOKEN=ORIGINALTOKEN
 HOST_IP=box.lan
@@ -328,6 +327,7 @@ DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 MONERO_OUT_PEERS=48
 EOF
+seed_node_onion_state "$R2/data/tor"
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","out_peers":49}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$R2/config.json"
 RACE_CNT="$R2/race-count"
 out="$(cd "$R2" && RACE_CNT_FILE="$RACE_CNT" PATH="$R2/bin:$PATH" ./pithead apply -y 2>&1)"

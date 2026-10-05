@@ -690,6 +690,7 @@ cp "$STACK" "$RSUT/pithead" && chmod +x "$RSUT/pithead"
 cp -R "$(dirname "$STACK")/build" "$RSUT/build" # service-config templates render injects from
 make_stubs "$RSUT/bin"
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false} }\n' "$WALLET" >"$RSUT/config.json"
+seed_node_onion_state "$RSUT/data/tor"
 (cd "$RSUT" && printf '\nn\n' | DOCKER_LOG=/dev/null PATH="$RSUT/bin:$PATH" ./pithead setup --skip-deps --skip-optimize >/dev/null 2>&1)
 echo "# stale — written by an older build" >"$RSUT/Caddyfile"
 render_out=$(cd "$RSUT" && DOCKER_LOG=/dev/null PATH="$RSUT/bin:$PATH" ./pithead render 2>&1)
