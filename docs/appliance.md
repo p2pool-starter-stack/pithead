@@ -246,6 +246,7 @@ Then a handful of choices, all with sensible defaults:
 | Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
 | First sync | private over Tor | Faster over clearnet: hours instead of days. This opts every local chain into fast sync and exposes your IP address to the Monero network and, if Tari runs locally, the Tari network until initial sync finishes. With the firewall on, only those local nodes are exempted. The host closes and verifies its exception before the Tor restart, then verifies the live daemon and rules before clearing the warning. The firewall and each clearnet option are confirmed settings in the Configuration view. |
+| Enable stratum password? | no | Yes generates a password every miner must send; it then appears on the hand-off card, in the dashboard's **Connect a miner** block and in the CLI output of `setup` and `apply`. With No, miners connect without one. Existing and restored configurations keep their current setting; the form-submit fallback (no JavaScript) follows the same rule. Change it later with `p2pool.stratum_password` ([configuration](configuration.md#configuration-reference)). |
 | Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
 
 XvB is off on a new install and is not asked. Enable it later from the Configuration view.
@@ -280,6 +281,8 @@ Only when everything passes does the page show the things you must save:
 - the **dashboard login** (generated, or the one you chose)
 - the **dashboard address** (`https://pithead.local`)
 - where to **point your miners** (`stratum+tcp://pithead.local:3333`)
+- the **stratum password**, or **No stratum password** when it is off
+- the **TLS fingerprint** when stratum TLS is enabled
 
 A remote node's address and RPC login are not one-time answers. The dashboard's Configuration view
 changes either on a running machine: type `APPLY` to confirm, and the host checks the staged
@@ -288,7 +291,12 @@ endpoint with the staged login before it commits the pair
 local-node mode preserves its masked partner and applies the pair to the local services together. A changed endpoint needs explicit replacement
 credentials: a masked login never follows it to a new node.
 
-**Copy the login somewhere safe, then press "I saved these — erase the disk and install."**
+After provisioning, **Connect a miner** in the dashboard shows the LAN pool URL and the TLS
+fingerprint when enabled. The block offers Reveal and Copy for a configured stratum password,
+including on a dashboard without a login: anyone on that LAN can retrieve it. If it is off,
+the block says **No stratum password**.
+
+**Copy the login and any stratum password somewhere safe, then press "I saved these — erase the disk and install."**
 Nothing touches the disk until that press. The install takes a few minutes, and when it
 finishes **the machine switches itself off.** That is the end of the install, not a crash.
 

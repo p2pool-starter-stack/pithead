@@ -1,7 +1,5 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Dashboard login previews, rendered Caddy auth/vhosts, and status sync progress.
-# Custom ports and catch-alls prevent an unmatched Host from returning an empty 200.
 # The global-address guard fences both site names AND bind addresses: Caddy's wildcard
 # listener matches Host content, so filtering only the site list is insufficient.
 # dashboard_sync_progress re-renders /api/state with one curl (#384).
@@ -550,6 +548,7 @@ hash1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_HASH_B64)"
 fp1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)"
 [ -n "$hash1" ] && ok "auth hash persisted (base64)" || bad "auth hash persisted (base64)" "empty"
 [ -n "$fp1" ] && ok "auth fingerprint persisted" || bad "auth fingerprint persisted" "empty"
+assert_contains "auth hashing disables container logs" "$(cat "$AUTH_LOG")" "run --rm -i --log-driver none "
 assert_contains "auth hashed via the pinned caddy image" "$(cat "$AUTH_LOG")" "hash-password"
 assert_not_contains "auth password stays out of docker argv" "$(cat "$AUTH_LOG")" "hunter2hunter2"
 assert_contains "Caddyfile gains basic_auth" "$(cat "$V/Caddyfile")" "basic_auth"
@@ -573,6 +572,7 @@ esac
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "proxy":{"donate_level":1}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"freshpass99"}} }\n' "$WALLET" >"$V/config.json"
 : >"$AUTH_LOG"
 out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_contains "password rotation disables container logs" "$(cat "$AUTH_LOG")" "run --rm -i --log-driver none "
 assert_contains "changed password re-hashes" "$(cat "$AUTH_LOG")" "hash-password"
 assert_eq "changed password updates fingerprint" "$([ "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)" != "$fp1" ] && echo changed)" "changed"
 assert_contains "auth change recreates caddy" "$(cat "$AUTH_LOG")" "restart caddy"

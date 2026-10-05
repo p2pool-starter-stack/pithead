@@ -282,7 +282,8 @@ async def wizard_state(request: web.Request) -> web.Response:
             "install_attempt": install_attempt,
             "auth_mode": auth_mode,
             "restore_enabled": request.app["restore_enabled"],
-        }
+        },
+        headers={"Cache-Control": "no-store"},  # the hand-off card carries the stratum password
     )
 
 
@@ -425,9 +426,8 @@ async def _submit_locked(request: web.Request) -> web.Response:
     except ValueError as exc:
         return web.json_response({"error": f"Invalid configuration: {exc}"}, status=400)
     clear_submission_sidecars()
-    # The dashboard-login choice travels BESIDE the config: "no login" is an empty password,
-    # which is also what "not chosen yet" looks like, so the config alone cannot express intent.
-    # The host reads this to decide whether to generate one.
+    # The host needs a separate login choice: an empty password means either no login
+    # or no choice yet, so config alone cannot tell it whether to generate one.
     mode = str(form.get("auth_mode", "")).strip()
     if mode in ("auto", "set", "none"):
         _spool_write_text("auth-mode", mode)
@@ -533,15 +533,14 @@ async def _submit_restore_locked(request: web.Request) -> web.Response:
 
 async def handoff(request: web.Request) -> web.Response:
     """The credentials card, once the host publishes it: dashboard login, dashboard URL, and the
-    stratum address. Authed, over the same TLS the operator typed secrets into — a 32-character
-    random password transcribed from a console was never realistic. Read from handoff_dir(),
-    which the installer keeps volatile."""
+    stratum address. Authed, over the same TLS the operator typed secrets into. Read from
+    handoff_dir(), which the installer keeps volatile."""
     if not _authed(request):
         return web.json_response({"error": "unauthenticated"}, status=401)
     raw = _spool_read("handoff.json", handoff_dir())
     if not raw:
         return web.json_response({"error": "not ready"}, status=404)
-    return web.json_response(json.loads(raw))
+    return web.json_response(json.loads(raw), headers={"Cache-Control": "no-store"})
 
 
 async def handoff_ack(request: web.Request) -> web.Response:
@@ -596,9 +595,8 @@ async def status(request: web.Request) -> web.Response:
 def make_app(exit_fn=sys.exit, restore_enabled=False, secure_cookie=False) -> web.Application:
     if not clear_page_temps():
         raise RuntimeError("temporary wizard files could not be cleared safely")
-    # Some minimal hosts lack /etc/mime.types, so ES modules would be served as
-    # application/octet-stream, which browsers refuse to execute. Same fix as the dashboard's
-    # server.py — the wizard serves the same static tree.
+    # Hosts without /etc/mime.types mislabel ES modules as application/octet-stream.
+    # Use the dashboard fix for the same static tree so browsers can execute them.
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("text/javascript", ".js")
     # aiohttp's default (1 MiB) refuses a restore upload before submit_restore's own, clearer
