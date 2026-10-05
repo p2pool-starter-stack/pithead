@@ -467,8 +467,13 @@ via an `EXIT` trap):
    nodes running. It removes test-checkout containers for services absent from the baseline.
    A recreated node can report healthy before the dashboard's sync gate stops p2pool and
    xmrig-proxy while its chains reload. Restore waits up to 1500 seconds for the dashboard's
-   Monero and Tari sync panels to read `done`, then waits for service health before the final
-   census. A timeout leaves the restore unproved; the per-service identity check still runs.
+   Monero and Tari sync panels to read `done`, then waits for service health, then up to 1500
+   seconds for P2Pool and xmrig-proxy to be running in two consecutive samples
+   ([#3152](https://github.com/p2pool-starter-stack/pithead/issues/3152)): synced and healthy
+   can read true before the dashboard's next poll starts them again. Only then does the final
+   census run. A timeout leaves the restore unproved and prints the stage (`mining-services`),
+   the gate marker and each service's state; the per-service identity check still runs and
+   still fails any service that is not running.
 7. Proves the restored stack matches the on-disk config
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
