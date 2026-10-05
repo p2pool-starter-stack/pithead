@@ -23,16 +23,15 @@ A fresh `config.json` is this (see [`config.minimal.json`](../config.minimal.jso
         "wallet_address": "your_tari_wallet_address"
     },
     "p2pool": {
-        "stratum_password": "auto"
+        "stratum_password": ""
     }
 }
 ```
 
-The `stratum_password` line turns on [stratum authentication](workers.md#authentication) for new
-installs (#208): the stack generates a stable secret, prints it after `setup`/`apply`, and rigs
-connect with it as their stratum `pass` (RigForge's setup prompts for it). It is explicit here —
-not a hidden default — so an install that predates it keeps its open-`:3333` behavior on upgrade;
-delete the line (or set `""`) to run unauthenticated on a trusted LAN.
+The starter configuration has no [stratum password](workers.md#authentication). Both setup
+wizards ask **Enable stratum password?**, default off. Choose Yes to generate a password;
+set `p2pool.stratum_password` to `"auto"` or a chosen value to enable it later. Upgrades and
+restores keep the current setting and saved generated secret.
 
 For every key and its default, see [`config.reference.json`](../config.reference.json) and copy in
 only the keys you want to override.
