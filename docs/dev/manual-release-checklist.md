@@ -155,7 +155,9 @@ stratum password unless the user opts in (#3092).
 **Config B — everything on.** Login, browser configuration, Telegram with commands, stratum TLS,
 on-chain payout confirmation for both chains (Tari needs only the view key: the spend key is read
 from the dual-key address, #3096), energy prices, and the dashboard as a Tor onion (which needs a
-dashboard password of 16 characters or more; make one up for QA).
+dashboard password of 16 characters or more; make one up for QA). This sample targets #3096:
+until that implementation lands, the validator still requires `tari.spend_public_key`
+(confirm wording at the freeze).
 
 ```json
 {
@@ -465,10 +467,11 @@ Record what broke, take a backup, run setup again, and carry on from 2.3 on the 
 - [ ] **2.3 Nothing lost.** Do: compare the box with your notes, then run
   `jq -r .config_version config.json` and `ls -l config.json`. Expect: `./pithead version` shows
   the candidate; the dashboard login, payout addresses, onion address, and worker list match your
-  notes, with `qa-1x-migration` from 2.1b as the one expected extra `workers.list` entry; XvB,
-  Tari's mode and the stratum password setting are as you noted, because an upgrade keeps what it
-  had (#3099); the hashrate chart still shows the history from before; Monero is still synced and
-  the miners reconnected by themselves. Per #3109 the first `jq` line prints the candidate's
+  notes, with `qa-1x-migration` from 2.1b as the one expected extra `workers.list` entry; XvB is
+  off, because 2.1b deliberately set `xmrig_proxy.enabled` to `false`, which migrates to
+  `xvb.enabled: false`. Tari's mode and the stratum password setting are as you noted, because an
+  upgrade keeps what it had (#3099); the hashrate chart still shows the history from before;
+  Monero is still synced and the miners reconnected by themselves. Per #3109 the first `jq` line prints the candidate's
   release number without any `-pre` or build suffix, and `config.json` is still `-rw-------` with
   its owner unchanged (confirm wording at the freeze). If payout confirmation was on before the
   upgrade, the payout card is green again with no rescan: #3096 adopts the old wallet as the one
