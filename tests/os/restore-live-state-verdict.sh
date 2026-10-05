@@ -46,7 +46,7 @@ restore_live_state_verdict() {
 # 30-second startup probe, since it would otherwise stop P2Pool every poll on fresh chains.
 # Start the existing restored container once, never retry it, then restore the normal gate.
 restore_p2pool_startup() {
-    local state id running exit_code restarts oom extra started_at stop_logs line initial_id="" sample failed=0 checkpoint="stop dashboard"
+    local state id running exit_code restarts oom extra started_at stop_logs plain_stop_logs line initial_id="" sample failed=0 checkpoint="stop dashboard"
     local inspect="podman inspect p2pool --format '{{.Id}} {{.State.Running}} {{.State.ExitCode}} {{.RestartCount}} {{.State.OOMKilled}}'"
     _ssh "podman stop dashboard >/dev/null" || failed=1
     if [ "$failed" -eq 0 ]; then
@@ -68,7 +68,8 @@ restore_p2pool_startup() {
                 checkpoint="read prior stop logs"
                 stop_logs=$(_ssh "podman logs --since '$started_at' --tail 30 p2pool 2>&1") || failed=1
                 [ "$failed" -ne 0 ] || checkpoint="validate prior stop logs"
-                [[ "$stop_logs" = *'P2Pool caught SIGTERM'* ]] && [[ "$stop_logs" = *'P2Pool stopping'* ]] || failed=1
+                plain_stop_logs=$(printf '%s\n' "$stop_logs" | mm_strip_ansi)
+                [[ "$plain_stop_logs" = *'P2Pool caught SIGTERM'* ]] && [[ "$plain_stop_logs" = *'P2Pool stopping'* ]] || failed=1
             fi
         else
             [ "$exit_code" = 0 ] || failed=1

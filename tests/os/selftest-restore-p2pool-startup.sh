@@ -32,9 +32,9 @@ _ssh() {
             return 0
         fi
         [ "$mode" != unproved-kill ] || return 0
-        echo 'P2Pool caught SIGTERM'
+        printf '\033[0;90mP2Pool \033[0mcaught SIGTERM\033[0m\n'
         [ "$mode" != partial-stop-log ] || return 0
-        echo 'P2Pool stopping'
+        printf '\033[0;90mP2Pool \033[0mstopping\033[0m\n'
         ;;
     "podman inspect"*)
         local sample
