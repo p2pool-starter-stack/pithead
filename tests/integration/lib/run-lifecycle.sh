@@ -9,6 +9,7 @@ run_lifecycle() {
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
     tor_recovery_healthy_probe
+    prove_wallet_supersession
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
     wait_status_ok 240 || true

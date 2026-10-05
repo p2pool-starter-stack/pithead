@@ -89,8 +89,8 @@ def manifest(path):
             if stream is None:
                 raise ValueError("unreadable wallet archive member")
             result[name] = [member.mode, member.size, stream_digest(stream)]
-    if set(result) != {"payout-wallet", "payout-wallet.keys"} or not all(
-        value[1] for value in result.values()
+    if set(result) != {"payout-wallet", "payout-wallet.keys"} or any(
+        v[1] == 0 for v in result.values()
     ):
         raise ValueError("wallet archive must contain only the prepared cache and keys")
     return result
@@ -125,7 +125,7 @@ STOP_WINDOW = 600
 TERM_INTERVAL = 5
 
 
-def stop_wallet(item):
+def stop_wallet(item, diagnostics=True):
     # Never SIGKILL: a kill can land mid-refresh or mid-store() and damage the prepared cache.
     # A TERM sent while the wallet is still `Loading wallet...` (PID 1, no handler yet) is
     # discarded by the kernel, so re-send it until the container stops; repeats are harmless.
@@ -141,7 +141,8 @@ def stop_wallet(item):
             tail = docker(
                 "logs", "--tail", "20", item["Id"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
             ).stdout.decode(errors="replace")
-            print(f"wallet did not stop on SIGTERM; last log lines:\n{tail}", file=sys.stderr)
+            if diagnostics:
+                print(f"wallet did not stop on SIGTERM; last log lines:\n{tail}", file=sys.stderr)
             raise ValueError("wallet did not stop gracefully; no forced kill attempted")
         if running and now >= next_term:
             docker("kill", "--signal", "TERM", item["Id"], stdout=subprocess.DEVNULL, check=False)
@@ -324,18 +325,17 @@ def capture(baseline):
     print(directory)
 
 
-def load(directory, baseline, cleanup_only=False):
+def load(directory, baseline, cleanup_only=False, supersession=False):
     if directory.name == "" or not directory.name.startswith("pithead-wallet-fixture-"):
         raise ValueError("unexpected wallet fixture snapshot path")
     private(directory.lstat(), True)
+    retired = directory / "supersession.json"
+    if not supersession and (retired.exists() or retired.is_symlink()):
+        raise ValueError("superseded fixture is retained; restoration and ordinary cleanup refused")
     private((directory / "state.json").lstat())
     state = json.loads((directory / "state.json").read_text())
-    if state["directory"] != str(directory) or state["stage"] not in {
-        "captured",
-        "restoring",
-        "import_verified",
-        "ready",
-    }:
+    stages = {"captured", "restoring", "import_verified", "ready"}
+    if state["directory"] != str(directory) or state["stage"] not in stages:
         raise ValueError("wallet fixture receipt changed")
     if state["baseline"] != str(baseline) or state["identity"] != identity(baseline):
         raise ValueError("baseline wallet identity changed")

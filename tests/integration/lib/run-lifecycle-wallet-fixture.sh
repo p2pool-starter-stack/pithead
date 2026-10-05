@@ -116,3 +116,11 @@ cleanup_failed_tari_wallet_fixture() {
         it_fail "failed fixture removes its unrelated volume" "volume cleanup failed"
     fi
 }
+
+prove_wallet_supersession() {
+    local supersession_out supersession_rc
+    supersession_out="$(rx 'python3 tests/integration/tools/prove-wallet-supersession.py .')"
+    supersession_rc=$?
+    assert_rc "wallet supersession proves live identity, isolated opening and retained evidence (#3133)" "$supersession_rc" "0"
+    [ "$supersession_rc" -eq 0 ] || printf '%s\n' "$supersession_out" | redact
+}
