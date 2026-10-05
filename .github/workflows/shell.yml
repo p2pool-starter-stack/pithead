@@ -30,9 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     strategy:
-      fail-fast: false # a red block should not hide the verdicts of the other three
+      fail-fast: false # a red block should not hide the verdicts of the other blocks
       matrix:
-        block: [1, 2, 3, 4] # run.sh's STACK_BLOCKS; stack_blocks_audit holds the two equal
+        block: [1, 2, 3, 4, 5] # run.sh's STACK_BLOCKS; stack_blocks_audit holds the two equal
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

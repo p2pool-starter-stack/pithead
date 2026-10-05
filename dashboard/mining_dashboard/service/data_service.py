@@ -381,6 +381,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         monero_health=monero_sync["health"],
                         tari_down=tari_down,
                         tari_required=TARI_REQUIRED,
+                        workers_rejected=self.workers_rejected,
                         miner_released=self.miner_released,
                         # The same worker rows the dashboard shows; the monitor reads each rig's
                         # status (DOWN = offline) so alerts line up with the on-screen state.

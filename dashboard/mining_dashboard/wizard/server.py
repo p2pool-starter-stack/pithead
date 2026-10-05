@@ -118,7 +118,11 @@ def _spool_json(name: str) -> dict:
 
 def _reference() -> dict:
     """Every key with its documented default, published into the spool by the host."""
-    return {k: v for k, v in _spool_json("config.reference.json").items() if not k.startswith("_")}
+    return {
+        k: v
+        for k, v in _spool_json("config.reference.json").items()
+        if not k.startswith("_") and k != "config_version"
+    }
 
 
 def _last_attempt() -> dict:

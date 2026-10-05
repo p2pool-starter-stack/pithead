@@ -299,18 +299,17 @@ apply() {
     else
         rm -f "$newenv"
         if [ "$incomplete" -eq 0 ]; then
-            # #33: converge the control-runner units BEFORE returning. A box whose units point at
-            # a dead install has an unchanged config by definition — the fault is in the unit
-            # files, not config.json — so returning here first made `apply` the one thing that
-            # could not repair it, while doctor was telling the operator to run exactly that.
-            # Idempotent and sudo-free when the units already match.
+            # Host state may change without an .env diff: converge units and local_miner (#3090).
             mutation_lock_acquire apply
             provision_control_runner
             provision_firewall_check_units || error "Firewall check units could not be provisioned."
             reconcile_appliance_hostname
             apply_refresh_appliance_tls # #1265: the mint doctor sends the operator here for
+            render_local_miner_config
+            provision_local_miner || true
             log "No configuration changes detected. Nothing to apply."
             mutation_lock_release
+            announce_dashboard_url
             return 0
         fi
         warn "A previous apply updated the config but did not finish recreating containers — retrying."
