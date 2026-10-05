@@ -72,7 +72,7 @@ class Docker:
         self.calls.append(args)
         value = b""
         if args[0] == "ps":
-            value = b"source" if self.item else b""
+            value = b"" if "name=" in args[-1] else (b"source" if self.item else b"")
         elif args[:2] == ("container", "inspect"):
             value = json.dumps([self.item]).encode()
         elif args[:2] == ("volume", "inspect"):
@@ -312,6 +312,16 @@ class FixtureTest(unittest.TestCase):
         self.assertIn(first, contents)
         self.assertIn(second, contents)
         self.assertIn(".payout-active", contents)
+
+    def test_wallet_keys_names_the_single_prepared_pair_only(self):
+        legacy = {"payout-wallet": [], "payout-wallet.keys": [], ".payout-active": []}
+        self.assertEqual(fixture.wallet_keys(legacy), "payout-wallet.keys")
+        named = "payout-wallet-" + "a" * 64 + ".keys"
+        self.assertEqual(fixture.wallet_keys({named: []}), named)
+        with self.assertRaises(ValueError):
+            fixture.wallet_keys({named: [], "payout-wallet.keys": []})
+        with self.assertRaises(ValueError):
+            fixture.wallet_keys({".payout-active": []})
 
     def test_fingerprinted_archive_requires_keys_and_rejects_foreign_suffixes(self):
         for name in ("payout-wallet-" + "a" * 64, "payout-wallet-" + "b" * 64 + ".evil"):

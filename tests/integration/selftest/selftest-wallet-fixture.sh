@@ -8,7 +8,6 @@ source "$HERE/lib.sh"
 # shellcheck source=tests/integration/lib/wallet-fixture.sh
 source "$HERE/lib/wallet-fixture.sh"
 python3 "$TEST_DIR/test-wallet-fixture.py" || exit 1
-python3 "$TEST_DIR/test-wallet-fixture-transport.py" || exit 1
 python3 "$TEST_DIR/test-payout-docker-guard.py" || exit 1
 python3 "$TEST_DIR/test-payout-pair-preparation.py" || exit 1
 python3 "$TEST_DIR/test-payout-pair-model.py" || exit 1

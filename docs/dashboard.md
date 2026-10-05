@@ -9,6 +9,15 @@ chains are synced it switches to the operational view.
 
 ---
 
+## Connect a miner
+
+The **Connect a miner** block is available while syncing and in the running dashboard. It shows
+the LAN pool URL and, when stratum TLS is enabled, the certificate's SHA-256 fingerprint.
+A configured stratum password has Reveal and Copy controls. With dashboard authentication
+disabled, anyone on that LAN can retrieve it; enable a dashboard login before sharing access.
+An onion-published dashboard requires a login. With no stratum password, the block says
+**No stratum password** and miners connect without one.
+
 ## Sync Mode
 
 The dashboard shows Sync Mode the first time you start the stack, or any time the Monero or Tari

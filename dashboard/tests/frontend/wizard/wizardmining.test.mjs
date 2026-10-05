@@ -172,7 +172,11 @@ test("an invalid Monero address turns red only after its field is edited", () =>
 test("every two-to-four-answer setup question renders as full-text radios", () => {
   const tree = setupOn("local").tree;
   const groups = walk(tree).filter((node) => node.type === "fieldset");
-  assert.equal(groups.length, 8);
+  assert.equal(groups.length, 9);
+  assert.equal(
+    groups.filter((group) => renderToString(group).includes("Enable stratum password?")).length,
+    1,
+  );
   for (const group of groups) {
     const radios = walk(group).filter(
       (node) => node.type === "input" && node.props.type === "radio",

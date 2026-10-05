@@ -8,26 +8,31 @@ run_lifecycle() {
     local lifecycle_ok=1
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
+    lifecycle_gate_sample before-wizard-defaults
     run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
+    prove_wallet_supersession
+    lifecycle_gate_sample before-restart
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after restart" "$?" "0"
+    lifecycle_gate_sample after-restart
     run_connection_announcements || return 1
-
     # Remove the socket-proxy image and prove up fetches a missing pinned image (#2654).
     if rx 'test -f dashboard/Dockerfile'; then
         local proxy_ref proxy_id proxy_fails="$IT_FAIL"
         proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"
         proxy_id="$(rx "docker image inspect --format '{{.Id}}' $(quote_arg "$proxy_ref")" 2>/dev/null)"
+        lifecycle_gate_sample before-image-down
         it_step "removing the pinned socket-proxy image, then pithead up (#2654)…"
         if [ -n "$proxy_ref" ] && [ -n "$proxy_id" ] && pithead down >/dev/null 2>&1 &&
             rx "docker image rm -f $(quote_arg "$proxy_id")" >/dev/null 2>&1; then
             local up_out up_rc
             up_out="$(pithead up 2>&1)"
             up_rc=$?
+            lifecycle_gate_sample after-image-up
             assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
             # The failing pull or up names its cause; job 1280 lost it to /dev/null (#2755).
             [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
@@ -49,7 +54,6 @@ run_lifecycle() {
     else
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
-
     run_source_image_reconcile || return 1
     local cur_pool fp_before
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
@@ -85,7 +89,6 @@ run_lifecycle() {
     # .pool.type lags a sidechain switch until peers on the new chain connect — wait + three-way
     # verdict, don't assert cold on a peer-timing state (#54, #687).
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
-
     # Node-down failover (#31): stop monerod -> status non-zero (node down), dashboard rejects
     # workers (xmrig-proxy stopped) -> start monerod -> readmitted -> status 0 again.
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
@@ -102,7 +105,6 @@ run_lifecycle() {
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
-
     # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
     # restore brings them back. We change the pool, restore, and assert the pool reverted and
     # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check

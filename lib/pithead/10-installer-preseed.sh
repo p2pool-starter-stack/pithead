@@ -312,6 +312,10 @@ consume_install_request() ( # <spool-dir> [required-wipe] [volatile-restore-carr
         printf 'not an offered target: %s' "$target" | wizard_spool_publish "$spool" error.txt cat
         return 1
     fi
+    validate_miner_connection_install_request "$target" "$wipe" || {
+        wizard_spool_publish "$spool" error.txt printf '%s' 'The install request changed — submit the settings again.'
+        return 1
+    }
     log "Installing to /dev/$target (data: $wipe) ..."
     install_args=(--target "/dev/$target" --wipe "$wipe" --yes)
     [ -z "$carry" ] || [ ! -f "$carry/archive" ] || install_args+=(--no-preseeds)
@@ -322,6 +326,10 @@ consume_install_request() ( # <spool-dir> [required-wipe] [volatile-restore-carr
             warn "Install to /dev/$target completed, but its restore failed."
             return 1
         fi
+        install_miner_connection_to_target "/dev/$target" || {
+            wizard_spool_publish "$spool" error.txt printf '%s' 'Could not carry miner connection credentials to the installed system.'
+            return 1
+        }
         wizard_spool_publish "$spool" installed true
         log "Installed to /dev/$target."
         return 0

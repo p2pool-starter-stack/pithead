@@ -2,6 +2,8 @@
 # Prove the live probe rejects missing output, rather than passing on a command's exit alone.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
+# shellcheck source=tests/integration/lib/run-source-image.sh
+source "$ROOT/tests/integration/lib/run-source-image.sh"
 # shellcheck source=tests/integration/lib/run-connection-announcements.sh
 source "$ROOT/tests/integration/lib/run-connection-announcements.sh"
 echo "== connection announcement probe fails closed =="
@@ -70,6 +72,8 @@ chmod +x "$fixture/pithead"
 probe=$(connection_announcements_snippet)
 (cd "$fixture" && bash -c "$probe") >"$fixture/output" 2>&1
 grep -Fq 'connections: no-change apply matches rendered credentials and preserves env' "$fixture/output"
+expected_gate_stages=$'before-setup\nafter-setup\nafter-up\nafter-apply\nafter-no-change'
+[ "$(retain_lifecycle_gate_samples <"$fixture/output" | awk '{print $2}')" = "$expected_gate_stages" ]
 echo 'PASS: complete connection probe executes its final assertion'
 rm -f "$fixture/apply-count"
 (cd "$fixture" && SKIP_HOST_PROMPT=1 bash -c "$probe") >"$fixture/output" 2>&1
@@ -90,6 +94,19 @@ if (cd "$fixture" && OMIT_COMMAND=no-change OMIT_FIELD=unchanged bash -c "$probe
     exit 1
 fi
 echo 'PASS: missing no-change-path assertion fails closed'
+
+# The outer probe retains successful diagnostic records without retaining CLI credentials.
+IT_FAIL=0
+OUT_DIR=$fixture
+rx() { (cd "$fixture" && bash -c "$1"); }
+it_step() { :; }
+assert_rc() { [ "$2" -eq "$3" ] || IT_FAIL=$((IT_FAIL + 1)); }
+it_pass() { :; }
+it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
+rm -f "$fixture/apply-count"
+run_connection_announcements
+[ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = "$expected_gate_stages" ]
+! grep -Fq 'fixture.pool-pass' "$fixture/lifecycle-gate.log"
 
 # Drive the outer harness too: a failed CLI must leave useful, credential-free evidence.
 IT_FAIL=0

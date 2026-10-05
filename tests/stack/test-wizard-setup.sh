@@ -61,7 +61,7 @@ echo "== unit: wizard prompt count is pinned (#502 — a silently-added prompt f
 core_reads=$(awk '/^wizard_ask_core\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
 shape_reads=$(awk '/^wizard_ask_shape\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
 assert_eq "wizard_ask_core has exactly 11 read prompts (Monero wallet, node config, pool tier, dashboard login — the Tari prompts are wizard_ask_tari's, pinned in test-wizard-tari.sh)" "$core_reads" "11"
-assert_eq "wizard_ask_shape has exactly 6 read prompts (clearnet-sync, remote-access, alerts cluster, local-miner opt-in)" "$shape_reads" "6"
+assert_eq "wizard_ask_shape has exactly 6 read prompts (clearnet-sync, remote-access, alerts cluster, local-miner opt-in; stratum is delegated)" "$shape_reads" "6"
 
 echo "== unit: wizard — Enter-through defaults skip everything but the core answers (#502) =="
 W1="$SANDBOX/wizard-defaults"
@@ -147,10 +147,10 @@ printf '%s\n\n2\n%s\nmain\nopuser\nsuperSecret1\ny\ny\ny\nmybottoken123\n9876543
 w2_cfg="$(cat "$W2/config.json" 2>/dev/null)"
 assert_eq "full path: monero.mode local (Enter-through)" "$(jq -r '.monero.mode' <<<"$w2_cfg")" "local"
 assert_eq "full path: p2pool.pool honors an explicit main" "$(jq -r '.p2pool.pool' <<<"$w2_cfg")" "main"
-assert_eq "full path: stratum auth defaults on for new installs (#208)" "$(jq -r '.p2pool.stratum_password' <<<"$w2_cfg")" "auto"
+assert_eq "full path: stratum password remains off without opt-in" "$(jq -r '.p2pool.stratum_password' <<<"$w2_cfg")" ""
 # The other new-install path — `cp config.minimal.json config.json` (the bundle quick-start,
 # which bypasses the wizard) — must carry the same default, or only wizard users get auth.
-assert_eq "config.minimal.json ships stratum auth on (#208)" "$(jq -r '.p2pool.stratum_password' "$ROOT/config.minimal.json")" "auto"
+assert_eq "config.minimal.json ships no stratum password" "$(jq -r '.p2pool.stratum_password' "$ROOT/config.minimal.json")" ""
 assert_eq "full path: dashboard.auth.username set" "$(jq -r '.dashboard.auth.username' <<<"$w2_cfg")" "opuser"
 assert_eq "full path: dashboard.auth.password set" "$(jq -r '.dashboard.auth.password' <<<"$w2_cfg")" "superSecret1"
 assert_eq "full path: clearnet-sync cluster sets BOTH chains together" \

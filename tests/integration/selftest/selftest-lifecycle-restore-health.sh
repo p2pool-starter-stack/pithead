@@ -18,6 +18,12 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 RESTORED=no
         OUT_DIR="$(mktemp -d)"
         trap 'rm -rf "$OUT_DIR"' EXIT
+        # A file carries failures out of command substitutions and redirected/conditional calls.
+        command_not_found_handle() {
+            printf 'restore fixture: command not found: %s\n' "$1" >>"$OUT_DIR/missing-command"
+            printf 'restore fixture: command not found: %s\n' "$1" >&2
+            return 127
+        }
         it_log() { :; }
         it_step() { :; }
         it_pass() { :; }
@@ -53,7 +59,10 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
+        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
+        prove_wallet_supersession() { :; }    # Identity proof has its own selftest.
+        tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
         run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
         run_uninstall_round_trip() { :; }     # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
@@ -91,10 +100,26 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }
         eval "$LIFECYCLE_SRC"
         run_lifecycle >"${LIFECYCLE_OUT:-/dev/null}"
-        printf '%s|%s' "$?" "$IT_FAIL"
+        local lifecycle_rc=$?
+        if [ -s "$OUT_DIR/missing-command" ]; then
+            printf '127|%s' "$((IT_FAIL + 1))"
+            exit 127
+        fi
+        printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
     )
 }
+
+# A missing helper must survive shell contexts that can mask its status or stderr.
+for missing_call in \
+    'pithead_restore_fixture_missing' \
+    'local result="$(pithead_restore_fixture_missing 2>/dev/null)"' \
+    'if pithead_restore_fixture_missing >/dev/null 2>&1; then :; fi'; do
+    missing_result="$(LIFECYCLE_SRC="run_lifecycle() { $missing_call; :; }" drive_restore yes 2>/dev/null)"
+    missing_rc=$?
+    assert_eq "the restore fixture rejects a missing command: $missing_call" \
+        "$missing_rc|$missing_result" "127|127|1"
+done
 
 assert_eq "a failed wizard defaults proof stops lifecycle" "$(drive_restore yes wizard-defaults-fails)" "1|1"
 assert_eq "a healthy restore succeeds" "$(drive_restore yes)" "0|0"
@@ -121,18 +146,18 @@ assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHEC
 assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore no)" "1|2"
 LIFECYCLE_OUT="$(mktemp)"
 LIFECYCLE_TRACE_OUT="$(mktemp)"
-SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null
+SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null || it_fail "missing-image diagnostic fixture executes"
 assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
 assert_contains "a failed missing-image up captures Tor's first unhealthy state (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
 assert_eq "missing-image up captures Tor before the next image operation (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-up\npost-up-image-inspect'
 : >"$LIFECYCLE_TRACE_OUT"
-LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-apply-fails >/dev/null
+LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-apply-fails >/dev/null || it_fail "carry apply diagnostic fixture executes"
 assert_contains "a failed carry captures Tor before cleanup (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
 assert_eq "carry captures Tor before cleanup stops it (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-carry\ncarry-cleanup-down'
 : >"$LIFECYCLE_TRACE_OUT"
-LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-health-fails >/dev/null
+LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-health-fails >/dev/null || it_fail "carry health diagnostic fixture executes"
 assert_contains "a carry health timeout captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
-SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore no >/dev/null
+SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore no >/dev/null || it_fail "missing-image health diagnostic fixture executes"
 assert_contains "a later missing-image health failure captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
 rm -f "$LIFECYCLE_OUT" "$LIFECYCLE_TRACE_OUT"
 
