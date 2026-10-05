@@ -95,6 +95,7 @@ def prove(baseline):
 
 if __name__ == "__main__":
     os.umask(0o077)
+    load("retirement", "wallet_fixture_supersession.py").install_signal_handlers()
     try:
         print(json.dumps(prove(Path(sys.argv[1]).resolve()), sort_keys=True))
     except (ValueError, OSError, subprocess.SubprocessError, tarfile.TarError, KeyError, TypeError):

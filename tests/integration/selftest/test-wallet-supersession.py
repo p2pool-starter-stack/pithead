@@ -26,7 +26,12 @@ retire = module("retire", HERE.parent / "lib/wallet_fixture_supersession.py")
 
 
 class SupersessionTest(unittest.TestCase):
-    setUp = existing.FixtureTest.setUp
+    def setUp(self):
+        existing.FixtureTest.setUp(self)
+        self.mock_docker.stop()
+        self.mock_docker = patch.object(fixture, "docker", self.proof_docker([]))
+        self.mock_docker.start()
+
     tearDown = existing.FixtureTest.tearDown
     capture = existing.FixtureTest.capture
 
@@ -156,6 +161,13 @@ class SupersessionTest(unittest.TestCase):
                 self.run_retirement()
             self.assertFalse(self.docker.calls)
             (self.directory / name).write_bytes(original)
+            with (self.directory / name).open("ab") as stream:
+                stream.truncate(
+                    (2 * 1024**3 + 1024**2 if name == "wallet.tar" else 4 * 1024**3) + 1
+                )
+            with self.assertRaisesRegex(ValueError, "exceeds its limit"):
+                self.run_retirement()
+            (self.directory / name).write_bytes(original)
         state = json.loads((self.directory / "state.json").read_bytes())
         state["contents"]["payout-wallet.keys"][2] = "f" * 64
         fixture.write_state(self.directory, state)
@@ -268,6 +280,99 @@ class SupersessionTest(unittest.TestCase):
                 self.run_retirement()
         self.assertFalse(self.docker.calls)
         self.assert_preserved()
+
+    def test_tampered_retirement_records_never_echo_extra_or_missing_proof_fields(self):
+        self.prepare()
+        result = self.run_retirement()
+        path = self.directory / "supersession.json"
+        cases = []
+        for field in (
+            "method",
+            "archived_keys_fingerprint",
+            "live_keys_fingerprint",
+            "encrypted_keys_match",
+        ):
+            changed = json.loads(json.dumps(result))
+            del changed["proof"][field]
+            cases.append(changed)
+        cases.extend(
+            [
+                {**result, "private_value": "dummy-secret"},
+                {**result, "proof": {**result["proof"], "address": "dummy-secret"}},
+                {**result, "proof": {**result["proof"], "encrypted_keys_match": 1}},
+                {**result, "proof": {**result["proof"], "live_keys_fingerprint": "f" * 64}},
+            ]
+        )
+        for changed in cases:
+            path.write_text(json.dumps(changed))
+            with self.assertRaises(ValueError):
+                self.run_retirement()
+            script = HERE.parent / "lib/wallet_fixture_supersession.py"
+            cli = subprocess.run(  # noqa: S603 -- fixed local CLI with synthetic input.
+                [
+                    sys.executable,
+                    str(script),
+                    str(self.baseline),
+                    str(self.directory),
+                    str(self.job),
+                ],
+                input=json.dumps(self.request).encode(),
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(cli.returncode, 1)
+            self.assertEqual(
+                json.loads(cli.stdout), {"schema": 1, "status": "REFUSED", "identity_proven": False}
+            )
+            self.assertEqual(cli.stderr, b"")
+
+    def test_capture_timeout_and_signal_cleanup_precede_live_restart(self):
+        for failure in (subprocess.TimeoutExpired("docker", 180), InterruptedError("interrupted")):
+            self.prepare()
+            active = False
+            events = []
+            original = self.proof_docker([])
+
+            def docker(*args, events=events, failure=failure, original=original, **kwargs):
+                nonlocal active
+                events.append(args)
+                self.assertIsInstance(kwargs.get("timeout"), (int, float))
+                self.assertGreater(kwargs["timeout"], 0)
+                if args[0] == "run" and any("identity-capture" in value for value in args):
+                    active = True
+                    raise failure
+                if args[0] == "ps" and "name=" in args[-1]:
+                    return subprocess.CompletedProcess(args, 0, b"copy" if active else b"")
+                if args[0] == "kill" and args[-1].endswith("identity-capture"):
+                    return subprocess.CompletedProcess(args, 0, b"")
+                if args[0] == "wait":
+                    active = False
+                    return subprocess.CompletedProcess(args, 0, b"0")
+                if args[0] == "rm":
+                    return subprocess.CompletedProcess(args, 0, b"")
+                return original(*args, **kwargs)
+
+            with patch.object(fixture, "docker", docker):
+                with self.assertRaises(type(failure)):
+                    self.run_retirement()
+            self.assertLess(
+                next(i for i, c in enumerate(events) if c[0] == "wait"),
+                next(i for i, c in enumerate(events) if c[0] == "start"),
+            )
+            self.assertFalse(active)
+            self.assert_preserved()
+            self.job.rename(self.root / ("failed-" + type(failure).__name__))
+
+    def test_signal_handlers_raise_through_cleanup_and_ignore_repeated_signals(self):
+        with patch.object(retire.signal, "signal") as register:
+            retire.install_signal_handlers()
+            self.assertEqual(register.call_count, 3)
+            handler = register.call_args_list[0].args[1]
+            with self.assertRaises(InterruptedError):
+                handler(retire.signal.SIGTERM, None)
+            self.assertTrue(
+                all(call.args[1] == retire.signal.SIG_IGN for call in register.call_args_list[-3:])
+            )
 
     def test_cli_refusal_is_bounded_json_without_echoing_inputs(self):
         script = HERE.parent / "lib/wallet_fixture_supersession.py"

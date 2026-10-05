@@ -25,13 +25,12 @@ IDENTITY_FIELDS = {
 
 
 def docker(*args, **kwargs):
-    # Only fixed native Docker operations; snapshot image/mount arguments are validated below.
     kwargs = {"stderr": subprocess.DEVNULL, "check": True, **kwargs}
     return subprocess.run(["docker", *args], **kwargs)  # noqa: S603,S607
 
 
-def inspect(kind, name):
-    return json.loads(docker(kind, "inspect", name, stdout=subprocess.PIPE).stdout)[0]
+def inspect(kind, name, **kwargs):
+    return json.loads(docker(kind, "inspect", name, stdout=subprocess.PIPE, **kwargs).stdout)[0]
 
 
 def identity_values(lines):
@@ -96,9 +95,9 @@ def manifest(path):
     return result
 
 
-def wallet_container(allowed):
+def wallet_container(allowed, **kwargs):
     ids = (
-        docker("ps", "-aq", "--filter", f"volume={VOLUME}", stdout=subprocess.PIPE)
+        docker("ps", "-aq", "--filter", f"volume={VOLUME}", stdout=subprocess.PIPE, **kwargs)
         .stdout.decode()
         .split()
     )
@@ -106,7 +105,7 @@ def wallet_container(allowed):
         raise ValueError("wallet volume has another consumer")
     if not ids:
         return None
-    item = inspect("container", ids[0])
+    item = inspect("container", ids[0], **kwargs)
     labels = item["Config"]["Labels"] or {}
     if (
         labels.get("com.docker.compose.project") != "pithead"
@@ -125,27 +124,35 @@ STOP_WINDOW = 600
 TERM_INTERVAL = 5
 
 
-def stop_wallet(item, diagnostics=True):
+def stop_wallet(item, diagnostics=True, **kwargs):
     # Never SIGKILL: a kill can land mid-refresh or mid-store() and damage the prepared cache.
     # A TERM sent while the wallet is still `Loading wallet...` (PID 1, no handler yet) is
     # discarded by the kernel, so re-send it until the container stops; repeats are harmless.
     start = time.monotonic()
     next_term = start
     while True:
-        item = inspect("container", item["Id"])
+        item = inspect("container", item["Id"], **kwargs)
         running = item["State"]["Running"]
         if not running and not item["State"].get("Restarting"):
             return item
         now = time.monotonic()
         if now - start >= STOP_WINDOW:
-            tail = docker(
-                "logs", "--tail", "20", item["Id"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-            ).stdout.decode(errors="replace")
             if diagnostics:
+                tail = docker(
+                    "logs", "--tail", "20", item["Id"], stdout=subprocess.PIPE, **kwargs
+                ).stdout.decode(errors="replace")
                 print(f"wallet did not stop on SIGTERM; last log lines:\n{tail}", file=sys.stderr)
             raise ValueError("wallet did not stop gracefully; no forced kill attempted")
         if running and now >= next_term:
-            docker("kill", "--signal", "TERM", item["Id"], stdout=subprocess.DEVNULL, check=False)
+            docker(
+                "kill",
+                "--signal",
+                "TERM",
+                item["Id"],
+                stdout=subprocess.DEVNULL,
+                check=False,
+                **kwargs,
+            )
             next_term = now + TERM_INTERVAL
         time.sleep(1)
 
@@ -160,34 +167,27 @@ def helper(image, readonly, directory, action):
         "run",
         "--rm",
         "-i",
-        "--name",
-        f"{directory.name}-{action}",
-        "--label",
-        f"pithead.wallet-fixture={directory.name}",
+        f"--name={directory.name}-{action}",
+        f"--label=pithead.wallet-fixture={directory.name}",
         "--network",
         "none",
         "--read-only",
         "--cap-drop",
         "ALL",
-        "--security-opt",
-        "no-new-privileges",
-        "--memory",
-        "128m",
-        "--pids-limit",
-        "64",
+        "--security-opt=no-new-privileges",
+        "--memory=128m",
+        "--pids-limit=64",
         "--user",
         "1000:1000",
-        "--mount",
-        mount,
-        "--entrypoint",
-        "/bin/sh",
+        f"--mount={mount}",
+        "--entrypoint=/bin/sh",
         image,
         "-c",
     ]
 
 
-def local_volume():
-    volume = inspect("volume", VOLUME)
+def local_volume(**kwargs):
+    volume = inspect("volume", VOLUME, **kwargs)
     if volume["Driver"] != "local" or volume.get("Options"):
         raise ValueError("wallet fixture requires an independent local Docker volume")
     labels = volume.get("Labels") or {}

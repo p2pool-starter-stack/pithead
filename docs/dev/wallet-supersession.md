@@ -45,7 +45,8 @@ invalid references, oversized input and unsafe evidence refuse the operation.
 ## Proof and transition
 
 The wrapper validates owner-only snapshot metadata, the wallet archive digest,
-its complete member manifest and the archived image digest. It requires the
+its complete member manifest and the archived image digest. Refuse wallet archives
+over 2 GiB plus 1 MiB tar overhead and image archives over 4 GiB. It requires the
 baseline configuration fingerprint to match the original metadata and live
 wallet container, the expected Compose-owned local volume and no other consumer.
 Only `captured` or `import_verified` snapshots with an ARMED or NOT_PROVEN original
@@ -62,8 +63,10 @@ isolated container. Address equality alone cannot establish proof.
 
 Opening each copy has a 660-second client limit. On interruption, request SIGTERM
 and wait up to 600 seconds for its container to exit; never force-kill it. An
-unproved stop refuses supersession. Temporary live archives are removed and a
-previously running live wallet is restarted on success or failure. A failed stop,
+unproved stop refuses supersession. SIGTERM, SIGHUP and SIGINT enter the same cleanup path. Stop and remove a
+capture helper before restarting the live wallet. Temporary live archives are
+removed and a previously running live wallet is restarted on success or failure,
+except when capture-helper cleanup remains unproved. In that case keep it stopped. A failed stop,
 restart, archive validation or identity comparison cannot create a retirement
 record. Refusals do not print wallet logs or input values.
 
@@ -79,8 +82,9 @@ only fingerprints and booleans. On refusal, exit 1 with:
 
 The snapshot directory lock serializes supersession calls. Retrying the same
 request validates the retained original evidence and returns the existing record
-without stopping the wallet again. A changed request, receipt, archive or metadata
-refuses the retry. A receipt-only SUPERSEDED transition is unsupported.
+without stopping the wallet again. Strict record/proof schemas refuse missing,
+extra or inconsistent fields rather than echoing them. A changed request, receipt,
+archive or metadata refuses the retry. A receipt-only SUPERSEDED transition is unsupported.
 
 Restore and ordinary cleanup refuse a snapshot carrying a supersession record.
 The original receipt remains ARMED or NOT_PROVEN, never VERIFIED. Retained

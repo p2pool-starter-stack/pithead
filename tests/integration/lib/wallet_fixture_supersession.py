@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -153,27 +154,93 @@ def open_copy(fixture, image, archive, directory, suffix):
             raise ValueError("invalid isolated wallet identity proof")
         return result
     finally:
-        # A timed-out Docker client does not stop its container. Never force-kill
-        # even these copies; an unproved stop refuses the transition.
-        found = fixture.docker(
+        cleanup_helper(fixture, name)
+
+
+def cleanup_helper(fixture, name):
+    def present():
+        return fixture.docker(
             "ps", "-aq", "--filter", f"name=^/{name}$", stdout=subprocess.PIPE, timeout=30
         ).stdout.strip()
-        if found:
-            fixture.docker(
-                "kill", "--signal", "TERM", name, stdout=subprocess.DEVNULL, check=False, timeout=30
-            )
-            fixture.docker("wait", name, stdout=subprocess.DEVNULL, timeout=600)
-            fixture.docker("rm", name, stdout=subprocess.DEVNULL, timeout=30)
+
+    if not present():
+        return
+    fixture.docker(
+        "kill", "--signal", "TERM", name, stdout=subprocess.DEVNULL, check=False, timeout=30
+    )
+    try:
+        fixture.docker("wait", name, stdout=subprocess.DEVNULL, timeout=600)
+    except subprocess.CalledProcessError:
+        # --rm can remove the container before `wait` attaches. An authoritative
+        # empty listing proves cleanup; other daemon errors remain failures.
+        if present():
+            raise
+    fixture.docker("rm", name, stdout=subprocess.DEVNULL, check=False, timeout=30)
+    if present():
+        raise ValueError("wallet proof helper cleanup is unproved")
+
+
+def install_signal_handlers():
+    def interrupt(signum, frame):
+        for value in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            signal.signal(value, signal.SIG_IGN)
+        raise InterruptedError("wallet proof interrupted")
+
+    for value in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        signal.signal(value, interrupt)
+
+
+def validate_record(record, binding, state):
+    if (
+        set(record) != {*binding, "status", "proof"}
+        or record["status"] != "SUPERSEDED"
+        or any(record[key] != value for key, value in binding.items())
+    ):
+        raise ValueError("mismatched supersession retry")
+    proof = record["proof"]
+    common = {
+        "method",
+        "encrypted_keys_match",
+        "archived_keys_fingerprint",
+        "live_keys_fingerprint",
+        "identity_proven",
+    }
+    extra = {"address_fingerprint", "view_key_fingerprint", "address_match", "view_key_match"}
+    encrypted = proof.get("method") == "encrypted_keys"
+    if proof.get("method") not in {"encrypted_keys", "isolated_open"} or set(proof) != (
+        common if encrypted else common | extra
+    ):
+        raise ValueError("invalid retained identity proof")
+    fingerprints = {"archived_keys_fingerprint", "live_keys_fingerprint"} | (
+        set() if encrypted else {"address_fingerprint", "view_key_fingerprint"}
+    )
+    if any(
+        not isinstance(proof[key], str) or not re.fullmatch(r"[0-9a-f]{64}", proof[key])
+        for key in fingerprints
+    ):
+        raise ValueError("invalid retained identity fingerprint")
+    if (
+        proof["identity_proven"] is not True
+        or proof["encrypted_keys_match"] is not encrypted
+        or proof["archived_keys_fingerprint"] != state["contents"]["payout-wallet.keys"][2]
+    ):
+        raise ValueError("invalid retained identity proof")
+    if (proof["archived_keys_fingerprint"] == proof["live_keys_fingerprint"]) is not encrypted or (
+        not encrypted
+        and (proof["address_match"] is not True or proof["view_key_match"] is not True)
+    ):
+        raise ValueError("inconsistent retained identity proof")
 
 
 def prove_live(fixture, state, directory, baseline):
-    item = fixture.wallet_container({baseline})
+    item = fixture.wallet_container({baseline}, timeout=30)
     if item is None or fixture.identity_values(item["Config"]["Env"]) != state["identity"]:
         raise ValueError("live wallet fixture identity differs from the baseline")
-    fixture.local_volume()
+    fixture.local_volume(timeout=30)
     was_running = item["State"]["Running"]
+    restart_allowed = True
     try:
-        stopped = fixture.stop_wallet(item, diagnostics=False)
+        stopped = fixture.stop_wallet(item, diagnostics=False, timeout=30)
         if stopped["State"]["ExitCode"] != 0 or stopped["State"].get("OOMKilled"):
             raise ValueError("live wallet has no graceful save proof")
         with tempfile.TemporaryDirectory(
@@ -181,12 +248,17 @@ def prove_live(fixture, state, directory, baseline):
         ) as work:
             live = Path(work) / "live.tar"
             with live.open("xb") as stream:
-                fixture.docker(
-                    *fixture.helper(item["Image"], True, directory, "identity-capture"),
-                    f"test ! -e {fixture.WALLET_DIR}/.payout-scanning && tar -C {fixture.WALLET_DIR} -cf - payout-wallet payout-wallet.keys",
-                    stdout=stream,
-                    timeout=180,
-                )
+                restart_allowed = False
+                try:
+                    fixture.docker(
+                        *fixture.helper(item["Image"], True, directory, "identity-capture"),
+                        f"test ! -e {fixture.WALLET_DIR}/.payout-scanning && tar -C {fixture.WALLET_DIR} -cf - payout-wallet payout-wallet.keys",
+                        stdout=stream,
+                        timeout=180,
+                    )
+                finally:
+                    cleanup_helper(fixture, f"{directory.name}-identity-capture")
+                    restart_allowed = True
             current = fixture.manifest(live)
             encrypted = (
                 state["contents"]["payout-wallet.keys"][2] == current["payout-wallet.keys"][2]
@@ -203,7 +275,7 @@ def prove_live(fixture, state, directory, baseline):
                     fixture.docker(
                         "image", "load", stdin=stream, stdout=subprocess.DEVNULL, timeout=180
                     )
-                if fixture.inspect("image", state["image"])["Id"] != state["image"]:
+                if fixture.inspect("image", state["image"], timeout=30)["Id"] != state["image"]:
                     raise ValueError("isolated wallet helper differs from the archived image")
                 original = open_copy(
                     fixture, state["image"], directory / "wallet.tar", directory, "original"
@@ -216,7 +288,7 @@ def prove_live(fixture, state, directory, baseline):
                 proof.update(original, address_match=True, view_key_match=True)
             return proof
     finally:
-        if was_running:
+        if was_running and restart_allowed:
             fixture.docker("start", item["Id"], stdout=subprocess.DEVNULL, timeout=180)
 
 
@@ -243,6 +315,11 @@ def supersede(fixture, directory, baseline, job_directory, raw):
                 raise ValueError("invalid retained supersession record")
         # Validate original evidence on every invocation, including idempotent retries.
         metadata = read_private(fixture, directory / "state.json")
+        for name, limit in (("wallet.tar", 2 * 1024**3 + 1024**2), ("image.tar", 4 * 1024**3)):
+            info = (directory / name).lstat()
+            fixture.private(info)
+            if info.st_size > limit:
+                raise ValueError("wallet supersession archive exceeds its limit")
         state = fixture.load(directory, baseline, supersession=True)
         if state["stage"] not in {"captured", "import_verified"}:
             raise ValueError("active or completed restoration cannot be superseded")
@@ -257,12 +334,7 @@ def supersede(fixture, directory, baseline, job_directory, raw):
             "original_receipt_fingerprint": hashlib.sha256(receipt).hexdigest(),
         }
         if previous is not None:
-            if (
-                any(previous.get(key) != value for key, value in binding.items())
-                or previous.get("status") != "SUPERSEDED"
-                or previous.get("proof", {}).get("identity_proven") is not True
-            ):
-                raise ValueError("mismatched supersession retry")
+            validate_record(previous, binding, state)
             return previous
         proof = prove_live(fixture, state, directory, baseline)
         result = {**binding, "status": "SUPERSEDED", "proof": proof}
@@ -284,6 +356,7 @@ def supersede(fixture, directory, baseline, job_directory, raw):
 
 if __name__ == "__main__":
     os.umask(0o077)
+    install_signal_handlers()
     try:
         if len(sys.argv) != 4:
             raise ValueError("expected baseline, snapshot and original job directory")
