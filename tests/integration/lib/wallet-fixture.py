@@ -264,7 +264,28 @@ def private(info, directory=False):
         raise ValueError("wallet fixture snapshot is not owner-only")
 
 
-def capture(baseline):
+def cleanup_helper(name):
+    def present():
+        return docker(
+            "ps", "-aq", "--filter", f"name=^/{name}$", stdout=subprocess.PIPE, timeout=30
+        ).stdout.strip()
+
+    if not present():
+        return
+    docker("kill", "--signal", "TERM", name, stdout=subprocess.DEVNULL, check=False, timeout=30)
+    try:
+        docker("wait", name, stdout=subprocess.DEVNULL, timeout=600)
+    except subprocess.CalledProcessError:
+        # --rm can remove the container before `wait` attaches. An authoritative
+        # empty listing proves cleanup; other daemon errors remain failures.
+        if present():
+            raise
+    docker("rm", name, stdout=subprocess.DEVNULL, check=False, timeout=30)
+    if present():
+        raise ValueError("wallet proof helper cleanup is unproved")
+
+
+def capture(baseline, diagnostics=True):
     if "capture_fixture" in globals():
         operation = globals()["capture_fixture"]  # Streamed by wallet-fixture.sh.
     else:
@@ -274,7 +295,7 @@ def capture(baseline):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         operation = module.capture_fixture
-    return operation(SimpleNamespace(**globals()), baseline)
+    return operation(SimpleNamespace(**globals()), baseline, diagnostics=diagnostics)
 
 
 def load(directory, baseline, cleanup_only=False, supersession=False):

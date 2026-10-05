@@ -63,8 +63,10 @@ isolated container. Address equality alone cannot establish proof.
 
 Opening each copy has a 660-second client limit. On interruption, request SIGTERM
 and wait up to 600 seconds for its container to exit; never force-kill it. An
-unproved stop refuses supersession. SIGTERM, SIGHUP and SIGINT enter the same cleanup path. Stop and remove a
-capture helper before restarting the live wallet. Temporary live archives are
+unproved stop refuses supersession. SIGTERM, SIGHUP and SIGINT enter the same cleanup path. Initial snapshot capture and live supersession share the same bounded helper
+cleanup: request TERM, wait for exit, remove the helper and verify its absence
+before allowing a live restart. A client timeout or interruption cannot bypass
+that cleanup. Stop and remove a capture helper before restarting the live wallet. Temporary live archives are
 removed and a previously running live wallet is restarted on success or failure,
 except when capture-helper cleanup remains unproved. In that case keep it stopped. A failed stop,
 restart, archive validation or identity comparison cannot create a retirement

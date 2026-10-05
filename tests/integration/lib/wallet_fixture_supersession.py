@@ -158,26 +158,7 @@ def open_copy(fixture, image, archive, directory, suffix):
 
 
 def cleanup_helper(fixture, name):
-    def present():
-        return fixture.docker(
-            "ps", "-aq", "--filter", f"name=^/{name}$", stdout=subprocess.PIPE, timeout=30
-        ).stdout.strip()
-
-    if not present():
-        return
-    fixture.docker(
-        "kill", "--signal", "TERM", name, stdout=subprocess.DEVNULL, check=False, timeout=30
-    )
-    try:
-        fixture.docker("wait", name, stdout=subprocess.DEVNULL, timeout=600)
-    except subprocess.CalledProcessError:
-        # --rm can remove the container before `wait` attaches. An authoritative
-        # empty listing proves cleanup; other daemon errors remain failures.
-        if present():
-            raise
-    fixture.docker("rm", name, stdout=subprocess.DEVNULL, check=False, timeout=30)
-    if present():
-        raise ValueError("wallet proof helper cleanup is unproved")
+    fixture.cleanup_helper(name)
 
 
 def install_signal_handlers():

@@ -83,7 +83,7 @@ def prove(baseline, progress):
     wait_prepared(fixture, baseline)
     progress("capture")
     with redirect_stdout(io.StringIO()) as output:
-        fixture.capture(baseline)
+        fixture.capture(baseline, diagnostics=False)
     snapshot = Path(output.getvalue().strip())
     progress("original_receipt")
     job = scratch / "1"

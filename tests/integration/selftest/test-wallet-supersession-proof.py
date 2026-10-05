@@ -24,7 +24,7 @@ class ProofDiagnosticsTest(unittest.TestCase):
             (snapshot / "wallet.tar").write_bytes(b"private-wallet-data")
             fixture = Mock()
             retirement = Mock()
-            fixture.capture.side_effect = lambda baseline: print(snapshot)
+            fixture.capture.side_effect = lambda baseline, **kwargs: print(snapshot)
             fixture.load.return_value = {"image": "private-image"}
             retirement.open_copy.return_value = {"identity": True}
             for stage, target in (
@@ -102,7 +102,7 @@ class ProofDiagnosticsTest(unittest.TestCase):
             snapshot.mkdir()
             (snapshot / "wallet.tar").write_bytes(b"private-fixture")
             fixture, retirement = Mock(), Mock()
-            fixture.capture.side_effect = lambda baseline: print(snapshot)
+            fixture.capture.side_effect = lambda baseline, **kwargs: print(snapshot)
             fixture.receipt.side_effect = lambda job, stage: (
                 job / "wallet-fixture-restore.state"
             ).write_bytes(b"ARMED\n")
@@ -138,6 +138,7 @@ class ProofDiagnosticsTest(unittest.TestCase):
                 self.assertEqual(stages[stages.index(stage) + 1], "wait")
             self.assertEqual(stages.count("wait"), 2)
             self.assertEqual(retirement.supersede.call_count, 2)
+            fixture.capture.assert_called_once_with(root, diagnostics=False)
 
 
 if __name__ == "__main__":
