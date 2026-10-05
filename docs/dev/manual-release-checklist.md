@@ -430,8 +430,8 @@ Record what broke, take a backup, run setup again, and carry on from 2.3 on the 
   file `backups/pithead-backup-<date>-<time>.tar.gz.enc` exists; the stack was stopped for the
   copy and is running again.
 - [ ] **2.1b 1.x config keys are migrated.** Do, on the previous release, after you took the notes
-  above: if `dashboard.workers` already exists, record this fixture BLOCKED and keep the config
-  unchanged; it already carries legacy workers this fixture must not overwrite. Otherwise note
+  above: if `dashboard.workers` already exists, record this upgrade session BLOCKED and keep the
+  config unchanged; it already carries legacy workers this fixture must not overwrite. Otherwise note
   whether `workers.list` exists. If it does, save the output of
   `jq -c '.workers.list' config.json` with your private notes, including an empty `[]`.
   This output can contain rig addresses and tokens: never attach it publicly. Without applying, edit
