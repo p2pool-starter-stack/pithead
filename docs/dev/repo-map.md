@@ -46,6 +46,9 @@ checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
+The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
+its shell regressions are in `tests/stack/config/version.sh`. The Configuration stamp card is
+`web/static/config/configversion.mjs`, with response metadata in `service/config_operations.py`.
 The host firewall installer is `02b-tor-egress-apply.sh`; the host-owned clearnet
 sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
 readback helpers are in `02d-tor-egress-verify.sh`.

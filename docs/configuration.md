@@ -98,10 +98,28 @@ show every answer as a radio choice. The target-disk inventory remains a select 
 ## Configuration reference
 
 > Only `monero.wallet_address` is always required; `tari.wallet_address` is required unless
-> `tari.mode` is `off`, which merge-mines nothing and so needs nowhere to be paid. Everything below
-> is optional and has a default. Add a key only when you want to change its behavior. Editing `config.json`
+> `tari.mode` is `off`, which merge-mines nothing and so needs nowhere to be paid. Settings below
+> are optional and have defaults. Add a setting only when you want to change its behavior. Editing `config.json`
 > changes nothing by itself — run `./pithead apply` afterward (see
 > [Changing settings later](#changing-settings-later)).
+
+`config_version` is a read-only host stamp, not a setting. After successful non-dry validation
+(apply, setup or boot render), the host writes the release `X.Y.Z` from `VERSION`, without a
+prerelease or build suffix. An equal stamp leaves the file untouched; a dry run never stamps.
+An absent stamp means 2.0.0. Configuration versioning starts at 2.0.0, with no 1.x migrations.
+A failed stamp write warns and validation continues. `pithead backup` validates first, so it
+stamps before archiving.
+
+A newer stamp is kept. Apply, render and boot show a warning; the media, pre-seed, firstboot and
+restore validators discard warnings on success. Pre-seed rewrites an older stamp. Both restore
+doors refuse a newer backup before promotion: update to that version or later, then restore.
+The dashboard shows the stamp and warns that saving is blocked while unknown settings remain.
+Dashboard form, JSON editor, control API and USB edits ignore this key; previews, diffs and
+recent changes omit it. The appliance wizard drops it and the host stamps the result.
+
+| Key | Baseline | Meaning |
+|---|---|---|
+| `config_version` | `2.0.0` | Release that last validated and stamped the file; read-only in Configuration. |
 
 The table below has ~90 keys across 14 sections — every leaf key of
 [`config.reference.json`](../config.reference.json) — most of it you'll never touch. A handful of keys
@@ -116,7 +134,7 @@ top of its form. Both read the exact same list, [`config.core-keys.json`](../con
 Below the core group, the Configuration view and `config.reference.json` follow the same
 operator-purpose order: **Mining, Payouts, Monero node, Tari node, Workers, Dashboard & access,
 Notifications, Energy, Alerts, Advanced**. Each group says in one line what its settings affect.
-Every reference key belongs to one of those named groups; the frontend test fails if a new key
+Every setting apart from the read-only version stamp belongs to one of those named groups; the frontend test fails if a new key
 would otherwise fall into an unlabeled catch-all.
 
 Ordinary settings apply after the preview. Disruptive settings also require typed `APPLY`.
@@ -127,7 +145,7 @@ which the host re-checks against the staged file. These are typo protection and 
 friction, not a second identity — a signed-in session that can set a field can also fill the
 confirm box. The Telegram approval that once sat here was removed in #2076. The preview shows full
 old and new non-secret values, while credentials and capability URLs stay masked and never echo
-back after commit. No field is refused from the dashboard (#2367). The high-consequence ones
+back after commit. No setting is refused from the dashboard (#2367); `config_version` is the read-only exception. The high-consequence ones
 warn in the form and name their cost again in the host preview before you confirm: the dashboard
 password; the Telegram bot token, chat id and Healthchecks ping URL, where a wrong value stops
 delivery or sends alerts and pings to an unintended destination; and the
