@@ -127,15 +127,6 @@ recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-
         warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
 }
 
-rearm_sync_gate_marker() { # <dashboard-dir>: plant sync-gate-reset without following what is there
-    local t
-    t=$(mktemp "$1/.sync-gate-reset.XXXXXX") || return 1
-    mv -f -T "$t" "$1/sync-gate-reset" || {
-        rm -f "$t"
-        return 1
-    }
-}
-
 apply() {
     # apply reaches its mutating window down two different paths (a normal change, and the retry
     # after a previous apply committed the config but did not finish recreating containers), so it
@@ -187,7 +178,7 @@ apply() {
     # the marker is present, re-apply re-attempts the recreate even when the rendered config matches.
     local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
-    # A retried recreate keeps the sync-gate re-arm its first attempt decided on (#2763).
+    grep -qx rearm-tari-only "$apply_marker" 2>/dev/null && rearm_sync_gate=2
     grep -qx rearm-sync-gate "$apply_marker" 2>/dev/null && rearm_sync_gate=1
 
     local destructive=0 caddy_changed=0 caddy_before="" caddy_had=0 wallet_keys=() line flag msg old new
@@ -205,9 +196,11 @@ apply() {
             # #2360: remember the active dashboard.data_dir for the carry before .env publication.
             # The separate historical-default migration runs later, after service configuration.
             [ "$key" == "DASHBOARD_DATA_DIR" ] && dashboard_data_dir_old="$old"
-            # #2763: a required chain now dials another node (remote<->local, a new endpoint)
-            # that may not have synced, so the #35 release earned on the old node no longer holds.
-            case "$key" in MONERO_NODE_HOST | MONERO_RPC_PORT | TARI_MODE | TARI_GRPC_ADDRESS) rearm_sync_gate=1 ;; esac
+            # Monero changes take precedence over Tari-only re-arms.
+            case "$key" in
+            MONERO_NODE_HOST | MONERO_RPC_PORT) rearm_sync_gate=1 ;;
+            TARI_MODE | TARI_GRPC_ADDRESS) [ "$rearm_sync_gate" -eq 1 ] || rearm_sync_gate=2 ;;
+            esac
             line=$(describe_change "$key" "$old" "$new")
             flag=${line%%$'\t'*}
             msg=${line#*$'\t'}
@@ -337,32 +330,24 @@ apply() {
     # before the rules go in. Idempotent, so the common case
     # (already installed from `up`) is a cheap re-assert; the .env it reads was committed just above.
     apply_tor_egress_firewall
-    # Mark the recreate in-flight: cleared only after a SUCCESSFUL `up`, so a failure here (image
-    # build error, a port already bound, a failed health/dependency gate, daemon hiccup) leaves the
-    # marker for the next apply to retry instead of no-opping on the already-committed config (#125).
-    if [ "$rearm_sync_gate" -eq 1 ]; then echo rearm-sync-gate >"$apply_marker"; else : >"$apply_marker"; fi
-    # One-time move of the dashboard data out of the install dir (#455) — after the confirmed
-    # commit above (never before the operator said yes) and under the marker, so a failed move is
-    # retried; the recreate below then mounts the migrated directory.
+    # Keep recreate and reset scope retryable until up succeeds (#125).
+    case "$rearm_sync_gate" in
+    1) echo rearm-sync-gate >"$apply_marker" ;;
+    2) echo rearm-tari-only >"$apply_marker" ;;
+    *) : >"$apply_marker" ;;
+    esac
     migrate_dashboard_data
-    # Re-arm the sync gate with the restore's marker (#2626), after the move above so its target
-    # is still empty. Each key that sets rearm_sync_gate reaches the dashboard's environment (the
-    # port via MONERO_RPC_URL), so the up below recreates it and it reads the marker at start. It
-    # holds the miner until the new node syncs (or releases on the first cycle if it already has).
-    # The directory belongs to the dashboard's uid (ensure_directories), hence sudo when the
-    # operator's is another. Whatever that uid left at the path is never opened: mktemp creates a
-    # fresh file (O_EXCL) and `mv -T` renames it over the entry, replacing a planted symlink
-    # instead of following it, and refusing a directory.
-    if [ "$rearm_sync_gate" -eq 1 ]; then
-        rearm_sync_gate_marker "$DASHBOARD_DIR" 2>/dev/null ||
-            sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\"" _ "$DASHBOARD_DIR" || true
-        # Judge the result, not the exit status: only a regular file at the path re-arms the gate.
-        [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
+    # Write after data migration and before recreation. Tari-only resets retain the earned
+    # mining release; a full reset waits for both required chains. Atomic replacement does
+    # not follow a planted symlink; a directory fails closed and leaves the retry marker.
+    if [ "$rearm_sync_gate" -ne 0 ]; then
+        # A stale marker can satisfy the file check, so one writer must report success.
+        { rearm_sync_gate_marker "$DASHBOARD_DIR" "$rearm_sync_gate" 2>/dev/null ||
+            sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\" \"\$2\"" _ "$DASHBOARD_DIR" "$rearm_sync_gate"; } &&
+            [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
             error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset); re-run '$0 apply' to retry."
     fi
-    # Compose recreates only the services whose resolved config changed. --remove-orphans covers
-    # services that left the compose file entirely; a profile-deactivated service is NOT an orphan
-    # to compose, so compose_up_checked removes those containers itself before the up (#795).
+    # Recreate changed services; compose_up_checked also removes inactive profiles (#795).
     if ! compose_up_checked -d --remove-orphans; then
         warn "Config files were updated but containers were NOT recreated ('docker compose up' failed)."
         warn "Fix the cause shown above, then re-run '$0 apply' (it will retry the recreate) — or '$0 up'."

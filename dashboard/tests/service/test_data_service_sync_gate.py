@@ -99,7 +99,9 @@ def _restored(sm):
 class TestSyncGateDecision:
     """The loop's sync-result-to-gate decision, from the real Monero RPC mapping onward (#2472)."""
 
-    async def _iterate(self, svc, tari_sync, get_info=None, monero_sync=None, tari_required=True):
+    async def _iterate(
+        self, svc, tari_sync, get_info=None, monero_sync=None, tari_required=True, network_height=0
+    ):
         """Run one loop iteration. With ``get_info`` the real local-monerod path
         (MoneroClient.get_sync_status -> _get_local_monero_sync_status) produces the reading;
         with ``monero_sync`` that dict is served as the reading itself."""
@@ -110,10 +112,10 @@ class TestSyncGateDecision:
         worker_client = MagicMock()
         worker_client.get_stats = AsyncMock(return_value={})
         tari_client = MagicMock()
-        tari_client.get_sync_status = AsyncMock(return_value=tari_sync)
+        tari_client.get_sync_status = AsyncMock(return_value=dict(tari_sync))
         if monero_sync is not None:
             monero_patch = patch.object(
-                ds_mod, "get_monero_sync_status", AsyncMock(return_value=monero_sync)
+                ds_mod, "get_monero_sync_status", AsyncMock(return_value=dict(monero_sync))
             )
         else:
             monero_patch = patch.object(logs_mod._monero_client, "get_info", return_value=get_info)
@@ -126,7 +128,7 @@ class TestSyncGateDecision:
             patch.object(ds_mod, "SYNC_GATE_CONTAINERS", ["p2pool", "xmrig-proxy"]),
             patch.object(ds_mod, "TARI_REQUIRED", tari_required),
             patch.object(ds_mod, "get_stratum_stats", return_value={}),
-            patch.object(ds_mod, "get_network_stats", return_value={"height": 0}),
+            patch.object(ds_mod, "get_network_stats", return_value={"height": network_height}),
             patch.object(ds_mod, "get_tari_stats", return_value={"active": False, "height": 0}),
             patch.object(
                 ds_mod,

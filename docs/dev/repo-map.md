@@ -49,6 +49,8 @@ The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
+The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
+part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
 its shell regressions are in `tests/stack/config/version.sh`. The Configuration stamp card is
 `web/static/config/configversion.mjs`, with response metadata in `service/config_operations.py`.
@@ -151,6 +153,8 @@ both local-miner toggles converge without rebooting.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata, failure snapshots and bounded preview transport recovery; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.
+The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to prove
+continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
 The provision and setup-defaults phases check firstboot and system journals for bcrypt credentials with
 `tests/os/credential-journals.sh`; `selftest-credential-journals.sh` covers leaks and unreadable journals.
 Password fixture cleanup lives in `tests/os/appliance-password-fixture.sh`, sourced and selftested by the config-approval leg.
