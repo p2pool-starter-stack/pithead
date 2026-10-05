@@ -36,11 +36,27 @@ _xvb_diag_field() { # <text-when-empty> <lines> <cmd...>
     fi
 }
 
-_xvb_proxy_diag() { # -> one line: state | start | tcp | proxy log tail
-    printf 'proxy diag: state[%s] start[%s] tcp[%s] log[%s]' \
+# Jobs 130 and 2241: the dashboard (host network) timed out against a RUNNING proxy for 11-33s after
+# every gate-driven restart. The host's neighbor entry for the proxy's fixed address is the suspect: a
+# restarted container comes back with a new MAC, and an entry still REACHABLE on the old one drops
+# every SYN until it ages out. Name the entry's state and whether its MAC is the live container's,
+# without printing either address.
+_xvb_proxy_neigh_cmd() {
+    printf '%s' 'h=$(podman exec dashboard printenv PROXY_HOST) || exit 1
+m=$(podman inspect -f "{{range .NetworkSettings.Networks}}{{.MacAddress}}{{end}}" xmrig-proxy 2>/dev/null)
+set -- $(ip neigh show to "$h")
+s=none l=none
+while [ $# -gt 0 ]; do [ "$1" = lladdr ] && l=$2; s=$1; shift; done
+if [ "$l" = none ]; then :; elif [ -z "$m" ]; then l=no-container-mac; elif [ "$l" = "$m" ]; then l=match; else l=differs; fi
+echo "neigh=$s lladdr=$l"'
+}
+
+_xvb_proxy_diag() { # -> one line: state | start | tcp | host neighbor entry | proxy log tail
+    printf 'proxy diag: state[%s] start[%s] tcp[%s] net[%s] log[%s]' \
         "$(_xvb_diag_field empty 1 _ssh "podman inspect -f '{{.State.Status}} exit={{.State.ExitCode}} err={{.State.Error}}' xmrig-proxy 2>&1")" \
         "$(_xvb_diag_field ok 2 _ssh "podman start xmrig-proxy 2>&1 >/dev/null")" \
         "$(_xvb_diag_field empty 1 _xvb_guest_python "$(_xvb_proxy_diag_payload)")" \
+        "$(_xvb_diag_field empty 1 _ssh "$(_xvb_proxy_neigh_cmd)")" \
         "$(_xvb_diag_field empty 3 _ssh "podman logs --tail 3 xmrig-proxy 2>&1")"
 }
 
@@ -74,6 +90,7 @@ _xvb_diag_self_test() {
     }
     unset -f _ssh _xvb_wire_dead _xvb_wire_noexec
     _xvb_diag_payload_self_test || f=$((f + 1))
+    _xvb_neigh_cmd_self_test || f=$((f + 1))
     rm -f "$SSH_ERR"
     [ "$f" -eq 0 ]
 }
@@ -112,4 +129,29 @@ print(run(port))
         printf 'xvb self-test: the real TCP diagnostic payload did not report reachable then refused: %s\n' "$out" >&2
         return 1
     }
+}
+
+# The REAL neighbor command, run by sh against stubbed podman/ip: a stale MAC, a live one, no entry, a
+# FAILED entry, a stopped container and an unreadable PROXY_HOST must each read as what they are.
+_xvb_neigh_cmd_self_test() {
+    local f=0 want got
+    while IFS='|' read -r neigh mac want; do
+        got="$(NEIGH="$neigh" MAC="$mac" sh -c 'podman() {
+    case "$*" in *printenv*) [ "$MAC" = no-env ] && return 1; echo 172.28.0.29 ;; *) [ "$MAC" = - ] || echo "$MAC" ;; esac
+}
+ip() { [ -z "$NEIGH" ] || echo "$NEIGH"; }
+'"$(_xvb_proxy_neigh_cmd)" 2>&1)" || got="rc=$?:$got"
+        [ "$got" = "$want" ] || {
+            printf 'xvb self-test: neighbor diagnostic for [%s] [%s]: got [%s], want [%s]\n' "$neigh" "$mac" "$got" "$want" >&2
+            f=$((f + 1))
+        }
+    done <<'CASES'
+172.28.0.29 dev podman1 lladdr 0a:00:00:00:00:01 REACHABLE|0a:00:00:00:00:02|neigh=REACHABLE lladdr=differs
+172.28.0.29 dev podman1 lladdr 0a:00:00:00:00:02 STALE|0a:00:00:00:00:02|neigh=STALE lladdr=match
+|0a:00:00:00:00:02|neigh=none lladdr=none
+172.28.0.29 dev podman1 FAILED|0a:00:00:00:00:02|neigh=FAILED lladdr=none
+172.28.0.29 dev podman1 lladdr 0a:00:00:00:00:01 DELAY|-|neigh=DELAY lladdr=no-container-mac
+172.28.0.29 dev podman1 lladdr 0a:00:00:00:00:01 DELAY|no-env|rc=1:
+CASES
+    [ "$f" -eq 0 ]
 }
