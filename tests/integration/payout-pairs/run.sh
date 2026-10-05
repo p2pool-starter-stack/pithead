@@ -11,6 +11,13 @@ PROJECT="pithead-payout-pairs-$$"
 TOOLBOX="pithead-payout-pair-tools:itest"
 BEFORE="$(sha256sum config.json .env)"
 compose() { docker compose -f "$WORK/docker-compose.yml" --env-file "$WORK/.env" "$@"; }
+remove_fixture_work() {
+    # Service-owned directories may have other uids; expose only this private tree for removal.
+    docker run --rm --network none --user 0 --read-only --cap-drop ALL \
+        --cap-add DAC_OVERRIDE --cap-add FOWNER --security-opt no-new-privileges \
+        -v "$WORK:/fixture" "$TOOLBOX" sh -c 'find /fixture -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +' || return 1
+    rmdir "$WORK"
+}
 cleanup() {
     rc=$?
     compose down -v --remove-orphans >"$WORK/cleanup.log" 2>&1 || rc=1
@@ -18,7 +25,7 @@ cleanup() {
     # Keep raw evidence until the job finishes; no canonical wallet volume is touched.
     mkdir -p "$ROOT/results"
     cp "$WORK/"*.log "$ROOT/results/" 2>/dev/null || true
-    [ "$rc" = 0 ] && rm -rf "$WORK"
+    if [ "$rc" = 0 ]; then remove_fixture_work || rc=1; fi
     exit "$rc"
 }
 trap cleanup EXIT
@@ -28,7 +35,8 @@ cp .env "$WORK/.env"
 # Build the exact source tree; no released image can substitute for the candidate.
 docker build -t pithead-payout-pair-monero:itest build/monero >"$WORK/monero-build.log" 2>&1
 docker build -t pithead-payout-pair-dashboard:itest dashboard >"$WORK/dashboard-build.log" 2>&1
-docker build --build-arg "SHELLCHECK_VERSION=$(make -s print-shellcheck-version)" \
+docker build --build-arg "PITHEAD_UID=$(id -u)" --build-arg "PITHEAD_GID=$(id -g)" \
+    --build-arg "SHELLCHECK_VERSION=$(make -s print-shellcheck-version)" \
     --build-arg "SHFMT_VERSION=$(make -s print-shfmt-version)" \
     -t "$TOOLBOX" tests/runner >"$WORK/tools-build.log" 2>&1
 # Include dependencies from other profiles, and refuse a failed model before pulling.
@@ -55,7 +63,7 @@ jq --arg w "$WORK" --arg m "$PAYOUT_MONERO1" --arg t "$PAYOUT_TARI1" --arg k "$P
 apply_pair() {
     # Separate namespaces contain any host-unit provisioning. The stock CLI uses real Compose.
     python3 "$ROOT/tests/integration/payout-pairs/docker_guard.py" "$PROJECT" "$WORK/docker.sock" \
-        docker run --rm --user 0 --network none -e PITHEAD_PULL=never -e "DOCKER_HOST=unix://$WORK/docker.sock" \
+        docker run --rm --user "$(id -u):$(id -g)" --network none -e PITHEAD_PULL=never -e "DOCKER_HOST=unix://$WORK/docker.sock" \
         -v "$WORK:$WORK" -w "$WORK" "$TOOLBOX" ./pithead apply -y >"$WORK/apply-$1.log" 2>&1
 }
 wallet_rpc() { # method
@@ -112,12 +120,12 @@ jq --arg m "$PAYOUT_MONERO2" --arg t "$PAYOUT_TARI2" --arg k "$PAYOUT_VIEW2" \
     "$WORK/config.json" >"$WORK/new.json"
 mv "$WORK/new.json" "$WORK/config.json"
 apply_pair changed
+ready
 SECOND="$(wallet_path)"
 [ "$SECOND" != "$FIRST" ]
 [ "$(tari_path)" != "$TARI_FIRST" ]
 SCAN_FROM=$(compose exec -T wallet-rpc jq -er .scan_from_height /tmp/gen.json)
 [ "$SCAN_FROM" -gt 0 ]
-ready
 TIP=$(wallet_rpc get_height | jq -er .result.height)
 [ "$((TIP - SCAN_FROM))" -le 130 ]
 printf 'PASS: changed pair created near the tip (restore=%s caught-up=%s), retaining the first wallet\n' "$SCAN_FROM" "$TIP"
@@ -129,13 +137,13 @@ jq --arg m "$PAYOUT_MONERO1" --arg t "$PAYOUT_TARI1" --arg k "$PAYOUT_VIEW1" \
     "$WORK/config.json" >"$WORK/new.json"
 mv "$WORK/new.json" "$WORK/config.json"
 apply_pair reverted
+ready
 [ "$(wallet_path)" = "$FIRST" ]
 [ "$(wallet_inode)" = "$FIRST_INODE" ]
 [ "$(tari_path)" = "$TARI_FIRST" ]
 [ "$(tari_inode)" = "$TARI_FIRST_INODE" ]
 # A reopened wallet has no creation JSON in its fresh container tmpfs.
 compose exec -T wallet-rpc test ! -e /tmp/gen.json
-ready
 printf 'PASS: revert reopened both retained wallet identities and inodes without recreation\n'
 [ "$(sha256sum config.json .env)" = "$BEFORE" ]
 printf 'PASS: canonical payout configuration stayed unchanged\n'

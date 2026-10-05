@@ -7,6 +7,13 @@ model = json.load(sys.stdin)
 project, monero_host, tari_host = sys.argv[1:]
 services = {key: model["services"][key] for key in ("wallet-rpc", "tari-wallet", "dashboard")}
 for name, service in services.items():
+    # --no-interpolate can retain list syntax; split only the first equals sign.
+    if isinstance(service["environment"], list):
+        service["environment"] = {
+            key: value if separator else None
+            for entry in service["environment"]
+            for key, separator, value in [entry.partition("=")]
+        }
     for key in ("container_name", "depends_on", "profiles", "ports", "network_mode", "build"):
         service.pop(key, None)
     service["networks"] = {"mining_net": {"aliases": [f"pair-{name}"]}}

@@ -10,7 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 DOCKER = """#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, shutil
+from pathlib import Path
 args = sys.argv[1:]
 with open(os.environ['DOCKER_TRACE'], 'a') as out:
     out.write(json.dumps(args) + '\\n')
@@ -19,6 +20,13 @@ if args[0] == 'compose' and 'config' in args:
         print('service tari-wallet depends on undefined service tari', file=sys.stderr)
         sys.exit(1)
     print(json.dumps({'services': {'tari-wallet': {'image': 'fixture-wallet:test'}}}))
+if args[0] == 'run':
+    source, target = args[args.index('-v') + 1].split(':')
+    path = Path(source).resolve()
+    assert target == '/fixture' and path.is_relative_to(Path(os.environ['DOCKER_TRACE']).parent)
+    for child in path.iterdir():
+        if child.is_dir() and not child.is_symlink(): shutil.rmtree(child)
+        else: child.unlink()
 if args[0] == 'pull' and args[1] != 'fixture-wallet:test':
     print('invalid reference format', file=sys.stderr)
     sys.exit(1)
@@ -79,6 +87,14 @@ class PreparationTest(unittest.TestCase):
         result, calls = self.run_preparation()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(["pull", "fixture-wallet:test"], calls)
+
+    def test_toolbox_account_matches_caller_for_owner_only_files(self):
+        result, calls = self.run_preparation()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        builds = [call for call in calls if call[0] == "build" and call[-1] == "tests/runner"]
+        self.assertEqual(len(builds), 1)
+        self.assertIn(f"PITHEAD_UID={os.getuid()}", builds[0])
+        self.assertIn(f"PITHEAD_GID={os.getgid()}", builds[0])
 
     def test_failed_model_lookup_never_attempts_image_pull(self):
         result, calls = self.run_preparation(refuse=True)
