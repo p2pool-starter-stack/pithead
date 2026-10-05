@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from mining_dashboard.config import documents
 from tests.web._server_support import app_data, control_client, control_spool  # noqa: F401
 
 HEADERS = {"X-Pithead-Control": "1"}
@@ -89,6 +90,56 @@ async def test_deep_document_is_bad_request(control_client, control_spool):
     text = '{"config":{"value":' + "[" * 1200 + "0" + "]" * 1200 + "}}"
     response = await control_client.post("/api/control/preview", data=text, headers=HEADERS)
     assert response.status == 400
+    assert not list((control_spool / "requests").iterdir())
+
+
+@pytest.mark.parametrize("endpoint", ["preview", "commit"])
+@pytest.mark.parametrize(
+    ("text", "diagnostic"),
+    [
+        ('{"config":{},"config":{}}', 'duplicate key "config" at the top level (path config)'),
+        (
+            '{"config":{"dashboard":{"auth":{"password":1,"password":2}}}}',
+            'duplicate key "password" at config.dashboard.auth (path config.dashboard.auth.password)',
+        ),
+        (
+            '{"config":{"dashboard":{"auth":{"password":"YOUR_secret"}}}}',
+            "placeholder value at dashboard.auth.password",
+        ),
+        ("{", "Body must be JSON."),
+        ("[]", "Body must be a JSON object."),
+    ],
+)
+async def test_control_document_response_is_curated(
+    control_client, control_spool, endpoint, text, diagnostic
+):
+    response = await control_client.post(f"/api/control/{endpoint}", data=text, headers=HEADERS)
+    assert response.status == 400
+    assert await response.text() == diagnostic
+    assert not list((control_spool / "requests").iterdir())
+
+
+@pytest.mark.parametrize("endpoint", ["preview", "commit"])
+@pytest.mark.parametrize("known_defect", [False, True])
+async def test_control_never_returns_exception_details(
+    control_client, control_spool, monkeypatch, endpoint, known_defect
+):
+    def fail(_text):
+        exc = (
+            documents.ConfigDocumentError("dashboard.auth.password")
+            if known_defect
+            else ValueError()
+        )
+        exc.args = ("private parser details",)
+        raise exc
+
+    monkeypatch.setattr(documents, "loads", fail)
+    response = await control_client.post(f"/api/control/{endpoint}", data="{}", headers=HEADERS)
+    assert response.status == 400
+    expected = (
+        "placeholder value at dashboard.auth.password" if known_defect else "Body must be JSON."
+    )
+    assert await response.text() == expected
     assert not list((control_spool / "requests").iterdir())
 
 

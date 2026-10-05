@@ -10,11 +10,13 @@ async def config_request(request):
     try:
         body = await request.json(loads=documents.loads)
         if not isinstance(body, dict):
-            raise ValueError("Body must be a JSON object.")
+            raise web.HTTPBadRequest(text="Body must be a JSON object.")
         if "config" in body:
             documents.reject_placeholders(body["config"])
-    except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from None
+    except documents.ConfigDocumentError as exc:
+        raise web.HTTPBadRequest(text=exc.diagnostic()) from None
+    except web.HTTPBadRequest:
+        raise
     except Exception:
         raise web.HTTPBadRequest(text="Body must be JSON.") from None
     return body

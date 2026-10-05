@@ -12,15 +12,31 @@ def _path(parent, key):
     return f"{parent}.{key}" if parent else key
 
 
+class ConfigDocumentError(ValueError):
+    """A known document defect with path data, separate from exception details."""
+
+    def __init__(self, path, key=None):
+        self.path = path
+        self.key = key
+        super().__init__(self.diagnostic())
+
+    def diagnostic(self):
+        """Compose only a curated validation message, never exception text."""
+        location = self.path or "the top level"
+        if self.key is not None:
+            return (
+                f"duplicate key {json.dumps(self.key)} at {location} "
+                f"(path {_path(self.path, self.key)})"
+            )
+        return f"placeholder value at {location}"
+
+
 def _decode(node, path=""):
     if isinstance(node, _ObjectPairs):
         result = {}
         for key, value in node:
             if key in result:
-                location = path or "the top level"
-                raise ValueError(
-                    f"duplicate key {json.dumps(key)} at {location} (path {_path(path, key)})"
-                )
+                raise ConfigDocumentError(path, key)
             result[key] = _decode(value, _path(path, key))
         return result
     if isinstance(node, list):
@@ -37,7 +53,7 @@ def reject_placeholders(node, path=""):
         for index, value in enumerate(node):
             reject_placeholders(value, f"{path}[{index}]")
     elif isinstance(node, str) and node.upper().startswith(("PASTE_", "YOUR_")):
-        raise ValueError(f"placeholder value at {path or 'the top level'}")
+        raise ConfigDocumentError(path)
 
 
 def loads(text):

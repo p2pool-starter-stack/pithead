@@ -8,7 +8,9 @@ the stack afterward, edit `config.json` and run `./pithead apply`.
 
 Every JSON object must have unique keys, including nested objects and objects in arrays.
 `setup`, `apply`, `up`, and dashboard configuration previews refuse duplicate keys and name
-their path. Edit the existing block when adding settings. Every string value beginning with
+their path. Dashboard control requests return HTTP 400 with the duplicate or placeholder path;
+malformed JSON returns `Body must be JSON.` without parser or exception details.
+Edit the existing block when adding settings. Every string value beginning with
 `PASTE_` or `YOUR_` (case-insensitive) is a placeholder and is refused, including secrets,
 hosts, and optional fields. Replace it with a real value, or omit the key to use its default.
 The host checks raw config before refreshing the dashboard’s masked copy. Invalid input
