@@ -93,8 +93,6 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
 
     _last_monero_sync = None  # last real {percent,current,target} — held across RPC blips
 
-    # On a partial-start failure stay held so the next cycle retries.
-
     async def _sync_prices(self):
         """Refresh the live XMR/XTM prices (#520) into ``latest_data["prices"]`` — a no-op with the
         feed off. The PriceFeed self-throttles and keeps its last good result, so calling this every

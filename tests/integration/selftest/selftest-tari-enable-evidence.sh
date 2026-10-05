@@ -11,7 +11,7 @@ echo "== Tari enable evidence distinguishes stopped and recreated proxies =="
 fixture="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/tari-enable-selftest.XXXXXX")" || exit 1
 trap 'rm -rf "$fixture"' EXIT
 bad=0
-for CASE in recreated stopped unchanged never-syncing stale-hashes; do
+for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hashes decreasing-hashes no-workers late-stall probe-error missing-hashes; do
     OUT_DIR="$fixture/$CASE"
     mkdir -p "$OUT_DIR"
     PHASE=0
@@ -23,7 +23,7 @@ for CASE in recreated stopped unchanged never-syncing stale-hashes; do
     pithead() { printf 'apply-completed\n'; }
     wait_stratum_hashes() { return 0; }
     wait_status_ok() { return 0; }
-    now_s() { printf 1; }
+    now_s() { printf '%s' "$((1 + $(cat "$OUT_DIR/polls") * 30))"; }
     sleep() { :; }
     it_fail() { FAILURE_COUNT=$((FAILURE_COUNT + 1)); }
     it_pass() {
@@ -42,6 +42,21 @@ for CASE in recreated stopped unchanged never-syncing stale-hashes; do
             if [ "$CASE:$PHASE" = recreated:2 ]; then printf new-start; else printf old-start; fi
             ;;
         *"{{.Name}} id="*) printf 'proxy state observed\n' ;;
+        'docker exec dashboard python3 -c '*get_summary*)
+            [ "$CASE" != probe-error ] || return 1
+            if [ "$CASE" = missing-hashes ]; then
+                printf '{"workers":1}'
+                return 0
+            fi
+            local poll hashes workers=1
+            poll="$(cat "$OUT_DIR/polls")"
+            hashes=$((poll * 100))
+            [ "$CASE" != stale-hashes ] || hashes=100
+            [ "$CASE" != decreasing-hashes ] || hashes=$((10000 - poll * 100))
+            [ "$CASE" != no-workers ] || workers=0
+            if [ "$CASE" = late-stall ] && [ "$poll" -ge 3 ]; then hashes=300; fi
+            printf '{"workers":%s,"hashes":%s}' "$workers" "$hashes"
+            ;;
         'docker logs --tail 100 dashboard') printf 'gate transition observed\n' ;;
         *) return 1 ;;
         esac
@@ -54,6 +69,8 @@ for CASE in recreated stopped unchanged never-syncing stale-hashes; do
             height=43
             [ "$poll" -ge 4 ] || sync_state="syncing"
             [ "$CASE" != never-syncing ] || sync_state="done"
+            if [ "$CASE" = loading-to-done ] && [ "$poll" -lt 4 ]; then sync_state="loading"; fi
+            if [ "$CASE" = late-stall ] && [ "$poll" -lt 10 ]; then sync_state="loading"; fi
         fi
         local hashes=$((poll * 100))
         [ "$CASE" != stale-hashes ] || hashes=100
@@ -68,20 +85,20 @@ for CASE in recreated stopped unchanged never-syncing stale-hashes; do
     if grep -q must-not-be-retained "$OUT_DIR/tari-enable/snapshots.log"; then bad=$((bad + 1)); fi
     if [ -f "$OUT_DIR/tari-enable/samples.jsonl" ] && grep -q must-not-be-retained "$OUT_DIR/tari-enable/samples.jsonl"; then bad=$((bad + 1)); fi
     if [ "$CASE" != recreated ] && [ "$CASE" != stopped ]; then
-        jq -e -s 'length > 0 and all(.[]; .observed == 1)' "$OUT_DIR/tari-enable/samples.jsonl" >/dev/null || bad=$((bad + 1))
+        jq -e -s 'length > 0 and all(.[]; (.observed | type) == "number" and .observed > 1)' "$OUT_DIR/tari-enable/samples.jsonl" >/dev/null || bad=$((bad + 1))
     fi
     if [ "$CASE" = recreated ] || [ "$CASE" = stopped ]; then
         [ "$CONTINUITY_PASSES" = 0 ] || bad=$((bad + 1))
     else
         [ "$CONTINUITY_PASSES" = 1 ] || bad=$((bad + 1))
     fi
-    if [ "$CASE" = unchanged ]; then
+    if [ "$CASE" = unchanged ] || [ "$CASE" = never-syncing ] || [ "$CASE" = loading-to-done ]; then
         [ "$rc:$FAILURE_COUNT" = 0:0 ] || bad=$((bad + 1))
+        jq -e -s '.[-1].observed - .[0].observed >= 90' "$OUT_DIR/tari-enable/samples.jsonl" >/dev/null || bad=$((bad + 1))
     else
         [ "$rc" = 1 ] && [ "$FAILURE_COUNT" -gt 0 ] || bad=$((bad + 1))
         [ -s "$OUT_DIR/tari-enable/dashboard.log" ] && [ -s "$OUT_DIR/tari-enable/captured" ] || bad=$((bad + 1))
-        if [ "$CASE" = never-syncing ] || [ "$CASE" = stale-hashes ]; then
-            [ "$FAILURE_COUNT" = 1 ] || bad=$((bad + 1))
+        if [ "$CASE" != recreated ] && [ "$CASE" != stopped ]; then
             [ -s "$OUT_DIR/tari-enable/samples.jsonl" ] || bad=$((bad + 1))
             jq -e -s 'length > 0 and all(.[]; has("observed") and has("hashes") and has("tari_sync") and (has("secret") | not))' "$OUT_DIR/tari-enable/samples.jsonl" >/dev/null || bad=$((bad + 1))
             continue

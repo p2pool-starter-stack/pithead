@@ -7,13 +7,18 @@ tari_enable_snapshot() { # <phase>: allowlisted, bounded evidence; no env/config
     api_state | jq '{timestamp, proxy_workers, hashes: .stratum.total_hashes, sync: {monero: .sync.monero.state, tari: .sync.tari.state}, tari: (.tari | {active, connected, height}), badges: [.badges[]? | {text}]}' | redact
 }
 
+tari_enable_mining_sample() {
+    # Read the unchanged proxy, not P2Pool's counter which resets during apply.
+    rx "docker exec dashboard python3 -c 'import json;from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient;from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN;s=XMRigProxyClient(PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN).get_summary();print(json.dumps({\"workers\":s.get(\"miners\",{}).get(\"now\"),\"hashes\":s.get(\"results\",{}).get(\"hashes_total\")}))'" 2>/dev/null
+}
+
 run_tari_background_sync() {
     # Only a local Tari baseline can prove off -> local without changing the node fixture.
     if [ "$(env_on_box TARI_MODE)" != local ]; then
         it_skip_leg "Tari-only apply keeps Monero mining (#3094)" "requires a local Tari baseline" "missing"
         return 0
     fi
-    local saved_config proxy_start deadline state syncing_hashes=0 synced=0 failed=0 previous_hashes="" hashes height_before
+    local saved_config proxy_start deadline state window_hashes=0 synced=0 failed=0 previous_hashes="" hashes height_before mining_sample observed window_start last_advance
     height_before="$(jq_get "$(api_state)" '.tari.height | tonumber')"
     [[ "$height_before" =~ ^[0-9]+$ ]] || {
         it_fail "pre-enable Tari template height is readable (#3094)" "no numeric template baseline"
@@ -44,7 +49,9 @@ run_tari_background_sync() {
                 failed=1
             else
                 tari_enable_snapshot after-enable >>"$evidence/snapshots.log"
-                deadline=$(($(now_s) + 600))
+                window_start="$(now_s)"
+                last_advance="$window_start"
+                deadline=$((window_start + 600))
                 while [ "$(now_s)" -lt "$deadline" ]; do
                     continuity_checks=$((continuity_checks + 1))
                     current_state="$(svc_state_of "$(service_state xmrig-proxy)")"
@@ -58,28 +65,42 @@ run_tari_background_sync() {
                         break
                     fi
                     state="$(api_state)"
-                    printf '%s\n' "$state" | jq -c --argjson observed "$(now_s)" \
-                        '{observed: $observed, workers: .proxy_workers, hashes: .stratum.total_hashes, tari_sync: (.sync.tari | {state, current, target, percent}), template: (.tari | {connected, height})}' | redact >>"$evidence/samples.jsonl"
-                    hashes="$(jq_get "$state" '.stratum.total_hashes')"
-                    if [ "$(jq_get "$state" '.sync.tari.state')" = syncing ] &&
-                        [ "$(jq_get "$state" '.proxy_workers')" -ge 1 ] 2>/dev/null &&
-                        [[ "$hashes" =~ ^[0-9]+$ ]]; then
-                        if [ -n "$previous_hashes" ] && [ "$hashes" -gt "$previous_hashes" ]; then syncing_hashes=1; fi
-                        previous_hashes="$hashes"
-                    else
-                        previous_hashes=""
+                    observed="$(now_s)"
+                    mining_sample="$(tari_enable_mining_sample)" || mining_sample='{}'
+                    printf '%s\n' "$state" | jq -c --argjson observed "$observed" --argjson mining "$mining_sample" \
+                        '{observed: $observed, workers: $mining.workers, hashes: $mining.hashes, stratum_hashes: .stratum.total_hashes, tari_sync: (.sync.tari | {state, current, target, percent}), template: (.tari | {connected, height})}' | redact >>"$evidence/samples.jsonl"
+                    hashes="$(jq_get "$mining_sample" '.hashes')"
+                    if ! [ "$(jq_get "$mining_sample" '.workers')" -ge 1 ] 2>/dev/null ||
+                        ! [[ "$hashes" =~ ^[0-9]+$ ]] ||
+                        { [ -n "$previous_hashes" ] && [ "$hashes" -lt "$previous_hashes" ]; }; then
+                        failed=1
+                        window_hashes=0
+                        break
+                    fi
+                    if [ -n "$previous_hashes" ] && [ "$hashes" -gt "$previous_hashes" ]; then
+                        window_hashes=1
+                        last_advance="$observed"
+                    fi
+                    previous_hashes="$hashes"
+                    # Share counters advance on submitted work, not every two-second poll.
+                    # Fail a stalled window; do not accept only a pre-stall increment.
+                    if [ "$((observed - last_advance))" -ge 120 ]; then
+                        failed=1
+                        window_hashes=0
+                        break
                     fi
                     if [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] &&
                         [ "$(jq_get "$state" '.tari.connected')" = true ] &&
                         [ "$(jq_get "$state" '.tari.height | tonumber')" -gt "$height_before" ] 2>/dev/null; then
                         synced=1
-                        break
                     fi
+                    # Cover startup and completion even when the warm chain catches up quickly.
+                    if [ "$synced" = 1 ] && [ "$window_hashes" = 1 ] && [ "$((observed - window_start))" -ge 120 ]; then break; fi
                     sleep 2
                 done
-                assert_eq "workers hash while newly enabled Tari syncs (#3094)" "$syncing_hashes" 1
+                assert_eq "workers keep hashing across the Tari enable window (#3094)" "$window_hashes" 1
                 assert_eq "merge-mining templates arrive after Tari sync (#3094)" "$synced" 1
-                [ "$syncing_hashes" = 1 ] && [ "$synced" = 1 ] || failed=1
+                [ "$window_hashes" = 1 ] && [ "$synced" = 1 ] || failed=1
                 if [ "$continuity_failed" = 0 ]; then
                     if [ "$continuity_checks" -gt 0 ]; then
                         it_pass "xmrig-proxy stays up during Tari enable/sync (#3094)"
