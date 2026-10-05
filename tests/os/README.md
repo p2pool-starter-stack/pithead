@@ -192,6 +192,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   the dashboard's `Tari DOWN` badge must report it, and `./pithead up` must bring all three back.
   The badge must stay absent before the running dashboard's `TARI_NODE_DOWN_AFTER_SEC`
   debounce (900 seconds when unset) and appear within that debounce plus 180 seconds.
+  Clock readings require successful numeric output; a failed initial clock refuses injection,
+  and a failed or backward clock during polling fails timing and proceeds to recovery.
   Unreadable state fails the negative control. Unreadable, invalid or out-of-range debounce
   settings (the test accepts 1–3600 seconds) fail before fault injection; the guest policy
   is never shortened.

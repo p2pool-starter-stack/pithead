@@ -67,4 +67,84 @@ scenario 900 2000 0 1/0 0
 scenario 900 900 1 0/1 1
 scenario 1 185 0 1/0 0
 scenario 5 185 0 1/0 1
+# Use the real Python-clock call with a failed command or malformed output.
+(
+    python3() {
+        printf '%s' "$clock_output"
+        return "$clock_rc"
+    }
+    # Restore the production reader; the polling scenarios above use a fake clock.
+    chain_fault_now() { python3 -I -c 'import time; print(int(time.monotonic()))'; }
+    clock_rc=0 clock_output=0005
+    [ "$(chain_fault_clock_read)" = 5 ]
+    for clock_output in '' 'not-a-number' '-1' '1+2' '9999999999999'; do
+        if chain_fault_clock_read; then exit 1; fi
+    done
+    clock_rc=127 clock_output=5
+    if chain_fault_clock_read; then exit 1; fi
+)
+
+# Drive the complete leg, proving failure before injection and recovery after injection.
+(
+    chain_fault_down_after() { printf '5\n'; }
+    chain_fault_probe() { printf '1000 900 2000 0\n'; }
+    provisioning_settled() { return 0; }
+    info() { :; }
+    bad() {
+        FAIL=$((FAIL + 1))
+        errors+="$*"
+    }
+    _ssh() {
+        case "$*" in
+        *'podman ps -q'*) printf 'fixture\n' ;;
+        *'podman stop'*) stopped=1 ;;
+        *'pithead up'*) stopped=0 upped=1 ;;
+        *) return 1 ;;
+        esac
+    }
+    chain_fault_status() {
+        if [ "$stopped" = 1 ]; then
+            printf '  ✗ tari exited\n'
+            return 1
+        fi
+        printf '  ✓ tari running\n'
+    }
+    chain_fault_doctor() {
+        if [ "$stopped" = 1 ]; then
+            printf '{"exit":1,"checks":[{"status":"fail","message":"tari is down"}]}'
+        else
+            printf '{"exit":0,"checks":[{"status":"ok","message":"Revenue healthy"}]}'
+        fi
+    }
+    chain_fault_state() { printf '{"badges":[]}'; }
+    chain_fault_now() {
+        if { [[ "$mode" = initial* ]] && [ "$upped/$stopped" = 0/0 ]; } ||
+            { [[ "$mode" = poll* ]] && [ "$stopped" = 1 ] && [ "$tick" -ge "$clock_fail_at" ]; }; then
+            case "$mode" in
+            *exit)
+                printf '5'
+                return 127
+                ;;
+            *empty) return 0 ;;
+            *text) printf 'not-a-number' ;;
+            *backward) printf '104' ;;
+            esac
+        else
+            printf '%s\n' "$((100 + tick))"
+        fi
+    }
+    for mode in initial-exit initial-empty initial-text poll-exit poll-empty poll-text poll-backward; do
+        stopped=0 upped=0 tick=0 PASS=0 FAIL=0 errors='' clock_fail_at=5
+        if [ "$mode" = poll-backward ]; then clock_fail_at=10; fi
+        phase_provision_chain_fault_after_release u p || :
+        [[ "$errors" = *'monotonic clock'* ]]
+        if [[ "$mode" = initial* ]]; then
+            [ "$stopped/$upped/$PASS/$FAIL" = 0/0/1/1 ]
+        else
+            # Timing must fail, but all unchanged stopped/recovered surface checks still run.
+            [ "$stopped/$upped/$PASS/$FAIL" = 0/1/8/2 ]
+            [ "$tick" -eq "$clock_fail_at" ]
+        fi
+    done
+)
 echo 'selftest-chain-fault-timing: PASS'

@@ -22,13 +22,26 @@ chain_fault_down_after() {
 # Monotonic elapsed time keeps wall-clock corrections out of the fault deadline.
 chain_fault_now() { python3 -I -c 'import time; print(int(time.monotonic()))'; }
 
+# Check status and bounded decimal output before shell arithmetic (including leading zeros).
+chain_fault_clock_read() {
+    local now
+    now=$(chain_fault_now) || return 1
+    [[ "$now" =~ ^[0-9]{1,12}$ ]] || return 1
+    printf '%s\n' "$((10#$now))"
+}
+
 chain_fault_wait_badge() { # <debounce-seconds> <stop-started>
-    local down_after="$1" started="$2" elapsed early_seen=0 early_ok=1 timely=0
+    local down_after="$1" started="$2" previous="$2" now elapsed early_seen=0 early_ok=1 timely=0
     # state belongs to the caller, so its final badge/evidence assertion reads this sample.
     # shellcheck disable=SC2034
     while :; do
         state=$(chain_fault_state)
-        elapsed=$(($(chain_fault_now) - started))
+        if ! now=$(chain_fault_clock_read) || [ "$now" -lt "$previous" ]; then
+            bad "post-commit $CHAIN_FAULT_SERVICE fault: monotonic clock failed or moved backward — timing was not proved; continuing to recovery"
+            return 1
+        fi
+        previous=$now
+        elapsed=$((now - started))
         [ "$elapsed" -le $((down_after + 180)) ] || break
         if [ "$elapsed" -lt "$down_after" ]; then
             early_seen=1

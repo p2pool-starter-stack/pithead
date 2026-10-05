@@ -32,7 +32,6 @@
 
 # shellcheck source=tests/os/chain-fault-timing.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/chain-fault-timing.sh"
-
 CHAIN_FAULT_SERVICE=tari
 # Several times the usual gap between two dashboard Tari polls (see above).
 CHAIN_FAULT_READ_WINDOW=180
@@ -164,7 +163,6 @@ phase_provision_chain_fault_after_release() { # <dashboard-user> <dashboard-pass
     fi
     ok "post-commit $svc fault: the dashboard reads the $svc node the release started"
     dash_before=$(awk '{print $2}' <<<"$probe")
-
     if ! down_after=$(chain_fault_down_after); then
         bad "post-commit $svc fault: dashboard debounce is unreadable or outside the 1–3600 second test bound — the fault was not injected"
         return 1
@@ -174,14 +172,16 @@ phase_provision_chain_fault_after_release() { # <dashboard-user> <dashboard-pass
         bad "post-commit $svc fault: dashboard state is unreadable or already shows Tari DOWN — the fault was not injected"
         return 1
     fi
-    fault_started=$(chain_fault_now)
+    if ! fault_started=$(chain_fault_clock_read); then
+        bad "post-commit $svc fault: monotonic clock is unreadable — the fault was not injected"
+        return 1
+    fi
     cid=$(_ssh "podman ps -q --filter label=com.docker.compose.service=$svc" 2>/dev/null | head -n1 | tr -d '\r')
     if [ -z "$cid" ] || ! _ssh "podman stop -t 10 $cid >/dev/null 2>&1"; then
         bad "post-commit $svc fault: could not stop a running $svc (container '${cid:-none}') — the fault was not injected"
         return 1
     fi
     ok "post-commit $svc fault: $svc stopped after 'chain services released' with the migration marker gone"
-
     status_out=$(chain_fault_status)
     status_rc=$?
     doctor=$(chain_fault_doctor)
