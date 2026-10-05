@@ -238,6 +238,12 @@ _phase_provision_initial_body() {
     else
         bad "no os_update in /api/state — the appliance has no reachable OS-update control"
     fi
+    # Inspect inside the guest: never print credential-bearing journal lines into evidence.
+    if SSH_TIMEOUT=60 _ssh 'bash -s' <"$SCRIPT_DIR/credential-journals.sh"; then
+        ok "firstboot and system journals contain no bcrypt credential (#3131)"
+    else
+        bad "firstboot or system journal contains bcrypt, or could not be checked (#3131)"
+    fi
     phase_provision_control_regressions "$pv_user" "$pv_pass"
     phase_provision_control_recovery "$ip" "$pv_user" "$pv_pass"
     phase_provision_dashboard_onion_exposure

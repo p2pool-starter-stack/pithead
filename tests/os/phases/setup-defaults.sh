@@ -72,4 +72,9 @@ phase_setup_defaults() {
     [ "$code" = 401 ] && ok "fresh default dashboard requires its generated login" || bad "fresh default dashboard is not protected (HTTP $code)"
     code=$(curl -ksS -u "admin:$password" -o /dev/null -w '%{http_code}' -m 8 "https://$guest_ip/")
     [ "$code" = 200 ] && ok "fresh default dashboard accepts the generated login" || bad "fresh generated login does not open the dashboard (HTTP $code)"
+    if SSH_TIMEOUT=60 _ssh 'bash -s' <"$SCRIPT_DIR/credential-journals.sh"; then
+        ok "fresh default firstboot and system journals contain no bcrypt credential (#3131)"
+    else
+        bad "fresh default firstboot or system journal contains bcrypt, or could not be checked (#3131)"
+    fi
 }
