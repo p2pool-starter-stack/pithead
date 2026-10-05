@@ -16,7 +16,8 @@ _restore_mining_running() { # -> 0 when p2pool and xmrig-proxy are both running 
 # Fixed grammar only: the gate marker and each service's container state, never values.
 restore_mining_diagnostics() {
     local out
-    out="$(on_bench "cd '$RESTORE_DIR' && bash -s" 2>/dev/null <<'PROBE'
+    out="$(
+        on_bench "cd '$RESTORE_DIR' && bash -s" 2>/dev/null <<'PROBE'
 marker=unknown
 if timeout --kill-after=2 10 docker compose exec -T dashboard test -e /data/sync-gate-reset 2>/dev/null; then marker=present
 elif timeout --kill-after=2 10 docker compose exec -T dashboard true 2>/dev/null; then marker=absent; fi

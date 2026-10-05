@@ -101,15 +101,17 @@ drive_restore_rc() {
         verify_restore_proof() { echo proof >>"$log"; }
         on_bench() { return 0; }
         eval "$RESTORE_SRC"
-        # A failed restore exits non-zero, so report on the way out.
-        trap '"'"'echo "failed:$RESTORE_PROOF_FAILED" >>"$log"; tr "\n" " " <"$log" >&3; rm -f "$log"'"'"' EXIT
-        exec 3>&1; restore_all >/dev/null 2>&1
+        # A failed restore ends in `exit 1`; record it instead of ending this shell.
+        exit() { echo "exit:$1" >>"$log"; }
+        restore_all >/dev/null 2>&1
+        tr "\n" " " <"$log"
+        rm -f "$log"
     ' 2>/dev/null
 }
 assert_eq "the wait runs after health and before the proof" \
-    "$(drive_restore_rc 0)" "synced healthy mining proof failed:0 "
+    "$(drive_restore_rc 0)" "synced healthy mining proof "
 assert_eq "a failed wait fails the restore but still runs the proof" \
-    "$(drive_restore_rc 1)" "synced healthy mining proof failed:1 "
+    "$(drive_restore_rc 1)" "synced healthy mining proof exit:1 "
 
 echo ""
 printf 'restore-mining-ready self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
