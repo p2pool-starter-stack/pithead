@@ -4,13 +4,18 @@
 # shellcheck source=tests/os/appliance-approval-verdict.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/appliance-approval-verdict.sh"
 
+# shellcheck source=tests/os/appliance-password-fixture.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/appliance-password-fixture.sh"
+
 APPROVAL_RESTORE_SNAPSHOT=""
 # Sensitive commits use the authenticated dashboard route. This phase repoints the appliance at
 # reserved nodes and must restore the original config afterward.
 
 # Keep this above the dashboard's 30-second answer window so a 202 response still carries the id.
-dashboard_control_post() { # <route> <json-body>; keeps secrets out of curl's argv
-    printf '%s' "$2" | dashboard_curl -sSk -m 45 -H 'Content-Type: application/json' \
+dashboard_control_post() { # <route> <json-body> [timeout]; keeps secrets out of curl's argv
+    local cap=45
+    [ -z "${3:-}" ] || cap="$3"
+    printf '%s' "$2" | dashboard_curl -sSk -m "$cap" -H 'Content-Type: application/json' \
         -H 'X-Pithead-Control: 1' --data-binary @- -w '\n%{http_code}' \
         "https://$ip/api/control/$1" 2>/dev/null
 }
@@ -158,24 +163,8 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         return
     fi
 
-    # #2367: the password left the physical-presence set and commits behind APPLY + the envelope.
-    # Once it applies, Caddy wants the NEW login, so the dashboard's result poll (old login) only
-    # sees 401s: read the verdict from the host spool, then restore the fixture password the same
-    # way so every later leg still signs in with the credentials it was handed.
-    local old_pass="$DASH_PASS"
-    password_commit_via_host "os1966-repointed" || return
-    DASH_PASS="os1966-repointed" # dashboard_curl reads DASH_USER/DASH_PASS from this frame by dynamic scope
-    if ! sensitive_live_config >/dev/null; then
-        bad "dashboard did not accept the new password after the commit"
-        return
-    fi
-    password_commit_via_host "$old_pass" || return
-    DASH_PASS="$old_pass"
-    if ! sensitive_live_config >/dev/null; then
-        bad "dashboard did not accept the restored fixture password"
-        return
-    fi
-    ok "dashboard-password repoint commits behind typed APPLY and the new login works"
+    password_fixture_round_trip
+
 }
 
 _password_commit_via_host_self_test() (
@@ -270,6 +259,8 @@ _approval_self_test() {
     _restore_waits_for_control_drain_self_test || f=$((f + 1))
     grep -Fq '_control_requests_drained || {' "$here/appliance-dashboard-exposure-leg.sh" || f=$((f + 1))
     _dashboard_password_repoint_applied_self_test || f=$((f + 1))
+    _password_fixture_self_test || f=$((f + 1))
+    _control_preview_retry_self_test || f=$((f + 1))
     _password_commit_via_host_self_test || f=$((f + 1))
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
