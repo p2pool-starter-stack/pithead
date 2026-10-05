@@ -30,6 +30,9 @@ if args[0] == 'run':
 if args[0] == 'pull' and args[1] != 'fixture-wallet:test':
     print('invalid reference format', file=sys.stderr)
     sys.exit(1)
+if args[0] == 'build':
+    work = next(Path.cwd().glob('pithead-payout-pairs.*'))
+    shutil.copyfile(work / '.env', Path.cwd() / 'fixture.env')
 """
 
 
@@ -60,6 +63,21 @@ class PreparationTest(unittest.TestCase):
             path.write_text(content)
             path.chmod(0o700)
         self.trace = self.root / "docker.trace"
+        self.canonical_env = (
+            "DEPLOYMENT_COMPLETED=true\n"
+            "P2POOL_ONION_ADDRESS=synthetic-provisioning-marker.onion\n"
+            "MONERO_ONION_ADDRESS=synthetic-monero.onion\n"
+            "TARI_ONION_ADDRESS=synthetic-tari.onion\n"
+            "MONERO_RPC_BIND=0.0.0.0\n"
+            "MONERO_ZMQ_BIND=0.0.0.0\n"
+            "TARI_GRPC_BIND=0.0.0.0\n"
+            "DASHBOARD_DATA_DIR=/canonical-data/dashboard\n"
+            "TOR_EGRESS_FIREWALL=true\n"
+            "WALLET_RPC_PASSWORD=canonical-wallet-password\n"
+            "TARI_WALLET_PASSWORD=canonical-tari-password\n"
+            "MONERO_WALLET_ADDRESS=canonical-payout\n"
+        )
+        (self.root / ".env").write_text(self.canonical_env)
         # Execute the shipped preparation, stopping before node inputs or service creation.
         source = (ROOT / "tests/integration/payout-pairs/run.sh").read_text()
         self.script = source.split("# Endpoint values stay private;")[0]
@@ -101,6 +119,48 @@ class PreparationTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("depends on undefined service", result.stderr)
         self.assertFalse(any(call[0] == "pull" for call in calls))
+
+    def test_private_seed_inherits_provisioning_without_canonical_runtime_state(self):
+        result, _ = self.run_preparation()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        seed = (self.root / "fixture.env").read_text()
+        self.assertEqual(set(seed.splitlines()), set(self.canonical_env.splitlines()[:4]))
+        self.assertEqual((self.root / ".env").read_text(), self.canonical_env)
+
+    def test_private_seed_does_not_claim_canonical_lan_publishes(self):
+        result, _ = self.run_preparation()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Run apply's real transition predicate; the test-owned daemon has no containers.
+        candidate = self.root / "candidate.env"
+        candidate.write_text(
+            "MONERO_RPC_BIND=127.0.0.1\nMONERO_ZMQ_BIND=127.0.0.1\nTARI_GRPC_BIND=127.0.0.1\n"
+        )
+        guard = subprocess.run(  # noqa: S603 — repository slices and test-owned inputs
+            [
+                shutil.which("bash"),
+                "-c",
+                'source "$1/lib/pithead/19-small-utilities.sh"; '
+                'source "$1/lib/pithead/02b-lan-guard.sh"; '
+                'source "$1/lib/pithead/02b-lan-guard-units.sh"; '
+                'source "$1/lib/pithead/02c-lan-guard-check.sh"; '
+                'ENV_FILE=fixture.env; lan_guard_transition_ports "$2"',
+                "fixture-guard",
+                str(ROOT),
+                str(candidate),
+            ],
+            cwd=self.root,
+            env={
+                **os.environ,
+                "PATH": f"{self.bin}:{os.environ['PATH']}",
+                "DOCKER_TRACE": str(self.trace),
+            },
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(guard.returncode, 0, guard.stderr)
+        self.assertEqual(guard.stdout.strip(), "")
 
 
 if __name__ == "__main__":

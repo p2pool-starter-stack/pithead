@@ -564,7 +564,9 @@ and `--list` prints it).
 
 The `local-pruned-main-payout-pairs` scenario additionally runs an isolated confirmation fixture
 using synthetic matching address/key pairs, separate wallet volumes and the candidate apply,
-wallet services and dashboard. It checks near-tip creation, caught-up card recovery and reopening
+wallet services and dashboard. Its initial environment carries only the synced nodes’ provisioning
+identities; apply renders the fixture’s bindings, data paths and fresh wallet passwords from its
+private configuration. It checks near-tip creation, caught-up card recovery and reopening
 the retained wallet after reverting the pair. It leaves the mining stack’s payout configuration
 unchanged and needs no private view-key input. Select that scenario with the `lifecycle` phase
 and `no_rig: true` for its bench-ci proof; the required safety backup runs automatically.

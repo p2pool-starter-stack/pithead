@@ -31,7 +31,10 @@ cleanup() {
 trap cleanup EXIT
 cp pithead config.reference.json config.core-keys.json VERSION "$WORK/"
 cp -r build "$WORK/"
-cp .env "$WORK/.env"
+# Reuse the synced nodes' provisioning identities, not their published ports, data paths or
+# wallet passwords. No canonical container belongs to this new project; apply renders its env.
+awk '/^(DEPLOYMENT_COMPLETED|P2POOL_ONION_ADDRESS|MONERO_ONION_ADDRESS|TARI_ONION_ADDRESS)=/' \
+    .env >"$WORK/.env"
 # Build the exact source tree; no released image can substitute for the candidate.
 docker build -t pithead-payout-pair-monero:itest build/monero >"$WORK/monero-build.log" 2>&1
 docker build -t pithead-payout-pair-dashboard:itest dashboard >"$WORK/dashboard-build.log" 2>&1
