@@ -131,4 +131,7 @@ fail_helper
 STUB
 if bash "$work/failure-preamble.sh" >"$work/failure-stage" 2>&1; then exit 1; fi
 grep -q 'Tor heal guest failed at inside-helper' "$work/failure-stage"
+# The enabled leg must start from a healthy Tor: the disabled leg ends network-disabled (job 2213).
+grep -E '^stage=(observe-disabled|reset-tor|configure-enabled)$' "$ROOT/tests/os/tor-heal-guest.sh" |
+    tr '\n' ' ' | grep -qx 'stage=observe-disabled stage=reset-tor stage=configure-enabled '
 echo 'tor-heal harness controls PASS'

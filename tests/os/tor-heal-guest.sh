@@ -104,6 +104,18 @@ poison() {
     done
     return 1
 }
+# The disabled leg leaves Tor network-disabled; `pithead apply` waits for a healthy Tor, so
+# return it to its original state and wait for health before the next apply.
+reset_tor() {
+    docker compose stop tor >"$work/reset-stop.log" 2>&1
+    cp "$work/original-state" "$data/state"
+    docker compose start tor >"$work/reset-start.log" 2>&1
+    for ((attempt = 0; attempt < 60; attempt++)); do
+        docker exec tor /usr/local/bin/tor-healthcheck.sh >/dev/null 2>&1 && return
+        sleep 5
+    done
+    return 1
+}
 backup_count() {
     find "$data" -maxdepth 1 -name 'state.backup.*' -type f | wc -l
 }
@@ -121,6 +133,8 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 done
 echo 'PASS: auto-heal off preserves saturated state throughout the full recovery window (#3118)'
 : >"$work/alerts.jsonl"
+stage=reset-tor
+reset_tor
 stage=configure-enabled
 configure true
 before=$(backup_count)
