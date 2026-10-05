@@ -29,7 +29,7 @@ SSH_ERR="$work/ssh-err"
 echo 'Tor heal guest failed at fixture-stage (line 1, exit 17)' >"$SSH_ERR"
 phase_tor_heal >"$work/phase-output"
 grep -q 'Guest stderr: Tor heal guest failed at fixture-stage' "$work/phase-output"
-[ "$(wc -l <"$work/fail")" = 2 ]
+[ "$(wc -l <"$work/fail" | tr -d " ")" = 2 ]
 # A Docker command that accepts no stdin must not make the offline test pass.
 docker() {
     case " $* " in
@@ -47,35 +47,10 @@ if bash "$work/broken-image-test.sh" fixture >"$work/broken-output"; then
     echo 'offline image test accepted missing Docker stdin' >&2
     exit 1
 fi
+# The dashboard sends webhooks from the host network, so the guest sink must be a loopback one.
+awk '/^  dashboard:/{d=1} d&&/network_mode:/{print; exit}' "$ROOT/docker-compose.yml" | grep -q '"host"'
+grep -qx 'gateway=127.0.0.1' "$ROOT/tests/os/tor-heal-guest.sh"
 # Exercise guest helpers without executing the guest's main body.
-eval "$(sed -n '/^guest_gateway() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
-podman() {
-    if [ "$1" = inspect ]; then
-        [ "${inspect_rc:-0}" = 0 ] || return 17
-        # Container-level gateway fields may be absent, or belong to several networks.
-        printf '%s\n' '{"a-ipv6":{},"b-dual-stack":{},"c-other":{}}'
-    else
-        [ "$1 $2" = 'network inspect' ]
-        case "$3" in
-        a-ipv6) printf '%s\n' '[{"subnets":[{"gateway":"2001:db8::1"}]}]' ;;
-        b-dual-stack)
-            [ "${ipv4:-yes}" = yes ] || return 18
-            printf '%s\n' '[{"subnets":[{"gateway":"2001:db8::1"},{"gateway":"192.0.2.1"}]}]'
-            ;;
-        c-other) printf '%s\n' '[]' ;;
-        *) return 19 ;;
-        esac
-    fi
-}
-[ "$(guest_gateway)" = 192.0.2.1 ]
-ipv4=no
-if guest_gateway >"$work/gateway-output"; then exit 1; fi
-[ ! -s "$work/gateway-output" ]
-ipv4=yes inspect_rc=1
-if guest_gateway >"$work/gateway-output"; then exit 1; fi
-[ ! -s "$work/gateway-output" ]
-unset inspect_rc
-
 (
     work="$work/configure"
     mkdir -p "$work/stack"

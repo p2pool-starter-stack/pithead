@@ -44,22 +44,11 @@ restore() {
     exit "$rc"
 }
 trap restore EXIT
-# An isolated guest-local webhook proves delivery while Tor egress is disabled.
-guest_gateway() {
-    local networks network gateway
-    networks=$(podman inspect dashboard --format '{{json .NetworkSettings.Networks}}') || return 1
-    while IFS= read -r network; do
-        gateway=$(podman network inspect "$network" | jq -er '
-            [.[] | .subnets[]? | .gateway | select(type == "string" and
-                test("^([0-9]{1,3}\\.){3}[0-9]{1,3}$"))][0] // empty') || continue
-        printf '%s\n' "$gateway"
-        return 0
-    done < <(jq -r 'keys[]' <<<"$networks")
-    return 1
-}
+# An isolated guest-local webhook proves delivery while Tor egress is disabled. The dashboard runs
+# on the host network (docker-compose.yml), so it reaches a loopback sink; a container bridge
+# gateway does not exist for it.
 stage=webhook-gateway
-gateway=$(guest_gateway)
-[ -n "$gateway" ]
+gateway=127.0.0.1
 cat >"$work/sink.py" <<'PYTHON'
 import json
 import sys
