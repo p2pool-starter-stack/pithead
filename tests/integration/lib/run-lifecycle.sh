@@ -139,8 +139,6 @@ run_lifecycle() {
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
                     lifecycle_ok=0
                 fi
-                # Same-box restore must not introduce a hold; an existing durable Tari policy
-                # belongs to the backup. Require unchanged marker state and running P2Pool.
                 if ! gate_marker_after="$(sync_gate_marker_state)" || [ "$gate_marker_after" != "$gate_marker_before" ]; then
                     it_fail "restore preserves sync-gate policy without a new hold (#2626)" "marker changed or unreadable"
                     lifecycle_ok=0
