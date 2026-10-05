@@ -73,6 +73,7 @@ _xvb_diag_self_test() {
         f=$((f + 1))
     }
     unset -f _ssh _xvb_wire_dead _xvb_wire_noexec
+    _xvb_diag_payload_self_test || f=$((f + 1))
     rm -f "$SSH_ERR"
     [ "$f" -eq 0 ]
 }
@@ -82,6 +83,33 @@ _xvb_diag_rows_ok() {
     ! grep -E '^(controller actuator could not|bounded controller injection did not leave|xmrig-proxy API never|guest left routed)' "$1" |
         grep -qv 'proxy diag: state\[' || {
         printf 'xvb self-test: a proxy-unreachable red row lacks the proxy diagnostic (#2733)\n' >&2
+        return 1
+    }
+}
+
+# The REAL payload, executed: the dashboard package importable (so PROXY_HOST / PROXY_API_PORT resolve
+# from the actual config module) against a local listener, then against the same port once closed.
+# A broken import or a renamed constant makes the child die, and its output then misses both patterns.
+_xvb_diag_payload_self_test() {
+    local root out
+    root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    out="$(PAYLOAD="$(_xvb_proxy_diag_payload | base64 -d)" ROOT="$root" python3 -c '
+import os, socket, subprocess, sys
+def run(port):
+    env = {**os.environ, "PYTHONPATH": os.environ["ROOT"] + "/dashboard", "PROXY_HOST": "127.0.0.1", "PROXY_API_PORT": str(port)}
+    r = subprocess.run([sys.executable, "-"], input=os.environ["PAYLOAD"], capture_output=True, text=True, env=env)
+    return (r.stdout.strip() or "no-output rc=%s %s" % (r.returncode, r.stderr.strip()[-120:])).replace("\n", ";")
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+s.listen(1)
+port = s.getsockname()[1]
+print(run(port))
+s.close()
+print(run(port))
+' 2>&1)"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = tcp-ok ] &&
+        [[ "$(printf '%s\n' "$out" | sed -n 2p)" == tcp-ConnectionRefusedError:* ]] || {
+        printf 'xvb self-test: the real TCP diagnostic payload did not report reachable then refused: %s\n' "$out" >&2
         return 1
     }
 }

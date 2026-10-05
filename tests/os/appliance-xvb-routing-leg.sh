@@ -147,7 +147,7 @@ _xvb_routing_actuation() {
         bad "controller actuator could not restore the live proxy to P2Pool within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
         return 1
     fi
-    ok "bounded controller injection restored the live proxy to P2Pool"
+    ok "bounded controller injection restored the live proxy to P2Pool"; printf '     %s\n' "$(_xvb_proxy_diag)" # #2733: the diagnostic runs green too
 }
 
 # NOT a subshell body: ok/bad must count in the harness's own PASS/FAIL, and a bare `return` after
