@@ -1294,6 +1294,12 @@ SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on
 so the harness itself is held to the same lint/test standard as the rest of the stack.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
+`selftest-check-lan-guard.sh` checks read-only and deploying dispatch with unrelated
+assertions, including onion targets, explicitly stubbed. It retains the LAN probes,
+timer flush and boot recovery assertions and rejects unexpected missing commands,
+even when a subshell or command substitution hides their exit status.
+`selftest-check-lan-guard-errors.sh` verifies a clean run and injects missing helpers
+to require a nonzero exit without a PASS marker.
 `selftest-skip-accounting.sh` is the one that keeps the skip accounting honest: besides checking
 the counters and the real `summary()`, it censuses every harness file and fails if a skip leaves
 through a bare `it_warn` — by wording, and by shape for the drops that never say "skipping".

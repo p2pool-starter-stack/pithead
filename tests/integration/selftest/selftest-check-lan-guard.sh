@@ -14,11 +14,19 @@ source "$HERE/../lib/run-lan-guard.sh"
 source "$HERE/../lib/run-scenario.sh"
 
 TRACE="$(mktemp)"
-trap 'rm -f "$TRACE"' EXIT
+MISSING_COMMANDS="$(mktemp)"
+trap 'rm -f "$TRACE" "$MISSING_COMMANDS"' EXIT
+# A file also records failures inside subshells and command substitutions whose
+# status the real harness may intentionally ignore. Never claim PASS after one.
+command_not_found_handle() {
+    printf '%s\n' "$1" >>"$MISSING_COMMANDS"
+    printf 'unexpected missing command: %s\n' "$1" >&2
+    return 127
+}
 
 # These assertions belong to other selftests. Here only the routing of side effects matters.
 for fn in it_pass it_fail it_log it_skip_leg assert_eq assert_rc assert_contains assert_num_gt \
-    assert_num_ge assert_pool_type assert_mining_state assert_tari_synced_required \
+    assert_num_ge assert_onion_targets assert_pool_type assert_mining_state assert_tari_synced_required \
     assert_zmq_publishes assert_mergemine_roundtrip assert_egress_dial_pair \
     assert_egress_posture assert_xvb_over_tor assert_metrics_via_caddy assert_share_stats_live \
     assert_telemetry_tables_present assert_doctor_ok wait_for; do
@@ -134,4 +142,8 @@ for case_ in "inactive|timer-stop flush timer-start " \
         exit 1
     }
 done
+if [ -s "$MISSING_COMMANDS" ]; then
+    echo 'selftest-check-lan-guard: FAIL (unexpected missing commands)' >&2
+    exit 1
+fi
 echo 'selftest-check-lan-guard: PASS'
