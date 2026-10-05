@@ -31,7 +31,9 @@ docker build -t pithead-payout-pair-dashboard:itest dashboard >"$WORK/dashboard-
 docker build --build-arg "SHELLCHECK_VERSION=$(make -s print-shellcheck-version)" \
     --build-arg "SHFMT_VERSION=$(make -s print-shfmt-version)" \
     -t "$TOOLBOX" tests/runner >"$WORK/tools-build.log" 2>&1
-docker pull "$(docker compose --profile tari_payout_confirm config --format json | jq -er '.services["tari-wallet"].image')" >"$WORK/tari-pull.log" 2>&1
+# Include dependencies from other profiles, and refuse a failed model before pulling.
+TARI_IMAGE="$(docker compose --profile '*' config --format json | jq -er '.services["tari-wallet"].image')"
+docker pull "$TARI_IMAGE" >"$WORK/tari-pull.log" 2>&1
 # Endpoint values stay private; they are read from the deployed local-node configuration.
 MONERO_HOST=$(sed -n 's/^MONERO_NODE_HOST=//p' .env)
 TARI_HOST=$(sed -n 's/^TARI_GRPC_ADDRESS=//p' .env)
