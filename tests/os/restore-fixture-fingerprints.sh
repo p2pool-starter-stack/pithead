@@ -104,9 +104,8 @@ restore_sync_gate_verdict() { # <restore case>
             bad "restore leg ($restore_case): no sync-gate marker in the dashboard's data mount (${dash_data:-none}) (#2626)"
             failed=1
         }
-    started_at=$(_ssh "podman inspect dashboard --format '{{json .State.StartedAt}}'" 2>/dev/null | tr -d '\r')
-    started_at=${started_at#\"}
-    started_at=${started_at%\"}
+    started_at=$(_ssh "podman inspect dashboard --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
+    started_at=$(printf '%s\n' "$started_at" | mm_rfc3339)
     if ! [[ "$started_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(Z|[+-][0-9]{2}:[0-9]{2})$ ]]; then
         bad "restore leg ($restore_case): dashboard start time is unreadable"
         return 1

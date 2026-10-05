@@ -3,6 +3,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/os/restore-live-state-verdict.sh
 source "$HERE/restore-live-state-verdict.sh"
+# shellcheck source=tests/integration/lib/mergemine-probe.sh
+source "$HERE/../integration/lib/mergemine-probe.sh"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 sleep() {
@@ -15,15 +17,20 @@ _ssh() {
     "podman stop dashboard"*) [ "$mode" != stop-fails ] ;;
     "podman start p2pool"*) [ "$mode" != start-fails ] ;;
     "podman stop p2pool"*) [ "$mode" != cleanup-fails ] ;;
-    *"json .State.StartedAt"*)
+    *".State.StartedAt"*)
         [ "$mode" != bad-stop-time ] || {
             echo 'unsafe;command'
             return
         }
-        echo '"2026-10-05T07:00:00.000000000+00:00"'
+        echo '2026-10-05 07:00:00.000000000 +0000 UTC'
         ;;
     "podman logs --since '2026-10-05T07:00:00.000000000+00:00' --tail 30 p2pool"*)
         [ "$mode" != missing-stop-log ] || return 1
+        if [ "$mode" = long-stop-log ]; then
+            local i
+            for i in {1..40}; do printf '\033[31mlong-stop-evidence %0300d\n' "$i"; done
+            return 0
+        fi
         [ "$mode" != unproved-kill ] || return 0
         echo 'P2Pool caught SIGTERM'
         [ "$mode" != partial-stop-log ] || return 0
@@ -36,7 +43,7 @@ _ssh() {
         case "$mode:$sample" in
         unreadable:*) return 1 ;;
         crash-before:0) echo 'container false 139 0 false' ;;
-        gate-kill:0 | unproved-kill:0 | missing-stop-log:0 | partial-stop-log:0 | bad-stop-time:0) echo 'container false 137 0 false' ;;
+        gate-kill:0 | unproved-kill:0 | missing-stop-log:0 | partial-stop-log:0 | bad-stop-time:0 | long-stop-log:0) echo 'container false 137 0 false' ;;
         oom-before:0) echo 'container false 137 0 true' ;;
         killed-during:3) echo 'container false 137 0 false' ;;
         oom-during:3) echo 'container true 0 0 true' ;;
@@ -54,7 +61,7 @@ _ssh() {
     *) return 1 ;;
     esac
 }
-for mode in clean gate-kill unproved-kill missing-stop-log partial-stop-log bad-stop-time oom-before killed-during oom-during sleep-fails stop-fails start-fails cleanup-fails unreadable crash-before restarted-before crash-during restarted-during replaced stopped malformed; do
+for mode in long-stop-log clean gate-kill unproved-kill missing-stop-log partial-stop-log bad-stop-time oom-before killed-during oom-during sleep-fails stop-fails start-fails cleanup-fails unreadable crash-before restarted-before crash-during restarted-during replaced stopped malformed; do
     printf '0\n' >"$scratch/sample"
     : >"$scratch/commands"
     : >"$scratch/sleeps"
@@ -70,8 +77,21 @@ for mode in clean gate-kill unproved-kill missing-stop-log partial-stop-log bad-
             cat "$scratch/err"
             exit 1
         }
+        grep -Fq 'failed at ' "$scratch/err"
+        case "$mode" in
+        unreadable) grep -Fq 'at inspect prior state' "$scratch/err" ;;
+        crash-before | restarted-before | oom-before) grep -Fq 'at validate prior state' "$scratch/err" ;;
+        bad-stop-time) grep -Fq 'at validate prior start time' "$scratch/err" ;;
+        missing-stop-log) grep -Fq 'at read prior stop logs' "$scratch/err" ;;
+        unproved-kill | partial-stop-log) grep -Fq 'at validate prior stop logs' "$scratch/err" ;;
+        esac
         grep -Fq 'bounded failure diagnostics' "$scratch/err"
         grep -Fq 'journalctl -k -b -n 200 --no-pager' "$scratch/commands"
+        if [ "$mode" = long-stop-log ]; then
+            [ "$(grep -c long-stop-evidence "$scratch/err")" = 30 ]
+            ! grep -q $'\033' "$scratch/err"
+            awk 'length($0)>240 {exit 1}' "$scratch/err"
+        fi
     fi
     grep -Fq 'podman stop p2pool >/dev/null; stopped=$?; podman start dashboard >/dev/null && test "$stopped" -eq 0' "$scratch/commands"
     [ "$(grep -c '^podman start p2pool' "$scratch/commands" || true)" -le 1 ]
@@ -94,9 +114,9 @@ _ssh() {
             return
         }
         if [ "$mode" = offset-hold ]; then
-            echo '"2026-10-05T07:00:00.000000000+00:00"'
+            echo '2026-10-05 07:00:00.000000000 +0000 UTC'
         else
-            echo '"2026-10-05T07:00:00.000000000Z"'
+            echo '2026-10-05T07:00:00.000000000Z'
         fi
         ;;
     "podman logs --since '2026-10-05T07:00:00.000000000Z' dashboard"*) [ "$mode" = fresh-hold ] || [ "$mode" = missing-marker ] ;;
