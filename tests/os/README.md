@@ -116,7 +116,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   then boot the target and prove the copied system is COMPLETE — the `/var` overlay made an
   incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:
   `/data` must survive a second install over the same disk, and the three-way wipe choice
-  (`keep`/`data`/`all`) is asserted on the raw partition. A previous 1.x `xmrig_proxy` setting
+  (`keep`/`data`/`all`) is asserted on the raw partition. After Fresh Start returns to the
+  installer, wait up to 180 seconds for the setup page before the remaining wipe and plant
+  writes; SSH readiness alone precedes firstboot's read-only target probes. A previous 1.x `xmrig_proxy` setting
   must appear under `xvb` in the reinstall pre-fill, never survive under its removed name. The
   restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk and
   requires its running stack to carry the prior-release wallet, Tor identity and secrets while
