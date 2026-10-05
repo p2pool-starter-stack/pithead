@@ -16,8 +16,7 @@ case "$*" in
 'compose exec -T dashboard python3 -c '*)
     [ "${GATE_FAIL:-0}" != 1 ] || exit 1
     if [ "${GATE_HANG:-0}" = 1 ]; then
-        trap '' TERM
-        while :; do sleep 1; done
+        exec "$REAL_PYTHON" -c 'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(600)'
     fi
     python3 -c "${*: -1}" ;;
 'compose ps --services --status running')
