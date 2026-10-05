@@ -44,4 +44,113 @@ if bash "$work/broken-image-test.sh" fixture >"$work/broken-output"; then
     echo 'offline image test accepted missing Docker stdin' >&2
     exit 1
 fi
+# Exercise guest helpers without executing the guest's main body.
+eval "$(sed -n '/^guest_gateway() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+podman() {
+    if [ "$1" = inspect ]; then
+        [ "${inspect_rc:-0}" = 0 ] || return 17
+        # Container-level gateway fields may be absent, or belong to several networks.
+        printf '%s\n' '{"a-ipv6":{},"b-dual-stack":{},"c-other":{}}'
+    else
+        [ "$1 $2" = 'network inspect' ]
+        case "$3" in
+        a-ipv6) printf '%s\n' '[{"subnets":[{"gateway":"2001:db8::1"}]}]' ;;
+        b-dual-stack)
+            [ "${ipv4:-yes}" = yes ] || return 18
+            printf '%s\n' '[{"subnets":[{"gateway":"2001:db8::1"},{"gateway":"192.0.2.1"}]}]'
+            ;;
+        c-other) printf '%s\n' '[]' ;;
+        *) return 19 ;;
+        esac
+    fi
+}
+[ "$(guest_gateway)" = 192.0.2.1 ]
+ipv4=no
+if guest_gateway >"$work/gateway-output"; then exit 1; fi
+[ ! -s "$work/gateway-output" ]
+ipv4=yes inspect_rc=1
+if guest_gateway >"$work/gateway-output"; then exit 1; fi
+[ ! -s "$work/gateway-output" ]
+unset inspect_rc
+
+(
+    work="$work/configure"
+    mkdir -p "$work/stack"
+    cd "$work/stack"
+    printf '{}\n' >config.json
+    cat >pithead <<'STUB'
+#!/usr/bin/env bash
+[ "$*" = 'apply -y' ] || exit 23
+STUB
+    chmod +x pithead
+    # shellcheck disable=SC2034 # extracted configure() reads this guest global.
+    gateway=192.0.2.1
+    eval "$(sed -n '/^configure() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    configure false
+    jq -e '.tor.auto_heal == false and .notifications.tor == false' config.json >/dev/null
+    configure true
+    jq -e '.tor.auto_heal == true and (.notifications.webhooks | length == 1)' config.json >/dev/null
+)
+
+restore_case() (
+    work="$work/restore-$1-$2"
+    data="$work/data"
+    mkdir -p "$data" "$work/stack"
+    cd "$work/stack"
+    printf 'original config\n' >"$work/config.json"
+    printf 'changed config\n' >config.json
+    printf 'original state\n' >"$work/original-state"
+    printf 'changed state\n' >"$data/state"
+    cat >pithead <<'STUB'
+#!/usr/bin/env bash
+[ "$*" = 'apply -y' ] || exit 23
+printf 'apply completed\n'
+STUB
+    chmod +x pithead
+    printf 'omitted-log-prefix\n' >"$work/diagnostic.log"
+    head -c 5000 /dev/zero | tr '\0' x >>"$work/diagnostic.log"
+    printf '\nretained-log-tail\n' >>"$work/diagnostic.log"
+    # shellcheck disable=SC2034 # extracted restore() reads this guest global.
+    sink_started=$3
+    systemctl() {
+        printf 'sink stopped\n' >"$work/sink-stopped"
+        return "${sink_stop_rc:-0}"
+    }
+    docker() {
+        printf 'compose command: %s\n' "$*"
+        if [ "$*" = 'compose stop tor' ]; then return "$stop_rc"; fi
+    }
+    stop_rc=$2
+    eval "$(sed -n '/^restore() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    trap restore EXIT
+    exit "$1"
+)
+restore_case 0 0 1 >"$work/restore-success"
+grep -q 'Guest restoration exit: 0; original exit: 0' "$work/restore-success"
+cmp "$work/restore-0-0/original-state" "$work/restore-0-0/data/state"
+if restore_case 17 0 0 >"$work/restore-original-failure"; then exit 1; else [ "$?" = 17 ]; fi
+grep -q 'Guest restoration exit: 0; original exit: 17' "$work/restore-original-failure"
+grep -q 'Guest command log: restore.log' "$work/restore-original-failure"
+grep -q 'retained-log-tail' "$work/restore-original-failure"
+if grep -q 'omitted-log-prefix' "$work/restore-original-failure"; then exit 1; fi
+[ ! -e "$work/restore-17-0/sink-stopped" ]
+if restore_case 0 19 1 >"$work/restore-failure"; then exit 1; else [ "$?" = 1 ]; fi
+grep -q 'Guest restoration exit: 1; original exit: 0' "$work/restore-failure"
+grep -q 'apply completed' "$work/restore-failure"
+grep -qx 'changed state' "$work/restore-0-19/data/state"
+if restore_case 17 19 1 >"$work/restore-both-failures"; then exit 1; else [ "$?" = 17 ]; fi
+grep -q 'Guest restoration exit: 1; original exit: 17' "$work/restore-both-failures"
+sink_stop_rc=21
+if restore_case 0 0 1 >"$work/restore-sink-failure"; then exit 1; else [ "$?" = 1 ]; fi
+grep -q 'Guest restoration exit: 1; original exit: 0' "$work/restore-sink-failure"
+unset sink_stop_rc
+# Run the actual preamble in a child: failures inside helpers must identify the stage.
+sed '/^cd \/data\/pithead/,$d' "$ROOT/tests/os/tor-heal-guest.sh" >"$work/failure-preamble.sh"
+cat >>"$work/failure-preamble.sh" <<'STUB'
+stage=inside-helper
+fail_helper() { false; }
+fail_helper
+STUB
+if bash "$work/failure-preamble.sh" >"$work/failure-stage" 2>&1; then exit 1; fi
+grep -q 'Tor heal guest failed at inside-helper' "$work/failure-stage"
 echo 'tor-heal harness controls PASS'

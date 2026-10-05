@@ -31,7 +31,10 @@ The opt-in `tor-heal` phase provisions a local-node guest and faults only that g
 It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes
 with it enabled. It requires the first-round diagnosis within 25 minutes, a host recovery
 result, a saturated state backup, cleared new state, unchanged onion keys and healthy Tor.
-The guest restores its original config and state on exit; no shared Tor is poisoned.
+The guest discovers its dashboard network's IPv4 gateway through Podman network inspection
+for a guest-local alert sink. It restores its original config and state on exit, copying
+state only after Tor stops. Failures report the current stage, bounded command logs and
+the restoration result separately from the test result; no shared Tor is poisoned.
 
 It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 
