@@ -162,6 +162,37 @@ class PreparationTest(unittest.TestCase):
         self.assertEqual(guard.returncode, 0, guard.stderr)
         self.assertEqual(guard.stdout.strip(), "")
 
+    def test_fixture_config_drops_dashboard_login_that_needs_a_caddy_container(self):
+        (self.root / "config.json").write_text(
+            '{"dashboard": {"auth": {"username": "u", "password": "p"}, "secure": true}}'
+        )
+        source = (ROOT / "tests/integration/payout-pairs/run.sh").read_text()
+        start = source.index("# The source's relative mounts")
+        script = (
+            self.script
+            + "MONERO_HOST=m TARI_HOST=t\n"
+            + source[start : source.index("apply_pair() {")]
+        )
+        script += 'cp "$WORK/config.json" "$ROOT/fixture-config.json"\n'
+        result = subprocess.run(  # noqa: S603 — fixed repository script, test-owned paths
+            [shutil.which("bash"), "-c", script],
+            cwd=self.root,
+            env={
+                **os.environ,
+                "TMPDIR": str(self.root),
+                "PATH": f"{self.bin}:{os.environ['PATH']}",
+                "DOCKER_TRACE": str(self.trace),
+            },
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        dashboard = json.loads((self.root / "fixture-config.json").read_text())["dashboard"]
+        self.assertNotIn("auth", dashboard)
+        self.assertIs(dashboard["secure"], False)
+
 
 if __name__ == "__main__":
     unittest.main()

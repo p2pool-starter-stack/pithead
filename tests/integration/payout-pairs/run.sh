@@ -52,6 +52,8 @@ TARI_HOST=$(sed -n 's/^TARI_GRPC_ADDRESS=//p' .env)
 docker compose --profile '*' config --no-interpolate --no-path-resolution --format json |
     python3 tests/integration/payout-pairs/compose.py "$PROJECT" "$MONERO_HOST" "$TARI_HOST" >"$WORK/docker-compose.yml"
 # The source's relative mounts resolve in WORK, where the candidate build/ tree was copied.
+# The fixture reaches the dashboard in-container, so it carries no login: apply would otherwise
+# bcrypt-hash the password with a Caddy container that the Docker guard rightly refuses.
 jq --arg w "$WORK" --arg m "$PAYOUT_MONERO1" --arg t "$PAYOUT_TARI1" --arg k "$PAYOUT_VIEW1" \
     '.monero.wallet_address=$m | .monero.view_key=$k | .monero.payout_scan_height="auto" |
      .monero.rpc_lan_access=false | .monero.zmq_lan_access=false | .tari.grpc_lan_access=false |
@@ -59,7 +61,7 @@ jq --arg w "$WORK" --arg m "$PAYOUT_MONERO1" --arg t "$PAYOUT_TARI1" --arg k "$P
      del(.tari.spend_public_key) | .tari.payout_scan_birthday="auto" | .tari.data_dir=($w+"/data/tari") |
      .p2pool.data_dir=($w+"/data/p2pool") | .tor.data_dir=($w+"/data/tor") |
      .dashboard.data_dir=($w+"/data/dashboard") | .dashboard.secure=false |
-     .dashboard.onion.enabled=false | .dashboard.control.enabled=false | .dashboard.local_miner.enabled=false |
+     del(.dashboard.auth) | .dashboard.onion.enabled=false | .dashboard.control.enabled=false | .dashboard.local_miner.enabled=false |
      .local_miner.enabled=false | .xvb.enabled=false | .telegram.enabled=false |
      .notifications={} | .healthchecks={} | .workers.list=[] | .network.tor_egress_firewall=false' \
     config.json >"$WORK/config.json"
