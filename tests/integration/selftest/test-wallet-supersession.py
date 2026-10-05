@@ -297,6 +297,10 @@ class SupersessionTest(unittest.TestCase):
             cases.append(changed)
         cases.extend(
             [
+                {**result, "schema": True},
+                {**result, "schema": 1.0},
+                {**result, "request": {**result["request"], "schema": True}},
+                {**result, "request": {**result["request"], "original_job": 12.0}},
                 {**result, "private_value": "dummy-secret"},
                 {**result, "proof": {**result["proof"], "address": "dummy-secret"}},
                 {**result, "proof": {**result["proof"], "encrypted_keys_match": 1}},

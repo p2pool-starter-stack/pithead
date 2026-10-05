@@ -191,6 +191,9 @@ def install_signal_handlers():
 
 
 def validate_record(record, binding, state):
+    if type(record.get("schema")) is not int:
+        raise ValueError("invalid retained supersession schema")
+    request_data(json.dumps(record.get("request")).encode())
     if (
         set(record) != {*binding, "status", "proof"}
         or record["status"] != "SUPERSEDED"
