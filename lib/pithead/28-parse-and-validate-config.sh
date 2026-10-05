@@ -1,8 +1,6 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
-    if ! jq -e . "$CONFIG_FILE" >/dev/null 2>&1; then
-        error "$CONFIG_FILE is not valid JSON."
-    fi
+    validate_config_document
 
     # Central .env line-injection guard (#33 hardening). No config string value may carry a
     # control character (newline, CR, tab, …). A raw newline in a value that renders into .env
@@ -48,9 +46,6 @@ parse_and_validate_config() {
     case "$TARI_WALLET" in
     *[[:space:]]*) error "tari.wallet_address contains whitespace — a Tari address (base58 or emoji) has none. Check for a stray space or line break in $CONFIG_FILE." ;;
     esac
-    if [ "$MONERO_WALLET" == "your_monero_wallet_address" ] || [ "$TARI_WALLET" == "your_tari_wallet_address" ]; then
-        error "Wallet addresses in $CONFIG_FILE are still the template placeholders. Set your real addresses."
-    fi
     # p2pool pays out via coinbase, which CANNOT go to a subaddress or integrated address — it requires a
     # PRIMARY/standard address (XvB credits by the same address too). A wrong type mines but is NEVER
     # paid, silently — so hard-fail here rather than let someone lose rewards (#250).

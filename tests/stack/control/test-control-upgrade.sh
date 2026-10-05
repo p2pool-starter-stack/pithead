@@ -500,11 +500,11 @@ assert_contains "the .env copy holds the pre-upgrade content (#637)" "$(cat "$up
 upg_bak_cfg2="$(ls "$UPG"/config.json.bak-upgrade-* 2>/dev/null | head -1)"
 assert_eq "the config.json copy holds the pre-upgrade content (#637)" "$(cat "$upg_bak_cfg2" 2>/dev/null)" "{}"
 
-# #637 fail-closed: no snapshot, no upgrade. With config.json unreadable the runner must refuse
-# BEFORE a byte of the bundle lands — the whole point of the restore point is that it exists
-# before the mutation does.
+# #637: with a valid source but failed snapshot copy, refuse before extraction. An absent
+# source now fails earlier at the raw-document guard, before an upgrade request is claimed.
 reset_upgrade_state
-mv "$UPG/config.json" "$UPG/config.json.hidden"
+printf '%s\n' '#!/usr/bin/env bash' 'case "${*: -1}" in */.bak-upgrade.*) exit 1 ;; esac' 'exec /bin/cp "$@"' >"$UPG/bin/cp"
+chmod +x "$UPG/bin/cp"
 upgrade_intent "$UUPG" "v9.9.9"
 urun >/dev/null
 assert_eq "failed snapshot fails the upgrade (#637)" "$(jq -r '.status' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "failed"
@@ -512,7 +512,7 @@ assert_contains "snapshot refusal names the missing restore point (#637)" "$(jq 
 assert_eq "failed snapshot extracts nothing (#637)" "$(cat "$UPG/VERSION")" "1.3.1"
 [ -z "$(ls "$UPG"/.bak-upgrade.* 2>/dev/null)" ] && ok "failed snapshot leaves no mktemp residue (#637)" ||
     bad "failed snapshot leaves no mktemp residue (#637)" "leftover temp file"
-mv "$UPG/config.json.hidden" "$UPG/config.json"
+rm -f "$UPG/bin/cp"
 
 # #637 hardening: the snapshot destination name is predictable, so a co-tenant can plant a
 # symlink there and hope root writes through it (the #629 attack class) — the runner must

@@ -69,6 +69,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             *) printf absent ;;
             esac
         }
+        prove_wallet_supersession() { :; }    # Identity proof has its own selftest.
         tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
         run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
         run_uninstall_round_trip() { :; }     # driven on its own by selftest-uninstall-round-trip.sh

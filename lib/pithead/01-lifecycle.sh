@@ -236,6 +236,7 @@ compose_up_checked() {
 
 stack_up() {
     mutation_lock_acquire up
+    validate_config_document
     log "Starting stack..."
     warn_missing_data_dirs
     migrate_compose_project

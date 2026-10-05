@@ -1,9 +1,10 @@
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
     local approval_required=0 needs_confirm=0
+    config_document_error "$CONFIG_FILE" || return 1
+    config_document_error "$staged" || return 1
     control_policy_gate "$staged" || return 1
-    # Fail closed if we cannot re-derive the change set (the staged config was validated at
-    # preview, so a dry-run failure here means something changed — refuse).
+    # Re-derive the change set: a dry-run failure after preview refuses the commit.
     local carried_ssh=0
     control_carried_ssh "$staged" && carried_ssh=1
     if ! porcelain=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>/dev/null); then
@@ -85,11 +86,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # Host-shell data paths use a catastrophic-root blocklist; dashboard moves use the tighter
     # allowlist and symlink boundary because a confirmed commit later mkdir/chown's as root.
     control_validate_data_dir_destinations "$staged" || return 1
-    # Confirm-gate (#719): an in-scope CONFIRM row PROCEEDS only with the operator's typed
-    # confirmation. The token is a fixed literal ("APPLY"), orthogonal to the value being set — it
-    # is friction that forces the operator to acknowledge an expensive/disruptive op, NOT a security
-    # control (the perimeter above is the boundary). control_commit records a confirmed change
-    # distinctly in the audit log via the marker file touched here.
+    # Disruptive changes require typed APPLY; record confirmed commits via the marker below.
     # An adopted rig (#2641) is confirmed the same way: the dashboard will send it a write token.
     printf '%s\n' "$porcelain" | grep -qE $'^(CONFIRM|DEST)\t' && needs_confirm=1
     [ -z "$worker_new" ] || needs_confirm=1
@@ -136,14 +133,17 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
 control_preview() { # <request-file> <id> <actor> <control-dir>
     local file="$1" id="$2" actor="$3" cdir="$4"
     local staged="$cdir/staged/$id.json" errf="$cdir/staged/.$id.err" out result
+    if ! out=$(config_document_error "$CONFIG_FILE"); then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$out" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+        return 0
+    fi
     if [ "$(jq -r '.config | type' "$file")" != "object" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"config must be a JSON object",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi
-    # A masked worker credential may survive an ordinary round-trip, but never an endpoint repoint.
-    # Restoring the old bearer by name after host/port/control_port changed would send a secret the
-    # container never knew to a destination it chose. Make the operator provide the replacement.
+    # Require a replacement credential for a masked worker endpoint repoint.
     if ! jq -e --slurpfile live "$CONFIG_FILE" '
         def endpoint($api_port): [(.host // null), (.port // $api_port), (.control_port // 8082)];
         (reduce (($live[0].workers.list // []) | reverse | .[]) as $w ({};

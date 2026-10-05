@@ -52,7 +52,6 @@ assert_eq "the clearnet DROP is the FINAL rule before the chain closes (fail-clo
 assert_contains "idempotent-replace: add table first" "$NFTR" "add table inet pithead_egress"
 assert_contains "idempotent-replace: delete before recreating" "$NFTR" "delete table inet pithead_egress"
 assert_contains "honours a custom subnet/prefix (#180)" "$(run_sourced "$SANDBOX" render_tor_egress_nft 172.30.5.0/24 172.30.5.25)" "ip saddr 172.30.5.0/24 drop"
-
 echo "== unit: render_tor_egress_nft — IPv6 backstop only when the mining bridge is passed (#858) =="
 # mining_net is IPv4-only by design, so a bare render (no bridge arg) must stay v4-only — no ip6
 # rule can appear, or it would fence traffic that doesn't exist and risk the host's own v6.
@@ -65,7 +64,6 @@ assert_contains "v6 LAN ULA (fc00::/7) allowed off the bridge" "$NFTR6" 'iifname
 assert_contains "v6 link-local (fe80::/10) allowed off the bridge" "$NFTR6" 'iifname "podman1" ip6 daddr fe80::/10 accept'
 assert_eq "the IPv6 drop is the FINAL rule before the chain closes (fail-closed)" "$(printf '%s\n' "$NFTR6" | grep -E 'accept|drop' | tail -1)" '    iifname "podman1" meta nfproto ipv6 drop'
 assert_contains "the v4 allow-set is unchanged when v6 is added" "$NFTR6" "ip saddr 172.28.0.0/24 drop"
-
 echo "== unit: mining_net_ipv6_bridge — resolve bridge only when mining_net has a v6 subnet (#858) =="
 # Both the v6 subnet and the interface name come from the SAME `podman network inspect`, so whenever
 # v6 is present the bridge is too. Stub podman to answer network inspect; jq is real.
@@ -248,6 +246,7 @@ up_order=$(
     announce_dashboard_url() { :; }
     apply_tor_egress_firewall() { echo firewall; }
     compose_up_checked() { echo compose; }
+    printf '{}\n' >config.json
     stack_up
 )
 assert_eq "up applies the firewall before 'compose up' (#276)" "$(fw_then_compose "$up_order")" "firewall,compose,"
@@ -355,6 +354,7 @@ up_sig_order=$(
     log() { :; }
     verify_release_images() { echo verify; }
     compose_up_checked() { echo compose; }
+    printf '{}\n' >config.json
     stack_up
 )
 assert_eq "first-install up verifies release-image signatures before 'compose up' (#452)" \

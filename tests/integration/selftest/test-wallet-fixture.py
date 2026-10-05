@@ -72,7 +72,7 @@ class Docker:
         self.calls.append(args)
         value = b""
         if args[0] == "ps":
-            value = b"source" if self.item else b""
+            value = b"" if "name=" in args[-1] else (b"source" if self.item else b"")
         elif args[:2] == ("container", "inspect"):
             value = json.dumps([self.item]).encode()
         elif args[:2] == ("volume", "inspect"):

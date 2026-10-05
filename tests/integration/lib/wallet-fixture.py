@@ -1,6 +1,7 @@
 """Keep the prepared, view-only Monero cache across destructive bench scenarios."""
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -12,6 +13,7 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 WALLET_DIR = "/home/ubuntu/wallets"
 VOLUME = "pithead_wallet_data"
@@ -25,13 +27,12 @@ IDENTITY_FIELDS = {
 
 
 def docker(*args, **kwargs):
-    # Only fixed native Docker operations; snapshot image/mount arguments are validated below.
     kwargs = {"stderr": subprocess.DEVNULL, "check": True, **kwargs}
     return subprocess.run(["docker", *args], **kwargs)  # noqa: S603,S607
 
 
-def inspect(kind, name):
-    return json.loads(docker(kind, "inspect", name, stdout=subprocess.PIPE).stdout)[0]
+def inspect(kind, name, **kwargs):
+    return json.loads(docker(kind, "inspect", name, stdout=subprocess.PIPE, **kwargs).stdout)[0]
 
 
 def identity_values(lines):
@@ -89,16 +90,16 @@ def manifest(path):
             if stream is None:
                 raise ValueError("unreadable wallet archive member")
             result[name] = [member.mode, member.size, stream_digest(stream)]
-    if set(result) != {"payout-wallet", "payout-wallet.keys"} or not all(
-        value[1] for value in result.values()
+    if set(result) != {"payout-wallet", "payout-wallet.keys"} or any(
+        v[1] == 0 for v in result.values()
     ):
         raise ValueError("wallet archive must contain only the prepared cache and keys")
     return result
 
 
-def wallet_container(allowed):
+def wallet_container(allowed, **kwargs):
     ids = (
-        docker("ps", "-aq", "--filter", f"volume={VOLUME}", stdout=subprocess.PIPE)
+        docker("ps", "-aq", "--filter", f"volume={VOLUME}", stdout=subprocess.PIPE, **kwargs)
         .stdout.decode()
         .split()
     )
@@ -106,7 +107,7 @@ def wallet_container(allowed):
         raise ValueError("wallet volume has another consumer")
     if not ids:
         return None
-    item = inspect("container", ids[0])
+    item = inspect("container", ids[0], **kwargs)
     labels = item["Config"]["Labels"] or {}
     if (
         labels.get("com.docker.compose.project") != "pithead"
@@ -125,26 +126,35 @@ STOP_WINDOW = 600
 TERM_INTERVAL = 5
 
 
-def stop_wallet(item):
+def stop_wallet(item, diagnostics=True, **kwargs):
     # Never SIGKILL: a kill can land mid-refresh or mid-store() and damage the prepared cache.
     # A TERM sent while the wallet is still `Loading wallet...` (PID 1, no handler yet) is
     # discarded by the kernel, so re-send it until the container stops; repeats are harmless.
     start = time.monotonic()
     next_term = start
     while True:
-        item = inspect("container", item["Id"])
+        item = inspect("container", item["Id"], **kwargs)
         running = item["State"]["Running"]
         if not running and not item["State"].get("Restarting"):
             return item
         now = time.monotonic()
         if now - start >= STOP_WINDOW:
-            tail = docker(
-                "logs", "--tail", "20", item["Id"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-            ).stdout.decode(errors="replace")
-            print(f"wallet did not stop on SIGTERM; last log lines:\n{tail}", file=sys.stderr)
+            if diagnostics:
+                tail = docker(
+                    "logs", "--tail", "20", item["Id"], stdout=subprocess.PIPE, **kwargs
+                ).stdout.decode(errors="replace")
+                print(f"wallet did not stop on SIGTERM; last log lines:\n{tail}", file=sys.stderr)
             raise ValueError("wallet did not stop gracefully; no forced kill attempted")
         if running and now >= next_term:
-            docker("kill", "--signal", "TERM", item["Id"], stdout=subprocess.DEVNULL, check=False)
+            docker(
+                "kill",
+                "--signal",
+                "TERM",
+                item["Id"],
+                stdout=subprocess.DEVNULL,
+                check=False,
+                **kwargs,
+            )
             next_term = now + TERM_INTERVAL
         time.sleep(1)
 
@@ -159,34 +169,27 @@ def helper(image, readonly, directory, action):
         "run",
         "--rm",
         "-i",
-        "--name",
-        f"{directory.name}-{action}",
-        "--label",
-        f"pithead.wallet-fixture={directory.name}",
+        f"--name={directory.name}-{action}",
+        f"--label=pithead.wallet-fixture={directory.name}",
         "--network",
         "none",
         "--read-only",
         "--cap-drop",
         "ALL",
-        "--security-opt",
-        "no-new-privileges",
-        "--memory",
-        "128m",
-        "--pids-limit",
-        "64",
+        "--security-opt=no-new-privileges",
+        "--memory=128m",
+        "--pids-limit=64",
         "--user",
         "1000:1000",
-        "--mount",
-        mount,
-        "--entrypoint",
-        "/bin/sh",
+        f"--mount={mount}",
+        "--entrypoint=/bin/sh",
         image,
         "-c",
     ]
 
 
-def local_volume():
-    volume = inspect("volume", VOLUME)
+def local_volume(**kwargs):
+    volume = inspect("volume", VOLUME, **kwargs)
     if volume["Driver"] != "local" or volume.get("Options"):
         raise ValueError("wallet fixture requires an independent local Docker volume")
     labels = volume.get("Labels") or {}
@@ -261,81 +264,51 @@ def private(info, directory=False):
         raise ValueError("wallet fixture snapshot is not owner-only")
 
 
-def capture(baseline):
-    fingerprint = identity(baseline)
-    if fingerprint is None:
+def cleanup_helper(name):
+    def present():
+        return docker(
+            "ps", "-aq", "--filter", f"name=^/{name}$", stdout=subprocess.PIPE, timeout=30
+        ).stdout.strip()
+
+    if not present():
         return
-    item = wallet_container({baseline})
-    if item is None:
-        raise ValueError("configured wallet container is missing")
-    if identity_values(item["Config"]["Env"]) != fingerprint:
-        raise ValueError("source container wallet identity differs from the baseline")
-    local_volume()
-    directory = Path(
-        tempfile.mkdtemp(
-            prefix="pithead-wallet-fixture-",
-            dir=os.environ.get("IT_SCRATCH_DIR") or "/var/tmp",  # noqa: S108 -- mkdtemp creates an owner-only directory under the persistent sticky temp root.
-        )
-    )
-    was_running = item["State"]["Running"]
+    docker("kill", "--signal", "TERM", name, stdout=subprocess.DEVNULL, check=False, timeout=30)
     try:
-        stopped = stop_wallet(item)
-        if stopped["State"]["ExitCode"] != 0 or stopped["State"].get("OOMKilled"):
-            raise ValueError("source wallet has no graceful save proof")
-        archive = directory / "wallet.tar"
-        with archive.open("xb") as stream:
-            command = f"test ! -e {WALLET_DIR}/.payout-scanning && tar -C {WALLET_DIR} -cf - payout-wallet payout-wallet.keys"
-            docker(*helper(item["Image"], True, directory, "capture"), command, stdout=stream)
-            stream.flush()
-            os.fsync(stream.fileno())
-        contents = manifest(archive)
-        # Uninstall also removes owned images. Keep the exact tar-capable image offline.
-        with (directory / "image.tar").open("xb") as stream:
-            docker("image", "save", item["Image"], stdout=stream)
-            stream.flush()
-            os.fsync(stream.fileno())
-        write_state(
-            directory,
-            {
-                "baseline": str(baseline),
-                "directory": str(directory),
-                "identity": fingerprint,
-                "image": item["Image"],
-                "archive_sha256": digest(archive),
-                "image_sha256": digest(directory / "image.tar"),
-                "contents": contents,
-                "stage": "captured",
-            },
+        docker("wait", name, stdout=subprocess.DEVNULL, timeout=600)
+    except subprocess.CalledProcessError:
+        # --rm can remove the container before `wait` attaches. An authoritative
+        # empty listing proves cleanup; other daemon errors remain failures.
+        if present():
+            raise
+    docker("rm", name, stdout=subprocess.DEVNULL, check=False, timeout=30)
+    if present():
+        raise ValueError("wallet proof helper cleanup is unproved")
+
+
+def capture(baseline, diagnostics=True):
+    if "capture_fixture" in globals():
+        operation = globals()["capture_fixture"]  # Streamed by wallet-fixture.sh.
+    else:
+        spec = importlib.util.spec_from_file_location(
+            "wallet_capture", Path(__file__).with_name("wallet_fixture_capture.py")
         )
-        sync_directory(directory.parent)
-    except Exception:
-        # No branch was deployed; remove only this capture's known private files.
-        for name in ("wallet.tar", "image.tar", "state.tmp", "state.json"):
-            path = directory / name
-            if path.exists() or path.is_symlink():
-                private(path.lstat())
-                path.unlink()
-        directory.rmdir()
-        sync_directory(directory.parent)
-        raise
-    finally:
-        if was_running:
-            docker("start", item["Id"], stdout=subprocess.DEVNULL)
-    print(directory)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        operation = module.capture_fixture
+    return operation(SimpleNamespace(**globals()), baseline, diagnostics=diagnostics)
 
 
-def load(directory, baseline, cleanup_only=False):
+def load(directory, baseline, cleanup_only=False, supersession=False):
     if directory.name == "" or not directory.name.startswith("pithead-wallet-fixture-"):
         raise ValueError("unexpected wallet fixture snapshot path")
     private(directory.lstat(), True)
+    retired = directory / "supersession.json"
+    if not supersession and (retired.exists() or retired.is_symlink()):
+        raise ValueError("superseded fixture is retained; restoration and ordinary cleanup refused")
     private((directory / "state.json").lstat())
     state = json.loads((directory / "state.json").read_text())
-    if state["directory"] != str(directory) or state["stage"] not in {
-        "captured",
-        "restoring",
-        "import_verified",
-        "ready",
-    }:
+    stages = {"captured", "restoring", "import_verified", "ready"}
+    if state["directory"] != str(directory) or state["stage"] not in stages:
         raise ValueError("wallet fixture receipt changed")
     if state["baseline"] != str(baseline) or state["identity"] != identity(baseline):
         raise ValueError("baseline wallet identity changed")
