@@ -157,6 +157,7 @@ def prepare_config(
     credential fields and persists across a failed install without copying their contents.
     """
     prepared = deepcopy(cfg)
+    prepared.pop("config_version", None)
     conflicts = _legacy_conflicts(prepared)
     if reject_legacy_conflicts and conflicts:
         names = "; ".join(conflicts)

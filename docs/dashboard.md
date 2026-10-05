@@ -987,6 +987,11 @@ wallet, so it refuses to run without a login), and run `./pithead apply`. A **Co
 button sits next to the Simple/Advanced toggle whether or not the channel is on; with it off, the
 view explains how to turn it on and nothing else.
 
+The panel shows `config_version` as read-only text (unknown when unstamped). A newer stamp
+warns that saving is blocked while the config contains settings this version does not know:
+update the OS first. Form, JSON and API edits to the stamp are ignored, and previews and recent
+changes omit it. See [configuration versioning](configuration.md#configuration-reference).
+
 One editing surface: the form on top and, beneath it, a collapsed **Advanced** pane holding
 the full proposed configuration — both live views of a single candidate. Editing
 a field rewrites the pane; editing the pane refills the fields. The pane shows the whole
@@ -1024,7 +1029,7 @@ wizard's pattern — the first page and the config tab now behave identically.) 
   it retunes the *rig's own* settings (pools, donation, autotune, watchdog, temperature cap)
   through that rig's control API, never the stack's descriptor list.
 
-  Ordinary fields are editable directly. Every other reference field below the physical-presence
+  Ordinary fields are editable directly. Other editable settings below the physical-presence
   boundary renders **editable but confirm-gated**, tooltipped "you'll type `APPLY` to confirm at
   Save". This includes disruptive settings and values that redirect funds, traffic, credentials or
   control. All three policy sets are surfaced on `GET /api/config`
