@@ -8,7 +8,7 @@ ensure_onion_password() {
     [ "$(config_bool '.dashboard.onion.enabled' false)" == "true" ] || return 0
     [ -z "$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")" ] || return 0
     local gen tmp
-    gen=$(generate_node_password) # 32 alnum chars: clears the >=16 floor, no quotes, no weak pattern
+    gen=$(generate_node_password) || return 1 # 32 alnum chars: clears the >=16 floor, no quotes, no weak pattern
     tmp=$(mktemp) || error "Could not create a temp file to save the generated dashboard password."
     jq --arg p "$gen" '.dashboard.auth.password = $p' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE" ||
         error "Could not save the generated dashboard password to $CONFIG_FILE."
@@ -332,10 +332,9 @@ wizard_mint_cert() { # <spool-dir>  -> prints the fingerprint
 # An appliance gets a dashboard login whether or not the onion is on.
 #
 # ensure_onion_password only fires for the onion, so a LAN appliance shipped an UNAUTHENTICATED
-# dashboard — and the setup page told the operator a login had been generated. On DIY that is a
-# defensible default: the operator ran the CLI wizard, was asked, and pressed Enter to skip. A
-# headless appliance was never asked, so the safe answer is the one it gets. The credential is
-# generated on the machine and printed to its console; it never crosses the setup page.
+# dashboard — and the setup page told the operator a login had been generated. Both setup
+# wizards now generate a login by default; the appliance honors its explicit opt-out. The credential is
+# generated on the machine and printed to its console and the authenticated handoff page.
 ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_FILE]
     local config="${2:-$CONFIG_FILE}"
     [ -f "$config" ] || return 0
@@ -347,7 +346,7 @@ ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_F
         return 0
     fi
     local gen tmp user
-    gen=$(generate_node_password) # 32 alnum: clears the >=16 floor, no quotes, no weak pattern
+    gen=$(generate_node_password) || return 1 # 32 alnum: clears the >=16 floor, no quotes, no weak pattern
     user=$(jq -r '.dashboard.auth.username // "admin"' "$config")
     tmp=$(mktemp) || return 1
     if jq --arg p "$gen" '.dashboard.auth.password = $p' "$config" >"$tmp" && mv "$tmp" "$config"; then
@@ -356,6 +355,6 @@ ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_F
         return 0
     fi
     rm -f "$tmp"
-    warn "Could not save a generated dashboard password; the dashboard will have no login."
+    warn "Could not save a generated dashboard password."
     return 1
 }

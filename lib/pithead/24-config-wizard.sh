@@ -5,7 +5,7 @@
 # p2pool.pool, dashboard auth) plus a few high-level "how should this run" shape questions —
 # tari.mode among them (#1916), asked by wizard_ask_tari in the same place and the same three-way
 # shape the browser wizard asks it, so the two setup paths cannot answer it differently.
-# Everything else keeps its config.reference.json default, silently — see wizard_print_pointer.
+# New installs write XvB off and private initial sync explicitly; other defaults are inherited.
 # workers.list (also in the shortlist, #529) isn't asked inline: it's a variable-length list of
 # per-rig objects, not a single answer, and the standard fleet needs no entries at all (see
 # docs/workers.md) — so it's covered by the closing pointer instead of a prompt, matching the
@@ -37,7 +37,7 @@ ensure_config_exists() {
 
 # Stage 1 (required — only the operator can answer these): the Monero payout address, local/remote
 # node (+ remote details), the Tari merge-mining question (delegated to wizard_ask_tari), pool tier,
-# and an optional dashboard login. Sets globals consumed by wizard_write_config: IN_MONERO_WALLET,
+# and a generated dashboard login (with an explicit opt-out). Sets globals consumed by wizard_write_config: IN_MONERO_WALLET,
 # MONERO_MODE_WIZ, REMOTE_HOST, REMOTE_RPC, REMOTE_ZMQ, IN_MONERO_USER, IN_MONERO_PASS, POOL_TIER,
 # IN_DASH_USER, IN_DASH_PASS — plus wizard_ask_tari's own.
 wizard_ask_core() {
@@ -107,19 +107,27 @@ wizard_ask_core() {
         ;;
     esac
 
-    # Dashboard login (core shortlist, #529) — optional, Enter-through: no login is the safe
-    # default on a private LAN, so blank means "skip", not "generate one for me."
     echo ""
-    echo "--- Dashboard Login (optional) ---"
-    echo "No login by default (fine on a private LAN). Set one if you'd like — Enter to skip."
+    echo "--- Dashboard Login ---"
     read -r -p "Dashboard username [admin]: " IN_DASH_USER || true
     IN_DASH_USER="${IN_DASH_USER:-admin}"
     while :; do
-        read -r -s -p "Dashboard password (8+ chars, Enter to skip): " IN_DASH_PASS || break
+        read -r -s -p "Dashboard password (8+ chars, Enter to generate, 'none' for no login): " IN_DASH_PASS || true
         echo ""
-        [ -z "$IN_DASH_PASS" ] && break
+        [ "$IN_DASH_PASS" == "none" ] && {
+            IN_DASH_PASS=""
+            break
+        }
+        if [ -z "$IN_DASH_PASS" ]; then
+            IN_DASH_PASS=$(generate_node_password) || error "Could not generate a dashboard password. Setup aborted."
+            [[ "$IN_DASH_PASS" =~ ^[A-Za-z0-9]{32}$ ]] || error "Could not generate a dashboard password. Setup aborted."
+            echo "Dashboard login: $IN_DASH_USER"
+            echo "Generated dashboard password: $IN_DASH_PASS"
+            echo "Save it now — it is also stored in your owner-only config.json."
+            break
+        fi
         [ "${#IN_DASH_PASS}" -ge 8 ] && break
-        echo "  ✗ Must be at least 8 characters (or blank to skip). Try again." >&2
+        echo "  ✗ Must be at least 8 characters. Try again." >&2
     done
 }
 
@@ -148,12 +156,8 @@ wizard_port() {
 # run did and what an omitted tari.mode still means, and the line says the disk could not be read.
 # Args: <monero_mode> — "remote" leaves Monero's chain out of the budget; it lives on another host.
 wizard_tari_disk_default() {
-    local monero_mode="$1" mount avail_kb avail_h need_gib comp verdict
-    need_gib=0
-    for comp in tari p2pool dashboard tor; do
-        need_gib=$((need_gib + $(disk_component_gib "$comp")))
-    done
-    [ "$monero_mode" == "remote" ] || need_gib=$((need_gib + $(disk_component_gib monero 1)))
+    local monero_mode="$1" mount avail_kb avail_h need_gib verdict
+    need_gib=$(wizard_stack_need_gib "$monero_mode")
 
     mount=$(disk_fs_mount "$PWD/data" 2>/dev/null) || mount=""
     avail_kb=""
@@ -250,9 +254,17 @@ wizard_ask_shape() {
     echo ""
     echo "--- A Few More (Enter for the default) ---"
 
-    read -r -p "First sync: private over Tor (days), or clearnet (hours; your IP visible to peers, then auto-switches to Tor)? (y/N = private): " IN_CLEARNET || true
+    read -r -p "Enable fast initial sync over clearnet for local chains? (y/N): " IN_CLEARNET || true
     CLEARNET_SYNC=false
-    [[ "$IN_CLEARNET" =~ ^[Yy] ]] && CLEARNET_SYNC=true
+    if [[ "$IN_CLEARNET" =~ ^[Yy] ]]; then
+        CLEARNET_SYNC=true
+        local networks=""
+        [ "$MONERO_MODE_WIZ" == "local" ] && networks="the Monero network"
+        if [ "$TARI_MODE_WIZ" == "local" ]; then
+            networks="${networks:+$networks and }the Tari network"
+        fi
+        [ -z "$networks" ] || warn "Fast sync exposes your IP address to $networks until the initial sync finishes."
+    fi
 
     read -r -p "Reach the dashboard from outside your LAN over Tor? (y/N): " IN_ONION || true
     ONION_ENABLED=false
@@ -275,6 +287,7 @@ wizard_ask_shape() {
     read -r -p "Also mine on this machine with its spare CPU (co-locate a RigForge worker)? (y/N): " IN_LOCAL_MINER || true
     LOCAL_MINER=false
     [[ "$IN_LOCAL_MINER" =~ ^[Yy] ]] && LOCAL_MINER=true
+    return 0
 }
 
 # Assembles config.json from the globals wizard_ask_core/wizard_ask_shape set, and writes it.
@@ -290,6 +303,7 @@ wizard_write_config() {
         '{monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: $mp},
           tari: {mode: $tmode},
           p2pool: {pool: $pool, stratum_password: "auto"},
+          xvb: {enabled: false},
           dashboard: {secure: true}}')
 
     # tari.mode is written EXPLICITLY, and it is the one key here that departs from the rest of the
@@ -317,9 +331,9 @@ wizard_write_config() {
         cfg=$(jq --arg u "$IN_DASH_USER" --arg p "$IN_DASH_PASS" '.dashboard.auth = {username: $u, password: $p}' <<<"$cfg")
     fi
 
-    if [ "$CLEARNET_SYNC" = true ]; then
-        cfg=$(jq '.monero.clearnet_initial_sync = true | .tari.clearnet_initial_sync = true' <<<"$cfg")
-    fi
+    cfg=$(jq --argjson fast "$CLEARNET_SYNC" \
+        '.monero.clearnet_initial_sync = ($fast and .monero.mode != "remote") |
+         .tari.clearnet_initial_sync = ($fast and .tari.mode == "local")' <<<"$cfg")
 
     if [ "$ONION_ENABLED" = true ]; then
         # Password (if still unset) and client-auth are handled downstream by

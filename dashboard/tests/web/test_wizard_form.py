@@ -103,12 +103,12 @@ def test_the_local_miner_is_opt_in():
 def test_the_clearnet_first_sync_applies_to_both_chains_or_neither():
     # One chain syncing over clearnet while the other waits on Tor is not a state the operator
     # asked for; the question is asked once and answers for both.
-    cfg = build_config({**BASE, "clearnet_sync": "true"})
+    cfg = build_config({**BASE, "tari_mode": "local", "clearnet_sync": "true"})
     assert cfg["monero"]["clearnet_initial_sync"] is True
     assert cfg["tari"]["clearnet_initial_sync"] is True
     plain = build_config({**BASE, "clearnet_sync": "false"})
-    assert "clearnet_initial_sync" not in plain["monero"]
-    assert "clearnet_initial_sync" not in plain["tari"]
+    assert plain["monero"]["clearnet_initial_sync"] is False
+    assert plain["tari"]["clearnet_initial_sync"] is False
 
 
 def test_the_mode_key_is_written_for_every_answer_including_the_default():
@@ -116,8 +116,8 @@ def test_the_mode_key_is_written_for_every_answer_including_the_default():
     # "local", so the ONE thing this form must never do is leave the key out — an operator who
     # answered No would get a merge-mining machine. Every answer, the unanswered one included.
     for form, expected in (
-        ({}, "off"),
-        ({"tari_mode": ""}, "off"),
+        ({}, "local"),
+        ({"tari_mode": ""}, "local"),
         ({"tari_mode": "off"}, "off"),
         ({"tari_mode": "local"}, "local"),
         ({"tari_mode": "remote"}, "remote"),
@@ -137,7 +137,7 @@ def test_declining_tari_asks_for_no_payout_address():
 def test_merge_mining_locally_still_carries_the_payout_address():
     # The other direction of the test above: turning it on puts the address back.
     cfg = build_config({**BASE, "tari_mode": "local"})
-    assert cfg["tari"] == {"mode": "local", "wallet_address": "t"}
+    assert cfg["tari"] == {"mode": "local", "wallet_address": "t", "clearnet_initial_sync": False}
 
 
 def test_an_empty_address_on_a_machine_that_merge_mines_reaches_the_host():
@@ -157,10 +157,15 @@ def test_a_remote_tari_node_carries_its_endpoint_and_the_address():
     assert cfg["tari"]["wallet_address"] == "t"
 
 
-def test_leaving_the_raffle_writes_the_key_and_staying_in_writes_nothing():
-    # xvb.enabled is true in config.reference.json, so only the OFF answer is worth writing:
-    # writing True would pin a default the operator never chose to pin. Both directions, and
-    # the unanswered form, because that is what every existing caller submits.
-    assert build_config({**BASE, "xvb": "false"})["xvb"] == {"enabled": False}
-    assert "xvb" not in build_config({**BASE, "xvb": "true"})
-    assert "xvb" not in build_config(BASE)
+def test_new_install_raffle_is_off_and_has_no_form_question():
+    for answer in ({}, {"xvb": "true"}, {"xvb": "false"}):
+        assert build_config({**BASE, **answer})["xvb"] == {"enabled": False}
+
+
+def test_fast_sync_excludes_remote_and_disabled_chains():
+    for monero, tari in (("remote", "local"), ("local", "off"), ("local", "remote")):
+        cfg = build_config(
+            {**BASE, "monero_mode": monero, "tari_mode": tari, "clearnet_sync": "true"}
+        )
+        assert cfg["monero"]["clearnet_initial_sync"] is (monero == "local")
+        assert cfg["tari"]["clearnet_initial_sync"] is (tari == "local")
