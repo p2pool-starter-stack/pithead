@@ -112,6 +112,8 @@ source "$HERE/lib/run-scenario.sh" || exit $?
 source "$HERE/lib/run-source-image.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-wizard-defaults.sh
 source "$HERE/lib/run-wizard-defaults.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-connection-announcements.sh
+source "$HERE/lib/run-connection-announcements.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh

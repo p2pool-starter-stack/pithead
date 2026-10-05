@@ -42,7 +42,7 @@ make test-container ARGS="--ssh make test-integration ARGS='--host user@box --di
 make test                 # local gates; needs Docker, but no live test server
 make test-dashboard       # dashboard pytest + 80% coverage gate
 make test-stack           # pithead shell suite
-bash tests/stack/run.sh 3 # one of the shell suite's four blocks, as one CI leg runs it
+bash tests/stack/run.sh 3 # one of the shell suite's five blocks, as one CI leg runs it
 # Run one #2048 prerequisite independently, with no predecessor fragment:
 bash -uo pipefail -c 'source tests/stack/lib.sh; source tests/stack/test-spool-audit.sh; [ "$PASS" -gt 0 ] && [ "$FAIL" -eq 0 ]'
 make test-fakes           # tier-2 contract test (real clients vs fakes)

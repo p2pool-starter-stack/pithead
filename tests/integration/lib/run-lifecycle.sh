@@ -15,6 +15,7 @@ run_lifecycle() {
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after restart" "$?" "0"
+    run_connection_announcements || return 1
 
     # Remove the socket-proxy image and prove up fetches a missing pinned image (#2654).
     if rx 'test -f dashboard/Dockerfile'; then
@@ -50,8 +51,6 @@ run_lifecycle() {
     fi
 
     run_source_image_reconcile || return 1
-    # apply that changes the sidechain recreates only the affected containers, preserving
-    # secrets. We flip main<->mini and assert the token/onions are untouched, then revert.
     local cur_pool fp_before
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"

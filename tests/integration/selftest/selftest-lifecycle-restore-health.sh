@@ -54,7 +54,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             return 1
         }; }
         run_source_image_reconcile() { :; }
-        run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
+        run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
+        run_uninstall_round_trip() { :; }     # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
         secret_fingerprint() { printf fingerprint; }

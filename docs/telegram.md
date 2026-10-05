@@ -22,9 +22,9 @@ transition, not a stream:
 
 | Alert | When it fires |
 |---|---|
-| 🔴 **Node down** | Your Monero (or Tari) node has been unreachable long enough to be considered down — or the Monero node is reachable but has sat out of sync for 10+ minutes (the stranded-peers state a Tor restart can leave behind). Either way the stack has stopped serving your rigs so they **fail over to their backup pools**. |
+| 🔴 **Node down** | Your Monero (or Tari) node has been unreachable long enough to be considered down — or the Monero node is reachable but has sat out of sync for 10+ minutes (the stranded-peers state a Tor restart can leave behind). Monero outages stop serving your rigs so they **fail over to their backup pools**. Tari messages describe the required policy and actual worker rejection state; optional Tari alone does not stop Monero mining. |
 | 🔴 **Monero node isolated / not advancing** | The local Monero node is reachable but has had no outgoing peers for 10+ minutes, or its height has not moved for 30+ minutes (#2499). Two separate messages, each with the numbers; they use the `node_down` toggle, and the recovery note uses `node_recovered`. Nothing is restarted for you: `./pithead restart monerod`. |
-| 🟢 **Node recovered** | The node is back — reachable and in sync — and stable; the stack has readmitted your rigs. |
+| 🟢 **Node recovered** | The node is back and stable. Monero keeps its readmission message. Tari reports merge mining resuming, says workers were readmitted only after observed rejection and readmission, and reports workers still rejected if the proxy remains stopped. |
 | 🔴 **Worker offline** | A rig stopped hashing and hasn't been seen for a few minutes (a reboot, a dropped connection, a dead miner) — it's showing **DOWN** on the dashboard. |
 | 🟢 **Worker back online** | A rig that had gone offline is hashing again. |
 | 🟢 **New worker joined** | A rig the stack hasn't seen before connected — a new miner joined the fleet. |
@@ -200,10 +200,16 @@ enabled; there is no separate event toggle for this payout-safety signal.
 > alert** — it's a fixed hardware fact with nothing to do at runtime, so it stays a badge (and shows
 > in `/status`) rather than a push you can't act on.
 
-> **Tari note.** A node-down/recovered alert fires for **Tari only when Tari is treated as
-> required** (`dashboard.tari_required: true`, the default). If you've made Tari non-blocking, a
-> Tari outage doesn't stop your Monero mining, so it isn't alerted as a node-down — matching how
-> the rest of the stack treats a non-blocking Tari. Monero is always alerted.
+> **Tari note.** Tari node-down/recovered alerts fire whether `dashboard.tari_required` is
+> true or false. Tari's RPC must remain unreachable for 15 minutes to count as down;
+> Monero keeps its 90-second debounce. Both use 60 seconds of confirmed reachability
+> for recovery. Startup, migration and syncing raise progress alerts instead of rejecting
+> workers. With required Tari, the down message warns of rejection if RPC stays unreachable
+> past the outage window, or confirms rejection if the proxy has stopped. Optional Tari messages
+> say Monero mining continues and Tari merge mining resumes when the node returns, unless workers
+> are already rejected (for example, during a Monero outage). Recovery
+> says workers were readmitted only after an observed rejection and successful readmission;
+> if another required node is down or the proxy restart fails, it says workers remain rejected.
 
 ---
 

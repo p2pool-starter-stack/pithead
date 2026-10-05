@@ -38,6 +38,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         has_compose_profile() { return 1; }
         run_cli_wizard_defaults() { :; }
         run_source_image_reconcile() { :; }
+        run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
         tor_recovery_healthy_probe() { :; }
         run_uninstall_round_trip() { :; }
         assert_scenario() { :; }

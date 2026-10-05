@@ -107,9 +107,10 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
   Tari node must sit in one of them — a node at a public IP is dropped with everything else, by
   design.
 - The host-networked dashboard and caddy aren't on the bridge; the dashboard's external calls go
-  over the Tor SOCKS (`socks5h`, [#163](#runtime-egress)/#224) — with one exception. With
-  `tari.mode: remote` the dashboard reads that node's state over gRPC directly, un-proxied, the same
-  plaintext leg p2pool uses.
+  over the Tor SOCKS (`socks5h`, [#163](#runtime-egress)/#224), except for configured remote
+  nodes. With `tari.mode: remote` the dashboard reads that node over gRPC directly; with
+  `monero.mode: remote` it probes the configured RPC directly. Both are un-proxied,
+  like p2pool's remote-node connections.
 - Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh): the `tor` arm requires zero app-container public connections, while `p2pool-choice` requires P2Pool peers and zero other app dials. It names each connection as an outbound dial or an inbound client on a published port.
 
 On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
@@ -186,6 +187,7 @@ What the running stack sends to the internet, connection by connection.
 | **Tari** P2P | Tari network | — | ✅ Tor SOCKS (`type = "socks5"`): onion and `/ip4` peers alike are dialled through the `tor` container, and `use_libtor = false` keeps the node's own in-process Tor off ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)) | on | Tor by default; can opt into clearnet (TCP) for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) |
 | **Tari** DNS seeds + Pulse (`seeds.tari.com`, `checkpoints.tari.com`) | DNS resolvers | "this IP runs Tari" | ✅ **closed** — `dns_seeds = []` and onion `peer_seeds` prevent seed lookups; Pulse's advisory lookup fails at the isolated loopback resolver, so no DNS packet leaves the host (#162) | n/a | clearnet sync ([#183](#optional-clearnet-initial-sync-off-by-default)) re-enables the `seeds.tari.com` DNS seed for the sync window |
 | **P2Pool** merge-mine gRPC to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — same posture as monerod's own remote-node RPC above | **off** — the bundled local Tari node is the default and this leg only exists in remote mode | use a node on your LAN or reachable over WireGuard; a `.onion` remote isn't supported yet (see [Configuration › Remote Tari node](configuration.md#remote-tari-node)) |
+| **Dashboard** sync poll to a remote Monero node (only if `monero.mode: remote`) | the configured RPC | **your real IP**, to that node's operator | ❌ direct HTTP with configured RPC digest auth | **off** — local Monero is the default | use a node on your LAN or reachable over WireGuard; polling detects outages so workers fail over |
 | **Dashboard** sync poll to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — a plaintext gRPC dial, and the host-networked dashboard sits outside the Tor-egress firewall | **off** — only exists in remote mode | same as the p2pool leg above: LAN or WireGuard |
 | **P2Pool** inbound peers | reach you via onion | — | ✅ onion hidden service | on | — |
 | **P2Pool** outbound sidechain peers | P2Pool sidechain peers, via Tor | — | ✅ **Tor** (`--socks5`, proxy-type `tor`) by default (#165) | on | opt out with `p2pool.clearnet: true` (exposes your IP for max yield) → [below](#p2pool-outbound-peers-165---tor-by-default) |

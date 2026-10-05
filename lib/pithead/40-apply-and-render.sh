@@ -200,7 +200,7 @@ apply() {
             new=$(env_get_file "$newenv" "$key")
             # Payout-wallet change (#375): remember WHICH wallet keys change for the typed
             # confirmation below — one prompt per key, so a Monero+Tari double change can't
-            # ride through on a single typed prefix.
+            # ride through on a single typed suffix.
             case "$key" in MONERO_WALLET_ADDRESS | TARI_WALLET_ADDRESS) wallet_keys+=("$key") ;; esac
             # #2360: remember the active dashboard.data_dir for the carry before .env publication.
             # The separate historical-default migration runs later, after service configuration.
@@ -225,7 +225,7 @@ apply() {
 
         if [ "${#wallet_keys[@]}" -gt 0 ] && [ "$assume_yes" -eq 0 ]; then
             # A payout-wallet change upgrades the generic y/N to a typed confirmation (#375):
-            # every future reward goes to the new address, so the operator must type its first
+            # every future reward goes to the new address, so the operator must type its last
             # 8 characters — once PER changed wallet key (a Monero and a Tari change are two
             # separate redirects; each needs its own typed confirm). This is the strongest
             # confirm, so it stands in for the y/N even when other disruptive changes ride
@@ -233,10 +233,10 @@ apply() {
             local wkey wnew wallet_new8 wlabel
             for wkey in "${wallet_keys[@]}"; do
                 wnew=$(env_get_file "$newenv" "$wkey")
-                wallet_new8="${wnew:0:8}" # never the full address — previews and prompts stay truncated
+                wallet_new8="${wnew: -8}" # never the full address — previews and prompts stay truncated
                 [ "$wkey" == "MONERO_WALLET_ADDRESS" ] && wlabel="Monero" || wlabel="Tari"
                 warn "The $wlabel payout wallet address is changing — ALL future $wlabel rewards go to the new address."
-                warn "Confirm by typing the first 8 characters of the new address ($wallet_new8)."
+                warn "Confirm by typing the last 8 characters of the new address ($wallet_new8)."
                 read -r -p "Confirm: " CONFIRM || true
                 if [ "$CONFIRM" != "$wallet_new8" ]; then
                     rm -f "$newenv"
@@ -299,18 +299,17 @@ apply() {
     else
         rm -f "$newenv"
         if [ "$incomplete" -eq 0 ]; then
-            # #33: converge the control-runner units BEFORE returning. A box whose units point at
-            # a dead install has an unchanged config by definition — the fault is in the unit
-            # files, not config.json — so returning here first made `apply` the one thing that
-            # could not repair it, while doctor was telling the operator to run exactly that.
-            # Idempotent and sudo-free when the units already match.
+            # Host state may change without an .env diff: converge units and local_miner (#3090).
             mutation_lock_acquire apply
             provision_control_runner
             provision_firewall_check_units || error "Firewall check units could not be provisioned."
             reconcile_appliance_hostname
             apply_refresh_appliance_tls # #1265: the mint doctor sends the operator here for
+            render_local_miner_config
+            provision_local_miner || true
             log "No configuration changes detected. Nothing to apply."
             mutation_lock_release
+            announce_dashboard_url
             return 0
         fi
         warn "A previous apply updated the config but did not finish recreating containers — retrying."
