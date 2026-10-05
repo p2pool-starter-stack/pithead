@@ -53,6 +53,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
+        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
         run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
         run_uninstall_round_trip() { :; }     # driven on its own by selftest-uninstall-round-trip.sh

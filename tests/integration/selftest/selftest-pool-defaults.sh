@@ -37,6 +37,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         env_on_box() { :; }
         has_compose_profile() { return 1; }
         run_cli_wizard_defaults() { :; }
+        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
         run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
         tor_recovery_healthy_probe() { :; }

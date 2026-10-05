@@ -67,6 +67,19 @@ for expected in off local; do
     assert_eq "harness runs service startup and baseline apply ($expected)" "$(cat "$WORK/operations")" $'up\napply -y'
 done
 
+# Sampling after a refused baseline apply must not replace that command's failure with success
+# or run its post-apply healthy-status wait. Keep this deliberate failure isolated.
+failed_apply_result=$(
+    IT_FAIL=0
+    pushes=0
+    waits=0
+    pithead() { [ "$1" != apply ] || return 17; }
+    wait_status_ok() { waits=$((waits + 1)); }
+    run_cli_wizard_defaults >/dev/null
+    printf '%s|%s' "$IT_FAIL" "$waits"
+)
+assert_eq "wizard restore diagnostics preserve failed apply and omit its status wait" "$failed_apply_result" '1|1'
+
 # Missing fixture inputs must count a failure before any remote wizard or deployment runs.
 missing_result=$(
     BASELINE_CONFIG='{}'
