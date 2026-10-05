@@ -96,13 +96,18 @@ restore_fixture_secret_verdict() {
 # guest's unsynced chains instead of inheriting a release — for every case in this loop.
 restore_sync_gate_verdict() { # <restore case>
     local restore_case="$1"
-    local dash_data gtries=0 gate_seen=0
+    local dash_data started_at gtries=0 gate_seen=0
     dash_data=$(_ssh "podman inspect dashboard --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}'" 2>/dev/null | tr -d '\r')
     { [ -n "$dash_data" ] && _ssh "test -f '$dash_data/sync-gate-reset'" 2>/dev/null; } &&
         ok "restore leg ($restore_case): the restore's sync-gate marker is in the dashboard's data mount (#2626)" ||
         bad "restore leg ($restore_case): no sync-gate marker in the dashboard's data mount (${dash_data:-none}) (#2626)"
+    started_at=$(_ssh "podman inspect dashboard --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
+    if ! [[ "$started_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$ ]]; then
+        bad "restore leg ($restore_case): dashboard start time is unreadable"
+        return 1
+    fi
     while [ "$gtries" -lt 30 ] && [ "$gate_seen" -eq 0 ]; do
-        _ssh "podman logs dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" 2>/dev/null && gate_seen=1
+        _ssh "podman logs --since '$started_at' dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" 2>/dev/null && gate_seen=1
         [ "$gate_seen" -eq 1 ] || { sleep 10 && gtries=$((gtries + 1)); }
     done
     [ "$gate_seen" -eq 1 ] &&
