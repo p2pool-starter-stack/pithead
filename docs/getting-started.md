@@ -60,12 +60,13 @@ dashboard shows the real version and the update-checker works:
 ```bash
 curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz
 cd pithead
-cp config.minimal.json config.json   # then set your Monero + Tari payout addresses
 ```
 
-`config.minimal.json` is minimal: just your two payout addresses. `setup` fills in defaults for
-everything else. For the full set of knobs, copy `config.reference.json` instead. Have your
-Monero and Tari payout addresses ready (Tari wallets are sometimes labeled Minotari, same thing).
+Leave `config.json` absent to use the setup wizard. Have a Monero payout address ready, and a
+Tari payout address if you enable merge-mining (Tari wallets are sometimes labeled Minotari).
+For a manual configuration, copy `config.minimal.json` or `config.reference.json` to `config.json`
+and edit it before setup; these files inherit the reference defaults rather than the wizard's
+new-install choices.
 
 ### Alternative: build from source
 
@@ -76,7 +77,6 @@ stack, clone the repo. pithead sees the `build/` context and builds locally, tag
 ```bash
 git clone https://github.com/p2pool-starter-stack/pithead.git
 cd pithead && make
-cp config.minimal.json config.json   # then set your payout addresses
 ```
 
 Release archives already include the generated `pithead` executable. Git clones keep only its
@@ -107,7 +107,7 @@ Setup walks through five stages. It's interactive on the first run and safe to r
      default — the stack runs its own) or connecting to a remote one, with a local node's RPC
      credentials auto-generated; and your P2Pool pool tier (`main`/`mini`/`nano` — pick low if
      you're not sure, a high-hashrate default silently starves a small rig of shares). An
-     optional dashboard login, Enter to skip.
+     dashboard login, generated on Enter and printed once; enter `none` to opt out.
    - **Merge-mine Tari?** Three answers: no, run the bundled Tari node here, or use a Tari node
      you already run. A yes asks for your Tari payout address, and "a node I already run" asks
      for its host and gRPC port — see [Remote Tari node](configuration.md#remote-tari-node). A no
@@ -121,10 +121,12 @@ Setup walks through five stages. It's interactive on the first run and safe to r
    - Once the config is written, setup asks one more thing: the hostname you'll use to reach the
      dashboard in a browser. Enter accepts this machine's hostname.
    - **A few more, Enter for the default:** a faster clearnet initial sync (hours instead of days,
-     with your IP visible to that chain's peers until it switches to Tor automatically) instead of
+     for every local chain, exposing your IP address to the Monero network and, when Tari runs
+     locally, the Tari network until initial sync finishes) instead of
      the private Tor default; reaching the dashboard from outside your LAN over Tor; Telegram alerts; and
      whether this machine should also mine with its spare CPU (a co-located RigForge worker).
-   - Everything else — ports, XvB tuning, energy pricing, per-worker overrides, and more — keeps
+   - XvB is off and is not asked; enable it later from the Configuration view.
+   - Everything else — ports, energy pricing, per-worker overrides, and more — keeps
      its documented default; the wizard prints a pointer to `config.json` and
      [Configuration](configuration.md) at the end for anyone who wants it.
 

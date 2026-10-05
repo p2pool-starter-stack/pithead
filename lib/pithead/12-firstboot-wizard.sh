@@ -77,7 +77,7 @@ firstboot_wizard() {
         if [ -f "$PWD/config.json" ] && ! setup_again_mode; then
             log "config.json already present (pre-seeded) — skipping the wizard and running setup."
             # A pre-seeded config that names no password still gets a login.
-            ensure_appliance_dashboard_password || true
+            ensure_appliance_dashboard_password || error "Could not prepare the dashboard login — provisioning stopped."
             apply_appliance_defaults || true
             record_machine_role "$(machine_role_from_config "$PWD/config.json")"
             setup
@@ -351,7 +351,7 @@ firstboot_wizard() {
                     continue
                 fi
                 log "Configuration accepted — provisioning now."
-                ensure_appliance_dashboard_password "$spool" "$candidate" || true
+                ensure_appliance_dashboard_password "$spool" "$candidate" || error "Could not prepare the dashboard login — provisioning stopped."
                 apply_appliance_defaults "$candidate" || true
                 # The candidate was validated BEFORE those two ran, so until #1066 the config the
                 # operator was told had been accepted was not the config about to be provisioned.

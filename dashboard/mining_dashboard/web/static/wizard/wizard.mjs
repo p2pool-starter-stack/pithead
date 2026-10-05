@@ -7,6 +7,7 @@ import { savedRoleOrSetup } from "./savedrole.mjs";
 import { renderSetup } from "./setup.mjs";
 import { Done, Gate, Installing } from "./stages.mjs";
 import * as failure from "./wizardfailure.mjs";
+import { applyDiskDefault, selectTarget, syncInitialChains } from "./wizardmining.mjs";
 
 const RESTORE_MAX_BYTES = 64 * 1024 * 1024;
 
@@ -16,6 +17,10 @@ export class WizardApp extends Component {
     error: "",
     cfg: {},
     reference: {},
+    diskBudget: {},
+    newMachine: false,
+    tariTouched: false,
+    fastSync: false,
     disks: [],
     chosen: "",
     confirm: "",
@@ -66,6 +71,8 @@ export class WizardApp extends Component {
       // one page, one submission (config + disk + wipe), one credentials card, then the erase.
       ...failure.restoredState(s, this.state),
       reference: s.reference,
+      diskBudget: s.disk_budget || {},
+      newMachine: s.new_machine === true,
       disks: s.disks,
       error: s.error || "",
       rigDefaults: s.rig_defaults || {},
@@ -87,11 +94,13 @@ export class WizardApp extends Component {
       next.rigPool = (s.rig_defaults || {}).pool || "";
       next.rigWorker = (s.rig_defaults || {}).worker || "";
     }
-    // The wait is over once the server either moved on or rejected: both end "Validating…".
     if (this.state.submitting && (next.stage !== "setup" || next.error)) next.submitting = false;
     // Do not clobber in-progress editing with the server's copy once the form is up.
     if (this.state.stage !== "setup" || !this.state.cfg || !Object.keys(this.state.cfg).length) {
       next.cfg = s.config;
+      next.fastSync = Boolean(
+        s.config.monero?.clearnet_initial_sync || s.config.tari?.clearnet_initial_sync,
+      );
       next.jsonText = JSON.stringify(s.config, null, 2);
     }
     this.setState(next);
@@ -102,8 +111,6 @@ export class WizardApp extends Component {
     await this.loadState(); // an existing session cookie skips the gate
   }
 
-  // One loop after submit: refresh the SERVER's stage (which carries the handoff when it is
-  // published) and the human-readable status line. No client-side stage guessing.
   poll() {
     const tick = async () => {
       try {
@@ -141,13 +148,22 @@ export class WizardApp extends Component {
     }
   };
 
-  // Field edit → config → JSON pane. The JSON is the single source of what gets submitted.
+  pickDisk = (e) => selectTarget(this, e.target.value, "keep");
+  changeWipe = (e) => selectTarget(this, this.state.chosen, e.target.value);
+
   edit = (path) => (e) => {
     const raw = e.target.type === "checkbox" ? String(e.target.checked) : e.target.value;
     const cfg = this.state.cfg;
     pathSet(cfg, path, coerceForPath(this.state.reference, path, raw));
+    const fast = path === "monero.clearnet_initial_sync" ? raw === "true" : this.state.fastSync;
+    if (path === "monero.mode") applyDiskDefault(this, cfg);
+    if (["monero.mode", "tari.mode", "monero.clearnet_initial_sync"].includes(path)) {
+      syncInitialChains(cfg, fast);
+    }
     this.setState({
       cfg,
+      fastSync: fast,
+      ...(path === "tari.mode" ? { tariTouched: true } : {}),
       jsonText: JSON.stringify(cfg, null, 2),
       ...(path === "monero.wallet_address" ? { moneroWalletTouched: true } : {}),
     });
@@ -180,7 +196,9 @@ export class WizardApp extends Component {
       this.setState({ jsonText: text, jsonError: err });
       return;
     }
-    this.setState({ jsonText: text, jsonError: "", cfg: JSON.parse(text) });
+    const cfg = JSON.parse(text);
+    const fastSync = Boolean(cfg.monero?.clearnet_initial_sync || cfg.tari?.clearnet_initial_sync);
+    this.setState({ jsonText: text, jsonError: "", cfg, fastSync, tariTouched: true });
   };
 
   submit = async (e) => {

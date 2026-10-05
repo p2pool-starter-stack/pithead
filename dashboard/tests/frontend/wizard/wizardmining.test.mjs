@@ -15,7 +15,7 @@ import { test } from "node:test";
 
 import { html } from "../../../mining_dashboard/web/static/app/preact.mjs";
 import { WizardApp } from "../../../mining_dashboard/web/static/wizard/wizard.mjs";
-import { TariSection, XvbField, tariAnswer } from "../../../mining_dashboard/web/static/wizard/wizardmining.mjs";
+import { TariSection, tariAnswer, tariDiskDefault } from "../../../mining_dashboard/web/static/wizard/wizardmining.mjs";
 import { renderToString } from "../helpers/render.mjs";
 
 // --- tariAnswer: the migration rule -----------------------------------------------------------
@@ -119,7 +119,6 @@ const radioFor = (tree, label, value) =>
 const selectedRadio = (tree, label) => radiosFor(tree, label).find((node) => node.props.checked);
 
 const TARI_Q = "Merge-mine Tari?";
-const XVB_Q = "Join the XMRvsBeast raffle?";
 
 const setupOn = (tariMode) => {
   const cfg = clone(REF);
@@ -173,7 +172,7 @@ test("an invalid Monero address turns red only after its field is edited", () =>
 test("every two-to-four-answer setup question renders as full-text radios", () => {
   const tree = setupOn("local").tree;
   const groups = walk(tree).filter((node) => node.type === "fieldset");
-  assert.equal(groups.length, 10);
+  assert.equal(groups.length, 9);
   assert.equal(
     groups.filter((group) => renderToString(group).includes("Enable stratum password?")).length,
     1,
@@ -254,43 +253,9 @@ test("the chain-size advice stops citing a Tari node on a machine that has none 
   }
 });
 
-// --- the raffle (#1848) -----------------------------------------------------------------------
-
-test("the wizard offers the raffle as a first-boot switch (#1848)", () => {
-  const { tree } = setupOn("off");
-  const radios = radiosFor(tree, XVB_Q);
-  assert.ok(radios.length, "the form asks the raffle question");
-  assert.deepEqual(radios.map((n) => n.props.value), ["true", "false"]);
-  // The docs' own sentence, so the wizard cannot drift from them or invent a figure.
-  assert.match(renderToString(tree), /earns nothing extra/);
+test("new setup offers no XvB question", () => {
+  assert.doesNotMatch(renderToString(setupOn("off").tree), /Join the XMRvsBeast raffle/);
 });
-
-test("the raffle switch defaults to the reference's answer, not to off (#1848)", () => {
-  // xvb.enabled is true in config.reference.json: the raffle is opt-OUT, and a switch that
-  // rendered No would show every new machine a state it is not in.
-  assert.equal(selectedRadio(setupOn("off").tree, XVB_Q).props.value, "true");
-  const off = clone(REF);
-  off.tari.mode = "off";
-  off.xvb.enabled = false;
-  assert.equal(selectedRadio(form(off).renderSetup(), XVB_Q).props.value, "false");
-  // A config with no xvb key at all still shows the reference's answer rather than blanking.
-  const bare = clone(REF);
-  bare.tari.mode = "off";
-  delete bare.xvb;
-  assert.equal(selectedRadio(form(bare).renderSetup(), XVB_Q).props.value, "true");
-});
-
-test("leaving the raffle writes a BOOLEAN false to xvb.enabled (#1848)", () => {
-  const { inst, tree } = setupOn("off");
-  radioFor(tree, XVB_Q, "false").props.onChange({ target: { value: "false" } });
-  // The string "false" is truthy everywhere downstream — in the host's config parse and in the
-  // dashboard — so a binding that skipped coercion would read as the raffle still being on.
-  assert.equal(inst.state.cfg.xvb.enabled, false);
-  assert.notEqual(inst.state.cfg.xvb.enabled, "false");
-  assert.equal(JSON.parse(inst.state.jsonText).xvb.enabled, false);
-});
-
-// --- the components on their own ---------------------------------------------------------------
 
 test("the Tari note tells the operator where the switch is, and what a later yes still costs", () => {
   // This note has now been wrong in BOTH directions, so it is pinned to what is true rather than
@@ -320,7 +285,7 @@ test("the Tari note tells the operator where the switch is, and what a later yes
   assert.match(out, /adding one later needs the approval step/i);
 });
 
-test("TariSection and XvbField render from props alone, with no app around them", () => {
+test("TariSection renders from props alone, with no app around it", () => {
   // The form tests above are the ones that matter; this is the narrow guard that neither export
   // reaches back into WizardApp, so a second view can render either one from props alone.
   const v = (name) => ({ tariWallet: "", tariRemoteHost: "", xvb: true })[name];
@@ -329,5 +294,59 @@ test("TariSection and XvbField render from props alone, with no app around them"
     renderToString(html`<${TariSection} answer="off" v=${v} on=${on} />`),
     /Merge-mine Tari\?/,
   );
-  assert.match(renderToString(html`<${XvbField} v=${v} on=${on} />`), /XMRvsBeast/);
+});
+
+
+test("selecting the target disk derives Tari without overwriting an explicit choice", () => {
+  const { inst } = setupOn("local");
+  inst.state.newMachine = true;
+  inst.state.diskBudget = { available_bytes: 1000, local_need_bytes: 528, remote_need_bytes: 208 };
+  inst.state.disks = [{ name: "small", data_bytes: 400 }, { name: "roomy", data_bytes: 600 }];
+  inst.pickDisk({ target: { value: "small" } });
+  assert.equal(inst.state.cfg.tari.mode, "off");
+  inst.pickDisk({ target: { value: "roomy" } });
+  assert.equal(JSON.parse(inst.state.jsonText).tari.mode, "local");
+  inst.edit("tari.mode")({ target: { value: "remote" } });
+  inst.pickDisk({ target: { value: "small" } });
+  assert.equal(inst.state.cfg.tari.mode, "remote");
+  assert.equal(tariDiskDefault(inst.state.diskBudget, inst.state.disks, "small", "remote"), "local");
+});
+
+test("fast sync updates both local chains, warns, and clears remote or disabled chains", () => {
+  const { inst } = setupOn("local");
+  inst.edit("monero.clearnet_initial_sync")({ target: { value: "true" } });
+  assert.equal(inst.state.cfg.tari.clearnet_initial_sync, true);
+  assert.match(renderToString(inst.renderSetup()), /exposes your IP address to the Monero network and the Tari network until the initial sync finishes/);
+  inst.edit("tari.mode")({ target: { value: "remote" } });
+  assert.equal(inst.state.cfg.tari.clearnet_initial_sync, false);
+  inst.edit("tari.mode")({ target: { value: "off" } });
+  assert.doesNotMatch(renderToString(inst.renderSetup()), /the Tari network/);
+  inst.edit("monero.mode")({ target: { value: "remote" } });
+  assert.equal(inst.state.cfg.monero.clearnet_initial_sync, false);
+  inst.edit("tari.mode")({ target: { value: "local" } });
+  assert.equal(inst.state.cfg.tari.clearnet_initial_sync, true);
+  inst.edit("monero.clearnet_initial_sync")({ target: { value: "false" } });
+  assert.equal(inst.state.cfg.tari.clearnet_initial_sync, false);
+  assert.doesNotMatch(renderToString(inst.renderSetup()), /exposes your IP address/);
+});
+
+
+test("sparse JSON preserves reference-local modes when fast sync is edited", () => {
+  const { inst } = setupOn("local");
+  inst.editJson({ target: { value: '{"monero":{"wallet_address":""}}' } });
+  inst.edit("monero.clearnet_initial_sync")({ target: { value: "true" } });
+  assert.equal(inst.state.cfg.monero.clearnet_initial_sync, true);
+  assert.equal(inst.state.cfg.tari.clearnet_initial_sync, true);
+  inst.edit("monero.mode")({ target: { value: "remote" } });
+  assert.equal(inst.state.cfg.monero.clearnet_initial_sync, false);
+});
+
+test("keeping chains measures current free space and wiping everything uses the fresh estimate", () => {
+  const { inst } = setupOn("local");
+  Object.assign(inst.state, { newMachine: true, diskBudget: { local_need_bytes: 528 }, disks: [{ name: "old", state: "pithead-with-data", data_bytes: 900, data_available_bytes: 100 }] });
+  inst.pickDisk({ target: { value: "old" } });
+  inst.changeWipe({ target: { value: "data" } });
+  assert.equal(inst.state.cfg.tari.mode, "off");
+  inst.changeWipe({ target: { value: "all" } });
+  assert.equal(JSON.parse(inst.state.jsonText).tari.mode, "local");
 });

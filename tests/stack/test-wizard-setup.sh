@@ -64,13 +64,9 @@ assert_eq "wizard_ask_core has exactly 11 read prompts (Monero wallet, node conf
 assert_eq "wizard_ask_shape has exactly 6 read prompts (clearnet-sync, remote-access, alerts cluster, local-miner opt-in; stratum is delegated)" "$shape_reads" "6"
 
 echo "== unit: wizard — Enter-through defaults skip everything but the core answers (#502) =="
-# Local node, every optional prompt left blank. Proves two things at once: the core answers land
-# (wallets, mode, pool tier), and nothing else does — dashboard.hashrate_drop_threshold,
-# network.subnet, xvb.*, telegram.*, dashboard.onion, dashboard.auth all keep their
-# config.reference.json default because the wizard never wrote them at all.
 W1="$SANDBOX/wizard-defaults"
 mkdir -p "$W1"
-printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >/dev/null 2>&1
+printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >"$W1/output" 2>&1
 if [ -f "$W1/config.json" ]; then
     ok "wizard (defaults path) writes config.json"
 else
@@ -83,19 +79,22 @@ assert_eq "defaults path: monero.mode local (Enter-through)" "$(jq -r '.monero.m
 assert_eq "defaults path: p2pool.pool Enter-through is mini (the global default)" "$(jq -r '.p2pool.pool' <<<"$w1_cfg")" "mini"
 assert_eq "defaults path: local node RPC creds auto-generated (non-empty)" \
     "$([ -n "$(jq -r '.monero.node_username' <<<"$w1_cfg")" ] && [ -n "$(jq -r '.monero.node_password' <<<"$w1_cfg")" ] && echo yes)" "yes"
-# The revert-proof core: config.json carries ONLY the four top-level blocks the defaults path
-# writes. If a future prompt silently starts writing e.g. dashboard.hashrate_drop_threshold or
-# network.subnet, this fails — a defaulted key growing a prompt shows up here even though its own
-# (blank) answer looks identical to every other blank answer.
 assert_eq "defaults path: top-level keys are exactly monero/tari/p2pool/dashboard, nothing else" \
-    "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","monero","p2pool","tari"]'
-assert_eq "defaults path: dashboard has only 'secure' — no auth/onion written" \
-    "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["secure"]'
+    "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","monero","p2pool","tari","xvb"]'
+assert_eq "defaults path: dashboard has secure and a generated login" \
+    "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["auth","secure"]'
 assert_eq "defaults path: no telegram block written" "$(jq -r 'has("telegram")' <<<"$w1_cfg")" "false"
-assert_eq "defaults path: no clearnet_initial_sync written (stays the reference default)" \
-    "$(jq -r '.monero | has("clearnet_initial_sync")' <<<"$w1_cfg")" "false"
+assert_eq "defaults path: private sync written explicitly" \
+    "$(jq -r '.monero.clearnet_initial_sync' <<<"$w1_cfg")" "false"
 assert_eq "defaults path: no local_miner block written (opt-in off, #593)" \
     "$(jq -r 'has("local_miner")' <<<"$w1_cfg")" "false"
+
+assert_eq "defaults path: XvB explicitly off" "$(jq -r '.xvb.enabled' <<<"$w1_cfg")" "false"
+w1_pass=$(jq -r '.dashboard.auth.password' <<<"$w1_cfg")
+assert_eq "defaults path: dashboard password has 32 characters" "${#w1_pass}" "32"
+assert_eq "defaults path: password printed once" "$(grep -Fc "$w1_pass" "$W1/output")" "1"
+assert_contains "defaults path: no raffle question" "$(cat "$W1/output")" "Dashboard login"
+if grep -q 'Join the XMRvsBeast raffle?' "$W1/output"; then bad "wizard does not ask XvB"; else ok "wizard does not ask XvB"; fi
 
 # Opt-in to the local miner (#593): answering 'y' to the final shape prompt writes
 # local_miner.enabled=true; every other answer left blank so only that key appears.
@@ -185,6 +184,7 @@ SU="$SANDBOX/setup-e2e"
 mkdir -p "$SU/build/tari" "$SU/dashboard"
 : >"$SU/dashboard/Dockerfile"
 cp "$STACK" "$SU/pithead"
+cp "$ROOT/docker-compose.yml" "$SU/docker-compose.yml"
 cp "$ROOT/build/tari/config.toml.template" "$SU/build/tari/"
 make_stubs "$SU/bin"
 printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$SU" run_wizard >/dev/null 2>&1
