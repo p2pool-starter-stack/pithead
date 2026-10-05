@@ -30,7 +30,7 @@ source "$HERE/lib/rig-supply.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
 # restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
 # shellcheck source=tests/integration/lib/restore-proof.sh
-source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" || exit $? # chain-keep: #2639
+source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" && source "$HERE/lib/restore-mining-ready.sh" || exit $? # chain-keep: #2639; mining-ready: #3152
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" && source "$HERE/lib/wallet-fixture.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
@@ -278,10 +278,10 @@ restore_all() {
             RESTORE_PROOF_FAILED=1
         fi
         # Job 1677: status passed before the sync gate stopped p2pool. Wait for its release.
-        if wait_synced 1500 restore && wait_bench_healthy 300; then
+        if wait_synced 1500 restore && wait_bench_healthy 300 && wait_restore_mining_ready 1500; then
             ok "baseline stack healthy again"
         else
-            warn "baseline stack did not regain synced chains and running services before restore proof"
+            warn "baseline stack did not regain synced chains and running mining services before restore proof"
             RESTORE_PROOF_FAILED=1
         fi
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
