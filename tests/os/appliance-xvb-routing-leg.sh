@@ -227,7 +227,8 @@ _xvb_self_test() {
         *"podman inspect"*" tor") printf '%s\n' "$XVBT_TOR_HEALTH" ;;
         *"{{.State.Running}}"*) printf 'true\n' ;;
         *"podman inspect"*"xmrig-proxy"* | *"podman logs"*) printf 'stub-proxy-state\n' ;;
-        *"podman start xmrig-proxy >"* | *"podman stop"*) printf x >>"$XVBT_STARTS" ;; # #2733: the gate owns the proxy
+        *"podman start xmrig-proxy 2>&1 >/dev/null") ;; # the failure diagnostic's own start[...] field
+        *"podman "*start*xmrig-proxy* | *"podman "*stop*xmrig-proxy*) printf x >>"$XVBT_STARTS" ;; # #2733: the gate owns it
         esac
         return 0
     }

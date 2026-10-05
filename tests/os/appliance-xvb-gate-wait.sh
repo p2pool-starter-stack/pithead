@@ -7,13 +7,17 @@
 # reachable before the next stop. The leg therefore runs only where the gate is released: after the
 # reserved-node approval dials synced nodes (job 2241: the gate started both at 15:11:13, 6s after
 # the commit) and before its restore re-holds them. This reads the gate the way the dashboard does:
-# its persisted latch says released and no sync-gate-reset marker overrides it.
+# its persisted latch says released and no full sync-gate-reset marker overrides it (a Tari-only
+# one keeps an earned release, data_gates.py). Read-only, as the integration sampler reads it: the
+# dashboard's StateManager would open the live database for writing every poll.
 _xvb_gate_payload() {
-    printf '%s\n' "import os" \
-        "from mining_dashboard.service.data_gates import SYNC_GATE_RESET_PATH" \
-        "from mining_dashboard.service.storage_service import StateManager" \
-        "snap = StateManager().load_snapshot() or {}" \
-        "marker = os.path.exists(SYNC_GATE_RESET_PATH)" \
+    printf '%s\n' "import json, os, sqlite3" \
+        "from mining_dashboard.config.config import DB_FILE_PATH" \
+        "from mining_dashboard.service.data_gates import SYNC_GATE_RESET_PATH as m" \
+        "with sqlite3.connect('file:' + DB_FILE_PATH + '?mode=ro', uri=True, timeout=1) as db:" \
+        "    row = db.execute('SELECT value FROM kv_store WHERE key = ?', ('snapshot_latest_data',)).fetchone()" \
+        "snap = json.loads(row[0]) if row and row[0] else {}" \
+        "marker = os.path.exists(m) and open(m, 'rb').read(32) != b'tari-only\\n'" \
         "print('released' if snap.get('miner_released') is True and not marker else 'held' + (' marker' if marker else ''))" |
         base64 | tr -d '\n'
 }
@@ -41,21 +45,33 @@ _xvb_wait_for_gate_release() { # -> 0 once released with xmrig-proxy running twi
     return 1
 }
 
-# The order is the fix, so it is pinned: the leg runs after the approval and before the restore,
-# and nowhere else in the provision phase.
-_xvb_gate_order_self_test() {
-    local here node call approval restore
+# The order is the fix, so it is pinned on the REAL caller: the leg runs once the reserved-node
+# approval applied and before its restore, a red leg still restores, an approval that never applied
+# is one named red row instead of a 300s wait, and the leg is called nowhere else in the phase.
+_xvb_gate_order_self_test() (
+    local here calls want applied
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    node="$here/appliance-node-runtime-leg.sh"
-    call=$(grep -n '^    phase_provision_xvb_routing' "$node" | cut -d: -f1 | head -1)
-    approval=$(grep -n '_reserved_node_regressions || rc=' "$node" | cut -d: -f1 | head -1)
-    restore=$(grep -n 'if approval_restore_pending; then' "$node" | cut -d: -f1 | head -1)
-    [ -n "$call" ] && [ -n "$approval" ] && [ -n "$restore" ] && [ "$call" -gt "$approval" ] && [ "$call" -lt "$restore" ] &&
+    # shellcheck source=tests/os/appliance-node-runtime-leg.sh
+    . "$here/appliance-node-runtime-leg.sh"
+    ok() { :; }
+    bad() { calls+="bad "; }
+    _reserved_node_regressions() { RESERVED_NODE_APPLIED=$applied; }
+    phase_provision_xvb_routing() { calls+="xvb " && return 1; }
+    approval_restore_pending() { calls+="restore "; }
+    for want in "1|xvb restore " "0|bad restore "; do
+        calls="" applied="${want%%|*}" APPROVAL_RESTORE_SNAPSHOT=snap
+        phase_provision_remote_node_regressions user pass
+        [ "$calls" = "${want#*|}" ] || {
+            printf 'xvb self-test: approval=%s ran [%s], want [%s] (#2733)\n' "$applied" "$calls" "${want#*|}" >&2
+            return 1
+        }
+    done
+    grep -q 'node_ok=1 RESERVED_NODE_APPLIED=1' "$here/appliance-node-runtime-leg.sh" &&
         ! grep -q 'phase_provision_xvb_routing' "$here/phases/provision-initial.sh" || {
-        printf 'xvb self-test: the XvB leg is not between the reserved-node approval and its restore (#2733)\n' >&2
+        printf 'xvb self-test: the XvB leg is not tied to the applied reserved-node approval alone (#2733)\n' >&2
         return 1
     }
-}
+)
 
 # The REAL payload against the real dashboard modules: a seeded snapshot and marker in a temp dir.
 _xvb_gate_payload_self_test() {
@@ -70,19 +86,20 @@ def run(snapshot, marker):
         if os.path.exists(p):
             os.remove(p)
     if marker:
-        open(mk, "w").close()
-    pre = "import mining_dashboard.service.data_gates as g, mining_dashboard.service.storage_service as s\n"
-    pre += "g.SYNC_GATE_RESET_PATH = %r\ns.DB_FILE_PATH = %r\n" % (mk, db)
+        open(mk, "w").write("" if marker is True else marker)
+    pre = "import mining_dashboard.service.data_gates as g, mining_dashboard.config.config as c, mining_dashboard.service.storage_service as s\n"
+    pre += "g.SYNC_GATE_RESET_PATH = %r\nc.DB_FILE_PATH = %r\ns.StateManager(%r)\n" % (mk, db, db)
     if snapshot is not None:
         pre += "s.StateManager(%r).save_snapshot(%r)\n" % (db, snapshot)
     r = subprocess.run([sys.executable, "-c", pre + os.environ["PAYLOAD"]], capture_output=True, text=True)
     return r.stdout.strip() or "no-output rc=%s %s" % (r.returncode, r.stderr.strip()[-120:].replace("\n", ";"))
 print(run({"miner_released": True}, False))
 print(run({"miner_released": True}, True))
+print(run({"miner_released": True}, "tari-only\n"))
 print(run({"miner_released": False}, False))
 print(run(None, False))
 ' 2>&1)"
-    [ "$out" = "$(printf 'released\nheld marker\nheld\nheld')" ] || {
+    [ "$out" = "$(printf 'released\nheld marker\nreleased\nheld\nheld')" ] && _xvb_gate_payload | base64 -d | grep -q "mode=ro'" || {
         printf 'xvb self-test: the real gate payload misread the latch: %s\n' "$(printf '%s' "$out" | tr '\n' '|')" >&2
         return 1
     }
