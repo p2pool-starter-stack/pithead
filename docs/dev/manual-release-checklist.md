@@ -69,7 +69,7 @@ Contents:
 >
 > A step that fails for a reason listed here is linked to the issue listed, not filed again. An
 > **Expect** line marked `(confirm wording at the freeze)` was written from the owner's ruling,
-> because its fix had not merged when this page was last edited. Only #3094, #3096 and #3112 are
+> because its fix had not merged when this page was last edited. Only #3096 and #3112 are
 > still marked. If the behaviour matches and only the wording differs, record PASS and write down
 > the text you saw. At the final cut, replace each one with the text the release candidate prints
 > and delete the mark (`grep -n 'confirm wording' docs/dev/manual-release-checklist.md`).
@@ -293,14 +293,14 @@ DIY steps that apply there.
 
 Which steps prove each issue the 2.0.0 re-cut fixed or added, as of 2026-10-05 UTC. **Shipped**
 means the **Expect** lines quote merged code. **Confirm** means they follow the owner's ruling and
-carry `(confirm wording at the freeze)`: #3094, #3096 with #2732, and #3112.
+carry `(confirm wording at the freeze)`: #3096 with #2732, and #3112.
 
 | Issue | What it requires | Steps | Wording |
 |---|---|---|---|
 | [#3090](https://github.com/p2pool-starter-stack/pithead/issues/3090) | `setup`, `up` and `apply` always print the pool URL and the stratum password (`none set` when there is none); a toggle-only `apply` still converges the local miner | 1.4, 1.5, 6.9, 13.8a | Shipped (#3101) |
 | [#3091](https://github.com/p2pool-starter-stack/pithead/issues/3091) | A required Tari rejects workers only after its RPC has been unreachable 10–15 minutes (15 shipped); migrating, starting and syncing only alert; Tari alerts ignore `tari_required`; an unreachable Monero node, local or remote, always rejects | 1.12, 2.3a, 8.5, 10.5, 10.6 | Shipped (#3093) |
 | [#3092](https://github.com/p2pool-starter-stack/pithead/issues/3092) | The stratum password is opt-in (default off) in both wizards and shows on the hand-off card, in **Connect a miner** and in CLI output, also on a LAN dashboard with no login; an onion dashboard always has a login | 1.4, 1.4a, 5.12, 10.7, 13.6, 13.6a, 13.8, last row of [Broken configs](#broken-configs) | Shipped (#3107) |
-| [#3094](https://github.com/p2pool-starter-stack/pithead/issues/3094) | Enabling Tari on a box that is already mining keeps Monero mining while Tari syncs | 10.2, 13.22 | Confirm |
+| [#3094](https://github.com/p2pool-starter-stack/pithead/issues/3094) | Enabling Tari on a box that is already mining keeps Monero mining while Tari syncs | 10.2, 13.22 | Shipped (#3102) |
 | [#3096](https://github.com/p2pool-starter-stack/pithead/issues/3096) and [#2732](https://github.com/p2pool-starter-stack/pithead/issues/2732) | One view-only wallet per (address, view key), adopted on upgrade; a fresh wallet starts near the tip; a key that does not match the address is refused; Tari confirmation needs a dual-key address and asks for the view key only | 2.3, 6.4a, 6.4b, 7.5 | Confirm |
 | [#3097](https://github.com/p2pool-starter-stack/pithead/issues/3097) | A payout-address change is confirmed by typing its last 8 characters, everywhere | 6.4, 7.5, 13.8 | Shipped (#3105) |
 | [#3098](https://github.com/p2pool-starter-stack/pithead/issues/3098) | `apply` and the dashboard refuse duplicate JSON keys and `PASTE_` or `YOUR_` values | [Broken configs](#broken-configs), 6.5, 7.6 | Shipped (#3106) |
@@ -851,7 +851,7 @@ Run on the upgrade box. See [Privacy](../privacy.md).
 - [ ] **10.2 Back to Tari.** Do: set `tari.mode` back to `local` and apply, then watch `docker ps`
   and a miner's log while Tari catches up. Expect: the preview marks `Tari merge-mining ON` with
   `⚠` and asks `(y/N)`; answer `y`. Per #3094 its row says that Monero mining continues and that
-  merge-mining starts when Tari has synced (confirm wording at the freeze). The Tari node resumes
+  merge-mining starts when Tari has synced (on an already-mining machine). The Tari node resumes
   from the chain it already had instead of starting from zero. `xmrig-proxy` and p2pool stay up,
   the miners keep hashing, no `Workers rejected` badge shows, and the Tari card reads syncing until
   Tari is at the tip. Only a first install waits for both chains.
@@ -1222,7 +1222,7 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
 - [ ] **13.22 Node modes on the appliance.** Do: in Configuration set Tari's mode to `off`,
   preview, type `APPLY` and confirm; then set it back to `local` the same way. Expect: the preview
   marks each change ⚠; with Tari off, mining continues; switching back resumes the Tari chain it
-  already had, and Monero mining carries on while Tari catches up (#3094; confirm wording at the freeze): the `Tari merge-mining ON` row says so, Workers Alive keeps its workers (the built-in
+  already had, and Monero mining carries on while Tari catches up (#3094): the `Tari merge-mining ON` row says so, Workers Alive keeps its workers (the built-in
   miner included), no `Workers rejected` badge shows, and the Tari card reads syncing. (The remote
   Monero node change is 13.15.)
 - [ ] **13.23 Settings by USB stick.** Do: on the laptop, give the second stick one partition
