@@ -364,8 +364,7 @@ syncing stack. Build the candidate from source so a failure here does not spend 
   `sudo usermod -aG docker $USER`, log out and back in, and run `./pithead setup` again.
 - [ ] **1.4a The wizard wrote the new-install defaults.** Do: run
   `jq '{xvb, tari_mode: .tari.mode, stratum_set: ((.p2pool.stratum_password // "") != ""), dashboard_login: (.dashboard.auth.password // "" | length > 0), fast_sync: [.monero.clearnet_initial_sync, .tari.clearnet_initial_sync]}' config.json`.
-  It prints booleans and modes only, never a secret. Expect, per #3099 and #3092
- : `"xvb": { "enabled": false }`, `tari_mode` `local` on a fitting disk and `off`
+  It prints booleans and modes only, never a secret. Expect, per #3099 and #3092: `"xvb": { "enabled": false }`, `tari_mode` `local` on a fitting disk and `off`
   otherwise, `stratum_set` `false`, `dashboard_login` `true`, and both `fast_sync` entries `false`
   or `null`. `jq -r .config_version config.json` prints the candidate's release number (2.3
   explains the stamp).
@@ -594,8 +593,7 @@ each panel means.
   Expect: Prometheus text with `pithead_` lines, including `pithead_shares_accepted_total`.
   Without `-u`, the request is refused.
 - [ ] **5.12 Connect a miner.** Do: signed in, find the **Connect a miner** block in the Simple
-  view. Then open the dashboard in a private window and do not sign in. Expect, per #3092
- : signed in, the block shows the LAN pool URL (`<host>:3333`),
+  view. Then open the dashboard in a private window and do not sign in. Expect, per #3092: signed in, the block shows the LAN pool URL (`<host>:3333`),
   the stratum password or the words `no stratum password`, and the TLS fingerprint when stratum
   TLS is on (4.3). The password matches `grep PROXY_STRATUM_PASSWORD .env`. Signed out, the
   private window shows the login and none of those values. A dashboard with no login shows the
@@ -853,7 +851,7 @@ Run on the upgrade box. See [Privacy](../privacy.md).
 - [ ] **10.2 Back to Tari.** Do: set `tari.mode` back to `local` and apply, then watch `docker ps`
   and a miner's log while Tari catches up. Expect: the preview marks `Tari merge-mining ON` with
   `⚠` and asks `(y/N)`; answer `y`. Per #3094 its row says that Monero mining continues and that
-  merge-mining starts when Tari has synced. The Tari node resumes
+  merge-mining starts when Tari has synced (confirm wording at the freeze). The Tari node resumes
   from the chain it already had instead of starting from zero. `xmrig-proxy` and p2pool stay up,
   the miners keep hashing, no `Workers rejected` badge shows, and the Tari card reads syncing until
   Tari is at the tip. Only a first install waits for both chains.
@@ -1094,8 +1092,7 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
 - [ ] **13.6a Stratum default and fast sync.** Do: on the second appliance's setup page, on its
   first install, keep every default (the stratum question stays no), turn on the faster first
   sync, and press **Validate, then install**. If that disk is too small for both chains, note
-  that Tari is off. After the install open Configuration. Expect, per #3099 and #3092
- : the hand-off card says `no stratum password`; the faster-sync choice
+  that Tari is off. After the install open Configuration. Expect, per #3099 and #3092: the hand-off card says `no stratum password`; the faster-sync choice
   warns as in 13.6; Configuration shows `monero.clearnet_initial_sync` on and, when Tari is on,
   `tari.clearnet_initial_sync` on too; on a disk too small for both chains the page turns Tari
   off and says why.
