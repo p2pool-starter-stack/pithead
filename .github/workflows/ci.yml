@@ -93,12 +93,8 @@ jobs:
         run: docker build --target test ./dashboard
 
   build-images:
-    # Build every build/* image, plus dashboard/ (moved out of build/, #1106), so a broken
-    # Dockerfile / COPY path / entrypoint / pinned-digest is caught in CI instead of at deploy
-    # time (#124). Previously only the dashboard test stage was built, so e.g. the Tor image's
-    # entrypoint restructure (#180) shipped with no CI safety net. Tari is an upstream image (no
-    # Dockerfile here), so it's excluded. fail-fast: false so one broken image doesn't hide the
-    # others; empty build-args keep the dashboard build working bare.
+    # Build first-party images, including dashboard; catch Dockerfile, COPY, entrypoint and pin errors (#124).
+    # Exclude upstream Tari; fail-fast: false keeps other images visible, and empty args permit a bare dashboard build.
     name: Build image (${{ matrix.service }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -122,6 +118,10 @@ jobs:
           persist-credentials: false
       - name: docker build ./${{ matrix.context }}
         run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
+      - name: Prove offline Tor saturated-state recovery
+        if: matrix.service == 'tor'
+        env: {TMPDIR: "${{ runner.temp }}"}
+        run: bash tests/stack/standalone/test_tor_saturated_image.sh pithead-tor:ci
       - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
         with:
           # THE live pin, and the only one: this literal is what gets installed, and it is the

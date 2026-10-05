@@ -60,7 +60,10 @@ and scoped node restarts are in `02b1-lan-guard-compose.sh`. Transition prearm a
 live-rule check are in `02c-lan-guard-check.sh`.
 Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
-the dashboard's clearnet healer stays in `service/health/tor_heal.py`.
+the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
+history observations and recovery results in `service/health/tor_heal_history.py`.
+The automatic `tor-recover` control wrapper is `48b-control-tor-recover.sh`; it calls
+the same host-gated recovery as the CLI.
 
 ## Dashboard feature folders
 
@@ -154,6 +157,10 @@ Password fixture cleanup lives in `tests/os/appliance-password-fixture.sh`, sour
 The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.py`
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
+The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
+to prove saturated-history recovery and the disabled control with production timers.
+The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
+run by the Tor image build job.
 Bundle staging into the guest is bounded and reports through `staging-failure-evidence.sh`; the
 floor-fallback leg stages separately from `os-update` (`selftest-floor-staging.sh`, #3049).
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
