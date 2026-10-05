@@ -115,10 +115,12 @@ mv config.json.tari-wallet-test config.json
     else
         bad "Tari wallet: the wallet volume root is owned by '${owner:-unknown}', not uid 1000"
     fi
-    if _ssh "podman exec tari-wallet test -f /var/tari/wallet/mainnet/config/wallet/log4rs.yml" 2>/dev/null; then
-        ok "Tari wallet: the wallet wrote its own config into /var/tari/wallet"
+    # The wallet's base is the active identity's directory under the volume (#3096); Tari appends
+    # the network to it. Ownership above and the persisted database below prove writability.
+    if _ssh "podman exec tari-wallet sh -c 'test -f /var/tari/wallet/payout-\$(cat /var/tari/wallet/.payout-active)/mainnet/config/wallet/log4rs.yml'" 2>/dev/null; then
+        ok "Tari wallet: the wallet wrote its own config into its active identity directory under /var/tari/wallet"
     else
-        bad "Tari wallet: no wallet config under /var/tari/wallet — the volume is not writable"
+        bad "Tari wallet: config not found under the active identity directory of /var/tari/wallet"
     fi
     node="http://$(_ssh "sed -n 's/^TARI_GRPC_ADDRESS=//p' /data/pithead/.env" 2>/dev/null | tr -d '\r\n' | cut -d: -f1):9000"
     # Every process's argv, not PID 1's: the container runs under an init (#2657), so PID 1 is the init.
