@@ -25,11 +25,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # Dockerfile is READ, never written, and resolved from SCRIPT_DIR rather than cwd; an unreadable
 # one SKIPS, and exit refuses a skip (#1064), so this cannot go quiet the way its predecessor did.
 DOCKERFILE="$SCRIPT_DIR/../../os/rootfs/Dockerfile"
-rigforge_ref_matches() { # <image-root> <dockerfile> — 0 iff the recorded ref IS the pinned one
-    local rec pin
+rigforge_ref_matches() { # <image-root> <dockerfile> — 0 iff the record matches the pin and baked version
+    local rec pin version
     rec=$(sed -n 's/^ref=\([^ ]*\).*/\1/p' "$1/opt/rigforge/RIGFORGE_REF" 2>/dev/null)
     pin="${PITHEAD_RIGFORGE_REF:-$(sed -n 's/^ARG RIGFORGE_REF=\([^ ]*\).*/\1/p' "$2" 2>/dev/null)}"
-    [[ "$pin" =~ ^[0-9a-f]{40}$ ]] && [ -n "$rec" ] && [ "$rec" = "$pin" ]
+    version=$(tr -d ' \t\r\n' 2>/dev/null <"$1/opt/rigforge/VERSION")
+    [[ "$pin" =~ ^[0-9a-f]{40}$ ]] && [ -n "$rec" ] && [ "$rec" = "$pin" ] && [ -n "$version" ] &&
+        [ "$(cat "$1/opt/rigforge/RIGFORGE_REF" 2>/dev/null)" = "ref=$pin version=$version" ]
 }
 # shellcheck source=tests/os/verify-image-artifact-helpers.sh
 . "$SCRIPT_DIR/verify-image-artifact-helpers.sh"
@@ -216,9 +218,9 @@ echo "==> the built-in miner (local_miner on the appliance)"
 # piece surfaces as a miner that silently never starts — on a machine with no shell.
 chk "rigforge tree baked" '[ -x "$ROOT/opt/rigforge/rigforge.sh" ]'
 if [ -r "$DOCKERFILE" ]; then
-    chk "rigforge ref recorded AND equal to the pin" 'rigforge_ref_matches "$ROOT" "$DOCKERFILE"'
+    chk "rigforge ref and version recorded AND equal to the baked tree" 'rigforge_ref_matches "$ROOT" "$DOCKERFILE"'
 else
-    skip "rigforge ref recorded AND equal to the pin" "os/rootfs/Dockerfile not readable"
+    skip "rigforge ref and version recorded AND equal to the baked tree" "os/rootfs/Dockerfile not readable"
 fi
 chk "prebuilt xmrig baked (Tor-only box cannot clone)" '[ -x "$ROOT/opt/rigforge/prebuilt/xmrig/build/xmrig" ]'
 chk "prebuilt commit marker matches rigforge's pin" '[ "$(cat "$ROOT/opt/rigforge/prebuilt/xmrig/.rigforge-commit")" = "$(sed -n "s/^XMRIG_COMMIT=\"\${XMRIG_COMMIT:-\(.*\)}\"$/\1/p" "$ROOT/opt/rigforge/rigforge.sh")" ]'

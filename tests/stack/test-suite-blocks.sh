@@ -14,6 +14,17 @@ out=$(stack_blocks_audit "$SB_RUN" "$SB_WF")
 assert_rc "the shipped run.sh and shell.yml pass the block audit" "$?" "0"
 assert_eq "...and the audit printed no defect" "$out" ""
 
+# The two expensive control groups must not share a timeout budget. Keep the four
+# approval/SSRF fragments in source order: the last three consume the first's fixtures.
+out=$(sed -n '/^if in_block 3; then$/,/^fi$/p' "$SB_RUN" |
+    sed -n 's/.*source "\$HERE\/\([^"]*\)".*/\1/p')
+assert_eq "approval and SSRF dependencies remain together in order" "$out" \
+    $'control/test-control-add-only-ssrf.sh\ncontrol/test-control-perimeter-tier3.sh\ncontrol/test-control-secret-and-dial-guards.sh\ncontrol/test-control-ssrf-host-local.sh'
+out=$(sed -n '/^if in_block 4; then$/,/^fi$/p' "$SB_RUN" |
+    sed -n 's/.*source "\$HERE\/\([^"]*\)".*/\1/p')
+assert_eq "independent round trips have a separate block and retain mask/audit order" "$out" \
+    $'control/test-control-editable-allowlist.sh\ntest-worker-config.sh\ntest-spool-audit.sh'
+
 # An audit parser failure with no stdout used to look exactly like a clean layout.
 out=$(
     awk() {

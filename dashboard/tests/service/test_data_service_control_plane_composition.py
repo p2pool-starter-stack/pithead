@@ -94,6 +94,8 @@ class TestControlPlaneComposition:
     @pytest.mark.parametrize("required", [True, False])
     async def test_tari_only_outage_policy_in_live_loop(self, required):
         svc, sm, proxy = _make_service()
+        svc.alert_service = MagicMock(enabled=False)
+        svc.alert_service.process = AsyncMock()
         proxy.get_workers.return_value = {"workers": []}
         svc.miner_released = True
         svc.tari_health.ever_up = True
@@ -150,3 +152,4 @@ class TestControlPlaneComposition:
 
         assert svc.docker_control.stop.await_count == int(required)
         assert svc.workers_rejected is required
+        assert svc.alert_service.process.await_args.kwargs["workers_rejected"] is required
