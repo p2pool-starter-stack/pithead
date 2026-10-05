@@ -18,6 +18,10 @@ on:
 permissions:
   contents: read
 
+# Harness selftests use the runner's scratch filesystem.
+env:
+  TMPDIR: ${{ runner.temp }}
+
 # Cancel superseded PR runs; never cancel push runs on main/develop — they are required checks on
 # the protected branch. #415.
 concurrency:
