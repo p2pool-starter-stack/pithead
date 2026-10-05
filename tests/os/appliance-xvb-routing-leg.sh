@@ -190,7 +190,7 @@ phase_provision_xvb_routing() {
 }
 
 _xvb_self_test() {
-    local f=0 payload real_guest_python
+    local f=0 payload real_guest_python && { _xvb_diag_self_test || f=1; } # first: _xvb_guest_python is still real
     # #2712 (job 1141): a single gate-driven xmrig-proxy outage ran ~59s, so the wait's own default
     # must stay wide enough to survive one — this is a source check, not a timed run, because a real
     # 150s wait has no place in a unit self-test. Both defaults (the wait's own and the row message's)
@@ -258,8 +258,9 @@ _xvb_self_test() {
     }
     _xvb_case() { # <label> <want-pass> <want-fail> <want-rc>
         local rc=0
-        PASS=0 FAIL=0 && : >"$XVBT_CALLS"
+        PASS=0 FAIL=0 && : >"$XVBT_CALLS" && : >"$XVBT_MSGS"
         phase_provision_xvb_routing >/dev/null 2>&1 || rc=$?
+        _xvb_diag_rows_ok "$XVBT_MSGS" || f=$((f + 1)) # #2733: every proxy-unreachable row, in every case
         [ "$PASS" = "$2" ] && [ "$FAIL" = "$3" ] && [ "$rc" = "$4" ] || {
             printf 'xvb self-test: %s — pass=%s want %s, fail=%s want %s, rc=%s want %s\n' \
                 "$1" "$PASS" "$2" "$FAIL" "$3" "$rc" "$4" >&2
@@ -320,9 +321,8 @@ _xvb_self_test() {
     # fallback restore — now also retrying/confirming instead of a silent `|| true` (#2708) — retries
     # against the SAME broken stub, times out too, and is a second, distinct counted red row: the
     # guest really is left misrouted, not just the first attempt.
-    XVBT_P2P_JSON="" && : >"$XVBT_MSGS"
+    XVBT_P2P_JSON=""
     _xvb_case "an actuator that cannot restore P2Pool is a counted red row, twice over" 2 2 1
-    _xvb_diag_rows_ok "$XVBT_MSGS" 2 || f=$((f + 1)) # #2733: both restore rows carry the proxy diagnostic
     XVBT_P2P_JSON='{"mode":"XVB","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     _xvb_case "a dashboard left persisting XVB after the restore is a counted red row, twice over" 2 2 1
     XVBT_P2P_JSON='{"mode":"P2POOL","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
