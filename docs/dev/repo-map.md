@@ -74,7 +74,7 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `service/xvb/` | XvB switching, calculations, and outcomes | `tests/service/xvb/` |
 | `web/views/` | HTTP views and response construction | `tests/web/views/` |
 | `web/server.py` | HTTP application setup and route registration | `tests/web/` |
-| `wizard/server.py`, `wizard/form.py` | Appliance wizard server, form translation, and install handoff | `tests/web/test_wizard*.py` |
+| `wizard/server.py`, `wizard/form.py`, `wizard/defaults.py` | Appliance wizard server, disk-based defaults, form translation, and install handoff | `tests/web/test_wizard*.py` |
 | `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
 
 Keep polling order, database locks, and transaction scopes intact when extracting
@@ -104,7 +104,7 @@ Keep local code out of `vendor/`.
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
 | `tests/integration/lib/` | Sourced helpers and phase functions for the live harness. `restore-chain-sync.sh` streams the read-only `restore-chain-sync.py` daemon proof to the restored baseline. The restoration transport uses libcurl Digest; `tests/integration/selftest/selftest-restore-curl-connection.sh` exercises its challenged connection against a bounded synthetic server in CI. `wallet-fixture.sh`, `wallet-fixture.py` and `wallet_archive.py` preserve legacy and fingerprinted Monero caches through destructive tests and verify them before releasing the reservation. The transport executes the candidate checkout’s Python file so its sibling archive module resolves from any working directory; `test-wallet-fixture-transport.py` covers that packaging contract. |
 | `tests/integration/payout-pairs/` | Isolated live apply, wallet services and dashboard. The Docker API guard limits fixture apply to its private storage and Compose project. The initial env carries only the synced nodes’ provisioning identities, leaving runtime state and wallet passwords to the fixture’s actual apply. Image lookup loads all source profiles so the wallet’s node dependency is present, and refuses a failed Compose model before pulling. `test-payout-pair-preparation.py` covers preparation and env isolation without creating containers. The model transform accepts environment lists and mappings while preserving unexpanded values; `test-payout-pair-model.py` checks both forms and the isolation contract. Apply uses the caller’s uid/gid so its owner-only files remain readable; successful cleanup exposes only the private scratch tree to a restricted removal container. Wallet identity checks follow the real readiness gate, with invocation and delayed-start regressions in `test-payout-pair-runtime.py`. |
-| `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `make test-integration-selftest` also checks appliance module loading. |
+| `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `selftest-wizard-defaults.sh` runs the real CLI wizard with the runner baseline contract and stubbed deployment I/O. `make test-integration-selftest` also checks appliance module loading. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. |
@@ -161,3 +161,9 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 Payout confirmation validates private view scalars in `lib/pithead/25b-payout-keys.sh`; the wallet
 entrypoints select storage by address/key fingerprint. `tests/stack/test-payout-wallet-pairs.sh`
 proves matching keys, derivation, selection and legacy adoption.
+
+The setup wizards share host disk budgets through `lib/pithead/11b-wizard-disk-budget.sh`;
+the appliance publishes them beside the disk inventory for both submission paths.
+
+`tests/os/phases/setup-defaults.sh` proves a fresh appliance with the wizard defaults,
+without the explicit Tari opt-in used by the general provision phase.

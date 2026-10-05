@@ -93,6 +93,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # anyway, so all three have a control that can fail, not two branches that pass by construction.
 # #2936's invalid_port labels use the five literal inputs in test-tor-port-validation.sh.
 # Payout pair labels use fixed monero/tari chains, vectors 1/2 and the two view-key fields.
+# #3099's mono/tari labels use the six literal local/remote/off combinations in the wizard test.
 # #3090's ca_enabled labels use only the fixed true/false toggle loop.
 vd_expected="$(
     cat <<'VDEXP'
@@ -149,6 +150,8 @@ test-tor-port-validation.sh|invalid_port
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
+test-wizard-tari.sh|mono
+test-wizard-tari.sh|tari
 VDEXP
 )"
 mapfile -t stack_fragments < <(find "$ROOT/tests/stack" -type f -name 'test-*.sh' | sort)
