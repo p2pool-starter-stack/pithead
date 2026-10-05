@@ -1,17 +1,4 @@
-"""What the wizard serves a machine that has never been configured (#1855, #1848).
-
-The state API hands the page a config built from two sources: `config.reference.json`, which the
-host publishes, and the page's own answers for a machine with no configuration yet. Those two
-disagree on exactly one key now, and the disagreement is the point of #1855 — the reference says
-`tari.mode: "local"` and must keep saying it, while a NEW machine is served `"off"`.
-
-That split is easy to get wrong in the direction nobody sees: a page whose components can render
-"No" but whose served config says "local" shows every new operator a Yes, and the whole finding
-survives the fix. So these pin the SERVED value, not the component.
-
-They live beside `test_wizard.py` rather than in it because that file is at its budget ceiling,
-and they carry their own fixtures for the same reason its three other siblings do.
-"""
+"""New-install answers are separate from the reference used by existing configs."""
 
 import json
 
@@ -58,10 +45,17 @@ async def _state(client):
     return await (await client.get("/api/wizard-state")).json()
 
 
-async def test_a_new_machine_is_served_a_decline_the_reference_does_not_carry(client):
+async def test_a_new_machine_uses_the_disk_rule_without_changing_reference(client, spool):
     """The finding: a fresh install showed Tari coming up for an operator who never asked."""
+    spool.joinpath("disk-budget.json").write_text(
+        json.dumps({"available_bytes": 10, "local_need_bytes": 528})
+    )
     s = await _state(client)
     assert s["config"]["tari"]["mode"] == "off"
+    spool.joinpath("disk-budget.json").write_text(
+        json.dumps({"available_bytes": 528, "local_need_bytes": 528})
+    )
+    assert (await _state(client))["config"]["tari"]["mode"] == "local"
     # The reference the same response carries is untouched, and that is not incidental: the page
     # diffs against it to decide what to write, and the host reads a missing key as "local". If
     # this ever came back "off", `strip_defaults` would drop the decline as a no-op default and
@@ -92,15 +86,9 @@ async def test_a_rejected_attempt_keeps_the_decline_the_operator_just_made(clien
     assert (await _state(client))["config"]["tari"]["mode"] == "off"
 
 
-async def test_the_raffle_is_served_from_the_reference_and_not_pinned_by_the_page(client, spool):
-    """#1848 is opt-OUT, so the page has no answer of its own to add here.
-
-    Asserted by moving the reference and watching the served value follow, rather than by
-    reading the page's own defaults: a value that merely happens to equal the reference today
-    proves nothing about where it came from.
-    """
-    assert (await _state(client))["config"]["xvb"]["enabled"] is True
-    spool.joinpath("config.reference.json").write_text(
-        json.dumps({**REFERENCE, "xvb": {"enabled": False}})
-    )
+async def test_new_machine_raffle_is_off_but_existing_absence_keeps_reference(client, spool):
     assert (await _state(client))["config"]["xvb"]["enabled"] is False
+    spool.joinpath("last-attempt.json").write_text(
+        json.dumps({"monero": {"wallet_address": "4OLD"}})
+    )
+    assert (await _state(client))["config"]["xvb"]["enabled"] is True
