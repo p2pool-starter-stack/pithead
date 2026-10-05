@@ -102,7 +102,9 @@ restore_p2pool_startup() {
         printf '%s\n' "${stop_logs:-no prior stop logs}" | head -30 | while IFS= read -r line; do
             printf '%q\n' "$line" | cut -c 1-240 >&2
         done
-        _ssh "podman logs --tail 30 p2pool 2>&1; journalctl -k -b -n 200 --no-pager | grep -E 'p2pool.*(fault|segfault)' | tail -10" >&2 || true
+        _ssh "podman logs --tail 30 p2pool 2>&1; journalctl -k -b -n 200 --no-pager | grep -E 'p2pool.*(fault|segfault)' | tail -10" 2>&1 | head -40 | while IFS= read -r line; do
+            printf '%q\n' "$line" | cut -c 1-240 >&2
+        done || true
     fi
     [ "$failed" -eq 0 ]
 }

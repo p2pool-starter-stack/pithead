@@ -57,7 +57,10 @@ _ssh() {
         *) echo 'container true 0 0 false' ;;
         esac
         ;;
-    "podman logs"*) echo 'bounded failure diagnostics' ;;
+    "podman logs"*)
+        local i
+        for i in {1..50}; do printf '\033[31mbounded failure diagnostics %0300d\n' "$i"; done
+        ;;
     *) return 1 ;;
     esac
 }
@@ -86,6 +89,9 @@ for mode in long-stop-log clean gate-kill unproved-kill missing-stop-log partial
         unproved-kill | partial-stop-log) grep -Fq 'at validate prior stop logs' "$scratch/err" ;;
         esac
         grep -Fq 'bounded failure diagnostics' "$scratch/err"
+        [ "$(grep -c 'bounded failure diagnostics' "$scratch/err")" = 40 ]
+        ! grep -q $'\033' "$scratch/err"
+        awk 'length($0)>240 {exit 1}' "$scratch/err"
         grep -Fq 'journalctl -k -b -n 200 --no-pager' "$scratch/commands"
         if [ "$mode" = long-stop-log ]; then
             [ "$(grep -c long-stop-evidence "$scratch/err")" = 30 ]
