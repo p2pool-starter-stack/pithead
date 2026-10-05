@@ -25,8 +25,11 @@ class DockerConnection(http.client.HTTPConnection):
 
 
 class Policy:
+    default_why = "not a fixture-owned name, label or resource"
+
     def __init__(self, project, inspect, work):
         self.project, self.inspect, self.work = project, inspect, Path(work).resolve()
+        self.why = self.default_why
 
     def fixture_name(self, name):
         return name.startswith(self.project + "_") or name.startswith(self.project + "-")
@@ -49,34 +52,38 @@ class Policy:
         source = Path(source).resolve()
         return source.is_relative_to(self.work) and not source.is_socket()
 
+    def deny(self, why):
+        self.why = why
+        return False
+
     def container_allowed(self, body):
         host = body.get("HostConfig", {})
         if "ALL" not in (host.get("CapDrop") or []) or any(
             host.get(k)
             for k in ("Privileged", "Devices", "DeviceRequests", "DeviceCgroupRules", "VolumesFrom")
         ):
-            return False
+            return self.deny("capabilities not dropped or privileged/device/volumes-from")
         if host.get("VolumeDriver") not in (None, "", "local"):
-            return False
+            return self.deny("volume driver")
         if set(host.get("CapAdd") or []) - {"CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"}:
-            return False
+            return self.deny("capability added")
         if any(
             host.get(k) not in (None, "", "private") for k in ("PidMode", "IpcMode", "UsernsMode")
         ):
-            return False
+            return self.deny("pid/ipc/userns mode")
         if host.get("NetworkMode") in ("host",) or (host.get("NetworkMode") or "").startswith(
             "container:"
         ):
-            return False
+            return self.deny("network mode")
         for mount in host.get("Mounts") or []:
             if (mount.get("VolumeOptions") or {}).get("DriverConfig"):
-                return False
+                return self.deny("mount driver")
             if not self.mount_allowed(mount.get("Type"), mount.get("Source", "")):
-                return False
+                return self.deny(f"mount source {mount.get('Source')}")
         for bind in host.get("Binds") or []:
             source = bind.split(":", 1)[0]
             if not self.mount_allowed("bind" if source.startswith("/") else "volume", source):
-                return False
+                return self.deny(f"bind source {source}")
         return True
 
     def owned(self, kind, name):
@@ -89,6 +96,7 @@ class Policy:
         return (labels or {}).get("com.docker.compose.project") == self.project
 
     def allows(self, method, path, body):
+        self.why = self.default_why
         query = parse_qs(urlsplit(path).query)
         path = re.sub(r"^/v[0-9.]+", "", unquote(urlsplit(path).path))
         bits = path.strip("/").split("/")
@@ -160,6 +168,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             body = json.loads(raw) if raw else {}
             if not self.server.policy.allows(self.command, self.path, body):
+                # Method, path and rule only: bodies can carry keys.
+                print(
+                    f"guard denied {self.command} {self.path}: {self.server.policy.why}",
+                    file=sys.stderr,
+                    flush=True,
+                )
                 self.send_error(403, "outside fixture project")
                 return
             headers = {k: v for k, v in self.headers.items() if k.lower() != "connection"}

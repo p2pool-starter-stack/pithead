@@ -168,6 +168,14 @@ class GuardTest(unittest.TestCase):
             )
         )
 
+    def test_denial_names_the_rule_without_the_body(self):
+        path = "/containers/create?name=fixture_wallet-1"
+        host = {"CapDrop": ["ALL"], "CapAdd": ["SYS_ADMIN"]}
+        self.assertFalse(self.policy.allows("POST", path, {"Labels": LABEL, "HostConfig": host}))
+        self.assertEqual(self.policy.why, "capability added")
+        self.assertFalse(self.policy.allows("POST", "/images/prune", {}))
+        self.assertEqual(self.policy.why, guard.Policy.default_why)
+
     def test_external_network_reads_and_owned_connects_only(self):
         self.assertTrue(self.policy.allows("GET", "/networks/mining_net", {}))
         self.assertFalse(
