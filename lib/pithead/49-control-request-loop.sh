@@ -103,6 +103,16 @@ control_process_request() { # <claimed-file> <control-dir>
             control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
         fi
         ;;
+    tor-recover)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ] ||
+            [ "$actor" != tor-heal ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid recovery request or auto-heal disabled",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+        else
+            control_tor_recover "$cdir" "$id" "$actor"
+        fi
+        ;;
     tor-history)
         # Read-only (#3052): reports only whether Tor's circuit-history state is saturated.
         if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
