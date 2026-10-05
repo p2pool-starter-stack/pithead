@@ -3,7 +3,12 @@
 How to point miners at the stack. Every miner connects to one endpoint; the stack handles pool
 selection, payouts, and the P2Pool/XvB split centrally.
 
-The endpoint is the `xmrig-proxy` service on port `3333`.
+The endpoint is the `xmrig-proxy` service on port `3333` by default. Every successful coordinator
+`setup`, `up`, and `apply` prints the pool URL and stratum password, or states that no password is
+set. This includes an `apply` with no configuration changes and a host with local mining enabled.
+When stratum TLS is enabled, the output also includes the certificate fingerprint to pin on rigs.
+The pool URL uses the dashboard hostname for an all-interface bind, or the configured stratum
+bind address; a loopback bind permits local connections only.
 
 > Do not put a wallet address in your miner config. The P2Pool service on the stack handles payouts.
 > Miners only need to know where the stack is.
@@ -461,7 +466,8 @@ headroom, and a ceiling on how large the HugePages pool may grow), runs RigForge
 appliance mode after the stack is up, and repeats that on every boot — the miner's service lives
 in `/run` and is re-created each time, like every other
 derived thing on the appliance. The worker appears in the dashboard's Workers Alive table; toggle
-`local_miner.enabled` from the dashboard's configuration view to turn it off or on again. The
+`local_miner.enabled` from the dashboard's configuration view to turn it off or on again. Apply
+starts or stops the built-in miner without rebooting, even when this is the only setting changed. The
 rest of this section is the DIY flow.
 
 Opt in during `./pithead setup` (the prompt "Also mine on this machine with its spare CPU?", off by
@@ -475,10 +481,10 @@ default), or set it in `config.json`:
 }
 ```
 
-Run `./pithead apply`. Setup and apply then print the two values a RigForge install needs — the pool
+Run `./pithead apply`. Setup, up, and apply print the two values a RigForge install needs — the local pool
 URL (`127.0.0.1:3333` by default, or your `p2pool.stratum_bind` address and `p2pool.stratum_port`)
-and the stratum password (the `PROXY_STRATUM_PASSWORD` already in `.env`, shown only when
-`p2pool.stratum_password` is set). Install [RigForge](https://github.com/p2pool-starter-stack/rigforge)
+and the stratum password (the `PROXY_STRATUM_PASSWORD` already in `.env`, or an explicit
+“none set” when authentication is off). Install [RigForge](https://github.com/p2pool-starter-stack/rigforge)
 on the same host and enter those two values when it asks; the worker self-registers and appears in
 the dashboard's Workers Alive table like any other rig.
 

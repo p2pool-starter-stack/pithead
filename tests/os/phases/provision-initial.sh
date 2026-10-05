@@ -327,6 +327,19 @@ _phase_provision_initial_body() {
         bad "the built-in miner's config does not dial the machine's own stratum (pools: $(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
     fi
 
+    # Same-apply convergence: exercise both toggles while the original boot is still running.
+    local miner_toggle_out miner_toggle_rc
+    miner_toggle_out=$(_ssh 'TMPDIR=/data bash -s' <"$SCRIPT_DIR/appliance-local-miner-leg.sh" 2>&1)
+    miner_toggle_rc=$?
+    if [ "$miner_toggle_rc" -eq 0 ]; then ok "local-miner apply toggle probe completes (#3090)"; else bad "local-miner apply toggle probe failed (#3090)"; fi
+    local miner_toggle_marker
+    for miner_toggle_marker in \
+        'disable apply stopped xmrig and removed derived config without reboot' \
+        'enable apply started xmrig and rendered its pool without reboot' \
+        'original configuration restored'; do
+        if [[ "$miner_toggle_out" == *"local-miner: $miner_toggle_marker"* ]]; then ok "$miner_toggle_marker (#3090)"; else bad "$miner_toggle_marker (#3090)"; fi
+    done
+
     # Runs LAST, after the fresh-chain sync-gate checks above (#2333): its own local-node login
     # edits are quick, but its remote-node round trip recreates monerod/tari and can poll up to 10
     # minutes for the Tari chain_id proof. Placed any earlier, that wall-clock cost — not a bug in

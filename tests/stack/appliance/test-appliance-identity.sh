@@ -89,7 +89,7 @@ ssh_run unknown '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST k
     ok "unknown variant -> carried SSH config cannot create runtime access" || bad "unknown variant -> carried SSH config cannot create runtime access" "residue"
 unset SSHSB ssh_run
 VSB="$SANDBOX/vsb"
-mkdir -p "$VSB"
+mkdir -p "$VSB" && cp "$ROOT/VERSION" "$VSB/VERSION"
 printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST legacy@test"} }' "$WALLET" >"$VSB/config.json"
 vout=$(
     cd "$VSB" || exit
