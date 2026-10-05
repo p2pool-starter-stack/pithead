@@ -289,9 +289,11 @@ _phase_install_reinstall() {
 }
 
 _phase_install_keep_plant() {
-    local image_id rc=0 SSH_ERR
+    local image_id rc=0 capture
     # Keep this call's full stderr separate from the shared, overwritten SSH scratch file.
-    SSH_ERR=$(command mktemp "${TMPDIR:?}/pithead-keep-plant.stderr.XXXXXX") || return $?
+    # Use the harness's existing scratch location; TMPDIR need not be exported.
+    capture=$(command mktemp "${SSH_ERR:?}.keep-plant.XXXXXX") || return $?
+    local SSH_ERR=$capture
     image_id=$(_ssh "bash -s" <"$SCRIPT_DIR/install-keep-plant.sh") || rc=$?
     if [ "$rc" -eq 0 ] && [[ "$image_id" =~ ^[0-9a-f]{12,64}$ ]]; then
         command rm -f "$SSH_ERR" || return $?

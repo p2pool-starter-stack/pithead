@@ -72,7 +72,7 @@ export -f record refuse mktemp mount mkdir podman sha256sum rm umount
 
 # Load the real wrapper, not a second implementation of its status/diagnostic handling.
 # shellcheck disable=SC2034 # dynamically consumed by the sourced harness helper.
-OS_RUN_SUITE=1 SCRIPT_DIR="$HERE"
+OS_RUN_SUITE=1 SCRIPT_DIR="$HERE" SSH_ERR="$work/ssh.err"
 # shellcheck source=tests/os/phases/install-reinstall.sh
 source "$HERE/phases/install-reinstall.sh"
 _ssh() {
@@ -87,14 +87,38 @@ run() {
     if [ -f "$work/stderr-path" ]; then saved_stderr=$(cat "$work/stderr-path"); fi
 }
 run
-[ "$rc" -eq 0 ] && [ "$(cat "$work/out")" = 123456abcdef ] && [ ! -s "$work/err" ] && [ ! -e "$saved_stderr" ]
+[ "$rc" -eq 0 ]
+[ "$(cat "$work/out")" = 123456abcdef ]
+[ ! -s "$work/err" ]
+[ ! -e "$saved_stderr" ]
 [ "$(cat "$PLANT_TRACE")" = $'mountpoint\nmount\ndirectories\nload\ndigest\nimage-lookup\ndatabase-cleanup\nunmount' ]
 [ "$(cat "$work/target/pithead/data/.loaded-dashboard.tar.gz.sha")" = "$(printf '%064d' 0)" ]
+
+# The real harness does not export TMPDIR. Capture beside its existing SSH scratch
+# file, without introducing an environment requirement before the guest runs.
+for temporary_dir in unset empty; do
+    if [ "$temporary_dir" = unset ]; then unset TMPDIR; else export TMPDIR=''; fi
+    run
+    [ "$rc" -eq 0 ]
+    [ "$(cat "$work/out")" = 123456abcdef ]
+    [[ "$saved_stderr" == "$SSH_ERR.keep-plant."* ]]
+    [ ! -e "$saved_stderr" ]
+    [ "$SSH_ERR" = "$work/ssh.err" ] # the dynamically scoped capture never replaces it.
+    PLANT_FAIL=load
+    run
+    [ "$rc" -eq 17 ]
+    [ ! -s "$work/out" ]
+    grep -q 'sub-step=load failed exit=17' "$work/err"
+    grep -q 'fixture stderr for load' "$saved_stderr"
+    PLANT_FAIL=''
+done
+export TMPDIR="$work"
 
 for PLANT_FAIL in mountpoint mount directories load digest image-lookup database-cleanup unmount; do
     export PLANT_FAIL
     run
-    [ "$rc" -eq 17 ] && [ ! -s "$work/out" ]
+    [ "$rc" -eq 17 ]
+    [ ! -s "$work/out" ]
     grep -q "sub-step=$PLANT_FAIL failed exit=17" "$work/err"
     grep -q "fixture stderr for $PLANT_FAIL" "$work/err"
     case "$PLANT_FAIL" in
@@ -115,7 +139,8 @@ done
 for PLANT_FAIL in empty-image malformed-image; do
     export PLANT_FAIL
     run
-    [ "$rc" -eq 1 ] && [ ! -s "$work/out" ]
+    [ "$rc" -eq 1 ]
+    [ ! -s "$work/out" ]
     grep -q 'sub-step=image-lookup failed exit=1' "$work/err"
     [ "$(tail -2 "$PLANT_TRACE")" = $'database-cleanup\nunmount' ]
 done
@@ -125,7 +150,8 @@ run
 grep -q 'sub-step=unmount failed exit=17' "$work/err"
 PLANT_CLEANUP_FAIL='' PLANT_FAIL=noisy-load
 run
-[ "$rc" -eq 17 ] && [ ! -s "$work/out" ]
+[ "$rc" -eq 17 ]
+[ ! -s "$work/out" ]
 grep -q 'sub-step=load failed exit=17' "$work/err"
 [ "$(wc -l <"$saved_stderr")" -gt 100 ] # full private evidence is retained.
 [ "$(wc -l <"$work/err")" -le 27 ]
@@ -138,14 +164,16 @@ _ssh() {
     return 255
 }
 run
-[ "$rc" -eq 255 ] && [ ! -s "$work/out" ]
+[ "$rc" -eq 255 ]
+[ ! -s "$work/out" ]
 grep -q 'fixture transport error' "$work/err"
 _ssh() {
     printf '%s\n' "$SSH_ERR" >"$work/stderr-path"
     : >"$SSH_ERR"
 }
 run
-[ "$rc" -eq 1 ] && [ ! -s "$work/out" ]
+[ "$rc" -eq 1 ]
+[ ! -s "$work/out" ]
 _ssh() {
     printf '%s\n' "$SSH_ERR" >"$work/stderr-path"
     printf '123456abcdef\n'
@@ -153,6 +181,7 @@ _ssh() {
     return 17
 }
 run
-[ "$rc" -eq 17 ] && [ ! -s "$work/out" ]
+[ "$rc" -eq 17 ]
+[ ! -s "$work/out" ]
 grep -q 'fixture cleanup failure' "$work/err"
 echo 'Install keep-leg plant diagnostics: PASS'
