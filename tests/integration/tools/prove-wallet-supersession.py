@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -19,6 +20,49 @@ def load(name, filename):
     value = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(value)
     return value
+
+
+def wait_prepared(fixture, baseline):
+    # Compose health can mean scan grace, not a prepared cache. Never stop during
+    # that grace: the existing capture guard must remain authoritative afterward.
+    item = fixture.wallet_container({baseline}, timeout=30)
+    if item is None or not item["State"]["Running"]:
+        raise ValueError("prepared proof wallet is not running")
+    deadline = time.monotonic() + 1200
+    while (remaining := deadline - time.monotonic()) > 0:
+        result = fixture.docker(
+            "exec",
+            item["Id"],
+            "test",
+            "!",
+            "-e",
+            f"{fixture.WALLET_DIR}/.payout-scanning",
+            check=False,
+            stdout=subprocess.DEVNULL,
+            timeout=min(30, remaining),
+        )
+        if result.returncode == 0:
+            return
+        time.sleep(min(15, max(0, deadline - time.monotonic())))
+    raise ValueError("prepared proof wallet scan deadline exceeded")
+
+
+def failure_reason(error):
+    # Exact known guard messages map to fixed labels; unknown input is discarded.
+    guards = {
+        "wallet consumer belongs to another checkout": "checkout_owner",
+        "source container wallet identity differs from the baseline": "configured_identity",
+        "wallet volume has another consumer": "extra_consumer",
+        "prepared proof wallet scan deadline exceeded": "scan_deadline",
+        "prepared proof wallet is not running": "wallet_not_running",
+    }
+    if isinstance(error, ValueError):
+        return guards.get(str(error), "validation_refused")
+    if isinstance(error, subprocess.TimeoutExpired):
+        return "command_timeout"
+    if isinstance(error, subprocess.CalledProcessError):
+        return "command_failed"
+    return "evidence_unavailable"
 
 
 def prove(baseline, progress):
@@ -35,13 +79,17 @@ def prove(baseline, progress):
     )
     # Retain this proof's archives privately, just like the recovery evidence.
     os.environ["IT_SCRATCH_DIR"] = str(scratch)
+    progress("prepared_capture")
+    wait_prepared(fixture, baseline)
     progress("capture")
     with redirect_stdout(io.StringIO()) as output:
         fixture.capture(baseline)
     snapshot = Path(output.getvalue().strip())
+    progress("original_receipt")
     job = scratch / "1"
     job.mkdir()
     fixture.receipt(job, "ARMED")
+    progress("commit_reference")
     commit = subprocess.check_output(  # noqa: S603 -- fixed checkout metadata command.
         ["git", "-C", str(baseline), "rev-parse", "HEAD"],  # noqa: S607 -- standard Git tool.
         text=True,
@@ -56,6 +104,7 @@ def prove(baseline, progress):
             "recovery_issues": ["pithead#3133"],
         }
     ).encode()
+    progress("original_fingerprints")
     before = {p.name: fixture.digest(p) for p in snapshot.iterdir()}
     progress("validate_snapshot")
     state = fixture.load(snapshot, baseline)
@@ -71,6 +120,8 @@ def prove(baseline, progress):
     )
     if first != second:
         raise ValueError("isolated copies did not prove equal address and view key")
+    progress("prepared_supersession")
+    wait_prepared(fixture, baseline)
     progress("supersede_live")
     result = retirement.supersede(fixture, snapshot, baseline, job, request)
     if (
@@ -112,9 +163,21 @@ def run_proof(baseline):
 
     try:
         return 0, prove(baseline, progress)
-    except (ValueError, OSError, subprocess.SubprocessError, tarfile.TarError, KeyError, TypeError):
+    except (
+        ValueError,
+        OSError,
+        subprocess.SubprocessError,
+        tarfile.TarError,
+        KeyError,
+        TypeError,
+    ) as error:
         # Fixed stage labels only: never echo exceptions, wallet data or paths.
-        return 1, {"schema": 1, "identity_proven": False, "failed_stage": stage}
+        return 1, {
+            "schema": 1,
+            "identity_proven": False,
+            "failed_stage": stage,
+            "failure_reason": failure_reason(error),
+        }
 
 
 if __name__ == "__main__":

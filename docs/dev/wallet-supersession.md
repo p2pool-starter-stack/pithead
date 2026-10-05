@@ -97,8 +97,12 @@ The mandatory integration selftest covers matching ciphertext, differing
 ciphertext with equal address and view key, independent address/view-key refusal,
 corrupt evidence, unsafe modes and symlinks, request binding, interrupted opening,
 retries and archive preservation. The tier-4 lifecycle proof uses a separate
-private snapshot, exercises the real offline opener twice, proves live ciphertext
+private snapshot, waits up to 1200 seconds for the running wallet's scan marker
+to clear before capture and again before live supersession, exercises the real
+offline opener twice, proves live ciphertext
 identity, checks idempotence and retained evidence, and requires restoration
 replay to refuse. It retains its proof archives in private job scratch and never
 retires another job's fixture. On failure its JSON names a fixed `failed_stage`
-label to identify the refused step without printing exception text or wallet data.
+label and a fixed `failure_reason` to identify the refused step or known guard
+without printing exception text or wallet data. Scan grace is not prepared-cache
+proof; both the ownership check and the stopped-cache marker refusal remain required.
