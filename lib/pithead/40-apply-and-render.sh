@@ -341,9 +341,10 @@ apply() {
     # mining release; a full reset waits for both required chains. Atomic replacement does
     # not follow a planted symlink; a directory fails closed and leaves the retry marker.
     if [ "$rearm_sync_gate" -ne 0 ]; then
-        rearm_sync_gate_marker "$DASHBOARD_DIR" "$rearm_sync_gate" 2>/dev/null ||
-            sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\" \"\$2\"" _ "$DASHBOARD_DIR" "$rearm_sync_gate" || true
-        [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
+        # A stale marker can satisfy the file check, so one writer must report success.
+        { rearm_sync_gate_marker "$DASHBOARD_DIR" "$rearm_sync_gate" 2>/dev/null ||
+            sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\" \"\$2\"" _ "$DASHBOARD_DIR" "$rearm_sync_gate"; } &&
+            [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
             error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset); re-run '$0 apply' to retry."
     fi
     # Recreate changed services; compose_up_checked also removes inactive profiles (#795).

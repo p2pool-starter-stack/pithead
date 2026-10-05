@@ -71,6 +71,16 @@ assert_eq "a directory at the marker path fails the apply" "$(rg_apply '"mode":"
 assert_eq "the failed re-arm is kept for the retry" "$(cat "$V/.env.apply-incomplete" 2>/dev/null)" rearm-sync-gate
 assert_eq "the planted directory is untouched" "$(ls "$RG_MARK")" keep
 rm -rf "$RG_MARK" "$V/.env.apply-incomplete"
+# A failed publication must not let a stale Tari-only marker stand in for a full reset: with the
+# directory read-only and the privileged retry denied, apply aborts before recreation and keeps its retry marker.
+cp "$V/bin/sudo" "$V/sudo.stub" && chmod +x "$V/sudo.stub" && printf '#!/usr/bin/env bash\n[ "${2:-}" = bash ] || [ "${1:-}" = bash ] && exit 1\nexec "%s" "$@"\n' "$V/sudo.stub" >"$V/bin/sudo"
+mkdir -p "$V/data/dashboard" && printf 'tari-only\n' >"$RG_MARK" && chmod 555 "$V/data/dashboard"
+assert_eq "a failed full reset aborts the apply" "$(rg_apply '"mode":"remote","remote":{"host":"node.example"}' '' mini | cut -d" " -f1)" "rc=1"
+chmod 755 "$V/data/dashboard"
+assert_eq "the stale Tari-only marker is not mistaken for the reset" "$(cat "$RG_MARK")" tari-only
+assert_eq "the failed full reset keeps its retry marker" "$(cat "$V/.env.apply-incomplete" 2>/dev/null)" rearm-sync-gate
+mv "$V/sudo.stub" "$V/bin/sudo"
+rm -f "$RG_MARK" "$V/.env.apply-incomplete"
 
 assert_contains "Tari mode preview explains continued Monero mining" "$(run_sourced "$SANDBOX" describe_change TARI_MODE off local)" "Monero mining continues; merge-mining starts when Tari has synced"
 assert_contains "Tari endpoint preview explains continued Monero mining" "$(run_sourced "$SANDBOX" describe_change TARI_GRPC_ADDRESS old.example:18142 new.example:18142)" "Monero mining continues; merge-mining starts when Tari has synced"
