@@ -59,6 +59,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
+        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
         run_tari_background_sync() { :; } # driven by its own runtime leg and selftest
         sync_gate_marker_state() {

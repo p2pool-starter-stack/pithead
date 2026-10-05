@@ -44,9 +44,17 @@ run_cli_wizard_defaults() {
     rx 'rm -f .itest-wizard-defaults.json'
     pithead up >/dev/null 2>&1
     assert_rc "fresh CLI defaults start their rendered services" "$?" 0
+    lifecycle_gate_sample after-wizard-up
     wait_status_ok 300
     assert_rc "fresh CLI defaults report a healthy stack" "$?" 0
     # Keep the general lifecycle's secret-preservation tests on their original fixture.
-    push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 300
-    assert_rc "CLI defaults proof restores the baseline config for lifecycle" "$?" 0
+    lifecycle_gate_sample before-wizard-restore
+    push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1
+    rc=$?
+    lifecycle_gate_sample after-wizard-restore-apply
+    if [ "$rc" -eq 0 ]; then
+        wait_status_ok 300
+        rc=$?
+    fi
+    assert_rc "CLI defaults proof restores the baseline config for lifecycle" "$rc" 0
 }

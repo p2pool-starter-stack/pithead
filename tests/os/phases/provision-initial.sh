@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+source "$SCRIPT_DIR/miner-connection-leg.sh" || return $?
 # The provision leg proper, plus the one assertion that must survive its aborts.
 #
 # #2059: the Tor-only egress ENFORCEMENT backstop used to be the last ~55 lines of the body below,
@@ -118,6 +119,11 @@ _phase_provision_initial_body() {
     else
         bad "the card's password is not a generated one: $(printf '%s' "$handoff_body" | jq -c '.password // null')"
     fi
+    if wizard_miner_connection_card_valid "$handoff_body" off false; then
+        ok "new setup hand-off explicitly has no stratum password (#3092)"
+    else
+        bad "new setup hand-off explicitly has no stratum password (#3092)"
+    fi
     scode=$(curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "handoff acknowledgement did not return 200 (got ${scode:-none})"
@@ -231,12 +237,19 @@ _phase_provision_initial_body() {
 
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
+    phase_miner_connection_installed "$handoff_body"
     phase_provision_xvb_routing
     if [ -n "$pv_pass" ] && curl -sSk -u "$pv_user:$pv_pass" "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.step' >/dev/null 2>&1; then
         ok "appliance state carries os_update — the dashboard OS-update control renders"
     else
         bad "no os_update in /api/state — the appliance has no reachable OS-update control"
+    fi
+    # Inspect inside the guest: never print credential-bearing journal lines into evidence.
+    if SSH_TIMEOUT=60 _ssh 'bash -s' <"$SCRIPT_DIR/credential-journals.sh"; then
+        ok "firstboot and system journals contain no bcrypt credential (#3131)"
+    else
+        bad "firstboot or system journal contains bcrypt, or could not be checked (#3131)"
     fi
     phase_provision_control_regressions "$pv_user" "$pv_pass"
     phase_provision_control_recovery "$ip" "$pv_user" "$pv_pass"

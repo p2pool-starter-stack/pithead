@@ -37,6 +37,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         env_on_box() { :; }
         has_compose_profile() { return 1; }
         run_cli_wizard_defaults() { :; }
+        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
         run_tari_background_sync() { :; }           # Its worker evidence has a separate selftest.
         sync_gate_marker_state() { printf absent; } # Marker reads and restoration are checked separately.

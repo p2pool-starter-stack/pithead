@@ -739,6 +739,16 @@ and `--list` prints it).
 For one representative config:
 
 - `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run.
+  `lifecycle-gate.log` samples the reset marker, persisted `miner_released` boolean and running
+  mining services before the wizard-defaults workload, after its startup and around its baseline
+  restore apply, before/after restart, around setup/up/apply connection probes, around the
+  missing-image down/up and before the source-image fixture. Each target command has a
+  10-second TERM deadline plus a 2-second forced-kill grace; unreadable state is explicitly
+  unavailable. The snapshot query is read-only and retains no other database values. These samples diagnose re-holds; healthy status alone
+  does not establish a released sync gate or prove running miners.
+  Source-image initialization failures report a fixed stage in `source-image-reconcile.log`,
+  including failures before the cleanup trap can be armed. The real image mutation, guarded
+  recreation, immutable image/Compose-owner assertions and cleanup remain binding.
   The restore must also return every wallet, proxy, dashboard, RPC, and onion secret category
   exactly, the same per-category comparison a safety rollback makes.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
@@ -761,7 +771,14 @@ For one representative config:
   with the `missing` pull policy must
   then return healthy on the same chain files and the same Monero onion address.
 
-A source checkout retains the original image under a temporary tag, builds a label-only
+A source checkout first reuses `assert_mining_probe_ready`: both P2Pool and xmrig-proxy
+must be running for two consecutive samples, five seconds apart, with a 1500-second
+readiness deadline. Each Docker probe has a 10-second TERM deadline and two-second
+forced-kill grace.
+The wizard-defaults baseline apply can legitimately reset the gate when it changes the
+required Tari mode; healthy status alone does not establish mining-service readiness.
+A failed prerequisite records a binding failure and still executes every image assertion.
+The fixture retains the original image under a temporary tag, builds a label-only
 `xmrig-proxy` image while the old container stays running, then calls the upgrade image
 reconciler. The regression requires guarded recreation,
 the declared immutable image ID and checkout Compose owner, and restoration of the original

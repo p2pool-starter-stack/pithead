@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 source "${BASH_SOURCE[0]%/*}/egress-probe.sh" || return $?
+source "${BASH_SOURCE[0]%/*}/miner-connection.sh" || return $?
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     local name="$1" config="$2"
@@ -105,6 +106,7 @@ assert_running_state() {
         return 0
     fi
     it_pass "dashboard /api/state reachable"
+    assert_miner_connection_live
 
     wait_for 150 5 "monerod caught up (RPC)" monero_caught_up || true
     if monero_caught_up; then it_pass "monerod reports synced (RPC)"; elif [ $? = 1 ]; then it_fail "monerod reports synced (RPC)" "get_info answered: not synchronized"; else it_fail "monerod reports synced (RPC)" "get_info could not be asked — unreachable, refused, timed out or rejected"; fi
@@ -267,21 +269,14 @@ assert_running_state() {
         esac } || it_skip_leg "tari DNS sinkholed — no clearnet resolver (#162)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         # The entrypoint's fork check (#2618) reads the header at 350,000 once gRPC answers; a bench on the canonical chain must log its hash.
         [ "$tmode" = "local" ] && assert_eq "tari fork-check: header 350000 is canonical (#2618)" "$(rx "for _ in \$(seq 60); do docker logs tari 2>&1 | grep -qF '[pithead fork-check] header 350000 is canonical (663b7254df69989b33cec8325815631e2b455f7252c230976f1b50dc8daced47)' && { echo 1; exit 0; }; sleep 5; done; echo 0")" "1" || it_skip_leg "tari fork-check: header 350000 is canonical (#2618)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
-        # The xmrig-proxy config knobs must reach the RUNNING proxy's argv, not just the compose
-        # render. donate-level is rendered explicitly so it's always visible (#173). The matrix
-        # deploys the default config (no p2pool.stratum_password) → stratum auth OFF, which must
-        # render NO --access-password flag at all: a literal empty '--access-password=' would demand
-        # an empty password and reject every rig (the bug verified + guarded for #152).
+        # Inspect PID 1 after the entrypoint has appended the password and TLS flags.
         local proxy_args
-        proxy_args="$(rx "docker inspect xmrig-proxy --format '{{json .Args}}' 2>/dev/null")"
+        proxy_args="$(rx "set -o pipefail; docker exec xmrig-proxy cat /proc/1/cmdline | jq -Rs 'split(\"\\u0000\") | .[:-1]'" 2>/dev/null)"
         case "$proxy_args" in
         *'--donate-level='*) it_pass "xmrig-proxy dev-fee donate-level is explicit + live (#173)" ;;
         *) it_fail "xmrig-proxy dev-fee donate-level is explicit + live (#173)" "no --donate-level in proxy argv" ;;
         esac
-        case "$proxy_args" in
-        *'--access-password='*) it_fail "default-off stratum: no --access-password live (#152)" "found --access-password with no stratum_password set — would reject rigs" ;;
-        *) it_pass "default-off stratum: no --access-password live (#152)" ;;
-        esac
+        assert_proxy_password_live "$config"
     fi
 
     # 8c. Stratum-over-TLS (#261/#942): tier 1 proves the render (PROXY_STRATUM_TLS -> the

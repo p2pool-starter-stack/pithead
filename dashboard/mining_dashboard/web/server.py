@@ -15,6 +15,7 @@ from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
 from mining_dashboard.web.config_commit import approval_envelope
+from mining_dashboard.web.miner_connection import handle_miner_connection
 from mining_dashboard.web.views import diagnostics_views, download_views
 from mining_dashboard.web.views.charts import canonical_window, parse_window
 from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
@@ -548,7 +549,7 @@ def _apply_security_headers(response):
     # static CSS/JS is baked into the image, so a `pithead upgrade` changes served bytes, and a
     # browser (notably iOS Safari) can otherwise keep serving pre-upgrade dashboard.css a while
     # (Issue #83). 'no-cache' still allows a conditional request, so an unchanged asset costs only a 304.
-    response.headers["Cache-Control"] = "no-cache"
+    response.headers.setdefault("Cache-Control", "no-cache")
     return response
 
 
@@ -586,8 +587,7 @@ def create_app(state_manager, latest_data_ref):
         [
             web.get("/", handle_index),
             web.get("/api/state", handle_state),
-            # Warm-standby state a backup stack pulls on failover (#249). Read-only, same auth as
-            # /api/state; harmless (and unread) on a stack with no backup.
+            web.get("/api/miner-connection", handle_miner_connection),
             web.get("/api/xvb-standby", handle_xvb_standby),
             web.get("/metrics", handle_metrics),
             web.get("/api/access", handle_access_log),
