@@ -46,15 +46,28 @@ restore_live_state_verdict() {
 # 30-second startup probe, since it would otherwise stop P2Pool every poll on fresh chains.
 # Start the existing restored container once, never retry it, then restore the normal gate.
 restore_p2pool_startup() {
-    local state id running exit_code restarts extra initial_id="" sample failed=0
-    local inspect="podman inspect p2pool --format '{{.Id}} {{.State.Running}} {{.State.ExitCode}} {{.RestartCount}}'"
+    local state id running exit_code restarts oom extra started_at stop_logs initial_id="" sample failed=0
+    local inspect="podman inspect p2pool --format '{{.Id}} {{.State.Running}} {{.State.ExitCode}} {{.RestartCount}} {{.State.OOMKilled}}'"
     _ssh "podman stop dashboard >/dev/null" || failed=1
     if [ "$failed" -eq 0 ]; then
         state=$(_ssh "$inspect") || failed=1
-        read -r initial_id running exit_code restarts extra <<<"$state"
-        # A crash before the observation window is still a failure, even if starting it again
-        # would clear ExitCode. Zero restarts also rejects a running instant in a crash loop.
-        [ -n "$initial_id" ] && { [ "$running" = true ] || [ "$running" = false ]; } && [ "$exit_code" = 0 ] && [ "$restarts" = 0 ] && [ -z "$extra" ] || failed=1
+        read -r initial_id running exit_code restarts oom extra <<<"$state"
+        # Reject earlier crashes and OOM kills. A proven sync-gate stop may escalate SIGTERM
+        # to SIGKILL (137) while P2Pool waits for a remote curl job; require this run's stop logs.
+        [ -n "$initial_id" ] && { [ "$running" = true ] || [ "$running" = false ]; } &&
+            [ "$restarts" = 0 ] && [ "$oom" = false ] && [ -z "$extra" ] || failed=1
+        if [ "$exit_code" = 137 ] && [ "$running" = false ] && [ "$failed" -eq 0 ]; then
+            started_at=$(_ssh "podman inspect p2pool --format '{{json .State.StartedAt}}'") || failed=1
+            started_at=${started_at#\"}
+            started_at=${started_at%\"}
+            [[ "$started_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(Z|[+-][0-9]{2}:[0-9]{2})$ ]] || failed=1
+            if [ "$failed" -eq 0 ]; then
+                stop_logs=$(_ssh "podman logs --since '$started_at' --tail 30 p2pool 2>&1") || failed=1
+                [[ "$stop_logs" = *'P2Pool caught SIGTERM'* ]] && [[ "$stop_logs" = *'P2Pool stopping'* ]] || failed=1
+            fi
+        else
+            [ "$exit_code" = 0 ] || failed=1
+        fi
     fi
     if [ "$failed" -eq 0 ]; then
         _ssh "podman start p2pool >/dev/null" || failed=1
@@ -66,9 +79,9 @@ restore_p2pool_startup() {
             break
         fi
         state=$(_ssh "$inspect") || failed=1
-        read -r id running exit_code restarts extra <<<"$state"
+        read -r id running exit_code restarts oom extra <<<"$state"
         [ "$id" = "$initial_id" ] && [ "$running" = true ] && [ "$exit_code" = 0 ] &&
-            [ "$restarts" = 0 ] && [ -z "$extra" ] || failed=1
+            [ "$restarts" = 0 ] && [ "$oom" = false ] && [ -z "$extra" ] || failed=1
     done
     # Always restore controller ownership, including after a transport/start/inspect failure.
     _ssh 'podman stop p2pool >/dev/null; stopped=$?; podman start dashboard >/dev/null && test "$stopped" -eq 0' || failed=1

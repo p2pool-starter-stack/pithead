@@ -355,8 +355,7 @@ _phase_install_restore() {
             done
             ;;
         esac
-        restore_sync_gate_verdict "$restore_case" # #2626, every case in this loop
-        if restore_p2pool_startup; then
+        if restore_sync_gate_verdict "$restore_case" && restore_p2pool_startup; then
             ok "restore leg ($restore_case): P2Pool runs for 30 seconds with zero restarts"
         else
             bad "restore leg ($restore_case): P2Pool startup or controller restoration failed"

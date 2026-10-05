@@ -96,13 +96,18 @@ restore_fixture_secret_verdict() {
 # guest's unsynced chains instead of inheriting a release — for every case in this loop.
 restore_sync_gate_verdict() { # <restore case>
     local restore_case="$1"
-    local dash_data started_at gtries=0 gate_seen=0
+    local dash_data started_at gtries=0 gate_seen=0 failed=0
     dash_data=$(_ssh "podman inspect dashboard --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}'" 2>/dev/null | tr -d '\r')
     { [ -n "$dash_data" ] && _ssh "test -f '$dash_data/sync-gate-reset'" 2>/dev/null; } &&
         ok "restore leg ($restore_case): the restore's sync-gate marker is in the dashboard's data mount (#2626)" ||
-        bad "restore leg ($restore_case): no sync-gate marker in the dashboard's data mount (${dash_data:-none}) (#2626)"
-    started_at=$(_ssh "podman inspect dashboard --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
-    if ! [[ "$started_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$ ]]; then
+        {
+            bad "restore leg ($restore_case): no sync-gate marker in the dashboard's data mount (${dash_data:-none}) (#2626)"
+            failed=1
+        }
+    started_at=$(_ssh "podman inspect dashboard --format '{{json .State.StartedAt}}'" 2>/dev/null | tr -d '\r')
+    started_at=${started_at#\"}
+    started_at=${started_at%\"}
+    if ! [[ "$started_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(Z|[+-][0-9]{2}:[0-9]{2})$ ]]; then
         bad "restore leg ($restore_case): dashboard start time is unreadable"
         return 1
     fi
@@ -113,6 +118,7 @@ restore_sync_gate_verdict() { # <restore case>
     [ "$gate_seen" -eq 1 ] &&
         ok "restore leg ($restore_case): the restored dashboard holds the miner on this machine's unsynced chains (#2626)" ||
         bad "restore leg ($restore_case): the restored dashboard never held the miner — a carried sync-gate release (#2626)"
+    [ "$failed" -eq 0 ] && [ "$gate_seen" -eq 1 ]
 }
 
 # A kept target's chain survives the restore without a resync: both the fixture's sentinel and
