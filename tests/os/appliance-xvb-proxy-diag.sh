@@ -44,7 +44,8 @@ _xvb_diag_field() { # <text-when-empty> <lines> <cmd...>
 _xvb_proxy_neigh_cmd() {
     printf '%s' 'h=$(podman exec dashboard printenv PROXY_HOST) || exit 1
 m=$(podman inspect -f "{{range .NetworkSettings.Networks}}{{.MacAddress}}{{end}}" xmrig-proxy 2>/dev/null)
-set -- $(ip neigh show to "$h")
+n=$(ip neigh show to "$h") || { echo "neigh=ip-failed lladdr=none"; exit 0; }
+set -- $n
 s=none l=none
 while [ $# -gt 0 ]; do [ "$1" = lladdr ] && l=$2; s=$1; shift; done
 if [ "$l" = none ]; then :; elif [ -z "$m" ]; then l=no-container-mac; elif [ "$l" = "$m" ]; then l=match; else l=differs; fi
@@ -69,6 +70,7 @@ _xvb_diag_self_test() {
     _xvb_wire_dead() { printf 'ssh: connect to host: No route to host\n' >&2 && return 255; }
     _xvb_wire_noexec() {
         case "$1" in
+        *"ip neigh show to"*) printf 'neigh=STUB lladdr=stub\n' ;;
         *"podman exec"*) printf 'Error: dashboard is not running\n' >&2 && return 125 ;;
         *"podman start"*) return 0 ;;
         *) printf 'live\n' ;;
@@ -77,14 +79,14 @@ _xvb_diag_self_test() {
     XVBT_WIRE=_xvb_wire_dead
     out="$(_xvb_proxy_diag)"
     [ "$(printf '%s' "$out" | grep -o 'collect-failed rc=255 .*No route to host' | wc -l)" -ge 1 ] &&
-        [[ "$out" != *'start[ok]'* ]] || {
+        [[ "$out" != *'start[ok]'* && "$out" == *' net[collect-failed rc=255 '*'No route to host'*'] log['* ]] || {
         printf 'xvb self-test: a dead transport is not named in the diagnostic: %s\n' "$out" >&2
         f=$((f + 1))
     }
     XVBT_WIRE=_xvb_wire_noexec
     out="$(_xvb_proxy_diag)"
     [[ "$out" == *'start[ok]'* && "$out" == *'tcp[collect-failed rc=125 '*'dashboard is not running'*']'* &&
-        "$out" == *'log[live]'* ]] || {
+        "$out" == *' net[neigh=STUB lladdr=stub] '* && "$out" == *'log[live]'* ]] || {
         printf 'xvb self-test: a dead dashboard exec is not named in the tcp field: %s\n' "$out" >&2
         f=$((f + 1))
     }
@@ -139,7 +141,7 @@ _xvb_neigh_cmd_self_test() {
         got="$(NEIGH="$neigh" MAC="$mac" sh -c 'podman() {
     case "$*" in *printenv*) [ "$MAC" = no-env ] && return 1; echo 172.28.0.29 ;; *) [ "$MAC" = - ] || echo "$MAC" ;; esac
 }
-ip() { [ -z "$NEIGH" ] || echo "$NEIGH"; }
+ip() { [ "$MAC" != no-ip ] && [ "$*" = "neigh show to 172.28.0.29" ] || return 3; [ -z "$NEIGH" ] || echo "$NEIGH"; }
 '"$(_xvb_proxy_neigh_cmd)" 2>&1)" || got="rc=$?:$got"
         [ "$got" = "$want" ] || {
             printf 'xvb self-test: neighbor diagnostic for [%s] [%s]: got [%s], want [%s]\n' "$neigh" "$mac" "$got" "$want" >&2
@@ -152,6 +154,7 @@ ip() { [ -z "$NEIGH" ] || echo "$NEIGH"; }
 172.28.0.29 dev podman1 FAILED|0a:00:00:00:00:02|neigh=FAILED lladdr=none
 172.28.0.29 dev podman1 lladdr 0a:00:00:00:00:01 DELAY|-|neigh=DELAY lladdr=no-container-mac
 172.28.0.29 dev podman1 lladdr 0a:00:00:00:00:01 DELAY|no-env|rc=1:
+172.28.0.29 dev podman1 lladdr 0a:00:00:00:00:01 DELAY|no-ip|neigh=ip-failed lladdr=none
 CASES
     [ "$f" -eq 0 ]
 }
