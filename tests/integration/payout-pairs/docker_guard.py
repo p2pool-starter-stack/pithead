@@ -124,6 +124,7 @@ class Policy:
                     self.fixture_name(name)
                     and (not self.inspect(kind, name) or self.owned(kind, name))
                     and not body.get("DriverOpts")
+                    and not body.get("Options")  # a network's equivalent of DriverOpts
                     and body.get("Driver") in (None, "", "local")
                 )
             if bits[1] == "prune":
@@ -142,6 +143,8 @@ class Policy:
                 return True  # Relay the daemon's 404; Compose then creates its fixture resource.
             return self.owned(kind, bits[1])
         # Images are prebuilt/pulled before apply. No unscoped Docker mutation is forwarded.
+        if bits[0] == "images" and bits[-1] not in ("json", "history", "images"):
+            return False
         return method in ("GET", "HEAD") and bits[0] in (
             "_ping",
             "version",
@@ -213,6 +216,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.flush()
         except (OSError, ValueError, http.client.HTTPException):
             self.close_connection = True
+        except (AttributeError, TypeError):  # a malformed body is a refusal, not a dead handler
+            self.send_error(403, "outside fixture project")
         finally:
             connection.close()
 

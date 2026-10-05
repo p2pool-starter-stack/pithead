@@ -191,6 +191,22 @@ class GuardTest(unittest.TestCase):
         path = "/containers/create?name=fixture-caddy-1"
         self.assertTrue(self.policy.allows("POST", path, {"Labels": LABEL, "HostConfig": host}))
 
+    def test_images_are_readable_but_never_exported_and_networks_take_no_options(self):
+        self.assertTrue(self.policy.allows("GET", "/v1.50/images/json", {}))
+        self.assertTrue(self.policy.allows("GET", "/images/ghcr.io/x/y:tag/json", {}))
+        self.assertFalse(self.policy.allows("GET", "/images/ghcr.io/x/y:tag/get", {}))
+        self.assertFalse(
+            self.policy.allows(
+                "POST",
+                "/networks/create",
+                {
+                    "Labels": LABEL,
+                    "Name": "fixture_net",
+                    "Options": {"com.docker.network.bridge.name": "docker0"},
+                },
+            )
+        )
+
     def test_external_network_reads_and_owned_connects_only(self):
         self.assertTrue(self.policy.allows("GET", "/networks/mining_net", {}))
         self.assertFalse(
