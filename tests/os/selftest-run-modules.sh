@@ -69,8 +69,6 @@ source "$HERE/phases/image-upgrade.sh" || exit $?
 source "$HERE/phases/crossupdate.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
 source "$HERE/phases/stack.sh" || exit $?
-# shellcheck source=tests/os/phases/tor-heal.sh
-source "$HERE/phases/tor-heal.sh" || exit $?
 # #2254: stack.sh is sourced into the runner's scope, so SCRIPT_DIR is the runner's own
 # directory (tests/os), never stack.sh's (tests/os/phases). _stack_run_integration must resolve
 # the DIY gate as "$SCRIPT_DIR/../integration/run.sh"; a stray extra ".." would send it above the
