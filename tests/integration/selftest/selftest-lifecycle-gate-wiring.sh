@@ -45,7 +45,7 @@ wait_status_ok() { :; }
 tor_recovery_healthy_probe() { :; }
 run_connection_announcements() { :; }
 run_cli_wizard_defaults() { :; }
-assert_mining_probe_ready() { [ "$1" = "source image fixture (#1276)" ]; }
+assert_mining_probe_ready() { [ "$1" = "source image fixture (bench-ci#1276)" ]; }
 service_state() { echo 'running none'; }
 svc_state_of() { printf '%s' "${1%% *}"; }
 run_lifecycle
