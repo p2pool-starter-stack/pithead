@@ -15,7 +15,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STACK_BLOCKS=4
+STACK_BLOCKS=5
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
 # shellcheck source=tests/stack/lib/suite-blocks.sh
@@ -221,6 +221,10 @@ if in_block 3; then
     # shellcheck source=tests/stack/control/test-control-ssrf-host-local.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-ssrf-host-local.sh" && domain_ran test-control-ssrf-host-local.sh "$_d0" "$?" || domain_ran test-control-ssrf-host-local.sh "$_d0" "$?"
 
+fi
+
+# Keep the approval/SSRF dependency group together; independent round trips get their own budget.
+if in_block 4; then
     # shellcheck source=tests/stack/control/test-control-editable-allowlist.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh" && domain_ran test-control-editable-allowlist.sh "$_d0" "$?" || domain_ran test-control-editable-allowlist.sh "$_d0" "$?"
 
@@ -252,7 +256,7 @@ if in_block 3; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 fi
 
-if in_block 4; then
+if in_block 5; then
     # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-dashboard-carry.sh disable=SC2015
