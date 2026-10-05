@@ -176,6 +176,16 @@ class GuardTest(unittest.TestCase):
         self.assertFalse(self.policy.allows("POST", "/images/prune", {}))
         self.assertEqual(self.policy.why, guard.Policy.default_why)
 
+    def test_compose_prefixed_capability_names_are_the_same_capabilities(self):
+        path = "/containers/create?name=fixture_wallet-1"
+        for caps, allowed in (
+            (["CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_SETUID", "CAP_SETGID"], True),
+            (["CAP_SYS_ADMIN"], False),
+        ):
+            host = {"CapDrop": ["ALL"], "CapAdd": caps}
+            body = {"Labels": LABEL, "HostConfig": host}
+            self.assertEqual(self.policy.allows("POST", path, body), allowed)
+
     def test_external_network_reads_and_owned_connects_only(self):
         self.assertTrue(self.policy.allows("GET", "/networks/mining_net", {}))
         self.assertFalse(

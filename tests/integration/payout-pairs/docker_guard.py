@@ -65,7 +65,12 @@ class Policy:
             return self.deny("capabilities not dropped or privileged/device/volumes-from")
         if host.get("VolumeDriver") not in (None, "", "local"):
             return self.deny("volume driver")
-        if set(host.get("CapAdd") or []) - {"CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"}:
+        if {c.removeprefix("CAP_") for c in host.get("CapAdd") or []} - {
+            "CHOWN",
+            "DAC_OVERRIDE",
+            "SETUID",
+            "SETGID",
+        }:
             return self.deny("capability added")
         if any(
             host.get(k) not in (None, "", "private") for k in ("PidMode", "IpcMode", "UsernsMode")
