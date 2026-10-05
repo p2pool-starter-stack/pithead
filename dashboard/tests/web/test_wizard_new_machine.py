@@ -92,3 +92,11 @@ async def test_new_machine_raffle_is_off_but_existing_absence_keeps_reference(cl
         json.dumps({"monero": {"wallet_address": "4OLD"}})
     )
     assert (await _state(client))["config"]["xvb"]["enabled"] is True
+
+
+async def test_handoff_credentials_are_never_cached(client, spool):
+    spool.joinpath("handoff.json").write_text('{"stratum_password": "x"}')
+    await _auth(client)
+    stage = await client.get("/api/handoff")
+    assert stage.headers["Cache-Control"] == "no-store"
+    assert (await client.get("/api/wizard-state")).headers["Cache-Control"] == "no-store"

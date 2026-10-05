@@ -21,7 +21,7 @@ class MoneroHealthEdgesMixin:
                 bool(health.get("peerless")),
                 f"Monero node has no outgoing peers ({health.get('peers_out')} out, "
                 f"{health.get('peers_in')} in) — it cannot see new blocks and mining sits on a "
-                "stale tip. Run './pithead restart monerod' to re-dial.",
+                "stale tip. Run './pithead restart monerod' to re-dial, then './pithead tor-recover check' if it stays peerless.",
                 "Monero node has outgoing peers again.",
             )
         if health.get("height") is not None and health.get("advance_age_sec") is not None:
@@ -30,7 +30,7 @@ class MoneroHealthEdgesMixin:
                 bool(health.get("stalled")),
                 f"Monero node height {health.get('height')} has not moved for "
                 f"{health['advance_age_sec'] // 60} min (blocks arrive every ~2) — "
-                "it may be on a stale tip or a fork. Run './pithead restart monerod'.",
+                "it may be on a stale tip or a fork. Run './pithead restart monerod', then './pithead tor-recover check' if height stays stalled.",
                 "Monero node is advancing again.",
             )
         return alerts

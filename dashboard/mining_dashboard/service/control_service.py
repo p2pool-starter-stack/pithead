@@ -20,7 +20,7 @@ import os
 import time
 import uuid
 
-from mining_dashboard.config import config
+from mining_dashboard.config import config, documents
 from mining_dashboard.service import audit_service, config_operations, request_spool
 
 logger = logging.getLogger("ControlService")
@@ -57,7 +57,7 @@ _RESULT_POLL_S = 0.5
 def _load_host_config():
     """The host-rendered, pre-masked config copy (#440) — no raw secret ever crosses the mount."""
     with open(config.HOST_CONFIG_PATH) as f:
-        return json.load(f)
+        return documents.load_host_config(f)
 
 
 def _get(cfg, path):

@@ -11,6 +11,7 @@ run_lifecycle() {
     lifecycle_gate_sample before-wizard-defaults
     run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
+    prove_wallet_supersession
     lifecycle_gate_sample before-restart
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
@@ -88,7 +89,6 @@ run_lifecycle() {
     # .pool.type lags a sidechain switch until peers on the new chain connect — wait + three-way
     # verdict, don't assert cold on a peer-timing state (#54, #687).
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
-
     # Node-down failover (#31): stop monerod -> status non-zero (node down), dashboard rejects
     # workers (xmrig-proxy stopped) -> start monerod -> readmitted -> status 0 again.
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
@@ -105,7 +105,6 @@ run_lifecycle() {
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
-
     # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
     # restore brings them back. We change the pool, restore, and assert the pool reverted and
     # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check

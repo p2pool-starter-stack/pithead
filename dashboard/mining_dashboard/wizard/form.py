@@ -8,6 +8,8 @@ is reached. ``wizard.py`` re-imports the name, so ``wizard.build_config`` still 
 the tests and for the one call site in ``submit``.
 """
 
+import secrets
+
 
 def build_config(form: dict, *, tari_default: str = "local") -> dict:
     """Form fields as a pithead config — the fallback for a client that never populated the
@@ -28,7 +30,12 @@ def build_config(form: dict, *, tari_default: str = "local") -> dict:
         "dashboard": {"host": s_("machine_name") or "pithead"},
         "monero": {"wallet_address": s_("monero_wallet"), "mode": s_("monero_mode") or "local"},
         "xvb": {"enabled": False},
-        "p2pool": {"pool": s_("pool") or "mini", "stratum_password": "auto"},
+        "p2pool": {
+            "pool": s_("pool") or "mini",
+            "stratum_password": secrets.token_hex(12)
+            if form.get("stratum_password") == "true"
+            else "",
+        },
     }
 
     # Explicit wizard answer, independent of the reference used by older configs.

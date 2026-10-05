@@ -1,4 +1,4 @@
-# Explicit recovery for saturated Tor circuit history. Never called by clearnet probing.
+# Gated recovery for saturated Tor history: explicit CLI or auto-heal host control request.
 TOR_RECOVERY_COOLDOWN_SEC=21600
 
 # monerod's get_info with the REAL outgoing count (#2921). The published RPC is restricted and answers 0

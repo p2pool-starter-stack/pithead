@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh)
-function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-fresh-start.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh)
+modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
+function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-fresh-start.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
 expected_modules="${modules[*]}"
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_modules" = "$expected_modules" ] || {
     echo "os module order mismatch: $actual_modules" >&2
     exit 1
 }
-expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup serial_has wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg _restore_target_preboot_verdict _restore_installer_preboot_verdict phase_install phase_provision phase_setup_defaults _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _phase_reset_config phase_reset _image_upgrade_input_failure _image_upgrade_input_run _image_upgrade_inputs_valid _image_upgrade_node_v4 _image_upgrade_prepare_inputs _image_upgrade_sign_wrong_key _image_upgrade_stage_guest _image_upgrade_clear_guest_inputs _image_upgrade_read_guest_failure _image_upgrade_read_miner_readiness phase_image_upgrade phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack'
+expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup serial_has wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg _restore_target_preboot_verdict _restore_installer_preboot_verdict phase_install phase_provision phase_setup_defaults _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _phase_reset_config phase_reset _image_upgrade_input_failure _image_upgrade_input_run _image_upgrade_inputs_valid _image_upgrade_node_v4 _image_upgrade_prepare_inputs _image_upgrade_sign_wrong_key _image_upgrade_stage_guest _image_upgrade_clear_guest_inputs _image_upgrade_read_guest_failure _image_upgrade_read_miner_readiness phase_image_upgrade phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack phase_tor_heal'
 actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_(height|evidence)$' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
@@ -69,6 +69,8 @@ source "$HERE/phases/image-upgrade.sh" || exit $?
 source "$HERE/phases/crossupdate.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
 source "$HERE/phases/stack.sh" || exit $?
+# shellcheck source=tests/os/phases/tor-heal.sh
+source "$HERE/phases/tor-heal.sh" || exit $?
 # #2254: stack.sh is sourced into the runner's scope, so SCRIPT_DIR is the runner's own
 # directory (tests/os), never stack.sh's (tests/os/phases). _stack_run_integration must resolve
 # the DIY gate as "$SCRIPT_DIR/../integration/run.sh"; a stray extra ".." would send it above the
@@ -456,11 +458,9 @@ awk 'index($0, "m10_recovered \"$i\" || return 1") { held = $0; next }
 grep -qF 'm10_recovered "$i" || return 1' "$m10_mutant" || exit 1
 ! m10_call_in_cut_loop "$m10_mutant" || exit 1
 rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR" "$m10_mutant"
-# #1998's routing leg drives its own assertions against a stubbed guest. Driven from here rather
-# than tests/stack/test-harness-tooling.sh (where the other appliance-lane self-tests live) only
-# because that file sits exactly on its 406-line budget ceiling, which ceilings-only-go-down will
-# not let this add to; this runner is already the os lane's own self-test entry point and is
-# reached from the same tier-1 row.
+# #1998's routing leg drives its own assertions against a stubbed guest. Driven from here, the os
+# lane's own self-test entry point, because tests/stack/test-harness-tooling.sh sits exactly on its
+# 406-line budget ceiling; it is reached from the same tier-1 row.
 bash "$HERE/appliance-xvb-routing-leg.sh" --self-test >/dev/null || {
     echo "#1998 appliance XvB routing leg self-test failed" >&2
     exit 1

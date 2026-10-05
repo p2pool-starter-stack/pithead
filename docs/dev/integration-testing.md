@@ -448,6 +448,11 @@ via an `EXIT` trap):
    replayed. Only completed cleanup marks restoration verified. Failed or interrupted preservation
    leaves the reservation held; generic stack health
    cannot replace that proof. `--keep` does not capture or restore this fixture.
+   Superseded snapshots use the separate [wrapper supersession interface](wallet-supersession.md).
+   That operation proves archived/live wallet identity, retains the original restoration receipt
+   and archives, and refuses restoration replay. It does not establish original restoration.
+   Lifecycle runs prove the operation on a separate private snapshot, including real offline
+   opening of isolated copies, idempotence and evidence preservation.
    How the baseline comes back depends on what it is. A release bundle gets `pithead apply` then
    `pithead up`: its images are versioned tags the branch never touched, so rebuilding them would be
    waste. A **source checkout** gets `pithead upgrade` instead, and the difference is not an

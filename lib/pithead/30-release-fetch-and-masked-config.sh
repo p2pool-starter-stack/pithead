@@ -167,12 +167,25 @@ render_worker_read_tokens() { # <masked-dir>; dashboard-only RigForge credential
 # results, and the audit log. Runtime credentials the dashboard consumes are a separate process-
 # environment boundary. An EMPTY secret stays empty, so the UI can
 # tell "set — leave blank to keep" from "not set". World-readable on purpose (it holds no secret
-# values; the container reads it as $APP_UID); best-effort, so a render hiccup degrades to a
-# stale prefill, never a failed apply.
+# values; the container reads it as $APP_UID). Invalid raw sources replace the prefill with
+# a path-only error record; ordinary render I/O failures retain the existing best-effort behavior.
 render_masked_config() { # <control-dir>
-    local mdir="$1/masked" tmp
+    local mdir="$1/masked" tmp reason
     mkdir -p "$mdir" 2>/dev/null || true
     tmp="$mdir/.config.json.tmp"
+    # Validate before jq can collapse members or mask template credentials. Invalidate stale
+    # prefill and worker credentials too; the dashboard must not accept yesterday's good copy.
+    if ! reason=$(config_document_error "$CONFIG_FILE"); then
+        rm -f "$mdir/config.json" "$mdir/worker-read-tokens.json"
+        if jq -n --arg reason "$reason" '{_config_document_error:$reason}' >"$tmp" &&
+            chmod 644 "$tmp" && mv "$tmp" "$mdir/config.json"; then
+            warn "Invalid configuration: $reason."
+        else
+            rm -f "$tmp"
+            warn "Could not publish the invalid configuration diagnostic."
+        fi
+        return 1
+    fi
     # Per-worker tokens (#172) live in the variable-length descriptor array at workers.list[]
     # (#506), out of reach of the fixed-path walk above — mask each SET secret entry by entry.
     # Masking an empty array is a no-op.

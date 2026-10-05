@@ -134,6 +134,8 @@ bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null
 assert_rc "the OS runner module and control lifecycle guard self-test passes" "$?" "0"
 bash "$ROOT/tests/os/selftest-restore-p2pool-startup.sh" >/dev/null 2>&1
 assert_rc "restore startup rejects P2Pool crashes across its bounded window" "$?" "0"
+bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null
+assert_rc "Tor heal guest and offline-image harness controls pass" "$?" "0"
 bash "$ROOT/tests/os/appliance-hostname-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#1966 appliance hostname verdict self-test passes" "$?" "0"
 bash "$ROOT/tests/os/appliance-diagnostics-leg.sh" --self-test >/dev/null 2>&1

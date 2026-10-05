@@ -50,6 +50,19 @@ root-owned volatile storage while the installer applies it directly to target da
 finishes either path headlessly, with no second wizard. A missing ack installs nothing: the erase
 waits for a human, and a timeout hands the form back intact.
 
+The connection card includes a stratum password or explicit absence and, when enabled, the
+TLS fingerprint. The password question defaults off in the CLI, JavaScript page and form-submit
+fallback. The typed wizard stores an enabled password as a generated literal; existing `"auto"`
+configurations retain their mode and rendered seed. A config-only installer restore publishes
+only its validated stratum seed beside the private candidate, then removes that sidecar.
+
+Before the card, the host resolves credentials once. Installed setup reuses or creates its
+stratum certificate in its final data directory. The installer retains a kept target's existing
+pair through a read-only mount, or creates one in the root-only volatile carry directory. After
+installation it copies that pair directly to target data, never to the ESP. The install request
+must still name the target and wipe choice whose identity the card showed. Cleanup removes the
+carry along with the existing restore credentials.
+
 On a reinstall the form opens with the previous machine's answers. When the inventory holds
 exactly one disk that already carries an install, the host mounts its data partition
 read-only, reads the previous `config.json`, strips every secret

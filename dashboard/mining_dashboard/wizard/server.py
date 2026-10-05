@@ -282,7 +282,8 @@ async def wizard_state(request: web.Request) -> web.Response:
             "install_attempt": install_attempt,
             "auth_mode": auth_mode,
             "restore_enabled": request.app["restore_enabled"],
-        }
+        },
+        headers={"Cache-Control": "no-store"},  # the hand-off card carries the stratum password
     )
 
 
@@ -532,15 +533,14 @@ async def _submit_restore_locked(request: web.Request) -> web.Response:
 
 async def handoff(request: web.Request) -> web.Response:
     """The credentials card, once the host publishes it: dashboard login, dashboard URL, and the
-    stratum address. Authed, over the same TLS the operator typed secrets into — a 32-character
-    random password transcribed from a console was never realistic. Read from handoff_dir(),
-    which the installer keeps volatile."""
+    stratum address. Authed, over the same TLS the operator typed secrets into. Read from
+    handoff_dir(), which the installer keeps volatile."""
     if not _authed(request):
         return web.json_response({"error": "unauthenticated"}, status=401)
     raw = _spool_read("handoff.json", handoff_dir())
     if not raw:
         return web.json_response({"error": "not ready"}, status=404)
-    return web.json_response(json.loads(raw))
+    return web.json_response(json.loads(raw), headers={"Cache-Control": "no-store"})
 
 
 async def handoff_ack(request: web.Request) -> web.Response:
