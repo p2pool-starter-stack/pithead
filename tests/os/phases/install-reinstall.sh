@@ -141,17 +141,10 @@ _phase_install_reinstall() {
     # creates a libpod database (db.sql + libpod/) that records the mount path as the graph
     # root — and podman refuses a store whose recorded paths differ from its own, so the
     # reinstalled machine's every podman command died with "database configuration mismatch"
-    # (invisible: _ssh drops stderr). A machine that ran the product wrote its db against
-    # /data/containers/storage; dropping the plant's db models that machine — the first real
+    # (the plant now reports captured stderr on failure). A machine that ran the product
+    # wrote its db against /data/containers/storage; dropping the plant's db models that machine — the first real
     # boot recreates it against the right paths, images intact.
-    old_dash_id=$(_ssh "T=\$(mktemp -d) && mount /dev/vda4 \"\$T\" &&
-          mkdir -p \"\$T/pithead/data\" \"\$T/containers/storage\" &&
-          podman --root \"\$T/containers/storage\" load -qi /opt/pithead/images/dashboard.tar.gz >/dev/null &&
-          sha256sum /opt/pithead/images/dashboard.tar.gz | cut -d' ' -f1 | tr -d '\n' >\"\$T/pithead/data/.loaded-dashboard.tar.gz.sha\" &&
-          podman --root \"\$T/containers/storage\" images --format '{{.Repository}} {{.ID}}' | awk '/pithead-dashboard/{print \$2; exit}' &&
-          rm -rf \"\$T/containers/storage/db.sql\" \"\$T/containers/storage/libpod\" &&
-          umount \"\$T\"")
-    [ -n "$old_dash_id" ] || {
+    old_dash_id=$(_phase_install_keep_plant) || {
         bad "could not plant the old dashboard image for the keep leg"
         return 1
     }
@@ -293,4 +286,23 @@ _phase_install_reinstall() {
         bad "the reinstalled machine still serves the old dashboard image (got: $dm)"
     fi
 
+}
+
+_phase_install_keep_plant() {
+    local image_id rc=0 capture
+    # Keep this call's full stderr separate from the shared, overwritten SSH scratch file.
+    # Use the harness's existing scratch location; TMPDIR need not be exported.
+    capture=$(command mktemp "${SSH_ERR:?}.keep-plant.XXXXXX") || return $?
+    local SSH_ERR=$capture
+    image_id=$(_ssh "bash -s" <"$SCRIPT_DIR/install-keep-plant.sh") || rc=$?
+    if [ "$rc" -eq 0 ] && [[ "$image_id" =~ ^[0-9a-f]{12,64}$ ]]; then
+        command rm -f "$SSH_ERR" || return $?
+        printf '%s\n' "$image_id"
+        return 0
+    fi
+    [ "$rc" -ne 0 ] || rc=1
+    printf 'keep-plant failed: transport/guest exit=%s; private stderr=%s\n' "$rc" "$SSH_ERR" >&2
+    # SSH_ERR retains the complete private evidence; strip controls and bound the excerpt.
+    bash "$SCRIPT_DIR/../../scripts/sanitize-test-log.sh" --lines 20 --width 240 "$SSH_ERR" >&2
+    return "$rc"
 }

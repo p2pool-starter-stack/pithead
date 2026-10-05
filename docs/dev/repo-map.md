@@ -74,7 +74,7 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `service/xvb/` | XvB switching, calculations, and outcomes | `tests/service/xvb/` |
 | `web/views/` | HTTP views and response construction | `tests/web/views/` |
 | `web/server.py` | HTTP application setup and route registration | `tests/web/` |
-| `wizard/server.py`, `wizard/form.py` | Appliance wizard server, form translation, and install handoff | `tests/web/test_wizard*.py` |
+| `wizard/server.py`, `wizard/form.py`, `wizard/defaults.py` | Appliance wizard server, disk-based defaults, form translation, and install handoff | `tests/web/test_wizard*.py` |
 | `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
 
 Keep polling order, database locks, and transaction scopes intact when extracting
@@ -103,15 +103,19 @@ Keep local code out of `vendor/`.
 | `tests/stack/lib/` | Shared harness modules and sandbox builders used by feature fragments; `control-fixtures.sh` and `backup-fixtures.sh` initialize independent prerequisite runs. |
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
 | `tests/integration/lib/` | Sourced helpers and phase functions for the live harness. `restore-chain-sync.sh` streams the read-only `restore-chain-sync.py` daemon proof to the restored baseline. The restoration transport uses libcurl Digest; `tests/integration/selftest/selftest-restore-curl-connection.sh` exercises its challenged connection against a bounded synthetic server in CI. `wallet-fixture.sh` and `wallet-fixture.py` preserve the prepared Monero cache through destructive tests and verify it before releasing the reservation. |
-| `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `make test-integration-selftest` also checks appliance module loading. |
+| `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `selftest-wizard-defaults.sh` runs the real CLI wizard with the runner baseline contract and stubbed deployment I/O. `make test-integration-selftest` also checks appliance module loading. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. |
-| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The installer restore uses `restore-live-state-verdict.sh` for the configured-wallet comparison and bounded P2Pool startup window, with controller restoration and crash cases checked by `selftest-restore-p2pool-startup.sh`. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
+| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The installer restore uses `restore-live-state-verdict.sh` for the configured-wallet comparison and bounded P2Pool startup window, with controller restoration and crash cases checked by `selftest-restore-p2pool-startup.sh`. The post-commit fault leg uses `chain-fault-timing.sh` to read the live dashboard debounce and prove the before/after window; `selftest-chain-fault-timing.sh` covers its deadlines and negative controls. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
 | `tests/runner/` | The pinned Linux image `make test-container` runs the other tiers inside, so a macOS or Windows host reaches CI's verdict. Built and CVE-scanned by `test-images.yml`; reaches no user. |
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
+
+`tests/os/install-keep-plant.sh` stages the reinstall dashboard image in the guest,
+with sub-step failure diagnostics and cleanup; `tests/os/selftest-install-keep-plant.sh`
+drives command failures without mounting a disk or starting Podman.
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
@@ -120,6 +124,10 @@ Coordinator connection announcements and unchanged-apply miner calls are covered
 `tests/integration/lib/run-connection-announcements.sh` against the deployed CLI.
 Its `tests/integration/tools/connection-setup-pty.py` driver answers the real setup prompts
 and bounds the child process and captured output.
+The source-image module supplies shared read-only lifecycle latch/marker diagnostics to the
+connection probe and lifecycle runner. The image fixture uses the shared
+`assert_mining_probe_ready` in `run-matrix.sh` to settle a legitimate restore-induced hold.
+Its diagnostic, readiness and image selftests use fake Docker I/O.
 The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
 both local-miner toggles converge without rebooting.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
@@ -156,3 +164,9 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 [testing guide](testing-guide.md). For configuration values, read
 [configuration](../configuration.md). The wizard spool-file protocol is in
 [appliance wizard](appliance-wizard.md#host-and-page-spool-files).
+
+The setup wizards share host disk budgets through `lib/pithead/11b-wizard-disk-budget.sh`;
+the appliance publishes them beside the disk inventory for both submission paths.
+
+`tests/os/phases/setup-defaults.sh` proves a fresh appliance with the wizard defaults,
+without the explicit Tari opt-in used by the general provision phase.
