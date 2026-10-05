@@ -430,7 +430,11 @@ Record what broke, take a backup, run setup again, and carry on from 2.3 on the 
   file `backups/pithead-backup-<date>-<time>.tar.gz.enc` exists; the stack was stopped for the
   copy and is running again.
 - [ ] **2.1b 1.x config keys are migrated.** Do, on the previous release, after you took the notes
-  above, without applying: edit
+  above: if `dashboard.workers` already exists, record this fixture BLOCKED and keep the config
+  unchanged; it already carries legacy workers this fixture must not overwrite. Otherwise note
+  whether `workers.list` exists. If it does, save the output of
+  `jq -c '.workers.list' config.json` with your private notes, including an empty `[]`.
+  This output can contain rig addresses and tokens: never attach it publicly. Without applying, edit
   `config.json` and add a top-level `"xmrig_proxy": { "enabled": false }` (first delete `enabled`
   from the `xvb` block, if there is one). If there is no `workers.list`, add
   `"workers": [ { "name": "qa-1x-migration" } ]` inside the `dashboard` block. If there is a `telegram`
@@ -439,10 +443,12 @@ Record what broke, take a backup, run setup again, and carry on from 2.3 on the 
   (`scp`), and keep it, with its passphrase, for 13.14a. After the upgrade (2.2), run
   `jq '{xvb, workers, tc: .telegram.control}' config.json` and `ls config.json.bak-1x`.
   Expect: the first `./pithead upgrade` that runs (2.2a or 2.2) prints
-  `Migrated the 1.x config keys (dashboard.workers[] to workers.list[], xmrig_proxy.* to xvb.*) — the old copy is at`
-  followed by the path of `config.json.bak-1x`, and, with the `telegram` block, the warning
+  `[pithead] Migrated the 1.x config keys (dashboard.workers[] to workers.list[], xmrig_proxy.* to xvb.*) — the old copy is at config.json.bak-1x.`
+  in all three cases (absent, empty or populated `workers.list`), and, with the `telegram` block, the warning
   `telegram.control was removed: the Telegram bot is read-only now.` The `jq` output shows
-  `"enabled": false` under `xvb`, `qa-1x-migration` under `workers.list`, and `"tc": null`;
+  `"enabled": false` under `xvb` and `"tc": null`. `qa-1x-migration` appears under `workers.list`
+  only if this step added it. Otherwise `jq -c '.workers.list' config.json` matches the saved line
+  byte for byte, whether the list was empty or populated;
   `config.json.bak-1x` exists. A later dashboard save (7.2) is not refused for a leftover key.
 - [ ] **2.2a The upgrade refuses a Tari volume without room.** Upgrade box only, before 2.2, with
   the stack running (the `tari` container must exist). Do: run the first 2.2 commands, `git fetch`,
@@ -467,9 +473,11 @@ Record what broke, take a backup, run setup again, and carry on from 2.3 on the 
 - [ ] **2.3 Nothing lost.** Do: compare the box with your notes, then run
   `jq -r .config_version config.json` and `ls -l config.json`. Expect: `./pithead version` shows
   the candidate; the dashboard login, payout addresses, onion address, and worker list match your
-  notes, with `qa-1x-migration` from 2.1b as the one expected extra `workers.list` entry; XvB is
+  notes, with `qa-1x-migration` as the one expected extra `workers.list` entry only if 2.1b inserted
+  it. Otherwise the worker list matches your notes exactly. When 2.1b ran, XvB is
   off, because 2.1b deliberately set `xmrig_proxy.enabled` to `false`, which migrates to
-  `xvb.enabled: false`. Tari's mode and the stratum password setting are as you noted, because an
+  `xvb.enabled: false`; if that fixture was BLOCKED, XvB matches your original notes.
+  Tari's mode and the stratum password setting are as you noted, because an
   upgrade keeps what it had (#3099); the hashrate chart still shows the history from before;
   Monero is still synced and the miners reconnected by themselves. Per #3109 the first `jq` line prints the candidate's
   release number without any `-pre` or build suffix, and `config.json` is still `-rw-------` with
