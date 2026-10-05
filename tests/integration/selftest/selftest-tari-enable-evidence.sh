@@ -67,6 +67,9 @@ for CASE in recreated stopped unchanged never-syncing stale-hashes; do
     grep -q 'phase=after-restore' "$OUT_DIR/tari-enable/snapshots.log" || bad=$((bad + 1))
     if grep -q must-not-be-retained "$OUT_DIR/tari-enable/snapshots.log"; then bad=$((bad + 1)); fi
     if [ -f "$OUT_DIR/tari-enable/samples.jsonl" ] && grep -q must-not-be-retained "$OUT_DIR/tari-enable/samples.jsonl"; then bad=$((bad + 1)); fi
+    if [ "$CASE" != recreated ] && [ "$CASE" != stopped ]; then
+        jq -e -s 'length > 0 and all(.[]; .observed == 1)' "$OUT_DIR/tari-enable/samples.jsonl" >/dev/null || bad=$((bad + 1))
+    fi
     if [ "$CASE" = recreated ] || [ "$CASE" = stopped ]; then
         [ "$CONTINUITY_PASSES" = 0 ] || bad=$((bad + 1))
     else

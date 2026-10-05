@@ -59,7 +59,7 @@ run_tari_background_sync() {
                     fi
                     state="$(api_state)"
                     printf '%s\n' "$state" | jq -c --argjson observed "$(now_s)" \
-                        '{observed, workers: .proxy_workers, hashes: .stratum.total_hashes, tari_sync: (.sync.tari | {state, current, target, percent}), template: (.tari | {connected, height})}' | redact >>"$evidence/samples.jsonl"
+                        '{observed: $observed, workers: .proxy_workers, hashes: .stratum.total_hashes, tari_sync: (.sync.tari | {state, current, target, percent}), template: (.tari | {connected, height})}' | redact >>"$evidence/samples.jsonl"
                     hashes="$(jq_get "$state" '.stratum.total_hashes')"
                     if [ "$(jq_get "$state" '.sync.tari.state')" = syncing ] &&
                         [ "$(jq_get "$state" '.proxy_workers')" -ge 1 ] 2>/dev/null &&
