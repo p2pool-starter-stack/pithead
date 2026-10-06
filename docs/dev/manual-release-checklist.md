@@ -79,7 +79,8 @@ record PASS and write down the text you saw.
 ## Run sheet
 
 The order for one tester with the soak appliance, a fresh DIY box, an upgrade DIY box (sections 1
-and 2–11 need one machine each) and the rest of [What you need](#what-you-need). The restore PC is
+and 2–11 need one machine each; either may be a virtual machine, see
+[Running the DIY boxes as virtual machines](#running-the-diy-boxes-as-virtual-machines)) and the rest of [What you need](#what-you-need). The restore PC is
 the second appliance. Where this order differs from the section order below, this order wins.
 Sessions 1–13 run before the soak; session 14 starts it. Times are hands-on time plus the waits you
 cannot shorten. Test files are named by role: the RC image, the RC update bundle, the good
@@ -110,8 +111,8 @@ appliance but the daily probe. After publishing: 12.1–12.3 and [After publishi
 
 | Item | What it is for |
 |---|---|
-| **Fresh box** | Ubuntu Server 24.04, AVX2 CPU, 16 GB RAM, 600 GB SSD, nothing of Pithead on it. Section 1. |
-| **Upgrade box** | A machine already running the previous release, with both chains synced and the dashboard password set. Sections 2–11; it runs the candidate from 2.2 on. Its Monero node also serves as the test node for 13.15 (M16), opened to the LAN as in Config D. 9.5 replaces its dashboard onion address and 11.5 clears its dashboard history, so do not use a box whose onion or history you need to keep. |
+| **Fresh box** | Ubuntu Server 24.04, AVX2 CPU, 16 GB RAM, 600 GB SSD, nothing of Pithead on it. Section 1. A virtual machine is fine: see [Running the DIY boxes as virtual machines](#running-the-diy-boxes-as-virtual-machines). |
+| **Upgrade box** | A machine already running the previous release, with both chains synced and the dashboard password set. A virtual machine is fine: see [Running the DIY boxes as virtual machines](#running-the-diy-boxes-as-virtual-machines). Sections 2–11; it runs the candidate from 2.2 on. Its Monero node also serves as the test node for 13.15 (M16), opened to the LAN as in Config D. 9.5 replaces its dashboard onion address and 11.5 clears its dashboard history, so do not use a box whose onion or history you need to keep. |
 | **Appliance box** | An x86-64 UEFI PC with 16 GB RAM, ethernet, firmware settings you can change (Secure Boot off), and an internal SSD or NVMe of **600 GB or more** that may be erased; a smaller disk cannot hold both chains ([the appliance guide](../appliance.md)). A second internal disk for the wrong-disk check. Section 13. |
 | **Restore PC** | A second x86-64 UEFI PC with 16 GB RAM, wired ethernet, Secure Boot off and a disk that may be erased, for the restore tests in 13.14 and 13.14a. While a soak runs it is also the second appliance (see [Testing a debug RC on the soak box](#testing-a-debug-rc-on-the-soak-box)). |
 | **USB sticks** | One of **16 GB or larger** for the image (a smaller stick stops the first boot at an emergency console), contents expendable. A second stick of any size for the settings files in 13.23 and 13.24, so writing them does not erase the image; 13.23 erases this second stick when it partitions it. The appliance reads settings only from a stick the kernel reports as removable: on a Linux machine, `lsblk -o NAME,RM` must show `1` under `RM` for it. |
@@ -124,6 +125,37 @@ appliance but the daily probe. After publishing: 12.1–12.3 and [After publishi
 | **Release artifacts** | The candidate's full commit SHA, the previous release tag, and for the appliance: the RC image (the candidate's debug image; the release `.img.xz` with its `.sha256` joins it at GA), the RC update bundle (the candidate's own `.raucb`), the good higher-version test bundle (a debug-variant `.raucb` with a higher version), the broken (health-gate fault) test bundle M9 describes (also debug-variant, with a version above the good one), and the bench SSH key for debug images, kept in the private handoff ([appliance-release.md](appliance-release.md)). |
 
 Reserve shared machines before you start: see [Reserve the hardware](#reserve-the-hardware).
+
+### Running the DIY boxes as virtual machines
+
+The fresh box and the upgrade box can be virtual machines on a Linux host with KVM (libvirt or
+similar). The appliance, the restore PC and the rigs cannot: sections 13–15 need real hardware.
+
+| Setting | Value | Why |
+|---|---|---|
+| OS | Ubuntu Server 24.04 LTS, nothing of Pithead on it | The fresh-box baseline in 1.1 |
+| CPU | Host passthrough (libvirt `host-passthrough`), 6 or more vCPUs | The guest must see AVX2 and AES; the RandomX miner and the build need them |
+| Memory | 16 GB for a box that runs both chains | The documented minimum. Less tests an undersized box, not the release |
+| Disk | 700 GB, thin-provisioned | 600 GB for both chains, plus headroom |
+| Network | Its own address on your LAN (bridged or macvtap) | The laptop, the miners and the phone must reach its dashboard and stratum port; a NAT network hides it |
+
+- **Snapshots.** Take one right after the OS install (*clean*) and one once the previous release
+  has synced (*previous release synced*). Section 1 starts from *clean*, and section 2 from
+  *previous release synced*. Reverting repeats a route without reinstalling.
+- **Sync time.** A box syncing both chains from zero over Tor takes days. For the upgrade box,
+  install the previous release with `clearnet_initial_sync` set to `true` under both `monero` and
+  `tari`. That exposes the box's IP while it syncs, which is acceptable on a sandbox. Otherwise,
+  start it a few days ahead. 1.1–1.11 do not need the chains synced; 1.12 and 1.13 do.
+- **Two boxes at once.** Session 9 needs both: in 10.3 and 10.4 the upgrade box serves its node
+  and the second machine uses it as a remote node. That second machine runs no chain of its own,
+  so a small VM (about 6 GB of memory) is enough while the fresh box is paused or stopped. On a
+  host that cannot hold both full boxes, run session 2 first, then pause or stop the fresh box
+  for sessions 3–9.
+- **What a VM cannot prove.** HugePages and MSR tuning for the built-in miner, USB sticks, power
+  cuts, physical disks and real network cards. Record those steps as N/A for a VM run, never as
+  PASS, and walk them on hardware.
+- **Host load.** Give the VM its own cores where you can. A busy host slows the guest enough to
+  turn timing-sensitive steps (sync waits, alert debounces) into false failures.
 
 ## Sample configs
 
