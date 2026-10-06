@@ -100,11 +100,13 @@ This is the DIY path. For the appliance, download `pithead-os-vX.Y.Z.img.xz` fro
 # Grab the latest release — pulls the published, tested images (no local build)
 curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz
 cd pithead
-cp config.minimal.json config.json   # then set your Monero + Tari payout addresses
 ./pithead setup
 ```
 
-> For every tunable, copy `config.reference.json` instead. To build from source (a `dev`
+> Leave `config.json` absent for the setup wizard; have a Monero payout address ready, and a
+> Tari payout address only if you enable merge-mining. For manual configuration, copy
+> `config.minimal.json` or `config.reference.json` and edit it before setup; those files inherit
+> reference defaults rather than the wizard's new-install choices. To build from source (a `dev`
 > build), e.g. to contribute, see [Install from source](docs/getting-started.md#alternative-build-from-source).
 > Release archives include the generated `pithead` executable and offline operator guides; source
 > clones build the executable with `make`.
@@ -112,15 +114,16 @@ cp config.minimal.json config.json   # then set your Monero + Tari payout addres
 > NOTE: Prereqs are Ubuntu Server 24.04 LTS, 16 GB+ RAM, an SSD (600 GB+ in either prune mode
 > with both nodes local, or 370 GB+ with Tari remote; the chains grow ~100+ GB/year, so 2–4 TB
 > avoids a later resize),
-> and your Monero + Tari payout addresses. Running a node on another machine cuts the disk budget —
+> and your Monero payout address (Tari is optional). Running a node on another machine cuts the disk budget —
 > full sizing in [Hardware Requirements](docs/hardware.md).
 
-`setup` checks dependencies (and offers to install them on Ubuntu), asks for your wallet
-addresses, provisions Tor, tunes HugePages for RandomX, and offers to start the stack. Then:
+`setup` checks dependencies (and offers to install them on Ubuntu), asks for your Monero address
+and optional Tari merge-mining, provisions Tor, tunes HugePages for RandomX, and offers to start
+the stack. Then:
 
 1. Open the dashboard at `https://<your-hostname>` (the script prints the exact URL).
-2. Wait for the initial sync. On first boot the dashboard shows Sync Mode while the Monero and Tari
-   nodes catch up, then switches to the live view once both are synced. p2pool and the proxy stay
+2. Wait for the initial sync. On first boot the dashboard shows Sync Mode while the required
+   nodes catch up, then switches to the live view. Tari is absent when merge-mining is off. p2pool and the proxy stay
    parked until then.
 3. Point any [XMRig](https://github.com/xmrig/xmrig) rig at `YOUR_STACK_IP:3333` — no wallet
    address in the miner. [RigForge](https://github.com/p2pool-starter-stack/rigforge) provisions a

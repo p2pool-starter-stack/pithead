@@ -12,10 +12,10 @@ dashboard, no Linux to set up.
 > ```bash
 > curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz
 > cd pithead
-> cp config.minimal.json config.json   # set your Monero + Tari payout addresses
 > ./pithead setup
 > ```
 >
+> Have a Monero payout address ready; Tari and its payout address are optional in the wizard.
 > Let it run, then open the dashboard at `https://<your-hostname>`.
 
 ---
