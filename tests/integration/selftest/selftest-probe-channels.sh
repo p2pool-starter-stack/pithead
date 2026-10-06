@@ -11,6 +11,7 @@ source "$ROOT/tests/integration/lib/run-connection-announcements.sh"
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
 source "$ROOT/tests/integration/lib/run-lifecycle-wallet-fixture.sh"
+echo "== checkout-only probe channel decisions =="
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 OUT_DIR=$fixture
