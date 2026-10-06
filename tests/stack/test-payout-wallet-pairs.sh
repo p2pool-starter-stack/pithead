@@ -32,6 +32,13 @@ for chain in monero tari; do
     out="$(pair_apply)"
     assert_rc "$chain apply refuses a wrong-wallet view key" "$?" 1
     assert_contains "$chain mismatch names both fields" "$out" "$chain.view_key does not belong to $chain.wallet_address"
+    if [ "$chain" = monero ]; then
+        assert_contains "Monero mismatch names the secret view key" "$out" 'Use the secret (not public) view key of the wallet that owns this address'
+    else
+        assert_contains "Tari mismatch names the private view key" "$out" 'Use the private view key of the wallet that owns this address'
+    fi
+    assert_contains "$chain mismatch links the wallet guide" "$out" \
+        "https://github.com/p2pool-starter-stack/pithead/blob/main/docs/dashboard.md#getting-your-view-keys"
     assert_eq "$chain mismatch preserves rendered config" "$(sha256sum "$V/.env")" "$before"
     assert_not_contains "$chain mismatch never prints the private key" "$out" "$PAYOUT_VIEW2"
 done
