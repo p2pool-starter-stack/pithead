@@ -111,7 +111,7 @@ No release image exists before GA, so every appliance step runs on the debug ima
 
 ### Step 3: Record the box before `--start`
 
-Over SSH:
+Before `soak-probe --start`, over SSH:
 
 1. Copy `/data/pithead/config.json` off the box into the private handoff, never into an issue or
    the release thread. It holds the dashboard password, the [view keys](../README.md#glossary)
