@@ -46,6 +46,9 @@ Raw config checks live in `lib/pithead/22a-config-document.sh` and
 in `dashboard/mining_dashboard/web/static/config/jsondocument.mjs`.
 Both reject duplicate members before normalization and placeholders before staging or masking.
 
+Release-note extraction is covered by `tests/stack/release/test-release-notes.sh`;
+it selects the changelog section matching the release tag, including known issues.
+
 The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering

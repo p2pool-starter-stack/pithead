@@ -189,6 +189,9 @@ A step that fails for a reason listed here is linked to the issue listed, not fi
 - [#3166](https://github.com/p2pool-starter-stack/pithead/issues/3166): `tor.auto_heal` only
   probes and logs warnings on a box without `dashboard.control.enabled`, which includes an
   appliance set up with **No login**; it refreshes or recovers Tor only when control is on.
+- [#2436](https://github.com/p2pool-starter-stack/pithead/issues/2436): after an appliance update
+  that fails its health check, the console shows nothing for about 15 minutes before the machine
+  restarts into the previous version by itself. Leave it powered on through that wait.
 
 ## Glossary
 
