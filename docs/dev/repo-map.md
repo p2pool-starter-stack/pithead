@@ -138,6 +138,9 @@ Keep local code out of `vendor/`.
 with sub-step failure diagnostics and cleanup; `tests/os/selftest-install-keep-plant.sh`
 drives command failures without mounting a disk or starting Podman.
 
+The daily soak reader is `tests/os/soak-probe.sh`; its fixed read-only remote command
+is streamed from `tests/os/soak-read.sh` in the probe's one SSH session.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 Coordinator connection announcements and unchanged-apply miner calls are covered by
