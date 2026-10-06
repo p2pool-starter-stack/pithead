@@ -217,9 +217,21 @@ phase_rig() {
 
     # ---- reboot: pithead-boot owns a rig now, and commits its slot -------------------------
     info "reboot leg — the rig must come back mining, and commit its own slot"
-    # #3204: a Worker Inspect edit lands in /data/rigforge/config.json, which the boot rebuilds from rig.json.
-    _ssh "jq '.max_temp_c = 77' /data/rigforge/config.json >/tmp/edit.json && cat /tmp/edit.json >/data/rigforge/config.json && rm -f /tmp/edit.json" ||
-        bad "could not write a control-path edit into the rig's miner config"
+    # #3204: edit through RigForge's control path (loopback is the pinned source), reboot, then no drift:
+    # Pithead's flag is config_meta.revision moving while last_change_id does not, both on the rig's own feed.
+    local cid cstat meta0 meta1
+    _rig_meta() { _ssh "curl -s -m 5 -H 'Authorization: Bearer $rtok' http://127.0.0.1:8081/2/summary | jq -c '.rigforge.config_meta | {revision, last_change_id}'" 2>/dev/null | tr -d '\r\n'; }
+    cid=$(_ssh "curl -s -m 10 -X POST -H 'Authorization: Bearer $rtok' -H 'Content-Type: application/json' -d '{\"max_temp_c\":77}' http://127.0.0.1:8082/apply | jq -r '.change_id // empty'" 2>/dev/null | tr -d '\r\n')
+    [ -n "$cid" ] && ok "the control path accepted a max_temp_c change ($cid)" || bad "the control path did not accept a max_temp_c change"
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        cstat=$(_ssh "curl -s -m 5 -H 'Authorization: Bearer $rtok' 'http://127.0.0.1:8082/status?change_id=$cid' | jq -r '.status // empty'" 2>/dev/null | tr -d '\r\n')
+        case "$cstat" in applied | rejected | rolled_back | failed) break ;; esac
+        sleep 5
+    done
+    [ "$cstat" = "applied" ] && ok "the control change was applied" || bad "the control change ended '${cstat:-unknown}', not applied"
+    meta0=$(_rig_meta)
+    [ "$(jq -r '.last_change_id // ""' <<<"$meta0" 2>/dev/null)" = "$cid" ] &&
+        ok "the rig's feed attributes the new revision to that change" || bad "config_meta does not carry the change id before the reboot: ${meta0:-unreadable}"
     _reboot_wait reboot 300 || {
         bad "the rig never returned from the reboot"
         return
@@ -230,6 +242,10 @@ phase_rig() {
     [ "$(_ssh "jq -r .max_temp_c /data/rigforge/config.json" | tr -d '\r\n')" = "77" ] &&
         ok "a control-path edit (max_temp_c) survived the reboot's config rebuild (#3204)" ||
         bad "the reboot's config rebuild reverted a control-path edit (max_temp_c)"
+    meta1=$(_rig_meta); [ -n "$meta1" ] || { sleep 30; meta1=$(_rig_meta); }
+    [ -n "$meta0" ] && [ "$meta1" = "$meta0" ] &&
+        ok "no drift across the reboot: config_meta revision and last_change_id are unchanged" ||
+        bad "config_meta changed across the reboot (Pithead would flag drift): $meta0 -> ${meta1:-unreadable}"
     # XMRig starts before pithead-boot finishes its final mark-good and exit, so its active state
     # alone is not proof that this RemainAfterExit unit has settled. The shared wait also proves
     # that the boot unit, rather than the condition-skipped wizard, ran this boot.
