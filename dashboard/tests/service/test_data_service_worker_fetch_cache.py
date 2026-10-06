@@ -34,10 +34,10 @@ async def cached_service(aiohttp_client):
     sm.close()
 
 
-async def _poll(svc, proxy, payload, now, direct=None):
+async def _poll(svc, proxy, payload, now, direct=None, worker=None):
     proxy.get_workers.side_effect = payload if isinstance(payload, Exception) else None
     proxy.get_workers.return_value = payload
-    worker = MagicMock()
+    worker = worker or MagicMock()
     worker.get_stats = AsyncMock(return_value=direct or {})
     tari = MagicMock()
     tari.get_sync_status = AsyncMock(return_value={"is_syncing": False, "reachable": True})
@@ -124,3 +124,13 @@ async def test_cache_is_not_mutated_by_direct_stats_or_lifecycle(cached_service)
     assert await _online(client) == ["pithead"]
     assert svc.latest_data["workers"][0]["h15"] == 2000
     assert svc._last_proxy_workers == _normalize_proxy_workers(_GOOD)
+
+
+async def test_poll_probes_only_online_rows(cached_service):
+    """The run loop wires WorkerProber in: an offline row is never probed (#2466)."""
+    svc, proxy, _ = cached_service
+    live = ["rig", "10.0.0.2", 1, 5, 0, 0, 0, 0, 1, 2, 3, 4, 5]
+    ghost = ["ghost", "10.0.0.3", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    worker = MagicMock()
+    await _poll(svc, proxy, {"workers": [ghost, live]}, 0, worker=worker)
+    assert [c.args[1] for c in worker.get_stats.call_args_list] == ["rig"]
