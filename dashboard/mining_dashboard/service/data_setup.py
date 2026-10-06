@@ -75,6 +75,8 @@ class DataSetupMixin:
             CoinGeckoClient(DASHBOARD_ENERGY["currency"], TOR_SOCKS_PROXY),
             enabled=DASHBOARD_ENERGY["price_feed"],
         )
+        self._last_proxy_workers = []
+        self._last_proxy_workers_at = None
         # Share-health delta baseline (#116): the previous poll's cumulative proxy /summary
         # totals; None until the first poll seeds it (and again after a counter reset).
         self._last_share_totals = None

@@ -348,7 +348,10 @@ A live table of every connected rig: worker name, IP, uptime, and per-worker has
 and 10m windows — the same 10m window the chart's averaging toggle and Telegram's totals report —
 for spotting a rig that has dropped off or is underperforming. A
 worker whose direct API is unreachable still counts (with proxy-derived hashrate); a worker whose
-miner has stopped drops out of the total. On a narrow screen the table scrolls sideways within its
+miner has stopped drops out of the total. A failed proxy worker fetch retains the last successful
+worker list for less than five minutes from that fetch; after that, cached workers stop counting
+as online. A nonempty response missing `workers` is a failed fetch. A successful empty list
+stops counting disconnected workers immediately. On a narrow screen the table scrolls sideways within its
 card so columns stay readable. Until the first worker ever connects, the card shows a connect hint
 ("point each rig at `<host-ip>:3333`") in place of the empty table; see
 [Connecting Miners](workers.md).
