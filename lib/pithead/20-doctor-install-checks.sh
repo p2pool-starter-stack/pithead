@@ -43,7 +43,18 @@ check_stratum_exposure() {
         # redact() does have one (#1609), but that twin guards CI artifact uploads, not the browser.
         msg="This host appears to have a public IP ($pub). The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall."
         if [ "$mode" = doctor ]; then
-            dr_warn_surface "This host appears to have a public IP. The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP, and the stratum port $port is unauthenticated and cleartext by default — anything on the internet can reach it. Block that port at your router so only your network can reach it. Open Configuration to narrow the listen address or require a stratum password, then complete the confirmation step."
+            local password tls
+            password=$(env_get PROXY_STRATUM_PASSWORD)
+            tls=$(normalize_bool "$(env_get PROXY_STRATUM_TLS)")
+            if [ -n "$password" ] && [ "$tls" = true ]; then
+                dr_info "This host appears to have a public IP. Stratum :$port has a password and TLS available; rigs not switched to TLS still connect in cleartext. Restrict access at your router to your network."
+            elif [ -n "$password" ]; then
+                dr_warn_surface "This host appears to have a public IP. Stratum :$port requires a password but is still cleartext — firewall it to your LAN, narrow p2pool.stratum_bind, and enable p2pool.stratum_tls on the stack and TLS on each rig. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP. Stratum :$port requires a password but is still cleartext. Block that port at your router so only your network can reach it. Open Configuration to narrow the listen address or enable stratum TLS, then complete the confirmation step and switch each rig to TLS."
+            elif [ "$tls" = true ]; then
+                dr_warn_surface "This host appears to have a public IP. Stratum :$port offers TLS, but rigs not switched to TLS still connect in cleartext without authentication — firewall it to your LAN, narrow p2pool.stratum_bind, and require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP. Stratum :$port offers TLS, but rigs not switched to TLS still connect in cleartext without authentication. Block that port at your router so only your network can reach it. Open Configuration to narrow the listen address or require a stratum password, then complete the confirmation step and switch each rig to TLS."
+            else
+                dr_warn_surface "This host appears to have a public IP. The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP, and the stratum port $port is unauthenticated and cleartext by default — anything on the internet can reach it. Block that port at your router so only your network can reach it. Open Configuration to narrow the listen address or require a stratum password, then complete the confirmation step."
+            fi
         else
             warn "$msg"
         fi
