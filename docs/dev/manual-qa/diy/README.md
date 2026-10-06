@@ -22,7 +22,7 @@ Run the sessions in the order of the [Run sheet](../README.md#run-sheet). Where 
 | File | What it tests | Machine | Run sheet session |
 |---|---|---|---|
 | [sandbox-vm.md](sandbox-vm.md) | Running the DIY boxes as virtual machines | Either box | Before session 2 |
-| [01-fresh-install.md](01-fresh-install.md) | 1. Fresh DIY install | Fresh box | 2 (1.1–1.11), 9 (1.12, 1.13) |
+| [01-fresh-install.md](01-fresh-install.md) | 1. Fresh DIY install | Fresh box | 2 (1.1–1.11), during the sync (1.12), 9 (1.13) |
 | [02-upgrade.md](02-upgrade.md) | 2. Upgrade from the previous release | Upgrade box | 3 |
 | [03-everyday-commands.md](03-everyday-commands.md) | 3. Everyday commands | Upgrade box | 4 |
 | [04-connect-a-miner.md](04-connect-a-miner.md) | 4. Connect a miner | Upgrade box, two miners | 4 |

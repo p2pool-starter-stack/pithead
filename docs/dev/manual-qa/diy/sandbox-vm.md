@@ -16,10 +16,10 @@ which checks a virtual machine cannot prove.
 - Rough time: about an hour of hands-on work per box, then the chain
   [sync](../README.md#glossary), which takes days over [Tor](../README.md#glossary).
 
-On the project's own bench fleet, bench-ci will start and end a sandbox VM with this spec from its
-status page once its sandbox sessions land
+On the project's own bench fleet, bench-ci's sandbox sessions have merged
 ([p2pool-starter-stack/bench-ci#1433](https://github.com/p2pool-starter-stack/bench-ci/issues/1433)).
-Until then, and anywhere else, build one with any KVM tool to the same spec.
+Once a bench is configured for them, its status page starts and ends a full or small VM with this
+spec. Until then, and anywhere else, build one with any KVM tool to the same spec.
 
 ## The VM settings
 
@@ -86,9 +86,13 @@ follow the [Run sheet](../README.md#run-sheet) as written. The fresh box is the 
 2. Upgrade box: install the previous release, let it sync, and take the *previous release
    synced* snapshot. Then run sessions 3–8. Set it aside.
 3. Fresh box: start it again and watch its sync on the dashboard a few times a day. If Monero
-   finishes its first sync while Tari is still syncing, run 1.12 in that window. If Tari finishes
-   first, or the window passes before you see it, record 1.12 as SKIP and say which. Once both
-   chains are synced, run 1.13, 10.1, 10.2 and 10.7. Set it aside.
+   finishes its first sync while Tari is still syncing, run 1.12 in that window. Once both chains
+   are synced, run 1.13, 10.1, 10.2 and 10.7. Set it aside.
+   - If Tari finishes first, the window never happened: record 1.12 as SKIP and say so.
+   - If the window passed before you saw it, 1.12 is not covered yet; do not record SKIP. Note it
+     as missed and carry on. After step 5, revert the fresh box to its *clean* snapshot, run
+     1.1–1.11 again, and check the dashboard more often during the sync until 1.12 runs in its
+     window.
 4. Upgrade box: start it again, and start a small VM as the second machine, configured for a
    remote node. Run 10.3, 10.3a, 10.4 and 10.6, then 10.5 and 11.1–11.5. Remove the small VM.
 5. Fresh box: start it again for session 13 (S1–S8 where they use it, then 11.6 and 11.7 last).

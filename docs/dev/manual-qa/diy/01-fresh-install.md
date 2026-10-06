@@ -5,10 +5,10 @@ This part tests the path a new user takes, from an empty machine to a stack that
 ## Before you start
 
 - **Machine:** the **fresh box**, Ubuntu Server 24.04 with nothing of Pithead on it (full spec in [What you need](../what-you-need.md)). It may be a virtual machine: see [sandbox-vm.md](sandbox-vm.md), and start from its *clean* snapshot.
-- **Earlier steps:** none. 1.1–1.11 are session 2 of the [Run sheet](../README.md#run-sheet); 1.12 and 1.13 wait for session 9, once the fresh box has synced.
+- **Earlier steps:** none. 1.1–1.11 are session 2 of the [Run sheet](../README.md#run-sheet). 1.12 runs partway through the sync, in the window when Monero has finished its first sync and Tari has not: check the dashboard a few times a day so you catch it. 1.13 waits for session 9, once both chains have synced.
 - **Have ready:** the candidate's full commit SHA; the QA Monero wallet's **primary** address and one **subaddress** of it; the Tari QA address; the laptop on the same network, with a browser.
 - **Why from source:** build the candidate from source, so a failure here does not spend the version tag.
-- **Time:** about 2 hours hands-on for 1.1–1.11, then hours to days of chain sync before 1.12 and 1.13.
+- **Time:** about 2 hours hands-on for 1.1–1.11, then hours to days of chain sync: 1.12 runs partway through it, 1.13 after it.
 
 ## Steps
 
@@ -362,7 +362,7 @@ Per #3099 and #3092:
 - If the test chat is set up on this box, one message that starts `Tari node is syncing` arrives, once.
 - For reference: only an unreachable Tari node (10.5) can reject workers, and then only with `tari_required` true.
 
-**Record**: PASS, FAIL or N/A in the results sheet. Record SKIP if the timing never lines up.
+**Record**: PASS, FAIL or N/A in the results sheet. Record SKIP only if Tari finished its first sync before Monero did, so the window never happened, and say so. A window you missed is not a SKIP: 1.12 is not covered yet. Note it as missed and repeat the step: on a VM, revert to the *clean* snapshot as [Two boxes at once](sandbox-vm.md#two-boxes-at-once) describes; on a real machine, reinstall from an empty disk. Then run 1.1–1.11 again and check the dashboard more often during the sync.
 
 ### 1.13 Sync finishes
 
