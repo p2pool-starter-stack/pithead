@@ -31,6 +31,7 @@ from mining_dashboard.service.health.update_checker import GitHubReleaseClient, 
 from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor
 from mining_dashboard.service.notify.alert_service import AlertService
 from mining_dashboard.service.notify.healthchecks import HealthchecksClient
+from mining_dashboard.service.worker_probe import WorkerProber
 from mining_dashboard.service.xvb.price_feed import CoinGeckoClient, PriceFeed
 
 logger = logging.getLogger("DataService")
@@ -77,6 +78,7 @@ class DataSetupMixin:
         )
         self._last_proxy_workers = []
         self._last_proxy_workers_at = None
+        self._prober = WorkerProber()
         # Share-health delta baseline (#116): the previous poll's cumulative proxy /summary
         # totals; None until the first poll seeds it (and again after a counter reset).
         self._last_share_totals = None

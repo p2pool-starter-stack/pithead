@@ -173,8 +173,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                             )
 
                     # 3. Augment with Direct Worker Stats (Uptime, Hashrate) via Local API
-                    tasks = [worker_client.get_stats(w["ip"], w["name"]) for w in proxy_workers]
-                    worker_results = await asyncio.gather(*tasks)
+                    worker_results = await self._prober.probe(worker_client, proxy_workers)
 
                     # Reconcile pending rig edits and flag out-of-band edits using this poll.
                     await self._reconcile_worker_config(proxy_workers, worker_results)
