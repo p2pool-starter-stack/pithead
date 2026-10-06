@@ -32,6 +32,7 @@ for chain in monero tari; do
     out="$(pair_apply)"
     assert_rc "$chain apply refuses a wrong-wallet view key" "$?" 1
     assert_contains "$chain mismatch names both fields" "$out" "$chain.view_key does not belong to $chain.wallet_address"
+    assert_contains "$chain mismatch points at the docs section (#3112)" "$out" "dashboard.md#getting-your-view-keys"
     assert_eq "$chain mismatch preserves rendered config" "$(sha256sum "$V/.env")" "$before"
     assert_not_contains "$chain mismatch never prints the private key" "$out" "$PAYOUT_VIEW2"
 done
