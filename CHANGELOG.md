@@ -622,4 +622,20 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   (CVE-2026-14456, [#1438](https://github.com/p2pool-starter-stack/pithead/issues/1438)); x/crypto and grpc are raised so the appliance rootfs scan is clean
   ([#1649](https://github.com/p2pool-starter-stack/pithead/issues/1649)); a CVE in the appliance rootfs is fixed at its source ([#1153](https://github.com/p2pool-starter-stack/pithead/issues/1153)).
 
+### Known issues
+
+These ship in 2.0.0 and are fixed after it.
+
+- **`pithead doctor` can warn about a stratum port that is already protected.** On a host with a public
+  IP, which includes every IPv6 network, doctor warns that port 3333 is unauthenticated and cleartext
+  even when `p2pool.stratum_password` and `p2pool.stratum_tls` are set. With both set, the warning
+  does not apply ([#2461](https://github.com/p2pool-starter-stack/pithead/issues/2461)).
+- **A refused appliance update is silent for about 15 minutes.** When an update fails its health
+  check, the console shows nothing while the boot gate waits. The machine then restarts into the
+  previous version by itself. Leave it powered on through that wait ([#2436](https://github.com/p2pool-starter-stack/pithead/issues/2436)).
+- **Tor auto-heal needs dashboard control.** Without `dashboard.control.enabled`, which includes every
+  appliance set up with **No login**, `tor.auto_heal` only detects and logs Tor trouble and cannot
+  refresh or recover Tor. Turn dashboard control on, or restart Tor by hand with
+  `./pithead restart tor` ([#3166](https://github.com/p2pool-starter-stack/pithead/issues/3166)).
+
 Older releases (before 2.0.0) are archived in [docs/changelog-archive.md](docs/changelog-archive.md).
