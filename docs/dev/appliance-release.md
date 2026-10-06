@@ -138,7 +138,11 @@ PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=X.Y.Z os/rauc/mkbundle.sh ...
 
 `X.Y.Z` is the lowest OS version whose monerod/tari can still read `/data` after the
 migration — normally this release's own version. `mkbundle.sh` refuses to build a
-migrating bundle without it.
+migrating bundle without it. A release build (no `--dev`) also refuses unless both fields are
+set. This prevents omitted declarations, not incorrect declarations: the builder does not
+compare service image majors with a previous release. `--dev` retains the defaults. The
+2.0.0 release bundle must declare `PITHEAD_DATA_MIGRATION=true` and
+`PITHEAD_MIN_OS_VERSION=2.0.0`. A release that does not migrate declares that: `PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION=`.
 
 **The migration hold — how a flagged update boots.** Installing a `data_migration` bundle
 also leaves a marker on `/data` (`.os-migration-pending`, stamped with the bundle's
@@ -241,7 +245,8 @@ a new one:
 ```sh
 PITHEAD_RAUC_CERT=<build>/os/rauc/certs/cert.pem \
 PITHEAD_RAUC_KEY=<build>/os/rauc/certs/key.pem \
-  os/rauc/mkbundle.sh          # no --dev: naming the key IS the signal
+PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0 \
+  os/rauc/mkbundle.sh          # no --dev: naming the key IS the signal, so declare the migration fields
 ```
 
 Confirm before copying anything, by comparing fingerprints — the target's trusted chain is at
@@ -518,6 +523,8 @@ channels share the final cut commit, one version and one GitHub Release.
    export PITHEAD_RAUC_KEYRING=~/.config/pithead-release/rauc-root.pem
    export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem
    export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
+   # declare the data-migration contract above, migrating or not (2.0.0: true and 2.0.0)
+   export PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0
    sudo -E os/rauc/mkimage.sh && sudo -E os/rauc/mkbundle.sh
    ```
 
