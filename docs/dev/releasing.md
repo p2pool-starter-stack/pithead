@@ -62,7 +62,7 @@ bumps on the component pins for the same reason.
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
-cannot change what is baked; that row resolves the latest release tag to the commit it names and
+cannot change what is baked; the pin watcher resolves the latest release tag to the commit it names and
 compares the two commits. Comparing the commit against the tag directly would read stale for ever,
 including straight after a correct bump.
 
