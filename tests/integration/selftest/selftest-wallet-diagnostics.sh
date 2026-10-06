@@ -75,6 +75,18 @@ printf '2100000000\n' >"$TD/cgroup/memory/memory.max_usage_in_bytes"
 body="$(wallet_scan_sample)"
 assert_contains "v1 current usage is measured when v2 files are absent" "$body" $'memory.usage_in_bytes:\n1700000000'
 assert_contains "v1 peak is measured when v2 files are absent" "$body" $'memory.max_usage_in_bytes:\n2100000000'
+pair=$(printf '%064d' 1)
+printf '%s\n' "$pair" >"$TD/wallet/.payout-active"
+printf 'retained-cache' >"$TD/wallet/payout-wallet-$pair"
+printf 'retained-keys' >"$TD/wallet/payout-wallet-$pair.keys"
+body="$(wallet_scan_sample)"
+assert_contains "active fingerprinted cache size is measured" "$body" 'wallet_cache_bytes=14'
+assert_contains "active fingerprinted key size is measured" "$body" 'wallet_keys_bytes=13'
+assert_eq "retained cache content is never emitted" "$(printf '%s' "$body" | grep -c retained-cache)" 0
+printf '../escape\n' >"$TD/wallet/.payout-active"
+body="$(wallet_scan_sample)"
+assert_contains "invalid identity cannot redirect diagnostic reads" "$body" 'wallet_cache_bytes=13'
+rm "$TD/wallet/.payout-active"
 rm "$TD/wallet/payout-wallet.keys"
 body="$(wallet_scan_sample)"
 assert_contains "unavailable metadata is explicit" "$body" 'wallet_keys_bytes=unavailable'
@@ -146,7 +158,9 @@ for mode in create reopen; do
     assert_eq "wallet $mode does not skip initial sync" "$(grep -cx -- --no-initial-sync "$WALLET_TEST_ARGV")" 0
     assert_eq "wallet $mode keeps view material off argv" "$(grep -c fixture-view-key "$WALLET_TEST_ARGV")" 0
     if [ "$mode" = reopen ]; then
-        assert_eq "reopen preserves cached wallet content" "$(cat "$d/payout-wallet")" persisted-wallet
+        wallet_file="$(grep -A1 -x -- --wallet-file "$WALLET_TEST_ARGV" | tail -1)"
+        assert_eq "reopen uses the adopted wallet identity" "$wallet_file" "$d/payout-wallet-$(cat "$d/.payout-active")"
+        assert_eq "reopen preserves cached wallet content" "$(cat "$wallet_file")" persisted-wallet
         assert_eq "reopen does not regenerate the wallet" "$(test -f "$d/gen.json" && echo present)" ''
     else
         assert_eq "create writes the existing key-generation input" "$(test -f "$d/gen.json" && echo present)" present

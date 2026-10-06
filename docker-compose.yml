@@ -372,6 +372,7 @@ services:
       # bundled node's fixed bridge IP) and remote (a third-party/fleet-shared node's host:port);
       # the fallback here is the stock local default for a bare `docker compose up` bypassing
       # pithead. Harmless either way — this service never runs in remote mode (the gate above).
+      - TARI_WALLET_ADDRESS=${TARI_WALLET_ADDRESS}
       - TARI_BASE_NODE_GRPC_ADDRESS=${TARI_GRPC_ADDRESS:-172.28.0.27:18142}
       - TARI_WALLET_BIRTHDAY=${TARI_WALLET_BIRTHDAY:-auto}
       - TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143

@@ -20,7 +20,10 @@ OPEN_COPY = r"""
 set -eu
 umask 077
 tar -C /proof --no-same-owner -xf -
-monero-wallet-rpc --offline --no-initial-sync --wallet-file /proof/payout-wallet \
+set -- /proof/payout-wallet*.keys
+[ "$#" -eq 1 ] && [ -f "$1" ]
+wallet=${1%.keys}
+monero-wallet-rpc --offline --no-initial-sync --wallet-file "$wallet" \
     --password '' --disable-rpc-login --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18082 \
     --shared-ringdb-dir /proof/ringdb --log-file /proof/wallet.log \
     --max-concurrency 1 --non-interactive >/dev/null 2>&1 &
@@ -171,7 +174,7 @@ def install_signal_handlers():
         signal.signal(value, interrupt)
 
 
-def validate_record(record, binding, state):
+def validate_record(fixture, record, binding, state):
     if type(record.get("schema")) is not int:
         raise ValueError("invalid retained supersession schema")
     request_data(json.dumps(record.get("request")).encode())
@@ -206,7 +209,8 @@ def validate_record(record, binding, state):
     if (
         proof["identity_proven"] is not True
         or proof["encrypted_keys_match"] is not encrypted
-        or proof["archived_keys_fingerprint"] != state["contents"]["payout-wallet.keys"][2]
+        or proof["archived_keys_fingerprint"]
+        != state["contents"][fixture.wallet_keys(state["contents"])][2]
     ):
         raise ValueError("invalid retained identity proof")
     if (proof["archived_keys_fingerprint"] == proof["live_keys_fingerprint"]) is not encrypted or (
@@ -236,7 +240,8 @@ def prove_live(fixture, state, directory, baseline):
                 try:
                     fixture.docker(
                         *fixture.helper(item["Image"], True, directory, "identity-capture"),
-                        f"test ! -e {fixture.WALLET_DIR}/.payout-scanning && tar -C {fixture.WALLET_DIR} -cf - payout-wallet payout-wallet.keys",
+                        f"test ! -e {fixture.WALLET_DIR}/.payout-scanning && "
+                        + fixture.archive_command(fixture.WALLET_DIR),
                         stdout=stream,
                         timeout=180,
                     )
@@ -244,14 +249,14 @@ def prove_live(fixture, state, directory, baseline):
                     cleanup_helper(fixture, f"{directory.name}-identity-capture")
                     restart_allowed = True
             current = fixture.manifest(live)
-            encrypted = (
-                state["contents"]["payout-wallet.keys"][2] == current["payout-wallet.keys"][2]
-            )
+            archived_keys = state["contents"][fixture.wallet_keys(state["contents"])]
+            live_keys = current[fixture.wallet_keys(current)]
+            encrypted = archived_keys[2] == live_keys[2]
             proof = {
                 "method": "encrypted_keys" if encrypted else "isolated_open",
                 "encrypted_keys_match": encrypted,
-                "archived_keys_fingerprint": state["contents"]["payout-wallet.keys"][2],
-                "live_keys_fingerprint": current["payout-wallet.keys"][2],
+                "archived_keys_fingerprint": archived_keys[2],
+                "live_keys_fingerprint": live_keys[2],
                 "identity_proven": True,
             }
             if not encrypted:
@@ -318,7 +323,7 @@ def supersede(fixture, directory, baseline, job_directory, raw):
             "original_receipt_fingerprint": hashlib.sha256(receipt).hexdigest(),
         }
         if previous is not None:
-            validate_record(previous, binding, state)
+            validate_record(fixture, previous, binding, state)
             return previous
         proof = prove_live(fixture, state, directory, baseline)
         result = {**binding, "status": "SUPERSEDED", "proof": proof}

@@ -290,6 +290,46 @@ class FixtureTest(unittest.TestCase):
             fixture.cleanup(directory, self.baseline)
         self.assertTrue((directory / "wallet.tar").exists())
 
+    def test_fingerprinted_wallets_round_trip_with_retained_pairs(self):
+        first, second = "payout-wallet-" + "a" * 64, "payout-wallet-" + "b" * 64
+        self.docker.contents = archive(
+            {
+                first: b"first-progress",
+                first + ".keys": b"first-keys",
+                second: b"second-progress",
+                second + ".keys": b"second-keys",
+                ".payout-active": ("b" * 64 + "\n").encode(),
+                ".legacy-wallet-identity": ("a" * 64 + "\n").encode(),
+            }
+        )
+        saved = self.docker.contents
+        directory = self.capture()
+        self.docker.item = None
+        self.docker.contents = archive()
+        fixture.restore(directory, self.baseline, self.root / "branch")
+        self.assertEqual(self.docker.contents, saved)
+        contents = fixture.load(directory, self.baseline)["contents"]
+        self.assertIn(first, contents)
+        self.assertIn(second, contents)
+        self.assertIn(".payout-active", contents)
+
+    def test_wallet_keys_names_the_single_prepared_pair_only(self):
+        legacy = {"payout-wallet": [], "payout-wallet.keys": [], ".payout-active": []}
+        self.assertEqual(fixture.wallet_keys(legacy), "payout-wallet.keys")
+        named = "payout-wallet-" + "a" * 64 + ".keys"
+        self.assertEqual(fixture.wallet_keys({named: []}), named)
+        with self.assertRaises(ValueError):
+            fixture.wallet_keys({named: [], "payout-wallet.keys": []})
+        with self.assertRaises(ValueError):
+            fixture.wallet_keys({".payout-active": []})
+
+    def test_fingerprinted_archive_requires_keys_and_rejects_foreign_suffixes(self):
+        for name in ("payout-wallet-" + "a" * 64, "payout-wallet-" + "b" * 64 + ".evil"):
+            path = self.root / "incomplete.tar"
+            path.write_bytes(archive({name: b"unpaired"}))
+            with self.assertRaises(ValueError):
+                fixture.manifest(path)
+
     def test_partial_cleanup_can_be_replayed_after_durable_readiness(self):
         directory = self.capture()
         fixture.restore(directory, self.baseline, self.root / "branch")

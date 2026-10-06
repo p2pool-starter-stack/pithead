@@ -71,6 +71,25 @@ def digest(path):
         return stream_digest(stream)
 
 
+def archive_command(directory):
+    # The private snapshot is validated before import; include every retained pair, not ringdb.
+    return (
+        f"cd {directory} && find . -maxdepth 1 -type f "
+        "\\( -name 'payout-wallet*' -o -name '.payout-active' -o -name '.legacy-wallet-identity' \\) "
+        "-printf '%f\\0' | tar --null -T - -cf -"
+    )
+
+
+def wallet_keys(contents):
+    """The one prepared pair's keys member; several retained pairs cannot identify one."""
+    keys = [
+        name for name in contents if re.fullmatch(r"payout-wallet(?:-[0-9a-f]{64})?\.keys", name)
+    ]
+    if len(keys) != 1:
+        raise ValueError("wallet archive must identify exactly one prepared pair")
+    return keys[0]
+
+
 def manifest(path):
     result = {}
     size = 0
@@ -90,10 +109,18 @@ def manifest(path):
             if stream is None:
                 raise ValueError("unreadable wallet archive member")
             result[name] = [member.mode, member.size, stream_digest(stream)]
-    if set(result) != {"payout-wallet", "payout-wallet.keys"} or any(
-        v[1] == 0 for v in result.values()
+    wallets = {name for name in result if re.fullmatch(r"payout-wallet(?:-[0-9a-f]{64})?", name)}
+    allowed = {".payout-active", ".legacy-wallet-identity"}
+    for name in wallets:
+        allowed.update({name, name + ".keys", name + ".address.txt", name + ".unportable"})
+    if (
+        not wallets
+        or set(result) - allowed
+        or any(name + ".keys" not in result for name in wallets)
     ):
-        raise ValueError("wallet archive must contain only the prepared cache and keys")
+        raise ValueError("wallet archive must contain only complete prepared caches and keys")
+    if not all(value[1] for value in result.values()):
+        raise ValueError("wallet archive contains an empty member")
     return result
 
 
@@ -356,7 +383,7 @@ def restore(directory, baseline, branch):
         raise ValueError("wallet consumer restarted before fixture import")
     state["stage"] = "restoring"
     write_state(directory, state)
-    command = f"find {WALLET_DIR} -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} + && tar -C {WALLET_DIR} --no-same-owner -xf - && sync {WALLET_DIR}/payout-wallet {WALLET_DIR}/payout-wallet.keys {WALLET_DIR}"
+    command = f"find {WALLET_DIR} -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} + && tar -C {WALLET_DIR} --no-same-owner -xf - && find {WALLET_DIR} -maxdepth 1 -type f -exec sync {{}} + && sync {WALLET_DIR}"
     with (directory / "wallet.tar").open("rb") as stream:
         docker(
             *helper(state["image"], False, directory, "import"),
@@ -368,7 +395,7 @@ def restore(directory, baseline, branch):
     with check.open("wb") as stream:
         docker(
             *helper(state["image"], True, directory, "verify"),
-            f"tar -C {WALLET_DIR} -cf - payout-wallet payout-wallet.keys",
+            archive_command(WALLET_DIR),
             stdout=stream,
         )
     if manifest(check) != state["contents"]:

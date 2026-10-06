@@ -246,6 +246,13 @@ run_scenario() {
             it_fail "turning P2Pool clearnet off removes its live firewall exemption (#2790)" "apply or live readback failed"
         fi
     fi
+    if [ "$name" = local-pruned-main-payout-pairs ]; then
+        if rx 'timeout 3600 bash tests/integration/payout-pairs/run.sh' >"$OUT_DIR/payout-pairs.log" 2>&1; then
+            it_pass "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)"
+        else
+            it_fail "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)" "see payout-pairs.log"
+        fi
+    fi
     # If this scenario turned anything red, grab artifacts for it.
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "$name" "$OUT_DIR"
     restore_firewall_after_clearnet "$name" "$config"

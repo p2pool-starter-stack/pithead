@@ -862,14 +862,13 @@ health grace does not delay the card or alert.
 > host loopback (`127.0.0.1:18082`), runs
 > non-root with a read-only root filesystem, and authenticates the dashboard with a generated
 > password. **Phase 1 is local node only** — scanning through a third-party daemon would change the
-> trust story, so a view key set with `monero.mode: remote` is refused. To rotate it, get a fresh
-> view key from your wallet and replace `monero.view_key`. Leave `monero.view_key` empty (the
+> trust story, so a view key set with `monero.mode: remote` is refused. To change payout wallets, replace
+> the address and its matching `monero.view_key`; apply rejects a mismatched pair. Leave `monero.view_key` empty (the
 > default) and none of this runs — the card shows only the estimate.
 
 The **Tari** side of the merge-mine works the same way (#462). Tari merge-mining here is solo — the
 whole block reward lands at once when your hashrate finds a Tari block, so a payout is a rare, large
-event worth confirming. Set `tari.view_key` and `tari.spend_public_key` (both exported from your
-Tari wallet) and the stack runs a **view-only** `minotari_console_wallet` against your local Tari
+event worth confirming. Set `tari.view_key` for the dual-key `tari.wallet_address` (Tari Universe’s default) and the stack runs a **view-only** `minotari_console_wallet` against your local Tari
 node. The Tari tab of the earnings card then shows **Confirmed** XTM totals (24 hours, 7 days,
 all-time) beside the time-to-block estimate, and the same `payout_confirmed` alert fires once per
 Tari payout, carrying the chain. The Tari view key is a secret and is handled exactly like the
@@ -886,6 +885,12 @@ and provide readable logs with no database-integrity errors before the forced st
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
 2022-01-01, as Tari Universe's `wallet_birthday`), not a block height. The wallet scans only through
 the local node's wallet HTTP service on the internal network, never Tari's public fallback node. Leave `tari.view_key` empty and none of the Tari half runs.
+
+Each address/view-key pair keeps a separate view-only wallet. Changing the pair opens its wallet
+and keeps the previous one; reverting reopens the saved scan progress. Apply verifies that each
+view key belongs to its address. A fresh Monero wallet starts 100 blocks behind the local tip
+unless `monero.payout_scan_height` is set. Tari keeps its configured birthday. On upgrade, the
+legacy wallet is adopted for the currently configured pair without a rescan.
 
 #### Exporting your keys
 
@@ -906,7 +911,8 @@ minotari_console_wallet --base-path <your-wallet-dir> export-view-key-and-spend-
 ```
 
 Enter the wallet password when prompted. It prints the private **view key** (goes in
-`tari.view_key`) and the public **spend key** (goes in `tari.spend_public_key`).
+`tari.view_key`) and the public **spend key**. Supply only the view key: apply derives the public
+spend key from the dual-key address.
 
 Set the keys in `config.json` and run `./pithead apply`. Key reference: the `monero.view_key` and
 `tari.*` rows in [Configuration](configuration.md#configuration-reference).

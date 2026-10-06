@@ -30,7 +30,10 @@ def capture_fixture(fixture, baseline, diagnostics=True):
             raise ValueError("source wallet has no graceful save proof")
         archive = directory / "wallet.tar"
         with archive.open("xb") as stream:
-            command = f"test ! -e {fixture.WALLET_DIR}/.payout-scanning && tar -C {fixture.WALLET_DIR} -cf - payout-wallet payout-wallet.keys"
+            command = (
+                f"test ! -e {fixture.WALLET_DIR}/.payout-scanning && "
+                + fixture.archive_command(fixture.WALLET_DIR)
+            )
             restart_allowed = False
             try:
                 fixture.docker(

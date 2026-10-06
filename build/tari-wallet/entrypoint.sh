@@ -15,6 +15,7 @@
 # sees them, and they never touch argv (where `ps` would expose them). First run creates the
 # view-only wallet from the keys; later runs reopen the existing wallet DB from the named volume.
 set -eu
+umask 077
 
 WALLET_DIR="${WALLET_DIR:-/var/tari/wallet}"
 SECRET_FILE="${TARI_WALLET_SECRET_FILE_IN:-/run/secrets/tari_wallet_secret}"
@@ -40,6 +41,34 @@ resolve_birthday() {
     esac
 }
 
+# Keep a separate base path (and hence database) for each configured address/key pair.
+select_wallet() {
+    local identity owner entry
+    identity=$(printf '%s\n%s\n' "${TARI_WALLET_ADDRESS:-$MINOTARI_WALLET_SPEND_KEY}" "$MINOTARI_WALLET_VIEW_PRIVATE_KEY" | sha256sum)
+    identity="${identity%% *}"
+    WALLET_BASE="$WALLET_DIR/payout-$identity"
+    owner="$WALLET_DIR/.legacy-wallet-identity"
+    if [ -n "$(find "$WALLET_DIR" -maxdepth 7 -name console_wallet.db -not -path "$WALLET_DIR/payout-*/*" -print -quit)" ] && [ ! -f "$owner" ]; then
+        (
+            umask 077
+            printf '%s\n' "$identity" >"$owner"
+        )
+    fi
+    mkdir -p "$WALLET_BASE"
+    # Record the adoption owner before moving: an interrupted migration resumes for that pair.
+    if [ -f "$owner" ] && [ "$(cat "$owner")" = "$identity" ]; then
+        for entry in "$WALLET_DIR"/*; do
+            [ -e "$entry" ] || continue
+            case "${entry##*/}" in payout-*) continue ;; esac
+            mv "$entry" "$WALLET_BASE/"
+        done
+    fi
+    if [ "$(cat "$WALLET_DIR/.payout-active" 2>/dev/null || true)" != "$identity" ]; then
+        rm -f "$WALLET_DIR/.payout-scanning"
+        printf '%s\n' "$identity" >"$WALLET_DIR/.payout-active"
+    fi
+}
+
 # When sourced by the shell test harness, expose the functions and stop — don't read secrets or exec.
 if [ "${PITHEAD_TEST_SOURCE:-0}" = "1" ]; then
     return 0 2>/dev/null || exit 0
@@ -58,8 +87,9 @@ else
 fi
 
 mkdir -p "$WALLET_DIR"
+select_wallet
 # Repair a root-owned volume if needed, then run the wallet as the image's non-root uid (#2454).
-if [ "$(stat -c %u "$WALLET_DIR")" != 1000 ]; then
+if [ "$(stat -c %u "$WALLET_DIR")" != 1000 ] || [ "$(stat -c %u "$WALLET_BASE")" != 1000 ]; then
     chown -R 1000:1000 "$WALLET_DIR"
 fi
 # First-scan grace survives restarts; a crash loop cannot restart its clock.
@@ -71,7 +101,7 @@ echo "Starting view-only Tari payout wallet (birthday $birthday, base node $NODE
 # exported) supply the view-only wallet material WITHOUT ever landing on the command line. Supplying
 # all three creates the read-only wallet non-interactively on first run and reopens it after.
 exec setpriv --reuid=1000 --regid=1000 --clear-groups minotari_console_wallet \
-    --base-path "$WALLET_DIR" \
+    --base-path "$WALLET_BASE" \
     --non-interactive-mode \
     --enable-grpc \
     --grpc-address "$GRPC_BIND" \

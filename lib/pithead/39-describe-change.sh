@@ -324,7 +324,7 @@ describe_change() {
             msg="Payout confirmation view key SET — a view-only monero-wallet-rpc starts and scans the local node for confirmed payouts (it can see incoming amounts, never spend)."
         else
             flag=DEST
-            msg="Payout confirmation view key CHANGED — the view-only wallet-rpc is recreated and rescans."
+            msg="Payout confirmation view key CHANGED — a new view-only wallet is opened for this address (the previous one is kept)."
         fi
         ;;
     WALLET_RPC_PASSWORD)
@@ -351,7 +351,7 @@ describe_change() {
             msg="Tari payout confirmation view key SET — a view-only minotari_console_wallet starts and scans the local Tari node for confirmed payouts (it can see incoming amounts, never spend)."
         else
             flag=DEST
-            msg="Tari payout confirmation view key CHANGED — the view-only tari-wallet is recreated and rescans."
+            msg="Tari payout confirmation view key CHANGED — a new view-only wallet is opened for this address (the previous one is kept)."
         fi
         ;;
     TARI_WALLET_PASSWORD)

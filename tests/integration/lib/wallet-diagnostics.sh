@@ -20,8 +20,14 @@ wallet_scan_sample() {
             sed -n "/^VmRSS:/p; /^VmHWM:/p; /^Threads:/p" /proc/1/status
             sed -n "/^rchar:/p; /^read_bytes:/p" /proc/1/io
             wallet_dir="${WALLET_DIR:-/home/ubuntu/wallets}"
-            printf "wallet_cache_bytes=%s\n" "$(stat -c %s "$wallet_dir/payout-wallet" 2>/dev/null || echo unavailable)"
-            printf "wallet_keys_bytes=%s\n" "$(stat -c %s "$wallet_dir/payout-wallet.keys" 2>/dev/null || echo unavailable)"
+            wallet_file="$wallet_dir/payout-wallet"
+            pair=$(head -c 65 "$wallet_dir/.payout-active" 2>/dev/null || true)
+            case "$pair" in
+                *[!0-9a-f]*|"") ;;
+                *) [ "${#pair}" != 64 ] || wallet_file="$wallet_dir/payout-wallet-$pair" ;;
+            esac
+            printf "wallet_cache_bytes=%s\n" "$(stat -c %s "$wallet_file" 2>/dev/null || echo unavailable)"
+            printf "wallet_keys_bytes=%s\n" "$(stat -c %s "$wallet_file.keys" 2>/dev/null || echo unavailable)"
         '
         timeout 5 docker events --since 60s --until "$(date +%s)" --filter container=wallet-rpc --filter event=oom --filter event=die --filter event=start --filter event=restart --format '{{.Time}} action={{.Action}} exit={{index .Actor.Attributes "exitCode"}}'
 WALLET_DIAGNOSTICS

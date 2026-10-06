@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "$ROOT/tests/stack/lib.sh"
 WORK="$SANDBOX"
 mkdir -p "$WORK/bin" "$WORK/wallet/mainnet/config/wallet"
-printf 'MINOTARI_WALLET_PASSWORD=fixture\n' >"$WORK/secret"
+printf 'MINOTARI_WALLET_PASSWORD=fixture\nMINOTARI_WALLET_VIEW_PRIVATE_KEY=synthetic\nMINOTARI_WALLET_SPEND_KEY=public\n' >"$WORK/secret"
 cat >"$WORK/bin/stat" <<'EOF'
 #!/usr/bin/env bash
 if [ "${1:-}" = -c ] && [ "${2:-}" = %Y ]; then
