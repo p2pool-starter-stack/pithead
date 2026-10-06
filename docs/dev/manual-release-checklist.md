@@ -984,7 +984,9 @@ anything, so started from there it does not find this box's `config.json`.
 Read this first when the candidate is a debug release candidate and the appliance box then
 carries the 7-day soak ([#1652](https://github.com/p2pool-starter-stack/pithead/issues/1652)). The
 soak probe scores one boot, flat container restarts, every day-0 container running and healthy,
-and exactly one SSH login a day, its own. Anything else spends a soak day.
+and exactly one SSH login a day, its own. Rule 6 also requires the egress table to remain
+present with the same stateless ruleset hash as day 0. Resources, chain heights/growth and
+accepted work are recorded; they do not gate. See the [soak probe contract](../../tests/os/README.md#soak-probe).
 
 - **The image.** No release image exists before GA, so every appliance step runs on the debug
   image. Skip the instruction above to write the release image after 13.12, and record the variant
@@ -1015,7 +1017,12 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   `/data/pithead/.os-migration-pending` is absent and that both chains are synced.
 - **Starting the probe.** Use a fresh probe log directory, never the previous soak's, so the old
   `soak.log`, `day0.env`, `started` and `read<N>.env` files are not mixed into this soak's record. On the build host, run
-  `tests/os/soak-probe.sh <box IPv4> <logdir> --start`, then add the daily cron line with the same
+  `tests/os/soak-probe.sh --self-test`, then
+  `tests/os/soak-probe.sh <box IPv4> <logdir> --read` and inspect the private readings.
+  Keep the probe and its three sibling helper scripts together in the kit. Confirm both chains
+  are synced, no migration is pending and no first-sync clearnet exemption remains; `--start`
+  refuses an exemption or an unreadable firewall check without opening a window. Then run
+  `tests/os/soak-probe.sh <box IPv4> <logdir> --start`, and add the daily cron line with the same
   IPv4 and log directory:
   `0 6 * * * <checkout>/tests/os/soak-probe.sh <box IPv4> <logdir> >><logdir>/cron.log 2>&1`.
   The day-0 line carries a rule-4 FAIL from the setup logins; that is the baseline, not a soak day.

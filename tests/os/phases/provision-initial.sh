@@ -352,5 +352,28 @@ _phase_provision_initial_body() {
     # the sync-gate-hold checks above run, so they'd stop finding the "still syncing" hold they
     # exist to prove (job 1044/1113/1172/1173: the checks above went red only once this leg's own
     # round trip completed and consumed several extra minutes before them).
+    # Exercise the fixed read-only collector without opening a soak on this disposable guest.
+    local soak_dir soak_rc=0 soak_today
+    soak_dir=$(mktemp -d) || {
+        bad "soak probe scratch directory unavailable (#3188)"
+        return 1
+    }
+    PITHEAD_SOAK_KEY="$KEY" bash "$SCRIPT_DIR/soak-probe.sh" "$ip" "$soak_dir" --read >/dev/null 2>&1 || soak_rc=$?
+    # shellcheck source=tests/os/soak-record.sh
+    source "$SCRIPT_DIR/soak-record.sh"
+    if [ "$soak_rc" -eq 0 ] && soak_live_read_verdict "$soak_dir/read.env"; then
+        ok "soak probe live read records memory, firewall and every optional instrument (#3188)"
+        # Fixed whitelist: no raw env, addresses, credentials or firewall listings enter the log.
+        soak_today=$(sed -n '/^\(mem_.*_kib\|swap_.*_kib\|.*_chain_mib\|tari_height\|p2pool_.*\|proxy_.*\|tor_bootstrap_pct\|firewall_present\|firewall_hash\|first_sync_exemption\|container_stats\)=/p' "$soak_dir/read.env")
+        info "soak recorded readings (#3188): $soak_today"
+    else
+        bad "soak probe live read unavailable or instrument contract incomplete (#3188)"
+    fi
+    if [ ! -e "$soak_dir/started" ] && [ ! -e "$soak_dir/day0.env" ]; then
+        ok "soak probe live proof opens no soak window (#3188)"
+    else
+        bad "soak probe live proof unexpectedly opened a soak window (#3188)"
+    fi
+    rm -rf "$soak_dir"
     phase_provision_remote_node_regressions "$pv_user" "$pv_pass" || bad "reserved-node regression phase aborted before completing required checks"
 }

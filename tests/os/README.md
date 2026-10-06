@@ -435,19 +435,67 @@ sudo tests/os/verify-image.sh os/rauc/build/system.img --test   # harness build:
 
 ## Soak probe
 
-`tests/os/soak-probe.sh HOST LOGDIR [--start]` is the 7-day unattended soak's daily reader
-(#1652): one non-interactive, read-only SSH session whose remote command is fixed in the script,
-one line per day appended to `LOGDIR/soak.log`, scored against the pass condition ruled on the
-issue (one boot, restart counts and start times flat, every container running and — except
-`xmrig-proxy`, #1098 — healthy, exactly the probe's own login since the previous read). Each
-read records the journal cursor it reached in `LOGDIR/ssh.cursor`, and the next read counts logins
-from there, so nothing falls between two days and nothing is counted twice; a count of 0 fails
-naming the instrument, since the probe's own login must be there. `--start` writes the day-0
-baseline — its own line reads `window=25h` and carries a rule-4 FAIL from the setup logins, so day
-0 is the baseline, not a soak day. Only `--start` writes `day0.env`; a cron read never does, so a
-restart in the window's first hours can never be absorbed into the baseline it is scored against.
-Every line carries `read=N`, its `soak.log` line number, because the first cron read lands under
-24 h after `--start` and shares `day=0` with the baseline line; each run's raw readings are kept as
-`LOGDIR/readN.env`. `--self-test` proves the verdict over canned readings, then drives the script
-three times through a stubbed `ssh` to prove the baseline survives a cron read, without a box. Run
-it from a cron line on the build host, never from a resident session.
+`tests/os/soak-probe.sh HOST LOGDIR [--start|--read]` is the 7-day unattended soak's daily
+reader (#1652). It streams `tests/os/soak-read.sh` in one non-interactive, read-only SSH
+session. Keep `soak-probe.sh`, `soak-read.sh`, `soak-record.sh` and `soak-selftest.sh` together
+when copying the probe into the test kit. Nothing is installed in the guest.
+
+Run `--self-test`, then `HOST LOGDIR --read` before opening the window. `--read` saves
+`read.env` and `read.firewall.json` locally without creating a baseline or counting a soak day.
+The KVM `provision` phase exercises this mode on its disposable provisioned appliance. Its
+assertion requires measured memory and an egress table, plus every optional reading present
+as a number or `?`; it does not prove seven days of mining. Run the scheduled daily probe
+from the build host, never from a resident session.
+
+Open day 0 with `--start` only after both chains are synced and no migration is pending,
+as required by the kit's pre-soak step. `--start` refuses an absent or unreadable egress
+table, or a live Monero/Tari first-sync clearnet exemption. An unreadable exemption check
+also refuses the start. It preserves the attempted reading in `refused-start.env` and
+writes no new baseline or start marker. The steady Tor-first rules must be present first.
+A new `--start` opens a new window and resets the sampled memory maximum.
+
+Each daily read appends one line to `LOGDIR/soak.log`, scored against these rules:
+
+1. One boot: boot time and journal-directory count agree with day 0.
+2. Container restart counts and start times remain flat.
+3. Every day-0 container runs and is healthy, except `xmrig-proxy` health (#1098).
+4. Exactly the probe's own SSH login occurred since the previous read; no interactive
+   sessions occurred. Each read saves its journal cursor in `ssh.cursor`. The next read
+   counts from that cursor, so no login falls between two reads or gets counted twice.
+   A count of 0 fails because the probe's own login is the instrument's positive control.
+5. Chain state, resources and useful mining are recorded, without gating the soak.
+6. The `inet pithead_egress` table is present and its stateless ruleset hash equals day 0.
+   An absent table, an unreadable listing or hash, or a changed hash fails.
+
+The owner approved rule 6 and the sampled-memory definition on 2026-10-06. The firewall
+collector checks `nft list tables`, then reads `nft -s -j list table inet pithead_egress`.
+It hashes sorted-key JSON with SHA-256, excluding nft metadata, object handles and dynamic
+set elements. Counters are omitted by `-s`. Static set elements and dynamic set definitions
+remain in the hash. This proves sampled policy stability, not continuous enforcement or
+packet delivery between reads. A missing daily line or a failed SSH read fails the soak.
+
+`--start` writes `day0.env`, `day0.firewall.json` and the start marker. Its own login count
+uses the preceding 25 hours, so setup logins can make its rule-4 verdict fail: day 0 is the
+baseline, not a soak day. Only `--start` writes the baseline; a cron read never does.
+Every line carries `read=N`, its `soak.log` line number, because a read under 24 hours after
+`--start` can share `day=0`. Each reading and its derived values are kept in `readN.env`.
+On a rule-6 failure, `readN.firewall-baseline.json` and `readN.firewall-current.json` retain
+both stateless listings beside that reading. An unavailable current listing is `?`.
+These files contain local topology: keep them private. They and the logs use owner-only
+permissions; neither firewall listings nor credentials appear in the daily summary.
+
+The recorded readings are:
+
+| Reading | Instrument and interpretation |
+|---|---|
+| Memory and swap | `/proc/meminfo` MemTotal, MemAvailable, SwapTotal and SwapFree, in KiB. Used memory is MemTotal minus MemAvailable. `mem_sampled_max_kib` is the maximum across sampled reads since day 0, retained across missing samples; it cannot measure peaks between reads. |
+| Container resources | `podman stats --no-stream --format`, container name, memory usage/limit and CPU percent. |
+| Chain size and growth | `du -sx -B1M` on the configured Monero/Tari directories resolved under `/data`, allocated MiB on that filesystem. Growth is the difference from the previous read; MiB/day uses the elapsed seconds between samples. Day 0 has no rate; missing readings give `?`, not zero. Negative growth remains visible. |
+| Tari height | The local node's `GetTipInfo` through the dashboard's installed gRPC client. Remote/off Tari and unreadable readiness give `?`. |
+| Useful mining | P2Pool local data-api 15-minute hashrate, cumulative shares found/failed and pool sidechain height; xmrig-proxy summary connected miners and accepted/rejected work counters. No worker identities are recorded. |
+| Privacy route | Egress presence/hash and Tor's cookie-authenticated bootstrap healthcheck. A successful check records 100%; incomplete progress is recorded when reported; unavailable progress is `?`. |
+
+Every missing recorded value appears as `?` in the reading and summary. Only rule 6 adds
+a new failure condition; missing optional readings do not change rules 1–4. `--self-test`
+uses canned readings, pure instrument parsers and stubbed SSH to prove these contracts,
+including refusal to start with a sync exemption and retention of mismatch evidence.

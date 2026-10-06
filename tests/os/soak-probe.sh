@@ -58,8 +58,8 @@
 #                       "Method not found"), and a restricted `get_info` zeroes the peer counts
 #                       and peer lists by design — so peers reads `restricted` there rather than
 #                       a 0/0 that is the instrument, not the node; height moving between days is
-#                       the stall signal. Tari is recorded by container state only: the box has
-#                       no gRPC client, so its height is not read — stated, not skipped silently.
+#                       the stall signal. Tari height, resources and accepted work are also recorded, never gating.
+#   6 firewall stable — the stateless egress table hash must match day 0; missing reads FAIL.
 # A day whose line is missing, or whose SSH read failed, is a FAIL by the ruling's own terms; a
 # failed read keeps the previous cursor, so the next good day also counts the failed day's login.
 # The session skips host-key checking on purpose: the box regenerates its host key on every
@@ -73,7 +73,7 @@ EXCLUDED_HEALTH="xmrig-proxy"
 # The one remote command. Read-only by construction: every line is a read, and the .env is
 # consulted for monerod's RPC credentials without ever printing them.
 read_box() { # $1 = host, $2 = previous read's journal cursor or empty; prints key=value lines
-    timeout 120 ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=no \
+    timeout 180 ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "root@$1" "SOAK_CURSOR='$2' bash -s" <"$(dirname "$0")/soak-read.sh"
 }
 
@@ -89,6 +89,12 @@ soak_day_verdict() {
     b=$(rd "$base" jdirs)
     t=$(rd "$today" jdirs)
     { [ -n "$t" ] && [ "${t:-0}" -le "${b:-0}" ]; } 2>/dev/null || fails="$fails 1:journal-dirs($b->${t:-?})"
+    b=$(rd "$base" firewall_hash)
+    t=$(rd "$today" firewall_hash)
+    if [ "$(rd "$today" firewall_present)" != 1 ] ||
+        [[ ! "$b" =~ ^[a-f0-9]{64}$ || ! "$t" =~ ^[a-f0-9]{64}$ ]] || [ "$b" != "$t" ]; then
+        fails="$fails 6:firewall-missing-or-changed"
+    fi
     local name brc bstarted tstate trc thealth tstarted tline
     while IFS='|' read -r name _ brc _ bstarted; do
         [ -n "$name" ] || continue
@@ -123,6 +129,9 @@ soak_day_verdict() {
 self_test() {
     local base today out
     base=$'btime=100\njdirs=1\ncontainer=monerod|running|0|healthy|2026-09-03T06:00:00Z\ncontainer=xmrig-proxy|running|0|unhealthy|2026-09-03T06:00:00Z\nssh_window=cursor\nssh_accepted=1\nlast_sessions=0\nmonero=h:100 sync:true peers:1/2'
+    base+=$'\nfirewall_present=1\nfirst_sync_exemption=0\nfirewall_hash='
+    base+=$(printf steady | sha256sum | awk '{print $1}')
+    base+=$'\nfirewall_listing_b64=e30K'
     n=0
     f=0
     chk() { if [ "$2" = "$3" ]; then n=$((n + 1)); else
@@ -178,6 +187,9 @@ self_test() {
     out=$(soak_day_verdict "$base" "")
     chk "an empty reading FAILS every rule, never passes" "$?" 1
     self_test_driver "$base"
+    # shellcheck source=tests/os/soak-selftest.sh
+    source "$(dirname "$0")/soak-selftest.sh"
+    soak_extended_selftest "$base"
     echo "soak-probe self-test: $n ok, $f failed"
     [ "$f" -eq 0 ]
 }
@@ -212,7 +224,8 @@ self_test_driver() { # $1 = a canned reading that passes against itself
     chk "driver: the same reading again STILL fails — the baseline never absorbed the restart" "$?" 1
     chk "  …named" "${out##*fails=}" "2:monerod-restarts(0->1)"
     chk "driver: three lines, three distinct read= labels" "$(sed -n 's/^[^ ]* read=\([0-9]*\) .*/\1/p' "$tmp/log/soak.log" | sort -u | tr '\n' ' ')" "1 2 3 "
-    cmp -s "$tmp/b" "$tmp/log/read3.env"
+    sed '/^mem_used_kib=/,$d' "$tmp/log/read3.env" >"$tmp/raw"
+    cmp -s "$tmp/b" "$tmp/raw"
     chk "driver: read3.env holds the third read's raw readings" "$?" 0
     chk "driver: the second read was handed the first read's cursor" "$(sed -n 2p "$tmp/args")" "SOAK_CURSOR='s=1;i=1' bash -s"
     rm -rf "$tmp"
@@ -229,12 +242,18 @@ case "${1:-}" in
     ;;
 esac
 if [ -z "${2:-}" ]; then # HOST without LOGDIR would mkdir "" and write day0.env at /
-    echo "usage: $0 HOST LOGDIR [--start] | --self-test" >&2
+    echo "usage: $0 HOST LOGDIR [--start|--read] | --self-test" >&2
     exit 2
 fi
 HOST="$1"
 LOGDIR="$2"
 MODE="${3:-}"
+case "$MODE" in '' | --start | --read) ;; *)
+    echo "unknown mode: $MODE" >&2
+    exit 2
+    ;;
+esac
+umask 077
 mkdir -p "$LOGDIR"
 chmod 700 "$LOGDIR"
 now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -253,7 +272,21 @@ if [ "$rc" -ne 0 ] || [ -z "$today" ]; then
     printf '%s read=%s day=? READ-FAILED ssh rc=%s VERDICT=FAIL fails=read\n' "$now" "$line" "$rc" | tee -a "$LOGDIR/soak.log"
     exit 1
 fi
+kv() { printf '%s\n' "$today" | sed -n "s/^$1=//p" | head -1; }
+if [ "$MODE" = "--read" ]; then
+    printf '%s\n' "$today" >"$LOGDIR/read.env"
+    printf '%s\n' "$(kv firewall_listing_b64)" | base64 -d >"$LOGDIR/read.firewall.json"
+    echo "Read-only collection saved; no soak window opened."
+    exit 0
+fi
+if [ "$MODE" = "--start" ] && { [ "$(kv first_sync_exemption)" != 0 ] ||
+    [ "$(kv firewall_present)" != 1 ] || [[ ! "$(kv firewall_hash)" =~ ^[a-f0-9]{64}$ ]]; }; then
+    echo "REFUSED: day 0 needs a readable egress table with no first-sync clearnet exemption." >&2
+    printf '%s\n' "$today" >"$LOGDIR/refused-start.env"
+    exit 1
+fi
 if [ "$MODE" = "--start" ]; then # the ONLY writer of day0.env
+    printf '%s\n' "$(kv firewall_listing_b64)" | base64 -d >"$LOGDIR/day0.firewall.json"
     printf '%s\n' "$today" >"$LOGDIR/day0.env"
     printf '%s\n' "$now" >"$LOGDIR/started"
 fi
@@ -262,13 +295,19 @@ fi
     exit 1
 }
 day=$((($(date -u +%s) - $(date -u -d "$(cat "$LOGDIR/started")" +%s)) / 86400))
-kv() { printf '%s\n' "$today" | sed -n "s/^$1=//p" | head -1; }
 running=$(printf '%s\n' "$today" | grep -c '^container=.*|running|')
 total=$(printf '%s\n' "$today" | grep -c '^container=')
 unhealthy=$(printf '%s\n' "$today" | sed -n 's/^container=\([^|]*\)|[^|]*|[^|]*|unhealthy|.*/\1/p' | tr '\n' ',' | sed 's/,$//')
+# shellcheck source=tests/os/soak-record.sh
+source "$(dirname "$0")/soak-record.sh"
+soak_record_derived
 verdict=$(soak_day_verdict "$(cat "$LOGDIR/day0.env")" "$today")
-printf '%s read=%s day=%s btime=%s jdirs=%s up=%ss running=%s/%s unhealthy=%s ssh_accepted=%s window=%s last=%s monero=%s rauc=%s data_free_mb=%s load=%s %s\n' \
-    "$now" "$line" "$day" "$(kv btime)" "$(kv jdirs)" "$(kv uptime_s)" "$running" "$total" "${unhealthy:-none}" "$(kv ssh_accepted)" "$(kv ssh_window)" "$(kv last_sessions)" "$(kv monero)" "$(kv rauc)" "$(kv data_free_mb)" "$(kv load)" "$verdict" |
+if [[ "$verdict" == *6:firewall* ]]; then
+    cp "$LOGDIR/day0.firewall.json" "$LOGDIR/read$line.firewall-baseline.json"
+    printf '%s\n' "$(kv firewall_listing_b64)" | base64 -d >"$LOGDIR/read$line.firewall-current.json"
+fi
+printf '%s read=%s day=%s btime=%s jdirs=%s up=%ss running=%s/%s unhealthy=%s ssh_accepted=%s window=%s last=%s monero=%s rauc=%s data_free_mb=%s load=%s %s %s\n' \
+    "$now" "$line" "$day" "$(kv btime)" "$(kv jdirs)" "$(kv uptime_s)" "$running" "$total" "${unhealthy:-none}" "$(kv ssh_accepted)" "$(kv ssh_window)" "$(kv last_sessions)" "$(kv monero)" "$(kv rauc)" "$(kv data_free_mb)" "$(kv load)" "$(soak_record_summary)" "$verdict" |
     tee -a "$LOGDIR/soak.log"
 printf '%s\n' "$today" >"$LOGDIR/read$line.env"
 [ -n "$(kv ssh_cursor)" ] && printf '%s\n' "$(kv ssh_cursor)" >"$LOGDIR/ssh.cursor"
