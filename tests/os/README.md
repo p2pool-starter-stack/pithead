@@ -146,14 +146,24 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
   The nightly KVM battery also makes a wallet-bearing XvB stats request through that Tor SOCKS
   path, up to three attempts 15 seconds apart because one Tor circuit can read-time-out against the
-  remote host; every attempt refuses any socket but the Tor SOCKS. It then starts the otherwise sync-held proxy only long enough to invoke the controller's
+  remote host; every attempt refuses any socket but the Tor SOCKS. The leg runs inside the
+  reserved-node leg, after the approval whose synced nodes release the sync gate and before the
+  restore that re-holds it: on the guest's own unsynced chains the gate re-stops the proxy every
+  30 to 45 seconds, and a leg that restarted it lost the P2Pool restore to that cycle
+  ([#2733](https://github.com/p2pool-starter-stack/pithead/issues/2733)). Before the actuation and
+  again before either normal or fallback P2Pool restore confirmation, it waits up to 300 seconds
+  for the gate to read released with the proxy running in two consecutive samples. Each guest read
+  is capped by the remaining deadline, and a late result cannot confirm readiness. It then invokes the controller's
   existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
-  the same process before the unsynced controller can return it to P2Pool. This bounded injection
+  the same process. This bounded injection
   proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
   until their chains sync. Each of its verdicts is a counted row in the phase's own summary and none of
   them aborts it: a controller that cannot move the live route is one RED row, and the rows after it still
-  run ([#2321](https://github.com/p2pool-starter-stack/pithead/issues/2321)). The leg restores P2Pool and
-  stops the proxy again on every path, including the ones that bail mid-transition.
+  run ([#2321](https://github.com/p2pool-starter-stack/pithead/issues/2321)). A failed transition
+  attempts a fallback P2Pool restore only after the gate prerequisite passes; a held gate or an
+  unconfirmed route is a counted failure. The leg never starts or stops the proxy: the gate owns it.
+  The state, TCP and log diagnostics are read-only too. Without an applied reserved-node approval
+  the leg does not run, and says so in one red row.
   Before the successful attempt, an
   unreachable remote node must be refused by preflight with its safe form values retained; a
   separate injected post-validation setup fault must open a recoverable failed page and retry

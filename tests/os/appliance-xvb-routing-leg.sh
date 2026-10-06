@@ -4,6 +4,8 @@
 # method rather than pretending a PPLNS share or routed hashrate exists.
 # shellcheck source=tests/os/appliance-xvb-proxy-diag.sh
 . "$(dirname "${BASH_SOURCE[0]}")/appliance-xvb-proxy-diag.sh"
+# shellcheck source=tests/os/appliance-xvb-gate-wait.sh
+. "$(dirname "${BASH_SOURCE[0]}")/appliance-xvb-gate-wait.sh"
 _xvb_payload() { # <mode> -> base64 Python that actuates then reads the live route
     case "$1" in P2POOL | XVB) ;; *) return 2 ;; esac
     printf '%s\n' "import asyncio, json" "from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient" \
@@ -30,34 +32,17 @@ _xvb_proxy_ready_payload() {
         base64 | tr -d '\n'
 }
 
-# xmrig-proxy is held stopped by the sync gate (#35) until this leg starts it, fresh, one line
-# above the actuation call. Its container's own healthcheck (#904, docker-compose.yml) gates
-# nothing and gets there in ~1s once the process is up (job 1141), so it cannot stand in for this
-# wait; algo_service.switch_miners swallows a not-yet-listening API as a silent, logged no-op (its
+# algo_service.switch_miners swallows a not-yet-listening API as a silent, logged no-op (its
 # get_config returns falsy, so it never calls update_config and never touches state) — exactly the
-# shape job 629 hit: mode stayed null and pools stayed the single-entry startup config, because the
-# switch never ran. Poll the SAME get_config() call switch_miners depends on, so "ready" means what
-# the actuator actually needs, not just an open port.
-#
-# The gate is a one-way latch that only releases once the chain(s) fully sync — never true on this
-# throwaway appliance — so it re-asserts the stop every UPDATE_INTERVAL cycle (30s default,
-# data_gates.py) for as long as we wait. A single start before this loop loses that race outright:
-# jobs 701 and 717 both died to it, one before the API ever answered, one a second after it did.
-# Re-issue the start on every poll (a no-op once already running) so the gate's periodic stop is
-# answered within one 2s poll instead of costing the whole wait.
-#
-# 60s was too tight for the gate's own cycle, not for the proxy: job 1141's guest journal shows
-# xmrig-proxy's healthcheck reporting healthy within ~1s of every single start, but the gate-driven
-# stop at 00:52:26.735Z was not followed by a restart until 00:53:25.423Z — a single ~59s outage
-# that alone swallowed nearly the whole bounded wait, because xmrig-proxy's compose entry depends
-# on p2pool's own restart finishing first (com.docker.compose.depends_on=p2pool:service_started).
-# 150s gives one such worst-case gap room to happen and still leave a live window for the poll.
+# shape job 629 hit: mode stayed null and pools stayed the single-entry startup config. The gate's
+# own start of the proxy can land a second before this, and the container healthcheck (#904) gates
+# nothing, so poll the SAME get_config() call switch_miners depends on: "ready" means what the
+# actuator needs, not just an open port. The wait starts nothing; the released gate owns the proxy.
 _xvb_wait_for_proxy_api() { # -> 0 once the proxy answers a real get_config()
     local deadline payload
     payload="$(_xvb_proxy_ready_payload)"
     deadline=$(($(date +%s) + ${XVB_PROXY_READY_TIMEOUT:-150}))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        _ssh "podman start xmrig-proxy >/dev/null 2>&1"
         _xvb_guest_python "$payload" >/dev/null 2>&1 && return 0
         sleep 2
     done
@@ -106,18 +91,15 @@ _xvb_route_is() { # <route-json> <mode> <tor-routed: true|false>
         >/dev/null 2>&1
 }
 
-# #2708 (job 1172), #2737 (job 1208): the sync gate (#35) re-stops xmrig-proxy every cycle on this
-# unsynced appliance, and one such outage ran ~59s (job 1141), so the proxy the readiness wait saw
-# can be gone by the next call: a switch then dies to a guest-side ConnectTimeout, and a restore
-# that neither restarted the proxy nor outlasted that outage (30s) left the guest routed to XvB for
-# the rest of the phase. Every attempt re-asserts the start, as the readiness wait does, and the
-# route must confirm before the call counts. Prints the last route it read either way.
+# #2708 (job 1172), #2737 (job 1208): a single switch can still die to a transient guest-side
+# timeout, so each direction retries until its route confirms. The retries no longer restart the
+# proxy against a holding gate (#2733: that fight is what stranded the guest on XvB); the leg runs
+# only where the gate is released. Prints the last route it read either way.
 _xvb_actuate() { # <mode> <tor-routed: true|false> -> 0 once confirmed, 1 on timeout
     local deadline pools="" payload
     payload="$(_xvb_payload "$1")"
     deadline=$(($(date +%s) + ${XVB_ACTUATE_TIMEOUT:-150}))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        _ssh "podman start xmrig-proxy >/dev/null 2>&1"
         pools="$(_xvb_guest_python "$payload")"
         if [ -n "$pools" ] && _xvb_route_is "$pools" "$1" "$2"; then
             printf '%s' "$pools"
@@ -142,6 +124,11 @@ _xvb_routing_actuation() {
         return 1
     fi
     ok "bounded controller injection moved the live proxy to Tor-routed XvB"
+    local gate
+    if ! gate="$(_xvb_wait_for_gate_release)"; then # #2733: the restore's own precondition
+        bad "sync gate never read released with xmrig-proxy running in two consecutive samples within ${XVB_GATE_RELEASE_TIMEOUT:-300}s before the P2POOL restore (last: $gate) $(_xvb_proxy_diag)"
+        return 1
+    fi
     if ! _xvb_actuate P2POOL false >/dev/null; then
         bad "controller actuator could not restore the live proxy to P2Pool within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
         return 1
@@ -153,7 +140,7 @@ _xvb_routing_actuation() {
 # NOT a subshell body: ok/bad must count in the harness's own PASS/FAIL, and a bare `return` after
 # bad() returns printf's 0 — between them a red leg read as a clean one and the caller never saw it.
 phase_provision_xvb_routing() {
-    local rc=0 tor_status
+    local rc=0 tor_status gate
     info "provision leg — bounded XvB routing injection"
     if ! tor_status="$(_xvb_wait_for_tor)"; then
         bad "guest Tor never reported bootstrapped within ${XVB_TOR_READY_TIMEOUT:-300}s (last health: $tor_status) — the real XvB stats request was never made"
@@ -165,27 +152,29 @@ phase_provision_xvb_routing() {
         bad "XvB stats request did not complete through the guest Tor SOCKS only (guest: $(_xvb_guest_stderr))"
         return 1
     fi
-    _ssh "podman start xmrig-proxy >/dev/null" || {
-        bad "held xmrig-proxy could not start for the bounded XvB actuator injection (guest: $(_xvb_guest_stderr))"
+    if ! gate="$(_xvb_wait_for_gate_release)"; then
+        bad "sync gate never read released with xmrig-proxy running in two consecutive samples within ${XVB_GATE_RELEASE_TIMEOUT:-300}s — the actuator was never attempted (last: $gate) $(_xvb_proxy_diag)"
         return 1
-    }
+    fi
     if ! _xvb_wait_for_proxy_api; then
-        bad "xmrig-proxy API never answered within ${XVB_PROXY_READY_TIMEOUT:-150}s of starting — the actuator was never attempted $(_xvb_proxy_diag)"
-        _ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true
+        bad "xmrig-proxy API never answered within ${XVB_PROXY_READY_TIMEOUT:-150}s of the gate's release — the actuator was never attempted $(_xvb_proxy_diag)"
         return 1
     fi
     _xvb_routing_actuation || rc=1
-    # Put the guest back the way the fresh appliance holds it (#35): re-assert P2POOL when the
-    # actuation bailed mid-transition, so the fourteen rows after this one do not run against a
-    # dashboard still persisting XVB, then stop the proxy again. #2708: the retry+confirm loop
+    # Re-assert P2POOL when the actuation bailed mid-transition, so the rows after this one do not
+    # run against a dashboard still persisting XVB. The proxy is left to the gate: the reserved-node
+    # restore that follows re-holds it (job 2241, 15:12:19). #2708: the retry+confirm loop
     # already ran once inside the actuation, so a bare `|| true` here would repeat the very
     # silent-swallow that issue exists to kill — a fallback restore that also fails is a counted,
     # named diagnostic instead, so nothing downstream mistakes a still-misrouted guest for a clean one.
     if [ "$rc" -ne 0 ]; then
-        _xvb_actuate P2POOL false >/dev/null ||
-            bad "guest left routed to XvB after the leg failed — P2POOL restore did not confirm within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
+        if ! gate="$(_xvb_wait_for_gate_release)"; then
+            bad "guest left routed to XvB after the leg failed — sync gate never read released with xmrig-proxy running twice within ${XVB_GATE_RELEASE_TIMEOUT:-300}s before fallback P2POOL restore (last: $gate) $(_xvb_proxy_diag)"
+        else
+            _xvb_actuate P2POOL false >/dev/null ||
+                bad "guest left routed to XvB after the leg failed — P2POOL restore did not confirm within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
+        fi
     fi
-    _ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true
     return "$rc"
 }
 
@@ -225,11 +214,11 @@ _xvb_self_test() {
     # Drive the REAL leg, one inverted assertion at a time. A source grep would pass on a leg whose
     # rows never reach the harness's counters, which is exactly the defect this replaced: the rows
     # must be counted HERE, in the caller's own PASS/FAIL, and the leg must return non-zero.
-    local PASS=0 FAIL=0 XVBT_FETCH_FAILS=0 XVBT_FETCH_CALLS XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
+    local PASS=0 FAIL=0 XVBT_FETCH_FAILS=0 XVBT_FETCH_CALLS XVBT_GATE=released XVBT_XVB_JSON="" XVBT_P2P_JSON=""
     local XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
     # Deadlines are whole seconds of `date +%s`: a 1s one computed at x.999 expires before the
     # poll runs once, so every short deadline here is 2 — at least one full second of polling (#2739).
-    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=2 XVB_ACTUATE_TIMEOUT=2
+    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=2 XVB_ACTUATE_TIMEOUT=2 XVB_GATE_RELEASE_TIMEOUT=2
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     local p2p_ok='{"mode":"P2POOL","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     ok() { PASS=$((PASS + 1)); }
@@ -240,8 +229,9 @@ _xvb_self_test() {
     _ssh() {
         case "$1" in
         *"podman inspect"*" tor") printf '%s\n' "$XVBT_TOR_HEALTH" ;;
+        *"{{.State.Running}}"*) printf 'true\n' ;;
         *"podman inspect"*"xmrig-proxy"* | *"podman logs"*) printf 'stub-proxy-state\n' ;;
-        *"podman start"*) printf x >>"$XVBT_STARTS" && return "$XVBT_START_RC" ;;
+        *"podman "*start*xmrig-proxy* | *"podman "*stop*xmrig-proxy*) printf x >>"$XVBT_STARTS" ;; # #2733: the gate owns it
         esac
         return 0
     }
@@ -252,6 +242,7 @@ _xvb_self_test() {
         *switch_miners*) printf x >>"$XVBT_CALLS" && [ "$(wc -c <"$XVBT_CALLS")" -gt "${XVBT_MISSES:-0}" ] || return 1 ;;&
         *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
         *"switch_miners('P2POOL')"*) printf '%s' "$XVBT_P2P_JSON" ;;
+        *SYNC_GATE_RESET_PATH*) [ "${XVBT_REHOLD:-0}" = 1 ] && [ -s "$XVBT_CALLS" ] && echo held || echo "$XVBT_GATE" ;;
         *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
         *"socket.create_connection"*) printf 'tcp-timeout:timed out\n' ;;
         esac
@@ -271,17 +262,18 @@ _xvb_self_test() {
     XVBT_XVB_JSON="$xvb_ok" XVBT_P2P_JSON="$p2p_ok"
     _xvb_case "a clean transition reports three green rows and rc 0" 3 0 0
 
-    # #2708 (job 1172), #2737 (job 1208): a switch that hits a transient ConnectTimeout (the gate
-    # re-stopped the proxy) must retry until its route confirms, re-asserting the proxy start
-    # between attempts, not strand the guest on XvB.
-    : >"$XVBT_STARTS" && XVBT_MISSES=1
+    # #2708 (job 1172), #2737 (job 1208): a switch that hits a transient timeout must retry until
+    # its route confirms, not strand the guest on XvB.
+    XVBT_MISSES=1
     _xvb_case "a switch that times out once and then succeeds is NOT a red row" 3 0 0
-    # 2 from the phase and readiness wait, then one per actuation attempt: 2 for XvB, 1 for P2Pool.
-    [ "$(wc -c <"$XVBT_STARTS")" -ge 5 ] || {
-        printf 'xvb self-test: the actuator does not re-assert the proxy start between attempts\n' >&2
-        f=$((f + 1))
-    }
     XVBT_MISSES=0
+    # #2733: a gate that never releases is a counted red row before the actuator is tried, and one
+    # that re-holds after the XvB switch stops the P2POOL restore from being confirmed against it.
+    XVBT_GATE=held
+    _xvb_case "a sync gate that never releases is a counted red row before any actuation" 1 1 1
+    XVBT_GATE=released XVBT_REHOLD=1
+    _xvb_case "a gate that re-holds blocks both normal and fallback P2POOL confirmation" 2 2 1
+    XVBT_REHOLD=0
 
     # #2253: the leg must WAIT for Tor rather than race it, and must say so when it never arrives.
     # The REAL wait runs in every case here; only the guest's answer and the deadline are stubbed.
@@ -295,9 +287,6 @@ _xvb_self_test() {
     _xvb_case "an unreachable real XvB request over guest Tor is a counted red row" 0 1 1
     [ "$(wc -c <"$XVBT_FETCH_CALLS")" = 3 ] || { echo "xvb self-test: fetch not tried 3 times" >&2 && f=$((f + 1)); }
     XVBT_FETCH_FAILS=0
-    XVBT_START_RC=1
-    _xvb_case "a held xmrig-proxy that will not start is a counted red row" 1 1 1
-    XVBT_START_RC=0
     # Job 629's own cause: xmrig-proxy started but its API never answered before the actuator was
     # tried, so the switch silently no-opped. That must be a counted red row on its own, before the
     # actuator ever runs — not the actuator's "could not switch" row, which would misname the cause.
@@ -382,26 +371,11 @@ _xvb_self_test() {
         f=$((f + 1))
     fi
 
-    # #1998 regression (jobs 701, 717): the sync gate (#35) re-stops xmrig-proxy every cycle on
-    # this unsynced appliance, so a wait that starts it once and only polls loses that race. Prove
-    # the wait keeps re-asserting the start itself, not just the one the caller made before it —
-    # a single start call here would time out having never answered, same as the case above.
-    local start_calls=0
-    _ssh() {
-        case "$1" in
-        *"podman start"*) start_calls=$((start_calls + 1)) ;;
-        esac
-        return 1
-    }
-    XVB_PROXY_READY_TIMEOUT=2 _xvb_wait_for_proxy_api
-    if [ "$start_calls" -lt 2 ]; then
-        printf 'xvb self-test: the proxy-API wait does not re-assert the start against the sync gate (#1998), only asserted %s time(s)\n' \
-            "$start_calls" >&2
-        f=$((f + 1))
-    fi
     unset -f sleep
 
+    [ ! -s "$XVBT_STARTS" ] || { echo "xvb self-test: the leg started or stopped xmrig-proxy against the gate (#2733)" >&2 && f=$((f + 1)); }
     unset -f ok bad info _ssh _xvb_real_tor_fetch _xvb_guest_python _xvb_case && rm -f "$XVBT_FETCH_CALLS" "$XVBT_STARTS" "$XVBT_CALLS" "$XVBT_MSGS"
+    _xvb_gate_wait_self_test || f=$((f + 1))
     [ "$f" -eq 0 ]
 }
 
