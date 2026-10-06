@@ -36,3 +36,8 @@ be95cee9f654b55eff157c89350913921fdb23ab:tests/os/selftest-miner-connection.sh:g
 473fab771dba8966de137dc5c307d994dbcdb0d7:tests/os/selftest-miner-connection-card.sh:generic-api-key:6
 473fab771dba8966de137dc5c307d994dbcdb0d7:tests/os/selftest-miner-connection-card.sh:generic-api-key:38
 473fab771dba8966de137dc5c307d994dbcdb0d7:tests/stack/appliance/test-appliance-restore-publish.sh:generic-api-key:14
+# Synthetic soak transport fixtures in the original #3188 commit: one empty reply plus
+# a shell failure switch, and one fabricated tari_height string used to test secret exclusion.
+# Current fixtures use SOAK_REPLY; these historical fingerprints exempt no later copies.
+767ae18596b06a63ef98beccf31ac0a212786365:tests/os/soak-selftest.sh:generic-api-key:86
+767ae18596b06a63ef98beccf31ac0a212786365:tests/os/soak-selftest.sh:generic-api-key:88

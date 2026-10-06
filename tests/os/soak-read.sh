@@ -36,7 +36,7 @@ soak_sync_exemption() { # <network prefix>; live nft JSON on stdin
 soak_disk() { # <key> <configured data directory>; do not read outside /data
     local dir size='?'
     dir=$(realpath -e -- "$2" 2>/dev/null) || dir=''
-    case "$dir" in /data/*) size=$(timeout 25 du -sx -B1M -- "$dir" 2>/dev/null | awk '{print $1}') ;; esac
+    case "$dir" in /data/*) size=$(timeout 25 du -sx -B1M -- "$dir" 2>/dev/null | awk '{print $1}') || size='?' ;; esac
     soak_number "$1" "$size"
 }
 soak_stats_file() { # <key> <file> <jq selector>

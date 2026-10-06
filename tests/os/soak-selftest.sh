@@ -56,6 +56,25 @@ SwapFree: 1500 kB')
         chk 'extended: mktemp' 1 0
         return
     }
+    mkdir -p "$tmp/bin"
+    printf '%s\n' '#!/usr/bin/env bash' '[ "${SOAK_REALPATH_FAIL:-0}" = 0 ] || exit 1' 'printf "%s\n" "$SOAK_RESOLVED_PATH"' >"$tmp/bin/realpath"
+    printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "$*" >"$SOAK_DU_ARGS"' 'printf "%s\tfixture\n" "${SOAK_DU_SIZE:-123}"' 'exit "${SOAK_DU_FAIL:-0}"' >"$tmp/bin/du"
+    chmod +x "$tmp/bin/realpath" "$tmp/bin/du"
+    out=$(PATH="$tmp/bin:$PATH" SOAK_RESOLVED_PATH=/data/fixture/monero SOAK_DU_ARGS="$tmp/du-args" soak_disk monero_chain_mib /configured/monero)
+    chk 'chain collector records allocated MiB from resolved data path' "$out" 'monero_chain_mib=123'
+    chk 'chain collector requests same-filesystem allocated MiB' "$(cat "$tmp/du-args")" '-sx -B1M -- /data/fixture/monero'
+    out=$(PATH="$tmp/bin:$PATH" SOAK_RESOLVED_PATH=/data/fixture/tari SOAK_DU_ARGS="$tmp/du-args" SOAK_DU_SIZE=0 soak_disk tari_chain_mib /configured/tari)
+    chk 'zero chain size is measured, not missing' "$out" 'tari_chain_mib=0'
+    out=$(PATH="$tmp/bin:$PATH" SOAK_RESOLVED_PATH=/data/fixture/tari SOAK_DU_ARGS="$tmp/du-args" SOAK_DU_FAIL=1 soak_disk tari_chain_mib /configured/tari)
+    chk 'failed du with partial total is unknown' "$out" 'tari_chain_mib=?'
+    rm -f "$tmp/du-args"
+    out=$(PATH="$tmp/bin:$PATH" SOAK_REALPATH_FAIL=1 SOAK_RESOLVED_PATH='' SOAK_DU_ARGS="$tmp/du-args" soak_disk tari_chain_mib /missing)
+    chk 'missing chain path is unknown' "$out" 'tari_chain_mib=?'
+    out=$(PATH="$tmp/bin:$PATH" SOAK_RESOLVED_PATH=/outside/fixture SOAK_DU_ARGS="$tmp/du-args" soak_disk tari_chain_mib /data/escape)
+    chk 'escaped data path is unknown' "$out" 'tari_chain_mib=?'
+    if [ ! -e "$tmp/du-args" ]; then rc=0; else rc=1; fi
+    chk 'du never runs for missing or escaped data paths' "$rc" 0
+    rm "$tmp/bin/realpath" "$tmp/bin/du"
     mkdir -p "$tmp/pool/stats/local" "$tmp/pool/stats/pool"
     printf '{"hashrate_15m":50,"shares_found":6,"shares_failed":0,"wallet":"secret"}' >"$tmp/pool/stats/local/stratum"
     printf '{"pool_statistics":{"sidechainHeight":100}}' >"$tmp/pool/stats/pool/stats"
@@ -80,17 +99,17 @@ SwapFree: 1500 kB')
     chk 'live-read mode never opens soak window' "$rc" 0
     if [ -s "$tmp/log/read.env" ]; then rc=0; else rc=1; fi
     chk 'live-read mode retains readings' "$rc" 0
-    printf '%s\n' '#!/usr/bin/env bash' 'if [ "$2" = -i ]; then cat >/dev/null; printf "%s\n" "$SOAK_API_CANNED"; exit "${SOAK_STUB_FAILURE:-0}"; fi' 'printf "%s\n" "${SOAK_TOR_CANNED:-}"; exit "${SOAK_STUB_FAILURE:-0}"' >"$tmp/bin/podman"
+    printf '%s\n' '#!/usr/bin/env bash' 'if [ "$2" = -i ]; then cat >/dev/null; printf "%s\n" "$SOAK_REPLY"; exit "${SOAK_STUB_FAILURE:-0}"; fi' 'printf "%s\n" "${SOAK_TOR_CANNED:-}"; exit "${SOAK_STUB_FAILURE:-0}"' >"$tmp/bin/podman"
     chmod +x "$tmp/bin/podman"
     env_get() { [ "$1" != TARI_MODE ] || printf '%s' "${SOAK_TARI_MODE:-local}"; }
     value=$'tari_height=123\nproxy_workers=2\nproxy_accepted=50\nproxy_rejected=0'
-    out=$(PATH="$tmp/bin:$PATH" SOAK_API_CANNED="$value" soak_api)
+    out=$(PATH="$tmp/bin:$PATH" SOAK_REPLY="$value" soak_api)
     chk 'actual API wrapper records tip and proxy counters' "$out" "$value"
-    out=$(PATH="$tmp/bin:$PATH" SOAK_API_CANNED="$value" SOAK_TARI_MODE=remote soak_api)
+    out=$(PATH="$tmp/bin:$PATH" SOAK_REPLY="$value" SOAK_TARI_MODE=remote soak_api)
     chk 'remote Tari is not attributed to local node' "$out" "${value/tari_height=123/tari_height=?}"
-    out=$(PATH="$tmp/bin:$PATH" SOAK_API_CANNED='' SOAK_STUB_FAILURE=1 soak_api)
+    out=$(PATH="$tmp/bin:$PATH" SOAK_REPLY='' SOAK_STUB_FAILURE=1 soak_api)
     chk 'unavailable API records every field as unknown' "$out" $'tari_height=?\nproxy_workers=?\nproxy_accepted=?\nproxy_rejected=?'
-    out=$(PATH="$tmp/bin:$PATH" SOAK_API_CANNED='tari_height=wallet-secret' soak_api)
+    out=$(PATH="$tmp/bin:$PATH" SOAK_REPLY='tari_height=wallet-secret' soak_api)
     chk 'API wrapper cannot disclose string values' "$out" $'tari_height=?\nproxy_workers=?\nproxy_accepted=?\nproxy_rejected=?'
     out=$(PATH="$tmp/bin:$PATH" soak_tor)
     chk 'successful authenticated Tor check records 100 percent' "$out" 'tor_bootstrap_pct=100'
