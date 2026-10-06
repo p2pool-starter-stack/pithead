@@ -3,6 +3,10 @@
 How to point miners at the stack. Every miner connects to one endpoint; the stack handles pool
 selection, payouts, and the P2Pool/XvB split centrally.
 
+Choose [coordinator-only, coordinator plus a local worker, or worker-only](hardware.md#choose-the-arrangement)
+before sizing the machines. The appliance's [role chooser](appliance.md#what-is-this-machine)
+sets that arrangement; a worker-only machine holds no chain data or payout wallet configuration.
+
 The endpoint is the `xmrig-proxy` service on port `3333` by default. Every successful coordinator
 `setup`, `up`, and `apply` prints the pool URL and stratum password, or states that no password is
 set. This includes an `apply` with no configuration changes and a host with local mining enabled.
@@ -455,9 +459,11 @@ kernel tuning, and verification.
 
 ## Mine on the stack host itself
 
-A box that runs the stack 24/7 has spare CPU between syncs. You can put that CPU to work by
-co-locating a RigForge worker on the stack host, pointed at the stack's own stratum over loopback —
-no LAN exposure, no firewall rule, no Tor hop.
+Opt in to a co-located RigForge worker on the stack host, pointed at the stack's own stratum over
+loopback — no LAN exposure, no firewall rule, no Tor hop. Leave CPU and memory headroom for the
+coordinator; available CPU alone does not establish useful hashrate or absence of contention.
+See [Hardware Requirements](hardware.md#choose-the-arrangement) for the separate budgets and
+the pending co-location measurement.
 
 **On the appliance, this is built in.** The image carries a pinned RigForge tree and a prebuilt
 XMRig, so answering yes to "Mine on this machine too?" in the setup wizard is the whole job:

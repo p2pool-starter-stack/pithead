@@ -749,6 +749,8 @@ worker whose feed reports no watts (macOS, a non-RigForge rig, an older kit) can
 estimate: add `"watts": <number>` to its `workers.list[]` descriptor and it counts toward the
 total, marked *estimated*. A worker with neither a measured nor a configured draw is left out and
 the **Fleet Power** figure turns amber to show the total is a lower bound, not a fabricated zero.
+Its kWh and power cost are incomplete too; net can read too high when some workers' draw is
+unknown. With no power inputs the tab is unavailable, rather than showing a measured zero.
 
 The tab always shows fleet watts and H/s-per-watt, plus the same Day / Month / Year table as the
 other tabs — here its columns grow as prices are set. **kWh** (a naive extrapolation of the
@@ -780,6 +782,10 @@ tooltip label it `XvB (est.)` and say exactly what the figure counts, so it is n
 partial. XvB folds in only while its published estimate is fresh (the same staleness rule as the
 *XvB Donation Stats* card) and you clear a donor tier; otherwise it is left out rather than
 guessed, and the label reverts to P2Pool (and Tari, if priced) alone.
+The API's energy disclaimer describes these same conditional contributions. The tooltips name
+missing XvB as having no usable fresh donor-tier estimate, and missing Tari as having no priced
+merge-mining estimate. All earnings remain subject to mining variance; projected kWh is not a
+metered bill.
 
 Prices come from one of two places, and the card always says which:
 

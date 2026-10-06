@@ -10,6 +10,11 @@ manage the host.
 
 ## What you need
 
+The RAM and chain-storage figures below size a coordinator, with or without a local worker.
+For worker-only, use [worker hardware requirements](hardware.md#choose-the-arrangement): it runs
+no chains. UEFI, wired ethernet and boot/install media requirements still apply to both roles;
+a rig can [run from the USB stick](#the-disk) without an internal chain disk.
+
 - An x86-64 machine with UEFI you can dedicate to mining. It will be **erased**.
 - 16 GB RAM or more — that is the supported floor, not a suggestion: the appliance reserves
   6 GB of it for mining at every boot. With less RAM it still boots, but it prints a warning
@@ -139,6 +144,12 @@ rest — including erasing the disk only after everything else checked out.
 Before the disk, the page asks what the machine is going to be. This is the first question
 because it decides everything else the page asks — and, for one of the three answers, whether
 the machine gets a dashboard at all.
+
+These are three arrangements built from coordinator and rig roles; **Pithead + RigForge**
+sets the coordinator's local-miner option. Compare their [hardware budgets](hardware.md#choose-the-arrangement)
+and [miner connection instructions](workers.md) before choosing. Tari is optional for either
+coordinator arrangement: decline merge-mining to run Monero only, with no Tari payout address
+or Tari node required.
 
 | Choice | What it produces |
 |---|---|
