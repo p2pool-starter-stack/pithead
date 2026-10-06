@@ -132,7 +132,7 @@ assert_contains "appliance cut signs its disposable probe with the release leaf 
     'rauc --cert "$PITHEAD_RAUC_CERT" --key "$PITHEAD_RAUC_KEY" bundle "$work_dir/probe" "$work_dir/probe.raucb"'
 assert_contains "appliance cut verifies a leaf-signed probe against the baked keyring (#2825)" "$CUT_DOC" \
     'rauc info --keyring "$work_dir/mnt/etc/rauc/keyring.pem" "$work_dir/probe.raucb"'
-CHECKLIST_DOC="$(cat "$ROOT/docs/dev/manual-release-checklist.md")"
+CHECKLIST_DOC="$(cat "$ROOT/docs/dev/manual-qa/release/cutting-and-after.md")"
 assert_contains "cut checklist requires the root's offline backup (#2825)" "$CHECKLIST_DOC" \
     'root private key has an offline backup'
 # Bundle completeness: the pull-based bundle must ship every ./build/* path the compose MOUNTS at

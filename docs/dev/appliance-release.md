@@ -401,7 +401,7 @@ the morning.
 
 M11–M14 are the rig-role steps: rig install and mining, dashboard-driven adopt and config push,
 rig power-loss and update, and run-from-USB. M11–M13 stay a manual procedure today — see
-[the manual release checklist](manual-release-checklist.md) — because the `rig` KVM phase (`tests/os/phases/rig.sh`) covers only the virtualized subset: it proves the
+[the rig-role manual battery](manual-qa/appliance/rig-battery.md) — because the `rig` KVM phase (`tests/os/phases/rig.sh`) covers only the virtualized subset: it proves the
 wizard's rig card and role select, that a rig submits toward a pool, volatile journald, an unaided
 plain reboot, a virsh power cut with unattended mining and slot commit recovery, and the A/B update
 leg committing on a rig. Its own share leg (#2063) then re-points the rig at a SECOND, concurrent
@@ -600,7 +600,7 @@ channels share the final cut commit, one version and one GitHub Release.
    [the appliance guide](../appliance.md#1-write-the-image-to-a-usb-stick). The soak starts from
    that same compressed artifact. Record results. The human half of a
    release — every check no harness can make, and the traps that have actually bitten — is
-   collected in [the manual release checklist](manual-release-checklist.md); walk it alongside
+   collected in [the manual QA guides](manual-qa/README.md); walk them alongside
    this list.
 5. Attach the `.img.xz`, `.raucb`, and their two `.sha256` files from `os/rauc/build/release/`
    to the version's GitHub Release **while it is still a draft** (the DIY cut opens it with
@@ -610,7 +610,7 @@ channels share the final cut commit, one version and one GitHub Release.
    signature is what devices verify.
 6. `main` fast-forwards to the tag automatically when `release.sh` publishes; if the push was
    refused, run the command it prints (see
-   [After publishing](manual-release-checklist.md#after-publishing)).
+   [After publishing](manual-qa/release/cutting-and-after.md#after-publishing)).
 
 ## Shipping a bad release
 
