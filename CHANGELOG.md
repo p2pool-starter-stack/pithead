@@ -634,9 +634,6 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 These ship in 2.0.0 and are fixed after it.
 
-- **A refused appliance update is silent for about 15 minutes.** When an update fails its health
-  check, the console shows nothing while the boot gate waits. The machine then restarts into the
-  previous version by itself. Leave it powered on through that wait ([#2436](https://github.com/p2pool-starter-stack/pithead/issues/2436)).
 - **Tor auto-heal needs dashboard control.** Without `dashboard.control.enabled`, which includes every
   appliance set up with **No login**, `tor.auto_heal` only detects and logs Tor trouble and cannot
   refresh or recover Tor; `pithead doctor` says so. Turn dashboard control on, or restart Tor by hand with

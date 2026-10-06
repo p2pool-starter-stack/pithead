@@ -76,8 +76,11 @@ wins and no config crosses.
 
 Before a pre-fill reaches the form, the server moves the removed `xmrig_proxy.*` and
 `dashboard.workers[]` names to `xvb.*` and `workers.list[]`. It then drops keys absent from the
-current reference schema. The same preparation runs again on submit, so a hand-edited JSON pane
-cannot put an obsolete or unknown name back into the host's candidate. Known keys keep their
+current reference schema. The JSON pane refuses duplicate keys before updating the form.
+The submit endpoint also refuses duplicates and case-insensitive `PASTE_` / `YOUR_` string
+placeholders before normalization or staging, including in unknown keys. Refusals name the
+key path without echoing values. The same preparation runs again on submit, so a hand-edited
+JSON pane cannot put an obsolete or unknown name back into the host's candidate. Known keys keep their
 values and types for the host parser to validate; the wizard never weakens that gate. The page
 lists changed key paths without rendering their values.
 
