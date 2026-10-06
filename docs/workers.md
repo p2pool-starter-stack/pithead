@@ -234,9 +234,10 @@ To point it at a differently-configured fleet, set
 | `token` | all miners share one API token | `workers.api_token` |
 
 Only the worker's validated IP is ever contacted; a miner-controlled worker name is never used as a
-request host (the SSRF guard). Only workers the proxy reports as online are probed, plus any rig whose
-previous probe answered (a RigForge rig with its miner stopped but its feed up). A worker the proxy
-still lists but reports offline, whose last probe failed, is not probed and carries no badge. If a probe fails, the worker isn't dropped: it keeps its
+request host (the SSRF guard). Only workers the proxy reports as online are probed, plus any rig
+whose previous probe answered (a RigForge rig with its miner stopped but its feed up). A worker the
+proxy still lists but reports offline, whose last probe failed, is not probed and carries no badge.
+If a probe fails, the worker isn't dropped: it keeps its
 proxy-reported hashrate and is badged on the dashboard, with a single log line naming the URL,
 status, and likely fix, so a misconfigured API reads differently from an offline miner. Which badge
 depends on whether the rig is *adopted* — whether its [`workers.list`](#per-worker-overrides) entry

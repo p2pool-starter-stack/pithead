@@ -71,3 +71,11 @@ def test_mixed_list_stays_aligned():
     results = _run(WorkerProber(), client, workers)
     assert [r.get("id") for r in results] == ["a", None, "c"]
     assert results[1] == {}
+
+
+def test_stale_duplicate_name_on_another_ip_is_not_vouched_for():
+    client = _Client({"rig": {"api_ok": True}})
+    prober = WorkerProber()
+    _run(prober, client, [_w("rig", "online")])
+    stale = {**_w("rig", "offline"), "ip": "8.8.4.4"}
+    assert _run(prober, client, [_w("rig", "online"), stale]) == [{"api_ok": True}, {}]

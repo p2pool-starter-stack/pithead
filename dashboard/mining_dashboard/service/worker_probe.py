@@ -4,7 +4,7 @@ import asyncio
 
 
 class WorkerProber:
-    """Probes the workers worth probing and remembers which ones answered.
+    """Probes the workers worth probing and remembers which (name, ip) rows answered.
 
     A row is probed when the proxy reports it ``online`` or when its previous probe answered:
     the latter keeps a RigForge rig whose miner is stopped (thermal hold, remote stop) but whose
@@ -18,7 +18,9 @@ class WorkerProber:
         self._answered = set()
 
     async def probe(self, client, workers):
-        wanted = [w.get("status") == "online" or w["name"] in self._answered for w in workers]
+        wanted = [
+            w.get("status") == "online" or (w["name"], w["ip"]) in self._answered for w in workers
+        ]
         probes = [
             client.get_stats(w["ip"], w["name"])
             for w, ok in zip(workers, wanted, strict=True)
@@ -27,6 +29,6 @@ class WorkerProber:
         probed = iter(await asyncio.gather(*probes))
         results = [next(probed) if ok else {} for ok in wanted]
         self._answered = {
-            w["name"] for w, r in zip(workers, results, strict=True) if r.get("api_ok")
+            (w["name"], w["ip"]) for w, r in zip(workers, results, strict=True) if r.get("api_ok")
         }
         return results
