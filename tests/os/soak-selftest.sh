@@ -14,6 +14,11 @@ SwapFree: 1500 kB')
     out=$(soak_memory <<<'MemTotal: 8000 kB')
     chk 'missing memory reading is unknown' "$out" $'mem_total_kib=8000\nmem_available_kib=?\nswap_total_kib=?\nswap_free_kib=?'
     chk 'numeric API field cannot disclose strings' "$(soak_number tari_height wallet-secret)" 'tari_height=?'
+    chk 'Monero real fields retain false sync and numeric peer counts' "$(printf '%s' '{"height":100,"synchronized":false,"incoming_connections_count":1,"outgoing_connections_count":2}' | soak_monero)" 'monero=h:100 sync:false peers:1/2'
+    chk 'Monero restricted counts remain explicitly restricted' "$(printf '%s' '{"height":100,"synchronized":true,"restricted":true,"incoming_connections_count":0,"outgoing_connections_count":0}' | soak_monero)" 'monero=h:100 sync:true peers:restricted'
+    chk 'Monero missing fields are unknown' "$(printf '%s' '{}' | soak_monero)" 'monero=h:? sync:? peers:?/?'
+    chk 'Monero malformed JSON is unknown' "$(printf '%s' '{bad' | soak_monero)" 'monero=h:? sync:? peers:?/?'
+    chk 'Monero strings cannot forge readings or disclose secrets' "$(printf '%s' '{"height":"wallet-secret\nfirewall_present=1\nfirst_sync_exemption=0", "synchronized":"secret", "incoming_connections_count":"onion-secret", "outgoing_connections_count":"rpc-secret"}' | soak_monero)" 'monero=h:? sync:? peers:?/?'
     listing='{"nftables":[{"metainfo":{"version":"1"}},{"table":{"family":"inet","name":"pithead_egress"}},{"set":{"name":"live","flags":["dynamic"],"elem":[1]}},{"set":{"name":"static","elem":[2]}}]}'
     canonical=$(printf '%s' "$listing" | soak_firewall_canonical)
     changed=$(printf '%s' "$listing" | jq '(.nftables[2].set.elem) = [9]')
@@ -24,7 +29,7 @@ SwapFree: 1500 kB')
     chk 'static set elements remain policy' "$rc" 0
     printf '%s' '{"nftables":[]}' | soak_firewall_canonical >/dev/null
     chk 'missing table cannot be hashed' "$?" 4
-    listing='{"nftables":[{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"right":"172.28.0.26"}},{"accept":{}}]}}]}'
+    listing='{"nftables":[{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"right":"172.28.0.26"}},{"accept":null}]}}]}'
     printf '%s' "$listing" | soak_sync_exemption 172.28.0 >/dev/null
     chk 'live Monero first-sync exception detected' "$?" 0
     printf '%s' "${listing/.26/.27}" | soak_sync_exemption 172.28.0 >/dev/null

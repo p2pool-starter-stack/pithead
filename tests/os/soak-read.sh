@@ -27,7 +27,7 @@ soak_firewall_canonical() { # stateless nft JSON on stdin
 soak_sync_exemption() { # <network prefix>; live nft JSON on stdin
     jq -er --arg m "$1.26" --arg t "$1.27" '
         [.nftables[] | .rule? | select(.chain == "forward") | .expr |
-            select(any(.[]; .accept? != null)) |
+            select(any(.[]; has("accept"))) |
             select(any(.[]; .match?.left?.payload?.protocol == "ip" and
                 .match?.left?.payload?.field == "saddr" and
                 (.match.right == $m or .match.right == $t))) |
@@ -43,6 +43,15 @@ soak_stats_file() { # <key> <file> <jq selector>
     local value
     value=$(jq -er "$3 | select(type == \"number\" and . >= 0)" "$2" 2>/dev/null) || value='?'
     soak_number "$1" "$value"
+}
+soak_monero() { # get_info JSON on stdin; no API string can forge a later reading
+    local reading
+    reading=$(jq -r '
+        def n: if type == "number" and . >= 0 and . == floor then tostring else "?" end;
+        def b: if type == "boolean" then tostring else "?" end;
+        "h:\(.height | n) sync:\(.synchronized | b) peers:\(if .restricted == true then "restricted" else "\(.incoming_connections_count | n)/\(.outgoing_connections_count | n)" end)"
+    ' 2>/dev/null) || reading=''
+    printf 'monero=%s\n' "${reading:-h:? sync:? peers:?/?}"
 }
 soak_p2pool() { # <resolved data directory>
     soak_stats_file p2pool_hashrate "$1/stats/local/stratum" '.hashrate_15m'
@@ -138,7 +147,7 @@ mp=$(env_get MONERO_NODE_PASSWORD)
 murl=$(env_get MONERO_RPC_URL)
 [ -n "$murl" ] || murl=http://127.0.0.1:18081
 if [ -n "$mu" ]; then body=$(curl -fsS --max-time 8 --digest -u "$mu:$mp" "$murl/get_info" 2>/dev/null); else body=$(curl -fsS --max-time 8 "$murl/get_info" 2>/dev/null); fi
-printf 'monero=%s\n' "$(printf '%s' "${body:-null}" | jq -r '"h:\(.height // "?") sync:\(.synchronized // "?") peers:\(if .restricted == true then "restricted" else "\(.incoming_connections_count // "?")/\(.outgoing_connections_count // "?")" end)"' 2>/dev/null || echo 'h:? sync:? peers:?/?')"
+printf '%s' "${body:-null}" | soak_monero
 soak_memory </proc/meminfo
 for pair in 'monero_chain_mib MONERO_DATA_DIR' 'tari_chain_mib TARI_DATA_DIR'; do
     read -r key envkey <<<"$pair"
