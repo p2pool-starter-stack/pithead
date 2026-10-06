@@ -408,6 +408,15 @@ lines. The probe then redacts them and masks every IPv4 and IPv6 address, creden
 `name:value` and `name=value` tokens, and alphanumeric runs of 40 or more characters. From those lines, a log-read error,
 bad launch arguments and an unreachable Tari node each look different.
 
+The wallet supersession proof (#3133) and CLI connection announcement probe (#3090)
+require tools from the DIY checkout that the appliance image does not ship. The
+lifecycle phase identifies the appliance with the CLI's `is_appliance` predicate
+and records six named `by-design` skips: one supersession row and five connection
+rows. The appliance wizard owns setup; these skips do not prove appliance credential
+presentation. On DIY, both probes remain binding, including when a tool is missing
+or channel identification fails. Tier-1 channel regressions exercise the skips and
+these refusal paths; live proof requires both KVM `stack` and DIY `lifecycle` runs.
+
 Two parity rows from the matrix above are deliberately not driven from this phase, because this guest
 cannot satisfy their inputs, and each carries job 510's row-scoped evidence on its own issue:
 `remote-tari-main-secure` switches the guest to `monero.mode=local`, so it starts a local `monerod`

@@ -101,11 +101,41 @@ PB="$SANDBOX/pair-bin" PD="$SANDBOX/pair-wallets"
 mkdir -p "$PB" "$PD"
 cat >"$PB/curl" <<'STUB'
 #!/bin/sh
+case "$*" in
+    *18083/json_rpc*)
+        for probe in "$WALLET_DIR"/.legacy-probe.*; do
+            [ -f "$probe/identity" ] || continue
+            jq -n --arg address "$(cat "$probe/identity")" '{result:{address:$address}}'
+            exit 0
+        done
+        exit 7 ;;
+    *GetCompleteAddress*)
+        for probe in "$WALLET_DIR"/.legacy-probe.*; do
+            [ -f "$probe/identity" ] || continue
+            while [ "$1" != -o ]; do shift; done
+            python3 - "$probe/identity" "$2" <<'PYFRAME'
+import sys
+from pathlib import Path
+addr = Path(sys.argv[1]).read_bytes().strip()
+body = bytes([34, len(addr)]) + addr
+Path(sys.argv[2]).write_bytes(b'\0' + len(body).to_bytes(4, 'big') + body)
+PYFRAME
+            printf 'grpc-status: 0\r\n'
+            exit 0
+        done
+        exit 7 ;;
+esac
 [ "${PAIR_NODE_DOWN:-0}" != 1 ] || exit 7
 printf '{"result":{"count":3200100}}\n'
 STUB
 cat >"$PB/monero-wallet-rpc" <<'STUB'
 #!/usr/bin/env bash
+if [[ "$*" == *--offline* ]]; then
+    while [ "$1" != --wallet-file ]; do shift; done
+    [ -s "$2.keys" ] || exit 1
+    cp "$2.keys" "$(dirname "$2")/identity"
+    exec sleep 60
+fi
 for ((i=1; i<=$#; i++)); do
     if [ "${!i}" = --generate-from-json ]; then
         i=$((i + 1)); file=$(jq -r .filename "${!i}")
@@ -131,10 +161,21 @@ cat >"$PB/minotari_console_wallet" <<'STUB'
 #!/usr/bin/env bash
 while [ "$1" != --base-path ]; do shift; done
 base="$2"; file="$base/mainnet/data/wallet/db/console_wallet.db"
+if [[ "$base" == */.legacy-probe.* ]]; then
+    [ -z "${MINOTARI_WALLET_VIEW_PRIVATE_KEY:-}${MINOTARI_WALLET_SPEND_KEY:-}" ] || exit 1
+    address=$(sed -n '2p' "$file")
+    [ -n "$address" ] || exit 1
+    printf '%s\n' "$address" >"$base/identity"
+    exec sleep 60
+fi
 if [ -f "$file" ]; then echo reopen >"$PAIR_ACTION"; else
     mkdir -p "$(dirname "$file")"; echo saved-progress >"$file"; echo create >"$PAIR_ACTION"
 fi
 printf '%s\n' "$file" >"$PAIR_PATH"
+STUB
+cat >"$PB/chown" <<'STUB'
+#!/bin/sh
+exit 0
 STUB
 chmod +x "$PB/"*
 pair_start() { # <chain> <pair> <volume>
@@ -143,12 +184,12 @@ pair_start() { # <chain> <pair> <volume>
     if [ "$c" = monero ]; then
         PATH="$PB:$PATH" WALLET_DIR="$d" GEN_JSON="$d/gen.json" PAIR_ACTION="$PD/action" PAIR_PATH="$PD/path" \
             MONERO_WALLET_ADDRESS="${!addr}" MONERO_VIEW_KEY="${!vk}" PAYOUT_SCAN_HEIGHT=auto \
-            bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1
+            bash "$ROOT/build/monero/wallet-entrypoint.sh" >"$PD/start-output" 2>&1
     else
         printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=fixture\n' \
             "${!vk}" "$PAYOUT_TARI_PUBLIC1" >"$PD/secret"
         PATH="$PB:$PATH" WALLET_DIR="$d" TARI_WALLET_SECRET_FILE_IN="$PD/secret" TARI_WALLET_ADDRESS="${!addr}" \
-            PAIR_ACTION="$PD/action" PAIR_PATH="$PD/path" bash "$ROOT/build/tari-wallet/entrypoint.sh" >/dev/null 2>&1
+            PAIR_ACTION="$PD/action" PAIR_PATH="$PD/path" bash "$ROOT/build/tari-wallet/entrypoint.sh" >"$PD/start-output" 2>&1
     fi
 }
 for chain in monero tari; do
@@ -174,20 +215,43 @@ for chain in monero tari; do
     mkdir -p "$legacy"
     if [ "$chain" = monero ]; then
         printf 'saved-progress\n' >"$legacy/payout-wallet"
-        touch "$legacy/payout-wallet.keys"
+        printf '%s\n' "$PAYOUT_MONERO1" >"$legacy/payout-wallet.keys"
         old="$legacy/payout-wallet"
     else
         mkdir -p "$legacy/mainnet/data/wallet/db"
         old="$legacy/mainnet/data/wallet/db/console_wallet.db"
-        printf 'saved-progress\n' >"$old"
+        printf 'saved-progress\n%s\n' "$PAYOUT_TARI1" >"$old"
     fi
     inode="$(/usr/bin/stat -c %i "$old")"
     pair_start "$chain" 1 "$legacy"
     assert_eq "$chain legacy adoption reopens" "$(cat "$PD/action")" reopen
-    assert_eq "$chain legacy adoption keeps stored progress" "$(cat "$(cat "$PD/path")")" saved-progress
+    assert_eq "$chain legacy adoption keeps stored progress" "$(head -n 1 "$(cat "$PD/path")")" saved-progress
     assert_eq "$chain legacy adoption preserves inode" "$(/usr/bin/stat -c %i "$(cat "$PD/path")")" "$inode"
     pair_start "$chain" 2 "$legacy"
     assert_eq "$chain legacy adoption never applies to a second pair" "$(cat "$PD/action")" create
+    for state in changed unreadable; do
+        legacy="$PD/$state-$chain"
+        mkdir -p "$legacy"
+        if [ "$chain" = monero ]; then
+            old="$legacy/payout-wallet"
+            printf 'saved-progress\n' >"$old"
+            if [ "$state" = changed ]; then printf '%s\n' "$PAYOUT_MONERO1" >"$old.keys"; else touch "$old.keys"; fi
+        else
+            mkdir -p "$legacy/mainnet/data/wallet/db"
+            old="$legacy/mainnet/data/wallet/db/console_wallet.db"
+            printf 'saved-progress\n' >"$old"
+            [ "$state" != changed ] || printf '%s\n' "$PAYOUT_TARI1" >>"$old"
+        fi
+        before=$(sha256sum "$old")
+        pair_start "$chain" 2 "$legacy"
+        assert_rc "$chain $state legacy identity starts the configured fresh pair" "$?" 0
+        assert_eq "$chain $state legacy wallet remains byte-for-byte intact" "$(sha256sum "$old")" "$before"
+        assert_eq "$chain $state legacy wallet is not stamped" "$([ ! -e "$legacy/.legacy-wallet-identity" ] && echo yes)" yes
+        assert_not_contains "$chain $state diagnostic hides the view key" "$(cat "$PD/start-output")" "$PAYOUT_VIEW2"
+        assert_contains "$chain $state diagnostic states refusal" "$(cat "$PD/start-output")" 'retaining it without adoption'
+        assert_eq "$chain $state selects fresh-wallet creation" "$(cat "$PD/action")" create
+        assert_eq "$chain $state probe storage is removed" "$(find "$legacy" -maxdepth 1 -name '.legacy-probe.*' | wc -l | tr -d ' ')" 0
+    done
 done
 PAIR_NODE_DOWN=1 pair_start monero 1 "$PD/down"
 assert_rc 'fresh auto wallet refuses an unavailable node without genesis fallback' "$?" 1
@@ -203,3 +267,66 @@ assert_eq "Monero explicit leading-zero height becomes valid JSON integer" \
     "$(PAYOUT_SCAN_HEIGHT=00042 PITHEAD_TEST_SOURCE=1 bash -c 'source "$1"; resolve_scan_height' _ "$ROOT/build/monero/wallet-entrypoint.sh")" 42
 assert_eq "Monero explicit all-zero height becomes genesis zero" \
     "$(PAYOUT_SCAN_HEIGHT=000 PITHEAD_TEST_SOURCE=1 bash -c 'source "$1"; resolve_scan_height' _ "$ROOT/build/monero/wallet-entrypoint.sh")" 0
+
+# Real parser: a matching substring, truncated frame or error is not an identity.
+python3 - "$PD" "$PAYOUT_TARI1" <<'PYFRAME'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+address = sys.argv[2].encode()
+body = bytes([34, len(address)]) + address
+frame = b'\0' + len(body).to_bytes(4, 'big') + body
+for name, data in {
+    'valid': frame,
+    'truncated': frame[:-1],
+    'compressed': b'\1' + frame[1:],
+    'trailing': frame + b'\0',
+    'wrong-tag': frame[:5] + bytes([35]) + frame[6:],
+    'empty': b'\0\0\0\0\0',
+}.items():
+    (root / ('response-' + name)).write_bytes(data)
+PYFRAME
+for state in valid truncated compressed trailing wrong-tag empty; do
+    PITHEAD_TEST_SOURCE=1 bash -c 'source "$1"; legacy_response_matches "$2" "$3"' _ \
+        "$ROOT/build/tari-wallet/entrypoint.sh" "$PD/response-$state" "$PAYOUT_TARI1"
+    rc=$?
+    expected=1
+    [ "$state" != valid ] || expected=0
+    assert_rc "Tari identity parser: $state" "$rc" "$expected"
+done
+
+# A setpriv child transitions from the wrapper uid to the wallet uid. Both windows must signal.
+for phase in wrapper dropped; do
+    for signal in -0 -KILL; do
+        out=$(SIGNAL="$signal" PHASE="$phase" PITHEAD_TEST_SOURCE=1 bash -c '
+            source "$1"
+            kill() { [ "$PHASE" = wrapper ]; }
+            setpriv() {
+                [ "$1 $2 $3" = "--reuid=1000 --regid=1000 --clear-groups" ] || return 1
+                shift 3
+                [ "$1" = bash ] && [ "$5" = "$SIGNAL" ] && [ "$6" = 123 ] || return 1
+                printf "child-uid\n"
+            }
+            legacy_probe_signal "$SIGNAL" 123 || exit $?
+            printf "signalled\n"
+        ' _ "$ROOT/build/tari-wallet/entrypoint.sh" 2>&1)
+        assert_rc "Tari $phase uid can receive $signal" "$?" 0
+        if [ "$phase" = wrapper ]; then
+            assert_eq "Tari $signal before uid drop uses parent signal" "$out" signalled
+        else
+            assert_eq "Tari $signal after uid drop uses child uid signal" "$out" $'child-uid\nsignalled'
+        fi
+    done
+done
+
+python3 - "$PD/response-emoji" "$VALID_TARI_EMOJI" <<'PYFRAME'
+import sys
+from pathlib import Path
+address = sys.argv[2].encode()
+size = len(address)
+body = bytes([42, (size & 127) | 128, size >> 7]) + address
+Path(sys.argv[1]).write_bytes(b'\0' + len(body).to_bytes(4, 'big') + body)
+PYFRAME
+PITHEAD_TEST_SOURCE=1 bash -c 'source "$1"; legacy_response_matches "$2" "$3"' _ \
+    "$ROOT/build/tari-wallet/entrypoint.sh" "$PD/response-emoji" "$VALID_TARI_EMOJI"
+assert_rc 'Tari identity parser accepts the configured emoji representation' "$?" 0

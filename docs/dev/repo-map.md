@@ -39,6 +39,7 @@ pithead/
 | Containers | `build/<daemon>/` | Dockerfiles, entrypoints, and healthchecks; CI builds the images. |
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--dry-run"` previews the plan. |
+| Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; the start page holds the run sheet, result rules and glossary. |
 
 Raw config checks live in `lib/pithead/22a-config-document.sh` and
 `dashboard/mining_dashboard/config/documents.py`; the browser JSON editor checks duplicates
@@ -123,7 +124,7 @@ Keep local code out of `vendor/`.
 | `tests/stack/lib/` | Shared harness modules and sandbox builders used by feature fragments; `control-fixtures.sh` and `backup-fixtures.sh` initialize independent prerequisite runs. `config-document-parser.py` holds CLI decoder cases invoked by `test-config-document.sh`; dashboard decoder tests stay in the dashboard image context. |
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
 | `tests/integration/lib/` | Sourced helpers and phase functions for the live harness. `restore-chain-sync.sh` streams the read-only `restore-chain-sync.py` daemon proof to the restored baseline. The restoration transport uses libcurl Digest; `tests/integration/selftest/selftest-restore-curl-connection.sh` exercises its challenged connection against a bounded synthetic server in CI. `wallet-fixture.sh`, `wallet-fixture.py` and its adjacent `wallet_fixture_capture.py` preserve legacy and fingerprinted Monero caches through destructive tests and verify them before releasing the reservation. `wallet_fixture_supersession.py` owns retained snapshot retirement; `tools/prove-wallet-supersession.py` exercises it in lifecycle. |
-| `tests/integration/payout-pairs/` | Isolated live apply, wallet services and dashboard. The Docker API guard limits fixture apply to its private storage and Compose project. The initial env carries only the synced nodes’ provisioning identities, leaving runtime state and wallet passwords to the fixture’s actual apply. Image lookup loads all source profiles so the wallet’s node dependency is present, and refuses a failed Compose model before pulling. `test-payout-pair-preparation.py` covers preparation and env isolation without creating containers. The model transform accepts environment lists and mappings while preserving unexpanded values; `test-payout-pair-model.py` checks both forms and the isolation contract. Apply uses the caller’s uid/gid so its owner-only files remain readable; successful cleanup exposes only the private scratch tree to a restricted removal container. Wallet identity checks follow the real readiness gate, with invocation and delayed-start regressions in `test-payout-pair-runtime.py`. The fixture carries no dashboard login and an inert `caddy` stub, so apply’s real Caddy restart has a target without a proxy; the guard prints the rule behind any denial (never the request body) into the apply log. |
+| `tests/integration/payout-pairs/` | Isolated live apply, wallet services and dashboard. The Docker API guard limits fixture apply to its private storage and Compose project. The initial env carries only the synced nodes’ provisioning identities, leaving runtime state and wallet passwords to the fixture’s actual apply. Image lookup loads all source profiles so the wallet’s node dependency is present, and refuses a failed Compose model before pulling. `test-payout-pair-preparation.py` covers preparation and env isolation without creating containers. The model transform accepts environment lists and mappings while preserving unexpanded values; `test-payout-pair-model.py` checks both forms and the isolation contract. Apply uses the caller’s uid/gid so its owner-only files remain readable; successful cleanup exposes only the private scratch tree to a restricted removal container. Wallet identity checks follow a bounded readiness poll that requires fresh direct health and height checks even when dashboard cards still show cached success; `test-payout-pair-runtime.py` covers startup retries, deadline failures and invocation ordering. The fixture carries no dashboard login and an inert `caddy` stub, so apply’s real Caddy restart has a target without a proxy; the guard prints the rule behind any denial (never the request body) into the apply log. |
 | `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `selftest-wizard-defaults.sh` runs the real CLI wizard with the runner baseline contract and stubbed deployment I/O. `make test-integration-selftest` also checks appliance module loading. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
@@ -148,9 +149,14 @@ The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 Coordinator connection announcements and unchanged-apply miner calls are covered by
 `tests/stack/test-connection-announce.sh`; the lifecycle phase runs
-`tests/integration/lib/run-connection-announcements.sh` against the deployed CLI.
+`tests/integration/lib/run-connection-announcements.sh` against the deployed DIY CLI.
 Its `tests/integration/tools/connection-setup-pty.py` driver answers the real setup prompts
 and bounds the child process and captured output.
+`tests/integration/lib/run-channel.sh` identifies appliances through the shipped CLI
+and records counted `by-design` skips for the connection and wallet supersession
+checkout probes; failed identification leaves those probes binding.
+`tests/integration/selftest/selftest-probe-channels.sh` covers the channel decision,
+skip accounting and missing DIY tools without starting containers.
 The source-image module supplies shared read-only lifecycle latch/marker diagnostics to the
 connection probe and lifecycle runner. The image fixture uses the shared
 `assert_mining_probe_ready` in `run-matrix.sh` to settle a legitimate restore-induced hold.
@@ -202,7 +208,10 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 
 Payout confirmation validates private view scalars in `lib/pithead/25b-payout-keys.sh`; the wallet
 entrypoints select storage by address/key fingerprint. `tests/stack/test-payout-wallet-pairs.sh`
-proves matching keys, derivation, selection and legacy adoption.
+proves matching keys, derivation, selection and checked legacy adoption. The Tari entrypoint's
+`build/tari-wallet/legacy-address.sh` reads the pinned wallet's address RPC from a private database
+copy. The isolated `tests/integration/payout-pairs/run.sh` fixture exercises matching adoption and
+an upgrade with a changed pair without changing the mining stack's payout configuration.
 
 The setup wizards share host disk budgets through `lib/pithead/11b-wizard-disk-budget.sh`;
 the appliance publishes them beside the disk inventory for both submission paths.

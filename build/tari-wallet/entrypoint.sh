@@ -41,18 +41,26 @@ resolve_birthday() {
     esac
 }
 
+# shellcheck source=build/tari-wallet/legacy-address.sh
+source "$(dirname "${BASH_SOURCE[0]}")/legacy-address.sh"
+
 # Keep a separate base path (and hence database) for each configured address/key pair.
 select_wallet() {
-    local identity owner entry
+    local identity owner entry legacy_db
     identity=$(printf '%s\n%s\n' "${TARI_WALLET_ADDRESS:-$MINOTARI_WALLET_SPEND_KEY}" "$MINOTARI_WALLET_VIEW_PRIVATE_KEY" | sha256sum)
     identity="${identity%% *}"
     WALLET_BASE="$WALLET_DIR/payout-$identity"
     owner="$WALLET_DIR/.legacy-wallet-identity"
-    if [ -n "$(find "$WALLET_DIR" -maxdepth 7 -name console_wallet.db -not -path "$WALLET_DIR/payout-*/*" -print -quit)" ] && [ ! -f "$owner" ]; then
-        (
-            umask 077
-            printf '%s\n' "$identity" >"$owner"
-        )
+    legacy_db=$(find "$WALLET_DIR" -maxdepth 7 -name console_wallet.db -not -path "$WALLET_DIR/payout-*/*" -not -path "$WALLET_DIR/.legacy-probe.*/*" -print)
+    if [ -n "$legacy_db" ] && [ ! -f "$owner" ] && [ ! -e "$WALLET_BASE" ]; then
+        if legacy_address_matches "$legacy_db"; then
+            (
+                umask 077
+                printf '%s\n' "$identity" >"$owner"
+            )
+        else
+            echo "Legacy Tari wallet identity differs or cannot be read; retaining it without adoption." >&2
+        fi
     fi
     mkdir -p "$WALLET_BASE"
     # Record the adoption owner before moving: an interrupted migration resumes for that pair.
@@ -90,7 +98,8 @@ mkdir -p "$WALLET_DIR"
 select_wallet
 # Repair a root-owned volume if needed, then run the wallet as the image's non-root uid (#2454).
 if [ "$(stat -c %u "$WALLET_DIR")" != 1000 ] || [ "$(stat -c %u "$WALLET_BASE")" != 1000 ]; then
-    chown -R 1000:1000 "$WALLET_DIR"
+    chown 1000:1000 "$WALLET_DIR"
+    chown -R 1000:1000 "$WALLET_BASE"
 fi
 # First-scan grace survives restarts; a crash loop cannot restart its clock.
 [ -e "$WALLET_DIR/.payout-scanning" ] || touch "$WALLET_DIR/.payout-scanning"

@@ -149,8 +149,9 @@ ENTRYPOINT="$HERE/../../../build/monero/wallet-entrypoint.sh"
 for mode in create reopen; do
     d="$TD/start-$mode"
     mkdir -p "$d"
-    [ "$mode" != reopen ] || printf 'persisted-wallet' >"$d/payout-wallet"
-    WALLET_DIR="$d" GEN_JSON="$d/gen.json" MONERO_VIEW_KEY=fixture-view-key bash "$ENTRYPOINT" >/dev/null
+    identity=$(printf '%s\n%s\n' fixture-address fixture-view-key | sha256sum | cut -d' ' -f1)
+    [ "$mode" != reopen ] || printf 'persisted-wallet' >"$d/payout-wallet-$identity"
+    WALLET_DIR="$d" GEN_JSON="$d/gen.json" MONERO_WALLET_ADDRESS=fixture-address MONERO_VIEW_KEY=fixture-view-key bash "$ENTRYPOINT" >/dev/null
     rc=$?
     assert_rc "wallet $mode still invokes the daemon" "$rc" 0
     assert_eq "wallet $mode limits parallel work to one worker" "$(grep -A1 -x -- --max-concurrency "$WALLET_TEST_ARGV" | tail -1)" 1
@@ -159,7 +160,7 @@ for mode in create reopen; do
     assert_eq "wallet $mode keeps view material off argv" "$(grep -c fixture-view-key "$WALLET_TEST_ARGV")" 0
     if [ "$mode" = reopen ]; then
         wallet_file="$(grep -A1 -x -- --wallet-file "$WALLET_TEST_ARGV" | tail -1)"
-        assert_eq "reopen uses the adopted wallet identity" "$wallet_file" "$d/payout-wallet-$(cat "$d/.payout-active")"
+        assert_eq "reopen uses the retained wallet identity" "$wallet_file" "$d/payout-wallet-$(cat "$d/.payout-active")"
         assert_eq "reopen preserves cached wallet content" "$(cat "$wallet_file")" persisted-wallet
         assert_eq "reopen does not regenerate the wallet" "$(test -f "$d/gen.json" && echo present)" ''
     else
