@@ -39,6 +39,7 @@ pithead/
 | Containers | `build/<daemon>/` | Dockerfiles, entrypoints, and healthchecks; CI builds the images. |
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--dry-run"` previews the plan. |
+| Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; the start page holds the run sheet, result rules and glossary. |
 
 Raw config checks live in `lib/pithead/22a-config-document.sh` and
 `dashboard/mining_dashboard/config/documents.py`; the browser JSON editor checks duplicates
