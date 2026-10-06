@@ -229,6 +229,15 @@ assert_contains "the message asks for the migration floor" "$out" "PITHEAD_MIN_O
 out=$(cd "$ROOT" && PITHEAD_MIN_OS_VERSION=1.2 bash os/rauc/mkbundle.sh /dev/null 2>&1)
 assert_rc "a non-semver floor is refused" "$?" "2"
 assert_contains "the message names the floor field" "$out" "PITHEAD_MIN_OS_VERSION"
+out=$(cd "$ROOT" && env -u PITHEAD_DATA_MIGRATION -u PITHEAD_MIN_OS_VERSION bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_rc "a release bundle that declares neither field is refused (#3167)" "$?" "2"
+assert_contains "the refusal asks for the declaration" "$out" "must declare PITHEAD_DATA_MIGRATION"
+out=$(cd "$ROOT" && env -u PITHEAD_MIN_OS_VERSION PITHEAD_DATA_MIGRATION=false bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_contains "a release bundle must declare the floor too, even empty" "$out" "must declare PITHEAD_DATA_MIGRATION"
+out=$(cd "$ROOT" && PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION='' bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_not_contains "a declared non-migrating release passes the declaration check" "$out" "must declare"
+out=$(cd "$ROOT" && env -u PITHEAD_DATA_MIGRATION -u PITHEAD_MIN_OS_VERSION bash os/rauc/mkbundle.sh --dev /dev/null 2>&1)
+assert_not_contains "a --dev bundle keeps the defaults" "$out" "must declare"
 
 # ---------------------------------------------------------------------------
 # os/rauc signing-material guard (resolve_signing_material in populate-slot.sh). A release build
