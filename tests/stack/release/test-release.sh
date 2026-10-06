@@ -291,6 +291,23 @@ assert_contains "manifest names the tari CONSOLE WALLET pin (#1138)" "$(cat "$ma
     "- tari console wallet: \`ghcr.io/tari-project/minotari_console_wallet:"
 assert_contains "manifest names the published appliance rootfs (#1353)" "$(cat "$man_out" 2>/dev/null)" \
     "ghcr.io/p2pool-starter-stack/pithead-os-rootfs:v9.9.9"
+rigforge_ref="$(sed -n 's/^ARG RIGFORGE_REF=//p' "$ROOT/os/rootfs/Dockerfile")"
+# shellcheck disable=SC1090
+rigforge_pin="$(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    pin rigforge
+)"
+if [ -n "$rigforge_pin" ]; then
+    ok "pin rigforge is non-empty"
+else
+    bad "pin rigforge is non-empty" "got an empty ref"
+fi
+assert_eq "pin rigforge equals the baked Dockerfile ref" "$rigforge_pin" "$rigforge_ref"
+grep -Fxq -- "- rigforge: \`$rigforge_ref\`" "$man_out"
+assert_rc "manifest names the exact baked RigForge ref" "$?" "0"
 # The ingredients manifest's component pins must resolve to a real value present in each Dockerfile —
 # a drift guard so a renamed ARG can't silently emit an empty pin in the release notes.
 for svc in p2pool monero xmrig-proxy; do
