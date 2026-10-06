@@ -387,7 +387,11 @@ for gate_attempt in $(seq 90); do
         exit 0
     fi
     if ((gate_attempt % 6 == 0)); then
-        echo "pithead-boot: Pithead is still starting ($(((SECONDS - gate_wait_started + 59) / 60)) of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself."
+        gate_progress="pithead-boot: Pithead is still starting ($(((SECONDS - gate_wait_started + 59) / 60)) of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself."
+        echo "$gate_progress"
+        for gate_console in /dev/tty1 /dev/ttyS0; do
+            [ -w "$gate_console" ] && { printf '%s\n' "$gate_progress" >"$gate_console"; } 2>/dev/null || true
+        done
     fi
     sleep 10
 done

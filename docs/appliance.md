@@ -398,9 +398,12 @@ would not:
 The appliance keeps **two copies of the system**, and only one runs at a time. An update
 is written to the copy that is idle, so the running system is never modified in place.
 The machine installs an update, reboots into the new version, and checks that the stack
-came up. While the health gate waits, the console and journal report elapsed minutes
-about once a minute, with an approximate 16-minute wait and a reminder to leave the
-machine powered on. A gate that passes in its first minute prints no progress line.
+came up. While the health gate waits, every sixth failed check prints elapsed minutes
+to the screen, serial console and journal, with an approximate 16-minute wait and a
+reminder to leave the machine powered on. Six checks take about a minute plus the
+time spent checking health; the estimate is not a deadline. Console writes are
+best-effort, and a missing console does not stop the journal message or health gate.
+A gate that passes in its first minute prints no progress line.
 If the stack does not start, or the machine fails to boot, **the machine
 goes back to the previous version on its own**, with nobody present: it restarts itself
 once, and that restart lands on the copy that was working. That is the entire point of
