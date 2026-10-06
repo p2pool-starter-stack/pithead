@@ -208,6 +208,27 @@ API_TEST
     chk 'mismatch retains day-0 listing beside daily record' "$?" 0
     if [ -s "$tmp/log/read6.firewall-current.json" ]; then rc=0; else rc=1; fi
     chk 'mismatch retains current listing beside daily record' "$rc" 0
+    # A failed SSH sample occupies a read number but writes no predecessor env.
+    rm -rf "$tmp/log"
+    drv_ext a --start >/dev/null
+    drv_ext b >/dev/null
+    drv_ext absent >/dev/null 2>&1
+    chk 'failed SSH sample fails the read' "$?" 1
+    if [ ! -e "$tmp/log/read3.env" ]; then rc=0; else rc=1; fi
+    chk 'failed SSH sample leaves no readings record' "$rc" 0
+    sed 's/monero_chain_mib=100/monero_chain_mib=120/;s/tari_chain_mib=200/tari_chain_mib=220/' "$tmp/a" >"$tmp/recovered"
+    drv_ext recovered >/dev/null
+    chk 'SSH recovery records a successful sample' "$?" 0
+    out=$(cat "$tmp/log/read4.env")
+    for key in monero_growth_mib monero_growth_mib_per_day tari_growth_mib tari_growth_mib_per_day; do
+        chk "SSH recovery leaves $key unavailable across missing predecessor" "$(printf '%s\n' "$out" | sed -n "s/^$key=//p")" '?'
+    done
+    sed 's/monero_chain_mib=120/monero_chain_mib=130/;s/tari_chain_mib=220/tari_chain_mib=230/' "$tmp/recovered" >"$tmp/next"
+    drv_ext next >/dev/null
+    out=$(cat "$tmp/log/read5.env")
+    for chain in monero tari; do
+        chk "next successful read resumes $chain growth from recovery" "$(printf '%s\n' "$out" | sed -n "s/^${chain}_growth_mib=//p")" 10
+    done
     # The KVM row must fail if a required collector field disappears.
     printf '%s\nmem_total_kib=8000\nmem_available_kib=3000\ncontainer_stats=?\n' "$base" >"$tmp/live"
     for key in swap_total_kib swap_free_kib monero_chain_mib tari_chain_mib tari_height p2pool_hashrate p2pool_shares_found p2pool_shares_failed p2pool_sidechain_height proxy_workers proxy_accepted proxy_rejected tor_bootstrap_pct; do printf '%s=?\n' "$key" >>"$tmp/live"; done

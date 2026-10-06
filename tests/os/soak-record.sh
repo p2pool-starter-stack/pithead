@@ -2,7 +2,7 @@
 # Local derivations and bounded summary; sourced by soak-probe.sh after its baseline exists.
 soak_record_derived() {
     : "${line:?caller must supply the read number}"
-    local total available used='?' peak='?' chain current base previous elapsed growth rate epoch
+    local total available used='?' peak='?' chain current previous elapsed growth rate epoch
     total=$(kv mem_total_kib)
     available=$(kv mem_available_kib)
     if [[ "$total" =~ ^[0-9]+$ && "$available" =~ ^[0-9]+$ ]] && ((total >= available)); then used=$((total - available)); fi
@@ -15,12 +15,13 @@ soak_record_derived() {
     today+=$(printf '\nsample_epoch=%s' "$epoch")
     for chain in monero tari; do
         current=$(kv "${chain}_chain_mib")
-        base=$(sed -n "s/^${chain}_chain_mib=//p" "$LOGDIR/day0.env" | head -1)
-        previous=$base
+        previous='?'
         elapsed=0
         growth='?'
         rate='?'
-        if [ "$MODE" != --start ] && [ -f "$LOGDIR/read$((line - 1)).env" ]; then
+        if [ "$MODE" = --start ]; then
+            previous=$(sed -n "s/^${chain}_chain_mib=//p" "$LOGDIR/day0.env" | head -1)
+        elif [ -f "$LOGDIR/read$((line - 1)).env" ]; then
             previous=$(sed -n "s/^${chain}_chain_mib=//p" "$LOGDIR/read$((line - 1)).env" | head -1)
             elapsed=$(sed -n 's/^sample_epoch=//p' "$LOGDIR/read$((line - 1)).env" | head -1)
             [[ "$elapsed" =~ ^[0-9]+$ ]] && elapsed=$((epoch - elapsed)) || elapsed=0
