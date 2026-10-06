@@ -79,7 +79,7 @@ validate_payout_keys() {
         address_keys=$(MONERO_ADDRESS_KEY_ONLY=1 monero_address_type "$MONERO_WALLET")
         derived=$(payout_public_view_key monero "$MONERO_VIEW_KEY") ||
             error "Cannot validate monero.view_key: python3 must be available and the key must be a nonzero canonical private scalar."
-        [ "$derived" = "$address_keys" ] || error "monero.view_key does not belong to monero.wallet_address: the public view key differs."
+        [ "$derived" = "$address_keys" ] || error "monero.view_key does not belong to monero.wallet_address: the public view key differs. Use the secret (not public) view key of the wallet that owns this address; see $DOCS_URL/docs/dashboard.md#getting-your-view-keys."
     fi
     if [ -n "$TARI_VIEW_KEY" ]; then
         address_keys=$(TARI_ADDRESS_KEY_ONLY=1 tari_address_type "$TARI_WALLET")
@@ -90,7 +90,7 @@ validate_payout_keys() {
         esac
         derived=$(payout_public_view_key tari "$TARI_VIEW_KEY") ||
             error "Cannot validate tari.view_key: python3 must be available and the key must be a nonzero canonical private scalar."
-        [ "$derived" = "${address_keys:2:64}" ] || error "tari.view_key does not belong to tari.wallet_address: the public view key differs."
+        [ "$derived" = "${address_keys:2:64}" ] || error "tari.view_key does not belong to tari.wallet_address: the public view key differs. Use the private view key of the wallet that owns this address; see $DOCS_URL/docs/dashboard.md#getting-your-view-keys."
         explicit="$TARI_SPEND_PUBLIC_KEY"
         TARI_SPEND_PUBLIC_KEY="${address_keys:66:64}"
         [ -z "$explicit" ] || [ "$explicit" = "$TARI_SPEND_PUBLIC_KEY" ] ||

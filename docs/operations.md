@@ -836,7 +836,10 @@ own within minutes; monerod does **not** — it keeps its dead SOCKS connections
 0 peers for hours while its healthcheck stays green (#972) — so a local monerod is restarted
 right after tor is healthy again and re-dials in about a minute. Re-run `./pithead doctor` to
 confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_heal: true` in `config.json` and run
-`./pithead apply`. The dashboard probes every five minutes with a new SOCKS circuit per request.
+`./pithead apply`. Its circuit refreshes and state recovery go through the host control runner,
+and a refresh must be confirmed before the final restart, so the heal also needs
+`dashboard.control.enabled: true` (the appliance sets it only when a dashboard login exists);
+without it the heal only probes and logs warnings, and sends a recovery note when egress returns. The dashboard probes every five minutes with a new SOCKS circuit per request.
 A failed request is corroborated against a second target before it counts toward the 15-minute
 outage window. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
 continued failure after accepted refreshes permits one final action. With saturated circuit history,

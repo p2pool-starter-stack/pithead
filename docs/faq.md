@@ -170,7 +170,7 @@ spend. Payout confirmation needs the local node for that chain: a view key set a
 `monero.mode: remote` or `tari.mode: remote` is refused at `apply`, since scanning through someone
 else's daemon changes the trust story. See
 [Dashboard › Payout confirmation](dashboard.md#payout-confirmation) — including
-[how to export the keys](dashboard.md#exporting-your-keys) from your wallets.
+[how to get the view keys](dashboard.md#getting-your-view-keys) from your wallets.
 
 ### How do I connect my miners?
 

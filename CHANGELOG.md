@@ -36,7 +36,7 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 - Tari outage alerts now describe the required policy and actual worker rejection state.
   Optional Tari keeps mining Monero; recovery claims readmission only after workers were
-  rejected and the proxy successfully restarted. Monero alert texts are unchanged (#3119).
+  rejected and the proxy successfully restarted (#3119).
 
 - **Tari v6.0.1-pre.0 and P2Pool 4.18.1, upgraded together
   ([#1129](https://github.com/p2pool-starter-stack/pithead/issues/1129)).** The Tari 6.0 hard
@@ -106,14 +106,18 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 - **A saturated Tor circuit history is reported, and `tor-recover` can reset it while Monero stays
   synchronized ([#3052](https://github.com/p2pool-starter-stack/pithead/issues/3052)).** Tor can
   finish bootstrapping with its circuit-build-time history full and still fail every clearnet
-  request; a NEWNYM refresh does not clear it. With `tor.auto_heal` on, when a refresh is
-  unconfirmed or does not bring egress back, the dashboard reads Tor's circuit-history state, logs a
-  saturated history on each round and sends one alert per outage naming `./pithead tor-recover`,
-  retrying until a channel delivers it. `./pithead doctor` reports the same condition as a FAIL,
+  request; a NEWNYM refresh does not clear it. With `tor.auto_heal` on, the dashboard reads Tor's
+  circuit-history state on every heal round, logs a saturated history and sends one alert per
+  outage naming `./pithead tor-recover`, retrying until a channel delivers it. `./pithead doctor`
+  reports the same condition as a FAIL,
   which the Tor section of Service Diagnostics shows after a health check. `tor-recover check` and
   `apply` now also accept two failed heal rounds from the same outage at least 15 minutes apart,
   with both clearnet probes still failing through Tor, so a synchronized Monero node no longer
-  blocks the reset. Nothing deletes Tor state on its own; the reset stays an operator command.
+  blocks the reset. When the history stays saturated through the heal rounds, `tor.auto_heal` runs
+  the same gated `tor-recover apply` itself ([#3118](https://github.com/p2pool-starter-stack/pithead/issues/3118)),
+  keeping its cooldown, evidence and onion-identity checks. Its refreshes and recovery go through the
+  host control runner, so the heal needs `dashboard.control.enabled`, which the appliance turns on
+  only when a dashboard login is set. Without `tor.auto_heal` the reset stays an operator command.
 
 - **The dashboard onion's client key without a shell.** With Tor client authorization on — the
   default, and mandatory whenever the config editor is on — a published `.onion` does not answer a
@@ -198,17 +202,29 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   unchanged ([#3094](https://github.com/p2pool-starter-stack/pithead/issues/3094)).
 - **New installs start from safer defaults in both wizards.** Tari is on when the disk fits both
   chains and off when it does not, the XvB raffle is off and not asked about, a dashboard login is
-  generated and shown once, and the first sync runs over Tor. The faster sync is an opt-in that
+  generated and shown once unless you choose no login, and the first sync runs over Tor. The faster sync is an opt-in that
   covers each chain run locally and warns that it exposes your IP. Upgrades keep their config
   ([#3099](https://github.com/p2pool-starter-stack/pithead/issues/3099)).
 - **`setup`, `up` and `apply` always print the pool URL and the stratum password state.** The
   password reads `none set` when there is none. An `apply` that only toggles `local_miner`
   converges the local miner instead of reporting no changes ([#3090](https://github.com/p2pool-starter-stack/pithead/issues/3090)).
-- **A payout address change is confirmed by typing its last 8 characters**, in the command line
-  and in the dashboard ([#3097](https://github.com/p2pool-starter-stack/pithead/issues/3097)).
+- **The command line confirms a payout address change by its last 8 characters**, as the
+  dashboard already did; it used to ask for the first 8 ([#3097](https://github.com/p2pool-starter-stack/pithead/issues/3097)).
 - **`apply` and the dashboard refuse a config with a duplicate JSON key or a `PASTE_` or `YOUR_`
   placeholder value.** The refusal names the key and never prints the value ([#3098](https://github.com/p2pool-starter-stack/pithead/issues/3098)).
 - **Appliance documentation corrections** for identity and update recovery ([#3100](https://github.com/p2pool-starter-stack/pithead/issues/3100)).
+- **Payout confirmation keeps one view-only wallet per payout address and view key.** Changing the
+  address or key opens a separate wallet instead of reusing the old one, reverting reopens the
+  earlier wallet, and an upgrade adopts the existing wallet without recreating it. A new automatic
+  Monero wallet starts 100 blocks behind the local node's tip. `apply` refuses a view key that does
+  not belong to the configured address, for Monero and Tari, so a key from the wrong wallet fails at
+  once instead of scanning forever ([#3096](https://github.com/p2pool-starter-stack/pithead/issues/3096)).
+- **Tari payout confirmation needs only the view key.** `apply` derives the public spend key from
+  the dual-key `tari.wallet_address`; `tari.spend_public_key` is optional and, with `tari.view_key`
+  set, must match the address. A single-key Tari address is refused while `tari.view_key` is set;
+  mining to it still works ([#2732](https://github.com/p2pool-starter-stack/pithead/issues/2732)).
+- **The docs show where each view key lives in the Monero GUI wallet and Tari Universe**, and
+  `apply`'s view-key messages point there ([#3112](https://github.com/p2pool-starter-stack/pithead/issues/3112)).
 - **The Configuration view works the same, minus the Telegram round-trip.** A disruptive change
   still asks you to type `APPLY`. A payout change also asks for the last characters of the new
   address, after the host validates its checksum and network. Future rewards go to the new
@@ -272,8 +288,8 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 ### Fixed
 
 - **A Tari outage no longer rejects workers at once.** With `tari_required`, workers are rejected
-  only after a sustained Tari RPC outage; migrating, starting and syncing only alert. A Monero
-  outage, local or remote, always rejects ([#3091](https://github.com/p2pool-starter-stack/pithead/issues/3091)).
+  only after a sustained Tari RPC outage; migrating, starting and syncing only alert. Once the
+  Monero node has answered, an outage, local or remote, always rejects ([#3091](https://github.com/p2pool-starter-stack/pithead/issues/3091)).
 - **Tor recovers from a saturated circuit-build history.** An early alert, and under
   `tor.auto_heal` a self-heal, reset Tor through the gated `./pithead tor-recover`; the doctor and
   the Monero card's advice name it ([#3118](https://github.com/p2pool-starter-stack/pithead/issues/3118)).
