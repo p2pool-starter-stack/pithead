@@ -65,14 +65,16 @@ Contents:
 
 ### Known on the re-cut RC
 
-> Filled in at the final cut.
->
-> A step that fails for a reason listed here is linked to the issue listed, not filed again. An
-> **Expect** line marked `(confirm wording at the freeze)` was written from the owner's ruling,
-> because its fix had not merged when this page was last edited. Only #3096 and #3112 are
-> still marked. If the behaviour matches and only the wording differs, record PASS and write down
-> the text you saw. At the final cut, replace each one with the text the release candidate prints
-> and delete the mark (`grep -n 'confirm wording' docs/dev/manual-release-checklist.md`).
+A step that fails for a reason listed here is linked to the issue listed, not filed again. Every
+**Expect** line now quotes merged code. If the behaviour matches and only the wording differs,
+record PASS and write down the text you saw.
+
+- [#3165](https://github.com/p2pool-starter-stack/pithead/issues/3165): the appliance first-boot
+  wizard's JSON pane collapses a duplicate key silently (last one wins) instead of refusing it;
+  `apply` and the dashboard's Configuration editor refuse it as 7.6 expects.
+- [#3166](https://github.com/p2pool-starter-stack/pithead/issues/3166): `tor.auto_heal` only probes
+  and logs warnings on a box without `dashboard.control.enabled`, which includes an appliance set up with
+  **No login**; it refreshes or recovers Tor only when control is on.
 
 ## Run sheet
 
@@ -155,9 +157,7 @@ stratum password unless the user opts in (#3092).
 **Config B — everything on.** Login, browser configuration, Telegram with commands, stratum TLS,
 on-chain payout confirmation for both chains (Tari needs only the view key: the spend key is read
 from the dual-key address, #3096), energy prices, and the dashboard as a Tor onion (which needs a
-dashboard password of 16 characters or more; make one up for QA). This sample targets #3096:
-until that implementation lands, the validator still requires `tari.spend_public_key`
-(confirm wording at the freeze).
+dashboard password of 16 characters or more; make one up for QA).
 
 ```json
 {
@@ -291,9 +291,8 @@ DIY steps that apply there.
 
 ## Re-cut coverage
 
-Which steps prove each issue the 2.0.0 re-cut fixed or added, as of 2026-10-05 UTC. **Shipped**
-means the **Expect** lines quote merged code. **Confirm** means they follow the owner's ruling and
-carry `(confirm wording at the freeze)`: #3096 with #2732, and #3112.
+Which steps prove each issue the 2.0.0 re-cut fixed or added. **Shipped** means the **Expect**
+lines quote merged code; every row is shipped.
 
 | Issue | What it requires | Steps | Wording |
 |---|---|---|---|
@@ -301,12 +300,12 @@ carry `(confirm wording at the freeze)`: #3096 with #2732, and #3112.
 | [#3091](https://github.com/p2pool-starter-stack/pithead/issues/3091) | A required Tari rejects workers only after its RPC has been unreachable 10–15 minutes (15 shipped); migrating, starting and syncing only alert; Tari alerts ignore `tari_required`; an unreachable Monero node, local or remote, always rejects | 1.12, 2.3a, 8.5, 10.5, 10.6 | Shipped (#3093) |
 | [#3092](https://github.com/p2pool-starter-stack/pithead/issues/3092) | The stratum password is opt-in (default off) in both wizards and shows on the hand-off card, in **Connect a miner** and in CLI output, also on a LAN dashboard with no login; an onion dashboard always has a login | 1.4, 1.4a, 5.12, 10.7, 13.6, 13.6a, 13.8, last row of [Broken configs](#broken-configs) | Shipped (#3107) |
 | [#3094](https://github.com/p2pool-starter-stack/pithead/issues/3094) | Enabling Tari on a box that is already mining keeps Monero mining while Tari syncs | 10.2, 13.22 | Shipped (#3102) |
-| [#3096](https://github.com/p2pool-starter-stack/pithead/issues/3096) and [#2732](https://github.com/p2pool-starter-stack/pithead/issues/2732) | One view-only wallet per (address, view key), adopted on upgrade; a fresh wallet starts near the tip; a key that does not match the address is refused; Tari confirmation needs a dual-key address and asks for the view key only | 2.3, 6.4a, 6.4b, 7.5 | Confirm |
+| [#3096](https://github.com/p2pool-starter-stack/pithead/issues/3096) and [#2732](https://github.com/p2pool-starter-stack/pithead/issues/2732) | One view-only wallet per (address, view key), adopted on upgrade; a fresh wallet starts near the tip; a key that does not match the address is refused; Tari confirmation needs a dual-key address and asks for the view key only | 2.3, 6.4a, 6.4b, 7.5 | Shipped (#3113) |
 | [#3097](https://github.com/p2pool-starter-stack/pithead/issues/3097) | A payout-address change is confirmed by typing its last 8 characters, everywhere | 6.4, 7.5, 13.8 | Shipped (#3105) |
 | [#3098](https://github.com/p2pool-starter-stack/pithead/issues/3098) | `apply` and the dashboard refuse duplicate JSON keys and `PASTE_` or `YOUR_` values | [Broken configs](#broken-configs), 6.5, 7.6 | Shipped (#3106) |
 | [#3099](https://github.com/p2pool-starter-stack/pithead/issues/3099) | New-install defaults in both wizards: Tari by disk, XvB off and not asked, a generated dashboard login, Tor first sync with an opt-in fast sync that warns; upgrades keep their config | 1.4, 1.4a, 2.3, 7.3a, 13.6, 13.6a | Shipped (#3110) |
 | [#3109](https://github.com/p2pool-starter-stack/pithead/issues/3109) | A read-only `config_version` stamp, shown but not editable; a newer config warns; a restore of a newer config is refused; the 1.x release-notes line | 1.4a, 2.3, 6.10, 7.1, 7.1a, 11.2a, and the 1.x note in section 2 | Shipped (#3114) |
-| [#3112](https://github.com/p2pool-starter-stack/pithead/issues/3112) | Docs for getting the view keys from the Monero GUI wallet and Tari Universe | 7.9 | Confirm |
+| [#3112](https://github.com/p2pool-starter-stack/pithead/issues/3112) | Docs for getting the view keys from the Monero GUI wallet and Tari Universe | 7.9 | Shipped (#3168) |
 | [#3100](https://github.com/p2pool-starter-stack/pithead/issues/3100) | Appliance docs corrections | 12.3, 13.10, 13.21, 13.25, 15.1 | Shipped (#3104) |
 | [#3116](https://github.com/p2pool-starter-stack/pithead/issues/3116) | The image pins RigForge at the develop tip that becomes v1.18.0 | 13.7a, 13.8, 14.1 | Shipped (#3117) |
 | [#3118](https://github.com/p2pool-starter-stack/pithead/issues/3118) | Tor recovers from a saturated circuit-build state: early alert, self-heal under `tor.auto_heal`, advice and doctor name `tor-recover` | 9.6a | Shipped (#3120) |
@@ -482,7 +481,7 @@ Record what broke, take a backup, run setup again, and carry on from 2.3 on the 
   release number without any `-pre` or build suffix, and `config.json` is still `-rw-------` with
   its owner unchanged. If payout confirmation was on before the
   upgrade, the payout card is green again with no rescan: #3096 adopts the old wallet as the one
-  for your current address and view key (confirm wording at the freeze). Tari reads loading, with
+  for your current address and view key. Tari reads loading, with
   no progress, until its one-way database migration ends (2.3a): that is expected for hours, not a
   failure.
 - [ ] **2.3a Wait out the Tari migration and the fork rewind.** Do: right after 2.2, run
@@ -594,7 +593,7 @@ each panel means.
   Without `-u`, the request is refused.
 - [ ] **5.12 Connect a miner.** Do: signed in, find the **Connect a miner** block in the Simple
   view. Then open the dashboard in a private window and do not sign in. Expect, per #3092: signed in, the block shows the LAN pool URL (`<host>:3333`),
-  the stratum password or the words `no stratum password`, and the TLS fingerprint when stratum
+  the stratum password or the words `No stratum password`, and the TLS fingerprint when stratum
   TLS is on (4.3). The password matches `grep PROXY_STRATUM_PASSWORD .env`. Signed out, the
   private window shows the login and none of those values. A dashboard with no login shows the
   block to anyone on the LAN (10.7).
@@ -628,23 +627,25 @@ and restore it at the end.
   `monero.wallet_address` to the second QA primary address and leave the first wallet's view key,
   then run `./pithead apply`. (2) Set the second wallet's view key as well, apply, and type the
   last 8 characters. Watch the Earnings card. (3) Put both the address and the view key back,
-  apply, and type the last 8 characters again. Expect, per #3096 (confirm wording at the freeze):
-  (1) is refused before anything changes, and the message says the view key does not belong to the
-  address. (2) The preview says a new view-only wallet is opened for this address and the previous
-  one is kept; the card turns green after the new wallet catches up within minutes, because a
-  fresh wallet starts near the chain tip and does not rescan from the first block. (3) The first
-  wallet reopens, and the card is green again with no rescan.
+  apply, and type the last 8 characters again. Expect, per #3096: (1) is refused before anything changes with
+  `monero.view_key does not belong to monero.wallet_address: the public view key differs.`, followed
+  by a pointer to the docs section on getting your view keys. (2) The preview reads `Payout
+  confirmation view key CHANGED — a new view-only wallet is opened for this address (the previous
+  one is kept).`; the card turns green after the new wallet catches up within minutes, because a
+  fresh automatic wallet starts 100 blocks behind the local node's tip. (3) The first wallet
+  reopens, and the card is green again with no rescan.
 - [ ] **6.4b Tari payout confirmation needs a dual-key address and asks only for the view key.**
   Needs Config B's `tari` block (the address and `view_key`, no `spend_public_key`) and a green Tari
   payout card. Do: (1) set `tari.spend_public_key` to 64 zeros and run `./pithead apply`, then
   remove the key. (2) Set `tari.wallet_address` to the single-key Tari address, keep `view_key`,
   and apply. (3) Put the QA address back, apply, and type the last 8 characters if asked. Expect,
-  per #3096 and #2732 (confirm wording at the freeze): the block in Config B is accepted without a
-  spend key, because the public spend key is read from the address. (1) is refused, naming
-  `tari.spend_public_key` as not belonging to the address. (2) is refused with an explanation that
-  payout confirmation needs a dual-key address (Tari Universe creates one by default) and that a
-  single-key address carries no public view key to check the view key against; mining payouts to
-  a single-key address are unaffected. (3) applies, and the card is green again with no rescan.
+  per #3096 and #2732: the block in Config B is accepted without a spend key, because the public
+  spend key is read from the address. (1) is refused with `tari.spend_public_key disagrees with
+  tari.wallet_address. Leave it empty to derive the public spend key from the address.` (2) is
+  refused with `Tari payout confirmation needs a dual-key address, which Tari Universe gives by
+  default. A single-key address carries no public view key to check tari.view_key against. Mining
+  payouts to single-key addresses remain supported.` (3) applies, and the card is green again with
+  no rescan.
 - [ ] **6.5 Broken configs.** Do: work through every row of [Broken configs](#broken-configs).
   Expect: each refusal matches, and `./pithead status` stays healthy throughout.
 - [ ] **6.6 Render.** Do: `./pithead render`. Expect: it finishes and no container restarts.
@@ -671,8 +672,8 @@ and restore it at the end.
   then edit `config.json` and change the `config_version` value to `"9.9.9"`. Run
   `./pithead render`, then `jq -r .config_version config.json`. Then put the noted value back by
   hand and run `./pithead render` again. Expect, per #3109: the
-  first render exits 0 and prints a warning that the file was written by a newer pithead than this
-  one and that settings added after this version are ignored until you update; the stamp still
+  first render exits 0 and warns `config.json was written by pithead 9.9.9; this is <version>.
+  Settings added after <version> are ignored until you update.`; the stamp still
   reads `9.9.9` (a stamp is never rewritten downward); the second render prints no warning.
   7.1a shows the same condition in the dashboard.
 
@@ -693,8 +694,8 @@ preview marks turning it on with ⚠ and asks `(y/N)`; answer `y`.
   view, then put the stamp back by hand. Expect, per #3109: the
   pane never shows `config_version`; the pasted value is ignored, so the preview has no row for
   it, the stamp on disk is unchanged and **Recent config changes** has no `config_version` row.
-  With the stamp at 9.9.9 the view shows a warning that the file was written by a newer version
-  and says what that means for saving.
+  With the stamp at 9.9.9 the view warns `This configuration was written by a newer Pithead
+  version.` and says saving is blocked while it holds settings this version does not know.
 - [ ] **7.2 Benign change.** Do: set an energy price, click **Save & preview changes**, then
   confirm. Expect: a preview with one row per changed setting; after confirming, the value shows
   on the Energy tab, survives a reload, and appears in **Recent config changes**.
@@ -713,8 +714,8 @@ preview marks turning it on with ⚠ and asks `(y/N)`; answer `y`.
   address, and its view key too if `monero.view_key` is set. Expect: the change is marked ⚠; the
   confirmation asks you to type `APPLY` and the last eight characters of the new address (the
   command line asks for the same, 6.4, #3097), and a wrong suffix is refused. After it applies,
-  the **Payout wallet changed** badge appears. Change it back. With a view key set, the form
-  refuses a key that does not belong to the new address, as 6.4a does (#3096; confirm wording at the freeze).
+  the **Payout wallet changed** badge appears. Change it back. With a view key set, the preview
+  refuses a key that does not belong to the new address with the same message as 6.4a (#3096).
 - [ ] **7.6 Bad value.** Do: paste the QA subaddress into the Monero address field and preview.
   Then add a second top-level `"p2pool"` block in the Advanced pane and preview, and type
   `PASTE_QA_X` into the dashboard password field and preview. Expect: the subaddress is refused
@@ -730,8 +731,8 @@ preview marks turning it on with ⚠ and asks `(y/N)`; answer `y`.
   [The Dashboard](../dashboard.md) (the section on getting your view keys), find the Monero secret
   view key and restore height and the Tari view key and wallet birthday, with no other help. Enter
   them in Configuration's payout settings, preview and confirm. Then paste the Monero *public*
-  view key into the Monero view key field and preview. Expect, per #3112
-  (confirm wording at the freeze): the docs name every menu or file you needed, and you never needed the spend key, the
+  view key into the Monero view key field and preview. Expect, per #3112: the docs name every menu
+  or file you needed, and you never needed the spend key, the
   seed words or a wallet password; the matching values are accepted; the public key is refused
   with a message that points at the docs section, not at a label either wallet lacks. Write down
   every place you hesitated.
@@ -901,7 +902,7 @@ Run on the upgrade box. See [Privacy](../privacy.md).
   remove its `dashboard.auth` and `dashboard.control` blocks, and `./pithead apply`; answer `y` to
   what it asks. Open the dashboard in a private window, then put the copy back and apply. Expect,
   per #3092: no login prompt appears, and the **Connect a miner**
-  block shows the LAN pool URL and the stratum password, or `no stratum password`, to anyone on
+  block shows the LAN pool URL and the stratum password, or `No stratum password`, to anyone on
   the LAN (the owner accepts that risk). A dashboard published as an onion always has a login: the
   last row of [Broken configs](#broken-configs) is that refusal.
 
@@ -917,9 +918,8 @@ Run on the upgrade box unless stated. The steps are destructive; run them in thi
   `config_version` to `"9.9.9"` as in 6.10, run `./pithead backup`, and put the stamp back by hand.
   Then run `./pithead restore backups/<that newest file>` with the right passphrase. Do not use
   that archive in 11.3. Expect, per #3109: the restore is refused
-  before anything is promoted, with a message that the backup's configuration was written by
-  pithead `<stamp>` while this machine runs an older version, and that you should update to that
-  version or later first; `config.json`, the data
+  before anything is promoted, with `This backup's configuration was written by pithead <stamp>;
+  this machine runs <version>. Update to <stamp> or later, then restore.`; `config.json`, the data
   and the running stack are unchanged.
 - [ ] **11.3 Restore.** Do: change the energy price in the dashboard, then restore the backup with
   the right passphrase. Expect: the energy price is back to its earlier value, the onion address
@@ -1092,7 +1092,7 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
 - [ ] **13.6a Stratum default and fast sync.** Do: on the second appliance's setup page, on its
   first install, keep every default (the stratum question stays no), turn on the faster first
   sync, and press **Validate, then install**. If that disk is too small for both chains, note
-  that Tari is off. After the install open Configuration. Expect, per #3099 and #3092: the hand-off card says `no stratum password`; the faster-sync choice
+  that Tari is off. After the install open Configuration. Expect, per #3099 and #3092: the hand-off card says `No stratum password`; the faster-sync choice
   warns as in 13.6; Configuration shows `monero.clearnet_initial_sync` on and, when Tari is on,
   `tari.clearnet_initial_sync` on too; on a disk too small for both chains the page turns Tari
   off and says why.
@@ -1111,7 +1111,7 @@ and exactly one SSH login a day, its own. Anything else spends a soak day.
   [the appliance guide](../appliance.md), find the pool URL and, if one is set, the stratum
   password an outside miner must send. Expect, per #3092: signed
   in, the dashboard shows a **Connect a miner** block with the LAN pool URL and the same stratum
-  password as the 13.6 hand-off card, or `no stratum password`; signed out, nothing shows it. On a
+  password as the 13.6 hand-off card, or `No stratum password`; signed out, nothing shows it. On a
   box with no dashboard login, the block shows it to anyone on the LAN (owner, 2026-10-04: the
   risk is accepted; an onion-published dashboard always has a login). Then, while the appliance's
   chains sync, check 1.8; when they finish, check 1.13. Then repeat sections 4 and 5 (5.12

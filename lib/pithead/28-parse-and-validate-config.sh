@@ -89,7 +89,7 @@ parse_and_validate_config() {
         fi
         # A view key is 64 lowercase hex chars. Reject a malformed value before it reaches the wallet.
         if ! printf '%s' "$MONERO_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "monero.view_key must be the 64-character hex PRIVATE VIEW KEY for monero.wallet_address (get it from your wallet: 'View Key' / 'wallet_secret_view_key'). Got ${#MONERO_VIEW_KEY} chars."
+            error "monero.view_key must be the 64-character hex SECRET VIEW KEY for monero.wallet_address (Monero GUI: Settings › Wallet › Show seed & keys › 'Secret view key'; monero-wallet-cli: viewkey). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#MONERO_VIEW_KEY} chars."
         fi
         case "$PAYOUT_SCAN_HEIGHT" in
         '' | auto) ;;
@@ -119,7 +119,7 @@ parse_and_validate_config() {
         fi
         # Tari view / public-spend keys are 64 lowercase hex chars (32-byte Ristretto scalar / point).
         if ! printf '%s' "$TARI_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (from your Tari wallet: 'export-view-key-and-spend-key'). Got ${#TARI_VIEW_KEY} chars."
+            error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (Tari Universe: 'view_private_key_hex' in config_wallet.json; minotari_console_wallet: export-view-key-and-spend-key). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#TARI_VIEW_KEY} chars."
         fi
         # "auto" or a day no later than today: a future day scans from the tip, missing past payouts.
         local tari_today=$((($(date +%s) - 1640995200) / 86400))

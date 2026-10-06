@@ -274,7 +274,7 @@ seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","view_key":"not-a-view-key"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "malformed view key rejected" "$?" "1"
-assert_contains "malformed view-key message" "$out" "64-character hex"
+assert_contains "malformed monero view-key message names the wallet field and guide" "$out" "monero.view_key must be the 64-character hex SECRET VIEW KEY for monero.wallet_address (Monero GUI: Settings › Wallet › Show seed & keys › 'Secret view key'; monero-wallet-cli: viewkey). See https://github.com/p2pool-starter-stack/pithead/blob/main/docs/dashboard.md#getting-your-view-keys."
 
 echo "== black-box: Tari payout confirmation view key (#462) =="
 # Tari's local view and spend keys enable tari_payout_confirm and its view-only wallet.
@@ -325,7 +325,7 @@ seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"nope","spend_public_key":"%s"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TSPEND" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "malformed tari view key rejected" "$?" "1"
-assert_contains "malformed tari view-key message" "$out" "64-character hex"
+assert_contains "malformed tari view-key message names the wallet field and guide" "$out" "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (Tari Universe: 'view_private_key_hex' in config_wallet.json; minotari_console_wallet: export-view-key-and-spend-key). See https://github.com/p2pool-starter-stack/pithead/blob/main/docs/dashboard.md#getting-your-view-keys."
 # (5) An explicit spend key must match the address.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"deadbeef"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" >"$V/config.json"
