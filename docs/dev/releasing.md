@@ -212,7 +212,9 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 8. Publish GitHub Release: create the git tag `vX.Y.Z`, fast-forward `main` to the tagged commit
    (see [Branch mechanics](#branch-mechanics)), write the release notes from the `CHANGELOG.md`
    entry matching the tag (including its Known issues section, excluding Unreleased and other
-   versions), and attach release assets: a pinned `docker-compose.yml` / config bundle referencing
+   versions). If the tag has no entry, warn on stderr and use the first non-Unreleased section;
+   if the changelog is absent, use `Pithead <TAG>`. Attach release assets: a pinned
+   `docker-compose.yml` / config bundle referencing
    `${STACK_VERSION}=vX.Y.Z`, its detached signature (`pithead.tar.gz.sig`), plus the ingredients
    manifest (exact component versions + promoted image digests). The install bundle includes the
    generated CLI and top-level operator guides, but no source slices, appliance code, tests,

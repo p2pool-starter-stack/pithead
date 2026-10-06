@@ -190,8 +190,8 @@ make_bundle() (
 # Release notes = the CHANGELOG section for the tag being published.
 changelog_notes() {
     if [ ! -f CHANGELOG.md ]; then
-        printf 'Missing CHANGELOG.md for release %s\n' "$TAG" >&2
-        return 1
+        printf 'Pithead %s\n' "$TAG"
+        return
     fi
     # Compare literal bracketed versions: Unreleased and other releases are excluded.
     awk -v heading="[${TAG#v}]" '
@@ -202,7 +202,13 @@ changelog_notes() {
         seen
         END { if (!seen) exit 1 }
     ' CHANGELOG.md || {
-        printf 'Could not extract CHANGELOG.md entry for release %s\n' "$TAG" >&2
-        return 1
+        printf 'Warning: no CHANGELOG.md entry for release %s; using the first non-Unreleased section\n' "$TAG" >&2
+        awk '
+            /^## \[/ {
+                if (seen) exit
+                if ($2 != "[Unreleased]") seen=1
+            }
+            seen
+        ' CHANGELOG.md
     }
 }

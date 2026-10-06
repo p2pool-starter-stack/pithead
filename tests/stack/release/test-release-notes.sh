@@ -45,21 +45,24 @@ assert_contains "release notes include the Tor control prerequisite issue link" 
 assert_not_contains "release notes exclude pending changes" "$release_notes_out" 'Future changes'
 assert_not_contains "release notes exclude newer releases" "$release_notes_out" 'A newer release'
 assert_not_contains "release notes stop before older releases" "$release_notes_out" 'Old changes'
-release_notes_out="$(release_notes_extract v2.0.2 2>&1)"
-assert_rc "a missing release entry fails extraction" "$?" "1"
-assert_contains "a missing entry diagnostic names the release" "$release_notes_out" 'release v2.0.2'
-assert_not_contains "a missing entry cannot publish unrelated notes" "$release_notes_out" 'Future changes'
+release_notes_out="$(release_notes_extract v2.0.2 2>"$release_notes_fixture/warning")"
+assert_rc "a missing release entry uses a successful fallback" "$?" "0"
+assert_contains "a missing entry warns on stderr" "$(cat "$release_notes_fixture/warning")" 'release v2.0.2'
+assert_contains "a missing entry selects the first non-Unreleased section" "$release_notes_out" '## [2.0.1]'
+assert_not_contains "fallback notes exclude pending changes" "$release_notes_out" 'Future changes'
+assert_not_contains "fallback notes stop before the next release" "$release_notes_out" '### Known issues'
 # Dots in a version are literal, not regular-expression wildcards.
 sed 's/\[2.0.0\]/[2x0x0]/' "$release_notes_fixture/CHANGELOG.md" >"$release_notes_fixture/other.md"
 mv "$release_notes_fixture/other.md" "$release_notes_fixture/CHANGELOG.md"
-release_notes_extract v2.0.0 >/dev/null 2>&1
-assert_rc "version matching does not treat dots as wildcards" "$?" "1"
+release_notes_out="$(release_notes_extract v2.0.0 2>"$release_notes_fixture/warning")"
+assert_contains "literal version mismatch uses the fallback" "$release_notes_out" '## [2.0.1]'
+assert_contains "version matching does not treat dots as wildcards" "$(cat "$release_notes_fixture/warning")" 'release v2.0.0'
 printf '## [2.0.0-rc.1]\n\nCandidate notes\n' >"$release_notes_fixture/CHANGELOG.md"
 assert_contains "release notes support prerelease tags" "$(release_notes_extract v2.0.0-rc.1)" 'Candidate notes'
 rm "$release_notes_fixture/CHANGELOG.md"
 release_notes_out="$(release_notes_extract v2.0.0 2>&1)"
-assert_rc "a missing changelog fails extraction" "$?" "1"
-assert_contains "a missing changelog is diagnosed" "$release_notes_out" 'Missing CHANGELOG.md'
+assert_rc "a missing changelog preserves successful fallback" "$?" "0"
+assert_eq "a missing changelog emits the release title" "$release_notes_out" 'Pithead v2.0.0'
 rm -rf "$release_notes_fixture"
 unset release_notes_fixture release_notes_out
 unset -f release_notes_extract
