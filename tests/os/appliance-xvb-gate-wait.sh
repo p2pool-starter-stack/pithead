@@ -33,20 +33,29 @@ _xvb_gate_payload() {
 # released reading with the proxy up can still be the instant before a re-hold. Never starts or
 # stops a container: the gate owns them. Prints the last sample on timeout.
 _xvb_wait_for_gate_release() { # -> 0 once released with xmrig-proxy running twice in a row
-    local deadline payload gate running samples=0 last="unread"
+    local deadline payload gate running remaining samples=0 last="unread"
     payload="$(_xvb_gate_payload)"
     deadline=$(($(date +%s) + ${XVB_GATE_RELEASE_TIMEOUT:-300}))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        gate="$(_xvb_guest_python "$payload" 2>/dev/null | tr -d '\r\n')"
-        running="$(_ssh "podman inspect -f '{{.State.Running}}' xmrig-proxy" 2>/dev/null | tr -d '\r\n')"
+        remaining=$((deadline - $(date +%s)))
+        [ "$remaining" -gt 0 ] || break
+        gate="$(SSH_TIMEOUT="$remaining" _xvb_guest_python "$payload" 2>/dev/null | tr -d '\r\n')"
+        last="gate=${gate:-unreadable} proxy-running=unreadable"
+        remaining=$((deadline - $(date +%s)))
+        [ "$remaining" -gt 0 ] || break
+        running="$(SSH_TIMEOUT="$remaining" _ssh "podman inspect -f '{{.State.Running}}' xmrig-proxy" 2>/dev/null | tr -d '\r\n')"
         last="gate=${gate:-unreadable} proxy-running=${running:-unreadable}"
+        [ "$(date +%s)" -lt "$deadline" ] || break
         if [ "$gate" = released ] && [ "$running" = true ]; then
             samples=$((samples + 1))
             [ "$samples" -ge 2 ] && return 0
         else
             samples=0
         fi
-        sleep 5
+        remaining=$((deadline - $(date +%s)))
+        [ "$remaining" -gt 0 ] || break
+        [ "$remaining" -le 5 ] || remaining=5
+        sleep "$remaining"
     done
     printf '%s' "$last"
     return 1
@@ -170,5 +179,48 @@ CASES
     rm -rf "$dir"
     _xvb_gate_order_self_test || f=$((f + 1))
     _xvb_gate_payload_self_test || f=$((f + 1))
+    _xvb_gate_stalled_read_self_test || f=$((f + 1))
     [ "$f" -eq 0 ]
 }
+
+# Real SSH wrapper and local fake transport: either read can stall, including the second good
+# sample. Neither a stalled read nor a late released/running result may outlive the deadline.
+_xvb_gate_stalled_read_self_test() (
+    local here dir scenario out rc start elapsed XVB_GATE_RELEASE_TIMEOUT=2
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    dir="$(mktemp -d)"
+    trap 'rm -rf "$dir"' EXIT
+    eval "$(sed -n '/^_ssh() {/,/^}/p' "$here/lib/core.sh")"
+    eval "$(sed -n '/^_xvb_guest_python() {/p' "$here/appliance-xvb-routing-leg.sh")"
+    sleep() { :; }
+    cat >"$dir/ssh" <<'TRANSPORT'
+#!/bin/sh
+case "$*" in *inspect*) field=proxy value=true ;; *) field=gate value=released ;; esac
+n=$(cat "$COUNTER.$field" 2>/dev/null || echo 0)
+n=$((n + 1)); printf '%s' "$n" >"$COUNTER.$field"
+case "$SCENARIO" in
+proxy-clock) [ "$field" != proxy ] || [ "$n" -lt 2 ] || printf 2 >"$CLOCK" ;;
+"$field-stall") sleep 4 ;;
+"$field-late") [ "$n" -lt 2 ] || sleep 4 ;;
+esac
+printf '%s' "$value"
+TRANSPORT
+    chmod +x "$dir/ssh"
+    export PATH="$dir:$PATH" COUNTER="$dir/count" CLOCK="$dir/clock" SCENARIO
+    date() { if [ "$SCENARIO" = proxy-clock ]; then cat "$CLOCK"; else command date "$@"; fi; }
+    # shellcheck disable=SC2034 # the extracted real _ssh reads these dynamically
+    local KEY=fixture ip=fixture SSH_ERR="$dir/stderr"
+    for scenario in gate-stall proxy-stall gate-late proxy-late proxy-clock; do
+        printf 0 >"$CLOCK"
+        rm -f "$dir/count.gate" "$dir/count.proxy"
+        SCENARIO="$scenario"
+        start=$(date +%s) rc=0
+        out="$(_xvb_wait_for_gate_release)" || rc=$?
+        elapsed=$(($(date +%s) - start))
+        # One second covers whole-second clock rounding and payload setup; the fake stalls for four.
+        [ "$rc" -eq 1 ] && [ "$elapsed" -le "$((XVB_GATE_RELEASE_TIMEOUT + 1))" ] || {
+            printf 'xvb self-test: %s read exceeded its deadline or accepted late success (elapsed=%s rc=%s %s)\n' "$scenario" "$elapsed" "$rc" "$out" >&2
+            return 1
+        }
+    done
+)

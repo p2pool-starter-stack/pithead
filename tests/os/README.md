@@ -152,7 +152,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   30 to 45 seconds, and a leg that restarted it lost the P2Pool restore to that cycle
   ([#2733](https://github.com/p2pool-starter-stack/pithead/issues/2733)). Before the actuation and
   again before either normal or fallback P2Pool restore confirmation, it waits up to 300 seconds
-  for the gate to read released with the proxy running in two consecutive samples, then invokes the controller's
+  for the gate to read released with the proxy running in two consecutive samples. Each guest read
+  is capped by the remaining deadline, and a late result cannot confirm readiness. It then invokes the controller's
   existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
   the same process. This bounded injection
   proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
