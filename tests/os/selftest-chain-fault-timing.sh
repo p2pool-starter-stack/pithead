@@ -61,12 +61,54 @@ scenario() { # <debounce> <badge-at> <unreadable-early> <want-negative> <want-la
 scenario 900 900 0 1/0 1
 # An overridden debounce, with collection/publish delay, determines the deadline.
 scenario 1200 1300 0 1/0 1
-scenario 900 0 0 0/1 1
-scenario 900 895 0 0/1 1
+scenario 900 0 0 0/1 0
+scenario 900 895 0 0/1 0
 scenario 900 2000 0 1/0 0
-scenario 900 900 1 0/1 1
+scenario 900 900 1 0/1 0
 scenario 1 185 0 1/0 0
 scenario 5 185 0 1/0 1
+# Sample sequences distinguish transport errors, malformed state and an actual early badge.
+(
+    bad() {
+        FAIL=$((FAIL + 1))
+        errors+="$*"
+    }
+    chain_fault_state() {
+        case "${samples[tick / 5]:-down}" in
+        up) printf '{"badges":[]}' ;;
+        down) printf '{"badges":[{"text":"Tari DOWN"}]}' ;;
+        json) printf 'not-json' ;;
+        shape) printf '{"badges":null}' ;;
+        transport) return 28 ;;
+        esac
+    }
+    sequence() { # <debounce> <initial-tick> <want-pass/fail> <want-late> <last-tick> <message> <samples...>
+        local debounce="$1" tick="$2" PASS=0 FAIL=0 state late=0 errors=''
+        local want_counts="$3" want_late="$4" want_tick="$5" message="$6"
+        shift 6
+        local samples=("$@")
+        chain_fault_wait_badge "$debounce" 0 && late=1
+        [ "$PASS/$FAIL/$late/$tick" = "$want_counts/$want_late/$want_tick" ] || {
+            printf 'sequence: got %s/%s/%s/%s; %s\n' "$PASS" "$FAIL" "$late" "$tick" "$errors" >&2
+            return 1
+        }
+        if [ -n "$message" ]; then [[ "$errors" = *"$message"* ]]; else [ -z "$errors" ]; fi
+    }
+    # Three failures are tolerated, including before the first readable observation.
+    sequence 20 0 1/0 1 20 '' transport json shape up down
+    sequence 20 0 1/0 1 20 '' up transport json shape down
+    # A readable sample resets the consecutive budget: six failed reads still pass.
+    sequence 40 0 1/0 1 40 '' transport json shape up transport json shape up down
+    sequence 30 0 0/1 0 20 'unreadable for 4 consecutive' up transport json shape transport down
+    sequence 30 0 0/1 0 20 'elapsed=20s read_rc=28' up transport json shape transport down
+    sequence 30 0 0/1 0 20 'invalid JSON or badge list' up json shape json shape down
+    # An actual early badge fails immediately, even after an unreadable sample.
+    sequence 30 0 0/1 0 10 'dashboard badge: Tari DOWN' up transport down up down
+    sequence 30 0 0/1 0 10 'elapsed=10s' up json down up down
+    # Unreadable samples cannot satisfy the required pre-debounce observation.
+    sequence 15 0 0/1 1 15 'no readable pre-debounce sample' transport json shape down
+    sequence 15 15 0/1 1 15 'no readable pre-debounce sample' up up up down
+)
 # Use the real Python-clock call with a failed command or malformed output.
 (
     python3() {

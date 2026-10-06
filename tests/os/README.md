@@ -217,7 +217,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   debounce (900 seconds when unset) and appear within that debounce plus 180 seconds.
   Clock readings require successful numeric output; a failed initial clock refuses injection,
   and a failed or backward clock during polling fails timing and proceeds to recovery.
-  Unreadable state fails the negative control. Unreadable, invalid or out-of-range debounce
+  The negative control requires a readable pre-debounce sample. Up to three consecutive
+  unreadable samples are tolerated; a readable sample resets that count. An early `Tari DOWN`
+  badge fails immediately and proceeds to recovery. A fourth consecutive unreadable sample
+  or no readable pre-debounce observation fails separately. Failure messages record elapsed
+  seconds and the badge verdict or read error, without dumping the full dashboard state. Unreadable, invalid or out-of-range debounce
   settings (the test accepts 1–3600 seconds) fail before fault injection; the guest policy
   is never shortened.
   After it, the floor-fallback leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating
