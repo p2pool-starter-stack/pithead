@@ -1019,7 +1019,8 @@ accepted work are recorded; they do not gate. See the [soak probe contract](../.
   `soak.log`, `day0.env`, `started` and `read<N>.env` files are not mixed into this soak's record. On the build host, run
   `tests/os/soak-probe.sh --self-test`, then
   `tests/os/soak-probe.sh <box IPv4> <logdir> --read` and inspect the private readings.
-  Keep the probe and its three sibling helper scripts together in the kit. Confirm both chains
+  Keep the probe and its three sibling helper scripts together in the kit; include
+  `dashboard/mining_dashboard/helper/http.py` for the self-test and preserve all five repository-relative paths. Confirm both chains
   are synced, no migration is pending and no first-sync clearnet exemption remains; `--start`
   refuses an exemption or an unreadable firewall check without opening a window. Then run
   `tests/os/soak-probe.sh <box IPv4> <logdir> --start`, and add the daily cron line with the same

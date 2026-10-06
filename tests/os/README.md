@@ -438,7 +438,9 @@ sudo tests/os/verify-image.sh os/rauc/build/system.img --test   # harness build:
 `tests/os/soak-probe.sh HOST LOGDIR [--start|--read]` is the 7-day unattended soak's daily
 reader (#1652). It streams `tests/os/soak-read.sh` in one non-interactive, read-only SSH
 session. Keep `soak-probe.sh`, `soak-read.sh`, `soak-record.sh` and `soak-selftest.sh` together
-when copying the probe into the test kit. Nothing is installed in the guest.
+when copying the probe into the test kit. The self-test also reads
+`dashboard/mining_dashboard/helper/http.py`; preserve all five repository-relative paths
+in copied kits (the four scripts under `tests/os/`) to exercise the real bounded HTTP helper. Nothing is installed in the guest.
 
 Run `--self-test`, then `HOST LOGDIR --read` before opening the window. `--read` saves
 `read.env` and `read.firewall.json` locally without creating a baseline or counting a soak day.
