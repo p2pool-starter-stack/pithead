@@ -78,7 +78,7 @@ soak_api() {
         timeout 20 podman exec -i dashboard python - <<'API'
 import os
 import grpc
-import requests
+from mining_dashboard.helper.http import bounded_get
 from google.protobuf import empty_pb2
 from mining_dashboard.client.tari.generated import base_node_pb2_grpc
 values = {"tari_height": "?", "proxy_workers": "?", "proxy_accepted": "?", "proxy_rejected": "?"}
@@ -92,7 +92,7 @@ try:
     token = os.environ.get("PROXY_AUTH_TOKEN", "")
     headers = {"Authorization": "Bearer " + token} if token else {}
     url = "http://{}:{}/1/summary".format(os.environ.get("PROXY_HOST", "xmrig-proxy"), os.environ.get("PROXY_API_PORT", "3344"))
-    response = requests.get(url, headers=headers, timeout=5)
+    response = bounded_get(url, headers=headers, timeout=5)
     response.raise_for_status()
     summary = response.json()
     values.update(proxy_workers=summary.get("miners", {}).get("now", "?"),

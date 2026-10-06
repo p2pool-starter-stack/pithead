@@ -125,6 +125,9 @@ import io
 import os
 import sys
 import types
+import json
+import importlib.util
+from pathlib import Path
 from unittest.mock import patch
 
 source = open(sys.argv[1]).read()
@@ -132,7 +135,10 @@ code = source.split("<<'API'\n", 1)[1].split("\nAPI\n", 1)[0]
 summary = {"miners": {"now": 2}, "results": {"accepted": 50, "rejected": 0}, "wallet": "secret"}
 tip = types.SimpleNamespace(metadata=types.SimpleNamespace(best_block_height=123))
 fail = False
+oversized = False
 calls = []
+closed = []
+consumed = []
 class Channel:
     def __enter__(self): return self
     def __exit__(self, *args): pass
@@ -143,11 +149,25 @@ class Stub:
         if fail: raise RuntimeError("secret")
         return tip
 class Response:
+    status_code = 200
+    encoding = "utf-8"
+    def __enter__(self): return self
+    def __exit__(self, *args): closed.append(True)
     def raise_for_status(self):
         if fail: raise RuntimeError("secret")
-    def json(self): return summary
-def get(url, headers, timeout):
-    calls.append((url, headers, timeout))
+    def body(self):
+        body = json.dumps(summary).encode()
+        return body + b" " * (1048577 - len(body)) if oversized else body
+    def iter_content(self, chunk_size):
+        if fail: raise RuntimeError("secret")
+        body = self.body()
+        for offset in range(0, len(body), chunk_size):
+            chunk = body[offset:offset + chunk_size]
+            consumed.append(len(chunk))
+            yield chunk
+    def json(self): return json.loads(self.body())
+def get(url, headers, timeout, stream=False):
+    calls.append((url, headers, timeout, stream))
     return Response()
 modules = {name: types.ModuleType(name) for name in (
     "grpc", "requests", "google", "google.protobuf", "google.protobuf.empty_pb2",
@@ -155,15 +175,23 @@ modules = {name: types.ModuleType(name) for name in (
     "mining_dashboard.client.tari.generated", "mining_dashboard.client.tari.generated.base_node_pb2_grpc")}
 modules["grpc"].insecure_channel = lambda address: Channel()
 modules["requests"].get = get
+modules["requests"].RequestException = RuntimeError
+modules["requests"].HTTPError = RuntimeError
 modules["google.protobuf.empty_pb2"].Empty = lambda: None
 modules["mining_dashboard.client.tari.generated.base_node_pb2_grpc"].BaseNodeStub = Stub
 with patch.dict(sys.modules, modules), patch.dict(os.environ, {"TARI_GRPC_ADDRESS": "node.invalid:18142", "PROXY_HOST": "proxy.invalid", "PROXY_API_PORT": "3344", "PROXY_AUTH_TOKEN": "secret"}, clear=True):
+    # Load the repository's real helper against the fake HTTP transport.
+    helper_path = Path(sys.argv[1]).resolve().parents[2] / "dashboard/mining_dashboard/helper/http.py"
+    spec = importlib.util.spec_from_file_location("mining_dashboard.helper.http", helper_path)
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    sys.modules["mining_dashboard.helper.http"] = helper
     def run():
         output = io.StringIO()
         with contextlib.redirect_stdout(output): exec(code, {})
         return output.getvalue()
     assert run() == "tari_height=123\nproxy_workers=2\nproxy_accepted=50\nproxy_rejected=0\n"
-    assert calls[-1] == ("http://proxy.invalid:3344/1/summary", {"Authorization": "Bearer secret"}, 5)
+    assert calls[-1][:3] == ("http://proxy.invalid:3344/1/summary", {"Authorization": "Bearer secret"}, 5)
     fail = True
     assert run() == "tari_height=?\nproxy_workers=?\nproxy_accepted=?\nproxy_rejected=?\n"
     fail = False
@@ -171,8 +199,17 @@ with patch.dict(sys.modules, modules), patch.dict(os.environ, {"TARI_GRPC_ADDRES
     assert run() == "tari_height=?\nproxy_workers=?\nproxy_accepted=?\nproxy_rejected=?\n"
     summary = {"miners": {"now": "secret"}, "results": {"accepted": True, "rejected": -1}}
     assert "secret" not in run() and "proxy_workers=?" in run()
+    summary = {"miners": {"now": 2}, "results": {"accepted": 50, "rejected": 0}, "wallet": "secret"}
+    tip.metadata.best_block_height = 123
+    oversized = True
+    closed.clear(); consumed.clear()
+    output = run()
+    assert output == "tari_height=123\nproxy_workers=?\nproxy_accepted=?\nproxy_rejected=?\n", "oversized proxy response must remain unavailable"
+    assert calls[-1][3] is True, "proxy response must be streamed"
+    assert closed == [True], "oversized response must be closed"
+    assert sum(consumed) == helper.MAX_RESPONSE_BYTES + 1
 API_TEST
-    chk 'real API program measured, missing, error and secret fixtures' "$?" 0
+    chk 'real API program measured, missing, oversized, error and secret fixtures' "$?" 0
     printf '%s\nmem_total_kib=8000\nmem_available_kib=3000\nmonero_chain_mib=100\ntari_chain_mib=200\ncontainer_stats=monerod|12MiB / 2GiB|1.5%%\n' "$base" >"$tmp/a"
     drv_ext a --start >/dev/null
     chk 'metrics are recorded without gating' "$?" 0

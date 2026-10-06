@@ -492,7 +492,7 @@ The recorded readings are:
 | Container resources | `podman stats --no-stream --format`, container name, memory usage/limit and CPU percent. |
 | Chain size and growth | `du -sx -B1M` on the configured Monero/Tari directories resolved under `/data`, allocated MiB on that filesystem. Growth is the difference from the previous read; MiB/day uses the elapsed seconds between samples. Day 0 has no rate; missing readings or a missing predecessor record after a failed SSH sample give `?` for growth and rate, not zero or cumulative growth since day 0. The next pair of consecutive successful reads resumes growth reporting. Negative growth remains visible. |
 | Tari height | The local node's `GetTipInfo` through the dashboard's installed gRPC client. Remote/off Tari and unreadable readiness give `?`. |
-| Useful mining | P2Pool local data-api 15-minute hashrate, cumulative shares found/failed and pool sidechain height; xmrig-proxy summary connected miners and accepted/rejected work counters. No worker identities are recorded. |
+| Useful mining | P2Pool local data-api 15-minute hashrate, cumulative shares found/failed and pool sidechain height; xmrig-proxy summary connected miners and accepted/rejected work counters. No worker identities are recorded. Proxy HTTP reads use the dashboard's bounded helper (1 MiB response cap, five-second timeout); oversized replies leave proxy readings `?`. |
 | Privacy route | Egress presence/hash and Tor's cookie-authenticated bootstrap healthcheck. A successful check records 100%; incomplete progress is recorded when reported; unavailable progress is `?`. |
 
 Every missing recorded value appears as `?` in the reading and summary. Only rule 6 adds
