@@ -41,9 +41,12 @@ Contents:
 - You do not need to read code. You need a terminal on the test machine, a web browser, and a
   way to write down what you see.
 - Every step has a **What you do** part and a **What you should see** part. A step passes only
-  when what you see matches **What you should see**. If it differs in any way (a different
-  message, a missing button, a wait far longer than stated), mark it FAIL, even if the product
-  seems to work.
+  when what you see matches **What you should see**:
+  - Text in `code style` must match exactly. A different message there is a FAIL; write down the
+    text you saw.
+  - Expectations written in plain words describe what must happen, not the exact words on screen.
+  - Any other difference (a missing button, a wait far longer than stated, a different outcome) is
+    a FAIL, even if the product seems to work.
 - Text in `code style` is exactly what you type, or exactly what the product prints. Words in
   angle brackets, such as `<full candidate SHA>`, are placeholders: the step says what to put
   there.
@@ -176,8 +179,8 @@ Release:
 ## Known on the re-cut RC
 
 A step that fails for a reason listed here is linked to the issue listed, not filed again. Every
-**What you should see** line now quotes merged code. If the behaviour matches and only the
-wording differs, record PASS and write down the text you saw.
+**What you should see** line quotes merged code, so judge each step by the rule in
+[How to read a step](#how-to-read-a-step).
 
 - [#3165](https://github.com/p2pool-starter-stack/pithead/issues/3165): the appliance first-boot
   wizard's JSON pane collapses a duplicate key silently (last one wins) instead of refusing it;
