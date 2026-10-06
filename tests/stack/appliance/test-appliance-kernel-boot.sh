@@ -233,11 +233,17 @@ out=$(cd "$ROOT" && env -u PITHEAD_DATA_MIGRATION -u PITHEAD_MIN_OS_VERSION bash
 assert_rc "a release bundle that declares neither field is refused (#3167)" "$?" "2"
 assert_contains "the refusal asks for the declaration" "$out" "must declare PITHEAD_DATA_MIGRATION"
 out=$(cd "$ROOT" && env -u PITHEAD_MIN_OS_VERSION PITHEAD_DATA_MIGRATION=false bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_rc "a release bundle with an undeclared floor is refused" "$?" "2"
 assert_contains "a release bundle must declare the floor too, even empty" "$out" "must declare PITHEAD_DATA_MIGRATION"
+out=$(cd "$ROOT" && env -u PITHEAD_DATA_MIGRATION PITHEAD_MIN_OS_VERSION='' bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_rc "a release bundle with an undeclared migration field is refused" "$?" "2"
+assert_contains "a release bundle must declare the migration field too" "$out" "must declare PITHEAD_DATA_MIGRATION"
 out=$(cd "$ROOT" && PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION='' bash os/rauc/mkbundle.sh /dev/null 2>&1)
-assert_not_contains "a declared non-migrating release passes the declaration check" "$out" "must declare"
+assert_contains "a declared non-migrating release reaches the tarball check" "$out" "missing os/build/pithead-root.tar"
+out=$(cd "$ROOT" && PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0 bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_contains "a declared 2.0.0 migrating release reaches the tarball check" "$out" "missing os/build/pithead-root.tar"
 out=$(cd "$ROOT" && env -u PITHEAD_DATA_MIGRATION -u PITHEAD_MIN_OS_VERSION bash os/rauc/mkbundle.sh --dev /dev/null 2>&1)
-assert_not_contains "a --dev bundle keeps the defaults" "$out" "must declare"
+assert_contains "a --dev bundle keeps the defaults and reaches the tarball check" "$out" "missing os/build/pithead-root.tar"
 
 # ---------------------------------------------------------------------------
 # os/rauc signing-material guard (resolve_signing_material in populate-slot.sh). A release build
