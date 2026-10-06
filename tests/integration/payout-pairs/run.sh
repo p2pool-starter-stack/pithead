@@ -80,13 +80,14 @@ ready() {
     while [ "$(date +%s)" -lt "$end" ]; do
         st=$(compose exec -T dashboard python3 -c 'import json,urllib.request; s=json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state",timeout=5)); print(json.dumps({k:s["earnings"][k] for k in ("confirmed","tari_confirmed")}))' 2>/dev/null) || st='{}'
         if printf '%s' "$st" | jq -e 'all(.confirmed,.tari_confirmed; .enabled and .reachable and .address_match and (.down != true))' >/dev/null &&
-            compose exec -T wallet-rpc test ! -e /home/ubuntu/wallets/.payout-scanning; then
+            compose exec -T wallet-rpc test ! -e /home/ubuntu/wallets/.payout-scanning &&
+            # Cached cards can precede the listener after restart. Retry every direct check.
             # Healthchecks must pass with zero scan grace; the card cannot be forced green.
-            compose exec -T -e PAYOUT_SCAN_GRACE_SEC=0 wallet-rpc /usr/local/bin/wallet-healthcheck.sh >/dev/null
-            compose exec -T -e PAYOUT_SCAN_GRACE_SEC=0 tari-wallet /wallet-config/wallet-healthcheck.sh
-            height=$(wallet_rpc get_height | jq -er .result.height)
-            tip=$(compose exec -T wallet-rpc sh -c 'curl -fsS --digest --max-time 5 -u "$MONERO_NODE_USERNAME:$MONERO_NODE_PASSWORD" -H "Content-Type: application/json" -d '\''{"jsonrpc":"2.0","id":"0","method":"get_block_count"}'\'' "http://$MONERO_NODE_HOST:$MONERO_RPC_PORT/json_rpc"' | jq -er .result.count)
-            [ "$((height + 2))" -ge "$tip" ]
+            compose exec -T -e PAYOUT_SCAN_GRACE_SEC=0 wallet-rpc /usr/local/bin/wallet-healthcheck.sh >/dev/null &&
+            compose exec -T -e PAYOUT_SCAN_GRACE_SEC=0 tari-wallet /wallet-config/wallet-healthcheck.sh &&
+            height=$(wallet_rpc get_height | jq -er .result.height) &&
+            tip=$(compose exec -T wallet-rpc sh -c 'curl -fsS --digest --max-time 5 -u "$MONERO_NODE_USERNAME:$MONERO_NODE_PASSWORD" -H "Content-Type: application/json" -d '\''{"jsonrpc":"2.0","id":"0","method":"get_block_count"}'\'' "http://$MONERO_NODE_HOST:$MONERO_RPC_PORT/json_rpc"' | jq -er .result.count) &&
+            [ "$((height + 2))" -ge "$tip" ]; then
             printf 'PASS: both payout cards recovered; Monero wallet height=%s node count=%s\n' "$height" "$tip"
             return 0
         fi

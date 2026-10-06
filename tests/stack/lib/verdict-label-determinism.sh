@@ -93,7 +93,8 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # No label in tests/stack uses $* or $#, the special parameters past $@. They are seeded below
 # anyway, so all three have a control that can fail, not two branches that pass by construction.
 # #2936's invalid_port labels use the five literal inputs in test-tor-port-validation.sh.
-# Payout pair labels use fixed monero/tari chains, vectors 1/2 and the two view-key fields.
+# Payout pair labels use fixed chains, vectors, view-key fields, identity/frame states
+# and the wrapper/dropped UID phases with literal -0/-KILL signals.
 # #3099's mono/tari labels use the six literal local/remote/off combinations in the wizard test.
 # #3090's ca_enabled labels use only the fixed true/false toggle loop.
 vd_expected="$(
@@ -132,6 +133,9 @@ test-doctor.sh|ip
 test-payout-wallet-pairs.sh|chain
 test-payout-wallet-pairs.sh|field
 test-payout-wallet-pairs.sh|k
+test-payout-wallet-pairs.sh|phase
+test-payout-wallet-pairs.sh|signal
+test-payout-wallet-pairs.sh|state
 test-recovery-address-gates.sh|_rag_v
 test-recovery-address-gates.sh|label
 test-release-verify.sh|pin_case

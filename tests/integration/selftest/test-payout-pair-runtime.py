@@ -80,6 +80,50 @@ class RuntimeTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertTrue(work.exists())
 
+    def readiness(self, failure, persistent=False):
+        return self.run_shell(
+            r"""
+iteration=0
+sleep() { iteration=$((iteration + 1)); }
+date() { echo "$((iteration * 600))"; }
+blocked() { [ "$FAIL_AT" = "$1" ] && { [ "$iteration" = 0 ] || [ "$PERSISTENT" = 1 ]; }; }
+compose() {
+    case "$*" in
+    *dashboard*)
+        echo '{"confirmed":{"enabled":true,"reachable":true,"address_match":true},"tari_confirmed":{"enabled":true,"reachable":true,"address_match":true}}' ;;
+    *'test ! -e'*) ! blocked marker ;;
+    *'wallet-rpc /usr/local/bin/wallet-healthcheck.sh'*) ! blocked monero ;;
+    *'tari-wallet /wallet-config/wallet-healthcheck.sh'*) ! blocked tari ;;
+    *get_block_count*) blocked tip && return 7; echo '{"result":{"count":1000}}' ;;
+    *) echo "unexpected Compose invocation" >&2; return 9 ;;
+    esac
+}
+wallet_rpc() {
+    blocked height && return 7
+    if blocked behind; then echo '{"result":{"height":900}}'; else echo '{"result":{"height":1000}}'; fi
+}
+"""
+            + function("ready")
+            + '\nready\nprintf "polls=%s\\n" "$iteration"',
+            {"FAIL_AT": failure, "PERSISTENT": "1" if persistent else "0"},
+        )
+
+    def test_cached_cards_do_not_abort_poll_during_wallet_restart(self):
+        for failure in ("marker", "monero", "tari", "height", "tip", "behind"):
+            with self.subTest(failure=failure):
+                result = self.readiness(failure)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("polls=1", result.stdout)
+                self.assertEqual(result.stdout.count("PASS: both payout cards recovered"), 1)
+
+    def test_persistent_direct_readiness_failure_expires_without_pass(self):
+        for failure in ("marker", "monero", "tari", "height", "tip", "behind"):
+            with self.subTest(failure=failure):
+                result = self.readiness(failure, persistent=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("did not recover within 1200 seconds", result.stderr)
+                self.assertNotIn("PASS:", result.stdout)
+
     def test_changed_identity_waits_for_entrypoint_readiness(self):
         fragment = SCRIPT.split("apply_pair changed\n", 1)[1].split('SECOND="$(wallet_path)"', 1)[0]
         result = self.run_shell(
