@@ -187,12 +187,28 @@ make_bundle() (
     log "Wrote install bundle: $out"
 )
 
-# Release notes = the top (newest) section of CHANGELOG.md — the curated, user-facing summary.
+# Release notes = the CHANGELOG section for the tag being published.
 changelog_notes() {
     if [ ! -f CHANGELOG.md ]; then
         printf 'Pithead %s\n' "$TAG"
         return
     fi
-    # Print from the first "## [" heading up to (but not including) the next one.
-    awk '/^## \[/{ if (seen) exit; seen=1 } seen' CHANGELOG.md
+    # Compare literal bracketed versions: Unreleased and other releases are excluded.
+    awk -v heading="[${TAG#v}]" '
+        /^## \[/ {
+            if (seen) exit
+            if ($2 == heading) seen=1
+        }
+        seen
+        END { if (!seen) exit 1 }
+    ' CHANGELOG.md || {
+        printf 'Warning: no CHANGELOG.md entry for release %s; using the first non-Unreleased section\n' "$TAG" >&2
+        awk '
+            /^## \[/ {
+                if (seen) exit
+                if ($2 != "[Unreleased]") seen=1
+            }
+            seen
+        ' CHANGELOG.md
+    }
 }

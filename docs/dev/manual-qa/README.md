@@ -192,6 +192,9 @@ A step that fails for a reason listed here is linked to the issue listed, not fi
 - [rigforge#583](https://github.com/p2pool-starter-stack/rigforge/issues/583): on an appliance
   rig, a pool changed from Worker Inspect reverts at the next reboot; change it in the rig's
   `rig.json` instead.
+- [#2436](https://github.com/p2pool-starter-stack/pithead/issues/2436): after an appliance update
+  that fails its health check, the console shows nothing for about 15 minutes before the machine
+  restarts into the previous version by itself. Leave it powered on through that wait.
 
 ## Glossary
 

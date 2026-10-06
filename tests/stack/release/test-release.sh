@@ -373,3 +373,19 @@ done
 ver_file="$(tr -d ' \t\r\n' <"$ROOT/VERSION")"
 ver_pyproject="$(grep -oE '^version = "[^"]+"' "$ROOT/dashboard/pyproject.toml" | head -1 | cut -d'"' -f2)"
 assert_eq "pyproject.toml version matches VERSION (#44)" "$ver_pyproject" "$ver_file"
+
+# Check the actual release content, not just the extractor's synthetic fixtures.
+release_notes_real="$(
+    cd "$ROOT" || exit
+    # shellcheck source=scripts/release/bundle.sh
+    source "$ROOT/scripts/release/bundle.sh"
+    TAG=v2.0.0 changelog_notes
+)"
+assert_rc "the real 2.0.0 changelog extracts successfully" "$?" "0"
+assert_contains "the real release notes include Known issues" "$release_notes_real" '### Known issues'
+assert_contains "the real release notes include the boot-gate issue link" "$release_notes_real" \
+    '[#2436](https://github.com/p2pool-starter-stack/pithead/issues/2436)'
+assert_contains "the real release notes include the Tor control issue link" "$release_notes_real" \
+    '[#3166](https://github.com/p2pool-starter-stack/pithead/issues/3166)'
+assert_not_contains "the real release notes exclude Unreleased" "$release_notes_real" '## [Unreleased]'
+unset release_notes_real
