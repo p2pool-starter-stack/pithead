@@ -66,7 +66,8 @@ virtual machines.
 - For the upgrade box, install the previous release with `clearnet_initial_sync` set to `true`
   under both `monero` and `tari`. That exposes the box's IP while it syncs, which is acceptable on
   a sandbox. Otherwise, start it a few days ahead.
-- 1.1–1.11 do not need the chains synced; 1.12 and 1.13 do.
+- 1.1–1.11 do not need the chains synced. 1.12 needs Monero synced while Tari is still syncing,
+  and 1.13 needs both synced.
 
 ## Two boxes at once
 
@@ -84,8 +85,10 @@ follow the [Run sheet](../README.md#run-sheet) as written. The fresh box is the 
 1. Fresh box: session 2 (1.1–1.11). Set it aside.
 2. Upgrade box: install the previous release, let it sync, and take the *previous release
    synced* snapshot. Then run sessions 3–8. Set it aside.
-3. Fresh box: start it again and let both chains finish syncing. Then run 1.12, 1.13, 10.1,
-   10.2 and 10.7. Set it aside.
+3. Fresh box: start it again and watch its sync on the dashboard a few times a day. If Monero
+   finishes its first sync while Tari is still syncing, run 1.12 in that window. If Tari finishes
+   first, or the window passes before you see it, record 1.12 as SKIP and say which. Once both
+   chains are synced, run 1.13, 10.1, 10.2 and 10.7. Set it aside.
 4. Upgrade box: start it again, and start a small VM as the second machine, configured for a
    remote node. Run 10.3, 10.3a, 10.4 and 10.6, then 10.5 and 11.1–11.5. Remove the small VM.
 5. Fresh box: start it again for session 13 (S1–S8 where they use it, then 11.6 and 11.7 last).
