@@ -41,9 +41,12 @@ run_case 0
 marker="$WORK/wallet/.payout-scanning"
 [ -f "$marker" ]
 touch -t 200001010000.00 "$marker"
-grep -qxF "chown -R 1000:1000 $WORK/wallet" "$WORK/actions"
+identity=$(cat "$WORK/wallet/.payout-active")
+grep -qxF "chown 1000:1000 $WORK/wallet" "$WORK/actions"
+grep -qxF "chown -R 1000:1000 $WORK/wallet/payout-$identity" "$WORK/actions"
+! grep -qxF "chown -R 1000:1000 $WORK/wallet" "$WORK/actions"
 grep -qF 'setpriv --reuid=1000 --regid=1000 --clear-groups minotari_console_wallet' "$WORK/actions"
-grep -qF "wallet --base-path $WORK/wallet" "$WORK/actions"
+grep -qF "wallet --base-path $WORK/wallet/payout-$identity " "$WORK/actions"
 run_case 1000
 [ "$(stat -c %Y "$marker" 2>/dev/null || stat -f %m "$marker")" -lt "$(date +%s)" ]
 ! grep -q '^chown ' "$WORK/actions"
