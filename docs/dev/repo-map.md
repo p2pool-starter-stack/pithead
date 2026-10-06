@@ -139,6 +139,12 @@ Keep local code out of `vendor/`.
 with sub-step failure diagnostics and cleanup; `tests/os/selftest-install-keep-plant.sh`
 drives command failures without mounting a disk or starting Podman.
 
+The daily soak reader is `tests/os/soak-probe.sh`. Its fixed remote collector is
+`soak-read.sh`, local derivations and live-read verdict are in `soak-record.sh`, and
+extended canned cases are in `soak-selftest.sh`, all under `tests/os/`. Its `--self-test`
+is run by `tests/stack/test-harness-tooling.sh`; the provision phase exercises `--read`
+on the guest without opening a soak window.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 Coordinator connection announcements and unchanged-apply miner calls are covered by

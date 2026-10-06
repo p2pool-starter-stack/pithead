@@ -81,7 +81,10 @@ started from there it does not find this box's `config.json`.
 Read this first when the candidate is a debug release candidate and the appliance box then
 carries the 7-day soak ([#1652](https://github.com/p2pool-starter-stack/pithead/issues/1652)). The
 soak probe scores one boot, flat container restarts, every day-0 container running and healthy,
-and exactly one SSH login a day, its own. Anything else spends a soak day.
+and exactly one SSH login a day, its own. Rule 6 also requires the egress table to remain
+present with the same stateless ruleset hash as day 0. Resources, chain heights/growth and
+accepted work are recorded; they do not gate. See the
+[soak probe contract](../../../../tests/os/README.md#soak-probe).
 
 Work through steps 1 to 5 in order. The rules after them hold for the whole run.
 
@@ -151,20 +154,34 @@ NOTE: The machine name replaces `pithead` in every `pithead.local` address in th
    read at the next boot, after any power event.
 4. Check that `/data/pithead/.os-migration-pending` is absent.
 5. Check that both chains are [synced](../README.md#glossary).
+6. Confirm no first-sync clearnet exemption remains. `--start` refuses an exemption or an
+   unreadable firewall check without opening a window.
 
 ### Step 5: Start the probe
 
 1. Make a fresh probe log directory, never the previous soak's, so the old `soak.log`,
    `day0.env`, `started` and `read<N>.env` files are not mixed into this soak's record.
-2. On the build host, run:
+2. Keep the probe and its three sibling helper scripts together in the kit; include
+   `dashboard/mining_dashboard/helper/http.py` for the self-test. Preserve all five
+   repository-relative paths. On the build host, run:
+
+   ```bash
+   tests/os/soak-probe.sh --self-test
+   ```
+
+   ```bash
+   tests/os/soak-probe.sh <box IPv4> <logdir> --read
+   ```
+
+   Inspect the private readings. `<box IPv4>` is the soak box's IPv4 address from step 3.
+   `<logdir>` is the fresh log directory from item 1. This read opens no soak window.
+3. Once step 4 is complete, open day 0:
 
    ```bash
    tests/os/soak-probe.sh <box IPv4> <logdir> --start
    ```
 
-   `<box IPv4>` is the soak box's IPv4 address from step 3. `<logdir>` is the fresh log directory
-   from item 1.
-3. Add the daily cron line, with the same IPv4 address and log directory:
+4. Add the daily cron line, with the same IPv4 address and log directory:
 
    ```bash
    0 6 * * * <checkout>/tests/os/soak-probe.sh <box IPv4> <logdir> >><logdir>/cron.log 2>&1
@@ -176,6 +193,10 @@ NOTE: The machine name replaces `pithead` in every `pithead.local` address in th
 
 - The day-0 line carries a rule-4 FAIL from the setup logins. That is the baseline, not a soak
   day.
+- Every UTC date has a probe line. A skipped date makes the next read fail with
+  `schedule:missing-days(N)` and leaves both chains' growth and rate as `?`; another read
+  on that date cannot clear the gap. The next consecutive successful daily sample resumes
+  growth reporting, but the missing day still fails the whole soak window.
 
 ### Allowed during the soak (read-only)
 
