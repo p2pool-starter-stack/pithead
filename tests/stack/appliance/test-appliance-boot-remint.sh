@@ -115,10 +115,8 @@ assert_contains "the fourth call is refused (BOOT_REMINT_MAX=3)" "$rm_out" "call
 assert_contains "  …before render runs: three renders for four calls" "$rm_out" "renders=3"
 
 echo "== unit: the gate loop is wired — the re-mint sits between this round's ready check and the sleep (#1265) =="
-# The loop is below the sourcing boundary, so its wiring is asserted by ORDER in the script:
-# the per-round reset of gate_doctor_ran, the ready check, the re-mint branch keyed on THIS
-# round's doctor run, then progress, the sleep and the fail. Mutation run: delete the elif -> red; move the
-# reset above the loop -> the reset row goes red (a stale verdict file could then re-mint).
+# Below the sourcing boundary, assert reset, ready, this round's re-mint, progress, sleep, fail.
+# Mutations deleting elif or moving the reset above the loop must fail (stale doctor verdicts).
 BOOTSCRIPT="$ROOT/os/overlay/pithead-boot"
 bl_line() { grep -n -F -- "$1" "$BOOTSCRIPT" | head -1 | cut -d: -f1; }
 l_loop=$(bl_line 'for gate_attempt in $(seq 90); do')
