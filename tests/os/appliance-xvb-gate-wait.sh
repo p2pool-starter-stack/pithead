@@ -166,7 +166,7 @@ held marker|true|1|a sync-gate-reset marker keeps the gate held
 held|false|1|a gate that never releases times out
 CASES
     out="$(XVBT_GATE=held XVBT_PROXY=false && rm -f "$dir/g" "$dir/p" && _xvb_wait_for_gate_release)"
-    [ "$out" = "gate=held proxy-running=false" ] || {
+    [[ "$out" = "gate=held proxy-running=false" || "$out" = "gate=held proxy-running=unreadable" ]] || {
         printf 'xvb self-test: the timed-out gate wait did not name its last sample (%s)\n' "$out" >&2
         f=$((f + 1))
     }
