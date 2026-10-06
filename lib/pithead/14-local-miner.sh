@@ -339,7 +339,7 @@ render_rig_miner_config() {
     }
     allow=$(rig_coordinator_ip)
     [ -n "$allow" ] || warn "The rig's control API stays off: the pool host does not resolve to an IPv4 address to pin it to. The read-only feed still serves, token required."
-    keep=$(jq -c 'if type == "object" then with_entries(select(.key | IN("DONATION", "autotune", "watchdog", "watchdog_interval_min", "max_temp_c"))) else {} end' "$dir/config.json" 2>/dev/null || echo '{}')
+    keep=$(jq -sc 'if length == 1 and (.[0] | type == "object") then .[0] | with_entries(select(.key | IN("DONATION", "autotune", "watchdog", "watchdog_interval_min", "max_temp_c"))) else {} end' "$dir/config.json" 2>/dev/null) || keep='{}'
     jq --argjson keep "$keep" --arg tok "$tok" --arg allow "$allow" '$keep + {pools: [({url: .pool, user: (.worker // "")}
         + (if (.stratum_password // "") == "" then {} else {pass: .stratum_password} end))],
         ACCESS_TOKEN: $tok, api: "enabled"}

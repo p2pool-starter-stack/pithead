@@ -12,18 +12,9 @@ _rig_mining_up() { # <tries>, 10 s apart — 0 once the xmrig unit is active wit
 
 phase_rig() {
     info "phase: rig (the OTHER machine this image installs — mines instead of coordinating)"
-    # Recorded at phase ENTRY, before the first build or boot: the dashboard-scoped legs (hostname
-    # identity, diagnostics, tari-mode switch, egress backstop — all phase_provision_* in
-    # appliance-*-leg.sh) cannot apply to a rig whatever this run goes on to do, and a fact known
-    # before anything runs must not be reported only by the runs that get far enough to reach it.
-    # A guest that dies at the image build and one that finishes the phase enumerate the same row.
     it_skip_leg "hostname identity, diagnostics, tari-mode switch and egress backstop legs" \
         "a rig has no dashboard, no control API and no compose stack at all to assert any of these against" by-design
-    # One image, two machines. Every other phase proves the coordinator; this one proves that
-    # answering "RigForge" produces a box with no stack at all, mining the baked binary without
-    # compiling or reaching the network, that takes an A/B update exactly like a coordinator. A
-    # rig has no dashboard to complain through, so one that never starts is invisible otherwise.
-    local img token jar body scode marker card card_tok rtok pcode ptries=0
+    local img token jar body scode marker card card_tok rtok pcode ptries=0 cid cstat meta0 meta1
 
     img=$(_build_image v1) || {
         bad "image build failed (/tmp/os-fault-build.log)"
@@ -223,12 +214,14 @@ phase_rig() {
 
     # ---- reboot: pithead-boot owns a rig now, and commits its slot -------------------------
     info "reboot leg — the rig must come back mining, and commit its own slot"
-    # #3204: edit through RigForge's control path (loopback is the pinned source), reboot, then no drift:
-    # Pithead's flag is config_meta.revision moving while last_change_id does not, both on the rig's own feed.
-    local cid cstat meta0 meta1
-    _rig_meta() { _ssh "curl -s -m 5 -H 'Authorization: Bearer $rtok' http://127.0.0.1:8081/2/summary | jq -c '.rigforge.config_meta | {revision, last_change_id}'" 2>/dev/null | tr -d '\r\n'; }
+    # #3204: apply on loopback, reboot, then require unchanged config_meta (no drift).
+    _rig_meta() { _ssh "curl -s -m 5 -H 'Authorization: Bearer $rtok' http://127.0.0.1:8081/2/summary | jq -ec '.rigforge.config_meta | select((.revision | type == \"string\" and length > 0) and (.last_change_id | type == \"string\" and length > 0)) | {revision, last_change_id}'" 2>/dev/null | tr -d '\r\n'; }
     cid=$(_ssh "curl -s -m 10 -X POST -H 'Authorization: Bearer $rtok' -H 'Content-Type: application/json' -d '{\"max_temp_c\":77}' http://127.0.0.1:8082/apply | jq -r '.change_id // empty'" 2>/dev/null | tr -d '\r\n')
-    [ -n "$cid" ] && ok "the control path accepted a max_temp_c change ($cid)" || bad "the control path did not accept a max_temp_c change"
+    [[ "$cid" =~ ^[0-9a-f]{16}$ ]] || {
+        bad "the control path did not accept a max_temp_c change"
+        return
+    }
+    ok "the control path accepted a max_temp_c change ($cid)"
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
         cstat=$(_ssh "curl -s -m 5 -H 'Authorization: Bearer $rtok' 'http://127.0.0.1:8082/status?change_id=$cid' | jq -r '.status // empty'" 2>/dev/null | tr -d '\r\n')
         case "$cstat" in applied | rejected | rolled_back | failed) break ;; esac
@@ -248,7 +241,11 @@ phase_rig() {
     [ "$(_ssh "jq -r .max_temp_c /data/rigforge/config.json" | tr -d '\r\n')" = "77" ] &&
         ok "a control-path edit (max_temp_c) survived the reboot's config rebuild (#3204)" ||
         bad "the reboot's config rebuild reverted a control-path edit (max_temp_c)"
-    meta1=$(_rig_meta); [ -n "$meta1" ] || { sleep 30; meta1=$(_rig_meta); }
+    meta1=$(_rig_meta)
+    [ -n "$meta1" ] || {
+        sleep 30
+        meta1=$(_rig_meta)
+    }
     [ -n "$meta0" ] && [ "$meta1" = "$meta0" ] &&
         ok "no drift across the reboot: config_meta revision and last_change_id are unchanged" ||
         bad "config_meta changed across the reboot (Pithead would flag drift): $meta0 -> ${meta1:-unreadable}"
