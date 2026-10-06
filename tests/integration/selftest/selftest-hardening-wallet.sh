@@ -10,6 +10,8 @@ export INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/../lib/run-hardening.sh"
 
+echo "== hardening wallet preview reaches the typed confirmation gate =="
+
 # Execute the live leg itself, including its payload construction and confirmation assertions.
 LEG="$(sed -n '/^        local uuid_bad /,/^    fi$/p' "$HERE/../lib/run-hardening.sh" | sed '$d')"
 assert_contains "wallet leg is present" "$LEG" 'wallet spool preview needs typed confirmation'
