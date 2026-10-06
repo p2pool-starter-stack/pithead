@@ -137,13 +137,13 @@ def _parse_legacy_dict_worker(w):
 
 def _normalize_proxy_workers(proxy_data, now=None):
     """Normalize an xmrig-proxy ``/workers`` payload into a uniform worker list.
-
-    Dispatches each entry to the right parser for the two shapes the proxy emits — the 6.x
-    positional-list format and the legacy dict format — and drops anything that matches
-    neither (e.g. a truncated row). Returns ``[]`` for a missing/empty payload.
+    Parse positional-list and legacy dict rows, dropping truncated rows. Empty payloads
+    return ``[]``; nonempty payloads without ``workers`` raise instead of clearing the cache.
     """
-    if not proxy_data or "workers" not in proxy_data:
+    if not proxy_data:
         return []
+    if "workers" not in proxy_data:
+        raise ValueError("Proxy workers payload is missing workers")
 
     workers = []
     for w in proxy_data["workers"]:

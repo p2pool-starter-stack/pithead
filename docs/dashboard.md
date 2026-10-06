@@ -348,7 +348,10 @@ A live table of every connected rig: worker name, IP, uptime, and per-worker has
 and 10m windows — the same 10m window the chart's averaging toggle and Telegram's totals report —
 for spotting a rig that has dropped off or is underperforming. A
 worker whose direct API is unreachable still counts (with proxy-derived hashrate); a worker whose
-miner has stopped drops out of the total. On a narrow screen the table scrolls sideways within its
+miner has stopped drops out of the total. A failed proxy worker fetch retains the last successful
+worker list for less than five minutes from that fetch; after that, cached workers stop counting
+as online. A nonempty response missing `workers` is a failed fetch. A successful empty list
+stops counting disconnected workers immediately. On a narrow screen the table scrolls sideways within its
 card so columns stay readable. Until the first worker ever connects, the card shows a connect hint
 ("point each rig at `<host-ip>:3333`") in place of the empty table; see
 [Connecting Miners](workers.md).
@@ -427,6 +430,12 @@ Either way, click **Apply to rig**; RigForge validates the change, applies it, a
 doesn't come back to a live hashrate — rolls it back on its own. The panel shows the outcome
 (applied / rejected / rolled back — or failed with the rig's reason, when its own rollback
 path broke) and appends it to the history.
+
+> NOTE: `DONATION` below the rig's built-in minimum has no effect. Appliance rigs run stock XMRig,
+> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig has the same
+> floor at the level it was compiled with, and lowering it needs a rebuild. Worker Inspect shows the
+> value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
+> report XMRig's live donate level.
 
 To make a rig editable, give it `host`, `token`, and (unless it's the default `8082`) `control_port`
 in its [`workers.list[]`](configuration.md#configuration-reference) descriptor. A rig with neither

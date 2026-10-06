@@ -265,3 +265,7 @@ bash "$ROOT/scripts/watch/scheduled-run-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "scheduled-run watch self-test passes" "$?" "0"
 # shellcheck source=tests/stack/lib/verdict-label-determinism.sh
 source "$HERE/lib/verdict-label-determinism.sh"
+
+# The soak's canned readings and stubbed driver are pure shell; no SSH or containers run here.
+bash "$ROOT/tests/os/soak-probe.sh" --self-test >"$SANDBOX/soak-selftest.log" 2>&1
+assert_rc "soak probe selftest passes" "$?" "0"

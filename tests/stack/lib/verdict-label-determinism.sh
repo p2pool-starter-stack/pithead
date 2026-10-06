@@ -97,6 +97,8 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # and the wrapper/dropped UID phases with literal -0/-KILL signals.
 # #3099's mono/tari labels use the six literal local/remote/off combinations in the wizard test.
 # #3090's ca_enabled labels use only the fixed true/false toggle loop.
+# #2461's _xp_row labels use fixed surface and true/false loops; the password field
+# is only empty or "set", never the fixture password, an address or a measured value.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -128,6 +130,7 @@ test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT
 test-control-secret-and-dial-guards.sh|HOOKS
 test-control-ssrf-host-local.sh|2
+test-doctor-exposure.sh|_xp_row
 test-doctor-surface.sh|_s
 test-doctor.sh|ip
 test-payout-wallet-pairs.sh|chain

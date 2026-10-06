@@ -91,10 +91,10 @@ chain_fault_doctor_verdict() { # <doctor-json> <service> <faulted|recovered>
 chain_fault_dashboard_verdict() { # <api-state-json> <faulted|recovered>
     case "$2" in
     faulted)
-        printf '%s' "$1" | jq -e 'any(.badges[]?; .text == "Tari DOWN")' >/dev/null 2>&1
+        printf '%s' "$1" | jq -e '(.badges | type == "array") and any(.badges[]; .text == "Tari DOWN")' >/dev/null 2>&1
         ;;
     recovered)
-        printf '%s' "$1" | jq -e 'any(.badges[]; .text == "Tari DOWN") | not' >/dev/null 2>&1
+        printf '%s' "$1" | jq -e '(.badges | type == "array") and (any(.badges[]; .text == "Tari DOWN") | not)' >/dev/null 2>&1
         ;;
     *) return 1 ;;
     esac
