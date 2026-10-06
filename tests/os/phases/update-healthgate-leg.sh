@@ -17,7 +17,7 @@ phase_update_healthgate_leg() {
             "leg 4 did not reach a committed, provisioned guest on this run, so there is no live pithead-boot to install a fault bundle against" missing
         return
     fi
-    local fbundle fbrc marker fmarker fdeadline
+    local fbundle fbrc marker fmarker fdeadline fserial_mark
     info "building v3fault bundle (dashboard healthcheck forced to 'exit 1')"
     export PITHEAD_TEST_BREAK_HEALTHCHECK=1
     fbundle=$(_build_bundle v3fault)
@@ -35,6 +35,10 @@ phase_update_healthgate_leg() {
     }
     # No mark-good here, deliberately: a plain reboot into the freshly installed slot, the same
     # shape an automatic A/B boot takes with nobody watching. pithead-boot's own gate decides this.
+    fserial_mark=$(wc -c <"$SERIAL") || {
+        bad "leg 5: could not mark the serial console before the fault boot"
+        return
+    }
     _reboot_wait reboot 300 || {
         bad "leg 5: guest never returned after booting the fault slot"
         return
@@ -57,6 +61,16 @@ phase_update_healthgate_leg() {
         ok "leg 5: FALLBACK — the unhealthy dashboard held the gate and the guest fell back to v2"
     else
         bad "leg 5: expected the guest back on v2 after the fault boot's gate refusal, got '${fmarker:-none}' (30 min bound)"
+    fi
+    if tail -c "+$((fserial_mark + 1))" "$SERIAL" | grep -F 'Pithead is still starting (' | grep -F 'of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself.' >/dev/null; then
+        ok "leg 5: the fault boot's serial console reports health-gate progress and automatic update fallback"
+    else
+        bad "leg 5: the fault boot's serial console has no health-gate progress and automatic update fallback line"
+    fi
+    if _ssh "journalctl -u pithead-boot -b -1 2>/dev/null | grep -F 'Pithead is still starting (' | grep -F 'of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself.' >/dev/null"; then
+        ok "leg 5: the fault boot's journal reports health-gate progress and automatic update fallback"
+    else
+        bad "leg 5: the fault boot's journal has no health-gate progress and automatic update fallback line"
     fi
     if _ssh "journalctl -u pithead-boot -b -1 2>/dev/null | grep -q 'container dashboard'"; then
         ok "leg 5: the fault boot's journal names the dashboard container that held the gate"
