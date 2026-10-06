@@ -86,7 +86,7 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
     (a mined output that has not matured yet), so a payout is still recorded when it is mined.
 
-### Known issues
+### Known issues in 2.0.0
 
 - On an appliance rig, a pool changed from Worker Inspect reverts at the next reboot: the rig's
   `rig.json` owns the pool. Change it in the rig's `rig.json` instead

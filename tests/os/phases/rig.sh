@@ -215,7 +215,6 @@ phase_rig() {
     # ---- reboot: pithead-boot owns a rig now, and commits its slot -------------------------
     info "reboot leg — the rig must come back mining, and commit its own slot"
     # #3204: apply on loopback, reboot, then require unchanged config_meta (no drift).
-    _rig_meta() { _ssh "curl -s -m 5 -H 'Authorization: Bearer $rtok' http://127.0.0.1:8081/2/summary | jq -ec '.rigforge.config_meta | select((.revision | type == \"string\" and length > 0) and (.last_change_id | type == \"string\" and length > 0)) | {revision, last_change_id}'" 2>/dev/null | tr -d '\r\n'; }
     cid=$(_ssh "curl -s -m 10 -X POST -H 'Authorization: Bearer $rtok' -H 'Content-Type: application/json' -d '{\"max_temp_c\":77}' http://127.0.0.1:8082/apply | jq -r '.change_id // empty'" 2>/dev/null | tr -d '\r\n')
     [[ "$cid" =~ ^[0-9a-f]{16}$ ]] || {
         bad "the control path did not accept a max_temp_c change"
@@ -228,7 +227,7 @@ phase_rig() {
         sleep 5
     done
     [ "$cstat" = "applied" ] && ok "the control change was applied" || bad "the control change ended '${cstat:-unknown}', not applied"
-    meta0=$(_rig_meta)
+    meta0=$(rig_config_meta_wait "$rtok" "$cid")
     [ "$(jq -r '.last_change_id // ""' <<<"$meta0" 2>/dev/null)" = "$cid" ] &&
         ok "the rig's feed attributes the new revision to that change" || bad "config_meta does not carry the change id before the reboot: ${meta0:-unreadable}"
     _reboot_wait reboot 300 || {
@@ -241,11 +240,7 @@ phase_rig() {
     [ "$(_ssh "jq -r .max_temp_c /data/rigforge/config.json" | tr -d '\r\n')" = "77" ] &&
         ok "a control-path edit (max_temp_c) survived the reboot's config rebuild (#3204)" ||
         bad "the reboot's config rebuild reverted a control-path edit (max_temp_c)"
-    meta1=$(_rig_meta)
-    [ -n "$meta1" ] || {
-        sleep 30
-        meta1=$(_rig_meta)
-    }
+    meta1=$(rig_config_meta_wait "$rtok")
     [ -n "$meta0" ] && [ "$meta1" = "$meta0" ] &&
         ok "no drift across the reboot: config_meta revision and last_change_id are unchanged" ||
         bad "config_meta changed across the reboot (Pithead would flag drift): $meta0 -> ${meta1:-unreadable}"
