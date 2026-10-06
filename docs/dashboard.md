@@ -428,6 +428,12 @@ doesn't come back to a live hashrate — rolls it back on its own. The panel sho
 (applied / rejected / rolled back — or failed with the rig's reason, when its own rollback
 path broke) and appends it to the history.
 
+> NOTE: `DONATION` below the rig's built-in minimum has no effect. Appliance rigs run stock XMRig,
+> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig has the same
+> floor at the level it was compiled with, and lowering it needs a rebuild. Worker Inspect shows the
+> value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
+> report XMRig's live donate level.
+
 To make a rig editable, give it `host`, `token`, and (unless it's the default `8082`) `control_port`
 in its [`workers.list[]`](configuration.md#configuration-reference) descriptor. A rig with neither
 yet shows an **adopt form** instead of the editor: the control address prefilled from the IP the
