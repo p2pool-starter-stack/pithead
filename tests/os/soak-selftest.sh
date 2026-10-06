@@ -266,6 +266,67 @@ API_TEST
     for chain in monero tari; do
         chk "next successful read resumes $chain growth from recovery" "$(printf '%s\n' "$out" | sed -n "s/^${chain}_growth_mib=//p")" 10
     done
+    # Advance only the clock: cron never invokes the probe on calendar day 2.
+    local real_date
+    real_date=$(command -v date)
+    cat >"$tmp/bin/date" <<'CLOCK'
+#!/usr/bin/env bash
+case "$*" in
+    '-u +%s') printf '%s\n' "$SOAK_CLOCK" ;;
+    '-u +%Y-%m-%dT%H:%M:%SZ') "$SOAK_REAL_DATE" -u -d "@$SOAK_CLOCK" +%Y-%m-%dT%H:%M:%SZ ;;
+    *) "$SOAK_REAL_DATE" "$@" ;;
+esac
+CLOCK
+    chmod +x "$tmp/bin/date"
+    drv_clock() { PATH="$tmp/bin:$PATH" SOAK_STUB_READING="$tmp/$2" SOAK_REAL_DATE="$real_date" SOAK_CLOCK="$((1791244800 + $1 * 86400))" bash "$0" stub-host "$tmp/log" "${3:-}"; }
+    rm -rf "$tmp/log"
+    sed 's/monero_chain_mib=100/monero_chain_mib=110/;s/tari_chain_mib=200/tari_chain_mib=210/;s/mem_available_kib=3000/mem_available_kib=2000/' "$tmp/a" >"$tmp/calendar1"
+    sed 's/monero_chain_mib=100/monero_chain_mib=130/;s/tari_chain_mib=200/tari_chain_mib=230/' "$tmp/a" >"$tmp/calendar3"
+    sed 's/monero_chain_mib=100/monero_chain_mib=140/;s/tari_chain_mib=200/tari_chain_mib=240/' "$tmp/a" >"$tmp/calendar4"
+    drv_clock 0 a --start >/dev/null
+    chk 'calendar day 0 starts the fixture' "$?" 0
+    drv_clock 1 calendar1 >/dev/null
+    chk 'calendar day 1 is a consecutive successful sample' "$?" 0
+    drv_clock 3 calendar3 >/dev/null
+    chk 'calendar day 3 detects the absent day-2 invocation' "$?" 1
+    out=$(cat "$tmp/log/read3.env")
+    chk 'calendar gap is recorded as one missing daily sample' "$(printf '%s\n' "$out" | sed -n 's/^missing_days=//p')" 1
+    chk 'calendar gap appears in the daily summary' "$(tail -1 "$tmp/log/soak.log" | sed -n 's/.* missing_days=\([^ ]*\).*/\1/p')" 1
+    chk 'calendar gap names the scheduling failure' "$(tail -1 "$tmp/log/soak.log" | sed -n 's/.* fails=//p')" 'schedule:missing-days(1)'
+    for key in monero_growth_mib monero_growth_mib_per_day tari_growth_mib tari_growth_mib_per_day; do
+        chk "calendar gap leaves $key unavailable" "$(printf '%s\n' "$out" | sed -n "s/^$key=//p")" '?'
+    done
+    chk 'calendar gap preserves sampled memory maximum' "$(printf '%s\n' "$out" | sed -n 's/^mem_sampled_max_kib=//p')" 6000
+    cp -R "$tmp/log" "$tmp/day3-log"
+    drv_clock 4 calendar4 >/dev/null
+    chk 'calendar day 4 resumes consecutive daily sampling' "$?" 0
+    out=$(cat "$tmp/log/read4.env")
+    for chain in monero tari; do
+        chk "calendar day 4 resumes $chain growth" "$(printf '%s\n' "$out" | sed -n "s/^${chain}_growth_mib=//p")" 10
+        chk "calendar day 4 resumes $chain rate" "$(printf '%s\n' "$out" | sed -n "s/^${chain}_growth_mib_per_day=//p")" '10.000'
+    done
+    chk 'calendar day 4 records no new gap' "$(printf '%s\n' "$out" | sed -n 's/^missing_days=//p')" 0
+    # Replaying another read on day 3 cannot hide the missing day.
+    rm -rf "$tmp/log"
+    mv "$tmp/day3-log" "$tmp/log"
+    drv_clock 3 calendar3 >/dev/null
+    chk 'same-day retry cannot clear a calendar gap' "$?" 1
+    out=$(cat "$tmp/log/read4.env")
+    chk 'same-day retry preserves the recorded gap' "$(printf '%s\n' "$out" | sed -n 's/^missing_days=//p')" 1
+    for key in monero_growth_mib monero_growth_mib_per_day tari_growth_mib tari_growth_mib_per_day; do
+        chk "same-day retry keeps $key unavailable" "$(printf '%s\n' "$out" | sed -n "s/^$key=//p")" '?'
+    done
+    drv_clock 2 calendar1 >/dev/null
+    chk 'backwards clock fails the schedule check' "$?" 1
+    out=$(cat "$tmp/log/read5.env")
+    chk 'backwards clock records an unknown gap' "$(printf '%s\n' "$out" | sed -n 's/^missing_days=//p')" '?'
+    chk 'backwards clock leaves growth unavailable' "$(printf '%s\n' "$out" | sed -n 's/^monero_growth_mib=//p')" '?'
+    sed -i '$s/^[^ ]*/unreadable/' "$tmp/log/soak.log"
+    drv_clock 3 calendar3 >/dev/null
+    chk 'unreadable recorded time fails the schedule check' "$?" 1
+    out=$(cat "$tmp/log/read6.env")
+    chk 'unreadable recorded time leaves rate unavailable' "$(printf '%s\n' "$out" | sed -n 's/^tari_growth_mib_per_day=//p')" '?'
+    rm "$tmp/bin/date"
     # The KVM row must fail if a required collector field disappears.
     printf '%s\nmem_total_kib=8000\nmem_available_kib=3000\ncontainer_stats=?\n' "$base" >"$tmp/live"
     for key in swap_total_kib swap_free_kib monero_chain_mib tari_chain_mib tari_height p2pool_hashrate p2pool_shares_found p2pool_shares_failed p2pool_sidechain_height proxy_workers proxy_accepted proxy_rejected tor_bootstrap_pct; do printf '%s=?\n' "$key" >>"$tmp/live"; done

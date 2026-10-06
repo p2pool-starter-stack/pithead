@@ -193,6 +193,10 @@ NOTE: The machine name replaces `pithead` in every `pithead.local` address in th
 
 - The day-0 line carries a rule-4 FAIL from the setup logins. That is the baseline, not a soak
   day.
+- Every UTC date has a probe line. A skipped date makes the next read fail with
+  `schedule:missing-days(N)` and leaves both chains' growth and rate as `?`; another read
+  on that date cannot clear the gap. The next consecutive successful daily sample resumes
+  growth reporting, but the missing day still fails the whole soak window.
 
 ### Allowed during the soak (read-only)
 

@@ -62,6 +62,7 @@
 #   6 firewall stable — the stateless egress table hash must match day 0; missing reads FAIL.
 # A day whose line is missing, or whose SSH read failed, is a FAIL by the ruling's own terms; a
 # failed read keeps the previous cursor, so the next good day also counts the failed day's login.
+# Recorded UTC dates detect missed daily invocations; same-day retries retain that date's gap.
 # The session skips host-key checking on purpose: the box regenerates its host key on every
 # provisioning (#1659's churn) and the probe is read-only on a bench LAN, so a pinned key would
 # only turn each re-flash into a READ-FAILED day.
@@ -256,7 +257,11 @@ esac
 umask 077
 mkdir -p "$LOGDIR"
 chmod 700 "$LOGDIR"
-now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+sample_epoch=$(date -u +%s)
+now=$(date -u -d "@$sample_epoch" +%Y-%m-%dT%H:%M:%SZ)
+# shellcheck source=tests/os/soak-record.sh
+source "$(dirname "$0")/soak-record.sh"
+soak_record_schedule
 # This run's label is the soak.log line number it lands on — day= is information, not identity.
 line=$(($([ -f "$LOGDIR/soak.log" ] && wc -l <"$LOGDIR/soak.log" || echo 0) + 1))
 # The previous read's journal cursor is the one input the fixed remote command takes. --start
@@ -269,7 +274,7 @@ fi
 today=$(read_box "$HOST" "$cursor")
 rc=$?
 if [ "$rc" -ne 0 ] || [ -z "$today" ]; then
-    printf '%s read=%s day=? READ-FAILED ssh rc=%s VERDICT=FAIL fails=read\n' "$now" "$line" "$rc" | tee -a "$LOGDIR/soak.log"
+    printf '%s read=%s day=? READ-FAILED ssh rc=%s sample_epoch=%s missing_days=%s VERDICT=FAIL fails=read\n' "$now" "$line" "$rc" "$sample_epoch" "$missing_days" | tee -a "$LOGDIR/soak.log"
     exit 1
 fi
 kv() { printf '%s\n' "$today" | sed -n "s/^$1=//p" | head -1; }
@@ -294,14 +299,18 @@ fi
     printf '%s read=%s day=? NO-BASELINE VERDICT=FAIL fails=baseline (run with --start first)\n' "$now" "$line" | tee -a "$LOGDIR/soak.log"
     exit 1
 }
-day=$((($(date -u +%s) - $(date -u -d "$(cat "$LOGDIR/started")" +%s)) / 86400))
+day=$(((sample_epoch - $(date -u -d "$(cat "$LOGDIR/started")" +%s)) / 86400))
 running=$(printf '%s\n' "$today" | grep -c '^container=.*|running|')
 total=$(printf '%s\n' "$today" | grep -c '^container=')
 unhealthy=$(printf '%s\n' "$today" | sed -n 's/^container=\([^|]*\)|[^|]*|[^|]*|unhealthy|.*/\1/p' | tr '\n' ',' | sed 's/,$//')
-# shellcheck source=tests/os/soak-record.sh
-source "$(dirname "$0")/soak-record.sh"
 soak_record_derived
 verdict=$(soak_day_verdict "$(cat "$LOGDIR/day0.env")" "$today")
+if [ "$missing_days" != 0 ]; then
+    case "$verdict" in
+    VERDICT=PASS*) verdict="VERDICT=FAIL fails=schedule:missing-days($missing_days)" ;;
+    *) verdict+=" schedule:missing-days($missing_days)" ;;
+    esac
+fi
 if [[ "$verdict" == *6:firewall* ]]; then
     cp "$LOGDIR/day0.firewall.json" "$LOGDIR/read$line.firewall-baseline.json"
     printf '%s\n' "$(kv firewall_listing_b64)" | base64 -d >"$LOGDIR/read$line.firewall-current.json"

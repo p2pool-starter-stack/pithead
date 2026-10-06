@@ -475,12 +475,19 @@ It hashes sorted-key JSON with SHA-256, excluding nft metadata, object handles a
 set elements. Counters are omitted by `-s`. Static set elements and dynamic set definitions
 remain in the hash. This proves sampled policy stability, not continuous enforcement or
 packet delivery between reads. A missing daily line or a failed SSH read fails the soak.
+The probe compares recorded UTC sample dates, including failed SSH attempts, to detect
+skipped dates. It records their count as `missing_days` and fails that read with
+`schedule:missing-days(N)`. A retry on the same UTC date preserves the gap; the next daily
+sample can resume normal scoring. Unreadable or backwards timestamps record `?` and fail
+the schedule check. Keep every day's line when assessing the whole soak window.
 
 `--start` writes `day0.env`, `day0.firewall.json` and the start marker. Its own login count
 uses the preceding 25 hours, so setup logins can make its rule-4 verdict fail: day 0 is the
 baseline, not a soak day. Only `--start` writes the baseline; a cron read never does.
 Every line carries `read=N`, its `soak.log` line number, because a read under 24 hours after
-`--start` can share `day=0`. Each reading and its derived values are kept in `readN.env`.
+`--start` can share `day=0`. Read numbers identify records; recorded time determines daily
+continuity. Each successful reading and its derived values are kept in `readN.env`, with
+`sample_epoch` captured before SSH so the log timestamp and rate interval use the same clock.
 On a rule-6 failure, `readN.firewall-baseline.json` and `readN.firewall-current.json` retain
 both stateless listings beside that reading. An unavailable current listing is `?`.
 These files contain local topology: keep them private. They and the logs use owner-only
@@ -492,12 +499,14 @@ The recorded readings are:
 |---|---|
 | Memory and swap | `/proc/meminfo` MemTotal, MemAvailable, SwapTotal and SwapFree, in KiB. Used memory is MemTotal minus MemAvailable. `mem_sampled_max_kib` is the maximum across sampled reads since day 0, retained across missing samples; it cannot measure peaks between reads. |
 | Container resources | `podman stats --no-stream --format`, container name, memory usage/limit and CPU percent. |
-| Chain size and growth | `du -sx -B1M` on the configured Monero/Tari directories resolved under `/data`, allocated MiB on that filesystem. Growth is the difference from the previous read; MiB/day uses the elapsed seconds between samples. Day 0 has no rate; missing readings or a missing predecessor record after a failed SSH sample give `?` for growth and rate, not zero or cumulative growth since day 0. The next pair of consecutive successful reads resumes growth reporting. Negative growth remains visible. |
+| Chain size and growth | `du -sx -B1M` on the configured Monero/Tari directories resolved under `/data`, allocated MiB on that filesystem. Growth is the difference from the previous successful read when its recorded UTC date is the same or the preceding date and there is no recorded gap; MiB/day uses elapsed sample seconds. Day 0 has no rate. Missing readings, a failed SSH predecessor, or a skipped UTC date give `?` for both chains' growth and rate. With samples on days 0/1/3/4, day 3 records one missing day and unavailable growth/rate; day 4 resumes from day 3. Same-day retries cannot clear the gap. Negative growth remains visible. |
 | Tari height | The local node's `GetTipInfo` through the dashboard's installed gRPC client. Remote/off Tari and unreadable readiness give `?`. |
 | Useful mining | P2Pool local data-api 15-minute hashrate, cumulative shares found/failed and pool sidechain height; xmrig-proxy summary connected miners and accepted/rejected work counters. No worker identities are recorded. Proxy HTTP reads use the dashboard's bounded helper (1 MiB response cap, five-second timeout); oversized replies leave proxy readings `?`. |
 | Privacy route | Egress presence/hash and Tor's cookie-authenticated bootstrap healthcheck. A successful check records 100%; incomplete progress is recorded when reported; unavailable progress is `?`. |
 
-Every missing recorded value appears as `?` in the reading and summary. Only rule 6 adds
-a new failure condition; missing optional readings do not change rules 1–4. `--self-test`
+Every missing recorded value appears as `?` in the reading and summary. Missing daily
+samples and failed SSH reads fail independently of rules 1–6; missing optional readings
+do not gate the soak. `--self-test`
 uses canned readings, pure instrument parsers and stubbed SSH to prove these contracts,
-including refusal to start with a sync exemption and retention of mismatch evidence.
+including clock-advanced missing-day recovery, failed SSH recovery, refusal to start with
+a sync exemption and retention of mismatch evidence.
