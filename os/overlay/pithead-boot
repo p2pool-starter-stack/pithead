@@ -337,7 +337,8 @@ gate_target=$(gate_target_url "$gate_scheme" "$gate_host" "$gate_port")
 gate_resolve_args=()
 gate_rs=$(gate_resolve_spec "$gate_host" "$gate_port")
 [ -n "$gate_rs" ] && gate_resolve_args=(--resolve "$gate_rs")
-for _ in $(seq 90); do
+gate_wait_started=$SECONDS
+for gate_attempt in $(seq 90); do
     gate_doctor_ran=0 gate_pass=0
     # SNI and the Host header carry the site's real name, so Caddy vhost-matches it; for a name the
     # --resolve above sends the connection to loopback, which the appliance binds unconditionally.
@@ -384,6 +385,9 @@ for _ in $(seq 90); do
         # forever; 30 minutes clears a worst-case first native recompile, the prebuilt path is seconds.
         timeout 1800 ./pithead local-miner || true
         exit 0
+    fi
+    if ((gate_attempt % 6 == 0)); then
+        echo "pithead-boot: Pithead is still starting ($(((SECONDS - gate_wait_started + 59) / 60)) of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself."
     fi
     sleep 10
 done

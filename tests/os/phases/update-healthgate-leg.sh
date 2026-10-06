@@ -58,6 +58,11 @@ phase_update_healthgate_leg() {
     else
         bad "leg 5: expected the guest back on v2 after the fault boot's gate refusal, got '${fmarker:-none}' (30 min bound)"
     fi
+    if _ssh "journalctl -u pithead-boot -b -1 2>/dev/null | grep -F 'Pithead is still starting (' | grep -Fq 'of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself.'"; then
+        ok "leg 5: the fault boot's journal reports health-gate progress and automatic update fallback"
+    else
+        bad "leg 5: the fault boot's journal has no health-gate progress and automatic update fallback line"
+    fi
     if _ssh "journalctl -u pithead-boot -b -1 2>/dev/null | grep -q 'container dashboard'"; then
         ok "leg 5: the fault boot's journal names the dashboard container that held the gate"
     else

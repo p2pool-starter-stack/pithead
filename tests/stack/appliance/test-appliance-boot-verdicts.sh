@@ -363,3 +363,34 @@ PI_ORDER=$(awk '
 ' "$ROOT/tests/os/phases/provision-initial.sh")
 assert_eq "provision settles provisioning after the stack row and before the control legs" "$PI_ORDER" "settled-first"
 unset PI_ORDER
+
+echo "== unit: boot gate progress — elapsed minutes every sixth failed pass =="
+# shellcheck disable=SC2034,SC2154 # variables assigned/read by the extracted production loop
+boot_progress_case() (
+    # Execute the production loop with a deterministic clock and no real daemon or sleep.
+    unset SECONDS
+    SECONDS=600
+    gate_doctor_ran=0 gate_advisory="" hold_chain=0 OS_INFLIGHT="$SANDBOX/absent-inflight"
+    gate_target=fixture gate_resolve_args=()
+    probe_seconds="$2"
+    curl() { echo "503 $probe_seconds"; }
+    pass_at="$1"
+    gate_ready() {
+        SECONDS=$((SECONDS + probe_seconds))
+        [ "$gate_attempt" -eq "$pass_at" ]
+    }
+    sleep() { SECONDS=$((SECONDS + $1)); }
+    boot_gate_passed() { :; }
+    rauc() { :; }
+    timeout() { :; }
+    eval "$(sed -n '/^gate_wait_started=/,/^done$/p' "$ROOT/os/overlay/pithead-boot")"
+)
+progress_text='Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself.'
+assert_not_contains "passing on round six prints no progress" "$(boot_progress_case 6 0)" "still starting"
+progress_out=$(boot_progress_case 13 0)
+assert_eq "twelve failures print twice" "$(printf '%s\n' "$progress_out" | grep -c 'still starting')" "2"
+assert_contains "first progress minute and recovery text" "$progress_out" "Pithead is still starting (1 of about 16 minutes). $progress_text"
+assert_contains "second progress minute" "$progress_out" "still starting (2 of about 16 minutes)"
+assert_contains "slow probes count real elapsed time, excluding earlier boot work" "$(boot_progress_case 7 20)" "still starting (3 of about 16 minutes)"
+unset -f boot_progress_case
+unset progress_text progress_out
