@@ -36,6 +36,18 @@ for chain in monero tari; do
     assert_eq "$chain mismatch preserves rendered config" "$(sha256sum "$V/.env")" "$before"
     assert_not_contains "$chain mismatch never prints the private key" "$out" "$PAYOUT_VIEW2"
 done
+# #3112: a malformed key names the standard wallet's own label and points at the docs section.
+for pair in "monero:'Secret view key'" "tari:'view_private_key_hex' in config_wallet.json"; do
+    chain=${pair%%:*}
+    seed_env
+    pair_config
+    jq --arg c "$chain" '.[$c].view_key="not-a-view-key"' "$V/config.json" >"$V/candidate"
+    mv "$V/candidate" "$V/config.json"
+    out="$(pair_apply)"
+    assert_rc "$chain apply refuses a malformed view key" "$?" 1
+    assert_contains "$chain malformed-key message names the wallet label" "$out" "${pair#*:}"
+    assert_contains "$chain malformed-key message points at the docs section" "$out" "dashboard.md#getting-your-view-keys"
+done
 seed_env
 pair_config
 out="$(pair_apply)"

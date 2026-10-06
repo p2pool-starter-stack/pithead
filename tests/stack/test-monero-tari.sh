@@ -275,8 +275,6 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "malformed view key rejected" "$?" "1"
 assert_contains "malformed view-key message" "$out" "64-character hex"
-assert_contains "malformed view-key message names the Monero GUI label (#3112)" "$out" "'Secret view key'"
-assert_contains "malformed view-key message points at the docs section (#3112)" "$out" "dashboard.md#getting-your-view-keys"
 
 echo "== black-box: Tari payout confirmation view key (#462) =="
 # Tari's local view and spend keys enable tari_payout_confirm and its view-only wallet.
@@ -328,8 +326,6 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "malformed tari view key rejected" "$?" "1"
 assert_contains "malformed tari view-key message" "$out" "64-character hex"
-assert_contains "malformed tari view-key message names the Tari Universe field (#3112)" "$out" "'view_private_key_hex' in config_wallet.json"
-assert_contains "malformed tari view-key message points at the docs section (#3112)" "$out" "dashboard.md#getting-your-view-keys"
 # (5) An explicit spend key must match the address.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"deadbeef"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" >"$V/config.json"
