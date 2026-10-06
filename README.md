@@ -14,7 +14,8 @@
 Docker Compose stack for Monero + Tari merge-mining on [P2Pool](https://github.com/SChernykh/p2pool),
 with a [Monero](https://www.getmonero.org/) full node, [Tari](https://www.tari.com/) base node, and
 a Tor daemon. Both setup wizards enable Tari when the data disk fits the whole stack, leave
-XvB off, and generate a dashboard login. Traffic uses Tor unless you opt into fast initial sync.
+XvB off, and generate a dashboard login. Networking is Tor-first by default; see the
+[privacy guide](docs/privacy.md) for its scope and exceptions.
 The `pithead` script renders config, provisions Tor, and drives docker-compose.
 It ships two ways: **Pithead OS**, a bootable appliance image for a machine you dedicate to
 mining, and the **Compose stack** you run on a host you manage.
@@ -33,23 +34,26 @@ mining, and the **Compose stack** you run on a host you manage.
 - ⛏️ **P2Pool payouts, Tari merge-mined.** Mines Monero on [P2Pool](https://p2pool.io/): no pool
   operator, no fee, rewards paid to your own wallet. Every hash can merge-mine Tari on the same
   work — the appliance's setup wizard asks, and a machine that declines mines Monero alone.
+  P2Pool's PPLNS payouts are lumpy, and Tari's solo merge-mining payouts are lumpier still;
+  see [payout expectations](docs/dashboard.md#earnings--expected-vs-actual).
 - 🧠 **XvB switching engine.** Watches the XMRvsBeast raffle and shifts hashrate to hold your tier,
   donating the minimum needed and routing the rest to your P2Pool payouts.
 - 🧅 **Tor-first networking.** A built-in Tor daemon gives P2Pool an onion address, and the Monero
-  and Tari nodes one each while they run locally; a host firewall drops any direct clearnet dial
-  from the stack. All runtime egress routes over Tor by default; the opt-in exceptions are the
-  clearnet initial sync and a node you run on another machine, which is dialled directly. The
-  [privacy guide](docs/privacy.md) maps every connection.
+  and Tari nodes one each while they run locally. Upstream runtime traffic uses Tor by default;
+  the [privacy guide](docs/privacy.md) maps the firewall's scope, opt-in clearnet paths,
+  directly dialled remote nodes, and one-time install downloads.
 - 🔌 **One endpoint for every rig.** Point all workers at a single address on port `3333`. No wallet
-  address in the miner config; the stack routes the hashrate.
+  address in the miner config for [workers pointed at Pithead](docs/workers.md#already-have-miners-connect-them);
+  the stack routes the hashrate.
 - 📊 **Live dashboard, with history.** Hashrate, the P2Pool/XvB split, the PPLNS window, and
   per-worker stats over HTTPS on your LAN — and a time-series store keeps blocks found, XvB credit,
   network difficulty, disk growth, and per-rig hashrate as trends, not just the latest reading.
 - 🎛️ **Configure and tune from the browser.** Opt in with `dashboard.control.enabled` to edit
-  `config.json` from a guided form — or raw JSON, with file upload — inspect and retune each rig,
-  see how a rig's hashrate tracks each config version, one-click upgrade to a new release, and read
-  the access and config-change audit logs. Every change is gated host-side behind a login. See
-  [The Dashboard](docs/dashboard.md).
+  `config.json` from a guided form — or raw JSON, with file upload — upgrade to a new release, and
+  read the access and config-change audit logs. Inspecting rig configuration, retuning, and tracking
+  hashrate against config versions require an adopted RigForge rig with its control token and
+  control API enabled; plain XMRig rigs are monitoring only. Every change is gated host-side behind
+  a login. See [Worker Inspect](docs/dashboard.md#worker-inspect) and [The Dashboard](docs/dashboard.md).
 - ⚙️ **One config, tuned to your setup.** A local or remote Monero node, pruned or full, and a local
   or remote Tari node; the P2Pool tier (`main`, `mini`, or `nano`); XvB donation strategy;
   per-worker power and API settings; four alert channels; timezone, memory limits, and every privacy
@@ -82,7 +86,7 @@ mining, and the **Compose stack** you run on a host you manage.
 
 | | What you get | Start here |
 |---|---|---|
-| **Pithead OS** — the appliance | A bootable USB image that installs itself on a dedicated machine: no Linux to set up, configured from a browser, updated as one signed image that falls back on failure. | [The appliance guide](docs/appliance.md) |
+| **Pithead OS** — the appliance | A bootable USB image that installs itself on a dedicated machine: no Linux to set up, configured from a browser, updated as one signed OS image with A/B fallback. Fallback covers the OS image only; it cannot undo a one-way data migration such as Tari v6. | [The appliance guide](docs/appliance.md#updates) |
 | **The Compose stack** — DIY | The same stack on a host you manage (Ubuntu Server 24.04): you keep the OS, `pithead` drives Docker Compose. | The Quick Start below |
 
 Same stack, same dashboard, same configuration either way. The appliance is the short road;
@@ -144,9 +148,9 @@ Full walkthrough: [docs/getting-started.md](docs/getting-started.md)
 
 | Guide | What's inside |
 |---|---|
-| **[Pithead OS — the appliance](docs/appliance.md)** | Write a USB stick, install on a dedicated machine, configure from a browser. The whole stack as one signed image with automatic fallback. |
+| **[Pithead OS — the appliance](docs/appliance.md)** | Write a USB stick, install on a dedicated machine, configure from a browser. Signed OS image updates with [A/B fallback](docs/appliance.md#updates) for the OS only, not one-way data migrations such as Tari v6. |
 | **[Getting Started](docs/getting-started.md)** | The DIY path: prerequisites, install, first-run setup, and what to expect while the node syncs. |
-| **[Hardware Requirements](docs/hardware.md)** | Minimum vs. recommended specs for the stack host (CPU, RAM, disk, network), and how to run leaner. (Miner specs live in [RigForge](https://github.com/p2pool-starter-stack/rigforge).) |
+| **[Hardware Requirements](docs/hardware.md#choose-the-arrangement)** | Coordinator only, coordinator plus a local worker, or worker only: separate sizing for each role, and how to run leaner. |
 | **[Configuration](docs/configuration.md)** | Every `config.json` key, applying changes safely, reusing an existing node, and remote Monero or Tari nodes. |
 | **[The Dashboard](docs/dashboard.md)** | Sync Mode, a tour of the live operational view, and the opt-in control channel: editing config, one-click upgrades, and the audit logs from the browser. |
 | **[Connecting Miners](docs/workers.md)** | Point any existing rig at the stack, or spin up a tuned miner with [RigForge](https://github.com/p2pool-starter-stack/rigforge). |
