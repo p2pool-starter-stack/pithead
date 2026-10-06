@@ -61,12 +61,57 @@ scenario() { # <debounce> <badge-at> <unreadable-early> <want-negative> <want-la
 scenario 900 900 0 1/0 1
 # An overridden debounce, with collection/publish delay, determines the deadline.
 scenario 1200 1300 0 1/0 1
-scenario 900 0 0 0/1 1
-scenario 900 895 0 0/1 1
+scenario 900 0 0 0/1 0
+scenario 900 895 0 0/1 0
 scenario 900 2000 0 1/0 0
-scenario 900 900 1 0/1 1
+scenario 900 900 1 0/1 0
 scenario 1 185 0 1/0 0
 scenario 5 185 0 1/0 1
+# Sample sequences distinguish transport errors, malformed state and an actual early badge.
+(
+    bad() {
+        FAIL=$((FAIL + 1))
+        errors+="$*"
+    }
+    chain_fault_state() {
+        case "${samples[tick / 5]:-down}" in
+        up) printf '{"badges":[]}' ;;
+        down) printf '{"badges":[{"text":"Tari DOWN"}]}' ;;
+        json) printf 'not-json' ;;
+        shape) printf '{"badges":null}' ;;
+        object) printf '{"badges":{}}' ;;
+        transport) return 28 ;;
+        esac
+    }
+    sequence() { # <debounce> <initial-tick> <want-pass/fail> <want-late> <last-tick> <message> <samples...>
+        local debounce="$1" tick="$2" PASS=0 FAIL=0 state late=0 errors=''
+        local want_counts="$3" want_late="$4" want_tick="$5" message="$6"
+        shift 6
+        local samples=("$@")
+        chain_fault_wait_badge "$debounce" 0 && late=1
+        [ "$PASS/$FAIL/$late/$tick" = "$want_counts/$want_late/$want_tick" ] || {
+            printf 'sequence: got %s/%s/%s/%s; %s\n' "$PASS" "$FAIL" "$late" "$tick" "$errors" >&2
+            return 1
+        }
+        if [ -n "$message" ]; then [[ "$errors" = *"$message"* ]]; else [ -z "$errors" ]; fi
+    }
+    # Three failures are tolerated, including before the first readable observation.
+    sequence 20 0 1/0 1 20 '' transport json shape up down
+    sequence 20 0 1/0 1 20 '' up transport json shape down
+    # A readable sample resets the consecutive budget: six failed reads still pass.
+    sequence 40 0 1/0 1 40 '' transport json shape up transport json shape up down
+    sequence 30 0 0/1 0 20 'unreadable for 4 consecutive' up transport json shape transport down
+    sequence 30 0 0/1 0 20 'elapsed=20s read_rc=28' up transport json shape transport down
+    sequence 30 0 0/1 0 20 'invalid JSON or badge list' up json shape json object down
+    # An actual early badge fails immediately, even after an unreadable sample.
+    sequence 30 0 0/1 0 10 'dashboard badge: Tari DOWN' up transport down up down
+    sequence 30 0 0/1 0 10 'elapsed=10s' up json down up down
+    # Unreadable samples cannot satisfy the required pre-debounce observation.
+    sequence 15 0 0/1 1 15 'no readable pre-debounce sample' transport json shape down
+    sequence 15 15 0/1 1 15 'no readable pre-debounce sample' up up up down
+    sequence 15 0 0/1 1 15 'dashboard badge: Tari DOWN' transport json object down
+    sequence 15 200 0/1 0 200 'no readable pre-debounce sample' up
+)
 # Use the real Python-clock call with a failed command or malformed output.
 (
     python3() {
@@ -86,7 +131,7 @@ scenario 5 185 0 1/0 1
 
 # Drive the complete leg, proving failure before injection and recovery after injection.
 (
-    chain_fault_down_after() { printf '5\n'; }
+    chain_fault_down_after() { if [ "$mode" = sample-unreadable ]; then printf '30\n'; else printf '5\n'; fi; }
     chain_fault_probe() { printf '1000 900 2000 0\n'; }
     provisioning_settled() { return 0; }
     info() { :; }
@@ -97,7 +142,10 @@ scenario 5 185 0 1/0 1
     _ssh() {
         case "$*" in
         *'podman ps -q'*) printf 'fixture\n' ;;
-        *'podman stop'*) stopped=1 ;;
+        *'podman stop'*)
+            stopped=1
+            if [ "$mode" = sample-missing ]; then tick=5; fi
+            ;;
         *'pithead up'*) stopped=0 upped=1 ;;
         *) return 1 ;;
         esac
@@ -116,7 +164,17 @@ scenario 5 185 0 1/0 1
             printf '{"exit":0,"checks":[{"status":"ok","message":"Revenue healthy"}]}'
         fi
     }
-    chain_fault_state() { printf '{"badges":[]}'; }
+    chain_fault_state() {
+        if [ "$stopped" = 1 ]; then
+            case "$mode" in
+            sample-early | sample-missing) printf '{"badges":[{"text":"Tari DOWN"}]}' ;;
+            sample-unreadable) return 28 ;;
+            *) printf '{"badges":[]}' ;;
+            esac
+        else
+            printf '{"badges":[]}'
+        fi
+    }
     chain_fault_now() {
         if { [[ "$mode" = initial* ]] && [ "$upped/$stopped" = 0/0 ]; } ||
             { [[ "$mode" = poll* ]] && [ "$stopped" = 1 ] && [ "$tick" -ge "$clock_fail_at" ]; }; then
@@ -133,17 +191,31 @@ scenario 5 185 0 1/0 1
             printf '%s\n' "$((100 + tick))"
         fi
     }
-    for mode in initial-exit initial-empty initial-text poll-exit poll-empty poll-text poll-backward; do
+    for mode in initial-exit initial-empty initial-text poll-exit poll-empty poll-text poll-backward sample-early sample-unreadable sample-missing; do
         stopped=0 upped=0 tick=0 PASS=0 FAIL=0 errors='' clock_fail_at=5
         if [ "$mode" = poll-backward ]; then clock_fail_at=10; fi
         phase_provision_chain_fault_after_release u p || :
-        [[ "$errors" = *'monotonic clock'* ]]
+        case "$mode" in
+        sample-early) [[ "$errors" = *'Tari DOWN appeared before'* ]] ;;
+        sample-unreadable) [[ "$errors" = *'unreadable for 4 consecutive'* ]] ;;
+        sample-missing) [[ "$errors" = *'no readable pre-debounce sample'* ]] ;;
+        *) [[ "$errors" = *'monotonic clock'* ]] ;;
+        esac
         if [[ "$mode" = initial* ]]; then
             [ "$stopped/$upped/$PASS/$FAIL" = 0/0/1/1 ]
         else
             # Timing must fail, but all unchanged stopped/recovered surface checks still run.
-            [ "$stopped/$upped/$PASS/$FAIL" = 0/1/8/2 ]
-            [ "$tick" -eq "$clock_fail_at" ]
+            if [ "$mode" = sample-missing ]; then
+                [ "$stopped/$upped/$PASS/$FAIL" = 0/1/9/1 ]
+            else
+                [ "$stopped/$upped/$PASS/$FAIL" = 0/1/8/2 ]
+            fi
+            case "$mode" in
+            sample-early) [ "$tick" = 0 ] ;;
+            sample-unreadable) [ "$tick" = 15 ] ;;
+            sample-missing) [ "$tick" = 5 ] ;;
+            *) [ "$tick" -eq "$clock_fail_at" ] ;;
+            esac
         fi
     done
 )

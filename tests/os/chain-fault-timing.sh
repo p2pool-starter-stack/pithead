@@ -31,32 +31,62 @@ chain_fault_clock_read() {
 }
 
 chain_fault_wait_badge() { # <debounce-seconds> <stop-started>
-    local down_after="$1" started="$2" previous="$2" now elapsed early_seen=0 early_ok=1 timely=0
+    local down_after="$1" started="$2" previous="$2" now elapsed early_seen=0 unreadable_streak=0 timely=0 read_rc sample verdict
     # state belongs to the caller, so its final badge/evidence assertion reads this sample.
     # shellcheck disable=SC2034
     while :; do
-        state=$(chain_fault_state)
+        read_rc=0
+        state=$(chain_fault_state) || read_rc=$?
         if ! now=$(chain_fault_clock_read) || [ "$now" -lt "$previous" ]; then
             bad "post-commit $CHAIN_FAULT_SERVICE fault: monotonic clock failed or moved backward — timing was not proved; continuing to recovery"
             return 1
         fi
         previous=$now
         elapsed=$((now - started))
+        # Report only the badge verdict or read error; /api/state can contain secrets.
+        sample="elapsed=${elapsed}s read_rc=$read_rc"
+        verdict=unreadable
+        if [ "$read_rc" != 0 ]; then
+            sample+="; dashboard read failed"
+        elif chain_fault_dashboard_verdict "$state" recovered; then
+            verdict=recovered
+            sample+="; dashboard badge: Tari DOWN absent"
+        elif chain_fault_dashboard_verdict "$state" faulted; then
+            verdict=faulted
+            sample+="; dashboard badge: Tari DOWN"
+        else
+            sample+="; invalid JSON or badge list"
+        fi
         [ "$elapsed" -le $((down_after + 180)) ] || break
         if [ "$elapsed" -lt "$down_after" ]; then
-            early_seen=1
-            chain_fault_dashboard_verdict "$state" recovered || early_ok=0
-        elif chain_fault_dashboard_verdict "$state" faulted; then
+            case "$verdict" in
+            recovered)
+                early_seen=1
+                unreadable_streak=0
+                ;;
+            faulted)
+                bad "post-commit $CHAIN_FAULT_SERVICE fault: Tari DOWN appeared before the ${down_after}s debounce ($sample); continuing to recovery"
+                return 1
+                ;;
+            unreadable)
+                unreadable_streak=$((unreadable_streak + 1))
+                if [ "$unreadable_streak" -gt 3 ]; then
+                    bad "post-commit $CHAIN_FAULT_SERVICE fault: dashboard unreadable for $unreadable_streak consecutive pre-debounce samples ($sample); continuing to recovery"
+                    return 1
+                fi
+                ;;
+            esac
+        elif [ "$verdict" = faulted ]; then
             timely=1
             break
         fi
         [ "$elapsed" -lt $((down_after + 180)) ] || break
         sleep 5
     done
-    if [ "$early_seen/$early_ok" = 1/1 ]; then
+    if [ "$early_seen" = 1 ]; then
         ok "post-commit $CHAIN_FAULT_SERVICE fault: no Tari DOWN badge before the ${down_after}s debounce"
     else
-        bad "post-commit $CHAIN_FAULT_SERVICE fault: Tari DOWN appeared early, dashboard was unreadable, or no pre-debounce sample was observed"
+        bad "post-commit $CHAIN_FAULT_SERVICE fault: no readable pre-debounce sample was observed ($sample)"
     fi
     [ "$timely" = 1 ]
 }
