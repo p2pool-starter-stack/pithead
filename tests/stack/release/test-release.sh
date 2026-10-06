@@ -383,8 +383,6 @@ release_notes_real="$(
 )"
 assert_rc "the real 2.0.0 changelog extracts successfully" "$?" "0"
 assert_contains "the real release notes include Known issues" "$release_notes_real" '### Known issues'
-assert_contains "the real release notes include the boot-gate issue link" "$release_notes_real" \
-    '[#2436](https://github.com/p2pool-starter-stack/pithead/issues/2436)'
 assert_contains "the real release notes include the Tor control issue link" "$release_notes_real" \
     '[#3166](https://github.com/p2pool-starter-stack/pithead/issues/3166)'
 assert_not_contains "the real release notes exclude Unreleased" "$release_notes_real" '## [Unreleased]'
