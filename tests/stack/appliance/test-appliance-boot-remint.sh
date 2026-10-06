@@ -117,23 +117,24 @@ assert_contains "  …before render runs: three renders for four calls" "$rm_out
 echo "== unit: the gate loop is wired — the re-mint sits between this round's ready check and the sleep (#1265) =="
 # The loop is below the sourcing boundary, so its wiring is asserted by ORDER in the script:
 # the per-round reset of gate_doctor_ran, the ready check, the re-mint branch keyed on THIS
-# round's doctor run, then the sleep and the fail. Mutation run: delete the elif -> red; move the
+# round's doctor run, then progress, the sleep and the fail. Mutation run: delete the elif -> red; move the
 # reset above the loop -> the reset row goes red (a stale verdict file could then re-mint).
 BOOTSCRIPT="$ROOT/os/overlay/pithead-boot"
 bl_line() { grep -n -F -- "$1" "$BOOTSCRIPT" | head -1 | cut -d: -f1; }
-l_loop=$(bl_line 'for _ in $(seq 90); do')
+l_loop=$(bl_line 'for gate_attempt in $(seq 90); do')
 l_reset=$(bl_line '    gate_doctor_ran=0')
 l_ready=$(bl_line '    if gate_ready "')
 l_elif=$(bl_line '    elif [ "$gate_doctor_ran" = 1 ] && gate_blocked_only_by_cert; then')
 l_remint=$(bl_line '        gate_remint_cert || true')
+l_progress=$(bl_line '    if ((gate_attempt % 6 == 0)); then')
 l_sleep=$(bl_line '    sleep 10')
 l_fail=$(bl_line 'fail_boot "the stack never became healthy (serving + doctor + status)"')
 assert_eq "every anchor is present exactly where a reader would look" \
-    "$([ -n "$l_loop" ] && [ -n "$l_reset" ] && [ -n "$l_ready" ] && [ -n "$l_elif" ] && [ -n "$l_remint" ] && [ -n "$l_sleep" ] && [ -n "$l_fail" ] && echo all)" "all"
+    "$([ -n "$l_loop" ] && [ -n "$l_reset" ] && [ -n "$l_ready" ] && [ -n "$l_elif" ] && [ -n "$l_remint" ] && [ -n "$l_progress" ] && [ -n "$l_sleep" ] && [ -n "$l_fail" ] && echo all)" "all"
 assert_eq "gate_doctor_ran is reset INSIDE the loop, before the ready check" \
     "$([ "${l_loop:-0}" -lt "${l_reset:-0}" ] && [ "${l_reset:-0}" -lt "${l_ready:-0}" ] && echo ordered)" "ordered"
-assert_eq "the re-mint branch follows the ready check and precedes the sleep and the fail" \
-    "$([ "${l_ready:-0}" -lt "${l_elif:-0}" ] && [ "${l_elif:-0}" -lt "${l_remint:-0}" ] && [ "${l_remint:-0}" -lt "${l_sleep:-0}" ] && [ "${l_sleep:-0}" -lt "${l_fail:-0}" ] && echo ordered)" "ordered"
+assert_eq "the re-mint branch follows the ready check and precedes progress, sleep and fail" \
+    "$([ "${l_ready:-0}" -lt "${l_elif:-0}" ] && [ "${l_elif:-0}" -lt "${l_remint:-0}" ] && [ "${l_remint:-0}" -lt "${l_progress:-0}" ] && [ "${l_progress:-0}" -lt "${l_sleep:-0}" ] && [ "${l_sleep:-0}" -lt "${l_fail:-0}" ] && echo ordered)" "ordered"
 l_gr=$(grep -n -F 'gate_ready() {' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 l_set=$(grep -n -F '    gate_doctor_ran=1' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 l_doc=$(grep -n -F '    ./pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
