@@ -1,5 +1,5 @@
 import { Component, html, render } from "../app/preact.mjs";
-import { jsonSyntaxError } from "../config/configlogic.mjs";
+import { parseConfigJson } from "../config/configlogic.mjs";
 import { coerceForPath, pathGet, pathSet } from "../config/configsync.mjs";
 import { needsNodeProbe } from "../network/nodeprobe.mjs";
 import { renderRestore, renderRigFields } from "./formparts.mjs";
@@ -191,12 +191,11 @@ export class WizardApp extends Component {
   // JSON pane edit → config → fields. Hand-edited JSON wins; shape errors show as typed.
   editJson = (e) => {
     const text = e.target.value;
-    const err = jsonSyntaxError(text);
-    if (err) {
-      this.setState({ jsonText: text, jsonError: err });
+    const { config: cfg, error } = parseConfigJson(text);
+    if (error) {
+      this.setState({ jsonText: text, jsonError: error });
       return;
     }
-    const cfg = JSON.parse(text);
     const fastSync = Boolean(cfg.monero?.clearnet_initial_sync || cfg.tari?.clearnet_initial_sync);
     this.setState({ jsonText: text, jsonError: "", cfg, fastSync, tariTouched: true });
   };

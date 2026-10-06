@@ -35,6 +35,7 @@ import sys
 
 from aiohttp import web
 
+from mining_dashboard.config import documents
 from mining_dashboard.wizard.defaults import (
     disk_inventory,
     explicit_wizard_config,
@@ -399,13 +400,13 @@ async def _submit_locked(request: web.Request) -> web.Response:
     # submission against a preserved install must not smuggle a role change past the survivor.
     if str(form.get("role", "")).strip() == "rig":
         return _submit_rig(dict(form))
-    # The JSON pane IS the configuration — what the operator can see is exactly what gets
-    # applied. build_config remains the fallback for a client with no JavaScript.
+    # Check the raw JSON pane before normalization; build_config is the no-JS fallback.
     try:
-        cfg = (
-            json.loads(raw)
-            if raw
-            else build_config(
+        if raw:
+            cfg = documents.loads(raw)
+            documents.reject_placeholders(cfg)
+        else:
+            cfg = build_config(
                 dict(form),
                 tari_default=tari_disk_default(
                     _spool_json("disk-budget.json") or {},
@@ -415,11 +416,12 @@ async def _submit_locked(request: web.Request) -> web.Response:
                     str(form.get("wipe", "keep")),
                 ),
             )
-        )
         if not isinstance(cfg, dict):
             raise ValueError("the top level must be a JSON object")
-    except (ValueError, TypeError) as exc:
-        return web.json_response({"error": f"Not valid JSON: {exc}"}, status=400)
+    except documents.ConfigDocumentError as exc:
+        return web.json_response({"error": exc.diagnostic()}, status=400)
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Not valid JSON: enter a JSON object."}, status=400)
     try:
         cfg, changes = prepare_config(cfg, ref, reject_legacy_conflicts=True)
         validate_machine_name(cfg, _last_attempt())
