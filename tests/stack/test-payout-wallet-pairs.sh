@@ -151,6 +151,9 @@ STUB
 cat >"$PB/setpriv" <<'STUB'
 #!/usr/bin/env bash
 shift 3
+if [ "$1" = bash ] && [ -n "${PAIR_SIGNAL_LOG:-}" ]; then
+    printf '%s\n' "$5" >>"$PAIR_SIGNAL_LOG"
+fi
 exec "$@"
 STUB
 cat >"$PB/stat" <<'STUB'
@@ -189,7 +192,7 @@ pair_start() { # <chain> <pair> <volume>
         printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=fixture\n' \
             "${!vk}" "$PAYOUT_TARI_PUBLIC1" >"$PD/secret"
         PATH="$PB:$PATH" WALLET_DIR="$d" TARI_WALLET_SECRET_FILE_IN="$PD/secret" TARI_WALLET_ADDRESS="${!addr}" \
-            PAIR_ACTION="$PD/action" PAIR_PATH="$PD/path" bash "$ROOT/build/tari-wallet/entrypoint.sh" >"$PD/start-output" 2>&1
+            PAIR_ACTION="$PD/action" PAIR_PATH="$PD/path" PAIR_SIGNAL_LOG="$PD/signals" bash "$ROOT/build/tari-wallet/entrypoint.sh" >"$PD/start-output" 2>&1
     fi
 }
 for chain in monero tari; do
@@ -293,4 +296,28 @@ for state in valid truncated compressed trailing wrong-tag empty; do
     expected=1
     [ "$state" != valid ] || expected=0
     assert_rc "Tari identity parser: $state" "$rc" "$expected"
+done
+
+# A setpriv child transitions from the wrapper uid to the wallet uid. Both windows must signal.
+for phase in wrapper dropped; do
+    for signal in -0 -KILL; do
+        out=$(SIGNAL="$signal" PHASE="$phase" PITHEAD_TEST_SOURCE=1 bash -c '
+            source "$1"
+            kill() { [ "$PHASE" = wrapper ]; }
+            setpriv() {
+                [ "$1 $2 $3" = "--reuid=1000 --regid=1000 --clear-groups" ] || return 1
+                shift 3
+                [ "$1" = bash ] && [ "$5" = "$SIGNAL" ] && [ "$6" = 123 ] || return 1
+                printf "child-uid\n"
+            }
+            legacy_probe_signal "$SIGNAL" 123 || exit $?
+            printf "signalled\n"
+        ' _ "$ROOT/build/tari-wallet/entrypoint.sh" 2>&1)
+        assert_rc "Tari $phase uid can receive $signal" "$?" 0
+        if [ "$phase" = wrapper ]; then
+            assert_eq "Tari $signal before uid drop uses parent signal" "$out" signalled
+        else
+            assert_eq "Tari $signal after uid drop uses child uid signal" "$out" $'child-uid\nsignalled'
+        fi
+    done
 done

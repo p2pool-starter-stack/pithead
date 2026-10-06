@@ -43,6 +43,13 @@ legacy_response_matches() {
     return "$match"
 }
 
+# setpriv starts as the wrapper uid before dropping to 1000. Try the parent first;
+# after the drop, signal as the child uid because the wrapper has no CAP_KILL.
+legacy_probe_signal() {
+    kill "$1" "$2" 2>/dev/null ||
+        setpriv --reuid=1000 --regid=1000 --clear-groups bash -c 'kill "$1" "$2"' _ "$1" "$2"
+}
+
 # Probe a private copy: even an unreadable or mismatching legacy DB stays byte-for-byte intact.
 legacy_address_matches() (
     set -eu
@@ -50,7 +57,7 @@ legacy_address_matches() (
     # Multiple legacy databases have ambiguous ownership; never choose one arbitrarily.
     [ -f "$db" ] && [ ! -L "$db" ] || exit 1
     probe=$(mktemp -d "$WALLET_DIR/.legacy-probe.XXXXXX") || exit 1
-    trap '[ -z "$pid" ] || { kill -KILL "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; }; rm -rf "$probe"' EXIT
+    trap '[ -z "$pid" ] || { legacy_probe_signal -KILL "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; }; rm -rf "$probe"' EXIT
     trap 'exit 1' INT TERM
     mkdir -p "$probe/mainnet/data/wallet/db"
     for suffix in '' -wal -shm; do
@@ -67,7 +74,7 @@ legacy_address_matches() (
         >"$probe/output" 2>&1 &
     pid=$!
     for ((attempt = 0; attempt < 30; attempt++)); do
-        kill -0 "$pid" 2>/dev/null || exit 1
+        legacy_probe_signal -0 "$pid" 2>/dev/null || exit 1
         if headers=$(printf '\000\000\000\000\000' | curl -fsS --http2-prior-knowledge --max-time 1 \
             --max-filesize 4096 -D - -o "$probe/response" \
             -H 'content-type: application/grpc' -H 'te: trailers' --data-binary @- \
