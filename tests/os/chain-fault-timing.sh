@@ -31,7 +31,7 @@ chain_fault_clock_read() {
 }
 
 chain_fault_wait_badge() { # <debounce-seconds> <stop-started>
-    local down_after="$1" started="$2" previous="$2" now elapsed early_seen=0 unreadable_streak=0 timely=0 read_rc sample
+    local down_after="$1" started="$2" previous="$2" now elapsed early_seen=0 unreadable_streak=0 timely=0 read_rc sample verdict
     # state belongs to the caller, so its final badge/evidence assertion reads this sample.
     # shellcheck disable=SC2034
     while :; do
@@ -45,23 +45,38 @@ chain_fault_wait_badge() { # <debounce-seconds> <stop-started>
         elapsed=$((now - started))
         # Report only the badge verdict or read error; /api/state can contain secrets.
         sample="elapsed=${elapsed}s read_rc=$read_rc"
+        verdict=unreadable
+        if [ "$read_rc" != 0 ]; then
+            sample+="; dashboard read failed"
+        elif chain_fault_dashboard_verdict "$state" recovered; then
+            verdict=recovered
+            sample+="; dashboard badge: Tari DOWN absent"
+        elif chain_fault_dashboard_verdict "$state" faulted; then
+            verdict=faulted
+            sample+="; dashboard badge: Tari DOWN"
+        else
+            sample+="; invalid JSON or badge list"
+        fi
         [ "$elapsed" -le $((down_after + 180)) ] || break
         if [ "$elapsed" -lt "$down_after" ]; then
-            if [ "$read_rc" = 0 ] && chain_fault_dashboard_verdict "$state" recovered; then
+            case "$verdict" in
+            recovered)
                 early_seen=1
                 unreadable_streak=0
-            elif [ "$read_rc" = 0 ] && chain_fault_dashboard_verdict "$state" faulted; then
-                bad "post-commit $CHAIN_FAULT_SERVICE fault: Tari DOWN appeared before the ${down_after}s debounce ($sample; dashboard badge: Tari DOWN); continuing to recovery"
+                ;;
+            faulted)
+                bad "post-commit $CHAIN_FAULT_SERVICE fault: Tari DOWN appeared before the ${down_after}s debounce ($sample); continuing to recovery"
                 return 1
-            else
+                ;;
+            unreadable)
                 unreadable_streak=$((unreadable_streak + 1))
-                if [ "$read_rc" = 0 ]; then sample+="; invalid JSON or badge list"; fi
                 if [ "$unreadable_streak" -gt 3 ]; then
                     bad "post-commit $CHAIN_FAULT_SERVICE fault: dashboard unreadable for $unreadable_streak consecutive pre-debounce samples ($sample); continuing to recovery"
                     return 1
                 fi
-            fi
-        elif [ "$read_rc" = 0 ] && chain_fault_dashboard_verdict "$state" faulted; then
+                ;;
+            esac
+        elif [ "$verdict" = faulted ]; then
             timely=1
             break
         fi
