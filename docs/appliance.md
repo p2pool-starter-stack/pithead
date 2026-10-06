@@ -36,8 +36,8 @@ a rig can [run from the USB stick](#the-disk) without an internal chain disk.
 - A USB stick, **16 GB or larger** — the image writes 5 GB to the stick, whatever the size of the download.
 - A second computer with a browser, on the same network.
 
-The machine runs continuously. A slow disk or a USB-resident install will not keep up:
-install to an internal drive.
+A coordinator with local chains runs continuously and needs an internal SSD or NVMe; do not
+keep its chain data on the USB stick. A worker-only rig can run from the stick as described below.
 
 **Set the machine to power on by itself after an outage.** This is a firmware setting, not
 something the appliance can do for you, and the default on most machines is to stay off.
