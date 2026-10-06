@@ -299,6 +299,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install.sh" && domain_ran test-appliance-install.sh "$_d0" "$?" || domain_ran test-appliance-install.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rig-miner.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-rig-config-merge.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-config-merge.sh" && domain_ran test-appliance-rig-config-merge.sh "$_d0" "$?" || domain_ran test-appliance-rig-config-merge.sh "$_d0" "$?"
 
     # shellcheck source=tests/stack/appliance/test-appliance-rig-token-landing.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-token-landing.sh" && domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?" || domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?"

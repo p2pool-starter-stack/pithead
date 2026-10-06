@@ -217,6 +217,9 @@ phase_rig() {
 
     # ---- reboot: pithead-boot owns a rig now, and commits its slot -------------------------
     info "reboot leg — the rig must come back mining, and commit its own slot"
+    # #3204: a Worker Inspect edit lands in /data/rigforge/config.json, which the boot rebuilds from rig.json.
+    _ssh "jq '.max_temp_c = 77' /data/rigforge/config.json >/tmp/edit.json && cat /tmp/edit.json >/data/rigforge/config.json && rm -f /tmp/edit.json" ||
+        bad "could not write a control-path edit into the rig's miner config"
     _reboot_wait reboot 300 || {
         bad "the rig never returned from the reboot"
         return
@@ -224,6 +227,9 @@ phase_rig() {
     _rig_mining_up 24 &&
         ok "the rig returned mining with no hands on it (its unit lives in /run and died with the reboot)" ||
         bad "the rig did not return after the reboot — its runtime unit was never re-rendered"
+    [ "$(_ssh "jq -r .max_temp_c /data/rigforge/config.json" | tr -d '\r\n')" = "77" ] &&
+        ok "a control-path edit (max_temp_c) survived the reboot's config rebuild (#3204)" ||
+        bad "the reboot's config rebuild reverted a control-path edit (max_temp_c)"
     # XMRig starts before pithead-boot finishes its final mark-good and exit, so its active state
     # alone is not proof that this RemainAfterExit unit has settled. The shared wait also proves
     # that the boot unit, rather than the condition-skipped wizard, ran this boot.
