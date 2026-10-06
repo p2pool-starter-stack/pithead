@@ -45,6 +45,34 @@ resolve_scan_height() {
     esac
 }
 
+# Read the keys through the pinned wallet RPC, never trust an optional address sidecar.
+# Only the keys are needed; the probe creates its own cache without contacting a daemon.
+legacy_address_matches() (
+    set -eu
+    local probe pid='' address attempt
+    probe=$(mktemp -d "$WALLET_DIR/.legacy-probe.XXXXXX") || exit 1
+    trap '[ -z "$pid" ] || { kill -KILL "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; }; rm -rf "$probe"' EXIT
+    trap 'exit 1' INT TERM
+    cp "$WALLET_DIR/payout-wallet.keys" "$probe/wallet.keys" || exit 1
+    monero-wallet-rpc --wallet-file "$probe/wallet" --password '' --offline \
+        --no-initial-sync --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18083 \
+        --disable-rpc-login --non-interactive --max-concurrency 1 \
+        --shared-ringdb-dir "$probe/ringdb" --log-file "$probe/rpc.log" \
+        >"$probe/output" 2>&1 &
+    pid=$!
+    for ((attempt = 0; attempt < 30; attempt++)); do
+        kill -0 "$pid" 2>/dev/null || exit 1
+        if address=$(curl -fsS --max-time 1 -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":"0","method":"get_address"}' \
+            http://127.0.0.1:18083/json_rpc 2>/dev/null | jq -er '.result.address | select(type == "string" and length > 0)'); then
+            [ "$address" = "${MONERO_WALLET_ADDRESS:-}" ]
+            exit $?
+        fi
+        sleep 1
+    done
+    exit 1
+)
+
 select_wallet() {
     local identity legacy owner suffix
     identity=$(printf '%s\n%s\n' "${MONERO_WALLET_ADDRESS:-}" "${MONERO_VIEW_KEY:-}" | sha256sum)
@@ -53,11 +81,15 @@ select_wallet() {
     legacy="$WALLET_DIR/payout-wallet"
     owner="$WALLET_DIR/.legacy-wallet-identity"
     # Record the adoption owner first; a interrupted rename resumes for this pair only.
-    if [ -f "$legacy" ] && [ ! -f "$owner" ]; then
-        (
-            umask 077
-            printf '%s\n' "$identity" >"$owner"
-        )
+    if [ -f "$legacy" ] && [ ! -f "$owner" ] && [ ! -e "$WALLET_FILE" ]; then
+        if legacy_address_matches; then
+            (
+                umask 077
+                printf '%s\n' "$identity" >"$owner"
+            )
+        else
+            echo "Legacy Monero wallet identity differs or cannot be read; retaining it without adoption." >&2
+        fi
     fi
     if [ -f "$owner" ] && [ "$(cat "$owner")" = "$identity" ]; then
         for suffix in .keys .address.txt .unportable ''; do

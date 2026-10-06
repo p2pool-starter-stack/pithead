@@ -196,7 +196,10 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 
 Payout confirmation validates private view scalars in `lib/pithead/25b-payout-keys.sh`; the wallet
 entrypoints select storage by address/key fingerprint. `tests/stack/test-payout-wallet-pairs.sh`
-proves matching keys, derivation, selection and legacy adoption.
+proves matching keys, derivation, selection and checked legacy adoption. The Tari entrypoint's
+`build/tari-wallet/legacy-address.sh` reads the pinned wallet's address RPC from a private database
+copy. The isolated `tests/integration/payout-pairs/run.sh` fixture exercises matching adoption and
+an upgrade with a changed pair without changing the mining stack's payout configuration.
 
 The setup wizards share host disk budgets through `lib/pithead/11b-wizard-disk-budget.sh`;
 the appliance publishes them beside the disk inventory for both submission paths.

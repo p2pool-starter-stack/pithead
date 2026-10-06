@@ -120,6 +120,42 @@ TARI_FIRST="$(tari_path)" TARI_FIRST_INODE="$(tari_inode)"
 [ -n "$TARI_FIRST_INODE" ]
 # Persist progress before the recreated wallet is stopped, then pin the retained cache inode.
 wallet_rpc store >/dev/null
+stage_legacy() {
+    compose stop wallet-rpc tari-wallet >"$WORK/stop-legacy.log" 2>&1
+    compose run --rm --no-deps --entrypoint bash wallet-rpc -ceu '
+        base=/home/ubuntu/wallets; identity=$(cat "$base/.payout-active")
+        for suffix in .keys .address.txt .unportable ""; do
+            [ ! -f "$base/payout-wallet-$identity$suffix" ] || mv "$base/payout-wallet-$identity$suffix" "$base/payout-wallet$suffix"
+        done
+        rm -f "$base/.legacy-wallet-identity" "$base/.payout-active"
+    ' >"$WORK/stage-monero-legacy.log" 2>&1
+    compose run --rm --no-deps --entrypoint bash tari-wallet -ceu '
+        base=/var/tari/wallet; identity=$(cat "$base/.payout-active")
+        shopt -s dotglob nullglob
+        entries=("$base/payout-$identity/"*)
+        [ "${#entries[@]}" -gt 0 ]
+        mv "${entries[@]}" "$base/"
+        rmdir "$base/payout-$identity"
+        rm -f "$base/.legacy-wallet-identity" "$base/.payout-active"
+    ' >"$WORK/stage-tari-legacy.log" 2>&1
+}
+stage_legacy
+compose up -d wallet-rpc tari-wallet >"$WORK/start-legacy-match.log" 2>&1
+ready
+[ "$(wallet_inode)" = "$FIRST_INODE" ]
+[ "$(tari_inode)" = "$TARI_FIRST_INODE" ]
+compose exec -T wallet-rpc test -f /home/ubuntu/wallets/.legacy-wallet-identity
+compose exec -T tari-wallet test -f /var/tari/wallet/.legacy-wallet-identity
+printf 'PASS: matching legacy wallets adopted with original keys/database inodes\n'
+wallet_rpc store >/dev/null
+stage_legacy
+legacy_checksums() {
+    compose run --rm --no-deps --entrypoint bash wallet-rpc -ceu \
+        'sha256sum /home/ubuntu/wallets/payout-wallet /home/ubuntu/wallets/payout-wallet.keys'
+    compose run --rm --no-deps --entrypoint bash tari-wallet -ceu \
+        'find /var/tari/wallet/mainnet/data/wallet/db -type f -exec sha256sum {} \;'
+}
+legacy_checksums >"$WORK/legacy-before.log" 2>"$WORK/legacy-before-stderr.log"
 jq --arg m "$PAYOUT_MONERO2" --arg t "$PAYOUT_TARI2" --arg k "$PAYOUT_VIEW2" \
     '.monero.wallet_address=$m | .monero.view_key=$k | .tari.wallet_address=$t | .tari.view_key=$k' \
     "$WORK/config.json" >"$WORK/new.json"
@@ -133,9 +169,12 @@ SCAN_FROM=$(compose exec -T wallet-rpc jq -er .scan_from_height /tmp/gen.json)
 [ "$SCAN_FROM" -gt 0 ]
 TIP=$(wallet_rpc get_height | jq -er .result.height)
 [ "$((TIP - SCAN_FROM))" -le 130 ]
-printf 'PASS: changed pair created near the tip (restore=%s caught-up=%s), retaining the first wallet\n' "$SCAN_FROM" "$TIP"
-compose exec -T wallet-rpc test -f "/home/ubuntu/wallets/payout-wallet-$FIRST"
-compose exec -T tari-wallet test -d "/var/tari/wallet/payout-$TARI_FIRST"
+printf 'PASS: upgrade plus changed pair created near the tip (restore=%s caught-up=%s)\n' "$SCAN_FROM" "$TIP"
+legacy_checksums >"$WORK/legacy-after.log" 2>"$WORK/legacy-after-stderr.log"
+cmp "$WORK/legacy-before.log" "$WORK/legacy-after.log"
+compose exec -T wallet-rpc test ! -e /home/ubuntu/wallets/.legacy-wallet-identity
+compose exec -T tari-wallet test ! -e /var/tari/wallet/.legacy-wallet-identity
+printf 'PASS: mismatching legacy wallets remain byte-for-byte intact and unclaimed\n'
 wallet_rpc store >/dev/null
 jq --arg m "$PAYOUT_MONERO1" --arg t "$PAYOUT_TARI1" --arg k "$PAYOUT_VIEW1" \
     '.monero.wallet_address=$m | .monero.view_key=$k | .tari.wallet_address=$t | .tari.view_key=$k' \

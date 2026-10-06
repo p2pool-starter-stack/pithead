@@ -890,7 +890,10 @@ Each address/view-key pair keeps a separate view-only wallet. Changing the pair 
 and keeps the previous one; reverting reopens the saved scan progress. Apply verifies that each
 view key belongs to its address. A fresh Monero wallet starts 100 blocks behind the local tip
 unless `monero.payout_scan_height` is set. Tari keeps its configured birthday. On upgrade, the
-legacy wallet is adopted for the currently configured pair without a rescan.
+legacy wallet is adopted without a rescan only after its own address matches the configured
+address. The pinned wallet binary reads a private copy of the legacy keys or database; Monero's
+optional `.address.txt` is not an ownership check. A mismatch or unreadable identity leaves the
+legacy files untouched and unclaimed, and opens a fresh wallet for the configured pair.
 
 #### Getting your view keys
 
