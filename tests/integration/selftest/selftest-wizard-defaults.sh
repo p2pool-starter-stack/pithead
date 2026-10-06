@@ -67,6 +67,19 @@ for expected in off local; do
     assert_eq "harness runs service startup and baseline apply ($expected)" "$(cat "$WORK/operations")" $'up\napply -y'
 done
 
+# A remote-node baseline (the appliance) keeps its node sections: the wizard's local default would
+# provision a node onion the restore cannot take back (#3195). The wizard's own output is still checked.
+remote_baseline=$(jq -c '.monero += {mode:"remote",remote_host:"fixture-node"} | .tari += {mode:"remote",remote_host:"fixture-node"}' <<<"$BASELINE_CONFIG")
+remote_result=$(
+    BASELINE_CONFIG=$remote_baseline
+    IT_FAIL=0
+    pushes=0
+    : >"$WORK/operations"
+    run_cli_wizard_defaults >/dev/null
+    printf '%s|%s' "$IT_FAIL" "$(jq -c '[.monero.mode, .monero.remote_host, .tari.mode, .dashboard.auth.password != null]' "$WORK/generated.json")"
+)
+assert_eq "a remote-node baseline keeps its node sections and the wizard's dashboard choices" "$remote_result" '0|["remote","fixture-node","remote",true]'
+
 # Sampling after a refused baseline apply must not replace that command's failure with success
 # or run its post-apply healthy-status wait. Keep this deliberate failure isolated.
 failed_apply_result=$(

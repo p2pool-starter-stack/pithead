@@ -31,9 +31,14 @@ run_cli_wizard_defaults() {
     assert_eq "fresh CLI generated password is printed once" "$(grep -Fc "$(jq -r '.dashboard.auth.password' <<<"$cfg")" <<<"$out")" 1
     # Keep the runner's prepared data locations; the wizard's feature/auth choices stay intact.
     # A default auto path in this dedicated checkout would start a new chain instead of the fixture.
+    # A node the baseline does not run locally keeps the baseline's section too (#3195): the wizard
+    # defaults to a local node, and setting one up on a remote-node appliance provisions its onion,
+    # which pithead deliberately keeps after the restore, so the secret ledger never matches again.
     cfg=$(jq --argjson baseline "$BASELINE_CONFIG" '
         reduce ["monero", "tari", "p2pool", "dashboard", "tor"][] as $service (.;
             if $baseline[$service].data_dir then .[$service].data_dir = $baseline[$service].data_dir else . end)
+        | reduce ["monero", "tari"][] as $node (.;
+            if ($baseline[$node].mode // "local") != "local" then .[$node] = $baseline[$node] else . end)
     ' <<<"$cfg") || return 1
     push_config "$cfg" || return 1
     rx "sed -i 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' .env && grep -qx 'DEPLOYMENT_COMPLETED=false' .env" || return 1
