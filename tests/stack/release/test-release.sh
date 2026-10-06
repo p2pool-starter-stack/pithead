@@ -300,8 +300,11 @@ rigforge_pin="$(
     set +eu
     pin rigforge
 )"
-[ -n "$rigforge_pin" ]
-assert_rc "pin rigforge is non-empty" "$?" "0"
+if [ -n "$rigforge_pin" ]; then
+    ok "pin rigforge is non-empty"
+else
+    bad "pin rigforge is non-empty" "got an empty ref"
+fi
 assert_eq "pin rigforge equals the baked Dockerfile ref" "$rigforge_pin" "$rigforge_ref"
 grep -Fxq -- "- rigforge: \`$rigforge_ref\`" "$man_out"
 assert_rc "manifest names the exact baked RigForge ref" "$?" "0"
