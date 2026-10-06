@@ -151,9 +151,6 @@ STUB
 cat >"$PB/setpriv" <<'STUB'
 #!/usr/bin/env bash
 shift 3
-if [ "$1" = bash ] && [ -n "${PAIR_SIGNAL_LOG:-}" ]; then
-    printf '%s\n' "$5" >>"$PAIR_SIGNAL_LOG"
-fi
 exec "$@"
 STUB
 cat >"$PB/stat" <<'STUB'
@@ -192,7 +189,7 @@ pair_start() { # <chain> <pair> <volume>
         printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=fixture\n' \
             "${!vk}" "$PAYOUT_TARI_PUBLIC1" >"$PD/secret"
         PATH="$PB:$PATH" WALLET_DIR="$d" TARI_WALLET_SECRET_FILE_IN="$PD/secret" TARI_WALLET_ADDRESS="${!addr}" \
-            PAIR_ACTION="$PD/action" PAIR_PATH="$PD/path" PAIR_SIGNAL_LOG="$PD/signals" bash "$ROOT/build/tari-wallet/entrypoint.sh" >"$PD/start-output" 2>&1
+            PAIR_ACTION="$PD/action" PAIR_PATH="$PD/path" bash "$ROOT/build/tari-wallet/entrypoint.sh" >"$PD/start-output" 2>&1
     fi
 }
 for chain in monero tari; do
@@ -321,3 +318,15 @@ for phase in wrapper dropped; do
         fi
     done
 done
+
+python3 - "$PD/response-emoji" "$VALID_TARI_EMOJI" <<'PYFRAME'
+import sys
+from pathlib import Path
+address = sys.argv[2].encode()
+size = len(address)
+body = bytes([42, (size & 127) | 128, size >> 7]) + address
+Path(sys.argv[1]).write_bytes(b'\0' + len(body).to_bytes(4, 'big') + body)
+PYFRAME
+PITHEAD_TEST_SOURCE=1 bash -c 'source "$1"; legacy_response_matches "$2" "$3"' _ \
+    "$ROOT/build/tari-wallet/entrypoint.sh" "$PD/response-emoji" "$VALID_TARI_EMOJI"
+assert_rc 'Tari identity parser accepts the configured emoji representation' "$?" 0

@@ -23,14 +23,17 @@ legacy_response_matches() {
             shift=$((shift + 7))
         done
         [ "$((i + size))" -le "${#bytes[@]}" ] || return 1
-        if [ "$tag" = 26 ] || [ "$tag" = 34 ]; then
+        if [ "$tag" -ge 26 ]; then
             value=''
             while [ "$size" -gt 0 ]; do
                 byte=${bytes[i]}
                 i=$((i + 1))
                 size=$((size - 1))
-                # Base58 is printable ASCII; refuse embedded controls and NULs.
-                [ "$byte" -ge 33 ] && [ "$byte" -le 126 ] || return 1
+                # Base58 is ASCII; emoji addresses are UTF-8. Neither contains controls.
+                [ "$byte" -ge 33 ] || return 1
+                if [ "$tag" = 26 ] || [ "$tag" = 34 ]; then
+                    [ "$byte" -le 126 ] || return 1
+                fi
                 printf -v byte '\\%03o' "$byte"
                 printf -v byte '%b' "$byte"
                 value+="$byte"
