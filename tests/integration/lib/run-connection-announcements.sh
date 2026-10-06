@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/integration/lib/run-channel.sh
+source "${BASH_SOURCE[0]%/*}/run-channel.sh" || exit $?
 # Run the real CLI on the deployed candidate, keeping credentials inside the target shell.
 connection_announcements_snippet() {
     lifecycle_gate_snippet
@@ -75,6 +77,13 @@ PROBE
 }
 
 run_connection_announcements() {
+    skip_appliance_checkout_probe \
+        "setup is owned by the wizard and the CLI PTY tool is not shipped; strict proof runs on DIY" \
+        "coordinator connection announcement probe succeeds (#3090)" \
+        "setup with startup declined matches rendered credentials (#3090)" \
+        "up matches rendered credentials (#3090)" \
+        "apply matches rendered credentials (#3090)" \
+        "no-change apply matches rendered credentials and preserves env (#3090)" && return 0
     local out rc before="$IT_FAIL" marker
     it_step "checking setup/up/apply connection announcements on the candidate…"
     out="$(rx "$(connection_announcements_snippet)" 2>&1)"

@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/integration/lib/run-channel.sh
+source "${BASH_SOURCE[0]%/*}/run-channel.sh" || exit $?
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
 # Create the wallet volume through the profile that owns it, then leave the
@@ -118,6 +120,9 @@ cleanup_failed_tari_wallet_fixture() {
 }
 
 prove_wallet_supersession() {
+    skip_appliance_checkout_probe \
+        "the wallet supersession proof tool is not shipped; strict proof runs on DIY" \
+        "wallet supersession proves live identity, isolated opening and retained evidence (#3133)" && return 0
     local supersession_out supersession_rc
     supersession_out="$(rx 'python3 tests/integration/tools/prove-wallet-supersession.py .')"
     supersession_rc=$?
