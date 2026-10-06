@@ -192,7 +192,13 @@ phase_rig() {
     [ "$pcode" = "401" ] && ok "the sister feed refuses without the token (401)" || bad "the sister feed answered '${pcode}' without a token"
     pcode=$(_rig_http http://127.0.0.1:8080/1/summary)
     case "$pcode" in 401 | 403) ok "XMRig's own API is closed without the token ($pcode)" ;; *) bad "XMRig's API on 8080 answered '${pcode}' with no token — still open on the LAN" ;; esac
-    pcode=$(_rig_http http://127.0.0.1:8082/)
+    ptries=0
+    while [ "$ptries" -lt 12 ]; do
+        pcode=$(_rig_http http://127.0.0.1:8082/)
+        [ -n "$pcode" ] && [ "$pcode" != "000" ] && break
+        sleep 5
+        ptries=$((ptries + 1))
+    done
     [ -n "$pcode" ] && [ "$pcode" != "000" ] && ok "the control port listens (loopback answers $pcode)" || bad "the control port does not answer even on loopback ('${pcode}')"
     pcode=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8082/" 2>/dev/null)
     [ "${pcode:-000}" = "000" ] && ok "the control port is unreachable from an unpinned source (this host)" || bad "the control port answered '$pcode' from an unpinned source"

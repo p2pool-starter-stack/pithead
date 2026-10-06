@@ -73,9 +73,12 @@ stack's component versions don't dictate a miner version. When in doubt, run the
   Lock it down with controls that complement each other: narrow the bind address with
   [`p2pool.stratum_bind`](configuration.md#configuration-reference), restrict the source range with a
   host firewall, and/or require a password with [`p2pool.stratum_password`](#authentication).
-- `pithead setup` and `doctor` flag this for you: when the host has a public IP and stratum is bound
-  to all interfaces, they print a warning pointing back here. A NAT'd home host (no public IP on its
-  own interfaces) sees nothing, so this only nudges the hosts that are actually exposed.
+- `pithead setup` warns when the host has a public IP and stratum is bound to all interfaces
+  or to that public address. `doctor` reads the rendered password and TLS settings: neither set
+  warns about unauthenticated, cleartext access; password only warns about cleartext; TLS only
+  warns that rigs not switched to TLS still connect in cleartext without authentication. Both set
+  produces INFO, since cleartext rigs can still connect. Restrict access to your network even with
+  both configured. A NAT'd home host with no public IP on its interfaces needs no exposure warning.
 
 #### `p2pool.stratum_bind` — which interface to listen on
 
@@ -305,6 +308,10 @@ dashboard runtime gets only a lowercase hex HMAC-SHA256 read bearer (token as ke
 cryptographically random token of at least 32 ASCII characters; generate one with
 `openssl rand -hex 16`. A shorter legacy token still works for raw host control but gets no derived
 read bearer, because the bearer would make guessing that token offline practical.
+
+Appliance rigs run stock XMRig, which ignores a `DONATION` below 1 and donates at least 1%. A
+RigForge-built rig has the same floor at the level it was compiled with; lowering it needs a rebuild.
+Worker Inspect shows the configured value, not the rate the miner runs.
 
 ! The control token is **write-capable** and travels in **cleartext HTTP** over the LAN (like the
 stratum password): a change can alter a rig's pools or its thermal `watchdog`/`max_temp_c`, so anyone

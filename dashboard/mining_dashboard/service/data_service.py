@@ -83,13 +83,11 @@ logger = logging.getLogger("DataService")
 # Wall-clock cadences stay with the core poll loop that applies them.
 _HOURLY_CAPTURE_SEC = 3600
 _WORKER_HISTORY_CAPTURE_SEC = 300
+_PROXY_WORKERS_MAX_AGE_SEC = 300
 
 
 class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixin):
-    """
-    Core service responsible for aggregating mining statistics from various sources
-    (Local collectors, XMRig Proxy, Tari Node, etc.) and maintaining the application state.
-    """
+    """Aggregate mining statistics and maintain the application state."""
 
     _last_monero_sync = None  # last real {percent,current,target} — held across RPC blips
 
@@ -117,10 +115,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
         return self.tari_wallet_scan_answered
 
     async def run(self):
-        """
-        Main execution loop: Aggregates statistics from local collectors and external APIs.
-        Updates the `latest_data` state and persists historical metrics to the database.
-        """
+        """Poll collectors and APIs, publish state, and persist historical metrics."""
         logger.info("Service Started: Data Collection Loop")
 
         iteration_count = 0
@@ -141,9 +136,17 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     proxy_workers = []
                     try:
                         proxy_data = await asyncio.to_thread(self.proxy_client.get_workers)
-                        proxy_workers = _normalize_proxy_workers(proxy_data)
+                        self._last_proxy_workers = _normalize_proxy_workers(proxy_data)
+                        self._last_proxy_workers_at = time.monotonic()
                     except Exception as e:
                         logger.error(f"Proxy Data Fetch Error: {e}")
+                    if (
+                        self._last_proxy_workers_at is not None
+                        and time.monotonic() - self._last_proxy_workers_at
+                        < _PROXY_WORKERS_MAX_AGE_SEC
+                    ):
+                        # Enrichment and lifecycle mutate rows; retain the normalized snapshot.
+                        proxy_workers = [dict(w) for w in self._last_proxy_workers]
 
                     # 2b. Fetch the proxy /summary for pool-wide share totals (Issue #82). Kept
                     # separate from the workers fetch so one failing doesn't blank the other; a bad
@@ -173,9 +176,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     tasks = [worker_client.get_stats(w["ip"], w["name"]) for w in proxy_workers]
                     worker_results = await asyncio.gather(*tasks)
 
-                    # 3a. Reconcile any #185 history row a slow rig rollback left stuck 'accepted'
-                    # (#579), and flag a rig-side out-of-band edit (#530) — rides this same poll's
-                    # results, no new dial.
+                    # Reconcile pending rig edits and flag out-of-band edits using this poll.
                     await self._reconcile_worker_config(proxy_workers, worker_results)
 
                     # 3a-2. Out-of-band audit (#530): a config.json change not made through the

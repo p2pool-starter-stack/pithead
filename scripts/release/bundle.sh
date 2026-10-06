@@ -82,6 +82,7 @@ write_manifest() {
         printf -- '- tari console wallet: `%s`\n' "$(pin tari-wallet)"
         printf -- '- caddy: `%s`\n' "$(pin caddy)"
         printf -- '- docker-socket-proxy: `%s`\n' "$(pin socket-proxy)"
+        printf -- '- rigforge: `%s`\n' "$(pin rigforge)"
     } >"$out"
     log "Wrote ingredients manifest: $out"
 }
