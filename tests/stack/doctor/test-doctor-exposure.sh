@@ -72,3 +72,71 @@ echo "== unit: a narrowed bind to the host's OWN public address still warns (#18
 _xp_narrowed_public=$(STRATUM_BIND=8.8.8.8 PITHEAD_APPLIANCE=0 PATH="$XPBIN:$PATH" run_sourced "$SANDBOX" check_stratum_exposure doctor 2>&1)
 assert_contains "doctor still warns on a bind narrowed to its own public address (#1803)" "$_xp_narrowed_public" "public IP"
 assert_not_contains "doctor withholds that public bind address too (#1803)" "$_xp_narrowed_public" "8.8.8.8"
+
+echo "== unit: doctor reads rendered stratum mitigations (#2461) =="
+_xp_env="$SANDBOX/exposure-env"
+mkdir -p "$_xp_env"
+for _xp_surface in 0 1; do
+    for _xp_password in '' fixture-password; do
+        for _xp_tls in false true; do
+            printf 'PROXY_STRATUM_PASSWORD=%s\nPROXY_STRATUM_TLS=%s\n' "$_xp_password" "$_xp_tls" >"$_xp_env/.env"
+            _xp_row="surface=$_xp_surface password=${_xp_password:+set} TLS=$_xp_tls"
+            _xp_out=$(STRATUM_BIND=0.0.0.0 PITHEAD_APPLIANCE="$_xp_surface" PATH="$XPBIN:$PATH" run_sourced "$_xp_env" check_stratum_exposure doctor 2>&1)
+            assert_not_contains "$_xp_row: no FAIL" "$_xp_out" "FAIL"
+            assert_not_contains "$_xp_row: no public address" "$_xp_out" "8.8.8.8"
+            assert_not_contains "$_xp_row: no password value" "$_xp_out" "fixture-password"
+            assert_not_contains "$_xp_row: never OK for exposure" "$_xp_out" "OK"
+            if [ -n "$_xp_password" ] && [ "$_xp_tls" = true ]; then
+                assert_contains "$_xp_row: INFO with both mitigations" "$_xp_out" "•"
+                assert_not_contains "$_xp_row: no WARN with both mitigations" "$_xp_out" "WARN"
+                assert_contains "$_xp_row: TLS remains per rig" "$_xp_out" "rigs not switched to TLS still connect in cleartext"
+            else
+                assert_contains "$_xp_row: WARN with incomplete mitigations" "$_xp_out" "WARN"
+                if [ -n "$_xp_password" ]; then
+                    assert_contains "$_xp_row: acknowledges password" "$_xp_out" "requires a password but is still cleartext"
+                    assert_not_contains "$_xp_row: no unauthenticated claim" "$_xp_out" "unauthenticated"
+                elif [ "$_xp_tls" = true ]; then
+                    assert_contains "$_xp_row: TLS-only caveat" "$_xp_out" "rigs not switched to TLS still connect in cleartext without authentication"
+                else
+                    assert_contains "$_xp_row: default warning unchanged" "$_xp_out" "unauthenticated"
+                    assert_contains "$_xp_row: default cleartext warning" "$_xp_out" "cleartext"
+                fi
+            fi
+            _xp_setup=$(STRATUM_BIND=0.0.0.0 PITHEAD_APPLIANCE="$_xp_surface" PATH="$XPBIN:$PATH" run_sourced "$_xp_env" check_stratum_exposure setup 2>&1)
+            assert_eq "$_xp_row: setup warning unchanged" "$_xp_setup" "$_xp_console"
+        done
+    done
+done
+
+echo "== unit: auto-heal requires dashboard control (#3166) =="
+build_doctor_stubs
+for _xp_surface in 0 1; do
+    for _xp_heal in false true; do
+        for _xp_control in false true; do
+            printf 'TOR_AUTO_HEAL=%s\nDASHBOARD_CONTROL_ENABLED=%s\n' "$_xp_heal" "$_xp_control" >"$_xp_env/.env"
+            _xp_row="surface=$_xp_surface heal=$_xp_heal control=$_xp_control"
+            _xp_out=$(PITHEAD_APPLIANCE="$_xp_surface" RUNNING_CONTAINERS=tor PATH="$DRBIN:$PATH" run_sourced "$_xp_env" check_tor_running 2>&1)
+            assert_not_contains "$_xp_row: prerequisite never FAILs" "$_xp_out" "FAIL"
+            if [ "$_xp_heal" = true ] && [ "$_xp_control" = false ]; then
+                assert_contains "$_xp_row: INFO for inert heal" "$_xp_out" "•"
+                assert_contains "$_xp_row: describes limitation" "$_xp_out" "only probes and logs"
+                assert_contains "$_xp_row: names login" "$_xp_out" "dashboard login"
+                assert_contains "$_xp_row: names control" "$_xp_out" "enable dashboard control"
+                assert_contains "$_xp_row: manual recovery" "$_xp_out" "restart Tor by hand"
+            else
+                assert_not_contains "$_xp_row: no inert-heal diagnostic" "$_xp_out" "only probes and logs"
+            fi
+        done
+    done
+    _xp_out=$(PITHEAD_APPLIANCE="$_xp_surface" RUNNING_CONTAINERS=p2pool PATH="$DRBIN:$PATH" run_sourced "$_xp_env" check_tor_running 2>&1)
+    if [ "$_xp_surface" = 0 ]; then
+        assert_contains "Tor down hint names control prerequisite" "$_xp_out" "dashboard.control.enabled:true"
+    fi
+done
+
+# Force only the SOCKS probe to fail; no external connection is attempted.
+printf '#!/usr/bin/env bash\nexit 1\n' >"$DRBIN/curl"
+chmod +x "$DRBIN/curl"
+_xp_out=$(PITHEAD_APPLIANCE=0 RUNNING_CONTAINERS=tor PATH="$DRBIN:$PATH" run_sourced "$_xp_env" check_tor_clearnet_egress 2>&1)
+assert_contains "Tor egress hint names control prerequisite" "$_xp_out" "dashboard.control.enabled:true"
+assert_contains "Tor egress hint names login prerequisite" "$_xp_out" "dashboard login"

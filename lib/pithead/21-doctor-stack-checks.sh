@@ -11,18 +11,16 @@ mining_stack_running() {
     container_is_running p2pool || container_is_running monerod || container_is_running xmrig-proxy
 }
 
-# doctor (#563): the tor container is unconditional (no compose profile gates it — it's the
-# Tor-first backbone in every deployment, remote-node mode included). So "revenue containers up
-# but tor down" is never a legitimate state: it means tor crashed or was stopped individually
-# while the stack kept mining, leaving clearnet dials no longer fail-closed and every off-box
-# connection (Healthchecks, Telegram, XvB, p2pool/Tari peers) without its Tor path. FAIL loudly so
-# doctor can't report all-clear on a silent privacy outage. A clean `down` (nothing running) is
-# fine — nothing to guard.
+# Tor down while mining runs is a privacy outage; a clean stack shutdown is expected.
 check_tor_running() {
+    if [ "$(normalize_bool "$(env_get TOR_AUTO_HEAL)")" = true ] &&
+        [ "$(normalize_bool "$(env_get DASHBOARD_CONTROL_ENABLED)")" != true ]; then
+        dr_info "Tor auto-heal only probes and logs while dashboard control is disabled. Set a dashboard login and enable dashboard control for automatic recovery, or restart Tor by hand."
+    fi
     if container_is_running tor; then
         dr_ok "Tor container is running — the privacy backbone is up."
     elif mining_stack_running; then
-        dr_fail_surface "The Tor container is DOWN while the mining stack is still running — the privacy backbone is dead: clearnet dials are no longer fail-closed and off-box connections (Healthchecks, Telegram, XvB, peers) have lost their Tor path. Restart it ('./pithead restart tor'; set tor.auto_heal:true to self-heal), or bring the stack down ('./pithead down')." "The Tor container is DOWN while the mining stack is still running — the privacy backbone is dead: clearnet dials are no longer fail-closed and off-box connections (Healthchecks, Telegram, XvB, peers) have lost their Tor path. There is no dashboard control that restarts Tor on its own."
+        dr_fail_surface "The Tor container is DOWN while the mining stack is still running — the privacy backbone is dead: clearnet dials are no longer fail-closed and off-box connections (Healthchecks, Telegram, XvB, peers) have lost their Tor path. Restart it ('./pithead restart tor'; set tor.auto_heal:true with a dashboard login and dashboard.control.enabled:true to self-heal), or bring the stack down ('./pithead down')." "The Tor container is DOWN while the mining stack is still running — the privacy backbone is dead: clearnet dials are no longer fail-closed and off-box connections (Healthchecks, Telegram, XvB, peers) have lost their Tor path. There is no dashboard control that restarts Tor on its own."
     else
         dr_info_surface "Tor container isn't running — the stack is down (expected after './pithead down')." "Tor container isn't running — the mining stack is down, which is expected while it is stopped."
     fi
@@ -342,7 +340,7 @@ check_tor_clearnet_egress() {
         "https://www.google.com/generate_204" 2>/dev/null; then
         dr_ok "Tor clearnet egress works — Healthchecks, Telegram, and XvB can reach their services."
     else
-        dr_warn_surface "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats may be down while mining still works. Check with a second target; run './pithead restart tor' for manual recovery, or set tor.auto_heal:true in config.json for bounded circuit refresh before one restart." "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats may be down while mining still works. Check with a second target; run './pithead restart tor' for manual recovery."
+        dr_warn_surface "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats may be down while mining still works. Check with a second target; run './pithead restart tor' for manual recovery, or set tor.auto_heal:true with a dashboard login and dashboard.control.enabled:true in config.json for bounded circuit refresh before one restart." "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats may be down while mining still works. Check with a second target; run './pithead restart tor' for manual recovery."
     fi
     return 0
 }

@@ -73,9 +73,12 @@ stack's component versions don't dictate a miner version. When in doubt, run the
   Lock it down with controls that complement each other: narrow the bind address with
   [`p2pool.stratum_bind`](configuration.md#configuration-reference), restrict the source range with a
   host firewall, and/or require a password with [`p2pool.stratum_password`](#authentication).
-- `pithead setup` and `doctor` flag this for you: when the host has a public IP and stratum is bound
-  to all interfaces, they print a warning pointing back here. A NAT'd home host (no public IP on its
-  own interfaces) sees nothing, so this only nudges the hosts that are actually exposed.
+- `pithead setup` warns when the host has a public IP and stratum is bound to all interfaces
+  or to that public address. `doctor` reads the rendered password and TLS settings: neither set
+  warns about unauthenticated, cleartext access; password only warns about cleartext; TLS only
+  warns that rigs not switched to TLS still connect in cleartext without authentication. Both set
+  produces INFO, since cleartext rigs can still connect. Restrict access to your network even with
+  both configured. A NAT'd home host with no public IP on its interfaces needs no exposure warning.
 
 #### `p2pool.stratum_bind` — which interface to listen on
 
