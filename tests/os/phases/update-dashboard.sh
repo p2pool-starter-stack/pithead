@@ -31,20 +31,45 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         return
         ;;
     esac
-    local tries=0 code=000
-    while [ "$tries" -lt 60 ]; do
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        code=$(curl -ksS -o /dev/null -w '%{http_code}' -m 8 "https://$ip/" 2>/dev/null || true)
-        case "$code" in 2?? | 3?? | 401 | 403) break ;; esac
-        sleep 5
-        tries=$((tries + 1))
+    # Caddy answering does not mean the dashboard upstream is ready. Wait for the
+    # authenticated state endpoint, then judge os_update on that same response.
+    local state_body code=000 state_ready=0 remaining request_limit pause
+    state_body=$(mktemp) || {
+        bad "leg 4: could not create the /api/state response file"
+        return
+    }
+    deadline=$(($(date +%s) + 120))
+    while :; do
+        remaining=$((deadline - $(date +%s)))
+        [ "$remaining" -gt 0 ] || break
+        request_limit=8
+        [ "$remaining" -ge "$request_limit" ] || request_limit=$remaining
+        : >"$state_body"
+        # shellcheck disable=SC2154 # guest address shared by the suite runner
+        if code=$(curl -sSk -u "$DASH_USER:$DASH_PASS" -o "$state_body" -w '%{http_code}' \
+            -m "$request_limit" "https://$ip/api/state" 2>/dev/null) &&
+            [ "$code" = 200 ] && jq -e 'true' "$state_body" >/dev/null 2>&1; then
+            state_ready=1
+            break
+        fi
+        remaining=$((deadline - $(date +%s)))
+        [ "$remaining" -gt 0 ] || break
+        pause=5
+        [ "$remaining" -ge "$pause" ] || pause=$remaining
+        sleep "$pause"
     done
+    if [ "$state_ready" -ne 1 ]; then
+        bad "leg 4: /api/state readiness timed out after 120 s — HTTP ${code:-000}; body: $(head -c 200 "$state_body" | LC_ALL=C tr -cd '\11\12\15\40-\176' | tr '\r\n' ' ')"
+        rm -f "$state_body"
+        return
+    fi
     # The UI-presence contract: an appliance state carries os_update, so the header renders the
     # OS control instead of the tarball Upgrade button.
-    if curl -sSk -u "$DASH_USER:$DASH_PASS" "https://$ip/api/state" 2>/dev/null |
-        jq -e '.os_update.step' >/dev/null 2>&1; then
+    if jq -e '.os_update.step' "$state_body" >/dev/null 2>&1; then
+        rm -f "$state_body"
         ok "leg 4: /api/state carries the appliance os_update state (the header control renders)"
     else
+        rm -f "$state_body"
         bad "leg 4: /api/state has no os_update — the dashboard would never show the OS control"
         return
     fi
