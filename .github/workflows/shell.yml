@@ -146,6 +146,38 @@ jobs:
       - name: Run repository tooling checks
         run: make test-tools
 
+  soak-macos:
+    name: Soak self-test (macOS, ${{ matrix.bash }})
+    runs-on: macos-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        bash: [system, homebrew]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install jq and Homebrew Bash
+        run: brew install jq bash
+      - name: Run soak self-test with BSD userland
+        env:
+          BASH_FLAVOR: ${{ matrix.bash }}
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          tools="$RUNNER_TEMP/soak-tools"
+          mkdir -p "$tools"
+          ln -s "$(command -v jq)" "$tools/jq"
+          if [ "$BASH_FLAVOR" = homebrew ]; then
+            ln -s "$(brew --prefix bash)/bin/bash" "$tools/bash"
+          else
+            ln -s /bin/bash "$tools/bash"
+          fi
+          # Keep GNU coreutils, sed and timeout off PATH, including in driver children.
+          export PATH="$tools:/usr/bin:/bin:/usr/sbin:/sbin"
+          bash --version
+          bash tests/os/soak-probe.sh --self-test
+
   shell-lint:
     name: Shell lint (shellcheck + shfmt)
     runs-on: ubuntu-latest

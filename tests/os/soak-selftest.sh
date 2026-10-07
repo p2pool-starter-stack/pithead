@@ -6,6 +6,19 @@ soak_extended_selftest() {
     source "$(dirname "$0")/soak-read.sh" --library
     # shellcheck source=tests/os/soak-record.sh
     source "$(dirname "$0")/soak-record.sh"
+    chk 'UTC epoch is independent of workstation timezone' "$(TZ=Pacific/Honolulu soak_local epoch 2026-10-06T00:00:00Z)" 1791244800
+    chk 'epoch formats the captured sample in UTC' "$(TZ=Pacific/Honolulu soak_local utc 1791244800)" 2026-10-06T00:00:00Z
+    for value in unreadable 2026-02-30T00:00:00Z 2026-10-06T00:00:00 2026-1-06T00:00:00Z; do
+        soak_local epoch "$value" >/dev/null 2>&1
+        chk "invalid recorded UTC time rejected: $value" "$?" 1
+    done
+    chk 'local decoder preserves firewall JSON' "$(printf 'e30K\n' | soak_local decode)" '{}'
+    chk 'local SHA-256 hashes exact bytes' "$(printf steady | soak_local sha256)" '57e1f047b30bdadc4b84b18061faf30a0dd3d58336cbc91c8dd28a6b6f4927e9'
+    chk 'bounded local command preserves spaced arguments' "$(soak_local timeout 5 python3 -c 'import sys; print(sys.argv[1])' 'two words')" 'two words'
+    soak_local timeout 5 python3 -c 'raise SystemExit(7)'
+    chk 'bounded local command preserves failure status' "$?" 7
+    soak_local timeout 0.1 python3 -c 'import time; time.sleep(10)'
+    chk 'bounded local command times out with SSH failure status' "$?" 124
     out=$(soak_memory <<<'MemTotal: 8000 kB
 MemAvailable: 3000 kB
 SwapTotal: 2000 kB
@@ -216,7 +229,8 @@ API_TEST
     out=$(cat "$tmp/log/read1.env")
     chk 'initial sampled maximum is used RAM' "$(printf '%s\n' "$out" | sed -n 's/^mem_sampled_max_kib=//p')" 5000
     # Make the interval deterministic for growth arithmetic.
-    sed -i "s/^sample_epoch=.*/sample_epoch=$(($(date +%s) - 86400))/" "$tmp/log/read1.env"
+    sed "s/^sample_epoch=.*/sample_epoch=$(($(date +%s) - 86400))/" "$tmp/log/read1.env" >"$tmp/edited"
+    mv "$tmp/edited" "$tmp/log/read1.env"
     sed 's/mem_available_kib=3000/mem_available_kib=2000/;s/monero_chain_mib=100/monero_chain_mib=110/' "$tmp/a" >"$tmp/b"
     drv_ext b >/dev/null
     chk 'changed resources do not gate' "$?" 0
@@ -273,7 +287,6 @@ API_TEST
 #!/usr/bin/env bash
 case "$*" in
     '-u +%s') printf '%s\n' "$SOAK_CLOCK" ;;
-    '-u +%Y-%m-%dT%H:%M:%SZ') "$SOAK_REAL_DATE" -u -d "@$SOAK_CLOCK" +%Y-%m-%dT%H:%M:%SZ ;;
     *) "$SOAK_REAL_DATE" "$@" ;;
 esac
 CLOCK
@@ -321,11 +334,16 @@ CLOCK
     out=$(cat "$tmp/log/read5.env")
     chk 'backwards clock records an unknown gap' "$(printf '%s\n' "$out" | sed -n 's/^missing_days=//p')" '?'
     chk 'backwards clock leaves growth unavailable' "$(printf '%s\n' "$out" | sed -n 's/^monero_growth_mib=//p')" '?'
-    sed -i '$s/^[^ ]*/unreadable/' "$tmp/log/soak.log"
+    sed '$s/^[^ ]*/unreadable/' "$tmp/log/soak.log" >"$tmp/edited"
+    mv "$tmp/edited" "$tmp/log/soak.log"
     drv_clock 3 calendar3 >/dev/null
     chk 'unreadable recorded time fails the schedule check' "$?" 1
     out=$(cat "$tmp/log/read6.env")
     chk 'unreadable recorded time leaves rate unavailable' "$(printf '%s\n' "$out" | sed -n 's/^tari_growth_mib_per_day=//p')" '?'
+    printf 'unreadable\n' >"$tmp/log/started"
+    drv_clock 4 calendar4 >/dev/null 2>&1
+    chk 'unreadable baseline time fails without shell arithmetic errors' "$?" 1
+    chk 'unreadable baseline time keeps informational day unknown' "$(tail -1 "$tmp/log/soak.log" | sed -n 's/.* day=\([^ ]*\).*/\1/p')" '?'
     rm "$tmp/bin/date"
     # The KVM row must fail if a required collector field disappears.
     printf '%s\nmem_total_kib=8000\nmem_available_kib=3000\ncontainer_stats=?\n' "$base" >"$tmp/live"

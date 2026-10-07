@@ -71,10 +71,13 @@ set -uo pipefail
 KEY="${PITHEAD_SOAK_KEY:-$HOME/.ssh/pithead-os-test}"
 EXCLUDED_HEALTH="xmrig-proxy"
 
+# shellcheck source=tests/os/soak-record.sh
+source "$(dirname "$0")/soak-record.sh"
+
 # The one remote command. Read-only by construction: every line is a read, and the .env is
 # consulted for monerod's RPC credentials without ever printing them.
 read_box() { # $1 = host, $2 = previous read's journal cursor or empty; prints key=value lines
-    timeout 180 ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=no \
+    soak_local timeout 180 ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "root@$1" "SOAK_CURSOR='$2' bash -s" <"$(dirname "$0")/soak-read.sh"
 }
 
@@ -129,9 +132,12 @@ soak_day_verdict() {
 
 self_test() {
     local base today out
+    # Collector functions normally run under GNU tools on the Linux guest. Here only,
+    # bound their stubbed commands with the workstation helper instead.
+    timeout() { soak_local timeout "$@"; }
     base=$'btime=100\njdirs=1\ncontainer=monerod|running|0|healthy|2026-09-03T06:00:00Z\ncontainer=xmrig-proxy|running|0|unhealthy|2026-09-03T06:00:00Z\nssh_window=cursor\nssh_accepted=1\nlast_sessions=0\nmonero=h:100 sync:true peers:1/2'
     base+=$'\nfirewall_present=1\nfirst_sync_exemption=0\nfirewall_hash='
-    base+=$(printf steady | sha256sum | awk '{print $1}')
+    base+=$(printf steady | soak_local sha256)
     base+=$'\nfirewall_listing_b64=e30K'
     n=0
     f=0
@@ -258,9 +264,7 @@ umask 077
 mkdir -p "$LOGDIR"
 chmod 700 "$LOGDIR"
 sample_epoch=$(date -u +%s)
-now=$(date -u -d "@$sample_epoch" +%Y-%m-%dT%H:%M:%SZ)
-# shellcheck source=tests/os/soak-record.sh
-source "$(dirname "$0")/soak-record.sh"
+now=$(soak_local utc "$sample_epoch")
 soak_record_schedule
 # This run's label is the soak.log line number it lands on — day= is information, not identity.
 line=$(($([ -f "$LOGDIR/soak.log" ] && wc -l <"$LOGDIR/soak.log" || echo 0) + 1))
@@ -280,7 +284,7 @@ fi
 kv() { printf '%s\n' "$today" | sed -n "s/^$1=//p" | head -1; }
 if [ "$MODE" = "--read" ]; then
     printf '%s\n' "$today" >"$LOGDIR/read.env"
-    printf '%s\n' "$(kv firewall_listing_b64)" | base64 -d >"$LOGDIR/read.firewall.json"
+    printf '%s\n' "$(kv firewall_listing_b64)" | soak_local decode >"$LOGDIR/read.firewall.json"
     echo "Read-only collection saved; no soak window opened."
     exit 0
 fi
@@ -291,7 +295,7 @@ if [ "$MODE" = "--start" ] && { [ "$(kv first_sync_exemption)" != 0 ] ||
     exit 1
 fi
 if [ "$MODE" = "--start" ]; then # the ONLY writer of day0.env
-    printf '%s\n' "$(kv firewall_listing_b64)" | base64 -d >"$LOGDIR/day0.firewall.json"
+    printf '%s\n' "$(kv firewall_listing_b64)" | soak_local decode >"$LOGDIR/day0.firewall.json"
     printf '%s\n' "$today" >"$LOGDIR/day0.env"
     printf '%s\n' "$now" >"$LOGDIR/started"
 fi
@@ -299,7 +303,12 @@ fi
     printf '%s read=%s day=? NO-BASELINE VERDICT=FAIL fails=baseline (run with --start first)\n' "$now" "$line" | tee -a "$LOGDIR/soak.log"
     exit 1
 }
-day=$(((sample_epoch - $(date -u -d "$(cat "$LOGDIR/started")" +%s)) / 86400))
+day='?'
+if started_epoch=$(soak_local epoch "$(cat "$LOGDIR/started")" 2>/dev/null); then
+    day=$(((sample_epoch - started_epoch) / 86400))
+else
+    missing_days='?'
+fi
 running=$(printf '%s\n' "$today" | grep -c '^container=.*|running|')
 total=$(printf '%s\n' "$today" | grep -c '^container=')
 unhealthy=$(printf '%s\n' "$today" | sed -n 's/^container=\([^|]*\)|[^|]*|[^|]*|unhealthy|.*/\1/p' | tr '\n' ',' | sed 's/,$//')
@@ -313,7 +322,7 @@ if [ "$missing_days" != 0 ]; then
 fi
 if [[ "$verdict" == *6:firewall* ]]; then
     cp "$LOGDIR/day0.firewall.json" "$LOGDIR/read$line.firewall-baseline.json"
-    printf '%s\n' "$(kv firewall_listing_b64)" | base64 -d >"$LOGDIR/read$line.firewall-current.json"
+    printf '%s\n' "$(kv firewall_listing_b64)" | soak_local decode >"$LOGDIR/read$line.firewall-current.json"
 fi
 printf '%s read=%s day=%s btime=%s jdirs=%s up=%ss running=%s/%s unhealthy=%s ssh_accepted=%s window=%s last=%s monero=%s rauc=%s data_free_mb=%s load=%s %s %s\n' \
     "$now" "$line" "$day" "$(kv btime)" "$(kv jdirs)" "$(kv uptime_s)" "$running" "$total" "${unhealthy:-none}" "$(kv ssh_accepted)" "$(kv ssh_window)" "$(kv last_sessions)" "$(kv monero)" "$(kv rauc)" "$(kv data_free_mb)" "$(kv load)" "$(soak_record_summary)" "$verdict" |

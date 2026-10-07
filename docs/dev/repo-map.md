@@ -144,8 +144,10 @@ drives command failures without mounting a disk or starting Podman.
 
 The daily soak reader is `tests/os/soak-probe.sh`. Its fixed remote collector is
 `soak-read.sh`, local derivations and live-read verdict are in `soak-record.sh`, and
-extended canned cases are in `soak-selftest.sh`, all under `tests/os/`. Its `--self-test`
-is run by `tests/stack/test-harness-tooling.sh`; the provision phase exercises `--read`
+extended canned cases are in `soak-selftest.sh`, all under `tests/os/`. The workstation
+helper `soak-local.py` supplies portable UTC, hashing, decoding and bounded SSH execution.
+Its `--self-test` is run by `tests/stack/test-harness-tooling.sh` on Linux and by the
+Shell workflow on macOS with system and Homebrew Bash; the provision phase exercises `--read`
 on the guest without opening a soak window.
 
 The harness entry points retain their command-line interfaces. Live integration

@@ -445,9 +445,13 @@ sudo tests/os/verify-image.sh os/rauc/build/system.img --test   # harness build:
 `tests/os/soak-probe.sh HOST LOGDIR [--start|--read]` is the 7-day unattended soak's daily
 reader (#1652). It streams `tests/os/soak-read.sh` in one non-interactive, read-only SSH
 session. Keep `soak-probe.sh`, `soak-read.sh`, `soak-record.sh` and `soak-selftest.sh` together
-when copying the probe into the test kit. The self-test also reads
-`dashboard/mining_dashboard/helper/http.py`; preserve all five repository-relative paths
-in copied kits (the four scripts under `tests/os/`) to exercise the real bounded HTTP helper. Nothing is installed in the guest.
+with `soak-local.py` when copying the probe into the test kit. Run the local probe on
+Linux or macOS with Bash 3.2 or newer, Python 3 and jq. GNU coreutils are not required
+on the workstation: Python handles UTC timestamps, SHA-256, base64 decoding and the
+180-second SSH timeout. The streamed collector still runs on the Linux appliance.
+The self-test also reads
+`dashboard/mining_dashboard/helper/http.py`; preserve all six repository-relative paths
+in copied kits (the four shell scripts and Python helper under `tests/os/`) to exercise the real bounded HTTP helper. Nothing is installed in the guest.
 
 Run `--self-test`, then `HOST LOGDIR --read` before opening the window. `--read` saves
 `read.env` and `read.firewall.json` locally without creating a baseline or counting a soak day.
@@ -516,4 +520,6 @@ samples and failed SSH reads fail independently of rules 1–6; missing optional
 do not gate the soak. `--self-test`
 uses canned readings, pure instrument parsers and stubbed SSH to prove these contracts,
 including clock-advanced missing-day recovery, failed SSH recovery, refusal to start with
-a sync exemption and retention of mismatch evidence.
+a sync exemption and retention of mismatch evidence. Linux CI runs it through the
+shell suite; the Shell workflow also runs it on `macos-latest` with system Bash 3.2
+and Homebrew Bash, keeping GNU utilities off PATH.
