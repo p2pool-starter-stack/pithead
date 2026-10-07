@@ -161,9 +161,10 @@ NOTE: The machine name replaces `pithead` in every `pithead.local` address in th
 
 1. Make a fresh probe log directory, never the previous soak's, so the old `soak.log`,
    `day0.env`, `started` and `read<N>.env` files are not mixed into this soak's record.
-2. Keep the probe and its three sibling helper scripts together in the kit; include
-   `dashboard/mining_dashboard/helper/http.py` for the self-test. Preserve all five
-   repository-relative paths. On the build host, run:
+2. Keep the probe, its three sibling shell scripts and `tests/os/soak-local.py` together
+   in the kit; include `dashboard/mining_dashboard/helper/http.py` for the self-test.
+   Preserve all six repository-relative paths. On a Linux or macOS workstation with
+   Bash 3.2 or newer, Python 3 and jq, run:
 
    ```bash
    tests/os/soak-probe.sh --self-test
