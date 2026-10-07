@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
-# Run in one target shell so EXIT/INT/TERM restoration covers every failed assertion.
+# Run in one target shell so EXIT restoration covers failure and signal termination.
 p2pool_sidechain_sync_snippet() {
     cat <<'PROBE'
     set -euo pipefail
@@ -12,7 +12,7 @@ p2pool_sidechain_sync_snippet() {
     restart=false
     cleanup() {
         rc=$?
-        trap - EXIT INT TERM
+        trap - EXIT
         restored=true
         if [ "$saved" = true ]; then
             if ! sudo -n cp -p -- "$backup" "$file" || ! sudo -n cmp -s -- "$backup" "$file"; then
@@ -38,8 +38,6 @@ p2pool_sidechain_sync_snippet() {
         exit "$rc"
     }
     trap cleanup EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
     restart=true
     docker compose stop p2pool >/dev/null 2>&1
     sudo -n cp -p -- "$file" "$backup"
