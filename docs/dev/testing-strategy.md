@@ -185,7 +185,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Disabled / zero shares / `fail_count ≥ 3` / no sustainable tier → P2POOL | guards | 1 ✅ |
 | Closed-loop ramp/back-off, cold-start seed, VIP-reserve anti-overshoot (#70) | controller | 1 ✅ |
 | Actuated run-loop duty: split remainder dwell honored, steady state at tier + cushion (#423) | wall-clock sim | 1 ✅ |
-| P2POOL / XVB / SPLIT modes, tiers, smart-sleep early exit when enabled; full P2Pool dwell with XvB disabled and no credited average | decision | 1 ✅ |
+| P2POOL / XVB / SPLIT modes, tiers, smart-sleep early exit when enabled; full P2Pool dwell with XvB disabled and no credited average | decision | 1 ✅ · 4 ▶ (`assert_xvb_off_no_dwell_churn`: after 60 seconds of dashboard uptime, observe 95 seconds of live logs, longer than two old 30-second churn periods and shorter than the shipped `XVB_TIME_ALGO_MS`; zero early-dwell exits and at most one P2POOL switch. XvB enabled, an unstarted algorithm or rejected workers skip by design; unreadable probes and restarts fail. Fake-transport controls in `selftest-xvb-off-dwell.sh` reject the old churn log and exercise both harness callers) |
 | Real XvB endpoint reachable / failing | network | 4 (real endpoint) |
 | Credited 1h/24h averages converge to tier on live XvB (soak) | live donation | 4 (real endpoint) |
 

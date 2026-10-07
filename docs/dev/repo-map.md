@@ -172,6 +172,9 @@ and records counted `by-design` skips for the connection and wallet supersession
 checkout probes; failed identification leaves those probes binding.
 `tests/integration/selftest/selftest-probe-channels.sh` covers the channel decision,
 skip accounting and missing DIY tools without starting containers.
+`tests/integration/lib/xvb-off-dwell.sh` supplies the live disabled-XvB dwell observation
+for deploying scenarios and read-only checks; `selftest-xvb-off-dwell.sh` exercises
+its log, clock, rejection and transport controls without a daemon.
 The source-image module supplies shared read-only lifecycle latch/marker diagnostics to the
 connection probe and lifecycle runner. The image fixture uses the shared
 `assert_mining_probe_ready` in `run-matrix.sh` to settle a legitimate restore-induced hold.
