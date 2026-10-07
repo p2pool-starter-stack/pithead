@@ -102,7 +102,7 @@ install -m 644 os/rauc/grub.cfg /mnt/rauc-esp/grub/grub.cfg
 grub-editenv /mnt/rauc-esp/grub/grubenv create
 OS_VERSION=$(tr -d '[:space:]' <VERSION)
 grub-editenv /mnt/rauc-esp/grub/grubenv set ORDER="A B" A_OK=1 A_TRY=0 B_OK=0 B_TRY=0 \
-    "A_VERSION=$OS_VERSION" "B_VERSION="
+    "A_VERSION=$OS_VERSION" "B_VERSION=" MEDIA=usb
 
 # The /var overlay directories cannot be seeded here — /data does not exist until systemd-repart
 # creates it on the target machine's real disk. repart makes them itself at format time, via the

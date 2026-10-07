@@ -11,7 +11,7 @@ chk "the menu waits 5 s — long enough to choose an entry" 'grep -q "^timeout=5
 # title variables, so a refactor cannot silently drop one. It cannot prove the variables get the
 # RIGHT values for a given slot state — that's grub.cfg's real selection logic, executed against
 # fixture grubenv values by tests/stack/appliance/test-appliance-boot-labels.sh (#2055 G4).
-chk "entries name their version, slot and current/previous state" 'grep -q "^menuentry \"\$CURRENT_NAME (slot \$CURRENT_SLOT, current)\"" "$GRUBCFG" && grep -q "^menuentry \"\$A_TITLE\"" "$GRUBCFG" && grep -q "^menuentry \"\$B_TITLE\"" "$GRUBCFG"'
+chk "entries name their version, slot and current/previous state" 'grep -q "^menuentry \"\$CURRENT_TITLE\"" "$GRUBCFG" && grep -q "^menuentry \"\$A_TITLE\"" "$GRUBCFG" && grep -q "^menuentry \"\$B_TITLE\"" "$GRUBCFG"'
 chk "legacy-unknown and verified-empty slots stay distinct" 'grep -q "Pithead version unknown" "$GRUBCFG" && grep -q "empty (slot B)" "$GRUBCFG"'
 chk "no bootloader counters in any title" '! grep "^menuentry" "$GRUBCFG" | grep -qE "OK=|TRY="'
 chk "the menu is visible on the serial console" 'grep -q "^terminal_output console serial$" "$GRUBCFG"'
@@ -25,7 +25,7 @@ BVU="$ROOT/etc/systemd/system/pithead-boot-version.service"
 chk "the slot-version repair unit ships and is enabled" '[ -s "$BVU" ] && [ -L "$ROOT/etc/systemd/system/multi-user.target.wants/pithead-boot-version.service" ]'
 chk "it runs on every boot, not only a provisioned one" '! grep -q "^ConditionPathExists=" "$BVU" && grep -q "^ConditionPathIsMountPoint=/boot/efi$" "$BVU" && grep -q "^ExecStart=/usr/local/sbin/pithead-boot-version record-booted$" "$BVU"'
 chk "pithead-boot no longer carries the repair (one writer per boot)" '! grep -q "pithead-boot-version" "$ROOT/usr/local/sbin/pithead-boot"'
-chk "a Set up again entry, carrying the flag on its kernel line" 'grep -q "^menuentry \"Set up again (opens the setup wizard; keeps the saved settings)\"" "$GRUBCFG" && [ "$(grep -c "^ *linux .*pithead.setup=1" "$GRUBCFG")" -eq 1 ]'
+chk "a Set up again entry, carrying the flag on its kernel line" 'grep -q "^menuentry \"\$SETUP_TITLE\"" "$GRUBCFG" && [ "$(grep -c "^ *linux .*pithead.setup=1" "$GRUBCFG")" -eq 1 ]'
 # The entry is the default boot plus one flag: it must follow the slot counting, never pin a slot.
 chk "the setup entry boots the slot the counting chose" 'grep -q "rauc.slot=\$SETUP_SLOT pithead.setup=1" "$GRUBCFG" && grep -q "^set SETUP_SLOT=A$" "$GRUBCFG" && grep -q "SETUP_SLOT=B" "$GRUBCFG"'
 # grub-reboot's mechanism: the running system names an entry for ONE boot, and grub.cfg consumes it.

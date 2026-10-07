@@ -508,13 +508,21 @@ Every start shows a short menu for five seconds, then boots by itself. You never
 touch it: the machine keeps two copies of the system and boots the last one that worked,
 so an update that fails to come up is undone on the next start without you.
 
+Every title begins with **USB drive:** or **Internal disk:**, identifying the disk whose
+menu you are viewing. An installation made from an earlier image shows neither prefix: an
+update replaces the system slots, not its boot menu. The image starts with the USB label;
+if written directly to an internal disk, it corrects the label after the first boot. A
+transport that does not report USB reads as internal, including some enclosures and card
+readers. Use the firmware boot picker to identify the device when needed.
+
 - The first entry names the Pithead version the machine chose, its slot, and **current**.
   The other populated slot names its version and says **previous**. Two slots may hold the
   same version; **slot A** and **slot B** still tell them apart.
 - A slot the installer verified as unused says **empty**. An older installation with no saved
   version says **Pithead version unknown** until that slot boots and repairs its label.
-- **Set up again** opens the setup page, keeping everything the machine already has. Use it
-  when a machine's answers need changing and there is no other way in. A RigForge rig has no
+- **Set up again (setup wizard; keeps saved settings)** opens the setup page, keeping
+  everything the machine already has. Use it when a machine's answers need changing and
+  there is no other way in. A RigForge rig has no
   dashboard and no login, so this entry is its only way back to the setup page from the
   machine itself.
 

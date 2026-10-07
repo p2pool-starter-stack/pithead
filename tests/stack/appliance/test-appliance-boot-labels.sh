@@ -12,6 +12,7 @@ shift 2
 case "$op" in
 list) cat "$file" ;;
 set)
+    printf '%s\n' "$*" >>"$file.writes"
     for pair in "$@"; do
         key=${pair%%=*}
         sed "/^$key=/d" "$file" >"$file.tmp" 2>/dev/null || :
@@ -22,7 +23,24 @@ set)
 *) exit 2 ;;
 esac
 SH
-chmod +x "$BL/bin/grub-editenv"
+cat >"$BL/bin/findmnt" <<'SH'
+#!/bin/sh
+[ "$*" = '-no SOURCE /boot/efi' ] || exit 2
+[ "${BL_MOUNT_FAIL:-0}" = 0 ] || exit 1
+printf '/dev/fixture1\n'
+SH
+cat >"$BL/bin/lsblk" <<'SH'
+#!/bin/sh
+case "$*" in
+'-no PKNAME /dev/fixture1') printf 'fixture\n' ;;
+'-dno TRAN /dev/fixture')
+    [ "${BL_TRAN:-}" != fail ] || exit 1
+    printf '%s\n' "${BL_TRAN:-sata}" ;;
+*) exit 2 ;;
+esac
+SH
+chmod +x "$BL/bin/"*
+
 printf 'ORDER="B A"\nA_VERSION=1.9.0\nB_VERSION=\n' >"$BL/grubenv"
 printf 'quiet rauc.slot=A console=ttyS0\n' >"$BL/cmdline"
 printf '2.0.0\n' >"$BL/VERSION"
@@ -80,7 +98,44 @@ assert_rc "a boot with no slot to record does not fail its unit" "$?" "0"
 ) >/dev/null 2>&1
 assert_contains "…and the same dispatch still records a real A/B boot" "$(cat "$BL/grubenv")" "A_VERSION=2.0.0"
 
+# Transport updates run independently of slot metadata, including updater-free boots.
+for tran in usb sata nvme fail; do
+    expected=internal
+    [ "$tran" = usb ] && expected=usb
+    printf 'MEDIA=stale\nA_VERSION=2.0.0\n' >"$BL/grubenv"
+    PATH="$BL/bin:$PATH" BL_TRAN="$tran" PITHEAD_GRUBENV="$BL/grubenv" \
+        PITHEAD_CMDLINE="$BL/no-slot-cmdline" PITHEAD_VERSION_FILE="$BL/VERSION" \
+        bash "$ROOT/os/overlay/pithead-boot-version" record-booted >/dev/null 2>&1
+    assert_rc "$tran transport without a slot never fails the unit" "$?" 0
+    assert_contains "$tran transport records $expected media without a slot" "$(cat "$BL/grubenv")" "MEDIA=$expected"
+    : >"$BL/grubenv.writes"
+    PATH="$BL/bin:$PATH" BL_TRAN="$tran" PITHEAD_GRUBENV="$BL/grubenv" \
+        PITHEAD_CMDLINE="$BL/cmdline" PITHEAD_VERSION_FILE="$BL/VERSION" \
+        bash "$ROOT/os/overlay/pithead-boot-version" record-booted >/dev/null 2>&1
+    assert_eq "unchanged $tran media is not rewritten when versions refresh" \
+        "$(grep -c 'MEDIA=' "$BL/grubenv.writes")" 0
+    assert_contains "version refresh preserves $tran media" "$(cat "$BL/grubenv")" "MEDIA=$expected"
+    # Execute the installer's actual transport probe and seed, before any per-boot repair.
+    (
+        export PATH="$BL/bin:$PATH" BL_TRAN="$tran"
+        target=/dev/fixture media=internal mnt="$BL" os_version=2.0.0 b_version=""
+        mkdir -p "$mnt/boot/efi/grub"
+        sed -n '/^    tran=$(lsblk/,/^    \[ "$tran" = usb \]/p' "$ROOT/os/installer/pithead-install" >"$BL/seed.sh"
+        sed -n '/^    grub-editenv .* set ORDER=/,+1p' "$ROOT/os/installer/pithead-install" >>"$BL/seed.sh"
+        export target media mnt os_version b_version
+        bash -euo pipefail "$BL/seed.sh"
+    )
+    assert_rc "installer tolerates $tran transport under strict shell flags" "$?" 0
+    assert_contains "installer seeds $tran target media before boot" \
+        "$(cat "$BL/boot/efi/grub/grubenv")" "MEDIA=$expected"
+done
 before=$(cat "$BL/grubenv")
+PATH="$BL/bin:$PATH" BL_MOUNT_FAIL=1 PITHEAD_GRUBENV="$BL/grubenv" \
+    PITHEAD_CMDLINE="$BL/no-slot-cmdline" PITHEAD_VERSION_FILE="$BL/VERSION" \
+    bash "$ROOT/os/overlay/pithead-boot-version" record-booted >/dev/null 2>&1
+assert_rc "an unreadable ESP does not fail the boot unit" "$?" 0
+assert_eq "an unreadable ESP leaves media metadata alone" "$(cat "$BL/grubenv")" "$before"
+
 (
     PATH="$BL/bin:$PATH" PITHEAD_GRUBENV="$BL/grubenv" PITHEAD_CMDLINE="$BL/cmdline" \
         source "$ROOT/os/overlay/pithead-boot-version"
@@ -97,7 +152,7 @@ grub_fixture_titles() { # <env-file>
         echo 'save_env() { :; }'
         sed -n '/^set ORDER=/,/^# A one-boot entry choice/p' "$ROOT/os/rauc/grub.cfg" |
             sed '$d; s/set \([A-Z_][A-Z_]*=\)/\1/g'
-        echo 'printf "%s\n%s\n%s\n" "$CURRENT_NAME (slot $CURRENT_SLOT, current)" "$A_TITLE" "$B_TITLE"'
+        echo 'printf "%s\n%s\n%s\n%s\n" "$CURRENT_TITLE" "$A_TITLE" "$B_TITLE" "$SETUP_TITLE"'
     } >"$program"
     FIXTURE="$1" bash "$program"
 }
@@ -133,6 +188,31 @@ assert_eq "a recorded primary slot names its version and its letter" \
 grep -v '^B_VERSION=' "$BL/two" >"$BL/legacy"
 assert_eq "unset legacy metadata says unknown" "$(grub_fixture_titles "$BL/legacy" | sed -n 3p)" \
     "Pithead version unknown (slot B, previous)"
+# All four titles carry the medium, including both empty overrides and an empty primary.
+for medium in usb internal absent unknown; do
+    prefix=""
+    case "$medium" in
+    usb) prefix="USB drive: " ;;
+    internal) prefix="Internal disk: " ;;
+    esac
+    for fixture in two empty unrecorded legacy; do
+        cp "$BL/$fixture" "$BL/media-fixture"
+        [ "$medium" = absent ] || printf 'MEDIA=%s\n' "$medium" >>"$BL/media-fixture"
+        base=$(grub_fixture_titles "$BL/$fixture")
+        titles=$(grub_fixture_titles "$BL/media-fixture")
+        for row in 1 2 3 4; do
+            title=$(sed -n "${row}p" <<<"$titles")
+            assert_eq "$medium $fixture title $row names its medium" "$title" "$prefix$(sed -n "${row}p" <<<"$base")"
+            [ "${#title}" -le 72 ] && ok "$medium $fixture title $row fits 72 columns" || bad "title exceeds 72 columns: $title"
+            LC_ALL=C grep -q '[^ -~]' <<<"$title" && bad "title is not ASCII: $title" || ok "$medium $fixture title $row is ASCII"
+        done
+    done
+    # Explicitly drive the A-empty override as well as the B-empty fixture above.
+    sed 's/^A_VERSION=.*/A_VERSION=/' "$BL/media-fixture" >"$BL/empty-a"
+    assert_eq "$medium empty A title carries the medium" "$(grub_fixture_titles "$BL/empty-a" | sed -n 2p)" "${prefix}empty (slot A)"
+done
+assert_eq "setup wording fits the console with an internal prefix" \
+    "$(grub_fixture_titles "$BL/two" | sed -n 4p)" "Set up again (setup wizard; keeps saved settings)"
 assert_contains "the menu is emitted on the serial console" "$(cat "$ROOT/os/rauc/grub.cfg")" \
     "terminal_output console serial"
 # shellcheck source=tests/os/boot-label-serial-verdict.sh
@@ -146,5 +226,15 @@ boot_label_serial_verdict "$BL/serial" "$mark" 2.0.0 B A >/dev/null
 assert_rc "serial verdict rejects matching labels from an earlier boot" "$?" "1"
 boot_label_serial_verdict "$BL/serial" 0 2.0.1 B A >/dev/null
 assert_rc "serial verdict rejects a stale version" "$?" "1"
+
+printf 'Internal disk: Pithead 2.0.0 (slot B, current)\nInternal disk: Pithead 2.0.0 (slot A, previous)\nInternal disk: Set up again (setup wizard; keeps saved settings)\n' >"$BL/serial"
+boot_label_serial_verdict "$BL/serial" 0 2.0.0 B A "Internal disk: " >/dev/null
+assert_rc "serial verdict accepts complete media-prefixed menu titles" "$?" 0
+sed -i 's/; keeps saved settings)/; keeps saved/' "$BL/serial"
+boot_label_serial_verdict "$BL/serial" 0 2.0.0 B A "Internal disk: " >/dev/null
+assert_rc "serial verdict rejects a truncated setup title" "$?" 1
+printf 'Pithead 2.0.0 (slot B, current)\nPithead 2.0.0 (slot A, previous)\n' >"$BL/serial"
+boot_label_serial_verdict "$BL/serial" 0 2.0.0 B A "Internal disk: " >/dev/null
+assert_rc "serial verdict rejects missing media prefixes" "$?" 1
 
 rm -rf "$BL"

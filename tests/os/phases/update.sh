@@ -33,8 +33,7 @@ phase_update() {
             return
         }
     ok "v1 test image boots and answers test SSH ($ip)"
-    # #894/#895 baseline, compared after the committed A/B swap below (leg 2) proves SURVIVAL,
-    # not mere presence — /data (where both identities live) is untouched by a slot swap.
+    # #894/#895: compare these /data identities after the committed A/B swap (leg 2).
     local id_v1 hostkey_fp_v1
     id_v1=$(_ssh cat /etc/machine-id)
     hostkey_fp_v1=$(_ssh ssh-keygen -lf /data/ssh/ssh_host_ed25519_key 2>/dev/null | awk '{print $2}')
@@ -105,7 +104,7 @@ phase_update() {
         bad "the v2 install command failed on the guest"
         return
     }
-    ok "v2 installed into the spare slot"
+    _ssh 'grub-editenv /boot/efi/grub/grubenv list | grep -qx "MEDIA=internal"' && ok "RAUC install preserves media before any boot repair" || bad "RAUC install lost media before boot repair"
     _reboot_wait "$(_boot_spare_cmd)" 300 || {
         bad "guest never returned after booting the spare slot"
         return
@@ -139,6 +138,7 @@ phase_update() {
         return
     }
     ok "committed the booted update"
+    _ssh 'grub-editenv /boot/efi/grub/grubenv list | grep -qx "MEDIA=internal"' && ok "RAUC install and mark-good preserve media in the real grubenv" || bad "RAUC install or mark-good lost media in the real grubenv"
     menu_mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
     _reboot_wait reboot 300 || {
         bad "guest never returned after the post-commit reboot"
@@ -147,7 +147,7 @@ phase_update() {
     marker=$(_ssh cat /etc/pithead-test-marker)
     [ "$marker" = "v2" ] && ok "COMMIT: a committed update persists across reboot" ||
         bad "expected v2 after commit, got '$marker'"
-    menu_verdict=$(boot_label_serial_verdict "$SERIAL" "$menu_mark" "$(tr -d '[:space:]' <VERSION)" B A) && ok "$menu_verdict" || bad "$menu_verdict"
+    menu_verdict=$(boot_label_serial_verdict "$SERIAL" "$menu_mark" "$(tr -d '[:space:]' <VERSION)" B A "Internal disk: ") && ok "$menu_verdict" || bad "$menu_verdict"
     # #894/#895: host identity on /data must survive the system-slot swap.
     local id_v2 hostkey_fp_v2
     id_v2=$(_ssh cat /etc/machine-id)

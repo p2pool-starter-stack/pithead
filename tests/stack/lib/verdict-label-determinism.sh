@@ -99,10 +99,18 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # #3090's ca_enabled labels use only the fixed true/false toggle loop.
 # #2461's _xp_row labels use fixed surface and true/false loops; the password field
 # is only empty or "set", never the fixture password, an address or a measured value.
+# Boot-media labels use fixed transport/media cases (usb/sata/nvme/fail and
+# usb/internal/absent/unknown), expected usb/internal values, named fixtures, and
+# title rows 1..4; no measured value enters a PASS label.
 # #3204's rcm_invalid labels range over four fixed JSON fixtures, never measured input.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
+test-appliance-boot-labels.sh|expected
+test-appliance-boot-labels.sh|fixture
+test-appliance-boot-labels.sh|medium
+test-appliance-boot-labels.sh|row
+test-appliance-boot-labels.sh|tran
 test-appliance-boot.sh|ph
 test-appliance-hostname.sh|mode
 test-appliance-hostname.sh|op

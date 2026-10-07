@@ -15,6 +15,18 @@ write_slot_version() { # <A|B> <version-or-empty>
     grub-editenv "$GRUBENV" set "$1_VERSION=$2"
 }
 
+record_media() {
+    local esp disk tran media=internal
+    esp=$(findmnt -no SOURCE /boot/efi 2>/dev/null) || return 1
+    [ -n "$esp" ] || return 1
+    disk=$(lsblk -no PKNAME "$esp" 2>/dev/null) || return 1
+    [ -n "$disk" ] || return 1
+    tran=$(lsblk -dno TRAN "/dev/$disk" 2>/dev/null) || tran=""
+    [ "$tran" = usb ] && media=usb
+    [ "$(grub_value MEDIA)" = "$media" ] && return 0
+    grub-editenv "$GRUBENV" set "MEDIA=$media"
+}
+
 record_booted() {
     local slot version
     slot=$(booted_slot)
@@ -41,8 +53,10 @@ case "${1:-}" in
 # worth a red unit on a machine that is otherwise fine — an image built with no updater has no
 # `rauc.slot=` to read, and the next update or boot repairs a write that could not land. The
 # journal still says so, and the battery asserts `systemctl --failed` is empty (#792).
-record-booted) record_booted ||
-    echo "pithead-boot-version: could not refresh the booted slot's version label" >&2 ;;
+record-booted)
+    record_media || echo "pithead-boot-version: could not refresh the media label" >&2
+    record_booted || echo "pithead-boot-version: could not refresh the booted slot's version label" >&2
+    ;;
 record-installed) record_installed "${2:-}" ;;
 *)
     echo "usage: pithead-boot-version record-booted | record-installed VERSION" >&2

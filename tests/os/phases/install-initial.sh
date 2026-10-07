@@ -61,6 +61,11 @@ _phase_install_initial() {
         return 1
     }
     ok "image boots as removable media ($ip)"
+    if _ssh 'grub-editenv /boot/efi/grub/grubenv list | grep -qx "MEDIA=usb"'; then
+        ok "installer USB stick records USB media in the real grubenv"
+    else
+        bad "installer USB stick did not record USB media in the real grubenv"
+    fi
 
     # Plant the foreign disk's filesystem and sentinel before the inventory is read: M4 must
     # prove a disk that already carries someone else's data is still correctly offered for
