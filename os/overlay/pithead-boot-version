@@ -28,7 +28,7 @@ record_media() {
 }
 
 menu_version() { # <VERSION-file>; BUILD_LABEL is display-only and belongs to that slot
-    local file="${1:-$VERSION_FILE}" version label=""
+    local LC_ALL=C file="${1:-$VERSION_FILE}" version label=""
     version=$(tr -d '[:space:]' <"$file") || return 1
     valid_version "$version" || return 1
     if [ -f "${file%/*}/BUILD_LABEL" ]; then

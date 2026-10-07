@@ -21,6 +21,10 @@ for label in '' 'rc 3' 'rc_3' '+rc3' 'rc3;echo' 'abcdefghijklmnopq' $'rc3\nrc4' 
     printf '%s\n' "$label" >"$T/slot/opt/pithead/BUILD_LABEL"
     assert_eq "$(menu_version)" 2.0.0 'malformed label ignored'
 done
+for label in 'é' 'K' 'İ' 'ı' 'À'; do
+    printf '%s\n' "$label" >"$T/slot/opt/pithead/BUILD_LABEL"
+    assert_eq "$(LC_ALL=en_US.utf8 menu_version)" 2.0.0 'locale-independent ASCII label'
+done
 printf 'rc3\0\n' >"$T/slot/opt/pithead/BUILD_LABEL"
 assert_eq "$(menu_version)" 2.0.0 'NUL ignored'
 printf 'rc3\n\n' >"$T/slot/opt/pithead/BUILD_LABEL"
@@ -95,6 +99,10 @@ rm "$T/slot/opt/pithead/BUILD_LABEL"
 tar -cf "$T/debug.tar" -C "$T/slot" etc opt
 bash "$ROOT/tests/os/build-label-fixture.sh" rc3 "$T/debug.tar"
 assert_eq "$(tar -xOf "$T/debug.tar" opt/pithead/BUILD_LABEL)" rc3 'kit fixture label'
+if LC_ALL=en_US.utf8 bash "$ROOT/tests/os/build-label-fixture.sh" 'é' "$T/debug.tar"; then
+    echo 'FAIL: fixture stamped a non-ASCII label'
+    exit 1
+fi
 # First menus and mixed-slot versions must be read from this boot's serial, not an earlier one.
 printf 'USB drive: Pithead 2.0.0+rc3 (slot A, current)\n' >"$T/serial"
 bash "$ROOT/tests/os/build-label-boot-leg.sh" "$T/serial" 0 2.0.0 rc3 usb A
