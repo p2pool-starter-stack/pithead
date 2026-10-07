@@ -237,4 +237,15 @@ printf 'Pithead 2.0.0 (slot B, current)\nPithead 2.0.0 (slot A, previous)\n' >"$
 boot_label_serial_verdict "$BL/serial" 0 2.0.0 B A "Internal disk: " >/dev/null
 assert_rc "serial verdict rejects missing media prefixes" "$?" 1
 
+# Debug candidates in two slots stay distinguishable without changing the selected slot.
+sed -e 's/^A_VERSION=.*/A_VERSION=2.0.0+abcdefghijklmnop/' -e 's/^B_VERSION=.*/B_VERSION=2.0.0+rc2/' "$BL/two" >"$BL/debug"
+printf 'MEDIA=internal\n' >>"$BL/debug"
+titles=$(grub_fixture_titles "$BL/debug")
+assert_eq "debug slot keeps its own candidate" "$(sed -n 1p <<<"$titles")" "Internal disk: Pithead 2.0.0+abcdefghijklmnop (slot A, current)"
+assert_eq "previous debug candidate stays visible" "$(sed -n 3p <<<"$titles")" "Internal disk: Pithead 2.0.0+rc2 (slot B, previous)"
+for row in 1 2 3 4; do
+    title=$(sed -n "${row}p" <<<"$titles")
+    [ "${#title}" -le 72 ] && ok "maximum debug label title $row fits 72 columns" || bad "debug title exceeds 72 columns: $title"
+done
+
 rm -rf "$BL"

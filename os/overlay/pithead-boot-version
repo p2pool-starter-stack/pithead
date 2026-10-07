@@ -27,10 +27,27 @@ record_media() {
     grub-editenv "$GRUBENV" set "MEDIA=$media"
 }
 
+menu_version() { # <VERSION-file>; BUILD_LABEL is display-only and belongs to that slot
+    local file="${1:-$VERSION_FILE}" version label=""
+    version=$(tr -d '[:space:]' <"$file") || return 1
+    valid_version "$version" || return 1
+    if [ -f "${file%/*}/BUILD_LABEL" ]; then
+        # Read at most 18 bytes: a 16-byte token plus one newline fits. A NUL or
+        # an overlong file makes read succeed and is rejected; EOF preserves all bytes.
+        if LC_ALL=C IFS= read -r -n 18 -d '' label <"${file%/*}/BUILD_LABEL" 2>/dev/null; then
+            label=""
+        else
+            label=${label%$'\n'}
+        fi
+        [[ "$label" =~ ^[A-Za-z0-9.-]{1,16}$ ]] && version="$version+$label"
+    fi
+    printf '%s\n' "$version"
+}
+
 record_booted() {
     local slot version
     slot=$(booted_slot)
-    version=$(tr -d '[:space:]' <"$VERSION_FILE" 2>/dev/null)
+    version=$(menu_version "$VERSION_FILE") || return 1
     [ -n "$slot" ] && valid_version "$version" || return 1
     write_slot_version "$slot" "$version"
 }
@@ -57,9 +74,10 @@ record-booted)
     record_media || echo "pithead-boot-version: could not refresh the media label" >&2
     record_booted || echo "pithead-boot-version: could not refresh the booted slot's version label" >&2
     ;;
+menu-version) menu_version "${2:-$VERSION_FILE}" ;;
 record-installed) record_installed "${2:-}" ;;
 *)
-    echo "usage: pithead-boot-version record-booted | record-installed VERSION" >&2
+    echo "usage: pithead-boot-version record-booted | record-installed VERSION | menu-version [VERSION_FILE]" >&2
     exit 2
     ;;
 esac
