@@ -76,6 +76,7 @@ case "${*: -1}" in
 esac
 CURL
 chmod +x "$td/bin/"*
+echo "== P2Pool syncing fault detects bootstrap and restores every return path =="
 for CASE in success transient pre-fix missing-flag sticky raw-drift missing-module stop-fails backup-fails restore-fails interrupted; do
     export CASE STATE="$td/$CASE"
     mkdir -p "$STATE/data dir/stats/pool" "$STATE/scratch"
@@ -109,6 +110,7 @@ done
 echo 'selftest-p2pool-sync-fault: 11 cases passed (positive, pre-fix, recovery, missing evidence, raw drift, preparation, restoration, signal)'
 
 # Diagnostics from a failed target must be redacted before an assertion can print them.
+echo "== P2Pool syncing fault redacts failed target diagnostics before assertions =="
 OUT_DIR="$td"
 env_on_box() { printf '%s' "$td/data dir"; }
 quote_arg() { printf '%q' "$1"; }
