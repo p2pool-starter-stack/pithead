@@ -45,6 +45,11 @@ _phase_install_commit() {
     # ATTEMPTS slot A, which already happened by the time SSH answers, seed or no seed.
     local genv
     genv=$(_read_genv)
+    if [ "$(_genv_field "$genv" MEDIA)" = internal ]; then
+        ok "installed target records internal media in the real grubenv"
+    else
+        bad "installed target did not record internal media in the real grubenv"
+    fi
     if [ "$(_genv_field "$genv" A_OK)" = 1 ] && [ "$(_genv_field "$genv" B_OK)" = 0 ]; then
         ok "pithead-install seeded the installed disk's grubenv good before any boot gate ran: $genv"
     else

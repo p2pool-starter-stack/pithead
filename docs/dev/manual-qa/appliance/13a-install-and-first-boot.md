@@ -278,7 +278,10 @@ NOTE: On the soak box, first wait until the dashboard's Tari card shows progress
 **What you should see:**
 
 - A five-second menu that names the version, its [slot](../README.md#glossary) and **current**.
-- The menu also offers **Set up again**.
+- Every title starts with **USB drive:** on the stick or **Internal disk:** on the installed
+  disk. An installation made from an earlier image shows neither prefix.
+- The menu also offers **Set up again (setup wizard; keeps saved settings)**. Check that the
+  whole title is visible, including its media prefix.
 - It boots by itself.
 
 **Record:** PASS, FAIL or N/A in the results sheet.

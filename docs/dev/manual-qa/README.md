@@ -200,7 +200,9 @@ The words the guides use, in alphabetical order.
 - **Apply**: `./pithead apply` reads `config.json` and changes the running stack to match it,
   after showing a preview. On the dashboard, confirming a preview does the same.
 - **Boot menu**: the five-second menu the appliance shows when it starts. It names the version
-  in each slot, marks one **current**, and offers **Set up again**.
+  in each slot, marks one **current**, and offers **Set up again (setup wizard; keeps saved
+  settings)**. Each title begins with **USB drive:** or **Internal disk:**; an installation
+  made from an earlier image shows neither prefix.
 - **Built-in miner**: the miner the appliance runs on its own CPU (role **Pithead + RigForge**).
   It shows as a worker, and `local_miner.enabled` turns it on and off.
 - **Clearnet**: the ordinary internet, not through Tor. Pithead keeps node traffic on Tor unless

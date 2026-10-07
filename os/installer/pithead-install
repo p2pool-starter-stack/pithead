@@ -278,11 +278,13 @@ main() {
     # prefix directory because bare `load_env` reads $prefix/grubenv; at the ESP root it is a
     # silent no-op and the machine ignores every boot-state write the updater makes.
     grub-editenv "$mnt/boot/efi/grub/grubenv" create
-    local os_version b_version=""
+    local os_version b_version="" tran media=internal
+    tran=$(lsblk -dno TRAN "$target" 2>/dev/null || true)
+    [ "$tran" = usb ] && media=usb
     os_version=$(tr -d '[:space:]' </opt/pithead/VERSION)
     [ "$state" = "pithead-with-data" ] && b_version="unknown"
     grub-editenv "$mnt/boot/efi/grub/grubenv" set ORDER="A B" A_OK=1 A_TRY=0 B_OK=0 B_TRY=0 \
-        "A_VERSION=$os_version" "B_VERSION=$b_version"
+        "A_VERSION=$os_version" "B_VERSION=$b_version" "MEDIA=$media"
 
     # Carry pre-seeded files onto the target's ESP. Without this a fleet install loses them at
     # the first reboot: the installer builds a fresh ESP, and the operator's config — the whole
