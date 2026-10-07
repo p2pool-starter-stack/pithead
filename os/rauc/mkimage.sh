@@ -100,7 +100,7 @@ install -m 644 os/rauc/grub.cfg /mnt/rauc-esp/grub/grub.cfg
 # silent no-op — ORDER keeps its built-in "A B" with both _OK=0, nothing is selectable, and every
 # boot falls to the default entry. RAUC writes the file correctly and the machine still ignores it.
 grub-editenv /mnt/rauc-esp/grub/grubenv create
-OS_VERSION=$(tr -d '[:space:]' <VERSION)
+OS_VERSION=$(bash os/overlay/pithead-boot-version menu-version /mnt/rauc-sys/opt/pithead/VERSION)
 grub-editenv /mnt/rauc-esp/grub/grubenv set ORDER="A B" A_OK=1 A_TRY=0 B_OK=0 B_TRY=0 \
     "A_VERSION=$OS_VERSION" "B_VERSION=" MEDIA=usb
 

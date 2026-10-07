@@ -113,7 +113,7 @@ chk "grub.cfg in the prefix dir" '[ -s "$ESP/grub/grub.cfg" ]'
 chk "grubenv in the prefix dir, not the ESP root" '[ -s "$ESP/grub/grubenv" ] && [ ! -e "$ESP/grubenv" ]'
 chk "grubenv seeds USB media before first boot" 'grub-editenv "$ESP/grub/grubenv" list | grep -qx "MEDIA=usb"'
 chk "grubenv seeds slot A good" 'grub-editenv "$ESP/grub/grubenv" list | grep -q "A_OK=1"'
-chk "grubenv names slot A's version and records slot B empty" 'grub-editenv "$ESP/grub/grubenv" list | grep -q "^A_VERSION=$(tr -d "[:space:]" <"$ROOT/opt/pithead/VERSION")$" && grub-editenv "$ESP/grub/grubenv" list | grep -q "^B_VERSION=$"'
+chk "grubenv names slot A's version and records slot B empty" 'grub-editenv "$ESP/grub/grubenv" list | grep -q "^A_VERSION=$(bash os/overlay/pithead-boot-version menu-version "$ROOT/opt/pithead/VERSION")$" && grub-editenv "$ESP/grub/grubenv" list | grep -q "^B_VERSION=$"'
 chk "kernel root by probed PARTUUID, never label" 'grep -q "probe --set=PU --part-uuid" "$ESP/grub/grub.cfg"'
 # The console carries the token and the password; chatter that scrolls them away is a defect.
 chk "console is quieted so the token stays readable" 'grep -q "loglevel=4" "$ESP/grub/grub.cfg"'

@@ -23,7 +23,7 @@ phase_update() {
 
     info "building v1 test image (test SSH key + marker v1)"
     local img
-    img=$(_build_image v1) || {
+    img=$(_build_image v1 rc3) || {
         bad "v1 test image build failed (/tmp/os-fault-build.log)"
         return
     }
@@ -33,6 +33,8 @@ phase_update() {
             return
         }
     ok "v1 test image boots and answers test SSH ($ip)"
+    bash "$SCRIPT_DIR/build-label-boot-leg.sh" "$SERIAL" 0 "$(tr -d '[:space:]' <VERSION)" rc3 usb A && ok "labelled image menu precedes first boot repair" || bad "labelled image first menu lacks rc3"
+    _ssh 'grub-editenv /boot/efi/grub/grubenv set "A_VERSION=$(cat /opt/pithead/VERSION)" && systemctl restart pithead-boot-version.service && test "$(cat /opt/pithead/BUILD_LABEL)" = rc3 && grub-editenv /boot/efi/grub/grubenv list | grep -qx "A_VERSION=$(cat /opt/pithead/VERSION)+rc3"' && ok "boot-version unit repairs stale metadata to rc3 in grubenv" || bad "boot-version unit did not repair stale rc3 metadata"
     # #894/#895: compare these /data identities after the committed A/B swap (leg 2).
     local id_v1 hostkey_fp_v1
     id_v1=$(_ssh cat /etc/machine-id)
@@ -147,7 +149,7 @@ phase_update() {
     marker=$(_ssh cat /etc/pithead-test-marker)
     [ "$marker" = "v2" ] && ok "COMMIT: a committed update persists across reboot" ||
         bad "expected v2 after commit, got '$marker'"
-    menu_verdict=$(boot_label_serial_verdict "$SERIAL" "$menu_mark" "$(tr -d '[:space:]' <VERSION)" B A "Internal disk: ") && ok "$menu_verdict" || bad "$menu_verdict"
+    menu_verdict=$(boot_label_serial_verdict "$SERIAL" "$menu_mark" "$(tr -d '[:space:]' <VERSION)" B A "Internal disk: " "$(tr -d '[:space:]' <VERSION)+rc3") && ok "$menu_verdict" || bad "$menu_verdict"
     # #894/#895: host identity on /data must survive the system-slot swap.
     local id_v2 hostkey_fp_v2
     id_v2=$(_ssh cat /etc/machine-id)
@@ -192,12 +194,11 @@ phase_update() {
         bad "expected v1 after the operator rollback, got '$marker'"
 
     # #2055 G1: legs 1-3 above never write config.json or machine-role, so pithead-boot.service's
-    # ConditionPathExists never triggers on this guest and NOTHING it owns runs here. That absence
-    # is what let #1956 ship: the boot-menu repair rides pithead-boot, and the phase was green for
-    # everything else. The rows below enumerate what legs 1-3 could not see, so a reader of this
-    # phase's output is told rather than left to infer it.
+    # ConditionPathExists never triggers on this guest and NOTHING it owns runs here.
+    # The unconditional boot-menu repair unit is asserted above. The rows below enumerate
+    # what legs 1-3 cannot see, so the phase output names the remaining gaps.
     #
-    # These three are MISSING, not by-design: each one IS provable, just not by this invocation —
+    # These two are MISSING, not by-design: each one IS provable, just not by this invocation —
     # `--phase provision` (or `--phase all`) runs every one of them on this same box, so per
     # skip-accounting.sh's own test ("could a different invocation of this same harness against
     # this same box have covered it? Yes -> missing") they are gaps this run has, not holes the
@@ -205,8 +206,6 @@ phase_update() {
     # which is #1083's failure mode one level up.
     it_skip_leg "held-chain release, owned by pithead-boot (#2055 G1)" \
         "legs 1-3 never provision, so the mid-sync mining-held commit gate (#35) never runs here — tests/os/phases/provision-reboot.sh proves it under --phase provision or --phase all" missing
-    it_skip_leg "boot-menu version repair, owned by pithead-boot (#1956, #2055 G1)" \
-        "legs 1-3 never provision, so the repair path never runs here — leg 2's boot-label row above pins grub.cfg's rendered text only, never the repair that produces it (#2055 G4)" missing
     it_skip_leg "/data-floor restore after a failed migration, owned by pithead-boot (#1393/#1672)" \
         "legs 1-3 never provision, so no floor is ever raised or put back here — phase_provision_floor_fallback_leg proves it under --phase provision or --phase all" missing
 

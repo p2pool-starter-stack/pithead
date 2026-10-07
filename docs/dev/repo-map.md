@@ -150,6 +150,11 @@ Its `--self-test` is run by `tests/stack/test-harness-tooling.sh` on Linux and b
 Shell workflow on macOS with system and Homebrew Bash; the provision phase exercises `--read`
 on the guest without opening a soak window.
 
+`os/overlay/pithead-boot-version` supplies the display-only menu version for boot, image
+creation and disk installation. `tests/os/selftest-build-label.sh` checks all three
+writers and the release refusal. `tests/os/build-label-fixture.sh` stamps only debug test
+rootfs, and `tests/os/build-label-boot-leg.sh` checks first-menu serial titles.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 Coordinator connection announcements and unchanged-apply miner calls are covered by
