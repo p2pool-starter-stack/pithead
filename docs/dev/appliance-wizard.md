@@ -333,7 +333,6 @@ address or machine name; an unknown header uses the first host address, or `pith
 when the inventory is unavailable. The container socket address never selects a redirect.
 Caddy keeps a recognised typed host after provisioning.
 
-
 **One certificate for the machine's whole life**, at `appliance_tls_dir()`
 (`/data/pithead/data/tls`), presented by the wizard *and* by Caddy afterwards.
 
