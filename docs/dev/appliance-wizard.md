@@ -326,6 +326,14 @@ which the wizard's pre-provisioning trust level does not assume.
 
 ## The certificate lifecycle
 
+The plain setup port redirects to HTTPS. The host passes its global interface addresses
+in `WIZARD_HOST_ADDRESSES`, excluding bridge interfaces before starting the container.
+The console and log banners use the same list. A recognised Host header keeps the typed
+address or machine name; an unknown header uses the first host address, or `pithead.local`
+when the inventory is unavailable. The container socket address never selects a redirect.
+Caddy keeps a recognised typed host after provisioning.
+
+
 **One certificate for the machine's whole life**, at `appliance_tls_dir()`
 (`/data/pithead/data/tls`), presented by the wizard *and* by Caddy afterwards.
 

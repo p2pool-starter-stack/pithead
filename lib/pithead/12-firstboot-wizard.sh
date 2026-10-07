@@ -89,7 +89,7 @@ firstboot_wizard() {
     _console "" "Pithead is starting up — preparing the setup page." \
         "This takes a minute or two on first boot. Nothing to do yet."
 
-    local engine image token
+    local engine image token host_addresses
     engine=$(container_engine)
     # STACK_VERSION is the ONE place the registry tag is derived (a release is v<VERSION>, a
     # source checkout is dev) — deriving it here instead cost a boot: the archive holds
@@ -160,10 +160,12 @@ firstboot_wizard() {
         # Keep an operator's pre-seeded token; otherwise mint a fresh one every round.
         token=$(preseed_token) || token=$(wizard_mint_token)
         "$engine" rm -f pithead-wizard >/dev/null 2>&1 || true
+        host_addresses=$(wizard_host_addresses) || host_addresses=""
         "$engine" run -d --name pithead-wizard --entrypoint python3 \
             -p 80:8000 -p 443:8443 -e WIZARD_TOKEN="$token" \
             -e WIZARD_TLS_CERT="${cert_fp:+/wizard-spool/wizard.crt}" \
             -e WIZARD_TLS_KEY="${cert_fp:+/wizard-spool/wizard.key}" \
+            -e WIZARD_HOST_ADDRESSES="$host_addresses" \
             -e WIZARD_RESTORE=/wizard-restore \
             -e TMPDIR=/wizard-restore \
             -e WIZARD_HANDOFF="$card_mount" \
@@ -184,7 +186,7 @@ firstboot_wizard() {
         [ -n "$cert_fp" ] && scheme="https"
         log "Setup wizard is up. From a browser on this network, open:"
         log "    $scheme://$mdns_name"
-        for arg in $(hostname -I 2>/dev/null || echo 127.0.0.1); do log "    $scheme://$arg"; done
+        for arg in $host_addresses; do log "    $scheme://$(wizard_url_host "$arg")"; done
         log "One-time token: $token"
         # Announce on every physical console, not just stdout. /dev/console is whichever the
         # kernel cmdline named LAST, so an operator watching the other one (a monitor when the
@@ -198,7 +200,8 @@ firstboot_wizard() {
                 echo ""
                 echo "  Pithead setup wizard is ready. From a browser on this network, open:"
                 echo "      $scheme://$mdns_name"
-                echo "      $scheme://$(hostname -I 2>/dev/null | awk '{print $1}')   (if the name above does not resolve)"
+                [ -z "$host_addresses" ] ||
+                    echo "      $scheme://$(wizard_url_host "${host_addresses%% *}")   (if the name above does not resolve)"
                 echo ""
                 echo "  One-time token: $token"
                 echo "  (case does not matter, and the pit- prefix is optional)"
