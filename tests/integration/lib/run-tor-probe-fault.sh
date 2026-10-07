@@ -19,6 +19,10 @@ _tor_probe_mining_sample() {
 
 fault_tor_probe_egress() {
     local prefix epoch tor_before monero_before last now logs i rc=0 rule last_progress=0 mining_failure=
+    if [ "${SKIP_MINING_ASSERTS:-0}" = "1" ]; then
+        it_skip_leg "Tor clearnet probe fault" "no miner attached to this box (--no-mining-asserts)" by-design
+        return
+    fi
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = false ]; then
         it_fail "Tor probe fault requires the egress firewall" "network.tor_egress_firewall=false"
         return
