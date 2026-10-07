@@ -96,7 +96,7 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Added
 
-- Read-only `config_version` in `config.json`, shown in Configuration. Newer configs warn;
+- Read-only `config_version` in `config.json`, hidden from Configuration. Only newer configs warn;
   restoring a backup from a newer release requires updating first ([#3109](https://github.com/p2pool-starter-stack/pithead/issues/3109)).
 
 - **Stratum password is opt-in, and its connection details are shown wherever the pool URL is.**

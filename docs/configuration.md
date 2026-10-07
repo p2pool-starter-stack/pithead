@@ -126,13 +126,14 @@ stamps before archiving.
 A newer stamp is kept. Apply, render and boot show a warning; the media, pre-seed, firstboot and
 restore validators discard warnings on success. Pre-seed rewrites an older stamp. Both restore
 doors refuse a newer backup before promotion: update to that version or later, then restore.
-The dashboard shows the stamp and warns that saving is blocked while unknown settings remain.
+The dashboard hides the stamp; only a newer stamp shows a warning that saving is blocked while
+unknown settings remain.
 Dashboard form, JSON editor, control API and USB edits ignore this key; previews, diffs and
 recent changes omit it. The appliance wizard drops it and the host stamps the result.
 
 | Key | Baseline | Meaning |
 |---|---|---|
-| `config_version` | `2.0.0` | Release that last validated and stamped the file; read-only in Configuration. |
+| `config_version` | `2.0.0` | Release that last validated and stamped the file; hidden and not editable in Configuration. |
 
 The table below has ~90 keys across 14 sections — every leaf key of
 [`config.reference.json`](../config.reference.json) — most of it you'll never touch. A handful of keys
@@ -158,7 +159,8 @@ which the host re-checks against the staged file. These are typo protection and 
 friction, not a second identity — a signed-in session that can set a field can also fill the
 confirm box. The Telegram approval that once sat here was removed in #2076. The preview shows full
 old and new non-secret values, while credentials and capability URLs stay masked and never echo
-back after commit. No setting is refused from the dashboard (#2367); `config_version` is the read-only exception. The high-consequence ones
+back after commit. No setting is refused from the dashboard (#2367); `config_version` is the
+read-only exception, hidden from the panel. The high-consequence ones
 warn in the form and name their cost again in the host preview before you confirm: the dashboard
 password; the Telegram bot token, chat id and Healthchecks ping URL, where a wrong value stops
 delivery or sends alerts and pings to an unintended destination; and the
