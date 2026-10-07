@@ -116,7 +116,7 @@ function DashboardView({
             <${NodeStats} state=${state} />
             <${ExpectedVsActualCard} summary=${state.earnings_summary} onView=${onView} />
             <${TariCard} tari=${state.tari} local=${state.sync?.tari?.local} />
-            <${CadenceCard} cadence=${state.cadence} />
+            <${CadenceCard} cadence=${state.cadence} syncing=${state.pool.syncing} />
         </div>
         <div class="grid-section-label card-advanced">The Wider Pool</div>
         <div class="grid grid-columns">

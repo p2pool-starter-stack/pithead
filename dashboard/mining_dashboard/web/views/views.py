@@ -164,6 +164,7 @@ def build_pool_network(data, metrics):
         },
         "pool": {
             "type": metrics.pool_type,
+            "syncing": local_pool.get("syncing", False),
             "sidechain_height": local_pool.get("sidechain_height", 0),
             "diff": f"{metrics.pool_difficulty / 1e6:.2f} M",
             "hr": format_hashrate(metrics.pool_hashrate),
