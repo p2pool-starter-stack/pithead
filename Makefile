@@ -1,6 +1,6 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
@@ -13,6 +13,9 @@ test-dashboard: pithead ## Dashboard unit/component tests with coverage gate (de
 
 test-frontend: pithead ## Frontend logic tests with Node's built-in runner (#632; same invocation as CI)
 	cd dashboard/tests/frontend && node --test
+
+test-browser: ## Chromium regressions (install locked browser dependencies first; see testing guide)
+	cd dashboard/tests/browser && node --test
 
 test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% on changed lines (run after test-dashboard)
 	bash scripts/lint/patch-coverage.sh

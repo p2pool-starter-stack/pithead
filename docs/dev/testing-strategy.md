@@ -73,8 +73,11 @@ rejects it with a `ConfigError` (#2341).
 Dashboard connection recovery is covered by
 `dashboard/tests/frontend/app/connectionrecovery.test.mjs`: the 60-second failure boundary,
 reset after success, stale snapshot retention, and advice during sync, normal display and an
-initial-load failure. Native browser focus and replacement-certificate trust are manual checks
-in appliance QA steps 13.10 and 13.8; the existing KVM provision SAN check is retained.
+initial-load failure. `dashboard/tests/browser/osupdate-close.test.mjs` serves the production OS-update component,
+clicks Close once after a refused update check, and asserts the native dialog is removed and
+`document.activeElement` is its actual OS-updates trigger. The locked Chromium test runs through
+`make test-browser` in `browser.yml`. Replacement-certificate acceptance still requires the
+appliance browser check in QA step 13.8; the existing KVM provision SAN check is retained.
 
 ## Scenario catalog
 
