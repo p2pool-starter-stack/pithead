@@ -81,6 +81,8 @@ phase_boot() {
         bad "boot did not correct image media to internal on the virtio disk"
     fi
 
+    phase_wizard_redirect
+
     # Exercise the installed unit under systemd. The guest has a real emulated UART; a temporary
     # runtime drop-in gives the SAME ExecCondition a type-0 fixture, then is removed before reboot.
     # Keep the dead-port state for five minutes, long enough to expose the original 10 s loop.

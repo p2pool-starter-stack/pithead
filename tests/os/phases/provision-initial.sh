@@ -57,6 +57,7 @@ _phase_provision_initial_body() {
         bad "wizard gate never served"
         return 1
     }
+    phase_wizard_redirect
     stage_dashboard_exposure_addresses || return 1
 
     jar=$(mktemp)
@@ -232,6 +233,7 @@ _phase_provision_initial_body() {
         bad "no HTTP answer behind caddy on :443 within 5m (last: $code)"
         return 1
     fi
+    phase_dashboard_redirect
     phase_provision_dashboard_exposure || return 1
     phase_provision_address_watch
 

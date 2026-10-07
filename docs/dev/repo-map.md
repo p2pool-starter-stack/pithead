@@ -105,6 +105,11 @@ installer's TLS identity to target data and computes the public fingerprint. The
 `tests/integration/lib/miner-connection.sh` checks the running dashboard against the installed
 password and certificate. Both have mutation self-tests beside their harnesses.
 
+`lib/pithead/12a-wizard-addresses.sh` supplies non-bridge host addresses for the
+setup container and banner. `tests/os/wizard-redirect-leg.sh` checks the plain-port
+redirect from outside the guest during boot and provision, and Caddy after setup;
+its fake-transport cases run through `selftest-wizard-redirect.sh`.
+
 `python -m mining_dashboard.wizard` remains the appliance's wizard launch command;
 the package's `__main__.py` delegates to its server.
 
