@@ -99,6 +99,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # #3090's ca_enabled labels use only the fixed true/false toggle loop.
 # #2461's _xp_row labels use fixed surface and true/false loops; the password field
 # is only empty or "set", never the fixture password, an address or a measured value.
+# #3204's rcm_invalid labels range over four fixed JSON fixtures, never measured input.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -111,6 +112,7 @@ test-appliance-identity.sh|1
 test-appliance-identity.sh|f
 test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
+test-appliance-rig-config-merge.sh|rcm_invalid
 test-config-document.sh|raw
 test-config-document.sh|verb
 test-config.sh|2

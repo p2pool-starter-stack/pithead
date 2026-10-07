@@ -249,8 +249,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   exactly like a coordinator. (Uncommitted fallback is the update phase's to prove: a
   provisioned rig commits the moment its miner is up, so the uncommitted window closes by
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
-  everything except this. The reboot leg proves a CLEAN return; a power-cut leg (M13's rig half,
-  #2067) then destroys the guest mid-mining and asserts the same "mining unaided" fact off a real
+  everything except this. The reboot leg applies `max_temp_c` through the control path, waits
+  for that change's provenance on the timer-refreshed feed, then checks the value and unchanged
+  revision/change ID after reboot. Feed reads retry up to 12 times, five seconds apart; missing
+  provenance fails the leg. A power-cut leg (M13's rig half, #2067) then destroys the guest
+  mid-mining and asserts the same "mining unaided" fact off a real
   `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063) closes
   with the one thing every other row here cannot show: an ACCEPTED share. It boots a second,
   concurrent guest as a remote-node coordinator (`stack`'s own #2062 helper, from the SAME image —
