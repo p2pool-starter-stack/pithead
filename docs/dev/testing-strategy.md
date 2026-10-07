@@ -77,7 +77,14 @@ initial-load failure. `dashboard/tests/browser/osupdate-close.test.mjs` serves t
 clicks Close once after a refused update check, and asserts the native dialog is removed and
 `document.activeElement` is its actual OS-updates trigger. The locked Chromium test runs through
 `make test-browser` in `browser.yml`. Replacement-certificate acceptance still requires the
-appliance browser check in QA step 13.8; the existing KVM provision SAN check is retained.
+appliance browser check in QA step 13.8. The KVM provision address-watch leg retains its
+SAN check, then uses the captured dashboard login over TLS from outside the guest to require
+HTTP 200 for the deployed OS-update error Close handler, fingerprint-comparison and
+stop-on-mismatch guidance, and sustained-failure trigger. It runs the exact command in the
+served guidance over SSH and requires a SHA-256 fingerprint. These checks prove deployed
+assets and an executable console instruction; they do not prove browser certificate acceptance.
+`tests/os/selftest-dashboard-recovery.sh` checks old-handler, missing-asset, HTTP-error,
+missing-guidance, missing-trigger and failed-command refusals without a guest.
 
 ## Scenario catalog
 

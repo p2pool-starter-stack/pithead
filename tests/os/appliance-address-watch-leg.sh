@@ -7,6 +7,67 @@ ADDRESS_WATCH_TEST_ULA="fd00:2463::1"
 ADDRESS_WATCH_TEST_ULA_SAN="IP Address:FD00:2463:0:0:0:0:0:1"
 ADDRESS_WATCH_COVERED_OK="The dashboard certificate covers every name Caddy serves."
 
+# Read the deployed assets through Caddy, not from the source checkout or guest filesystem.
+# Keep HTTP status separate: a login redirect or an error page is not the requested module.
+address_watch_dashboard_asset() { # <static-path>
+    local response
+    # shellcheck disable=SC2154 # Set by the guest DHCP probe in lib/core.sh.
+    response=$(dashboard_curl -fsSk -m 15 -w '\n%{http_code}' "https://$ip/static/$1" 2>/dev/null) || return 1
+    [ "${response##*$'\n'}" = 200 ] || return 1
+    printf '%s' "${response%$'\n'*}"
+}
+
+phase_provision_dashboard_recovery() { # <captured-dashboard-user> <captured-dashboard-password>
+    # dashboard_curl uses these through Bash's dynamic scope and keeps them out of argv.
+    # shellcheck disable=SC2034
+    local DASH_USER="$1" DASH_PASS="$2"
+    local module pane guidance script command fingerprint rc=0
+    [ -n "$DASH_USER" ] && [ -n "$DASH_PASS" ] || {
+        bad "dashboard recovery: captured login is missing"
+        return 1
+    }
+    module=$(address_watch_dashboard_asset system/osupdate.mjs) || module=""
+    pane=${module#*'if (phase === "error")'}
+    pane=${pane%%'if (phase === "checking")'*}
+    if [[ "$module" == *'if (phase === "error")'* ]] &&
+        [[ "$pane" == *'onClick=${() => this.cancel()}>Close</button>'* ]] &&
+        [[ "$module" != *'this.setState({ phase: "idle", error: "" })'* ]]; then
+        ok "served OS-update error Close uses cancel without the old idle reset (#3241)"
+    else
+        bad "served OS-update error Close does not use cancel, or retains the old idle reset (#3241)"
+        rc=1
+    fi
+    module=$(address_watch_dashboard_asset app/connectionrecovery.mjs) || module=""
+    guidance=$(printf '%s' "$module" | tr '\n' ' ' | tr -s '[:space:]' ' ')
+    if [[ "$guidance" == *"compare the certificate's SHA-256 fingerprint with the current fingerprint on the appliance console"* ]] &&
+        [[ "$guidance" == *'Stop if they do not match. Accept the replacement only after they match'* ]]; then
+        ok "served certificate recovery guidance requires fingerprint comparison and stops on mismatch (#3242)"
+    else
+        bad "served certificate recovery guidance is missing fingerprint comparison or mismatch refusal (#3242)"
+        rc=1
+    fi
+    script=$(address_watch_dashboard_asset dashboard.js) || script=""
+    if [[ "$script" == *'recoveryNeeded: disconnectedSince !== null && now() - disconnectedSince >= 60000'* ]] &&
+        [[ "$script" == *'if (disconnectedSince === null) disconnectedSince = now();'* ]] &&
+        [[ "$script" == *'recoveryNeeded=${p.recoveryNeeded}'* ]]; then
+        ok "served dashboard triggers recovery guidance after sustained poll failure (#3242)"
+    else
+        bad "served dashboard lacks the sustained poll failure recovery trigger (#3242)"
+        rc=1
+    fi
+    command=$(printf '%s' "$module" | sed -n 's/.*<code>\(openssl x509[^<]*\)<\/code>.*/\1/p')
+    # Execute only the documented command, never arbitrary text obtained over HTTP.
+    if [ "$command" = 'openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -fingerprint -sha256' ] &&
+        fingerprint=$(_ssh "$command" 2>/dev/null) &&
+        printf '%s\n' "$fingerprint" | tr -d '\r' | grep -Eq '^(sha256|SHA256) Fingerprint=([[:xdigit:]]{2}:){31}[[:xdigit:]]{2}$'; then
+        ok "served recovery fingerprint command succeeds on the appliance and prints SHA-256 (#3242)"
+    else
+        bad "served recovery fingerprint command is missing, fails, or does not print SHA-256 (#3242)"
+        rc=1
+    fi
+    return "$rc"
+}
+
 address_watch_verdict() { # <timer-enabled> <timer-active> <doctor-json> <service-result> <cert-sans> <address> <san-entry>
     local enabled="$1" active="$2" doctor="$3" result="$4" sans="$5" addr="$6" san="$7"
     [ "$enabled" = enabled ] || {
@@ -72,4 +133,5 @@ phase_provision_address_watch() {
         _ssh "journalctl -u pithead-address-watch.service --no-pager -n 20" 2>/dev/null | tr -d '\r' | sed 's/^/     | /'
         return 1
     fi
+    phase_provision_dashboard_recovery "$1" "$2"
 }
