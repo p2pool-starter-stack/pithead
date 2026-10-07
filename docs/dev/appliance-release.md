@@ -60,6 +60,17 @@ Every build is one of two variants, decided by whether the rootfs bakes an SSH k
 - **debug** — the bench build: a root SSH key baked, sshd enabled. Never publish one;
   `verify-image` without `--test` refuses it.
 
+Debug kit rootfs may carry `/opt/pithead/BUILD_LABEL`: one ASCII token matching
+`^[A-Za-z0-9.-]{1,16}$`, with an optional final newline (for example `rc3`).
+The image builder seeds `A_VERSION` from the populated slot, the installer seeds it
+from the running slot, and the per-boot writer repairs that slot's menu name as
+`2.0.0+rc3`. Invalid labels are ignored. An installed update initially records the
+bundle's plain version; its first boot repairs the label from the new slot.
+The label affects only GRUB's slot titles. `VERSION`, stack image tags, bundle
+metadata, update/downgrade comparisons and the data-migration floor remain plain.
+Release image and bundle builds without `--dev` refuse any rootfs carrying the
+label file, including an empty or invalid one.
+
 The variant is stamped into the artifacts so tooling can tell them apart after the build:
 
 | Where | What |
@@ -510,7 +521,7 @@ channels share the final cut commit, one version and one GitHub Release.
    at this step it does not, so the release build bakes the tree's copy, and the tag `release.sh`
    then creates on this commit names those same bytes.
 3. Run the release pipeline with `--draft` first. It builds and publishes `pithead-os-rootfs:vX.Y.Z` by
-   digest, refuses a rootfs carrying the debug SSH key, and leaves the exact exported bytes in
+   digest, refuses a rootfs carrying the debug SSH key or `BUILD_LABEL`, and leaves the exact exported bytes in
    `os/build/pithead-root.tar` with its `.sha256` handoff. The production image and bundle builders
    require that digest and refuse a changed or debug-keyed tar. Do not run `os/build-image.sh`
    again: rebuilding would re-resolve apt and make the published rootfs differ from the appliance.

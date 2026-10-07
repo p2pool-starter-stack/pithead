@@ -5,7 +5,7 @@ _phase_install_initial() {
     info "phase: disk install (USB-style boot -> pithead-install -> boot from the target)"
 
     info "building the installer image (test SSH key + marker v1)"
-    img=$(_build_image v1) || {
+    img=$(_build_image v1 rc3) || {
         bad "image build failed (/tmp/os-fault-build.log)"
         return 1
     }
@@ -61,6 +61,7 @@ _phase_install_initial() {
         return 1
     }
     ok "image boots as removable media ($ip)"
+    bash "$SCRIPT_DIR/build-label-boot-leg.sh" "$SERIAL" 0 "$(tr -d '[:space:]' <VERSION)" rc3 usb A && ok "labelled USB first menu shows rc3" || bad "labelled USB first menu lacks rc3"
     if _ssh 'grub-editenv /boot/efi/grub/grubenv list | grep -qx "MEDIA=usb"'; then
         ok "installer USB stick records USB media in the real grubenv"
     else
@@ -243,6 +244,7 @@ _phase_install_initial() {
         bad "installed system never answered SSH (ip: ${ip:-none})"
         return 1
     }
+    bash "$SCRIPT_DIR/build-label-boot-leg.sh" "$SERIAL" 0 "$(tr -d '[:space:]' <VERSION)" rc3 internal A && ok "installed disk first menu shows rc3" || bad "installer did not seed rc3 on the target"
     ok "installed system boots from the internal disk"
 
     # findmnt reports the by-partlabel symlink the cmdline named; resolve to the parent disk
