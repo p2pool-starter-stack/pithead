@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # Local scheduling, derivations and bounded summary for soak-probe.sh.
+soak_local() { python3 "$(dirname "$0")/soak-local.py" "$@"; }
 soak_record_schedule() {
     : "${sample_epoch:?caller must supply the captured sample time}"
     missing_days=0
@@ -9,7 +10,7 @@ soak_record_schedule() {
         last=$(tail -1 "$LOGDIR/soak.log")
     elif [ -s "$LOGDIR/started" ]; then last=$(cat "$LOGDIR/started"); fi
     [ -n "$last" ] || return 0
-    previous_epoch=$(date -u -d "${last%% *}" +%s 2>/dev/null) || {
+    previous_epoch=$(soak_local epoch "${last%% *}" 2>/dev/null) || {
         missing_days='?'
         return 0
     }
