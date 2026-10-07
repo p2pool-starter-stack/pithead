@@ -12,9 +12,10 @@ install, and the first checks on the installed appliance (steps 13.1 to 13.9).
 - **Earlier steps.** The DIY sessions in the [Run sheet](../README.md#run-sheet). 13.8 repeats
   1.8 and 1.13, sections 4 and 5, 7.1–7.9 and 8.2–8.4, so have those guides at hand.
 - **Have ready.** The RC image, a 16 GB USB stick, a second internal disk in the appliance box, a
-  Linux machine for 13.1, a monitor, the laptop, the QA wallets (the Monero primary address, its
-  subaddress and the Tari address), two miners running XMRig, the Telegram test bot, and on the
-  debug image the bench SSH key from the private handoff. See [What you need](../what-you-need.md).
+  Linux machine or a Mac (macOS 14 or later) for 13.1, a monitor, the laptop, the QA wallets (the
+  Monero primary address, its subaddress and the Tari address), two miners running XMRig, the
+  Telegram test bot, and on the debug image the bench SSH key from the private handoff. See
+  [What you need](../what-you-need.md).
 - **Rough time.** About 4 hours, plus 30 minutes of provisioning, on the soak appliance (Run sheet
   session 7). 13.6a runs in session 10, on the second appliance.
 
@@ -22,11 +23,17 @@ install, and the first checks on the installed appliance (steps 13.1 to 13.9).
 
 **What you do:**
 
-1. On a Linux machine, check the image file against its checksum file. `vX.Y.Z` is the version in
-   the file names you downloaded.
+1. Check the image file against its checksum file. `vX.Y.Z` is the version in the file names you
+   downloaded. On Linux:
 
    ```bash
    sha256sum -c pithead-os-vX.Y.Z.img.xz.sha256
+   ```
+
+   On a Mac:
+
+   ```bash
+   shasum -a 256 -c pithead-os-vX.Y.Z.img.xz.sha256
    ```
 
 2. Write the image to the USB stick. `/dev/sdX` stands for the USB stick: replace it with the
@@ -35,6 +42,9 @@ install, and the first checks on the installed appliance (steps 13.1 to 13.9).
    ```bash
    xz -dc pithead-os-vX.Y.Z.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
    ```
+
+   On a Mac, write it with easydd as in
+   [the appliance guide, step 1](../../../appliance.md#1-write-the-image-to-a-usb-stick).
 
 **What you should see:**
 
