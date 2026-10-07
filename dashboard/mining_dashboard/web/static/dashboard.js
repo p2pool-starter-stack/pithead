@@ -57,6 +57,7 @@ export function initDashboard({
   replaceUrl = (url) => history.replaceState(null, "", url),
   schedule = (fn, ms) => setInterval(fn, ms),
   renderApp = null,
+  now = () => Date.now(),
 } = {}) {
   const root = doc.getElementById("app");
   const pageUrl = new URL(href);
@@ -94,6 +95,7 @@ export function initDashboard({
 
   let state = null; // latest /api/state payload, or null before the first response
   let connected = true; // false after a failed fetch (we keep showing the last snapshot)
+  let disconnectedSince = null;
   let inflight = false; // guard against overlapping fetches if one is slow
 
   // Tests inject renderApp to observe exactly what the App would receive; the browser default
@@ -102,7 +104,7 @@ export function initDashboard({
     renderApp ??
     ((p) =>
       render(
-        html`<${App} state=${p.state} connected=${p.connected} ui=${p.ui}
+        html`<${App} state=${p.state} connected=${p.connected} recoveryNeeded=${p.recoveryNeeded} ui=${p.ui}
                      onRange=${p.onRange} onSort=${p.onSort} onView=${p.onView} onTheme=${p.onTheme}
                      onZoom=${p.onZoom} onResetZoom=${p.onResetZoom} onToggleSeries=${p.onToggleSeries}
                      onAvgWindow=${p.onAvgWindow} onDismissHint=${p.onDismissHint}
@@ -114,6 +116,7 @@ export function initDashboard({
     paint({
       state,
       connected,
+      recoveryNeeded: disconnectedSince !== null && now() - disconnectedSince >= 60000,
       ui,
       onRange: setRange,
       onSort,
@@ -156,9 +159,11 @@ export function initDashboard({
       if (!res.ok) throw new Error("HTTP " + res.status);
       state = await res.json();
       connected = true;
+      disconnectedSince = null;
       if (state.page_title) doc.title = state.page_title;
     } catch (e) {
       connected = false;
+      if (disconnectedSince === null) disconnectedSince = now();
       console.warn("dashboard refresh failed", e);
     } finally {
       inflight = false;

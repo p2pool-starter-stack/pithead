@@ -118,6 +118,9 @@ Browser assets live in `web/static/`. JavaScript feature folders are `app/`,
 `tests/frontend/` mirrors those folders. Its `harness.mjs`, `helpers/`, and
 `fixtures/` provide shared test inputs and rendering support. Node discovers the
 nested tests through `make test-frontend`.
+`dashboard/tests/browser/` holds Chromium regressions using the locked Playwright package;
+`make test-browser` runs them after browser installation. The separate `browser.yml` workflow
+installs the locked tool and runs the native dialog focus check.
 
 `dashboard.css` imports the ordered files in `styles/`; wizard styles stay in
 `wizard/`. `vendor/` contains third-party browser libraries and their provenance.
@@ -178,6 +181,9 @@ connection probe and lifecycle runner. The image fixture uses the shared
 Its diagnostic, readiness and image selftests use fake Docker I/O.
 The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
 both local-miner toggles converge without rebooting.
+The address-watch provision leg in `tests/os/appliance-address-watch-leg.sh` checks certificate
+SAN coverage and the deployed dashboard recovery assets through TLS, then executes the served
+fingerprint instruction over SSH. Its refusal controls are in `tests/os/selftest-dashboard-recovery.sh`.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata, failure snapshots and bounded preview transport recovery; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.

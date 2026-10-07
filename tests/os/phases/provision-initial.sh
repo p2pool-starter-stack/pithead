@@ -235,10 +235,10 @@ _phase_provision_initial_body() {
     fi
     phase_dashboard_redirect
     phase_provision_dashboard_exposure || return 1
-    phase_provision_address_watch
-
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
+    phase_provision_address_watch "$pv_user" "$pv_pass"
+
     phase_miner_connection_installed "$handoff_body"
     if [ -n "$pv_pass" ] && curl -sSk -u "$pv_user:$pv_pass" "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.step' >/dev/null 2>&1; then
