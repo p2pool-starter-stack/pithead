@@ -49,16 +49,52 @@ outage happened while the machine was already down.
 
 ## 1. Write the image to a USB stick
 
-Download `pithead-os-vX.Y.Z.img.xz` and its `.sha256` file from the same release.
-Verify the download, then write the decompressed image to the stick:
+Download `pithead-os-vX.Y.Z.img.xz` and `pithead-os-vX.Y.Z.img.xz.sha256` from the same release
+into one folder, and run the commands below from that folder.
+
+**Check the download** before you write anything. On Linux:
 
 ```bash
 sha256sum -c pithead-os-vX.Y.Z.img.xz.sha256
+```
+
+On macOS:
+
+```bash
+shasum -a 256 -c pithead-os-vX.Y.Z.img.xz.sha256
+```
+
+A good download prints `pithead-os-vX.Y.Z.img.xz: OK`. `FAILED`, `FAILED open or read` or
+`did NOT match` means the file is damaged, incomplete or not in this folder: delete the `.img.xz`,
+download it again and repeat the check. Do not write an image that fails it.
+
+**Write the stick on Linux.** `/dev/sdX` is the USB stick: find it with
+`lsblk -o NAME,SIZE,MODEL,TRAN`, where it is the disk with `usb` under `TRAN`. Check it twice —
+`dd` will erase whatever you name.
+
+```bash
 xz -dc pithead-os-vX.Y.Z.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
-`/dev/sdX` is the USB stick. Check it twice — `dd` will erase whatever you name.
-Keep the `.xz` file intact for checksum verification; the write produces the full 5 GiB image.
+`xz -dc` decompresses as it writes and leaves the `.xz` intact; the stick receives the full 5 GiB
+image.
+
+**Write the stick on macOS 14 or later** with [easydd](https://github.com/VijitSingh97/easydd),
+which lists only external disks and asks you to type the disk's path before it writes. Install
+[Homebrew](https://brew.sh) if you do not have it, then install easydd and `xz`, decompress the
+image and write it:
+
+```bash
+brew tap vijitsingh97/easydd https://github.com/VijitSingh97/easydd.git
+brew install vijitsingh97/easydd/easydd xz
+xz -dk pithead-os-vX.Y.Z.img.xz
+easydd pithead-os-vX.Y.Z.img
+```
+
+easydd takes only the decompressed `.img`, so leave 5 GiB free for it; `-k` keeps the `.xz` so the
+checksum can be run again. Enter the stick's number from the list (check its name and size),
+type its `/dev/diskN` path to confirm, then enter your password. Wait for **Done**: easydd ejects
+the stick when the write finishes.
 
 ## 2. Boot the machine from the stick
 

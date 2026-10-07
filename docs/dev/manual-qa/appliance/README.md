@@ -49,8 +49,8 @@ Steps 13.10–13.12 copy update bundles to the box over SSH, which only the debu
 On a candidate with a release image:
 
 1. Run 13.1–13.9 on the release image.
-2. Before 13.10, write the debug image to the stick with the 13.1 commands. Skip the `sha256sum`
-   line if the debug image has no `.sha256` file.
+2. Before 13.10, write the debug image to the stick with the 13.1 commands. Skip the checksum check
+   if the debug image has no `.sha256` file.
 3. Boot the box from the stick, choose the same disk, and pick **Keep everything**.
 4. Reach the box as `root` over SSH with the bench key from the private handoff.
 5. Run 13.10–13.12.

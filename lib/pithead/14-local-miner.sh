@@ -319,16 +319,15 @@ rig_coordinator_ip() {
 }
 
 # RigForge's config for a rig, derived from rig.json exactly the way the Both role's is derived
-# from config.json — rebuilt every boot, never repaired. The pool the operator gave, the worker
-# name that labels this rig there (RigForge's pools[].user, the hostname when empty), the stratum
-# password when one was set — and, #1836, the rig's own token on every API, the read-only sister
-# feed the coordinator probes, and the writable control path pinned to the coordinator's address,
-# which is what lets the Workers view adopt this rig instead of showing "API error". Without the
-# token XMRig's own API stood open on the LAN. control_upgrade stays off: an appliance rig updates
-# through its own A/B bundle, never through RigForge's upgrade path. No hugepages_reserve_extra_mb:
-# there is no stack on this machine to leave headroom for, so RigForge sizes the pool for the miner.
+# from config.json — rebuilt every boot, never repaired (bar the keys Worker Inspect writes, #3204).
+# The pool the operator gave, the worker name that labels this rig there (RigForge's pools[].user,
+# the hostname when empty), the stratum password when one was set, and (#1836) the rig's own token
+# on every API, the read-only sister feed the coordinator probes, and the writable control path
+# pinned to the coordinator's address, which is how the Workers view adopts the rig. Without the
+# token XMRig's API stood open on the LAN. control_upgrade stays off (a rig updates through its A/B
+# bundle); no hugepages_reserve_extra_mb (no stack here to leave headroom for).
 render_rig_miner_config() {
-    local dir tok allow
+    local dir tok allow keep
     dir=$(rigforge_dir)
     if [ ! -d "$dir" ]; then
         warn "This machine is a rig, but there is no RigForge tree at $dir — this image does not carry the miner."
@@ -340,7 +339,8 @@ render_rig_miner_config() {
     }
     allow=$(rig_coordinator_ip)
     [ -n "$allow" ] || warn "The rig's control API stays off: the pool host does not resolve to an IPv4 address to pin it to. The read-only feed still serves, token required."
-    jq --arg tok "$tok" --arg allow "$allow" '{pools: [({url: .pool, user: (.worker // "")}
+    keep=$(jq -sc 'if length == 1 and (.[0] | type == "object") then .[0] | with_entries(select(.key | IN("DONATION", "autotune", "watchdog", "watchdog_interval_min", "max_temp_c"))) else {} end' "$dir/config.json" 2>/dev/null) || keep='{}'
+    jq --argjson keep "$keep" --arg tok "$tok" --arg allow "$allow" '$keep + {pools: [({url: .pool, user: (.worker // "")}
         + (if (.stratum_password // "") == "" then {} else {pass: .stratum_password} end))],
         ACCESS_TOKEN: $tok, api: "enabled"}
         + (if $allow == "" then {} else {control: "enabled", api_allow_from: $allow} end)' \
