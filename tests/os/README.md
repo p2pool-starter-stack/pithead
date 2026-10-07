@@ -177,7 +177,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   doctor output, a capped/redacted p2pool log tail and the wallet-log refusal, then an encrypted
   backup; the stack and dashboard must answer again after the backup. Doctor must still return
   every structured row as an applied diagnostic when its own exit is nonzero with monerod
-  deliberately stopped. A day-two `fixture-next` hostname preview must require typed `APPLY` and
+  deliberately stopped. After the first live config read, the authenticated dashboard must
+  serve a non-empty `/static/config/configversion.mjs` containing the newer-config warning
+  and its flag, without the removed config-version label (#3239). An unreadable asset fails
+  as unexercised; old and new module fixtures cover the verdict in the config-approval
+  leg’s self-test. A day-two `fixture-next` hostname preview must require typed `APPLY` and
   leave the kernel name, mDNS activation, certificate and live config byte-for-byte unchanged
   when it is omitted. A confirmed change must apply and audit without a second approver; the
   changed kernel, dashboard, certificate and mDNS identity must survive both the unaided reboot
