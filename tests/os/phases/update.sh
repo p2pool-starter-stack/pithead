@@ -34,7 +34,7 @@ phase_update() {
         }
     ok "v1 test image boots and answers test SSH ($ip)"
     bash "$SCRIPT_DIR/build-label-boot-leg.sh" "$SERIAL" 0 "$(tr -d '[:space:]' <VERSION)" rc3 usb A && ok "labelled image menu precedes first boot repair" || bad "labelled image first menu lacks rc3"
-    _ssh 'test "$(cat /opt/pithead/BUILD_LABEL)" = rc3 && grub-editenv /boot/efi/grub/grubenv list | grep -qx "A_VERSION=$(cat /opt/pithead/VERSION)+rc3"' && ok "booted labelled slot records rc3 in grubenv" || bad "booted slot lacks rc3 metadata"
+    _ssh 'grub-editenv /boot/efi/grub/grubenv set "A_VERSION=$(cat /opt/pithead/VERSION)" && systemctl restart pithead-boot-version.service && test "$(cat /opt/pithead/BUILD_LABEL)" = rc3 && grub-editenv /boot/efi/grub/grubenv list | grep -qx "A_VERSION=$(cat /opt/pithead/VERSION)+rc3"' && ok "boot-version unit repairs stale metadata to rc3 in grubenv" || bad "boot-version unit did not repair stale rc3 metadata"
     # #894/#895: compare these /data identities after the committed A/B swap (leg 2).
     local id_v1 hostkey_fp_v1
     id_v1=$(_ssh cat /etc/machine-id)
@@ -194,12 +194,11 @@ phase_update() {
         bad "expected v1 after the operator rollback, got '$marker'"
 
     # #2055 G1: legs 1-3 above never write config.json or machine-role, so pithead-boot.service's
-    # ConditionPathExists never triggers on this guest and NOTHING it owns runs here. That absence
-    # is what let #1956 ship: the boot-menu repair rides pithead-boot, and the phase was green for
-    # everything else. The rows below enumerate what legs 1-3 could not see, so a reader of this
-    # phase's output is told rather than left to infer it.
+    # ConditionPathExists never triggers on this guest and NOTHING it owns runs here.
+    # The unconditional boot-menu repair unit is asserted above. The rows below enumerate
+    # what legs 1-3 cannot see, so the phase output names the remaining gaps.
     #
-    # These three are MISSING, not by-design: each one IS provable, just not by this invocation —
+    # These two are MISSING, not by-design: each one IS provable, just not by this invocation —
     # `--phase provision` (or `--phase all`) runs every one of them on this same box, so per
     # skip-accounting.sh's own test ("could a different invocation of this same harness against
     # this same box have covered it? Yes -> missing") they are gaps this run has, not holes the
