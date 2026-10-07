@@ -10,6 +10,7 @@ import { MinerConnection } from "../workers/minerconnection.mjs";
 import { WorkersTable } from "../workers/workertable.mjs";
 import { WorkerInspect } from "../workers/workerview.mjs";
 import { ChartCard } from "./chart.mjs";
+import { ConnectionRecovery } from "./connectionrecovery.mjs";
 import { EarningsCard, ExpectedVsActualCard } from "./earnings.mjs";
 import { Header } from "./header.mjs";
 import {
@@ -132,6 +133,7 @@ function DashboardView({
 export function App({
   state,
   connected,
+  recoveryNeeded = false,
   ui,
   onRange,
   onSort,
@@ -164,7 +166,7 @@ export function App({
               connected
                 ? "Connecting to the dashboard… If this machine is still syncing its first chain, progress appears here in a moment."
                 : "Cannot reach the dashboard."
-            }</main>
+            }${!connected && recoveryNeeded ? html`<${ConnectionRecovery} />` : null}</main>
             ${switcher}
         <//>`;
   }
@@ -172,8 +174,8 @@ export function App({
         <${Header} state=${state} theme=${ui.theme} onTheme=${onTheme} />
         <main id="dashboard-main">
             <${OsVerdictBanner} os=${state.os_update} />
+            ${!connected ? html`<div class="disconnected-banner" role="status" aria-live="polite">Disconnected — showing data from ${state.last_update}. Retrying…${recoveryNeeded ? html`<${ConnectionRecovery} />` : null}</div>` : null}
             <${MinerConnection} />
-            ${!connected ? html`<div class="disconnected-banner" role="status" aria-live="polite">Disconnected — showing data from ${state.last_update}. Retrying…</div>` : null}
             ${
               state.syncing
                 ? html`<${SyncView} sync=${state.sync} />`

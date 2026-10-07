@@ -30,11 +30,15 @@ guide itself (steps 13.10 to 13.25).
 
 **What you do:**
 
-1. As M7 describes (in [appliance-release.md](../../appliance-release.md#manual-battery--required-before-every-appliance-release)),
+1. Open **OS updates** and click **Check now**. If it reports an error (for example, no
+   appliance bundle in the published release), click **Close** once. Check that the dialog
+   disappears and keyboard focus returns to **OS updates**. Record N/A for this error-path
+   check if the release check succeeds; do not download or install to manufacture an error.
+2. As M7 describes (in [appliance-release.md](../../appliance-release.md#manual-battery--required-before-every-appliance-release)),
    copy the good higher-version test bundle (a debug-variant bundle with a higher version) to the
    box. If you have no higher-version bundle, follow "With no higher-version bundle" below
    instead.
-2. Run the update. `<bundle>` is the path of the bundle file on the box. Never add `--yes` when
+3. Run the update. `<bundle>` is the path of the bundle file on the box. Never add `--yes` when
    the bundle's variant differs from the box's (see [Cutting](../release/cutting-and-after.md#cutting),
    item 3).
 
@@ -42,9 +46,9 @@ guide itself (steps 13.10 to 13.25).
    cd /data/pithead && ./pithead os-update <bundle>
    ```
 
-3. Run the reboot command it prints.
+4. Run the reboot command it prints.
 
-NOTE: After item 2 the spare [slot](../README.md#glossary) is armed: any reboot boots the update,
+NOTE: After item 3 the spare [slot](../README.md#glossary) is armed: any reboot boots the update,
 a power cut included (#3100).
 
 With no higher-version bundle:
@@ -61,7 +65,7 @@ With no higher-version bundle:
 
 **What you should see:**
 
-- After item 2, it says the update is written to the spare slot, that the machine keeps running
+- After item 3, it says the update is written to the spare slot, that the machine keeps running
   the current version until it reboots, and it prints the exact reboot command.
 - After the reboot, the boot menu shows the new version as **current** and the old one as
   **previous**.
