@@ -9,6 +9,10 @@
 // localStorage in sync. An unset/unknown value is left alone — the CSS default is "auto"
 // (follow prefers-color-scheme), so nothing to do.
 (() => {
+  document.documentElement.setAttribute(
+    "data-ui",
+    new URLSearchParams(location.search).get("ui") === "sovereign" ? "sovereign" : "classic",
+  );
   try {
     const t = localStorage.getItem("dashboardTheme");
     if (t === "light" || t === "dark" || t === "auto") {

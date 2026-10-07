@@ -1,0 +1,192 @@
+:root[data-ui="sovereign"] .wizard-shell {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 36px 48px;
+}
+.sov-wizard-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 104px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 50px;
+}
+.sov-wizard-brand strong {
+  display: block;
+  font-size: 26px;
+  letter-spacing: -1px;
+}
+.sov-wizard-brand span,
+.sov-wizard-brand small {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+}
+.sov-wizard-brand small {
+  margin-left: auto;
+  text-align: right;
+}
+.sov-wizard-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 64px;
+}
+.sov-wizard-guide {
+  align-self: start;
+  position: sticky;
+  top: 24px;
+}
+.sov-wizard-guide h1 {
+  font-size: 48px;
+  line-height: 1.06;
+  letter-spacing: -2px;
+  margin: 22px 0;
+}
+.sov-wizard-guide > p:not(.sov-eyebrow) {
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+.sov-wizard-guide ol {
+  list-style: none;
+  margin: 38px 0;
+  padding: 0;
+}
+.sov-wizard-guide li {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 15px 0;
+  color: var(--text-muted);
+}
+.sov-wizard-guide li span {
+  font:
+    12px ui-monospace,
+    monospace;
+}
+.sov-wizard-guide li[aria-current] {
+  color: var(--accent);
+  font-weight: 700;
+}
+.sov-wizard-footnote {
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.sov-wizard-form {
+  min-width: 0;
+}
+.sov-wizard-form > .card {
+  padding: 28px;
+  border-radius: 10px;
+}
+.sov-wizard-form p {
+  line-height: 1.6;
+}
+.sov-wizard-form .wizard-choices {
+  margin-top: 28px;
+  gap: 10px;
+}
+.sov-wizard-form .wizard-choices legend {
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.sov-wizard-form .wizard-choices label {
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  gap: 12px;
+  background: var(--bg);
+}
+.sov-wizard-form .wizard-choices label:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--elevated);
+}
+.sov-wizard-form input[type="radio"] {
+  accent-color: var(--accent);
+  width: 18px;
+  height: 18px;
+}
+.sov-wizard-form .config-field {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 20px 0;
+}
+.sov-wizard-form .config-field input,
+.sov-wizard-form .config-field select {
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
+}
+.sov-wizard-form .wizard-choices small {
+  margin-top: 5px;
+  line-height: 1.45;
+}
+.sov-wizard-form h2 {
+  margin-top: 36px;
+}
+.sov-wizard-form button:not(.wizard-link) {
+  padding: 12px 18px;
+  min-height: 44px;
+}
+.sov-wizard-form :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.sov-preview-bar {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.sov-preview-bar nav {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+@media (max-width: 850px) {
+  .sov-wizard-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .sov-wizard-guide {
+    position: static;
+  }
+  .sov-wizard-guide h1 {
+    font-size: 38px;
+    max-width: 540px;
+  }
+  .sov-wizard-guide ol {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 22px;
+    margin: 20px 0;
+  }
+  .sov-wizard-guide li {
+    font-size: 12px;
+    gap: 8px;
+    padding: 6px 0;
+  }
+  .sov-wizard-footnote {
+    display: none;
+  }
+  .sov-wizard-brand {
+    margin-bottom: 26px;
+  }
+}
+@media (max-width: 480px) {
+  :root[data-ui="sovereign"] .wizard-shell {
+    padding: 0 16px 32px;
+  }
+  .sov-wizard-brand small {
+    max-width: 100px;
+    font-size: 9px;
+    line-height: 1.6;
+  }
+  .sov-wizard-form > .card {
+    padding: 18px;
+  }
+  .sov-wizard-guide h1 {
+    font-size: 34px;
+  }
+}
