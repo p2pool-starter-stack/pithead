@@ -5,6 +5,23 @@ from tests.service.xvb._algo_service_support import *  # noqa: F403
 class TestSmartSleep:
     LATEST = {"total_live_h15": 15_000, "total_live_h10": 15_000, "pool": {}, "shares": []}
 
+    @pytest.mark.parametrize("enabled", [False, True])
+    async def test_below_tier_only_ends_dwell_when_xvb_enabled(self, algo, enabled, caplog):
+        algo.data_service.latest_data = dict(self.LATEST)
+        # With XvB off there is no stats fetch, but a donation tier is still reachable.
+        algo.state_manager.get_xvb_stats.return_value = {"avg_1h": 0, "last_update": 0}
+        assert algo._get_target_donation_hr(self.LATEST["total_live_h15"]) > 0
+        with (
+            patch("mining_dashboard.service.xvb.algo_service.ENABLE_XVB", enabled),
+            patch("asyncio.sleep", new_callable=AsyncMock) as slept,
+            caplog.at_level("INFO", logger="AlgoService"),
+        ):
+            await algo._smart_sleep(95, check_interval_sec=30)
+        assert [call.args[0] for call in slept.await_args_list] == (
+            [30] if enabled else [30, 30, 30, 5]
+        )
+        assert ("ending P2Pool dwell early" in caplog.text) is enabled
+
     async def test_aborts_early_when_decision_flips_to_donate(self, algo):
         algo.data_service.latest_data = dict(self.LATEST)
         algo.state_manager.get_xvb_stats.return_value = {"avg_24h": 0, "avg_1h": 0, "fail_count": 0}
