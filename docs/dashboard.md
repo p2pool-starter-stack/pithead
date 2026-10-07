@@ -1125,8 +1125,8 @@ wallet, so it refuses to run without a login), and run `./pithead apply`. A **Co
 button sits next to the Simple/Advanced toggle whether or not the channel is on; with it off, the
 view explains how to turn it on and nothing else.
 
-The panel shows `config_version` as read-only text (unknown when unstamped). A newer stamp
-warns that saving is blocked while the config contains settings this version does not know:
+The panel does not show the `config_version` stamp. Only a newer stamp shows a card warning
+that saving is blocked while the config contains settings this version does not know:
 update the OS first. Form, JSON and API edits to the stamp are ignored, and previews and recent
 changes omit it. See [configuration versioning](configuration.md#configuration-reference).
 

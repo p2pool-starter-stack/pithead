@@ -33,7 +33,7 @@ This part checks the dashboard's **Configuration** view: the form, the read-only
 
 - A form with grouped sections and an Advanced JSON pane.
 - Secrets show as "set — leave blank to keep", never their values.
-- The config file version (`config_version`) shows as plain text, not as a field (#3109).
+- No config file version text or version card appears for a current or unstamped config (#3239).
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
