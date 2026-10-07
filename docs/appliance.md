@@ -136,7 +136,15 @@ the one your browser shows under the warning's details. Stop on a mismatch; cont
 they match. If an open dashboard tab keeps retrying after a certificate replacement, open the
 same dashboard address in a new tab to inspect the warning and verify the current fingerprint
 at the appliance console. Accept only the matching replacement; the original tab then
-reconnects through its normal polls. The setup page is
+reconnects through its normal polls. To read the current dashboard fingerprint, log in at the
+appliance console and run:
+
+```bash
+openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -fingerprint -sha256
+```
+
+Use this current certificate, not the setup page's earlier fingerprint or the miner's stratum
+TLS fingerprint. The setup page is
 encrypted either way, which matters because what you type into it includes node passwords and,
 if you use the advanced view, anything else in the configuration.
 

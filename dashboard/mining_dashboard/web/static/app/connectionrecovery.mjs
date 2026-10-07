@@ -10,5 +10,7 @@ export function ConnectionRecovery() {
     SHA-256 fingerprint with the current fingerprint on the appliance console. Stop if they do not
     match. Accept the replacement only after they match, then return to this tab; polling will
     reconnect when the dashboard is reachable. The browser does not tell this page which failure
-    occurred.</p>`;
+    occurred.</p>
+    <p>To read the current dashboard fingerprint, log in at the appliance console and run
+      <code>openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -fingerprint -sha256</code>.</p>`;
 }

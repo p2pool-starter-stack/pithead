@@ -50,6 +50,7 @@ test("recovery guidance covers syncing, full dashboard and failed initial load",
     const out = renderToString(App(props));
     assert.match(out, /Reload this page or open the same dashboard address in a new tab/);
     assert.match(out, /SHA-256 fingerprint with the current fingerprint on the appliance console/);
+    assert.match(out, /openssl x509 -in \/data\/pithead\/data\/tls\/wizard\.crt -noout -fingerprint -sha256/);
     assert.match(out, /Stop if they do not\s+match/);
     assert.match(out, /Accept the replacement only after they match/);
     assert.match(out, /polling will\s+reconnect/);
