@@ -95,7 +95,13 @@ the node logs directly:
 
 ## The operational view
 
-Once both nodes are synced, the dashboard shows the operational view.
+Once both nodes are synced, the dashboard shows the operational view. P2Pool then syncs its
+own sidechain. While its reported difficulty is at the default minimum (100,000) and its
+sidechain height is below its reported PPLNS window, **Global P2Pool Stats** and
+**Pool Cadence & Luck** show "P2Pool is syncing its sidechain" instead of pool figures.
+Local worker hashrate remains visible. The cards return to their figures on the next poll
+when that bootstrap state clears. P2Pool's data API has no explicit sync flag or progress
+percentage; this detects its initial minimum-difficulty view, not later stalls or peer loss.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./images/launch/simple.png">
