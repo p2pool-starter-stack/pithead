@@ -15,6 +15,9 @@ phase_provision() {
     # pv_user/pv_pass are set by the initial leg and read by the reboot and migration legs,
     # so they belong to the phase, not to one leg.
     local pv_user="" pv_pass=""
+    # Snapshot metadata is shared by the fixture and mining probes through dynamic scope.
+    local MIGRATION_SNAPSHOT_SIZE="" MIGRATION_SNAPSHOT_HEIGHT="" MIGRATION_SNAPSHOT_SHA=""
+    migration_snapshot_input || return
     # shellcheck disable=SC2034 # provision_browser_config reads both through dynamic scope.
     local PROVISION_DASHBOARD_HOST=fixture-box
     _phase_provision_initial || return

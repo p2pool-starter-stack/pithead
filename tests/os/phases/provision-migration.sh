@@ -2,6 +2,8 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/os/migration-same-version-fallback.sh
 source "$SCRIPT_DIR/migration-same-version-fallback.sh" || return $?
+# shellcheck source=tests/os/migration-local-chain.sh
+source "$SCRIPT_DIR/migration-local-chain.sh" || return $?
 
 # ---- no room for the Tari migration (#2645): the migrating bundle is refused, nothing installed ----
 # The staged data_migration bundle meets a /data filled to 1 GiB free, below the 5 GiB margin alone,
@@ -75,6 +77,9 @@ _phase_provision_migration() {
     # race-free evidence (the hold and the release are both logged); the podman poll additionally proves
     # monerod never ran while the slot was uncommitted.
     info "migration leg — build a data_migration bundle, install via os-update, boot it"
+    # Credentials are read by the existing authenticated approval helpers through dynamic scope.
+    # shellcheck disable=SC2034,SC2154
+    local DASH_USER="$pv_user" DASH_PASS="$pv_pass"
     local mig_bundle
     mig_bundle=$(PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION="$(tr -d ' \n' <VERSION)" _build_bundle vmig) || {
         bundle_build_evidence
@@ -94,6 +99,11 @@ _phase_provision_migration() {
     # filler is still on /data, where that install would be refused for the fixture's fault.
     _phase_provision_migration_space_refusal
     [ "$?" -ne 2 ] || return 1
+    migration_prepare_local_chain || {
+        bad "the isolated local-chain fixture did not establish synced mining before upgrade"
+        approval_restore_pending || bad "local-chain precondition failure could not restore configuration"
+        return 1
+    }
     # os-update is the path that writes the pending marker (a bare rauc install does not) — and
     # this is also the first tier-4 exercise of os-update against a REAL bundle: it needs
     # unsquashfs on the appliance to read the manifest back, which CI's stubbed rauc never shows.
@@ -112,16 +122,6 @@ _phase_provision_migration() {
         bad "no migration-pending marker after installing a data_migration bundle"
         return 1
     fi
-    # Carry a real existing snapshot with the earned latch, rather than a fresh database.
-    # Stop the writer first; a one-shot container uses its existing data mount and image.
-    local seed image
-    seed=$(base64 <"$SCRIPT_DIR/migration-release-snapshot.py" | tr -d '\n')
-    image=$(_ssh "podman inspect -f '{{.Image}}' dashboard" | tr -d '\r\n')
-    if [ -z "$image" ] || ! _ssh "podman stop dashboard >/dev/null && printf %s '$seed' | base64 -d | podman run --rm -i --network none --volumes-from dashboard --entrypoint python3 '$image' - /data/mining_data.db"; then
-        bad "could not preserve and seed the existing dashboard mining-release snapshot"
-        return 1
-    fi
-    ok "migration upgrade carries an existing database with miner_released=true"
     _reboot_wait reboot 300 || {
         bad "guest never returned after booting the migration bundle"
         return 1
@@ -135,13 +135,18 @@ _phase_provision_migration() {
             released=1
             break
         fi
-        if _ssh "podman ps --format '{{.Names}}' 2>/dev/null | grep -qx monerod"; then
+        if _ssh "podman ps --format '{{.Names}}' 2>/dev/null | grep -qx monerod" &&
+            ! _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
             chain_ran_early=1
         fi
         sleep 5
     done
     if [ "$released" = 1 ]; then
-        ok "the migrating slot committed and released the chain services"
+        if [ "$(_marker)" = vmig ] && _ssh 'slot=$(sed -n "s/.*rauc.slot=\([AB]\).*/\1/p" /proc/cmdline); test -n "$slot" && grub-editenv /boot/efi/grub/grubenv list | grep -qx "${slot}_OK=1"'; then
+            ok "the migrating slot committed unattended and released the chain services"
+        else
+            bad "the released migrating slot is not marked good in the bootloader"
+        fi
         # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
         assert_appliance_hostname_identity fixture-next "A/B update" "$pv_user" "$pv_pass"
     else
@@ -184,6 +189,17 @@ _phase_provision_migration() {
     else
         ok "the migration-pending marker was consumed"
     fi
+    local recovered_since
+    recovered_since=$(_ssh 'date +%s' | tr -d '\r\n') || recovered_since=""
+    if [[ "$recovered_since" =~ ^[0-9]+$ ]] && migration_wait_for_mining "$recovered_since"; then
+        ok "after unattended commit the local chain is synced, P2Pool and proxy are healthy, and mining advances"
+    else
+        bad "post-commit local-chain mining did not recover from the persisted-release migration hold"
+    fi
+    approval_restore_pending || {
+        bad "the migration leg could not restore its original Tari configuration"
+        return 1
+    }
     # With the marker gone, a chain node that dies on its migration must reach the operator (#2588).
     phase_provision_chain_fault_after_release "$pv_user" "$pv_pass"
     phase_provision_same_version_fallback

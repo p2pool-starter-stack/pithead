@@ -246,25 +246,13 @@ class TestSyncGateDecision:
 
 
 async def test_migration_reset_with_real_persisted_release(tmp_path, monkeypatch):
-    import asyncio
-    from pathlib import Path
-
     from mining_dashboard.service.storage_service import StateManager
 
     database = StateManager(str(tmp_path / "mining_data.db"))
     database.save_snapshot({"miner_released": True, "sync_gate_monero_only": True})
     marker = tmp_path / "sync-gate-reset"
-    marker.write_text("tari-only\n")
-    root = Path(__file__).resolve().parents[3]
-    process = await asyncio.create_subprocess_exec(
-        "/bin/bash",
-        "-c",
-        '. "$1"; rearm_sync_gate_marker "$2" 1',
-        "migration-test",
-        str(root / "lib/pithead/40a-sync-gate-reset.sh"),
-        str(tmp_path),
-    )
-    assert await process.wait() == 0
+    # The host writer is exercised by the shell suite; this is its container-visible contract.
+    marker.write_bytes(b"")
     monkeypatch.setattr(ds_mod, "SYNC_GATE_RESET_PATH", str(marker))
     svc = DataService(database, MagicMock(), MagicMock())
     svc.docker_control = MagicMock(

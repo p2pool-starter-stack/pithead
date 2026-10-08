@@ -34,7 +34,7 @@ _phase_provision_initial_body() {
         bad "image build failed (/tmp/os-fault-build.log)"
         return 1
     }
-    _vm_boot_disk "$img" && _wait_ssh 240 || {
+    _vm_boot_disk "$img" "${PITHEAD_OS_MONERO_SNAPSHOT_GUEST_GIB:-40}" && _wait_ssh 240 || {
         bad "guest never answered SSH (ip: ${ip:-none})"
         return 1
     }

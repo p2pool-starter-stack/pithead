@@ -222,9 +222,13 @@ _secure_boot_guest_leg() {
 
 # Boot a raw appliance disk under OVMF and return once it has a lease. Sets the global `ip`.
 _vm_boot_disk() {
+    local disk_gib="${2:-40}"
+    [[ "$disk_gib" =~ ^[1-9][0-9]{1,3}$ ]] || return 1
+    case "$disk_gib" in '' | *[!0-9]* | ?????*) return 1 ;; esac
+    [ "$disk_gib" -ge 40 ] && [ "$disk_gib" -le 8192 ] || return 1
     vm_destroy_or_refuse || return
-    cp "$1" "$DISK"
-    qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
+    cp "$1" "$DISK" || return 1
+    qemu-img resize "$DISK" "${disk_gib}G" >/dev/null 2>&1 || return 1
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \

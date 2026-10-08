@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Pure-file migration ownership and same-version fallback regressions.
 set -euo pipefail
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?set TMPDIR or RUNNER_TEMP}}"
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d "${TMPDIR:?}/migration-hold.XXXXXX")
 trap 'rm -rf "$T"' EXIT
