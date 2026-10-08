@@ -188,19 +188,30 @@ tor_recovery_restore_start() { # <data dir> <original identity hashes>; recover 
     tor_recovery_redial_monerod
 }
 
+tor_recovery_refusal() {
+    # Exit only the CLI dispatch: explicit refusals bypass ERR without disabling errexit.
+    # Sourced and host-control callers keep the existing nonzero return contract.
+    [ "${_PITHEAD_TOR_RECOVERY_CLI:-0}" != 1 ] || exit 1
+}
+
 tor_recover() { # check | apply; explicit operator action only
     local mode="$1" outage dir state first second stamp now last backup healthy=0 info identities started_before started_after i
     case "$mode" in check | apply) ;; *) error "Usage: ./pithead tor-recover check|apply" ;; esac
     require_deployed
     # An active host operation is a refusal, not a queued mutation against changing state.
-    PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-recover || return 1
+    PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-recover || {
+        tor_recovery_refusal
+        return 1
+    }
     [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || {
         warn "Tor recovery refused: the host mutation lock is unavailable."
+        tor_recovery_refusal
         return 1
     }
     dir=$(tor_recovery_mount) || {
         warn "Tor recovery refused: live container or data mount is ambiguous."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     }
     state="$dir/state"
@@ -208,6 +219,7 @@ tor_recover() { # check | apply; explicit operator action only
     [ ! -L "$stamp" ] || {
         warn "Tor recovery refused: cooldown record is a symlink."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     }
     now=$(date +%s)
@@ -217,17 +229,20 @@ tor_recover() { # check | apply; explicit operator action only
         [[ "$last" =~ ^[0-9]+$ ]] || {
             warn "Tor recovery refused: invalid cooldown record."
             mutation_lock_release
+            tor_recovery_refusal
             return 1
         }
     fi
     if [ "$mode" = apply ] && [ $((now - last)) -lt "$TOR_RECOVERY_COOLDOWN_SEC" ]; then
         warn "Tor recovery refused: the persistent six-hour cooldown is active."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     fi
     if ! tor_recovery_state_saturated "$state"; then
         warn "Tor recovery refused: circuit history is not saturated."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     fi
     first=
@@ -244,11 +259,13 @@ tor_recover() { # check | apply; explicit operator action only
         second=$(tor_recovery_info) || {
             warn "Tor recovery refused: second Monero reading unavailable."
             mutation_lock_release
+            tor_recovery_refusal
             return 1
         }
         if ! tor_recovery_signature "$state" "$first" "$second"; then
             warn "Tor recovery refused: saturated circuit history and stalled, peerless Monero are not both established."
             mutation_lock_release
+            tor_recovery_refusal
             return 1
         fi
         log "Tor circuit history is saturated; local Monero stayed peerless and at one height across three minutes."
@@ -256,6 +273,7 @@ tor_recover() { # check | apply; explicit operator action only
         if ! tor_recovery_bootstrap_stalled "$state" "$now"; then
             warn "Tor recovery refused: unavailable Monero RPC is not corroborated by sustained authenticated Tor bootstrap failure."
             mutation_lock_release
+            tor_recovery_refusal
             return 1
         fi
         log "Tor circuit history is saturated; authenticated bootstrap stayed at 95% with no established circuit across three minutes and repeated invalid timing warnings."
@@ -263,6 +281,7 @@ tor_recover() { # check | apply; explicit operator action only
     identities=$(tor_recovery_identities "$dir") || {
         warn "Tor recovery refused: onion identities cannot be verified."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     }
     if [ "$mode" = check ]; then
@@ -274,6 +293,7 @@ tor_recover() { # check | apply; explicit operator action only
     sudo test ! -e "$backup" && sudo test ! -L "$backup" || {
         warn "Tor recovery refused: circuit-state backup target already exists."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     }
     # Stamp before disruption: a failed attempt must not become an unbounded retry loop.

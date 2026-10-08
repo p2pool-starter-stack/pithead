@@ -873,7 +873,9 @@ state reset sends one alert per outage explaining the saturated history and guar
 
 **Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed
 bootstrap, a failed clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
-reports invalid circuit build timing, run `./pithead tor-recover check`. This read-only check
+reports invalid circuit build timing, run `./pithead tor-recover check`. A refused precondition
+prints its warning and exits 1 without the unexpected-abort diagnostic; no recovery is applied.
+This read-only check
 validates the live Tor data mount and the saturated history signature. When local Monero RPC
 answers, it requires peerless, stalled Monero across three minutes (0 outgoing peers at one height,
 whatever `synchronized` says: monerod keeps its last value after losing every peer), with real
