@@ -26,7 +26,7 @@ run_reset_restore() {
     local running_probe
     running_probe="set -e; test -n \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running)\";
         scratch=\$(mktemp -d \"\${TMPDIR:?}/reset-restore.XXXXXX\");
-        trap 'for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"' EXIT;
+        trap 'for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"' EXIT
         for f in config.json .env Caddyfile; do mv -- \"\$f\" \"\$scratch/\$f\"; done;
         set +e; output=\$($IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 2>&1); result=\$?; set -e;
         test \"\$result\" -ne 0;
