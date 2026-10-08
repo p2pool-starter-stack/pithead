@@ -82,14 +82,20 @@ async function setup(t, disableExtensions) {
     }
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  t.after(() => new Promise((r) => { server.closeAllConnections(); server.close(r); }));
-  const browser = await chromium.launch({
+  let browser;
+  // Close Chromium before the TLS server: its speculative connections can otherwise hold
+  // server.close() open and prevent the next cleanup hook from ever closing the browser.
+  t.after(async () => {
+    await browser?.close();
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+  });
+  browser = await chromium.launch({
     // Use the full browser's new headless mode: the headless shell has no certificate UI.
     channel: "chromium",
     ignoreDefaultArgs: disableExtensions ? [] : ["--disable-extensions"],
     args: disableExtensions ? ["--disable-extensions"] : [],
   });
-  t.after(() => browser.close());
   console.log(`Backup browser: ${browser.version()}; fresh profile; extensions ${disableExtensions ? "explicitly disabled" : "none installed"}`);
   const context = await browser.newContext({ acceptDownloads: true });
   context.setDefaultTimeout(10000);
