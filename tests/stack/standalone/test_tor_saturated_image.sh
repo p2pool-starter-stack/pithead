@@ -93,7 +93,7 @@ if [ "$repaired" = true ]; then
         awk -v field="$field" '$1 == field && ($2 != "0" || NF != 2) { bad=1 } END { exit bad }' "$dir/state"
     done
     phase='assert no CircuitBuildTimeBin after automatic repair'
-    ! grep -q '^CircuitBuildTimeBin ' "$dir/state"
+    awk '$1 == "CircuitBuildTimeBin" { bad=1 } END { exit bad }' "$dir/state"
     echo 'PASS: automatic repair persists an empty circuit-build history'
 else
     phase='move state while Tor runs'
@@ -113,7 +113,9 @@ start
 stop
 phase='verify stop, move, start clears saturated history'
 [ -s "$dir/state" ]
-! saturated
+if saturated; then
+    exit 1
+fi
 echo 'PASS: stop, move, start clears the saturated state'
 echo 'Tor offline recovery assertions complete'
 GUEST

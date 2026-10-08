@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 FIXTURE = Path(__file__).with_name("test_tor_saturated_image.sh")
 
@@ -48,6 +49,8 @@ kill() {
         rm -f "$dir/pid"
         case "$mode" in
             false_repair) seed ;;
+            retained_bin) printf 'CircuitBuildTimeBin 123 1\n' >"$dir/state" ;;
+            failed_final) if [ "$starts" = 2 ]; then seed; else printf '%s\n' "$memory" >"$dir/state"; fi ;;
             nonzero_total) printf 'TotalBuildTimes 1\n' >"$dir/state" ;;
             repair) printf '# Tor minimal state file\n' >"$dir/state" ;;
             *) printf '%s\n' "$memory" >"$dir/state" ;;
@@ -69,7 +72,7 @@ running=false
 class OfflineTorFixtureTest(unittest.TestCase):
     def run_fixture(self, mode):
         with tempfile.TemporaryDirectory(
-            dir=os.environ.get("TMPDIR") or os.environ["RUNNER_TEMP"]
+            dir=os.environ.get("TMPDIR") or os.environ.get("RUNNER_TEMP")
         ) as scratch:
             root = Path(scratch)
             docker = root / "docker"
@@ -141,6 +144,29 @@ class OfflineTorFixtureTest(unittest.TestCase):
         self.assertIn(
             "FAIL: offline Tor phase: assert TotalBuildTimes is absent or zero", result.stdout
         )
+
+    def test_retained_bin_rejects_automatic_repair(self):
+        result = self.run_fixture("retained_bin")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("assert no CircuitBuildTimeBin after automatic repair", result.stdout)
+        self.assertNotIn("PASS: automatic repair persists", result.stdout)
+        self.assertNotIn("Tor offline recovery assertions complete", result.stdout)
+
+    def test_retained_saturation_rejects_final_recovery(self):
+        result = self.run_fixture("failed_final")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("verify stop, move, start clears saturated history", result.stdout)
+        self.assertNotIn("PASS: stop, move, start clears", result.stdout)
+        self.assertNotIn("Tor offline recovery assertions complete", result.stdout)
+
+    def test_platform_scratch_default_without_environment(self):
+        environment = {
+            key: value for key, value in os.environ.items() if key not in ("TMPDIR", "RUNNER_TEMP")
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            result = self.run_fixture("repair")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Tor offline recovery assertions complete", result.stdout)
 
     def test_explicit_zero_defaults_are_accepted(self):
         result = self.run_fixture("zero_fields")

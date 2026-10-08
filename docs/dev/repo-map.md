@@ -202,6 +202,8 @@ run by the Tor image build job. It verifies either startup repair of all 1000 ab
 observations and an empty persisted history, or the legacy warning and shutdown-write
 behavior, then checks stop/move/start recovery. Failures print the phase, the last 80
 offline daemon log lines and circuit-build state fields; authentication cookies stay private.
+Retained circuit-build bins after automatic repair and retained saturation after final
+recovery fail explicitly; neither can reach the completion marker.
 Its Docker-free controls are in `tests/stack/standalone/test_tor_saturated_fixture.py`,
 run by `make test-tools`.
 Bundle staging into the guest is bounded and reports through `staging-failure-evidence.sh`; the
