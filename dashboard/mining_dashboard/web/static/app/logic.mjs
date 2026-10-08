@@ -216,7 +216,7 @@ export const DAYS_PER_YEAR = 365;
 // shows "—"). Require the complete decimal/unit syntax; commas and exponents are not supported.
 export function parseHashrate(str) {
   if (typeof str !== "string") return null;
-  const m = str.trim().match(/^([0-9]*\.?[0-9]+)\s*([kmg])?\s*(?:h\/s)?$/i);
+  const m = str.trim().match(/^([0-9]+(?:\.[0-9]+)?|\.[0-9]+)\s*(?:([kmg])\s*)?(?:h\/s)?$/i);
   if (!m) return null;
   const val = Number(m[1]);
   const unit = (m[2] || "").toLowerCase();

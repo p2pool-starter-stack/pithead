@@ -45,6 +45,11 @@ test('parseHashrate: rejects comma/exponent notation and incomplete or trailing 
     assert.equal(parseHashrate(1000), null);
 });
 
+test('parseHashrate: rejects long malformed pasted values', () => {
+    assert.equal(parseHashrate('1'.repeat(100_000) + 'x'), null);
+    assert.equal(parseHashrate('1' + ' '.repeat(100_000) + 'x'), null);
+});
+
 test('parseHashrate: rejects overflow before and after unit conversion', () => {
     assert.equal(parseHashrate('9'.repeat(309)), null);
     assert.equal(parseHashrate('9'.repeat(300) + 'G'), null);
