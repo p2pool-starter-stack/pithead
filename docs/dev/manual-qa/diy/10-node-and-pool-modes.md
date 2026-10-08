@@ -192,7 +192,9 @@ Per #3092:
 - No login prompt appears.
 - The **Connect a miner** block shows the LAN pool URL and the [stratum](../README.md#glossary) password, or `No stratum password`, to anyone on the LAN. The owner accepts that risk.
 
-A dashboard published as an [onion](../README.md#glossary) always has a login: the last row of [Broken configs](../sample-configs.md#broken-configs) tests that read-only refusal with `apply --dry-run`. Normal apply generates a login
+A dashboard published as an [onion](../README.md#glossary) always has a login: the last row of
+[Broken configs](../sample-configs.md#broken-configs) tests that read-only refusal with
+`apply --dry-run`. Normal apply generates a login
 password before confirmation; the separate [password-generation cases](../sample-configs.md#onion-password-generation-on-normal-apply)
 check cancellation and acceptance.
 
