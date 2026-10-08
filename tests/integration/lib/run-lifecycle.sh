@@ -4,8 +4,6 @@
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tari-background-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
-# shellcheck source=tests/integration/lib/run-reset-restore.sh
-source "${BASH_SOURCE[0]%/*}/run-reset-restore.sh" || exit $?
 run_lifecycle() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"
@@ -227,6 +225,7 @@ run_lifecycle() {
     run_uninstall_round_trip || lifecycle_ok=0
     [ "$lifecycle_ok" = 1 ]
 }
+
 # A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
 # every regular file up to 64 MiB, and for a larger one (the chains' LMDB files, hundreds of GiB
 # on a synced box, an hour per hashing pass) its inode, size, mtime and ctime to the nanosecond.
@@ -240,6 +239,7 @@ kept_data_snapshot_snippet() { # <path>...
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
     printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths \\( -type f -size +65536k -printf 'meta %i %s %T@ %C@ %p\\n' \\) -o \\( -type f -exec sha256sum {} + \\) -o -printf '%y %p -> %l\\n' | LC_ALL=C sort"
 }
+
 # The same paths' LMDB files as inode, birth time to the nanosecond and path: a chain that was
 # reused keeps all three, one re-created by a resync gets a new birth time even when the
 # filesystem hands the freed inode number straight back. Only *.mdb: a log rotates into new
