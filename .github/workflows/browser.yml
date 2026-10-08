@@ -18,6 +18,8 @@ jobs:
     name: Browser native-dialog focus
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TMPDIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,3 +33,13 @@ jobs:
         run: dashboard/tests/browser/node_modules/.bin/playwright install --with-deps chromium
       - name: Assert native Close, trigger focus and complete HTTPS backup downloads
         run: make test-browser
+      - name: Install pinned Google Chrome for Testing
+        run: |
+          curl --fail --silent --show-error --location \
+            https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.37/linux64/chrome-linux64.zip \
+            --output "$TMPDIR/pithead-backup-chrome.zip"
+          unzip -q "$TMPDIR/pithead-backup-chrome.zip" -d "$TMPDIR/pithead-backup-chrome"
+      - name: Assert complete Google Chrome HTTPS backup downloads
+        run: |
+          PITHEAD_BACKUP_BROWSER_EXECUTABLE="$TMPDIR/pithead-backup-chrome/chrome-linux64/chrome" \
+            node --test dashboard/tests/browser/backup-download.test.mjs

@@ -93,10 +93,11 @@ async function setup(t, disableExtensions) {
   browser = await chromium.launch({
     // Use the full browser's new headless mode: the headless shell has no certificate UI.
     channel: "chromium",
+    executablePath: process.env.PITHEAD_BACKUP_BROWSER_EXECUTABLE || undefined,
     ignoreDefaultArgs: disableExtensions ? [] : ["--disable-extensions"],
     args: disableExtensions ? ["--disable-extensions"] : [],
   });
-  console.log(`Backup browser: ${browser.version()}; fresh profile; extensions ${disableExtensions ? "explicitly disabled" : "none installed"}`);
+  console.log(`Backup browser: ${process.env.PITHEAD_BACKUP_BROWSER_EXECUTABLE ? "Google Chrome for Testing" : "Chromium"} ${browser.version()}; fresh profile; extensions ${disableExtensions ? "explicitly disabled" : "none installed"}`);
   const context = await browser.newContext({ acceptDownloads: true });
   context.setDefaultTimeout(10000);
   const page = await context.newPage();

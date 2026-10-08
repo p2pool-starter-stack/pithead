@@ -76,7 +76,14 @@ reset after success, stale snapshot retention, and advice during sync, normal di
 initial-load failure. `dashboard/tests/browser/osupdate-close.test.mjs` serves the production OS-update component,
 clicks Close once after a refused update check, and asserts the native dialog is removed and
 `document.activeElement` is its actual OS-updates trigger. The locked Chromium test runs through
-`make test-browser` in `browser.yml`. Replacement-certificate acceptance still requires the
+`make test-browser` in `browser.yml`. `backup-download.test.mjs` uses the production backup
+component over self-signed HTTPS, accepts the certificate interstitial without bypass flags,
+and requires complete GUI saves of the kit and encrypted fixture: length and SHA-256 match,
+decryption using the saved kit, gzip/tar integrity and member bytes. It records exact Chromium
+and pinned Google Chrome for Testing versions, compares fresh profiles with extensions explicitly
+disabled, and checks that client blocking and interrupted transfers permit retry without a new
+backup or loss of the displayed kit. The original operator profile and live appliance backup
+contents remain outside these fixtures. Replacement-certificate acceptance still requires the
 appliance browser check in QA step 13.8. The KVM provision address-watch leg retains its
 SAN check, then uses the captured dashboard login over TLS from outside the guest to require
 HTTP 200 for the deployed OS-update error Close handler, fingerprint-comparison and
