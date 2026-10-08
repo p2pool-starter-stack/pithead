@@ -157,10 +157,17 @@ compare service image majors with a previous release. `--dev` retains the defaul
 
 **The migration hold — how a flagged update boots.** Installing a `data_migration` bundle
 also leaves a marker on `/data` (`.os-migration-pending`, stamped with the bundle's
-version). On the next boot, `pithead-boot` sees a marker matching its own version and
-brings the stack up **without** the chain services (monerod, tari, and their wallets — the
-holders of forward-only lmdb migrations): the A/B commit decision is made on everything
-else first. `doctor` reads the same marker and judges the deliberately-held chain
+version). Before loading images or rendering configuration, the candidate boot adds
+its A/B slot to the marker (`VERSION|A` or `VERSION|B`). A fallback into the previous
+slot then restores the data floor even when both builds carry the same version;
+the older version-only comparison also treats the qualified marker as a mismatch.
+`pithead-boot` brings the stack up **without** the chain services (monerod, tari, and their wallets — the
+holders of forward-only lmdb migrations). Before starting the dashboard, it writes a
+full sync-gate reset, revoking any mining release restored from the existing database.
+P2Pool and the proxy stop through the ordinary sync gate while local chains are held;
+after commit they wait for the required chains to sync before mining resumes. Normal
+boots and transient outages preserve the earned release. The A/B commit decision is
+made on everything else first. `doctor` reads the same marker and judges the deliberately-held chain
 containers by the sync-hold rule, so the commit gate gates on what is running instead of
 deadlocking on the hold. Only after `mark-good` does the boot path remove the marker and
 run a plain `up` — the chain services start, and the migration runs on a slot a fallback
@@ -172,7 +179,7 @@ nothing can undo that — and the journal carries one `FAULT` line saying the ch
 did not start and the migration has not run, with the recovery: `./pithead up` from
 `/data/pithead`. If health fails instead, the slot stays uncommitted, the machine
 falls back, and the old OS boots normally — its data was never touched (the old boot path
-ignores a marker for a version it isn't). A non-migrating install clears any stale marker.
+ignores the slot-qualified marker). A non-migrating install clears any stale marker.
 The `db_schema` field the plan also lists stays out until something reads it — an
 unread manifest field is a claim, not a contract.
 

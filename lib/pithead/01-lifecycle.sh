@@ -262,6 +262,10 @@ stack_up() {
     # only containers anything depends on together), so the A/B commit decision is made before
     # any migration touches /data. The chain services start with a plain `up` after the commit.
     if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
+        # Revoke the carried mining latch before dashboard startup; ordinary outages retain it.
+        local dashboard_dir
+        dashboard_dir=$(env_get DASHBOARD_DATA_DIR)
+        [ -n "$dashboard_dir" ] && rearm_sync_gate_marker "$dashboard_dir" 1 || error "Could not reset the mining sync gate for the data migration."
         local services c
         local filter=()
         for c in $REVENUE_CHAIN_CONTAINERS; do filter+=(-e "$c"); done

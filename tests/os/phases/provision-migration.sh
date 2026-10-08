@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/os/migration-same-version-fallback.sh
+source "$SCRIPT_DIR/migration-same-version-fallback.sh" || return $?
 
 # ---- no room for the Tari migration (#2645): the migrating bundle is refused, nothing installed ----
 # The staged data_migration bundle meets a /data filled to 1 GiB free, below the 5 GiB margin alone,
@@ -79,6 +81,11 @@ _phase_provision_migration() {
         bad "migration bundle build failed — read the build output above (/tmp/os-fault-bundle.log)"
         return 1
     }
+    # All bundle builds overwrite update.raucb. Retain the good bundle before the fault build.
+    mig_bundle=$(preserve_migration_bundle "$mig_bundle") || {
+        bad "could not retain the good migration bundle for fallback recovery"
+        return 1
+    }
     _stage_bundle "$mig_bundle" || {
         bad "staging the migration bundle failed"
         return 1
@@ -105,6 +112,16 @@ _phase_provision_migration() {
         bad "no migration-pending marker after installing a data_migration bundle"
         return 1
     fi
+    # Carry a real existing snapshot with the earned latch, rather than a fresh database.
+    # Stop the writer first; a one-shot container uses its existing data mount and image.
+    local seed image
+    seed=$(base64 <"$SCRIPT_DIR/migration-release-snapshot.py" | tr -d '\n')
+    image=$(_ssh "podman inspect -f '{{.Image}}' dashboard" | tr -d '\r\n')
+    if [ -z "$image" ] || ! _ssh "podman stop dashboard >/dev/null && printf %s '$seed' | base64 -d | podman run --rm -i --network none --volumes-from dashboard --entrypoint python3 '$image' - /data/mining_data.db"; then
+        bad "could not preserve and seed the existing dashboard mining-release snapshot"
+        return 1
+    fi
+    ok "migration upgrade carries an existing database with miner_released=true"
     _reboot_wait reboot 300 || {
         bad "guest never returned after booting the migration bundle"
         return 1
@@ -141,6 +158,13 @@ _phase_provision_migration() {
     else
         bad "no 'holding chain services' line in the boot journal — the hold path never ran"
     fi
+    # /run is fresh on this boot. This is the ordinary commit gate's final status record,
+    # captured before mark-good and the release up; it proves actual stopped states.
+    if _ssh "grep -Eq 'p2pool[[:space:]]+(created|exited|stopped)[[:space:]]' /run/pithead-boot-status.log && grep -Eq 'xmrig-proxy[[:space:]]+(created|exited|stopped)[[:space:]]' /run/pithead-boot-status.log"; then
+        ok "the ordinary pre-commit gate observed P2Pool and the proxy stopped with the carried release"
+    else
+        bad "the ordinary pre-commit gate did not record both mining services stopped"
+    fi
     # After the release: monerod back up, marker consumed.
     local mig_node_up=0
     for _ in $(seq 60); do
@@ -162,5 +186,7 @@ _phase_provision_migration() {
     fi
     # With the marker gone, a chain node that dies on its migration must reach the operator (#2588).
     phase_provision_chain_fault_after_release "$pv_user" "$pv_pass"
+    phase_provision_same_version_fallback
     phase_provision_floor_fallback_leg "$mig_bundle"
+    rm -f "$mig_bundle"
 }

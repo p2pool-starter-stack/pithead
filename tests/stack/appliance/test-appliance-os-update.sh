@@ -426,7 +426,7 @@ assert_rc "no hold: marker for another version (fallback boot)" "$?" "1"
 omh "ABSENT" "1.17.0"
 assert_rc "no hold: no marker" "$?" "1"
 omh "" "1.17.0"
-assert_rc "no hold: empty marker is not a version match" "$?" "1"
+assert_rc "empty marker fails closed instead of releasing chains" "$?" "2"
 unset -f omh
 
 # Fail-closed: a version the comparator can't parse is NOT proof of safety. Releases DO use -prep
