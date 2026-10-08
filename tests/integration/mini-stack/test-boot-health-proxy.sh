@@ -2,7 +2,7 @@
 # Real rendered Caddy + dashboard: boot 401s are marked, network forgeries still count.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/pithead-boot-proxy.XXXXXX")
+scratch=$(mktemp -d -t pithead-boot-proxy.XXXXXX)
 name="pithead-boot-proxy-$$"
 cleanup() {
     docker rm -f "$name-dashboard" "$name-front" "$name-caddy" >/dev/null 2>&1 || true

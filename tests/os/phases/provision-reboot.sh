@@ -120,6 +120,12 @@ _phase_provision_reboot() {
         bad "slot never self-committed — grubenv: ${genv:-unreadable}"
         ;;
     esac
+    # Read only this boot's real Caddy log and the deployed dashboard's own counter.
+    if _ssh "podman exec -i dashboard python -" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
+        ok "boot health 401 carries the private marker and is excluded from failed logins (#3263)"
+    else
+        bad "boot health marker, capability redaction or failed-login accounting did not verify (#3263)"
+    fi
     # The miner must return too (#796): its unit lives in /run and died with the reboot, so
     # only pithead-boot's local-miner leg — which runs after the slot commit above — can have
     # brought it back. The cached build makes this a re-render, not a recompile.

@@ -72,7 +72,7 @@ if mode == "local":
     require(request("/", BAD_AUTH)[0] == 401)
     summary(5, True)
     # Even local wrong credentials on the exact health path are ordinary failures.
-    require(request(PROBE, BAD_AUTH)[0] == 401)
+    require(request(PROBE, BAD_AUTH, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
     summary(6, True)
 elif mode in {"external", "proxy"}:
     forged = {
@@ -97,16 +97,21 @@ elif mode in {"external", "proxy"}:
     for path, method in [("/", "GET"), (PROBE, "GET"), (PROBE + "?x=1", "GET"), (PROBE, "POST")]:
         require(request(path, BAD_AUTH, method, forged)[0] == 401)
     require(request(PROBE, headers=forged)[0] == 401)
+    if mode == "external":
+        # Even a test client holding the capability cannot use it from a remote socket.
+        require(request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
 elif mode == "final":
-    summary(16, True)
+    summary(17, True)
     # Loopback alone is not an exemption, nor is a near-match path/method.
     for path, method in [("/", "GET"), (PROBE + "?x=1", "GET"), (PROBE, "HEAD")]:
-        require(request(path, method=method)[0] == 401)
-    summary(19, True)
+        require(
+            request(path, method=method, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401
+        )
+    summary(20, True)
     for value in [None, "boot-health-v1", CAPABILITY[:-1]]:
         headers = {} if value is None else {"X-Pithead-Boot-Probe": value}
         require(request(PROBE, headers=headers)[0] == 401)
-    summary(22, True)
+    summary(23, True)
 elif mode == "unlocked":
     status, body = request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})
     require(status == 200 and b"<html" in body.lower(), (status, body[:200]))

@@ -166,6 +166,9 @@ rootfs, and `tests/os/build-label-boot-leg.sh` checks first-menu serial titles.
 The mini-stack's `test-boot-health-proxy.sh` renders Caddy against the real dashboard;
 `boot-health-proxy.py` verifies boot-probe accounting and network forgery controls,
 including the loopback upstream supplied by `boot-health-front-proxy.py`.
+The provision reboot leg streams `tests/os/boot-probe-evidence.py` into the deployed
+dashboard to check the current boot marker, header redaction and failure counter;
+`selftest-boot-probe-evidence.sh` checks its negative controls.
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
