@@ -3,9 +3,6 @@
 # Wizard + setup domain (#1105 Phase 1): the interactive wizard flows, the setup e2e paths, and the
 # setup-time kernel/GRUB tuning (optimize_kernel runs inside cmd_setup). Sourceable standalone (#1387).
 WALLET="${WALLET:-$VALID_PRIMARY}" # exactly build_val_sandbox's own default; a no-op under run.sh
-# shellcheck source=tests/stack/test-grub-hugepages.sh
-source "$HERE/test-grub-hugepages.sh" || return 1
-
 echo "== unit: wizard prompt count is pinned (#502 — a silently-added prompt fails this loud) =="
 # Structural, not behavioral: every Enter-through default answer looks the same ("blank"), so a
 # NEW prompt slipped into either function wouldn't visibly break a happy-path run — it would just
