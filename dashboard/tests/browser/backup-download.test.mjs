@@ -41,6 +41,7 @@ async function setup(t, disableExtensions) {
     "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost"],
   { stdio: "ignore" });
   let backupPosts = 0;
+  let interrupted = false;
   const server = createServer({ key: await readFile(join(scratch, "key.pem")),
     cert: await readFile(join(scratch, "cert.pem")) }, async (req, res) => {
     if (req.url === "/") {
@@ -61,6 +62,9 @@ async function setup(t, disableExtensions) {
       res.writeHead(200, { "Content-Type": "application/octet-stream",
         "Content-Disposition": `attachment; filename="${archiveName}"`,
         "Content-Length": archive.length });
+      if (interrupted) {
+        return res.write(archive.subarray(0, 256 * 1024), () => res.destroy());
+      }
       return res.end(archive);
     }
     const path = resolve(staticRoot, "." + req.url.replace(/^\/static/, ""));
@@ -79,10 +83,16 @@ async function setup(t, disableExtensions) {
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   t.after(() => new Promise((r) => { server.closeAllConnections(); server.close(r); }));
-  const browser = await chromium.launch({ args: disableExtensions ? ["--disable-extensions"] : [] });
+  const browser = await chromium.launch({
+    // Use the full browser's new headless mode: the headless shell has no certificate UI.
+    channel: "chromium",
+    ignoreDefaultArgs: disableExtensions ? [] : ["--disable-extensions"],
+    args: disableExtensions ? ["--disable-extensions"] : [],
+  });
   t.after(() => browser.close());
   console.log(`Backup browser: ${browser.version()}; fresh profile; extensions ${disableExtensions ? "explicitly disabled" : "none installed"}`);
   const context = await browser.newContext({ acceptDownloads: true });
+  context.setDefaultTimeout(10000);
   const page = await context.newPage();
   const origin = `https://localhost:${server.address().port}`;
   // Accept the self-signed certificate in the browser itself, without ignoreHTTPSerrors
@@ -94,7 +104,7 @@ async function setup(t, disableExtensions) {
   await page.getByRole("button", { name: "Create backup", exact: true }).click();
   await page.getByRole("heading", { name: "Backup created", exact: true }).waitFor();
   return { scratch, archive, configBytes, databaseBytes, context, page, origin,
-    posts: () => backupPosts };
+    posts: () => backupPosts, interrupt: (value) => { interrupted = value; } };
 }
 
 async function savePair(f) {
@@ -157,7 +167,7 @@ test("a client-blocked archive preserves the kit and permits retry without anoth
   const failed = f.context.waitForEvent("requestfailed", {
     predicate: (req) => req.url().includes("/api/control/backup-download?"),
   });
-  await f.page.getByRole("link", { name: "Download archive", exact: true }).click().catch(() => {});
+  await f.page.getByRole("link", { name: "Download archive", exact: true }).click({ noWaitAfter: true });
   const request = await failed;
   assert.match(request.failure().errorText, /ERR_BLOCKED_BY_CLIENT/);
   assert.equal(f.page.url(), f.origin + "/");
@@ -167,4 +177,19 @@ test("a client-blocked archive preserves the kit and permits retry without anoth
   await f.page.getByRole("button", { name: "I've saved it — close", exact: true }).click();
   assert.equal(await f.page.locator(".kit-passphrase").count(), 0);
   assert.equal(await f.page.getByRole("link", { name: "Download kit (.txt)", exact: true }).count(), 0);
+});
+
+test("an interrupted archive is a failed download, with the kit still available for a complete retry", {
+  timeout: 60000,
+}, async (t) => {
+  const f = await setup(t, true);
+  f.interrupt(true);
+  const event = f.page.waitForEvent("download");
+  await f.page.getByRole("link", { name: "Download archive", exact: true }).click();
+  const download = await event;
+  assert.notEqual(await download.failure(), null);
+  assert.equal(f.page.url(), f.origin + "/");
+  await f.page.getByRole("heading", { name: "Backup created", exact: true }).waitFor();
+  f.interrupt(false);
+  await savePair(f);
 });
