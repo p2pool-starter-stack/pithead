@@ -6,6 +6,7 @@ source "$HERE/../lib.sh"
 # shellcheck disable=SC2034 # consumed by the sourced leg
 INTEGRATION_RUN_SUITE=1
 source "$HERE/../lib/run-reset-restore.sh"
+echo "== encrypted config-reset recovery failure controls =="
 
 drive_reset_restore() (
     local fault="$1"
