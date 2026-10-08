@@ -135,8 +135,10 @@ Setup walks through five stages. It's interactive on the first run and safe to r
    in remote mode gets no inbound onion — it accepts its own peers where it runs.
 
 4. **Kernel optimization (Linux only).** Configures HugePages for RandomX performance. Making
-   HugePages persistent edits GRUB and requires a reboot. You're prompted before any GRUB change,
-   and you can skip this whole stage with `--skip-optimize`.
+   HugePages persistent adds `/etc/default/grub.d/zz-pithead-hugepages.cfg` and requires a reboot.
+   Setup preserves existing boot arguments, including cloud console settings, and verifies the
+   generated kernel entries after `update-grub`. It repairs previous Pithead reservations on
+   re-run; a new reservation requires confirmation. Skip this stage with `--skip-optimize`.
 
 5. **Start.** Once everything is provisioned, setup offers to start the stack.
 

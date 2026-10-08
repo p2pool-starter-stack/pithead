@@ -86,6 +86,12 @@ assets and an executable console instruction; they do not prove browser certific
 `tests/os/selftest-dashboard-recovery.sh` checks old-handler, missing-asset, HTTP-error,
 missing-guidance, missing-trigger and failed-command refusals without a guest.
 
+The DIY persistent HugePages regression uses `tier4-diy-kvm` with `scenario: hugepages`.
+It runs setup in an Ubuntu 24.04 cloud guest, checks generated kernel entries, reboots,
+and verifies console arguments, HugePages/THP parameters and a nonzero reservation.
+The shell fixture in `tests/stack/test-grub-hugepages.sh` covers drop-in precedence,
+ISO-style defaults, idempotency and failures without a live host.
+
 ## Scenario catalog
 
 Every situation, its trigger, and the tier(s) that cover it. ✅ = covered today; ▶ = exercised by

@@ -1,34 +1,118 @@
-# Re-generate the bootloader config after a /etc/default/grub edit and flag that a reboot is needed.
-# Warns (rather than failing) when update-grub isn't on PATH so the user can run it by hand.
-apply_grub_update() {
-    if command -v update-grub >/dev/null; then
-        sudo update-grub
-        REBOOT_REQUIRED=true
-    else
-        warn "'update-grub' not found. Please manually update your bootloader."
+# A late, Pithead-owned GRUB drop-in: grub-mkconfig sources the main defaults then
+# grub.d/*.cfg, so editing only the defaults loses to Ubuntu's cloud console override.
+# Put the reservation in GRUB_CMDLINE_LINUX, which also reaches recovery entries.
+# Strip older reservations/THP typos from both variables without editing user files.
+# Tokenize without executing shell text. Keep quoted argument values intact, and
+# expose decoded tokens for parameter-name comparisons. Shared by the generated
+# drop-in and the generated-entry verifier so they agree on argument boundaries.
+grub_tokenizer_awk() {
+    cat <<'AWK'
+function parse(s,   i,c,q,raw,val,n) {
+    for(i in word) delete word[i]
+    for(i in value) delete value[i]
+    q=""; raw=""; val=""; n=0
+    for(i=1;i<=length(s);i++) {
+        c=substr(s,i,1)
+        if(c=="\\" && i<length(s)) {
+            raw=raw c substr(s,++i,1); val=val substr(s,i,1)
+        } else if(c==sprintf("%c",34) || c==sprintf("%c",39)) {
+            raw=raw c
+            if(q==c) q=""
+            else if(q=="") q=c
+            else val=val c
+        } else if(c ~ /[[:space:]]/ && q=="") {
+            if(raw!="") { word[++n]=raw; value[n]=val; raw=""; val="" }
+        } else { raw=raw c; val=val c }
+    }
+    if(q!="") return -1
+    if(raw!="") { word[++n]=raw; value[n]=val }
+    return n
+}
+AWK
+}
+
+grub_hugepages_dropin_content() {
+    cat <<'CFG' || return 1
+# Managed by Pithead setup. Remove this file to stop reserving HugePages at boot.
+# Keep all other arguments supplied by the main defaults and earlier drop-ins.
+_pithead_grub_clean() {
+    awk '
+CFG
+    grub_tokenizer_awk || return 1
+    cat <<'CFG' || return 1
+    {
+        n=parse($0); if(n<0) exit 1
+        sep=""
+        for(i=1;i<=n;i++) {
+            if(value[i] ~ /^(hugepagesz|hugepages|transparent_hugepages?)=/) continue
+            printf "%s%s",sep,word[i]; sep=" "
+        }
+        printf "\n"
+    }
+    '
+}
+GRUB_CMDLINE_LINUX=$(printf '%s\n' "${GRUB_CMDLINE_LINUX:-}" | _pithead_grub_clean) || return 1
+GRUB_CMDLINE_LINUX_DEFAULT=$(printf '%s\n' "${GRUB_CMDLINE_LINUX_DEFAULT:-}" | _pithead_grub_clean) || return 1
+unset -f _pithead_grub_clean
+CFG
+    printf 'GRUB_CMDLINE_LINUX="${GRUB_CMDLINE_LINUX} %s"\n' "$(randomx_boot_params)" || return 1
+}
+
+write_grub_hugepages() {
+    local grub="$1" tmp dropin="$1.d/zz-pithead-hugepages.cfg"
+    tmp=$(mktemp) || return 1
+    if ! grub_hugepages_dropin_content >"$tmp" || ! sudo mkdir -p "$grub.d"; then
+        rm -f "$tmp"
+        return 1
     fi
+    if ! sudo cmp -s "$tmp" "$dropin"; then
+        if ! sudo install -m 0644 "$tmp" "$dropin"; then
+            rm -f "$tmp"
+            return 1
+        fi
+    fi
+    rm -f "$tmp"
 }
 
-# Self-heal an earlier release's typo: the THP-disable kernel param is singular
-# (transparent_hugepage); the plural form is silently ignored, so THP was never disabled (#176).
-# Rewrites the plural token to the singular form in grub file $1. Returns 0 if it changed something,
-# 1 if there was nothing to heal — so callers only re-run update-grub when needed. Idempotent: a
-# no-op once the file already uses the singular form.
-heal_grub_thp_typo() {
-    local grub="$1"
-    grep -q "transparent_hugepages=" "$grub" || return 1
-    sudo cp "$grub" "$grub.bak"
-    sudo_sed 's/transparent_hugepages=/transparent_hugepage=/g' "$grub"
+# update-grub's exit status alone is insufficient. Check this host's generated
+# Linux section, including recovery entries; memory tests and os-prober entries
+# do not consume this host's defaults. No readable host kernel entries is failure.
+verify_grub_hugepages() {
+    sudo cat "${PITHEAD_GRUB_CONFIG:-/boot/grub/grub.cfg}" | awk -v pages="$PITHEAD_HUGEPAGES" "$(grub_tokenizer_awk)"'
+        /^### BEGIN / { host=($0 ~ /\/(10_linux|10_linux_zfs|20_linux_xen) ###$/); next }
+        /^### END / { host=0; next }
+        host && $1 ~ /^(linux|linuxefi|linux16)$/ {
+            entries++; size=0; count=0; thp=0
+            n=parse($0); if(n<0) { bad=1; next }
+            for (i=3; i<=n; i++) {
+                if (value[i] == "hugepagesz=2M") size++
+                else if (value[i] ~ /^hugepagesz=/) bad=1
+                if (value[i] == "hugepages=" pages) count++
+                else if (value[i] ~ /^hugepages=/) bad=1
+                if (value[i] == "transparent_hugepage=never") thp++
+                else if (value[i] ~ /^transparent_hugepages?=/) bad=1
+            }
+            if (size != 1 || count != 1 || thp != 1) bad=1
+        }
+        END { exit (!entries || bad) }
+    '
 }
 
-# Append the RandomX boot params to the active GRUB_CMDLINE_LINUX_DEFAULT="..." line in grub file $1,
-# preserving any leading indentation. Returns 0 on success, 1 when there's no active double-quoted
-# line to edit — commented out, single-quoted, or absent — so the caller can warn instead of
-# silently running update-grub and claiming a reboot is needed. The leading-^ anchor also ensures a
-# commented-out example line is never edited.
-append_grub_boot_params() {
+persist_grub_hugepages() {
     local grub="$1"
-    grep -q '^[[:space:]]*GRUB_CMDLINE_LINUX_DEFAULT="' "$grub" || return 1
-    sudo cp "$grub" "$grub.bak"
-    sudo_sed "s/^\([[:space:]]*\)GRUB_CMDLINE_LINUX_DEFAULT=\"/\1GRUB_CMDLINE_LINUX_DEFAULT=\"$(randomx_boot_params) /" "$grub"
+    if ! write_grub_hugepages "$grub"; then
+        warn "Could not write Pithead's HugePages GRUB drop-in. Persistent HugePages setup failed."
+        return 1
+    fi
+    if ! command -v update-grub >/dev/null || ! sudo update-grub; then
+        warn "Persistent HugePages setup failed: run 'sudo update-grub' after fixing the bootloader configuration."
+        return 1
+    fi
+    if ! verify_grub_hugepages; then
+        warn "Persistent HugePages setup failed: generated GRUB kernel entries lack the requested parameters or contain conflicting values."
+        warn "Check later GRUB drop-ins and /boot/grub/grub.cfg, then re-run setup. Do not reboot until the boot entries are correct."
+        return 1
+    fi
+    REBOOT_REQUIRED=true
+    log "Verified persistent HugePages in generated GRUB kernel entries; reboot required."
 }

@@ -29,7 +29,7 @@ hugepages_decision_pages() {
     fi
 }
 
-# Kernel boot params pithead appends to GRUB_CMDLINE_LINUX_DEFAULT for RandomX: reserve 6 GiB of
+# Kernel boot params pithead appends to GRUB_CMDLINE_LINUX for RandomX: reserve 6 GiB of
 # 2 MiB HugePages and disable Transparent HugePages. NOTE the THP param is SINGULAR
 # (transparent_hugepage) — the plural form is an unrecognized param the kernel silently ignores,
 # so THP would never actually be disabled (#176). Kept as a function so it has one definition and
@@ -63,40 +63,25 @@ optimize_kernel() {
             sudo sysctl -w vm.nr_hugepages="$hp_target"
         fi
 
-        if [ -f "/etc/default/grub" ]; then
-            # Heal an earlier release's invalid plural THP param if present (#176). Runs regardless of
-            # the reservation guard below, which would otherwise see hugepages= and skip it forever.
-            if heal_grub_thp_typo /etc/default/grub; then
-                log "Corrected invalid THP kernel parameter in GRUB (transparent_hugepages -> transparent_hugepage)."
-                apply_grub_update
-            fi
-
-            if ! grep -q "hugepages=" /etc/default/grub; then
-                warn "Persistent HugePages requires editing /etc/default/grub and a reboot."
+        local grub="${PITHEAD_GRUB_DEFAULTS:-/etc/default/grub}"
+        if [ -f "$grub" ]; then
+            # A previous Pithead reservation is already consented to; repair its
+            # precedence and verify it even when the main defaults contain flags.
+            if [ ! -f "$grub.d/zz-pithead-hugepages.cfg" ] &&
+                ! grep -Eq "^[[:space:]]*GRUB_CMDLINE_LINUX_DEFAULT=[\"']hugepagesz=2M hugepages=$PITHEAD_HUGEPAGES transparent_hugepages?=never([[:space:]]|[\"'])" "$grub"; then
+                warn "Persistent HugePages requires a GRUB drop-in and a reboot."
                 if [ -t 0 ]; then
                     read -r -p "Modify GRUB for persistent HugePages now? (y/N): " GRUB_OK || true
                 else
-                    # Headless: never touch GRUB unattended, but say so — the old EOF-swallow
-                    # skipped this silently and the operator never learned the reservation is
-                    # boot-only.
                     GRUB_OK=""
-                    warn "No terminal attached — skipping the persistent-HugePages GRUB change. Run '$0 setup' from a terminal (or edit /etc/default/grub) to make it permanent."
+                    warn "No terminal attached — skipping the persistent-HugePages GRUB change. Run '$0 setup' from a terminal to make it permanent."
                 fi
                 if [[ ! "$GRUB_OK" =~ ^[Yy] ]]; then
-                    log "Skipped GRUB edit. HugePages set for this boot only (vm.nr_hugepages=$PITHEAD_HUGEPAGES)."
+                    log "Skipped GRUB edit. HugePages set for this boot only (vm.nr_hugepages=$hp_target)."
                     return 0
                 fi
-                log "Updating GRUB configuration for persistent HugePages..."
-                if append_grub_boot_params /etc/default/grub; then
-                    apply_grub_update
-                else
-                    warn "No standard GRUB_CMDLINE_LINUX_DEFAULT=\"...\" line in /etc/default/grub — left it unchanged."
-                    warn "Add these kernel params by hand, then run 'sudo update-grub' and reboot:"
-                    warn "  $(randomx_boot_params)"
-                fi
-            else
-                log "HugePages already configured in GRUB."
             fi
+            persist_grub_hugepages "$grub" || return 1
         fi
     else
         log "Skipping Host HugePages configuration (Not supported on $OS_TYPE)."
