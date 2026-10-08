@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fake transport and clock; no daemon, network or real sleep.
 set -euo pipefail
+echo "== disabled-XvB live dwell observation controls =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$HERE/lib.sh"
 export INTEGRATION_RUN_SUITE=1
