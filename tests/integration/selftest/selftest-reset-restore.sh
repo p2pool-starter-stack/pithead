@@ -12,7 +12,7 @@ drive_reset_restore() (
     local fault="$1"
     # shellcheck disable=SC2034 # consumed by the sourced leg
     IT_FAIL=0 IT_PASS=0 IT_PITHEAD=./pithead
-    OUT_DIR=$(mktemp -d "${TMPDIR:?}/reset-restore-selftest.XXXXXX")
+    OUT_DIR=$(mktemp -d -t reset-restore-selftest.XXXXXX) || exit 1
     trap 'rm -rf "$OUT_DIR"' EXIT
     rx() {
         case "$1" in
