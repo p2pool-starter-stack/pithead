@@ -46,8 +46,8 @@ gate_cert_advisory_ready() { gate_cert_advisory && boot_status_ready; }
 # name — the one lookup a boot-time health probe must not be hostage to.
 gate_target_url() { # <scheme> <host> <port>
     case "$2" in
-    *:*) printf '%s://[%s]:%s/' "$1" "$2" "$3" ;;
-    *) printf '%s://%s:%s/' "$1" "$2" "$3" ;;
+    *:*) printf '%s://[%s]:%s/.pithead-boot-health' "$1" "$2" "$3" ;;
+    *) printf '%s://%s:%s/.pithead-boot-health' "$1" "$2" "$3" ;;
     esac
 }
 gate_resolve_spec() { # <host> <port> -> a --resolve spec, or empty when the host needs no lookup
@@ -56,4 +56,12 @@ gate_resolve_spec() { # <host> <port> -> a --resolve spec, or empty when the hos
     *[!0-9.]*) printf '%s:%s:127.0.0.1' "$1" "$2" ;; # a name
     *) ;;                                            # IPv4 literal
     esac
+}
+
+# Same domain-separated digest as Caddy's renderer, using the owner-only .env auth hash.
+# Stream the capability to curl's stdin so it never becomes a process argument.
+gate_probe_header() {
+    local capability
+    capability=$(printf 'pithead-boot-health-v1:%s' "$(gate_env_val DASHBOARD_AUTH_HASH_B64)" | sha256sum | cut -d' ' -f1)
+    printf 'X-Pithead-Boot-Probe: %s\n' "$capability"
 }

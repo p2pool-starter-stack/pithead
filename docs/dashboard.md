@@ -1339,7 +1339,12 @@ Below the form, the Configuration view shows two read-only security panels
   more in a day shows a warning to rotate the dashboard password (set a new
   `dashboard.auth.password`, run `./pithead apply`) and, if the onion address may have leaked,
   `./pithead rotate-dashboard-onion`. The log is always on; entries appear once Caddy has handled
-  a request on this version.
+  a request on this version. The exact credential-free appliance boot probe stays visible in
+  the table but is excluded from the failure count and warning. Caddy marks it only on a
+  loopback connection to `/.pithead-boot-health` carrying the private boot capability.
+  The capability is derived from the owner-only salted login hash and removed from logs
+  and upstream requests. Ordinary requests, wrong passwords, and network clients requesting
+  that path, including through a local reverse proxy, still count.
 - **Recent config changes.** The control channel's host-side audit trail: one row per handled
   request — timestamp, dashboard user, operation, outcome, and the *names* of the settings
   that changed. Initial wizard provisioning is named as provisioning instead of a host edit, and a

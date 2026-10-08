@@ -363,7 +363,6 @@ PI_ORDER=$(awk '
 ' "$ROOT/tests/os/phases/provision-initial.sh")
 assert_eq "provision settles provisioning after the stack row and before the control legs" "$PI_ORDER" "settled-first"
 unset PI_ORDER
-
 echo "== unit: boot gate progress — elapsed minutes every sixth failed pass =="
 # shellcheck disable=SC2034,SC2154 # variables assigned/read by the extracted production loop
 boot_progress_case() (
@@ -372,6 +371,7 @@ boot_progress_case() (
     gate_doctor_ran=0 gate_advisory="" hold_chain=0 OS_INFLIGHT="$SANDBOX/absent-inflight"
     gate_target=fixture gate_resolve_args=()
     probe_seconds="$2"
+    gate_probe_header() { :; }
     curl() { echo "503 $probe_seconds"; }
     pass_at="$1"
     gate_ready() { ((SECONDS += probe_seconds, gate_attempt == pass_at)); }

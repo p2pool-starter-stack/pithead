@@ -105,7 +105,7 @@ caddy_https="$(
 # native rolling (4 MiB per file, current + 2 rolled); mode 0644 lets the non-root dashboard
 # read what root-run Caddy writes (Caddy's own default is 0600, unreadable across the mount).
 assert_contains "access log block rendered" "$caddy_https" "output file /var/log/caddy/access.log"
-assert_contains "access log is JSON" "$caddy_https" "format json"
+assert_contains "access log is JSON" "$caddy_https" "wrap json"
 assert_contains "access log growth is bounded (roll_size)" "$caddy_https" "roll_size 4MiB"
 assert_contains "rolled files are capped (roll_keep)" "$caddy_https" "roll_keep 2"
 assert_contains "access log stays dashboard-readable (mode 0644)" "$caddy_https" "mode 0644"

@@ -163,6 +163,10 @@ creation and disk installation. `tests/os/selftest-build-label.sh` checks all th
 writers and the release refusal. `tests/os/build-label-fixture.sh` stamps only debug test
 rootfs, and `tests/os/build-label-boot-leg.sh` checks first-menu serial titles.
 
+The mini-stack's `test-boot-health-proxy.sh` renders Caddy against the real dashboard;
+`boot-health-proxy.py` verifies boot-probe accounting and network forgery controls,
+including the loopback upstream supplied by `boot-health-front-proxy.py`.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 Coordinator connection announcements and unchanged-apply miner calls are covered by

@@ -340,12 +340,12 @@ gate_rs=$(gate_resolve_spec "$gate_host" "$gate_port")
 gate_wait_started=$SECONDS
 for gate_attempt in $(seq 90); do
     gate_doctor_ran=0 gate_pass=0
-    # SNI and the Host header carry the site's real name, so Caddy vhost-matches it; for a name the
-    # --resolve above sends the connection to loopback, which the appliance binds unconditionally.
+    # SNI and the Host header carry the site's real name, so Caddy vhost-matches it;
+    # --connect-to keeps names and IP literals on loopback, which the appliance always binds.
     # `read` clears both when curl prints nothing, so a silent curl cannot leave the previous
     # round's success standing.
-    read -r code size <<<"$(curl -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
-        "${gate_resolve_args[@]}" "$gate_target" 2>/dev/null)"
+    read -r code size <<<"$(gate_probe_header | curl --header @- -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
+        --noproxy '*' --connect-to '::127.0.0.1:' "${gate_resolve_args[@]}" "$gate_target" 2>/dev/null)"
     # Cheapest first, inside gate_ready: the probe is fast and gates entry to the slow doctor run, so
     # an unhealthy or still-booting stack just loops here without paying for a full diagnostic.
     # doctor only has to pass ONCE — a chain node that is still 'starting' fails a pass and the loop
