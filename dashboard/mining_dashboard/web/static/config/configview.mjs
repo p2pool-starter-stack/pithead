@@ -149,6 +149,12 @@ export class ConfigView extends Component {
   componentDidMount() {
     this.load();
   }
+  componentDidUpdate(_previousProps, previousState) {
+    const dirty = this.state.editText !== this.state.pristine;
+    if (dirty !== (previousState.editText !== previousState.pristine)) {
+      this.props.onDirtyChange?.(dirty);
+    }
+  }
   async load() {
     try {
       const res = await fetch("/api/config");
@@ -180,8 +186,6 @@ export class ConfigView extends Component {
     }
   }
 
-  // Field -> candidate -> pane. The field's declared type drives coercion (shared
-  // configsync.coerceForType), so a port stays a number and a toggle a boolean in the JSON.
   onFieldEdit(field, raw) {
     const { candidate, cfg } = this.state;
     const value =
@@ -225,8 +229,6 @@ export class ConfigView extends Component {
     reader.readAsText(file);
   }
 
-  // Poll the result endpoint until a terminal result lands (shared pollResult above; kept as a
-  // method because the view's flows and tests drive it through the instance).
   poll(id, skip) {
     return pollResult(id, skip);
   }
@@ -289,7 +291,11 @@ export class ConfigView extends Component {
       const out = restarting
         ? await this.poll(id, "previewed")
         : await controlCommitResult(res, id, this.poll.bind(this));
-      this.setState({ phase: "done", result: out });
+      this.setState({
+        phase: "done",
+        result: out,
+        ...(out.status === "applied" ? { pristine: this.state.editText } : {}),
+      });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
     }
@@ -439,7 +445,7 @@ export class ConfigView extends Component {
         </div>
         <p class="sr-only" role="status" aria-live="polite">${phase === "previewing" ? "Previewing changes…" : ""}</p>
         ${
-          phase === "confirm" || phase === "committing"
+          this.props.active !== false && (phase === "confirm" || phase === "committing")
             ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${preview} confirmText=${confirmText}
                   onConfirmText=${(t) => this.setState({ confirmText: t })}
                   payoutSuffixes=${payoutSuffixes}

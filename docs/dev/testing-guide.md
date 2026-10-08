@@ -203,3 +203,7 @@ browser's system libraries as well. The separate `browser.yml` workflow does thi
 frontend tests remain dependency-free. Missing browser dependencies fail the browser suite.
 The focus regression uses the production OS-update component and native dialog with a local
 refused-check fixture; it does not contact an appliance or replace certificate acceptance proof.
+
+The configuration draft browser regression exercises valid edits and invalid JSON through
+Simple, Advanced and Backup, dirty markers, reset, failed apply and successful apply. The
+provision phase also fetches the shipped editor modules through the appliance dashboard.

@@ -1193,6 +1193,11 @@ wizard's pattern — the first page and the config tab now behave identically.) 
   the form grouping does not constrain it — the machine still validates it under the same free,
   confirm, approval, and never-approve classes.
 
+Switching between Configuration, Simple, Advanced and Backup keeps your draft in memory,
+including invalid JSON. **Unsaved changes** beside the Configuration button marks unfinished
+edits. Return to Configuration to finish them; the marker clears after a successful apply or
+**Discard edits**. Drafts are not stored across a browser reload or close.
+
 The flow mirrors the CLI's `apply`:
 
 1. The form/textarea is prefilled from a pre-masked copy of `config.json` the host renders into the

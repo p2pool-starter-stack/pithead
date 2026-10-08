@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   native-dialog:
-    name: Browser native-dialog focus
+    name: Browser dialogs and configuration drafts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -29,5 +29,5 @@ jobs:
         run: npm ci --prefix dashboard/tests/browser --ignore-scripts
       - name: Install pinned Chromium and system libraries
         run: dashboard/tests/browser/node_modules/.bin/playwright install --with-deps chromium
-      - name: Assert native Close and trigger focus
+      - name: Assert native dialogs and configuration draft navigation
         run: make test-browser
