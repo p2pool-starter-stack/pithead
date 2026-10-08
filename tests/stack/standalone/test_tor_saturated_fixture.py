@@ -68,7 +68,9 @@ running=false
 
 class OfflineTorFixtureTest(unittest.TestCase):
     def run_fixture(self, mode):
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR") or os.environ["RUNNER_TEMP"]) as scratch:
+        with tempfile.TemporaryDirectory(
+            dir=os.environ.get("TMPDIR") or os.environ["RUNNER_TEMP"]
+        ) as scratch:
             root = Path(scratch)
             docker = root / "docker"
             # Consume the very heredoc passed by the production wrapper. This also
