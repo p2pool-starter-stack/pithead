@@ -91,6 +91,10 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `wizard/server.py`, `wizard/form.py`, `wizard/defaults.py` | Appliance wizard server, disk-based defaults, form translation, and install handoff | `tests/web/test_wizard*.py` |
 | `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
 
+`service/access_log.py` bounds reads of Caddy's active and rotated access logs;
+`service/audit_service.py` sanitizes and summarizes those records. Rotation tests
+live in `tests/service/test_access_log.py`.
+
 Keep polling order, database locks, and transaction scopes intact when extracting
 helpers. The storage mixins share `StateManager`'s connection and lock; the
 atomicity and annotation tests in `tests/service/` check those boundaries.
