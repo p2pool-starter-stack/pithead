@@ -84,7 +84,6 @@ main() {
         ;;
     down)
         _reject_options down "$@"
-        require_env
         stack_down
         ;;
     restart)
