@@ -22,6 +22,47 @@ test('parseHashrate: rejects empty / unparseable input', () => {
     assert.equal(parseHashrate(undefined), null);
 });
 
+test('parseHashrate: accepts complete decimal values with optional units and whitespace', () => {
+    for (const [input, expected] of [
+        ['1000', 1000], ['0', 0], ['.5', 0.5], ['0.5 MH/s', 500_000],
+        [' 10.5 kH/s ', 10_500], ['2 K', 2000], ['2 m', 2_000_000],
+        ['2 G', 2_000_000_000], ['1000 H/s', 1000], ['2 gh/S', 2_000_000_000],
+        ['.5 k H/s', 500],
+    ]) {
+        assert.equal(parseHashrate(input), expected, input);
+    }
+});
+
+test('parseHashrate: rejects comma/exponent notation and incomplete or trailing syntax', () => {
+    for (const input of [
+        '1e3', '1E3', '1e+3', '1,000', '10garbage', '1000 trailing text',
+        '10kgarbage', '0.5 MH/s extra', '10KH/suffix', '10 H', '10 k/s',
+        '1.2.3', '1.', '.', '-10', '+10', 'Infinity', 'NaN', '0x10',
+        '10\n20', '10 T',
+    ]) {
+        assert.equal(parseHashrate(input), null, input);
+    }
+    assert.equal(parseHashrate(1000), null);
+});
+
+test('parseHashrate: rejects overflow before and after unit conversion', () => {
+    assert.equal(parseHashrate('9'.repeat(309)), null);
+    assert.equal(parseHashrate('9'.repeat(300) + 'G'), null);
+    assert.ok(Number.isFinite(parseHashrate('9'.repeat(299) + 'G')));
+});
+
+test('malformed what-if hashrate renders unavailable XMR estimates instead of a numeric prefix', () => {
+    const earnings = { available: true, coeff_day: 1e-7, pool_difficulty: 250_000_000 };
+    for (const input of ['1e3', '1,000', '10garbage', 'Infinity', '']) {
+        const est = computeEarnings(parseHashrate(input), earnings);
+        for (const value of [est.day, est.month, est.year]) {
+            assert.equal(value, null, input);
+            assert.equal(formatXmr(value), '—', input);
+        }
+        assert.equal(formatTimeToShare(est.timeToShareSec), '—', input);
+    }
+});
+
 test('fmtHashrate: mirrors the server format_hashrate unit boundaries (#387)', () => {
     // Same cases as tests/helper/test_utils.py TestFormatHashrate — the two must stay in lockstep.
     assert.equal(fmtHashrate(1_500_000_000), '1.50 GH/s');

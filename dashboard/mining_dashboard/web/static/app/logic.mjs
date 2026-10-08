@@ -213,15 +213,15 @@ export const DAYS_PER_YEAR = 365;
 
 // Parse a what-if hashrate string into H/s, accepting an optional k/M/G suffix so users can type
 // "10.5k", "1.2 MH/s", or a bare "50000". Returns null for empty/unparseable input (the card then
-// shows "—"). Mirrors helper/utils.parse_hashrate on the server side.
+// shows "—"). Require the complete decimal/unit syntax; commas and exponents are not supported.
 export function parseHashrate(str) {
   if (typeof str !== "string") return null;
-  const m = str.trim().match(/^([0-9]*\.?[0-9]+)\s*([kKmMgG])?/);
+  const m = str.trim().match(/^([0-9]*\.?[0-9]+)\s*([kmg])?\s*(?:h\/s)?$/i);
   if (!m) return null;
-  const val = parseFloat(m[1]);
-  if (!Number.isFinite(val) || val < 0) return null;
+  const val = Number(m[1]);
   const unit = (m[2] || "").toLowerCase();
-  return val * (unit === "g" ? 1e9 : unit === "m" ? 1e6 : unit === "k" ? 1e3 : 1);
+  const hs = val * (unit === "g" ? 1e9 : unit === "m" ? 1e6 : unit === "k" ? 1e3 : 1);
+  return Number.isFinite(hs) ? hs : null;
 }
 
 // Format raw H/s for display. Mirrors helper/utils.format_hashrate on the server side (same
