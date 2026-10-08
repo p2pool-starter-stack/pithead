@@ -295,7 +295,7 @@ export class OsUpdateControl extends Component {
     if (phase === "error")
       return html`<p class="status-bad">${error}</p>
           <div class="config-modal-actions">
-              <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", error: "" })}>Close</button>
+              <button class="btn-toggle" onClick=${() => this.cancel()}>Close</button>
               ${version ? html`<button class="btn-toggle active" onClick=${() => this.download()}>Retry</button>` : null}
           </div>`;
     if (phase === "checking")

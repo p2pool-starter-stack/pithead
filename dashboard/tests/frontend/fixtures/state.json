@@ -335,6 +335,7 @@
     "pplns_wgt": 0,
     "pplns_win": "2160 (6h 0m)",
     "sidechain_height": 0,
+    "syncing": false,
     "total_hashes": 0,
     "type": "Main",
     "uptime": "0m 0s"

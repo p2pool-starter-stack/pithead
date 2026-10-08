@@ -118,6 +118,8 @@ source "$HERE/lib/run-connection-announcements.sh" || exit $?
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$HERE/lib/run-faults.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-pool-sync-fault.sh
+source "$HERE/lib/run-pool-sync-fault.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tor-probe-fault.sh
 source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-egress-status.sh

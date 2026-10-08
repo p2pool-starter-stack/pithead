@@ -85,6 +85,36 @@ sensitive_live_config() { # prints the live config, or nothing
     return 1
 }
 
+# The served module proves the dashboard image carries #3239, without a browser.
+config_version_asset_verdict() { # <module body>; an empty or unrelated response cannot pass
+    [ -n "$1" ] &&
+        grep -Fq 'Saving is blocked' <<<"$1" &&
+        grep -Fq '_config_version_newer' <<<"$1" &&
+        ! grep -Fq 'Config file version' <<<"$1"
+}
+
+assert_shipped_config_version_asset() {
+    local tries=0 body="" readable=0
+    while [ "$tries" -lt 20 ]; do
+        if body=$(dashboard_curl -fsSk -m 8 "https://$ip/static/config/configversion.mjs" 2>/dev/null) && [ -n "$body" ]; then
+            readable=1
+            break
+        fi
+        tries=$((tries + 1))
+        sleep 3
+    done
+    if [ "$readable" -ne 1 ]; then
+        bad "shipped config-version asset (#3239) NOT exercised: module unreadable or empty after 20 tries"
+        return 1
+    fi
+    if config_version_asset_verdict "$body"; then
+        ok "shipped config-version asset hides the stamp and retains the newer-config warning (#3239)"
+    else
+        bad "shipped config-version asset (#3239): expected newer-config warning and flag without Config file version text"
+        return 1
+    fi
+}
+
 # Commit a dashboard-password change and read its verdict from the host's result spool: the
 # dashboard's own result poll authenticates with the login this very commit replaces (#2367).
 password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current login) by dynamic scope
@@ -125,6 +155,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         bad "sensitive config NOT exercised: the dashboard never served /api/config (20 tries over ~60s) — an earlier leg left it unreadable; this is not a verdict on the sensitive-commit path"
         return
     }
+    assert_shipped_config_version_asset || return 1
     before=$(hostname_runtime_snapshot fixture-box)
     proposed=$(printf '%s' "$live" | jq -c '.dashboard.host = "fixture-next"')
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
@@ -167,6 +198,63 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
 
 }
 
+_config_version_asset_self_test() (
+    local newer='cfg?._config_version_newer ? "Saving is blocked" : null'
+    local older='cfg?._config_version_newer ? "Saving is blocked" : `Config file version ${version}`'
+    config_version_asset_verdict "$newer" || return 1
+    local body
+    for body in "$older" "" '   ' 'Saving is blocked' '_config_version_newer' \
+        "$newer Config file version"; do
+        ! config_version_asset_verdict "$body" || return 1
+    done
+    local mode=ready sleeps=0 passed=0 failed=0 ip=fixture-address
+    dashboard_curl() {
+        case "$*" in *'/static/config/configversion.mjs'*) ;; *) return 1 ;; esac
+        case "$mode" in
+        ready) printf '%s' "$newer" ;;
+        old) printf '%s' "$older" ;;
+        empty) return 0 ;;
+        unreadable)
+            printf '%s' "$newer"
+            return 22
+            ;;
+        retry) [ "$sleeps" -gt 0 ] && printf '%s' "$newer" ;;
+        esac
+    }
+    sleep() { sleeps=$((sleeps + 1)); }
+    ok() { passed=$((passed + 1)); }
+    bad() { failed=$((failed + 1)); }
+    assert_shipped_config_version_asset && [ "$passed" = 1 ] && [ "$failed" = 0 ] || return 1
+    mode=retry
+    assert_shipped_config_version_asset && [ "$passed" = 2 ] && [ "$sleeps" = 1 ] || return 1
+    for mode in old empty unreadable; do
+        passed=0 failed=0 sleeps=0
+        ! assert_shipped_config_version_asset || return 1
+        [ "$passed" = 0 ] && [ "$failed" = 1 ] || return 1
+        [ "$mode" = old ] || [ "$sleeps" = 20 ] || return 1
+    done
+)
+
+_config_version_asset_phase_self_test() (
+    local ip=fixture-address asset_module='cfg?._config_version_newer ? "Saving is blocked" : null'
+    local previews=0 passed=0 failed=0
+    sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
+    dashboard_curl() { printf '%s' "$asset_module"; }
+    hostname_runtime_snapshot() { printf unchanged; }
+    sensitive_preview() {
+        previews=$((previews + 1))
+        return 1
+    }
+    ok() { passed=$((passed + 1)); }
+    bad() { failed=$((failed + 1)); }
+    phase_provision_sensitive_regressions fixture-user fixture-password || true
+    [ "$passed" = 1 ] && [ "$failed" = 0 ] && [ "$previews" = 1 ] || return 1
+    asset_module+=' Config file version'
+    previews=0 passed=0 failed=0
+    ! phase_provision_sensitive_regressions fixture-user fixture-password || return 1
+    [ "$passed" = 0 ] && [ "$failed" = 1 ] && [ "$previews" = 0 ]
+)
+
 _password_commit_via_host_self_test() (
     local msg="Dashboard login password CHANGED — a mistyped password locks this session out, and on the appliance it is also the console root login."
     local good preview committed
@@ -194,8 +282,9 @@ _password_commit_via_host_self_test() (
 )
 
 _hostname_landed_fallback_self_test() (
-    local output
+    local output ip=fixture-address
     sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
+    dashboard_curl() { printf 'cfg?._config_version_newer ? "Saving is blocked" : null'; }
     hostname_runtime_snapshot() { printf 'unchanged'; }
     sensitive_preview() {
         APPROVAL_PREVIEW='{"id":"r1","status":"previewed"}'
@@ -248,6 +337,8 @@ _remote_node_regressions_run_last_self_test() {
 _approval_self_test() {
     local f=0 here
     here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    _config_version_asset_self_test || f=$((f + 1))
+    _config_version_asset_phase_self_test || f=$((f + 1))
     _control_request_transport_self_test || f=$((f + 1))
     # Called from HERE, not from _approval_bind_payload_self_test: that one is also driven
     # standalone by tests/os/selftest-row-payloads.sh, which sources this verdict file WITHOUT

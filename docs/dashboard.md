@@ -95,7 +95,13 @@ the node logs directly:
 
 ## The operational view
 
-Once both nodes are synced, the dashboard shows the operational view.
+Once both nodes are synced, the dashboard shows the operational view. P2Pool then syncs its
+own sidechain. While its reported difficulty is at the default minimum (100,000) and its
+sidechain height is below its reported PPLNS window, **Global P2Pool Stats** and
+**Pool Cadence & Luck** show "P2Pool is syncing its sidechain" instead of pool figures.
+Local worker hashrate remains visible. The cards return to their figures on the next poll
+when that bootstrap state clears. P2Pool's data API has no explicit sync flag or progress
+percentage; this detects its initial minimum-difficulty view, not later stalls or peer loss.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./images/launch/simple.png">
@@ -109,7 +115,13 @@ sort, the earnings tab, and the topology mesh toggle — are also
 remembered across reloads. A poll that fails —
 or hangs, as a dropped Tor circuit can — aborts after 25 seconds and shows a red banner naming the
 timestamp of the data still on screen ("Disconnected — showing data from …"); it clears on the next
-successful refresh.
+successful refresh. After polls keep failing for 60 seconds, recovery guidance appears, including
+on the initial loading screen and during chain sync. Reload the page or open the same address in
+a new tab to inspect a browser warning or login prompt. On an appliance, an address change can
+replace the certificate even when the hostname stays the same. Compare a replacement
+certificate's SHA-256 fingerprint with the current one on the appliance console; stop on a
+mismatch and accept only a match. Polling reconnects after trust is restored. The page cannot
+distinguish certificate, network and authentication failures.
 
 ### Top bar
 
@@ -1586,7 +1598,9 @@ On a [Pithead OS appliance](appliance.md) the tarball upgrade above is refused �
 updates through signed OS images, and the header shows an **OS updates** control instead. It
 drives the appliance's A/B update from the browser, one explicit step at a time, through the same
 control channel as everything else on this page: the dashboard container only asks, and the host
-re-derives and re-verifies every step itself.
+re-derives and re-verifies every step itself. **Close** dismisses the dialog in one click, including
+after an update-check error, and returns focus to **OS updates**. **Retry** remains available
+when there is a target to download.
 
 1. **Check.** The host asks the release API (over Tor) for the latest release and its OS bundle.
    The dashboard's passive new-release badge covers the same ground hourly, from inside the

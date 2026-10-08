@@ -337,6 +337,7 @@ run_fault_injection() {
     fault_clock_drift
     fault_disk_enospc
     fault_p2pool_cold_cache_dns
+    fault_p2pool_sidechain_sync
     fault_tor_probe_egress
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "fault-injection" "$OUT_DIR"
 

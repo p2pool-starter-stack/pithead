@@ -60,6 +60,25 @@ def detect_pool_type(peers):
     return winner if counts[winner] > 0 else "Unknown"
 
 
+def _sidechain_syncing(pool_stats):
+    """Recognize the initial unsynced view; v4.18.1 exposes no API sync flag.
+
+    Its default Main/Mini/Nano minimum difficulty is 100000. A chain below
+    its reported PPLNS window at that difficulty is still a bootstrap view,
+    not usable pool-wide statistics. Missing evidence is not a sync verdict.
+    """
+    height = pool_stats.get("sidechainHeight")
+    difficulty = pool_stats.get("sidechainDifficulty")
+    window = pool_stats.get("pplnsWindowSize")
+    return (
+        type(height) is int
+        and type(difficulty) is int
+        and type(window) is int
+        and 0 <= height < window
+        and difficulty == 100000
+    )
+
+
 def get_p2pool_stats():
     """Aggregates P2Pool local statistics and P2P network health data."""
     raw_p2p = _read_json(P2P_STATS_PATH)
@@ -82,6 +101,7 @@ def get_p2pool_stats():
             "zmq_active": raw_p2p.get("zmq_last_active", 0),
         },
         "pool": {
+            "syncing": _sidechain_syncing(pool_stats),
             "hashrate": pool_stats.get("hashRate", 0),
             "miners": pool_stats.get("miners", 0),
             "blocks_found": pool_stats.get("totalBlocksFound", 0),

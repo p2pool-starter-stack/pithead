@@ -234,7 +234,15 @@ Per #3099 and #3092:
    `config.json`.
 7. Set up Telegram in Configuration, then repeat 8.2–8.4
    ([08-alerts-telegram.md](../diy/08-alerts-telegram.md)).
-8. Skip anything else that needs a shell (`./pithead`, `docker`, editing `config.json`): the
+8. On the reserved QA appliance, keep a trusted dashboard tab open across an address change
+   that adds a served address (the address-watch SAN check remains part of the KVM provision leg).
+   If Chrome stops trusting the replacement certificate, leave the tab open for at least
+   60 seconds of failed polls. Check the recovery guidance, then open the same dashboard address
+   in a new tab. Compare the replacement certificate's SHA-256 fingerprint with the current
+   fingerprint read at the appliance console. Stop on mismatch; accept only a match. Return to
+   the original tab and check it reconnects on a normal poll. Record N/A if the browser retained
+   trust, rather than claiming the recovery path passed.
+9. Skip anything else that needs a shell (`./pithead`, `docker`, editing `config.json`): the
    appliance has none apart from its console.
 
 **What you should see:**
@@ -252,7 +260,9 @@ For items 3 to 7:
 - The same results as on the DIY route.
 - The built-in miner appears as a worker, and it reports RigForge 1.18.0 (#3116).
 
-**Record:** PASS, FAIL or N/A in the results sheet.
+**Record:** PASS, FAIL or N/A in the results sheet, including Chrome version, whether the
+certificate warning appeared, guidance during sync or the full dashboard, fingerprint match,
+and recovery of the original tab. Keep actual addresses and fingerprints in private QA notes.
 
 ### 13.8a The built-in miner follows its toggle
 
