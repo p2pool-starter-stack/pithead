@@ -145,7 +145,7 @@ assert_metrics_via_caddy() {
 # decision logic against stubs; this proves the real toolchain (docker/sudo/iptables/ss/curl)
 # feeds them on a healthy box. The firewall line is config-gated the same way doctor itself is.
 assert_doctor_ok() {
-    local out rc evidence_dir
+    local out rc evidence_dir tip_out
     out="$(pithead doctor 2>&1)"
     rc=$?
     # Capture the asserted invocation before a later diagnostic can observe another state.
@@ -166,6 +166,14 @@ assert_doctor_ok() {
         it_fail "doctor assertion evidence captured" "could not create doctor evidence directory"
     fi
     assert_rc "doctor exits 0 on a healthy box (#383)" "$rc" "0"
+    if [ "$(jq_get "$(rx 'cat config.json')" '.monero.mode')" = remote ]; then
+        it_skip_leg "doctor zero tip timestamp (#3277)" "local Monero check is not run in remote mode" "by-design"
+    else
+        rc=0
+        tip_out=$(rx "bash -s -- $(quote_arg "$IT_PITHEAD")" --stdin <"$HERE/tools/doctor-tip-time.sh" 2>&1) || rc=$?
+        assert_rc "doctor zero tip timestamp in text and JSON has no fabricated age or stale warning (#3277)" "$rc" "0"
+        printf '%s\n' "$tip_out" | redact | sed 's/^/doctor-tip-time probe: /'
+    fi
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
         it_log "   doctor: egress firewall opted out — skipping that OK line"
     else
