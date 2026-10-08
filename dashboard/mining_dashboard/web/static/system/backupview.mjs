@@ -132,7 +132,7 @@ export class BackupPanel extends Component {
         <div class="config-actions">
             <a class="btn-toggle active" href=${kitHref} download=${kitFilename(result.archive)}>Download kit (.txt)</a>
             <a class="btn-toggle" href=${"/api/control/backup-download?id=" + encodeURIComponent(id)}
-                download=${result.archive} target="_blank" rel="noopener noreferrer">Download archive</a>
+                target="_blank" rel="noopener noreferrer">Download archive</a>
             <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", id: null, result: null })}>I've saved it — close</button>
         </div>
     </div>`;

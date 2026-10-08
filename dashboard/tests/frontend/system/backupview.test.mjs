@@ -156,7 +156,6 @@ test("BackupPanel kit phase reveals the passphrase exactly once, with download l
   assert.match(out, new RegExp(`/api/control/backup-download\\?id=${ID}`));
   assert.match(out, /Download kit/);
   // Failed archive navigation must never replace the only page holding the recovery kit.
-  assert.match(out, /download="pithead-backup-20260813-000000\.tar\.gz\.enc"/);
   assert.match(out, /target="_blank"/);
   assert.match(out, /rel="noopener noreferrer"/);
   assert.match(out, /Save the kit first/);
