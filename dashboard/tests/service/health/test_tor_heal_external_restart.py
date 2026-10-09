@@ -71,6 +71,21 @@ class _Rig:
         ):
             await self.healer.check()
 
+    async def observe(self):
+        """Only the start-time read, so its reset is visible before a probe folds in."""
+        health = {"tor": {"running": True, "started_at": self.tor_started}}
+        with patch(f"{TARGET}.get_container_health", AsyncMock(return_value=health)):
+            await self.healer._observe_tor_start()
+
+    async def exhaust(self):
+        """Two NEWNYMs, the healer's own adopted restart, then the give-up warning."""
+        await self.spend_newnyms()
+        await self.step(False, COOLDOWN_SEC)  # the healer's own Tor restart
+        self.tor_started += 3600
+        await self.step(False, COOLDOWN_SEC)  # adopts that start time; budget spent
+        assert self.healer._attempts == MAX_ATTEMPTS
+        assert self.healer._warned_exhausted is True
+
     async def spend_newnyms(self):
         await self.step(False)  # observes Tor and starts the outage clock
         await self.step(False, BROKEN_AFTER_SEC)
@@ -165,3 +180,21 @@ async def test_external_restart_after_an_adopted_healer_restart_still_resets():
     await rig.step(True)
     h = rig.healer
     assert (h._failing_since, h._attempts, h._last_attempt) == (None, 0, None)
+
+
+async def test_external_restart_rearms_the_exhausted_warning(caplog):
+    rig = _Rig()
+    await rig.exhaust()
+    h = rig.healer
+    await rig.step(True)  # a lone OK probe: the recovery streak stands at 1
+    assert h._ok_streak == 1
+    h._newnym_unconfirmed = True  # as a rejected NEWNYM round leaves it
+    rig.tor_started += 3600  # the operator restarts Tor
+    await rig.observe()
+    assert h._ok_streak == 0
+    assert h._warned_exhausted is False
+    assert h._newnym_unconfirmed is False
+    await rig.step(True)
+    await rig.step(True)
+    await rig.exhaust()  # a new outage spends the fresh budget and gives up again
+    assert caplog.text.count("STILL broken") == 2
