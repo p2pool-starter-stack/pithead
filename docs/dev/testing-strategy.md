@@ -75,8 +75,8 @@ Dashboard connection recovery is covered by
 reset after success, stale snapshot retention, and advice during sync, normal display and an
 initial-load failure. `dashboard/tests/browser/osupdate-close.test.mjs` serves the production OS-update component,
 clicks Close once after a refused update check, and asserts the native dialog is removed and
-`document.activeElement` is its actual OS-updates trigger. The locked Chromium test runs through
-`make test-browser` in `browser.yml`. Replacement-certificate acceptance still requires the
+`document.activeElement` is its actual OS-updates trigger. The [browser suite](browser-testing.md) runs production-page and component journeys through
+`make test-browser` in `browser.yml`, across Chromium, Firefox, WebKit and mobile Chromium. Replacement-certificate acceptance still requires the
 appliance browser check in QA step 13.8. The KVM provision address-watch leg retains its
 SAN check, then uses the captured dashboard login over TLS from outside the guest to require
 HTTP 200 for the deployed OS-update error Close handler, fingerprint-comparison and
