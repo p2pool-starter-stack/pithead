@@ -300,9 +300,12 @@ print_first_run_epilogue() {
 stack_down() {
     mutation_lock_acquire down
     log "Stopping stack..."
-    remove_tor_egress_firewall
-    if ! docker compose down; then
-        error "Stack failed to stop — see the error above."
+    if [ -f "$ENV_FILE" ]; then
+        remove_tor_egress_firewall
+        docker compose down || error "Stack failed to stop — see the error above."
+    else
+        configless_stack_down
+        remove_tor_egress_firewall
     fi
     # After the stop (#2749): the nodes never listen on a LAN port without the rule, and a failed
     # stop leaves it in place.

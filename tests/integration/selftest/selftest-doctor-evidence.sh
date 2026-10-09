@@ -25,6 +25,8 @@ pithead() {
     return "$DOCTOR_RC"
 }
 env_on_box() { echo true; }
+# Evidence capture is independent of the local-node fault, covered by its own fixture.
+rx() { [ "$1" != 'cat config.json' ] || echo '{"monero":{"mode":"remote"}}'; }
 assert_doctor_ok >"$OUT_DIR/assertion.log"
 [ "$IT_FAIL" -eq 1 ] || {
     echo 'doctor failure verdict changed'
@@ -45,7 +47,7 @@ expected=$'OK egress firewall is installed\nOK workers can connect\nOK dashboard
 grep -q 'expected rc 0, got 7' "$OUT_DIR/assertion.log" || exit 1
 
 # The generic collector runs a second, healthy doctor, not the asserted invocation.
-rx() { case "$1" in *doctor*) echo '30 OK, 2 warnings, 0 failures' ;; esac }
+rx() { case "$1" in 'cat config.json') echo '{"monero":{"mode":"remote"}}' ;; *doctor*) echo '30 OK, 2 warnings, 0 failures' ;; esac }
 api_state() { echo '{}'; }
 capture_wallet_diagnostics() { :; }
 capture_artifacts check "$OUT_DIR" >/dev/null

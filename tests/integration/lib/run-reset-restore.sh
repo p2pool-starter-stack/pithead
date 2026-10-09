@@ -1,0 +1,92 @@
+# shellcheck shell=bash
+: "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+# The ordinary CLI recovery door, using real Compose containers and a real encrypted backup.
+run_reset_restore() {
+    local before_config before_secrets archive out rc after_config after_secrets
+    local failures_before="$IT_FAIL"
+    it_step "encrypted backup → config-reset → restore without rendered configuration…"
+    before_config=$(rx 'sha256sum config.json') && before_secrets=$(upgrade_secret_fingerprints) || {
+        it_fail "reset recovery captures configuration and secrets" "snapshot unreadable"
+        return 1
+    }
+    if ! rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD backup -y" 2>&1 |
+        redact >"$OUT_DIR/reset-restore.backup.log"; then
+        it_fail "reset recovery creates encrypted backup" "backup failed; see reset-restore.backup.log"
+        return 1
+    fi
+    archive=$(rx 'ls -t backups/pithead-backup-*.tar.gz.enc | head -n1') || archive=""
+    if [ -z "$archive" ]; then
+        it_fail "reset recovery creates encrypted backup" "no encrypted archive"
+        return 1
+    fi
+    it_pass "reset recovery creates encrypted backup"
+
+    # Hide all rendered/config state while real services run. The remote trap restores the files
+    # even when a refusal check fails; no crafted .env or fake Compose command is used.
+    local running_probe
+    running_probe="set -e; test -n \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running)\";
+        scratch=\$(mktemp -d \"\${TMPDIR:?}/reset-restore.XXXXXX\");
+        trap 'for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"' EXIT
+        for f in config.json .env Caddyfile; do mv -- \"\$f\" \"\$scratch/\$f\"; done;
+        set +e; output=\$($IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 2>&1); result=\$?; set -e;
+        test \"\$result\" -ne 0;
+        case \"\$output\" in *'stack services are still active'*) ;; *) exit 1 ;; esac;
+        test ! -e config.json; test ! -e .env; test ! -e Caddyfile"
+    if rx "$running_probe"; then
+        it_pass "restore refuses real running containers with all configuration missing"
+    else
+        it_fail "restore refuses real running containers with all configuration missing" "running census, refusal, or unchanged-file assertion failed"
+        return 1
+    fi
+
+    if ! rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
+        redact >"$OUT_DIR/reset-restore.reset.log" ||
+        ! rx 'test ! -e config.json && test ! -e .env && test ! -e Caddyfile'; then
+        it_fail "config-reset removes configuration before encrypted recovery" "reset failed or a rendered file remains; see reset-restore.reset.log"
+        return 1
+    fi
+    it_pass "config-reset removes configuration before encrypted recovery"
+    if pithead down 2>&1 | redact >"$OUT_DIR/reset-restore.down.log"; then
+        it_pass "pithead down succeeds after reset without Compose interpolation"
+    else
+        it_fail "pithead down succeeds after reset without Compose interpolation" "down failed; see reset-restore.down.log"
+        return 1
+    fi
+
+    # A PTY makes Bash's read -p prompt observable. Empty input must reach the actual passphrase
+    # request and refuse, rather than write anything. The successful leg then supplies a fixture
+    # passphrase; no operator secret crosses the test transport or log.
+    out=$(rx "printf '\\n' | env -u PITHEAD_BACKUP_PASSPHRASE script -q -e -c $(quote_arg "$IT_PITHEAD restore -y $(quote_arg "$archive")") /dev/null" 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ] && [[ "$out" == *"Backup passphrase:"* ]] && [[ "$out" == *"This archive is encrypted"* ]] &&
+        rx 'test ! -e config.json && test ! -e .env && test ! -e Caddyfile'; then
+        it_pass "encrypted restore after reset reaches the passphrase prompt"
+    else
+        it_fail "encrypted restore after reset reaches the passphrase prompt" "prompt or refusal missing, or configuration was promoted"
+        printf '%s\n' "$out" | redact >"$OUT_DIR/reset-restore.prompt.log"
+        return 1
+    fi
+    if ! rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y $(quote_arg "$archive")" 2>&1 |
+        redact >"$OUT_DIR/reset-restore.restore.log" || ! pithead up 2>&1 |
+        redact >"$OUT_DIR/reset-restore.up.log"; then
+        it_fail "encrypted restore after config-reset starts the stack" "restore or up failed; see reset-restore logs"
+        return 1
+    fi
+    if wait_status_ok 600; then
+        it_pass "stack healthy after encrypted restore following config-reset"
+    else
+        it_fail "stack healthy after encrypted restore following config-reset" "status did not recover"
+        return 1
+    fi
+    after_config=$(rx 'sha256sum config.json') && after_secrets=$(upgrade_secret_fingerprints) || {
+        it_fail "reset recovery reads restored configuration and secrets" "snapshot unreadable"
+        return 1
+    }
+    assert_eq "reset recovery restores the backup configuration" "$after_config" "$before_config"
+    assert_eq "reset recovery preserves backup secrets and identities" "$after_secrets" "$before_secrets"
+    rx "rm -f -- $(quote_arg "$archive")" || {
+        it_fail "reset recovery removes its encrypted fixture archive" "cleanup failed"
+        return 1
+    }
+    [ "$IT_FAIL" -le "$failures_before" ]
+}
