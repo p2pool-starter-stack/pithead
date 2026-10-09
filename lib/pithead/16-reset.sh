@@ -123,6 +123,7 @@ config_reset() {
     # timeout abandon a box whose configuration was already half gone.
     mutation_lock_acquire config-reset
 
+    restore_save_reset_paths
     detect_os 2>/dev/null || true
     docker compose down --remove-orphans 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with the config wipe."
