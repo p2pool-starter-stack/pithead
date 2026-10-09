@@ -91,6 +91,10 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `wizard/server.py`, `wizard/form.py`, `wizard/defaults.py` | Appliance wizard server, disk-based defaults, form translation, and install handoff | `tests/web/test_wizard*.py` |
 | `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
 
+`service/access_log.py` bounds reads of Caddy's active and rotated access logs;
+`service/audit_service.py` sanitizes and summarizes those records. Rotation tests
+live in `tests/service/test_access_log.py`.
+
 Keep polling order, database locks, and transaction scopes intact when extracting
 helpers. The storage mixins share `StateManager`'s connection and lock; the
 atomicity and annotation tests in `tests/service/` check those boundaries.
@@ -213,6 +217,12 @@ Bundle staging into the guest is bounded and reports through `staging-failure-ev
 floor-fallback leg stages separately from `os-update` (`selftest-floor-staging.sh`, #3049).
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
+
+The e2e hardening phase runs `tests/integration/lib/access_log_retention.py`
+against real Caddy requests and the deployed access API. It verifies wrong-password
+failures past the old tail limit and native gzip rotation;
+`tests/integration/selftest/selftest-access-log-retention.sh` runs its Docker-free
+undercount and failure controls.
 
 ## What stays at the root
 
