@@ -179,7 +179,8 @@ Per #3091, an unreachable Monero node, local or remote, always rejects workers:
    cp config.json config.json.qa
    ```
 
-2. Remove its `dashboard.auth` and `dashboard.control` blocks.
+2. Disable `dashboard.onion.enabled` if it is on, then remove the `dashboard.auth` and
+   `dashboard.control` blocks.
 3. Run `./pithead apply`, and answer `y` to what it asks.
 4. Open the dashboard in a private window.
 5. Put the copy back and run `./pithead apply`.
@@ -191,6 +192,10 @@ Per #3092:
 - No login prompt appears.
 - The **Connect a miner** block shows the LAN pool URL and the [stratum](../README.md#glossary) password, or `No stratum password`, to anyone on the LAN. The owner accepts that risk.
 
-A dashboard published as an [onion](../README.md#glossary) always has a login: the last row of [Broken configs](../sample-configs.md#broken-configs) is that refusal.
+A dashboard published as an [onion](../README.md#glossary) always has a login: the last row of
+[Broken configs](../sample-configs.md#broken-configs) tests that read-only refusal with
+`apply --dry-run`. Normal apply generates a login
+password before confirmation; the separate [password-generation cases](../sample-configs.md#onion-password-generation-on-normal-apply)
+check cancellation and acceptance.
 
 **Record:** PASS, FAIL or N/A in the results sheet.

@@ -205,6 +205,16 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Real XvB endpoint reachable / failing | network | 4 (real endpoint) |
 | Credited 1h/24h averages converge to tier on live XvB (soak) | live donation | 4 (real endpoint) |
 
+The appliance XvB leg's stubbed polling fixtures use a file-backed clock: each polling sleep
+advances one simulated second, including inside command substitutions. Host scheduling cannot
+consume their attempt budget. `tests/os/selftest-xvb-poll-clock.sh` runs the real self-test with
+two seconds of simulated host delay per clock read; success, retry, held/flickering gate,
+unavailable proxy/Tor and unsuccessful route controls retain their assertions. Gate-wait controls
+also count complete polls and distinguish two released samples before the deadline from one
+sample or a release after it. The separate stalled-SSH and late-answer controls keep real
+deadlines. These are tier-1 fixture checks; the runtime polls retain their wall-clock deadlines
+and require tier-4 appliance proof when changed.
+
 ### F. Dashboard `/api/state` field states
 
 | Situation | Trigger | Tier |

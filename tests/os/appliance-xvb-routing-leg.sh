@@ -178,7 +178,7 @@ phase_provision_xvb_routing() {
     return "$rc"
 }
 
-_xvb_self_test() {
+_xvb_self_test() (
     local f=0 payload real_guest_python && { _xvb_diag_self_test || f=1; } # first: _xvb_guest_python is still real
     # #2712 (job 1141): a single gate-driven xmrig-proxy outage ran ~59s, so the wait's own default
     # must stay wide enough to survive one — this is a source check, not a timed run, because a real
@@ -216,15 +216,19 @@ _xvb_self_test() {
     # must be counted HERE, in the caller's own PASS/FAIL, and the leg must return non-zero.
     local PASS=0 FAIL=0 XVBT_FETCH_FAILS=0 XVBT_FETCH_CALLS XVBT_GATE=released XVBT_XVB_JSON="" XVBT_P2P_JSON=""
     local XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
-    # Deadlines are whole seconds of `date +%s`: a 1s one computed at x.999 expires before the
-    # poll runs once, so every short deadline here is 2 — at least one full second of polling (#2739).
+    # #2721: stubbed polls advance a file-backed clock once per sleep, independent of host load.
     local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=2 XVB_ACTUATE_TIMEOUT=2 XVB_GATE_RELEASE_TIMEOUT=2
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     local p2p_ok='{"mode":"P2POOL","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     ok() { PASS=$((PASS + 1)); }
     bad() { FAIL=$((FAIL + 1)) && printf '%s\n' "$*" >>"$XVBT_MSGS"; }
     info() { :; }
-    sleep() { command sleep 0.05; } # the polls' own pacing, shortened so the self-test does not idle
+    local XVBT_CLOCK
+    XVBT_CLOCK="$(mktemp)"
+    trap 'rm -f "$XVBT_CLOCK"' EXIT
+    # shellcheck source=tests/os/xvb-selftest-clock.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/xvb-selftest-clock.sh"
+    _xvb_selftest_clock "$XVBT_CLOCK" || return 1
     XVBT_STARTS="$(mktemp)" XVBT_CALLS="$(mktemp)" XVBT_MSGS="$(mktemp)"
     _ssh() {
         case "$1" in
@@ -346,13 +350,11 @@ _xvb_self_test() {
         printf 'xvb self-test: the timed-out Tor wait did not name the last health it read (%s)\n' "$last_status" >&2
         f=$((f + 1))
     fi
-    unset -f sleep
 
     # Same property, for the proxy-readiness wait: it must ride out a not-yet-listening API rather
     # than read the first failed get_config() as a verdict. Restore the REAL _xvb_guest_python (see
     # real_guest_python above) so only _ssh answers, exercising the actual payload plumbing.
     eval "$real_guest_python"
-    sleep() { command sleep 0.02; }
     local proxy_answers
     proxy_answers="$(mktemp)"
     _ssh() {
@@ -371,13 +373,12 @@ _xvb_self_test() {
         f=$((f + 1))
     fi
 
-    unset -f sleep
-
     [ ! -s "$XVBT_STARTS" ] || { echo "xvb self-test: the leg started or stopped xmrig-proxy against the gate (#2733)" >&2 && f=$((f + 1)); }
     unset -f ok bad info _ssh _xvb_real_tor_fetch _xvb_guest_python _xvb_case && rm -f "$XVBT_FETCH_CALLS" "$XVBT_STARTS" "$XVBT_CALLS" "$XVBT_MSGS"
+    unset -f date sleep # real SSH deadline controls below use the host clock
     _xvb_gate_wait_self_test || f=$((f + 1))
     [ "$f" -eq 0 ]
-}
+)
 
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = --self-test ]; then
     _xvb_self_test || exit 1
