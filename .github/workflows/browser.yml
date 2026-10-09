@@ -29,7 +29,7 @@ jobs:
         run: npm ci --prefix dashboard/tests/browser --ignore-scripts
       - name: Install pinned Chromium and system libraries
         run: dashboard/tests/browser/node_modules/.bin/playwright install --with-deps chromium
-      - name: Assert native dialogs, configuration drafts and complete HTTPS backup downloads
+      - name: Assert native dialogs, trigger focus, earnings input, configuration drafts and HTTPS backup downloads
         env: {TMPDIR: "${{ runner.temp }}"}
         run: make test-browser
       - name: Install pinned Google Chrome for Testing

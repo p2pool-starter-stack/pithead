@@ -176,7 +176,6 @@ run_lifecycle() {
         it_fail "pithead backup succeeded" "backup returned non-zero"
         lifecycle_ok=0
     fi
-
     # Confirmed dashboard.data_dir carry (#2360): DASHBOARD_DATA_DIR is CONFIRM-class both from
     # the dashboard (typed APPLY) and the host CLI (folded into the disruptive y/N, exercised here
     # with -y) — same apply()-time carry either way. Without it the recreated dashboard would open
@@ -222,6 +221,7 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
+    run_reset_restore || return 1
     run_uninstall_round_trip || lifecycle_ok=0
     [ "$lifecycle_ok" = 1 ]
 }

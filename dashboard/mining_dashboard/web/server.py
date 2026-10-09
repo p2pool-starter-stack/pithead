@@ -508,7 +508,7 @@ async def handle_audit_log(request):
 
 
 # How deep the access log is read when the operator is NAVIGATING it (#823) vs the default
-# glance. The tail read is byte-bounded either way (audit_service._TAIL_BYTES) — this only stops
+# glance. Retained reads are byte-bounded (service/access_log.py) — this only stops
 # a filtered view from being quietly truncated to the glance depth before the filter even runs.
 _ACCESS_NAV_LIMIT = 1000
 
@@ -516,7 +516,7 @@ _ACCESS_NAV_LIMIT = 1000
 async def handle_access_log(request):
     """Recent dashboard accesses + failed-login count, from Caddy's JSON access log. Always
     registered (Caddy always writes the log); behind the same Caddy basic_auth as every route.
-    Accepts the #823 navigation params; the failure counters always describe the whole tail,
+    Accepts the #823 navigation params; the failure counters always describe the bounded retained records,
     never the filtered slice."""
     try:
         frm, to, q = _log_filters(request)

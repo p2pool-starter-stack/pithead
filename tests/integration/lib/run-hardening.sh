@@ -127,7 +127,6 @@ run_hardening() {
         it_skip_phase "hardening" "remote mode: no local containers/systemd to exercise" "by-design"
         return 0
     fi
-
     # 1. Read-only rootfs is LIVE at runtime (#377), not just declared in compose. We must assert
     #    the failure is specifically EROFS ("Read-only file system"), NOT just any error: the
     #    containers run non-root (#255), so `touch /` on a WRITABLE rootfs already fails with EACCES
@@ -145,7 +144,6 @@ run_hardening() {
                 "expected 'Read-only file system', got: ${probe_out:-<write SUCCEEDED — rootfs is writable>}"
         fi
     done
-
     # 2. The onion is reachable from OUTSIDE (privacy surface, #343/#360) and SURVIVES the #424 heal
     #    action. An independent external Tor client (its own image/tor/circuits) fetches the dashboard
     #    onion over the real Tor network — no stack SOCKS or plumbing involved. First a baseline; then
@@ -180,7 +178,6 @@ run_hardening() {
             fi
         fi
     fi
-
     # 3. The #33 control channel end-to-end THROUGH THE REAL SYSTEMD PATH UNIT. Tier-1 runs
     #    control-run-pending by hand; only here does pithead-control.path actually fire on a spooled
     #    file. Needs a dashboard password (control refuses to enable without one). Enable control,
@@ -326,6 +323,13 @@ run_hardening() {
         fi
     fi
 
+    if probe_out="$(rx "timeout 600 python3 tests/integration/lib/access_log_retention.py")" &&
+        grep -qx 'access-log-retention: complete' <<<"$probe_out"; then
+        it_pass "failed logins retained beyond 256 KiB and native gzip rotation (#3265)"
+    else
+        it_fail "failed logins retained beyond 256 KiB and native gzip rotation (#3265)" "$probe_out"
+    fi
+
     # Restore the baseline ourselves: re-applying with control off uninstalls the path unit, so the
     # root systemd unit never outlives the phase even though the end-of-run restore would also do it.
     it_step "restoring baseline (disables control, removes the path unit)…"
@@ -359,7 +363,6 @@ run_auth_fail_closed() {
     fi
 
     local fails_before="$IT_FAIL"
-
     # 1. Empty the token; `pithead up` must refuse to start AND name the documented fix.
     it_step "emptying PROXY_AUTH_TOKEN in .env and running 'pithead up'…"
     if ! _set_env_token ""; then
@@ -372,7 +375,6 @@ run_auth_fail_closed() {
     assert_ne "pithead up fails closed (non-zero exit) on an empty PROXY_AUTH_TOKEN" "$rc" "0"
     assert_contains "compose guard refuses the unauthenticated proxy API (#153)" \
         "$out" "refusing to start an unauthenticated xmrig-proxy control API"
-
     # 2. Restore the EXACT original token (apply would mint a new one) and recover.
     it_step "restoring the original PROXY_AUTH_TOKEN and recovering…"
     _set_env_token "$orig" || it_fail "restore PROXY_AUTH_TOKEN" "environment replacement failed"

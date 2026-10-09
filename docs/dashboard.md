@@ -746,7 +746,7 @@ It is scoped to P2Pool — **not** an XvB calculator:
 
 | Field | Meaning |
 |---|---|
-| **Your P2Pool Hashrate** | The hashrate the estimate is based on. Defaults to your **P2Pool 1h average** (the same figure the header shows, excluding any XvB-donated portion); type a different value (e.g. `50k`, `1.2 MH/s`) to see a **what-if** projection if you added or removed P2Pool hashpower. |
+| **Your P2Pool Hashrate** | The hashrate the estimate is based on. Defaults to your **P2Pool 1h average** (the same figure the header shows, excluding any XvB-donated portion). Enter a non-negative decimal (e.g. `50000`, `.5`) with an optional `k`, `M`, or `G` multiplier and optional `H/s` (case-insensitive, whitespace allowed between parts), such as `50k` or `1.2 MH/s`, for a **what-if** projection. Commas must group thousands in the integer part (e.g. `1,000`, `1,234.5 kH/s`). Malformed comma grouping, scientific notation, trailing text, and values that overflow H/s are rejected; hashrate-based estimates show `—` for invalid or blank input. |
 | **XMR Day / Month / Year** | Expected Monero earned over each horizon, computed as `hashrate × block reward ÷ network difficulty`, the standard variance-free mining expectation. P2Pool's zero-fee PPLNS payout makes this the right long-run expectation. |
 | **Est. Time to Tari Block** | Expected time for your hashrate to solo-find one Tari block: `network difficulty ÷ hashrate`. This is the honest headline for solo merge-mining — the reward lands here, all at once. `—` while merge-mining is inactive or Tari is still syncing. |
 | **XTM per Block** | The full Tari block reward paid when you find a block — you get all of it at once, not spread over time. Shown whenever the reward is known (the Tari Merge-Mining card shows the same figure): it depends on the Tari chain, not on your hashrate or the merge-mine channel. |
@@ -1339,7 +1339,12 @@ Below the form, the Configuration view shows two read-only security panels
 ([#349](https://github.com/p2pool-starter-stack/pithead/issues/349)):
 
 - **Access log.** Recent dashboard requests from Caddy's access log — time, HTTP status, method,
-  path, and the logged-in user — plus a count of failed logins (401s) in the last 24 hours. Over
+  path, and the logged-in user — plus a count of failed logins (401s) timestamped within the
+  last 24 hours among bounded retained records. Reads cover the active file and the two newest
+  Caddy generations, up to 4 MiB per file. The reader accepts timestamped `access-<timestamp>-size.log`
+  backups from the pinned Caddy, legacy `access-<timestamp>.log` backups, and their gzip forms.
+  Plain and compressed copies share one timestamp slot. Missing generations, retention, or byte limits can
+  omit failures; a zero count does not prove there were no failed logins. Over
   Tor there is no source IP to trace or block, so the signal is the *rate* of failures: five or
   more in a day shows a warning to rotate the dashboard password (set a new
   `dashboard.auth.password`, run `./pithead apply`) and, if the onion address may have leaked,
@@ -1359,7 +1364,7 @@ that range), the search narrows as you type, and filtering happens on the server
 deeper than the on-screen tail is still found — the access log's read stays size-bounded either
 way. Below the row, a pager reports how many entries matched and walks them a page at a time —
 pick 5 to 100 rows per page, step with Prev/Next. A filter with no matches says so; the
-failed-login counter always describes the whole log, never the filtered slice.
+failed-login counter always describes the bounded retained records, never the filtered slice.
 
 Both panels read host-written files through read-only mounts, and the dashboard treats every
 field in them as hostile input — a request path is attacker-chosen bytes — so each string is

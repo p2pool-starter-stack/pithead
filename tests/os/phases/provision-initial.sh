@@ -179,6 +179,12 @@ _phase_provision_initial_body() {
         info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
         return 1
     fi
+    # Healthy read-only refusal, before unrelated day-two legs can abort this guest (#3262).
+    if SSH_TIMEOUT=45 _ssh 'timeout 40 bash -s' <"$SCRIPT_DIR/tor-recovery-refusal-guest.sh"; then
+        ok "guest healthy Tor recovery refusal exits 1 without unexpected-abort advice (#3262)"
+    else
+        bad "guest healthy Tor recovery refusal proof failed (#3262)"
+    fi
     # The fresh-chain sync gate may hold P2Pool, but the bundled Monero listener must already
     # accept Tor's bridge dial. A torrc entry alone does not prove this across containers (#2936).
     local onion_prefix onion_port onion_tries=0
@@ -237,6 +243,7 @@ _phase_provision_initial_body() {
     phase_provision_dashboard_exposure || return 1
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
+    phase_provision_earnings_assets "$pv_user" "$pv_pass" || return 1
     phase_provision_address_watch "$pv_user" "$pv_pass"
 
     phase_miner_connection_installed "$handoff_body"
