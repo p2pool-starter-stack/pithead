@@ -17,6 +17,8 @@ Caddyfile
 # It holds only the current holder's pid/verb/timestamp, and the lock itself lives on the open
 # descriptor rather than on the file's existence — so a leftover file is inert, never a stale lock.
 .pithead.lock
+# Locally trusted restore destinations retained across config-reset.
+.restore-paths*
 # pithead backup archives bundle .env, config.json, the Caddyfile, and the Tor onion private keys
 # into one tarball; secret scanners can't see inside a gzipped tar, so keep the whole dir out (#369).
 /backups/
