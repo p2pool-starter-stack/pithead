@@ -163,3 +163,10 @@ test("the done-phase outcome is a live region on both the applied and the failed
   const failed = doneCard({ appliance: false });
   assert.match(failed, /role="status" aria-live="polite">/);
 });
+
+test("only the failed card offers the explicit draft discard (#3287)", () => {
+  assert.match(doneCard({ appliance: false }), /Discard draft and reload from host/);
+  const view = new ConfigView({});
+  view.state = { ...view.state, phase: "done", result: { status: "applied" } };
+  assert.ok(!renderToString(view.render()).includes("Discard draft"));
+});

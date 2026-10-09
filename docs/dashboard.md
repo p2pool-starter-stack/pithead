@@ -1233,6 +1233,9 @@ The flow mirrors the CLI's `apply`:
    [#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076) this step also required a
    tap in Telegram and recorded a `commit-approved` action with an approver; the bot is read-only
    now, that leg is gone, and nothing writes an approver.
+   When the apply fails, **Back to the form** returns to the draft you submitted, unsaved marker
+   included, so you can correct it and retry. **Discard draft and reload from host** replaces the
+   draft with the host's configuration. After a successful apply, **Back to the form** reloads it.
 
 Every reference setting belongs to a policy class. The ordinary allowlist covers routine
 operations; all remaining values confirm unless they are in the physical-presence set. Typed
