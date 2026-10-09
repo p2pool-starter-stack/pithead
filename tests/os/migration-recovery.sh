@@ -1,10 +1,21 @@
 # shellcheck shell=bash
 # The runner selects a cached old image; only merged, pre-fix source may seed this proof.
 migration_old_commit_valid() {
-    local commit="$1" pr_commits
+    local commit="$1" pr_commits ref
+    MIGRATION_BASE_REF="" MIGRATION_BASE_COMMIT=""
+    for ref in origin/develop refs/heads/develop; do
+        if MIGRATION_BASE_COMMIT=$(git rev-parse --verify "$ref^{commit}" 2>/dev/null); then
+            MIGRATION_BASE_REF=$ref
+            break
+        fi
+    done
+    [ -n "$MIGRATION_BASE_REF" ] || {
+        echo "migration baseline: neither origin/develop nor refs/heads/develop resolves to a commit" >&2
+        return 1
+    }
     [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || return 1
-    git merge-base --is-ancestor "$commit" origin/develop || return 1
-    pr_commits=$(git rev-list origin/develop..HEAD) || return 1
+    git merge-base --is-ancestor "$commit" "$MIGRATION_BASE_COMMIT" || return 1
+    pr_commits=$(git rev-list "$MIGRATION_BASE_COMMIT..HEAD") || return 1
     ! printf '%s\n' "$pr_commits" | grep -Fxq "$commit"
 }
 
@@ -25,7 +36,7 @@ migration_prepare_old() {
         bad "the selected old image cannot exercise the equal-version upgrade"
         return 1
     }
-    ok "selected old BUILD_COMMIT $old_commit is an ancestor of develop $(git rev-parse origin/develop), outside candidate PR $(git rev-parse HEAD); shared VERSION $old_version"
+    ok "selected old BUILD_COMMIT $old_commit is an ancestor of base $MIGRATION_BASE_REF $MIGRATION_BASE_COMMIT, outside candidate PR $(git rev-parse HEAD); shared VERSION $old_version"
     _wizard_provision_capture 0 || return 1
     # The captured old-image login replaces the credentials of the disposable initial guest.
     # shellcheck disable=SC2034 # phase-scoped credentials are used by all later legs.

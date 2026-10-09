@@ -40,7 +40,19 @@ fail() {
     for invalid in "$candidate" "$side" "${old:0:12}" "$(printf '%040d' 1)"; do
         if migration_old_commit_valid "$invalid" 2>/dev/null; then fail 'unmerged, PR or malformed source accepted'; fi
     done
+    [ "$MIGRATION_BASE_REF" = origin/develop ] && [ "$MIGRATION_BASE_COMMIT" = "$base" ] || fail 'remote base identity not retained'
+    git update-ref refs/remotes/origin/develop "$old"
+    if migration_old_commit_valid "$base" 2>/dev/null; then fail 'local base overrode valid remote base'; fi
     git update-ref -d refs/remotes/origin/develop
+    migration_old_commit_valid "$base" || fail 'mirror local base rejected'
+    [ "$MIGRATION_BASE_REF" = refs/heads/develop ] && [ "$MIGRATION_BASE_COMMIT" = "$base" ] || fail 'mirror base identity not retained'
+    for invalid in "$candidate" "$side"; do
+        if migration_old_commit_valid "$invalid" 2>/dev/null; then fail 'mirror accepted PR or unmerged source'; fi
+    done
+    git update-ref refs/remotes/origin/develop "$(git hash-object -w file)"
+    migration_old_commit_valid "$old" || fail 'non-commit remote ref prevented mirror fallback'
+    git update-ref -d refs/remotes/origin/develop
+    git update-ref -d refs/heads/develop
     if migration_old_commit_valid "$old" 2>/dev/null; then fail 'missing develop reference accepted'; fi
 )
 # Refuse an invalid selected source before the old guest's provisioning or seed.
