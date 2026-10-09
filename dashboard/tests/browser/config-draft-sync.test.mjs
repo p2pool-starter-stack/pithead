@@ -32,6 +32,10 @@ test("a configuration draft survives a synchronization screen and keeps its mark
       res.setHeader("Content-Type", "text/html");
       return res.end(fixture);
     }
+    if (req.url === "/api/control/preview") {
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({id:"sync-preview",status:"previewed",changes:[{msg:"Energy cost changed"}]}));
+    }
     if (req.url === "/api/config") {
       reads++;
       res.setHeader("Content-Type", "application/json");
@@ -69,5 +73,21 @@ test("a configuration draft survives a synchronization screen and keeps its mark
   await marker().waitFor();
   assert.equal(await editor.inputValue(), draft);
   assert.equal(reads, 1, "a sync transition must not reload and overwrite the candidate");
+  await page.getByRole("button", {name:"Save & preview changes"}).click();
+  await page.getByRole("dialog", {name:"Review changes"}).waitFor();
+  await page.evaluate(() => window.setSyncing(true));
+  assert.equal(await page.locator("dialog[open]").count(), 0, "the review dialog must close while the sync screen shows");
+  await page.evaluate(() => window.setSyncing(false));
+  await page.getByRole("dialog", {name:"Review changes"}).waitFor();
+  await page.getByRole("button", {name:"Cancel",exact:true}).click();
+  await marker().waitFor();
+  assert.equal(await editor.inputValue(), draft);
+  await page.getByRole("button", {name:"Simple",exact:true}).click();
+  await page.locator("#dashboard-view .grid").first().waitFor();
+  await page.evaluate(() => window.setSyncing(true));
+  assert.equal(await page.locator("#dashboard-view .grid").count(), 0, "the cards are not rendered behind the sync screen");
+  await page.evaluate(() => window.setSyncing(false));
+  await page.locator("#dashboard-view .grid").first().waitFor();
+  await marker().waitFor();
   assert.deepEqual(errors, []);
 });
