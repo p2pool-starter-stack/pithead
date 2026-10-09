@@ -162,11 +162,20 @@ NOTE: On the soak box, run M15 only before `--start` or after day 7 (see
 
 1. Write down the payout address, the [onion](../README.md#glossary) address and the time.
 2. In **Backup**, click **Back up now**.
-3. Save both downloads: the archive and its emergency kit.
+3. Save the emergency kit first, then the archive. Keep the recovery page open until both
+   downloads finish. If a download fails, retry its link without creating another backup.
+4. Record the exact Chrome version and whether extensions are enabled. If the archive is
+   blocked, check **Downloads** for the reason, verify the dashboard certificate and compare
+   with extensions disabled. Do not bypass a managed download policy.
+5. Check the saved archive's length and integrity, then decrypt it with the passphrase from
+   the downloaded kit. Record the results privately; do not record the passphrase in the sheet.
 
 **What you should see:**
 
 - The dashboard disconnects briefly and comes back.
+- Both files finish saving outside the appliance, and the saved archive opens with the saved
+  kit. A success heading or HTTP 200 alone does not pass this step.
+- A blocked download leaves the original recovery page available for retry.
 
 **Record:** PASS, FAIL or N/A in the results sheet, plus the payout address, the onion address and the time
 from item 1.

@@ -344,7 +344,12 @@ method, path, and the authenticated user — to `./data/caddy-logs/access.log`
 ([#349](https://github.com/p2pool-starter-stack/pithead/issues/349)). It is always on. Caddy
 redacts credential headers by default, so no password material lands in it, and Caddy's native
 rolling caps it at 4 MiB per file, the current file plus two rolled ones (~12 MiB worst case).
-The dashboard's Configuration view surfaces the same data:
+The dashboard reads the active file and at most two timestamped `access-*.log` or
+`access-*.log.gz` generations. Each plain-file tail and each gzip decompressed prefix is
+capped at 4 MiB; compressed input is also capped at 4 MiB per generation. One summary
+reads at most 12 MiB of JSON and 8 MiB of compressed input. Oversized files, missing or
+corrupt generations, and Caddy retention can omit records from the last-24-hour count.
+The dashboard's Configuration view surfaces these bounded records:
 [recent accesses and a failed-login count](dashboard.md#access-log-and-recent-config-changes).
 
 How to read it, given the dashboard is reachable over a Tor onion

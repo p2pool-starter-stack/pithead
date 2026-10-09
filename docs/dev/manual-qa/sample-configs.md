@@ -1,7 +1,7 @@
 # Sample configs
 
 Four complete `config.json` files the DIY steps paste in, and the broken configs that
-`./pithead apply` must refuse.
+`./pithead apply --dry-run` must refuse.
 
 ## Before you start
 
@@ -175,27 +175,30 @@ is the onion-without-login refusal that 10.7 names.
 **What you do:**
 
 1. Start from a working `config.json`.
-2. Make the change in one row of the table below, and only that change.
-3. Run:
+2. Keep a baseline copy with `cp config.json config.json.qa-broken`.
+3. Make the change in one row of the table below, and only that change.
+4. Run:
 
    ```bash
-   ./pithead apply
+   ./pithead apply --dry-run
    ```
 
-4. Check the refusal against the second column.
-5. Undo the change before the next row.
+5. Check the refusal against the second column. Record the nonzero exit status.
+6. Check that the candidate config, rendered `.env` and container identities are unchanged
+   from immediately before the dry run.
+7. Restore `config.json.qa-broken` before the next row.
 
 **What you should see:**
 
 For every row:
 
-- apply stops before anything changes.
+- The dry run stops before anything changes.
 - It prints a message that contains the text in the second column.
 - The running stack is untouched.
 
 | Change | The message contains |
 |---|---|
-| Delete one closing `}` | `is not valid JSON` |
+| Delete one closing `}` | A refusal saying the configuration is not valid JSON (for example `Invalid configuration: not valid JSON.`) |
 | Set `monero.wallet_address` to the QA **subaddress** (starts with `8`) | `is a SUBADDRESS (starts with 8)` |
 | Swap two different neighbouring characters in the middle of `monero.wallet_address` | `fails its checksum` |
 | Swap two different neighbouring characters in the middle of `tari.wallet_address` | `tari.wallet_address fails its checksum` |
@@ -215,3 +218,40 @@ For every row:
 
 **Record:** under step 6.5 in the results sheet: PASS when every row matches, FAIL with the row
 that did not.
+
+### Onion password generation on normal apply
+
+Normal `./pithead apply` generates a 32-character password in `dashboard.auth.password`
+before validation when the onion is enabled without a password. Cancelling the live apply
+keeps that generated password in the candidate `config.json`; it does not roll the candidate
+back, even though the cancellation message says no changes were made.
+
+**What you do:**
+
+1. Restore the working baseline from `config.json.qa-broken`. If its onion is enabled,
+   disable it, run `./pithead apply`, and accept the change. Save this applied, onion-off
+   config as `config.json.qa-onion`.
+2. Enable `dashboard.onion.enabled` and remove `dashboard.auth`. Keep every other key
+   unchanged. Record the rendered `.env` checksum and container identities.
+3. Run `./pithead apply` and answer `n` at the disruptive-change prompt.
+4. Check that `dashboard.auth.password` now contains 32 characters, without copying the
+   secret into the results sheet. Check that `.env` and container identities are unchanged.
+5. Restore `config.json.qa-onion`, then repeat the edit in item 2. Run `./pithead apply`
+   and answer `y` at the disruptive-change prompt.
+6. Open the dashboard in a private window and log in as `admin` with the newly generated
+   password from `config.json`.
+7. Restore `config.json.qa-onion` and run `./pithead apply`, accepting the change. Then
+   restore `config.json.qa-broken` and apply it, accepting any disruptive changes.
+
+**What you should see:**
+
+- Both normal applies report password generation and preview the login and onion changes
+  with `⚠` before asking for confirmation.
+- The cancelled apply changes only the candidate config, leaving the live stack untouched.
+- The accepted apply renders the authenticated onion configuration and recreates the affected
+  services. Login succeeds with the generated password; the stack stays healthy.
+- The final apply restores the original working configuration.
+
+**Record:** under step 6.5: PASS when generation, preview, cancellation, acceptance, login and
+baseline restoration all match; otherwise FAIL with the case that did not. Keep passwords
+out of the results sheet.

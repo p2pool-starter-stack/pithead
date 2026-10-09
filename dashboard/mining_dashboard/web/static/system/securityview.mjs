@@ -121,7 +121,7 @@ const AccessCard = ({ access, filters, onFilters, pager, onPager }) => {
       <h2>Access log</h2>
       <${LogControls} label="Access log filter" filters=${filters} onChange=${onFilters} />
       <p class=${failures > 0 ? "status-warn" : "status-ok"}>
-          ${failures} failed login${failures === 1 ? "" : "s"} in the last 24 h${
+          ${failures} failed login${failures === 1 ? "" : "s"} in the last 24 h (bounded retained logs)${
             access.last_failure_ts ? html` — last at ${fmtEpoch(access.last_failure_ts)}` : ""
           }
       </p>

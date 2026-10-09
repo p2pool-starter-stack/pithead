@@ -3,6 +3,7 @@
 assert_scenario() {
     local name="$1" config="$2"
     assert_running_state "$name" "$config"
+    assert_xvb_off_no_dwell_churn
     # Namespace probes, rule flushes and node restarts belong only to deploying scenarios.
     assert_lan_guard_live "$config"
     local again
@@ -97,6 +98,9 @@ assert_xvb_over_tor() {
     proxy="$(rx "docker exec dashboard printenv TOR_SOCKS_PROXY 2>/dev/null")"
     assert_eq "XvB stats + auto-register wired to the Tor SOCKS (#206/#163)" "$proxy" "$want"
 }
+
+# shellcheck source=tests/integration/lib/xvb-off-dwell.sh
+source "${BASH_SOURCE[0]%/*}/xvb-off-dwell.sh" || return $?
 
 # /metrics through the operator path (#379): curl the Prometheus endpoint THROUGH host-networked
 # Caddy — scheme from DASHBOARD_SECURE, vhost from HOST_IP, pinned to loopback so the box needn't
@@ -226,6 +230,7 @@ assert_current_state() {
     assert_running_state "check" "$BASELINE_CONFIG"
     assert_egress_posture
     assert_xvb_over_tor
+    assert_xvb_off_no_dwell_churn
     assert_metrics_via_caddy
     assert_share_stats_live
     assert_telemetry_tables_present
