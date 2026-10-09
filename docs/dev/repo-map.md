@@ -167,7 +167,8 @@ The mini-stack's `test-boot-health-proxy.sh` renders Caddy against the real dash
 `boot-health-proxy.py` verifies boot-probe accounting and network forgery controls,
 including the loopback upstream supplied by `boot-health-front-proxy.py`.
 The provision reboot leg streams `tests/os/boot-probe-evidence.py` into the deployed
-dashboard to check the current boot marker, header redaction and failure counter;
+dashboard to check the current boot marker, header redaction and zero failures, then
+one failure after an external wrong-password attempt;
 `selftest-boot-probe-evidence.sh` checks its negative controls.
 
 The harness entry points retain their command-line interfaces. Live integration

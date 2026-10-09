@@ -136,7 +136,9 @@ _BSH_CURL=$(sed -n '/    read -r code size <<</,/gate_target.*2>\/dev\/null)/p' 
 for _BSH_HOST in panel.example 192.0.2.5 2001:db8::1; do
     (
         source "$ROOT/os/overlay/pithead-boot-stack-health"
+        # shellcheck disable=SC2034 # read by the extracted production curl below.
         gate_target=$(gate_target_url https "$_BSH_HOST" 443)
+        # shellcheck disable=SC2034 # read by the extracted production curl below.
         gate_resolve_args=()
         gate_env_val() { printf fixture-auth-hash; }
         curl() {
@@ -146,9 +148,9 @@ for _BSH_HOST in panel.example 192.0.2.5 2001:db8::1; do
         }
         eval "$_BSH_CURL"
     )
-    assert_contains "boot curl for $_BSH_HOST connects only to loopback" "$(cat "$_BSH/curl-args")" "::127.0.0.1:"
-    assert_contains "boot curl for $_BSH_HOST bypasses environment proxies" "$(cat "$_BSH/curl-args")" "--noproxy"
-    assert_contains "boot curl for $_BSH_HOST requests the dedicated path" "$(cat "$_BSH/curl-args")" "/.pithead-boot-health"
+    assert_contains "boot curl connects only to loopback" "$(cat "$_BSH/curl-args")" "::127.0.0.1:"
+    assert_contains "boot curl bypasses environment proxies" "$(cat "$_BSH/curl-args")" "--noproxy"
+    assert_contains "boot curl requests the dedicated path" "$(cat "$_BSH/curl-args")" "/.pithead-boot-health"
     assert_contains "boot curl reads its capability from stdin" "$(cat "$_BSH/curl-args")" "@-"
     _BSH_CAP=$(printf 'pithead-boot-health-v1:%s' fixture-auth-hash | sha256sum | cut -d' ' -f1)
     assert_eq "boot capability matches Caddy's domain-separated digest" "$(cat "$_BSH/curl-header")" "X-Pithead-Boot-Probe: $_BSH_CAP"

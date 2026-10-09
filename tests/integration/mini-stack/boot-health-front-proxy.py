@@ -1,6 +1,7 @@
 """Local front proxy fixture: unauthenticated network requests arrive at Caddy on loopback."""
 
 import http.client
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -12,7 +13,7 @@ class FrontProxy(BaseHTTPRequestHandler):
         self.forward()
 
     def forward(self):
-        with http.client.HTTPConnection("127.0.0.1", 8080, timeout=5) as upstream:
+        with closing(http.client.HTTPConnection("127.0.0.1", 8080, timeout=5)) as upstream:
             upstream.request(self.command, self.path, headers=dict(self.headers))
             response = upstream.getresponse()
             body = response.read()

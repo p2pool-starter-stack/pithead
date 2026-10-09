@@ -8,6 +8,14 @@ _phase_provision_reboot() {
     # (#790): derived files are regenerated on every boot by construction, so a stale or broken one must not
     # survive — this is the defect that shipped new code against a days-old Caddyfile on hardware and killed
     # TLS.
+    # Start a controlled log window before the real boot; retain all requests within it.
+    _ssh "truncate -s 0 /data/pithead/data/caddy-logs/access.log" || {
+        bad "could not start the boot-probe access-log window (#3263)"
+        return 1
+    }
+    # Authenticate readiness checks so only the deliberate wrong-password control adds a 401.
+    # shellcheck disable=SC2154,SC2034 # phase locals; dashboard_curl reads dynamic scope.
+    local DASH_USER="$pv_user" DASH_PASS="$pv_pass"
     info "reboot leg — the stack must come back on its own (pithead-boot)"
     _ssh "echo '# corrupted by the harness — a regenerated boot must not serve this' > /data/pithead/Caddyfile" 2>/dev/null ||
         bad "could not corrupt the Caddyfile before the reboot"
@@ -41,7 +49,7 @@ _phase_provision_reboot() {
     local answered=0
     while [ "$tries" -lt 36 ]; do
         # shellcheck disable=SC2154  # shared through the assembled runner scope
-        code=$(curl -ksS -o /dev/null -w '%{http_code}' -m 8 "https://$ip/" 2>/dev/null || true)
+        code=$(dashboard_curl -ksS -o /dev/null -w '%{http_code}' -m 8 --resolve "fixture-next.local:443:$ip" "https://fixture-next.local/" 2>/dev/null || true)
         case "$code" in
         2?? | 3?? | 401 | 403)
             ok "dashboard answers again after the reboot (HTTP $code) — through a REGENERATED Caddyfile"
@@ -57,7 +65,6 @@ _phase_provision_reboot() {
         return 1
     }
     # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
-    assert_appliance_hostname_identity fixture-next "unaided reboot" "$pv_user" "$pv_pass"
     # No unit may be quietly broken (#792 sat visible in --failed for two RCs, unasserted).
     local failed_units
     # Transient healthcheck ephemera excluded: podman drives container healthchecks through
@@ -120,12 +127,26 @@ _phase_provision_reboot() {
         bad "slot never self-committed — grubenv: ${genv:-unreadable}"
         ;;
     esac
-    # Read only this boot's real Caddy log and the deployed dashboard's own counter.
-    if _ssh "podman exec -i dashboard python -" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
-        ok "boot health 401 carries the private marker and is excluded from failed logins (#3263)"
+    # Read this boot's real Caddy log and the deployed dashboard's own counter.
+    if _ssh "podman exec -i dashboard python - 0" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
+        ok "boot health probes count zero failed logins after the real boot (#3263)"
     else
-        bad "boot health marker, capability redaction or failed-login accounting did not verify (#3263)"
+        bad "boot probe marker, redaction or zero failed-login count did not verify (#3263)"
     fi
+    # This request originates outside the guest and deliberately omits the boot capability.
+    local wrong_code
+    wrong_code=$(
+        # shellcheck disable=SC2034 # dashboard_curl reads dynamic scope.
+        local DASH_PASS="${pv_pass}-wrong"
+        dashboard_curl -ksS -o /dev/null -w '%{http_code}' -m 8 --resolve "fixture-next.local:443:$ip" "https://fixture-next.local/"
+    ) || wrong_code=""
+    if [ "$wrong_code" = 401 ] &&
+        _ssh "podman exec -i dashboard python - 1" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
+        ok "one external wrong-password attempt counts one failed login (#3263)"
+    else
+        bad "external wrong-password 401 or single failed-login count did not verify (#3263)"
+    fi
+    assert_appliance_hostname_identity fixture-next "unaided reboot" "$pv_user" "$pv_pass"
     # The miner must return too (#796): its unit lives in /run and died with the reboot, so
     # only pithead-boot's local-miner leg — which runs after the slot commit above — can have
     # brought it back. The cached build makes this a re-render, not a recompile.
