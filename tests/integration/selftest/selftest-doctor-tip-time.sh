@@ -26,6 +26,7 @@ fi
 exit 1
 CLI
 chmod +x "$scratch/doctor"
+echo "== doctor zero-tip probe controls =="
 for case_name in valid old skipped invalid peerless; do
     rc=0
     CASE=$case_name bash "$ROOT/tests/integration/tools/doctor-tip-time.sh" "$scratch/doctor" >"$scratch/log" 2>&1 || rc=$?
