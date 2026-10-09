@@ -54,6 +54,7 @@ fail() {
     git update-ref -d refs/remotes/origin/develop
     git update-ref -d refs/heads/develop
     if migration_old_commit_valid "$old" 2>/dev/null; then fail 'missing develop reference accepted'; fi
+    git update-ref refs/remotes/origin/develop "$base"
 )
 # Refuse an invalid selected source before the old guest's provisioning or seed.
 (
@@ -70,7 +71,10 @@ fail() {
     if migration_prepare_old; then fail 'candidate branch baseline accepted'; fi
 )
 # Exercise successful old provisioning with the actual wizard POST and form parser.
+# Own the Git refs too: GitHub's checkout need not contain origin/develop.
 (
+    cp "$HERE/../../VERSION" "$T/repo/VERSION"
+    cd "$T/repo"
     OS_RUN_SUITE=1
     # shellcheck source=tests/os/phases/update.sh
     source "$HERE/phases/update.sh"
@@ -114,7 +118,7 @@ fail() {
         case "$1" in
         'cat /opt/pithead/BUILD_COMMIT') git rev-parse origin/develop ;;
         'cat /opt/pithead/VERSION') cat VERSION ;;
-        *MONERO_MODE*) : ;;
+        jq\ -e*) bash -c "${1//\/data\/pithead\/config.json/$T/config.json}" ;;
         *) fail 'unexpected old preparation query' ;;
         esac
     }
@@ -150,7 +154,17 @@ PYFIX
     tari_commit_verdict() { :; }
     ok() { :; }
     bad() { fail "$*"; }
+    printf '{"monero":{"mode":"local"}}' >"$T/config.json"
     migration_prepare_old || fail 'explicit local baseline preparation failed'
+    for config in '{"monero":{"mode":"remote"}}' '{}' '{broken'; do
+        printf '%s' "$config" >"$T/config.json"
+        if migration_prepare_old 2>/dev/null; then fail 'non-local or unreadable persisted config accepted'; fi
+    done
+    rm "$T/config.json"
+    if migration_prepare_old 2>/dev/null; then fail 'missing persisted config accepted'; fi
+    mkdir "$T/config.json"
+    if migration_prepare_old 2>/dev/null; then fail 'non-file persisted config accepted'; fi
+    rmdir "$T/config.json"
 )
 # Missing recovery input must refuse before configuration capture or mutation.
 (

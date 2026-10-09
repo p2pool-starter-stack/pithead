@@ -15,7 +15,10 @@ After the earlier provision legs, the battery provisions that disposable old
 guest with explicit local Monero/Tari wizard answers, including the reserved
 Tari wallet. This avoids an old wizard capacity default of Tari off omitting
 the wallet before the later full-config preview. Ordinary capture callers keep
-the wizard's defaults. It enables the guest miner, waits
+the wizard's defaults. After apply, the host's persisted `config.json` must
+explicitly report local Monero; a missing, malformed or remote-mode config
+fails before seeding. The fixture does not infer mode from an absent dotenv
+key. It enables the guest miner, waits
 for an existing snapshot, stops the old dashboard and seeds its release through
 that inspected image's `StateManager.save_snapshot`. It records the dashboard
 image ID. The writer runs as UID:GID 1000:1000 against its existing database

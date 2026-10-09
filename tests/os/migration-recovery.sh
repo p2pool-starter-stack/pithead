@@ -47,7 +47,7 @@ migration_prepare_old() {
     proposed=$(printf %s "$live" | jq -c '.dashboard.host="fixture-next" | .local_miner.enabled=true | .xvb.enabled=false | .monero.mode="local" | .tari.mode="local"') || return 1
     sensitive_preview "$(dashboard_config_body "$proposed")" || return 1
     result=$(approval_commit "$APPROVAL_REQUEST_ID") && tari_commit_verdict "$result" || return 1
-    _ssh "test \"\$(sed -n 's/^MONERO_MODE=//p' /data/pithead/.env)\" = local" || return 1
+    _ssh "jq -e '.monero.mode == \"local\"' /data/pithead/config.json >/dev/null" || return 1
     ok "verified pre-fix baseline is provisioned with local chains and a miner"
 }
 
