@@ -2,7 +2,13 @@
 # The live probe must reject old behavior, skipped checks and invalid JSON.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
-scratch=$(mktemp -d "${TMPDIR:?}/doctor-tip-selftest.XXXXXX")
+# GitHub provides RUNNER_TEMP even when TMPDIR is unset; other hosts use mktemp's default.
+if [ -z "${TMPDIR:-}" ] && [ -n "${RUNNER_TEMP:-}" ]; then
+    export TMPDIR="$RUNNER_TEMP"
+fi
+scratch=$(mktemp -d)
+# The live probe requires a supplied scratch root, owned and cleaned by this fixture.
+export TMPDIR="$scratch"
 trap 'rm -rf -- "$scratch"' EXIT
 cat >"$scratch/doctor" <<'CLI'
 #!/usr/bin/env bash
