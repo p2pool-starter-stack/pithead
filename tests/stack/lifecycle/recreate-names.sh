@@ -72,3 +72,25 @@ st_out=$(
 assert_contains "the recreate succeeds on the retry pass" "$st_out" "rc=0"
 assert_contains "the retry is announced" "$st_out" "retrying once"
 assert_eq "compose up ran exactly twice" "$(cat "$ST/ups")" "2"
+
+rm -f "$ST/ups"
+st_out=$(
+    cd "$ST" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    sleep() { :; }
+    docker() {
+        case "$*" in
+        "compose up"*)
+            echo $(($(cat ups 2>/dev/null || echo 0) + 1)) >ups
+            echo "timed out waiting for file /run/libpod/exits/2dcbcabe8329" >&2
+            return 1
+            ;;
+        esac
+    }
+    compose_up_checked -d --remove-orphans 2>&1
+    echo "rc=$?"
+)
+assert_contains "a stop timeout that repeats stays fatal" "$st_out" "rc=1"
+assert_eq "and compose up is not tried a third time" "$(cat "$ST/ups")" "2"

@@ -353,7 +353,7 @@ apply() {
         warn "Fix the cause shown above, then re-run '$0 apply' (it will retry the recreate) — or '$0 up'."
         # A recreate that failed mid-stop leaves the dashboard stopped, and with it the terminal
         # result the operator is waiting on (#3300). Bring only it back; the failure still stands.
-        compose_up_checked -d --no-deps dashboard >/dev/null 2>&1 ||
+        compose_up_checked -d --no-deps dashboard >/dev/null ||
             warn "The dashboard could not be restarted either — run '$0 up' to bring it back."
         exit 1 # leave $apply_marker in place so the retry re-attempts the recreate
     fi
