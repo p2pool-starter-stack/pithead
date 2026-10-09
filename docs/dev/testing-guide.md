@@ -190,19 +190,19 @@ now baked into the tests.
 
 ## Native browser regressions
 
-Install the locked Playwright package and its Chromium build, then run the browser suite:
+Install the locked Playwright runner and browsers, then run the suite:
 
 ```bash
 npm ci --prefix dashboard/tests/browser --ignore-scripts
-dashboard/tests/browser/node_modules/.bin/playwright install chromium
+dashboard/tests/browser/node_modules/.bin/playwright install chromium firefox webkit
 make test-browser
 ```
 
-On a fresh Linux test runner, use `playwright install --with-deps chromium` to install the
-browser's system libraries as well. The separate `browser.yml` workflow does this; pure
-frontend tests remain dependency-free. Missing browser dependencies fail the browser suite.
-The focus regression uses the production OS-update component and native dialog with a local
-refused-check fixture. The backup regression serves the production backup component over
+On Linux, add `--with-deps` to the install command. The separate `browser.yml` workflow
+installs these dependencies and runs Chromium, Firefox, WebKit and mobile Chromium.
+Missing dependencies fail the suite. Pure frontend tests remain dependency-free.
+See [browser testing](browser-testing.md) for focused runs, failure artifacts and coverage limits.
+The backup regression serves the production backup component over
 self-signed HTTPS, accepts the browser's certificate interstitial, and records the exact Chromium
 version in both fresh-profile and explicitly disabled-extension runs. CI repeats the backup tests
 with Google Chrome for Testing 141.0.7390.37; its executable can also be selected with
@@ -212,3 +212,7 @@ saved kit, and verifies gzip/tar integrity and member bytes. A client-blocked tr
 the kit available for retry without another backup request; an interrupted transfer must report
 a failed download and permit a complete retry. These fixtures do not contact an
 appliance, prove host backup creation, or identify an operator's extension or managed policy.
+
+The configuration draft browser regression exercises valid edits and invalid JSON through
+Simple, Advanced and Backup, dirty markers, reset, failed apply and successful apply. The
+provision phase also fetches the shipped editor modules through the appliance dashboard.
