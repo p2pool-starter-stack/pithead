@@ -508,7 +508,7 @@ async def handle_audit_log(request):
 
 
 # How deep the access log is read when the operator is NAVIGATING it (#823) vs the default
-# glance. The tail read is byte-bounded either way (audit_service._TAIL_BYTES) — this only stops
+# glance. Retained reads are byte-bounded (service/access_log.py) — this only stops
 # a filtered view from being quietly truncated to the glance depth before the filter even runs.
 _ACCESS_NAV_LIMIT = 1000
 
