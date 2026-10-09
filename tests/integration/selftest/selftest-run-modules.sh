@@ -141,11 +141,25 @@ pithead() {
         'OK   dashboard answers on 127.0.0.1:8000'
 }
 env_on_box() { [ "$1" = TOR_EGRESS_FIREWALL ] && echo true; }
+HERE=$ROOT
+IT_PITHEAD=./pithead
+rx() {
+    if [ "$1" = 'cat config.json' ]; then
+        printf '%s\n' '{"monero":{"mode":"local"}}'
+    else
+        cat >/dev/null
+        return "${TIP_PROBE_RC:-0}"
+    fi
+}
 doctor_checks_failed=0
 assert_rc() { [ "$2" = "$3" ] || doctor_checks_failed=$((doctor_checks_failed + 1)); }
 assert_contains() { [[ "$2" == *"$3"* ]] || doctor_checks_failed=$((doctor_checks_failed + 1)); }
 assert_doctor_ok
 [ "$doctor_checks_failed" -eq 0 ] || exit 1
+TIP_PROBE_RC=1
+assert_doctor_ok >/dev/null
+[ "$doctor_checks_failed" -eq 1 ] || exit 1
+unset TIP_PROBE_RC
 
 detail="$({
     source "$ROOT/lib.sh"
