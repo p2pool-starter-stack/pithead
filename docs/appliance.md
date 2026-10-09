@@ -595,9 +595,10 @@ the recovery page discards its passphrase, and the host removes its copy after i
 short expiry window. Without the passphrase, the archive cannot be opened.
 
 If Chrome blocks the archive, check **Downloads** for the reason and verify the dashboard
-certificate. Save the kit and keep the recovery page open. Retry the existing archive link in
-a clean Chrome profile with no extensions, signing in to the dashboard in that profile as
-needed. Do not create another backup to retry the download. If a managed policy blocks it,
+certificate. Save the kit, keep the recovery page open, and copy its archive link. Open a
+clean Chrome profile with no extensions, verify the dashboard certificate and sign in there,
+then open the copied archive link. Do not create another backup to retry the download.
+If a managed policy blocks it,
 ask its administrator to approve downloads from the appliance origin or provide another
 approved way to save the encrypted archive; do not bypass the policy. **Backup created**
 means the file exists on the host, not that a complete off-machine copy has been saved.
