@@ -215,6 +215,12 @@ floor-fallback leg stages separately from `os-update` (`selftest-floor-staging.s
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
 
+The e2e hardening phase runs `tests/integration/lib/access_log_retention.py`
+against real Caddy requests and the deployed access API. It verifies wrong-password
+failures past the old tail limit and native gzip rotation;
+`tests/integration/selftest/selftest-access-log-retention.sh` runs its Docker-free
+undercount and failure controls.
+
 ## What stays at the root
 
 - Runtime contracts: generated `pithead`, `pithead-completion.bash`,

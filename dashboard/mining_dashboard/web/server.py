@@ -516,7 +516,7 @@ _ACCESS_NAV_LIMIT = 1000
 async def handle_access_log(request):
     """Recent dashboard accesses + failed-login count, from Caddy's JSON access log. Always
     registered (Caddy always writes the log); behind the same Caddy basic_auth as every route.
-    Accepts the #823 navigation params; the failure counters always describe the whole tail,
+    Accepts the #823 navigation params; the failure counters always describe the bounded retained records,
     never the filtered slice."""
     try:
         frm, to, q = _log_filters(request)
