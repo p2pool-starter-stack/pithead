@@ -128,7 +128,7 @@ _phase_provision_reboot() {
         ;;
     esac
     # Read this boot's real Caddy log and the deployed dashboard's own counter.
-    if _ssh "podman exec -i dashboard python - 0" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
+    if _ssh "podman exec -i dashboard python - 0 2>&1" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
         ok "boot health probes count zero failed logins after the real boot (#3263)"
     else
         bad "boot probe marker, redaction or zero failed-login count did not verify (#3263)"
@@ -140,8 +140,12 @@ _phase_provision_reboot() {
         local DASH_PASS="${pv_pass}-wrong"
         dashboard_curl -ksS -o /dev/null -w '%{http_code}' -m 8 --resolve "fixture-next.local:443:$ip" "https://fixture-next.local/"
     ) || wrong_code=""
+    case "$wrong_code" in
+    [0-9][0-9][0-9]) info "external wrong-password response: HTTP $wrong_code (#3263)" ;;
+    *) info "external wrong-password response: unavailable (#3263)" ;;
+    esac
     if [ "$wrong_code" = 401 ] &&
-        _ssh "podman exec -i dashboard python - 1" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
+        _ssh "podman exec -i dashboard python - 1 2>&1" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
         ok "one external wrong-password attempt counts one failed login (#3263)"
     else
         bad "external wrong-password 401 or single failed-login count did not verify (#3263)"

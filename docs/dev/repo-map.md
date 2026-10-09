@@ -169,7 +169,9 @@ including the loopback upstream supplied by `boot-health-front-proxy.py`.
 The provision reboot leg streams `tests/os/boot-probe-evidence.py` into the deployed
 dashboard to check the current boot marker, header redaction and zero failures, then
 one failure after an external wrong-password attempt;
-`selftest-boot-probe-evidence.sh` checks its negative controls.
+`selftest-boot-probe-evidence.sh` checks its negative controls and diagnostic redaction.
+The checks retain assertion errors and bounded counts in the battery output; raw request,
+header and user values are omitted.
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
