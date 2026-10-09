@@ -37,7 +37,7 @@ migration_prepare_old() {
         return 1
     }
     ok "selected old BUILD_COMMIT $old_commit is an ancestor of base $MIGRATION_BASE_REF $MIGRATION_BASE_COMMIT, outside candidate PR $(git rev-parse HEAD); shared VERSION $old_version"
-    _wizard_provision_capture 0 || return 1
+    _wizard_provision_capture 0 local || return 1
     # The captured old-image login replaces the credentials of the disposable initial guest.
     # shellcheck disable=SC2034 # phase-scoped credentials are used by all later legs.
     pv_user="$DASH_USER" pv_pass="$DASH_PASS"

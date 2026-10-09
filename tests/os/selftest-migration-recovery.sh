@@ -69,6 +69,89 @@ fail() {
     _wizard_provision_capture() { fail 'PR source reached provisioning'; }
     if migration_prepare_old; then fail 'candidate branch baseline accepted'; fi
 )
+# Exercise successful old provisioning with the actual wizard POST and form parser.
+(
+    OS_RUN_SUITE=1
+    # shellcheck source=tests/os/phases/update.sh
+    source "$HERE/phases/update.sh"
+    SERIAL="$T/serial"
+    printf 'pit-ABC123\n' >"$SERIAL"
+    HARNESS_WALLET=fixture-monero HARNESS_TARI=fixture-tari ip=fixture
+    _wait_setup_page() { :; }
+    curl() {
+        local cookie="" body="" url=""
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+            -c)
+                cookie=$2
+                shift
+                ;;
+            --data)
+                body=$2
+                shift
+                ;;
+            https://*) url=$1 ;;
+            esac
+            shift
+        done
+        case "$url" in
+        */auth) printf 'wizard_session\n' >"$cookie" ;;
+        */submit)
+            printf '%s' "$body" >"$T/form"
+            printf 200
+            ;;
+        */api/handoff) printf '{"username":"fixture","password":"fixture"}' ;;
+        */handoff-ack) : ;;
+        *) fail 'unexpected wizard request' ;;
+        esac
+    }
+    _wizard_provision_capture 0
+    ! grep -q 'tari_mode=' "$T/form" || fail 'ordinary capture changed wizard defaults'
+    PITHEAD_OLD_IMAGE="$T/image"
+    _vm_boot_disk() { :; }
+    _wait_ssh() { :; }
+    _ssh() {
+        case "$1" in
+        'cat /opt/pithead/BUILD_COMMIT') git rev-parse origin/develop ;;
+        'cat /opt/pithead/VERSION') cat VERSION ;;
+        *MONERO_MODE*) : ;;
+        *) fail 'unexpected old preparation query' ;;
+        esac
+    }
+    provisioning_settled() { :; }
+    provisioning_setup_failed() { return 1; }
+    sensitive_live_config() {
+        python3 - "$HERE" "$T/form" <<'PYFIX'
+import importlib.util, json, sys
+from pathlib import Path
+from urllib.parse import parse_qs
+root = Path(sys.argv[1]).parents[1] / "dashboard/mining_dashboard"
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+form = load("form", root / "wizard/form.py")
+documents = load("documents", root / "config/documents.py")
+fields = {k: v[0] for k, v in parse_qs(Path(sys.argv[2]).read_text()).items()}
+assert fields["tari_mode"] == "local"
+config = form.build_config(fields, tari_default="off")
+assert config["tari"]["wallet_address"] == "fixture-tari"
+documents.reject_placeholders(config)
+print(json.dumps(config))
+PYFIX
+    }
+    dashboard_config_body() { jq -c '{config:.}' <<<"$1"; }
+    sensitive_preview() {
+        jq -e '.config.tari.mode == "local" and .config.tari.wallet_address == "fixture-tari"' <<<"$1" >/dev/null
+        APPROVAL_REQUEST_ID=fixture
+    }
+    approval_commit() { printf '{"status":"applied"}'; }
+    tari_commit_verdict() { :; }
+    ok() { :; }
+    bad() { fail "$*"; }
+    migration_prepare_old || fail 'explicit local baseline preparation failed'
+)
 # Missing recovery input must refuse before configuration capture or mutation.
 (
     unset PITHEAD_OS_TARI_GRPC_PORT
