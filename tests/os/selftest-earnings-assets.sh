@@ -41,7 +41,7 @@ if phase_provision_earnings_assets fixture-user ''; then
     exit 1
 fi
 [ "$passes" = 0 ] && [ "$failures" = 1 ]
-control=$(mktemp -d "${TMPDIR:?}/earnings-assets.XXXXXX")
+control=$(mktemp -d -t earnings-assets.XXXXXX)
 trap 'rm -rf "$control"' EXIT
 mkdir -p "$control/tests/os" "$control/dashboard/mining_dashboard/web/static/app"
 SCRIPT_DIR="$control/tests/os"
