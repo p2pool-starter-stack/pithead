@@ -149,6 +149,10 @@ export class ConfigView extends Component {
   componentDidMount() {
     this.load();
   }
+  componentDidUpdate(_previousProps, { editText, pristine }) {
+    const dirty = this.state.editText !== this.state.pristine;
+    if (dirty !== (editText !== pristine)) this.props.onDirtyChange?.(dirty);
+  }
   async load() {
     try {
       const res = await fetch("/api/config");
@@ -289,7 +293,8 @@ export class ConfigView extends Component {
       const out = restarting
         ? await this.poll(id, "previewed")
         : await controlCommitResult(res, id, this.poll.bind(this));
-      this.setState({ phase: "done", result: out });
+      const pristine = out.status === "applied" ? this.state.editText : this.state.pristine;
+      this.setState({ phase: "done", result: out, pristine });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
     }
@@ -439,7 +444,7 @@ export class ConfigView extends Component {
         </div>
         <p class="sr-only" role="status" aria-live="polite">${phase === "previewing" ? "Previewing changes…" : ""}</p>
         ${
-          phase === "confirm" || phase === "committing"
+          this.props.active !== false && (phase === "confirm" || phase === "committing")
             ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${preview} confirmText=${confirmText}
                   onConfirmText=${(t) => this.setState({ confirmText: t })}
                   payoutSuffixes=${payoutSuffixes}
