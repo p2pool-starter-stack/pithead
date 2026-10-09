@@ -5,9 +5,13 @@ import { resolve, sep } from "node:path";
 import { test } from "node:test";
 import { chromium } from "playwright";
 
-const staticRoot = resolve(process.env.PITHEAD_BROWSER_STATIC ||
-  new URL("../../mining_dashboard/web/static/", import.meta.url).pathname);
-const state = JSON.parse(await readFile(new URL("../frontend/fixtures/state.json", import.meta.url)));
+const staticRoot = resolve(
+  process.env.PITHEAD_BROWSER_STATIC ||
+    new URL("../../mining_dashboard/web/static/", import.meta.url).pathname,
+);
+const state = JSON.parse(
+  await readFile(new URL("../frontend/fixtures/state.json", import.meta.url)),
+);
 state.control_enabled = false;
 const config = {
   dashboard: { energy: { cost_per_kwh: 0.17 } },
@@ -25,7 +29,9 @@ window.setSyncing = (syncing) => { state.syncing = syncing; draw(); };
 draw();
 </script></body></html>`;
 
-test("a configuration draft survives a synchronization screen and keeps its marker", { timeout: 60000 }, async (t) => {
+test("a configuration draft survives a synchronization screen and keeps its marker", {
+  timeout: 60000,
+}, async (t) => {
   let reads = 0;
   const server = createServer(async (req, res) => {
     if (req.url === "/") {
@@ -34,7 +40,13 @@ test("a configuration draft survives a synchronization screen and keeps its mark
     }
     if (req.url === "/api/control/preview") {
       res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify({id:"sync-preview",status:"previewed",changes:[{msg:"Energy cost changed"}]}));
+      return res.end(
+        JSON.stringify({
+          id: "sync-preview",
+          status: "previewed",
+          changes: [{ msg: "Energy cost changed" }],
+        }),
+      );
     }
     if (req.url === "/api/config") {
       reads++;
@@ -43,26 +55,40 @@ test("a configuration draft survives a synchronization screen and keeps its mark
     }
     const path = resolve(staticRoot, "." + req.url.replace(/^\/static/, ""));
     if (!req.url.startsWith("/static/") || !path.startsWith(staticRoot + sep)) {
-      res.writeHead(404); return res.end();
+      res.writeHead(404);
+      return res.end();
     }
     try {
       res.setHeader("Content-Type", "text/javascript");
       res.end(await readFile(path));
-    } catch { res.writeHead(404); res.end(); }
+    } catch {
+      res.writeHead(404);
+      res.end();
+    }
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  t.after(() => { server.closeAllConnections(); return new Promise((r) => server.close(r)); });
+  t.after(() => {
+    server.closeAllConnections();
+    return new Promise((r) => server.close(r));
+  });
   const browser = await chromium.launch();
   t.after(() => browser.close());
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
-  const nav = page.getByRole("navigation", {name:"View"});
-  const marker = () => nav.getByRole("button", {name:"Configuration — Unsaved changes",exact:true});
+  const nav = page.getByRole("navigation", { name: "View" });
+  const marker = () =>
+    nav.getByRole("button", { name: "Configuration — Unsaved changes", exact: true });
   const editor = page.locator(".config-view textarea");
-  await page.locator(".config-view summary").filter({hasText:"the configuration this page sends"}).click();
-  await page.locator(".config-view summary").filter({hasText:/^Energy$/}).click();
+  await page
+    .locator(".config-view summary")
+    .filter({ hasText: "the configuration this page sends" })
+    .click();
+  await page
+    .locator(".config-view summary")
+    .filter({ hasText: /^Energy$/ })
+    .click();
   await page.locator('.config-view input[type="number"]').fill("0.18");
   await marker().waitFor();
   const draft = await editor.inputValue();
@@ -73,21 +99,29 @@ test("a configuration draft survives a synchronization screen and keeps its mark
   await marker().waitFor();
   assert.equal(await editor.inputValue(), draft);
   assert.equal(reads, 1, "a sync transition must not reload and overwrite the candidate");
-  await page.getByRole("button", {name:"Save & preview changes"}).click();
-  await page.getByRole("dialog", {name:"Review changes"}).waitFor();
+  await page.getByRole("button", { name: "Save & preview changes" }).click();
+  await page.getByRole("dialog", { name: "Review changes" }).waitFor();
   await page.evaluate(() => window.setSyncing(true));
-  assert.equal(await page.locator("dialog[open]").count(), 0, "the review dialog must close while the sync screen shows");
+  assert.equal(
+    await page.locator("dialog[open]").count(),
+    0,
+    "the review dialog must close while the sync screen shows",
+  );
   await page.evaluate(() => window.setSyncing(false));
-  await page.getByRole("dialog", {name:"Review changes"}).waitFor();
-  await page.getByRole("button", {name:"Cancel",exact:true}).click();
+  await page.getByRole("dialog", { name: "Review changes" }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await marker().waitFor();
   assert.equal(await editor.inputValue(), draft);
-  await page.getByRole("button", {name:"Simple",exact:true}).click();
-  await page.locator("#dashboard-view .grid-section-label").first().waitFor({state:"attached"});
+  await page.getByRole("button", { name: "Simple", exact: true }).click();
+  await page.locator("#dashboard-view .grid-section-label").first().waitFor({ state: "attached" });
   await page.evaluate(() => window.setSyncing(true));
-  assert.equal(await page.locator("#dashboard-view .grid-section-label").count(), 0, "the cards are not rendered behind the sync screen");
+  assert.equal(
+    await page.locator("#dashboard-view .grid-section-label").count(),
+    0,
+    "the cards are not rendered behind the sync screen",
+  );
   await page.evaluate(() => window.setSyncing(false));
-  await page.locator("#dashboard-view .grid-section-label").first().waitFor({state:"attached"});
+  await page.locator("#dashboard-view .grid-section-label").first().waitFor({ state: "attached" });
   await marker().waitFor();
   assert.deepEqual(errors, []);
 });
