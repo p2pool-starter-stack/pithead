@@ -63,7 +63,8 @@ phase_provision_dashboard_recovery() { # <captured-dashboard-user> <captured-das
         [[ "$components" == *'onDirtyChange=${this.onConfigDirty}'* ]] &&
         [[ "$components" == *' — Unsaved changes'* ]] &&
         [[ "$configview" == *'this.props.onDirtyChange?.(dirty)'* ]] &&
-        [[ "$configview" == *'out.status === "applied" ? { pristine: this.state.editText }'* ]]; then
+        [[ "$configview" == *'const pristine = out.status === "applied" ? this.state.editText : this.state.pristine'* ]] &&
+        [[ "$configview" == *'this.setState({ phase: "done", result: out, pristine })'* ]]; then
         ok "served Configuration preserves internal navigation drafts and marks unsaved changes (#3264)"
     else
         bad "served Configuration lacks draft preservation or unsaved changes tracking (#3264)"
