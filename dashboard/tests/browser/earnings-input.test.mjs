@@ -4,13 +4,17 @@ test("earnings calculator converts grouped thousands and rejects malformed hashr
   page,
   ui,
 }) => {
-  await ui.mount(`import { EarningsCard } from '/static/app/earnings.mjs';
+  await ui.mount(`
+// Match the production Advanced view so its card is visible under the real stylesheet.
+document.body.classList.add('mode-advanced');
+import { EarningsCard } from '/static/app/earnings.mjs';
 render(html\`<\${EarningsCard} earnings=\${{
   available: true, p2pool_hr: 1000, p2pool_hr_str: '1000 H/s',
   coeff_day: 0.001, pool_difficulty: 1000,
 }} />\`, document.getElementById('fixture'));
 `);
   const input = page.getByRole("textbox", { name: "Your P2Pool Hashrate" });
+  await expect(input).toBeVisible();
   const coins = page.locator("#epanel-monero .est-table tbody td.c-accent");
   const expected = ["1.0000 XMR", "30.0000 XMR", "365.0000 XMR"];
   async function expectCoins(values) {
