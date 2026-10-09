@@ -48,6 +48,7 @@ pithead() {
 }
 _lan_probe() { echo "probe $*" >>"$TRACE"; }
 assert_lan_guard_timer_flush() { echo "timer $*" >>"$TRACE"; }
+assert_lan_guard_crash_restart() { echo "crash $*" >>"$TRACE"; }
 assert_lan_guard_boot_restore() { echo "boot-restore $*" >>"$TRACE"; }
 assert_lan_guard_boot_failure() { echo "boot-failure $*" >>"$TRACE"; }
 capture_artifacts() { echo artifacts >>"$TRACE"; }
@@ -83,6 +84,7 @@ probe 10.254.254 18083
 probe 198.51.100 18142
 probe 10.254.254 18142
 timer 18081 18083 18142
+crash 18081 18083 18142
 boot-restore 18081 18083 18142
 boot-failure 18081 18083 18142
 pithead apply -y" ] || {

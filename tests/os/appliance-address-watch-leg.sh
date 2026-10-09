@@ -55,6 +55,21 @@ phase_provision_dashboard_recovery() { # <captured-dashboard-user> <captured-das
         bad "served dashboard lacks the sustained poll failure recovery trigger (#3242)"
         rc=1
     fi
+    local components configview
+    components=$(address_watch_dashboard_asset app/components.mjs) || components=""
+    configview=$(address_watch_dashboard_asset config/configview.mjs) || configview=""
+    if [[ "$components" == *'this.configVisited'* ]] &&
+        [[ "$components" == *'hidden=${!configView}'* ]] &&
+        [[ "$components" == *'onDirtyChange=${this.onConfigDirty}'* ]] &&
+        [[ "$components" == *' — Unsaved changes'* ]] &&
+        [[ "$configview" == *'this.props.onDirtyChange?.(dirty)'* ]] &&
+        [[ "$configview" == *'const pristine = out.status === "applied" ? this.state.editText : this.state.pristine'* ]] &&
+        [[ "$configview" == *'this.setState({ phase: "done", result: out, pristine })'* ]]; then
+        ok "served Configuration preserves internal navigation drafts and marks unsaved changes (#3264)"
+    else
+        bad "served Configuration lacks draft preservation or unsaved changes tracking (#3264)"
+        rc=1
+    fi
     command=$(printf '%s' "$module" | sed -n 's/.*<code>\(openssl x509[^<]*\)<\/code>.*/\1/p')
     # Execute only the documented command, never arbitrary text obtained over HTTP.
     if [ "$command" = 'openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -fingerprint -sha256' ] &&

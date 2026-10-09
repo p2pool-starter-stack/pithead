@@ -191,7 +191,7 @@ integration_expected=$(
         ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh \
         ! -name remote-endpoints.sh ! -name wallet-fixture.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh \
-        ! -name miner-connection.sh -print |
+        ! -name miner-connection.sh ! -name xvb-off-dwell.sh -print |
         sed 's|^tests/integration/||'
 )
 integration_expected=$(printf '%s\n' "$integration_expected" | sort)

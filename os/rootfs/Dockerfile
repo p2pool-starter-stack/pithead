@@ -33,7 +33,7 @@
 # `+dirty` suffix, because raising a module edits go.mod and Go stamps that truthfully. It is also
 # why the tree state below says dirty: this binary IS built from a modified tree, and a build that
 # claimed otherwise would be lying about the provenance this paragraph exists to describe.
-FROM golang:1.26.8-trixie@sha256:bdca99a00bc16590cb1a0bb4e698f5fc5d6a64e4d5eef13d9f18a0ee08e5fa65 AS gobuild
+FROM golang:1.26.9-trixie@sha256:f89535b7caea67fa9ff0ba009894bff8f3be915e49cb635477c8ce04e045db5d AS gobuild
 
 ARG COMPOSE_VERSION=v5.5.1
 ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de

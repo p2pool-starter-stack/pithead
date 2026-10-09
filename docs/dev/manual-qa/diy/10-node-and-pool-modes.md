@@ -88,7 +88,7 @@ Only a first install waits for both chains.
 
 3. Run `sudo reboot` and touch nothing.
 4. When the node machine is back, look at the second machine's dashboard.
-5. On the node machine, run `docker kill monerod` and wait 5 minutes.
+5. On the node machine, run `docker kill monerod` and wait 3 minutes.
 6. Run `./pithead doctor`.
 7. Finally, run `./pithead up`.
 
@@ -98,9 +98,11 @@ Only a first install waits for both chains.
 - The restart policy is `no`.
 - After the reboot, monerod starts by itself, without `./pithead up`.
 - The second machine reconnects and mines within minutes.
-- After `docker kill`, Docker does not restart monerod.
-- doctor and the dashboard say that monerod is down, and the node-down alert arrives.
-- `./pithead up` brings it back, and the second machine mines again.
+- After `docker kill`, Docker itself does not restart monerod; `pithead-lan.timer` starts it
+  within two minutes (`lan-guard:node-restarted` in `journalctl -u pithead-lan.service`) and doctor is clean.
+- With the LAN rule flushed first on a test host, a killed monerod stays down and doctor says so;
+  `./pithead up` brings it back.
+- The second machine mines again.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -179,7 +181,8 @@ Per #3091, an unreachable Monero node, local or remote, always rejects workers:
    cp config.json config.json.qa
    ```
 
-2. Remove its `dashboard.auth` and `dashboard.control` blocks.
+2. Disable `dashboard.onion.enabled` if it is on, then remove the `dashboard.auth` and
+   `dashboard.control` blocks.
 3. Run `./pithead apply`, and answer `y` to what it asks.
 4. Open the dashboard in a private window.
 5. Put the copy back and run `./pithead apply`.
@@ -191,6 +194,10 @@ Per #3092:
 - No login prompt appears.
 - The **Connect a miner** block shows the LAN pool URL and the [stratum](../README.md#glossary) password, or `No stratum password`, to anyone on the LAN. The owner accepts that risk.
 
-A dashboard published as an [onion](../README.md#glossary) always has a login: the last row of [Broken configs](../sample-configs.md#broken-configs) is that refusal.
+A dashboard published as an [onion](../README.md#glossary) always has a login: the last row of
+[Broken configs](../sample-configs.md#broken-configs) tests that read-only refusal with
+`apply --dry-run`. Normal apply generates a login
+password before confirmation; the separate [password-generation cases](../sample-configs.md#onion-password-generation-on-normal-apply)
+check cancellation and acceptance.
 
 **Record:** PASS, FAIL or N/A in the results sheet.

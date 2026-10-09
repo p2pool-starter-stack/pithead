@@ -202,3 +202,17 @@ On Linux, add `--with-deps` to the install command. The separate `browser.yml` w
 installs these dependencies and runs Chromium, Firefox, WebKit and mobile Chromium.
 Missing dependencies fail the suite. Pure frontend tests remain dependency-free.
 See [browser testing](browser-testing.md) for focused runs, failure artifacts and coverage limits.
+The backup regression serves the production backup component over
+self-signed HTTPS, accepts the browser's certificate interstitial, and records the exact Chromium
+version in both fresh-profile and explicitly disabled-extension runs. CI repeats the backup tests
+with Google Chrome for Testing 141.0.7390.37; its executable can also be selected with
+`PITHEAD_BACKUP_BROWSER_EXECUTABLE`. It saves the kit and a
+22 MiB encrypted fixture through the GUI, compares archive length and SHA-256, decrypts with the
+saved kit, and verifies gzip/tar integrity and member bytes. A client-blocked transfer must leave
+the kit available for retry without another backup request; an interrupted transfer must report
+a failed download and permit a complete retry. These fixtures do not contact an
+appliance, prove host backup creation, or identify an operator's extension or managed policy.
+
+The configuration draft browser regression exercises valid edits and invalid JSON through
+Simple, Advanced and Backup, dirty markers, reset, failed apply and successful apply. The
+provision phase also fetches the shipped editor modules through the appliance dashboard.

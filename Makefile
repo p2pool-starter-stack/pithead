@@ -16,6 +16,7 @@ test-frontend: pithead ## Frontend logic tests with Node's built-in runner (#632
 
 test-browser: ## Cross-browser GUI regressions (install locked dependencies first; see testing guide)
 	cd dashboard/tests/browser && ./node_modules/.bin/playwright test
+	node --test dashboard/tests/browser/backup-download.test.mjs
 
 test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% on changed lines (run after test-dashboard)
 	bash scripts/lint/patch-coverage.sh
@@ -55,6 +56,7 @@ test-tools: ## Bounded-log sanitizer and CI workflow guards (no services or depe
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
+	python3 tests/stack/standalone/test_tor_saturated_fixture.py
 	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'

@@ -96,6 +96,9 @@ if in_block 1; then
     # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-onion.sh" && domain_ran test-dashboard-onion.sh "$_d0" "$?" || domain_ran test-dashboard-onion.sh "$_d0" "$?"
 
+    # shellcheck source=tests/stack/dashboard/test-onion-apply-password.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-onion-apply-password.sh" && domain_ran test-onion-apply-password.sh "$_d0" "$?" || domain_ran test-onion-apply-password.sh "$_d0" "$?"
+
     # Regression (#1330): test-dashboard-onion.sh passes alone; only a separate `bash`, not a subshell, proves it.
     # shellcheck disable=SC1090,SC2015  # STACK/HERE paths are dynamic by design
     bash -c '
@@ -148,6 +151,7 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-backup-recovery.sh" && domain_ran test-backup-recovery.sh "$_d0" "$?" || domain_ran test-backup-recovery.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-backup-stop-scope.sh" && domain_ran test-backup-stop-scope.sh "$_d0" "$?" || domain_ran test-backup-stop-scope.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-cli-restore-hardening.sh" && domain_ran test-cli-restore-hardening.sh "$_d0" "$?" || domain_ran test-cli-restore-hardening.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/test-restore-configless.sh" && domain_ran test-restore-configless.sh "$_d0" "$?" || domain_ran test-restore-configless.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-install-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-install-verify.sh" && domain_ran test-install-verify.sh "$_d0" "$?" || domain_ran test-install-verify.sh "$_d0" "$?"
 fi

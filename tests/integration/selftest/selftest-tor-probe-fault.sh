@@ -78,3 +78,40 @@ for flag in 0 unset; do
         test "$FAIL" -eq 0
     )
 done
+
+echo "== Lifecycle recovery proof rejects false success and unexpected-abort advice =="
+for fixture in refusal abort success wrong-guard; do
+    (
+        IT_FAIL=0 IT_PASS=0
+        rx() { [ "$1" != 'docker exec tor /usr/local/bin/tor-recovery-diagnose.sh' ]; }
+        pithead() {
+            case "$fixture" in
+            refusal)
+                echo '[WARNING] Tor recovery refused: circuit history is not saturated.'
+                return 1
+                ;;
+            abort)
+                echo '[WARNING] Tor recovery refused: circuit history is not saturated.'
+                echo 'pithead aborted unexpectedly; bash -x'
+                return 1
+                ;;
+            success) echo '[WARNING] Tor recovery refused: circuit history is not saturated.' ;;
+            wrong-guard)
+                echo 'Tor recovery refused: data mount is ambiguous.'
+                return 1
+                ;;
+            esac
+        }
+        set +e # The live harness records nonzero probes without errexit.
+        tor_recovery_healthy_probe
+        set -e
+        if [ "$fixture" = refusal ]; then
+            check test "$IT_FAIL" -eq 0
+            check test "$IT_PASS" -eq 6
+        else
+            check test "$IT_FAIL" -eq 1
+        fi
+        printf 'recovery fixture (%s): %s passed, %s failed\n' "$fixture" "$PASS" "$FAIL"
+        test "$FAIL" -eq 0
+    )
+done

@@ -30,7 +30,8 @@ while [ "$#" -gt 0 ]; do
 done
 IT_MODE=local IT_SSH_DEST='' IT_REMOTE_DIR=. IT_PITHEAD=pithead
 SAFETY_BACKUP=0 EXPECTED_WORKERS=1
-rx() { case "$1" in 'cat config.json') echo '{}' ;; esac; return 0; }
+# The retention fixture does not run the separately tested local-node RPC fault.
+rx() { case "$1" in 'cat config.json') echo '{"monero":{"mode":"remote"}}' ;; esac; return 0; }
 env_on_box() { echo true; }
 secret_fingerprint() { echo fixture-fingerprint; }
 record_manifest() { echo manifest >"$OUT_DIR/manifest.txt"; }

@@ -3,6 +3,8 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: "*.test.mjs",
+  // Chromium certificate interstitials and crypto fixtures retain their dedicated Node runner.
+  testIgnore: "backup-download.test.mjs",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,

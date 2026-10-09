@@ -175,12 +175,24 @@ TIP_BODY=$(jq -nc --arg ts "$TIP_EVIL" '{result:{block_header:{timestamp:$ts}}}'
 out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY="$TIP_BODY" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
 assert_eq "doctor tip: a hostile timestamp executes no command" "$([ -e "$TIPBOX/executed" ] && echo executed || echo untouched)" "untouched"
 assert_not_contains "doctor tip: a hostile timestamp yields no calculated age" "$out" "last block"
-for TIP_VALUE in '"1000"' -1 1.5 true 10000000000 null; do
+for TIP_VALUE in 0 '"1000"' -1 1.5 true 10000000000 null; do
     TIP_BODY=$(printf '{"result":{"block_header":{"timestamp":%s}}}' "$TIP_VALUE")
     out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY="$TIP_BODY" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
-    assert_not_contains "doctor tip: malformed timestamp yields no age" "$out" "last block"
+    assert_not_contains "doctor tip: unknown timestamp yields no age" "$out" "last block"
+    assert_not_contains "doctor tip: unknown timestamp causes no stale warning" "$out" "WARN"
 done
 TIP_BODY=$(jq -nc --argjson ts "$(($(date +%s) - 60))" '{result:{block_header:{timestamp:$ts}}}')
 out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY="$TIP_BODY" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
 assert_contains "doctor tip: a valid numeric timestamp retains the age" "$out" "last block"
+assert_not_contains "doctor tip: a recent timestamp causes no stale warning" "$out" "WARN"
+out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY='{"result":{"block_header":{}}}' PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
+assert_not_contains "doctor tip: absent timestamp yields no age" "$out" "last block"
+assert_not_contains "doctor tip: absent timestamp causes no stale warning" "$out" "WARN"
+out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":0,"incoming":2}' CURL_BODY='{"result":{"block_header":{"timestamp":0}}}' PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
+assert_contains "doctor tip: unknown age preserves zero-peer warning" "$out" "WARN"
+assert_not_contains "doctor tip: zero-peer warning invents no age" "$out" "last block"
+TIP_BODY=$(jq -nc --argjson ts "$(($(date +%s) - 3600))" '{result:{block_header:{timestamp:$ts}}}')
+out="$(RUNNING_CONTAINERS=monerod PEERS_JSON='{"outgoing":8,"incoming":2}' CURL_BODY="$TIP_BODY" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monerod_peers_and_tip '' '' http://localhost 2>&1)"
+assert_contains "doctor tip: a valid stale timestamp retains the age" "$out" "last block"
+assert_contains "doctor tip: a valid stale timestamp still warns" "$out" "WARN"
 rm -rf "$TIPBOX"
