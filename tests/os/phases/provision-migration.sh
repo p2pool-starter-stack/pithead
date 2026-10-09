@@ -80,8 +80,8 @@ _phase_provision_migration() {
     # Credentials are read by the existing authenticated approval helpers through dynamic scope.
     # shellcheck disable=SC2034,SC2154
     local DASH_USER="$pv_user" DASH_PASS="$pv_pass"
-    migration_prepare_rc2 || {
-        bad "the exact RC2 baseline could not be provisioned and verified"
+    migration_prepare_old || {
+        bad "the selected pre-fix baseline could not be provisioned and verified"
         return 1
     }
     local mig_bundle
@@ -103,8 +103,8 @@ _phase_provision_migration() {
     # filler is still on /data, where that install would be refused for the fixture's fault.
     _phase_provision_migration_space_refusal
     [ "$?" -ne 2 ] || return 1
-    migration_seed_rc2 || {
-        bad "the existing RC2 dashboard snapshot could not be seeded and independently verified"
+    migration_seed_old || {
+        bad "the existing old dashboard snapshot could not be seeded and independently verified"
         return 1
     }
     # os-update is the path that writes the pending marker (a bare rauc install does not) — and
@@ -132,7 +132,14 @@ _phase_provision_migration() {
     # Poll through the boot. The release line is logged at the commit boundary, BEFORE the
     # post-commit up — so any monerod observed running before that line is a chain service
     # beating the fallback decision, the exact ordering this rule exists to forbid.
-    local chain_ran_early=0 released=0 recovery_allowed=1
+    local chain_ran_early=0 released=0 recovery_allowed=1 candidate_commit
+    candidate_commit=$(_ssh 'cat /opt/pithead/BUILD_COMMIT' | tr -d '\r\n')
+    if [[ "$candidate_commit" =~ ^[0-9a-f]{40}$ ]] && [ "$candidate_commit" = "$(git rev-parse HEAD)" ]; then
+        ok "migration candidate BUILD_COMMIT $candidate_commit matches the tested head"
+    else
+        bad "the migration boot did not load the tested candidate source"
+        recovery_allowed=0
+    fi
     for _ in $(seq 120); do
         if _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
             released=1

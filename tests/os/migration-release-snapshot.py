@@ -1,4 +1,4 @@
-"""Seed through the inspected RC2 writer, then independently verify persistence and metadata."""
+"""Seed through the inspected old-image writer, then independently verify persistence and metadata."""
 
 import json
 import os
@@ -44,7 +44,7 @@ def main():
         raise ValueError("the old dashboard writer and database must retain their runtime identity")
     seed_release(DB_FILE_PATH, StateManager)
     print(
-        "RC2 persisted mining release seeded and independently verified; owner and mode preserved"
+        "old-image persisted mining release seeded and independently verified; owner and mode preserved"
     )
 
 

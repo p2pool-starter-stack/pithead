@@ -15,7 +15,7 @@ spec.loader.exec_module(seed)
 
 
 class Writer:
-    """Storage-contract stand-in; the KVM leg uses the inspected RC2 StateManager."""
+    """Storage-contract stand-in; the KVM leg uses the inspected old-image StateManager."""
 
     def __init__(self, db_path):
         self.path = db_path

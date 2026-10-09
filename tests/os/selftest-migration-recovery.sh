@@ -12,21 +12,51 @@ fail() {
     echo "FAIL: $*" >&2
     exit 1
 }
-# Exact identity is required before destroying or provisioning a guest.
-PITHEAD_OLD_IMAGE="$T/image"
-PITHEAD_OLD_IMAGE_COMMIT="$MIGRATION_RC2_COMMIT"
-PITHEAD_OLD_DASHBOARD_IMAGE="registry.example/dashboard@sha256:$(printf '%064d' 1)"
-if migration_rc2_input; then fail 'missing RC2 image accepted'; fi
-: >"$PITHEAD_OLD_IMAGE"
-migration_rc2_input || fail 'verified hand-off rejected'
-PITHEAD_OLD_IMAGE_COMMIT=$(printf '%040d' 1)
-if migration_rc2_input; then fail 'newest older cache substituted for RC2'; fi
-bad() { :; }
-_vm_boot_disk() { fail 'invalid baseline destroyed the guest'; }
-if migration_prepare_rc2; then fail 'invalid baseline provisioned'; fi
-PITHEAD_OLD_IMAGE_COMMIT="$MIGRATION_RC2_COMMIT"
-PITHEAD_OLD_DASHBOARD_IMAGE=registry.example/dashboard:2.0.0
-if migration_rc2_input; then fail 'mutable dashboard tag accepted'; fi
+# Use actual Git ancestry, including a side branch and the candidate's own commits.
+(
+    mkdir "$T/repo"
+    cd "$T/repo"
+    git init -q --initial-branch=develop
+    git config user.name fixture
+    git config user.email fixture@example.invalid
+    echo old >file
+    git add file
+    git commit -qm old
+    old=$(git rev-parse HEAD)
+    echo develop >file
+    git commit -qam develop
+    base=$(git rev-parse HEAD)
+    git update-ref refs/remotes/origin/develop "$base"
+    git checkout -qb candidate
+    echo candidate >file
+    git commit -qam candidate
+    candidate=$(git rev-parse HEAD)
+    git checkout -qb side "$old"
+    echo side >file
+    git commit -qam side
+    side=$(git rev-parse HEAD)
+    git checkout -q candidate
+    migration_old_commit_valid "$old" && migration_old_commit_valid "$base" || fail 'merged old source rejected'
+    for invalid in "$candidate" "$side" "${old:0:12}" "$(printf '%040d' 1)"; do
+        if migration_old_commit_valid "$invalid" 2>/dev/null; then fail 'unmerged, PR or malformed source accepted'; fi
+    done
+    git update-ref -d refs/remotes/origin/develop
+    if migration_old_commit_valid "$old" 2>/dev/null; then fail 'missing develop reference accepted'; fi
+)
+# Refuse an invalid selected source before the old guest's provisioning or seed.
+(
+    bad() { :; }
+    unset PITHEAD_OLD_IMAGE
+    _vm_boot_disk() { fail 'missing image reached guest destruction'; }
+    if migration_prepare_old; then fail 'missing cached baseline accepted'; fi
+    PITHEAD_OLD_IMAGE="$T/image"
+    : >"$PITHEAD_OLD_IMAGE"
+    _vm_boot_disk() { :; }
+    _wait_ssh() { :; }
+    _ssh() { git rev-parse HEAD; }
+    _wizard_provision_capture() { fail 'PR source reached provisioning'; }
+    if migration_prepare_old; then fail 'candidate branch baseline accepted'; fi
+)
 # Missing recovery input must refuse before configuration capture or mutation.
 (
     unset PITHEAD_OS_TARI_GRPC_PORT
@@ -64,7 +94,7 @@ unset -f date sleep _ssh
 OS_RUN_SUITE=1
 # shellcheck source=tests/os/phases/provision-migration.sh
 source "$HERE/phases/provision-migration.sh"
-for missing in none commit hold claim stopped startup marker; do
+for missing in none candidate commit hold claim stopped startup marker; do
     (
         pv_user=user pv_pass=pass marker=""
         calls="$T/calls"
@@ -73,8 +103,8 @@ for missing in none commit hold claim stopped startup marker; do
         bad() { :; }
         info() { :; }
         sleep() { :; }
-        migration_prepare_rc2() { :; }
-        migration_seed_rc2() { echo seed >>"$calls"; }
+        migration_prepare_old() { :; }
+        migration_seed_old() { echo seed >>"$calls"; }
         _build_bundle() {
             : >"$T/good"
             echo "$T/good"
@@ -87,6 +117,9 @@ for missing in none commit hold claim stopped startup marker; do
         assert_appliance_hostname_identity() { :; }
         _ssh() {
             case "$1" in
+            'cat /opt/pithead/BUILD_COMMIT')
+                if [ "$missing" = candidate ]; then printf '%040d\n' 1; else git rev-parse HEAD; fi
+                ;;
             *'./pithead os-update'*) grep -qx seed "$calls" || fail 'upgrade before seed' ;;
             *'cat /data/pithead/.os-migration-pending'*) echo 2.0.0 ;;
             *'grub-editenv'*) [ "$missing" != commit ] ;;

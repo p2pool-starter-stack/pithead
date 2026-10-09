@@ -1,40 +1,51 @@
 # shellcheck shell=bash
-# The exact RC2 baseline is a verified runner input, never a mutable version tag.
-MIGRATION_RC2_COMMIT=f5a5ad096c7a5345609a2eed4f600fd750a425ab
-migration_rc2_input() {
-    [ -f "${PITHEAD_OLD_IMAGE:-}" ] && [ "${PITHEAD_OLD_IMAGE_COMMIT:-}" = "$MIGRATION_RC2_COMMIT" ] &&
-        [[ "${PITHEAD_OLD_DASHBOARD_IMAGE:-}" =~ ^[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}$ ]]
+# The runner selects a cached old image; only merged, pre-fix source may seed this proof.
+migration_old_commit_valid() {
+    local commit="$1" pr_commits
+    [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || return 1
+    git merge-base --is-ancestor "$commit" origin/develop || return 1
+    pr_commits=$(git rev-list origin/develop..HEAD) || return 1
+    ! printf '%s\n' "$pr_commits" | grep -Fxq "$commit"
 }
 
-migration_prepare_rc2() {
-    migration_rc2_input || {
-        bad "the verified exact RC2 baseline hand-off is unavailable"
+migration_prepare_old() {
+    [ -f "${PITHEAD_OLD_IMAGE:-}" ] || {
+        bad "old_image=true did not provide a cached baseline"
         return 1
     }
     _vm_boot_disk "$PITHEAD_OLD_IMAGE" && _wait_ssh 900 || return 1
-    [ "$(_ssh 'cat /opt/pithead/BUILD_COMMIT' | tr -d '\r\n')" = "$MIGRATION_RC2_COMMIT" ] || return 1
+    local old_commit old_version
+    old_commit=$(_ssh 'cat /opt/pithead/BUILD_COMMIT' | tr -d '\r\n') || return 1
+    migration_old_commit_valid "$old_commit" || {
+        bad "selected old BUILD_COMMIT is not merged pre-fix source outside this PR: $old_commit"
+        return 1
+    }
+    old_version=$(_ssh 'cat /opt/pithead/VERSION' | tr -d '[:space:]') || return 1
+    [ "$old_version" = "$(tr -d '[:space:]' <VERSION)" ] || {
+        bad "the selected old image cannot exercise the equal-version upgrade"
+        return 1
+    }
+    ok "selected old BUILD_COMMIT $old_commit is an ancestor of develop $(git rev-parse origin/develop), outside candidate PR $(git rev-parse HEAD); shared VERSION $old_version"
     _wizard_provision_capture 0 || return 1
     # The captured old-image login replaces the credentials of the disposable initial guest.
     # shellcheck disable=SC2034 # phase-scoped credentials are used by all later legs.
     pv_user="$DASH_USER" pv_pass="$DASH_PASS"
     provisioning_settled 900 && ! provisioning_setup_failed || return 1
-    _ssh "actual=\$(podman inspect dashboard --format '{{.Image}}')
-expected=\$(podman image inspect '$PITHEAD_OLD_DASHBOARD_IMAGE' --format '{{.Id}}')
-test -n \"\$expected\" && test \"\$actual\" = \"\$expected\"" || return 1
     local live proposed result
     live=$(sensitive_live_config) || return 1
     proposed=$(printf %s "$live" | jq -c '.dashboard.host="fixture-next" | .local_miner.enabled=true | .xvb.enabled=false | .monero.mode="local" | .tari.mode="local"') || return 1
     sensitive_preview "$(dashboard_config_body "$proposed")" || return 1
     result=$(approval_commit "$APPROVAL_REQUEST_ID") && tari_commit_verdict "$result" || return 1
     _ssh "test \"\$(sed -n 's/^MONERO_MODE=//p' /data/pithead/.env)\" = local" || return 1
-    ok "verified RC2 baseline and immutable dashboard are provisioned with local chains and a miner"
+    ok "verified pre-fix baseline is provisioned with local chains and a miner"
 }
 
-migration_seed_rc2() {
+migration_seed_old() {
     local payload image persisted=0
     payload=$(base64 <"$SCRIPT_DIR/migration-release-snapshot.py" | tr -d '\n')
     image=$(_ssh "podman inspect dashboard --format '{{.Image}}'" | tr -d '\r\n') || return 1
     [[ "$image" =~ ^(sha256:)?[0-9a-f]{64}$ ]] || return 1
+    ok "selected old dashboard image ID $image supplies its own persisted-state writer"
     # The old dashboard persists periodically; a fresh provision must have a real snapshot
     # before its writer is stopped. Read only, with a bounded wait rather than a replacement DB.
     for _ in $(seq 30); do
@@ -47,7 +58,7 @@ migration_seed_rc2() {
     [ "$persisted" = 1 ] || return 1
     # Stop the only writer, retain its existing mount and identity, and never restart it pre-upgrade.
     _ssh "podman stop dashboard >/dev/null && printf %s '$payload' | base64 -d | podman run --rm -i --network none --volumes-from dashboard --user 1000:1000 --entrypoint python3 '$image' -" || return 1
-    ok "the RC2 writer seeded its existing release snapshot without changing database ownership or mode"
+    ok "the inspected old writer seeded its existing release snapshot without changing database ownership or mode"
 }
 
 migration_services_healthy() {

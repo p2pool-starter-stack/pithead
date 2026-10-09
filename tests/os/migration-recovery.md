@@ -1,33 +1,34 @@
 # Persisted release migration proof
 
-The provision phase requires a runner-owned RC2 baseline at
-`f5a5ad096c7a5345609a2eed4f600fd750a425ab`, with matching immutable service images.
-The hand-off supplies `PITHEAD_OLD_IMAGE`, `PITHEAD_OLD_IMAGE_COMMIT` and
-`PITHEAD_OLD_DASHBOARD_IMAGE` (a digest-qualified reference). The runner verifies
-source, image checksum, service pins and signing trust, and reserves the image
-and shared nodes for the run. `old_image=true` alone and mutable version tags do
-not establish RC2. The exact selector is tracked in bench-ci#1629.
+Submit the provision phase with `old_image=true`. The runner supplies its
+verified cached image as `PITHEAD_OLD_IMAGE`, keeping its normal checksum,
+registry, signing-trust and reservation checks. The battery records the selected
+guest's full BUILD_COMMIT and requires it to be an ancestor of `origin/develop`
+and outside the PR commits. Missing, malformed or unmerged source fails
+explicitly. The baseline and candidate share VERSION but are identified by
+BUILD_COMMIT. An exact RC2 selector is not required; bench-ci#1629 is not a
+prerequisite. The owner's appliance provides the exact RC2-to-RC3 acceptance.
 
-After the earlier provision legs, the battery provisions a disposable RC2 guest.
-It verifies the guest source and dashboard image identity and retains local
-Monero/Tari configuration. It enables the guest miner, waits for an existing
-snapshot, stops the old dashboard and seeds its release through that inspected
-image's `StateManager.save_snapshot`. The writer runs as UID:GID 1000:1000 against
-its existing database mount, without network access. An independent SQLite
-connection must confirm persistence; the database's owner, mode and inode must
-stay unchanged. The old dashboard stays stopped until upgrade.
+After the earlier provision legs, the battery provisions that disposable old
+guest with local Monero/Tari configuration. It enables the guest miner, waits
+for an existing snapshot, stops the old dashboard and seeds its release through
+that inspected image's `StateManager.save_snapshot`. It records the dashboard
+image ID. The writer runs as UID:GID 1000:1000 against its existing database
+mount, without network access. An independent SQLite connection must confirm
+persistence; the database's owner, mode and inode must stay unchanged. The old
+dashboard stays stopped until upgrade.
 
-The candidate's migration boot must record its durable marker claim with the
-booted A/B slot, P2Pool and proxy stopped at the ordinary health gate, an
-unattended bootloader commit, and local-chain startup after commit. Missing
-hold or commit evidence prevents remote recovery configuration. The existing
-reserved `PITHEAD_OS_MONERO_*` and `PITHEAD_OS_TARI_*` inputs are then applied
-through the authenticated configuration flow. A fresh persisted release,
+The candidate's migration boot must record its BUILD_COMMIT, durable marker
+claim with the booted A/B slot, P2Pool and proxy stopped at the ordinary health
+gate, an unattended bootloader commit, and local-chain startup after commit.
+Missing hold or commit evidence prevents remote recovery configuration. The
+existing reserved `PITHEAD_OS_MONERO_*` and `PITHEAD_OS_TARI_*` inputs are then
+applied through the authenticated configuration flow. A fresh persisted release,
 direct synchronized RPC, healthy mining services and an increasing hash counter
 establish recovery. The original local configuration is restored before the
 same-version and floor-fallback legs.
 
-This seeded regression proves the migration coordination path and mining
-recovery through reserved nodes. The owner's RC3 upgrade on an appliance with
-real synced chains provides separate real-chain acceptance; it does not gate
-this PR. The withdrawn disposable-snapshot fixture is not required.
+This seeded regression proves migration coordination and mining recovery through
+reserved nodes. The owner's RC3 upgrade with real synced chains provides separate
+real-chain acceptance; it does not gate this PR. The withdrawn disposable
+snapshot fixture and exact-baseline selector are not required.
