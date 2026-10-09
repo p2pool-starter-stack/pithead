@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { resolve, sep } from "node:path";
 import { test } from "node:test";
 import { chromium } from "playwright";
+import { stopFixture } from "./stop-fixture.mjs";
 
 // Real production component and native dialog, served locally with a refused host check.
 // PITHEAD_BROWSER_STATIC lets a negative-control run serve the old implementation.
@@ -47,9 +48,9 @@ test("one error Close dismisses the native dialog and restores focus to OS updat
 }, async (t) => {
   const server = createServer(serve);
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  t.after(() => new Promise((r) => server.close(r)));
-  const browser = await chromium.launch();
-  t.after(() => browser.close());
+  let browser;
+  t.after(() => stopFixture(server, browser));
+  browser = await chromium.launch();
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));

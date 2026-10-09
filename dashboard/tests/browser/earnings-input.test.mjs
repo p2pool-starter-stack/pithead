@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { resolve, sep } from "node:path";
 import { test } from "node:test";
 import { chromium } from "playwright";
+import { stopFixture } from "./stop-fixture.mjs";
 
 // Serve the production calculator; an alternate root enables a pre-fix negative control.
 const staticRoot = resolve(process.env.PITHEAD_BROWSER_STATIC ||
@@ -39,9 +40,9 @@ test("earnings calculator converts grouped thousands and rejects malformed hashr
 }, async (t) => {
   const server = createServer(serve);
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  t.after(() => new Promise((r) => server.close(r)));
-  const browser = await chromium.launch();
-  t.after(() => browser.close());
+  let browser;
+  t.after(() => stopFixture(server, browser));
+  browser = await chromium.launch();
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
