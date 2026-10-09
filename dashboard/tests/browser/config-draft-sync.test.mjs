@@ -63,7 +63,7 @@ test("a configuration draft survives a synchronization screen and keeps its mark
   await marker().waitFor();
   const draft = await editor.inputValue();
   await page.evaluate(() => window.setSyncing(true));
-  await page.locator(".loader-container").waitFor();
+  await page.locator(".progress-text").first().waitFor();
   assert.equal(await editor.isVisible(), false, "the draft is hidden while the sync screen shows");
   await page.evaluate(() => window.setSyncing(false));
   await marker().waitFor();
