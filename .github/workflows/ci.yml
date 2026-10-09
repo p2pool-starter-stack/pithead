@@ -76,7 +76,7 @@ jobs:
           node-version: "20"
       # Pure client logic uses Node's built-in runner; the Make target first builds the generated
       # CLI read by cross-surface drift tests. There is no package.json/node_modules build step.
-      # Component rendering is covered by a manual browser smoke test, not here.
+      # Native browser journeys run separately in browser.yml.
       - name: Run frontend logic tests
         run: make test-frontend
 

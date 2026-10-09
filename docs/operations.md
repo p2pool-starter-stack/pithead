@@ -572,7 +572,7 @@ pin the TLS fingerprint need the new values.
 | item | why it stays | to remove it by hand |
 |---|---|---|
 | apt packages `jq`, `openssl`, `docker.io`, `docker-compose-v2` | other software on the box may use them | `sudo apt-get remove <pkgs>` |
-| GRUB HugePages cmdline | reverting needs `update-grub` and a reboot the verb must not trigger | restore `/etc/default/grub.bak`, `sudo update-grub`, reboot |
+| GRUB HugePages cmdline | reverting needs `update-grub` and a reboot the verb must not trigger | remove `/etc/default/grub.d/zz-pithead-hugepages.cfg`, restore `/etc/default/grub.bak` if an older setup edited the defaults, `sudo update-grub`, reboot |
 | runtime HugePages pool | resets on reboot anyway | `sudo sysctl -w vm.nr_hugepages=0` |
 
 ## The deploy-box layout
@@ -834,7 +834,14 @@ failure shows up there rather than as a Tor error. Same private-range requiremen
 
 **HugePages shows as disabled / low.**
 Persistent HugePages require a GRUB change and a **reboot**. Re-run `./pithead setup` (without
-`--skip-optimize`) and reboot when prompted.
+`--skip-optimize`). Setup writes its own `/etc/default/grub.d/zz-pithead-hugepages.cfg`, preserves
+user drop-ins and console arguments, and verifies the generated kernel entries. If verification
+fails, check later GRUB drop-ins and the generated `/boot/grub/grub.cfg`, then re-run setup.
+Reboot only after verification succeeds; confirm `HugePages_Total` in `/proc/meminfo` afterwards.
+An unchanged setup with those flags already in the running kernel does not request another reboot.
+Setup automatically repairs its managed drop-in and recognizable legacy Pithead reservations.
+Other reservations, including differently ordered legacy flags or a plural THP typo, require
+interactive confirmation; setup preserves the main defaults rather than rewriting the typo there.
 
 **Tor egress broken while mining works.**
 Healthchecks reports the host down and Telegram commands go quiet, yet workers keep hashing.
