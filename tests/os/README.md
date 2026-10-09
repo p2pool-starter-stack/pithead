@@ -27,6 +27,12 @@ exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
 
+After initial provisioning has settled, `provision` runs `tor-recover check` in the guest
+with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and
+no unexpected-abort message or debug advice. `selftest-tor-recovery-refusal.sh` exercises
+this guest script against the generated CLI and a pre-fix dispatch negative control,
+without a container or guest. The live result requires a KVM job on the PR head.
+
 The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
 It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes
 with it enabled. It requires the first-round diagnosis within 25 minutes, a host recovery

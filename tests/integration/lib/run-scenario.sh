@@ -3,6 +3,7 @@
 assert_scenario() {
     local name="$1" config="$2"
     assert_running_state "$name" "$config"
+    assert_xvb_off_no_dwell_churn
     # Namespace probes, rule flushes and node restarts belong only to deploying scenarios.
     assert_lan_guard_live "$config"
     local again
@@ -98,6 +99,9 @@ assert_xvb_over_tor() {
     assert_eq "XvB stats + auto-register wired to the Tor SOCKS (#206/#163)" "$proxy" "$want"
 }
 
+# shellcheck source=tests/integration/lib/xvb-off-dwell.sh
+source "${BASH_SOURCE[0]%/*}/xvb-off-dwell.sh" || return $?
+
 # /metrics through the operator path (#379): curl the Prometheus endpoint THROUGH host-networked
 # Caddy — scheme from DASHBOARD_SECURE, vhost from HOST_IP, pinned to loopback so the box needn't
 # resolve its own hostname — and assert a pithead_ sample line survives the trip. This is the
@@ -114,9 +118,7 @@ assert_metrics_via_caddy() {
         return 0
     fi
     secure="$(env_on_box DASHBOARD_SECURE)"
-    # #740: Caddy binds HOST_PORT when set, else the scheme default (80/443). Read it so the operator
-    # path is curled on the port Caddy actually listens on, not a hardcoded 80/443.
-    port="$(env_on_box HOST_PORT)"
+    port="$(env_on_box HOST_PORT)" # #740: Caddy binds HOST_PORT when set, else 80/443
     if [ "$secure" = "false" ]; then
         scheme="http"
         [ -n "$port" ] || port=80
@@ -145,7 +147,7 @@ assert_metrics_via_caddy() {
 # decision logic against stubs; this proves the real toolchain (docker/sudo/iptables/ss/curl)
 # feeds them on a healthy box. The firewall line is config-gated the same way doctor itself is.
 assert_doctor_ok() {
-    local out rc evidence_dir
+    local out rc evidence_dir tip_out
     out="$(pithead doctor 2>&1)"
     rc=$?
     # Capture the asserted invocation before a later diagnostic can observe another state.
@@ -166,6 +168,13 @@ assert_doctor_ok() {
         it_fail "doctor assertion evidence captured" "could not create doctor evidence directory"
     fi
     assert_rc "doctor exits 0 on a healthy box (#383)" "$rc" "0"
+    if [ "$(jq_get "$(rx 'cat config.json')" '.monero.mode')" = remote ]; then
+        it_skip_leg "doctor zero tip timestamp (#3277)" "local Monero check is not run in remote mode" "by-design"
+    else
+        tip_out=$(rx "bash -s -- $(quote_arg "$IT_PITHEAD")" --stdin <"$HERE/tools/doctor-tip-time.sh" 2>&1) && rc=0 || rc=$?
+        assert_rc "doctor zero tip timestamp in text and JSON has no fabricated age or stale warning (#3277)" "$rc" "0"
+        printf '%s\n' "$tip_out" | redact | sed 's/^/doctor-tip-time probe: /'
+    fi
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
         it_log "   doctor: egress firewall opted out — skipping that OK line"
     else
@@ -218,6 +227,7 @@ assert_current_state() {
     assert_running_state "check" "$BASELINE_CONFIG"
     assert_egress_posture
     assert_xvb_over_tor
+    assert_xvb_off_no_dwell_churn
     assert_metrics_via_caddy
     assert_share_stats_live
     assert_telemetry_tables_present

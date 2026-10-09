@@ -118,7 +118,8 @@ Do not run `tor-recover apply` on a healthy machine.
 
 **What you should see:**
 
-- On a healthy machine it prints `Tor recovery refused: circuit history is not saturated.`
+- On a healthy machine it prints `Tor recovery refused: circuit history is not saturated.` and exits 1.
+- It prints no unexpected-abort message or debug advice.
 - It changes nothing.
 
 **Record:** PASS, FAIL or N/A in the results sheet.

@@ -102,6 +102,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # Boot-media labels use fixed transport/media cases (usb/sata/nvme/fail and
 # usb/internal/absent/unknown), expected usb/internal values, named fixtures, and
 # title rows 1..4; no measured value enters a PASS label.
+# #3278's rcf_status labels range over running/restarting/paused, a fixed status list.
 # #3204's rcm_invalid labels range over four fixed JSON fixtures, never measured input.
 # GRUB labels use only the three literal parameter names and nine literal stub modes.
 vd_expected="$(
@@ -159,6 +160,7 @@ test-release.sh|comp
 test-release.sh|pin_rel
 test-release.sh|svc
 test-render-quadlet.sh|f
+test-restore-configless.sh|rcf_status
 test-rig-worker.sh|3
 test-secrets-masking.sh|1
 test-secrets.sh|ev

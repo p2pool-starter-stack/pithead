@@ -113,10 +113,19 @@ _tor_probe_recovered() { # <epoch>
 
 # Lifecycle proves the branch image includes the diagnostic and rejects ordinary healthy Tor.
 tor_recovery_healthy_probe() {
+    local output rc=0
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
     assert_rc "Tor recovery lifecycle proof keeps the egress firewall enforced" "$?" "0"
     rx 'docker exec tor test -x /usr/local/bin/tor-recovery-diagnose.sh' >/dev/null 2>&1
     assert_rc "Tor image carries the authenticated recovery diagnostic" "$?" "0"
     rx 'docker exec tor /usr/local/bin/tor-recovery-diagnose.sh' >/dev/null 2>&1
     assert_rc "healthy Tor refuses bootstrap-stall recovery diagnosis" "$?" "1"
+    output=$(pithead tor-recover check 2>&1) || rc=$?
+    assert_rc "healthy Tor recovery check exits 1 (#3262)" "$rc" "1"
+    assert_contains "healthy Tor recovery check names its guard (#3262)" "$output" "Tor recovery refused: circuit history is not saturated."
+    if [[ "$output" = *"aborted unexpectedly"* || "$output" = *"bash -x"* ]]; then
+        it_fail "healthy Tor recovery refusal omits unexpected-abort advice (#3262)" "$output"
+    else
+        it_pass "healthy Tor recovery refusal omits unexpected-abort advice (#3262)"
+    fi
 }

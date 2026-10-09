@@ -344,7 +344,12 @@ method, path, and the authenticated user — to `./data/caddy-logs/access.log`
 ([#349](https://github.com/p2pool-starter-stack/pithead/issues/349)). It is always on. Caddy
 redacts credential headers by default, so no password material lands in it, and Caddy's native
 rolling caps it at 4 MiB per file, the current file plus two rolled ones (~12 MiB worst case).
-The dashboard's Configuration view surfaces the same data:
+The dashboard reads the active file and at most two timestamped `access-*.log` or
+`access-*.log.gz` generations. Each plain-file tail and each gzip decompressed prefix is
+capped at 4 MiB; compressed input is also capped at 4 MiB per generation. One summary
+reads at most 12 MiB of JSON and 8 MiB of compressed input. Oversized files, missing or
+corrupt generations, and Caddy retention can omit records from the last-24-hour count.
+The dashboard's Configuration view surfaces these bounded records:
 [recent accesses and a failed-login count](dashboard.md#access-log-and-recent-config-changes).
 
 How to read it, given the dashboard is reachable over a Tor onion
@@ -686,7 +691,14 @@ Include the blockchains (larger, slower) with:
 ./pithead backup --with-chains   # also include the blockchain data
 ```
 
-To recover (on a new machine, or after a wipe) copy the archive back and run:
+To recover a DIY installation, run from the original installation directory. After
+`config-reset`, no setup or manual `.env` is needed: the reset retains only the trusted data
+paths in an owner-only `.restore-paths` record. Restore removes that record after success.
+On a fresh installation, default data directories need no prior configuration. For custom data
+directories without a reset record, configure the original paths in `config.json` and run
+`./pithead render` before restoring; an archive cannot authorize new destination paths.
+
+Copy the archive back and run:
 
 ```bash
 ./pithead down                       # stop the stack first so files restore cleanly
@@ -697,8 +709,12 @@ To recover (on a new machine, or after a wipe) copy the archive back and run:
 `restore` detects the format from the archive itself — encrypted backups ask for the passphrase
 (or read `PITHEAD_BACKUP_PASSPHRASE`), and plaintext archives from earlier releases restore
 unchanged, no flag needed. A wrong passphrase, or a corrupt or truncated archive of either format,
-fails before anything on disk is touched. `restore` also refuses unless Compose confirms that all
-services are stopped. It stages the archive privately, accepts only the configured files and data
+fails before anything on disk is touched. `restore` also refuses while services are running,
+restarting, or paused. With `.env` absent, restore checks the engine's project labels directly;
+`down` stops and removes those containers without interpolating Compose, keeping data and named
+volumes. Networks remain until a configured Compose shutdown. The pinned `pithead` project and
+this directory's legacy project are checked; legacy containers must also carry this directory's
+working-directory label. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
 the validated proxy token, wallet RPC and database passwords, and Tor identities are retained
@@ -722,9 +738,9 @@ install may already have synced chain data, and replacing it would force a resyn
 files that only the archive has. The wizard replaces its Tor and dashboard directories normally.
 
 > NOTE: The archive stores the source box's absolute paths, and `restore` puts every file back
-> exactly where it came from. On a machine laid out differently (another user, another install
-> directory), the files land in the old box's directory tree — not the install you ran `restore`
-> from. Recreate the original path (or move the install there) before restoring.
+> exactly where it came from, after validating the destinations. A different installation path
+> is refused rather than redirected into the old directory tree. Recreate the original
+> installation path and configure any custom data paths before restoring.
 
 > NOTE: After a restore, Caddy regenerates the dashboard's HTTPS certificate, so the browser shows
 > its "not trusted" warning once. Accept it as on first setup.
@@ -876,7 +892,9 @@ state reset sends one alert per outage explaining the saturated history and guar
 
 **Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed
 bootstrap, a failed clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
-reports invalid circuit build timing, run `./pithead tor-recover check`. This read-only check
+reports invalid circuit build timing, run `./pithead tor-recover check`. A refused precondition
+prints its warning and exits 1 without the unexpected-abort diagnostic; no recovery is applied.
+This read-only check
 validates the live Tor data mount and the saturated history signature. When local Monero RPC
 answers, it requires peerless, stalled Monero across three minutes (0 outgoing peers at one height,
 whatever `synchronized` says: monerod keeps its last value after losing every peer), with real
@@ -947,8 +965,9 @@ stalled height still turns the card red without peer visibility. The container h
 also fails after 30 minutes without a rise past its best height, even with outgoing peers;
 its monotonic height clock resets on a new container run or an unavailable height reading.
 A syncing local node has no at-tip verdict; a node marked stale by the sync monitor is red.
-Doctor omits the last-block age when the RPC timestamp is malformed or outside its integer
-bound. The chain verdict turns red, with the numbers, when monerod has had 0 outgoing peers for
+Doctor omits the last-block age when the RPC timestamp is zero, absent, malformed or outside
+its positive-integer bound. An unavailable tip time does not imply a stale node; peer and
+initial-sync warnings still apply. The chain verdict turns red, with the numbers, when monerod has had 0 outgoing peers for
 10 minutes (`NODE_STALE_AFTER_SEC`) or its height has not moved for 30 minutes (Monero blocks
 arrive about every 2). A red local verdict adds a “Monero chain unhealthy” header badge with the
 reason and recovery advice. It also fails `./pithead doctor` (the Monero sync check prints the

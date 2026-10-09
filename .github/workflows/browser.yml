@@ -29,5 +29,18 @@ jobs:
         run: npm ci --prefix dashboard/tests/browser --ignore-scripts
       - name: Install pinned Chromium and system libraries
         run: dashboard/tests/browser/node_modules/.bin/playwright install --with-deps chromium
-      - name: Assert native Close and trigger focus
+      - name: Assert native Close, trigger focus, earnings input and HTTPS backup downloads
+        env: {TMPDIR: "${{ runner.temp }}"}
         run: make test-browser
+      - name: Install pinned Google Chrome for Testing
+        env: {TMPDIR: "${{ runner.temp }}"}
+        run: |
+          curl --fail --silent --show-error --location \
+            https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.37/linux64/chrome-linux64.zip \
+            --output "$TMPDIR/pithead-backup-chrome.zip"
+          unzip -q "$TMPDIR/pithead-backup-chrome.zip" -d "$TMPDIR/pithead-backup-chrome"
+      - name: Assert complete Google Chrome HTTPS backup downloads
+        env: {TMPDIR: "${{ runner.temp }}"}
+        run: |
+          PITHEAD_BACKUP_BROWSER_EXECUTABLE="$TMPDIR/pithead-backup-chrome/chrome-linux64/chrome" \
+            node --test dashboard/tests/browser/backup-download.test.mjs

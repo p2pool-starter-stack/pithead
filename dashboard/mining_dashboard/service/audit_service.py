@@ -11,18 +11,21 @@ stored XSS against the operator — the exact attacker-to-operator direction the
 guarded. ``_clean`` therefore whitelists a conservative ASCII charset (no ``<``, ``>``, quotes,
 backslashes, or control characters) and caps length; nothing from either file is served
 unfiltered. Growth is bounded by the writers, not here: the audit log is trimmed by
-``control_audit`` and Caddy rolls its own access log — this module only ever reads a tail.
+``control_audit`` and Caddy rolls its own access log. Audit reads use a bounded tail;
+access reads include bounded retained generations through ``access_log``.
 """
 
 import calendar
 import hashlib
 import json
+import math
 import os
 import re
 import time
 from urllib.parse import quote
 
 from mining_dashboard.config import config
+from mining_dashboard.service.access_log import access_rows
 
 # Whitelist, not escape: strip every character outside a conservative ASCII set. Keeps
 # timestamps, UUIDs, usernames, env-key names, and URL paths readable; drops anything that could
@@ -230,12 +233,13 @@ def filter_log_entries(entries, frm=None, to=None, q=None):
 
 
 def access_summary(limit=50, now=None):
-    """Recent dashboard accesses plus the rotate-signal: 401s in the last 24 h.
+    """Recent accesses and last-24-hour 401s within bounded retained Caddy records.
 
     Shape: ``{available, entries, failures_24h, last_failure_ts, rotate_hint}``. ``available``
-    is False until Caddy has written the log (pre-#349 deployments, or no request yet). Entries
+    is False until Caddy has written the log (pre-#349 deployments, or no request yet). Reads the active file and two allowlisted generations, at most 4 MiB each.
+    The count can be partial when these bounds or Caddy retention omit records. Entries
     are newest first; ts is epoch seconds, status is clamped to a real HTTP range."""
-    raw = _tail_json_lines(config.ACCESS_LOG_PATH)
+    raw = access_rows(config.ACCESS_LOG_PATH)
     if raw is None:
         return {
             "available": False,
@@ -252,30 +256,32 @@ def access_summary(limit=50, now=None):
         req = e.get("request") if isinstance(e.get("request"), dict) else {}
         try:
             ts = float(e.get("ts") or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             ts = 0.0
         try:
             status = int(e.get("status") or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             status = 0
         if not 100 <= status <= 599:
             status = 0
+        if not math.isfinite(ts):
+            ts = 0.0
         method = req.get("method")
         entries.append(
             {
                 "ts": ts,
                 "status": status,
-                "method": method if method in _KNOWN_METHODS else "?",
+                "method": method if isinstance(method, str) and method in _KNOWN_METHODS else "?",
                 "uri": _clean(req.get("uri")),
                 "user": _clean(e.get("user_id"), 64),
             }
         )
-        if status == 401 and now - ts <= 86400:
+        if status == 401 and 0 <= now - ts <= 86400:
             failures += 1
             last_failure = ts if last_failure is None else max(last_failure, ts)
     return {
         "available": True,
-        "entries": entries[-limit:][::-1],
+        "entries": sorted(entries, key=lambda entry: entry["ts"], reverse=True)[:limit],
         "failures_24h": failures,
         "last_failure_ts": last_failure,
         "rotate_hint": failures >= ROTATE_HINT_401S,
