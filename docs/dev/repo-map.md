@@ -139,7 +139,9 @@ Browser assets live in `web/static/`. JavaScript feature folders are `app/`,
 nested tests through `make test-frontend`.
 `dashboard/tests/browser/` holds Chromium regressions using the locked Playwright package;
 `make test-browser` runs them after browser installation. The separate `browser.yml` workflow
-installs the locked tool and runs the native dialog focus and HTTPS backup-download checks.
+installs the locked tool and runs native dialog focus, earnings input and HTTPS backup-download checks.
+The earnings browser regression serves the real calculator, verifies grouped thousands and
+malformed input, and supports `PITHEAD_BROWSER_STATIC` for pre-fix asset controls.
 
 `dashboard.css` imports the ordered files in `styles/`; wizard styles stay in
 `wizard/`. `vendor/` contains third-party browser libraries and their provenance.
@@ -203,6 +205,9 @@ connection probe and lifecycle runner. The image fixture uses the shared
 Its diagnostic, readiness and image selftests use fake Docker I/O.
 The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
 both local-miner toggles converge without rebooting.
+`tests/os/appliance-earnings-leg.sh` checks that the provisioned dashboard serves the checkout’s
+parser and earnings modules through authenticated Caddy; `selftest-earnings-assets.sh` rejects
+old, missing, redirected and unrelated responses without a guest.
 The address-watch provision leg in `tests/os/appliance-address-watch-leg.sh` checks certificate
 SAN coverage and the deployed dashboard recovery assets through TLS, then executes the served
 fingerprint instruction over SSH. Its refusal controls are in `tests/os/selftest-dashboard-recovery.sh`.

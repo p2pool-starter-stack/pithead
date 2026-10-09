@@ -243,6 +243,7 @@ _phase_provision_initial_body() {
     phase_provision_dashboard_exposure || return 1
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
+    phase_provision_earnings_assets "$pv_user" "$pv_pass" || return 1
     phase_provision_address_watch "$pv_user" "$pv_pass"
 
     phase_miner_connection_installed "$handoff_body"
