@@ -1,0 +1,27 @@
+name: Docker registry mirror
+description: >
+  Points the runner's Docker daemon at Google's public pull-through cache of Docker Hub
+  (mirror.gcr.io) so anonymous pulls from shared runner IPs are not refused with 429 (#3316).
+  No credential is involved. The daemon falls back to Docker Hub on a miss, and digest-pinned
+  FROM/image: references still verify content by digest. Merges into any existing daemon.json,
+  restarts the daemon, and fails the job if the mirror is not listed by `docker info`. Call it
+  as the first step after checkout in every job that builds, runs or pulls a docker.io image.
+runs:
+  using: composite
+  steps:
+    - name: Configure the Docker Hub registry mirror
+      shell: bash
+      run: |
+        set -euo pipefail
+        mirror="https://mirror.gcr.io"
+        cfg=/etc/docker/daemon.json
+        sudo mkdir -p /etc/docker
+        if sudo test -s "$cfg"; then
+          sudo cat "$cfg" | jq --arg m "$mirror" '."registry-mirrors" = ((."registry-mirrors" // []) + [$m] | unique)' > "$RUNNER_TEMP/daemon.json"
+        else
+          jq -n --arg m "$mirror" '{"registry-mirrors": [$m]}' > "$RUNNER_TEMP/daemon.json"
+        fi
+        sudo install -m 0644 "$RUNNER_TEMP/daemon.json" "$cfg"
+        sudo systemctl restart docker
+        docker info --format '{{range .RegistryConfig.Mirrors}}{{println .}}{{end}}' | tee "$RUNNER_TEMP/mirrors.txt"
+        grep -qx "$mirror/" "$RUNNER_TEMP/mirrors.txt"

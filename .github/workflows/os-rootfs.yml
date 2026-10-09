@@ -47,6 +47,7 @@ jobs:
           # The triggering ref, checkout's default: a PR run scans the PR; the weekly sweep and a
           # manual dispatch run on `develop`, which carries `os/` (#1162).
           persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
       - name: Check the appliance tree exists
         # Only a PR may legitimately miss the tree: a branch cut before the appliance tree existed
         # can reach this workflow through the .config/trivyignore path filter. Every other trigger runs on
