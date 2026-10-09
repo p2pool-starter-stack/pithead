@@ -198,6 +198,9 @@ The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to 
 continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
 The provision and setup-defaults phases check firstboot and system journals for bcrypt credentials with
 `tests/os/credential-journals.sh`; `selftest-credential-journals.sh` covers leaks and unreadable journals.
+The provision phase streams `tests/os/tor-recovery-refusal-guest.sh` after initial provisioning
+settles to require a healthy Tor guard refusal without unexpected-abort advice;
+`selftest-tor-recovery-refusal.sh` proves the assertion fails on pre-fix CLI dispatch.
 Password fixture cleanup lives in `tests/os/appliance-password-fixture.sh`, sourced and selftested by the config-approval leg.
 The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.py`
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;

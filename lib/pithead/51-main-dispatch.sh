@@ -93,6 +93,7 @@ main() {
         ;;
     tor-recover)
         [ "$#" -eq 1 ] || error "Usage: ./pithead tor-recover check|apply"
+        local _PITHEAD_TOR_RECOVERY_CLI=1
         tor_recover "$1"
         ;;
     upgrade)

@@ -646,6 +646,16 @@ pre-release gate (see [Releasing](releasing.md)) because it needs the real synce
 narrowed to what the diff touches, the per-PR gate for any change to what runs on a box (see
 [What a PR must prove](#what-a-pr-must-prove)).
 
+The lifecycle Tor recovery probe runs `tor-recover check` against healthy, ordinary circuit
+history. It requires exit 1 and the unsaturated-history warning, with no unexpected-abort
+message or debug advice. The standalone recovery suite exercises deliberate CLI refusals,
+successful checks and unexpected failures under production shell options; the Tor-probe
+selftest rejects a false success, wrong guard and generic-abort output. The KVM `provision`
+phase runs the same CLI command in its guest immediately after initial provisioning settles,
+first verifying unsaturated state, then requiring exit 1 and the warning on stderr without
+unexpected-abort advice. Its pure selftest fails against a generated CLI with the pre-fix
+dispatch behavior.
+
 ### Engineering standards
 
 Every scenario, at every tier, holds to the same rules.
