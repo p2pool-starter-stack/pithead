@@ -145,12 +145,17 @@ Per #3096 and #2732:
 
 **What you do:**
 
-1. Work through every row of [Broken configs](../sample-configs.md#broken-configs), one row at a time.
+1. Work through every row of [Broken configs](../sample-configs.md#broken-configs) with
+   `./pithead apply --dry-run`, restoring the baseline between rows.
 2. Run `./pithead status` between rows.
+3. Run the separate [normal-apply onion password cases](../sample-configs.md#onion-password-generation-on-normal-apply),
+   including cancellation, explicit acceptance and baseline restoration.
 
 **What you should see:**
 
-- Each refusal matches its row.
+- Each dry-run refusal matches its row and leaves the candidate config unchanged.
+- Normal apply generates a password before confirmation; cancelling keeps it in the
+  candidate config while leaving the rendered environment and containers unchanged.
 - `./pithead status` stays healthy throughout.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
