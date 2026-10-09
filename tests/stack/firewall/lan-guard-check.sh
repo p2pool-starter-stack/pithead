@@ -102,6 +102,20 @@ export LG_STOP="$LGD/stopped"
 : >"$LG_STOP"
 lg_check='mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1" in ps) case " $* " in *"service=monerod"*) grep -qxF monerod "$LG_STOP" || echo monerod ;; *"service=tari"*) grep -qxF tari "$LG_STOP" || echo tari ;; esac ;; port) case "$2" in monerod) echo "${LG_MONERO_PORT:-127.0.0.1}:18081" ;; tari) echo "${LG_TARI_PORT:-0.0.0.0}:18142" ;; esac ;; stop) printf "%s\n" "$2" >>"$LG_STOP" ;; esac; }; lan_guard_check'
 LG_LIVE=1 lg 'lan_guard_mark; mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; lan_guard_check' >/dev/null
+# A crashed node is started again only while the rule and this boot's marker are live (#3290).
+printf 'MONERO_RPC_BIND=0.0.0.0\nTARI_GRPC_BIND=0.0.0.0\n' >"$LGD/.env"
+export LG_START="$LGD/started"
+lg_crash='mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1" in ps) case " $* " in *"service=monerod"*) echo monerod ;; *"service=tari"*) echo tari ;; esac ;; inspect) case "$4" in monerod) echo 139 ;; tari) echo "${LG_TARI_EXIT:-0}" ;; esac ;; start) printf "%s\n" "$2" >>"$LG_START" ;; port) echo 0.0.0.0:1 ;; esac; }; lan_guard_check'
+: >"$LG_START"
+LG_LIVE=1 lg "lan_guard_mark; $lg_crash" >/dev/null 2>&1
+assert_eq "a node that exited non-zero is started again, a clean exit is left down" "$(tr '\n' ' ' <"$LG_START")" "monerod "
+: >"$LG_START"
+LG_LIVE=1 LG_TARI_EXIT=143 lg "lan_guard_mark; $lg_crash" >/dev/null 2>&1
+assert_eq "SIGTERM (143) is a deliberate stop and is not restarted" "$(tr '\n' ' ' <"$LG_START")" "monerod "
+: >"$LG_START"
+LG_LIVE=0 lg "lan_guard_mark; $lg_crash" >/dev/null 2>&1 || true
+assert_eq "no restart while the rule is missing" "$(cat "$LG_START")" ""
+LG_LIVE=1 lg 'lan_guard_mark' >/dev/null
 assert_eq "live rule leaves the marker" "$(cat "$LGD/data/lan-guard/enforced")" "boot-1"
 lg_rc=0
 LG_LIVE=0 lg "$lg_check" >/dev/null 2>&1 || lg_rc=$?

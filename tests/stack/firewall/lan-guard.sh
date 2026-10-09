@@ -350,7 +350,7 @@ assert_contains "guard failed at boot: tari is down, held, with the recovery" "$
 assert_contains "...and the recovery" "$lg_out" "Run './pithead up' to start it."
 lg_out="$(LG_LIVE=1 LG_ENABLED=0 LG_RUNNING=0 LG_EXIT=139 lg check_lan_guard)"
 assert_contains "exited while running: named, with its exit code" "$lg_out" \
-    "tari is down: it exited (code 139), and with LAN access on Docker does not restart it"
+    "tari is down: it exited (code 139), and with LAN access on Docker does not restart it; pithead-lan.timer starts it within 2 minutes while the LAN-only source rule is live"
 lg_out="$(LG_LIVE=1 LG_ENABLED=0 LG_RUNNING=0 LG_EXISTS=0 lg check_lan_guard)"
 assert_not_contains "a container down removed is no verdict" "$lg_out" "is down:"
 lg_out="$(LG_LIVE=1 LG_ENABLED=0 LG_POLICY=unless-stopped lg check_lan_guard)"
