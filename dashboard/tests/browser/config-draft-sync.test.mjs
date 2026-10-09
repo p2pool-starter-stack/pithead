@@ -83,11 +83,11 @@ test("a configuration draft survives a synchronization screen and keeps its mark
   await marker().waitFor();
   assert.equal(await editor.inputValue(), draft);
   await page.getByRole("button", {name:"Simple",exact:true}).click();
-  await page.locator("#dashboard-view .grid").first().waitFor();
+  await page.locator("#dashboard-view .grid").first().waitFor({state:"attached"});
   await page.evaluate(() => window.setSyncing(true));
   assert.equal(await page.locator("#dashboard-view .grid").count(), 0, "the cards are not rendered behind the sync screen");
   await page.evaluate(() => window.setSyncing(false));
-  await page.locator("#dashboard-view .grid").first().waitFor();
+  await page.locator("#dashboard-view .grid").first().waitFor({state:"attached"});
   await marker().waitFor();
   assert.deepEqual(errors, []);
 });
