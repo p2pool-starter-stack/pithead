@@ -1,8 +1,10 @@
 """Check the real boot's logged capability marker and dashboard failure accounting."""
 
+import gzip
 import json
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 
@@ -38,6 +40,52 @@ def validate(rows, summary, boot_started, now, expected_failures=0):
         raise AssertionError("ordinary failure count differs from the controlled test window")
     if summary["failures_24h"] != len(ordinary) or summary["rotate_hint"] != (len(ordinary) >= 5):
         raise AssertionError("dashboard did not exclude only marked boot probes")
+
+
+def log_storage(path):
+    """Inspect at most three native log files, 64 KiB each; retain only counts."""
+    path = Path(path)
+    result = {"files": 0, "bytes_sampled": 0, "nul_bytes": 0, "invalid_lines": 0, "health_rows": 0}
+    candidates = [path, *sorted(path.parent.glob("access-*.log*"))[-2:]]
+    for candidate in candidates:
+        try:
+            opener = gzip.open if candidate.suffix == ".gz" else open
+            with opener(candidate, "rb") as stream:
+                raw = stream.read(65536)
+        except (OSError, EOFError):
+            continue
+        result["files"] += 1
+        result["bytes_sampled"] += len(raw)
+        result["nul_bytes"] += raw.count(b"\0")
+        for line in raw.splitlines():
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except (ValueError, UnicodeError):
+                result["invalid_lines"] += 1
+                continue
+            if isinstance(row, dict) and isinstance(row.get("request"), dict):
+                result["health_rows"] += row["request"].get("uri") == "/.pithead-boot-health"
+    return result
+
+
+def caddy_configuration():
+    """Read host-network admin config without emitting any credentials or topology."""
+    result = {"available": False, "boot_matcher": False, "log_destination": False}
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open("http://127.0.0.1:2019/config/", timeout=3) as response:
+            config = json.loads(response.read(1048576))
+        serialized = json.dumps(config)
+        result.update(
+            available=True,
+            boot_matcher="X-Pithead-Boot-Probe" in serialized and "pithead_probe" in serialized,
+            log_destination="/var/log/caddy/access.log" in serialized,
+        )
+    except (OSError, ValueError):
+        pass
+    return result
 
 
 def report(rows, summary, boot_started, now, expected_failures):
@@ -172,6 +220,7 @@ def selftest():
         patch.object(sys, "argv", [__file__, "0"]),
         patch("time.time", return_value=1100),
         patch("time.sleep"),
+        patch("urllib.request.build_opener", side_effect=OSError("fixture unavailable")),
         patch.object(Path, "read_text", return_value="200"),
         redirect_stdout(captured),
     ):
@@ -186,6 +235,34 @@ def selftest():
         raise AssertionError("live evidence entry point lost its assertion reason")
     if json.loads(output.splitlines()[-1])["marked_wrong_uri"] != 1 or fixture_value in output:
         raise AssertionError("live evidence entry point lost or leaked its diagnostic")
+    with patch("urllib.request.build_opener") as factory:
+        factory.return_value.open.return_value = io.BytesIO(
+            json.dumps(
+                {
+                    "matcher": "X-Pithead-Boot-Probe",
+                    "field": "pithead_probe",
+                    "filename": "/var/log/caddy/access.log",
+                    "credential": fixture_value,
+                }
+            ).encode()
+        )
+        configuration = caddy_configuration()
+        if not all(configuration.values()) or fixture_value in json.dumps(configuration):
+            raise AssertionError("configuration diagnostic lost flags or leaked a credential")
+    import os
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory(dir=os.environ.get("TMPDIR")) as directory:
+        logfile = Path(directory) / "access.log"
+        logfile.write_bytes(b"\0" + json.dumps(probe).encode() + b"\n")
+        rolled = Path(directory) / "access-previous.log.gz"
+        with gzip.open(rolled, "wb") as stream:
+            stream.write(json.dumps(probe).encode() + b"\n")
+        storage = log_storage(logfile)
+        if storage["files"] != 2 or storage["nul_bytes"] != 1:
+            raise AssertionError("storage diagnostic lost current/rolled data")
+        if storage["invalid_lines"] != 1 or storage["health_rows"] != 1:
+            raise AssertionError("storage diagnostic hid malformed or rolled boot evidence")
     print("boot-probe evidence selftest passed")
 
 
@@ -208,7 +285,14 @@ if __name__ == "__main__":
                     raise AssertionError("Caddy access log is unavailable")
                 validate(rows, summary, boot_started, now, expected)
                 print(
-                    json.dumps(report(rows, summary, boot_started, now, expected), sort_keys=True)
+                    json.dumps(
+                        {
+                            **report(rows, summary, boot_started, now, expected),
+                            "storage": log_storage(audit_service.config.ACCESS_LOG_PATH),
+                            "caddy": caddy_configuration(),
+                        },
+                        sort_keys=True,
+                    )
                 )
                 break
             except AssertionError as failure:
@@ -216,7 +300,12 @@ if __name__ == "__main__":
                     print(str(failure), flush=True)
                     print(
                         json.dumps(
-                            report(rows, summary, boot_started, now, expected), sort_keys=True
+                            {
+                                **report(rows, summary, boot_started, now, expected),
+                                "storage": log_storage(audit_service.config.ACCESS_LOG_PATH),
+                                "caddy": caddy_configuration(),
+                            },
+                            sort_keys=True,
                         ),
                         flush=True,
                     )
