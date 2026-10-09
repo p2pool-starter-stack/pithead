@@ -212,3 +212,7 @@ saved kit, and verifies gzip/tar integrity and member bytes. A client-blocked tr
 the kit available for retry without another backup request; an interrupted transfer must report
 a failed download and permit a complete retry. These fixtures do not contact an
 appliance, prove host backup creation, or identify an operator's extension or managed policy.
+
+The configuration draft browser regression exercises valid edits and invalid JSON through
+Simple, Advanced and Backup, dirty markers, reset, failed apply and successful apply. The
+provision phase also fetches the shipped editor modules through the appliance dashboard.

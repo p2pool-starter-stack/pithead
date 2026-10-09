@@ -28,6 +28,11 @@ dashboard_curl() {
     missing-trigger:dashboard.js) body=${body/'disconnectedSince >= 60000'/'disconnectedSince >= Infinity'} ;;
     missing-failure-clock:dashboard.js) body=${body/'disconnectedSince = now();'/'disconnectedSince = null;'} ;;
     missing-prop:dashboard.js) body=${body/'recoveryNeeded=${p.recoveryNeeded}'/'recoveryNeeded=${false}'} ;;
+    missing-draft:app/components.mjs) body=${body/'hidden=${!configView}'/'hidden=${false}'} ;;
+    missing-marker:app/components.mjs) body=${body/' — Unsaved changes'/' — Changes'} ;;
+    missing-dirty:config/configview.mjs) body=${body/'this.props.onDirtyChange?.(dirty)'/'void dirty'} ;;
+    missing-applied-reset:config/configview.mjs) body=${body/'const pristine = out.status === "applied" ? this.state.editText : this.state.pristine'/'false ? {}'} ;;
+    missing-pristine-state:config/configview.mjs) body=${body/'this.setState({ phase: "done", result: out, pristine })'/'this.setState({ phase: "done", result: out })'} ;;
     unsafe-command:app/connectionrecovery.mjs) body=${body/' -sha256</code>'/' -sha256; false</code>'} ;;
     esac
     printf '%s\n%s' "$body" "$code"
@@ -49,7 +54,7 @@ passes=0 failures=0
 phase_provision_dashboard_recovery fixture-user fixture-password
 [ "$passes" = 5 ] && [ "$failures" = 0 ]
 for fixture in old-close missing-error-pane old-draft-reset missing-module redirect server-error missing-compare missing-stop \
-    missing-trigger missing-failure-clock missing-prop unsafe-command failed-command malformed-fingerprint; do
+    missing-trigger missing-failure-clock missing-prop missing-draft missing-marker missing-dirty missing-applied-reset missing-pristine-state unsafe-command failed-command malformed-fingerprint; do
     passes=0 failures=0
     if phase_provision_dashboard_recovery fixture-user fixture-password; then
         echo "incorrect PASS for $fixture" >&2
@@ -63,4 +68,4 @@ if phase_provision_dashboard_recovery fixture-user ''; then
     exit 1
 fi
 [ "$passes" = 0 ] && [ "$failures" = 1 ]
-echo 'selftest-dashboard-recovery: PASS (five deployed assertions; 15 refusal controls)'
+echo 'selftest-dashboard-recovery: PASS (five deployed assertions; 20 refusal controls)'
