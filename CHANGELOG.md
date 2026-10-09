@@ -337,7 +337,11 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 - **A crashed LAN-published node restarts** while the LAN-guard source rule is live ([#3295](https://github.com/p2pool-starter-stack/pithead/pull/3295)).
 - **`cosign` and `docker-compose` are built on Go 1.26.9**, which clears two Go standard-library
   CVEs in the image scan ([#3294](https://github.com/p2pool-starter-stack/pithead/pull/3294)).
-
+- **Persistent HugePages setup keeps cloud GRUB arguments.** Setup writes its own
+  `/etc/default/grub.d/zz-pithead-hugepages.cfg`, keeps existing boot arguments including cloud
+  console settings, verifies the generated kernel entries after `update-grub`, repairs earlier
+  Pithead reservations on re-run, and asks for no second reboot when the running kernel already has
+  the flags ([#3281](https://github.com/p2pool-starter-stack/pithead/pull/3281)).
 - **A Tari outage no longer rejects workers at once.** With `tari_required`, workers are rejected
   only after a sustained Tari RPC outage; migrating, starting and syncing only alert. Once the
   Monero node has answered, an outage, local or remote, always rejects ([#3091](https://github.com/p2pool-starter-stack/pithead/issues/3091)).
