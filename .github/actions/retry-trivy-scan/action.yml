@@ -9,6 +9,11 @@ description: >
   single pin `make lint-trivy-parity` reads (#1290, #2214). A second pin here would decide which
   engine the retry path runs while sitting outside that gate — so there isn't one, and this step
   re-scans with the binary already on $GITHUB_PATH rather than installing a second time.
+
+  The retry also covers a vulnerability-DB registry refusal (#3296): mirror.gcr.io answered 403 to
+  both attempts of one run because they ran within the same second. So the retry waits first, and
+  lists ghcr.io ahead of the mirror (TRIVY_DB_REPOSITORY, tried in order), so a refusing mirror
+  no longer fails an unrelated PR. The first attempt keeps trivy's default order.
 inputs:
   image-ref:
     required: true
@@ -17,7 +22,12 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Wait before retrying
+      shell: bash
+      run: sleep 30
     - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      env:
+        TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
       with:
         skip-setup-trivy: true
         image-ref: ${{ inputs.image-ref }}
