@@ -27,15 +27,16 @@ test('parseHashrate: accepts complete decimal values with optional units and whi
         ['1000', 1000], ['0', 0], ['.5', 0.5], ['0.5 MH/s', 500_000],
         [' 10.5 kH/s ', 10_500], ['2 K', 2000], ['2 m', 2_000_000],
         ['2 G', 2_000_000_000], ['1000 H/s', 1000], ['2 gh/S', 2_000_000_000],
-        ['.5 k H/s', 500],
+        ['.5 k H/s', 500], ['1,000', 1000], ['1,234.5 kH/s', 1_234_500],
+        ['12,345,678 H/s', 12_345_678],
     ]) {
         assert.equal(parseHashrate(input), expected, input);
     }
 });
 
-test('parseHashrate: rejects comma/exponent notation and incomplete or trailing syntax', () => {
+test('parseHashrate: rejects malformed comma grouping, exponent notation and incomplete or trailing syntax', () => {
     for (const input of [
-        '1e3', '1E3', '1e+3', '1,000', '10garbage', '1000 trailing text',
+        '1e3', '1E3', '1e+3', '1,00', '1000,000', '1,,000', '1,000,', '10garbage', '1000 trailing text',
         '10kgarbage', '0.5 MH/s extra', '10KH/suffix', '10 H', '10 k/s',
         '1.2.3', '1.', '.', '-10', '+10', 'Infinity', 'NaN', '0x10',
         '10\n20', '10 T',
@@ -58,7 +59,7 @@ test('parseHashrate: rejects overflow before and after unit conversion', () => {
 
 test('malformed what-if hashrate renders unavailable XMR estimates instead of a numeric prefix', () => {
     const earnings = { available: true, coeff_day: 1e-7, pool_difficulty: 250_000_000 };
-    for (const input of ['1e3', '1,000', '10garbage', 'Infinity', '']) {
+    for (const input of ['1e3', '1,00', '10garbage', 'Infinity', '']) {
         const est = computeEarnings(parseHashrate(input), earnings);
         for (const value of [est.day, est.month, est.year]) {
             assert.equal(value, null, input);
