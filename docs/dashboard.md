@@ -1334,7 +1334,12 @@ Below the form, the Configuration view shows two read-only security panels
 ([#349](https://github.com/p2pool-starter-stack/pithead/issues/349)):
 
 - **Access log.** Recent dashboard requests from Caddy's access log — time, HTTP status, method,
-  path, and the logged-in user — plus a count of failed logins (401s) in the last 24 hours. Over
+  path, and the logged-in user — plus a count of failed logins (401s) timestamped within the
+  last 24 hours among bounded retained records. Reads cover the active file and the two newest
+  Caddy generations, up to 4 MiB per file. The reader accepts timestamped `access-<timestamp>-size.log`
+  backups from the pinned Caddy, legacy `access-<timestamp>.log` backups, and their gzip forms.
+  Plain and compressed copies share one timestamp slot. Missing generations, retention, or byte limits can
+  omit failures; a zero count does not prove there were no failed logins. Over
   Tor there is no source IP to trace or block, so the signal is the *rate* of failures: five or
   more in a day shows a warning to rotate the dashboard password (set a new
   `dashboard.auth.password`, run `./pithead apply`) and, if the onion address may have leaked,
@@ -1359,7 +1364,7 @@ that range), the search narrows as you type, and filtering happens on the server
 deeper than the on-screen tail is still found — the access log's read stays size-bounded either
 way. Below the row, a pager reports how many entries matched and walks them a page at a time —
 pick 5 to 100 rows per page, step with Prev/Next. A filter with no matches says so; the
-failed-login counter always describes the whole log, never the filtered slice.
+failed-login counter always describes the bounded retained records, never the filtered slice.
 
 Both panels read host-written files through read-only mounts, and the dashboard treats every
 field in them as hostile input — a request path is attacker-chosen bytes — so each string is

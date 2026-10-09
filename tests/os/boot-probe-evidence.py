@@ -33,13 +33,28 @@ def validate(rows, summary, boot_started, now, expected_failures=0):
         r
         for r in rows
         if r.get("status") == 401
-        and now - r.get("ts", 0) <= 86400
+        and 0 <= now - r.get("ts", 0) <= 86400
         and r.get("pithead_probe") != "boot-health-v1"
     ]
     if len(ordinary) != expected_failures:
         raise AssertionError("ordinary failure count differs from the controlled test window")
     if summary["failures_24h"] != len(ordinary) or summary["rotate_hint"] != (len(ordinary) >= 5):
         raise AssertionError("dashboard did not exclude only marked boot probes")
+
+
+def start_log_window(directory):
+    """Archive the guest's complete log directory before reboot; preserve open writers."""
+    directory = Path(directory)
+    archive = directory.with_name(directory.name + ".before-reboot")
+    if archive.exists():
+        raise FileExistsError("pre-reboot log archive already exists")
+    directory.rename(archive)
+    try:
+        directory.mkdir(mode=0o755)
+    except OSError:
+        if not directory.exists():
+            archive.rename(directory)
+        raise
 
 
 def log_storage(path):
@@ -211,7 +226,7 @@ def selftest():
 
     fake = SimpleNamespace(
         config=SimpleNamespace(ACCESS_LOG_PATH="unused-fixture"),
-        _tail_json_lines=lambda _path: [dirty],
+        access_rows=lambda _path: [dirty],
         access_summary=lambda **_kwargs: quiet,
     )
     captured = io.StringIO()
@@ -263,12 +278,34 @@ def selftest():
             raise AssertionError("storage diagnostic lost current/rolled data")
         if storage["invalid_lines"] != 1 or storage["health_rows"] != 1:
             raise AssertionError("storage diagnostic hid malformed or rolled boot evidence")
+    with TemporaryDirectory(dir=os.environ.get("TMPDIR")) as directory:
+        logs = Path(directory) / "logs"
+        logs.mkdir()
+        active = logs / "access.log"
+        active.write_bytes(b"old-active\n")
+        (logs / "access-previous.log.gz").write_bytes(b"old-generation")
+        with active.open("ab") as old_writer:
+            start_log_window(logs)
+            old_writer.write(b"late-old-write\n")
+        archive = logs.with_name("logs.before-reboot")
+        if list(logs.iterdir()) or not (archive / "access-previous.log.gz").exists():
+            raise AssertionError("log window retained pre-boot generations or lost their archive")
+        if (archive / "access.log").read_bytes() != b"old-active\nlate-old-write\n":
+            raise AssertionError("log window lost an open writer's previous records")
+        try:
+            start_log_window(logs)
+        except FileExistsError:
+            pass
+        else:
+            raise AssertionError("log window overwrote the previous archive")
     print("boot-probe evidence selftest passed")
 
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         selftest()
+    elif len(sys.argv) == 3 and sys.argv[1] == "--start-window":
+        start_log_window(sys.argv[2])
     else:
         from mining_dashboard.service import audit_service
 
@@ -278,7 +315,7 @@ if __name__ == "__main__":
         for attempt in range(50):
             now = time.time()
             boot_started = now - float(Path("/proc/uptime").read_text().split()[0])
-            rows = audit_service._tail_json_lines(audit_service.config.ACCESS_LOG_PATH)
+            rows = audit_service.access_rows(audit_service.config.ACCESS_LOG_PATH)
             summary = audit_service.access_summary(now=now)
             try:
                 if rows is None:

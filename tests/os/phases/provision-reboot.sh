@@ -8,8 +8,8 @@ _phase_provision_reboot() {
     # (#790): derived files are regenerated on every boot by construction, so a stale or broken one must not
     # survive — this is the defect that shipped new code against a days-old Caddyfile on hardware and killed
     # TLS.
-    # Start a controlled log window before the real boot; retain all requests within it.
-    _ssh "truncate -s 0 /data/pithead/data/caddy-logs/access.log" || {
+    # Archive every retained generation before boot; keep old writers on their archived inode.
+    _ssh "python3 - --start-window /data/pithead/data/caddy-logs" <"$SCRIPT_DIR/boot-probe-evidence.py" || {
         bad "could not start the boot-probe access-log window (#3263)"
         return 1
     }
