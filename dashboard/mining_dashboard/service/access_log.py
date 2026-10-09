@@ -9,14 +9,16 @@ import stat
 import zlib
 from pathlib import Path
 
-# Match Caddy's lumberjack timestamped backups, including the uncompressed
-# generation present while compression runs. Never read arbitrary sibling files.
-_GENERATION = re.compile(r"access-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}\.log(?:\.gz)?")
+# Pinned Caddy's timberjack adds -size; older lumberjack backups omit it.
+# Include plain files during compression, but never arbitrary sibling files.
+_GENERATION = re.compile(
+    r"access-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3})(?:-size)?\.log(?:\.gz)?"
+)
 FILE_BYTES = 4 * 1024 * 1024
 GENERATIONS = 2
 
 
-def _read(path):
+def _read(path: Path) -> list[dict] | None:
     """At most 4 MiB of JSON bytes, and 4 MiB compressed input for gzip files.
 
     Plain files use a tail; gzip uses a bounded decompressed prefix. Oversized
@@ -55,7 +57,7 @@ def _read(path):
     return rows
 
 
-def access_rows(path):
+def access_rows(path: str) -> list[dict] | None:
     """Active log plus at most two newest unique backup timestamps, or None.
 
     Availability follows the active file. Missing/corrupt generations are ignored.
@@ -71,9 +73,10 @@ def access_rows(path):
     try:
         with os.scandir(active.parent) as siblings:
             for sibling in siblings:
-                if not _GENERATION.fullmatch(sibling.name):
+                match = _GENERATION.fullmatch(sibling.name)
+                if match is None:
                     continue
-                name = sibling.name.removesuffix(".gz")
+                name = match[1]
                 previous = newest.get(name)
                 if previous is None or not sibling.name.endswith(".gz"):
                     newest[name] = sibling.name

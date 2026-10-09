@@ -1336,7 +1336,9 @@ Below the form, the Configuration view shows two read-only security panels
 - **Access log.** Recent dashboard requests from Caddy's access log — time, HTTP status, method,
   path, and the logged-in user — plus a count of failed logins (401s) timestamped within the
   last 24 hours among bounded retained records. Reads cover the active file and the two newest
-  Caddy generations, up to 4 MiB per file. Missing generations, retention, or byte limits can
+  Caddy generations, up to 4 MiB per file. The reader accepts timestamped `access-<timestamp>-size.log`
+  backups from the pinned Caddy, legacy `access-<timestamp>.log` backups, and their gzip forms.
+  Plain and compressed copies share one timestamp slot. Missing generations, retention, or byte limits can
   omit failures; a zero count does not prove there were no failed logins. Over
   Tor there is no source IP to trace or block, so the signal is the *rate* of failures: five or
   more in a day shows a warning to rotate the dashboard password (set a new

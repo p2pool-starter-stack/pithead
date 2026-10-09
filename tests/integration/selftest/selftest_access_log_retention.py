@@ -4,10 +4,12 @@ import gzip
 import importlib.util
 import io
 import json
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 SOURCE = Path(__file__).resolve().parents[1] / "lib/access_log_retention.py"
 spec = importlib.util.spec_from_file_location("retention", SOURCE)
@@ -29,7 +31,8 @@ class FakeCaddy:
             return 200, ""
         if self.active.stat().st_size + len(uri) > 400000:
             self.rolls += 1
-            name = f"access-2026-10-09T01-00-{self.rolls:02d}.000.log.gz"
+            # Caddy 2.11.4 pins timberjack 1.4.2: native size rotations carry -size.
+            name = f"access-2026-10-09T01-00-{self.rolls:02d}.000-size.log.gz"
             (self.logs / name).write_bytes(gzip.compress(self.active.read_bytes()))
             self.active.write_bytes(b"")
         entry = {
@@ -86,6 +89,28 @@ class RetentionControls(unittest.TestCase):
         self.assertIn("failures retained beyond 256 KiB", out)
         self.assertIn("failures retained after native gzip rotation", out)
         self.assertIn("access-log-retention: complete", out)
+
+    def test_legacy_only_matcher_misses_native_rotation(self):
+        legacy = re.compile(r"access-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}\.log(?:\.gz)?")
+        with patch.object(retention, "_GENERATION", legacy):
+            with self.assertRaisesRegex(RuntimeError, "did not rotate"):
+                self.run_proof()
+
+    def test_witness_deduplicates_legacy_and_native_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            logs = Path(directory)
+            names = (
+                "access-2026-10-09T01-00-01.000.log.gz",
+                "access-2026-10-09T01-00-01.000-size.log",
+                "access-2026-10-08T01-00-01.000.log.gz",
+                "access-2026-10-07T01-00-01.000-size.log.gz",
+            )
+            for name in names:
+                (logs / name).touch()
+            self.assertEqual(
+                {p.name for p in retention.retained_paths(logs)},
+                {"access.log", names[1], names[2]},
+            )
 
     def test_original_reader_fails_after_tail_limit(self):
         with self.assertRaisesRegex(RuntimeError, "beyond the old 256 KiB tail"):

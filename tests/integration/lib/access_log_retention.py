@@ -14,7 +14,10 @@ import zlib
 from pathlib import Path
 from urllib.parse import urlencode
 
-_GENERATION = re.compile(r"access-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}\.log(?:\.gz)?")
+# Pinned Caddy uses timberjack's -size suffix; legacy lumberjack omits it.
+_GENERATION = re.compile(
+    r"access-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3})(?:-size)?\.log(?:\.gz)?"
+)
 OLD_TAIL = 256 * 1024
 FILE_BYTES = 4 * 1024 * 1024
 
@@ -103,9 +106,10 @@ def retained_paths(logs):
     """Independent witness: active plus two newest unique shipped generations."""
     selected = {}
     for path in logs.iterdir():
-        if not _GENERATION.fullmatch(path.name):
+        match = _GENERATION.fullmatch(path.name)
+        if match is None:
             continue
-        name = path.name.removesuffix(".gz")
+        name = match[1]
         if name not in selected or path.suffix != ".gz":
             selected[name] = path
         if len(selected) > 2:
