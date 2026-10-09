@@ -115,7 +115,8 @@ async def get_container_health():
     Inspects each stack container (``GET /containers/<name>/json`` — the read proxy's
     CONTAINERS=1 ruleset allows it, see docker-compose.yml `docker-proxy`) and returns
     ``{name: {"running", "restarting", "restart_count", "health", "unsupervised", "exit_code",
-    "held_since_boot"}}``. ``health`` is
+    "held_since_boot", "started_at"}}``. ``started_at`` is ``State.StartedAt`` as epoch seconds
+    (``None`` when unreadable). ``health`` is
     ``State.Health.Status`` (never the human "Up 2 hours (unhealthy)" list string) and is
     ``None`` when the container has no healthcheck — no signal, not "unhealthy". A missing
     container (404) or an unreachable proxy skips that name rather than raising, so remote
@@ -163,6 +164,7 @@ async def get_container_health():
                         == "no"
                     ),
                     "exit_code": state.get("ExitCode"),
+                    "started_at": _epoch(state.get("StartedAt")),
                     "held_since_boot": bool(
                         boot is not None
                         and (started := _epoch(state.get("StartedAt"))) is not None
