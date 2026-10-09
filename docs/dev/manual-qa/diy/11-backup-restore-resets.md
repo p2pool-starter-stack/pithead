@@ -28,6 +28,8 @@ This part checks encrypted backups, restores (including the refusals), the dashb
 
 - A `.tar.gz.enc` file under `backups/`.
 - The file is mode 600 (`-rw-------`).
+- Backup restarts the stack. Stop it before each restore below; restore leaves it stopped
+  until you run `./pithead up`.
 
 **Record:** PASS, FAIL or N/A in the results sheet. Write down the backup file name.
 
@@ -35,15 +37,21 @@ This part checks encrypted backups, restores (including the refusals), the dashb
 
 **What you do:**
 
-1. Run this, where `<file>` is the backup file name from 11.1, and give a wrong passphrase:
+1. Run `./pithead down` and check `./pithead status` shows the services stopped.
+2. Run this, where `<file>` is the backup file name from 11.1. Answer `y` to the overwrite
+   confirmation, then give a wrong passphrase:
 
    ```bash
    ./pithead restore backups/<file>
    ```
 
+3. Run `./pithead up` and check the stack is healthy.
+
 **What you should see:**
 
-- The restore is refused before anything changes.
+- The restore exits nonzero with `Wrong passphrase or corrupt archive — nothing was restored.`
+- Config, rendered files and data are unchanged. A refusal saying services are still active
+  does not test the passphrase: stop them and retry.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -53,16 +61,18 @@ This part checks encrypted backups, restores (including the refusals), the dashb
 
 1. Edit `config.json` and set `config_version` to `"9.9.9"`, as in [6.10](06-settings-command-line.md#610-a-config-newer-than-the-code-warns).
 2. Run `./pithead backup`.
-3. Put the stamp back by hand.
-4. Run `./pithead restore backups/<that newest file>` with the right passphrase, where `<that newest file>` is the backup you just made.
-5. Do not use that archive in 11.3.
+3. Put the stamp back by hand. Run `./pithead down` and check the services are stopped.
+4. Run `./pithead restore backups/<that newest file>`, answer `y` to the overwrite
+   confirmation and enter the right passphrase. Use the backup you just made.
+5. Run `./pithead up` and check the stack is healthy. Do not use that archive in 11.3.
 
 **What you should see:**
 
 Per #3109:
 
 - The restore is refused before anything is promoted, with `This backup's configuration was written by pithead <stamp>; this machine runs <version>. Update to <stamp> or later, then restore.`
-- `config.json`, the data and the running stack are unchanged.
+- The refusal exits nonzero. `config.json`, rendered files and data are unchanged; services
+  stay stopped until item 5.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -71,11 +81,16 @@ Per #3109:
 **What you do:**
 
 1. Change the energy price in the dashboard.
-2. Restore the backup from 11.1 with the right passphrase:
+2. Run `./pithead down` and check the services are stopped.
+3. Restore the backup from 11.1, answer `y` to the overwrite confirmation and enter the
+   right passphrase:
 
    ```bash
    ./pithead restore backups/<file>
    ```
+
+4. Check restore exits 0 and asks you to start the stack. Run `./pithead up`, check
+   `./pithead status` is healthy, and reopen the dashboard.
 
 **What you should see:**
 
