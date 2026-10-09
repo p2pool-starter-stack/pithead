@@ -163,8 +163,7 @@ jobs:
     # Every leg resolves the published TAG to a DIGEST and scans the digest: a tag is a moving
     # pointer, so only the digest names the bytes a user pulled. It is printed in the report.
     #
-    # fail-fast: false; the report job runs on `always()` and names any image with no scan as
-    # UNCHECKED, never as clean.
+    # fail-fast: false; the report job (always()) names an unscanned image UNCHECKED, not clean.
     name: Shipped-image CVE sweep (${{ matrix.service }})
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
