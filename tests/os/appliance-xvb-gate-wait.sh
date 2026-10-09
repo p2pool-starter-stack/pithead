@@ -132,13 +132,16 @@ print(run({"miner_released": True}, "fifo"))
     }
 }
 
-# The wait itself, over stubbed guest reads: <gate answers> <proxy answers> <want-rc> <label>.
+# The wait itself, over stubbed reads: <gate answers> <proxy answers> <want-rc> <polls> <label>.
 # Each answers string is consumed one word per sample; the last word repeats.
-_xvb_gate_wait_self_test() {
-    local f=0 dir rc XVB_GATE_RELEASE_TIMEOUT=2 out saved
+_xvb_gate_wait_self_test() (
+    local f=0 dir rc XVB_GATE_RELEASE_TIMEOUT=5 out saved XVBT_CLOCK want polls label
     saved="$(declare -f _xvb_guest_python _ssh)" # redefined below; put back for the caller's own tests
     dir="$(mktemp -d)"
-    sleep() { command sleep 0.05; }
+    trap 'rm -rf "$dir"' EXIT
+    # shellcheck source=tests/os/xvb-selftest-clock.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/xvb-selftest-clock.sh"
+    _xvb_selftest_clock "$dir/clock" || return 1
     _xvb_next() { # <file> <words>: the sample counter lives in a file, outside the $(...) subshells
         local n words
         n=$(($(cat "$1" 2>/dev/null || echo 0) + 1)) && printf '%s' "$n" >"$1"
@@ -150,20 +153,27 @@ _xvb_gate_wait_self_test() {
     _ssh() {
         case "$1" in *"podman inspect"*"xmrig-proxy"*) _xvb_next "$dir/p" "$XVBT_PROXY" ;; *"podman start"* | *"podman stop"*) echo "$1" >>"$dir/touched" ;; esac
     }
-    while IFS='|' read -r XVBT_GATE XVBT_PROXY want label; do
+    while IFS='|' read -r XVBT_GATE XVBT_PROXY want polls label; do
         rm -f "$dir/g" "$dir/p"
         rc=0 && out="$(_xvb_wait_for_gate_release)" || rc=$?
+        [ "$(cat "$dir/g")" = "$polls" ] && [ "$(cat "$dir/p")" = "$polls" ] || {
+            printf 'xvb self-test: gate wait — %s: did not make %s complete polls\n' "$label" "$polls" >&2
+            f=$((f + 1))
+        }
         [ "$rc" = "$want" ] || {
             printf 'xvb self-test: gate wait — %s: rc=%s want %s (%s)\n' "$label" "$rc" "$want" "$out" >&2
             f=$((f + 1))
         }
     done <<'CASES'
-released|true|0|released with the proxy up from the start
-held held released|false true|0|released one poll after the caller arrived (the restore race itself)
-released held released held|true|1|a release that flickers never holds for two samples
-released|true false true false|1|a proxy that keeps dropping never runs for two samples
-held marker|true|1|a sync-gate-reset marker keeps the gate held
-held|false|1|a gate that never releases times out
+released|true|0|2|released with the proxy up from the start
+held held released|false true|0|4|released one poll after the caller arrived (the restore race itself)
+released held released held|true|1|5|a release that flickers never holds for two samples
+released|true false true false|1|5|a proxy that keeps dropping never runs for two samples
+held marker|true|1|5|a sync-gate-reset marker keeps the gate held
+held|false|1|5|a gate that never releases times out
+held held held released|true|0|5|two released samples before the deadline succeed
+held held held held released|true|1|5|one released sample before the deadline is insufficient
+held held held held held released|true|1|5|a release after the deadline is never sampled
 CASES
     out="$(XVBT_GATE=held XVBT_PROXY=false && rm -f "$dir/g" "$dir/p" && _xvb_wait_for_gate_release)"
     [[ "$out" = "gate=held proxy-running=false" || "$out" = "gate=held proxy-running=unreadable" ]] || {
@@ -174,14 +184,14 @@ CASES
         printf 'xvb self-test: the gate wait started or stopped a container the gate owns\n' >&2
         f=$((f + 1))
     }
-    unset -f sleep _xvb_next _xvb_guest_python _ssh
+    unset -f date sleep _xvb_next _xvb_guest_python _ssh
     eval "$saved"
     rm -rf "$dir"
     _xvb_gate_order_self_test || f=$((f + 1))
     _xvb_gate_payload_self_test || f=$((f + 1))
     _xvb_gate_stalled_read_self_test || f=$((f + 1))
     [ "$f" -eq 0 ]
-}
+)
 
 # Real SSH wrapper and local fake transport: either read can stall, including the second good
 # sample. Neither a stalled read nor a late released/running result may outlive the deadline.
