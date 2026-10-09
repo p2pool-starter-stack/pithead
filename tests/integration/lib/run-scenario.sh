@@ -118,9 +118,7 @@ assert_metrics_via_caddy() {
         return 0
     fi
     secure="$(env_on_box DASHBOARD_SECURE)"
-    # #740: Caddy binds HOST_PORT when set, else the scheme default (80/443). Read it so the operator
-    # path is curled on the port Caddy actually listens on, not a hardcoded 80/443.
-    port="$(env_on_box HOST_PORT)"
+    port="$(env_on_box HOST_PORT)" # #740: Caddy binds HOST_PORT when set, else 80/443
     if [ "$secure" = "false" ]; then
         scheme="http"
         [ -n "$port" ] || port=80
@@ -173,8 +171,7 @@ assert_doctor_ok() {
     if [ "$(jq_get "$(rx 'cat config.json')" '.monero.mode')" = remote ]; then
         it_skip_leg "doctor zero tip timestamp (#3277)" "local Monero check is not run in remote mode" "by-design"
     else
-        rc=0
-        tip_out=$(rx "bash -s -- $(quote_arg "$IT_PITHEAD")" --stdin <"$HERE/tools/doctor-tip-time.sh" 2>&1) || rc=$?
+        tip_out=$(rx "bash -s -- $(quote_arg "$IT_PITHEAD")" --stdin <"$HERE/tools/doctor-tip-time.sh" 2>&1) && rc=0 || rc=$?
         assert_rc "doctor zero tip timestamp in text and JSON has no fabricated age or stale warning (#3277)" "$rc" "0"
         printf '%s\n' "$tip_out" | redact | sed 's/^/doctor-tip-time probe: /'
     fi
