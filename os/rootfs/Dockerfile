@@ -47,6 +47,8 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 #
 #   golang.org/x/mod       v0.40.0   CVE-2026-56864 / CVE-2026-56865. Indirect in both: cosign
 #                                    v3.1.3 pins v0.37.0; compose v5.5.1 selects v0.40.0.
+#   golang.org/x/net       v0.60.0   CVE-2026-78669 (HIGH, HTTP/2 SETTINGS denial of service), both
+#                                    binaries: both resolve v0.58.0.
 #   google.golang.org/grpc v1.83.2   CVE-2026-84445 (HIGH), both binaries. Third trip down this
 #                                    ladder: #1153's v1.82.1 (GHSA-hrxh-6v49-42gf) aged into
 #                                    CVE-2026-84304, whose v1.83.1 aged into this. #1655.
@@ -61,8 +63,8 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # survived in that file until #1153. Verify by re-running the scan against the built binaries with
 # NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
 # left two other HIGH findings standing.
-ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
+ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
+ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.40.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
 ENV CGO_ENABLED=0
 
 # Blobless clone then detach to the commit: the tag is only a convenience for the version string.
