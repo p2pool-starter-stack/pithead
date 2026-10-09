@@ -587,9 +587,21 @@ resync from the network on their own.
 The archive is encrypted, and the machine picks the passphrase for you: a long, random
 one, shown exactly once, right after the archive is ready. There is no way to see it
 again — the page shows it inside a downloadable kit (the passphrase, the archive's name,
-and what it contains), and warns you before it moves on. Save the kit and download the
-archive together, and keep them somewhere other than this machine. Without the
-passphrase, the archive cannot be opened.
+and what it contains). Save the kit first, then download the archive, and keep both somewhere
+other than this machine. Leave the recovery page open until both downloads finish and check
+the saved files before closing it. The archive link keeps this page available if the browser
+blocks the transfer; retry the same link without creating another backup. Reloading or leaving
+the recovery page discards its passphrase, and the host removes its copy after its existing
+short expiry window. Without the passphrase, the archive cannot be opened.
+
+If Chrome blocks the archive, check **Downloads** for the reason and verify the dashboard
+certificate. Save the kit, keep the recovery page open, and copy its archive link. Open a
+clean Chrome profile with no extensions, verify the dashboard certificate and sign in there,
+then open the copied archive link. Do not create another backup to retry the download.
+If a managed policy blocks it,
+ask its administrator to approve downloads from the appliance origin or provide another
+approved way to save the encrypted archive; do not bypass the policy. **Backup created**
+means the file exists on the host, not that a complete off-machine copy has been saved.
 
 Putting a backup to use is the [Recovering from a backup](#recovering-from-a-backup)
 section below: a fresh install accepts the archive and its passphrase in place of the

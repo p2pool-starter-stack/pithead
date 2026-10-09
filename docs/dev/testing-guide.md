@@ -202,4 +202,13 @@ On a fresh Linux test runner, use `playwright install --with-deps chromium` to i
 browser's system libraries as well. The separate `browser.yml` workflow does this; pure
 frontend tests remain dependency-free. Missing browser dependencies fail the browser suite.
 The focus regression uses the production OS-update component and native dialog with a local
-refused-check fixture; it does not contact an appliance or replace certificate acceptance proof.
+refused-check fixture. The backup regression serves the production backup component over
+self-signed HTTPS, accepts the browser's certificate interstitial, and records the exact Chromium
+version in both fresh-profile and explicitly disabled-extension runs. CI repeats the backup tests
+with Google Chrome for Testing 141.0.7390.37; its executable can also be selected with
+`PITHEAD_BACKUP_BROWSER_EXECUTABLE`. It saves the kit and a
+22 MiB encrypted fixture through the GUI, compares archive length and SHA-256, decrypts with the
+saved kit, and verifies gzip/tar integrity and member bytes. A client-blocked transfer must leave
+the kit available for retry without another backup request; an interrupted transfer must report
+a failed download and permit a complete retry. These fixtures do not contact an
+appliance, prove host backup creation, or identify an operator's extension or managed policy.

@@ -76,7 +76,14 @@ reset after success, stale snapshot retention, and advice during sync, normal di
 initial-load failure. `dashboard/tests/browser/osupdate-close.test.mjs` serves the production OS-update component,
 clicks Close once after a refused update check, and asserts the native dialog is removed and
 `document.activeElement` is its actual OS-updates trigger. The locked Chromium test runs through
-`make test-browser` in `browser.yml`. Replacement-certificate acceptance still requires the
+`make test-browser` in `browser.yml`. `backup-download.test.mjs` uses the production backup
+component over self-signed HTTPS, accepts the certificate interstitial without bypass flags,
+and requires complete GUI saves of the kit and encrypted fixture: length and SHA-256 match,
+decryption using the saved kit, gzip/tar integrity and member bytes. It records exact Chromium
+and pinned Google Chrome for Testing versions, compares fresh profiles with extensions explicitly
+disabled, and checks that client blocking and interrupted transfers permit retry without a new
+backup or loss of the displayed kit. The original operator profile and live appliance backup
+contents remain outside these fixtures. Replacement-certificate acceptance still requires the
 appliance browser check in QA step 13.8. The KVM provision address-watch leg retains its
 SAN check, then uses the captured dashboard login over TLS from outside the guest to require
 HTTP 200 for the deployed OS-update error Close handler, fingerprint-comparison and
@@ -201,9 +208,19 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Disabled / zero shares / `fail_count ≥ 3` / no sustainable tier → P2POOL | guards | 1 ✅ |
 | Closed-loop ramp/back-off, cold-start seed, VIP-reserve anti-overshoot (#70) | controller | 1 ✅ |
 | Actuated run-loop duty: split remainder dwell honored, steady state at tier + cushion (#423) | wall-clock sim | 1 ✅ |
-| P2POOL / XVB / SPLIT modes, tiers, smart-sleep early exit when enabled; full P2Pool dwell with XvB disabled and no credited average | decision | 1 ✅ |
+| P2POOL / XVB / SPLIT modes, tiers, smart-sleep early exit when enabled; full P2Pool dwell with XvB disabled and no credited average | decision | 1 ✅ · 4 ▶ (`assert_xvb_off_no_dwell_churn`: after 60 seconds of dashboard uptime, observe 95 seconds of live logs, longer than two old 30-second churn periods and shorter than the shipped `XVB_TIME_ALGO_MS`; zero early-dwell exits and at most one P2POOL switch. XvB enabled, an unstarted algorithm or rejected workers skip by design; unreadable probes and restarts fail. Fake-transport controls in `selftest-xvb-off-dwell.sh` reject the old churn log and exercise both harness callers) |
 | Real XvB endpoint reachable / failing | network | 4 (real endpoint) |
 | Credited 1h/24h averages converge to tier on live XvB (soak) | live donation | 4 (real endpoint) |
+
+The appliance XvB leg's stubbed polling fixtures use a file-backed clock: each polling sleep
+advances one simulated second, including inside command substitutions. Host scheduling cannot
+consume their attempt budget. `tests/os/selftest-xvb-poll-clock.sh` runs the real self-test with
+two seconds of simulated host delay per clock read; success, retry, held/flickering gate,
+unavailable proxy/Tor and unsuccessful route controls retain their assertions. Gate-wait controls
+also count complete polls and distinguish two released samples before the deadline from one
+sample or a release after it. The separate stalled-SSH and late-answer controls keep real
+deadlines. These are tier-1 fixture checks; the runtime polls retain their wall-clock deadlines
+and require tier-4 appliance proof when changed.
 
 ### F. Dashboard `/api/state` field states
 
