@@ -120,7 +120,7 @@ Browser assets live in `web/static/`. JavaScript feature folders are `app/`,
 nested tests through `make test-frontend`.
 `dashboard/tests/browser/` holds Chromium regressions using the locked Playwright package;
 `make test-browser` runs them after browser installation. The separate `browser.yml` workflow
-installs the locked tool and runs native dialog focus and earnings input checks.
+installs the locked tool and runs native dialog focus, earnings input and HTTPS backup-download checks.
 The earnings browser regression serves the real calculator, verifies grouped thousands and
 malformed input, and supports `PITHEAD_BROWSER_STATIC` for pre-fix asset controls.
 
@@ -143,7 +143,7 @@ Keep local code out of `vendor/`.
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. `fakes/test_masked_config_read.py` exercises raw host config through the CLI renderer and dashboard reader. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. `rig-config-meta-wait.sh` waits for refreshed provenance before the rig reboot comparison; `selftest-rig-config-meta-wait.sh` covers stale, absent and invalid feeds without a guest. |
-| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The installer restore uses `restore-live-state-verdict.sh` for the configured-wallet comparison and bounded P2Pool startup window, with controller restoration and crash cases checked by `selftest-restore-p2pool-startup.sh`. The post-commit fault leg uses `chain-fault-timing.sh` to read the live dashboard debounce and prove the before/after window; `selftest-chain-fault-timing.sh` covers its deadlines and negative controls. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
+| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The installer restore uses `restore-live-state-verdict.sh` for the configured-wallet comparison and bounded P2Pool startup window, with controller restoration and crash cases checked by `selftest-restore-p2pool-startup.sh`. The post-commit fault leg uses `chain-fault-timing.sh` to read the live dashboard debounce and prove the before/after window; `selftest-chain-fault-timing.sh` covers its deadlines and negative controls. The XvB stubbed polling fixtures share `tests/os/xvb-selftest-clock.sh`; `tests/os/selftest-xvb-poll-clock.sh` checks independence from host scheduling. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
 | `tests/runner/` | The pinned Linux image `make test-container` runs the other tiers inside, so a macOS or Windows host reaches CI's verdict. Built and CVE-scanned by `test-images.yml`; reaches no user. |
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
@@ -177,6 +177,9 @@ and records counted `by-design` skips for the connection and wallet supersession
 checkout probes; failed identification leaves those probes binding.
 `tests/integration/selftest/selftest-probe-channels.sh` covers the channel decision,
 skip accounting and missing DIY tools without starting containers.
+`tests/integration/lib/xvb-off-dwell.sh` supplies the live disabled-XvB dwell observation
+for deploying scenarios and read-only checks; `selftest-xvb-off-dwell.sh` exercises
+its log, clock, rejection and transport controls without a daemon.
 The source-image module supplies shared read-only lifecycle latch/marker diagnostics to the
 connection probe and lifecycle runner. The image fixture uses the shared
 `assert_mining_probe_ready` in `run-matrix.sh` to settle a legitimate restore-induced hold.
