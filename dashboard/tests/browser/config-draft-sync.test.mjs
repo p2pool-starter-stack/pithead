@@ -1,86 +1,43 @@
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { resolve, sep } from "node:path";
-import { test } from "node:test";
-import { chromium } from "playwright";
+import { expect, test } from "./fixtures.mjs";
 
-const staticRoot = resolve(
-  process.env.PITHEAD_BROWSER_STATIC ||
-    new URL("../../mining_dashboard/web/static/", import.meta.url).pathname,
-);
-const state = JSON.parse(
-  await readFile(new URL("../frontend/fixtures/state.json", import.meta.url)),
-);
-state.control_enabled = false;
 const config = {
   dashboard: { energy: { cost_per_kwh: 0.17 } },
   _editable_keys: ["dashboard.energy.cost_per_kwh"],
 };
-const fixture = `<!doctype html><html><body><div id="fixture"></div>
-<script type="module">
-import { html, render } from '/static/app/preact.mjs';
-import { App } from '/static/app/components.mjs';
-const state = ${JSON.stringify(state)};
+
+test("configuration drafts, the review dialog and the backup dialog follow the synchronization screen", async ({
+  page,
+  ui,
+}) => {
+  let reads = 0;
+  await page.route("**/api/config", (route) => {
+    reads++;
+    return route.fulfill({ json: config });
+  });
+  await page.route("**/api/control/preview", (route) =>
+    route.fulfill({
+      json: { id: "sync-preview", status: "previewed", changes: [{ msg: "Energy cost changed" }] },
+    }),
+  );
+  ui.state.control_enabled = false;
+  await ui.mount(`import { App } from '/static/app/components.mjs';
+const state = ${JSON.stringify(ui.state)};
 const ui = {view:'config',range:'all',series:{},avg:'10m',theme:'auto',hintDismissed:true};
 const draw = () => render(html\`<\${App} state=\${state} connected=\${true} ui=\${ui}
   onView=\${mode => {ui.view = mode; draw();}} />\`, document.getElementById('fixture'));
 window.setSyncing = (syncing) => { state.syncing = syncing; draw(); };
+window.enableControl = () => { state.control_enabled = true; draw(); };
 draw();
-</script></body></html>`;
-
-test("a configuration draft survives a synchronization screen and keeps its marker", {
-  timeout: 60000,
-}, async (t) => {
-  let reads = 0;
-  const server = createServer(async (req, res) => {
-    if (req.url === "/") {
-      res.setHeader("Content-Type", "text/html");
-      return res.end(fixture);
-    }
-    if (req.url === "/api/control/preview") {
-      res.setHeader("Content-Type", "application/json");
-      return res.end(
-        JSON.stringify({
-          id: "sync-preview",
-          status: "previewed",
-          changes: [{ msg: "Energy cost changed" }],
-        }),
-      );
-    }
-    if (req.url === "/api/config") {
-      reads++;
-      res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify(config));
-    }
-    const path = resolve(staticRoot, "." + req.url.replace(/^\/static/, ""));
-    if (!req.url.startsWith("/static/") || !path.startsWith(staticRoot + sep)) {
-      res.writeHead(404);
-      return res.end();
-    }
-    try {
-      res.setHeader("Content-Type", "text/javascript");
-      res.end(await readFile(path));
-    } catch {
-      res.writeHead(404);
-      res.end();
-    }
-  });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  t.after(() => {
-    server.closeAllConnections();
-    return new Promise((r) => server.close(r));
-  });
-  const browser = await chromium.launch();
-  t.after(() => browser.close());
-  const page = await browser.newPage();
-  const errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`http://127.0.0.1:${server.address().port}/`);
+`);
+  const setSyncing = (syncing) => page.evaluate((value) => window.setSyncing(value), syncing);
   const nav = page.getByRole("navigation", { name: "View" });
   const marker = () =>
     nav.getByRole("button", { name: "Configuration — Unsaved changes", exact: true });
   const editor = page.locator(".config-view textarea");
+  const openDialogs = page.locator("dialog[open]");
+  const stackCards = page.locator("#dashboard-view .grid-section-label");
+
+  // The draft and its marker survive a sync screen without reloading the configuration.
   await page
     .locator(".config-view summary")
     .filter({ hasText: "the configuration this page sends" })
@@ -90,38 +47,43 @@ test("a configuration draft survives a synchronization screen and keeps its mark
     .filter({ hasText: /^Energy$/ })
     .click();
   await page.locator('.config-view input[type="number"]').fill("0.18");
-  await marker().waitFor();
+  await expect(marker()).toBeVisible();
   const draft = await editor.inputValue();
-  await page.evaluate(() => window.setSyncing(true));
-  await page.locator(".progress-text").first().waitFor();
-  assert.equal(await editor.isVisible(), false, "the draft is hidden while the sync screen shows");
-  await page.evaluate(() => window.setSyncing(false));
-  await marker().waitFor();
-  assert.equal(await editor.inputValue(), draft);
-  assert.equal(reads, 1, "a sync transition must not reload and overwrite the candidate");
+  await setSyncing(true);
+  await expect(page.locator(".progress-text").first()).toBeVisible();
+  await expect(editor).toBeHidden();
+  await setSyncing(false);
+  await expect(marker()).toBeVisible();
+  await expect(editor).toHaveValue(draft);
+  expect(reads, "a sync transition must not reload and overwrite the candidate").toBe(1);
+
+  // An open review dialog closes behind the sync screen and returns with the draft intact.
   await page.getByRole("button", { name: "Save & preview changes" }).click();
-  await page.getByRole("dialog", { name: "Review changes" }).waitFor();
-  await page.evaluate(() => window.setSyncing(true));
-  assert.equal(
-    await page.locator("dialog[open]").count(),
-    0,
-    "the review dialog must close while the sync screen shows",
-  );
-  await page.evaluate(() => window.setSyncing(false));
-  await page.getByRole("dialog", { name: "Review changes" }).waitFor();
+  await expect(page.getByRole("dialog", { name: "Review changes" })).toBeVisible();
+  await setSyncing(true);
+  await expect(openDialogs).toHaveCount(0);
+  await setSyncing(false);
+  await expect(page.getByRole("dialog", { name: "Review changes" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await marker().waitFor();
-  assert.equal(await editor.inputValue(), draft);
+  await expect(marker()).toBeVisible();
+  await expect(editor).toHaveValue(draft);
+
+  // The stack cards are not rendered behind the sync screen.
   await page.getByRole("button", { name: "Simple", exact: true }).click();
-  await page.locator("#dashboard-view .grid-section-label").first().waitFor({ state: "attached" });
-  await page.evaluate(() => window.setSyncing(true));
-  assert.equal(
-    await page.locator("#dashboard-view .grid-section-label").count(),
-    0,
-    "the cards are not rendered behind the sync screen",
-  );
-  await page.evaluate(() => window.setSyncing(false));
-  await page.locator("#dashboard-view .grid-section-label").first().waitFor({ state: "attached" });
-  await marker().waitFor();
-  assert.deepEqual(errors, []);
+  await expect(stackCards.first()).toBeAttached();
+  await setSyncing(true);
+  await expect(stackCards).toHaveCount(0);
+  await setSyncing(false);
+  await expect(stackCards.first()).toBeAttached();
+  await expect(marker()).toBeVisible();
+
+  // A backup confirmation dialog closes behind the sync screen too.
+  await page.evaluate(() => window.enableControl());
+  await page.getByRole("button", { name: "Backup", exact: true }).click();
+  await page.getByRole("button", { name: "Back up now" }).click();
+  await expect(page.getByRole("dialog", { name: "Create a backup" })).toBeVisible();
+  await setSyncing(true);
+  await expect(openDialogs).toHaveCount(0);
+  await setSyncing(false);
+  await expect(page.getByRole("dialog", { name: "Create a backup" })).toBeVisible();
 });

@@ -1199,7 +1199,9 @@ edits. Return to Configuration to finish them; the marker clears after a success
 **Discard edits**. When the stack enters its synchronization screen the editor is hidden, not
 unmounted, so the draft and the marker are still there when the dashboard returns. The page only
 shows the loading screen before its first state response, when no editor exists yet. Drafts are
-not stored across a browser reload or close. The page cannot observe an HTTP authentication change, so a re-authenticated tab keeps its draft until it is reloaded.
+not stored across a browser reload or close. The page cannot observe an HTTP authentication change,
+so a re-authenticated tab keeps its draft until it is reloaded
+([#3323](https://github.com/p2pool-starter-stack/pithead/issues/3323) tracks a reset).
 
 The flow mirrors the CLI's `apply`:
 

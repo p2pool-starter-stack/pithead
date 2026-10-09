@@ -103,7 +103,7 @@ class DashboardView extends Component {
         }
         ${
           backupView
-            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} /></div>`
+            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} active=${!suspended} /></div>`
             : null
         }
         ${
