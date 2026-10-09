@@ -1196,7 +1196,10 @@ wizard's pattern — the first page and the config tab now behave identically.) 
 Switching between Configuration, Simple, Advanced and Backup keeps your draft in memory,
 including invalid JSON. **Unsaved changes** beside the Configuration button marks unfinished
 edits. Return to Configuration to finish them; the marker clears after a successful apply or
-**Discard edits**. Drafts are not stored across a browser reload or close.
+**Discard edits**. When the stack enters its synchronization screen the editor is hidden, not
+unmounted, so the draft and the marker are still there when the dashboard returns. The page only
+shows the loading screen before its first state response, when no editor exists yet. Drafts are
+not stored across a browser reload or close, which is also the only session boundary the page has.
 
 The flow mirrors the CLI's `apply`:
 
