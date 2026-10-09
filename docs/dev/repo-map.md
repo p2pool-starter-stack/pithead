@@ -127,11 +127,12 @@ Browser assets live in `web/static/`. JavaScript feature folders are `app/`,
 `tests/frontend/` mirrors those folders. Its `harness.mjs`, `helpers/`, and
 `fixtures/` provide shared test inputs and rendering support. Node discovers the
 nested tests through `make test-frontend`.
-`dashboard/tests/browser/` holds Chromium regressions using the locked Playwright package;
-`make test-browser` runs them after browser installation. The separate `browser.yml` workflow
-installs the locked tool and runs native dialog focus, earnings input and HTTPS backup-download checks.
-The earnings browser regression serves the real calculator, verifies grouped thousands and
-malformed input, and supports `PITHEAD_BROWSER_STATIC` for pre-fix asset controls.
+`dashboard/tests/browser/` holds Playwright user journeys, an isolated local fixture server,
+and Chromium/Firefox/WebKit/mobile projects. `make test-browser` runs them after browser
+installation; `browser.yml` runs the same suite and retains failure artifacts.
+[Browser testing](browser-testing.md) maps coverage and live acceptance limits.
+The earnings regression serves the production calculator and supports pre-fix asset controls.
+The separate HTTPS backup fixture verifies complete encrypted downloads in Chromium and pinned Chrome.
 
 `dashboard.css` imports the ordered files in `styles/`; wizard styles stay in
 `wizard/`. `vendor/` contains third-party browser libraries and their provenance.
