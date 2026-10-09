@@ -80,8 +80,14 @@ class _Rig:
         assert self.healer._attempts == MAX_ATTEMPTS - 1
 
 
+async def _spend_and_return():
+    rig = _Rig()
+    await rig.spend_newnyms()
+    return rig
+
+
 async def test_external_restart_resets_clock_budget_and_cooldown():
-    rig = await _Rig.spend_and_return()
+    rig = await _spend_and_return()
     h = rig.healer
     rig.tor_started += 3600
     await rig.step(True)
@@ -93,7 +99,7 @@ async def test_external_restart_resets_clock_budget_and_cooldown():
 
 
 async def test_failed_probe_after_external_restart_waits_for_fresh_threshold():
-    rig = await _Rig.spend_and_return()
+    rig = await _spend_and_return()
     rig.tor_started += 3600
     await rig.step(True)
     await rig.step(False)
@@ -145,10 +151,17 @@ async def test_refused_host_recovery_does_not_hide_a_later_external_restart():
     assert rig.healer._failing_since == rig.clock.t
 
 
-async def _spend_and_return():
+async def test_external_restart_after_an_adopted_healer_restart_still_resets():
     rig = _Rig()
     await rig.spend_newnyms()
-    return rig
-
-
-_Rig.spend_and_return = staticmethod(_spend_and_return)
+    await rig.step(False, COOLDOWN_SEC)  # the healer's own Tor restart
+    assert ("stop", "tor") in rig.docker.calls
+    rig.tor_started += 3600
+    await rig.step(True)  # adopts the healer's own start time
+    await rig.step(True)  # second OK probe confirms recovery
+    assert rig.healer._attempts == 0
+    await rig.spend_newnyms()  # a new outage spends two NEWNYMs
+    rig.tor_started += 3600  # the operator restarts Tor
+    await rig.step(True)
+    h = rig.healer
+    assert (h._failing_since, h._attempts, h._last_attempt) == (None, 0, None)
