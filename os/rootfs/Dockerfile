@@ -45,8 +45,11 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # the module beats muting the scanner. Per-binary because the findings differ, and EXACT versions
 # because `go get` will happily DOWNGRADE a module that is already newer.
 #
-#   golang.org/x/mod       v0.40.0   CVE-2026-56864 / CVE-2026-56865. Indirect in both: cosign
+#   golang.org/x/mod       v0.41.0   CVE-2026-56864 / CVE-2026-56865. Indirect in both: cosign
 #                                    v3.1.3 pins v0.37.0; compose v5.5.1 selects v0.40.0.
+#                                    v0.41.0 is the floor x/net v0.60.0 requires (go get refuses less).
+#   golang.org/x/net       v0.60.0   CVE-2026-78669 (HIGH, HTTP/2 SETTINGS denial of service), both
+#                                    binaries: both resolve v0.58.0.
 #   google.golang.org/grpc v1.83.2   CVE-2026-84445 (HIGH), both binaries. Third trip down this
 #                                    ladder: #1153's v1.82.1 (GHSA-hrxh-6v49-42gf) aged into
 #                                    CVE-2026-84304, whose v1.83.1 aged into this. #1655.
@@ -61,8 +64,8 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # survived in that file until #1153. Verify by re-running the scan against the built binaries with
 # NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
 # left two other HIGH findings standing.
-ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
+ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
+ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
 ENV CGO_ENABLED=0
 
 # Blobless clone then detach to the commit: the tag is only a convenience for the version string.
@@ -112,7 +115,7 @@ RUN /out/docker-compose version && /out/cosign version \
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
 # bump is how base-distro CVE fixes reach the appliance (#833): there is no apt on the running
 # box — every Debian package here is frozen until the next bake.
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
 ENV DEBIAN_FRONTEND=noninteractive
 
