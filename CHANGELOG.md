@@ -297,8 +297,9 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 - **Configuration drafts survive a view change.** Edits in the configuration editor are kept when
   you move to another dashboard view and back, and after an apply that fails ([#3273](https://github.com/p2pool-starter-stack/pithead/pull/3273)).
-- **The bare-IP dashboard address redirects on the appliance.** A plain `http://` LAN address is
-  redirected to the host's address ([#3236](https://github.com/p2pool-starter-stack/pithead/pull/3236)).
+- **The setup wizard's plain-HTTP port redirects to HTTPS.** A plain `http://` LAN URL is
+  redirected to an HTTPS host address: the host you typed, or the first host address or
+  `pithead.local`. Caddy keeps a recognised typed host after provisioning ([#3236](https://github.com/p2pool-starter-stack/pithead/pull/3236)).
 - **The boot menu names the boot disk.** Each GRUB entry says whether it boots the USB stick or the
   internal disk, and a debug build's label appears only in the slot title ([#3230](https://github.com/p2pool-starter-stack/pithead/pull/3230),
   [#3238](https://github.com/p2pool-starter-stack/pithead/pull/3238)).
@@ -318,8 +319,13 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   values ([#3250](https://github.com/p2pool-starter-stack/pithead/pull/3250)).
 - **Update errors can be dismissed, and the dashboard explains how to reconnect** after the
   certificate changes ([#3243](https://github.com/p2pool-starter-stack/pithead/pull/3243)).
-- **The configuration version text is hidden** in the dashboard ([#3240](https://github.com/p2pool-starter-stack/pithead/pull/3240)).
 - **The what-if calculator rejects a malformed hashrate** and parses grouped numbers ([#3268](https://github.com/p2pool-starter-stack/pithead/pull/3268)).
+- **Worker Inspect edits survive an appliance rig's reboot.** The rig role's boot-time rebuild of
+  RigForge's config no longer drops `DONATION`, `autotune`, `watchdog`, `watchdog_interval_min` and
+  `max_temp_c`; a pool change still reverts (see Known issues)
+  ([#3204](https://github.com/p2pool-starter-stack/pithead/issues/3204)).
+- **Worker Inspect says a `DONATION` below the miner's built-in minimum has no effect**
+  ([#3206](https://github.com/p2pool-starter-stack/pithead/issues/3206)).
 - **XvB keeps its full P2Pool dwell when the raffle is disabled** ([#3226](https://github.com/p2pool-starter-stack/pithead/pull/3226)).
 - **Workers and rigs are probed only while online**, or while their feed last answered
   ([#3211](https://github.com/p2pool-starter-stack/pithead/pull/3211)); workers are kept across a
