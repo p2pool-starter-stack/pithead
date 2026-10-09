@@ -4,6 +4,7 @@
   "files": {
     "includes": [
       "dashboard/mining_dashboard/web/static/**/*.{js,mjs,css}",
+      "dashboard/tests/browser/*.mjs",
       "!dashboard/mining_dashboard/web/static/vendor"
     ]
   },
