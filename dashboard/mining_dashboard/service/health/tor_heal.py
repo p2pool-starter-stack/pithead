@@ -170,7 +170,8 @@ class TorEgressHealer(TorHistoryMixin):
 
         A restart by the operator, ``./pithead`` or Docker is a recovery the healer did not
         perform, so the old clock, budget and cooldown no longer describe the Tor that is running.
-        A restart the healer issued itself is adopted into the baseline and keeps counting."""
+        A restart the healer issued itself is adopted into the baseline and keeps counting. A Tor that
+        restarts more often than BROKEN_AFTER_SEC (a crash loop) therefore never reaches an action."""
         started = (await get_container_health()).get(self.CONTAINER, {}).get("started_at")
         if started is None:
             return

@@ -884,7 +884,9 @@ on later rounds. A saturated
 history (abandoned count and total build times both at 1000, no `CircuitBuildTimeBin`) is logged
 on each such round, sent once per outage to the alert sinks (failed delivery retries on later rounds), and names `./pithead tor-recover`;
 `./pithead doctor` reports it as a FAIL, also shown in the Tor section of Service diagnostics after a health check. The doctor check does not require an outage record or auto-heal: saturated history plus live egress failure is enough for a FAIL. The action budget is three per outage; after that the
-monitor warns until egress recovers. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
+monitor warns until egress recovers. A Tor start the monitor did not cause (an operator, `./pithead` or
+Docker restart) opens a fresh outage window and resets the clock, budget and cooldown, so a Tor that
+restarts more often than every 15 minutes never reaches an action or the warning. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
 state reset sends one alert per outage explaining the saturated history and guard reset.
 
 **Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed

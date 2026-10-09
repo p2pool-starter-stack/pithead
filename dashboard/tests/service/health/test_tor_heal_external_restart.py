@@ -41,6 +41,8 @@ class _Rig:
         self.docker = _Docker()
         self.ok = False
         self.tor_started = 5000.0
+        self.saturated = False
+        self.recover_result = {"status": "applied"}
         self.healer = TorEgressHealer(
             self.docker,
             enabled=True,
@@ -49,17 +51,22 @@ class _Rig:
             restart_monerod=False,
         )
 
+    def _result(self, request_id):
+        if request_id == "tor-history":
+            return {"status": "applied", "saturated": self.saturated}
+        if request_id == "tor-recover":
+            return self.recover_result
+        return {"status": "applied"}
+
     async def step(self, ok, seconds=PROBE_INTERVAL_SEC):
         self.clock.t += seconds
         self.ok = ok
         health = {"tor": {"running": True, "started_at": self.tor_started}}
         with (
             patch(f"{TARGET}.get_container_health", AsyncMock(return_value=health)),
-            patch(f"{TARGET}.control_service.submit", return_value="i"),
-            patch(
-                f"{TARGET}.control_service.result",
-                return_value={"status": "applied"},
-            ),
+            patch(f"{TARGET}.control_service.submit", side_effect=lambda action, **kw: action),
+            patch("mining_dashboard.service.request_spool.write", lambda req: req["action"]),
+            patch(f"{TARGET}.control_service.result", side_effect=self._result),
             patch(f"{TARGET}.asyncio.sleep", AsyncMock()),
         ):
             await self.healer.check()
@@ -104,6 +111,38 @@ async def test_healer_restart_keeps_counting():
     await rig.step(False)
     assert rig.healer._attempts == MAX_ATTEMPTS
     assert rig.healer._failing_since is not None
+
+
+async def _recover_submitted(recover_result):
+    """Saturated history: both NEWNYMs spent, then the final step submits tor-recover."""
+    rig = _Rig()
+    rig.saturated = True
+    rig.recover_result = recover_result
+    await rig.spend_newnyms()
+    await rig.step(False, COOLDOWN_SEC)
+    assert rig.healer._pending_recovery == "tor-recover"
+    assert rig.healer._attempts == MAX_ATTEMPTS
+    return rig
+
+
+async def test_host_recovery_restart_keeps_counting():
+    rig = await _recover_submitted({"status": "applied"})
+    await rig.step(False)  # result read
+    rig.tor_started += 3600  # the host-run recovery restarted Tor
+    await rig.step(False)
+    assert rig.healer._attempts == MAX_ATTEMPTS
+    assert rig.healer._failing_since is not None
+    assert rig.healer._last_attempt is not None
+
+
+async def test_refused_host_recovery_does_not_hide_a_later_external_restart():
+    rig = await _recover_submitted({"status": "refused", "error": "cooldown"})
+    await rig.step(False)  # refusal read: nothing restarted Tor
+    rig.tor_started += 3600  # now the operator restarts it
+    await rig.step(False)
+    assert rig.healer._attempts == 0
+    assert rig.healer._last_attempt is None
+    assert rig.healer._failing_since == rig.clock.t
 
 
 async def _spend_and_return():
