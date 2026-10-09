@@ -75,7 +75,7 @@ lan_guard_check() {
     if command -v flock >/dev/null 2>&1 && exec 8>>"$(mutation_lock_path)" 2>/dev/null && flock -n 8; then
         lan_guard_check_now
         rc=$?
-        [ "$rc" = 0 ] && lan_guard_holds && lan_guard_recover_nodes
+        [ "$rc" = 0 ] && lan_guard_recover_nodes
         exec 8>&-
         return "$rc"
     fi

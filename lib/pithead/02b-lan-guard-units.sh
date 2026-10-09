@@ -1,7 +1,7 @@
 # --- The same rule across a DIY host reboot (#2749) ----------------------------------------------
 # pithead-lan-guard.service restores rule then marker before docker.service (as 02a). The nodes run
-# restart "no"; pithead-lan-hold.service starts them after the guard (Requires=). Docker restarts no
-# crash, so the 2-minute pithead-lan.timer check starts a node that exited non-zero (#3290). The appliance needs neither: pithead-boot runs `up` first.
+# restart "no"; pithead-lan-hold.service starts them after the guard (Requires=). Docker restarts
+# no crash, so the 2-minute pithead-lan.timer check starts a node that exited non-zero (#3290). The appliance needs neither: pithead-boot runs `up` first.
 LAN_GUARD_BOOT_UNIT="pithead-lan-guard.service"
 LAN_GUARD_HOLD_UNIT="pithead-lan-hold.service"
 LAN_GUARD_CHECK_SERVICE="pithead-lan-check.service"

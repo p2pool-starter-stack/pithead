@@ -48,6 +48,8 @@ assert_lan_guard_live() { # <config>
     done
     # shellcheck disable=SC2086
     assert_lan_guard_timer_flush $ports
+    # shellcheck disable=SC2086
+    assert_lan_guard_crash_restart $ports
     # shellcheck disable=SC2086 # one argument per port
     assert_lan_guard_boot_restore $ports
     # shellcheck disable=SC2086
@@ -114,6 +116,94 @@ assert_lan_guard_timer_flush() { # <port>...
     for p in "$@"; do
         assert_eq "LAN port $p admits a private source after recovery (#2846)" "$(_lan_probe 10.254.254 "$p")" open
     done
+}
+
+# Stop the LAN check timer and wait for a running check to finish; 1 if it never goes idle (timer
+# restarted, so the caller can report and move on).
+_lan_timer_pause() {
+    local _
+    rx 'sudo systemctl stop pithead-lan.timer' >/dev/null 2>&1 || true
+    for _ in $(seq 30); do
+        case "$(rx 'systemctl is-active pithead-lan-check.service 2>/dev/null')" in
+        inactive | failed) return 0 ;;
+        esac
+        sleep 1
+    done
+    rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
+    return 1
+}
+
+# Prints the exit code once <container> has stopped (waits up to 30s), or running.
+_lan_exit_code() { # <container>
+    local _ out
+    for _ in $(seq 15); do
+        out=$(rx "docker inspect -f '{{.State.Running}} {{.State.ExitCode}}' $1" 2>/dev/null)
+        case "$out" in "false "*)
+            echo "${out#false }"
+            return 0
+            ;;
+        esac
+        sleep 2
+    done
+    echo running
+}
+
+# A crashed LAN node comes back (#3290). Docker's restart policy is "no" so the LAN guard holds the
+# first start; the timer check starts a node that exited non-zero, but only with the rule live.
+# Part one: rule live, kill each LAN node with SIGSEGV (exit 139; a PID 1 with no handler ignores it,
+# so SIGKILL, 137, is the fallback) and require it running again within the timer interval.
+# Part two: kill it with the timer paused, flush the rule, run the timer: it must stay down.
+assert_lan_guard_crash_restart() { # <port>...
+    local p c containers="" code since deadline up rc=0
+    [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
+    for p in "$@"; do
+        c=$(rx "bash -c 'source ./pithead && lan_guard_container $p'")
+        [[ " $containers " == *" $c "* ]] || containers="$containers $c"
+    done
+    for c in $containers; do
+        rx "docker kill --signal SEGV $c" >/dev/null 2>&1 || true
+        code=$(_lan_exit_code "$c")
+        if [ "$code" = running ]; then
+            rx "docker kill --signal KILL $c" >/dev/null 2>&1 || true
+            code=$(_lan_exit_code "$c")
+        fi
+        assert_ne "$c crashed with a non-zero exit code (#3290)" "$code" "running"
+        assert_ne "...and it was not a clean exit (#3290)" "$code" "0"
+        since=$(date +%s)
+        deadline=$((since + 180))
+        up=false
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            up=$(rx "docker inspect -f '{{.State.Running}}' $c" 2>/dev/null)
+            [ "$up" = true ] && break
+            sleep 5
+        done
+        assert_eq "$c is running again within the timer interval, rule live (#3290)" "$up" true
+    done
+    assert_eq "the rule is still live after the restart (#3290)" \
+        "$(rx "bash -c 'source ./pithead && lan_guard_enforced $*' && echo live")" live
+    if ! _lan_timer_pause; then
+        it_fail "LAN check service finished before the no-rule crash (#3290)" "still running after 30s; negative case skipped"
+        return 0
+    fi
+    c=${containers# }
+    c=${c%% *}
+    rx "docker kill --signal KILL $c" >/dev/null 2>&1 || true
+    assert_ne "$c is down before the rule is flushed (#3290)" "$(_lan_exit_code "$c")" running
+    _lan_flush_rules
+    rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
+    since=$(date +%s)
+    deadline=$((since + 150))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        [ "$(rx 'test -e data/lan-guard/enforced && echo present')" != present ] && break
+        sleep 5
+    done
+    assert_eq "the timer ran with the rule missing and removed the marker (#3290)" \
+        "$(rx 'test -e data/lan-guard/enforced && echo present')" ""
+    sleep 10
+    assert_eq "$c stays down while the rule is missing (#3290)" "$(rx "docker inspect -f '{{.State.Running}}' $c")" false
+    rx './pithead up' >/dev/null 2>&1 || rc=$?
+    assert_rc "up restores the rule and the node after the no-rule crash (#3290)" "$rc" 0
+    assert_eq "$c runs again after up (#3290)" "$(rx "docker inspect -f '{{.State.Running}}' $c")" true
 }
 
 # DIY reboot restore (#2749), without rebooting the bench: a reboot empties PITHEAD-LAN and its
