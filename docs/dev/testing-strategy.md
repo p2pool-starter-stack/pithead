@@ -75,11 +75,9 @@ Dashboard connection recovery is covered by
 reset after success, stale snapshot retention, and advice during sync, normal display and an
 initial-load failure. `dashboard/tests/browser/osupdate-close.test.mjs` serves the production OS-update component,
 clicks Close once after a refused update check, and asserts the native dialog is removed and
-`document.activeElement` is its actual OS-updates trigger. The locked Chromium test runs through
-`make test-browser` in `browser.yml`. The OS-update and earnings tests tear down through `stop-fixture.mjs`
-(Chromium first, then `closeAllConnections()`, then `server.close()`, as the backup and draft tests do inline), because a speculative Chromium
-connection holding a half-sent request keeps a bare `server.close()` pending and stalls the file until
-the job maximum (#3292); `stop-fixture.test.mjs` fails on that bare close. `backup-download.test.mjs` uses the production backup
+`document.activeElement` is its actual OS-updates trigger. The [browser suite](browser-testing.md) runs production-page and component journeys through
+`make test-browser` in `browser.yml`, across Chromium, Firefox, WebKit and mobile Chromium.
+`backup-download.test.mjs` uses the production backup
 component over self-signed HTTPS, accepts the certificate interstitial without bypass flags,
 and requires complete GUI saves of the kit and encrypted fixture: length and SHA-256 match,
 decryption using the saved kit, gzip/tar integrity and member bytes. It records exact Chromium
