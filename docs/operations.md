@@ -838,6 +838,10 @@ Persistent HugePages require a GRUB change and a **reboot**. Re-run `./pithead s
 user drop-ins and console arguments, and verifies the generated kernel entries. If verification
 fails, check later GRUB drop-ins and the generated `/boot/grub/grub.cfg`, then re-run setup.
 Reboot only after verification succeeds; confirm `HugePages_Total` in `/proc/meminfo` afterwards.
+An unchanged setup with those flags already in the running kernel does not request another reboot.
+Setup automatically repairs its managed drop-in and recognizable legacy Pithead reservations.
+Other reservations, including differently ordered legacy flags or a plural THP typo, require
+interactive confirmation; setup preserves the main defaults rather than rewriting the typo there.
 
 **Tor egress broken while mining works.**
 Healthchecks reports the host down and Telegram commands go quiet, yet workers keep hashing.

@@ -60,6 +60,7 @@ CFG
 
 write_grub_hugepages() {
     local grub="$1" tmp dropin="$1.d/zz-pithead-hugepages.cfg"
+    GRUB_HUGEPAGES_CHANGED=false
     tmp=$(mktemp) || return 1
     if ! grub_hugepages_dropin_content >"$tmp" || ! sudo mkdir -p "$grub.d"; then
         rm -f "$tmp"
@@ -70,6 +71,7 @@ write_grub_hugepages() {
             rm -f "$tmp"
             return 1
         fi
+        GRUB_HUGEPAGES_CHANGED=true
     fi
     rm -f "$tmp"
 }
@@ -77,11 +79,27 @@ write_grub_hugepages() {
 # update-grub's exit status alone is insufficient. Check this host's generated
 # Linux section, including recovery entries; memory tests and os-prober entries
 # do not consume this host's defaults. No readable host kernel entries is failure.
-verify_grub_hugepages() {
-    sudo cat "${PITHEAD_GRUB_CONFIG:-/boot/grub/grub.cfg}" | awk -v pages="$PITHEAD_HUGEPAGES" "$(grub_tokenizer_awk)"'
+grub_host_kernel_entries() {
+    sudo cat "${PITHEAD_GRUB_CONFIG:-/boot/grub/grub.cfg}" | awk '
         /^### BEGIN / { host=($0 ~ /\/(10_linux|10_linux_zfs|20_linux_xen) ###$/); next }
         /^### END / { host=0; next }
-        host && $1 ~ /^(linux|linuxefi|linux16)$/ {
+        host && $1 ~ /^(linux|linuxefi|linux16)$/ { print }
+    '
+}
+
+verify_grub_hugepages() {
+    grub_host_kernel_entries | grub_hugepages_entries_valid
+}
+
+verify_running_grub_hugepages() {
+    local cmdline
+    cmdline=$(cat "${PITHEAD_CMDLINE:-/proc/cmdline}") || return 1
+    printf 'linux /running %s\n' "$cmdline" | grub_hugepages_entries_valid
+}
+
+grub_hugepages_entries_valid() {
+    awk -v pages="$PITHEAD_HUGEPAGES" "$(grub_tokenizer_awk)"'
+        $1 ~ /^(linux|linuxefi|linux16)$/ {
             entries++; size=0; count=0; thp=0
             n=parse($0); if(n<0) { bad=1; next }
             for (i=3; i<=n; i++) {
@@ -99,7 +117,8 @@ verify_grub_hugepages() {
 }
 
 persist_grub_hugepages() {
-    local grub="$1"
+    local grub="$1" before
+    before=$(grub_host_kernel_entries 2>/dev/null) || before=""
     if ! write_grub_hugepages "$grub"; then
         warn "Could not write Pithead's HugePages GRUB drop-in. Persistent HugePages setup failed."
         return 1
@@ -113,6 +132,11 @@ persist_grub_hugepages() {
         warn "Check later GRUB drop-ins and /boot/grub/grub.cfg, then re-run setup. Do not reboot until the boot entries are correct."
         return 1
     fi
-    REBOOT_REQUIRED=true
-    log "Verified persistent HugePages in generated GRUB kernel entries; reboot required."
+    if [ "$GRUB_HUGEPAGES_CHANGED" = true ] ||
+        [ "$before" != "$(grub_host_kernel_entries)" ] || ! verify_running_grub_hugepages; then
+        REBOOT_REQUIRED=true
+        log "Verified persistent HugePages in generated GRUB kernel entries; reboot required."
+    else
+        log "Persistent HugePages already configured and verified."
+    fi
 }

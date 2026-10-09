@@ -104,7 +104,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # title rows 1..4; no measured value enters a PASS label.
 # #3278's rcf_status labels range over running/restarting/paused, a fixed status list.
 # #3204's rcm_invalid labels range over four fixed JSON fixtures, never measured input.
-# GRUB labels use only the three literal parameter names and nine literal stub modes.
+# GRUB labels use only the three literal parameter names and ten literal fixture modes.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1

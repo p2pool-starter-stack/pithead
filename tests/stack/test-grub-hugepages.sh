@@ -29,10 +29,11 @@ STUB
 chmod +x "$GR/bin/"*
 run_grub() {
     PATH="$GR/bin:$PATH" PITHEAD_GRUB_DEFAULTS="$GR/default/grub" PITHEAD_GRUB_CONFIG="$GR/grub.cfg" \
-        PITHEAD_NR_HUGEPAGES_FILE="$GR/nr_hugepages" \
+        PITHEAD_NR_HUGEPAGES_FILE="$GR/nr_hugepages" PITHEAD_CMDLINE="$GR/cmdline" \
         bash -Eeuo pipefail -c '
             source "$1"
             SKIP_OPTIMIZE=0
+            REBOOT_REQUIRED=${GRUB_INITIAL_REBOOT:-false}
             case "${GRUB_STUB_MODE:-}" in
                 cat-fail) cat() { [ "$#" -gt 0 ] || return 1; command cat "$@"; } ;;
                 printf-fail) printf() { case "$1" in GRUB_CMDLINE*) return 1 ;; esac; builtin printf "$@"; } ;;
@@ -45,6 +46,7 @@ run_grub() {
         ' _ "$STACK" "${1:-persist_grub_hugepages}"
 }
 printf '3072\n' >"$GR/nr_hugepages"
+printf 'console=tty1 console=ttyS0\n' >"$GR/cmdline"
 bp=$(run_sourced "$SANDBOX" randomx_boot_params)
 assert_eq "valid HugePages and singular THP parameters" "$bp" "hugepagesz=2M hugepages=3072 transparent_hugepage=never"
 
@@ -63,10 +65,40 @@ assert_contains "cloud: effective consoles retained" "$(cat "$GR/grub.cfg")" "co
 for param in hugepagesz=2M hugepages=3072 transparent_hugepage=never; do
     assert_eq "cloud: $param once per generated entry" "$(awk -v p="$param" '$2=="/vmlinuz" { n=0; for(i=1;i<=NF;i++) if($i==p)n++; if(n!=1)bad=1 } END { print bad+0 }' "$GR/grub.cfg")" 0
 done
+# Before reboot, unchanged files still require the pending boot change.
+out=$(run_grub optimize_kernel 2>&1)
+assert_contains "cloud: pending reboot remains required" "$out" "reboot_required=true"
+printf 'console=tty1 console=ttyS0 hugepagesz=2M hugepages=3072 transparent_hugepage=never\n' >"$GR/cmdline"
 before=$(cat "$GR/default/grub.d/zz-pithead-hugepages.cfg" "$GR/grub.cfg")
 out=$(run_grub optimize_kernel 2>&1)
 assert_rc "cloud: second setup succeeds" "$?" 0
+assert_contains "cloud: second setup needs no reboot" "$out" "reboot_required=false"
+assert_contains "cloud: second setup reports verified state" "$out" "already configured and verified"
+out=$(GRUB_INITIAL_REBOOT=true run_grub optimize_kernel 2>&1)
+assert_rc "cloud: unchanged setup preserves other pending reboot" "$?" 0
+assert_contains "cloud: other pending reboot remains required" "$out" "reboot_required=true"
 assert_eq "cloud: second setup unchanged" "$(cat "$GR/default/grub.d/zz-pithead-hugepages.cfg" "$GR/grub.cfg")" "$before"
+# An unreadable or conflicting running command line cannot establish that reboot finished.
+for mode in conflict duplicate unreadable; do
+    case "$mode" in
+    conflict) printf 'hugepagesz=2M hugepages=1 transparent_hugepage=never\n' >"$GR/cmdline" ;;
+    duplicate) printf 'hugepagesz=2M hugepages=3072 hugepages=3072 transparent_hugepage=never\n' >"$GR/cmdline" ;;
+    unreadable) rm "$GR/cmdline" ;;
+    esac
+    out=$(run_grub optimize_kernel 2>&1)
+    assert_rc "running $mode: setup verifies boot entries" "$?" 0
+    assert_contains "running $mode: reboot remains required" "$out" "reboot_required=true"
+done
+printf 'console=tty1 console=ttyS0 hugepagesz=2M hugepages=3072 transparent_hugepage=never\n' >"$GR/cmdline"
+# A generated-entry repair must still request reboot, even on a correctly booted host.
+sed -i 's/hugepages=3072/hugepages=1/g' "$GR/grub.cfg"
+out=$(run_grub optimize_kernel 2>&1)
+assert_rc "cloud: generated-entry repair succeeds" "$?" 0
+assert_contains "cloud: generated-entry repair requires reboot" "$out" "reboot_required=true"
+# A changed managed drop-in must also retain the first-install reboot decision.
+printf '# obsolete managed contents\n' >"$GR/default/grub.d/zz-pithead-hugepages.cfg"
+out=$(run_grub optimize_kernel 2>&1)
+assert_contains "cloud: drop-in repair requires reboot" "$out" "reboot_required=true"
 
 # ISO: no drop-in directory, single-quoted defaults and other common arguments.
 rm -rf "$GR/default/grub.d"
@@ -74,6 +106,7 @@ printf "GRUB_CMDLINE_LINUX='audit=1 hugepages=12'\nGRUB_CMDLINE_LINUX_DEFAULT='q
 before=$(cat "$GR/default/grub")
 out=$(run_grub persist_grub_hugepages 2>&1)
 assert_rc "ISO: setup works without existing drop-ins" "$?" 0
+assert_contains "ISO: first install requires reboot" "$out" "reboot_required=true"
 assert_eq "ISO: defaults untouched" "$(cat "$GR/default/grub")" "$before"
 assert_contains "ISO: existing common arguments retained" "$(cat "$GR/grub.cfg")" "audit=1"
 assert_contains "ISO: normal-entry defaults retained" "$(cat "$GR/grub.cfg")" "quiet splash"
@@ -106,6 +139,18 @@ assert_rc "manual reservation: headless setup skips persistence" "$?" 0
 assert_contains "manual reservation: confirmation still required" "$out" "No terminal attached"
 assert_eq "manual reservation: main defaults unchanged" "$(cat "$GR/default/grub")" "$before"
 assert_eq "manual reservation: no drop-in written" "$([ -d "$GR/default/grub.d" ] && echo yes || echo no)" no
+
+# A typo outside the recognizable Pithead triplet is not consent to a new reservation.
+printf 'GRUB_CMDLINE_LINUX_DEFAULT="quiet hugepagesz=2M hugepages=3072 transparent_hugepages=never"\n' >"$GR/default/grub"
+before=$(cat "$GR/default/grub")
+out=$(run_grub optimize_kernel </dev/null 2>&1)
+assert_rc "unrecognized typo: headless setup skips persistence" "$?" 0
+assert_contains "unrecognized typo: confirmation required" "$out" "No terminal attached"
+assert_eq "unrecognized typo: defaults unchanged" "$(cat "$GR/default/grub")" "$before"
+out=$(run_grub persist_grub_hugepages 2>&1)
+assert_rc "unrecognized typo: consented persistence verifies" "$?" 0
+assert_not_contains "unrecognized typo: generated entries remove plural parameter" "$(cat "$GR/grub.cfg")" 'transparent_hugepages='
+assert_contains "unrecognized typo: consented install requires reboot" "$out" 'reboot_required=true'
 
 # Parameter-like words inside quoted values must survive both filtering and verification.
 cat >"$GR/default/grub" <<'DEFAULTS'

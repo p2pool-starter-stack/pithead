@@ -196,10 +196,9 @@ EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$RT/config.json"
 printf 'ONIONKEY-ORIG\n' >"$RT/data/tor/hs_ed25519_secret_key"
 printf 'DBDATA-ORIG\n' >"$RT/data/dashboard/dashboard.db"
-out="$(cd "$RT" && PATH="$RT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y 2>&1)"
+(cd "$RT" && PATH="$RT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y >/dev/null 2>&1)
 rc=$?
 assert_rc "restore-stranding fixture: backup exits 0" "$rc" "0"
-[ "$rc" -eq 0 ] || printf '%s\n' "$out"
 rt_archive="$(ls "$RT"/backups/pithead-backup-*.tar.gz.enc 2>/dev/null | head -1)"
 { [ -n "$rt_archive" ] && [ -f "$rt_archive" ]; } && ok "restore-stranding fixture: encrypted archive created" || bad "restore-stranding fixture: encrypted archive created" "no .enc archive"
 
