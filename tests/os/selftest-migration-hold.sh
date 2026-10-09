@@ -17,10 +17,12 @@ fail() {
 }
 printf 'quiet rauc.slot=B console=ttyS0\n' >cmdline
 printf '2.0.0\n' >.os-migration-pending
-os_prepare_migration_hold || fail 'candidate did not claim the legacy marker'
+claim_log=$(os_prepare_migration_hold) || fail 'candidate did not claim the legacy marker'
+[ "$claim_log" = 'pithead-boot: migration marker claimed: 2.0.0|B' ] || fail 'the durable claim was not recorded'
 [ "$(cat .os-migration-pending)" = '2.0.0|B' ] || fail 'marker has no slot owner'
 os_migration_hold_active || fail 'doctor does not recognise the claimed hold'
-os_prepare_migration_hold || fail 'same-slot reboot lost the hold'
+claim_log=$(os_prepare_migration_hold) || fail 'same-slot reboot lost the hold'
+[ "$claim_log" = 'pithead-boot: migration marker claimed: 2.0.0|B' ] || fail 'reboot did not record its owner'
 printf 'quiet rauc.slot=A\n' >cmdline
 if os_migration_hold_active; then fail 'same-version previous slot was held'; fi
 # The previous release uses this exact version-only comparison; the qualified marker

@@ -1,4 +1,4 @@
-"""Bounded local-chain mining verdict from fresh persisted state and direct Monero RPC."""
+"""Post-commit recovery verdict from fresh persisted state and reserved-node RPC."""
 
 import json
 import math
@@ -7,11 +7,11 @@ import sqlite3
 import sys
 
 
-def mining_readiness(snapshot, node, *, local, marker, since, minimum_height):
+def mining_readiness(snapshot, node, *, marker, since):
     """Return height and live hash counter, or None; no UI sync override is accepted."""
     if not isinstance(snapshot, dict) or not isinstance(node, dict):
         return None
-    if not local or marker or snapshot.get("miner_released") is not True:
+    if marker or snapshot.get("miner_released") is not True:
         return None
     timestamp = snapshot.get("timestamp")
     if (
@@ -31,14 +31,12 @@ def mining_readiness(snapshot, node, *, local, marker, since, minimum_height):
         return None
     if node.get("status") != "OK" or node.get("synchronized") is not True:
         return None
-    if height < minimum_height:
-        return None
     return height, hashes
 
 
 def main():
     from mining_dashboard.client.monero.monero_client import MoneroClient
-    from mining_dashboard.config.config import DB_FILE_PATH, LOCAL_MONERO_HOST, MONERO_NODE_HOST
+    from mining_dashboard.config.config import DB_FILE_PATH
     from mining_dashboard.service.data_gates import SYNC_GATE_RESET_PATH
 
     with sqlite3.connect("file:" + DB_FILE_PATH + "?mode=ro", uri=True, timeout=1) as db:
@@ -48,10 +46,8 @@ def main():
     result = mining_readiness(
         json.loads(row[0]) if row else None,
         MoneroClient().get_info(),
-        local=MONERO_NODE_HOST == LOCAL_MONERO_HOST,
         marker=os.path.lexists(SYNC_GATE_RESET_PATH),
         since=int(sys.argv[1]),
-        minimum_height=int(sys.argv[2]),
     )
     if result is None:
         return 1

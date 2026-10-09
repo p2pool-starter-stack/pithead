@@ -117,6 +117,7 @@ os_prepare_migration_hold() { # 0 hold, 1 fallback/absent, 2 cannot establish ow
         rm -f "$temporary"
         return 2
     fi
+    printf 'pithead-boot: migration marker claimed: %s|%s\n' "$(os_running_version)" "$slot"
 }
 
 # The version floor + downgrade refusals, shared verbatim by the `os-update` CLI and the

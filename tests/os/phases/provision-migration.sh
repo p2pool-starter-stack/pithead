@@ -2,8 +2,8 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/os/migration-same-version-fallback.sh
 source "$SCRIPT_DIR/migration-same-version-fallback.sh" || return $?
-# shellcheck source=tests/os/migration-local-chain.sh
-source "$SCRIPT_DIR/migration-local-chain.sh" || return $?
+# shellcheck source=tests/os/migration-recovery.sh
+source "$SCRIPT_DIR/migration-recovery.sh" || return $?
 
 # ---- no room for the Tari migration (#2645): the migrating bundle is refused, nothing installed ----
 # The staged data_migration bundle meets a /data filled to 1 GiB free, below the 5 GiB margin alone,
@@ -80,6 +80,10 @@ _phase_provision_migration() {
     # Credentials are read by the existing authenticated approval helpers through dynamic scope.
     # shellcheck disable=SC2034,SC2154
     local DASH_USER="$pv_user" DASH_PASS="$pv_pass"
+    migration_prepare_rc2 || {
+        bad "the exact RC2 baseline could not be provisioned and verified"
+        return 1
+    }
     local mig_bundle
     mig_bundle=$(PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION="$(tr -d ' \n' <VERSION)" _build_bundle vmig) || {
         bundle_build_evidence
@@ -99,9 +103,8 @@ _phase_provision_migration() {
     # filler is still on /data, where that install would be refused for the fixture's fault.
     _phase_provision_migration_space_refusal
     [ "$?" -ne 2 ] || return 1
-    migration_prepare_local_chain || {
-        bad "the isolated local-chain fixture did not establish synced mining before upgrade"
-        approval_restore_pending || bad "local-chain precondition failure could not restore configuration"
+    migration_seed_rc2 || {
+        bad "the existing RC2 dashboard snapshot could not be seeded and independently verified"
         return 1
     }
     # os-update is the path that writes the pending marker (a bare rauc install does not) — and
@@ -129,7 +132,7 @@ _phase_provision_migration() {
     # Poll through the boot. The release line is logged at the commit boundary, BEFORE the
     # post-commit up — so any monerod observed running before that line is a chain service
     # beating the fallback decision, the exact ordering this rule exists to forbid.
-    local chain_ran_early=0 released=0
+    local chain_ran_early=0 released=0 recovery_allowed=1
     for _ in $(seq 120); do
         if _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
             released=1
@@ -146,6 +149,7 @@ _phase_provision_migration() {
             ok "the migrating slot committed unattended and released the chain services"
         else
             bad "the released migrating slot is not marked good in the bootloader"
+            recovery_allowed=0
         fi
         # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
         assert_appliance_hostname_identity fixture-next "A/B update" "$pv_user" "$pv_pass"
@@ -157,11 +161,19 @@ _phase_provision_migration() {
         ok "monerod never ran while the slot was uncommitted"
     else
         bad "monerod ran BEFORE the commit — the migration would beat the fallback decision"
+        recovery_allowed=0
     fi
     if _ssh "journalctl -u pithead-boot -b | grep -q 'holding chain services'"; then
         ok "boot journal shows the chain hold"
     else
         bad "no 'holding chain services' line in the boot journal — the hold path never ran"
+        recovery_allowed=0
+    fi
+    if _ssh 'slot=$(sed -n "s/.*rauc.slot=\([AB]\).*/\1/p" /proc/cmdline); version=$(tr -d "[:space:]" </data/pithead/VERSION); test -n "$slot" && journalctl -u pithead-boot -b -o cat | grep -Fxq "pithead-boot: migration marker claimed: $version|$slot"'; then
+        ok "the candidate recorded its durable migration claim with the booted A/B slot"
+    else
+        bad "the boot journal does not prove the candidate owned its migration marker"
+        recovery_allowed=0
     fi
     # /run is fresh on this boot. This is the ordinary commit gate's final status record,
     # captured before mark-good and the release up; it proves actual stopped states.
@@ -169,32 +181,36 @@ _phase_provision_migration() {
         ok "the ordinary pre-commit gate observed P2Pool and the proxy stopped with the carried release"
     else
         bad "the ordinary pre-commit gate did not record both mining services stopped"
+        recovery_allowed=0
     fi
     # After the release: monerod back up, marker consumed.
     local mig_node_up=0
     for _ in $(seq 60); do
-        if _ssh "podman ps --format '{{.Names}}' 2>/dev/null | grep -qx monerod"; then
+        if _ssh "podman inspect monerod minotari_node | jq -e 'length == 2 and all(.[]; .State.Running == true)' >/dev/null"; then
             mig_node_up=1
             break
         fi
         sleep 5
     done
     if [ "$mig_node_up" = 1 ]; then
-        ok "monerod is running again post-commit (the migration window is over)"
+        ok "local Monero and Tari services started post-commit before recovery reconfiguration"
     else
         bad "monerod never came back after the commit"
+        recovery_allowed=0
     fi
     if _ssh "test -f /data/pithead/.os-migration-pending"; then
         bad "the migration-pending marker survived the commit"
+        recovery_allowed=0
     else
         ok "the migration-pending marker was consumed"
     fi
     local recovered_since
     recovered_since=$(_ssh 'date +%s' | tr -d '\r\n') || recovered_since=""
-    if [[ "$recovered_since" =~ ^[0-9]+$ ]] && migration_wait_for_mining "$recovered_since"; then
-        ok "after unattended commit the local chain is synced, P2Pool and proxy are healthy, and mining advances"
+    if [ "$recovery_allowed" = 1 ] && [[ "$recovered_since" =~ ^[0-9]+$ ]] &&
+        migration_remote_recovery && migration_wait_for_mining "$recovered_since"; then
+        ok "after the recorded hold and unattended commit, reserved nodes are synced, mining services are healthy and hashes advance"
     else
-        bad "post-commit local-chain mining did not recover from the persisted-release migration hold"
+        bad "post-commit mining recovery was not proved; remote configuration cannot replace missing hold or commit evidence"
     fi
     approval_restore_pending || {
         bad "the migration leg could not restore its original Tari configuration"

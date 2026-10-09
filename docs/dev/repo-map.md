@@ -55,10 +55,11 @@ checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
 The migration startup regression is `tests/stack/lifecycle/migration-hold.sh`;
 `tests/os/selftest-migration-hold.sh` checks slot ownership and same-version fallback.
-The provision migration fixture and live verdicts are in `tests/os/migration-local-chain.sh`,
-`migration-monero-snapshot.py` and `migration-readiness.py`;
-`selftest-migration-local-chain.sh` checks their pure refusal and recovery contracts.
-The input contract is in `tests/os/migration-local-chain.md`.
+The provision migration fixture is `tests/os/migration-recovery.sh`: it seeds the release through
+the verified RC2 dashboard writer in `migration-release-snapshot.py`, and measures post-commit
+mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
+`selftest-migration-snapshot.sh` check baseline refusal, persistence and recovery contracts.
+The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
