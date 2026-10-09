@@ -1,7 +1,7 @@
 # --- The same rule across a DIY host reboot (#2749) ----------------------------------------------
 # pithead-lan-guard.service restores rule then marker before docker.service (as 02a). The nodes run
-# restart "no"; pithead-lan-hold.service starts them after the guard (Requires=), so nothing restarts
-# a crash (doctor, dashboard say so). The appliance needs neither: pithead-boot runs `up` first.
+# restart "no"; pithead-lan-hold.service starts them after the guard (Requires=). Docker restarts no
+# crash, so the 2-minute pithead-lan.timer check starts a node that exited non-zero (#3290). The appliance needs neither: pithead-boot runs `up` first.
 LAN_GUARD_BOOT_UNIT="pithead-lan-guard.service"
 LAN_GUARD_HOLD_UNIT="pithead-lan-hold.service"
 LAN_GUARD_CHECK_SERVICE="pithead-lan-check.service"
@@ -185,7 +185,7 @@ provision_lan_guard_boot_unit() { # <port>...
     for c in "${containers[@]}"; do
         if [ "$c" = tari ]; then export TARI_RESTART=no; else export MONERO_RESTART=no; fi
     done
-    log "At boot, ${containers[*]} start only once the LAN-only source rule is back ($LAN_GUARD_HOLD_UNIT); Docker does not restart them by itself."
+    log "At boot, ${containers[*]} start only once the LAN-only source rule is back ($LAN_GUARD_HOLD_UNIT); Docker does not restart them; after a crash $LAN_GUARD_CHECK_TIMER does, within 2 minutes, while the rule is live."
 }
 
 # Disable and delete both units (switches off, uninstall); 1 if a step fails or a unit or want stays.

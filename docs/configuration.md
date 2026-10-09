@@ -366,8 +366,12 @@ stop the nodes, the ports close by the next check; a start outside
 `pithead` then fails the marker gate. Fix the firewall and run `./pithead up` to restore the rule
 and restart the nodes. This check also runs on the appliance after `pithead up`.
 
-Turning a `*_lan_access` switch on has a cost on the Docker install: Docker no longer restarts a
-crashed `monerod` or `tari`. It stays down until `./pithead up` or the next boot. `./pithead doctor`
+Turning a `*_lan_access` switch on changes how a crashed node comes back on the Docker install:
+Docker itself no longer restarts `monerod` or `tari`. Instead the same `pithead-lan.timer` check
+starts a node that exited with a non-zero code other than 143 (SIGTERM, a deliberate stop), within
+two minutes, but only while the rule is live and this boot's marker is current. A node whose
+rule is missing stays down until `./pithead up`, and one that crashes again is started again on the
+next check. `./pithead doctor`
 reports a node that is down with the reason, either held since boot because the guard failed (see
 `journalctl -u pithead-lan-guard`) or exited with its exit code. It also reports a running node
 whose restart policy would let Docker start it before the rule. The dashboard sends the same

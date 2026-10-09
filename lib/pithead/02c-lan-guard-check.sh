@@ -45,6 +45,28 @@ lan_guard_holds() {
     [ "${#ports[@]}" -eq 0 ] || { lan_guard_enforced "${ports[@]}" && lan_guard_marker_current; }
 }
 
+# A node that crashed (a non-zero exit other than SIGTERM's 143) stays down under restart "no" (#3290).
+# With the rule and this boot's marker both live, start it again: at most once per timer tick, and
+# never while the rule is missing, which is also when the marker is gone and the entrypoint refuses.
+lan_guard_recover_nodes() {
+    local p c name code seen=" "
+    for p in $(lan_guard_watched_ports); do
+        c=$(lan_guard_container "$p")
+        [[ "$seen" == *" $c "* ]] && continue
+        seen+="$c "
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            code=$(docker inspect -f '{{.State.ExitCode}}' "$name" 2>/dev/null) || continue
+            case "$code" in '' | 0 | 143 | *[!0-9]*) continue ;; esac
+            if docker start "$name" >/dev/null 2>&1; then
+                log "lan-guard:node-restarted — $name exited with code $code and was started again; the LAN-only source rule is in place."
+            else
+                warn "lan-guard:node-restart-failed — $name exited with code $code and could not be started."
+            fi
+        done < <(docker ps -a --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" --filter status=exited --format '{{.Names}}' 2>/dev/null)
+    done
+}
+
 # Take the mutation lock only if free. A long apply/upgrade must not delay an emergency stop, but
 # it rewrites the rule and marker itself: a tick that lands mid-rewrite must not stop the nodes
 # that up is about to start (they would refuse with 78), so a lock-busy tick rechecks briefly first.
@@ -53,6 +75,7 @@ lan_guard_check() {
     if command -v flock >/dev/null 2>&1 && exec 8>>"$(mutation_lock_path)" 2>/dev/null && flock -n 8; then
         lan_guard_check_now
         rc=$?
+        [ "$rc" = 0 ] && lan_guard_holds && lan_guard_recover_nodes
         exec 8>&-
         return "$rc"
     fi
