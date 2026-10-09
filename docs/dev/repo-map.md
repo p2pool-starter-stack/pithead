@@ -182,7 +182,8 @@ dashboard using the same retained-log reader as the summary to check the current
 marker, header redaction and zero failures, then
 one failure after an external wrong-password attempt;
 The complete pre-boot log directory is archived before reboot to isolate the controlled window.
-`selftest-boot-probe-evidence.sh` checks its negative controls, archive behavior and diagnostic redaction.
+`selftest-boot-probe-evidence.sh` checks its negative controls, archive behavior,
+diagnostic redaction and delayed current-boot commit.
 The checks retain assertion errors and bounded counts in the battery output; raw request,
 header and user values are omitted. Bounded current/rolled-log counts expose discarded
 records; effective Caddy configuration is reported only as matcher/log-destination flags.
