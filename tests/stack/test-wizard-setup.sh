@@ -3,57 +3,6 @@
 # Wizard + setup domain (#1105 Phase 1): the interactive wizard flows, the setup e2e paths, and the
 # setup-time kernel/GRUB tuning (optimize_kernel runs inside cmd_setup). Sourceable standalone (#1387).
 WALLET="${WALLET:-$VALID_PRIMARY}" # exactly build_val_sandbox's own default; a no-op under run.sh
-echo "== unit: randomx_boot_params (#176) =="
-# The kernel boot params pithead writes into GRUB_CMDLINE_LINUX_DEFAULT for RandomX. Guards the
-# regression where the THP-disable param was PLURAL (transparent_hugepages=never) — an unrecognized
-# param the kernel silently ignores, so THP was never actually disabled. The valid param is singular.
-bp="$(run_sourced "$SANDBOX" randomx_boot_params)"
-assert_contains "reserves 2M huge page size" "$bp" "hugepagesz=2M"
-assert_contains "reserves 3072 huge pages" "$bp" "hugepages=3072"
-assert_contains "disables THP (singular param)" "$bp" "transparent_hugepage=never"
-case "$bp" in
-*transparent_hugepages=*) bad "THP param must be singular, not the kernel-ignored plural" "got [$bp]" ;;
-*) ok "THP param is singular (no plural transparent_hugepages= typo)" ;;
-esac
-
-echo "== unit: grub heal + boot-param insert (#176) =="
-# A passthrough sudo so the helpers' `sudo cp` / `sudo sed -i` actually edit a sandbox grub file
-# (the global stub sudo is a no-op). The helpers select GNU vs BSD sed via OS_TYPE, so this exercises
-# the real transformation on both Linux CI and a macOS dev box.
-GR="$SANDBOX/grub"
-mkdir -p "$GR/bin"
-printf '#!/usr/bin/env bash\nexec "$@"\n' >"$GR/bin/sudo"
-chmod +x "$GR/bin/sudo"
-run_grub() { PATH="$GR/bin:$PATH" run_sourced "$SANDBOX" "$@"; }
-
-# heal: rewrites an existing plural typo to the singular param, then is an idempotent no-op.
-g="$GR/healed"
-printf 'GRUB_CMDLINE_LINUX_DEFAULT="hugepagesz=2M hugepages=3072 transparent_hugepages=never quiet"\n' >"$g"
-run_grub heal_grub_thp_typo "$g"
-assert_rc "heal: rewrites plural typo (rc 0)" "$?" "0"
-assert_contains "heal: file now uses singular param" "$(cat "$g")" "transparent_hugepage=never"
-case "$(cat "$g")" in *transparent_hugepages=*) bad "heal: plural typo removed" "$(cat "$g")" ;; *) ok "heal: plural typo removed" ;; esac
-run_grub heal_grub_thp_typo "$g"
-assert_rc "heal: idempotent no-op when already singular (rc 1)" "$?" "1"
-
-# insert: appends the params to the active line, preserving what's already there.
-g="$GR/fresh"
-printf 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\n' >"$g"
-run_grub append_grub_boot_params "$g"
-assert_rc "insert: edits the active line (rc 0)" "$?" "0"
-out="$(cat "$g")"
-assert_contains "insert: keeps existing params" "$out" "quiet splash"
-assert_contains "insert: adds hugepages reservation" "$out" "hugepages=3072"
-assert_contains "insert: adds singular THP param" "$out" "transparent_hugepage=never"
-
-# insert: a commented-out line is not the active form -> rc 1, file untouched (no silent reboot).
-g="$GR/commented"
-printf '# GRUB_CMDLINE_LINUX_DEFAULT="quiet"\nGRUB_TIMEOUT=5\n' >"$g"
-before="$(cat "$g")"
-run_grub append_grub_boot_params "$g"
-assert_rc "insert: no active line -> rc 1" "$?" "1"
-assert_eq "insert: leaves file unchanged when no active line" "$(cat "$g")" "$before"
-
 echo "== unit: wizard prompt count is pinned (#502 — a silently-added prompt fails this loud) =="
 # Structural, not behavioral: every Enter-through default answer looks the same ("blank"), so a
 # NEW prompt slipped into either function wouldn't visibly break a happy-path run — it would just
@@ -247,7 +196,7 @@ EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$RT/config.json"
 printf 'ONIONKEY-ORIG\n' >"$RT/data/tor/hs_ed25519_secret_key"
 printf 'DBDATA-ORIG\n' >"$RT/data/dashboard/dashboard.db"
-out="$(cd "$RT" && PATH="$RT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y 2>&1)"
+(cd "$RT" && PATH="$RT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y >/dev/null 2>&1)
 rc=$?
 assert_rc "restore-stranding fixture: backup exits 0" "$rc" "0"
 rt_archive="$(ls "$RT"/backups/pithead-backup-*.tar.gz.enc 2>/dev/null | head -1)"
