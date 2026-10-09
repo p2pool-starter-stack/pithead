@@ -53,6 +53,7 @@ The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
+
 The migration startup regression is `tests/stack/lifecycle/migration-hold.sh`;
 `tests/os/selftest-migration-hold.sh` checks slot ownership and same-version fallback.
 The provision migration fixture is `tests/os/migration-recovery.sh`: it seeds the release through
@@ -60,6 +61,13 @@ the selected old dashboard writer in `migration-release-snapshot.py`, and measur
 mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
 `selftest-migration-snapshot.sh` check ancestry refusal, persistence and recovery contracts.
 The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
+
+Configless shutdown and the local reset destination record are in
+`lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
+`16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the
+lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure controls in
+`tests/integration/selftest/selftest-reset-restore.sh`.
+
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
@@ -98,6 +106,10 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `wizard/server.py`, `wizard/form.py`, `wizard/defaults.py` | Appliance wizard server, disk-based defaults, form translation, and install handoff | `tests/web/test_wizard*.py` |
 | `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
 
+`service/access_log.py` bounds reads of Caddy's active and rotated access logs;
+`service/audit_service.py` sanitizes and summarizes those records. Rotation tests
+live in `tests/service/test_access_log.py`.
+
 Keep polling order, database locks, and transaction scopes intact when extracting
 helpers. The storage mixins share `StateManager`'s connection and lock; the
 atomicity and annotation tests in `tests/service/` check those boundaries.
@@ -127,7 +139,7 @@ Browser assets live in `web/static/`. JavaScript feature folders are `app/`,
 nested tests through `make test-frontend`.
 `dashboard/tests/browser/` holds Chromium regressions using the locked Playwright package;
 `make test-browser` runs them after browser installation. The separate `browser.yml` workflow
-installs the locked tool and runs the native dialog focus check.
+installs the locked tool and runs the native dialog focus and HTTPS backup-download checks.
 
 `dashboard.css` imports the ordered files in `styles/`; wizard styles stay in
 `wizard/`. `vendor/` contains third-party browser libraries and their provenance.
@@ -144,7 +156,7 @@ Keep local code out of `vendor/`.
 | `tests/integration/lib/` | Sourced helpers and phase functions for the live harness. `run-pool-sync-fault.sh` injects bootstrap pool stats and checks the dashboard sync state and recovery, with trap-protected restoration; its selftest checks failures and cleanup without Docker. `restore-chain-sync.sh` streams the read-only `restore-chain-sync.py` daemon proof to the restored baseline. The restoration transport uses libcurl Digest; `tests/integration/selftest/selftest-restore-curl-connection.sh` exercises its challenged connection against a bounded synthetic server in CI. `wallet-fixture.sh`, `wallet-fixture.py` and its adjacent `wallet_fixture_capture.py` preserve legacy and fingerprinted Monero caches through destructive tests and verify them before releasing the reservation. `wallet_fixture_supersession.py` owns retained snapshot retirement; `tools/prove-wallet-supersession.py` exercises it in lifecycle. |
 | `tests/integration/payout-pairs/` | Isolated live apply, wallet services and dashboard. The Docker API guard limits fixture apply to its private storage and Compose project. The initial env carries only the synced nodes’ provisioning identities, leaving runtime state and wallet passwords to the fixture’s actual apply. Image lookup loads all source profiles so the wallet’s node dependency is present, and refuses a failed Compose model before pulling. `test-payout-pair-preparation.py` covers preparation and env isolation without creating containers. The model transform accepts environment lists and mappings while preserving unexpanded values; `test-payout-pair-model.py` checks both forms and the isolation contract. Apply uses the caller’s uid/gid so its owner-only files remain readable; successful cleanup exposes only the private scratch tree to a restricted removal container. Wallet identity checks follow a bounded readiness poll that requires fresh direct health and height checks even when dashboard cards still show cached success; `test-payout-pair-runtime.py` covers startup retries, deadline failures and invocation ordering. The fixture carries no dashboard login and an inert `caddy` stub, so apply’s real Caddy restart has a target without a proxy; the guard prints the rule behind any denial (never the request body) into the apply log. |
 | `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `selftest-wizard-defaults.sh` runs the real CLI wizard with the runner baseline contract and stubbed deployment I/O. `make test-integration-selftest` also checks appliance module loading. |
-| `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
+| `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. `doctor-tip-time.sh` runs both doctor formats against the live stack with a zero-timestamp RPC response during the check phase. |
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. `fakes/test_masked_config_read.py` exercises raw host config through the CLI renderer and dashboard reader. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. `rig-config-meta-wait.sh` waits for refreshed provenance before the rig reboot comparison; `selftest-rig-config-meta-wait.sh` covers stale, absent and invalid feeds without a guest. |
@@ -182,6 +194,9 @@ and records counted `by-design` skips for the connection and wallet supersession
 checkout probes; failed identification leaves those probes binding.
 `tests/integration/selftest/selftest-probe-channels.sh` covers the channel decision,
 skip accounting and missing DIY tools without starting containers.
+`tests/integration/lib/xvb-off-dwell.sh` supplies the live disabled-XvB dwell observation
+for deploying scenarios and read-only checks; `selftest-xvb-off-dwell.sh` exercises
+its log, clock, rejection and transport controls without a daemon.
 The source-image module supplies shared read-only lifecycle latch/marker diagnostics to the
 connection probe and lifecycle runner. The image fixture uses the shared
 `assert_mining_probe_ready` in `run-matrix.sh` to settle a legitimate restore-induced hold.
@@ -198,6 +213,9 @@ The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to 
 continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
 The provision and setup-defaults phases check firstboot and system journals for bcrypt credentials with
 `tests/os/credential-journals.sh`; `selftest-credential-journals.sh` covers leaks and unreadable journals.
+The provision phase streams `tests/os/tor-recovery-refusal-guest.sh` after initial provisioning
+settles to require a healthy Tor guard refusal without unexpected-abort advice;
+`selftest-tor-recovery-refusal.sh` proves the assertion fails on pre-fix CLI dispatch.
 Password fixture cleanup lives in `tests/os/appliance-password-fixture.sh`, sourced and selftested by the config-approval leg.
 The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.py`
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
@@ -217,6 +235,12 @@ Bundle staging into the guest is bounded and reports through `staging-failure-ev
 floor-fallback leg stages separately from `os-update` (`selftest-floor-staging.sh`, #3049).
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
+
+The e2e hardening phase runs `tests/integration/lib/access_log_retention.py`
+against real Caddy requests and the deployed access API. It verifies wrong-password
+failures past the old tail limit and native gzip rotation;
+`tests/integration/selftest/selftest-access-log-retention.sh` runs its Docker-free
+undercount and failure controls.
 
 ## What stays at the root
 

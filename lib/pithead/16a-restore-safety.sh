@@ -3,7 +3,11 @@
 compose_active_ids() {
     local status ids active=""
     for status in running restarting paused; do
-        ids=$(docker compose ps --status "$status" -q 2>/dev/null) || return 1
+        if [ -f "$ENV_FILE" ]; then
+            ids=$(docker compose ps --status "$status" -q 2>/dev/null) || return 1
+        else
+            ids=$(configless_project_ids --filter "status=$status" 2>/dev/null) || return 1
+        fi
         active+="$ids"
     done
     printf '%s' "$active"
@@ -33,6 +37,7 @@ restore_collect_destinations() {
     case "$cfg" in /*) ;; *) cfg="$PWD/$cfg" ;; esac
     RESTORE_FIXED_PATHS=("$cfg" "$PWD/$ENV_FILE" "$PWD/Caddyfile")
     RESTORE_TRUSTED_DIRS=("$PWD/data/monero" "$PWD/data/tari" "$PWD/data/p2pool" "$PWD/data/tor" "$PWD/data/dashboard")
+    [ -f "$PWD/$ENV_FILE" ] || restore_reset_paths
     for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do
         path=$(env_get_file "$PWD/$ENV_FILE" "$key")
         [ -z "$path" ] || RESTORE_TRUSTED_DIRS+=("$path")
@@ -41,6 +46,9 @@ restore_collect_destinations() {
 
 restore_member_allowed() {
     local name="${1%/}" path rel
+    # The local reset record is destination policy, never recoverable archive data, even when
+    # an operator's configured data directory contains the installation itself.
+    case "$name" in "${PWD#/}/.restore-paths" | "${PWD#/}/.restore-paths/"*) return 1 ;; esac
     for path in "${RESTORE_FIXED_PATHS[@]}"; do
         [ "$name" = "${path#/}" ] && return 0
     done

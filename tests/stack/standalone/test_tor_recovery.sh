@@ -7,6 +7,78 @@ WORK=$(cd "$WORK" && pwd -P)
 trap 'chmod 700 "$WORK/tor" 2>/dev/null || true; chmod 700 "$WORK/tor/p2pool" 2>/dev/null || true; rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+echo "== tor recovery CLI distinguishes refusals from unexpected failures =="
+cat >"$WORK/cli-fixture.sh" <<'SH'
+#!/usr/bin/env bash
+source "$1"
+trap on_err ERR
+CASE="$2" MODE="$3" WORK="$4"
+export_build_provenance() { :; }
+require_deployed() { if [ "$CASE" = unexpected ]; then false; fi; }
+mutation_lock_acquire() { _PITHEAD_LOCK_OWNED=1; }
+mutation_lock_release() { printf 'released\n' >>"$WORK/released"; }
+tor_recovery_mount() { printf '%s\n' "$WORK/cli-tor"; }
+env_get() { printf '%s\n' "$WORK/cli-control"; }
+sudo() { "$@"; }
+tor_recovery_heal_outage() { return 0; }
+tor_recovery_egress_down() { return 0; }
+tor_recovery_identities() { [ "$CASE" != identity ] || return 1; printf 'identity\n'; }
+docker() { printf 'mutation\n' >>"$WORK/cli-actions"; return 99; }
+case "$CASE" in
+mount) tor_recovery_mount() { return 1; } ;;
+lock) mutation_lock_acquire() { _PITHEAD_LOCK_OWNED=0; } ;;
+evidence)
+    tor_recovery_heal_outage() { return 1; }
+    docker() { printf 'false\n'; }
+    tor_recovery_bootstrap_stalled() { return 1; }
+    ;;
+esac
+# Direct dispatch under production errexit, never in an if/|| that disables it.
+main tor-recover "$MODE"
+printf 'continued\n'
+SH
+mkdir -p "$WORK/cli-tor" "$WORK/cli-control"
+cli_case() { # <case> <mode> <status> <message> <unexpected diagnostic: yes/no>
+    local scenario="$1" mode="$2" expected="$3" message="$4" unexpected="$5" output rc=0
+    rm -f "$WORK/released" "$WORK/cli-actions" "$WORK/cli-control/tor-recovery-at"
+    printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$WORK/cli-tor/state"
+    case "$scenario" in
+    unsaturated) printf 'CircuitBuildTimeBin 1 2\n' >>"$WORK/cli-tor/state" ;;
+    cooldown) date +%s >"$WORK/cli-control/tor-recovery-at" ;;
+    invalid-cooldown) printf 'invalid\n' >"$WORK/cli-control/tor-recovery-at" ;;
+    esac
+    output=$(bash "$WORK/cli-fixture.sh" "$ROOT/pithead" "$scenario" "$mode" "$WORK" 2>&1) || rc=$?
+    [ "$rc" = "$expected" ] || {
+        printf '%s: expected exit %s, got %s\n%s\n' "$scenario" "$expected" "$rc" "$output" >&2
+        exit 1
+    }
+    [[ "$output" = *"$message"* ]] || {
+        printf '%s: missing %s\n%s\n' "$scenario" "$message" "$output" >&2
+        exit 1
+    }
+    if [ "$unexpected" = yes ]; then
+        [[ "$output" = *"aborted unexpectedly"* && "$output" = *"bash -x"* ]]
+    else
+        [[ "$output" != *"aborted unexpectedly"* && "$output" != *"bash -x"* ]]
+        if [ "$scenario" != lock ]; then [ -s "$WORK/released" ]; fi
+    fi
+    if [ "$expected" = 0 ]; then [[ "$output" = *continued* ]]; else [[ "$output" != *continued* ]]; fi
+    [ ! -e "$WORK/cli-actions" ]
+}
+for mode in check apply; do
+    cli_case unsaturated "$mode" 1 'circuit history is not saturated' no
+    cli_case mount "$mode" 1 'data mount is ambiguous' no
+    cli_case lock "$mode" 1 'mutation lock is unavailable' no
+    cli_case invalid-cooldown "$mode" 1 'invalid cooldown record' no
+    cli_case evidence "$mode" 1 'not corroborated' no
+    cli_case identity "$mode" 1 'onion identities cannot be verified' no
+    cli_case unexpected "$mode" 1 'aborted unexpectedly' yes
+done
+cli_case cooldown apply 1 'six-hour cooldown is active' no
+cli_case ordinary check 0 'Read-only check passed' no
+# A sourced caller still receives a nonzero refusal rather than an exit from its shell.
+source_output=$(bash -c 'source "$1"; tor_recovery_refusal; printf "caller retained\n"' _ "$ROOT/pithead")
+[ "$source_output" = 'caller retained' ]
 sudo() { "$@"; }
 echo "== tor recovery refuses unsafe state and preserves identities =="
 mkdir -p "$WORK/tor/p2pool" "$WORK/control/audit"
