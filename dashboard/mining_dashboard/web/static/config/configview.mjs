@@ -194,7 +194,8 @@ export class ConfigView extends Component {
     // drop one the pane now overrides.
     const drafts = Object.fromEntries(
       Object.entries(this.state.drafts).filter(
-        ([key, raw]) => !validNumber(raw) || coerceForType("number", raw) === pathGet(candidate, key),
+        ([key, raw]) =>
+          !validNumber(raw) || coerceForType("number", raw) === pathGet(candidate, key),
       ),
     );
     this.setState({ editText, jsonError: null, candidate, drafts });
