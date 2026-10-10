@@ -117,7 +117,8 @@ async def test_settle_wait_is_bounded_when_tor_never_reads_down():
     health = AsyncMock(return_value={"tor": {"running": True}})
     await _heal_to_restart(docker, health)
     assert docker.calls == [("stop", "tor"), ("start", "tor")]
-    assert health.await_count == 6  # TOR_SETTLE_SEC // TOR_SETTLE_POLL_SEC polls, then start
+    # One start-time read per check (4), then TOR_SETTLE_SEC // TOR_SETTLE_POLL_SEC polls, then start.
+    assert health.await_count == 4 + 6
 
 
 async def test_confirmed_stop_starts_without_waiting():
@@ -125,4 +126,4 @@ async def test_confirmed_stop_starts_without_waiting():
     health = AsyncMock(return_value={"tor": {"running": True}})
     await _heal_to_restart(docker, health)
     assert docker.calls == [("stop", "tor"), ("start", "tor")]
-    assert health.await_count == 0
+    assert health.await_count == 4  # only the per-check start-time reads; no settle polls
