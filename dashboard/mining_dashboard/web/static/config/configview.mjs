@@ -156,10 +156,7 @@ export class ConfigView extends Component {
   async load() {
     try {
       const res = await fetch("/api/config");
-      if (res.status === 404) {
-        this.setState({ phase: "disabled" });
-        return;
-      }
+      if (res.status === 404) return this.setState({ phase: "disabled" });
       await requirePreviewResponse(res);
       const cfg = await res.json();
       const candidate = editableCandidate(cfg);
@@ -179,7 +176,6 @@ export class ConfigView extends Component {
         editText: text,
         jsonError: null,
         error: null,
-        preview: null,
       });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
