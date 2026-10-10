@@ -235,7 +235,7 @@ phase_update() {
 DASH_USER=""
 DASH_PASS=""
 WIZ_FAIL_REASON=""
-_wizard_provision_capture() { # <serial-byte-offset-before-this-boot, default 0>
+_wizard_provision_capture() { # <serial-byte-offset, default 0> [explicit Tari mode]
     local mark="${1:-0}" token="" tries=0 jar scode handoff="" tok_total
     WIZ_FAIL_REASON=""
     while [ -z "$token" ] && [ "$tries" -lt 40 ]; do
@@ -267,7 +267,7 @@ _wizard_provision_capture() { # <serial-byte-offset-before-this-boot, default 0>
         rm -f "$jar"
         return 1
     fi
-    scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini" \
+    scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini${2:+&tari_mode=$2}" \
         "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     if [ "$scode" != "200" ]; then
         WIZ_FAIL_REASON="gate: submit — /submit returned $scode, want 200"

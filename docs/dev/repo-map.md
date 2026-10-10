@@ -53,11 +53,21 @@ The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
+
+The migration startup regression is `tests/stack/lifecycle/migration-hold.sh`;
+`tests/os/selftest-migration-hold.sh` checks slot ownership and same-version fallback.
+The provision migration fixture is `tests/os/migration-recovery.sh`: it seeds the release through
+the selected old dashboard writer in `migration-release-snapshot.py`, and measures post-commit
+mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
+`selftest-migration-snapshot.sh` check ancestry refusal, persistence and recovery contracts.
+The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
+
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the
 lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure controls in
 `tests/integration/selftest/selftest-reset-restore.sh`.
+
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;

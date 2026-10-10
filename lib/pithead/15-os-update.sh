@@ -73,21 +73,51 @@ os_raise_data_floor() { # $1: new floor — raise it, never lower (a migration o
     fi
 }
 
-# The migration-pending marker (#851): written by os-update when a data_migration bundle installs,
-# holding the version that bundle carries. On the next boot, pithead-boot and doctor read it back:
-# a marker matching the RUNNING version means "this boot must not start the chain services until
-# the slot commits" — the lmdb migration only runs once A/B fallback can no longer need the
-# pre-migration data. A marker that does NOT match the running version is a fallback boot (the
-# migrating slot failed health and the old OS is back); the old data was never touched, so it is
-# ignored. pithead-boot removes the marker once the migrating slot commits.
+# Install leaves the bundle VERSION. Before starting anything, the candidate boot adds its
+# A/B slot: VERSION|A or VERSION|B. Even an older boot path sees that as a different version,
+# so a same-version fallback restores the floor instead of holding its own chain services.
 os_migration_marker_file() { printf '%s' "${PITHEAD_MIGRATION_MARKER_FILE:-/data/pithead/.os-migration-pending}"; }
 
-os_migration_hold_active() { # rc 0 when this boot is the held, pre-commit boot of a migrating bundle
-    local f v
+os_booted_slot() {
+    tr ' ' '\n' <"${PITHEAD_CMDLINE:-/proc/cmdline}" | sed -n 's/^rauc\.slot=\([AB]\)$/\1/p'
+}
+
+os_migration_hold_active() {
+    local f v slot
     f=$(os_migration_marker_file)
     [ -f "$f" ] || return 1
-    v=$(tr -d ' \t\r\n' <"$f" 2>/dev/null)
-    [ -n "$v" ] && [ "$v" = "$(os_running_version)" ]
+    v=$(tr -d ' \t\r\n' <"$f") || return 2
+    case "$v" in
+    '' | *[!0-9.vAB\|]*) return 2 ;;
+    esac
+    os_semver_ok "${v%%|*}" || return 2
+    case "$v" in
+    *'|'*)
+        case "${v#*|}" in A | B) ;; *) return 2 ;; esac
+        slot=$(os_booted_slot) || return 2
+        case "$slot" in A | B) ;; *) return 2 ;; esac
+        [ "$v" = "$(os_running_version)|$slot" ]
+        ;;
+    *) [ "$v" = "$(os_running_version)" ] ;;
+    esac
+}
+
+os_prepare_migration_hold() { # 0 hold, 1 fallback/absent, 2 cannot establish ownership
+    local rc slot marker temporary
+    os_migration_hold_active && rc=0 || rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    slot=$(os_booted_slot) || return 2
+    case "$slot" in A | B) ;; *) return 2 ;; esac
+    marker=$(os_migration_marker_file)
+    temporary=$(mktemp "$marker.XXXXXX") || return 2
+    # Publish without truncating the legacy marker. Flush both the content and rename before
+    # any boot action can fail: the previous slot must see its new owner after a power loss.
+    if ! { printf '%s|%s\n' "$(os_running_version)" "$slot" >"$temporary" &&
+        chmod 0644 "$temporary" && sync -f "$temporary" && mv -f "$temporary" "$marker" && sync -f "$marker"; }; then
+        rm -f "$temporary"
+        return 2
+    fi
+    printf 'pithead-boot: migration marker claimed: %s|%s\n' "$(os_running_version)" "$slot"
 }
 
 # The version floor + downgrade refusals, shared verbatim by the `os-update` CLI and the

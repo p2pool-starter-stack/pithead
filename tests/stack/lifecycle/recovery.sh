@@ -154,41 +154,8 @@ PATH="$EO/findbin:$PATH" run_sourced "$EO" ensure_owner "$EO/tree" "$myuid" "$my
 assert_not_contains "the ownership scan is recursive (no -maxdepth)" "$(cat "$EO/find.log")" "-maxdepth"
 assert_contains "the ownership scan keys off foreign uid" "$(cat "$EO/find.log")" "! -uid $myuid"
 
-echo "== black-box: 'pithead up' under the migration hold starts everything but the chain (#851) =="
-# PITHEAD_HOLD_CHAIN=1 is set by the appliance boot path on the first boot of a data_migration
-# bundle: the chain services (the lmdb holders) must not start before the A/B slot commits. The
-# compose service list comes from a dedicated stub because the shared one answers nothing for
-# `compose config --services`, and stack_status's tests rely on exactly that.
-HCB="$SANDBOX/hold-chain-bin"
-mkdir -p "$HCB"
-cat >"$HCB/docker" <<'EOF'
-#!/usr/bin/env bash
-echo "[docker] $*" >> "${DOCKER_LOG:-/dev/null}"
-case "$*" in
-"compose config --services") printf 'tor\nmonerod\ntari\nwallet-rpc\ntari-wallet\np2pool\nxmrig-proxy\ncaddy\ndashboard\n' ;;
-esac
-exit 0
-EOF
-chmod +x "$HCB/docker"
-HOLD_LOG=$(mktemp)
-printf '{}\n' >"$V/config.json"
-seed_env
-out="$(cd "$V" && DOCKER_LOG="$HOLD_LOG" PATH="$HCB:$V/bin:$PATH" PITHEAD_HOLD_CHAIN=1 ./pithead up 2>&1)"
-assert_rc "up succeeds under the hold" "$?" "0"
-assert_contains "the hold is announced for the journal" "$out" "holding chain services"
-up_line=$(grep "compose up" "$HOLD_LOG" | tail -1)
-assert_contains "tor still starts under the hold" "$up_line" "tor"
-assert_contains "p2pool still starts under the hold" "$up_line" "p2pool"
-assert_contains "the dashboard still starts under the hold" "$up_line" "dashboard"
-assert_not_contains "monerod is withheld" "$up_line" "monerod"
-assert_not_contains "tari and tari-wallet are withheld" "$up_line" "tari"
-assert_not_contains "wallet-rpc is withheld" "$up_line" "wallet-rpc"
-# Without the env the same sandbox starts the whole stack — the hold is opt-in per boot.
-HOLD_LOG2=$(mktemp)
-(cd "$V" && DOCKER_LOG="$HOLD_LOG2" PATH="$HCB:$V/bin:$PATH" ./pithead up >/dev/null 2>&1)
-up_line2=$(grep "compose up" "$HOLD_LOG2" | tail -1)
-assert_not_contains "a plain up names no service subset" "$up_line2" "p2pool"
-rm -f "$HOLD_LOG" "$HOLD_LOG2"
+# shellcheck source=tests/stack/lifecycle/migration-hold.sh
+source "$HERE/lifecycle/migration-hold.sh" || return $?
 
 # Healthchecks.io (#79): absent => no ping URL (off).
 seed_env
