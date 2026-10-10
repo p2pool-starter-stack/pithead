@@ -22,7 +22,9 @@ drive_reset_restore() (
             ;;
         *' backup -y') [ "$fault" != backup ] ;;
         ls*) [ "$fault" != archive ] && printf 'backups/fixture.tar.gz.enc' ;;
-        'set -e; test -n '*) [ "$fault" != active ] ;;
+        'set -e; test -n '*)
+            printf '%s' "$1" >"$OUT_DIR/probe"
+            [ "$fault" != active ] ;;
         *"printf 'config-reset"*) [ "$fault" != reset ] && touch "$OUT_DIR/reset" ;;
         'test ! -e config.json'*) [ -e "$OUT_DIR/reset" ] && [ "$fault" != absent ] ;;
         *' script -q -e '*)
@@ -46,9 +48,19 @@ drive_reset_restore() (
     run_reset_restore >"$OUT_DIR/output" 2>&1
     local rc=$?
     [ ! -e "$OUT_DIR/unhandled" ] || rc=127
+    if [ "$fault" = none ]; then cp "$OUT_DIR/probe" "$PROBE_COPY"; fi
     printf '%s|%s|%s' "$rc" "$IT_FAIL" "$IT_PASS"
 )
+PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
+trap 'rm -f "$PROBE_COPY"' EXIT
 assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|8'
+# An SSH session on a stock guest has no TMPDIR: the probe's scratch directory must still resolve.
+scratch_line=$(grep -m1 'mktemp -d' "$PROBE_COPY")
+if scratch=$(env -u TMPDIR bash -c "set -e; ${scratch_line%;}; printf %s \"\$scratch\"; rmdir \"\$scratch\"") && [[ "$scratch" == /tmp/reset-restore.* ]]; then
+    it_pass "reset-restore probe creates its scratch directory without TMPDIR"
+else
+    it_fail "reset-restore probe creates its scratch directory without TMPDIR" "scratch line failed: $scratch_line"
+fi
 for fault in snapshot backup archive active reset absent down prompt restore up health config secrets cleanup; do
     verdict=$(drive_reset_restore "$fault")
     if [[ "$verdict" == 1\|1\|* ]]; then
