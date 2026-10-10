@@ -2,15 +2,29 @@
 # Recovery operations must not interpolate the Compose model when rendered state is missing.
 # The shipped project is pinned to pithead. Include this directory's legacy project only with
 # its exact working-directory label, as in the project migration's ownership boundary.
-configless_project_ids() { # [docker ps filters...]
-    local legacy ids
-    docker ps --all --quiet --filter label=com.docker.compose.project=pithead "$@" || return 1
+configless_project_ps() { # <ps output flags...> -- [ps filters...]
+    local out=() legacy ids
+    while [ "$#" -gt 0 ] && [ "$1" != -- ]; do out+=("$1"); shift; done
+    shift
+    docker ps --all "${out[@]}" --filter label=com.docker.compose.project=pithead "$@" || return 1
     legacy=$(basename "$PWD" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')
     if [ -n "$legacy" ] && [ "$legacy" != pithead ]; then
-        ids=$(docker ps --all --quiet --filter "label=com.docker.compose.project=$legacy" \
+        ids=$(docker ps --all "${out[@]}" --filter "label=com.docker.compose.project=$legacy" \
             --filter "label=com.docker.compose.project.working_dir=$PWD" "$@") || return 1
         [ -z "$ids" ] || printf '%s\n' "$ids"
     fi
+}
+
+configless_project_ids() { # [ps filters...]
+    configless_project_ps --quiet -- "$@"
+}
+
+# Podman rejects status=restarting as an unknown state, so the active census lists every state once
+# and filters in the shell: an engine failure still refuses, and no engine-specific state is requested.
+configless_active_ids() {
+    local rows
+    rows=$(configless_project_ps --no-trunc --format '{{.State}} {{.ID}}' --) || return 1
+    awk '$1 == "running" || $1 == "restarting" || $1 == "paused" { print $2 }' <<<"$rows"
 }
 
 configless_stack_down() {

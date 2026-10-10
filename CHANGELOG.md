@@ -14,6 +14,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 ### Fixed
 
 - `pithead apply` now finishes a caddy restart that an earlier, interrupted apply never completed, so the dashboard login always matches the rendered config (#3332).
+- `pithead restore` after `pithead config-reset` no longer refuses on the appliance with "could not verify that the stack is stopped": the configless running-container check lists container states once instead of asking Podman for the `restarting` state it does not have (#3346).
 
 ## [2.0.0] - 2026-10-03
 
@@ -117,6 +118,9 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
 - On a DIY host whose GRUB configuration has malformed quoting, later `update-grub` runs can
   fail (#3305). Run setup with `--skip-optimize`, or remove
   `/etc/default/grub.d/zz-pithead-hugepages.cfg`.
+- On pithead-OS, `pithead restore` after `pithead config-reset` refuses with "could not verify
+  that the stack is stopped"; nothing is written (#3346). Fixed in 2.0.1. Use the setup
+  wizard's Restore instead.
 - The order of the DIY firewall rules against Docker at reboot is untested (#2677).
 - Automatic Tor recovery is a named soak risk: it restarts Tor on its own, and its long-run
   behaviour has had no soak time yet.
