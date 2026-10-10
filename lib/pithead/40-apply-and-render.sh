@@ -178,8 +178,7 @@ apply() {
     # the marker is present, re-apply re-attempts the recreate even when the rendered config matches.
     local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
-    # Armed before .env commits, cleared after caddy restarts: a retry that diffs the already rendered
-    # Caddyfile would otherwise leave Caddy serving the old login hash (#3332).
+    # Armed before .env commits, cleared when apply ends: a retry would otherwise keep the old login hash (#3332).
     local caddy_marker="${ENV_FILE}.caddy-restart-pending" caddy_pending=0
     [ -f "$caddy_marker" ] && caddy_pending=1
     grep -qx rearm-tari-only "$apply_marker" 2>/dev/null && rearm_sync_gate=2
@@ -291,10 +290,9 @@ apply() {
             caddy_before=$(cat "Caddyfile")
         fi
         generate_caddyfile
-        if [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; then
+        if [ "$caddy_pending" -eq 1 ] || { [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; }; then
             caddy_changed=1
         fi
-        [ "$caddy_pending" -eq 0 ] || caddy_changed=1
     else
         rm -f "$newenv"
         if [ "$incomplete" -eq 0 ]; then
@@ -317,7 +315,8 @@ apply() {
             return 0
         fi
         warn "A previous apply updated the config but did not finish recreating containers — retrying."
-        if [ "$caddy_pending" -eq 1 ]; then generate_caddyfile; caddy_changed=1; fi
+        caddy_changed=$caddy_pending
+        [ "$caddy_pending" -eq 0 ] || generate_caddyfile
     fi
 
     # The retry branch reaches here without a hold; the changed branch already has one.
