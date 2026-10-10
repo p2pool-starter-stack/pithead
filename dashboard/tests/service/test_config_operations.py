@@ -42,6 +42,24 @@ def test_editor_metadata_is_not_a_schema_leaf():
     ) == ["p2pool.pool"]
 
 
+def test_omitted_array_defaults_are_reported_as_default_keys(tmp_path):
+    """#3355: arrays absent from a sparse host config are defaults too, present ones are not."""
+    reference = {
+        "workers": {"api_port": 8080, "list": []},
+        "notifications": {"webhooks": [], "tor": True},
+    }
+    host = {"workers": {"list": [{"name": "rig"}]}}
+    assert config_operations.missing_default_paths(reference, host, control_service._get) == [
+        "workers.api_port",
+        "notifications.webhooks",
+        "notifications.tor",
+    ]
+    assert list(config_operations.leaf_paths(reference)) == [
+        "workers.api_port",
+        "notifications.tor",
+    ]
+
+
 def test_perimeter_fields_are_confirm_gated(config_paths):
     """Dashboard authentication plus typed confirmation is the ruled perimeter (#1959)."""
     cfg = control_service.read_config()
