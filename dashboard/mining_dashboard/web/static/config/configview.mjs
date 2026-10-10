@@ -412,7 +412,8 @@ export class ConfigView extends Component {
               ? html`<p class="status-ok">Changes applied — only the affected containers were recreated.</p>`
               : applyFailure(result, this.props.appliance)
           }</div>
-          <button class="btn-toggle" onClick=${() => this.load()}>Back to the form</button>
+          <button class="btn-toggle" onClick=${() => (ok ? this.load() : this.setState({ phase: "form", result: null }))}>Back to the form</button>
+          ${ok ? null : html`<button class="btn-toggle" onClick=${() => this.load()}>Discard draft and reload from host</button>`}
       </div>`;
     }
     const busy = phase === "previewing" || phase === "committing";
