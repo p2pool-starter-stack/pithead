@@ -128,7 +128,11 @@ fi
 (
     sleep() { :; }
     calls=$(mktemp) || exit 1
-    rx() { echo x >>"$calls"; n=$(wc -l <"$calls"); if [ "$n" -lt 3 ]; then return 255; elif [ "$n" -lt 4 ]; then printf boot-a; else printf boot-b; fi; }
+    rx() {
+        echo x >>"$calls"
+        n=$(wc -l <"$calls")
+        if [ "$n" -lt 3 ]; then return 255; elif [ "$n" -lt 4 ]; then printf boot-a; else printf boot-b; fi
+    }
     reset_restore_wait_reboot boot-a 60
 ) && it_pass "reboot wait returns once a new boot id answers" || it_fail "reboot wait returns once a new boot id answers" "never saw boot-b"
 (
