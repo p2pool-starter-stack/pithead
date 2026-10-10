@@ -199,8 +199,11 @@ export function initDashboard({
     rerender(); // client-side sort only, no fetch
   }
 
-  function setView(mode) {
+  // `section` names a Configuration section to open and focus (the earnings hint points at
+  // Payouts); a fresh object per call so repeating the same shortcut re-fires it.
+  function setView(mode, section) {
     ui.view = mode;
+    if (section) ui.configFocus = { section };
     storage.setItem("dashboardView", mode);
     // Visiting Advanced retires the calculators hint (#425) — its discoverability job is done.
     if (mode === "advanced" && !ui.hintDismissed) {

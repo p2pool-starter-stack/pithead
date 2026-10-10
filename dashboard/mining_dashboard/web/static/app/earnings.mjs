@@ -36,9 +36,12 @@ import { Component, html } from "./preact.mjs";
 // The Configuration view is the only surface an appliance operator sees — a config key
 // ("monero.view_key") printed verbatim is text they can't act on. Point at the view instead,
 // the same inline-button pattern AdvancedHint (components.mjs) uses to switch views.
-const configLink = (onView, section) =>
+// monero.view_key and tari.view_key both live in the Payouts section (configlogic.mjs), not under
+// the node sections; the link opens and focuses it.
+const PAYOUTS_SECTION = "Payouts";
+const configLink = (onView) =>
   html`<span>Not tracked. Add a view key in <button type="button" class="btn-link"
-    onClick=${() => onView("config")}>Configuration</button> → ${section}.</span>`;
+    onClick=${() => onView("config", PAYOUTS_SECTION)}>Configuration</button> → ${PAYOUTS_SECTION}.</span>`;
 
 function ExpectedVsActualCard({ summary, onView }) {
   if (!summary) return null;
@@ -59,7 +62,7 @@ function ExpectedVsActualCard({ summary, onView }) {
     label: xmr.includes_xvb ? "Monero + XvB (30d)" : "Monero (30d)",
     expected: xmr.available ? formatXmr(xmr.expected_30d) : "—",
     actual: !xmr.enabled
-      ? configLink(onView, "Monero")
+      ? configLink(onView)
       : partialMark(xmr, formatXmr(xmr.actual_30d) + (xmr.pct !== null ? ` (${xmr.pct}%)` : "")),
     dim: !xmr.enabled,
     title:
@@ -90,7 +93,7 @@ function ExpectedVsActualCard({ summary, onView }) {
     actual: !tari.enabled
       ? tari.is_local === false
         ? "Not available with a remote Tari node."
-        : configLink(onView, "Tari")
+        : configLink(onView)
       : partialMark(
           tari,
           `${tari.blocks_30d} block${tari.blocks_30d === 1 ? "" : "s"} · ${formatXtm(tari.xtm_30d)}`,

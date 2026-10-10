@@ -70,7 +70,7 @@ test('ExpectedVsActualCard points at Configuration, not a config key, when Moner
     const out = renderApp({ state: s });
     assert.doesNotMatch(out, /monero\.view_key/); // never the raw config key
     assert.match(out, /Not tracked\. Add a view key in/);
-    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Monero\./);
+    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Payouts\./);
     assert.doesNotMatch(out, /0\.000000 XMR \(/); // no zero-actual masquerading as a figure
     // The hint cell wraps at spaces only — #1861 found overflow-wrap:anywhere breaking it mid-word.
     assert.match(cardSlice(out, 'card-expected-vs-actual'), /class="text-muted eva-hint"/);
@@ -82,7 +82,7 @@ test('ExpectedVsActualCard points at Configuration for a LOCAL Tari node when co
         blocks_30d: null, xtm_30d: null, partial: false, is_local: true };
     const out = renderApp({ state: s });
     assert.doesNotMatch(out, /tari\.view_key/); // never the raw config key
-    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Tari\./);
+    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Payouts\./);
     // Tari expectation keeps two significant digits — a fraction of a block must never read 0.0.
     assert.match(out, /≈ 0\.0052 blocks/);
 });
@@ -93,7 +93,7 @@ test('ExpectedVsActualCard drops the view-key hint under a REMOTE Tari node — 
         blocks_30d: null, xtm_30d: null, partial: false, is_local: false };
     const out = renderApp({ state: s });
     assert.doesNotMatch(out, /tari\.view_key/);
-    assert.doesNotMatch(out, /→ Tari\./); // no suggestion of a key remote rejects
+    assert.doesNotMatch(out, /→ Payouts/); // no suggestion of a key remote rejects
     assert.match(out, /Not available with a remote Tari node\./);
 });
 
@@ -106,7 +106,7 @@ test('ExpectedVsActualCard never claims "remote" for Tari switched OFF — is_lo
         blocks_30d: null, xtm_30d: null, partial: false, is_local: null };
     const out = renderApp({ state: s });
     assert.doesNotMatch(out, /Not available with a remote Tari node\./); // Tari is OFF, not remote
-    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Tari\./);
+    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Payouts\./);
 });
 
 test('ExpectedVsActualCard counts Tari blocks and windows XvB wins (#808)', () => {
