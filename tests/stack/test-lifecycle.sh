@@ -4,6 +4,8 @@
 # appliance seams.
 # shellcheck source=tests/stack/lifecycle/recovery.sh
 source "$HERE/lifecycle/recovery.sh" || return $?
+# shellcheck source=tests/stack/lifecycle/caddy-pending.sh
+source "$HERE/lifecycle/caddy-pending.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/pull-policy.sh
 source "$HERE/lifecycle/pull-policy.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/lock-core.sh
