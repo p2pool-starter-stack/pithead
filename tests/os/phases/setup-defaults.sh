@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
-# A fresh 40 GiB guest takes the disk-derived Monero-only answer. Unlike provision,
-# this leg does not override Tari to exercise the rest of the all-chain battery.
+# A fresh 40 GiB guest takes the Monero-only answer: Tari merge-mining is an opt-in beta, so Enter
+# means off (#3333). Unlike provision, this leg does not override Tari to exercise the rest of the
+# all-chain battery.
 phase_setup_defaults() {
     local img token jar state cfg code handoff tries password names
     img=$(_build_image v1) || {
