@@ -13,7 +13,7 @@ from mining_dashboard.config import config, documents
 from mining_dashboard.service import audit_service, control_service
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
-from mining_dashboard.service.workers import fleet_api_port, worker_adopt, worker_refresh
+from mining_dashboard.service.workers import worker_adopt, worker_refresh
 from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
 from mining_dashboard.web.views import diagnostics_views, download_views
@@ -153,8 +153,8 @@ async def handle_control_preview(request):
     proposed = body.get("config")
     if not isinstance(proposed, dict):
         raise web.HTTPBadRequest(text="'config' must be a JSON object.")
-    # Click-to-adopt (#893): pre-validate any newly-appended workers.list[] entry before spooling.
-    err = fleet_api_port.validate(proposed)  # #3358: refuse a bad fleet port before the APPLY gate
+    # Pre-validate the fleet workers.api_port (#3358) and any newly-appended workers.list[] entry (#893).
+    err = worker_adopt.validate_fleet_api_port(proposed)
     err = err or worker_adopt.validate_new_worker_entries(control_service.read_config(), proposed)
     if err:
         raise web.HTTPBadRequest(text=err)
