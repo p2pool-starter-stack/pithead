@@ -157,6 +157,14 @@ assert_not_contains "private sync has no exposure warning" "$out" "Fast sync exp
 budget=$(PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$SANDBOX" wizard_disk_budget)
 assert_eq "host publishes the measured data filesystem bytes" "$(jq -r '.available_bytes' <<<"$budget")" "$((WT_SMALL_KB * 1024))"
 assert_eq "both wizards share the local and remote budgets" "$(jq -rc '[.local_need_bytes,.remote_need_bytes]' <<<"$budget")" '[566935683072,223338299392]'
+# The field the booted-disk Enter exception travels on (#3333): without it the browser wizard never
+# learns that the data disk holds a Tari chain.
+assert_eq "no Tari data directory: the budget says no chain is held" "$(jq -r '.tari_chain_held' <<<"$budget")" "false"
+mkdir -p "$WT/budget-held/data/tari"
+budget=$(WDU_KB=104857600 PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$WT/budget-held" wizard_disk_budget)
+assert_eq "a Tari directory of half the budget: the budget says a chain is held" "$(jq -r '.tari_chain_held' <<<"$budget")" "true"
+budget=$(WDU_KB=104857599 PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$WT/budget-held" wizard_disk_budget)
+assert_eq "a Tari directory a KiB under half the budget: no chain is held" "$(jq -r '.tari_chain_held' <<<"$budget")" "false"
 
 echo "== unit: failed randomness cannot disable the default dashboard login =="
 _wf_rng_rejected() {

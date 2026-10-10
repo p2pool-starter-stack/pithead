@@ -15,6 +15,8 @@ wizard_stack_need_gib() { # <monero-mode>
 wizard_tari_chain_held() {
     local dir="${TARI_DIR:-$PWD/data/tari}" kb
     [ -d "$dir" ] || return 1
+    # du skips what the invoking user cannot read and under-counts; that fails toward "off", so a
+    # reinstall whose chain is unreadable loses the Enter-stays-local exception silently.
     kb=$(du -sk "$dir" 2>/dev/null | awk '{print $1}')
     [[ "$kb" =~ ^[0-9]+$ ]] && [ "$kb" -ge "$(($(disk_component_gib tari) * 1048576 / 2))" ]
 }
