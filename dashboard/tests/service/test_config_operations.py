@@ -63,7 +63,19 @@ def test_omitted_array_defaults_are_reported_as_default_keys(tmp_path):
 
 def test_real_reference_array_defaults_are_default_keys_for_a_minimal_host(tmp_path, monkeypatch):
     """#3355: a minimal host omitting workers/notifications reports their arrays as defaults."""
-    reference = Path(__file__).resolve().parents[3] / "config.reference.json"
+    # The repo checkout ("Dashboard tests" job) always has the real file; the dashboard-only image's
+    # test stage builds from dashboard/ alone, like test_env_key_perimeter's pithead lookup.
+    here = Path(__file__).resolve()
+    reference = next(
+        (
+            p / "config.reference.json"
+            for p in here.parents
+            if (p / "config.reference.json").is_file()
+        ),
+        None,
+    )
+    if reference is None:
+        pytest.skip("config.reference.json not present in this test context (dashboard-only image)")
     host = tmp_path / "config.json"
     host.write_text(json.dumps({"dashboard": {"energy": {"cost_per_kwh": 0.1}}}))
     monkeypatch.setattr(control_service.config, "HOST_CONFIG_PATH", str(host))
