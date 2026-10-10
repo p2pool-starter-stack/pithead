@@ -56,11 +56,13 @@ test("a refused restore preserves the upload for a corrected passphrase and send
   ui,
 }) => {
   const uploads = [];
-  await page.route("**/submit-restore", async (route) => {
-    const request = route.request();
-    expect(request.method()).toBe("POST");
-    const form = await new Response(request.postDataBuffer(), {
-      headers: { "content-type": request.headers()["content-type"] },
+  // WebKit's intercepted request omits file bytes; inspect the actual HTTP upload instead.
+  ui.responses.set("/submit-restore", async (request) => {
+    expect(request.method).toBe("POST");
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const form = await new Response(Buffer.concat(chunks), {
+      headers: { "content-type": request.headers["content-type"] },
     }).formData();
     uploads.push({
       keys: [...form.keys()],
@@ -69,13 +71,17 @@ test("a refused restore preserves the upload for a corrected passphrase and send
       bytes: Buffer.from(await form.get("archive").arrayBuffer()),
     });
     if (uploads.length === 1)
-      return route.fulfill({ status: 400, json: { error: "Wrong archive passphrase." } });
+      return {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ error: "Wrong archive passphrase." }),
+      };
     await page.route("**/api/wizard-state", (stateRoute) =>
       stateRoute.fulfill({
         json: { stage: "installing", config: {}, reference: {}, disks: [], restore_enabled: true },
       }),
     );
-    return route.fulfill({ status: 202, json: {} });
+    return { status: 202, headers: { "Content-Type": "application/json" }, body: "{}" };
   });
   await page.route("**/status", (route) => route.fulfill({ body: "Validating restored settings" }));
   await ui.openWizard();

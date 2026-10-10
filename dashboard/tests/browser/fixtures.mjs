@@ -33,8 +33,9 @@ export const test = base.extend({
     page.on("pageerror", (error) => errors.push(error.message));
     const server = createServer(async (req, res) => {
       try {
-        const response = responses.get(req.url);
-        if (response) {
+        const configured = responses.get(req.url);
+        if (configured) {
+          const response = typeof configured === "function" ? await configured(req) : configured;
           res.writeHead(response.status || 200, response.headers);
           return res.end(response.body);
         }
