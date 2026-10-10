@@ -120,8 +120,8 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-rootfs-publish.sh" && domain_ran test-release-rootfs-publish.sh "$_d0" "$?" || domain_ran test-release-rootfs-publish.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-unit-helpers.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-unit-helpers.sh" && domain_ran test-unit-helpers.sh "$_d0" "$?" || domain_ran test-unit-helpers.sh "$_d0" "$?"
-    # shellcheck source=tests/stack/status-sync-hold.sh disable=SC2015
-    _d0=$((PASS + FAIL)) && source "$HERE/status-sync-hold.sh" && domain_ran status-sync-hold.sh "$_d0" "$?" || domain_ran status-sync-hold.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-status-sync-hold.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-status-sync-hold.sh" && domain_ran test-status-sync-hold.sh "$_d0" "$?" || domain_ran test-status-sync-hold.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-cli.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-cli.sh" && domain_ran test-cli.sh "$_d0" "$?" || domain_ran test-cli.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-deps-python.sh disable=SC2015
