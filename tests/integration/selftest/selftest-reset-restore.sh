@@ -27,7 +27,11 @@ drive_reset_restore() (
             case "$fault" in
             active) return 1 ;;
             refused)
-                printf 'restore exit=1 running=7 first-line=x\npresent after restore:\nconfigless census stderr=[]\n' >&2
+                printf 'restore exit=1 running=7 first-line=[ERROR] Restore could not verify that the stack is stopped\npresent after restore:\nstack intact\nconfigless census stderr=[]\n' >&2
+                return 1
+                ;;
+            other)
+                printf 'restore exit=1 running=7 first-line=[ERROR] Not a pithead backup archive\npresent after restore:\nstack intact\nconfigless census stderr=[]\n' >&2
                 return 1
                 ;;
             stopped)
@@ -65,7 +69,7 @@ drive_reset_restore() (
     [ ! -e "$OUT_DIR/unhandled" ] || rc=127
     if [ "$fault" = none ]; then cp "$OUT_DIR/probe" "$PROBE_COPY"; fi
     printf '%s|%s|%s' "$rc" "$IT_FAIL" "$IT_PASS"
-    case "$fault" in refused | written | stopped)
+    case "$fault" in refused | written | stopped | other)
         printf '|intact=%s|%s' "${RESET_RESTORE_STACK_INTACT:-0}" "$(grep -c '#3346' "$OUT_DIR/output")"
         ;;
     esac
@@ -78,8 +82,39 @@ assert_eq "a refusal that wrote nothing fails the row, names #3346 and flags the
     "$(drive_reset_restore refused)" "1|1|1|intact=1|1"
 assert_eq "a restore that wrote a file fails the row and does not flag the stack intact" \
     "$(drive_reset_restore written)" "1|1|1|intact=0|0"
+assert_eq "a different refusal is not labelled as #3346 but still flags the stack intact" \
+    "$(drive_reset_restore other)" "1|1|1|intact=1|0"
 assert_eq "a restore that left no container running does not flag the stack intact" \
     "$(drive_reset_restore stopped)" "1|1|1|intact=0|0"
+# Run the real probe text against a fake docker and pithead: the stage report, the intact marker and
+# the restoring trap are probe behaviour that the stubbed fixtures above cannot see.
+run_probe() { # <restore-exit> <restore-writes-config:0|1> <running-before> <running-after>
+    local d
+    d=$(mktemp -d -t reset-restore-probe-run.XXXXXX) || return 1
+    mkdir "$d/bin" "$d/work"
+    printf '%s\n' '#!/bin/bash' 'n=$(cat "$PROBE_DIR/n")' 'for _ in $(seq "$n"); do echo c; done' 'echo 1 >"$PROBE_DIR/seen"' >"$d/bin/docker"
+    printf '%s\n' '#!/bin/bash' 'echo "[ERROR] Restore could not verify that the stack is stopped"' '[ "$WRITES" != 1 ] || echo x >config.json' 'echo "$AFTER" >"$PROBE_DIR/n"' 'exit "$RESTORE_RC"' >"$d/work/pithead"
+    chmod +x "$d/bin/docker" "$d/work/pithead"
+    echo "$3" >"$d/n"
+    : >"$d/work/config.json"
+    : >"$d/work/.env"
+    : >"$d/work/Caddyfile"
+    # shellcheck disable=SC2069 # stderr only, as the rx caller captures it
+    (cd "$d/work" && PROBE_DIR="$d" RESTORE_RC="$1" WRITES="$2" AFTER="$4" PATH="$d/bin:$PATH" env -u TMPDIR bash -c "$(cat "$PROBE_COPY")" 2>&1 >/dev/null)
+    printf 'rc=%s files=%s\n' "$?" "$(cd "$d/work" && for f in config.json .env Caddyfile; do [ -e "$f" ] && printf '%s ' "$f"; done)"
+    rm -rf "$d"
+}
+out=$(run_probe 1 0 7 7)
+assert_contains "the probe marks a refusal that changed nothing intact and restores every file" "$out" "stack intact"
+assert_contains "the probe restores the hidden files on exit" "$out" "files=config.json .env Caddyfile"
+out=$(run_probe 1 0 7 3)
+if [[ "$out" == *"stack intact"* ]]; then it_fail "the probe withholds intact when containers stopped" "$out"; else it_pass "the probe withholds intact when containers stopped"; fi
+out=$(run_probe 1 1 7 7)
+if [[ "$out" == *"stack intact"* ]]; then it_fail "the probe withholds intact when a file was written" "$out"; else it_pass "the probe withholds intact when a file was written"; fi
+out=$(run_probe 0 0 7 7)
+assert_contains "the probe fails a restore that exits 0" "$out" "restore exited 0"
+out=$(run_probe 1 0 0 0)
+assert_contains "the probe names the census stage when nothing runs" "$out" "failed at census"
 # An SSH session on a stock guest has no TMPDIR: the probe's scratch directory must still resolve.
 bash -n "$PROBE_COPY" || it_fail "reset-restore probe parses" "syntax error"
 scratch_line=$(grep -m1 'mktemp -d' "$PROBE_COPY")

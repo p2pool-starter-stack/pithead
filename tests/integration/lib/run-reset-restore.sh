@@ -27,15 +27,17 @@ run_reset_restore() {
     # Hide all rendered/config state while real services run. The remote trap restores the files
     # even when a refusal check fails; no crafted .env or fake Compose command is used.
     local running_probe
-    running_probe="set -e; stage=census;
-        test -n \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running)\";
+    running_probe="set -e; stage=census; scratch=;
+        trap 'rc=\$?; if [ -n \"\$scratch\" ]; then for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"; fi; [ \"\$rc\" -eq 0 ] || printf \"reset-restore probe: failed at %s (exit %s)\\n\" \"\$stage\" \"\$rc\" >&2' EXIT
+        before=\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running | wc -l);
+        test \"\$before\" -gt 0;
         stage=scratch; scratch=\$(mktemp -d \"\${TMPDIR:-/tmp}/reset-restore.XXXXXX\");
-        trap 'rc=\$?; for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"; [ \"\$rc\" -eq 0 ] || printf \"reset-restore probe: failed at %s (exit %s)\\n\" \"\$stage\" \"\$rc\" >&2' EXIT
         stage=hide; for f in config.json .env Caddyfile; do mv -- \"\$f\" \"\$scratch/\$f\"; done;
         stage=restore; set +e; output=\$($IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 2>&1); result=\$?; set -e;
         stage=refusal; {
             printf \"restore exit=%s running=%s first-line=%s\\n\" \"\$result\" \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running | wc -l)\" \"\$(printf %s \"\$output\" | head -n 1 | cut -c1-200)\";
             printf \"present after restore:\"; for f in config.json .env Caddyfile; do [ ! -e \"\$f\" ] || printf \" %s\" \"\$f\"; done; printf \"\\n\";
+            [ \"\$result\" -eq 0 ] || [ -e config.json ] || [ -e .env ] || [ -e Caddyfile ] || [ \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running | wc -l)\" -ne \"\$before\" ] || printf \"stack intact\\n\";
         } >&2
         test \"\$result\" -ne 0 || { printf \"restore exited 0\\n\" >&2; exit 1; };
         case \"\$output\" in *'stack services are still active'*) ;; *)
@@ -47,15 +49,15 @@ run_reset_restore() {
     if probe_err=$(rx "$running_probe" 2>&1 >/dev/null); then
         it_pass "restore refuses real running containers with all configuration missing"
     else
-        probe_err=$(printf '%s' "$probe_err" | grep -v 'Permanently added' | redact | tail -n 8)
+        probe_err=$(printf '%s' "$probe_err" | grep -v 'Permanently added' | redact | tail -n 10)
         # Restore refused (non-zero exit) and left every file absent: the stack is as it was, so
         # the phases after lifecycle can still run. Any other failure keeps the phase stopped.
-        if grep -q 'restore exit=[1-9] running=[1-9]' <<<"$probe_err" && grep -qx 'present after restore:' <<<"$probe_err"; then
+        if grep -qx 'stack intact' <<<"$probe_err"; then
             # shellcheck disable=SC2034 # read by run_lifecycle
             RESET_RESTORE_STACK_INTACT=1
         fi
         # A Podman engine rejects status=restarting, so the configless census cannot finish (#3346).
-        case "$probe_err" in *'configless census stderr'*) probe_err="restore could not take its configless census; see #3346. $probe_err" ;; esac
+        case "$probe_err" in *'first-line='*'could not verify that the stack is stopped'*) probe_err="restore could not take its configless census; see #3346. $probe_err" ;; esac
         it_fail "restore refuses real running containers with all configuration missing" "running census, refusal, or unchanged-file assertion failed: ${probe_err:-no output}"
         return 1
     fi
