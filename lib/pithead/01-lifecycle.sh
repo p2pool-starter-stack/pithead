@@ -220,9 +220,11 @@ compose_up_checked() {
         rm -f "$tmp"
         [ "$rc" -eq 0 ] && return 0
         case "$out" in
-        *"must be in Created or Stopped state to be started"*)
+        # #3300: a stop that outlives its grace period is SIGKILLed and Podman answers 500 on the exit
+        # file; the container is stopped by the second pass.
+        *"must be in Created or Stopped state to be started"* | *"timed out waiting for file /run/libpod/exits/"*)
             [ "$_attempt" -eq 1 ] && {
-                warn "Compose hit a container still starting from a prior recreate — retrying once in 3s."
+                warn "Compose hit a container still changing state after a prior recreate — retrying once in 3s."
                 sleep 3
                 continue
             }
