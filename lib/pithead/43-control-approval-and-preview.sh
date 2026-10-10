@@ -133,6 +133,8 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
 control_preview() { # <request-file> <id> <actor> <control-dir>
     local file="$1" id="$2" actor="$3" cdir="$4"
     local staged="$cdir/staged/$id.json" errf="$cdir/staged/.$id.err" out result
+    local basef="$cdir/staged/.$id.base" base_sum=""
+    base_sum=$(control_live_config_sum) # the revision this preview diffs against (#3352)
     if ! out=$(config_document_error "$CONFIG_FILE"); then
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$out" '{status:"rejected",error:$e,ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
@@ -222,6 +224,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                 else . end)
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
+    (umask 077 && printf '%s\n' "$base_sum" >"$basef")
     local policy_error
     if policy_error=$(control_preview_policy_error "$staged"); then
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$policy_error" '{status:"rejected",error:$e,ts:(now|floor)}')"
@@ -334,7 +337,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     else
         # Validation failed — reject with pithead's own error tail; nothing stays staged.
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$errf")" '{status:"rejected",log:$e,ts:(now|floor)}')"
-        rm -f "$staged"
+        rm -f "$staged" "$basef"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
     fi
     rm -f "$errf"
@@ -345,23 +348,14 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
 control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     local id="$1" actor="$2" cdir="$3" confirm="${4:-}" approval="${5:-null}"
     local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0 carried_ssh=0
-    if [ ! -f "$staged" ]; then
-        control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
-        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"no staged intent for this id — preview first",ts:(now|floor)}')"
-        return 0
-    fi
-    if [ -z "$(find "$staged" -mmin -10 2>/dev/null)" ]; then
-        rm -f "$staged"
-        control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
-        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"staged intent expired (older than 10 minutes) — preview again",ts:(now|floor)}')"
-        return 0
-    fi
+    local basef="$cdir/staged/.$id.base"
+    control_commit_unusable "$id" "$actor" "$cdir" && return 0
     # On refusal the gate's stdout is the reason; on approval it is the changed key names, which
     # the audit entries below record — WHAT changed, by name only (#349).
     local gate_out audit_keys=""
     if ! gate_out=$(control_approval_gate "$staged" "$confirm" "$id" "$actor" "$approval" "$cdir"); then
         [ -n "$gate_out" ] || gate_out="approval denied"
-        rm -f "$staged" "${staged}.confirmed"
+        rm -f "$staged" "$basef" "${staged}.confirmed"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$gate_out" '{status:"rejected",error:$e,ts:(now|floor)}')"
         return 0
@@ -396,5 +390,5 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
         control_audit "$cdir/audit/control.log" "$id" "$actor" "$audit_action" "failed" "$audit_keys" "$approver"
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$logf")" --arg b "${CONFIG_FILE}.bak-control" '{status:"failed",error:$e,backup:$b,ts:(now|floor)}')"
     fi
-    rm -f "$staged" "$logf" "${staged}.confirmed"
+    rm -f "$staged" "$basef" "$logf" "${staged}.confirmed"
 }

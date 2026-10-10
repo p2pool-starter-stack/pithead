@@ -14,6 +14,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 ### Fixed
 
 - `pithead apply` now finishes a caddy restart that an earlier, interrupted apply never completed, so the dashboard login always matches the rendered config (#3332).
+- A Configuration preview is now rejected at commit if the live config changed after it was made, so a stale preview from another tab can no longer silently overwrite a newer edit; preview again (#3352).
 
 ## [2.0.0] - 2026-10-03
 
