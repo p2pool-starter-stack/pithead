@@ -258,8 +258,7 @@ stack_up() {
     verify_release_images
     # Docker Compose automatically picks up COMPOSE_PROFILES from .env
     #
-    # PITHEAD_HOLD_CHAIN=1 holds monerod/tari and their wallets on a data-migration boot
-    # (#851), so forward-only LMDB changes wait for the A/B commit. Plain `up` starts them after commit.
+    # PITHEAD_HOLD_CHAIN=1 defers chains and LMDB changes until A/B commit (#851); plain `up` starts them afterward.
     if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
         # Revoke the carried mining latch before dashboard startup; ordinary outages retain it.
         local dashboard_dir
