@@ -212,11 +212,14 @@ later silence is unhealthy. This container grace never hides dashboard wallet re
 It exits non-zero when something needs attention, so you can wire it into a cron/monitoring check.
 A stopped `p2pool`/`xmrig-proxy` is reported as intentional, not an error: the dashboard stops it
 either to fail workers over a node-down outage or while the miner is held until the required chains
-finish their initial sync. When a chain is still syncing, `status` reads the dashboard's own
-`/api/state` and prints its progress inline — a line per chain with the percent and the number of
-blocks left, so you don't have to open the dashboard to see how far off release is. No ETA is
-shown: block rate isn't sampled, so the blocks-remaining count is the honest figure. The lines are
-skipped once both chains are synced, or when the dashboard app isn't answering yet.
+finish their initial sync. While the dashboard's global sync gate (`/api/state.syncing`) is on,
+`status` reads `/api/state` and prints each chain's progress inline — a line per chain with the
+percent and the number of blocks left, so you don't have to open the dashboard to see how far off
+release is. A Tari row is never listed while `TARI_REQUIRED=false`. No ETA is shown: block rate
+isn't sampled, so the blocks-remaining count is the honest figure. The lines are skipped when the
+gate is off, or when the dashboard app isn't answering yet. When the gate is off and a miner is
+stopped anyway, the reason reads "the dashboard reports no chain sync in progress — check the
+dashboard and the container logs" instead of claiming a sync hold.
 
 **Start / stop / restart:**
 

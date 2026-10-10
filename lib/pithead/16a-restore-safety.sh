@@ -2,12 +2,12 @@
 
 compose_active_ids() {
     local status ids active=""
+    if [ ! -f "$ENV_FILE" ]; then
+        configless_active_ids 2>/dev/null
+        return
+    fi
     for status in running restarting paused; do
-        if [ -f "$ENV_FILE" ]; then
-            ids=$(docker compose ps --status "$status" -q 2>/dev/null) || return 1
-        else
-            ids=$(configless_project_ids --filter "status=$status" 2>/dev/null) || return 1
-        fi
+        ids=$(docker compose ps --status "$status" -q 2>/dev/null) || return 1
         active+="$ids"
     done
     printf '%s' "$active"

@@ -14,6 +14,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 ### Fixed
 
 - `pithead apply` now finishes a caddy restart that an earlier, interrupted apply never completed, so the dashboard login always matches the rendered config (#3332).
+- `pithead restore` after `pithead config-reset` no longer refuses on the appliance with "could not verify that the stack is stopped": the configless running-container check lists container states once instead of asking Podman for the `restarting` state it does not have (#3346).
+- A fleet `workers.api_port` outside 1-65535 (or not an integer) is now refused at dashboard preview and by `pithead apply`, instead of rendering an invalid `XMRIG_API_PORT` (#3358).
+- A Configuration preview is now rejected at commit if the live config changed after it was made, so a stale preview from another tab can no longer silently overwrite a newer edit; preview again (#3352).
+- A one-field save in the dashboard Configuration view no longer adds untouched default arrays (`workers.list`, `notifications.webhooks`) to a minimal `config.json` (#3355).
 
 ## [2.0.0] - 2026-10-03
 
@@ -330,6 +334,9 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
   ([#3302](https://github.com/p2pool-starter-stack/pithead/pull/3302)).
 - **An apply that restarts the dashboard keeps it available** when the old container's stop times
   out ([#3307](https://github.com/p2pool-starter-stack/pithead/pull/3307)).
+- **Discarding a rejected configuration preview clears its error.** The dashboard no longer shows
+  the old preview error above the clean form after **Discard edits**, including after you move to
+  another view and back ([#3354](https://github.com/p2pool-starter-stack/pithead/pull/3354)).
 - **Configuration drafts survive a view change.** Edits in the configuration editor are kept when
   you move to another dashboard view and back, and after an apply that fails ([#3273](https://github.com/p2pool-starter-stack/pithead/pull/3273)).
 - **The setup wizard's plain-HTTP port redirects to HTTPS.** A plain `http://` LAN URL is

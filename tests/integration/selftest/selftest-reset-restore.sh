@@ -21,6 +21,7 @@ drive_reset_restore() (
             if [ "$fault" = config ] && [ -e "$OUT_DIR/restored" ]; then printf changed; else printf original; fi
             ;;
         *' backup -y') [ "$fault" != backup ] ;;
+        'cat /proc/sys/kernel/random/boot_id') printf boot-a ;;
         ls*) [ "$fault" != archive ] && printf 'backups/fixture.tar.gz.enc' ;;
         'set -e; stage=census;'*)
             printf '%s' "$1" >"$OUT_DIR/probe"
@@ -123,6 +124,25 @@ if scratch=$(env -u TMPDIR bash -c "set -e; ${scratch_line%;}; printf %s \"\$scr
 else
     it_fail "reset-restore probe creates its scratch directory without TMPDIR" "scratch line failed: $scratch_line"
 fi
+# The appliance reboots on config-reset: the wait must see a new boot id, and must give up if none comes.
+(
+    sleep() { :; }
+    calls=$(mktemp) || exit 1
+    rx() {
+        echo x >>"$calls"
+        n=$(wc -l <"$calls")
+        if [ "$n" -lt 3 ]; then return 255; elif [ "$n" -lt 4 ]; then printf boot-a; else printf boot-b; fi
+    }
+    reset_restore_wait_reboot boot-a 60
+) && it_pass "reboot wait returns once a new boot id answers" || it_fail "reboot wait returns once a new boot id answers" "never saw boot-b"
+(
+    clock=$(mktemp) || exit 1
+    echo 0 >"$clock"
+    sleep() { echo $(($(cat "$clock") + 30)) >"$clock"; }
+    date() { cat "$clock"; }
+    rx() { printf boot-a; }
+    reset_restore_wait_reboot boot-a 60
+) && it_fail "reboot wait gives up when the boot id never changes" "returned success" || it_pass "reboot wait gives up when the boot id never changes"
 for fault in snapshot backup archive active reset absent down prompt restore up health config secrets cleanup; do
     verdict=$(drive_reset_restore "$fault")
     if [[ "$verdict" == 1\|1\|* ]]; then

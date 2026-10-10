@@ -62,9 +62,20 @@ run_reset_restore() {
         return 1
     fi
 
-    if ! rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
-        redact >"$OUT_DIR/reset-restore.reset.log" ||
-        ! rx 'test ! -e config.json && test ! -e .env && test ! -e Caddyfile'; then
+    local boot_before
+    boot_before=$(rx 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
+    if [ -z "$boot_before" ]; then
+        it_fail "boot id is readable before config-reset" "the reboot wait needs a baseline"
+        return 1
+    fi
+    rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
+        redact >"$OUT_DIR/reset-restore.reset.log"
+    # The appliance reboots into first-boot setup right after the reset; every later step waits for it.
+    if grep -q 'Rebooting into first-boot' "$OUT_DIR/reset-restore.reset.log" && ! reset_restore_wait_reboot "$boot_before" 300; then
+        it_fail "guest returns after the config-reset reboot" "no new boot reached the target within 300s"
+        return 1
+    fi
+    if ! rx 'test ! -e config.json && test ! -e .env && test ! -e Caddyfile'; then
         it_fail "config-reset removes configuration before encrypted recovery" "reset failed or a rendered file remains; see reset-restore.reset.log"
         return 1
     fi
@@ -112,4 +123,16 @@ run_reset_restore() {
         return 1
     }
     [ "$IT_FAIL" -le "$failures_before" ]
+}
+
+# Wait until the target reports a boot id other than <before> (the appliance reboots on config-reset).
+reset_restore_wait_reboot() { # <boot id before> <timeout seconds>
+    local before="$1" deadline now boot_now
+    deadline=$(($(date +%s) + $2))
+    while now=$(date +%s) && [ "$now" -lt "$deadline" ]; do
+        sleep 5
+        boot_now=$(rx 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null) || continue
+        [ -n "$boot_now" ] && [ "$boot_now" != "$before" ] && return 0
+    done
+    return 1
 }

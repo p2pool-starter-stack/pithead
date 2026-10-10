@@ -1153,8 +1153,10 @@ the full proposed configuration — both live views of a single candidate. Editi
 a field rewrites the pane; editing the pane refills the fields. The pane shows the whole
 candidate, developer-only keys aside (named below). Save sends the complete explicit
 configuration because the host stages and commits it as a replacement, but removes every
-`config.reference.json` default that was absent from `config.json` and remains untouched. Existing
-values and masked secrets survive, while a placeholder default can't be committed as if the
+`config.reference.json` default that was absent from `config.json` and remains untouched, default
+arrays such as `workers.list` and `notifications.webhooks` included, so a one-field save adds no
+empty containers. Existing values and masked secrets survive, while a placeholder default can't be
+committed as if the
 operator had typed it
 ([#2365](https://github.com/p2pool-starter-stack/pithead/issues/2365)). (This is the setup
 wizard's pattern — the first page and the config tab now behave identically.) The pieces:
@@ -1231,6 +1233,10 @@ The flow mirrors the CLI's `apply`:
    claimed request, so a writer holding the original spool file open cannot change it mid-preview.
    Sensitive changes also show complete old and new non-secret
    values; secret values remain masked.
+   A preview belongs to the config it was made against: if another tab or `./pithead apply`
+   changes the config before you confirm, the commit is rejected with "preview again" and nothing
+   is written, so a stale preview never overwrites the newer change
+   ([#3352](https://github.com/p2pool-starter-stack/pithead/issues/3352)).
 3. Confirm. If the preview flags any change disruptive (⚠), you must type `APPLY` first. A payout
    change also requires the final eight characters of the new address. The
    commit runs `pithead apply -y` on the host and recreates only the containers whose config
