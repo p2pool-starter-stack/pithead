@@ -115,18 +115,13 @@ draw();
     await page.locator(".config-view").waitFor();
     await marker().waitFor(); // #3287: a failed apply keeps the rejected draft for correction.
     assert.equal(await editor.inputValue(), valid);
-    await page.getByRole("button", { name: "Save & preview changes" }).click();
-    await page.getByRole("button", { name: "Confirm & apply", exact: true }).click();
-    await page
-      .getByRole("button", { name: "Discard draft and reload from host", exact: true })
-      .click();
-    await marker().waitFor({ state: "detached" });
-    assert.equal(await editor.inputValue(), original);
+    // Correct the rejected draft in place and retry.
     await page
       .locator(".config-view summary")
       .filter({ hasText: "the configuration this page sends" })
       .click();
-    await editor.fill(valid);
+    const corrected = valid.replace("0.18", "0.19");
+    await editor.fill(corrected);
     commitStatus = "applied";
     await page.getByRole("button", { name: "Save & preview changes" }).click();
     await page.getByRole("button", { name: "Confirm & apply", exact: true }).click();
@@ -134,6 +129,21 @@ draw();
       .getByText("Changes applied — only the affected containers were recreated.")
       .waitFor();
     await marker().waitFor({ state: "detached" });
+    // The explicit discard replaces a rejected draft with the host configuration.
+    await page.getByRole("button", { name: "Back to the form", exact: true }).click();
+    await page
+      .locator(".config-view summary")
+      .filter({ hasText: "the configuration this page sends" })
+      .click();
+    await editor.fill(valid);
+    commitStatus = "failed";
+    await page.getByRole("button", { name: "Save & preview changes" }).click();
+    await page.getByRole("button", { name: "Confirm & apply", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Discard draft and reload from host", exact: true })
+      .click();
+    await marker().waitFor({ state: "detached" });
+    assert.equal(await editor.inputValue(), original);
     assert.equal(dialogs, 0, "view navigation must not ask for discard confirmation");
   } finally {
     releasePreview?.();
