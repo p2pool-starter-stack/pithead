@@ -756,7 +756,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
-- `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run.
+- `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).
   `lifecycle-gate.log` samples the reset marker, persisted `miner_released` boolean and running
   mining services before the wizard-defaults workload, after its startup and around its baseline
   restore apply, before/after restart, around setup/up/apply connection probes, around the
