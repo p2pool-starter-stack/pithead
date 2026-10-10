@@ -351,7 +351,9 @@ class TestFleetApiPort:
     def test_in_range_accepted(self, port):
         assert validate_fleet_api_port({"workers": {"api_port": port}}) == ""
 
-    @pytest.mark.parametrize("proposed", [{}, {"workers": {}}, {"workers": {"api_port": None}}, "x"])
+    @pytest.mark.parametrize(
+        "proposed", [{}, {"workers": {}}, {"workers": {"api_port": None}}, "x"]
+    )
     def test_absent_means_default(self, proposed):
         assert validate_fleet_api_port(proposed) == ""
 
