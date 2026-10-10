@@ -275,7 +275,7 @@ out="$(cd "$A" && DOCKER_LOG="$A/docker.log" FAIL_UP=1 PATH="$A/bin:$PATH" ./pit
 rc=$?
 assert_rc "apply fails (rc 1) when compose up fails" "$rc" "1"
 assert_contains "apply prints recovery guidance" "$out" "were NOT recreated"
-assert_eq "apply leaves the incomplete and caddy-restart markers (#3332)" "$(ls "$A"/.env.* | xargs -n1 basename | tr '\n' ' ')" ".env.apply-incomplete .env.caddy-restart-pending "
+assert_eq "apply leaves the incomplete and caddy-restart markers (#3332)" "$(find "$A" -maxdepth 1 \( -name .env.apply-incomplete -o -name .env.caddy-restart-pending \) | wc -l)" "2"
 assert_contains "a failed dashboard-alone restart (#3300) shows the engine's reason" "$out" "engine refused: compose up --pull never -d --no-deps dashboard"
 # Second apply: no delta, but the marker forces a retry that must also restart caddy, which the failed run never did (#3332).
 : >"$A/docker.log"
@@ -284,7 +284,7 @@ rc=$?
 assert_rc "re-apply retries and succeeds (rc 0)" "$rc" "0"
 assert_contains "re-apply re-attempts the recreate" "$out" "retrying"
 assert_contains "re-apply restarts caddy the failed run never restarted" "$(cat "$A/docker.log")" "compose restart caddy"
-assert_eq "markers cleared after a successful retry" "$(ls "$A"/.env.* 2>/dev/null | grep -c 'apply-incomplete\|caddy-restart')" "0"
+assert_eq "markers cleared after a successful retry" "$(find "$A" -maxdepth 1 \( -name .env.apply-incomplete -o -name .env.caddy-restart-pending \) | wc -l)" "0"
 
 echo "== black-box: compose_up_checked retries a transient container-state race once (#2293) =="
 # A docker stub that fails `compose up` with the state-conflict shape seen on bench-ci job 388 on the
