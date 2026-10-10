@@ -318,6 +318,14 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
 
 ### Fixed
 
+- **An upgrade with a data migration commits unattended.** This holds even when a mining release
+  was saved before the update ([#3267](https://github.com/p2pool-starter-stack/pithead/pull/3267)).
+- **Boot health probes no longer count as failed logins**, so they do not raise failed-login
+  warnings ([#3269](https://github.com/p2pool-starter-stack/pithead/pull/3269)).
+- **Tor self-heal resets its outage clock when Tor is restarted outside the healer**
+  ([#3302](https://github.com/p2pool-starter-stack/pithead/pull/3302)).
+- **An apply that restarts the dashboard keeps it available** when the old container's stop times
+  out ([#3307](https://github.com/p2pool-starter-stack/pithead/pull/3307)).
 - **Configuration drafts survive a view change.** Edits in the configuration editor are kept when
   you move to another dashboard view and back, and after an apply that fails ([#3273](https://github.com/p2pool-starter-stack/pithead/pull/3273)).
 - **The setup wizard's plain-HTTP port redirects to HTTPS.** A plain `http://` LAN URL is
