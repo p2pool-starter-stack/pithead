@@ -29,6 +29,8 @@ dashboard stays stopped until upgrade.
 The candidate's migration boot must record its BUILD_COMMIT, durable marker
 claim with the booted A/B slot, P2Pool and proxy stopped at the ordinary health
 gate, an unattended bootloader commit, and local-chain startup after commit.
+The startup probe inspects the shipped `monerod` and `tari` container names and
+requires both to be running before remote recovery configuration.
 Missing hold or commit evidence prevents remote recovery configuration. The
 existing reserved `PITHEAD_OS_MONERO_*` and `PITHEAD_OS_TARI_*` inputs are then
 applied through the authenticated configuration flow. A fresh persisted release,

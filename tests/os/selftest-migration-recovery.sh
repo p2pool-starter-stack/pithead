@@ -203,7 +203,11 @@ unset -f date sleep _ssh
 OS_RUN_SUITE=1
 # shellcheck source=tests/os/phases/provision-migration.sh
 source "$HERE/phases/provision-migration.sh"
-for missing in none candidate commit hold claim stopped startup marker; do
+# Inspect names come from the shipped Compose contract, not a copy of the query.
+monero_container=$(awk '$0 == "  monerod:" {service=1} service && /container_name:/ {print $2; exit}' "$HERE/../../docker-compose.yml")
+tari_container=$(awk '$0 == "  tari:" {service=1} service && /container_name:/ {print $2; exit}' "$HERE/../../docker-compose.yml")
+[ -n "$monero_container" ] && [ -n "$tari_container" ] || fail 'chain container names missing from Compose'
+for missing in none candidate commit hold claim stopped startup startup_monerod startup_tari marker; do
     (
         pv_user=user pv_pass=pass marker=""
         calls="$T/calls"
@@ -224,6 +228,18 @@ for missing in none candidate commit hold claim stopped startup marker; do
         _reboot_wait() { echo boot >>"$calls"; }
         _marker() { echo vmig; }
         assert_appliance_hostname_identity() { :; }
+        podman() {
+            [ "$#" -eq 3 ] && [ "$1" = inspect ] &&
+                [ "$2" = "$monero_container" ] && [ "$3" = "$tari_container" ] || return 125
+            local monero=true tari=true
+            case "$missing" in
+            startup) monero=false tari=false ;;
+            startup_monerod) monero=false ;;
+            startup_tari) tari=false ;;
+            esac
+            jq -nc --argjson monero "$monero" --argjson tari "$tari" \
+                '[{State:{Running:$monero}},{State:{Running:$tari}}]'
+        }
         _ssh() {
             case "$1" in
             'cat /opt/pithead/BUILD_COMMIT')
@@ -235,7 +251,7 @@ for missing in none candidate commit hold claim stopped startup marker; do
             *'holding chain services'*) [ "$missing" != hold ] ;;
             *'migration marker claimed'*) [ "$missing" != claim ] ;;
             *'pithead-boot-status.log'*) [ "$missing" != stopped ] ;;
-            *'podman inspect monerod minotari_node'*) [ "$missing" != startup ] ;;
+            *'podman inspect '*) eval "$1" ;;
             *'test -f /data/pithead/.os-migration-pending'*) [ "$missing" = marker ] ;;
             'date +%s') echo 100 ;;
             *'chain services released'*) return 0 ;;

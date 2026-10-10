@@ -193,7 +193,7 @@ _phase_provision_migration() {
     # After the release: monerod back up, marker consumed.
     local mig_node_up=0
     for _ in $(seq 60); do
-        if _ssh "podman inspect monerod minotari_node | jq -e 'length == 2 and all(.[]; .State.Running == true)' >/dev/null"; then
+        if _ssh "podman inspect monerod tari | jq -e 'length == 2 and all(.[]; .State.Running == true)' >/dev/null"; then
             mig_node_up=1
             break
         fi
@@ -202,7 +202,7 @@ _phase_provision_migration() {
     if [ "$mig_node_up" = 1 ]; then
         ok "local Monero and Tari services started post-commit before recovery reconfiguration"
     else
-        bad "monerod never came back after the commit"
+        bad "local Monero or Tari did not start after the commit"
         recovery_allowed=0
     fi
     if _ssh "test -f /data/pithead/.os-migration-pending"; then
