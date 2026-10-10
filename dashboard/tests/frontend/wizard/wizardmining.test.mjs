@@ -348,12 +348,13 @@ test("sparse JSON preserves reference-local modes when fast sync is edited", () 
   assert.equal(inst.state.cfg.monero.clearnet_initial_sync, false);
 });
 
-test("keeping chains measures current free space and wiping everything uses the fresh estimate", () => {
+test("keeping chains keeps Tari on and wiping everything starts from off (#3333)", () => {
   const { inst } = setupOn("local");
   Object.assign(inst.state, { newMachine: true, diskBudget: { local_need_bytes: 528 }, disks: [{ name: "old", state: "pithead-with-data", data_bytes: 900, data_available_bytes: 100 }] });
   inst.pickDisk({ target: { value: "old" } });
-  inst.changeWipe({ target: { value: "data" } });
   assert.equal(inst.state.cfg.tari.mode, "off");
+  inst.changeWipe({ target: { value: "data" } });
+  assert.equal(inst.state.cfg.tari.mode, "local");
   inst.changeWipe({ target: { value: "all" } });
-  assert.equal(JSON.parse(inst.state.jsonText).tari.mode, "local");
+  assert.equal(JSON.parse(inst.state.jsonText).tari.mode, "off");
 });

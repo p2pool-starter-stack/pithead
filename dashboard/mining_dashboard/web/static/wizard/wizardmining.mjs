@@ -39,8 +39,8 @@ export const TariSection = ({ answer, v, on }) => html`<h2>Tari merge-mining</h2
         ]} />
     <${Note}>Merge-mining Tari is a beta. It earns Tari from the same work that mines Monero, so it
     costs no hashrate. Choosing Yes downloads and syncs a Tari chain over Tor, which takes days.
-    It needs its own payout address and a node of its own, and the bundled node adds a 200 GiB
-    disk budget on top of Monero's. The Configuration view carries this switch, so
+    It needs its own payout address and a node of its own, and the bundled node
+    adds a 200 GiB disk budget on top of Monero's. The Configuration view carries this switch, so
     you can turn it off and back on later behind a typed APPLY; turning it off keeps the chain data
     on disk, so it resumes rather than re-syncing. Answering No stores no payout address, and
     adding one later needs the approval step.<//>
