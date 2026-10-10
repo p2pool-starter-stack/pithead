@@ -31,7 +31,7 @@ class FakeCaddy:
             return 200, ""
         if self.active.stat().st_size + len(uri) > 400000:
             self.rolls += 1
-            # Caddy 2.11.4 pinned timberjack 1.4.2 (2.11.7 pins 1.4.8): native size rotations carry -size.
+            # Caddy 2.11.4 pinned timberjack 1.4.2 (2.11.7: 1.4.8): size rotations carry -size.
             name = f"access-2026-10-09T01-00-{self.rolls:02d}.000-size.log.gz"
             (self.logs / name).write_bytes(gzip.compress(self.active.read_bytes()))
             self.active.write_bytes(b"")
