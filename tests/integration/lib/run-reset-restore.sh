@@ -30,8 +30,14 @@ run_reset_restore() {
         trap 'rc=\$?; for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"; [ \"\$rc\" -eq 0 ] || printf \"reset-restore probe: failed at %s (exit %s)\\n\" \"\$stage\" \"\$rc\" >&2' EXIT
         stage=hide; for f in config.json .env Caddyfile; do mv -- \"\$f\" \"\$scratch/\$f\"; done;
         stage=restore; set +e; output=\$($IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 2>&1); result=\$?; set -e;
-        stage=refusal; test \"\$result\" -ne 0 || { printf \"restore exited 0\\n\" >&2; exit 1; };
-        case \"\$output\" in *'stack services are still active'*) ;; *) printf \"unexpected restore output: %s\\n\" \"\$(printf %s \"\$output\" | tail -n 3 | cut -c1-200)\" >&2; exit 1 ;; esac;
+        stage=refusal; {
+            printf \"restore exit=%s running=%s first-line=%s\\n\" \"\$result\" \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running | wc -l)\" \"\$(printf %s \"\$output\" | head -n 1 | cut -c1-200)\";
+            printf \"present after restore:\"; for f in config.json .env Caddyfile; do [ ! -e \"\$f\" ] || printf \" %s\" \"\$f\"; done; printf \"\\n\";
+        } >&2
+        test \"\$result\" -ne 0 || { printf \"restore exited 0\\n\" >&2; exit 1; };
+        case \"\$output\" in *'stack services are still active'*) ;; *)
+            ce=\$(docker ps --all --quiet --filter label=com.docker.compose.project=pithead --filter status=running 2>&1 >/dev/null | head -n 2 | cut -c1-200);
+            printf \"configless census stderr=[%s] pwd-base=%s\\n\" \"\$ce\" \"\$(basename \"\$PWD\")\" >&2; exit 1 ;; esac;
         stage=unchanged; test ! -e config.json; test ! -e .env; test ! -e Caddyfile"
     local probe_err
     if probe_err=$(rx "$running_probe" 2>&1 >/dev/null); then
