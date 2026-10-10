@@ -92,7 +92,10 @@ Beta means the feature is optional and off unless you turn it on, and a defect s
 enabled may ship as a known issue. These are beta in 2.0.0; the label lives in the docs, this
 changelog and the wizard text only, and dashboard badges come in 2.0.1.
 
-- **Tari merge-mining:** off by default in the setup wizards; an upgrade keeps the bundled node.
+- **Tari merge-mining:** off by default in the setup wizards (beta); upgrades and configs that omit
+  `tari.mode` keep the bundled node. A yes in a new-install wizard also writes
+  `dashboard.tari_required: false`, and a reinstall that keeps its Tari chain keeps Enter on yes
+  ([#3333](https://github.com/p2pool-starter-stack/pithead/issues/3333)).
 - **XvB raffle:** off for new installs.
 - **Payout confirmation:** the Monero and Tari view keys (`monero.view_key`, `tari.view_key`).
 - **Remote rig control:** an appliance rig listens for control at every boot, pinned to the
@@ -228,8 +231,8 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
   preview row says so. The sync hold then applies to Monero only, so the miner and workers carry
   on; merge-mining starts when Tari has synced. The first-install hold on both chains is
   unchanged ([#3094](https://github.com/p2pool-starter-stack/pithead/issues/3094)).
-- **New installs start from safer defaults in both wizards.** Tari is on when the disk fits both
-  chains and off when it does not, the XvB raffle is off and not asked about, a dashboard login is
+- **New installs start from safer defaults in both wizards.** Tari is off unless you say yes (#3333),
+  the XvB raffle is off and not asked about, a dashboard login is
   generated and shown once unless you choose no login, and the first sync runs over Tor. The faster sync is an opt-in that
   covers each chain run locally and warns that it exposes your IP. Upgrades keep their config
   ([#3099](https://github.com/p2pool-starter-stack/pithead/issues/3099)).

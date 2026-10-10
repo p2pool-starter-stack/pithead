@@ -122,7 +122,7 @@ This part tests the path a new user takes, from an empty machine to a stack that
 6. Answer the remaining questions like this:
    - Monero node: local.
    - Pool: `mini`.
-   - Tari: the default and, if it asks, the Tari address.
+   - Tari: the default (No). Run it once more answering Yes and give the Tari address.
    - The [stratum](../README.md#glossary) password question, `Enable stratum password?`: the default (off).
    - The faster first sync: decline.
    - [Tor](../README.md#glossary) dashboard access: decline.
@@ -142,7 +142,7 @@ This part tests the path a new user takes, from an empty machine to a stack that
 
 - The subaddress is refused with an explanation, and you are asked again.
 - Per #3099, #3092 and #3090:
-  - Tari is on when the disk fits both chains and off when it does not, and the wizard says which. On a fitting disk it asks for the Tari address.
+  - The Tari question is labelled beta and says a yes syncs a Tari chain over Tor. Enter means No on any disk; the wizard says declining is the default. A Yes asks for the Tari address and writes `dashboard.tari_required: false`.
   - The wizard does not ask about the XvB raffle and leaves it off.
   - It generates a dashboard login and shows it once.
   - It keeps the first sync on Tor unless you opt in. The fast-sync offer covers each chain the stack runs locally, and warns that it exposes your IP to the Monero network and, if Tari is on, the Tari network.

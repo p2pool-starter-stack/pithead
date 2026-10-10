@@ -13,8 +13,9 @@ NEW_MACHINE_ANSWERS = {
     "local_miner": {"enabled": True},
     "xvb": {"enabled": False},
     "monero": {"clearnet_initial_sync": False},
-    "tari": {"mode": "local", "clearnet_initial_sync": False},
-    "dashboard": {"host": "pithead"},
+    # Tari merge-mining is an opt-in beta (#3333). A Yes must not let it hold or reject Monero mining.
+    "tari": {"mode": "off", "clearnet_initial_sync": False},
+    "dashboard": {"host": "pithead", "tari_required": False},
 }
 
 

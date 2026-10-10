@@ -15,7 +15,7 @@ dashboard, no Linux to set up.
 > ./pithead setup
 > ```
 >
-> Have a Monero payout address ready; Tari and its payout address are optional in the wizard.
+> Have a Monero payout address ready; Tari merge-mining is an optional beta, off unless you say yes, and has its own payout address.
 > Let it run, then open the dashboard at `https://<your-hostname>`.
 
 ---
@@ -108,15 +108,18 @@ Setup walks through five stages. It's interactive on the first run and safe to r
      credentials auto-generated; and your P2Pool pool tier (`main`/`mini`/`nano` — pick low if
      you're not sure, a high-hashrate default silently starves a small rig of shares). An
      dashboard login, generated on Enter and printed once; enter `none` to opt out.
-   - **Merge-mine Tari?** Three answers: no, run the bundled Tari node here, or use a Tari node
-     you already run. A yes asks for your Tari payout address, and "a node I already run" asks
+   - **Merge-mine Tari? (beta)** Three answers: no, run the bundled Tari node here, or use a Tari
+     node you already run. Tari runs on pre-release upstream software, so Enter means no. Yes
+     downloads and syncs a Tari chain over Tor, which takes days. A yes asks for your Tari payout address, and "a node I already run" asks
      for its host and gRPC port — see [Remote Tari node](configuration.md#remote-tari-node). A no
      asks nothing further and stores no Tari address; nothing merge-mines and no Tari node runs.
      The wizard writes `tari.mode` explicitly whichever way you answer, so the answer survives.
-     The default offered depends on free disk where `./data` will live: the bundled Tari node
-     adds a 200 GiB budget on top of Monero's, so a host with room for the whole stack is
-     offered yes and one without is offered no. The wizard prints the figure it measured and the
-     one it compared against, and the answer is yours either way. Changeable later from the
+     The one exception is a reinstall that keeps its data: when `./data/tari` already holds half
+     the Tari budget or more, Enter keeps the bundled node on, so it does not silently drop
+     merge-mining. The wizard prints the free space it measured against the whole-stack budget
+     (the bundled Tari node adds 200 GiB to Monero's) for anyone who says yes. A yes on a new
+     install also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero
+     mining. Changeable later from the
      dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.
    - Once the config is written, setup asks one more thing: the hostname you'll use to reach the
      dashboard in a browser. Enter accepts this machine's hostname.

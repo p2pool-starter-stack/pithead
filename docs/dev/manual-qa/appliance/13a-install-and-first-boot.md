@@ -125,7 +125,7 @@ NOTE: Never choose **Wipe everything** on the soak box: it costs days of resync.
    nothing, so M6 would be N/A there: run this step on the second appliance.
 2. Paste the QA subaddress first.
 3. Then paste the QA primary address.
-4. Keep every default. Paste the Tari address if the page asks for one.
+4. Keep every default. Tari stays No, so the page asks for no Tari address.
 5. Answer yes to `Enable stratum password?` (its default is no). The
    [stratum](../README.md#glossary) password is what outside miners send to the pool.
 6. Press **Validate, then install**.
@@ -136,8 +136,8 @@ NOTE: Never choose **Wipe everything** on the soak box: it costs days of resync.
 
 Per #3099 and #3092:
 
-- Merge-mining Tari is on by default when the target disk fits both chains, and off when it does
-  not.
+- Merge-mining Tari is an opt-in beta: the question is labelled beta and Enter means No on any
+  disk, except a reinstall that keeps its chains. A Yes writes `dashboard.tari_required: false`.
 - The page does not ask about the XvB raffle and leaves it off.
 - It generates a dashboard login by default.
 - It keeps the first [sync](../README.md#glossary) on [Tor](../README.md#glossary) unless you opt
@@ -158,7 +158,7 @@ Per #3099 and #3092:
    question stays no.
 2. Turn on the faster first sync.
 3. Press **Validate, then install**.
-4. If that disk is too small for both chains, note that Tari is off.
+4. Note that Tari is off.
 5. After the install, open Configuration.
 
 **What you should see:**
@@ -168,10 +168,9 @@ Per #3099 and #3092:
 - The hand-off card says `No stratum password`.
 - The faster-sync choice warns as in [13.6](#136-answers-m6).
 - Configuration shows `monero.clearnet_initial_sync` on.
-- When Tari is on, Configuration shows `tari.clearnet_initial_sync` on too.
-- On a disk too small for both chains, the page turns Tari off and says why.
+- Tari is off, so Configuration shows `tari.clearnet_initial_sync` off. With Tari answered Yes it shows on too.
 
-**Record:** PASS, FAIL or N/A in the results sheet, plus whether Tari was off because the disk was too small.
+**Record:** PASS, FAIL or N/A in the results sheet, plus the Tari answer the page started on.
 
 ### 13.7 Install (M3)
 

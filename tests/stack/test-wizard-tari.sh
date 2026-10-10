@@ -48,32 +48,47 @@ wt_run() { # <name> <free-kb> <free-h> <answers-as-printf-%b>
 }
 wt_cfg() { cat "$WT/$1/config.json" 2>/dev/null; }
 
-echo "== unit: Enter-through on a host with room writes tari.mode EXPLICITLY (#1916) =="
-# The key is written even when the answer is the one a missing key would have meant. That is the
-# whole point: wizard_write_config otherwise omits-and-inherits, and an omitted tari.mode is only
-# right for configs written before the question existed.
-wt_run roomy-default "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n\n$VALID_TARI\n\n\n\n\n\n\n\n" >/dev/null
-c="$(wt_cfg roomy-default)"
-assert_eq "roomy Enter-through: tari.mode is written, and it is local" "$(jq -r '.tari.mode' <<<"$c")" "local"
-assert_eq "roomy Enter-through: the payout address it was given is stored" "$(jq -r '.tari.wallet_address' <<<"$c")" "$VALID_TARI"
-assert_eq "roomy Enter-through: no tari.remote block for a bundled node" "$(jq -r '.tari | has("remote")' <<<"$c")" "false"
+cat >"$WT/bin/du" <<'DU'
+#!/usr/bin/env bash
+# WDU_KB stands in for the size of a Tari chain; unset, the real du answers.
+if [ -n "${WDU_KB:-}" ]; then printf '%s\t%s\n' "$WDU_KB" "${*: -1}"; else exec /usr/bin/du "$@"; fi
+DU
+chmod +x "$WT/bin/du"
 
-echo "== unit: Enter-through on a host without room declines, and asks for no address (#1916) =="
-# The answers after the mode are the same ones the roomy fixture gave; the address line is simply
-# never consumed, because a decline asks nothing further. Note what is NOT asserted here: that the
-# transcript lacks the address prompt. `read -p` writes its prompt to the terminal only, so a piped
-# run prints none and that assertion passes against any wizard at all. The config shape is the real
-# proof that nothing was collected, and roomy-declined below proves the prompt is not merely
-# ignored but absent.
-out="$(wt_run small-default "$WT_SMALL_KB" "$WT_SMALL_H" "$WALLET\n\n\n$VALID_TARI\n\n\n\n\n\n\n\n")"
-c="$(wt_cfg small-default)"
-assert_eq "small-disk Enter-through: tari.mode off" "$(jq -r '.tari.mode' <<<"$c")" "off"
-assert_eq "small-disk Enter-through: NO tari.wallet_address — nothing merge-mines, so nothing is paid" \
-    "$(jq -r '.tari | has("wallet_address")' <<<"$c")" "false"
-assert_eq "small-disk Enter-through: tari carries the mode and nothing else" \
-    "$(jq -rc '.tari | keys' <<<"$c")" '["clearnet_initial_sync","mode"]'
-assert_contains "the decline says what it turned off and how to turn it back on" "$out" "Tari merge-mining is OFF"
-assert_contains "and points at the key that does it" "$out" "tari.mode"
+echo "== unit: Enter-through is NO on a new install, and tari.mode is written EXPLICITLY (#1916, #3333) =="
+# Tari merge-mining is an opt-in beta, so the default is off however much disk there is. The key is
+# written even so: wizard_write_config otherwise omits-and-inherits, and an omitted tari.mode
+# parses as local, which would merge-mine anyway. The address line is never consumed, because a
+# decline asks nothing further. Note what is NOT asserted: that the transcript lacks the address
+# prompt. `read -p` writes its prompt to the terminal only, so a piped run prints none and that
+# assertion passes against any wizard at all. The config shape is the real proof.
+for size in ROOMY SMALL; do
+    kb="WT_${size}_KB" h="WT_${size}_H"
+    out="$(wt_run "default-$size" "${!kb}" "${!h}" "$WALLET\n\n\n\n\n\n\n\n\n\n")"
+    c="$(wt_cfg "default-$size")"
+    assert_eq "$size disk Enter-through: tari.mode is written, and it is off" "$(jq -r '.tari.mode' <<<"$c")" "off"
+    assert_eq "$size disk Enter-through: NO tari.wallet_address — nothing merge-mines, so nothing is paid" \
+        "$(jq -r '.tari | has("wallet_address")' <<<"$c")" "false"
+    assert_eq "$size disk Enter-through: tari carries the mode and nothing else" \
+        "$(jq -rc '.tari | keys' <<<"$c")" '["clearnet_initial_sync","mode"]'
+    assert_contains "$size disk: the decline says what it turned off and how to turn it back on" "$out" "Tari merge-mining is OFF"
+    assert_contains "$size disk: and points at the key that does it" "$out" "tari.mode"
+    assert_contains "$size disk: the question calls it a beta" "$out" "Yes (beta)"
+    assert_not_contains "$size disk: the verdict never says running it is the default" "$out" "running it is the default"
+    assert_contains "$size disk: the verdict says declining is the default" "$out" "declining is the default"
+done
+
+echo "== unit: a data disk that already holds a Tari chain keeps local as the Enter default (#3333) =="
+mkdir -p "$WT/default-held/data/tari"
+out="$(WDU_KB=209715200 wt_run default-held "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n\n$VALID_TARI\n\n\n\n\n\n\n\n")"
+c="$(wt_cfg default-held)"
+assert_eq "held chain Enter-through: tari.mode is local" "$(jq -r '.tari.mode' <<<"$c")" "local"
+assert_eq "held chain Enter-through: the payout address is stored" "$(jq -r '.tari.wallet_address' <<<"$c")" "$VALID_TARI"
+assert_contains "held chain: the line says why local is the default" "$out" "keeping merge-mining on is the default"
+mkdir -p "$WT/default-small-chain/data/tari"
+WDU_KB=1048576 wt_run default-small-chain "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n\n\n\n\n\n\n\n\n" >/dev/null
+assert_eq "a part-synced chain below half the budget does not flip the default" \
+    "$(jq -r '.tari.mode' <<<"$(wt_cfg default-small-chain)")" "off"
 
 echo "== unit: the disk figure shown is the stack's own budget, and follows monero.mode (#1916) =="
 # Not a bare 'Tari needs 200 GiB': the question is whether Tari fits ALONGSIDE everything else that
@@ -100,11 +115,13 @@ c="$(
 )"
 assert_eq "answering 2 on a small host still runs the bundled node" "$(jq -r '.tari.mode' <<<"$c")" "local"
 assert_eq "and stores the address it was given" "$(jq -r '.tari.wallet_address' <<<"$c")" "$VALID_TARI"
+assert_eq "a Yes on a new install writes dashboard.tari_required false (#3333)" "$(jq -r '.dashboard.tari_required' <<<"$c")" "false"
+assert_eq "a No writes no dashboard.tari_required" "$(jq -r '.dashboard | has("tari_required")' <<<"$(wt_cfg roomy-declined)")" "false"
 
 echo "== unit: an unrecognised answer falls back to the default rather than guessing (#1916) =="
-out="$(wt_run garbage "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\nbanana\n$VALID_TARI\n\n\n\n\n\n\n\n")"
+out="$(wt_run garbage "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\nbanana\n\n\n\n\n\n\n\n")"
 assert_contains "an unrecognised answer says so" "$out" "Not 1/2/3"
-assert_eq "an unrecognised answer takes the disk-derived default" "$(jq -r '.tari.mode' <<<"$(wt_cfg garbage)")" "local"
+assert_eq "an unrecognised answer takes the default, which is off" "$(jq -r '.tari.mode' <<<"$(wt_cfg garbage)")" "off"
 
 echo "== unit: answer 3 writes tari.mode remote with the node it was given (#1916) =="
 # The third answer has to collect a host: parse_and_validate_config refuses tari.mode "remote"
@@ -140,6 +157,14 @@ assert_not_contains "private sync has no exposure warning" "$out" "Fast sync exp
 budget=$(PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$SANDBOX" wizard_disk_budget)
 assert_eq "host publishes the measured data filesystem bytes" "$(jq -r '.available_bytes' <<<"$budget")" "$((WT_SMALL_KB * 1024))"
 assert_eq "both wizards share the local and remote budgets" "$(jq -rc '[.local_need_bytes,.remote_need_bytes]' <<<"$budget")" '[566935683072,223338299392]'
+# The field the booted-disk Enter exception travels on (#3333): without it the browser wizard never
+# learns that the data disk holds a Tari chain.
+assert_eq "no Tari data directory: the budget says no chain is held" "$(jq -r '.tari_chain_held' <<<"$budget")" "false"
+mkdir -p "$WT/budget-held/data/tari"
+budget=$(WDU_KB=104857600 PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$WT/budget-held" wizard_disk_budget)
+assert_eq "a Tari directory of half the budget: the budget says a chain is held" "$(jq -r '.tari_chain_held' <<<"$budget")" "true"
+budget=$(WDU_KB=104857599 PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$WT/budget-held" wizard_disk_budget)
+assert_eq "a Tari directory a KiB under half the budget: no chain is held" "$(jq -r '.tari_chain_held' <<<"$budget")" "false"
 
 echo "== unit: failed randomness cannot disable the default dashboard login =="
 _wf_rng_rejected() {

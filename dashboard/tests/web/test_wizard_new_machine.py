@@ -45,15 +45,18 @@ async def _state(client):
     return await (await client.get("/api/wizard-state")).json()
 
 
-async def test_a_new_machine_uses_the_disk_rule_without_changing_reference(client, spool):
-    """The finding: a fresh install showed Tari coming up for an operator who never asked."""
+async def test_a_new_machine_opts_in_to_tari_instead_of_out(client, spool):
+    """Tari merge-mining is an opt-in beta (#3333): Enter-through is No, however big the disk."""
     spool.joinpath("disk-budget.json").write_text(
-        json.dumps({"available_bytes": 10, "local_need_bytes": 528})
+        json.dumps({"available_bytes": 900, "local_need_bytes": 528})
     )
     s = await _state(client)
     assert s["config"]["tari"]["mode"] == "off"
+    # A Yes must not let Tari hold or reject Monero mining, so the page already carries that.
+    assert s["config"]["dashboard"]["tari_required"] is False
+    # The exception: a data disk that already holds a Tari chain keeps merge-mining on.
     spool.joinpath("disk-budget.json").write_text(
-        json.dumps({"available_bytes": 528, "local_need_bytes": 528})
+        json.dumps({"available_bytes": 900, "local_need_bytes": 528, "tari_chain_held": True})
     )
     assert (await _state(client))["config"]["tari"]["mode"] == "local"
     # The reference the same response carries is untouched, and that is not incidental: the page

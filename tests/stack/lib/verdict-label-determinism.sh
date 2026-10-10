@@ -176,6 +176,7 @@ test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
 test-wizard-tari.sh|mono
+test-wizard-tari.sh|size
 test-wizard-tari.sh|tari
 VDEXP
 )"

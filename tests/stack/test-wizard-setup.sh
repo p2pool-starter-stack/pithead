@@ -30,8 +30,8 @@ assert_eq "defaults path: local node RPC creds auto-generated (non-empty)" \
     "$([ -n "$(jq -r '.monero.node_username' <<<"$w1_cfg")" ] && [ -n "$(jq -r '.monero.node_password' <<<"$w1_cfg")" ] && echo yes)" "yes"
 assert_eq "defaults path: top-level keys are exactly monero/tari/p2pool/dashboard, nothing else" \
     "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","monero","p2pool","tari","xvb"]'
-assert_eq "defaults path: dashboard has secure and a generated login" \
-    "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["auth","secure"]'
+assert_eq "defaults path: dashboard has secure, a generated login and — the Tari yes of this fixture — tari_required false (#3333)" \
+    "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["auth","secure","tari_required"]'
 assert_eq "defaults path: no telegram block written" "$(jq -r 'has("telegram")' <<<"$w1_cfg")" "false"
 assert_eq "defaults path: private sync written explicitly" \
     "$(jq -r '.monero.clearnet_initial_sync' <<<"$w1_cfg")" "false"

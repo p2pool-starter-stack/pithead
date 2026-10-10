@@ -8,6 +8,19 @@ wizard_stack_need_gib() { # <monero-mode>
     echo "$need"
 }
 
+# Does this machine's data disk already hold a Tari chain? Half the Tari budget is the line: a
+# fresh or abandoned sync sits well below it, a synced chain well above. The one input that turns
+# the wizards' Enter default for Tari from "off" back to "local" (#3333). TARI_DIR is the
+# configured location when a config is loaded; the wizard runs before one exists, so ./data/tari.
+wizard_tari_chain_held() {
+    local dir="${TARI_DIR:-$PWD/data/tari}" kb
+    [ -d "$dir" ] || return 1
+    # du skips what the invoking user cannot read and under-counts; that fails toward "off", so a
+    # reinstall whose chain is unreadable loses the Enter-stays-local exception silently.
+    kb=$(du -sk "$dir" 2>/dev/null | awk '{print $1}')
+    [[ "$kb" =~ ^[0-9]+$ ]] && [ "$kb" -ge "$(($(disk_component_gib tari) * 1048576 / 2))" ]
+}
+
 # Host measurement, never the wizard container's overlay filesystem. Installer targets
 # carry their own capacity in disks.tsv; this value is for an already booted data disk.
 wizard_disk_budget() {
@@ -17,9 +30,12 @@ wizard_disk_budget() {
         kb=$(df -P "$mount" 2>/dev/null | awk 'NR==2{print $4}') || kb=""
         [[ "$kb" =~ ^[0-9]+$ ]] && bytes=$((kb * 1024))
     fi
-    jq -n --argjson available "$bytes" \
+    local held=false
+    wizard_tari_chain_held && held=true
+    jq -n --argjson available "$bytes" --argjson held "$held" \
         --argjson local_need "$(wizard_stack_need_gib local)" \
         --argjson remote_need "$(wizard_stack_need_gib remote)" \
         '{available_bytes: $available, local_need_bytes: ($local_need * 1073741824),
-          remote_need_bytes: ($remote_need * 1073741824)}'
+          remote_need_bytes: ($remote_need * 1073741824),
+          tari_chain_held: $held}'
 }
