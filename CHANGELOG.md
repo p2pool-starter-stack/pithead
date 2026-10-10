@@ -14,6 +14,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 ### Fixed
 
 - `pithead apply` now finishes a caddy restart that an earlier, interrupted apply never completed, so the dashboard login always matches the rendered config (#3332).
+- A one-field save in the dashboard Configuration view no longer adds untouched default arrays (`workers.list`, `notifications.webhooks`) to a minimal `config.json` (#3355).
 
 ## [2.0.0] - 2026-10-03
 

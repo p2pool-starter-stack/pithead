@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -40,6 +41,69 @@ def test_editor_metadata_is_not_a_schema_leaf():
             {"_last_apply": {"status": "applied", "id": "abc"}, "p2pool": {"pool": "mini"}}
         )
     ) == ["p2pool.pool"]
+
+
+def test_omitted_array_defaults_are_reported_as_default_keys(tmp_path):
+    """#3355: arrays absent from a sparse host config are defaults too, present ones are not."""
+    reference = {
+        "workers": {"api_port": 8080, "list": []},
+        "notifications": {"webhooks": [], "tor": True},
+    }
+    host = {"workers": {"list": [{"name": "rig"}]}}
+    assert config_operations.missing_default_paths(reference, host, control_service._get) == [
+        "workers.api_port",
+        "notifications.webhooks",
+        "notifications.tor",
+    ]
+    assert list(config_operations.leaf_paths(reference)) == [
+        "workers.api_port",
+        "notifications.tor",
+    ]
+
+
+def test_real_reference_array_defaults_are_default_keys_for_a_minimal_host(tmp_path, monkeypatch):
+    """#3355: a minimal host omitting workers/notifications reports their arrays as defaults."""
+    # The repo checkout ("Dashboard tests" job) always has the real file; the dashboard-only image's
+    # test stage builds from dashboard/ alone, like test_env_key_perimeter's pithead lookup.
+    here = Path(__file__).resolve()
+    reference = next(
+        (
+            p / "config.reference.json"
+            for p in here.parents
+            if (p / "config.reference.json").is_file()
+        ),
+        None,
+    )
+    if reference is None:
+        pytest.skip("config.reference.json not present in this test context (dashboard-only image)")
+    host = tmp_path / "config.json"
+    host.write_text(json.dumps({"dashboard": {"energy": {"cost_per_kwh": 0.1}}}))
+    monkeypatch.setattr(control_service.config, "HOST_CONFIG_PATH", str(host))
+    monkeypatch.setattr(control_service.config, "HOST_REFERENCE_PATH", str(reference))
+    cfg = control_service.read_config()
+    assert cfg["workers"]["list"] == [] and cfg["notifications"]["webhooks"] == []
+    assert "workers.list" in cfg["_default_keys"]
+    assert "notifications.webhooks" in cfg["_default_keys"]
+    assert "dashboard.energy.cost_per_kwh" not in cfg["_default_keys"]
+    # Every reference leaf outside the host's one key is a default, so a client that strips
+    # untouched defaults and prunes empty containers is left with exactly the host document.
+    served = {k: v for k, v in cfg.items() if not k.startswith("_")}
+    for dotted in cfg["_default_keys"]:
+        *parents, leaf = dotted.split(".")
+        node = served
+        for key in parents:
+            node = node[key]
+        del node[leaf]
+
+    def prune(node):
+        for key in [k for k, v in node.items() if isinstance(v, dict)]:
+            prune(node[key])
+            if not node[key]:
+                del node[key]
+
+    prune(served)
+    served.pop("config_version", None)
+    assert served == {"dashboard": {"energy": {"cost_per_kwh": 0.1}}}
 
 
 def test_perimeter_fields_are_confirm_gated(config_paths):
