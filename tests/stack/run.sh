@@ -120,16 +120,16 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-rootfs-publish.sh" && domain_ran test-release-rootfs-publish.sh "$_d0" "$?" || domain_ran test-release-rootfs-publish.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-unit-helpers.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-unit-helpers.sh" && domain_ran test-unit-helpers.sh "$_d0" "$?" || domain_ran test-unit-helpers.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/status-sync-hold.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/status-sync-hold.sh" && domain_ran status-sync-hold.sh "$_d0" "$?" || domain_ran status-sync-hold.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-cli.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-cli.sh" && domain_ran test-cli.sh "$_d0" "$?" || domain_ran test-cli.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-deps-python.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-deps-python.sh" && domain_ran test-deps-python.sh "$_d0" "$?" || domain_ran test-deps-python.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-config.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-config.sh" && domain_ran test-config.sh "$_d0" "$?" || domain_ran test-config.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/test-config-document.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-config-document.sh" && domain_ran test-config-document.sh "$_d0" "$?" || domain_ran test-config-document.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/test-render-quadlet.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-render-quadlet.sh" && domain_ran test-render-quadlet.sh "$_d0" "$?" || domain_ran test-render-quadlet.sh "$_d0" "$?"
 
