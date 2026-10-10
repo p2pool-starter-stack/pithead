@@ -15,6 +15,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - `pithead apply` now finishes a caddy restart that an earlier, interrupted apply never completed, so the dashboard login always matches the rendered config (#3332).
 - `pithead restore` after `pithead config-reset` no longer refuses on the appliance with "could not verify that the stack is stopped": the configless running-container check lists container states once instead of asking Podman for the `restarting` state it does not have (#3346).
+- A Configuration preview is now rejected at commit if the live config changed after it was made, so a stale preview from another tab can no longer silently overwrite a newer edit; preview again (#3352).
 - A one-field save in the dashboard Configuration view no longer adds untouched default arrays (`workers.list`, `notifications.webhooks`) to a minimal `config.json` (#3355).
 
 ## [2.0.0] - 2026-10-03
