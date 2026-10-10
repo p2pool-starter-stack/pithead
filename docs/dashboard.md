@@ -1233,6 +1233,10 @@ The flow mirrors the CLI's `apply`:
    claimed request, so a writer holding the original spool file open cannot change it mid-preview.
    Sensitive changes also show complete old and new non-secret
    values; secret values remain masked.
+   A preview belongs to the config it was made against: if another tab or `./pithead apply`
+   changes the config before you confirm, the commit is rejected with "preview again" and nothing
+   is written, so a stale preview never overwrites the newer change
+   ([#3352](https://github.com/p2pool-starter-stack/pithead/issues/3352)).
 3. Confirm. If the preview flags any change disruptive (⚠), you must type `APPLY` first. A payout
    change also requires the final eight characters of the new address. The
    commit runs `pithead apply -y` on the host and recreates only the containers whose config
