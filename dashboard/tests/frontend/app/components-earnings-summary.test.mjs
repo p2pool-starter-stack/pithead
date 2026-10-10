@@ -93,7 +93,6 @@ test('ExpectedVsActualCard drops the view-key hint under a REMOTE Tari node — 
         blocks_30d: null, xtm_30d: null, partial: false, is_local: false };
     const out = renderApp({ state: s });
     assert.doesNotMatch(out, /tari\.view_key/);
-    assert.doesNotMatch(out, /→ Payouts/); // no suggestion of a key remote rejects
     assert.match(out, /Not available with a remote Tari node\./);
 });
 

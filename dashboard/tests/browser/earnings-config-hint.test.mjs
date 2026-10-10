@@ -29,13 +29,12 @@ test("the Expected vs Actual view-key hint opens Configuration on the Payouts se
   await expect(hint).toContainText("Configuration → Payouts.");
   await hint.getByRole("button", { name: "Configuration", exact: true }).click();
 
-  const payouts = page.locator("details.config-section[data-section=\"Payouts\"]");
+  const payouts = page.locator('details.config-section[data-section="Payouts"]');
   await expect(payouts).toHaveAttribute("open", "");
   await expect(payouts.locator("summary")).toBeFocused();
   await expect(payouts.locator(".config-field-name", { hasText: /^view_key$/ })).toBeVisible();
   // The node section the old text named stays collapsed: the hint no longer sends anyone there.
-  await expect(page.locator("details.config-section[data-section=\"Monero node\"]")).not.toHaveAttribute(
-    "open",
-    "",
-  );
+  await expect(
+    page.locator('details.config-section[data-section="Monero node"]'),
+  ).not.toHaveAttribute("open", "");
 });
