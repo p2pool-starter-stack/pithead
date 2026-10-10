@@ -297,19 +297,26 @@ test("TariSection renders from props alone, with no app around it", () => {
 });
 
 
-test("selecting the target disk derives Tari without overwriting an explicit choice", () => {
+test("selecting the target disk defaults Tari off, except where the chains are kept (#3333)", () => {
   const { inst } = setupOn("local");
   inst.state.newMachine = true;
   inst.state.diskBudget = { available_bytes: 1000, local_need_bytes: 528, remote_need_bytes: 208 };
-  inst.state.disks = [{ name: "small", data_bytes: 400 }, { name: "roomy", data_bytes: 600 }];
-  inst.pickDisk({ target: { value: "small" } });
-  assert.equal(inst.state.cfg.tari.mode, "off");
+  inst.state.disks = [
+    { name: "roomy", state: "empty", data_bytes: 600 },
+    { name: "kept", state: "pithead-with-data", data_bytes: 600 },
+  ];
   inst.pickDisk({ target: { value: "roomy" } });
+  assert.equal(inst.state.cfg.tari.mode, "off");
+  inst.pickDisk({ target: { value: "kept" } });
+  assert.equal(inst.state.cfg.tari.mode, "off");
+  inst.changeWipe({ target: { value: "data" } });
   assert.equal(JSON.parse(inst.state.jsonText).tari.mode, "local");
   inst.edit("tari.mode")({ target: { value: "remote" } });
-  inst.pickDisk({ target: { value: "small" } });
+  inst.pickDisk({ target: { value: "roomy" } });
   assert.equal(inst.state.cfg.tari.mode, "remote");
-  assert.equal(tariDiskDefault(inst.state.diskBudget, inst.state.disks, "small", "remote"), "local");
+  assert.equal(tariDiskDefault({ tari_chain_held: true }, [], ""), "local");
+  assert.equal(tariDiskDefault({ tari_chain_held: false }, [], ""), "off");
+  assert.equal(tariDiskDefault({}, inst.state.disks, "kept", "all"), "off");
 });
 
 test("fast sync updates both local chains, warns, and clears remote or disabled chains", () => {

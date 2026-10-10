@@ -11,7 +11,7 @@ the tests and for the one call site in ``submit``.
 import secrets
 
 
-def build_config(form: dict, *, tari_default: str = "local") -> dict:
+def build_config(form: dict, *, tari_default: str = "off") -> dict:
     """Form fields as a pithead config — the fallback for a client that never populated the
     JSON pane (no JavaScript: the harness's curl, a text browser). Mirrors the CLI wizard's
     question set; the host's parse_and_validate_config is the validator.
@@ -46,6 +46,8 @@ def build_config(form: dict, *, tari_default: str = "local") -> dict:
         # rather than sent empty. When it DOES merge-mine, an empty value still flows through
         # so the HOST produces the rejection, as it does for the Monero address.
         cfg["tari"]["wallet_address"] = s_("tari_wallet")
+        # An opted-in beta Tari must not hold or reject Monero mining (#3333).
+        cfg["dashboard"]["tari_required"] = False
 
     if form.get("monero_mode") == "remote":
         cfg["monero"]["mode"] = "remote"

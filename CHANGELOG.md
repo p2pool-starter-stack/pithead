@@ -34,6 +34,10 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Tari / P2Pool
 
+- Tari merge-mining: off by default in the setup wizards (beta); upgrades and configs that omit
+  `tari.mode` keep the bundled node. A yes in a new-install wizard also writes
+  `dashboard.tari_required: false`; a reinstall that keeps its Tari chain keeps Enter on yes
+  ([#3333](https://github.com/p2pool-starter-stack/pithead/issues/3333)).
 - Tari outage alerts now describe the required policy and actual worker rejection state.
   Optional Tari keeps mining Monero; recovery claims readmission only after workers were
   rejected and the proxy successfully restarted (#3119).
@@ -208,8 +212,8 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   preview row says so. The sync hold then applies to Monero only, so the miner and workers carry
   on; merge-mining starts when Tari has synced. The first-install hold on both chains is
   unchanged ([#3094](https://github.com/p2pool-starter-stack/pithead/issues/3094)).
-- **New installs start from safer defaults in both wizards.** Tari is on when the disk fits both
-  chains and off when it does not, the XvB raffle is off and not asked about, a dashboard login is
+- **New installs start from safer defaults in both wizards.** Tari is off unless you say yes (#3333),
+  the XvB raffle is off and not asked about, a dashboard login is
   generated and shown once unless you choose no login, and the first sync runs over Tor. The faster sync is an opt-in that
   covers each chain run locally and warns that it exposes your IP. Upgrades keep their config
   ([#3099](https://github.com/p2pool-starter-stack/pithead/issues/3099)).
