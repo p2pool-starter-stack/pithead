@@ -393,10 +393,10 @@ boot_fn() { # <function> <args...>
 }
 gtu() { boot_fn gate_target_url "$@"; }
 grs() { boot_fn gate_resolve_spec "$@"; }
-assert_eq "a name goes in the URL as-is" "$(gtu https panel.example 443)" "https://panel.example:443/"
+assert_eq "a name goes in the URL as-is" "$(gtu https panel.example 443)" "https://panel.example:443/.pithead-boot-health"
 assert_eq "an IPv6 literal is bracketed, or the port joins the address" \
-    "$(gtu https 2001:db8::1 443)" "https://[2001:db8::1]:443/"
-assert_eq "an IPv4 literal needs no brackets" "$(gtu http 192.0.2.5 80)" "http://192.0.2.5:80/"
+    "$(gtu https 2001:db8::1 443)" "https://[2001:db8::1]:443/.pithead-boot-health"
+assert_eq "an IPv4 literal needs no brackets" "$(gtu http 192.0.2.5 80)" "http://192.0.2.5:80/.pithead-boot-health"
 # --resolve is for names only. It is what keeps a name's dial on loopback without the box having to
 # resolve its own mDNS name; a literal is already an address and needs no lookup.
 assert_eq "a name gets a --resolve spec pointing at loopback" \

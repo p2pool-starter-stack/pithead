@@ -131,6 +131,32 @@ assert_rc "a compose with no dashboard healthcheck to break refuses the fault bu
 assert_contains "the refusal names the missing healthcheck" "$_BSH_OUT" "no single dashboard healthcheck to break"
 assert_contains "build-image applies the fault to the staged compose the slot ships" \
     "$(cat "$ROOT/os/build-image.sh")" "break_dashboard_healthcheck os/build/stage/docker-compose.yml || exit 1"
+echo "== unit: the boot curl pins every vhost to loopback and bypasses proxy environment =="
+_BSH_CURL=$(sed -n '/    read -r code size <<</,/gate_target.*2>\/dev\/null)/p' "$ROOT/os/overlay/pithead-boot")
+for _BSH_HOST in panel.example 192.0.2.5 2001:db8::1; do
+    (
+        source "$ROOT/os/overlay/pithead-boot-stack-health"
+        # shellcheck disable=SC2034 # read by the extracted production curl below.
+        gate_target=$(gate_target_url https "$_BSH_HOST" 443)
+        # shellcheck disable=SC2034 # read by the extracted production curl below.
+        gate_resolve_args=()
+        gate_env_val() { printf fixture-auth-hash; }
+        curl() {
+            printf '%s\n' "$@" >"$_BSH/curl-args"
+            cat >"$_BSH/curl-header"
+            printf '401 0'
+        }
+        eval "$_BSH_CURL"
+    )
+    assert_contains "boot curl connects only to loopback" "$(cat "$_BSH/curl-args")" "::127.0.0.1:"
+    assert_contains "boot curl bypasses environment proxies" "$(cat "$_BSH/curl-args")" "--noproxy"
+    assert_contains "boot curl requests the dedicated path" "$(cat "$_BSH/curl-args")" "/.pithead-boot-health"
+    assert_contains "boot curl reads its capability from stdin" "$(cat "$_BSH/curl-args")" "@-"
+    _BSH_CAP=$(printf 'pithead-boot-health-v1:%s' fixture-auth-hash | sha256sum | cut -d' ' -f1)
+    assert_eq "boot capability matches Caddy's domain-separated digest" "$(cat "$_BSH/curl-header")" "X-Pithead-Boot-Probe: $_BSH_CAP"
+    assert_not_contains "boot capability stays out of curl argv" "$(cat "$_BSH/curl-args")" "$_BSH_CAP"
+done
 rm -rf "$_BSH"
+
 unset -f _bsh_status _bsh_revenue _bsh_break
 unset _BSH _BSH_MODE _BSH_ADVISORY _BSH_STATUS _BSH_RC _BSH_BLOCKING _BSH_OUT

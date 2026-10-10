@@ -177,6 +177,20 @@ creation and disk installation. `tests/os/selftest-build-label.sh` checks all th
 writers and the release refusal. `tests/os/build-label-fixture.sh` stamps only debug test
 rootfs, and `tests/os/build-label-boot-leg.sh` checks first-menu serial titles.
 
+The mini-stack's `test-boot-health-proxy.sh` renders Caddy against the real dashboard;
+`boot-health-proxy.py` verifies boot-probe accounting and network forgery controls,
+including the loopback upstream supplied by `boot-health-front-proxy.py`.
+The provision reboot leg streams `tests/os/boot-probe-evidence.py` into the deployed
+dashboard using the same retained-log reader as the summary to check the current boot
+marker, header redaction and zero failures, then
+one failure after an external wrong-password attempt;
+The complete pre-boot log directory is archived before reboot to isolate the controlled window.
+`selftest-boot-probe-evidence.sh` checks its negative controls, archive behavior,
+diagnostic redaction and delayed current-boot commit.
+The checks retain assertion errors and bounded counts in the battery output; raw request,
+header and user values are omitted. Bounded current/rolled-log counts expose discarded
+records; effective Caddy configuration is reported only as matcher/log-destination flags.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 Coordinator connection announcements and unchanged-apply miner calls are covered by

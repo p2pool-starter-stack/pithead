@@ -1,5 +1,15 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# RAUC flags survive reboot. Require this boot's health-gate commit as well.
+_provision_reboot_gate_committed() {
+    case "$1" in
+    *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*)
+        _ssh "journalctl -b -u pithead-boot.service --no-pager -o cat | grep -Eq '^pithead-boot: stack is serving .* — booted slot committed'"
+        ;;
+    *) return 1 ;;
+    esac
+}
+
 _phase_provision_reboot() {
     # ---- reboot leg: the provisioned stack must return UNAIDED ---------------------------
     # pithead-boot owns recovery (#792): render the derived layer, compose up, health-gated slot commit.
@@ -8,6 +18,14 @@ _phase_provision_reboot() {
     # (#790): derived files are regenerated on every boot by construction, so a stale or broken one must not
     # survive — this is the defect that shipped new code against a days-old Caddyfile on hardware and killed
     # TLS.
+    # Archive every retained generation before boot; keep old writers on their archived inode.
+    _ssh "python3 - --start-window /data/pithead/data/caddy-logs" <"$SCRIPT_DIR/boot-probe-evidence.py" || {
+        bad "could not start the boot-probe access-log window (#3263)"
+        return 1
+    }
+    # Authenticate readiness checks so only the deliberate wrong-password control adds a 401.
+    # shellcheck disable=SC2154,SC2034 # phase locals; dashboard_curl reads dynamic scope.
+    local DASH_USER="$pv_user" DASH_PASS="$pv_pass"
     info "reboot leg — the stack must come back on its own (pithead-boot)"
     _ssh "echo '# corrupted by the harness — a regenerated boot must not serve this' > /data/pithead/Caddyfile" 2>/dev/null ||
         bad "could not corrupt the Caddyfile before the reboot"
@@ -41,7 +59,7 @@ _phase_provision_reboot() {
     local answered=0
     while [ "$tries" -lt 36 ]; do
         # shellcheck disable=SC2154  # shared through the assembled runner scope
-        code=$(curl -ksS -o /dev/null -w '%{http_code}' -m 8 "https://$ip/" 2>/dev/null || true)
+        code=$(dashboard_curl -ksS -o /dev/null -w '%{http_code}' -m 8 --resolve "fixture-next.local:443:$ip" "https://fixture-next.local/" 2>/dev/null || true)
         case "$code" in
         2?? | 3?? | 401 | 403)
             ok "dashboard answers again after the reboot (HTTP $code) — through a REGENERATED Caddyfile"
@@ -57,7 +75,6 @@ _phase_provision_reboot() {
         return 1
     }
     # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
-    assert_appliance_hostname_identity fixture-next "unaided reboot" "$pv_user" "$pv_pass"
     # No unit may be quietly broken (#792 sat visible in --failed for two RCs, unasserted).
     local failed_units
     # Transient healthcheck ephemera excluded: podman drives container healthchecks through
@@ -102,24 +119,45 @@ _phase_provision_reboot() {
     fi
     # The booted slot must commit ITSELF once healthy (#793) — no harness mark-good here. On a
     # real appliance nothing ever ran mark-good, so RAUC called both slots bad and every boot
-    # took GRUB's degraded fallback path. A_OK=1 + A_TRY=0 is the committed state.
+    # took GRUB's degraded fallback path. A_OK=1 + A_TRY=0 is the committed state, but
+    # survives the preceding boot. Wait for this boot's journal commit before reading its probes.
     local genv tries3=0
     while [ "$tries3" -lt 18 ]; do
         genv=$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')
-        case "$genv" in
-        *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*) break ;;
-        esac
+        _provision_reboot_gate_committed "$genv" && break
         sleep 10
         tries3=$((tries3 + 1))
     done
-    case "$genv" in
-    *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*)
+    if _provision_reboot_gate_committed "$genv"; then
         ok "booted slot committed itself after the health gate (A_OK=1 A_TRY=0)"
-        ;;
-    *)
-        bad "slot never self-committed — grubenv: ${genv:-unreadable}"
-        ;;
+    else
+        bad "slot never self-committed in this boot — grubenv: ${genv:-unreadable}"
+        return 1
+    fi
+    # Read this boot's real Caddy log and the deployed dashboard's own counter.
+    if _ssh "podman exec -i dashboard python - 0 2>&1" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
+        ok "boot health probes count zero failed logins after the real boot (#3263)"
+    else
+        bad "boot probe marker, redaction or zero failed-login count did not verify (#3263)"
+    fi
+    # This request originates outside the guest and deliberately omits the boot capability.
+    local wrong_code
+    wrong_code=$(
+        # shellcheck disable=SC2034 # dashboard_curl reads dynamic scope.
+        local DASH_PASS="${pv_pass}-wrong"
+        dashboard_curl -ksS -o /dev/null -w '%{http_code}' -m 8 --resolve "fixture-next.local:443:$ip" "https://fixture-next.local/"
+    ) || wrong_code=""
+    case "$wrong_code" in
+    [0-9][0-9][0-9]) info "external wrong-password response: HTTP $wrong_code (#3263)" ;;
+    *) info "external wrong-password response: unavailable (#3263)" ;;
     esac
+    if [ "$wrong_code" = 401 ] &&
+        _ssh "podman exec -i dashboard python - 1 2>&1" <"$SCRIPT_DIR/boot-probe-evidence.py"; then
+        ok "one external wrong-password attempt counts one failed login (#3263)"
+    else
+        bad "external wrong-password 401 or single failed-login count did not verify (#3263)"
+    fi
+    assert_appliance_hostname_identity fixture-next "unaided reboot" "$pv_user" "$pv_pass"
     # The miner must return too (#796): its unit lives in /run and died with the reboot, so
     # only pithead-boot's local-miner leg — which runs after the slot commit above — can have
     # brought it back. The cached build makes this a re-render, not a recompile.

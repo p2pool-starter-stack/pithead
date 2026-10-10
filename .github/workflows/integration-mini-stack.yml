@@ -35,6 +35,8 @@ jobs:
       # ubuntu-latest ships Docker with the Compose v2 plugin — no setup needed.
       - name: Run the fake-daemon mini-stack
         run: bash tests/integration/mini-stack/run-mini-stack.sh
+      - name: Verify boot health access accounting through rendered Caddy
+        run: bash tests/integration/mini-stack/test-boot-health-proxy.sh
       - name: Start and check the real view-only wallets
         run: bash tests/integration/mini-stack/test-real-wallets.sh
       - name: Dump dashboard logs on failure

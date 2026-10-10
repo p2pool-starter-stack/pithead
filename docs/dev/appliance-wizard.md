@@ -464,9 +464,14 @@ Five steps, each answering a hardware-validated failure:
    started the stack into its own oneshot cgroup, and systemd SIGKILLed the containers it
    had just spawned.
 4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes three gates.
-   First the dashboard must answer through caddy on a *listed* vhost (`localhost`; bare
-   `127.0.0.1` hits Caddy's empty default site and proves nothing) — the end of the
-   derived-config → caddy → dashboard chain. Second `pithead doctor --json` must exit clean: it
+   First the dashboard must answer through Caddy on the vhost rendered in `.env`, with the
+   connection forced to loopback and the exact `/.pithead-boot-health` path rewritten to `/`.
+   The probe sends a capability derived from the owner-only salted login hash on curl's stdin.
+   Caddy requires the capability and removes it from logs and upstream requests; only this
+   credential-free local request gets the boot marker in its access log. Its locked 401
+   proves the login gate answers without adding a failed-login warning. With login off, the
+   dashboard must return a nonempty page. This checks the derived-config → Caddy → dashboard
+   chain. Second `pithead doctor --json` must exit clean: it
    FAILs on a crashed revenue container (monerod/p2pool/tari, including one an interrupted compose
    recreate left under its temporary `<id>_<service>` name), a dead Tor backbone, or a missing
    egress firewall, so a slot that serves a dashboard while mining is dead does not commit. Third

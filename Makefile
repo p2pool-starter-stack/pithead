@@ -65,8 +65,9 @@ test-tools: ## Bounded-log sanitizer and CI workflow guards (no services or depe
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
 	uv run --locked --project dashboard --extra test python -m pytest tests/integration/fakes -q
 
-test-mini-stack: ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
+test-mini-stack: pithead ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
 	bash tests/integration/mini-stack/run-mini-stack.sh
+	bash tests/integration/mini-stack/test-boot-health-proxy.sh
 
 test-tari-config-parse: pithead ## Feed the rendered Tari config to the pinned minotari_node image (needs docker; CI, #2341)
 	bash tests/stack/standalone/test_tari_config_parse.sh
