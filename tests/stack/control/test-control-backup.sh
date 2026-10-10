@@ -133,6 +133,15 @@ assert_contains "backups/ is handed to the config.json owner" \
     "$(cat "$own_d/chown.log" 2>/dev/null)" "$(stat -c '%u:%g' "$own_d/config.json") $own_d/backups"
 assert_eq "the backups/ directory is re-owned exactly once, never recursively" \
     "$(grep -c "$own_d/backups\$" "$own_d/chown.log")" "1"
+# A backups -> elsewhere symlink must not be followed by the root chown.
+rm -rf "$own_d/backups" "$own_d/chown.log"
+mkdir -p "$own_d/elsewhere"
+ln -s "$own_d/elsewhere" "$own_d/backups"
+(
+    export PATH="$own_d/bin:$PATH" CONFIG_FILE="$own_d/config.json"
+    run_sourced_e "$own_d" control_prepare_backups_dir >/dev/null 2>&1
+)
+assert_eq "a backups symlink is never chowned" "$(cat "$own_d/chown.log" 2>/dev/null | grep -c .)" "0"
 rm -rf "$own_d"
 unset own_d own_id
 

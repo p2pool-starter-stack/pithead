@@ -27,13 +27,16 @@ control_reown_operator_files() {
 # The backup destination the root control-runner's `backup -y` child creates (#3363). stack_backup
 # does `mkdir -p "$PWD/backups"`, so a GUI backup on a fresh checkout left backups/ root:root 755 and
 # the operator's next `./pithead backup` died on mkdir/write before it had written anything. Create
-# the directory first and give ONLY that directory to the config.json owner (same derivation as
+# the directory first and give ONLY that real directory (never a symlink) to the config.json owner (same derivation as
 # control_reown_operator_files, so nothing from the request steers it); its contents and the secret
 # and data paths are untouched. No owner or a failed chown is a warning, never an abort.
 control_prepare_backups_dir() {
     local owner dir="$PWD/backups"
     owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
     [ -n "$owner" ] || return 0
+    # backups/ sits in the operator-owned checkout and chown follows links: never hand the target of a
+    # symlink the operator planted to anyone (the backup itself then fails on its own terms).
+    [ ! -L "$dir" ] || return 0
     mkdir -p "$dir" 2>/dev/null || return 0
     chown "$owner" "$dir" 2>/dev/null ||
         warn "Could not re-own $dir to $owner — the operator may need to chown it by hand before './pithead backup'."
