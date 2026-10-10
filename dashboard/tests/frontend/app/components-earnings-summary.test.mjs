@@ -63,7 +63,7 @@ test('ExpectedVsActualCard drops the percent when the server withholds it, toolt
     assert.doesNotMatch(withPct, /No percentage shown/);
 });
 
-test('ExpectedVsActualCard points at Configuration, not a config key, when Monero confirmation is off (#1861)', () => {
+test('ExpectedVsActualCard points at the Payouts config group when Monero confirmation is off (#1861, #3359)', () => {
     const s = clone();
     s.earnings_summary.xmr = { available: true, expected_30d: 0.0123, includes_xvb: false,
         enabled: false, actual_30d: null, partial: false, pct: null };

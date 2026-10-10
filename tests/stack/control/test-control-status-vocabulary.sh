@@ -46,3 +46,6 @@ assert_contains "control_worker_apply's terminal case arm was actually found" "$
 assert_contains "control_worker_upgrade's terminal case arm was actually found" "$_csv_upgrade_arms" "applied"
 assert_eq "control_worker_apply + control_worker_upgrade terminal arms union to exactly the fixture's terminal words" \
     "$_csv_union_arms" "$_csv_fixture_terminal"
+
+# shellcheck source=tests/stack/status-sync-hold.sh
+source "$HERE/status-sync-hold.sh"
