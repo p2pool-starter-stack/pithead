@@ -23,7 +23,7 @@ import {
   SECRET_HINT,
 } from "./configlogic.mjs";
 import { PreviewModal } from "./configpreview.mjs";
-import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
+import { coerceForType, focusSection, pathGet, pathSet } from "./configsync.mjs";
 import { ConfigVersion } from "./configversion.mjs";
 import { controlCommitResult, requirePreviewResponse } from "./controlclient.mjs";
 
@@ -156,10 +156,7 @@ export class ConfigView extends Component {
   async load() {
     try {
       const res = await fetch("/api/config");
-      if (res.status === 404) {
-        this.setState({ phase: "disabled" });
-        return;
-      }
+      if (res.status === 404) return this.setState({ phase: "disabled" });
       await requirePreviewResponse(res);
       const cfg = await res.json();
       const candidate = editableCandidate(cfg);
@@ -178,6 +175,7 @@ export class ConfigView extends Component {
         pristine: text,
         editText: text,
         jsonError: null,
+        error: null,
       });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
@@ -333,7 +331,7 @@ export class ConfigView extends Component {
           // keys via its subgroups (Notifications: telegram + notifications + healthchecks, each
           // in its own labelled <details>) keeps short labels for the flat telegram.* remainder.
           const mixed = new Set(fields.map((f) => f.path[0])).size > 1;
-          return html`<details class="card config-section">
+          return html`<details class="card config-section" data-section=${s.name} ref=${(d) => d && focusSection(d, s.name, this.props.focus)}>
               <summary>${s.name}</summary>
               ${s.description ? html`<p class="text-muted text-xs">${s.description}</p>` : null}
               ${fields.map((f) => field(f, mixed))}
