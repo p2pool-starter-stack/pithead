@@ -17,12 +17,12 @@ import pytest
 from mining_dashboard.service.workers.worker_adopt import (
     DEFAULT_API_PORT,
     DEFAULT_CONTROL_PORT,
+    FLEET_API_PORT_ERROR,
     HOST_RE,
     NAME_RE,
     TOKEN_RE,
     host_is_internal,
     new_worker_entries,
-    FLEET_API_PORT_ERROR,
     validate_fleet_api_port,
     validate_new_worker_entries,
     validate_worker_descriptor,
