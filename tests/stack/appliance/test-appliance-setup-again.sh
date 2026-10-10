@@ -136,6 +136,47 @@ out=$(PITHEAD_INSTALL_BIN=/nonexistent PITHEAD_REGISTRY=registry STACK_VERSION=d
 assert_rc "a restored legacy remote-node config reaches setup" "$?" "0"
 assert_not_contains "the current new-node preflight does not reject the restored archive" "$(cat "$RF_LOG")" "preflight"
 assert_contains "the restored config reaches the credentials-handoff path" "$(cat "$RF_LOG")" "setup"
+echo "== unit: firstboot_wizard closes its page when the CLI provisions the box beside it (#3369) =="
+# `pithead restore` after a config-reset lands config.json while the page's container still publishes
+# 80/443; Caddy then fails to bind them. The engine stub logs every call, answers `inspect` as
+# running (stopped in the control), and lands config.json on the first inspect when asked (the CLI restore). The second run is the
+# control: a config.json already present when the round opens (set-up-again, or a failed provisioning's kept copy)
+# must NOT close the page, so the loop goes on and the second `run` (which the stub refuses) is reached.
+mkdir -p "$SAWB/bin" "$SAWB/data/firstboot"
+cat >"$SAWB/bin/eng" <<'ENG'
+#!/bin/bash
+echo "$*" >>"${RF_LOG:?}"
+case "$1" in
+run) [ "$(grep -c '^run ' "$RF_LOG")" -le 1 ] || exit 1 ;;
+inspect)
+    # Bounded: a page that never stands down is reported as stopped after 3 polls, which ends the
+    # round and reaches the refused second `run` instead of hanging the suite.
+    if [ -n "${LAND_CONFIG:-}" ] && [ "$(grep -c '^inspect ' "$RF_LOG")" -le 3 ]; then
+        printf '{"monero":{"wallet":"4cli"}}' >config.json
+        echo true
+    else
+        echo false
+    fi
+    ;;
+esac
+exit 0
+ENG
+chmod +x "$SAWB/bin/eng"
+SAW_STUBS_CLI='container_engine() { echo "$SAWB/bin/eng"; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { return 2; }; firstboot_consume_spool() { return 1; }; setup() { echo setup-ran >>"${RF_LOG:?}"; }; firstboot_wizard'
+export SAWB
+rm -f "$SAWB/config.json"
+: >"$RF_LOG"
+rm -f "$SAWB/config.json"
+out=$(LAND_CONFIG=1 PITHEAD_INSTALL_BIN=/nonexistent PITHEAD_REGISTRY=registry STACK_VERSION=dev run_sourced "$SAWB" eval "$SAW_STUBS_CLI" 2>&1)
+assert_rc "a config.json landed by the CLI while the page is open -> the wizard returns" "$?" "0"
+assert_contains "...and says why" "$out" "provisioned without it"
+assert_contains "...the page's container is removed (the exit trap), freeing 80/443" "$(cat "$RF_LOG")" "rm -f pithead-wizard"
+assert_not_contains "...and setup did not run beside it" "$(cat "$RF_LOG")" "setup-ran"
+printf '{"monero":{"wallet":"4kept"}}' >"$SAWB/config.json"
+: >"$RF_LOG"
+out=$(PITHEAD_SETUP_AGAIN=1 PITHEAD_INSTALL_BIN=/nonexistent PITHEAD_REGISTRY=registry STACK_VERSION=dev run_sourced "$SAWB" eval "$SAW_STUBS_CLI" 2>&1)
+assert_eq "control: a config.json present when the round opened keeps the page open (the next round's run is refused)" "$(grep -c '^run ' "$RF_LOG")" "2"
+unset SAW_STUBS_CLI
 unset PITHEAD_PRESEED_DIR PITHEAD_RIGFORGE_DIR RF_LOG SAW_STUBS SAW_STUBS_RESTORE SAW_STUBS_LEGACY
 rm -rf "$SAWB" "$SAESP"
 echo "== unit: write_handoff_card — the credentials card is owner-only from its first byte (#1842) =="
