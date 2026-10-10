@@ -7,8 +7,10 @@ import { chromium } from "playwright";
 
 // Real ConfigView against a fake host API (#3287). PITHEAD_BROWSER_STATIC lets a
 // negative-control run serve the pre-fix module.
-const staticRoot = resolve(process.env.PITHEAD_BROWSER_STATIC ||
-  new URL("../../mining_dashboard/web/static/", import.meta.url).pathname);
+const staticRoot = resolve(
+  process.env.PITHEAD_BROWSER_STATIC ||
+    new URL("../../mining_dashboard/web/static/", import.meta.url).pathname,
+);
 const fixture = `<!doctype html><html><body><div id="fixture"></div>
 <script type="module">
 import { html, render } from '/static/app/preact.mjs';
@@ -22,11 +24,12 @@ function host() {
     res.writeHead(code, { "Content-Type": "application/json" });
     res.end(JSON.stringify(body));
   };
-  const body = (req) => new Promise((r) => {
-    let s = "";
-    req.on("data", (c) => (s += c));
-    req.on("end", () => r(s));
-  });
+  const body = (req) =>
+    new Promise((r) => {
+      let s = "";
+      req.on("data", (c) => (s += c));
+      req.on("end", () => r(s));
+    });
   const serve = async (req, res) => {
     if (req.url === "/") {
       res.setHeader("Content-Type", "text/html");
@@ -37,24 +40,37 @@ function host() {
       return json(res, 200, { monero: { mode: "local" } });
     }
     if (req.url === "/api/control/preview") {
-      return json(res, 200, { status: "previewed", id: "p1", changes: [{ flag: "OK", msg: "monero.mode changes" }] });
+      return json(res, 200, {
+        status: "previewed",
+        id: "p1",
+        changes: [{ flag: "OK", msg: "monero.mode changes" }],
+      });
     }
     if (req.url === "/api/control/commit") {
       state.committed.push(JSON.parse(await body(req)));
       state.commits++;
-      return json(res, 200, state.commits === 1
-        ? { status: "failed", error: "apply exploded", backup: "/fixture/config.json.bak" }
-        : { status: "applied" });
+      return json(
+        res,
+        200,
+        state.commits === 1
+          ? { status: "failed", error: "apply exploded", backup: "/fixture/config.json.bak" }
+          : { status: "applied" },
+      );
     }
     const path = resolve(staticRoot, "." + req.url.replace(/^\/static/, ""));
     if (!req.url.startsWith("/static/") || !path.startsWith(staticRoot + sep)) {
       res.writeHead(404);
       return res.end();
     }
-    readFile(path).then((b) => {
-      res.setHeader("Content-Type", "text/javascript");
-      res.end(b);
-    }).catch(() => { res.writeHead(404); res.end(); });
+    readFile(path)
+      .then((b) => {
+        res.setHeader("Content-Type", "text/javascript");
+        res.end(b);
+      })
+      .catch(() => {
+        res.writeHead(404);
+        res.end();
+      });
   };
   return { state, serve };
 }
@@ -105,7 +121,9 @@ test("Discard draft and reload from host replaces the draft and clears the marke
 }, async (t) => {
   const { page, editor, draft, state, errors } = await failedApply(t);
   const loads = state.loads;
-  await page.getByRole("button", { name: "Discard draft and reload from host", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Discard draft and reload from host", exact: true })
+    .click();
   await editor.waitFor();
   assert.equal(state.loads, loads + 1);
   assert.notEqual(await editor.inputValue(), draft);
