@@ -273,3 +273,8 @@ the appliance publishes them beside the disk inventory for both submission paths
 
 `tests/os/phases/setup-defaults.sh` proves a fresh appliance with the wizard defaults,
 without the explicit Tari opt-in used by the general provision phase.
+
+Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugepages.sh`;
+`lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
+`tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
+drop-in precedence, ISO defaults, idempotency and generated-entry failures.

@@ -16,8 +16,7 @@ which checks a virtual machine cannot prove.
 - Rough time: about an hour of hands-on work per box, then the chain
   [sync](../README.md#glossary), which takes days over [Tor](../README.md#glossary).
 
-On the project's own bench fleet, bench-ci's sandbox sessions have merged
-([p2pool-starter-stack/bench-ci#1433](https://github.com/p2pool-starter-stack/bench-ci/issues/1433)).
+On the project's own bench fleet, bench-ci's sandbox sessions have merged.
 Once a bench is configured for them, its status page starts and ends a full or small VM with this
 spec. Until then, and anywhere else, build one with any KVM tool to the same spec.
 

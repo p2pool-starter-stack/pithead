@@ -31,6 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
       # ubuntu-latest ships Docker with the Compose v2 plugin — no setup needed.
       - name: Run the fake-daemon mini-stack
         run: bash tests/integration/mini-stack/run-mini-stack.sh
