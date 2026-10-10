@@ -45,6 +45,14 @@ def explicit_wizard_config(cfg: dict, ref: dict) -> dict:
         for key in keys:
             if isinstance(cfg.get(block), dict) and key in cfg[block]:
                 written.setdefault(block, {})[key] = cfg[block][key]
+    # The new-machine page carries tari_required=false for a Yes (#3333); a No writes nothing,
+    # the same as the CLI wizard, so enabling Tari later starts from the reference default.
+    if isinstance(cfg.get("tari"), dict) and cfg["tari"].get("mode") == "off":
+        dashboard = written.get("dashboard")
+        if isinstance(dashboard, dict):
+            dashboard.pop("tari_required", None)
+            if not dashboard:
+                del written["dashboard"]
     return written
 
 

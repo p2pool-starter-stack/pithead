@@ -76,6 +76,8 @@ async def test_new_install_submission_pins_disk_answer_raffle_and_private_sync(
         # An opted-in beta Tari must not hold or reject Monero mining (#3333).
         if mode == "local":
             assert written["dashboard"]["tari_required"] is False
+        else:
+            assert "tari_required" not in written.get("dashboard", {})
         assert written["xvb"]["enabled"] is False
         assert written["monero"]["clearnet_initial_sync"] is False
         assert written["tari"]["clearnet_initial_sync"] is False
