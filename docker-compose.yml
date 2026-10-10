@@ -623,6 +623,10 @@ services:
         PITHEAD_GIT_BRANCH: ${PITHEAD_GIT_BRANCH:-}
         PITHEAD_RELEASE: ${PITHEAD_RELEASE:-}
     container_name: dashboard
+    # Room for the drain in main.py (3s) plus background-task cancel and the SQLite close. A stop that
+    # outruns the grace period is SIGKILLed and the engine can answer the stop with a 500, which
+    # fails an apply mid-recreate with the dashboard down (#3300).
+    stop_grace_period: 30s
     # Memory ceiling (#132 — see monerod). A small aiohttp + SQLite app (~0.06 GiB observed); a tight
     # cap is pure upside — a memory regression OOM-restarts the dashboard, not the revenue services.
     mem_limit: 512m
