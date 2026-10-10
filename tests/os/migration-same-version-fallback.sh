@@ -2,7 +2,7 @@
 # Real equal-version A/B fallback after a migrating candidate fails its health gate.
 preserve_migration_bundle() {
     local saved
-    saved=$(mktemp "${TMPDIR:?}/pithead-migration-good.XXXXXX.raucb") || return 1
+    saved=$(mktemp "${TMPDIR:-$(dirname -- "$1")}/pithead-migration-good.XXXXXX.saved") || return 1
     cp "$1" "$saved" || {
         rm -f "$saved"
         return 1

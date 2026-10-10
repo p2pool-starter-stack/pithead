@@ -34,7 +34,11 @@ existing reserved `PITHEAD_OS_MONERO_*` and `PITHEAD_OS_TARI_*` inputs are then
 applied through the authenticated configuration flow. A fresh persisted release,
 direct synchronized RPC, healthy mining services and an increasing hash counter
 establish recovery. The original local configuration is restored before the
-same-version and floor-fallback legs.
+same-version and floor-fallback legs. Before building a fault bundle, the battery
+retains the good bundle in `TMPDIR` when set, otherwise beside the built bundle
+in its job-owned build directory. The retained copy uses a `.saved` suffix so
+the builder’s `*.raucb` discovery cannot select it instead of a later fault
+bundle. An unset or empty `TMPDIR` does not prevent the fallback proof.
 
 This seeded regression proves migration coordination and mining recovery through
 reserved nodes. The owner's RC3 upgrade with real synced chains provides separate
