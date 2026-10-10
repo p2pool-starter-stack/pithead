@@ -150,7 +150,9 @@ test("a failed commit request returns to the retained draft; only the explicit d
       json: { id: "draft-preview", status: "previewed", changes: [{ msg: "Energy cost changed" }] },
     }),
   );
-  await page.route("**/api/control/commit", (route) => route.fulfill({ status: 500, body: "boom" }));
+  await page.route("**/api/control/commit", (route) =>
+    route.fulfill({ status: 500, body: "boom" }),
+  );
   ui.state.control_enabled = false;
   await ui.mount(`import { App } from '/static/app/components.mjs';
 const state = ${JSON.stringify(ui.state)};
