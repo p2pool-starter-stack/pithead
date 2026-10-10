@@ -41,17 +41,16 @@ run_reset_restore() {
         case \"\$output\" in *'stack services are still active'*) ;; *)
             ce=\$(docker ps --all --quiet --filter label=com.docker.compose.project=pithead --filter status=running 2>&1 >/dev/null | head -n 2 | cut -c1-200);
             printf \"configless census stderr=[%s] pwd-base=%s\\n\" \"\$ce\" \"\$(basename \"\$PWD\")\" >&2;
-            BASH_XTRACEFD=9 bash -x $IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 9>\"\$scratch/xtrace\" >/dev/null 2>&1 || true;
-            tail -n 30 \"\$scratch/xtrace\" | cut -c1-160 >&2; rm -f -- \"\$scratch/xtrace\"; exit 1 ;; esac;
+            exit 1 ;; esac;
         stage=unchanged; test ! -e config.json; test ! -e .env; test ! -e Caddyfile"
     local probe_err
     if probe_err=$(rx "$running_probe" 2>&1 >/dev/null); then
         it_pass "restore refuses real running containers with all configuration missing"
     else
-        probe_err=$(printf '%s' "$probe_err" | grep -v 'Permanently added' | redact | tail -n 40)
+        probe_err=$(printf '%s' "$probe_err" | grep -v 'Permanently added' | redact | tail -n 8)
         # Restore refused (non-zero exit) and left every file absent: the stack is as it was, so
         # the phases after lifecycle can still run. Any other failure keeps the phase stopped.
-        if grep -q 'restore exit=[1-9]' <<<"$probe_err" && grep -qx 'present after restore:' <<<"$probe_err"; then
+        if grep -q 'restore exit=[1-9] running=[1-9]' <<<"$probe_err" && grep -qx 'present after restore:' <<<"$probe_err"; then
             # shellcheck disable=SC2034 # read by run_lifecycle
             RESET_RESTORE_STACK_INTACT=1
         fi
