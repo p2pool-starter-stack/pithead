@@ -64,18 +64,18 @@ run_reset_restore() {
 
     local boot_before
     boot_before=$(rx 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
-    if ! rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
-        redact >"$OUT_DIR/reset-restore.reset.log" ||
-        ! rx 'test ! -e config.json && test ! -e .env && test ! -e Caddyfile'; then
-        it_fail "config-reset removes configuration before encrypted recovery" "reset failed or a rendered file remains; see reset-restore.reset.log"
-        return 1
-    fi
-    it_pass "config-reset removes configuration before encrypted recovery"
-    # The appliance reboots into first-boot setup right after the reset; the next step must wait for it.
+    rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
+        redact >"$OUT_DIR/reset-restore.reset.log"
+    # The appliance reboots into first-boot setup right after the reset; every later step waits for it.
     if grep -q 'Rebooting into first-boot' "$OUT_DIR/reset-restore.reset.log" && ! reset_restore_wait_reboot "$boot_before" 300; then
         it_fail "guest returns after the config-reset reboot" "no new boot reached the target within 300s"
         return 1
     fi
+    if ! rx 'test ! -e config.json && test ! -e .env && test ! -e Caddyfile'; then
+        it_fail "config-reset removes configuration before encrypted recovery" "reset failed or a rendered file remains; see reset-restore.reset.log"
+        return 1
+    fi
+    it_pass "config-reset removes configuration before encrypted recovery"
     if pithead down 2>&1 | redact >"$OUT_DIR/reset-restore.down.log"; then
         it_pass "pithead down succeeds after reset without Compose interpolation"
     else
