@@ -84,7 +84,9 @@ const APPROVAL_TITLE = "Editable — this sensitive change is recorded under you
 // bare "view_key" (and System / advanced would show four identical "data_dir" rows).
 //
 // A host-only field has no event listener; it cannot enter staged edits.
-const Field = ({ field, value, onEdit, full }) => {
+const validNumber = (raw) => Number.isFinite(coerceForType("number", raw));
+
+const Field = ({ field, value, onEdit, full, invalid }) => {
   // The host derives this public key from the dual address; ask only for the private view key.
   if (field.key === "tari.spend_public_key") return null;
   const editable = field.editable !== false;
@@ -112,11 +114,14 @@ const Field = ({ field, value, onEdit, full }) => {
         disabled=${!editable} onInput=${change} />`;
   } else {
     input = html`<input type=${field.type === "number" ? "number" : "text"} value=${value}
+        step=${field.type === "number" ? "any" : undefined}
+        aria-invalid=${invalid ? "true" : undefined}
         disabled=${!editable} onInput=${change} />`;
   }
   return html`<label class="config-field" title=${title}>
       <span class="config-field-name">${label}${field.defaulted ? " (default)" : ""}</span>
       ${input}
+      ${invalid ? html`<span class="config-field-warning" role="alert">⚠ Not a valid number; the saved value is unchanged.</span>` : null}
       ${field.warning ? html`<span class="config-field-warning">⚠ ${field.warning}</span>` : null}
   </label>`;
 };
@@ -134,6 +139,7 @@ export class ConfigView extends Component {
       approvalKeys: [],
       defaultKeys: [],
       lastApply: null,
+      drafts: {}, // numeric fields' in-progress text, by config key (#3350)
       candidate: null, // the ONE config both the fields and the JSON pane edit (#785)
       pristine: "", // candidate's serialization at load — dirtiness is a comparison, not a flag
       editText: "",
@@ -175,6 +181,7 @@ export class ConfigView extends Component {
         defaultKeys: cfg._default_keys || [],
         lastApply: cfg._last_apply || null,
         candidate,
+        drafts: {},
         pristine: text,
         editText: text,
         jsonError: null,
@@ -186,8 +193,26 @@ export class ConfigView extends Component {
 
   // Field -> candidate -> pane. The field's declared type drives coercion (shared
   // configsync.coerceForType), so a port stays a number and a toggle a boolean in the JSON.
+  // A numeric field keeps the operator's text as a draft while they type (#3350): re-rendering
+  // "0." or "-" from the coerced candidate rewrites the next keystroke. The candidate only takes
+  // a draft that parses; otherwise it keeps its last valid number and the field is flagged.
   onFieldEdit(field, raw) {
     const { candidate, cfg } = this.state;
+    if (field.type === "number") {
+      const drafts = { ...this.state.drafts, [field.key]: raw };
+      if (!validNumber(raw)) {
+        this.setState({ drafts });
+        return;
+      }
+      pathSet(candidate, field.key, coerceForType("number", raw));
+      this.setState({
+        drafts,
+        candidate,
+        editText: JSON.stringify(candidate, null, 2),
+        jsonError: null,
+      });
+      return;
+    }
     const value =
       field.type === "secret" && raw === ""
         ? pathGet(cfg, field.key)
@@ -219,7 +244,7 @@ export class ConfigView extends Component {
       JSON.stringify(candidate) === JSON.stringify(staged.config)
         ? text
         : JSON.stringify(candidate, null, 2);
-    this.setState({ editText, jsonError: null, candidate });
+    this.setState({ editText, jsonError: null, candidate, drafts: {} });
   }
   onFilePick(e) {
     const file = e.target.files[0];
@@ -307,7 +332,7 @@ export class ConfigView extends Component {
   // cluster (telegram.events, the notification sinks, healthchecks) into its own nested <details>,
   // one level deeper, also collapsed by default.
   renderForm(core, groups) {
-    const { candidate } = this.state;
+    const { candidate, drafts } = this.state;
     const onEdit = (f, v) => this.onFieldEdit(f, v);
     // A set secret arrives as a sentinel and renders blank behind its keep-hint placeholder;
     // everything else shows the candidate's live value, so pane edits are visible immediately.
@@ -317,7 +342,9 @@ export class ConfigView extends Component {
       return typeof v === "object" ? JSON.stringify(v) : String(v);
     };
     const field = (f, full) =>
-      html`<${Field} field=${f} value=${displayValue(f)} full=${full} onEdit=${onEdit} />`;
+      html`<${Field} field=${f} value=${f.key in drafts ? drafts[f.key] : displayValue(f)}
+        invalid=${f.key in drafts && !validNumber(drafts[f.key])}
+        full=${full} onEdit=${onEdit} />`;
     return html`<div class="grid">
         ${
           core.length

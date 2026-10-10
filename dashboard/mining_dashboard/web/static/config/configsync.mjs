@@ -43,6 +43,7 @@ export function coerceForPath(reference, path, raw) {
 export function coerceForType(type, raw) {
   if (type === "boolean") return raw === "true" || raw === true;
   if (type === "number") {
+    if (String(raw).trim() === "") return raw; // Number("") is 0: an empty field is not zero
     const n = Number(raw);
     return Number.isNaN(n) ? raw : n;
   }

@@ -68,5 +68,7 @@ test("coerceForType follows the field's declared type", async () => {
   assert.equal(coerceForType("number", "0.5"), 0.5);
   // Garbage stays a string for the host validator to name, never NaN into the config.
   assert.equal(coerceForType("number", "not-a-port"), "not-a-port");
+  assert.equal(coerceForType("number", ""), "", "an empty field is not zero (#3350)");
+  assert.equal(coerceForType("number", " "), " ");
   assert.equal(coerceForType("text", "18081"), "18081");
 });
