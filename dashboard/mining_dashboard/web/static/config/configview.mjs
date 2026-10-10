@@ -178,6 +178,8 @@ export class ConfigView extends Component {
         pristine: text,
         editText: text,
         jsonError: null,
+        error: null,
+        preview: null,
       });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });

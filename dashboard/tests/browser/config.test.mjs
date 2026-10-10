@@ -98,6 +98,22 @@ test("cancelled preview returns to the editor without committing", async ({ page
   expect(commits).toBe(0);
 });
 
+// #3353: Discard edits must take the rejected candidate's preview error with it.
+test("discarding a rejected preview leaves a clean form without the old error", async ({ page, ui }) => {
+  await page.route("**/api/config", (route) => route.fulfill({ json: CONFIG }));
+  await page.route("**/api/control/preview", (route) =>
+    route.fulfill({ json: { id: "config-3", status: "rejected", error: "p2pool.pool is not a valid pool" } }),
+  );
+
+  await mount(ui);
+  await page.getByRole("combobox", { name: /^p2pool\.pool/ }).selectOption("nano");
+  await page.getByRole("button", { name: "Save & preview changes" }).click();
+  await expect(page.getByText("p2pool.pool is not a valid pool")).toBeVisible();
+  await page.getByRole("button", { name: "Discard edits" }).click();
+  await expect(page.getByRole("button", { name: "Save & preview changes" })).toBeDisabled();
+  await expect(page.getByText("p2pool.pool is not a valid pool")).toHaveCount(0);
+});
+
 for (const [name, text, message] of [
   ["malformed JSON", "{not json", "Not valid JSON."],
   ["duplicate JSON keys", '{"p2pool":{"pool":"mini","pool":"main"}}', /duplicate key "pool"/],
