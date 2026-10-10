@@ -1,7 +1,10 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 # The ordinary CLI recovery door, using real Compose containers and a real encrypted backup.
+# RESET_RESTORE_STACK_INTACT=1 on return marks a failure that changed nothing, so run_lifecycle can
+# go on and the phases after it still run (#3342).
 run_reset_restore() {
+    RESET_RESTORE_STACK_INTACT=0
     local before_config before_secrets archive out rc after_config after_secrets
     local failures_before="$IT_FAIL"
     it_step "encrypted backup → config-reset → restore without rendered configuration…"
@@ -46,6 +49,14 @@ run_reset_restore() {
         it_pass "restore refuses real running containers with all configuration missing"
     else
         probe_err=$(printf '%s' "$probe_err" | grep -v 'Permanently added' | redact | tail -n 40)
+        # Restore refused (non-zero exit) and left every file absent: the stack is as it was, so
+        # the phases after lifecycle can still run. Any other failure keeps the phase stopped.
+        if grep -q 'restore exit=[1-9]' <<<"$probe_err" && grep -qx 'present after restore:' <<<"$probe_err"; then
+            # shellcheck disable=SC2034 # read by run_lifecycle
+            RESET_RESTORE_STACK_INTACT=1
+        fi
+        # A Podman engine rejects status=restarting, so the configless census cannot finish (#3346).
+        case "$probe_err" in *'configless census stderr'*) probe_err="restore could not take its configless census; see #3346. $probe_err" ;; esac
         it_fail "restore refuses real running containers with all configuration missing" "running census, refusal, or unchanged-file assertion failed: ${probe_err:-no output}"
         return 1
     fi

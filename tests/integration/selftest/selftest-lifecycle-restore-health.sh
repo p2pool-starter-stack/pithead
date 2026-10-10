@@ -72,8 +72,14 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         prove_wallet_supersession() { :; }    # Identity proof has its own selftest.
         tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
         run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
-        run_reset_restore() { :; }            # driven by selftest-reset-restore.sh
-        run_uninstall_round_trip() { :; }     # driven on its own by selftest-uninstall-round-trip.sh
+        run_reset_restore() { # the leg is driven by selftest-reset-restore.sh
+            case "$RESTORE_CASE" in
+            # shellcheck disable=SC2034 # read by the extracted lifecycle function
+            reset-refused-intact) RESET_RESTORE_STACK_INTACT=1; return 1 ;;
+            reset-failed-late) return 1 ;;
+            esac
+        }
+        run_uninstall_round_trip() { touch "$OUT_DIR/uninstall"; } # own selftest: selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
         secret_fingerprint() { printf fingerprint; }
@@ -116,6 +122,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         fi
         printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
+        case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
     )
 }
 
@@ -124,6 +131,11 @@ assert_eq "restore rejects a newly introduced marker" "$(drive_restore yes marke
 assert_eq "restore rejects a changed marker" "$(drive_restore yes marker-changed)" "1|1"
 assert_eq "an unreadable pre-restore marker fails closed" "$(drive_restore yes marker-before-fails)" "1|1"
 assert_eq "an unreadable restored marker fails closed" "$(drive_restore yes marker-after-fails)" "1|1"
+# A refusal row that fails before anything destructive keeps the phases after lifecycle runnable (#3342).
+assert_eq "a reset-restore refusal that left the stack intact fails lifecycle but flags the stack healthy" \
+    "$(drive_restore yes reset-refused-intact)" "1|0|intact=1|uninstall=yes"
+assert_eq "a reset-restore failure after a destructive step stops lifecycle and does not flag the stack" \
+    "$(drive_restore yes reset-failed-late)" "1|0|intact=0|uninstall=no"
 # A missing helper must survive shell contexts that can mask its status or stderr.
 for missing_call in \
     'pithead_restore_fixture_missing' \
@@ -213,7 +225,7 @@ drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
         # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
         RUN_LIFECYCLE=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
             RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
-        run_lifecycle() { return "$lifecycle_rc"; }
+        run_lifecycle() { LIFECYCLE_STACK_INTACT="${intact:-0}"; return "$lifecycle_rc"; }
         run_fault_injection() { fault_ran=yes; }
         it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
         gate() { eval "$MAIN_SRC"; }
@@ -224,6 +236,7 @@ drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
 
 assert_eq "fault injection runs after a healthy lifecycle" "$(drive_gate 0)" "yes"
 assert_eq "fault injection is reported skipped after a failed lifecycle (#2755)" "$(drive_gate 1)" "skipped:fault-injection "
+assert_eq "fault injection runs after a lifecycle row failed with the stack intact (#3342)" "$(intact=1 drive_gate 1)" "yes"
 assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:fault-injection "
 
 echo "selftest-lifecycle-restore-health: $IT_PASS passed, $IT_FAIL failed"

@@ -24,7 +24,11 @@ drive_reset_restore() (
         ls*) [ "$fault" != archive ] && printf 'backups/fixture.tar.gz.enc' ;;
         'set -e; stage=census;'*)
             printf '%s' "$1" >"$OUT_DIR/probe"
-            [ "$fault" != active ] ;;
+            case "$fault" in
+            active) return 1 ;;
+            refused) printf 'restore exit=1 running=7 first-line=x\npresent after restore:\nconfigless census stderr=[]\n' >&2; return 1 ;;
+            written) printf 'restore exit=1 running=7 first-line=x\npresent after restore: config.json\n' >&2; return 1 ;;
+            esac ;;
         *"printf 'config-reset"*) [ "$fault" != reset ] && touch "$OUT_DIR/reset" ;;
         'test ! -e config.json'*) [ -e "$OUT_DIR/reset" ] && [ "$fault" != absent ] ;;
         *' script -q -e '*)
@@ -50,10 +54,16 @@ drive_reset_restore() (
     [ ! -e "$OUT_DIR/unhandled" ] || rc=127
     if [ "$fault" = none ]; then cp "$OUT_DIR/probe" "$PROBE_COPY"; fi
     printf '%s|%s|%s' "$rc" "$IT_FAIL" "$IT_PASS"
+    case "$fault" in refused | written) printf '|intact=%s|%s' "${RESET_RESTORE_STACK_INTACT:-0}" "$(grep -c '#3346' "$OUT_DIR/output")" ;; esac
 )
 PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
 trap 'rm -f "$PROBE_COPY"' EXIT
 assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|8'
+# Restore refused and wrote nothing: the failure names #3346 and lets later phases run; a write does not.
+assert_eq "a refusal that wrote nothing fails the row, names #3346 and flags the stack intact" \
+    "$(drive_reset_restore refused)" "1|1|1|intact=1|1"
+assert_eq "a restore that wrote a file fails the row and does not flag the stack intact" \
+    "$(drive_reset_restore written)" "1|1|1|intact=0|0"
 # An SSH session on a stock guest has no TMPDIR: the probe's scratch directory must still resolve.
 bash -n "$PROBE_COPY" || it_fail "reset-restore probe parses" "syntax error"
 scratch_line=$(grep -m1 'mktemp -d' "$PROBE_COPY")

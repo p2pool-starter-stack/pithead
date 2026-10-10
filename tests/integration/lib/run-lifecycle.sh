@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034 # LIFECYCLE_STACK_INTACT is read by the phase gate in run.sh
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
@@ -221,7 +221,7 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
-    run_reset_restore || return 1
+    run_reset_restore || { [ "$lifecycle_ok:${RESET_RESTORE_STACK_INTACT:-0}" = 1:1 ] || return 1; run_uninstall_round_trip && LIFECYCLE_STACK_INTACT=1; return 1; }
     run_uninstall_round_trip || lifecycle_ok=0
     [ "$lifecycle_ok" = 1 ]
 }
