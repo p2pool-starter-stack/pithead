@@ -178,6 +178,9 @@ apply() {
     # the marker is present, re-apply re-attempts the recreate even when the rendered config matches.
     local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
+    # Armed before .env commits, cleared when apply ends: a retry would otherwise keep the old login hash (#3332).
+    local caddy_marker="${ENV_FILE}.caddy-restart-pending" caddy_pending=0
+    [ -f "$caddy_marker" ] && caddy_pending=1
     grep -qx rearm-tari-only "$apply_marker" 2>/dev/null && rearm_sync_gate=2
     grep -qx rearm-sync-gate "$apply_marker" 2>/dev/null && rearm_sync_gate=1
 
@@ -268,6 +271,7 @@ apply() {
             [ "$dashboard_carry_recovery" -eq 0 ] || PITHEAD_DASHBOARD_CARRY_RECOVERY[4]=1
         fi
         lan_guard_arm_transition "$newenv" || error "The LAN-only source rule could not be armed before changing .env."
+        : >"$caddy_marker"
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -286,7 +290,7 @@ apply() {
             caddy_before=$(cat "Caddyfile")
         fi
         generate_caddyfile
-        if [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; then
+        if [ "$caddy_pending" -eq 1 ] || { [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; }; then
             caddy_changed=1
         fi
     else
@@ -294,6 +298,11 @@ apply() {
         if [ "$incomplete" -eq 0 ]; then
             # Host state may change without an .env diff: converge units and local_miner (#3090).
             mutation_lock_acquire apply
+            if [ "$caddy_pending" -eq 1 ]; then
+                generate_caddyfile
+                docker compose restart caddy
+                rm -f "$caddy_marker"
+            fi
             provision_control_runner
             provision_firewall_check_units || error "Firewall check units could not be provisioned."
             reconcile_appliance_hostname
@@ -306,6 +315,8 @@ apply() {
             return 0
         fi
         warn "A previous apply updated the config but did not finish recreating containers — retrying."
+        caddy_changed=$caddy_pending
+        [ "$caddy_pending" -eq 0 ] || generate_caddyfile
     fi
 
     # The retry branch reaches here without a hold; the changed branch already has one.
@@ -377,7 +388,7 @@ apply() {
             docker compose restart caddy
         fi
     fi
-    rm -f "$apply_marker"
+    rm -f "$apply_marker" "$caddy_marker"
     # Converge the built-in miner on a toggle without waiting for a reboot (#796): start it when
     # local_miner just turned on, stop it when it turned off. After the recreate above so the
     # stratum the miner dials is the freshly-applied one. Best-effort, same posture as setup.
