@@ -15,6 +15,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - `pithead apply` now finishes a caddy restart that an earlier, interrupted apply never completed, so the dashboard login always matches the rendered config (#3332).
 - `pithead restore` after `pithead config-reset` no longer refuses on the appliance with "could not verify that the stack is stopped": the configless running-container check lists container states once instead of asking Podman for the `restarting` state it does not have (#3346).
+- A one-field save in the dashboard Configuration view no longer adds untouched default arrays (`workers.list`, `notifications.webhooks`) to a minimal `config.json` (#3355).
 
 ## [2.0.0] - 2026-10-03
 
@@ -118,9 +119,6 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
 - On a DIY host whose GRUB configuration has malformed quoting, later `update-grub` runs can
   fail (#3305). Run setup with `--skip-optimize`, or remove
   `/etc/default/grub.d/zz-pithead-hugepages.cfg`.
-- On pithead-OS, `pithead restore` after `pithead config-reset` refuses with "could not verify
-  that the stack is stopped"; nothing is written (#3346). Fixed in 2.0.1. Use the setup
-  wizard's Restore instead.
 - The order of the DIY firewall rules against Docker at reboot is untested (#2677).
 - Automatic Tor recovery is a named soak risk: it restarts Tor on its own, and its long-run
   behaviour has had no soak time yet.
@@ -334,6 +332,9 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
   ([#3302](https://github.com/p2pool-starter-stack/pithead/pull/3302)).
 - **An apply that restarts the dashboard keeps it available** when the old container's stop times
   out ([#3307](https://github.com/p2pool-starter-stack/pithead/pull/3307)).
+- **Discarding a rejected configuration preview clears its error.** The dashboard no longer shows
+  the old preview error above the clean form after **Discard edits**, including after you move to
+  another view and back ([#3354](https://github.com/p2pool-starter-stack/pithead/pull/3354)).
 - **Configuration drafts survive a view change.** Edits in the configuration editor are kept when
   you move to another dashboard view and back, and after an apply that fails ([#3273](https://github.com/p2pool-starter-stack/pithead/pull/3273)).
 - **The setup wizard's plain-HTTP port redirects to HTTPS.** A plain `http://` LAN URL is

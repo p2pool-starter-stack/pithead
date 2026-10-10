@@ -70,3 +70,27 @@ test("coerceForType follows the field's declared type", async () => {
   assert.equal(coerceForType("number", "not-a-port"), "not-a-port");
   assert.equal(coerceForType("text", "18081"), "18081");
 });
+
+test("focusSection opens and focuses only the named section, once per shortcut (#3359)", async () => {
+  const { focusSection } = await import("../../../mining_dashboard/web/static/config/configsync.mjs");
+  const make = () => {
+    const summary = { calls: [], scrollIntoView() {}, focus() { this.calls.push("focus"); } };
+    return { open: false, summary, querySelector: () => summary };
+  };
+  const payouts = make();
+  const node = make();
+  const focus = { section: "Payouts" };
+  focusSection(node, "Monero node", focus);
+  assert.equal(node.open, false);
+  focusSection(payouts, "Payouts", focus);
+  assert.equal(payouts.open, true);
+  assert.deepEqual(payouts.summary.calls, ["focus"]);
+  // A re-render with the same shortcut must not reopen a section the operator collapsed.
+  payouts.open = false;
+  focusSection(payouts, "Payouts", focus);
+  assert.equal(payouts.open, false);
+  // A fresh click is a fresh object, so it fires again; no shortcut is a no-op.
+  focusSection(payouts, "Payouts", { section: "Payouts" });
+  assert.equal(payouts.open, true);
+  focusSection(payouts, "Payouts", undefined);
+});
