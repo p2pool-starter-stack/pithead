@@ -317,7 +317,7 @@ apply() {
             return 0
         fi
         warn "A previous apply updated the config but did not finish recreating containers — retrying."
-        [ "$caddy_pending" -eq 0 ] || { generate_caddyfile && caddy_changed=1; }
+        if [ "$caddy_pending" -eq 1 ]; then generate_caddyfile; caddy_changed=1; fi
     fi
 
     # The retry branch reaches here without a hold; the changed branch already has one.
@@ -374,7 +374,6 @@ apply() {
     if [ "$caddy_changed" -eq 1 ]; then
         docker compose restart caddy
     fi
-    rm -f "$caddy_marker"
     # If the dashboard onion was just turned on, the recreated tor container generated its hostname;
     # read it back into .env so `pithead status` can surface the address (#343) — and regenerate the
     # Caddyfile + restart caddy so the HTTPS onion vhost (#360) actually appears this run instead of
@@ -386,7 +385,7 @@ apply() {
             docker compose restart caddy
         fi
     fi
-    rm -f "$apply_marker"
+    rm -f "$apply_marker" "$caddy_marker"
     # Converge the built-in miner on a toggle without waiting for a reboot (#796): start it when
     # local_miner just turned on, stop it when it turned off. After the recreate above so the
     # stratum the miner dials is the freshly-applied one. Best-effort, same posture as setup.
