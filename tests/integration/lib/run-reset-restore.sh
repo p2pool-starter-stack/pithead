@@ -38,13 +38,14 @@ run_reset_restore() {
         case \"\$output\" in *'stack services are still active'*) ;; *)
             ce=\$(docker ps --all --quiet --filter label=com.docker.compose.project=pithead --filter status=running 2>&1 >/dev/null | head -n 2 | cut -c1-200);
             printf \"configless census stderr=[%s] pwd-base=%s\\n\" \"\$ce\" \"\$(basename \"\$PWD\")\" >&2;
-            bash -x $IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 2>&1 | grep -E '^\\++ (docker|ids=|return|compose_active|configless|restore_require)' | tail -n 8 | cut -c1-200 >&2 || true; exit 1 ;; esac;
+            BASH_XTRACEFD=9 bash -x $IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 9>\"\$scratch/xtrace\" >/dev/null 2>&1 || true;
+            tail -n 30 \"\$scratch/xtrace\" | cut -c1-160 >&2; rm -f -- \"\$scratch/xtrace\"; exit 1 ;; esac;
         stage=unchanged; test ! -e config.json; test ! -e .env; test ! -e Caddyfile"
     local probe_err
     if probe_err=$(rx "$running_probe" 2>&1 >/dev/null); then
         it_pass "restore refuses real running containers with all configuration missing"
     else
-        probe_err=$(printf '%s' "$probe_err" | grep -v 'Permanently added' | redact | tail -n 14)
+        probe_err=$(printf '%s' "$probe_err" | grep -v 'Permanently added' | redact | tail -n 40)
         it_fail "restore refuses real running containers with all configuration missing" "running census, refusal, or unchanged-file assertion failed: ${probe_err:-no output}"
         return 1
     fi
