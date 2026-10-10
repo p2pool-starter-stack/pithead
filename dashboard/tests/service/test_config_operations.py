@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -58,6 +59,39 @@ def test_omitted_array_defaults_are_reported_as_default_keys(tmp_path):
         "workers.api_port",
         "notifications.tor",
     ]
+
+
+def test_real_reference_array_defaults_are_default_keys_for_a_minimal_host(tmp_path, monkeypatch):
+    """#3355: a minimal host omitting workers/notifications reports their arrays as defaults."""
+    reference = Path(__file__).resolve().parents[3] / "config.reference.json"
+    host = tmp_path / "config.json"
+    host.write_text(json.dumps({"dashboard": {"energy": {"cost_per_kwh": 0.1}}}))
+    monkeypatch.setattr(control_service.config, "HOST_CONFIG_PATH", str(host))
+    monkeypatch.setattr(control_service.config, "HOST_REFERENCE_PATH", str(reference))
+    cfg = control_service.read_config()
+    assert cfg["workers"]["list"] == [] and cfg["notifications"]["webhooks"] == []
+    assert "workers.list" in cfg["_default_keys"]
+    assert "notifications.webhooks" in cfg["_default_keys"]
+    assert "dashboard.energy.cost_per_kwh" not in cfg["_default_keys"]
+    # Every reference leaf outside the host's one key is a default, so a client that strips
+    # untouched defaults and prunes empty containers is left with exactly the host document.
+    served = {k: v for k, v in cfg.items() if not k.startswith("_")}
+    for dotted in cfg["_default_keys"]:
+        *parents, leaf = dotted.split(".")
+        node = served
+        for key in parents:
+            node = node[key]
+        del node[leaf]
+
+    def prune(node):
+        for key in [k for k, v in node.items() if isinstance(v, dict)]:
+            prune(node[key])
+            if not node[key]:
+                del node[key]
+
+    prune(served)
+    served.pop("config_version", None)
+    assert served == {"dashboard": {"energy": {"cost_per_kwh": 0.1}}}
 
 
 def test_perimeter_fields_are_confirm_gated(config_paths):

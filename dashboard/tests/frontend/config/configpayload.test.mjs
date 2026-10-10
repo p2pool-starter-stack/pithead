@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { explicitCandidate } from "../../../mining_dashboard/web/static/config/configlogic.mjs";
@@ -85,4 +86,34 @@ test("an edited default array is kept as explicit (#3355)", () => {
   assert.deepEqual(explicitCandidate(served, candidate, ["workers.list"]).workers, {
     list: [{ name: "rig" }],
   });
+});
+
+// The real reference, merged under a minimal host config the way control_service.read_config does,
+// with the default keys derived by the server's rule (every reference leaf, arrays included, that
+// the host omits). Pytest pins the server half against the same file (#3355).
+function referenceLeaves(node, prefix = []) {
+  return Object.entries(node).flatMap(([key, value]) => {
+    if (key.startsWith("_") || (!prefix.length && key === "config_version")) return [];
+    const path = [...prefix, key];
+    const isSecret = value && typeof value === "object" && value.__secret__ === true;
+    if (value && typeof value === "object" && !Array.isArray(value) && !isSecret) {
+      return referenceLeaves(value, path);
+    }
+    return [path.join(".")];
+  });
+}
+
+test("a one-field save against the real reference sends exactly the minimal config (#3355)", () => {
+  const reference = JSON.parse(
+    readFileSync(new URL("../../../../config.reference.json", import.meta.url), "utf8"),
+  );
+  const served = structuredClone(reference);
+  delete served._docs;
+  served.dashboard.energy.cost_per_kwh = 0.1;
+  const defaultKeys = referenceLeaves(reference).filter((k) => k !== "dashboard.energy.cost_per_kwh");
+  const candidate = structuredClone(served);
+  candidate.dashboard.energy.cost_per_kwh = 0.15;
+  const out = explicitCandidate(served, candidate, defaultKeys);
+  delete out.config_version;
+  assert.deepEqual(out, { dashboard: { energy: { cost_per_kwh: 0.15 } } });
 });

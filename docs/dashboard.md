@@ -1153,9 +1153,10 @@ the full proposed configuration — both live views of a single candidate. Editi
 a field rewrites the pane; editing the pane refills the fields. The pane shows the whole
 candidate, developer-only keys aside (named below). Save sends the complete explicit
 configuration because the host stages and commits it as a replacement, but removes every
-`config.reference.json` default that was absent from `config.json` and remains untouched, default arrays such as `workers.list` and `notifications.webhooks`
-included, so a one-field save adds no empty containers. Existing
-values and masked secrets survive, while a placeholder default can't be committed as if the
+`config.reference.json` default that was absent from `config.json` and remains untouched, default
+arrays such as `workers.list` and `notifications.webhooks` included, so a one-field save adds no
+empty containers. Existing values and masked secrets survive, while a placeholder default can't be
+committed as if the
 operator had typed it
 ([#2365](https://github.com/p2pool-starter-stack/pithead/issues/2365)). (This is the setup
 wizard's pattern — the first page and the config tab now behave identically.) The pieces:
