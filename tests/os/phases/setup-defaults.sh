@@ -27,7 +27,9 @@ phase_setup_defaults() {
         bad "fresh appliance defaults differ from the small-disk contract"
         return 1
     fi
-    cfg=$(jq -c --arg m "$HARNESS_WALLET" '.config | .monero.wallet_address = $m' <<<"$state") || return 1
+    # The page blanks the reference's template wallets before it submits; curl must do the same, or
+    # the placeholder check (#3106) refuses the Tari template address even with Tari off.
+    cfg=$(jq -c --arg m "$HARNESS_WALLET" '.config | .monero.wallet_address = $m | .tari.wallet_address = ""' <<<"$state") || return 1
     code=$(curl -sSk -b "$jar" --data-urlencode "config=$cfg" --data-urlencode auth_mode=auto \
         "https://$guest_ip/submit" -o /dev/null -w '%{http_code}')
     [ "$code" = 200 ] || {
