@@ -119,6 +119,38 @@ test("discarding a rejected preview leaves a clean form without the old error", 
   await expect(page.getByText("p2pool.pool is not a valid pool")).toHaveCount(0);
 });
 
+test("the old rejected-preview error stays gone after discarding and changing view", async ({
+  page,
+  ui,
+}) => {
+  const rejected = "p2pool.pool is not a valid pool";
+  await page.route("**/api/config", (route) => route.fulfill({ json: CONFIG }));
+  await page.route("**/api/control/preview", (route) =>
+    route.fulfill({ json: { id: "config-4", status: "rejected", error: rejected } }),
+  );
+  ui.state.control_enabled = false;
+  await ui.mount(`import { App } from '/static/app/components.mjs';
+const state = ${JSON.stringify(ui.state)};
+const ui = {view:'config',range:'all',series:{},avg:'10m',theme:'auto',hintDismissed:true};
+const draw = () => render(html\`<\${App} state=\${state} connected=\${true} ui=\${ui}
+  onView=\${mode => {ui.view = mode; draw();}} />\`, document.getElementById('fixture'));
+draw();
+`);
+  const nav = page.getByRole("navigation", { name: "View" });
+  await page.getByRole("combobox", { name: /^p2pool\.pool/ }).selectOption("nano");
+  await page.getByRole("button", { name: "Save & preview changes" }).click();
+  await expect(page.getByText(rejected)).toBeVisible();
+  await page.getByRole("button", { name: "Discard edits", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save & preview changes" })).toBeDisabled();
+  await expect(page.getByText(rejected)).toHaveCount(0);
+  for (const view of ["Simple", "Advanced"]) {
+    await nav.getByRole("button", { name: view, exact: true }).click();
+    await nav.getByRole("button", { name: /^Configuration/ }).click();
+    await expect(page.getByRole("button", { name: "Save & preview changes" })).toBeDisabled();
+    await expect(page.getByText(rejected)).toHaveCount(0);
+  }
+});
+
 for (const [name, text, message] of [
   ["malformed JSON", "{not json", "Not valid JSON."],
   ["duplicate JSON keys", '{"p2pool":{"pool":"mini","pool":"main"}}', /duplicate key "pool"/],
