@@ -104,6 +104,38 @@ assert_contains "the redaction note explains the passphrase is gone" \
 assert_eq "the archive name survives the redaction (ciphertext stays downloadable)" \
     "$(jq -r .archive "$BKC/results/$bid1.json")" "pithead-backup-20260813-000000.tar.gz.enc"
 
+echo "== control channel: backup verb leaves backups/ to the config owner (#3363) =="
+# The root child's own `mkdir -p backups` made the directory root:root 755, so the operator's next
+# `./pithead backup` could not write. The glue now creates it first and chowns ONLY it to the
+# config.json owner. A chown shim records the call (this suite is not root); the stub child records
+# whether backups/ already existed when it started.
+own_d="$SANDBOX/own3363"
+mkdir -p "$own_d/bin" "$own_d/ctl/staged" "$own_d/ctl/results" "$own_d/ctl/audit"
+printf '{}\n' >"$own_d/config.json"
+printf '#!/usr/bin/env bash\necho "$*" >>"%s/chown.log"\n' "$own_d" >"$own_d/bin/chown"
+chmod +x "$own_d/bin/chown"
+cat >"$own_d/self" <<'EOF'
+#!/usr/bin/env bash
+[ -d "$PWD/backups" ] && echo existed >>"$OWN_LOG" || echo missing >>"$OWN_LOG"
+echo "[pithead] Backup written to: $FAKE_ARCHIVE"
+EOF
+chmod +x "$own_d/self"
+own_id="a0a0a0a0-0000-4000-8000-0000000033a3"
+printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$own_id" >"$own_d/req.json"
+(
+    export PATH="$own_d/bin:$PATH" PITHEAD_SELF="$own_d/self" OWN_LOG="$own_d/own.log" CONFIG_FILE="$own_d/config.json"
+    export FAKE_ARCHIVE="$own_d/archive.enc" CONTROL_BACKUP_KIT_TTL_S=0
+    printf 'x' >"$FAKE_ARCHIVE"
+    run_sourced_e "$own_d" control_process_request "$own_d/req.json" "$own_d/ctl" >/dev/null 2>&1
+)
+assert_eq "backups/ exists before the root child runs" "$(cat "$own_d/own.log" 2>/dev/null)" "existed"
+assert_contains "backups/ is handed to the config.json owner" \
+    "$(cat "$own_d/chown.log" 2>/dev/null)" "$(stat -c '%u:%g' "$own_d/config.json") $own_d/backups"
+assert_eq "the backups/ directory is re-owned exactly once, never recursively" \
+    "$(grep -c "$own_d/backups\$" "$own_d/chown.log")" "1"
+rm -rf "$own_d"
+unset own_d own_id
+
 echo "== control channel: backup verb — the kit is visible before its TTL, gone after (#908) =="
 # A wider TTL, checked mid-flight: the passphrase is readable for a real window (long enough for
 # an ordinary dashboard poll), then null either way — "consumed or not, it's gone".
