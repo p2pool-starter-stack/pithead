@@ -63,14 +63,14 @@ test('ExpectedVsActualCard drops the percent when the server withholds it, toolt
     assert.doesNotMatch(withPct, /No percentage shown/);
 });
 
-test('ExpectedVsActualCard points at Configuration, not a config key, when Monero confirmation is off (#1861)', () => {
+test('ExpectedVsActualCard points at the Payouts config group when Monero confirmation is off (#1861, #3359)', () => {
     const s = clone();
     s.earnings_summary.xmr = { available: true, expected_30d: 0.0123, includes_xvb: false,
         enabled: false, actual_30d: null, partial: false, pct: null };
     const out = renderApp({ state: s });
     assert.doesNotMatch(out, /monero\.view_key/); // never the raw config key
     assert.match(out, /Not tracked\. Add a view key in/);
-    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Monero\./);
+    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Payouts\./);
     assert.doesNotMatch(out, /0\.000000 XMR \(/); // no zero-actual masquerading as a figure
     // The hint cell wraps at spaces only — #1861 found overflow-wrap:anywhere breaking it mid-word.
     assert.match(cardSlice(out, 'card-expected-vs-actual'), /class="text-muted eva-hint"/);

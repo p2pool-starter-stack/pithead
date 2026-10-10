@@ -258,7 +258,6 @@ dw_case '{"name":"rig1"}' "non-array 1.x dashboard.workers" "must be an array"
 dw_case '[{"host":"10.0.0.5"}]' "1.x worker entry without a name" "name"
 dw_case '[{"name":"rig1","host":"attacker:8080"}]' "1.x worker host smuggling a port" "workers.list[rig1].host"
 dw_case '[{"name":"rig1","watts":0}]' "non-positive 1.x worker watts (#260)" "workers.list[rig1].watts"
-
 # Duplicate names are legal (first-declared wins) but warned about, and a valid 1.x
 # dashboard.workers[] list applies — migrated once, with the duplicate warning naming the new key.
 seed_env
@@ -291,7 +290,8 @@ wl_case '[{"name":"rig1","api_token":"probe-only"}]' "unpinned worker probe toke
 wl_case '[{"name":"rig1","host":"rig.lan","api_token":"has space"}]' "unsafe worker probe token" "workers.list[rig1].api_token"
 wl_case '[{"name":"rig1","watts":0}]' "non-positive workers.list watts (#260)" "workers.list[rig1].watts"
 wl_case '[{"name":"rig1","watts":"142"}]' "string workers.list watts (#260)" "workers.list[rig1].watts"
-
+# shellcheck source=tests/stack/workers-api-port-validation.sh
+source "$HERE/workers-api-port-validation.sh"
 # A valid workers.list[] applies cleanly, leaves the 1.x migration inert, and — like the 1.x shape
 # — carries only its explicitly read-only, endpoint-bound api_token through .env (R15).
 seed_env

@@ -387,3 +387,6 @@ control_config mini
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 # shellcheck source=tests/stack/control/config-version.sh
 source "$HERE/control/config-version.sh"
+
+# shellcheck source=tests/stack/control/config-concurrency.sh
+source "$HERE/control/config-concurrency.sh"
