@@ -92,7 +92,6 @@ control_backup() { # <id> <actor> <control-dir>
     # Run as a CHILD PROCESS, like control_lifecycle/control_commit's own re-invocations:
     # stack_backup's error() exits its whole process on failure, which must not take the drain
     # loop's other pending requests down with it.
-    control_prepare_backups_dir # the root child would otherwise create backups/ root-owned (#3363)
     export PITHEAD_BACKUP_PASSPHRASE="$pass"
     "$self" backup -y >"$logf" 2>&1 || rc=$?
     unset PITHEAD_BACKUP_PASSPHRASE
