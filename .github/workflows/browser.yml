@@ -15,9 +15,9 @@ concurrency:
 
 jobs:
   native-dialog:
-    name: Browser native-dialog focus
+    name: Browser user journeys
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,11 +27,21 @@ jobs:
           node-version: "20"
       - name: Install locked browser test dependencies
         run: npm ci --prefix dashboard/tests/browser --ignore-scripts
-      - name: Install pinned Chromium and system libraries
-        run: dashboard/tests/browser/node_modules/.bin/playwright install --with-deps chromium
-      - name: Assert native Close, trigger focus, earnings input and HTTPS backup downloads
+      - name: Install pinned browsers and system libraries
+        run: dashboard/tests/browser/node_modules/.bin/playwright install --with-deps chromium firefox webkit
+      - name: Run cross-browser user journeys and HTTPS backup fixtures
         env: {TMPDIR: "${{ runner.temp }}"}
         run: make test-browser
+      - name: Retain browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-evidence
+          path: |
+            dashboard/tests/browser/test-results/
+            dashboard/tests/browser/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Install pinned Google Chrome for Testing
         env: {TMPDIR: "${{ runner.temp }}"}
         run: |

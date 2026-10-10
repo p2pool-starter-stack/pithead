@@ -176,7 +176,9 @@ export class BackupPanel extends Component {
     if (phase === "kit" && result) return this.renderKit(id, result);
     if (phase === "failed") return this.renderFailed(result);
     let modal = null;
-    if (phase === "confirm") modal = this.renderConfirm();
+    // Hidden but mounted views must not hold a modal open (ConfigView does the same, #3288).
+    if (this.props.active === false) modal = null;
+    else if (phase === "confirm") modal = this.renderConfirm();
     else if (phase === "creating") modal = this.renderCreating();
     return html`<div class="card">
         <h2>Backup</h2>

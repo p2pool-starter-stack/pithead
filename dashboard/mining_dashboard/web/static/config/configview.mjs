@@ -149,6 +149,10 @@ export class ConfigView extends Component {
   componentDidMount() {
     this.load();
   }
+  componentDidUpdate(_previousProps, { editText, pristine }) {
+    const dirty = this.state.editText !== this.state.pristine;
+    if (dirty !== (editText !== pristine)) this.props.onDirtyChange?.(dirty);
+  }
   async load() {
     try {
       const res = await fetch("/api/config");
@@ -289,7 +293,8 @@ export class ConfigView extends Component {
       const out = restarting
         ? await this.poll(id, "previewed")
         : await controlCommitResult(res, id, this.poll.bind(this));
-      this.setState({ phase: "done", result: out });
+      const pristine = out.status === "applied" ? this.state.editText : this.state.pristine;
+      this.setState({ phase: "done", result: out, pristine });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
     }
@@ -395,7 +400,8 @@ export class ConfigView extends Component {
       return html`<div class="card">
           <h2>Configuration</h2>
           <p class="status-bad">${error}</p>
-          <button class="btn-toggle" onClick=${() => this.load()}>Reload</button>
+          ${this.state.candidate ? html`<button class="btn-toggle" onClick=${() => this.setState({ phase: "form", preview: null, error: null })}>Back to the form</button>` : null}
+          <button class="btn-toggle" onClick=${() => this.load()}>${this.state.candidate ? "Discard draft and reload from host" : "Reload"}</button>
       </div>`;
     }
     if (phase === "done") {
@@ -407,7 +413,8 @@ export class ConfigView extends Component {
               ? html`<p class="status-ok">Changes applied — only the affected containers were recreated.</p>`
               : applyFailure(result, this.props.appliance)
           }</div>
-          <button class="btn-toggle" onClick=${() => this.load()}>Back to the form</button>
+          <button class="btn-toggle" onClick=${() => (ok ? this.load() : this.setState({ phase: "form", result: null }))}>Back to the form</button>
+          ${ok ? null : html`<button class="btn-toggle" onClick=${() => this.load()}>Discard draft and reload from host</button>`}
       </div>`;
     }
     const busy = phase === "previewing" || phase === "committing";
@@ -439,7 +446,7 @@ export class ConfigView extends Component {
         </div>
         <p class="sr-only" role="status" aria-live="polite">${phase === "previewing" ? "Previewing changes…" : ""}</p>
         ${
-          phase === "confirm" || phase === "committing"
+          this.props.active !== false && (phase === "confirm" || phase === "committing")
             ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${preview} confirmText=${confirmText}
                   onConfirmText=${(t) => this.setState({ confirmText: t })}
                   payoutSuffixes=${payoutSuffixes}

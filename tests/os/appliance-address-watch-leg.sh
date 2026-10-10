@@ -37,6 +37,14 @@ phase_provision_dashboard_recovery() { # <captured-dashboard-user> <captured-das
         bad "served OS-update error Close does not use cancel, or retains the old idle reset (#3241)"
         rc=1
     fi
+    module=$(address_watch_dashboard_asset config/configview.mjs) || module=""
+    if [[ "$module" == *'this.setState({ phase: "form", result: null })'* ]] &&
+        [[ "$module" == *'Discard draft and reload from host'* ]]; then
+        ok "served configuration failure card keeps the draft and offers an explicit discard (#3287)"
+    else
+        bad "served configuration failure card resets the draft or lacks the explicit discard (#3287)"
+        rc=1
+    fi
     module=$(address_watch_dashboard_asset app/connectionrecovery.mjs) || module=""
     guidance=$(printf '%s' "$module" | tr '\n' ' ' | tr -s '[:space:]' ' ')
     if [[ "$guidance" == *"compare the certificate's SHA-256 fingerprint with the current fingerprint on the appliance console"* ]] &&
@@ -53,6 +61,21 @@ phase_provision_dashboard_recovery() { # <captured-dashboard-user> <captured-das
         ok "served dashboard triggers recovery guidance after sustained poll failure (#3242)"
     else
         bad "served dashboard lacks the sustained poll failure recovery trigger (#3242)"
+        rc=1
+    fi
+    local components configview
+    components=$(address_watch_dashboard_asset app/components.mjs) || components=""
+    configview=$(address_watch_dashboard_asset config/configview.mjs) || configview=""
+    if [[ "$components" == *'this.configVisited'* ]] &&
+        [[ "$components" == *'hidden=${!configView}'* ]] &&
+        [[ "$components" == *'onDirtyChange=${this.onConfigDirty}'* ]] &&
+        [[ "$components" == *' — Unsaved changes'* ]] &&
+        [[ "$configview" == *'this.props.onDirtyChange?.(dirty)'* ]] &&
+        [[ "$configview" == *'const pristine = out.status === "applied" ? this.state.editText : this.state.pristine'* ]] &&
+        [[ "$configview" == *'this.setState({ phase: "done", result: out, pristine })'* ]]; then
+        ok "served Configuration preserves internal navigation drafts and marks unsaved changes (#3264)"
+    else
+        bad "served Configuration lacks draft preservation or unsaved changes tracking (#3264)"
         rc=1
     fi
     command=$(printf '%s' "$module" | sed -n 's/.*<code>\(openssl x509[^<]*\)<\/code>.*/\1/p')

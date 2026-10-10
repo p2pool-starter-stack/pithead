@@ -22,7 +22,7 @@ import {
   TariCard,
   XvBStats,
 } from "./overview.mjs";
-import { Fragment, html } from "./preact.mjs";
+import { Component, Fragment, html } from "./preact.mjs";
 import { HeroBand, ThemeSwitcher } from "./ui.mjs";
 
 // One-time discoverability hint (#425): the earnings + XvB tier calculators are Advanced-view
@@ -40,37 +40,49 @@ function AdvancedHint({ ui, onView, onDismissHint }) {
     </div>`;
 }
 
-function DashboardView({
-  state,
-  ui,
-  onRange,
-  onSort,
-  onView,
-  onZoom,
-  onResetZoom,
-  onToggleSeries,
-  onAvgWindow,
-  onDismissHint,
-  onInspect,
-}) {
-  const advanced = ui.view === "advanced";
-  const configView = ui.view === "config";
-  // Backup is its own view, not a card below the config editor (#1854): an operator handed a
-  // working machine has to be able to find "take a backup" without reading the editor first.
-  const backupView = ui.view === "backup";
-  // Layout by operator relevance (#159): the at-a-glance chart and the rigs themselves lead (this
-  // stack may drive many machines), then this stack's own detail cards, then pool-wide and network
-  // context as reference at the bottom — "mine" first, "the world" last.
-  // Within "Your Stack" (#991, reopened): the section packs into CSS columns now, not CSS grid
-  // rows, so a card's height no longer forces blank space under a shorter neighbour regardless of
-  // which cards a given render state actually shows (XvB disabled, no earnings yet, ...) — the
-  // tall-with-tall/short-with-short pairing this comment used to describe was a workaround for
-  // grid's row-stretch behaviour and is moot under column packing. Order here still sets the
-  // column-major reading order, so it stays "mine" first, "the world" last, same as above.
-  // Overview is Simple-view-only (display:none in Advanced) and ExpectedVsActualCard shows in
-  // both views — neither is constrained by this ordering.
-  return html`
-    <div id="dashboard-view" class=${advanced ? "mode-advanced" : ""}>
+class DashboardView extends Component {
+  constructor(props) {
+    super(props);
+    this.configVisited = false;
+    this.state = { configDirty: false };
+    this.onConfigDirty = (configDirty) => this.setState({ configDirty });
+  }
+  render() {
+    const {
+      state,
+      ui,
+      onRange,
+      onSort,
+      onView,
+      onZoom,
+      onResetZoom,
+      onToggleSeries,
+      onAvgWindow,
+      onDismissHint,
+      onInspect,
+      suspended,
+    } = this.props;
+    const advanced = ui.view === "advanced";
+    const configView = ui.view === "config";
+    if (configView) this.configVisited = true;
+    // Backup is its own view, not a card below the config editor (#1854): an operator handed a
+    // working machine has to be able to find "take a backup" without reading the editor first.
+    const backupView = ui.view === "backup";
+    // Layout by operator relevance (#159): the at-a-glance chart and the rigs themselves lead (this
+    // stack may drive many machines), then this stack's own detail cards, then pool-wide and network
+    // context as reference at the bottom — "mine" first, "the world" last.
+    // Within "Your Stack" (#991, reopened): the section packs into CSS columns now, not CSS grid
+    // rows, so a card's height no longer forces blank space under a shorter neighbour regardless of
+    // which cards a given render state actually shows (XvB disabled, no earnings yet, ...) — the
+    // tall-with-tall/short-with-short pairing this comment used to describe was a workaround for
+    // grid's row-stretch behaviour and is moot under column packing. Order here still sets the
+    // column-major reading order, so it stays "mine" first, "the world" last, same as above.
+    // Overview is Simple-view-only (display:none in Advanced) and ExpectedVsActualCard shows in
+    // both views — neither is constrained by this ordering.
+    // While the chain syncs (`suspended`) App shows SyncView instead; this view stays mounted but
+    // hidden, so a retained configuration draft is not unmounted with it (#3288).
+    return html`
+    <div id="dashboard-view" class=${advanced ? "mode-advanced" : ""} hidden=${suspended}>
         <nav class="view-controls" aria-label="View">
             <div class="toggle-group" role="group" aria-label="Dashboard view">
                 <button class=${"btn-toggle" + (!advanced && !configView && !backupView ? " active" : "")} aria-pressed=${!advanced && !configView && !backupView}
@@ -78,24 +90,24 @@ function DashboardView({
                 <button class=${"btn-toggle" + (advanced ? " active" : "")} aria-pressed=${advanced}
                     title="Every stats card, calculators and diagnostics" onClick=${() => onView("advanced")}>Advanced</button>
                 <button class=${"btn-toggle" + (configView ? " active" : "")} aria-pressed=${configView}
-                    title="View or edit the stack configuration" onClick=${() => onView("config")}>Configuration</button>
+                    title="View or edit the stack configuration" onClick=${() => onView("config")}>Configuration${this.state.configDirty ? " — Unsaved changes" : ""}</button>
                 <button class=${"btn-toggle" + (backupView ? " active" : "")} aria-pressed=${backupView}
                     title="Export an encrypted copy of this machine's configuration and secrets" onClick=${() => onView("backup")}>Backup</button>
             </div>
         </nav>
         <${AdvancedHint} ui=${ui} onView=${onView} onDismissHint=${onDismissHint} />
         ${
-          configView
-            ? html`<div class="card-stack"><${ConfigView} appliance=${!!state.os_update} /><${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} /></div>`
+          this.configVisited
+            ? html`<div class="card-stack"><div hidden=${!configView}><${ConfigView} active=${configView && !suspended} appliance=${!!state.os_update} onDirtyChange=${this.onConfigDirty} /></div>${configView ? html`<${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} />` : null}</div>`
             : null
         }
         ${
           backupView
-            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} /></div>`
+            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} active=${!suspended} /></div>`
             : null
         }
         ${
-          configView || backupView
+          configView || backupView || suspended
             ? null
             : html`
         <div class="grid">
@@ -126,6 +138,7 @@ function DashboardView({
         </div>`
         }
     </div>`;
+  }
 }
 
 // --- Root ----------------------------------------------------------------------------
@@ -182,12 +195,13 @@ export function App({
                 : html`<${Fragment}>
                     <${HeroBand} state=${state} />
                     <${MineCartTrain} chart=${state.chart} blocks=${state.blocks} payouts=${state.payouts} />
-                    <${DashboardView} state=${state} ui=${ui} onRange=${onRange} onSort=${onSort}
-                                      onView=${onView} onZoom=${onZoom} onResetZoom=${onResetZoom}
-                                      onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow}
-                                      onDismissHint=${onDismissHint} onInspect=${onInspect} />
                   <//>`
             }
+            <${DashboardView} state=${state} ui=${ui} onRange=${onRange} onSort=${onSort}
+                              onView=${onView} onZoom=${onZoom} onResetZoom=${onResetZoom}
+                              onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow}
+                              onDismissHint=${onDismissHint} onInspect=${onInspect}
+                              suspended=${!!state.syncing} />
         </main>
         ${inspect}
     <//>`;

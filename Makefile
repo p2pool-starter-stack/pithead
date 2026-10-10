@@ -14,8 +14,9 @@ test-dashboard: pithead ## Dashboard unit/component tests with coverage gate (de
 test-frontend: pithead ## Frontend logic tests with Node's built-in runner (#632; same invocation as CI)
 	cd dashboard/tests/frontend && node --test
 
-test-browser: ## Chromium regressions (install locked browser dependencies first; see testing guide)
-	cd dashboard/tests/browser && node --test
+test-browser: ## Cross-browser GUI regressions (install locked dependencies first; see testing guide)
+	cd dashboard/tests/browser && ./node_modules/.bin/playwright test
+	node --test dashboard/tests/browser/backup-download.test.mjs
 
 test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% on changed lines (run after test-dashboard)
 	bash scripts/lint/patch-coverage.sh
