@@ -34,10 +34,6 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Tari / P2Pool
 
-- Tari merge-mining: off by default in the setup wizards (beta); upgrades and configs that omit
-  `tari.mode` keep the bundled node. A yes in a new-install wizard also writes
-  `dashboard.tari_required: false`; a reinstall that keeps its Tari chain keeps Enter on yes
-  ([#3333](https://github.com/p2pool-starter-stack/pithead/issues/3333)).
 - Tari outage alerts now describe the required policy and actual worker rejection state.
   Optional Tari keeps mining Monero; recovery claims readmission only after workers were
   rejected and the proxy successfully restarted (#3119).
@@ -90,6 +86,21 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
     (a mined output that has not matured yet), so a payout is still recorded when it is mined.
 
+### Beta in 2.0.0
+
+Beta means the feature is optional and off unless you turn it on, and a defect seen only with it
+enabled may ship as a known issue. These are beta in 2.0.0; the label lives in the docs, this
+changelog and the wizard text only, and dashboard badges come in 2.0.1.
+
+- **Tari merge-mining:** off by default in the setup wizards (beta); upgrades and configs that omit
+  `tari.mode` keep the bundled node. A yes in a new-install wizard also writes
+  `dashboard.tari_required: false`, and a reinstall that keeps its Tari chain keeps Enter on yes
+  ([#3333](https://github.com/p2pool-starter-stack/pithead/issues/3333)).
+- **XvB raffle:** off for new installs.
+- **Payout confirmation:** the Monero and Tari view keys (`monero.view_key`, `tari.view_key`).
+- **Remote rig control:** an appliance rig listens for control at every boot, pinned to the
+  coordinator and gated by its token. Dashboard writes to a rig need adoption first.
+
 ### Known issues in 2.0.0
 
 - On an appliance rig, a pool changed from Worker Inspect reverts at the next reboot: the rig's
@@ -97,6 +108,14 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   ([rigforge#583](https://github.com/p2pool-starter-stack/rigforge/issues/583)). The other
   Worker Inspect edits (`DONATION`, `autotune`, `watchdog`, `watchdog_interval_min`,
   `max_temp_c`) survive a reboot.
+- On a no-login appliance, Tor auto-heal does nothing unless `dashboard.control.enabled` is set
+  (#3166).
+- On a DIY host whose GRUB configuration has malformed quoting, later `update-grub` runs can
+  fail (#3305). Run setup with `--skip-optimize`, or remove
+  `/etc/default/grub.d/zz-pithead-hugepages.cfg`.
+- The order of the DIY firewall rules against Docker at reboot is untested (#2677).
+- Automatic Tor recovery is a named soak risk: it restarts Tor on its own, and its long-run
+  behaviour has had no soak time yet.
 
 ### Added
 
