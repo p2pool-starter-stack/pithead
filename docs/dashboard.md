@@ -1252,6 +1252,9 @@ The flow mirrors the CLI's `apply`:
    When the apply fails, **Back to the form** returns to the draft you submitted, unsaved marker
    included, so you can correct it and retry. **Discard draft and reload from host** replaces the
    draft with the host's configuration. After a successful apply, **Back to the form** reloads it.
+   The error card shown when the commit request itself fails (an HTTP error, an unreadable response,
+   or a poll timeout; a timeout does not mean the apply failed) offers the same two actions. Only a
+   failed first load, which has no draft, offers a plain **Reload**.
 
 Every reference setting belongs to a policy class. The ordinary allowlist covers routine
 operations; all remaining values confirm unless they are in the physical-presence set. Typed
