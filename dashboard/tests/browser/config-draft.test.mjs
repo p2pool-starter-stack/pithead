@@ -15,6 +15,7 @@ test("configuration drafts and invalid JSON survive every internal view; marker 
   let delayedPreview = false;
   let commitStatus = "applied";
   let dialogs = 0;
+  let previewed;
   page.on("dialog", async (dialog) => {
     dialogs++;
     await dialog.dismiss();
@@ -28,6 +29,7 @@ test("configuration drafts and invalid JSON survive every internal view; marker 
       await new Promise((resolve) => {
         releasePreview = resolve;
       });
+    previewed = route.request().postDataJSON();
     await route.fulfill({
       json: { id: "draft-preview", status: "previewed", changes: [{ msg: "Energy cost changed" }] },
     });
@@ -112,12 +114,16 @@ draw();
     await page.getByRole("button", { name: "Back to the form", exact: true }).waitFor();
     await marker().waitFor();
     await page.getByRole("button", { name: "Back to the form", exact: true }).click();
-    await marker().waitFor({ state: "detached" });
+    await page.locator(".config-view").waitFor();
+    await marker().waitFor(); // #3287: a failed apply keeps the rejected draft for correction.
+    assert.equal(await editor.inputValue(), valid);
+    // Correct the rejected draft in place and retry.
     await page
       .locator(".config-view summary")
       .filter({ hasText: "the configuration this page sends" })
       .click();
-    await editor.fill(valid);
+    const corrected = valid.replace("0.18", "0.19");
+    await editor.fill(corrected);
     commitStatus = "applied";
     await page.getByRole("button", { name: "Save & preview changes" }).click();
     await page.getByRole("button", { name: "Confirm & apply", exact: true }).click();
@@ -125,6 +131,22 @@ draw();
       .getByText("Changes applied — only the affected containers were recreated.")
       .waitFor();
     await marker().waitFor({ state: "detached" });
+    assert.equal(previewed.config.dashboard.energy.cost_per_kwh, 0.19);
+    // The explicit discard replaces a rejected draft with the host configuration.
+    await page.getByRole("button", { name: "Back to the form", exact: true }).click();
+    await page
+      .locator(".config-view summary")
+      .filter({ hasText: "the configuration this page sends" })
+      .click();
+    await editor.fill(valid);
+    commitStatus = "failed";
+    await page.getByRole("button", { name: "Save & preview changes" }).click();
+    await page.getByRole("button", { name: "Confirm & apply", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Discard draft and reload from host", exact: true })
+      .click();
+    await marker().waitFor({ state: "detached" });
+    assert.equal(await editor.inputValue(), original);
     assert.equal(dialogs, 0, "view navigation must not ask for discard confirmation");
   } finally {
     releasePreview?.();
