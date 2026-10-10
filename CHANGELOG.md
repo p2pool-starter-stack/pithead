@@ -11,6 +11,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- `pithead apply` now finishes a caddy restart that an earlier, interrupted apply never completed, so the dashboard login always matches the rendered config (#3332).
+
 ## [2.0.0] - 2026-10-03
 
 ### Upgrading from 1.20.x

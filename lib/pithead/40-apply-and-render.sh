@@ -178,6 +178,10 @@ apply() {
     # the marker is present, re-apply re-attempts the recreate even when the rendered config matches.
     local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
+    # Armed before .env commits, cleared after caddy restarts: a retry that diffs the already rendered
+    # Caddyfile would otherwise leave Caddy serving the old login hash (#3332).
+    local caddy_marker="${ENV_FILE}.caddy-restart-pending" caddy_pending=0
+    [ -f "$caddy_marker" ] && caddy_pending=1
     grep -qx rearm-tari-only "$apply_marker" 2>/dev/null && rearm_sync_gate=2
     grep -qx rearm-sync-gate "$apply_marker" 2>/dev/null && rearm_sync_gate=1
 
@@ -268,6 +272,7 @@ apply() {
             [ "$dashboard_carry_recovery" -eq 0 ] || PITHEAD_DASHBOARD_CARRY_RECOVERY[4]=1
         fi
         lan_guard_arm_transition "$newenv" || error "The LAN-only source rule could not be armed before changing .env."
+        : >"$caddy_marker"
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -289,11 +294,17 @@ apply() {
         if [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; then
             caddy_changed=1
         fi
+        [ "$caddy_pending" -eq 0 ] || caddy_changed=1
     else
         rm -f "$newenv"
         if [ "$incomplete" -eq 0 ]; then
             # Host state may change without an .env diff: converge units and local_miner (#3090).
             mutation_lock_acquire apply
+            if [ "$caddy_pending" -eq 1 ]; then
+                generate_caddyfile
+                docker compose restart caddy
+                rm -f "$caddy_marker"
+            fi
             provision_control_runner
             provision_firewall_check_units || error "Firewall check units could not be provisioned."
             reconcile_appliance_hostname
@@ -306,6 +317,7 @@ apply() {
             return 0
         fi
         warn "A previous apply updated the config but did not finish recreating containers — retrying."
+        [ "$caddy_pending" -eq 0 ] || { generate_caddyfile && caddy_changed=1; }
     fi
 
     # The retry branch reaches here without a hold; the changed branch already has one.
@@ -362,6 +374,7 @@ apply() {
     if [ "$caddy_changed" -eq 1 ]; then
         docker compose restart caddy
     fi
+    rm -f "$caddy_marker"
     # If the dashboard onion was just turned on, the recreated tor container generated its hostname;
     # read it back into .env so `pithead status` can surface the address (#343) — and regenerate the
     # Caddyfile + restart caddy so the HTTPS onion vhost (#360) actually appears this run instead of
