@@ -138,7 +138,7 @@ failed_read_ok=$([ "$failed_read_rc" -eq 1 ] && [ "$failed_read_failures" -eq 1 
 
 MAIN_SRC="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../run.sh")"
 assert_contains "main gates later fault injection on successful RigForge control" "$MAIN_SRC" 'if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then'
-assert_contains "main gates later fault injection on a successful lifecycle" "$MAIN_SRC" 'if [ "$lifecycle_ok" = 1 ]; then'
+assert_contains "main gates later fault injection on a successful lifecycle" "$MAIN_SRC" 'if [ "$lifecycle_ok" = 1 ] || [ "$LIFECYCLE_STACK_INTACT" = 1 ]; then'
 # The forced failures above are product-counter stimuli, not selftest failures.
 [ "$early_ok" = 1 ] && [ "$unreadable_ok" = 1 ] && [ "$late_ok" = 1 ] && [ "$pending_ok" = 1 ] && [ "$failed_read_ok" = 1 ] && [ "$IT_FAIL" -eq 1 ] || exit 1
 printf '\nselftest-rigforge-control-barrier: PASS\n'
