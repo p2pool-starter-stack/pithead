@@ -6,6 +6,7 @@ import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { test } from "node:test";
+import { gzipSync } from "node:zlib";
 import { chromium } from "playwright";
 
 const staticRoot = resolve(
@@ -30,9 +31,12 @@ async function setup(t, disableExtensions) {
   const databaseBytes = randomBytes(22 * 1024 * 1024);
   await writeFile(join(scratch, "config.json"), configBytes);
   await writeFile(join(scratch, "dashboard.db"), databaseBytes);
-  const plain = execFileSync("tar", ["-czf", "-", "-C", scratch, "config.json", "dashboard.db"], {
-    maxBuffer: 32 * 1024 * 1024,
-  });
+  // BSD tar pads compressed stdout; gzip the tar bytes ourselves so gzip -t stays strict.
+  const plain = gzipSync(
+    execFileSync("tar", ["-cf", "-", "-C", scratch, "config.json", "dashboard.db"], {
+      maxBuffer: 32 * 1024 * 1024,
+    }),
+  );
   const passphrase = randomBytes(24).toString("hex");
   const archive = execFileSync(
     "openssl",
