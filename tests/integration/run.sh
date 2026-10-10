@@ -253,6 +253,7 @@ main() {
         run_rigforge_integration
     fi
     local lifecycle_ok=1 _gated
+    LIFECYCLE_STACK_INTACT=0
     # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
     # name every requested one in the summary instead of dropping it silently (#2755).
     if [ "$rig_control_ok" != 1 ]; then
@@ -269,7 +270,8 @@ main() {
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
         # Faults need the healthy stack a passing lifecycle leaves (#2501); a requested phase that
         # does not run is named in the summary, never dropped silently (#2755).
-        if [ "$lifecycle_ok" = 1 ]; then
+        # A lifecycle row that failed without disturbing the stack still leaves faults a healthy one.
+        if [ "$lifecycle_ok" = 1 ] || [ "$LIFECYCLE_STACK_INTACT" = 1 ]; then
             run_fault_injection
         else
             it_skip_phase "fault-injection" "the lifecycle phase failed, so there is no healthy stack to inject faults into (#2501)"

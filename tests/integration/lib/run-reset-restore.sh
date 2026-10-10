@@ -1,7 +1,10 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 # The ordinary CLI recovery door, using real Compose containers and a real encrypted backup.
+# RESET_RESTORE_STACK_INTACT=1 on return marks a failure that changed nothing, so run_lifecycle can
+# go on and the phases after it still run (#3342).
 run_reset_restore() {
+    RESET_RESTORE_STACK_INTACT=0
     local before_config before_secrets archive out rc after_config after_secrets
     local failures_before="$IT_FAIL"
     it_step "encrypted backup → config-reset → restore without rendered configuration…"
@@ -24,24 +27,55 @@ run_reset_restore() {
     # Hide all rendered/config state while real services run. The remote trap restores the files
     # even when a refusal check fails; no crafted .env or fake Compose command is used.
     local running_probe
-    running_probe="set -e; test -n \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running)\";
-        scratch=\$(mktemp -d \"\${TMPDIR:-/tmp}/reset-restore.XXXXXX\");
-        trap 'for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"' EXIT
-        for f in config.json .env Caddyfile; do mv -- \"\$f\" \"\$scratch/\$f\"; done;
-        set +e; output=\$($IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 2>&1); result=\$?; set -e;
-        test \"\$result\" -ne 0;
-        case \"\$output\" in *'stack services are still active'*) ;; *) exit 1 ;; esac;
-        test ! -e config.json; test ! -e .env; test ! -e Caddyfile"
-    if rx "$running_probe"; then
+    running_probe="set -e; stage=census; scratch=;
+        trap 'rc=\$?; if [ -n \"\$scratch\" ]; then for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"; fi; [ \"\$rc\" -eq 0 ] || printf \"reset-restore probe: failed at %s (exit %s)\\n\" \"\$stage\" \"\$rc\" >&2' EXIT
+        before=\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running | wc -l);
+        test \"\$before\" -gt 0;
+        stage=scratch; scratch=\$(mktemp -d \"\${TMPDIR:-/tmp}/reset-restore.XXXXXX\");
+        stage=hide; for f in config.json .env Caddyfile; do mv -- \"\$f\" \"\$scratch/\$f\"; done;
+        stage=restore; set +e; output=\$($IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 2>&1); result=\$?; set -e;
+        stage=refusal; {
+            printf \"restore exit=%s running=%s first-line=%s\\n\" \"\$result\" \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running | wc -l)\" \"\$(printf %s \"\$output\" | head -n 1 | cut -c1-200)\";
+            printf \"present after restore:\"; for f in config.json .env Caddyfile; do [ ! -e \"\$f\" ] || printf \" %s\" \"\$f\"; done; printf \"\\n\";
+            [ \"\$result\" -eq 0 ] || [ -e config.json ] || [ -e .env ] || [ -e Caddyfile ] || [ \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running | wc -l)\" -ne \"\$before\" ] || printf \"stack intact\\n\";
+        } >&2
+        test \"\$result\" -ne 0 || { printf \"restore exited 0\\n\" >&2; exit 1; };
+        case \"\$output\" in *'stack services are still active'*) ;; *)
+            ce=\$(docker ps --all --quiet --filter label=com.docker.compose.project=pithead --filter status=running 2>&1 >/dev/null | head -n 2 | cut -c1-200);
+            printf \"configless census stderr=[%s] pwd-base=%s\\n\" \"\$ce\" \"\$(basename \"\$PWD\")\" >&2;
+            exit 1 ;; esac;
+        stage=unchanged; test ! -e config.json; test ! -e .env; test ! -e Caddyfile"
+    local probe_err
+    if probe_err=$(rx "$running_probe" 2>&1 >/dev/null); then
         it_pass "restore refuses real running containers with all configuration missing"
     else
-        it_fail "restore refuses real running containers with all configuration missing" "running census, refusal, or unchanged-file assertion failed"
+        probe_err=$(printf '%s' "$probe_err" | grep -v 'Permanently added' | redact | tail -n 10)
+        # Restore refused (non-zero exit) and left every file absent: the stack is as it was, so
+        # the phases after lifecycle can still run. Any other failure keeps the phase stopped.
+        if grep -qx 'stack intact' <<<"$probe_err"; then
+            # shellcheck disable=SC2034 # read by run_lifecycle
+            RESET_RESTORE_STACK_INTACT=1
+        fi
+        # A Podman engine rejects status=restarting, so the configless census cannot finish (#3346).
+        case "$probe_err" in *'first-line='*'could not verify that the stack is stopped'*) probe_err="restore could not take its configless census; see #3346. $probe_err" ;; esac
+        it_fail "restore refuses real running containers with all configuration missing" "running census, refusal, or unchanged-file assertion failed: ${probe_err:-no output}"
         return 1
     fi
 
-    if ! rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
-        redact >"$OUT_DIR/reset-restore.reset.log" ||
-        ! rx 'test ! -e config.json && test ! -e .env && test ! -e Caddyfile'; then
+    local boot_before
+    boot_before=$(rx 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
+    if [ -z "$boot_before" ]; then
+        it_fail "boot id is readable before config-reset" "the reboot wait needs a baseline"
+        return 1
+    fi
+    rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
+        redact >"$OUT_DIR/reset-restore.reset.log"
+    # The appliance reboots into first-boot setup right after the reset; every later step waits for it.
+    if grep -q 'Rebooting into first-boot' "$OUT_DIR/reset-restore.reset.log" && ! reset_restore_wait_reboot "$boot_before" 300; then
+        it_fail "guest returns after the config-reset reboot" "no new boot reached the target within 300s"
+        return 1
+    fi
+    if ! rx 'test ! -e config.json && test ! -e .env && test ! -e Caddyfile'; then
         it_fail "config-reset removes configuration before encrypted recovery" "reset failed or a rendered file remains; see reset-restore.reset.log"
         return 1
     fi
@@ -89,4 +123,16 @@ run_reset_restore() {
         return 1
     }
     [ "$IT_FAIL" -le "$failures_before" ]
+}
+
+# Wait until the target reports a boot id other than <before> (the appliance reboots on config-reset).
+reset_restore_wait_reboot() { # <boot id before> <timeout seconds>
+    local before="$1" deadline now boot_now
+    deadline=$(($(date +%s) + $2))
+    while now=$(date +%s) && [ "$now" -lt "$deadline" ]; do
+        sleep 5
+        boot_now=$(rx 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null) || continue
+        [ -n "$boot_now" ] && [ "$boot_now" != "$before" ] && return 0
+    done
+    return 1
 }

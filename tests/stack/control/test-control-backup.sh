@@ -360,3 +360,8 @@ unset ock_id ock_ttl_id ock_rej_id ock_disp_id ock_bogus_id
 # shellcheck source=tests/stack/control/control-results-prune.sh disable=SC2015
 _d1=$((PASS + FAIL)) && source "$HERE/control/control-results-prune.sh" && domain_ran control-results-prune.sh "$_d1" "$?" || domain_ran control-results-prune.sh "$_d1" "$?"
 unset _d1
+
+# #3363 cross-surface rows (GUI backup as root, then the operator's CLI backup), split out like the above.
+# shellcheck source=tests/stack/control/control-backup-ownership.sh disable=SC2015
+_d1=$((PASS + FAIL)) && source "$HERE/control/control-backup-ownership.sh" && domain_ran control-backup-ownership.sh "$_d1" "$?" || domain_ran control-backup-ownership.sh "$_d1" "$?"
+unset _d1
