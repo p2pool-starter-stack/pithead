@@ -75,7 +75,10 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         # shellcheck disable=SC2034 # RESET_RESTORE_STACK_INTACT is read by the extracted lifecycle function
         run_reset_restore() { # the leg is driven by selftest-reset-restore.sh
             case "$RESTORE_CASE" in
-            reset-refused-intact) RESET_RESTORE_STACK_INTACT=1; return 1 ;;
+            reset-refused-intact)
+                RESET_RESTORE_STACK_INTACT=1
+                return 1
+                ;;
             reset-failed-late) return 1 ;;
             esac
         }
@@ -225,7 +228,10 @@ drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
         # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
         RUN_LIFECYCLE=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
             RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
-        run_lifecycle() { LIFECYCLE_STACK_INTACT="${intact:-0}"; return "$lifecycle_rc"; }
+        run_lifecycle() {
+            LIFECYCLE_STACK_INTACT="${intact:-0}"
+            return "$lifecycle_rc"
+        }
         run_fault_injection() { fault_ran=yes; }
         it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
         gate() { eval "$MAIN_SRC"; }

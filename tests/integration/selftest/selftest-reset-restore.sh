@@ -26,9 +26,16 @@ drive_reset_restore() (
             printf '%s' "$1" >"$OUT_DIR/probe"
             case "$fault" in
             active) return 1 ;;
-            refused) printf 'restore exit=1 running=7 first-line=x\npresent after restore:\nconfigless census stderr=[]\n' >&2; return 1 ;;
-            written) printf 'restore exit=1 running=7 first-line=x\npresent after restore: config.json\n' >&2; return 1 ;;
-            esac ;;
+            refused)
+                printf 'restore exit=1 running=7 first-line=x\npresent after restore:\nconfigless census stderr=[]\n' >&2
+                return 1
+                ;;
+            written)
+                printf 'restore exit=1 running=7 first-line=x\npresent after restore: config.json\n' >&2
+                return 1
+                ;;
+            esac
+            ;;
         *"printf 'config-reset"*) [ "$fault" != reset ] && touch "$OUT_DIR/reset" ;;
         'test ! -e config.json'*) [ -e "$OUT_DIR/reset" ] && [ "$fault" != absent ] ;;
         *' script -q -e '*)

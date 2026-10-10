@@ -5,9 +5,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit 
 # shellcheck source=tests/integration/lib/run-tari-background-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 run_lifecycle() {
-    # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"
-    local lifecycle_ok=1
+    local lifecycle_ok=1 reset_failed=0 # reset_failed: 1 changed state, 2 left the stack intact (#3342)
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
@@ -221,9 +220,10 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
-    run_reset_restore || { [ "$lifecycle_ok:${RESET_RESTORE_STACK_INTACT:-0}" = 1:1 ] || return 1; run_uninstall_round_trip && LIFECYCLE_STACK_INTACT=1; return 1; }
-    run_uninstall_round_trip || lifecycle_ok=0
-    [ "$lifecycle_ok" = 1 ]
+    run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
+    [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
+    [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
+    [ "$lifecycle_ok$reset_failed" = 10 ]
 }
 
 # A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
