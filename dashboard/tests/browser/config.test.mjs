@@ -99,10 +99,15 @@ test("cancelled preview returns to the editor without committing", async ({ page
 });
 
 // #3353: Discard edits must take the rejected candidate's preview error with it.
-test("discarding a rejected preview leaves a clean form without the old error", async ({ page, ui }) => {
+test("discarding a rejected preview leaves a clean form without the old error", async ({
+  page,
+  ui,
+}) => {
   await page.route("**/api/config", (route) => route.fulfill({ json: CONFIG }));
   await page.route("**/api/control/preview", (route) =>
-    route.fulfill({ json: { id: "config-3", status: "rejected", error: "p2pool.pool is not a valid pool" } }),
+    route.fulfill({
+      json: { id: "config-3", status: "rejected", error: "p2pool.pool is not a valid pool" },
+    }),
   );
 
   await mount(ui);
