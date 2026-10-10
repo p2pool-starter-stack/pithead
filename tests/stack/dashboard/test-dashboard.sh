@@ -512,7 +512,7 @@ exit "${CURL_RC:-0}"
 EOF
 chmod +x "$SP/bin/curl"
 # Monero mid-sync + Tari still discovering its target height: both surface, monero with numbers.
-sp_body='{"sync":{"monero":{"state":"syncing","percent":87,"current":2451000,"target":2810000,"remaining":359000},"tari":{"state":"loading","percent":0,"current":0,"target":0,"remaining":0}}}'
+sp_body='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":87,"current":2451000,"target":2810000,"remaining":359000},"tari":{"state":"loading","percent":0,"current":0,"target":0,"remaining":0}}}'
 out="$(CURL_BODY="$sp_body" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: monero syncing shows percent + blocks-to-go" "$out" "87% (2451000 / 2810000 blocks, 359000 to go)"
 assert_contains "sync progress: no-target chain reads as discovering" "$out" "discovering the target height"
@@ -522,7 +522,7 @@ sp_done='{"sync":{"monero":{"state":"done","percent":100,"current":10,"target":1
 assert_eq "sync progress: both synced -> silent" \
     "$(CURL_BODY="$sp_done" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
 # Only monero still syncing: the synced tari is omitted (not listed as done).
-sp_partial='{"sync":{"monero":{"state":"syncing","percent":42,"current":100,"target":238,"remaining":138},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
+sp_partial='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":42,"current":100,"target":238,"remaining":138},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
 out="$(CURL_BODY="$sp_partial" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: partial -> monero listed" "$out" "monero"
 assert_not_contains "sync progress: partial -> synced tari omitted" "$out" "tari"

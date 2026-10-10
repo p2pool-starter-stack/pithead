@@ -23,6 +23,7 @@ chmod +x "$test_dir/apply"
 ROOT="$ROOT" TEST_DIR="$test_dir" CONFIG_FILE="$CONFIG_FILE" bash -c '
     set -euo pipefail
     source "$ROOT/lib/pithead/43-control-approval-and-preview.sh"
+    source "$ROOT/lib/pithead/43b-control-preview-staleness.sh"
     control_approval_gate() {
         [[ ${GATE_RC:-0} == 0 ]] || return 1
         printf P2POOL_FLAGS
