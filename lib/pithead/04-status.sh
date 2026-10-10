@@ -82,11 +82,15 @@ dashboard_onion_status() {
 # still starting, or down), or jq is missing — so `status` degrades quietly.
 dashboard_sync_progress() {
     command -v jq >/dev/null 2>&1 || return 1
-    local body rows
+    local body rows tari_required
+    tari_required=$(env_get TARI_REQUIRED 2>/dev/null || true)
     body=$(curl -fsS --max-time 3 "http://127.0.0.1:8000/api/state" 2>/dev/null) || return 1
-    rows=$(printf '%s' "$body" | jq -r '
-        (.sync // {}) | to_entries[]
+    # Only the dashboard's own global gate (.syncing) holds the miner; a non-required Tari row
+    # (tari.mode off, or dashboard.tari_required false) is passive and never listed (#3351).
+    rows=$(printf '%s' "$body" | jq -r --arg tari_required "${tari_required:-true}" '
+        select(.syncing == true) | (.sync // {}) | to_entries[]
         | select(.value.state != "done")
+        | select(.key != "tari" or $tari_required != "false")
         | [.key,
            (.value.state // "loading"),
            (.value.percent // 0),

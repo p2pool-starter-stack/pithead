@@ -96,6 +96,8 @@ if in_block 1; then
     # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-onion.sh" && domain_ran test-dashboard-onion.sh "$_d0" "$?" || domain_ran test-dashboard-onion.sh "$_d0" "$?"
 
+    # shellcheck source=tests/stack/dashboard/test-sync-progress-hold.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-sync-progress-hold.sh" && domain_ran test-sync-progress-hold.sh "$_d0" "$?" || domain_ran test-sync-progress-hold.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-onion-apply-password.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-onion-apply-password.sh" && domain_ran test-onion-apply-password.sh "$_d0" "$?" || domain_ran test-onion-apply-password.sh "$_d0" "$?"
 
@@ -108,7 +110,6 @@ if in_block 1; then
         [ "$FAIL" -eq 0 ] && [ "$PASS" -gt 0 ]
     ' _ "$HERE"
     assert_rc "test-dashboard-onion.sh does not depend on run.sh's source order (#1330)" "$?" "0"
-
     # shellcheck source=tests/stack/release/test-release.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release.sh" && domain_ran test-release.sh "$_d0" "$?" || domain_ran test-release.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-notes.sh disable=SC2015
@@ -117,7 +118,6 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-publish.sh" && domain_ran test-release-publish.sh "$_d0" "$?" || domain_ran test-release-publish.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-rootfs-publish.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-rootfs-publish.sh" && domain_ran test-release-rootfs-publish.sh "$_d0" "$?" || domain_ran test-release-rootfs-publish.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/test-unit-helpers.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-unit-helpers.sh" && domain_ran test-unit-helpers.sh "$_d0" "$?" || domain_ran test-unit-helpers.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-cli.sh disable=SC2015
