@@ -254,7 +254,7 @@ case "$*" in
   "exec tor cat /var/lib/tor/monero/hostname") echo "mona.onion"; exit 0 ;;
   "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion"; exit 0 ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion"; exit 0 ;;
-  "compose up --pull never -d --remove-orphans") [ "${FAIL_UP:-0}" = "1" ] && exit 1 || exit 0 ;;
+  "compose up --pull never -d --remove-orphans"|"compose up --pull never -d --no-deps dashboard") [ "${FAIL_UP:-0}" = "1" ] && { echo "engine refused: $*"; exit 1; } || exit 0 ;;
 esac
 exit 0
 EOF
@@ -277,7 +277,7 @@ assert_rc "apply fails (rc 1) when compose up fails" "$rc" "1"
 assert_contains "apply prints recovery guidance" "$out" "were NOT recreated"
 if [ -f "$A/.env.apply-incomplete" ]; then mk=present; else mk=absent; fi
 assert_eq "apply leaves the incomplete marker" "$mk" "present"
-assert_contains "a failed recreate restarts the dashboard alone (#3300)" "$(cat "$A/docker.log")" "compose up --pull never -d --no-deps dashboard"
+assert_contains "a failed dashboard-alone restart (#3300) shows the engine's reason" "$out" "engine refused: compose up --pull never -d --no-deps dashboard"
 # Second apply: config already committed (no delta), but the marker forces a retry, not a silent no-op.
 out="$(cd "$A" && FAIL_UP=0 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
