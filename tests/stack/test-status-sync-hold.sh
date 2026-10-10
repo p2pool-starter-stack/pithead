@@ -4,8 +4,8 @@
 
 echo "== unit: status distinguishes an optional Tari loading row from a global sync hold (#3351) =="
 
-status_sync_case() { # <tari-required> <global-syncing>
-    local required="$1" syncing="$2"
+status_sync_case() { # <tari-required> <global-syncing> [miner state: "exited none" | "running healthy"] [curl: ok | down]
+    local required="$1" syncing="$2" miner="${3:-exited none}" api="${4:-ok}"
     (
         cd "$SANDBOX" || exit
         # shellcheck disable=SC1090
@@ -25,7 +25,7 @@ status_sync_case() { # <tari-required> <global-syncing>
             "compose ps -aq "*) printf '%s\n' "${*: -1}" ;;
             "inspect --format "*)
                 case "${*: -1}" in
-                p2pool | xmrig-proxy) printf '%s\n' 'exited none' ;;
+                p2pool | xmrig-proxy) printf '%s\n' "$miner" ;;
                 *) printf '%s\n' 'running healthy' ;;
                 esac
                 ;;
@@ -36,6 +36,7 @@ status_sync_case() { # <tari-required> <global-syncing>
             esac
         }
         curl() {
+            [ "$api" = ok ] || return 22
             printf '{"syncing":%s,"sync":{"monero":{"state":"done"},"tari":{"state":"loading"}}}\n' "$syncing"
         }
         os_migration_hold_active() { return 1; }
@@ -64,3 +65,11 @@ assert_contains "a real required-chain sync still explains the intentional hold"
     "$required_out" "held until the required chains finish syncing"
 assert_contains "a real required-chain sync announces global hold progress" \
     "$required_out" "Chain sync in progress — the miner is held"
+
+healthy_out="$(status_sync_case false false 'running healthy')"
+assert_not_contains "healthy running miners with optional Tari loading: no global sync hold" \
+    "$healthy_out" "Chain sync in progress — the miner is held"
+
+down_out="$(status_sync_case true true 'exited none' down)"
+assert_contains "dashboard unreachable keeps the old held wording" \
+    "$down_out" "held until the required chains finish syncing"
