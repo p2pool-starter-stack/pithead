@@ -98,7 +98,7 @@ class DashboardView extends Component {
         <${AdvancedHint} ui=${ui} onView=${onView} onDismissHint=${onDismissHint} />
         ${
           this.configVisited
-            ? html`<div class="card-stack"><div hidden=${!configView}><${ConfigView} active=${configView && !suspended} appliance=${!!state.os_update} onDirtyChange=${this.onConfigDirty} /></div>${configView ? html`<${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} />` : null}</div>`
+            ? html`<div class="card-stack"><div hidden=${!configView}><${ConfigView} active=${configView && !suspended} focus=${ui.configFocus} appliance=${!!state.os_update} onDirtyChange=${this.onConfigDirty} /></div>${configView ? html`<${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} />` : null}</div>`
             : null
         }
         ${

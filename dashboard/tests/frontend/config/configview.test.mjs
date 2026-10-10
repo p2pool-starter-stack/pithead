@@ -258,3 +258,26 @@ test("the previewing phase announces itself in a live region, not on the button 
   Object.assign(view.state, { phase: "committing" });
   assert.doesNotMatch(renderToString(view.render()), /Previewing changes…/);
 });
+
+// #3353: Discard edits reloads the host config; the rejected candidate's preview error must go with it.
+test("discarding a rejected preview clears its error from the clean form (#3353)", async () => {
+  const view = new ConfigView({ appliance: true });
+  view.props = { appliance: true };
+  view.setState = (patch) => Object.assign(view.state, patch);
+  Object.assign(view.state, { phase: "form", candidate: {}, cfg: {} });
+  await withFastPoll(
+    async () => okResult({ status: "rejected", log: "monero.wallet_address is invalid" }),
+    () => view.save(),
+  );
+  assert.match(renderToString(view.render()), /Configuration preview did not complete/);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => okResult({ monero: { wallet_address: "4" } });
+  try {
+    await view.load();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(view.state.error, null);
+  assert.equal(view.state.phase, "form");
+  assert.doesNotMatch(renderToString(view.render()), /Configuration preview did not complete|wallet_address is invalid/);
+});
