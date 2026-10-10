@@ -298,7 +298,7 @@ EOF
 Description=pithead caddy
 [Container]
 ContainerName=caddy
-Image=docker.io/library/caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52
+Image=docker.io/library/caddy:2.11.7@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772
 Network=host
 Volume=$(_qenv QUADLET_CADDYFILE):/etc/caddy/Caddyfile:ro
 Volume=pithead-caddy-data:/data
