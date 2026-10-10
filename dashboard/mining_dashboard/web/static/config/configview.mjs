@@ -400,8 +400,7 @@ export class ConfigView extends Component {
       return html`<div class="card">
           <h2>Configuration</h2>
           <p class="status-bad">${error}</p>
-          ${this.state.candidate ? html`<button class="btn-toggle" onClick=${() => this.setState({ phase: "form", preview: null, error: null })}>Back to the form</button>` : null}
-          <button class="btn-toggle" onClick=${() => this.load()}>${this.state.candidate ? "Discard draft and reload from host" : "Reload"}</button>
+          <button class="btn-toggle" onClick=${() => this.load()}>Reload</button>
       </div>`;
     }
     if (phase === "done") {
