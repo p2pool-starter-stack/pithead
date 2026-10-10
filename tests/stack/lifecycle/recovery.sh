@@ -254,7 +254,7 @@ case "$*" in
   "exec tor cat /var/lib/tor/monero/hostname") echo "mona.onion"; exit 0 ;;
   "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion"; exit 0 ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion"; exit 0 ;;
-  "compose up --pull never -d --remove-orphans") [ "${FAIL_UP:-0}" = "1" ] && exit 1 || exit 0 ;;
+  "compose up --pull never -d --remove-orphans"|"compose up --pull never -d --no-deps dashboard") [ "${FAIL_UP:-0}" = "1" ] && { echo "engine refused: $*"; exit 1; } || exit 0 ;;
 esac
 exit 0
 EOF
@@ -271,11 +271,12 @@ COMPOSE_PROFILES=local_node
 EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$A/config.json"
 # First apply: real config delta committed, but `compose up` FAILS -> marker left, rc 1, guidance.
-out="$(cd "$A" && FAIL_UP=1 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
+out="$(cd "$A" && DOCKER_LOG="$A/docker.log" FAIL_UP=1 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
 assert_rc "apply fails (rc 1) when compose up fails" "$rc" "1"
 assert_contains "apply prints recovery guidance" "$out" "were NOT recreated"
 assert_eq "apply leaves the incomplete and caddy-restart markers (#3332)" "$(ls "$A"/.env.* | xargs -n1 basename | tr '\n' ' ')" ".env.apply-incomplete .env.caddy-restart-pending "
+assert_contains "a failed dashboard-alone restart (#3300) shows the engine's reason" "$out" "engine refused: compose up --pull never -d --no-deps dashboard"
 # Second apply: no delta, but the marker forces a retry that must also restart caddy, which the failed run never did (#3332).
 : >"$A/docker.log"
 out="$(cd "$A" && DOCKER_LOG="$A/docker.log" FAIL_UP=0 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -286,9 +287,8 @@ assert_contains "re-apply restarts caddy the failed run never restarted" "$(cat 
 assert_eq "markers cleared after a successful retry" "$(ls "$A"/.env.* 2>/dev/null | grep -c 'apply-incomplete\|caddy-restart')" "0"
 
 echo "== black-box: compose_up_checked retries a transient container-state race once (#2293) =="
-# A docker stub that fails `compose up` with the exact state-conflict shape observed on bench-ci job
-# 388 (a container still mid-transition from its own prior start) on the FIRST call only, then
-# succeeds — proving the retry happens inside a single apply, not across a second dashboard commit.
+# A docker stub that fails `compose up` with the state-conflict shape seen on bench-ci job 388 on the
+# FIRST call only, then succeeds — the retry happens inside a single apply, not a second commit.
 R2="$SANDBOX/racecompose"
 mkdir -p "$R2/build/tari" "$R2/dashboard" "$R2/bin" "$R2/data/monero" "$R2/data/tari" "$R2/data/p2pool/stats" "$R2/data/tor" "$R2/data/dashboard"
 : >"$R2/dashboard/Dockerfile"
