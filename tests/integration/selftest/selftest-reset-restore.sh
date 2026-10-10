@@ -22,7 +22,7 @@ drive_reset_restore() (
             ;;
         *' backup -y') [ "$fault" != backup ] ;;
         ls*) [ "$fault" != archive ] && printf 'backups/fixture.tar.gz.enc' ;;
-        'set -e; test -n '*)
+        'set -e; stage=census;'*)
             printf '%s' "$1" >"$OUT_DIR/probe"
             [ "$fault" != active ] ;;
         *"printf 'config-reset"*) [ "$fault" != reset ] && touch "$OUT_DIR/reset" ;;
@@ -55,6 +55,7 @@ PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
 trap 'rm -f "$PROBE_COPY"' EXIT
 assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|8'
 # An SSH session on a stock guest has no TMPDIR: the probe's scratch directory must still resolve.
+bash -n "$PROBE_COPY" || it_fail "reset-restore probe parses" "syntax error"
 scratch_line=$(grep -m1 'mktemp -d' "$PROBE_COPY")
 if scratch=$(env -u TMPDIR bash -c "set -e; ${scratch_line%;}; printf %s \"\$scratch\"; rmdir \"\$scratch\"") && [[ "$scratch" == /tmp/reset-restore.* ]]; then
     it_pass "reset-restore probe creates its scratch directory without TMPDIR"

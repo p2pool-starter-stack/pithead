@@ -24,18 +24,21 @@ run_reset_restore() {
     # Hide all rendered/config state while real services run. The remote trap restores the files
     # even when a refusal check fails; no crafted .env or fake Compose command is used.
     local running_probe
-    running_probe="set -e; test -n \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running)\";
-        scratch=\$(mktemp -d \"\${TMPDIR:-/tmp}/reset-restore.XXXXXX\");
-        trap 'for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"' EXIT
-        for f in config.json .env Caddyfile; do mv -- \"\$f\" \"\$scratch/\$f\"; done;
-        set +e; output=\$($IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 2>&1); result=\$?; set -e;
-        test \"\$result\" -ne 0;
-        case \"\$output\" in *'stack services are still active'*) ;; *) exit 1 ;; esac;
-        test ! -e config.json; test ! -e .env; test ! -e Caddyfile"
-    if rx "$running_probe"; then
+    running_probe="set -e; stage=census;
+        test -n \"\$(docker ps -q --filter label=com.docker.compose.project=pithead --filter status=running)\";
+        stage=scratch; scratch=\$(mktemp -d \"\${TMPDIR:-/tmp}/reset-restore.XXXXXX\");
+        trap 'rc=\$?; for f in config.json .env Caddyfile; do [ ! -e \"\$scratch/\$f\" ] || mv -- \"\$scratch/\$f\" \"\$f\"; done; rmdir -- \"\$scratch\"; [ \"\$rc\" -eq 0 ] || printf \"reset-restore probe: failed at %s (exit %s)\\n\" \"\$stage\" \"\$rc\" >&2' EXIT
+        stage=hide; for f in config.json .env Caddyfile; do mv -- \"\$f\" \"\$scratch/\$f\"; done;
+        stage=restore; set +e; output=\$($IT_PITHEAD restore -y $(quote_arg "$archive") </dev/null 2>&1); result=\$?; set -e;
+        stage=refusal; test \"\$result\" -ne 0 || { printf \"restore exited 0\\n\" >&2; exit 1; };
+        case \"\$output\" in *'stack services are still active'*) ;; *) printf \"unexpected restore output: %s\\n\" \"\$(printf %s \"\$output\" | tail -n 3 | cut -c1-200)\" >&2; exit 1 ;; esac;
+        stage=unchanged; test ! -e config.json; test ! -e .env; test ! -e Caddyfile"
+    local probe_err
+    if probe_err=$(rx "$running_probe" 2>&1 >/dev/null); then
         it_pass "restore refuses real running containers with all configuration missing"
     else
-        it_fail "restore refuses real running containers with all configuration missing" "running census, refusal, or unchanged-file assertion failed"
+        probe_err=$(printf '%s' "$probe_err" | grep -v 'Permanently added' | redact | tail -n 5)
+        it_fail "restore refuses real running containers with all configuration missing" "running census, refusal, or unchanged-file assertion failed: ${probe_err:-no output}"
         return 1
     fi
 
