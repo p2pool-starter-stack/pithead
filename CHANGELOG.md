@@ -330,6 +330,9 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
   ([#3302](https://github.com/p2pool-starter-stack/pithead/pull/3302)).
 - **An apply that restarts the dashboard keeps it available** when the old container's stop times
   out ([#3307](https://github.com/p2pool-starter-stack/pithead/pull/3307)).
+- **Discarding a rejected configuration preview clears its error.** The dashboard no longer shows
+  the old preview error above the clean form after **Discard edits**, including after you move to
+  another view and back ([#3354](https://github.com/p2pool-starter-stack/pithead/pull/3354)).
 - **Configuration drafts survive a view change.** Edits in the configuration editor are kept when
   you move to another dashboard view and back, and after an apply that fails ([#3273](https://github.com/p2pool-starter-stack/pithead/pull/3273)).
 - **The setup wizard's plain-HTTP port redirects to HTTPS.** A plain `http://` LAN URL is
