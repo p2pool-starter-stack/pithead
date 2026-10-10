@@ -15,6 +15,7 @@ test("configuration drafts and invalid JSON survive every internal view; marker 
   let delayedPreview = false;
   let commitStatus = "applied";
   let dialogs = 0;
+  let previewed;
   page.on("dialog", async (dialog) => {
     dialogs++;
     await dialog.dismiss();
@@ -28,6 +29,7 @@ test("configuration drafts and invalid JSON survive every internal view; marker 
       await new Promise((resolve) => {
         releasePreview = resolve;
       });
+    previewed = route.request().postDataJSON();
     await route.fulfill({
       json: { id: "draft-preview", status: "previewed", changes: [{ msg: "Energy cost changed" }] },
     });
@@ -129,6 +131,7 @@ draw();
       .getByText("Changes applied — only the affected containers were recreated.")
       .waitFor();
     await marker().waitFor({ state: "detached" });
+    assert.equal(previewed.config.dashboard.energy.cost_per_kwh, 0.19);
     // The explicit discard replaces a rejected draft with the host configuration.
     await page.getByRole("button", { name: "Back to the form", exact: true }).click();
     await page
