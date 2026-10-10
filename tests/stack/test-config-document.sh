@@ -98,6 +98,8 @@ wap_case -1 "negative workers.api_port"
 wap_case true "boolean workers.api_port"
 wap_case false "false workers.api_port"
 wap_case 80.5 "fractional workers.api_port"
+wap_case 8080.0 "float-spelled workers.api_port"
+wap_case 1e3 "exponent-spelled workers.api_port"
 wap_case '"8080"' "string workers.api_port"
 for good in 1 65535; do
     seed_env

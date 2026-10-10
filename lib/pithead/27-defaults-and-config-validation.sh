@@ -56,7 +56,7 @@ validate_worker_endpoints() {
     dw_err=$(jq -r "$WORKER_LIST_JQ"'
         worker_list as $w
         | if (.workers // {}) | type == "object" and has("api_port") and (.api_port != null)
-              and ((.api_port | type) != "number" or .api_port != (.api_port | floor) or .api_port < 1 or .api_port > 65535)
+              and ((.api_port | type) != "number" or (.api_port | tostring | test("^[0-9]+$") | not) or .api_port < 1 or .api_port > 65535)
           then "workers.api_port must be an integer between 1 and 65535 (the fleet default worker API port)."
           elif ($w | type) != "array" then "workers.list must be an array of {name, host?, port?, token?, api_token?} objects."
           else [ $w[] |

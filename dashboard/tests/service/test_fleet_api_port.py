@@ -6,7 +6,7 @@ import pytest
 from mining_dashboard.service.workers import fleet_api_port
 
 
-@pytest.mark.parametrize("port", [1, 8080, 65535, 8080.0])
+@pytest.mark.parametrize("port", [1, 8080, 65535])
 def test_in_range_accepted(port):
     assert fleet_api_port.validate({"workers": {"api_port": port}}) == ""
 
@@ -18,7 +18,7 @@ def test_absent_means_default(proposed):
 
 @pytest.mark.parametrize(
     "port",
-    [0, 65536, -1, True, False, 80.5, "8080", "", [], {}, float("inf"), float("nan")],
+    [0, 65536, -1, True, False, 80.5, 8080.0, "8080", "", [], {}, float("inf"), float("nan")],
 )
 def test_invalid_refused(port):
     err = fleet_api_port.validate({"workers": {"api_port": port}})
