@@ -4,7 +4,10 @@
 # its exact working-directory label, as in the project migration's ownership boundary.
 configless_project_ps() { # <ps output flags...> -- [ps filters...]
     local out=() legacy ids
-    while [ "$#" -gt 0 ] && [ "$1" != -- ]; do out+=("$1"); shift; done
+    while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
+        out+=("$1")
+        shift
+    done
     shift
     docker ps --all "${out[@]}" --filter label=com.docker.compose.project=pithead "$@" || return 1
     legacy=$(basename "$PWD" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')
