@@ -64,6 +64,10 @@ run_reset_restore() {
 
     local boot_before
     boot_before=$(rx 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
+    if [ -z "$boot_before" ]; then
+        it_fail "boot id is readable before config-reset" "the reboot wait needs a baseline"
+        return 1
+    fi
     rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
         redact >"$OUT_DIR/reset-restore.reset.log"
     # The appliance reboots into first-boot setup right after the reset; every later step waits for it.
