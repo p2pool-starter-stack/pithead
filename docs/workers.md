@@ -300,7 +300,9 @@ reports no measured watts — macOS (the RAPL probe is Linux-only), a non-RigFor
 kit — so the fleet power total still counts it (marked *estimated*). A RigForge rig on Linux reports
 its own watts and needs no estimate.
 
-`control_port` (default `8082`) is the rig's writable control API port, used by
+`control_port` (default `8082`) is the rig's writable control API port (remote rig control is beta
+in 2.0.0: an appliance rig listens for control at every boot, pinned to the coordinator and gated
+by its token, and dashboard writes need adoption), used by
 [Worker Inspect](dashboard.md#worker-inspect) to push config changes from the dashboard. Set it
 alongside `host` and `token` to make a rig editable — either by hand in `config.json`, or from
 Worker Inspect's own **adopt form** on a rig that doesn't have an entry yet; leave the whole

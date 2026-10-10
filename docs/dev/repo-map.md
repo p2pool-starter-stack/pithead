@@ -131,6 +131,8 @@ nested tests through `make test-frontend`.
 and Chromium/Firefox/WebKit/mobile projects. `make test-browser` runs them after browser
 installation; `browser.yml` runs the same suite and retains failure artifacts.
 [Browser testing](browser-testing.md) maps coverage and live acceptance limits.
+The same fixture serves the production setup page for restore-upload journeys; API responses,
+archives, credentials and disk targets remain synthetic and confined to loopback.
 The earnings regression serves the production calculator and supports pre-fix asset controls.
 The separate HTTPS backup fixture verifies complete encrypted downloads in Chromium and pinned Chrome.
 
@@ -273,3 +275,8 @@ the appliance publishes them beside the disk inventory for both submission paths
 
 `tests/os/phases/setup-defaults.sh` proves a fresh appliance with the wizard defaults,
 without the explicit Tari opt-in used by the general provision phase.
+
+Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugepages.sh`;
+`lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
+`tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
+drop-in precedence, ISO defaults, idempotency and generated-entry failures.

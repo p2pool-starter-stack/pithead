@@ -86,6 +86,18 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
     (a mined output that has not matured yet), so a payout is still recorded when it is mined.
 
+### Beta in 2.0.0
+
+Beta means the feature is optional and off unless you turn it on, and a defect seen only with it
+enabled may ship as a known issue. These are beta in 2.0.0; the label lives in the docs, this
+changelog and the wizard text only, and dashboard badges come in 2.0.1.
+
+- **Tari merge-mining:** off by default in the setup wizards; an upgrade keeps the bundled node.
+- **XvB raffle:** off for new installs.
+- **Payout confirmation:** the Monero and Tari view keys (`monero.view_key`, `tari.view_key`).
+- **Remote rig control:** an appliance rig listens for control at every boot, pinned to the
+  coordinator and gated by its token. Dashboard writes to a rig need adoption first.
+
 ### Known issues in 2.0.0
 
 - On an appliance rig, a pool changed from Worker Inspect reverts at the next reboot: the rig's
@@ -93,6 +105,14 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   ([rigforge#583](https://github.com/p2pool-starter-stack/rigforge/issues/583)). The other
   Worker Inspect edits (`DONATION`, `autotune`, `watchdog`, `watchdog_interval_min`,
   `max_temp_c`) survive a reboot.
+- On a no-login appliance, Tor auto-heal does nothing unless `dashboard.control.enabled` is set
+  (#3166).
+- On a DIY host whose GRUB configuration has malformed quoting, later `update-grub` runs can
+  fail (#3305). Run setup with `--skip-optimize`, or remove
+  `/etc/default/grub.d/zz-pithead-hugepages.cfg`.
+- The order of the DIY firewall rules against Docker at reboot is untested (#2677).
+- Automatic Tor recovery is a named soak risk: it restarts Tor on its own, and its long-run
+  behaviour has had no soak time yet.
 
 ### Added
 
@@ -295,6 +315,53 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Fixed
 
+- **Configuration drafts survive a view change.** Edits in the configuration editor are kept when
+  you move to another dashboard view and back, and after an apply that fails ([#3273](https://github.com/p2pool-starter-stack/pithead/pull/3273)).
+- **The setup wizard's plain-HTTP port redirects to HTTPS.** A plain `http://` LAN URL is
+  redirected to an HTTPS host address: the host you typed, or the first host address or
+  `pithead.local`. Caddy keeps a recognised typed host after provisioning ([#3236](https://github.com/p2pool-starter-stack/pithead/pull/3236)).
+- **The boot menu names the boot disk.** Each GRUB entry says whether it boots the USB stick or the
+  internal disk, and a debug build's label appears only in the slot title ([#3230](https://github.com/p2pool-starter-stack/pithead/pull/3230),
+  [#3238](https://github.com/p2pool-starter-stack/pithead/pull/3238)).
+- **The boot health wait shows progress.** The appliance reports what it is waiting for on the
+  console during the health gate ([#3203](https://github.com/p2pool-starter-stack/pithead/pull/3203)).
+- **Failed-login counts survive Caddy log rotation.** The security view keeps its recent
+  failed-login history when the access log rotates ([#3270](https://github.com/p2pool-starter-stack/pithead/pull/3270)).
+- **`restore` works after `config-reset` on the Docker-Compose install** ([#3282](https://github.com/p2pool-starter-stack/pithead/pull/3282)).
+- **`pithead doctor` shows no tip age for an unset Monero tip timestamp**, instead of an age
+  measured from 1970 ([#3280](https://github.com/p2pool-starter-stack/pithead/pull/3280)).
+- **Expected Tor recovery refusals are not reported as aborts.** A healthy Tor that refuses
+  `tor-recover` no longer leaves abort diagnostics ([#3266](https://github.com/p2pool-starter-stack/pithead/pull/3266)).
+- **The backup kit survives a failed archive download.** A download that fails (the Chrome case
+  included) keeps the kit available for a retry; the backup guide has the clean-profile workaround
+  ([#3272](https://github.com/p2pool-starter-stack/pithead/pull/3272)).
+- **P2Pool pool statistics are hidden while the sidechain syncs**, instead of showing bootstrap
+  values ([#3250](https://github.com/p2pool-starter-stack/pithead/pull/3250)).
+- **Update errors can be dismissed, and the dashboard explains how to reconnect** after the
+  certificate changes ([#3243](https://github.com/p2pool-starter-stack/pithead/pull/3243)).
+- **The what-if calculator rejects a malformed hashrate** and parses grouped numbers ([#3268](https://github.com/p2pool-starter-stack/pithead/pull/3268)).
+- **Worker Inspect edits survive an appliance rig's reboot.** The rig role's boot-time rebuild of
+  RigForge's config no longer drops `DONATION`, `autotune`, `watchdog`, `watchdog_interval_min` and
+  `max_temp_c`; a pool change still reverts (see Known issues)
+  ([#3204](https://github.com/p2pool-starter-stack/pithead/issues/3204)).
+- **Worker Inspect says a `DONATION` below the miner's built-in minimum has no effect**
+  ([#3206](https://github.com/p2pool-starter-stack/pithead/issues/3206)).
+- **XvB keeps its full P2Pool dwell when the raffle is disabled** ([#3226](https://github.com/p2pool-starter-stack/pithead/pull/3226)).
+- **Workers and rigs are probed only while online**, or while their feed last answered
+  ([#3211](https://github.com/p2pool-starter-stack/pithead/pull/3211)); workers are kept across a
+  transient proxy fetch failure ([#3201](https://github.com/p2pool-starter-stack/pithead/pull/3201)).
+- **The setup wizard rejects duplicate JSON keys and template placeholders** ([#3200](https://github.com/p2pool-starter-stack/pithead/pull/3200)).
+- **`pithead doctor` accounts for stratum protection and Tor control** in its exposure checks
+  ([#3202](https://github.com/p2pool-starter-stack/pithead/pull/3202)).
+- **A legacy payout wallet is verified before it is adopted** ([#3177](https://github.com/p2pool-starter-stack/pithead/pull/3177)).
+- **A crashed LAN-published node restarts** while the LAN-guard source rule is live ([#3295](https://github.com/p2pool-starter-stack/pithead/pull/3295)).
+- **`cosign` and `docker-compose` are built on Go 1.26.9**, which clears two Go standard-library
+  CVEs in the image scan ([#3294](https://github.com/p2pool-starter-stack/pithead/pull/3294)).
+- **Persistent HugePages setup keeps cloud GRUB arguments.** Setup writes its own
+  `/etc/default/grub.d/zz-pithead-hugepages.cfg`, keeps existing boot arguments including cloud
+  console settings, verifies the generated kernel entries after `update-grub`, repairs earlier
+  Pithead reservations on re-run, and asks for no second reboot when the running kernel already has
+  the flags ([#3281](https://github.com/p2pool-starter-stack/pithead/pull/3281)).
 - **A Tari outage no longer rejects workers at once.** With `tari_required`, workers are rejected
   only after a sustained Tari RPC outage; migrating, starting and syncing only alert. Once the
   Monero node has answered, an outage, local or remote, always rejects ([#3091](https://github.com/p2pool-starter-stack/pithead/issues/3091)).

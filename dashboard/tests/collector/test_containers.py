@@ -85,8 +85,13 @@ class TestGetContainerHealth:
                 "unsupervised": False,
                 "exit_code": None,
                 "held_since_boot": False,
+                "started_at": None,
             }
         }
+
+    async def test_started_at_is_the_container_start_in_epoch_seconds(self):
+        out = await self._one(_inspect(StartedAt="2026-09-27T10:00:00Z"))
+        assert out["started_at"] == 1790503200.0
 
     async def _one(self, payload, boot=1_790_000_000):
         responses = [_FakeResp(200, payload)] + [_FakeResp(404)] * (
