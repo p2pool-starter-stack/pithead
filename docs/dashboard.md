@@ -449,6 +449,9 @@ path broke) and appends it to the history.
 > value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
 > report XMRig's live donate level.
 
+> **Remote rig control is beta in 2.0.0.** An appliance rig listens for control at every boot,
+> pinned to the coordinator and gated by its token; dashboard writes need the rig adopted first.
+
 To make a rig editable, give it `host`, `token`, and (unless it's the default `8082`) `control_port`
 in its [`workers.list[]`](configuration.md#configuration-reference) descriptor. A rig with neither
 yet shows an **adopt form** instead of the editor: the control address prefilled from the IP the
@@ -825,6 +828,9 @@ card), the XvB tab's published-reward table and a fiat mirror of the tier compar
 feed (with age) or config.json — so no fiat figure is ever unattributed.
 
 ### Payout confirmation
+
+> **Beta in 2.0.0.** Payout confirmation is optional and off until you set a view key; a defect seen
+> only with it enabled may ship as a known issue.
 
 Everything above is a **model**. The earnings card also shows what actually landed in your wallet,
 when you give the stack a way to check the chain. Set `monero.view_key` (the private **view** key
