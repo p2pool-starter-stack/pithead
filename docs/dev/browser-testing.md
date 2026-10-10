@@ -48,10 +48,13 @@ frontend tests. See [testing strategy](testing-strategy.md) for the CLI, KVM and
 Each Playwright journey gets its own loopback server, browser context and synthetic state. The full-page tests
 serve the production HTML and static assets and reuse the frontend state fixture. Component
 journeys mount production controls and stub only their API boundaries. They never invoke product host-control commands. The separate HTTPS fixture uses local
-OpenSSL and tar solely to generate and verify synthetic encrypted archives; those tools are required
+OpenSSL, tar and gzip solely to generate and verify synthetic encrypted archives; those tools are required
 by `make test-browser`. The shared Playwright fixture rejects external traffic and fails on missing static assets or
 uncaught browser errors. These journeys use visible controls and native downloads, without
 fixed sleeps or retries.
+
+The HTTPS fixture compresses uncompressed tar output with Node's built-in gzip implementation,
+so its gzip integrity check remains strict on both GNU and BSD tar hosts.
 
 Restore journeys use `ui.openWizard()` to serve the production setup template. Uploaded archives,
 passphrases and disk names are synthetic; routes inspect the multipart request without decrypting or
