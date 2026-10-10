@@ -58,3 +58,20 @@ test("a partial value is flagged, not rewritten, and leaves the candidate unchan
   await expect(input).toHaveValue("0.5");
   await expect(input).not.toHaveAttribute("aria-invalid", "true");
 });
+
+test("an invalid draft blocks Save and the candidate keeps its last number (#3350)", async ({
+  page,
+  ui,
+}) => {
+  const { input, previews } = await open(page, ui);
+  await input.fill("0.2");
+  await input.press("ControlOrMeta+a");
+  await input.press("Backspace");
+  await expect(input).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByRole("button", { name: "Save & preview changes" })).toBeDisabled();
+  await input.fill("0.25");
+  await save(page);
+  await expect(page.getByRole("dialog", { name: "Review changes" })).toBeVisible();
+  expect(previews).toHaveLength(1);
+  expect(previews[0].config.dashboard.energy.cost_per_kwh).toBe(0.25);
+});

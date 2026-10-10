@@ -4,6 +4,8 @@ import { html } from "../app/preact.mjs";
 import { SECRET_HINT } from "./configlogic.mjs";
 import { coerceForType } from "./configsync.mjs";
 
+export const validNumber = (raw) => Number.isFinite(coerceForType("number", raw));
+
 const HOST_ONLY_TITLE = "Host-only — edit config.json and run ./pithead apply";
 // #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review modal makes you type APPLY. The tooltip sets that expectation up front.
 const CONFIRM_TITLE = "Editable — this change is disruptive; you'll type APPLY to confirm at Save";
@@ -16,8 +18,6 @@ const APPROVAL_TITLE = "Editable — this sensitive change is recorded under you
 // bare "view_key" (and System / advanced would show four identical "data_dir" rows).
 //
 // A host-only field has no event listener; it cannot enter staged edits.
-export const validNumber = (raw) => Number.isFinite(coerceForType("number", raw));
-
 export const Field = ({ field, value, onEdit, full, invalid }) => {
   // The host derives this public key from the dual address; ask only for the private view key.
   if (field.key === "tari.spend_public_key") return null;
@@ -48,12 +48,13 @@ export const Field = ({ field, value, onEdit, full, invalid }) => {
     input = html`<input type=${field.type === "number" ? "number" : "text"} value=${value}
         step=${field.type === "number" ? "any" : undefined}
         aria-invalid=${invalid ? "true" : undefined}
+        aria-describedby=${invalid ? `${field.key}-invalid` : undefined}
         disabled=${!editable} onInput=${change} />`;
   }
   return html`<label class="config-field" title=${title}>
       <span class="config-field-name">${label}${field.defaulted ? " (default)" : ""}</span>
       ${input}
-      ${invalid ? html`<span class="config-field-warning" role="alert">⚠ Not a valid number; the saved value is unchanged.</span>` : null}
+      ${invalid ? html`<span class="config-field-warning" role="alert" id=${`${field.key}-invalid`}>⚠ Not a valid number; the saved value is unchanged.</span>` : null}
       ${field.warning ? html`<span class="config-field-warning">⚠ ${field.warning}</span>` : null}
   </label>`;
 };

@@ -190,7 +190,14 @@ export class ConfigView extends Component {
       JSON.stringify(candidate) === JSON.stringify(staged.config)
         ? text
         : JSON.stringify(candidate, null, 2);
-    this.setState({ editText, jsonError: null, candidate, drafts: {} });
+    // Keep a draft the operator is still fixing (or whose text just differs in form, 0.10);
+    // drop one the pane now overrides.
+    const drafts = Object.fromEntries(
+      Object.entries(this.state.drafts).filter(
+        ([key, raw]) => !validNumber(raw) || coerceForType("number", raw) === pathGet(candidate, key),
+      ),
+    );
+    this.setState({ editText, jsonError: null, candidate, drafts });
   }
   onFilePick(e) {
     const file = e.target.files[0];
@@ -392,7 +399,8 @@ export class ConfigView extends Component {
     }
     const busy = phase === "previewing" || phase === "committing";
     const dirty = editText !== this.state.pristine;
-    const canSave = dirty && !jsonError;
+    const badDraft = Object.values(this.state.drafts).some((raw) => !validNumber(raw));
+    const canSave = dirty && !jsonError && !badDraft;
     const { core, sections: groups } = regroupCore(
       markEditable(sections, editableKeys, confirmKeys, approvalKeys, defaultKeys),
       coreKeys,
