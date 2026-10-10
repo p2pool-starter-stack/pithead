@@ -171,9 +171,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   The state, TCP and log diagnostics are read-only too. Without an applied reserved-node approval
   the leg does not run, and says so in one red row.
   Before the successful attempt, an
-  unreachable remote node must be refused by preflight with its safe form values retained; a
-  separate injected post-validation setup fault must open a recoverable failed page and retry
-  with those values. The successful wizard submission names the appliance `fixture-box`; the
+  unreachable remote node must be refused by preflight with its safe form values retained, and
+  a name resolving only to the bench's reserved node's private address must be accepted and
+  pinned to that resolved address, not the name (#2351; skipped, missing, without a reserved
+  node configured). A separate injected post-validation setup fault must open a recoverable
+  failed page and retry with those values. The successful wizard submission names the appliance `fixture-box`; the
   running kernel, rendered dashboard address, served certificate and active mDNS service must all
   agree on that identity. The guest carries an unrouted documentation-range global IPv6 address
   and a ULA before submit; after provisioning, the pinned site, LAN v4 and ULA binds/listeners,
