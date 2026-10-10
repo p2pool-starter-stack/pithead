@@ -1243,6 +1243,10 @@ The flow mirrors the CLI's `apply`:
    [#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076) this step also required a
    tap in Telegram and recorded a `commit-approved` action with an approver; the bot is read-only
    now, that leg is gone, and nothing writes an approver.
+   When the commit request itself fails (an HTTP error, an unreadable response, or a poll timeout;
+   a timeout does not mean the apply failed), the error card likewise offers **Back to the form**,
+   which keeps the draft and its marker, and **Discard draft and reload from host**. Only a failed
+   first load, which has no draft, offers a plain **Reload**.
 
 Every reference setting belongs to a policy class. The ordinary allowlist covers routine
 operations; all remaining values confirm unless they are in the physical-presence set. Typed

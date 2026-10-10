@@ -130,3 +130,69 @@ draw();
     releasePreview?.();
   }
 });
+
+test("a failed commit request returns to the retained draft; only the explicit discard reloads the host copy", async ({
+  page,
+  ui,
+}) => {
+  let reads = 0;
+  let dialogs = 0;
+  page.on("dialog", async (dialog) => {
+    dialogs++;
+    await dialog.dismiss();
+  });
+  await page.route("**/api/config", (route) => {
+    reads++;
+    return route.fulfill({ json: config });
+  });
+  await page.route("**/api/control/preview", (route) =>
+    route.fulfill({
+      json: { id: "draft-preview", status: "previewed", changes: [{ msg: "Energy cost changed" }] },
+    }),
+  );
+  await page.route("**/api/control/commit", (route) => route.fulfill({ status: 500, body: "boom" }));
+  ui.state.control_enabled = false;
+  await ui.mount(`import { App } from '/static/app/components.mjs';
+const state = ${JSON.stringify(ui.state)};
+const ui = {view:'config',range:'all',series:{},avg:'10m',theme:'auto',hintDismissed:true};
+const draw = () => render(html\`<\${App} state=\${state} connected=\${true} ui=\${ui}
+  onView=\${mode => {ui.view = mode; draw();}} />\`, document.getElementById('fixture'));
+draw();
+`);
+  const nav = page.getByRole("navigation", { name: "View" });
+  const marker = () =>
+    nav.getByRole("button", { name: "Configuration — Unsaved changes", exact: true });
+  const editor = page.locator(".config-view textarea");
+  const open = () =>
+    page
+      .locator(".config-view summary")
+      .filter({ hasText: "the configuration this page sends" })
+      .click();
+  await open();
+  const original = await editor.inputValue();
+  await page
+    .locator(".config-view summary")
+    .filter({ hasText: /^Energy$/ })
+    .click();
+  await page.locator('.config-view input[type="number"]').fill("0.18");
+  await marker().waitFor();
+  const valid = await editor.inputValue();
+  await page.getByRole("button", { name: "Save & preview changes" }).click();
+  await page.getByRole("button", { name: "Confirm & apply", exact: true }).click();
+  await page.getByText("HTTP 500").waitFor();
+  assert.equal(await page.getByRole("button", { name: "Reload", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Back to the form", exact: true }).click();
+  await marker().waitFor();
+  await open();
+  assert.equal(await editor.inputValue(), valid);
+  await page.getByRole("button", { name: "Save & preview changes" }).click();
+  await page.getByRole("button", { name: "Confirm & apply", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Discard draft and reload from host", exact: true })
+    .click();
+  await marker().waitFor({ state: "detached" });
+  await open();
+  assert.equal(await editor.inputValue(), original);
+  assert.equal(reads, 2);
+  assert.equal(dialogs, 0, "discarding must not ask for confirmation");
+});
