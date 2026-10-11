@@ -1,0 +1,51 @@
+#!/bin/bash
+# Recover the appliance's active but disconnected host miner after proxy recreation.
+set -eu
+umask 077
+STATE=${PITHEAD_MINER_RECOVERY_STATE:-/run/pithead-miner-recovery.state}
+reset_window() {
+    rm -f "$STATE"
+    exit 0
+}
+cd "${PITHEAD_DIR:-/data/pithead}" 2>/dev/null || reset_window
+# Serialize with backup/apply/up and never turn an intentional stop into a start.
+exec 9>>.pithead.lock
+flock -n 9 || reset_window
+[ "$(cat machine-role 2>/dev/null || true)" != rig ] || reset_window
+jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
+systemctl is-active --quiet xmrig.service || reset_window
+# A stopped/sync-held proxy or an unavailable API is not a disconnected-miner reading.
+reading=$(
+    timeout 15 podman exec -i dashboard python - <<'PY'
+import os
+from mining_dashboard.helper.http import bounded_get
+try:
+    token = os.environ.get("PROXY_AUTH_TOKEN", "")
+    headers = {"Authorization": "Bearer " + token} if token else {}
+    url = "http://{}:{}/1/summary".format(
+        os.environ.get("PROXY_HOST", "xmrig-proxy"),
+        os.environ.get("PROXY_API_PORT", "3344"))
+    response = bounded_get(url, headers=headers, timeout=5)
+    response.raise_for_status()
+    count = response.json()["miners"]["now"]
+    print("idle" if type(count) is int and count == 0 else "reset")
+except Exception:
+    print("reset")
+PY
+) 2>/dev/null || reset_window
+[ "$reading" = idle ] || reset_window
+# /run and the monotonic boot clock cannot carry a stale window across recovery boots.
+read -r uptime _ <"${PITHEAD_MINER_RECOVERY_UPTIME:-/proc/uptime}"
+now=${uptime%%.*}
+start=$(cat "$STATE" 2>/dev/null || true)
+case "$start" in '' | *[!0-9]*) start=$now ;; esac
+if [ "$start" -gt "$now" ]; then start=$now; fi
+printf '%s\n' "$start" >"$STATE"
+[ "$((now - start))" -ge 300 ] || exit 0
+# Re-check the opt-in and service immediately before the bounded recovery request.
+jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
+systemctl is-active --quiet xmrig.service || reset_window
+printf '%s\n' 'pithead-miner-recovery: active local miner disconnected for 300 seconds; restarting xmrig'
+# Queue the job without holding the mutation lock during dataset initialization.
+systemctl --no-block try-restart xmrig.service
+rm -f "$STATE"

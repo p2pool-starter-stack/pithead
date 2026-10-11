@@ -135,7 +135,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
 		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
-		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-serial-port-present \
+		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery os/overlay/pithead-serial-port-present \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version \
 		tests/os/*.sh tests/os/*/*.sh tests/netwatch/*.sh \
 		| xargs -0 -n 1 -P 4 shellcheck -x --severity=warning
@@ -143,12 +143,12 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 # depends on concatenation order. Listing them separately duplicates a large analysis
 # and reports false unused-global warnings. shfmt checks every slice independently.
 	shellcheck --severity=warning tests/stack/run.sh
-	@# Three non-.sh files are named outright below, so a dead enumeration still hands shfmt
-	@# three real arguments and exits 0 — 3 files checked of 100, reported as a pass. Guard the
+	@# Four non-.sh files are named outright below, so a dead enumeration still hands shfmt
+	@# four real arguments and exits 0 — 4 files checked of 100, reported as a pass. Guard the
 	@# enumeration itself, the way lint-toml already does. (lint-yaml needs no guard: yamllint
 	@# with no arguments is rc=2.)
 	@test -n "$$(git ls-files '*.sh' | grep -v '^docs/research/')" || { echo "lint-sh: zero tracked *.sh files — refusing a vacuous pass"; exit 1; }
-	shfmt -i 4 -d pithead pithead-completion.bash os/installer/pithead-install $(shell git ls-files '*.sh' | grep -v '^docs/research/')
+	shfmt -i 4 -d pithead pithead-completion.bash os/installer/pithead-install os/overlay/pithead-miner-recovery $(shell git ls-files '*.sh' | grep -v '^docs/research/')
 
 lint-py: ## ruff lint + format check on all repo Python (ruff runs via uv from the locked dev extra)
 	uv run --locked --project dashboard --extra dev ruff check .
