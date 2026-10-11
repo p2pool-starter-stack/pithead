@@ -222,6 +222,11 @@ connection probe and lifecycle runner. The image fixture uses the shared
 Its diagnostic, readiness and image selftests use fake Docker I/O.
 The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
 both local-miner toggles converge without rebooting.
+The appliance-only `os/overlay/pithead-miner-recovery` timer recovers a disconnected active
+local miner; `tests/os/selftest-miner-recovery.sh` covers its decision window and refusals.
+`tests/os/appliance-miner-recovery-leg.sh` proves accepted-share progress after proxy recreation
+on the stack phase’s synced remote-node guest, including a suspended active client that
+only the production timer can replace.
 `tests/os/appliance-earnings-leg.sh` checks that the provisioned dashboard serves the checkout’s
 parser and earnings modules through authenticated Caddy; `selftest-earnings-assets.sh` rejects
 old, missing, redirected and unrelated responses without a guest.

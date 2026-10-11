@@ -258,6 +258,17 @@ phase_stack() {
     }
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
 
+    # This guest has synced nodes: process health alone cannot prove mining recovery.
+    local miner_recovery_out miner_recovery_rc
+    miner_recovery_out=$(_ssh 'bash -s' <"$SCRIPT_DIR/appliance-miner-recovery-leg.sh" 2>&1)
+    miner_recovery_rc=$?
+    if [ "$miner_recovery_rc" -eq 0 ]; then
+        ok "local miner accepts fresh shares unattended after proxy recreation (#3375)"
+    else
+        bad "local miner failed accepted-share recovery after proxy recreation (#3375)"
+    fi
+    info "$miner_recovery_out"
+
     # The DIY gate itself: a non-destructive read, then the destructive phases the appliance
     # channel has never run — its first live coverage of each (#2062). The two parity rows this
     # guest cannot satisfy are named, with their own issues, after the invocations below.
