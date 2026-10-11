@@ -13,6 +13,44 @@ _phase_reset_config() {
     info "leg 0 — config-reset must keep chains and the onion address, clear the config, and re-arm the wizard"
     local onion_before onion_after cr_height_before cr_height_after cr_height_deadline fb_ran boot_ran
     local cr_want cr_probe cr_what
+    local cr_identity cr_identity_after cr_env cr_slot cr_spare
+    # The first wizard setup has no boot owner to commit it. Take a provisioned boot and
+    # require the real health gate to commit before resetting an already-good slot.
+    _reboot_wait reboot 300 || {
+        bad "pre-reset provisioned boot failed"
+        return 1
+    }
+    cr_height_deadline=$(($(date +%s) + 900))
+    cr_slot=$(_ssh "sed -n 's/.*rauc.slot=\\([AB]\\).*/\\1/p' /proc/cmdline")
+    case "$cr_slot" in A) cr_spare=B ;; B) cr_spare=A ;; *)
+        bad "pre-reset slot unreadable"
+        return 1
+        ;;
+    esac
+    while [ "$(date +%s)" -lt "$cr_height_deadline" ]; do
+        cr_env=$(_ssh "grub-editenv /boot/efi/grub/grubenv list") || cr_env=""
+        printf '%s\n' "$cr_env" | grep -qx "${cr_slot}_TRY=0" &&
+            printf '%s\n' "$cr_env" | grep -qx "${cr_slot}_OK=1" &&
+            _ssh "systemctl is-active --quiet pithead-boot.service" && break
+        sleep 5
+    done
+    if ! printf '%s\n' "$cr_env" | grep -qx "${cr_slot}_TRY=0" ||
+        ! printf '%s\n' "$cr_env" | grep -qx "${cr_slot}_OK=1" ||
+        ! _ssh "systemctl is-active --quiet pithead-boot.service"; then
+        bad "pre-reset provisioned health gate did not commit the active slot"
+        return 1
+    fi
+    # Seed a bootable previous slot in this disposable guest. Without a second good slot,
+    # GRUB's nothing-selectable branch hides the reset regression by retrying the same one.
+    _ssh "dd if=/dev/disk/by-partlabel/system-$(echo "$cr_slot" | tr AB ab) of=/dev/disk/by-partlabel/system-$(echo "$cr_spare" | tr AB ab) bs=4M conv=fsync && grub-editenv /boot/efi/grub/grubenv set ${cr_spare}_OK=1 ${cr_spare}_TRY=0 ORDER='$cr_slot $cr_spare'" || {
+        bad "could not seed a bootable previous slot for config-reset"
+        return 1
+    }
+    cr_identity=$(_ssh "printf '%s|' '$cr_slot'; cat /opt/pithead/BUILD_COMMIT")
+    [ "$cr_identity" = "$cr_slot|$(git rev-parse HEAD)" ] || {
+        bad "pre-reset source is not the exact candidate"
+        return 1
+    }
     onion_before=$(_ssh "podman exec tor cat /var/lib/tor/monero/hostname" 2>/dev/null | tr -d '\r')
     # monerod's RPC can still be starting even once "stack containers running" above only checked
     # dashboard+caddy — its baked archive is the largest and loads last (appliance-egress-leg.sh's
@@ -95,6 +133,13 @@ CR_PROBES
     else
         bad "no wizard gate after config-reset — the machine did not return to first-boot"
         return 1
+    fi
+
+    cr_env=$(_ssh "grub-editenv /boot/efi/grub/grubenv list") || cr_env=""
+    if printf '%s\n' "$cr_env" | grep -qx "${cr_slot}_TRY=0"; then
+        ok "configless firstboot preserves the previously good slot"
+    else
+        bad "configless firstboot consumed the previously good slot attempt"
     fi
 
     # Re-provision through the same browser-shaped submit phase_provision uses (#1846), the path
@@ -190,4 +235,15 @@ CR_PROBES
     else
         bad "monerod height regressed or is unreadable after config-reset (before: $cr_height_before, after: ${cr_height_after:-none})"
     fi
+    if ! _reboot_wait reboot 300; then
+        bad "guest did not return after reconfiguration"
+        return 1
+    fi
+    cr_identity_after=$(_ssh "slot=\$(sed -n 's/.*rauc.slot=\([AB]\).*/\1/p' /proc/cmdline); printf '%s|' \"\$slot\"; cat /opt/pithead/BUILD_COMMIT")
+    if [ "$cr_identity_after" = "$cr_identity" ]; then
+        ok "config-reset setup and normal reboot stay on the exact same slot and source"
+    else
+        bad "config-reset setup reboot changed slot or source ($cr_identity -> $cr_identity_after)"
+    fi
+
 }

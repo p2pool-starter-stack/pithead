@@ -123,6 +123,7 @@ config_reset() {
     # timeout abandon a box whose configuration was already half gone.
     mutation_lock_acquire config-reset
 
+    reset_slot_record_good || error "Could not preserve the boot slot before reset — configuration was not cleared."
     restore_save_reset_paths
     detect_os 2>/dev/null || true
     docker compose down --remove-orphans 2>/dev/null ||

@@ -185,6 +185,7 @@ firstboot_wizard() {
                 "Diagnose with: journalctl -u pithead-firstboot -b"
             error "Could not start the wizard container ($engine, $image). Pre-seed config.json or run '$0 firstboot-wizard --cli'."
         }
+        [ "$installer" -eq 1 ] || reset_slot_restore_good "$engine" || warn "Could not restore the reset slot's good state; reboot may fall back."
         local mdns_name scheme
         mdns_name="$(hostname).local"
         scheme="http"
@@ -198,7 +199,6 @@ firstboot_wizard() {
         # box also has a serial line, or vice versa) would otherwise never see the token.
         # The mDNS name FIRST: it is what the documentation tells operators to use, it survives a
         # DHCP lease change, and it is the only address that still works once the monitor is gone.
-        # The IP follows as the fallback for networks where mDNS is filtered.
         for dev in /dev/tty1 /dev/ttyS0; do
             [ -w "$dev" ] || continue
             {
