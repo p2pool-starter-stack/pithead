@@ -397,4 +397,4 @@ assert_eq "the other console receives fresh progress" "$(cat "$SANDBOX/boot-prog
 assert_contains "slow probes count real elapsed time, excluding earlier boot work" "$(boot_progress_case 7 20)" "still starting (3 of about 16 minutes)"
 unset -f boot_progress_case
 unset progress_text progress_out
-source "$ROOT/tests/stack/appliance/test-appliance-settle-order.sh" # #2661 phase-order pins; own file to stay under the budget
+source "$ROOT/tests/stack/appliance/settle-order.sh" # #2661 phase-order pins; own file to stay under the budget
