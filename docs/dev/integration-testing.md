@@ -756,7 +756,15 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
-- `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).
+- `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
+  container StartedAt and RestartCount), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).
+  On the appliance, reset recovery first waits up to 300 seconds for a running wizard and
+  a setup page served to the harness host. After restore/up, auth recovery and setup after
+  uninstall, web ownership rows require the wizard container to disappear within 60 seconds,
+  Caddy to become healthy within 60 seconds and keep the same Id, RestartCount and StartedAt
+  for another 60 seconds, and the configured web route to return 401 with auth or 200 without
+  auth. Appliances always require 401. A setup page or failed request fails the row; failures
+  print listener state and the last 40 Caddy log lines.
   `lifecycle-gate.log` samples the reset marker, persisted `miner_released` boolean and running
   mining services before the wizard-defaults workload, after its startup and around its baseline
   restore apply, before/after restart, around setup/up/apply connection probes, around the
