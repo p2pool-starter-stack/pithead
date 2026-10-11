@@ -703,8 +703,9 @@ directories without a reset record, configure the original paths in `config.json
 
 On the appliance, `config-reset` reboots into the setup wizard. After a successful provisioned boot,
 the reset records the current good slot and exact image source. When the wizard container starts,
-firstboot restores that same slot's good state so a reset, restore and normal reboot do not select
-the previous slot. An unverified slot keeps its normal fallback; the next provisioned boot still
+firstboot restores that same slot's good state on each configless boot, including a reboot while
+setup is still open. The record remains until a provisioned boot passes its health gate, so reset,
+CLI restore and setup followed by a normal reboot keep the intended slot. An unverified slot keeps its normal fallback; the next provisioned boot still
 requires the stack health gate. If you restore from the shell instead of the wizard page, the wizard
 closes its page within seconds of `config.json` returning, which frees ports 80 and 443 for Caddy;
 run `./pithead up` after that.

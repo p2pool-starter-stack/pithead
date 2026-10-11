@@ -42,6 +42,9 @@ reset_slot_record_good() {
 
 reset_slot_restore_good() { # <container engine>; called only after the wizard container starts
     is_appliance || return 0
+    # Set up again also starts a wizard on provisioned machines. Their health gate,
+    # not retained reset authority, owns the slot until it has passed.
+    [ ! -e config.json ] && [ ! -e machine-role ] || return 0
     local identity saved state slot marker=.config-reset-good-slot
     [ -f "$marker" ] || return 0
     identity=$(reset_slot_identity) || return 1
@@ -55,6 +58,7 @@ reset_slot_restore_good() { # <container engine>; called only after the wizard c
     printf '%s\n' "$state" | grep -qx "${slot}_OK=1" || return 1
     [ "$("$1" inspect --format '{{.State.Running}}' pithead-wizard)" = true ] || return 1
     rauc status mark-good || return 1
-    rm -f "$marker" || return 1
+    # Keep authority across configless reboots while the setup page is open. The
+    # provisioned boot health gate clears it once configuration has returned.
     log "Restored the previously good reset slot after firstboot started."
 }

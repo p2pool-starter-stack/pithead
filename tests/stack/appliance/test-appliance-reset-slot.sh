@@ -47,7 +47,8 @@ printf 'B_OK=1\nB_TRY=1\nA_OK=1\nA_TRY=0\n' >"$RS/state"
 rs_call reset_slot_restore_good engine >/dev/null
 assert_rc "clean firstboot restores the previously good slot" "$?" 0
 assert_contains "RAUC cleared the consumed boot attempt" "$(cat "$RS/state")" B_TRY=0
-assert_eq "successful restoration consumes the reset record" "$([ -e "$RS/.config-reset-good-slot" ] && echo present || echo absent)" absent
+assert_eq "configless restoration retains authority for another setup-page boot" "$([ -e "$RS/.config-reset-good-slot" ] && echo present || echo absent)" present
+rm -f "$RS/.config-reset-good-slot"
 rs_call reset_slot_restore_good engine >/dev/null
 assert_eq "ordinary firstboot cannot commit without a reset record" "$(wc -l <"$RS/calls" | tr -d ' ')" 1
 for rs_case in pending bad gate; do

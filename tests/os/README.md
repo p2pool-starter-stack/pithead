@@ -297,7 +297,15 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
   and requiring the monero chain directory to survive, monerod's height to resume at or past its
   pre-reset value (no resync), and the Tor onion address, read from the hidden-service hostname
-  file rather than `.env`, to come back byte-for-byte unchanged. Leg 1 is the deep tier: the real
+  file rather than `.env`, to come back byte-for-byte unchanged. The following reset-slot leg
+  reboots through the real health gate on A, installs a v2 bundle with `pithead os-update`,
+  and requires committed primary B with A still good. It takes an encrypted backup and tests
+  three config-reset rounds: wizard setup, CLI `restore -y` plus `up`, and a reboot with setup
+  still open before finishing setup. Every reset boot and final normal reboot must remain
+  B|v2 with A good and ORDER="B A". Fallback stays red and is re-armed before the next round.
+  The leg adds about 60 minutes to RC gate job 3b (reset,stack); a missing precondition is a
+  counted missing leg, never proof. Update leg 1 separately requires the fresh spare B to
+  remain uncommitted while its setup page serves. Leg 1 is the deep tier: the real
   `pithead factory-reset -y`, which arms the `pithead-reset` marker on the ESP and reboots; assert
   it comes back to the wizard with the provisioned config and old container images gone, the
   seeded dirs back, and a FRESH host identity (SSH host-key fingerprint, machine-id) — the deep
