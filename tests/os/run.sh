@@ -191,6 +191,8 @@ source "$SCRIPT_DIR/lib/core.sh" || exit $?
 source "$SCRIPT_DIR/wizard-redirect-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/boot.sh
 source "$SCRIPT_DIR/phases/boot.sh" || exit $?
+# shellcheck source=tests/os/phases/update-spare-slot.sh
+source "$SCRIPT_DIR/phases/update-spare-slot.sh" || exit $?
 # shellcheck source=tests/os/phases/update.sh
 source "$SCRIPT_DIR/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh

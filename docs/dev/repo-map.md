@@ -65,6 +65,7 @@ The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
 Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture controls live in
 `tests/stack/appliance/test-appliance-reset-slot.sh` and
 `tests/stack/appliance/test-appliance-reset-slot-boot.sh`.
+The fresh-spare negative control is in `tests/os/phases/update-spare-slot.sh`.
 The real A/B reset leg is `tests/os/phases/reset-slot.sh`; it checks wizard setup, CLI restore
 and reboot with setup still open before the final provisioned reboot.
 
@@ -136,7 +137,8 @@ installer's TLS identity to target data and computes the public fingerprint. The
 password and certificate. Both have mutation self-tests beside their harnesses.
 
 `lib/pithead/12a-wizard-addresses.sh` supplies non-bridge host addresses for the
-setup container and banner. `tests/os/wizard-redirect-leg.sh` checks the plain-port
+setup container and prints the journal and physical-console connection announcements.
+`tests/os/wizard-redirect-leg.sh` checks the plain-port
 redirect from outside the guest during boot and provision, and Caddy after setup;
 its fake-transport cases run through `selftest-wizard-redirect.sh`.
 
