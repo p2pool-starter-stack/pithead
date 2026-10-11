@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Pure convergence/timeout/reset-counter controls for the lifecycle mining post-step.
 set -euo pipefail
+echo "== lifecycle mining convergence and reset-counter controls =="
 INTEGRATION_RUN_SUITE=1
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/integration/lib/run-lifecycle-miners.sh
