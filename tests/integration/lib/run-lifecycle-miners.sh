@@ -3,7 +3,9 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 lifecycle_proxy_started() { rx "docker inspect --format '{{.State.StartedAt}}' xmrig-proxy" 2>/dev/null; }
 lifecycle_proxy_workers() {
-    rx "timeout --kill-after=2 15 docker compose exec -T dashboard python3 - <<'PY'
+    local script
+    script=$(
+        cat <<'PY'
 import json, os
 from mining_dashboard.helper.http import bounded_get
 r=bounded_get('http://{}:{}/1/workers'.format(os.environ['PROXY_HOST'], os.environ['PROXY_API_PORT']),
@@ -15,7 +17,11 @@ for row in rows:
     assert type(row) is list and len(row) >= 4 and type(row[0]) is str
     assert all(type(v) is int and v >= 0 for v in row[2:4])
 print(json.dumps(rows))
-PY"
+PY
+    )
+    # rx groups SSH commands with a closing suffix; quote the script instead of a heredoc.
+    printf -v script '%q' "$script"
+    rx "timeout --kill-after=2 15 docker compose exec -T dashboard python3 -c $script"
 }
 lifecycle_worker_set() {
     lifecycle_proxy_workers | jq -ce '[.[] | select(.[2] >= 1) | .[0]] | unique'
