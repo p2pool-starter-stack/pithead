@@ -15,7 +15,7 @@ caddy_bridge="$(
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    hostname() { printf '192.168.1.10 10.89.0.1 172.28.0.1 fd00::1 fd00:89::1\n'; }
+    hostname() { printf '192.168.1.10 10.89.0.1 172.28.0.1 fd00::1 fd00:89::1 192.168.50.2 192.168.60.2\n'; }
     ip() {
         printf '%s\n' \
             '1: lo    inet 127.0.0.1/8 scope host lo' \
@@ -23,6 +23,8 @@ caddy_bridge="$(
             '2: enp1s0    inet6 fd00::1/64 scope global enp1s0' \
             '5: podman2    inet 10.89.0.1/24 brd 10.89.0.255 scope global podman2' \
             '5: podman2    inet6 fd00:89::1/64 scope global podman2' \
+            '3: br0    inet 192.168.50.2/24 scope global br0' \
+            '4: br-lan    inet 192.168.60.2/24 scope global br-lan' \
             '6: br-0123456789ab    inet 172.28.0.1/24 scope global br-0123456789ab'
     }
     DASHBOARD_SECURE=true HOST_IP=pithead.local DASHBOARD_AUTH_HASH_B64="" \
@@ -30,5 +32,5 @@ caddy_bridge="$(
     cat Caddyfile
 )"
 bridge_bind="$(printf '%s' "$caddy_bridge" | grep '^    bind ' | sort -u)"
-assert_eq "the bind keeps the LAN, ULA and loopback and drops every container-bridge address" \
-    "$bridge_bind" "    bind 192.168.1.10 fd00::1 127.0.0.1 ::1"
+assert_eq "the bind keeps the LAN, ULA and loopback and drops engine bridges but keeps LAN bridges (br0, br-lan)" \
+    "$bridge_bind" "    bind 192.168.1.10 fd00::1 192.168.50.2 192.168.60.2 127.0.0.1 ::1"
