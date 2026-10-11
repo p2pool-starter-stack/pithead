@@ -17,6 +17,19 @@ _reset_config_shutdown_passed() {
     [ "$warning_rc" -eq 1 ] # no match; a reader error is not a clean scan
 }
 
+# Read every project container state; an engine error must not look like an empty census.
+_reset_config_wait_empty() {
+    local deadline=$(($(date +%s) + $1)) residue
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if residue=$(_ssh "podman ps -a --filter label=com.docker.compose.project=pithead --format '{{.ID}} {{.State}} {{.Names}}'" 2>&1) && [ -z "$residue" ]; then
+            return 0
+        fi
+        sleep 2
+    done
+    printf 'config-reset residue census did not clear: %s\n' "${residue:-unreadable}" >&2
+    return 1
+}
+
 _phase_reset_config() {
     info "leg 0 — config-reset must keep chains and the onion address, clear the config, and re-arm the wizard"
     local onion_before onion_after cr_height_before cr_height_after cr_height_deadline fb_ran boot_ran
@@ -83,6 +96,12 @@ _phase_reset_config() {
         ok "the wizard is re-armed and pithead-boot stands down — the two conditions came out opposite, as designed"
     else
         bad "config-reset did not flip the boot conditions (firstboot ran: $fb_ran, boot ran: $boot_ran)"
+    fi
+
+    if _reset_config_wait_empty 60; then
+        ok "config-reset leaves no pithead-project containers in any state"
+    else
+        bad "config-reset left project-container residue or an unreadable census"
     fi
 
     # What config-reset must clear, and the one thing it must keep, as a table: one row per probe
