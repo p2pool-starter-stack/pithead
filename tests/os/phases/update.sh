@@ -1,24 +1,9 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
-# SCOPE (#2055 G1): legs 1-3 below keep the guest UNPROVISIONED throughout — neither config.json
-# nor machine-role is ever written, so pithead-boot.service's ConditionPathExists never triggers
-# and the unit never runs for the whole of legs 1-3. Their `rauc install`/`mark-good`/`mark-bad`
-# calls drive the A/B bootloader mechanism directly over SSH, standing in for what pithead-boot's
-# health-gated auto-commit would issue on a real boot. Legs 1-3 therefore measure the RAUC/GRUB
-# slot mechanism ONLY: pithead-boot's own render/up/health-gate/commit-or-rollback logic, the
-# data-floor restore and the held-chain release are NOT exercised here — those need a provisioned
-# guest and are leg 4's job (`phase_update_dashboard`, via `_wizard_provision_capture`, which does
-# write config.json and drives the real dashboard-triggered os-update path; see testing-strategy.md
-# row 223/226). Two exceptions ride units with no provisioned-only condition and so stay valid
-# evidence even here: `boot_label_serial_verdict` below (leg 2) reads `pithead-boot-version.service`,
-# which the #1956/#2054 fix deliberately made run on every boot; and the machine-id/SSH-host-key
-# survival checks read `pithead-machine-id`/`pithead-ssh-host-keys`, both unconditional units.
+# Legs 1–3 keep the guest configless and exercise RAUC/GRUB; leg 4 drives the
+# provisioned health gate. Leg 1 requires the open setup page to leave B uncommitted.
 phase_update() {
     info "phase: update (A/B commit + rollback, driven over test-only SSH)"
-    # NO local _ssh/_wait_ssh redefinitions here. Function definitions are global but locals are
-    # not: a redefinition capturing a local outlives the phase, and the NEXT phase in an
-    # --phase all run then calls it with the variable gone — an unbound-variable crash that no
-    # standalone phase run can ever reproduce. The top-level helpers already do this job.
     local ip="" marker bundle menu_mark menu_verdict
 
     info "building v1 test image (test SSH key + marker v1)"
@@ -116,6 +101,21 @@ phase_update() {
         bad "expected v2 in the spare slot, got '$marker'"
         return
     }
+    if _wait_setup_page 120; then
+        local spare_status spare_until=$((SECONDS + 120))
+        while [ "$SECONDS" -lt "$spare_until" ]; do
+            spare_status=$(SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh 'rauc status --output-format=json') || spare_status=""
+            printf '%s' "$spare_status" | jq -e '.booted == "B" and any(.slots[]; .["rootfs.1"].state == "booted" and .["rootfs.1"].boot_status == "bad")' >/dev/null 2>&1 && break
+            sleep 5
+        done
+        if [ "$SECONDS" -lt "$spare_until" ]; then
+            ok "unprovisioned B with its setup page open remains uncommitted"
+        else
+            bad "unprovisioned B was committed or its RAUC state never became readable"
+        fi
+    else
+        bad "unprovisioned update setup page never served"
+    fi
     _reboot_wait reboot 300 || { # uncommitted -> the bootloader must fall back on its own
         bad "guest never returned after the no-commit reboot"
         return
