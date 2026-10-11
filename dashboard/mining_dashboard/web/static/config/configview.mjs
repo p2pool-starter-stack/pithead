@@ -10,6 +10,7 @@
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
+import { Field, validNumber } from "./configfield.mjs";
 import {
   buildSections,
   editableCandidate,
@@ -20,7 +21,6 @@ import {
   nestSection,
   parseConfigJson,
   regroupCore,
-  SECRET_HINT,
 } from "./configlogic.mjs";
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, focusSection, pathGet, pathSet } from "./configsync.mjs";
@@ -72,55 +72,6 @@ export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
   );
 }
 
-const HOST_ONLY_TITLE = "Host-only — edit config.json and run ./pithead apply";
-// #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review modal makes you type APPLY. The tooltip sets that expectation up front.
-const CONFIRM_TITLE = "Editable — this change is disruptive; you'll type APPLY to confirm at Save";
-const APPROVAL_TITLE = "Editable — this sensitive change is recorded under your signed-in identity";
-// `full` (#529): the pinned Core card mixes fields from several sections, so its rows need the
-// FULL dotted key ("monero.wallet_address") to stay unambiguous. A natural section keeps the
-// shorter relative label ONLY while all its fields share one top-level key (its heading then says
-// the rest); a logical section that mixes top-level keys (#611 — Wallets & payout spans monero.*
-// AND tari.*) gets full keys too, or monero.view_key and tari.view_key would both render as a
-// bare "view_key" (and System / advanced would show four identical "data_dir" rows).
-//
-// A host-only field has no event listener; it cannot enter staged edits.
-const Field = ({ field, value, onEdit, full }) => {
-  // The host derives this public key from the dual address; ask only for the private view key.
-  if (field.key === "tari.spend_public_key") return null;
-  const editable = field.editable !== false;
-  const label = full ? field.key : field.path.slice(1).join(".") || field.path[0];
-  const title = !editable
-    ? HOST_ONLY_TITLE
-    : field.confirm
-      ? CONFIRM_TITLE
-      : field.approval
-        ? APPROVAL_TITLE
-        : undefined;
-  const change = editable ? (e) => onEdit(field, e.target.value) : undefined;
-  let input;
-  if (field.type === "boolean") {
-    input = html`<select value=${String(value)} disabled=${!editable} onChange=${change}>
-        <option value="true">true</option>
-        <option value="false">false</option>
-    </select>`;
-  } else if (field.type === "select") {
-    input = html`<select value=${value} disabled=${!editable} onChange=${change}>
-        ${field.options.map((o) => html`<option value=${o}>${o}</option>`)}
-    </select>`;
-  } else if (field.type === "secret") {
-    input = html`<input type="password" value=${value} placeholder=${SECRET_HINT}
-        disabled=${!editable} onInput=${change} />`;
-  } else {
-    input = html`<input type=${field.type === "number" ? "number" : "text"} value=${value}
-        disabled=${!editable} onInput=${change} />`;
-  }
-  return html`<label class="config-field" title=${title}>
-      <span class="config-field-name">${label}${field.defaulted ? " (default)" : ""}</span>
-      ${input}
-      ${field.warning ? html`<span class="config-field-warning">⚠ ${field.warning}</span>` : null}
-  </label>`;
-};
-
 export class ConfigView extends Component {
   constructor(props) {
     super(props);
@@ -134,6 +85,7 @@ export class ConfigView extends Component {
       approvalKeys: [],
       defaultKeys: [],
       lastApply: null,
+      drafts: {}, // numeric fields' in-progress text, by config key (#3350)
       candidate: null, // the ONE config both the fields and the JSON pane edit (#785)
       pristine: "", // candidate's serialization at load — dirtiness is a comparison, not a flag
       editText: "",
@@ -172,6 +124,7 @@ export class ConfigView extends Component {
         defaultKeys: cfg._default_keys || [],
         lastApply: cfg._last_apply || null,
         candidate,
+        drafts: {},
         pristine: text,
         editText: text,
         jsonError: null,
@@ -184,8 +137,26 @@ export class ConfigView extends Component {
 
   // Field -> candidate -> pane. The field's declared type drives coercion (shared
   // configsync.coerceForType), so a port stays a number and a toggle a boolean in the JSON.
+  // A numeric field keeps the operator's text as a draft while they type (#3350): re-rendering
+  // "0." or "-" from the coerced candidate rewrites the next keystroke. The candidate only takes
+  // a draft that parses; otherwise it keeps its last valid number and the field is flagged.
   onFieldEdit(field, raw) {
     const { candidate, cfg } = this.state;
+    if (field.type === "number") {
+      const drafts = { ...this.state.drafts, [field.key]: raw };
+      if (!validNumber(raw)) {
+        this.setState({ drafts });
+        return;
+      }
+      pathSet(candidate, field.key, coerceForType("number", raw));
+      this.setState({
+        drafts,
+        candidate,
+        editText: JSON.stringify(candidate, null, 2),
+        jsonError: null,
+      });
+      return;
+    }
     const value =
       field.type === "secret" && raw === ""
         ? pathGet(cfg, field.key)
@@ -217,7 +188,15 @@ export class ConfigView extends Component {
       JSON.stringify(candidate) === JSON.stringify(staged.config)
         ? text
         : JSON.stringify(candidate, null, 2);
-    this.setState({ editText, jsonError: null, candidate });
+    // Keep invalid drafts (still being fixed) and valid ones whose number the pane left alone
+    // (0.10 vs 0.1); drop a valid draft the pane changed, so the field follows it.
+    const drafts = Object.fromEntries(
+      Object.entries(this.state.drafts).filter(
+        ([key, raw]) =>
+          !validNumber(raw) || coerceForType("number", raw) === pathGet(candidate, key),
+      ),
+    );
+    this.setState({ editText, jsonError: null, candidate, drafts });
   }
   onFilePick(e) {
     const file = e.target.files[0];
@@ -305,7 +284,7 @@ export class ConfigView extends Component {
   // cluster (telegram.events, the notification sinks, healthchecks) into its own nested <details>,
   // one level deeper, also collapsed by default.
   renderForm(core, groups) {
-    const { candidate } = this.state;
+    const { candidate, drafts } = this.state;
     const onEdit = (f, v) => this.onFieldEdit(f, v);
     // A set secret arrives as a sentinel and renders blank behind its keep-hint placeholder;
     // everything else shows the candidate's live value, so pane edits are visible immediately.
@@ -315,7 +294,9 @@ export class ConfigView extends Component {
       return typeof v === "object" ? JSON.stringify(v) : String(v);
     };
     const field = (f, full) =>
-      html`<${Field} field=${f} value=${displayValue(f)} full=${full} onEdit=${onEdit} />`;
+      html`<${Field} field=${f} value=${f.key in drafts ? drafts[f.key] : displayValue(f)}
+        invalid=${f.key in drafts && !validNumber(drafts[f.key])}
+        full=${full} onEdit=${onEdit} />`;
     return html`<div class="grid">
         ${
           core.length
@@ -417,7 +398,8 @@ export class ConfigView extends Component {
     }
     const busy = phase === "previewing" || phase === "committing";
     const dirty = editText !== this.state.pristine;
-    const canSave = dirty && !jsonError;
+    const badDraft = Object.values(this.state.drafts).some((raw) => !validNumber(raw));
+    const canSave = dirty && !jsonError && !badDraft;
     const { core, sections: groups } = regroupCore(
       markEditable(sections, editableKeys, confirmKeys, approvalKeys, defaultKeys),
       coreKeys,
