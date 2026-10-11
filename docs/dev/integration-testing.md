@@ -264,6 +264,14 @@ endpoints. The gate's success signal is real mining, so it reserves no rig: the 
 its own stack with the appliance's built-in miner, started through `pithead local-miner` — the same
 invocation a provisioned coordinator uses, pointed at `127.0.0.1`'s stratum port. The baseline
 predates that subcommand, so the appliance's own CLI runs it against the baseline stack directory.
+Both the forward worker-set wait and the rollback worker-set/proxy-count wait use
+`BOUND_RECONNECT` (default 480 seconds). Rollback re-reads the dashboard state every five seconds
+and compares both worker readings from the same response; a persistent wrong worker set or
+insufficient proxy count still fails restoration after the bound. An informational row records
+whether the host miner MainPID changed and whether the miner recovery agent logged a restart
+during rollback; unavailable observations do not establish recovery. The pure
+`selftest-restore-baseline-workers.sh` covers delayed convergence, timeout, wrong names and an
+earlier healthy reading followed by disconnection, and runs in the tier-1 selftest glob.
 The phase reports the seconds the miner took to reach the four states the gate reads, and bounds
 that wait so a miner that never mines fails the gate instead of hanging it. The candidate's
 `pithead upgrade` and every restored baseline whose CLI defines `container_engine` start under the
