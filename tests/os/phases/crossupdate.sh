@@ -55,6 +55,13 @@ phase_crossupdate() {
         return
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return
+    fi
 
     local id_old hostkey_fp_old
     id_old=$(_ssh cat /etc/machine-id)
@@ -169,6 +176,8 @@ phase_crossupdate() {
         case "$names" in *dashboard*caddy* | *caddy*dashboard*) break ;; esac
         sleep 15
     done
+    # The swapped slot's `up` may still hold the mutation lock behind tor's healthcheck (#2661).
+    provisioning_settled 900 || bad "provisioning never finished after the slot swap; the runtime config below may be read mid-start ($(provisioning_state))"
     local live_wallet="" wdeadline verdict
     wdeadline=$(($(date +%s) + 180))
     while [ "$(date +%s)" -lt "$wdeadline" ]; do
