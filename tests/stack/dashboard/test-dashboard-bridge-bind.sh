@@ -36,12 +36,5 @@ bridge_bind="$(printf '%s' "$caddy_bridge" | grep '^    bind ' | sort -u)"
 assert_eq "the bind keeps the LAN, ULA and loopback and drops engine bridges but keeps LAN bridges (br0, br-lan)" \
     "$bridge_bind" "    bind 192.168.1.10 fd00::1 192.168.50.2 192.168.60.2 127.0.0.1 ::1"
 site_line="$(printf '%s' "$caddy_bridge" | grep -m1 '^https://pithead.local')"
-for kept in 192.168.1.10 192.168.50.2 192.168.60.2 fd00::1; do
-    assert_contains "the site list keeps the LAN address $kept" "$site_line" "$kept"
-done
-for gone in 10.89.0.1 172.28.0.1 fd00:89::1; do
-    case "$site_line" in
-    *"$gone"*) bad "the site list drops the bridge address $gone" "present in: $site_line" ;;
-    *) ok "the site list drops the bridge address $gone" ;;
-    esac
-done
+assert_eq "the site list keeps the LAN addresses and drops every engine bridge address" "$site_line" \
+    "https://pithead.local, https://192.168.1.10, https://fd00::1, https://192.168.50.2, https://192.168.60.2, https://localhost {"
