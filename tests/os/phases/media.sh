@@ -100,6 +100,13 @@ phase_media() {
         return
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return
+    fi
 
     # ---- apply leg: a real change, shown, counted down, applied, consumed --------------------
     # A MINIMAL stick on purpose — wallet + pool, nothing else. Settings it does not name must
