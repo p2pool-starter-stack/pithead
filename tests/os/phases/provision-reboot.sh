@@ -55,6 +55,13 @@ _phase_provision_reboot() {
         return 1
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return 1
+    fi
     tries=0
     local answered=0
     while [ "$tries" -lt 36 ]; do

@@ -206,6 +206,13 @@ CR_PROBES
         return 1
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return 1
+    fi
 
     # The claims that only a real boot can settle (#2347): the onion address is the SAME one —
     # read from TOR_DATA_DIR's hostname files, not .env (#2379) — and the chain resumed rather

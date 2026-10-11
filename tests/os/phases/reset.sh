@@ -85,6 +85,13 @@ phase_reset() {
         return
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return
+    fi
 
     # leg 0 (#2347): config-reset must keep chains and the onion address, clear the config, and
     # re-arm the wizard — on the SAME provisioned guest, before leg 1 wipes it.
