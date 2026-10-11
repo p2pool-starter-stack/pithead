@@ -177,7 +177,12 @@ phase_crossupdate() {
         sleep 15
     done
     # The swapped slot's `up` may still hold the mutation lock behind tor's healthcheck (#2661).
-    provisioning_settled 900 || bad "provisioning never finished after the slot swap; the runtime config below may be read mid-start ($(provisioning_state))"
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished after the slot swap ($(provisioning_state))"
+    else
+        bad "provisioning never finished after the slot swap, or its setup failed; the runtime config cannot be read ($(provisioning_state))"
+        return
+    fi
     local live_wallet="" wdeadline verdict
     wdeadline=$(($(date +%s) + 180))
     while [ "$(date +%s)" -lt "$wdeadline" ]; do

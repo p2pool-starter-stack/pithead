@@ -20,10 +20,27 @@ PI_ORDER=$(awk '
 ' "$ROOT/tests/os/phases/provision-initial.sh")
 assert_eq "provision settles provisioning after the stack row and before the control legs" "$PI_ORDER" "settled-first"
 unset PI_ORDER
-for _phase in reset-config reset update-dashboard media; do
-    assert_eq "$_phase waits for provisioning to settle after its stack row" \
-        "$(awk '/podman ps --format/ { row = 1 } row && /provisioning_settled [0-9]+/ { print "settled"; exit }' "$ROOT/tests/os/phases/$_phase.sh")" "settled"
+# The k-th `podman ps` listing's loop closes with `done`; the first code line after it must be the
+# guarded wait, and its else branch must leave the phase. Prints settled-first or what came first.
+settle_site() { # $1 phase file, $2 which listing
+    awk -v want="$2" '
+        /podman ps --format/ && !/^ *#/ { rows++ }
+        rows == want && /^ *done$/ && !seen { seen = 1; next }
+        seen && !done && !/^ *#/ && /_ssh|curl|phase_|assert_|provisioning_settled|_monerod_height|_marker|virsh/ {
+            done = 1
+            if ($0 ~ /^ *if provisioning_settled [0-9]+ && ! provisioning_setup_failed; then/) guard = 1
+            else first = $0
+            next
+        }
+        guard && /^ *else$/ { inelse = 1; next }
+        guard && inelse && /^ *return( 1)?$/ { aborts = 1; exit }
+        guard && inelse && /^ *fi$/ { exit }
+        END { print (guard && aborts ? "settled-first" : "first guest line: " first) }
+    ' "$ROOT/tests/os/phases/$1.sh"
+}
+for _site in reset-config:1 reset:1 update-dashboard:1 media:1 crossupdate:1 crossupdate:2; do
+    assert_eq "${_site%%:*} listing ${_site##*:} is followed by the guarded provisioning wait that aborts the phase" \
+        "$(settle_site "${_site%%:*}" "${_site##*:}")" "settled-first"
 done
-assert_eq "crossupdate waits for provisioning to settle at both stack rows" \
-    "$(grep -c 'provisioning_settled [0-9]' "$ROOT/tests/os/phases/crossupdate.sh")" "2"
-unset _phase
+unset -f settle_site
+unset _site
