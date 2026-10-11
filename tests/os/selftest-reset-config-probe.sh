@@ -39,14 +39,14 @@ for stop_rc in 0 125; do
     if [ "$stop_rc" = 0 ]; then
         _reset_config_shutdown_passed "$result" "$output"
     else
-        ! _reset_config_shutdown_passed "$result" "$output"
+        if _reset_config_shutdown_passed "$result" "$output"; then exit 1; fi
     fi
 done
 for result in '' unavailable $'compose_exit=0\nconfig_present=no' $'compose_exit=0\nconfig_present=yes\ncompose_exit=0'; do
-    ! _reset_config_shutdown_passed "$result" 'reset completed'
+    if _reset_config_shutdown_passed "$result" 'reset completed'; then exit 1; fi
 done
 for warning in 'Stack shutdown failed — continuing with the config wipe.' 'compose down failed (engine not running?) — continuing with the config wipe.'; do
-    ! _reset_config_shutdown_passed $'compose_exit=0\nconfig_present=yes' "$warning"
+    if _reset_config_shutdown_passed $'compose_exit=0\nconfig_present=yes' "$warning"; then exit 1; fi
 done
 for reader_rc in 2 127; do
     (
@@ -60,7 +60,7 @@ large_warning=$(
     printf 'Stack shutdown failed\n'
     head -c 65536 /dev/zero | tr '\0' x
 )
-! _reset_config_shutdown_passed $'compose_exit=0\nconfig_present=yes' "$large_warning"
+if _reset_config_shutdown_passed $'compose_exit=0\nconfig_present=yes' "$large_warning"; then exit 1; fi
 
 # Drive leg 0 through capture and verdict; stop at its next unrelated boot-condition gate.
 _ssh() {
@@ -98,7 +98,7 @@ for stop_rc in 0 125; do
         grep -Fq 'ok: config-reset Compose shutdown succeeded before the configuration wipe (exit 0)' "$work/phase-rows"
     else
         grep -Fq 'bad: config-reset Compose shutdown failed or was not recorded before the configuration wipe' "$work/phase-rows"
-        ! grep -Fq 'ok: config-reset Compose shutdown succeeded' "$work/phase-rows"
+        if grep -Fq 'ok: config-reset Compose shutdown succeeded' "$work/phase-rows"; then exit 1; fi
     fi
 done
 fixture_result=$'compose_exit=0\nconfig_present=yes'
@@ -112,7 +112,7 @@ for capture_case in missing oversize read-error; do
     esac
     if _phase_reset_config >"$work/phase-rows" 2>"$work/phase-diagnostics"; then exit 1; fi
     grep -Fq 'bad: config-reset shutdown diagnostics are missing, unreadable or exceed the capture bound' "$work/phase-rows"
-    ! grep -Fq 'ok: config-reset Compose shutdown succeeded' "$work/phase-rows"
+    if grep -Fq 'ok: config-reset Compose shutdown succeeded' "$work/phase-rows"; then exit 1; fi
 done
 # Poll the actual residue helper; include exited containers and unreadable engines.
 (
