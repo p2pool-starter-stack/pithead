@@ -14,6 +14,9 @@ drive_reset_restore() (
     IT_FAIL=0 IT_PASS=0 IT_PITHEAD=./pithead
     OUT_DIR=$(mktemp -d -t reset-restore-selftest.XXXXXX) || exit 1
     trap 'rm -rf "$OUT_DIR"' EXIT
+    echo 0 >"$OUT_DIR/clock"
+    date() { cat "$OUT_DIR/clock"; }
+    sleep() { echo $(($(cat "$OUT_DIR/clock") + 2)) >"$OUT_DIR/clock"; }
     rx() {
         case "$1" in
         'sha256sum config.json')
@@ -45,7 +48,20 @@ drive_reset_restore() (
                 ;;
             esac
             ;;
-        *"printf 'config-reset"*) [ "$fault" != reset ] && touch "$OUT_DIR/reset" ;;
+        *"printf 'config-reset"*)
+            [ "$fault" != reset ] || return 1
+            touch "$OUT_DIR/reset"
+            case "$fault" in
+            warning) printf 'Stack shutdown failed — continuing with the config wipe.\n' ;;
+            old-warning) printf 'compose down failed (engine not running?) — continuing with the config wipe.\n' ;;
+            esac
+            ;;
+        'docker ps --all --quiet --filter label=com.docker.compose.project=pithead')
+            case "$fault" in
+            residue) printf 'exited-container\n' ;;
+            census) return 1 ;;
+            esac
+            ;;
         'test ! -e config.json'*) [ -e "$OUT_DIR/reset" ] && [ "$fault" != absent ] ;;
         *' script -q -e '*)
             [ "$fault" != prompt ] || return 1
@@ -77,7 +93,7 @@ drive_reset_restore() (
 )
 PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
 trap 'rm -f "$PROBE_COPY"' EXIT
-assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|8'
+assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|10'
 # Restore refused and wrote nothing: the failure names #3346 and lets later phases run; a write does not.
 assert_eq "a refusal that wrote nothing fails the row, names #3346 and flags the stack intact" \
     "$(drive_reset_restore refused)" "1|1|1|intact=1|1"
@@ -143,7 +159,7 @@ fi
     rx() { printf boot-a; }
     reset_restore_wait_reboot boot-a 60
 ) && it_fail "reboot wait gives up when the boot id never changes" "returned success" || it_pass "reboot wait gives up when the boot id never changes"
-for fault in snapshot backup archive active reset absent down prompt restore up health config secrets cleanup; do
+for fault in snapshot backup archive active reset absent down prompt restore up health config secrets cleanup warning old-warning residue census; do
     verdict=$(drive_reset_restore "$fault")
     if [[ "$verdict" == 1\|1\|* ]]; then
         it_pass "reset recovery refuses $fault failure"
@@ -151,4 +167,9 @@ for fault in snapshot backup archive active reset absent down prompt restore up 
         it_fail "reset recovery refuses $fault failure" "unexpected verdict $verdict"
     fi
 done
+if reset_restore_shutdown_clean "$PROBE_COPY.absent" 2>/dev/null; then
+    it_fail "missing reset log cannot pass the warning guard" "reader error accepted"
+else
+    it_pass "missing reset log cannot pass the warning guard"
+fi
 [ "$IT_FAIL" -eq 0 ]
