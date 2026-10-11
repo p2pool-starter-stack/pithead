@@ -231,6 +231,9 @@ The appliance-only `os/overlay/pithead-miner-recovery` timer recovers a disconne
 local miner; `tests/os/selftest-miner-recovery.sh` covers its decision window and refusals.
 `tests/os/appliance-miner-recovery{,-leg}.sh` proves per-worker accepted-share progress after
 dashboard backup on the stack phase’s synced guest, using a reversible loopback strand.
+Failed guest verdicts print the strand marker, local worker counts and bounded watcher,
+recovery and miner journals before cleanup; the rig coordinator is then torn down.
+`tests/os/selftest-miner-recovery-diagnostics.sh` checks that order and journal-read failures.
 The rig share leg repeats the backup trial while a real rig stays connected.
 `tests/os/appliance-earnings-leg.sh` checks that the provisioned dashboard serves the checkout’s
 parser and earnings modules through authenticated Caddy; `selftest-earnings-assets.sh` rejects

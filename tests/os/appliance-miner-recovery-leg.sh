@@ -56,8 +56,19 @@ miner_cleanup() {
     if [ "$failed" = 0 ]; then rm -rf "$T3375"; fi
     return "$failed"
 }
+miner_diagnostics() {
+    local recorded=no
+    [ ! -e "$T3375/strand" ] || recorded=yes
+    printf 'pithead-t3375: failure phase=%s strand_recorded=%s\n' "${MINER_PHASE:-unknown}" "$recorded"
+    printf 'pithead-t3375: local connections/accepted: '
+    miner_counts || printf '%s\n' unreadable
+    timeout 10 systemctl show pithead-t3375-watcher.service -p ActiveState -p Result -p ExecMainStatus || true
+    timeout 10 journalctl --no-pager -n 80 --since '-20 minutes' \
+        -u pithead-t3375-watcher.service -u pithead-miner-recovery.service -u xmrig.service || true
+}
 miner_guest_exit() {
     local rc=$?
+    if [ "$rc" != 0 ]; then miner_diagnostics || true; fi
     if ! miner_cleanup; then rc=1; fi
     trap - EXIT
     exit "$rc"
@@ -211,6 +222,7 @@ miner_verdict() {
     return 1
 }
 miner_guest_dispatch() {
+    MINER_PHASE=${1:-unknown}
     case "${1:-}" in
     precondition) miner_precondition ;;
     arm)

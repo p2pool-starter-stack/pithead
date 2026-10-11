@@ -170,6 +170,15 @@ miner_arm >"$work/skip" || rc=$?
 [ ! -e "$T3375" ] && [ "$TABLE" = false ]
 
 # Execute real arming/verdict dispatch failures; kernel/systemd calls are the seams.
+journalctl() { printf '%s\n' 'fixture guest journal'; }
+timeout() {
+    if [ "$1" = 10 ]; then
+        shift
+        "$@"
+    else
+        command timeout "$@"
+    fi
+}
 systemctl() {
     case "$*" in
     *MainPID*) echo 123 ;;
