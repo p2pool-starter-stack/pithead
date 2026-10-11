@@ -90,6 +90,8 @@ if in_block 1; then
 
     # shellcheck source=tests/stack/dashboard/test-dashboard.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard.sh" && domain_ran test-dashboard.sh "$_d0" "$?" || domain_ran test-dashboard.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/dashboard/test-dashboard-bridge-bind.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-bridge-bind.sh" && domain_ran test-dashboard-bridge-bind.sh "$_d0" "$?" || domain_ran test-dashboard-bridge-bind.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-dashboard-exposure-live.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-exposure-live.sh" && domain_ran test-dashboard-exposure-live.sh "$_d0" "$?" || domain_ran test-dashboard-exposure-live.sh "$_d0" "$?"
 
