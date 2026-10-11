@@ -16,7 +16,7 @@ IT_FAIL=0
 wallet_proof_calls=0
 # Execute the original lifecycle prefix through the real source-image runner; later pool/wallet
 # legs do not concern these diagnostics and have their own complete lifecycle selftests.
-eval "$(sed -n '/^run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d')
+eval "$(sed -n '/^_run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d;1s/^_run_lifecycle/run_lifecycle/')
 }"
 rx() {
     case "$1" in
