@@ -6,10 +6,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit 
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-miners.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-miners.sh" || exit $?
-run_lifecycle() {
+_run_lifecycle() {
     IT_CURRENT_SCENARIO="lifecycle"
-    local LIFECYCLE_MINING_ACTIVE=1 LIFECYCLE_MINER_STOPPED=0 LIFECYCLE_MINER_NAMES LIFECYCLE_MINER_STATE="$OUT_DIR/.lifecycle-mining.json"
-    rm -f "$LIFECYCLE_MINER_STATE"
     local lifecycle_ok=1 reset_failed=0 # reset_failed: 1 changed state, 2 left the stack intact (#3342)
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults

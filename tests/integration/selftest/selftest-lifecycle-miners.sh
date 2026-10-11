@@ -6,6 +6,11 @@ INTEGRATION_RUN_SUITE=1
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/integration/lib/run-lifecycle-miners.sh
 source "$ROOT/tests/integration/lib/run-lifecycle-miners.sh"
+# Use the harness's real skip ledger: an inapplicable comparison must be counted.
+# shellcheck source=tests/integration/lib/skip-accounting.sh
+source "$ROOT/tests/integration/lib/skip-accounting.sh"
+it_warn() { :; }
+it_err() { :; }
 started=old
 lifecycle_proxy_started() {
     if [ "${INSPECT_FAIL:-0}" = 1 ] && [ "$started" != old ]; then return 1; fi
@@ -23,7 +28,9 @@ api_state() {
     else echo '{"workers":[{"name":"local","status":"online","accepted":1},{"name":"rig","status":"online","accepted":1}]}'; fi
 }
 lifecycle_proxy_workers() {
-    if [ "${LIVE_ZERO:-0}" = 1 ] && [ "$started" = new ]; then
+    if [ "${NO_WORKERS:-0}" = 1 ]; then
+        echo '[]'
+    elif [ "${LIVE_ZERO:-0}" = 1 ] && [ "$started" = new ]; then
         echo '[["local","fixture",0,0],["rig","fixture",1,1]]'
     else
         api_state | jq -ce '[.workers[] | [.name,"fixture",(if .status == "online" then 1 else 0 end),.accepted]]'
@@ -83,8 +90,56 @@ lifecycle_mining_step restore mutation | cat >/dev/null
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 1 ]
 pithead up
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
+# Empty pre-step sets skip the comparison, not the lifecycle mutation or its exit status.
+NO_WORKERS=1 started=old
+skips=$IT_SKIPPED_LEGS
+lifecycle_mining_step apply mutation
+[ "$started" = new ] && [ "$IT_SKIPPED_LEGS" = "$((skips + 1))" ]
+[ "$IT_SKIPPED_BY_DESIGN" = "$IT_SKIPPED_LEGS" ]
+[[ "$IT_SKIPPED_NAMES" == *'no online workers before lifecycle mutation'* ]]
+mutation_fails() {
+    started=new
+    return 7
+}
+if lifecycle_mining_step backup mutation_fails; then exit 1; else rc=$?; fi
+[ "$rc" = 7 ] && [ "$IT_SKIPPED_LEGS" = "$((skips + 2))" ]
+# Empty down/restore/up spans must not inspect a proxy that the harness intentionally stopped.
+lifecycle_mining_step down mutation
+lifecycle_mining_step restore mutation
+[ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 1 ]
+lifecycle_mining_step up mutation
+[ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
+[ "$IT_SKIPPED_LEGS" = "$((skips + 5))" ]
+unset NO_WORKERS
 SKIP_MINING_ASSERTS=1
 lifecycle_mining_step backup mutation
+[ "$IT_SKIPPED_LEGS" = "$((skips + 6))" ]
+if lifecycle_mining_step apply mutation_fails; then exit 1; else rc=$?; fi
+[ "$rc" = 7 ] && [ "$IT_SKIPPED_LEGS" = "$((skips + 7))" ]
+unset SKIP_MINING_ASSERTS
+# Phase-local state stays private outside results and is cleaned on success and failure.
+OUT_DIR="$work/results"
+mkdir -p "$OUT_DIR"
+_run_lifecycle() {
+    phase_state=$LIFECYCLE_MINER_STATE
+    case "$phase_state" in "$OUT_DIR"/*) return 99 ;; esac
+    [ -d "${phase_state%/*}" ]
+    LIFECYCLE_MINER_NAMES='["local"]'
+    lifecycle_mining_save
+    [ -s "$phase_state" ]
+    return "$PHASE_RC"
+}
+export RUNNER_TEMP="$work/scratch"
+mkdir -p "$RUNNER_TEMP"
+for temporary_source in TMPDIR RUNNER_TEMP; do
+    if [ "$temporary_source" = TMPDIR ]; then export TMPDIR="$RUNNER_TEMP"; else unset TMPDIR; fi
+    for PHASE_RC in 0 7; do
+        if run_lifecycle; then rc=0; else rc=$?; fi
+        [ "$rc" = "$PHASE_RC" ] && [ ! -e "${phase_state%/*}" ]
+        [[ "$phase_state" == "$RUNNER_TEMP"/* ]]
+    done
+done
+export TMPDIR="$RUNNER_TEMP"
 printf '%s\n' 'PASS: lifecycle worker return, reset counters, refusal and mining opt-out'
 
 # Exercise the real rx shell parsing and Python probe in both target modes.

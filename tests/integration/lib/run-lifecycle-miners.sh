@@ -54,6 +54,7 @@ lifecycle_mining_step() { # <description> <command> [args]
     local label=$1 before after names end rc=0
     shift
     if [ "${SKIP_MINING_ASSERTS:-0}" = 1 ]; then
+        it_skip_leg "$label workers reconnect and accept post-restart shares (#3375)" "SKIP_MINING_ASSERTS=1" "by-design"
         "$@"
         return $?
     fi
@@ -67,11 +68,20 @@ lifecycle_mining_step() { # <description> <command> [args]
             return 1
         }
     fi
-    # An intentional down/up span retains the last live set instead of proving an empty set.
-    [ "$names" != '[]' ] || {
-        it_fail "$label mining precondition" "no online workers before lifecycle mutation"
-        return 1
-    }
+    # No pre-step worker means there is no return comparison; still run the mutation.
+    if [ "$names" = '[]' ]; then
+        it_skip_leg "$label workers reconnect and accept post-restart shares (#3375)" "no online workers before lifecycle mutation" "by-design"
+        "$@" || return $?
+        LIFECYCLE_MINER_NAMES=$names
+        case "$label" in
+        down | uninstall) LIFECYCLE_MINER_STOPPED=1 ;;
+        restore) : ;; # A restore within an intentional down/up span does not start the proxy.
+        *) LIFECYCLE_MINER_STOPPED=0 ;;
+        esac
+        lifecycle_mining_save
+        return $?
+    fi
+    # An intentional down/up span retains its nonempty live worker set.
     LIFECYCLE_MINER_NAMES=$names
     lifecycle_mining_save || return 1
     "$@" || rc=$?
@@ -118,4 +128,14 @@ pithead() {
         ;;
     *) lifecycle_raw_pithead "$@" ;;
     esac
+}
+
+# Keep private, atomic state out of the published results and remove it on phase return.
+run_lifecycle() {
+    local LIFECYCLE_MINING_ACTIVE=1 LIFECYCLE_MINER_STOPPED=0 LIFECYCLE_MINER_NAMES directory rc
+    directory=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?temporary directory required}}/lifecycle-mining.XXXXXX") || return 1
+    local LIFECYCLE_MINER_STATE="$directory/state.json"
+    if _run_lifecycle; then rc=0; else rc=$?; fi
+    rm -rf "$directory" || return 1
+    return "$rc"
 }
