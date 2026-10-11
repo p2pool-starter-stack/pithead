@@ -9,11 +9,29 @@ source "$HERE/../lib/run-reset-restore.sh"
 echo "== encrypted config-reset recovery failure controls =="
 
 drive_reset_restore() (
-    local fault="$1"
+    local fault="$1" channel="${2:-diy}"
+    # shellcheck disable=SC2034 # read by the shared web helper
+    IT_SSH_DEST=root@guest.invalid
     # shellcheck disable=SC2034 # consumed by the sourced leg
     IT_FAIL=0 IT_PASS=0 IT_PITHEAD=./pithead
     OUT_DIR=$(mktemp -d -t reset-restore-selftest.XXXXXX) || exit 1
     trap 'rm -rf "$OUT_DIR"' EXIT
+    echo 0 >"$OUT_DIR/clock"
+    now_s() { cat "$OUT_DIR/clock"; }
+    sleep() { echo $(($(now_s) + $1)) >"$OUT_DIR/clock"; }
+    env_on_box() {
+        [ "$fault" != "env-$1" ] || return 1
+        case "$1" in
+        HOST_IP) printf dashboard.invalid ;;
+        HOST_PORT) case "$fault" in custom-port | custom-http) printf 8443 ;; esac ;;
+        DASHBOARD_SECURE) if [ "$fault" = custom-http ]; then printf false; else printf true; fi ;;
+        DASHBOARD_AUTH_HASH_B64) [ "$fault" = noauth ] || printf fixture ;;
+        esac
+        return 0
+    }
+    curl() { [ "$fault" != page ] && printf 'Pithead setup'; }
+    reset_restore_wait_reboot() { :; } # reboot transport has its own controls below
+
     rx() {
         case "$1" in
         'sha256sum config.json')
@@ -22,6 +40,41 @@ drive_reset_restore() (
             ;;
         *' backup -y') [ "$fault" != backup ] ;;
         'cat /proc/sys/kernel/random/boot_id') printf boot-a ;;
+        *"inspect --format '{{.State.Running}}' pithead-wizard") [ "$fault" != wizard-start ] && printf true ;;
+        'docker ps -a --format "{{.Names}}"')
+            [ "$fault" != wizard ] || printf pithead-wizard
+            ;;
+        *"inspect --format '{{.Id}} {{.RestartCount}}"*)
+            local count=0 started=start-a id=caddy-a health=healthy
+            if [ "$(now_s)" -gt 0 ]; then
+                [ "$fault" != restart ] || count=1
+                [ "$fault" != started ] || started=start-b
+                [ "$fault" != id ] || id=caddy-b
+            fi
+            [ "$fault" != starting ] || health=starting
+            printf '%s %s %s true %s' "$id" "$count" "$started" "$health"
+            ;;
+        'source ./pithead || exit;'*)
+            [ "$fault" != channel ] || return 255
+            printf '%s' "$channel"
+            ;;
+        curl*)
+            [ "$fault" != curl ] || return 1
+            local port=443
+            local scheme=https
+            case "$fault" in custom-port | custom-http) port=8443 ;; esac
+            [ "$fault" != custom-http ] || scheme=http
+            [[ "$1" == *"--resolve dashboard.invalid:$port:127.0.0.1"* ]] &&
+                [[ "$1" == *"$scheme://dashboard.invalid:$port/"* ]] || return 127
+            local body=dashboard code=401
+            [ "$fault" != body ] || body='Pithead setup'
+            [ "$fault" != zero ] || code=000
+            [ "$fault" != code ] || code=503
+            [ "$fault" != noauth ] || code=200
+            printf '%s\n%s' "$body" "$code"
+            ;;
+        'ss -ltnp; docker logs --tail 40 caddy') : ;;
+
         ls*) [ "$fault" != archive ] && printf 'backups/fixture.tar.gz.enc' ;;
         'set -e; stage=census;'*)
             printf '%s' "$1" >"$OUT_DIR/probe"
@@ -45,7 +98,10 @@ drive_reset_restore() (
                 ;;
             esac
             ;;
-        *"printf 'config-reset"*) [ "$fault" != reset ] && touch "$OUT_DIR/reset" ;;
+        *"printf 'config-reset"*)
+            [ "$fault" != reset ] && touch "$OUT_DIR/reset"
+            [ "$channel" != appliance ] || printf 'Rebooting into first-boot'
+            ;;
         'test ! -e config.json'*) [ -e "$OUT_DIR/reset" ] && [ "$fault" != absent ] ;;
         *' script -q -e '*)
             [ "$fault" != prompt ] || return 1
@@ -77,7 +133,19 @@ drive_reset_restore() (
 )
 PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
 trap 'rm -f "$PROBE_COPY"' EXIT
-assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|8'
+assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|11'
+assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|12'
+assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|11'
+assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|11'
+assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|11'
+for fault in page wizard restart started id starting body zero curl code noauth wizard-start channel env-HOST_PORT env-DASHBOARD_SECURE env-DASHBOARD_AUTH_HASH_B64; do
+    verdict=$(drive_reset_restore "$fault" appliance)
+    if [[ "$verdict" == 1\|1\|* ]]; then
+        it_pass "appliance recovery refuses $fault web failure"
+    else
+        it_fail "appliance recovery refuses $fault web failure" "unexpected verdict $verdict"
+    fi
+done
 # Restore refused and wrote nothing: the failure names #3346 and lets later phases run; a write does not.
 assert_eq "a refusal that wrote nothing fails the row, names #3346 and flags the stack intact" \
     "$(drive_reset_restore refused)" "1|1|1|intact=1|1"
@@ -151,4 +219,41 @@ for fault in snapshot backup archive active reset absent down prompt restore up 
         it_fail "reset recovery refuses $fault failure" "unexpected verdict $verdict"
     fi
 done
+# The real status predicate needs two matching censuses, resets on failed status and read errors,
+# and treats a recreated container like a restart. No fake predicate replaces the code under test.
+(
+    status_churn_reset
+    census='id start-a 0'
+    pithead() { [ "${status_fails:-0}" = 0 ]; }
+    rx() {
+        case "$1" in
+        'docker ps -aq '*) printf id ;;
+        'docker inspect '*) [ "${inspect_fails:-0}" = 0 ] && printf '%s' "$census" ;;
+        *) return 127 ;;
+        esac
+    }
+    _pred_status_ok && exit 1
+    _pred_status_ok || exit 1
+    for census in 'id start-b 0' 'id start-b 1' 'new-id start-b 1'; do
+        _pred_status_ok && exit 1
+        _pred_status_ok || exit 1
+    done
+    status_fails=1
+    _pred_status_ok && exit 1
+    status_fails=0
+    _pred_status_ok && exit 1
+    _pred_status_ok || exit 1
+    inspect_fails=1
+    _pred_status_ok && exit 1
+    inspect_fails=0
+    _pred_status_ok && exit 1
+    _pred_status_ok || exit 1
+    # Each wait clears any prior success: its first read must not reuse a stale census.
+    wait_for() {
+        "$4" && exit 1
+        "$4"
+    }
+    wait_status_ok || exit 1
+) && it_pass "status waits reject churn and require consecutive OK reads" ||
+    it_fail "status waits reject churn and require consecutive OK reads" "predicate accepted churn or stale state"
 [ "$IT_FAIL" -eq 0 ]

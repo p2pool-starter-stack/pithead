@@ -388,6 +388,7 @@ run_auth_fail_closed() {
     pithead status >/dev/null 2>&1
     assert_rc "stack healthy again after token restore" "$?" "0"
 
+    rr_web_ports_owned_by_dashboard "auth recovery" || true
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "auth-fail-closed" "$OUT_DIR"
 }
 
