@@ -13,6 +13,7 @@ it_warn() { :; }
 it_err() { :; }
 started=old
 lifecycle_proxy_started() {
+    if [ -n "${PROXY_ABSENT_FILE:-}" ] && [ -e "$PROXY_ABSENT_FILE" ]; then return 1; fi
     if [ "${INSPECT_FAIL:-0}" = 1 ] && [ "$started" != old ]; then return 1; fi
     echo "$started"
 }
@@ -90,6 +91,24 @@ lifecycle_mining_step restore mutation | cat >/dev/null
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 1 ]
 pithead up
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
+# Config-reset removes the proxy: retain the pre-reset names through absent down/restore/up.
+PROXY_ABSENT_FILE="$work/proxy-absent"
+proxy_shutdown() { touch "$PROXY_ABSENT_FILE"; }
+proxy_start() {
+    rm -f "$PROXY_ABSENT_FILE"
+    started=new
+}
+started=old CASE=good
+lifecycle_mining_step config-reset proxy_shutdown | cat >/dev/null
+[ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 1 ]
+[ "$(jq -c .names "$LIFECYCLE_MINER_STATE")" = '["local","rig"]' ]
+lifecycle_mining_step down mutation
+lifecycle_mining_step restore mutation
+[ -e "$PROXY_ABSENT_FILE" ]
+lifecycle_mining_step up proxy_start
+[ ! -e "$PROXY_ABSENT_FILE" ]
+[ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
+unset PROXY_ABSENT_FILE
 # Empty pre-step sets skip the comparison, not the lifecycle mutation or its exit status.
 NO_WORKERS=1 started=old
 skips=$IT_SKIPPED_LEGS

@@ -74,19 +74,19 @@ lifecycle_mining_step() { # <description> <command> [args]
         "$@" || return $?
         LIFECYCLE_MINER_NAMES=$names
         case "$label" in
-        down | uninstall) LIFECYCLE_MINER_STOPPED=1 ;;
+        down | uninstall | config-reset) LIFECYCLE_MINER_STOPPED=1 ;;
         restore) : ;; # A restore within an intentional down/up span does not start the proxy.
         *) LIFECYCLE_MINER_STOPPED=0 ;;
         esac
         lifecycle_mining_save
         return $?
     fi
-    # An intentional down/up span retains its nonempty live worker set.
+    # An intentional reset/down/restore/up span retains its nonempty live worker set.
     LIFECYCLE_MINER_NAMES=$names
     lifecycle_mining_save || return 1
     "$@" || rc=$?
     [ "$rc" = 0 ] || return "$rc"
-    case "$label" in down | uninstall)
+    case "$label" in down | uninstall | config-reset)
         LIFECYCLE_MINER_STOPPED=1
         lifecycle_mining_save
         return $?
