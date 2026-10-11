@@ -133,6 +133,7 @@ fault_body=$(declare -f fault_tor_probe_egress)
 
 # shellcheck source=tests/integration/lib.sh
 source "$ROOT/lib.sh"
+for fn in rr_setup_page_ready rr_web_ports_owned_by_dashboard status_ok_without_churn status_churn_reset; do type "$fn" >/dev/null 2>&1 || exit 1; done
 OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/doctor-modules.XXXXXX")"
 trap 'rm -rf "$OUT_DIR"' EXIT
 
