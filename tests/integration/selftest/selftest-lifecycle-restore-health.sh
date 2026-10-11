@@ -12,7 +12,7 @@ source "$HERE/../lib.sh"
 
 echo "== lifecycle restore health gates fault injection (#2501) =="
 
-LIFECYCLE_SRC="$(sed -n '/^run_lifecycle() {$/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
+LIFECYCLE_SRC="$(sed -n '/^_run_lifecycle() {$/,/^}$/p' "$HERE/../lib/run-lifecycle.sh" | sed '1s/^_run_lifecycle/run_lifecycle/')"
 assert_eq "the extraction is the whole lifecycle function" \
     "$(printf '%s\n' "$LIFECYCLE_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_lifecycle() { } "
 

@@ -88,8 +88,10 @@ Check the box is fit at any time, non-destructively:
 tests/integration/run.sh --host you@server --dir pithead --readiness
 ```
 
-It asserts: Monero synced and Tari dashboard sync `done` within 240 s (chains reusable),
-`pithead status` healthy within 240 s (a failure lists each service's last verdict), the prune
+It asserts: Monero caught up and Tari dashboard sync `done`, each polled every 5 s
+for up to 240 s (chains reusable). Monero expiry distinguishes a node that answered
+“not caught up” from one that could not be asked. It also checks that
+`pithead status` becomes healthy within 240 s (a failure lists each service's last verdict), the prune
 axis is exercisable (the live chain FS is snapshot-capable
 **or** a pre-built variant chain is supplied), disk headroom, `.env` is owner-only, the dashboard
 is bound to localhost, and the backup/rollback net is usable. A Tari-only timeout is reported to

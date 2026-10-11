@@ -13,6 +13,9 @@ source tests/integration/lib/run-lifecycle-miners.sh
     rx() { bash -c "$1"; }
     it_pass() { :; }
     it_fail() { printf '%s\n' 'connections: mining post-step failed' >&2; }
+# A fixed skip marker bypasses each CLI output capture; the outer harness counts it.
+exec 3>&1
+    it_skip_leg() { printf 'connections: mining skipped: %s\n' "${1%% *}" >&3; }
 stage=initialization
 # EXIT alone preserves the integration harness's abort/unwind contract.
 trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at %s\n" "$stage" >&2; fi' EXIT
@@ -110,6 +113,14 @@ run_connection_announcements() {
         fi
     done
     printf '%s\n' "$out" | retain_lifecycle_gate_samples >>"$OUT_DIR/lifecycle-gate.log"
+    while IFS= read -r marker; do
+        case "$marker" in
+        'connections: mining skipped: setup' | 'connections: mining skipped: up' | 'connections: mining skipped: apply')
+            it_skip_leg "${marker##*: } worker return (#3375)" "no pre-step worker or SKIP_MINING_ASSERTS=1" "by-design"
+            printf 'SKIP: %s\n' "${marker##*: } worker return (#3375)" >>"$OUT_DIR/connection-announcements.log"
+            ;;
+        esac
+    done <<<"$out"
     assert_rc "coordinator connection announcement probe succeeds (#3090)" "$rc" 0
     for marker in \
         'setup with startup declined matches rendered credentials' \

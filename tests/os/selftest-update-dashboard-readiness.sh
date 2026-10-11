@@ -16,6 +16,9 @@ info() { :; }
 ok() { printf '%s\n' "$*" >>"$scratch/pass"; }
 bad() { printf '%s\n' "$*" >>"$scratch/fail"; }
 _wizard_provision_capture() { return 0; }
+provisioning_settled() { return 0; }
+provisioning_setup_failed() { return 1; }
+provisioning_state() { printf settled; }
 _ssh() { printf 'dashboard\ncaddy\n'; }
 date() { cat "$scratch/clock"; }
 sleep() {

@@ -68,6 +68,11 @@ Configless shutdown and the local reset destination record are in
 lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure controls in
 `tests/integration/selftest/selftest-reset-restore.sh`.
 
+Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
+`tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
+configuration removal, including suppressed RC4 diagnostics. `tests/os/selftest-reset-config-probe.sh`
+checks that failed or unrecorded stops cannot pass from reset's final exit 0.
+
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
@@ -226,6 +231,12 @@ The appliance-only `os/overlay/pithead-miner-recovery` timer recovers a disconne
 local miner; `tests/os/selftest-miner-recovery.sh` covers its decision window and refusals.
 `tests/os/appliance-miner-recovery{,-leg}.sh` proves per-worker accepted-share progress after
 dashboard backup on the stack phase’s synced guest, using a reversible loopback strand.
+Failed guest verdicts print the strand marker, local worker counts and bounded watcher,
+recovery and miner journals before cleanup; the rig coordinator is then torn down.
+`tests/os/selftest-miner-recovery-diagnostics.sh` checks that order and journal-read failures.
+The watcher polls for the rig to reconnect before recording the strand; separate journal
+budgets retain its early failures alongside mining activity. `selftest-miner-recovery-watcher.sh`
+requires both a connected rig and a nonzero aggregate before the injection is removed.
 The rig share leg repeats the backup trial while a real rig stays connected.
 `tests/os/appliance-earnings-leg.sh` checks that the provisioned dashboard serves the checkout’s
 parser and earnings modules through authenticated Caddy; `selftest-earnings-assets.sh` rejects
