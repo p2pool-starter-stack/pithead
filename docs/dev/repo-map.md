@@ -68,6 +68,11 @@ Configless shutdown and the local reset destination record are in
 lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure controls in
 `tests/integration/selftest/selftest-reset-restore.sh`.
 
+Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
+`tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
+configuration removal, including suppressed RC4 diagnostics. `tests/os/selftest-reset-config-probe.sh`
+checks that failed or unrecorded stops cannot pass from reset's final exit 0.
+
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
