@@ -2,9 +2,11 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/os/phases/reset-config.sh
 source "$SCRIPT_DIR/phases/reset-config.sh" || return $?
+# shellcheck source=tests/os/reset-config-reproduce.sh
+source "$SCRIPT_DIR/reset-config-reproduce.sh" || return $?
 phase_reset() {
     info "phase: reset (factory-reset ESP marker + wedged-/data recovery — opt-in, destructive)"
-    local img token tries jar scode names deadline
+    local img token tries jar scode names deadline handoff DASH_USER DASH_PASS
 
     info "provisioning the guest that legs 0 and 1 both run against"
     img=$(_build_image v1) || {
@@ -48,7 +50,8 @@ phase_reset() {
     }
     tries=0
     while [ "$tries" -lt 24 ]; do
-        curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null | grep -q '"password"' && break
+        handoff=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null)
+        grep -q '"password"' <<<"$handoff" && break
         sleep 5
         tries=$((tries + 1))
     done
@@ -56,6 +59,13 @@ phase_reset() {
         bad "no credentials handoff appeared on the page"
         rm -f "$jar"
         return
+    }
+    # shellcheck disable=SC2034 # dashboard_curl reads this phase local dynamically
+    DASH_USER=$(jq -r '.username // "admin"' <<<"$handoff")
+    DASH_PASS=$(jq -r '.password // ""' <<<"$handoff")
+    [ -n "$DASH_PASS" ] || {
+        bad "reset reproduction handoff has no dashboard password"
+        return 1
     }
     curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
     rm -f "$jar"

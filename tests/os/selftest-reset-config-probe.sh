@@ -82,6 +82,9 @@ _monerod_height() { printf '100\n'; }
 _reboot_wait() {
     [ "$1" = 'umask 077; cd /data/pithead && bash .reset-config-probe.sh > .reset-config-output.log 2>&1' ]
 }
+# This proof branch's attempt uses live transport only in the KVM job.
+_reset_repro_prepare() { :; }
+_reset_repro_reboot_wait() { _reboot_wait "$@"; }
 wait_unit_condition_evaluated() { return 1; }
 info() { :; }
 ok() { printf 'ok: %s\n' "$*"; }
@@ -114,4 +117,27 @@ for capture_case in missing oversize read-error; do
     grep -Fq 'bad: config-reset shutdown diagnostics are missing, unreadable or exceed the capture bound' "$work/phase-rows"
     ! grep -Fq 'ok: config-reset Compose shutdown succeeded' "$work/phase-rows"
 done
+# Poll the actual residue helper; include exited containers and unreadable engines.
+(
+    echo 0 >"$work/clock"
+    date() { cat "$work/clock"; }
+    sleep() { echo $(($(cat "$work/clock") + 2)) >"$work/clock"; }
+    _ssh() {
+        [ "$*" = "podman ps -a --filter label=com.docker.compose.project=pithead --format '{{.ID}} {{.State}} {{.Names}}'" ] || return 127
+        case "$residue_case" in
+        empty) return 0 ;;
+        exited) printf 'fixture exited dashboard\n' ;;
+        unreadable) return 125 ;;
+        delayed) [ "$(cat "$work/clock")" -ge 4 ] || printf 'fixture stopping caddy\n' ;;
+        esac
+    }
+    for residue_case in empty exited unreadable delayed; do
+        echo 0 >"$work/clock"
+        if _reset_config_wait_empty 6 >"$work/residue-output" 2>&1; then
+            case "$residue_case" in empty | delayed) ;; *) exit 1 ;; esac
+        else
+            case "$residue_case" in exited | unreadable) ;; *) exit 1 ;; esac
+        fi
+    done
+)
 printf 'selftest-reset-config-probe: PASS (clean stop, suppressed failure, missing/invalid receipts, old/new warnings)\n'
