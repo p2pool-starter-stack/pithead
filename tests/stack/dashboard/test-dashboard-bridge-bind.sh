@@ -6,7 +6,8 @@ echo "== unit: generate_caddyfile bind list excludes container-bridge addresses 
 # A container bridge the engine (or the setup wizard) created is in `hostname -I` when the Caddyfile
 # renders and can be gone when `up` starts Caddy; a bind on that literal fails the whole file with
 # "cannot assign requested address" and Caddy crash-loops (#3406). The bind keeps the LAN and ULA
-# addresses and drops every address an engine interface holds, while the site list still names them.
+# addresses and drops every address an engine interface holds. The site list and certificate names drop them
+# too: a name that appears only after `up` made the address watch re-render and restart a healthy Caddy.
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_bridge="$(
     # shellcheck disable=SC1090
@@ -34,3 +35,13 @@ caddy_bridge="$(
 bridge_bind="$(printf '%s' "$caddy_bridge" | grep '^    bind ' | sort -u)"
 assert_eq "the bind keeps the LAN, ULA and loopback and drops engine bridges but keeps LAN bridges (br0, br-lan)" \
     "$bridge_bind" "    bind 192.168.1.10 fd00::1 192.168.50.2 192.168.60.2 127.0.0.1 ::1"
+site_line="$(printf '%s' "$caddy_bridge" | grep -m1 '^https://pithead.local')"
+for kept in 192.168.1.10 192.168.50.2 192.168.60.2 fd00::1; do
+    assert_contains "the site list keeps the LAN address $kept" "$site_line" "$kept"
+done
+for gone in 10.89.0.1 172.28.0.1 fd00:89::1; do
+    case "$site_line" in
+    *"$gone"*) bad "the site list drops the bridge address $gone" "present in: $site_line" ;;
+    *) ok "the site list drops the bridge address $gone" ;;
+    esac
+done
