@@ -197,7 +197,7 @@ run_image_upgrade() {
     if [ "$SKIP_MINING_ASSERTS" = "1" ]; then
         after_workers="$(worker_names)"
     else
-        wait_for 240 5 "the exact pre-upgrade worker set" _pred_worker_set_capture "$before_workers" after_workers ||
+        wait_for "${BOUND_RECONNECT:-480}" 5 "the exact pre-upgrade worker set" _pred_worker_set_capture "$before_workers" after_workers ||
             it_fail "workers returned after image upgrade" "the exact pre-upgrade worker set did not return"
     fi
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 360 || it_fail "hashes resumed after image upgrade" "stratum hashes stayed idle"

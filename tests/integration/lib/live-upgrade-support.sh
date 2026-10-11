@@ -302,6 +302,8 @@ restore_upgrade_baseline() {
     _UPGRADE_RESTORE_ARMED=0
     it_warn "restoring the exact pre-upgrade release, state, and image set"
     local failed="" files_ok=1 state restored_workers restored_telemetry monero_tip monero_height
+    local miner_observation
+    miner_observation="$(upgrade_miner_observation_start)"
     local PITHEAD_REGISTRY="$UPGRADE_BASELINE_REGISTRY"
     export PITHEAD_REGISTRY
     pithead down >/dev/null 2>&1 || {
@@ -345,7 +347,8 @@ restore_upgrade_baseline() {
     [ "$(monero_block_identity "$((UPGRADE_BEFORE_MONERO - 1))")" = "$UPGRADE_BEFORE_MONERO_ID" ] || failed+=" monero-identity"
     [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed+=" tari-identity"
     [ "$(stateful_mounts)" = "$UPGRADE_BEFORE_MOUNTS" ] || failed+=" mounts"
-    restored_workers="$(worker_names)"
+    wait_for "${BOUND_RECONNECT:-480}" 5 "restored baseline workers" _pred_upgrade_workers_capture || true
+    upgrade_miner_observation_finish "$miner_observation"
     [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed+=" workers"
     [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null || failed+=" proxy-workers"
     [ "$(jq_get "$state" '.stratum.total_hashes')" -gt 0 ] 2>/dev/null || failed+=" hashes"
