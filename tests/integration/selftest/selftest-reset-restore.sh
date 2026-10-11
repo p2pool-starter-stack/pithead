@@ -17,8 +17,9 @@ drive_reset_restore() (
     OUT_DIR=$(mktemp -d -t reset-restore-selftest.XXXXXX) || exit 1
     trap 'rm -rf "$OUT_DIR"' EXIT
     echo 0 >"$OUT_DIR/clock"
+    date() { cat "$OUT_DIR/clock"; }
     now_s() { cat "$OUT_DIR/clock"; }
-    sleep() { echo $(($(now_s) + $1)) >"$OUT_DIR/clock"; }
+    sleep() { echo $(($(now_s) + ${1:-2})) >"$OUT_DIR/clock"; }
     env_on_box() {
         [ "$fault" != "env-$1" ] || return 1
         case "$1" in
@@ -99,8 +100,19 @@ drive_reset_restore() (
             esac
             ;;
         *"printf 'config-reset"*)
-            [ "$fault" != reset ] && touch "$OUT_DIR/reset"
+            [ "$fault" != reset ] || return 1
+            touch "$OUT_DIR/reset"
+            case "$fault" in
+            warning) printf 'Stack shutdown failed — continuing with the config wipe.\n' ;;
+            old-warning) printf 'compose down failed (engine not running?) — continuing with the config wipe.\n' ;;
+            esac
             [ "$channel" != appliance ] || printf 'Rebooting into first-boot'
+            ;;
+        'docker ps --all --quiet --filter label=com.docker.compose.project=pithead')
+            case "$fault" in
+            residue) printf 'exited-container\n' ;;
+            census) return 1 ;;
+            esac
             ;;
         'test ! -e config.json'*) [ -e "$OUT_DIR/reset" ] && [ "$fault" != absent ] ;;
         *' script -q -e '*)
@@ -133,11 +145,11 @@ drive_reset_restore() (
 )
 PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
 trap 'rm -f "$PROBE_COPY"' EXIT
-assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|11'
-assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|12'
-assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|11'
-assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|11'
-assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|11'
+assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|13'
+assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|14'
+assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|13'
+assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|13'
+assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|13'
 for fault in page wizard restart started id starting body zero curl code noauth wizard-start channel env-HOST_PORT env-DASHBOARD_SECURE env-DASHBOARD_AUTH_HASH_B64; do
     verdict=$(drive_reset_restore "$fault" appliance)
     if [[ "$verdict" == 1\|1\|* ]]; then
@@ -211,7 +223,7 @@ fi
     rx() { printf boot-a; }
     reset_restore_wait_reboot boot-a 60
 ) && it_fail "reboot wait gives up when the boot id never changes" "returned success" || it_pass "reboot wait gives up when the boot id never changes"
-for fault in snapshot backup archive active reset absent down prompt restore up health config secrets cleanup; do
+for fault in snapshot backup archive active reset absent down prompt restore up health config secrets cleanup warning old-warning residue census; do
     verdict=$(drive_reset_restore "$fault")
     if [[ "$verdict" == 1\|1\|* ]]; then
         it_pass "reset recovery refuses $fault failure"
@@ -219,6 +231,11 @@ for fault in snapshot backup archive active reset absent down prompt restore up 
         it_fail "reset recovery refuses $fault failure" "unexpected verdict $verdict"
     fi
 done
+if reset_restore_shutdown_clean "$PROBE_COPY.absent" 2>/dev/null; then
+    it_fail "missing reset log cannot pass the warning guard" "reader error accepted"
+else
+    it_pass "missing reset log cannot pass the warning guard"
+fi
 # The real status predicate needs two matching censuses, resets on failed status and read errors,
 # and treats a recreated container like a restart. No fake predicate replaces the code under test.
 (

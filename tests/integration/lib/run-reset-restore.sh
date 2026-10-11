@@ -80,6 +80,18 @@ run_reset_restore() {
         return 1
     fi
     it_pass "config-reset removes configuration before encrypted recovery"
+    if reset_restore_shutdown_clean "$OUT_DIR/reset-restore.reset.log"; then
+        it_pass "config-reset reports no failed shutdown before recovery"
+    else
+        it_fail "config-reset reports no failed shutdown before recovery" "failed-shutdown warning or unreadable reset log; see reset-restore.reset.log"
+        return 1
+    fi
+    if reset_restore_wait_empty 60; then
+        it_pass "config-reset leaves no pithead-project containers in any state"
+    else
+        it_fail "config-reset leaves no pithead-project containers in any state" "project residue or engine read failure before configless down"
+        return 1
+    fi
     if pithead down 2>&1 | redact >"$OUT_DIR/reset-restore.down.log"; then
         it_pass "pithead down succeeds after reset without Compose interpolation"
     else
@@ -143,6 +155,23 @@ reset_restore_wait_reboot() { # <boot id before> <timeout seconds>
         sleep 5
         boot_now=$(rx 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null) || continue
         [ -n "$boot_now" ] && [ "$boot_now" != "$before" ] && return 0
+    done
+    return 1
+}
+
+reset_restore_shutdown_clean() { # <reset log>
+    local scan_rc=0
+    grep -Eq 'Stack shutdown failed|compose down failed' "$1" || scan_rc=$?
+    [ "$scan_rc" -eq 1 ] # only a successful no-match is clean
+}
+
+reset_restore_wait_empty() { # <timeout seconds>; Docker also invokes Podman on the appliance
+    local deadline=$(($(date +%s) + $1)) residue
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if residue=$(rx "docker ps --all --quiet --filter label=com.docker.compose.project=pithead" 2>/dev/null) && [ -z "$residue" ]; then
+            return 0
+        fi
+        sleep 2
     done
     return 1
 }
