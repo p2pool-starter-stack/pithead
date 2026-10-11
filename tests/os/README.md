@@ -301,8 +301,10 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   reboots through the real health gate on A, installs a v2 bundle with `pithead os-update`,
   and requires committed primary B with A still good. It takes an encrypted backup and tests
   three config-reset rounds: wizard setup, CLI `restore -y` plus `up`, and a reboot with setup
-  still open before finishing setup. Every reset boot and final normal reboot must remain
-  B|v2 with A good and ORDER="B A". Fallback stays red and is re-armed before the next round.
+  still open before finishing setup. Before each normal reboot, provisioning must settle
+  successfully, the rendered environment must exist, and status and doctor must pass;
+  old containers answering during wizard handoff do not establish readiness. Every reset boot
+  and final normal reboot must remain B|v2 with A good and ORDER="B A". Fallback stays red and is re-armed before the next round.
   The leg adds about 60 minutes to RC gate job 3b (reset,stack); a missing precondition is a
   counted missing leg, never proof. Update leg 1 separately requires the fresh spare B to
   remain uncommitted while its setup page serves. Leg 1 is the deep tier: the real

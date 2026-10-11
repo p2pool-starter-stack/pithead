@@ -41,8 +41,12 @@ _reset_slot_wait() { # <slot> <marker> <committed: yes/no> [seconds]
 
 _reset_slot_good_stack() {
     local until=$((SECONDS + 900)) SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}"
+    # Old containers can answer doctor during the handoff, before setup writes
+    # .env. Rebooting then kills firstboot and manufactures a render failure.
+    provisioning_settled 900 && ! provisioning_setup_failed || return 1
+    until=$((SECONDS + 900))
     while [ "$SECONDS" -lt "$until" ]; do
-        if _ssh 'cd /data/pithead && ./pithead doctor --json' 2>/dev/null |
+        if _ssh 'cd /data/pithead && test -s .env && ./pithead status >/dev/null && ./pithead doctor --json' 2>/dev/null |
             jq -e '.summary.fail == 0' >/dev/null 2>&1; then
             return 0
         fi
