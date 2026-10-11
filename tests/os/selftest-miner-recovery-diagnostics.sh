@@ -16,9 +16,12 @@ timeout() {
 }
 systemctl() { printf '%s\n' 'ActiveState=failed' 'Result=exit-code' 'ExecMainStatus=1'; }
 journalctl() {
-    [ "$*" = "--no-pager -n 80 --since -20 minutes -u pithead-t3375-watcher.service -u pithead-miner-recovery.service -u xmrig.service" ] || return 99
     [ -e "$T3375/armed" ] || return 99
-    printf '%s\n' 'fixture watcher failure'
+    case "$*" in
+    '--no-pager -n 40 --since -20 minutes -u pithead-t3375-watcher.service') printf '%s\n' 'fixture watcher failure' ;;
+    '--no-pager -n 40 --since -20 minutes -u pithead-miner-recovery.service -u xmrig.service') printf '%s\n' 'fixture miner journal' ;;
+    *) return 99 ;;
+    esac
     return "${JOURNAL_RC:-0}"
 }
 miner_cleanup() { rm -rf "$T3375"; }
@@ -32,5 +35,6 @@ for journal_rc in 0 1; do
     grep -Fx 'pithead-t3375: local connections/accepted: [0,0]' "$work/log" >/dev/null
     grep -Fx 'Result=exit-code' "$work/log" >/dev/null
     grep -Fx 'fixture watcher failure' "$work/log" >/dev/null
+    grep -Fx 'fixture miner journal' "$work/log" >/dev/null
 done
 echo 'PASS: failed verdict preserves bounded diagnostics before cleanup, including journal failure'

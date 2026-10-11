@@ -62,9 +62,10 @@ miner_diagnostics() {
     printf 'pithead-t3375: failure phase=%s strand_recorded=%s\n' "${MINER_PHASE:-unknown}" "$recorded"
     printf 'pithead-t3375: local connections/accepted: '
     miner_counts || printf '%s\n' unreadable
-    timeout 10 systemctl show pithead-t3375-watcher.service -p ActiveState -p Result -p ExecMainStatus || true
-    timeout 10 journalctl --no-pager -n 80 --since '-20 minutes' \
-        -u pithead-t3375-watcher.service -u pithead-miner-recovery.service -u xmrig.service || true
+    timeout 10 systemctl show pithead-t3375-watcher.service -p LoadState -p ActiveState -p Result -p ExecMainStatus || true
+    timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u pithead-t3375-watcher.service || true
+    timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' \
+        -u pithead-miner-recovery.service -u xmrig.service || true
 }
 miner_guest_exit() {
     local rc=$?
@@ -89,8 +90,13 @@ miner_watch() {
         if [ -e "$T3375/armed" ] && [ ! -e "$T3375/strand" ] && miner_stranded; then
             ss -Hntp state established >"$T3375/strand-sockets"
             if [ -n "${2:-}" ]; then
-                miner_workers | jq -e --arg rig "$2" 'any(.[]; .[0] == $rig and .[2] >= 1)' >/dev/null
-                timeout 15 podman exec dashboard python -c 'from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; import os; c=XMRigProxyClient(os.environ["PROXY_HOST"], int(os.environ["PROXY_API_PORT"]), os.environ["PROXY_AUTH_TOKEN"]); assert c.get_summary()["miners"]["now"] >= 1'
+                # Backup restarts the proxy: wait for the rig too, without accepting an
+                # absent rig or ending the independent watcher on a transient API read.
+                if ! { miner_workers | jq -e --arg rig "$2" 'any(.[]; .[0] == $rig and .[2] >= 1)' >/dev/null &&
+                    timeout 15 podman exec dashboard python -c 'from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; import os; c=XMRigProxyClient(os.environ["PROXY_HOST"], int(os.environ["PROXY_API_PORT"]), os.environ["PROXY_AUTH_TOKEN"]); assert c.get_summary()["miners"]["now"] >= 1'; }; then
+                    sleep 1
+                    continue
+                fi
             fi
             miner_delete_table
             printf '%s\n' recorded >"$T3375/strand"

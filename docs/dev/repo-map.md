@@ -234,6 +234,9 @@ dashboard backup on the stack phase’s synced guest, using a reversible loopbac
 Failed guest verdicts print the strand marker, local worker counts and bounded watcher,
 recovery and miner journals before cleanup; the rig coordinator is then torn down.
 `tests/os/selftest-miner-recovery-diagnostics.sh` checks that order and journal-read failures.
+The watcher polls for the rig to reconnect before recording the strand; separate journal
+budgets retain its early failures alongside mining activity. `selftest-miner-recovery-watcher.sh`
+requires both a connected rig and a nonzero aggregate before the injection is removed.
 The rig share leg repeats the backup trial while a real rig stays connected.
 `tests/os/appliance-earnings-leg.sh` checks that the provisioned dashboard serves the checkout’s
 parser and earnings modules through authenticated Caddy; `selftest-earnings-assets.sh` rejects
