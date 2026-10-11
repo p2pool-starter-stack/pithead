@@ -14,21 +14,40 @@ flock -n 9 || reset_window
 [ "$(cat machine-role 2>/dev/null || true)" != rig ] || reset_window
 jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
 systemctl is-active --quiet xmrig.service || reset_window
+# Use the identity RigForge actually rendered, rather than the total proxy miner count.
+worker_config=${PITHEAD_MINER_RECOVERY_CONFIG:-/data/rigforge/data/worker/xmrig/build/config.json}
+worker=$(jq -er '.pools[0].user | select(type == "string" and length > 0)' "$worker_config" 2>/dev/null) || reset_window
+rig_id=$(jq -er '.pools[0]["rig-id"] // "" | select(type == "string")' "$worker_config" 2>/dev/null) || reset_window
 # A stopped/sync-held proxy or an unavailable API is not a disconnected-miner reading.
 reading=$(
-    timeout 15 podman exec -i dashboard python - <<'PY'
+    timeout 15 podman exec -i dashboard python - "$worker" "$rig_id" <<'PY'
 import os
+import sys
 from mining_dashboard.helper.http import bounded_get
 try:
     token = os.environ.get("PROXY_AUTH_TOKEN", "")
     headers = {"Authorization": "Bearer " + token} if token else {}
-    url = "http://{}:{}/1/summary".format(
+    url = "http://{}:{}/1/workers".format(
         os.environ.get("PROXY_HOST", "xmrig-proxy"),
         os.environ.get("PROXY_API_PORT", "3344"))
     response = bounded_get(url, headers=headers, timeout=5)
     response.raise_for_status()
-    count = response.json()["miners"]["now"]
-    print("idle" if type(count) is int and count == 0 else "reset")
+    body = response.json()
+    mode = body["mode"]
+    if mode not in ("rig_id", "user"):
+        raise ValueError("unsupported worker grouping")
+    name = (sys.argv[2] or sys.argv[1]) if mode == "rig_id" else sys.argv[1]
+    rows = body["workers"]
+    if type(rows) is not list:
+        raise ValueError("invalid workers")
+    count = 0
+    for row in rows:
+        if (type(row) is not list or len(row) < 3 or type(row[0]) is not str
+                or type(row[2]) is not int or row[2] < 0):
+            raise ValueError("invalid worker")
+        if row[0] == name:
+            count += row[2]
+    print("idle" if count == 0 else "reset")
 except Exception:
     print("reset")
 PY

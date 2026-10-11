@@ -498,8 +498,9 @@ Five steps, each answering a hardware-validated failure:
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a
    passenger (`|| true`). The appliance checks an active, enabled local miner every 30 seconds.
-   Five minutes of successful proxy API readings with zero miners queue an XMRig restart,
-   logged by `pithead-miner-recovery.service`. Missing readings, a connected miner, a stopped
+   Five minutes of successful proxy worker-list readings with no connection for the local
+   miner’s rendered identity queue an XMRig restart, logged by `pithead-miner-recovery.service`.
+   Other connected rigs do not reset that window. Missing readings, a connected local miner, a stopped
    miner, or a busy stack operation reset that window. This guard runs only on coordinators;
    it does not start a disabled miner or change slot-commit policy. When enabled, this runs RigForge's setup in appliance mode from the
    tree `pithead-sync` keeps on `/data/rigforge`: its unit renders into `/run` with

@@ -260,7 +260,7 @@ phase_stack() {
 
     # This guest has synced nodes: process health alone cannot prove mining recovery.
     local miner_recovery_out miner_recovery_rc
-    miner_recovery_out=$(_ssh 'bash -s' <"$SCRIPT_DIR/appliance-miner-recovery-leg.sh" 2>&1)
+    miner_recovery_out=$(_ssh 'TMPDIR=/data bash -s' <"$SCRIPT_DIR/appliance-miner-recovery-leg.sh" 2>&1)
     miner_recovery_rc=$?
     if [ "$miner_recovery_rc" -eq 0 ]; then
         ok "local miner accepts fresh shares unattended after proxy recreation (#3375)"
