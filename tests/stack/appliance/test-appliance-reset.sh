@@ -263,6 +263,3 @@ out=$(
 rc=$?
 assert_rc "boot_disk_part on a non-/dev root -> rc 1" "$rc" "1"
 assert_eq "boot_disk_part on a non-/dev root -> prints nothing" "$out" ""
-
-# shellcheck source=tests/stack/appliance/test-appliance-reset-slot.sh
-source "$ROOT/tests/stack/appliance/test-appliance-reset-slot.sh"

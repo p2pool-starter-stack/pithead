@@ -354,12 +354,12 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-serial-getty.sh" && domain_ran test-appliance-serial-getty.sh "$_d0" "$?" || domain_ran test-appliance-serial-getty.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rootfs-apt.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rootfs-apt.sh" && domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?" || domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-reset.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-reset.sh" && domain_ran test-appliance-reset.sh "$_d0" "$?" || domain_ran test-appliance-reset.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-reset-slot.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-reset-slot.sh" && domain_ran test-appliance-reset-slot.sh "$_d0" "$?" || domain_ran test-appliance-reset-slot.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-reset-lock.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-reset-lock.sh" && domain_ran test-appliance-reset-lock.sh "$_d0" "$?" || domain_ran test-appliance-reset-lock.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-caddyfile-optional-env.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-caddyfile-optional-env.sh" && domain_ran test-appliance-caddyfile-optional-env.sh "$_d0" "$?" || domain_ran test-appliance-caddyfile-optional-env.sh "$_d0" "$?"
 
