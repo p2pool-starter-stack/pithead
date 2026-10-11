@@ -4,9 +4,15 @@ source "${BASH_SOURCE[0]%/*}/run-channel.sh" || exit $?
 # Run the real CLI on the deployed candidate, keeping credentials inside the target shell.
 connection_announcements_snippet() {
     lifecycle_gate_snippet
+    printf 'SKIP_MINING_ASSERTS=%q\n' "${SKIP_MINING_ASSERTS:-0}"
     cat <<'PROBE'
 set -Eeuo pipefail
 source ./pithead
+INTEGRATION_RUN_SUITE=1 IT_PITHEAD=./pithead LIFECYCLE_MINING_ACTIVE=1
+source tests/integration/lib/run-lifecycle-miners.sh
+    rx() { bash -c "$1"; }
+    it_pass() { :; }
+    it_fail() { printf '%s\n' 'connections: mining post-step failed' >&2; }
 stage=initialization
 # EXIT alone preserves the integration harness's abort/unwind contract.
 trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at %s\n" "$stage" >&2; fi' EXIT
@@ -37,7 +43,7 @@ trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at
 # Answer each prompt as it appears: setup's subprocesses may consume pre-fed stdin.
 lifecycle_gate_sample_target before-setup
 stage=setup
-out=$(python3 tests/integration/tools/connection-setup-pty.py) || {
+out=$(lifecycle_mining_step setup python3 tests/integration/tools/connection-setup-pty.py) || {
     rc=$?
     printf '%s\n' 'connections: diagnostic: failed at setup'
     printf 'connections: diagnostic: setup command exit %s\n' "$rc"
@@ -56,18 +62,18 @@ lifecycle_gate_sample_target after-setup
 check_output "$out"
 printf '%s\n' 'connections: setup with startup declined matches rendered credentials'
 stage=up
-out=$(./pithead up 2>&1)
+out=$(pithead up 2>&1)
 lifecycle_gate_sample_target after-up
 check_output "$out"
 printf '%s\n' 'connections: up matches rendered credentials'
 stage=apply
-out=$(./pithead apply -y 2>&1)
+out=$(pithead apply -y 2>&1)
 lifecycle_gate_sample_target after-apply
 check_output "$out"
 printf '%s\n' 'connections: apply matches rendered credentials'
 before=$(sha256sum .env)
 stage=no-change
-out=$(./pithead apply -y 2>&1)
+out=$(pithead apply -y 2>&1)
 [[ "$out" == *"No configuration changes detected"* ]]
 check_output "$out"
 lifecycle_gate_sample_target after-no-change

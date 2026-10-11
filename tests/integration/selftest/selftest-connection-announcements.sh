@@ -12,7 +12,9 @@ trap 'rm -rf -- "$fixture"' EXIT
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/key.pem" -out "$fixture/cert.pem" -days 1 -subj /CN=fixture >/dev/null 2>&1
 printf 'PROXY_TLS_DIR=%s\n' "$fixture" >"$fixture/.env"
 printf '{"dashboard":{"host":"fixture-box"}}\n' >"$fixture/config.json"
-mkdir -p "$fixture/tests/integration/tools"
+mkdir -p "$fixture/tests/integration/tools" "$fixture/tests/integration/lib"
+cp "$ROOT/tests/integration/lib/run-lifecycle-miners.sh" "$fixture/tests/integration/lib/"
+SKIP_MINING_ASSERTS=1 # This fixture tests credential announcements; mining has dedicated controls.
 cp "$ROOT/tests/integration/tools/connection-setup-pty.py" "$fixture/tests/integration/tools/"
 cat >"$fixture/pithead" <<'FAKE'
 #!/usr/bin/env bash

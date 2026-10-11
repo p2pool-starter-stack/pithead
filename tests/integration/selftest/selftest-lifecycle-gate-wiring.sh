@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # The lifecycle's real prefix must sample every restart/image-fixture boundary in order.
 set -euo pipefail
+lifecycle_mining_step() {
+    shift
+    "$@"
+} # Mining convergence has dedicated controls.
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 # shellcheck source=tests/integration/lib/run-source-image.sh
 source "$ROOT/tests/integration/lib/run-source-image.sh"

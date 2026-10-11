@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # A failed backup restore must stop later faults before they touch an unhealthy stack (#2501).
 set -uo pipefail
+lifecycle_mining_step() {
+    shift
+    "$@"
+} # Mining convergence has dedicated controls.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh

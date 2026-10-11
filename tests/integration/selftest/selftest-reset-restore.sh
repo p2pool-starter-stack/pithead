@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Failure controls for the real encrypted config-reset recovery leg; no engine is started here.
 set -uo pipefail
+lifecycle_mining_step() {
+    shift
+    "$@"
+} # Mining post-step has dedicated controls.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 # shellcheck disable=SC2034 # consumed by the sourced leg

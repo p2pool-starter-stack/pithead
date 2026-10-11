@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pure host recovery controls; fake systemd/Podman, real API decoder and clock window.
 set -euo pipefail
-export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?}}"
+export TMPDIR="${TMPDIR:-/tmp}"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 work=$(mktemp -d "${TMPDIR:?}/miner-recovery.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -146,94 +146,92 @@ grep -Fq 'ExecStart=/usr/local/sbin/pithead-miner-recovery' "$ROOT/os/overlay/pi
 grep -Fq 'OnUnitInactiveSec=30s' "$ROOT/os/overlay/pithead-miner-recovery.timer"
 printf '%s\n' 'PASS: miner recovery debounce, refusals, decoder, failure and image wiring'
 
-# The guest share assertion must reject health/job messages and consume only post-cursor logs.
+# Exercise the guest's cleanup and by-design skip decisions with fake kernel/systemd commands.
 # shellcheck source=tests/os/appliance-miner-recovery-leg.sh
 source "$ROOT/tests/os/appliance-miner-recovery-leg.sh"
-journalctl() {
+T3375="$work/strand"
+mkdir "$T3375"
+TABLE=true
+nft() {
     case "$*" in
-    *'--show-cursor'*) printf 'old accepted (9/0)\n-- cursor: fixture-cursor\n' ;;
-    *)
-        [[ "$*" == *'--after-cursor fixture-cursor'* ]] || return 99
-        printf '%b\n' "$SHARE_LOG"
+    'list table ip pithead_t3375') [ "$TABLE" = true ] ;;
+    'delete table ip pithead_t3375') TABLE=false ;;
+    *) return 99 ;;
+    esac
+}
+miner_cleanup
+[ "$TABLE" = false ] && [ ! -e "$T3375" ]
+miner_delete_table
+jq() { echo 3333; }
+ss() { :; }
+rc=0
+miner_arm >"$work/skip" || rc=$?
+[ "$rc" = 77 ] && grep -Fq 'SKIP: by-design' "$work/skip"
+[ ! -e "$T3375" ] && [ "$TABLE" = false ]
+
+# Execute real arming/verdict dispatch failures; kernel/systemd calls are the seams.
+systemctl() {
+    case "$*" in
+    *MainPID*) echo 123 ;;
+    *LoadState*) echo not-found ;;
+    *) return 0 ;;
+    esac
+}
+ss() { echo 'LISTEN 0 8 127.0.0.1:3333 0.0.0.0:*'; }
+systemd-run() { touch "$T3375/ready" "$work/watcher-started"; }
+nft() {
+    case "$*" in
+    '-f -')
+        cat >/dev/null
+        [ -e "$work/watcher-started" ] || return 99
+        touch "$work/table"
+        return 1
         ;;
+    'list table ip pithead_t3375') [ -e "$work/table" ] ;;
+    'delete table ip pithead_t3375')
+        rm "$work/table"
+        touch "$work/deleted"
+        ;;
+    *) return 99 ;;
     esac
 }
-sleep() { SECONDS=$((SECONDS + 1000)); }
-[ "$(miner_share_cursor)" = fixture-cursor ]
-SHARE_LOG='new job; speed 1000; rejected (1/1)'
-if wait_miner_share fixture-cursor >"$work/no-share"; then exit 1; fi
-SHARE_LOG='accepted \033[1;32m(1/0)\033[0m'
-wait_miner_share fixture-cursor
-# Companion presence must be required throughout the recovery wait, even if shares exist.
-proxy_companion_connected() { [ "$COMPANION_CONNECTED" = true ]; }
-COMPANION_CONNECTED=false
-if wait_miner_share fixture-cursor xmrig.service 1 >"$work/companion-lost"; then exit 1; fi
-COMPANION_CONNECTED=true
-wait_miner_share fixture-cursor xmrig.service 1
-printf '%s\n' 'PASS: guest share proof enforces cursor, ANSI stripping and companion continuity'
-
-# Failure after suspension must release the injected fault even after main's locals unwind.
-cat >"$work/guest-cleanup.sh" <<'SH'
-cd() { :; }
-jq() { :; }
-systemd-run() { :; }
-timeout() { shift; "$@"; }
-systemctl() {
-    if [[ "$*" == *MainPID* ]]; then echo 123
-    elif [ "$*" = 'is-active --quiet pithead-miner-recovery-companion.service' ]; then return 1; fi
-}
-journalctl() {
-    if [[ "$*" == *--after-cursor* ]]; then
-        printf '%s\n' 'accepted (1/0)' 'active local miner disconnected for 300 seconds; restarting xmrig'
-    else echo '-- cursor: fixture-cursor'; fi
-}
-podman() {
-    if [ -e "$CLEANUP_ROOT/inspected" ]; then echo new; else
-        touch "$CLEANUP_ROOT/inspected"; echo old
-    fi
-}
-docker() {
-    if [ -e "$CLEANUP_ROOT/recreated" ]; then return 1; fi
-    touch "$CLEANUP_ROOT/recreated"
-}
-kill() { printf '%s\n' "$*" >>"$CLEANUP_ROOT/signals"; }
-SH
-export GUEST_LEG="$ROOT/tests/os/appliance-miner-recovery-leg.sh" CLEANUP_ROOT="$work"
-if BASH_ENV="$work/guest-cleanup.sh" bash -s <"$GUEST_LEG" >"$work/cleanup-output" 2>&1; then exit 1; fi
-if [ ! -e "$work/signals" ]; then
-    cat "$work/cleanup-output" >&2
+rm -f "$work/deleted"
+if (miner_guest_dispatch arm); then
+    echo 'FAIL: failed nft arming passed'
     exit 1
 fi
-[ "$(cat "$work/signals")" = "$(printf '%s\n' '-STOP 123' '-CONT 123')" ]
-printf '%s\n' 'PASS: failed guest recreation releases suspended miner after scope unwinds'
-
-# Cleanup must not signal a replaced PID or accept a running companion after stop.
-MINER_RECOVERY_STALLED_PID=123
-MINER_RECOVERY_FIXTURE="$work/cleanup-fixture"
-mkdir -p "$MINER_RECOVERY_FIXTURE"
-COMPANION_ACTIVE=true
+[ -e "$work/deleted" ] && [ ! -e "$work/table" ] && [ ! -e "$T3375" ]
+mkdir "$T3375"
+touch "$work/table"
+rm "$work/deleted"
+sleep() { SECONDS=$((SECONDS + 601)); }
+if (miner_guest_dispatch verdict old); then
+    echo 'FAIL: missing strand passed'
+    exit 1
+fi
+[ -e "$work/deleted" ] && [ ! -e "$work/table" ] && [ ! -e "$T3375" ]
+printf '%s\n' 'PASS: real arming/verdict failures delete the table; unavailable injection is a skip'
+# Failed restoration retains the independent watchdog's recipe and recorded intent.
+mkdir "$T3375"
+touch "$T3375/watcher" "$T3375/leg.sh" "$work/table"
+echo pithead-miner-recovery.timer >"$T3375/paused"
 systemctl() {
     case "$*" in
-    'show xmrig.service -p MainPID --value') echo 456 ;;
-    'stop pithead-miner-recovery-companion.service') return 0 ;;
-    'is-active --quiet pithead-miner-recovery-companion.service') [ "$COMPANION_ACTIVE" = true ] ;;
+    *LoadState*) echo loaded ;;
+    'stop pithead-t3375-watcher.service') return 1 ;;
+    'is-active --quiet pithead-t3375-watcher.service') return 0 ;;
+    'start pithead-miner-recovery.timer') return 1 ;;
+    *) return 99 ;;
     esac
 }
-kill() {
-    echo 'FAIL: cleanup signalled a replaced PID' >&2
-    return 99
-}
-if miner_recovery_cleanup; then
-    echo 'FAIL: cleanup accepted an active companion'
+if miner_cleanup; then
+    echo 'FAIL: failed watchdog shutdown passed'
     exit 1
 fi
-[ ! -e "$work/wrong-pid-signal" ]
-COMPANION_ACTIVE=false
-miner_recovery_cleanup
-# Readiness waits for provisioning and fails when the bounded wait expires.
-READY=false
-systemctl() { [ "$READY" = true ]; }
-if wait_local_miner_ready >"$work/not-ready"; then exit 1; fi
-READY=true
-wait_local_miner_ready
-printf '%s\n' 'PASS: cleanup rejects a live companion and readiness is bounded'
+[ -e "$T3375/leg.sh" ] && [ -e "$T3375/paused" ]
+if miner_watch_restore; then
+    echo 'FAIL: failed paused-unit restore passed'
+    exit 1
+fi
+[ -e "$T3375/paused" ]
+printf '%s\n' 'PASS: failed watchdog restoration retains its control files'
