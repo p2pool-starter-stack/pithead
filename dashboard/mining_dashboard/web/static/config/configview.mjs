@@ -190,9 +190,8 @@ export class ConfigView extends Component {
       JSON.stringify(candidate) === JSON.stringify(staged.config)
         ? text
         : JSON.stringify(candidate, null, 2);
-    // Keep an invalid draft (the operator is still fixing it; the pane cannot say it overrode
-    // the key) and a valid one whose number the pane left alone (0.10 vs 0.1); drop a valid
-    // draft the pane changed so the field follows it.
+    // Keep invalid drafts (still being fixed) and valid ones whose number the pane left alone
+    // (0.10 vs 0.1); drop a valid draft the pane changed, so the field follows it.
     const drafts = Object.fromEntries(
       Object.entries(this.state.drafts).filter(
         ([key, raw]) =>
