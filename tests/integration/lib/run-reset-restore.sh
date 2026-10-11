@@ -99,6 +99,15 @@ run_reset_restore() {
         return 1
     fi
 
+    if grep -q 'Rebooting into first-boot' "$OUT_DIR/reset-restore.reset.log"; then
+        if wait_for 300 5 "running wizard serving the setup page" rr_setup_page_ready; then
+            it_pass "reset recovery starts with a running wizard serving the setup page"
+        else
+            it_fail "reset recovery starts with a running wizard serving the setup page" "trigger absent after 300s"
+            return 1
+        fi
+    fi
+
     # A PTY makes Bash's read -p prompt observable. Empty input must reach the actual passphrase
     # request and refuse, rather than write anything. The successful leg then supplies a fixture
     # passphrase; no operator secret crosses the test transport or log.
@@ -118,6 +127,7 @@ run_reset_restore() {
         it_fail "encrypted restore after config-reset starts the stack" "restore or up failed; see reset-restore logs"
         return 1
     fi
+    rr_web_ports_owned_by_dashboard "reset recovery" || return 1
     if wait_status_ok 600; then
         it_pass "stack healthy after encrypted restore following config-reset"
     else

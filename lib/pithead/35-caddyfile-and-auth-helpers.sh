@@ -159,10 +159,17 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     # dashboard.host — a documented, supported choice — got a single-host site list and NO bind at
     # all, which is the wildcard listener and the whole exposure, back again for exactly the
     # operators who configured the box most deliberately.
-    local bind_addrs="" _bh
+    local bind_addrs="" _bh _bridge_addrs
     if is_appliance && [ "${DASHBOARD_EXPOSE_PUBLIC_IP:-false}" != "true" ]; then
+        # Container-bridge gateways are not bound: they belong to the engine, not the box. A stale
+        # one (wizard bridge, previous boot) is in `hostname -I` now and gone when `up` starts
+        # Caddy, which then crash-loops on "cannot assign requested address" (#3406). The onion
+        # vhost binds mining_net's gateway on its own line, and loopback reaches the host-networked
+        # dashboard.
+        _bridge_addrs=" $(container_bridge_addrs | tr '\n' ' ') "
         for _bh in $(hostname -I 2>/dev/null); do
             is_public_ip "$_bh" && continue
+            case "$_bridge_addrs" in *" $_bh "*) continue ;; esac
             case "$_bh" in
             *:*) ;;                # IPv6 literal
             *[!0-9.]*) continue ;; # not an address literal
