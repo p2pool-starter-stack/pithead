@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Exercise the real rollback with changing API responses; no daemon or network.
 set -euo pipefail
+echo "== Image-upgrade rollback worker reconnection =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/lib.sh"
