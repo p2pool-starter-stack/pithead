@@ -9,10 +9,18 @@
 # first) — $ip, $jar, $token, $tries, $scode, $names, $deadline and $SERIAL are phase_reset's own
 # locals, read and written here through Bash's dynamic function scope, the same trick
 # phases/provision-initial.sh uses.
+# A reset's exit 0 does not establish a clean stop. Missing/duplicate receipts also fail.
+_reset_config_shutdown_passed() {
+    [ "$1" = $'compose_exit=0\nconfig_present=yes' ] || return 1
+    local warning_rc=0
+    grep -Eq 'Stack shutdown failed|compose down failed' <<<"$2" || warning_rc=$?
+    [ "$warning_rc" -eq 1 ] # no match; a reader error is not a clean scan
+}
+
 _phase_reset_config() {
     info "leg 0 — config-reset must keep chains and the onion address, clear the config, and re-arm the wizard"
     local onion_before onion_after cr_height_before cr_height_after cr_height_deadline fb_ran boot_ran
-    local cr_want cr_probe cr_what
+    local cr_want cr_probe cr_what cr_stop_result cr_stop_output
     onion_before=$(_ssh "podman exec tor cat /var/lib/tor/monero/hostname" 2>/dev/null | tr -d '\r')
     # monerod's RPC can still be starting even once "stack containers running" above only checked
     # dashboard+caddy — its baked archive is the largest and loads last (appliance-egress-leg.sh's
@@ -32,11 +40,29 @@ _phase_reset_config() {
         return 1
     fi
 
-    if _reboot_wait "cd /data/pithead && ./pithead config-reset -y" 300; then
+    if ! _ssh "cat > /data/pithead/.reset-config-probe.sh" <"$SCRIPT_DIR/reset-config-probe.sh"; then
+        bad "could not install the config-reset shutdown probe"
+        return 1
+    fi
+    if _reboot_wait "umask 077; cd /data/pithead && bash .reset-config-probe.sh > .reset-config-output.log 2>&1" 300; then
         ok "guest returned after the config-reset reboot"
     else
         bad "guest never returned after config-reset — BRICKED"
         return 1
+    fi
+
+    cr_stop_result=$(_ssh "cat /data/pithead/.reset-compose.result" 2>/dev/null) || cr_stop_result=unavailable
+    # Both files must be present and bounded before absence of a warning is evidence.
+    if cr_stop_output=$(_ssh "cd /data/pithead && test -f .reset-compose.log && test -f .reset-config-output.log && test \$(wc -c < .reset-compose.log) -le 65536 && test \$(wc -c < .reset-config-output.log) -le 65536 && cat .reset-compose.log .reset-config-output.log" 2>&1); then
+        printf 'config-reset shutdown receipt:\n%s\nconfig-reset diagnostics:\n%s\n' "$cr_stop_result" "$cr_stop_output" >&2
+        if _reset_config_shutdown_passed "$cr_stop_result" "$cr_stop_output"; then
+            ok "config-reset Compose shutdown succeeded before the configuration wipe (exit 0)"
+        else
+            bad "config-reset Compose shutdown failed or was not recorded before the configuration wipe"
+        fi
+    else
+        bad "config-reset shutdown diagnostics are missing, unreadable or exceed the capture bound"
+        printf '%s\n' "$cr_stop_output" >&2
     fi
 
     # Two systemd conditions in opposition, neither observable from a stub: firstboot's

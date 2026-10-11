@@ -635,6 +635,9 @@ cd /data/pithead && ./pithead factory-reset
 
 Both ask you to type the reset name before they do anything. The machine reboots itself
 into setup when the reset is done.
+Config reset continues with the configuration wipe and reboot even if Compose fails to
+stop the stack. It prints the Compose error and a warning that containers may still be
+running. Exit status 0 means the reset completed; it does not confirm a clean shutdown.
 
 A machine that comes back to the setup wizard **without** being asked to is a different
 event: the data area would not mount, and the machine repaired it or, failing that,
