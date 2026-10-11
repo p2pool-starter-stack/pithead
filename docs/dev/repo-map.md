@@ -62,6 +62,10 @@ mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
 `selftest-migration-snapshot.sh` check ancestry refusal, persistence and recovery contracts.
 The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
 
+Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture controls live in
+`tests/stack/appliance/test-appliance-reset-slot.sh`, and the reset battery checks the exact
+slot and source after configless setup and reboot.
+
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the

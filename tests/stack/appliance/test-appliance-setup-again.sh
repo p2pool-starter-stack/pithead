@@ -162,13 +162,14 @@ esac
 exit 0
 ENG
 chmod +x "$SAWB/bin/eng"
-SAW_STUBS_CLI='container_engine() { echo "$SAWB/bin/eng"; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { return 2; }; firstboot_consume_spool() { return 1; }; setup() { echo setup-ran >>"${RF_LOG:?}"; }; firstboot_wizard'
+SAW_STUBS_CLI='reset_slot_restore_good() { echo reset-slot-restored >>"${RF_LOG:?}"; }; container_engine() { echo "$SAWB/bin/eng"; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { return 2; }; firstboot_consume_spool() { return 1; }; setup() { echo setup-ran >>"${RF_LOG:?}"; }; firstboot_wizard'
 export SAWB
 rm -f "$SAWB/config.json"
 : >"$RF_LOG"
 rm -f "$SAWB/config.json"
 out=$(LAND_CONFIG=1 PITHEAD_INSTALL_BIN=/nonexistent PITHEAD_REGISTRY=registry STACK_VERSION=dev run_sourced "$SAWB" eval "$SAW_STUBS_CLI" 2>&1)
 assert_rc "a config.json landed by the CLI while the page is open -> the wizard returns" "$?" "0"
+assert_contains "clean wizard startup reaches reset slot preservation" "$(cat "$RF_LOG")" "reset-slot-restored"
 assert_contains "...and says why" "$out" "provisioned without it"
 assert_contains "...the page's container is removed (the exit trap), freeing 80/443" "$(cat "$RF_LOG")" "rm -f pithead-wizard"
 assert_not_contains "...and setup did not run beside it" "$(cat "$RF_LOG")" "setup-ran"
