@@ -89,7 +89,7 @@ firstboot_wizard() {
     _console "" "Pithead is starting up — preparing the setup page." \
         "This takes a minute or two on first boot. Nothing to do yet."
 
-    local engine image token host_addresses
+    local engine image token host_addresses had_config
     engine=$(container_engine)
     # STACK_VERSION is the ONE place the registry tag is derived (a release is v<VERSION>, a
     # source checkout is dev) — deriving it here instead cost a boot: the archive holds
@@ -159,6 +159,11 @@ firstboot_wizard() {
         clear_setup_candidate "$restore_spool/config.json" "$restore_spool/handoff.json" || error "Could not clear private setup credentials."
         # Keep an operator's pre-seeded token; otherwise mint a fresh one every round.
         token=$(preseed_token) || token=$(wizard_mint_token)
+        # Whether a configuration already stood when this round opened: a failed provisioning
+        # keeps its config.json under the reopened page (#1059), so only one that APPEARS while
+        # the page is open came from somewhere else.
+        had_config=0
+        [ ! -f "$PWD/config.json" ] || had_config=1
         "$engine" rm -f pithead-wizard >/dev/null 2>&1 || true
         host_addresses=$(wizard_host_addresses) || host_addresses=""
         "$engine" run -d --name pithead-wizard --entrypoint python3 \
@@ -520,6 +525,13 @@ firstboot_wizard() {
                 fi
                 rm -f "$setup_log"
                 break # outer loop re-mints a token and restarts the wizard container
+            fi
+            # A config.json the CLI landed while the page is open (`pithead restore` after a config-reset)
+            # provisions the box without this page. Stand down: its published 80/443 are Caddy's ports,
+            # and the stack would come up beside it with Caddy failing "address already in use" (#3369).
+            if [ "$installer" -eq 0 ] && [ "$had_config" -eq 0 ] && [ -f "$PWD/config.json" ]; then
+                log "config.json appeared while the setup page was open — provisioned without it; closing the page."
+                return 0
             fi
             if ! "$engine" inspect -f '{{.State.Running}}' pithead-wizard 2>/dev/null | grep -q true; then
                 warn "Wizard stopped (token lockout or crash) — minting a fresh token and restarting it."
