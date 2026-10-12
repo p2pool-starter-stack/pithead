@@ -165,8 +165,6 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
   ([#3357](https://github.com/p2pool-starter-stack/pithead/issues/3357)).
 - Recovery after an interrupted image build during DIY source setup is undocumented
   ([#3348](https://github.com/p2pool-starter-stack/pithead/issues/3348)).
-- After a dashboard update, the original tab can stay on "Rebooting" after the new-version banner
-  appears. Reload the page ([#3415](https://github.com/p2pool-starter-stack/pithead/issues/3415)).
 
 ### Added
 
@@ -369,6 +367,8 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
 
 ### Fixed
 
+- **After a dashboard update, the original tab leaves "Rebooting" by itself** once the appliance
+  reports the new version ([#3415](https://github.com/p2pool-starter-stack/pithead/issues/3415)).
 - **An upgrade with a data migration commits unattended.** This holds even when a mining release
   was saved before the update ([#3267](https://github.com/p2pool-starter-stack/pithead/pull/3267)).
 - **Boot health probes no longer count as failed logins**, so they do not raise failed-login
