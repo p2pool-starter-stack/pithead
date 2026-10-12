@@ -63,7 +63,7 @@ export function hostAnswered(os, startedTs) {
 }
 
 // Poll until the dashboard answers again, then reload: the fresh state carries the verdict banner.
-// Stops quietly once `waiting()` is false, i.e. the host's verdict already cleared the phase.
+// Stops quietly once `waiting()` is false, i.e. the host's verdict already answered the reboot.
 export async function waitForDashboard(waiting, pollMs, max) {
   for (let i = 0; i < max; i++) {
     await new Promise((r) => setTimeout(r, pollMs));

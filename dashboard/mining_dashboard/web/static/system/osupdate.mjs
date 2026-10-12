@@ -284,7 +284,7 @@ export class OsUpdateControl extends Component {
 
   // Poll until the dashboard answers again, then reload (the fresh state carries the verdict).
   reconnect(max = 300) {
-    return waitForDashboard(() => this.state.phase === "rebooting", POLL_MS, max);
+    return waitForDashboard(() => !hostAnswered(this.props.os, this.rebootVerdictTs), POLL_MS, max);
   }
 
   renderBody() {
