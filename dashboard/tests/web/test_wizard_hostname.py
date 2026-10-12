@@ -9,6 +9,11 @@ from mining_dashboard.wizard import server as wizard
 from mining_dashboard.wizard.form import build_config
 
 
+def _consume_submission(spool):
+    for name in ("config.json", "submission-staging", "submission-active"):
+        spool.joinpath(name).unlink(missing_ok=True)
+
+
 @pytest.fixture
 async def hostname_client(tmp_path, monkeypatch):
     # The Docker test stage contains only dashboard/. Seed the relevant host
@@ -58,8 +63,9 @@ async def test_bad_names_never_publish_a_candidate(hostname_client, name):
 
 
 async def test_missing_name_remains_compatible_and_bad_dashboard_shape_is_rejected(hostname_client):
-    client, _spool = hostname_client
+    client, spool = hostname_client
     assert (await client.post("/submit", data={"config": "{}"})).status == 200
+    _consume_submission(spool)
     result = await client.post("/submit", data={"config": '{"dashboard": []}'})
     assert result.status == 400
 
@@ -75,6 +81,7 @@ async def test_unchanged_legacy_address_can_be_resubmitted_but_not_replaced_by_n
     spool.joinpath("last-attempt.json").write_text(json.dumps(cfg))
     assert (await client.post("/submit", data={"config": json.dumps(cfg)})).status == 200
     assert json.loads(spool.joinpath("last-attempt.json").read_text())["dashboard"]["host"] == host
+    _consume_submission(spool)
     result = await client.post("/submit", data={"config": '{"dashboard":{"host":"new.test"}}'})
     assert result.status == 400
     assert (

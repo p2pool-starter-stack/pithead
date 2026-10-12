@@ -23,7 +23,7 @@ source "$HERE/../lib/detached-harness.sh"
 pregate_of() { # <workers> <no_mining_flag> -> the readiness on_bench command, then the check one
     (
         E2E_DIR=/srv/code/pithead-e2e
-        on_bench() { printf '%s\n' "$1"; }
+        on_bench() { case "$1" in *run.sh*) printf '%s\n' "$1" ;; esac }
         harness_pregate "$1" "$2"
     ) </dev/null
 }

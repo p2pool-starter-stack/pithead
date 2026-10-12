@@ -272,13 +272,26 @@ that never landed.
 **Fixed — the hugepages reservation now fits the machine's RAM (#977).** The baked 6 GiB
 sysctl imposed a silent ≥ 16 GiB floor the harness's 16 GiB VM could never notice.
 `pithead-hugepages.service` now sizes the pool every boot before either boot owner:
-full 3072 pages on a supported machine, 2560 below 15 GiB (the smallest pool holding
-BOTH RandomX datasets — p2pool's ~2.3 GiB dataset falling out of hugetlbfs lands in its
-1 GiB cgroup cap and OOM-loops, the load-bearing finding from the #78 spike), zero
-below 7 GiB where the stack cannot run regardless. Degrades are announced on every
-console, journaled, and repeated by `doctor` as a WARN — never a FAIL, so the A/B
-commit gate still commits a degraded-but-serving slot. Running before the boot owners
-is not what makes the decision hold: pithead's own later writers grow the pool too, so
+full 3072 pages on a supported machine, 2048 below 15 GiB, zero below 7 GiB where the stack
+cannot run regardless. Under the 1 GiB cgroup cap of the #78 spike, a dataset falling out of
+hugetlbfs OOM-looped p2pool; the 4 GiB cap from #2562 holds the ~2.5 GiB fallback instead, and
+the machine pays in ordinary RAM rather than a restart loop. Only p2pool builds a dataset.
+monerod v0.18.5.1 allocates one only when `MONERO_RANDOMX_FULL_MEM` is set or it mines, and the
+stack does neither (#2681).
+
+The reduced pool's 2048 pages are MEASURED (#2685), not derived: a tier4-e2e run samples each
+daemon's own `/proc/<pid>/smaps_rollup` every 10 s across a synced local-node scenario, lifecycle
+and auth-fail-closed, and takes the peak — job 1115@701013bb1faaea1a9a337cde16dbe79fbca797d1 measured p2pool at 1305 pages and
+monerod at 129 (an upper bound: its per-thread verification scratchpads scale with the measuring
+bench's own thread count, above a reduced-tier appliance's). Combined peak 1434, +256 for the two
+processes' second-seed caches (a seed switch is roughly every 2.8 days, so a normal run does not
+exercise them), +10% margin, rounded up to the next 512-page step: 2048.
+`tests/integration/lib/hugepage-probe.sh` carries the bound `combined peak + 256 <= REDUCED_PAGES`
+as a standing gate row against this same overlay file, on every tier4-e2e run, and #2486 (p2pool
+`--light-mode` on this tier, which would remove the dataset) reruns the measurement when it lands.
+Degrades are announced on every console, journaled, and repeated by `doctor` as a WARN — never a
+FAIL, so the A/B commit gate still commits a degraded-but-serving slot. Running before the boot
+owners is not what makes the decision hold: pithead's own later writers grow the pool too, so
 the `/run` marker records the chosen page count and both of them honour it — setup's
 kernel optimization caps its grow at the recorded pages, and the local-miner render
 hands RigForge the recorded reservation, never the baked 6 GiB, as its headroom.
@@ -341,7 +354,7 @@ machine's own — it carries that machine's `DEPLOYMENT_COMPLETED=true`. `setup(
 `is_deployed` guard (#924) read that literally, could not tell "restored, never provisioned on
 THIS hardware" from "already live", and fatally refused with no tty to ask: `podman ps -a` on
 the live guest showed zero containers, ever. `restore_apply` — the one commit point both restore
-doors share — now clears the carried marker right after landing the archive, before its caller's
+doors share — now clears the carried marker in the staged archive before landing it, and before its caller's
 `setup()` runs. Restore retains validated generated secrets and Tor identity, and derives
 `HOST_IP` and runtime policy from the validated configuration. `setup()` renders `.env` again. The guard itself is
 unchanged and still refuses a headless re-run on a genuinely live box (its own #924 test stays

@@ -122,8 +122,33 @@ monero_rpc_speaks() { # <config-file> <host> <port>
     NODE_PROBE_REASON=ok
 }
 
+remote_node_addresses_allowed() { # <config-file>
+    local cfg="$1" host port
+    if [ "$(jq -r '.monero.mode // "local"' "$cfg")" = remote ]; then
+        host=$(jq -r '.monero.remote.host // ""' "$cfg")
+        port=$(jq -r '.monero.remote.rpc_port // 18081' "$cfg")
+        remote_node_address "$cfg" "$host" >/dev/null || {
+            case "$?" in 2) NODE_PROBE_REASON=dns ;; *) NODE_PROBE_REASON=address ;; esac
+            [ "$NODE_PROBE_REASON" != dns ] || printf 'the remote Monero node name %s does not resolve from this machine — check it for a typo, or give a numeric address' "$host"
+            [ "$NODE_PROBE_REASON" = dns ] || printf 'cannot use the remote Monero node at %s:%s — use an address allowed by network.tor_egress_firewall' "$host" "$port"
+            return 1
+        }
+    fi
+    if [ "$(jq -r '.tari.mode // "local"' "$cfg")" = remote ]; then
+        host=$(jq -r '.tari.remote.host // ""' "$cfg")
+        port=$(jq -r '.tari.remote.grpc_port // 18142' "$cfg")
+        remote_node_address "$cfg" "$host" >/dev/null || {
+            case "$?" in 2) NODE_PROBE_REASON=dns ;; *) NODE_PROBE_REASON=address ;; esac
+            [ "$NODE_PROBE_REASON" != dns ] || printf 'the remote Tari node name %s does not resolve from this machine — check it for a typo, or give a numeric address' "$host"
+            [ "$NODE_PROBE_REASON" = dns ] || printf 'cannot use the remote Tari node at %s:%s — use an address allowed by network.tor_egress_firewall and check tari.grpc_lan_access' "$host" "$port"
+            return 1
+        }
+    fi
+}
+
 preflight_remote_nodes() { # <config-file>
     local cfg="$1" host address port zmq
+    remote_node_addresses_allowed "$cfg" || return
     if [ "$(jq -r '.monero.mode // "local"' "$cfg")" = remote ]; then
         host=$(jq -r '.monero.remote.host // ""' "$cfg")
         port=$(jq -r '.monero.remote.rpc_port // 18081' "$cfg")

@@ -6,18 +6,20 @@ posture's, verbatim, so the panel and the egress list can never disagree about a
 
 from mining_dashboard.config import config
 from mining_dashboard.service.network.egress import (
-    _notify_route,
     _shared_knobs,
-    _xvb_route,
+    _sync_pending,
     _xvb_standby_route,
     compute_egress_posture,
 )
+from mining_dashboard.service.network.egress_status import with_firewall_state
 from mining_dashboard.service.network.topology_graph import (
     CLEARNET,
     INACTIVE,
     INCOMING,
     LOCAL,
     TOR,
+    _notify_route,
+    _xvb_route,
     edge,
     ext_node,
     node_route,
@@ -45,6 +47,7 @@ def compute_topology(
     xvb_standby_source="",
     tor_auto_heal=False,
     local_miner_enabled=False,
+    tari_explorer=False,
 ):
     """Pure derivation of the stack topology. ``kind`` is ``ingress``, ``egress``, ``p2p``
     (bidirectional — egress *and* onion ingress for the P2P daemons), or ``internal`` (host-only
@@ -68,6 +71,7 @@ def compute_topology(
         notify_sinks_private=notify_sinks_private,
         xvb_standby_source=xvb_standby_source,
         tor_auto_heal=tor_auto_heal,
+        tari_explorer=tari_explorer,
     )
     xvb = _xvb_route(xvb_enabled, xvb_tor)
     sinks = _notify_route(notify_sinks_enabled, notify_tor, notify_sinks_private)
@@ -90,6 +94,13 @@ def compute_topology(
         edge("dashboard", "tor", TOR, "update check", "egress"),
         edge("dashboard", "tor", TOR if xvb_enabled else INACTIVE, "XvB stats", "egress"),
         edge("dashboard", "tor", TOR if tor_auto_heal else INACTIVE, "Tor egress probe", "egress"),
+        edge(
+            "dashboard",
+            "tor",
+            TOR if tari_explorer and tari_enabled else INACTIVE,
+            "Tari explorer reference",
+            "egress",
+        ),
         edge(
             "dashboard",
             "tor",
@@ -145,7 +156,13 @@ def compute_topology(
     for link in edges:
         if link["route"] != CLEARNET:
             continue
-        if link["from"] != "dashboard" and firewall:
+        if (
+            (link["from"] in ("monerod", "tari") and link.get("label") == "clearnet IBD")
+            or (link["from"] == "p2pool" and link.get("label") == "sidechain P2P")
+            or (link["from"] == "xmrig-proxy" and link.get("label") == "XvB donation")
+        ):
+            link["chosen_clearnet"] = True
+        elif link["from"] != "dashboard" and firewall:
             link["blocked_by_firewall"] = True
         else:
             link["leak"] = True
@@ -161,13 +178,14 @@ def compute_topology(
 
 def topology_from_config():
     """Build the topology from the live dashboard config (values pithead rendered into the env)."""
-    return compute_topology(
+    return with_firewall_state(
+        compute_topology,
         firewall=config.TOR_EGRESS_FIREWALL,
         p2pool_clearnet=config.P2POOL_CLEARNET,
         xvb_enabled=config.ENABLE_XVB,
         xvb_tor=config.XVB_TOR_ENABLED,
-        monero_clearnet_sync=config.MONERO_CLEARNET_SYNC,
-        tari_clearnet_sync=config.TARI_CLEARNET_SYNC,
+        monero_clearnet_sync=_sync_pending("monero", config.MONERO_CLEARNET_SYNC),
+        tari_clearnet_sync=_sync_pending("tari", config.TARI_CLEARNET_SYNC),
         monero_route=node_route(config.MONERO_NODE_HOST, is_local=config.monero_is_local()),
         tari_route=node_route(config.TARI_GRPC_ADDRESS, is_local=config.tari_is_local()),
         tari_enabled=config.TARI_MODE != "off",

@@ -14,7 +14,14 @@
 
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
-import { osBadgeLabel, rebootAskPane, rebootConfirmPane, vtag } from "./osreboot.mjs";
+import {
+  hostAnswered,
+  osBadgeLabel,
+  rebootAskPane,
+  rebootConfirmPane,
+  vtag,
+  waitForDashboard,
+} from "./osreboot.mjs";
 import { verdictText } from "./osverdict.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
@@ -140,6 +147,10 @@ export class OsUpdateControl extends Component {
     this.cancelled = false;
     this.modalRef = createRef();
   }
+  componentDidUpdate() {
+    if (this.state.phase === "rebooting" && hostAnswered(this.props.os, this.rebootVerdictTs))
+      this.setState({ phase: "closed", confirmText: "" });
+  }
   cancel() {
     const busy = ["checking", "downloading", "verifying", "installing", "rebooting"];
     if (busy.includes(this.state.phase)) return;
@@ -259,6 +270,7 @@ export class OsUpdateControl extends Component {
   }
 
   async reboot() {
+    this.rebootVerdictTs = this.props.os && this.props.os.verdict && this.props.os.verdict.ts;
     this.setState({ phase: "rebooting", error: "" });
     try {
       const id = await osAction("reboot");
@@ -270,21 +282,9 @@ export class OsUpdateControl extends Component {
     this.reconnect();
   }
 
-  // The static "reconnecting" behaviour: poll until the dashboard answers again, then reload —
-  // the fresh state carries the post-reboot verdict banner.
-  async reconnect(max = 300) {
-    for (let i = 0; i < max; i++) {
-      await new Promise((r) => setTimeout(r, POLL_MS));
-      try {
-        const res = await fetch("/api/state?range=1h");
-        if (res.ok) {
-          window.location.reload();
-          return;
-        }
-      } catch {
-        /* still rebooting */
-      }
-    }
+  // Poll until the dashboard answers again, then reload (the fresh state carries the verdict).
+  reconnect(max = 300) {
+    return waitForDashboard(() => !hostAnswered(this.props.os, this.rebootVerdictTs), POLL_MS, max);
   }
 
   renderBody() {
@@ -295,7 +295,7 @@ export class OsUpdateControl extends Component {
     if (phase === "error")
       return html`<p class="status-bad">${error}</p>
           <div class="config-modal-actions">
-              <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", error: "" })}>Close</button>
+              <button class="btn-toggle" onClick=${() => this.cancel()}>Close</button>
               ${version ? html`<button class="btn-toggle active" onClick=${() => this.download()}>Retry</button>` : null}
           </div>`;
     if (phase === "checking")

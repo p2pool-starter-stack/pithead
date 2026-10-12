@@ -44,10 +44,6 @@ from mining_dashboard.web.views.charts import (
 # The header's address block lives in web/views/header.py (#1853): the hostname/IP line and the
 # .onion URL under it are ways IN to the machine, not readings off it.
 from mining_dashboard.web.views.header import dashboard_onion, host_display_addr
-
-# The host/rig/node status sections live in web/views/infra_views.py (#1105). views.py stays the
-# facade: build_state assembles these sections, build_pool_network uses the address elider, and
-# the last two are re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
 from mining_dashboard.web.views.infra_views import (
     _rigforge_display,  # noqa: F401 — re-export for worker_detail.py
     _shorten,
@@ -59,6 +55,11 @@ from mining_dashboard.web.views.infra_views import (
     build_workers,
     rigforge_update_for,  # noqa: F401 — re-export for worker_detail.py
 )
+
+# The host/rig/node status sections live in web/views/infra_views.py (#1105). views.py stays the
+# facade: build_state assembles these sections, build_pool_network uses the address elider, and
+# the last two are re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
+from mining_dashboard.web.views.monero_view import build_monero
 
 # The time-series sections live in web/views/series_views.py (#1105). views.py stays the facade:
 # build_state assembles these sections and reads the palette and the window reject rate, and
@@ -164,6 +165,7 @@ def build_pool_network(data, metrics):
         },
         "pool": {
             "type": metrics.pool_type,
+            "syncing": local_pool.get("syncing", False),
             "sidechain_height": local_pool.get("sidechain_height", 0),
             "diff": f"{metrics.pool_difficulty / 1e6:.2f} M",
             "hr": format_hashrate(metrics.pool_hashrate),
@@ -183,18 +185,9 @@ def build_pool_network(data, metrics):
             "hash": _shorten(str(network.get("hash", "N/A")), threshold=20),
             "ts": format_time_abs(network.get("timestamp", 0)),
         },
-        "monero": {
-            "mode": metrics.monero_mode,
-            "db_size": _monero_db_size(data.get("monero_sync", {})),
-        },
+        "monero": build_monero(data, metrics),
         "shares_window": {"count": metrics.shares_in_window, "ok": metrics.shares_in_window > 0},
     }
-
-
-def _monero_db_size(monero_sync):
-    """Human-readable on-disk Monero DB size (Issue #32); em-dash when unknown."""
-    db_bytes = monero_sync.get("db_size", 0) or 0
-    return f"{db_bytes / 1e9:.1f} GB" if db_bytes > 0 else "—"
 
 
 # --------------------------------------------------------------------------------------

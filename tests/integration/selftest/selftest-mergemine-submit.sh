@@ -42,14 +42,14 @@ check() { if [ "$2" = "$3" ]; then T_PASS=$((T_PASS + 1)); else T_FAIL=$((T_FAIL
 
 echo "== ROW lines map one for one; INFO lines are not verdicts =="
 reset
-_mm_rows $'INFO height=350000\nROW PASS 350000: accepted\nROW FAIL 350000: legacy ACCEPTED\nROW PASS 350001: rejected' >/dev/null 2>&1
+_mm_rows mergemine-submit $'INFO height=350000\nROW PASS 350000: accepted\nROW FAIL 350000: legacy ACCEPTED\nROW PASS 350001: rejected' >/dev/null 2>&1
 p=$IT_PASS f=$IT_FAIL
 check "two ROW PASS lines pass" "$p" 2
 check "one ROW FAIL line fails" "$f" 1
 
 echo "== no ROW line at all is a failure, never a silent pass =="
 reset
-_mm_rows $'error: something\nINFO only' >/dev/null 2>&1
+_mm_rows mergemine-submit $'error: something\nINFO only' >/dev/null 2>&1
 check "output without ROW lines fails once" "$IT_FAIL" 1
 
 echo "== no Tari wallet in config.json: phase skipped as missing, nothing built =="

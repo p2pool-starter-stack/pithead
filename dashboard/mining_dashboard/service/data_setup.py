@@ -13,23 +13,31 @@ from mining_dashboard.config.config import (
     HASHRATE_DROP_MINUTES,
     HASHRATE_DROP_THRESHOLD_PCT,
     NODE_STALE_AFTER_SEC,
+    TARI_MODE,
     TOR_SOCKS_PROXY,
     UPDATE_CHECK_INTERVAL,
     WORKER_FALLOFF_SEC,
+    monero_is_local,
 )
 from mining_dashboard.service.data_helpers import (
     WorkerLifecycle,
 )
 from mining_dashboard.service.health.degradation import DegradationMonitor
+from mining_dashboard.service.health.monero_health import MoneroChainHealth
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
+from mining_dashboard.service.health.tari_health import TariChainHealth
 from mining_dashboard.service.health.tor_heal import TorEgressHealer
 from mining_dashboard.service.health.update_checker import GitHubReleaseClient, UpdateChecker
 from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor
 from mining_dashboard.service.notify.alert_service import AlertService
 from mining_dashboard.service.notify.healthchecks import HealthchecksClient
+from mining_dashboard.service.worker_probe import WorkerProber
 from mining_dashboard.service.xvb.price_feed import CoinGeckoClient, PriceFeed
 
 logger = logging.getLogger("DataService")
+
+# Tari initialization can take hours; only a sustained RPC outage rejects workers.
+TARI_NODE_DOWN_AFTER_SEC = int(os.environ.get("TARI_NODE_DOWN_AFTER_SEC", 15 * 60))
 
 
 def _runtime():
@@ -68,6 +76,9 @@ class DataSetupMixin:
             CoinGeckoClient(DASHBOARD_ENERGY["currency"], TOR_SOCKS_PROXY),
             enabled=DASHBOARD_ENERGY["price_feed"],
         )
+        self._last_proxy_workers = []
+        self._last_proxy_workers_at = None
+        self._prober = WorkerProber()
         # Share-health delta baseline (#116): the previous poll's cumulative proxy /summary
         # totals; None until the first poll seeds it (and again after a counter reset).
         self._last_share_totals = None
@@ -142,7 +153,16 @@ class DataSetupMixin:
         # Node-down detection + optional worker rejection (Issue #31).
         self.docker_control = DockerControl()
         self.monero_health = NodeHealthMonitor()
-        self.tari_health = NodeHealthMonitor()
+        self.tari_health = NodeHealthMonitor(
+            down_after=TARI_NODE_DOWN_AFTER_SEC, ever_up=TARI_MODE != "off"
+        )
+        # Isolated / stalled monerod (#2499): the peers-and-tip verdict for the card, doctor, alerts.
+        self.monero_chain = MoneroChainHealth()
+        # A configured payout wallet that never answered is still a failure after the debounce.
+        self.monero_wallet_health = NodeHealthMonitor(ever_up=True)
+        self.tari_wallet_health = NodeHealthMonitor(ever_up=True)
+        self.monero_wallet_scan_answered = None
+        self.tari_wallet_scan_answered = None
         # Peer-loss staleness (#972): the same debounce machine, fed monerod's own
         # `synchronized` flag instead of reachability. "Ever synchronized" plays the ever-up
         # guard, so a node mid-initial-sync (synchronized false for days) never alarms; only a
@@ -191,6 +211,10 @@ class DataSetupMixin:
         self.tor_healer = TorEgressHealer(
             self.docker_control, notify=self.alert_service.tor_heal_alert
         )
+        # Tari chain health (#2464): a live, reachable node that stopped following the chain (stale
+        # tip, no peers, behind the explorer). Detection and alert only; the alert rides the same
+        # always-on sender as the tor-heal note.
+        self.tari_chain = TariChainHealth(notify=self.alert_service.tor_heal_alert)
         # Hashrate-degradation detector (Issue #99): flags a sustained total-hashrate drop and its
         # recovery. Runs every cycle (cheap, self-contained EMA baseline) so it can mark the chart
         # even with Telegram off; a loss also drives a hashrate_loss alert.
@@ -235,3 +259,31 @@ class DataSetupMixin:
             self.latest_data.update(loaded_snapshot)
             self.workers_rejected = bool(self.latest_data.get("workers_rejected", False))
             self.miner_released = bool(self.latest_data.get("miner_released", False))
+        self._restore_sync_gate()
+
+    def _observe_monero(self, monero_sync):
+        """Attach the monerod peers-and-tip verdict (#2499) as ``monero_sync["health"]`` for the
+        card, /api/state, doctor and the alert edges. A remote node gets the "peers not visible"
+        verdict: its peer set is not ours to judge."""
+        monero_sync["health"] = self.monero_chain.observe(monero_sync, local=monero_is_local())
+
+    async def _observe_tari(self, tari_client, tari_sync):
+        """One cycle of Tari health: the debounced node-down flag (#31), returned, and the chain
+        verdict (#2464) attached as ``tari_sync["health"]`` for the panel, /api/state and doctor.
+        Off mode has no node to judge; the peer count is asked only of a node that answered."""
+        if TARI_MODE == "off":
+            return False
+        try:
+            reachable = tari_sync.get("reachable", False)
+            connections = (
+                await tari_client.get_connections()
+                if reachable and not tari_sync.get("initializing")
+                else None
+            )
+            tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
+        except Exception as exc:  # the verdict must never break the data loop
+            logger.warning("Tari chain health check failed (%s)", type(exc).__name__)
+            # Serve the last verdict: a failed cycle must not make a red node vanish from
+            # the panel, doctor and status.
+            tari_sync["health"] = dict(self.tari_chain.verdict)
+        return self.tari_health.update(tari_sync.get("reachable", True))

@@ -3,13 +3,6 @@
 # Self-test for the #1236 writable-key legs (rigforge-writable-keys.sh), driven as pure functions
 # against stubs — no rig, no server, no docker.
 #
-# This file IS the lane's bar for #1236. A leg that goes SKIPPED -> PASSED without a demonstrated
-# failure mode has been silenced, not fixed, so every assertion below is written to DIE if the
-# behaviour it covers is removed: each one names the mutation it kills. The three refusals
-# (autotune, watchdog, self-derived pools) are asserted the same way — as behaviour, by proving no
-# apply payload ever carries those keys — because a refusal that lives only in a comment is a
-# refusal one edit away from being undone silently.
-#
 # Standalone (not sourced by selftest.sh) so it never touches selftest.sh's file-budget ceiling —
 # same reasoning as selftest-rigforge-apply-settle.sh (#1309) and selftest-compose-profiles.sh
 # (#1301). Run directly, or via `make test-integration-selftest`.
@@ -43,7 +36,8 @@ rig_key_clear() { :; }
 # assertions while proving nothing at all. (It did, on this file's first run.)
 STUB_DETAIL='{"rig_config":{}}'
 APPLY_LOG="$(mktemp)"
-trap 'rm -f "$APPLY_LOG"' EXIT
+MARK_LOG="$(mktemp)" # the #1379 ledger calls the pools leg makes (#2470)
+trap 'rm -f "$APPLY_LOG" "$MARK_LOG"' EXIT
 
 applies() { cat "$APPLY_LOG"; }
 reset_applies() { : >"$APPLY_LOG"; }
@@ -134,8 +128,7 @@ assert_eq "an immediate 'applied' passes through untouched" \
     "$(_settle_worker_apply_key rig1 DONATION 1 "$res")" "applied|DONATION|c1"
 
 echo "== _settle_worker_apply_key: RigForge #344 async apply (#1309), generic over the key =="
-# The load-bearing mutation-kill, inherited from #1309: reading `status` verbatim instead of
-# settling would leave every leg at "accepted|" with no changed_keys — 4 reds per key.
+# An async apply must settle rather than preserve its dial-time accepted status.
 res='{"status":"accepted","change_id":"c2"}'
 wait_for() { return 0; }
 assert_eq "'accepted' that converges settles to 'applied' + the requested key" \
@@ -184,14 +177,18 @@ _pred_feed_maxt() {
 _settle_worker_apply_maxt rigX 101 "$res" >/dev/null
 assert_eq "the max_temp_c adapter calls _pred_feed_maxt with <rig> <want>" "$(applies)" "maxt:rigX:101"
 unset -f _pred_feed_maxt
-wait_for() { return 0; }
+# History waits must observe the row; config-readback convergence remains stubbed.
+wait_for() {
+    shift 3
+    [ "$1" != _pred_history_row_terminal ] || "$@"
+}
 reset_applies
 
 echo "== _writable_key_round_trip: the probe and the revert are both real, well-formed applies =="
 STUB_DETAIL='{"rig_config":{"DONATION":1}}'
 reset_applies
 counts="$(quietly _writable_key_round_trip rig1 DONATION 0 1)"
-assert_eq "a clean round trip passes all four of its assertions" "$counts" "4,0"
+assert_eq "a clean round trip passes all five of its assertions" "$counts" "5,0"
 assert_eq "exactly two applies: the probe and the revert" "$(applies | grep -c .)" "2"
 assert_eq "the probe carries the probe value" "$(applies | sed -n 1p)" '{"DONATION":1}'
 assert_eq "the revert carries the ORIGINAL value" "$(applies | sed -n 2p)" '{"DONATION":0}'
@@ -203,7 +200,7 @@ echo "== _writable_key_round_trip: a history row still 'accepted' is NOT a pass 
 STUB_HISTORY='[{"change_id":"c-DONATION","status":"accepted"}]'
 reset_applies
 counts="$(quietly _writable_key_round_trip rig1 DONATION 0 1)"
-assert_eq "an unreconciled #185 row reds exactly one assertion" "$counts" "3,1"
+assert_eq "an unreconciled #185 row reds both forward and revert history assertions" "$counts" "3,2"
 STUB_HISTORY='[{"change_id":"c-DONATION","status":"applied"},
                {"change_id":"c-watchdog_interval_min","status":"applied"},
                {"change_id":"c-pools","status":"applied"}]'
@@ -217,8 +214,11 @@ STUB_HISTORY='[]'                           # ...and nothing was ever recorded f
 reset_applies
 wait_for() { return 1; } # ...so every settle times out and every assert reds
 counts="$(quietly _writable_key_round_trip rig1 DONATION 0 1)"
-wait_for() { return 0; }
-assert_eq "a probe that never lands reds every assertion in the leg (0 passes)" "$counts" "0,4"
+wait_for() {
+    shift 3
+    [ "$1" != _pred_history_row_terminal ] || "$@"
+}
+assert_eq "a probe that never lands reds every assertion in the leg (0 passes)" "$counts" "0,5"
 assert_eq "the revert was still POSTed after the failures" "$(applies | sed -n 2p)" '{"DONATION":0}'
 STUB_HISTORY='[{"change_id":"c-DONATION","status":"applied"},
                {"change_id":"c-watchdog_interval_min","status":"applied"},
@@ -255,7 +255,7 @@ echo "== run_rigforge_writable_keys: an out-of-contract value FAILS, it does not
 STUB_DETAIL='{"rig_config":{"DONATION":0,"watchdog_interval_min":0}}'
 reset_applies
 counts="$(quietly run_rigforge_writable_keys rig1)"
-assert_eq "an interval outside 1-1440 reds, and only it (the DONATION leg is unaffected)" "$counts" "4,1"
+assert_eq "an interval outside 1-1440 reds, and only it (the DONATION leg is unaffected)" "$counts" "5,1"
 assert_eq "and no watchdog_interval_min apply was POSTed at all" \
     "$(applies | grep -c watchdog_interval_min)" "0"
 
@@ -308,8 +308,8 @@ assert_contains "the up-front 'could not read' guard is what refused it, in its 
 assert_eq "the per-key skips did not fire (they would misreport a silent rig as one that answered)" \
     "$(printf '%s' "$err" | grep -c 'skipping that leg')" "0"
 
-echo "== run_rigforge_pools: still operator-gated, and it restores from last_applied =="
-STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1","pass":"secret"}]}}'
+echo "== run_rigforge_pools: still operator-gated =="
+STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1"}]}}'
 reset_applies
 unset IT_RIG_POOLS_PROBE
 counts="$(quietly run_rigforge_pools rig1)"
@@ -325,71 +325,59 @@ assert_contains "an absent pools probe is one missing row, never green" "$pools_
 assert_contains "the pools missing row names the required input" "$pools_rows" \
     "[missing] leg      pools write (#1002b) — no IT_RIG_POOLS_PROBE"
 
-export IT_RIG_POOLS_PROBE='[{"url":"probe:1"}]'
-reset_applies
-quietly run_rigforge_pools rig1 >/dev/null
-# The load-bearing half: the restore target is last_applied (which still carries `pass`), NEVER the
-# rig's own .rig_config.pools, which arrives with `pass` and `tls-fingerprint` deleted twice over.
-assert_eq "the restore uses last_applied, credential intact" \
-    "$(applies | sed -n 2p)" '{"pools":[{"url":"real:1","pass":"secret"}]}'
-assert_eq "the restore is NOT the rig's credential-stripped self-read" \
-    "$(applies | grep -c 'stripped:1')" "0"
-
-# #1546: the guard tests the CREDENTIAL, never emptiness as a proxy for it. These cases are the
-# reason this section could not be trusted before: the STUB_DETAIL above hardcodes `"pass":"secret"`,
-# so every assertion in this file stays green whether the guard tests `pass` or not — the coverage
-# was structurally blind, not merely thin. Measured against the pre-#1546 function, both shapes below
-# POSTed twice (the probe AND a credential-less restore, at a real miner); after it, zero. The
-# pass-present rows above are the positive control that the leg still runs and still POSTs.
-for _shape in '[{"url":"real:1"}]' '[{"url":"real:1","pass":""}]'; do
-    STUB_DETAIL="$(jq -cn --argjson p "$_shape" '{last_applied: {pools: $p}}')"
+echo "== run_rigforge_pools: #2470 — a pools row on record no longer skips the leg for good =="
+# The real dashboard serves .last_applied.pools with `pass` stripped (#113); before #2470 the #1546
+# check refused it and the leg never POSTed again. `{}` is #2325's case; a record that kept its `pass`
+# is a #113 regression, not a restore source. Pretty-printed: the #1379 ledger is one line per entry.
+export IT_RIG_POOLS_PROBE=$'[\n  {"url": "probe:1", "pass": "probesecret"}\n]'
+rig_key_mark() { printf '%s\n' "$4" >>"$MARK_LOG"; }
+rig_key_clear() { printf 'clear %s\n' "$3" >>"$MARK_LOG"; }
+STUB_HISTORY='[{"change_id":"c-applied","status":"applied"}]' # c-pools unconfirmed: no retiring (#2407)
+for _detail in "$STUB_DETAIL" '{"last_applied":{}}' '{"last_applied":{"pools":[{"url":"real:1","pass":"leaked"}]}}'; do
+    STUB_DETAIL="$_detail"
+    reset_applies
+    : >"$MARK_LOG"
+    quietly run_rigforge_pools rig1 >/dev/null
+    assert_eq "the leg applies the compacted probe once, never the record or the rig's read [$_detail]" \
+        "$(applies)" '{"pools":[{"url":"probe:1","pass":"probesecret"}]}'
+    assert_eq "the ledger holds the probe on one line, uncleared while no history row confirms it [$_detail]" \
+        "$(cat "$MARK_LOG")" '[{"url":"probe:1","pass":"probesecret"}]'
+done
+# The rig's decision retires the entry; the mark must land before the apply goes out (#1379).
+_worker_apply() {
+    printf '%s\n' "$2" >>"$APPLY_LOG"
+    echo apply >>"$MARK_LOG"
+    printf '{"status":"%s","changed_keys":["pools"],"change_id":"c-%s"}' "$STUB_STATUS" "$STUB_STATUS"
+}
+for _case in 'applied 3 apply,clear pools' 'rejected 1 apply,clear pools' 'rolled_back 1 apply,clear pools' 'failed 1 apply'; do
+    read -r STUB_STATUS _passes _want <<<"$_case"
+    : >"$MARK_LOG"
+    counts="$(quietly run_rigforge_pools rig1)"
+    assert_eq "passing rows; marked before the apply, retired only once the rig decides [$STUB_STATUS]" \
+        "${counts%,*}|$(sed 1d "$MARK_LOG" | paste -sd, -)" "$_passes|$_want"
+done
+# #1546: each shape would restore a borrowed miner to a credential-less config. Refused, never POSTed.
+for _shape in '[{"url":"probe:1"}]' '[{"url":"probe:1","pass":""}]' '[]' '{"p":{"url":"probe:1","pass":"x"}}' null; do
+    IT_RIG_POOLS_PROBE="$_shape"
     reset_applies
     counts="$(quietly run_rigforge_pools rig1)"
-    assert_eq "a last_applied.pools with no usable pass POSTs nothing at the rig [$_shape]" \
+    assert_eq "a probe with no usable pass POSTs nothing at the rig [$_shape]" \
         "$(applies | grep -c .)" "0"
     assert_eq "and self-skips rather than passing or failing [$_shape]" "$counts" "0,0"
 done
-# A skip that announces the wrong reason is its own small lie.
-STUB_DETAIL='{"last_applied":{"pools":[{"url":"real:1"}]}}'
-reset_applies
 err="$(drive_err run_rigforge_pools rig1)"
-assert_contains "the passless skip says the CREDENTIAL is what is missing" "$err" "no usable credential"
+assert_contains "the passless skip names the probe's credential as what is missing" "$err" \
+    "non-empty \`pass\` on every entry"
 
-echo "== run_rigforge_pools: #2325 — an absent record is SEEDED from IT_RIG_POOLS_PROBE, not skipped =="
-# The precondition this issue is about: a rig this leg has never touched has no .last_applied.pools
-# to restore, and used to skip forever because of it. The probe (by contract, a value the operator
-# has already attested carries `pass`) breaks that circle — it seeds the record with itself, so
-# there is no "original" other than the probe to restore back to.
-STUB_DETAIL='{"last_applied":{}}'
-IT_RIG_POOLS_PROBE='[{"url":"probe:1","pass":"seedsecret"}]'
-reset_applies
-quietly run_rigforge_pools rig1 >/dev/null
-assert_eq "seeding an absent record still POSTs — it is not skipped (#2325)" "$(applies | grep -c .)" "2"
-assert_eq "the first apply carries the probe — nothing else to seed with" \
-    "$(applies | sed -n 1p)" '{"pools":[{"url":"probe:1","pass":"seedsecret"}]}'
-assert_eq "the restore is the same probe — there is no other original yet" \
-    "$(applies | sed -n 2p)" '{"pools":[{"url":"probe:1","pass":"seedsecret"}]}'
-IT_RIG_POOLS_PROBE='[{"url":"probe:1"}]' # restored: the credential-less probe the rest of this file uses
-
-# The #1546 guard survives the seed path: a probe with no `pass` of its own must not seed a
-# credential-less config onto the rig either, and must say so — never a stale "nothing on record".
-STUB_DETAIL='{"last_applied":{}}'
-reset_applies
-err="$(drive_err run_rigforge_pools rig1)"
-assert_contains "a credential-less probe can't seed an absent record either (#1546/#2325)" \
-    "$err" "no usable credential"
-assert_eq "and nothing is POSTed — the credential is checked before any seed/apply" \
-    "$(applies | grep -c .)" "0"
-
-STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1","pass":"secret"}]}}'
-
-export IT_RIG_POOLS_PROBE='not-json-fixturesecret42'
-reset_applies
-counts="$(quietly run_rigforge_pools rig1)"
-assert_eq "a malformed probe reds rather than being POSTed at a rig" "${counts#*,}" "1"
-assert_eq "and nothing is POSTed" "$(applies | grep -c .)" "0"
-assert_eq "and its credential-shaped input is not copied into the error log" \
-    "$(drive_err run_rigforge_pools rig1 | grep -c fixturesecret42)" "0"
+for IT_RIG_POOLS_PROBE in 'not-json-fixturesecret42' '[{"url":"a","pass":"fixturesecret42"}] [{"url":"b","pass":"s"}]'; do
+    reset_applies
+    : >"$MARK_LOG"
+    counts="$(quietly run_rigforge_pools rig1)"
+    assert_eq "a malformed or multi-value probe reds, and POSTs and marks nothing" \
+        "${counts#*,}|$(applies | grep -c .)|$(grep -c . "$MARK_LOG")" "1|0|0"
+    assert_eq "and its credential-shaped input is not copied into the error log" \
+        "$(drive_err run_rigforge_pools rig1 | grep -c fixturesecret42)" "0"
+done
 unset IT_RIG_POOLS_PROBE
 
 echo "== run_rigforge_rollback: an absent rig-specific probe is a missing row, not green or red =="
