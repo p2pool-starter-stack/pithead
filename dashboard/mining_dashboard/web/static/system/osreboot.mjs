@@ -52,3 +52,30 @@ export function rebootConfirmPane({ version, confirmText, onConfirmText, onLater
               onClick=${onReboot}>Reboot now</button>
       </div>`;
 }
+
+// A terminal host verdict (idle step, updated or rolled back) answers a reboot this tab started;
+// it supersedes the local Rebooting phase, which the bounded reconnect loop never clears. A verdict
+// with the ts the reboot began under is an earlier update's, and a pending reboot is not an answer.
+export function hostAnswered(os, startedTs) {
+  const v = os && os.verdict;
+  const terminal = v && (v.outcome === "updated" || v.outcome === "rolled_back");
+  return !!(os && os.step === "idle" && terminal && v.ts !== startedTs);
+}
+
+// Poll until the dashboard answers again, then reload: the fresh state carries the verdict banner.
+// Stops quietly once `waiting()` is false, i.e. the host's verdict already answered the reboot.
+export async function waitForDashboard(waiting, pollMs, max) {
+  for (let i = 0; i < max; i++) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    if (!waiting()) return;
+    try {
+      const res = await fetch("/api/state?range=1h");
+      if (res.ok) {
+        window.location.reload();
+        return;
+      }
+    } catch {
+      /* still rebooting */
+    }
+  }
+}

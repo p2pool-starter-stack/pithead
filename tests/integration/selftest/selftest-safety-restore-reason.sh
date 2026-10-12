@@ -38,7 +38,7 @@ _restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <se
             up) return 0 ;;
             esac
         }
-        strict_pithead() { return "$_up_rc"; }
+        baseline_up() { return "$_up_rc"; }
         wait_status_ok() { return "$_health_rc"; }
         rx() { [ "$_config_state" = match ] && printf 'baseline' || printf 'drifted'; }
         upgrade_secret_fingerprints() {

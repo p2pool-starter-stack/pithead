@@ -3,13 +3,6 @@
 # Self-test for the #1236 writable-key legs (rigforge-writable-keys.sh), driven as pure functions
 # against stubs — no rig, no server, no docker.
 #
-# This file IS the lane's bar for #1236. A leg that goes SKIPPED -> PASSED without a demonstrated
-# failure mode has been silenced, not fixed, so every assertion below is written to DIE if the
-# behaviour it covers is removed: each one names the mutation it kills. The three refusals
-# (autotune, watchdog, self-derived pools) are asserted the same way — as behaviour, by proving no
-# apply payload ever carries those keys — because a refusal that lives only in a comment is a
-# refusal one edit away from being undone silently.
-#
 # Standalone (not sourced by selftest.sh) so it never touches selftest.sh's file-budget ceiling —
 # same reasoning as selftest-rigforge-apply-settle.sh (#1309) and selftest-compose-profiles.sh
 # (#1301). Run directly, or via `make test-integration-selftest`.
@@ -135,8 +128,7 @@ assert_eq "an immediate 'applied' passes through untouched" \
     "$(_settle_worker_apply_key rig1 DONATION 1 "$res")" "applied|DONATION|c1"
 
 echo "== _settle_worker_apply_key: RigForge #344 async apply (#1309), generic over the key =="
-# The load-bearing mutation-kill, inherited from #1309: reading `status` verbatim instead of
-# settling would leave every leg at "accepted|" with no changed_keys — 4 reds per key.
+# An async apply must settle rather than preserve its dial-time accepted status.
 res='{"status":"accepted","change_id":"c2"}'
 wait_for() { return 0; }
 assert_eq "'accepted' that converges settles to 'applied' + the requested key" \
@@ -185,14 +177,18 @@ _pred_feed_maxt() {
 _settle_worker_apply_maxt rigX 101 "$res" >/dev/null
 assert_eq "the max_temp_c adapter calls _pred_feed_maxt with <rig> <want>" "$(applies)" "maxt:rigX:101"
 unset -f _pred_feed_maxt
-wait_for() { return 0; }
+# History waits must observe the row; config-readback convergence remains stubbed.
+wait_for() {
+    shift 3
+    [ "$1" != _pred_history_row_terminal ] || "$@"
+}
 reset_applies
 
 echo "== _writable_key_round_trip: the probe and the revert are both real, well-formed applies =="
 STUB_DETAIL='{"rig_config":{"DONATION":1}}'
 reset_applies
 counts="$(quietly _writable_key_round_trip rig1 DONATION 0 1)"
-assert_eq "a clean round trip passes all four of its assertions" "$counts" "4,0"
+assert_eq "a clean round trip passes all five of its assertions" "$counts" "5,0"
 assert_eq "exactly two applies: the probe and the revert" "$(applies | grep -c .)" "2"
 assert_eq "the probe carries the probe value" "$(applies | sed -n 1p)" '{"DONATION":1}'
 assert_eq "the revert carries the ORIGINAL value" "$(applies | sed -n 2p)" '{"DONATION":0}'
@@ -204,7 +200,7 @@ echo "== _writable_key_round_trip: a history row still 'accepted' is NOT a pass 
 STUB_HISTORY='[{"change_id":"c-DONATION","status":"accepted"}]'
 reset_applies
 counts="$(quietly _writable_key_round_trip rig1 DONATION 0 1)"
-assert_eq "an unreconciled #185 row reds exactly one assertion" "$counts" "3,1"
+assert_eq "an unreconciled #185 row reds both forward and revert history assertions" "$counts" "3,2"
 STUB_HISTORY='[{"change_id":"c-DONATION","status":"applied"},
                {"change_id":"c-watchdog_interval_min","status":"applied"},
                {"change_id":"c-pools","status":"applied"}]'
@@ -218,8 +214,11 @@ STUB_HISTORY='[]'                           # ...and nothing was ever recorded f
 reset_applies
 wait_for() { return 1; } # ...so every settle times out and every assert reds
 counts="$(quietly _writable_key_round_trip rig1 DONATION 0 1)"
-wait_for() { return 0; }
-assert_eq "a probe that never lands reds every assertion in the leg (0 passes)" "$counts" "0,4"
+wait_for() {
+    shift 3
+    [ "$1" != _pred_history_row_terminal ] || "$@"
+}
+assert_eq "a probe that never lands reds every assertion in the leg (0 passes)" "$counts" "0,5"
 assert_eq "the revert was still POSTed after the failures" "$(applies | sed -n 2p)" '{"DONATION":0}'
 STUB_HISTORY='[{"change_id":"c-DONATION","status":"applied"},
                {"change_id":"c-watchdog_interval_min","status":"applied"},
@@ -256,7 +255,7 @@ echo "== run_rigforge_writable_keys: an out-of-contract value FAILS, it does not
 STUB_DETAIL='{"rig_config":{"DONATION":0,"watchdog_interval_min":0}}'
 reset_applies
 counts="$(quietly run_rigforge_writable_keys rig1)"
-assert_eq "an interval outside 1-1440 reds, and only it (the DONATION leg is unaffected)" "$counts" "4,1"
+assert_eq "an interval outside 1-1440 reds, and only it (the DONATION leg is unaffected)" "$counts" "5,1"
 assert_eq "and no watchdog_interval_min apply was POSTed at all" \
     "$(applies | grep -c watchdog_interval_min)" "0"
 

@@ -26,9 +26,10 @@ fi
 source "$ROOT/tests/stack/lib.sh"
 WORK_DIR="$SANDBOX"
 CONTAINER="tari-config-parse-check-$$"
+CALIBRATION="$CONTAINER-libtor"
 # rm -rf can leave root-owned files behind (the container ran --user root against $WORK_DIR/node)
 # and exit non-zero on them — `|| true` so cleanup never flips an otherwise-passing run to red.
-trap 'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -rf "$WORK_DIR" 2>/dev/null || true; rm -f "$ROOT/build/tari/config.toml"' EXIT
+trap 'docker rm -f "$CONTAINER" "$CALIBRATION" >/dev/null 2>&1 || true; rm -rf "$WORK_DIR" 2>/dev/null || true; rm -f "$ROOT/build/tari/config.toml"' EXIT
 echo "CLEARNET_STATE_DIR=$WORK_DIR/clearnet-state" >"$WORK_DIR/.env"
 
 # 00-prelude.sh declares ENV_FILE readonly from PITHEAD_ENV_FILE, so this has to be set first.
@@ -91,3 +92,39 @@ if [ "$survived" -eq 0 ]; then
     exit 1
 fi
 echo "  ✓ minotari_node accepted the rendered config (still running after the parse window, no ConfigError)"
+
+# #2653: the image is built with the `libtor` feature and `base_node.use_libtor` defaults to true, so
+# under a Tor hidden-service transport the node starts its own Tor, which dials Tor relays straight
+# from the tari container instead of through the stack's tor. That Tor keeps its data under
+# <base_path>/<network>/libtor (Tari's get_base_path() appends the network, as the log4rs path
+# /var/tari/node/mainnet/... shows), created before the node starts networking.
+libtor_dir() { find "$1" -mindepth 2 -maxdepth 2 -type d -name libtor -print -quit 2>/dev/null; }
+if [ -n "$(libtor_dir "$WORK_DIR/node")" ]; then
+    echo "$output" >&2
+    echo "FAIL: minotari_node started its in-process Tor (<base_path>/<network>/libtor exists) (#2653)" >&2
+    exit 1
+fi
+echo "  ✓ minotari_node started no in-process Tor (no <base_path>/<network>/libtor) (#2653)"
+
+# Calibration: the same image on the pre-#2653 transport (`tor`, use_libtor left at its default)
+# must create <base_path>/<network>/libtor, or the absence above proves nothing. If a future image
+# drops the libtor feature this fails, and use_libtor = false can go with it.
+mkdir -p "$WORK_DIR/calibration-config" "$WORK_DIR/calibration-node"
+cp -p "$ROOT/build/tari/entrypoint.sh" "$WORK_DIR/calibration-config/"
+sed -e 's/^type = "socks5"/type = "tor"/' -e '/^use_libtor = /d' "$ROOT/build/tari/config.toml" \
+    >"$WORK_DIR/calibration-config/config.toml"
+docker run -d --network none --name "$CALIBRATION" --user root -e WAIT_FOR_TOR=0 \
+    -v "$WORK_DIR/calibration-config:/var/tari/config:ro" \
+    -v "$WORK_DIR/calibration-node:/var/tari/node" \
+    --entrypoint /var/tari/config/entrypoint.sh \
+    "$TARI_IMAGE" --disable-splash-screen --non-interactive >/dev/null
+for _ in $(seq 1 20); do
+    [ -n "$(libtor_dir "$WORK_DIR/calibration-node")" ] && break
+    sleep 1
+done
+if [ -z "$(libtor_dir "$WORK_DIR/calibration-node")" ]; then
+    docker logs "$CALIBRATION" >&2 || true
+    echo "FAIL: calibration: a Tor transport with use_libtor at its default created no <base_path>/<network>/libtor" >&2
+    exit 1
+fi
+echo "  ✓ calibration: the same image on a Tor transport with use_libtor at its default starts libtor"

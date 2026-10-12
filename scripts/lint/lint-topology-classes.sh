@@ -14,7 +14,8 @@
 #      wherever that exact default is referenced.
 #   5. user@host strings — allowed only for generic role placeholders, the RFC 2606 reserved
 #      example domains, and technical shapes that only look like an address (a SHA-pinned GitHub
-#      Action, a package@version, a Telegram bot mention).
+#      Action, a package@version, a Telegram bot mention, or an instantiated systemd service
+#      drop-in directory in a path).
 #
 # Run with --self-test to check the scanners themselves against fixtures (including the
 # empty-enumeration guard below).
@@ -110,6 +111,17 @@ ipv4_allow() {
 
 email_allow() {
     local local_part="${1%%@*}" domain="${1#*@}"
+    # An instantiated unit's drop-in directory contains @ but is a path component, not an
+    # SSH destination. Check the bytes around THIS match under systemd's unit directory,
+    # so another path on the same line or an unrelated slash-delimited value cannot hide a host.
+    local unit_dir='/systemd/system/' context
+    if [[ $1 =~ ^[A-Za-z0-9_.-]+@[A-Za-z0-9_.:-]+\.service\.d$ ]] &&
+        [ "$#" -ge 4 ] && [ "$4" -ge "${#unit_dir}" ]; then
+        context=$(dd if="$2" bs=1 skip="$(($4 - ${#unit_dir}))" count="$((${#unit_dir} + ${#1} + 1))" 2>/dev/null)
+        if [ "$context" = "$unit_dir$1/" ]; then
+            return 0
+        fi
+    fi
     case "$local_part" in
     user | you | miner | root | operator) return 0 ;;
     esac
@@ -129,15 +141,16 @@ scan() { # <pattern> <allow-fn> <file...>
     local pattern="$1" allow_fn="$2"
     shift 2
     [ "$#" -eq 0 ] && return 0
-    local entry path line match
+    local entry path line offset match
     while IFS= read -r entry; do
-        [[ $entry =~ ^([^:]+):([0-9]+):(.*)$ ]] || continue
+        [[ $entry =~ ^([^:]+):([0-9]+):([0-9]+):(.*)$ ]] || continue
         path=${BASH_REMATCH[1]}
         line=${BASH_REMATCH[2]}
-        match=${BASH_REMATCH[3]}
-        "$allow_fn" "$match" && continue
+        offset=${BASH_REMATCH[3]}
+        match=${BASH_REMATCH[4]}
+        "$allow_fn" "$match" "$path" "$line" "$offset" && continue
         printf '%s:%s: %s\n' "$path" "$line" "$match"
-    done < <(grep -HInoP -e "$pattern" -- "$@" 2>/dev/null)
+    done < <(grep -HInboP -e "$pattern" -- "$@" 2>/dev/null)
     return 0
 }
 
@@ -210,12 +223,15 @@ if [ "${1:-}" = "--self-test" ]; then
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
     st_fail=0
-    expect() { # <desc> <hit|clean> <actual-output>
+    expect() { # <desc> <hit|clean|exact> <actual-output> [expected-output]
         if [ "$2" = hit ] && [ -z "$3" ]; then
             echo "  self-test FAIL: $1 (expected a hit, got none)"
             st_fail=1
         elif [ "$2" = clean ] && [ -n "$3" ]; then
             echo "  self-test FAIL: $1 (expected clean, got: $3)"
+            st_fail=1
+        elif [ "$2" = exact ] && [ "$3" != "$4" ]; then
+            echo "  self-test FAIL: $1 (expected: $4; got: $3)"
             st_fail=1
         else echo "  self-test ok: $1"; fi
     }
@@ -259,6 +275,25 @@ if [ "${1:-}" = "--self-test" ]; then
         "$(printf 'a%.0s' $(seq 1 40))" >"$tmp/email-clean.txt"
     expect "placeholders, example.com, a SHA pin, a package pin, a bot mention, and Go's bare @v syntax are not flagged" clean \
         "$(scan "$EMAIL_RE" email_allow "$tmp/email-clean.txt")"
+    printf 'COPY os/overlay/unit.conf /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf\n' >"$tmp/unit-path-clean.txt"
+    expect "an instantiated systemd service drop-in path is not an address" clean \
+        "$(scan "$EMAIL_RE" email_allow "$tmp/unit-path-clean.txt")"
+    printf 'ssh admin@node.service.d\n' >"$tmp/unit-host-hit.txt"
+    expect "a host shaped like a unit directory outside a path is still flagged" hit \
+        "$(scan "$EMAIL_RE" email_allow "$tmp/unit-host-hit.txt")"
+    printf 'COPY admin@node.service.d /etc/systemd/system/plain.service.d/override.conf\n' >"$tmp/unit-source-hit.txt"
+    expect "a standalone source token is still flagged beside a drop-in path" hit \
+        "$(scan "$EMAIL_RE" email_allow "$tmp/unit-source-hit.txt")"
+    printf 'URL=https://admin@node.service.d/private\n' >"$tmp/unit-url-hit.txt"
+    expect "URL userinfo is not a systemd path" hit \
+        "$(scan "$EMAIL_RE" email_allow "$tmp/unit-url-hit.txt")"
+    printf 'ssh admin@node.service.d; path=/etc/systemd/system/admin@node.service.d/override.conf\n' >"$tmp/unit-same-line-hit.txt"
+    expect "a systemd path occurrence does not hide a standalone host on the same line" exact \
+        "$(scan "$EMAIL_RE" email_allow "$tmp/unit-same-line-hit.txt")" \
+        "$tmp/unit-same-line-hit.txt:1: admin@node.service.d"
+    printf 'TOKEN_FILE=/secrets/admin@node.service.d/key\n' >"$tmp/unit-unrelated-path-hit.txt"
+    expect "an unrelated path does not get the systemd exception" hit \
+        "$(scan "$EMAIL_RE" email_allow "$tmp/unit-unrelated-path-hit.txt")"
 
     SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
     emptyrepo="$tmp/emptyrepo"

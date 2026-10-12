@@ -2,9 +2,10 @@ import { html } from "../app/preact.mjs";
 import { classifyMoneroAddress, pathGet, telegramPairReady } from "../config/configsync.mjs";
 import { NodeProbeProgress, NodeProbeReport } from "../network/nodeprobe.mjs";
 import { InstallSection } from "./stages.mjs";
+import { StratumPasswordChoice } from "./stratumpassword.mjs";
 import * as failure from "./wizardfailure.mjs";
 import { MachineName } from "./wizardhostname.mjs";
-import { TariSection, tariAnswer, XvbField } from "./wizardmining.mjs";
+import { fastSyncWarning, TariSection, tariAnswer } from "./wizardmining.mjs";
 import { Err, Field, Note, RadioField } from "./wizardparts.mjs";
 
 const FIELDS = {
@@ -22,7 +23,6 @@ const FIELDS = {
   tariRemoteGrpc: { path: "tari.remote.grpc_port" },
   pool: { path: "p2pool.pool" },
   localMiner: { path: "local_miner.enabled" },
-  xvb: { path: "xvb.enabled" },
   clearnetSync: { path: "monero.clearnet_initial_sync" },
   healthchecks: { path: "healthchecks.ping_url" },
   telegramToken: { path: "telegram.bot_token" },
@@ -102,9 +102,13 @@ export function renderSetup(app) {
           on ${dataWiped.when} — the wallets, node identity and synced chains that were on it are
           gone. If you have a backup, restore it below instead of setting up as a fresh machine.</p>`
         }
-        <p><button type="button" class="wizard-link"
-            onClick=${() => app.setState({ restoreMode: true, error: "" })}>
-            Restoring an existing Pithead? Upload its backup instead.</button></p>
+        <p>${
+          app.state.restoreEnabled
+            ? html`<button type="button" class="wizard-link"
+                onClick=${() => app.setState({ restoreMode: true, error: "" })}>
+                Restoring an existing Pithead? Upload its backup instead.</button>`
+            : "Restore from a backup requires HTTPS. Reboot after setup TLS is available."
+        }</p>
         ${app.state.probing && html`<${NodeProbeProgress} config=${cfg} />`}
         <${NodeProbeReport} report=${app.state.nodeProbe}>Setup does not continue while a
         check is failing. Correct the address below and submit again.<//>
@@ -124,9 +128,9 @@ export function renderSetup(app) {
               installer &&
               html`<${InstallSection} disks=${disks} chosen=${chosen} confirm=${confirm}
                 wipe=${wipe} allowStick=${rig}
-                onPick=${(e) => app.setState({ chosen: e.target.value, wipe: "keep" })}
+                onPick=${app.pickDisk}
                 onConfirm=${(e) => app.setState({ confirm: e.target.value })}
-                onWipe=${(e) => app.setState({ wipe: e.target.value })} />`
+                onWipe=${app.changeWipe} />`
             }
             ${diskPicked && !keepEverything && rig && app.renderRigFields()}
             ${diskPicked && !keepEverything && !rig && html`<${MachineName} cfg=${cfg} edit=${app.edit} />`}
@@ -135,7 +139,8 @@ export function renderSetup(app) {
               !keepEverything &&
               !rig &&
               html`<h2>Payout address</h2>
-            <${Note}>Paste it — it is far too long to type, and a typo pays a stranger.<//>
+            <${Note}>Use a dedicated mining wallet: P2Pool payout addresses are public. Paste
+            its address — it is too long to type, and a typo pays a stranger.<//>
             <${Field} label="Monero payout address">
                 <input class="wizard-mono" value=${v("moneroWallet") || ""} onInput=${on("moneroWallet")}
                     autocomplete="off" autocapitalize="off" spellcheck=${false}
@@ -208,15 +213,25 @@ export function renderSetup(app) {
                 CPU governor, memory reservations — which is exactly what a dedicated
                 appliance is for.<//>`
             }
-            <${XvbField} v=${v} on=${on} />
+            <${StratumPasswordChoice} value=${pathGet(cfg, "p2pool.stratum_password")} onChange=${app.edit("p2pool.stratum_password")} />
 
             <h2>First sync</h2>
-            <${RadioField} label="Downloading the chain the first time" name="clearnet-sync"
-                  value=${String(v("clearnetSync") ?? false)} onChange=${on("clearnetSync")} options=${[
-                    ["false", "Private, over Tor", "Takes days."],
-                    ["true", "Faster, over the open internet", "Takes hours; use Tor afterwards."],
+            <${RadioField} label="Fast initial sync for locally run chains" name="clearnet-sync"
+                  value=${String(app.state.fastSync)} onChange=${on("clearnetSync")} options=${[
+                    [
+                      "false",
+                      "Private, over Tor",
+                      "Default: all traffic goes over Tor. Takes days.",
+                    ],
+                    [
+                      "true",
+                      "Faster, over clearnet",
+                      "Takes hours instead of days. Each local chain switches to Tor automatically afterwards.",
+                    ],
                   ]} />
 
+
+            ${fastSyncWarning(cfg) && html`<p class="c-bad">${fastSyncWarning(cfg)}</p>`}
 
             <h2>Dashboard login</h2>
             <${RadioField} label="How should the dashboard be protected?" name="auth-mode"

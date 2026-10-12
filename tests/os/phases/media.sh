@@ -100,6 +100,13 @@ phase_media() {
         return
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return
+    fi
 
     # ---- apply leg: a real change, shown, counted down, applied, consumed --------------------
     # A MINIMAL stick on purpose — wallet + pool, nothing else. Settings it does not name must
@@ -128,7 +135,7 @@ phase_media() {
     wait_serial "staged configuration differs from the running one" 180 &&
         ok "the exact diff is shown on the console before anything applies" ||
         bad "no diff banner appeared on the console"
-    if tr -d '\r' <"$SERIAL" | grep -qE "$new_wallet"; then
+    if serial_has "$new_wallet"; then
         ok "the changed wallet address is shown in full — verifying it is the point"
     else
         bad "the changed wallet address never appeared on the console"

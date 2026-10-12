@@ -24,7 +24,7 @@
 # Shape the wizard's served config for remote-node mode. Mirrors provision_browser_config
 # (tests/os/provision-browser-submit.sh) but for the Both-role remote-node answers instead of the
 # all-local defaults, and reuses remote_node_proposal's endpoint shaping
-# (tests/os/appliance-config-approval-leg.sh) rather than re-deriving it.
+# (tests/os/appliance-node-runtime-leg.sh) rather than re-deriving it.
 # $1 served config, $2 monero host, $3 rpc port, $4 zmq port, $5 monero username, $6 monero
 # password, $7 tari host (empty means tari.mode=off, #1855), $8 tari grpc port.
 stack_browser_config() {

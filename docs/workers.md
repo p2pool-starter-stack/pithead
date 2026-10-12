@@ -3,7 +3,16 @@
 How to point miners at the stack. Every miner connects to one endpoint; the stack handles pool
 selection, payouts, and the P2Pool/XvB split centrally.
 
-The endpoint is the `xmrig-proxy` service on port `3333`.
+Choose [coordinator-only, coordinator plus a local worker, or worker-only](hardware.md#choose-the-arrangement)
+before sizing the machines. The appliance's [role chooser](appliance.md#what-is-this-machine)
+sets that arrangement; a worker-only machine holds no chain data or payout wallet configuration.
+
+The endpoint is the `xmrig-proxy` service on port `3333` by default. Every successful coordinator
+`setup`, `up`, and `apply` prints the pool URL and stratum password, or states that no password is
+set. This includes an `apply` with no configuration changes and a host with local mining enabled.
+When stratum TLS is enabled, the output also includes the certificate fingerprint to pin on rigs.
+The pool URL uses the dashboard hostname for an all-interface bind, or the configured stratum
+bind address; a loopback bind permits local connections only.
 
 > Do not put a wallet address in your miner config. The P2Pool service on the stack handles payouts.
 > Miners only need to know where the stack is.
@@ -64,9 +73,12 @@ stack's component versions don't dictate a miner version. When in doubt, run the
   Lock it down with controls that complement each other: narrow the bind address with
   [`p2pool.stratum_bind`](configuration.md#configuration-reference), restrict the source range with a
   host firewall, and/or require a password with [`p2pool.stratum_password`](#authentication).
-- `pithead setup` and `doctor` flag this for you: when the host has a public IP and stratum is bound
-  to all interfaces, they print a warning pointing back here. A NAT'd home host (no public IP on its
-  own interfaces) sees nothing, so this only nudges the hosts that are actually exposed.
+- `pithead setup` warns when the host has a public IP and stratum is bound to all interfaces
+  or to that public address. `doctor` reads the rendered password and TLS settings: neither set
+  warns about unauthenticated, cleartext access; password only warns about cleartext; TLS only
+  warns that rigs not switched to TLS still connect in cleartext without authentication. Both set
+  produces INFO, since cleartext rigs can still connect. Restrict access to your network even with
+  both configured. A NAT'd home host with no public IP on its interfaces needs no exposure warning.
 
 #### `p2pool.stratum_bind` — which interface to listen on
 
@@ -129,17 +141,19 @@ the internal wiring is untouched.
 
 ### Authentication
 
-New installs ship with stratum authentication **on** (#208): the setup wizard and
-`config.minimal.json` both write `p2pool.stratum_password: "auto"` into the new `config.json`, the
-stack generates a stable secret and prints it after `setup`/`apply` (also shown by
-`pithead status`), and RigForge's own setup prompts for it — a fresh stack plus fresh rigs
-authenticate end-to-end with no manual config edits. The proxy rejects any rig whose stratum
-`pass` doesn't match, so only devices you've configured can mine. That also means only they can
-register a worker name, which shrinks the worker-name SSRF surface (a malicious worker name is
-how an untrusted device could otherwise probe the dashboard's internals).
+New installs have **no stratum password**. The CLI and appliance setup wizards ask
+**Enable stratum password?**, default off. Choose Yes to generate one. Existing and restored
+configurations retain their password setting; `"auto"` continues to reuse its saved secret.
+The proxy rejects a miner whose `pass` does not match a configured password.
 
-An install that predates this default keeps its open `:3333` on upgrade — the key is written
-explicitly into new configs, never assumed for old ones. To adopt it on an existing fleet, update
+`setup`, `up` and `apply` print the connection details. The appliance setup hand-off shows the
+password before provisioning. The dashboard's **Connect a miner** block shows the LAN pool URL,
+password with Reveal and Copy, and the TLS fingerprint when enabled. A dashboard without a
+login also shows the password: anyone on that LAN can retrieve it. Enable dashboard authentication
+before sharing access. When no password is set, all these surfaces say so and miners connect
+without one.
+
+To adopt it on an existing fleet, update
 the rigs first (set each rig's `pass`, or push it over the rigs' control API from the dashboard's
 Worker Inspect), then set the password on the stack — a rig with the wrong `pass` is rejected the
 moment the stack enforces it.
@@ -223,7 +237,10 @@ To point it at a differently-configured fleet, set
 | `token` | all miners share one API token | `workers.api_token` |
 
 Only the worker's validated IP is ever contacted; a miner-controlled worker name is never used as a
-request host (the SSRF guard). If a probe fails, the worker isn't dropped: it keeps its
+request host (the SSRF guard). Only workers the proxy reports as online are probed, plus any rig
+whose previous probe answered (a RigForge rig with its miner stopped but its feed up). A worker the
+proxy still lists but reports offline, whose last probe failed, is not probed and carries no badge.
+If a probe fails, the worker isn't dropped: it keeps its
 proxy-reported hashrate and is badged on the dashboard, with a single log line naming the URL,
 status, and likely fix, so a misconfigured API reads differently from an offline miner. Which badge
 depends on whether the rig is *adopted* — whether its [`workers.list`](#per-worker-overrides) entry
@@ -244,16 +261,16 @@ carries a control token:
 
 `workers.api_auth`/`api_port`/`api_token` set the probe for the *whole* fleet. When one rig differs
 — its API is on a different port, on another interface than the address it mines from (NAT,
-multi-homed), or carries its own token — override just that rig with
+multi-homed), or carries its own read-only probe credential — override just that rig with
 [`workers.list`](configuration.md#configuration-reference), a list of
-`{name, host?, port?, token?, watts?, control_port?}` objects. Every field but `name` is optional:
+`{name, host?, port?, api_token?, token?, watts?, control_port?}` objects. Every field but `name` is optional:
 
 ```jsonc
 // config.json — the rest of the fleet keeps the workers.* defaults
 "workers": {
     "list": [
         { "name": "rig-01", "port": 18080 },
-        { "name": "rig-02", "host": "10.0.0.9", "token": "rig-02-secret" }
+        { "name": "rig-02", "host": "10.0.0.9", "api_token": "read-only-probe-secret" }
     ]
 }
 ```
@@ -271,8 +288,11 @@ the old key is dropped. Schema defaults never refuse either: an empty array carr
 `xvb.*`, so the `xvb.*` value is kept (#2690).
 
 The merge rule is: **per-worker field > fleet default > built-in default.** A rig with no entry (or
-an entry that only sets `port`) inherits everything else from `workers.*`. A per-worker `token`
-turns on token-auth for that one rig regardless of the fleet-wide `api_auth` mode.
+an entry that only sets `port`) inherits everything else from `workers.*`. A per-worker `api_token`
+turns on token-auth for that one rig regardless of the fleet-wide `api_auth` mode. It requires an
+operator-set `host`, is bound to that host and API port, and must be read-only at the miner.
+`workers.list[].token` is different: it is the write-capable RigForge control token, retained
+host-side for Worker Inspect; it is never copied into dashboard `.env` or used as a probe Bearer.
 
 `watts` is a manual power-draw estimate (in watts) for the dashboard's
 [energy & profit calculator](dashboard.md#energy--profit). Set it only for a rig whose enriched feed
@@ -280,7 +300,9 @@ reports no measured watts — macOS (the RAPL probe is Linux-only), a non-RigFor
 kit — so the fleet power total still counts it (marked *estimated*). A RigForge rig on Linux reports
 its own watts and needs no estimate.
 
-`control_port` (default `8082`) is the rig's writable control API port, used by
+`control_port` (default `8082`) is the rig's writable control API port (remote rig control is beta
+in 2.0.0: an appliance rig listens for control at every boot, pinned to the coordinator and gated
+by its token, and dashboard writes need adoption), used by
 [Worker Inspect](dashboard.md#worker-inspect) to push config changes from the dashboard. Set it
 alongside `host` and `token` to make a rig editable — either by hand in `config.json`, or from
 Worker Inspect's own **adopt form** on a rig that doesn't have an entry yet; leave the whole
@@ -292,12 +314,18 @@ cryptographically random token of at least 32 ASCII characters; generate one wit
 `openssl rand -hex 16`. A shorter legacy token still works for raw host control but gets no derived
 read bearer, because the bearer would make guessing that token offline practical.
 
+Appliance rigs run stock XMRig, which ignores a `DONATION` below 1 and donates at least 1%. A
+RigForge-built rig has the same floor at the level it was compiled with; lowering it needs a rebuild.
+Worker Inspect shows the configured value, not the rate the miner runs.
+
 ! The control token is **write-capable** and travels in **cleartext HTTP** over the LAN (like the
 stratum password): a change can alter a rig's pools or its thermal `watchdog`/`max_temp_c`, so anyone
 who can sniff or MITM the mining LAN and capture the token can push config to your rigs. Keep the
 mining LAN isolated from untrusted devices, and treat the token as a secret. After the Adopt POST,
 it is retained only in owner-protected host config and spool state, never in dashboard responses,
-logs, feed credentials, support bundles, or other exported artifacts.
+logs, feed credentials, support bundles, or other exported artifacts. A separate `api_token`, if
+configured for a non-RigForge miner, is a read-only probe credential and reaches only the
+dashboard's owner-protected environment; do not put a write-capable token in that field.
 
 NOTE: a rig provisioned by the appliance (the setup page's RigForge choice) ships with control
 **on**, pinned to the Pithead it was pointed at. Its rendered RigForge config carries the `pools`
@@ -321,8 +349,8 @@ updating its entry** here.
 `host` exists for the case where a rig's API isn't reachable at the address it mines from. It must
 be set by you in `config.json` and is never taken from anything a miner advertises: the dashboard
 will not send a configured token to a host a miner could control (the same [SSRF guard](#authentication)
-as the worker-name rule). Pinning `host` alongside `token` is the recommended pair. The derived
-read bearer is bound to that name, host, and API port, so a stale credential map fails closed during
+as the worker-name rule). `host` is required for `api_token` and for RigForge read-bearer derivation.
+Both probe credentials are bound to the configured name, host, and API port, so a stale map fails closed during
 an endpoint change instead of forwarding the old rig's read capability to a new address or service.
 
 The standard fleet — everyone on `8080`, token = rig name or open — needs no `workers.list`
@@ -344,8 +372,9 @@ watchdog temperatures. Point that rig's descriptor `port` at it to pick the bloc
 ```
 
 Nothing else changes — the enriched feed is a superset, so uptime and per-miner hashrate come from
-the same response. The dashboard then shows a RigForge version badge and health/power/tune/watchdog
-chips for that rig (see [Dashboard › Workers Alive](dashboard.md#workers-alive)). A plain-xmrig rig
+the same response. The dashboard then shows attention and live chips (alarm states, power, temperature) in the list and
+the full health/power/tune/watchdog detail in Worker Inspect for that rig (see
+[Dashboard › Workers Alive](dashboard.md#workers-alive)). A plain-xmrig rig
 on `8080` sends no `rigforge` block and reads exactly as before — no chips, no error. The feed is
 open when the rig has no `ACCESS_TOKEN`. For an adopted token-protected rig, RigForge 1.17.2 or
 newer accepts the read-only bearer Pithead derives; an older release needs a RigForge upgrade before
@@ -442,9 +471,11 @@ kernel tuning, and verification.
 
 ## Mine on the stack host itself
 
-A box that runs the stack 24/7 has spare CPU between syncs. You can put that CPU to work by
-co-locating a RigForge worker on the stack host, pointed at the stack's own stratum over loopback —
-no LAN exposure, no firewall rule, no Tor hop.
+Opt in to a co-located RigForge worker on the stack host, pointed at the stack's own stratum over
+loopback — no LAN exposure, no firewall rule, no Tor hop. Leave CPU and memory headroom for the
+coordinator; available CPU alone does not establish useful hashrate or absence of contention.
+See [Hardware Requirements](hardware.md#choose-the-arrangement) for the separate budgets and
+the pending co-location measurement.
 
 **On the appliance, this is built in.** The image carries a pinned RigForge tree and a prebuilt
 XMRig, so answering yes to "Mine on this machine too?" in the setup wizard is the whole job:
@@ -453,7 +484,8 @@ headroom, and a ceiling on how large the HugePages pool may grow), runs RigForge
 appliance mode after the stack is up, and repeats that on every boot — the miner's service lives
 in `/run` and is re-created each time, like every other
 derived thing on the appliance. The worker appears in the dashboard's Workers Alive table; toggle
-`local_miner.enabled` from the dashboard's configuration view to turn it off or on again. The
+`local_miner.enabled` from the dashboard's configuration view to turn it off or on again. Apply
+starts or stops the built-in miner without rebooting, even when this is the only setting changed. The
 rest of this section is the DIY flow.
 
 Opt in during `./pithead setup` (the prompt "Also mine on this machine with its spare CPU?", off by
@@ -467,10 +499,10 @@ default), or set it in `config.json`:
 }
 ```
 
-Run `./pithead apply`. Setup and apply then print the two values a RigForge install needs — the pool
+Run `./pithead apply`. Setup, up, and apply print the two values a RigForge install needs — the local pool
 URL (`127.0.0.1:3333` by default, or your `p2pool.stratum_bind` address and `p2pool.stratum_port`)
-and the stratum password (the `PROXY_STRATUM_PASSWORD` already in `.env`, shown only when
-`p2pool.stratum_password` is set). Install [RigForge](https://github.com/p2pool-starter-stack/rigforge)
+and the stratum password (the `PROXY_STRATUM_PASSWORD` already in `.env`, or an explicit
+“none set” when authentication is off). Install [RigForge](https://github.com/p2pool-starter-stack/rigforge)
 on the same host and enter those two values when it asks; the worker self-registers and appears in
 the dashboard's Workers Alive table like any other rig.
 

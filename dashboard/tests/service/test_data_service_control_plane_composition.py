@@ -84,20 +84,22 @@ class TestControlPlaneComposition:
         assert svc.workers_rejected is True
 
     async def test_both_nodes_down_rejects_via_monero_leg(self):
-        # A simultaneous Monero+Tari outage still rejects — driven by the monerod leg alone,
-        # since Tari is no longer part of the decision (#897).
+        # A simultaneous outage must reject regardless of the optional Tari setting.
         svc, _sm, _proxy = _make_service()
         with patch.object(ds_mod, "REJECT_WORKERS_CONTAINER", "xmrig-proxy"):
             await svc._apply_worker_rejection(monero_down=True)
         svc.docker_control.stop.assert_awaited_once_with("xmrig-proxy")
         assert svc.workers_rejected is True
 
-    async def test_tari_only_outage_keeps_mining(self):
-        # The #897 fix at the full-loop level: monerod healthy, Tari unreachable and required
-        # ⇒ the proxy is never stopped, so workers keep mining Monero through the Tari outage.
+    @pytest.mark.parametrize("required", [True, False])
+    async def test_tari_only_outage_policy_in_live_loop(self, required):
         svc, sm, proxy = _make_service()
+        svc.alert_service = MagicMock(enabled=False)
+        svc.alert_service.process = AsyncMock()
         proxy.get_workers.return_value = {"workers": []}
         svc.miner_released = True
+        svc.tari_health.ever_up = True
+        svc.tari_health.down_after = 0
 
         worker_client = MagicMock()
         worker_client.get_stats = AsyncMock(return_value={})
@@ -113,7 +115,7 @@ class TestControlPlaneComposition:
             patch.object(ds_mod, "TariClient", return_value=tari_client),
             patch.object(ds_mod, "SYNC_GATE_CONTAINERS", ["p2pool", "xmrig-proxy"]),
             patch.object(ds_mod, "REJECT_WORKERS_CONTAINER", "xmrig-proxy"),
-            patch.object(ds_mod, "TARI_REQUIRED", True),
+            patch.object(ds_mod, "TARI_REQUIRED", required),
             patch.object(ds_mod, "get_stratum_stats", return_value={}),
             patch.object(ds_mod, "get_network_stats", return_value={"height": 100}),
             patch.object(
@@ -148,5 +150,6 @@ class TestControlPlaneComposition:
             with pytest.raises(StopAsyncIteration):
                 await svc.run()
 
-        svc.docker_control.stop.assert_not_called()
-        assert svc.workers_rejected is False
+        assert svc.docker_control.stop.await_count == int(required)
+        assert svc.workers_rejected is required
+        assert svc.alert_service.process.await_args.kwargs["workers_rejected"] is required

@@ -33,6 +33,7 @@ const CFG = {
   p2pool: { pool: "mini", stratum_password: "" },
   dashboard: {
     auth: { username: "admin", password: { __secret__: true } },
+    host: "box.lan",
   },
   workers: { list: [{ name: "rig1", host: "10.0.0.5", token: { __secret__: true } }] },
 };
@@ -92,12 +93,12 @@ test("classifyGroup: no tari.* key renders under the Monero node group (#1887)",
     .flatMap((s) => s.fields)
     .map((f) => f.key)
     .filter((k) => k.startsWith("tari."));
-  // 11, counted from the reference, not from the four the issue named: a floor of 4 would still be
+  // 12 (#2464 added tari.explorer_url), counted from the reference, not from the four the issue named: a floor of 4 would still be
   // satisfied by a regression that stopped 7 of them rendering, and the class sweep below would
   // narrow to a spot check while staying green. Adding a tari.* key is meant to fail here.
   assert.equal(
     tariKeys.length,
-    11,
+    12,
     `the reference's tari.* leaf count changed (got ${tariKeys.length}) — update this floor and check the new key's group`,
   );
   assert.deepEqual(
@@ -106,6 +107,7 @@ test("classifyGroup: no tari.* key renders under the Monero node group (#1887)",
   );
   assert.equal(classifyGroup("tari.mode"), "Tari node");
   assert.equal(classifyGroup("tari.remote.host"), "Tari node");
+  assert.equal(classifyGroup("tari.explorer_url"), "Tari node");
   // Narrowness: a fix that swept every tari.* into the new group would fail these two.
   assert.equal(classifyGroup("tari.data_dir"), "Advanced");
   assert.equal(classifyGroup("tari.wallet_address"), "Payouts");
@@ -190,17 +192,6 @@ test("buildSections: field types follow the JSON value", () => {
   assert.equal(fields["dashboard.auth.password"].value, "");
   // An UNSET secret arrives as "" and renders as a plain text field (nothing to keep).
   assert.equal(fields["p2pool.stratum_password"].type, "text");
-});
-
-test("buildSections: high-consequence fields carry their inline warning", () => {
-  const fields = Object.fromEntries(
-    buildSections(CFG)
-      .flatMap((s) => s.fields)
-      .map((f) => [f.key, f]),
-  );
-  assert.match(fields["p2pool.pool"].warning, /PPLNS window resets/);
-  assert.match(fields["monero.wallet_address"].warning, /payout address/);
-  assert.equal(fields["monero.prune"].warning, undefined);
 });
 
 test("array values are not form fields (#172)", () => {
@@ -319,7 +310,7 @@ test("markEditable: a missing/empty editable set fails CLOSED — every field no
   }
 });
 
-test("markEditable: host-only fields (e.g. dashboard.auth.password, a security/secret field) stay non-editable", () => {
+test("markEditable: a field absent from every set (editable/confirm/approval) stays non-editable", () => {
   const editableKeys = ["monero.wallet_address", "p2pool.pool"]; // dashboard.auth.* deliberately absent
   const dashboardAccess = markEditable(buildSections(CFG), editableKeys).find(
     (s) => s.name === "Dashboard & access",

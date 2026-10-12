@@ -202,26 +202,26 @@ export function normalizeAvgWindow(w) {
   return AVG_WINDOWS.includes(w) ? w : DEFAULT_AVG_WINDOW;
 }
 
-// Expected-earnings what-if (Issue #12). The server publishes the per-H/s daily XMR *rate*
-// (earnings.coeff_day — authoritative, computed once in service/earnings.py) and the P2Pool
-// share difficulty. Earnings are linear in hashrate, so the client only scales that one rate to
-// the entered hashrate (and to month/year), and inverts the share difficulty for expected
-// time-to-share — no formula is re-derived here. Kept pure so it's unit-tested (no DOM); the
-// EarningsCard input wiring lives in components.mjs.
+// Expected-earnings what-if: scale server earnings.coeff_day from service/earnings.py by H/s,
+// month/year; invert P2Pool share difficulty for time-to-share. Pure; UI wiring is in earnings.mjs.
 export const DAYS_PER_MONTH = 30; // estimate convention (not 30.44); a year is 365 days
 export const DAYS_PER_YEAR = 365;
 
 // Parse a what-if hashrate string into H/s, accepting an optional k/M/G suffix so users can type
 // "10.5k", "1.2 MH/s", or a bare "50000". Returns null for empty/unparseable input (the card then
-// shows "—"). Mirrors helper/utils.parse_hashrate on the server side.
+// shows "—"). Require complete decimal/unit syntax; commas group thousands, exponents are not supported.
 export function parseHashrate(str) {
   if (typeof str !== "string") return null;
-  const m = str.trim().match(/^([0-9]*\.?[0-9]+)\s*([kKmMgG])?/);
+  const m = str
+    .trim()
+    .match(
+      /^([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?|\.[0-9]+)\s*(?:([kmg])\s*)?(?:h\/s)?$/i,
+    );
   if (!m) return null;
-  const val = parseFloat(m[1]);
-  if (!Number.isFinite(val) || val < 0) return null;
+  const val = Number(m[1].replaceAll(",", ""));
   const unit = (m[2] || "").toLowerCase();
-  return val * (unit === "g" ? 1e9 : unit === "m" ? 1e6 : unit === "k" ? 1e3 : 1);
+  const hs = val * (unit === "g" ? 1e9 : unit === "m" ? 1e6 : unit === "k" ? 1e3 : 1);
+  return Number.isFinite(hs) ? hs : null;
 }
 
 // Format raw H/s for display. Mirrors helper/utils.format_hashrate on the server side (same
