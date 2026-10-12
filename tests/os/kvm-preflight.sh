@@ -27,10 +27,15 @@ kvm_preflight() {
 # times out or fails prints the guest's qemu processes (state and kernel wait channel) and
 # whatever this shell still has running, so the next occurrence names itself. A timed-out
 # destroy leaves the domain listed, so the check below still refuses rather than passes.
+_virsh_bounded() {
+    # A shell-function virsh (the runner self-tests stub one) cannot run under timeout(1), which execs.
+    if declare -F virsh >/dev/null; then virsh "$@"; else timeout "${PITHEAD_VM_TEARDOWN_TIMEOUT:-180}" virsh "$@"; fi
+}
+
 _vm_teardown_step() {
     local t0 rc=0 secs
     t0=$(date +%s)
-    timeout "${PITHEAD_VM_TEARDOWN_TIMEOUT:-180}" virsh "$@" >/dev/null 2>&1 || rc=$?
+    _virsh_bounded "$@" >/dev/null 2>&1 || rc=$?
     secs=$(($(date +%s) - t0))
     printf '     · teardown: virsh %s took %ss (rc %s)\n' "$1" "$secs" "$rc" >&2
     [ "$rc" -eq 124 ] || return 0
@@ -44,7 +49,7 @@ vm_destroy() {
     local domains
     _vm_teardown_step destroy "$VM"
     _vm_teardown_step undefine "$VM" --nvram
-    domains=$(timeout "${PITHEAD_VM_TEARDOWN_TIMEOUT:-180}" virsh list --all --name) || return 1
+    domains=$(_virsh_bounded list --all --name) || return 1
     ! grep -Fxq "$VM" <<<"$domains"
 }
 
