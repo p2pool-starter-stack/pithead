@@ -140,6 +140,18 @@ export class OsUpdateControl extends Component {
     this.cancelled = false;
     this.modalRef = createRef();
   }
+  componentDidUpdate() {
+    // A terminal host verdict supersedes the local Rebooting phase: the reconnect loop gives up
+    // after its bounded attempts and never clears it, so a tab that outlived the outage would
+    // stay trapped behind a modal the host has already answered. A verdict that predates this
+    // reboot (same ts) is not an answer; a still-pending reboot keeps showing Rebooting.
+    if (this.state.phase !== "rebooting") return;
+    const os = this.props.os;
+    const v = os && os.verdict;
+    const terminal = v && (v.outcome === "updated" || v.outcome === "rolled_back");
+    if (os && os.step === "idle" && terminal && v.ts !== this.rebootVerdictTs)
+      this.setState({ phase: "closed", confirmText: "" });
+  }
   cancel() {
     const busy = ["checking", "downloading", "verifying", "installing", "rebooting"];
     if (busy.includes(this.state.phase)) return;
@@ -259,6 +271,7 @@ export class OsUpdateControl extends Component {
   }
 
   async reboot() {
+    this.rebootVerdictTs = this.props.os && this.props.os.verdict && this.props.os.verdict.ts;
     this.setState({ phase: "rebooting", error: "" });
     try {
       const id = await osAction("reboot");
@@ -275,6 +288,7 @@ export class OsUpdateControl extends Component {
   async reconnect(max = 300) {
     for (let i = 0; i < max; i++) {
       await new Promise((r) => setTimeout(r, POLL_MS));
+      if (this.state.phase !== "rebooting") return; // the host's verdict already answered
       try {
         const res = await fetch("/api/state?range=1h");
         if (res.ok) {
