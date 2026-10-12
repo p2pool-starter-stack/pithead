@@ -106,8 +106,14 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
   ([#3333](https://github.com/p2pool-starter-stack/pithead/issues/3333)).
 - **XvB raffle:** off for new installs.
 - **Payout confirmation:** the Monero and Tari view keys (`monero.view_key`, `tari.view_key`).
+  With Tari payout confirmation on, someone who knows your Tari address can make the view-only
+  wallet show a fake incoming amount. It cannot spend
+  ([GHSA-g2r4-jvjg-h942](https://github.com/tari-project/tari/security/advisories/GHSA-g2r4-jvjg-h942)).
 - **Remote rig control:** an appliance rig listens for control at every boot, pinned to the
   coordinator and gated by its token. Dashboard writes to a rig need adoption first.
+  On rigs whose home directories are mode `0750` (the stock Ubuntu default), dashboard adoption
+  and control do not work. Mining is unaffected
+  ([rigforge#362](https://github.com/p2pool-starter-stack/rigforge/issues/362)).
 
 ### Known issues in 2.0.0
 
@@ -124,6 +130,43 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
 - The order of the DIY firewall rules against Docker at reboot is untested (#2677).
 - Automatic Tor recovery is a named soak risk: it restarts Tor on its own, and its long-run
   behaviour has had no soak time yet.
+
+- On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
+  boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot. Fixed in
+  2.0.1 ([#3375](https://github.com/p2pool-starter-stack/pithead/issues/3375)).
+- After a dashboard update, the appliance can mint a new self-signed certificate for the same
+  addresses, so the browser asks you to trust it again. Fixed in 2.0.1
+  ([#3414](https://github.com/p2pool-starter-stack/pithead/issues/3414)).
+- On the appliance, a restore started from the command line while the setup page is still
+  starting can leave the setup page up instead of the dashboard. Mining is unaffected. Fixed in
+  2.0.1 ([#3390](https://github.com/p2pool-starter-stack/pithead/issues/3390)).
+- Setting the stratum port in Configuration to a port another service already uses is not caught
+  by the preview. Apply then fails part-way with the proxy stopped; Configuration's recovery
+  restores it ([#3417](https://github.com/p2pool-starter-stack/pithead/issues/3417)).
+- After a rejected stale Configuration change, the message can say it was saved
+  ([#3376](https://github.com/p2pool-starter-stack/pithead/issues/3376)).
+- The Configuration preview can warn about a sidechain/PPLNS reset for a routing-only change
+  ([#3382](https://github.com/p2pool-starter-stack/pithead/issues/3382)), or about Tari sync
+  settings that are off ([#3383](https://github.com/p2pool-starter-stack/pithead/issues/3383)).
+- The dashboard can show a LAN stratum URL for a loopback-only listener
+  ([#3384](https://github.com/p2pool-starter-stack/pithead/issues/3384)).
+- An Advanced JSON edit that slips in a null webhook entry saves it without the preview listing
+  it. Nothing is sent. Fixed in 2.0.1
+  ([#3388](https://github.com/p2pool-starter-stack/pithead/issues/3388)).
+- The preview shows a null worker API port as "unset"; the effective port is 8080
+  ([#3377](https://github.com/p2pool-starter-stack/pithead/issues/3377)).
+- Dark mode can make text in dialogs
+  ([#3378](https://github.com/p2pool-starter-stack/pithead/issues/3378)), password placeholders
+  ([#3379](https://github.com/p2pool-starter-stack/pithead/issues/3379)) and the empty Workers Alive
+  card's guide link ([#3380](https://github.com/p2pool-starter-stack/pithead/issues/3380)) hard to
+  read. The Advanced topology heading can be clipped
+  ([#3381](https://github.com/p2pool-starter-stack/pithead/issues/3381)).
+- DIY shows the appliance-only built-in-miner toggle
+  ([#3357](https://github.com/p2pool-starter-stack/pithead/issues/3357)).
+- Recovery after an interrupted image build during DIY source setup is undocumented
+  ([#3348](https://github.com/p2pool-starter-stack/pithead/issues/3348)).
+- After a dashboard update, the original tab can stay on "Rebooting" after the new-version banner
+  appears. Reload the page ([#3415](https://github.com/p2pool-starter-stack/pithead/issues/3415)).
 
 ### Added
 
