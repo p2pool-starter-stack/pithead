@@ -124,15 +124,16 @@ rx() {
 started=$SECONDS
 compose_read "$snapshot" closed-streams true --seconds 0.2
 check_json "closed streams cannot bypass the transport deadline" "$snapshot/closed-streams.json" '.capture_error == "time limit exceeded" and .transport_exit != 0'
-[ "$((SECONDS - started))" -lt 3 ]
-assert_rc "closed-stream capture returns within its time bound" "$?" 0
+assert_num_ge "closed-stream capture returns within its time bound" 2 "$((SECONDS - started))"
 python3 "$HERE/../lib/compose-read.py" --status-marker test= "$snapshot" unavailable missing-compose-test-command
 check_json "command-start error still writes capture-error metadata" "$snapshot/unavailable.json" '.capture_error != null and .compose_exit == null'
 python3 - "$HERE/../lib/compose-read.py" "$snapshot" <<'PYTEST'
 import importlib.util
 import subprocess
 import sys
-from unittest.mock import patch
+import time
+import json
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location("collector", sys.argv[1])
 collector = importlib.util.module_from_spec(spec)
@@ -162,8 +163,60 @@ with patch.object(sys, "argv", argv), patch.object(collector.subprocess, "Popen"
     collector.main()
 assert children[0].poll() is not None
 assert children[0].stdout.closed and children[0].stderr.closed
+
+# One owned child, with no descendants: denied group cleanup must retain artifacts,
+# fall back to direct termination, and never repeat the group kill.
+children.clear()
+argv = [sys.argv[1], "--status-marker", "test=", "--seconds", "0.4",
+        sys.argv[2], "permission-error", sys.executable, "-c",
+        "import time; print('TOKEN=cleanup-secret', flush=True); time.sleep(30)"]
+started = time.monotonic()
+with patch.object(sys, "argv", argv), patch.object(collector.subprocess, "Popen", track), \
+        patch.object(collector.os, "killpg", side_effect=PermissionError("synthetic denial")) as killpg:
+    try:
+        collector.main()
+    finally:
+        # This runs on the red version too; never leave the fixture child behind.
+        for child in children:
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=1)
+assert killpg.call_count == 1
+assert time.monotonic() - started < 0.8
+from pathlib import Path
+out = Path(argv[5])
+assert (out / "permission-error.stdout").read_text() == "TOKEN=cleanup-secret\n"
+metadata = json.loads((out / "permission-error.json").read_text())
+assert metadata["capture_error"] == "time limit exceeded"
+assert "termination" in metadata["cleanup_error"]
+assert metadata["transport_exit"] is not None
+assert children[0].stdout.closed and children[0].stderr.closed
+
+# If both termination paths are refused, evidence still survives and wait is bounded.
+# This is a fake child; no unkillable process is created by the regression.
+child = Mock(pid=123, returncode=None)
+child.poll.side_effect = PermissionError("synthetic state denial")
+child.kill.side_effect = PermissionError("synthetic termination denial")
+child.wait.side_effect = subprocess.TimeoutExpired("synthetic command", 0)
+child.stdout.close.side_effect = PermissionError("synthetic close denial")
+metadata = {}
+deadline = time.monotonic() + 0.01
+with patch.object(collector.os, "killpg", side_effect=PermissionError("synthetic denial")) as killpg:
+    collector.finish_capture(child, deadline, metadata)
+assert killpg.call_count == 1
+assert 0 <= child.wait.call_args.kwargs["timeout"] <= 0.01
+assert "child state unavailable" in metadata["cleanup_error"]
+assert "direct termination failed" in metadata["cleanup_error"]
+assert "cleanup deadline" in metadata["cleanup_error"]
+assert "pipe close failed" in metadata["cleanup_error"]
+assert metadata["capture_error"] == "cleanup failed"
+child.stderr.close.assert_called_once()
 PYTEST
-assert_rc "malformed markers are safe and I/O errors reap the capture child" "$?" 0
+assert_rc "malformed markers, I/O errors and denied cleanup retain evidence" "$?" 0
 check_json "I/O error still records capture-error metadata" "$snapshot/read-error.json" '.capture_error != null and .transport_exit != null'
+retain_compose_read "$snapshot" permission-error "$OUT_DIR" 2>/dev/null
+assert_rc "PermissionError diagnostics are retained through the artifact redactor" "$?" 0
+assert_contains "safe cleanup evidence redacts its token" "$(cat "$OUT_DIR/permission-error.stdout" 2>/dev/null)" 'TOKEN=<redacted>'
+check_json "cleanup error metadata survives normal artifact retention" "$OUT_DIR/permission-error.json" '.capture_error != null and .cleanup_error != null'
 echo "selftest-compose-read: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ]

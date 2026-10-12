@@ -8,7 +8,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 LIMIT = 65536
@@ -52,6 +52,43 @@ class Stream:
             self.truncated = True
 
 
+def finish_capture(proc, deadline, metadata):
+    """Terminate once, then reap within the capture budget without losing evidence."""
+    errors = []
+    try:
+        running = proc.poll() is None
+    except OSError:
+        errors.append("child state unavailable")
+        running = True
+    if running:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            errors.append("process group termination failed")
+            try:
+                proc.kill()
+            except OSError:
+                errors.append("direct termination failed")
+    try:
+        remaining = max(0, deadline - time.monotonic()) if deadline else 1
+        proc.wait(timeout=remaining)
+    except subprocess.TimeoutExpired:
+        errors.append("child did not exit within cleanup deadline")
+    except OSError:
+        errors.append("child reap failed")
+    metadata["transport_exit"] = proc.returncode
+    for pipe in (proc.stdout, proc.stderr):
+        try:
+            pipe.close()
+        except OSError:
+            errors.append("pipe close failed")
+    if errors:
+        metadata["cleanup_error"] = "; ".join(errors)
+        metadata.setdefault("capture_error", "cleanup failed")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
@@ -63,11 +100,14 @@ def main():
     args = parser.parse_args()
     streams = {name: Stream(args.status_marker.encode()) for name in ("stdout", "stderr")}
     metadata = {
-        "captured_at": datetime.now(UTC).isoformat(),
+        "captured_at": datetime.now(timezone.utc).isoformat(),  # noqa: UP017 -- Python 3.9
         "byte_limit_per_stream": LIMIT,
         "time_limit_seconds": args.seconds,
     }
     proc = None
+    deadline = time.monotonic() + args.seconds if args.seconds else None
+    # Reserve part of the same deadline for termination/reaping, including stream EOF.
+    read_deadline = deadline - min(0.1, args.seconds / 4) if deadline else None
     try:
         # Trusted harness shell and configured transport, never artifact contents.
         proc = subprocess.Popen(  # noqa: S603
@@ -76,13 +116,12 @@ def main():
         with selectors.DefaultSelector() as selector:
             selector.register(proc.stdout, selectors.EVENT_READ, "stdout")
             selector.register(proc.stderr, selectors.EVENT_READ, "stderr")
-            deadline = time.monotonic() + args.seconds if args.seconds else None
             while selector.get_map():
-                if deadline and time.monotonic() >= deadline:
+                if read_deadline and time.monotonic() >= read_deadline:
                     metadata["capture_error"] = "time limit exceeded"
-                    os.killpg(proc.pid, signal.SIGKILL)
                     break
-                for key, _ in selector.select(0.1):
+                remaining = max(0, read_deadline - time.monotonic()) if read_deadline else 0.1
+                for key, _ in selector.select(min(0.1, remaining)):
                     chunk = os.read(key.fileobj.fileno(), 8192)
                     if not chunk:
                         selector.unregister(key.fileobj)
@@ -92,7 +131,7 @@ def main():
                             sys.stdout.buffer.write(chunk)
                             sys.stdout.buffer.flush()
             try:
-                remaining = max(0, deadline - time.monotonic()) if deadline else None
+                remaining = max(0, read_deadline - time.monotonic()) if read_deadline else None
                 metadata["transport_exit"] = proc.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
                 metadata["capture_error"] = "time limit exceeded"
@@ -100,14 +139,7 @@ def main():
         metadata["capture_error"] = "could not start or read command"
     finally:
         if proc is not None:
-            if proc.poll() is None:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            metadata["transport_exit"] = proc.wait()
-            proc.stdout.close()
-            proc.stderr.close()
+            finish_capture(proc, deadline, metadata)
     for name, stream in streams.items():
         if stream.pending:
             if metadata.get("capture_error"):

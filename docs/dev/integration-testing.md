@@ -143,7 +143,7 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
    an external node (see `--remote-monero-host`).
 3. Tools on the box: `jq`, `curl`, `docker` (with compose v2), and `sha256sum`. The first three
    are already Pithead prerequisites; `sha256sum` ships with coreutils. The machine running
-   `tests/integration/e2e.sh` also needs `python3` to sanitize failed safety-backup output.
+   `tests/integration/e2e.sh` also needs Python 3.9 or newer for the Compose-read collector and failed safety-backup sanitization.
 4. Access. Key-based SSH from wherever you run the suite, or run it on the box with `--local`.
    If Docker needs root there, use `--pithead "sudo ./pithead"`.
 5. Optional: a second synced data dir for the opposite prune mode if you want to cover both
@@ -1170,9 +1170,13 @@ The latter identifies the scenario, first missing service and capture time. The 
 once per snapshot, with a 5-second command bound and an 8-second transport bound. Both reads
 retain at most 65536 bytes per stream before redaction, using complete lines; oversized lines
 are omitted so truncation cannot expose a secret prefix. Each JSON records truncation or capture
-errors. Failed captures preserve completed safe output and the original failed row. No environment
+errors. Cleanup attempts process-group termination once, falls back to direct child
+termination if permission is denied, and reaps only within the remaining capture deadline.
+Cleanup errors retain completed safe output and capture-error metadata; raw exception text
+is omitted. Failed captures preserve the original failed row. No environment
 or full inspect configuration is collected by this path. The pure
 `tests/integration/selftest/selftest-compose-read.sh` regression covers these diagnostics;
+the Shell workflow also runs it with Python 3.9 to check healthy membership and cleanup failure retention;
 live causal evidence comes from the next organic failure, not an unchanged rerun.
 
 On a scenario failure, the harness also captures fresh diagnostic snapshots (redacted) to `results/<scenario>/`:
