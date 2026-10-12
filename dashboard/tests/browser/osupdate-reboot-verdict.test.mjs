@@ -72,9 +72,7 @@ for (const terminal of terminalVerdicts) {
     });
 
     await mountUpdateHarness(ui);
-    await page
-      .getByRole("button", { name: "Reboot to finish the update to v2.0.0" })
-      .click();
+    await page.getByRole("button", { name: "Reboot to finish the update to v2.0.0" }).click();
     const dialog = page.getByRole("dialog", { name: "System update" });
     await dialog.getByLabel(/Type REBOOT to confirm/).fill("REBOOT");
     await dialog.getByRole("button", { name: "Reboot now" }).click();
