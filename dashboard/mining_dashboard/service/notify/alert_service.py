@@ -15,7 +15,9 @@ from mining_dashboard.service.health.container_health import EDGE_MESSAGES, Cont
 from mining_dashboard.service.network.egress_status import live_firewall_state
 from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_hhmm
 from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
+from mining_dashboard.service.notify.monero_health_edges import MoneroHealthEdgesMixin
 from mining_dashboard.service.notify.notify_sinks import config_sinks
+from mining_dashboard.service.notify.tari_node_edges import TariNodeEdgesMixin
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 from mining_dashboard.service.workers.worker_presence import WorkerPresenceMonitor
 
@@ -37,7 +39,9 @@ def build_default_notifier():
     )
 
 
-class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
+class AlertService(
+    AlertEdgesMixin, EgressFirewallEdgesMixin, MoneroHealthEdgesMixin, TariNodeEdgesMixin
+):
     """
     Turns the data loop's per-cycle signals into a small set of debounced operator alerts and
     fans them out to the configured sinks: Telegram (Issue #121) plus any webhook/ntfy sinks
@@ -46,9 +50,8 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
     It *consumes* signals the loop already computes rather than re-collecting anything:
 
     - **node down / recovered** — transitions of ``NodeHealthMonitor``'s debounced ``down``
-      flag per node (#31). Tari is only alerted when it's treated as required; a non-blocking
-      Tari going down isn't operator-critical (we keep mining Monero), matching the
-      worker-rejection rule.
+      flag per node (#31). A configured Tari node alerts independently of the required
+      policy; optional Tari keeps workers mining Monero during its outage.
     - **node out of sync / back in sync** — the debounced peer-loss strand (#972): monerod
       reachable and healthy-looking but reporting ``synchronized: false`` past the stale
       threshold (a tor restart kills its SOCKS peers and it doesn't re-dial). Rides the
@@ -161,6 +164,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         self._prev_monero_down = None
         self._prev_monero_stale = None
         self._prev_tari_down = None
+        self._tari_outage_rejected = False
         self._prev_released = None
         self._prev_disk_level = None
         self._prev_db_healthy = None
@@ -209,11 +213,13 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         *,
         monero_down,
         monero_stale=False,
+        monero_health=None,
         tari_down,
         tari_required,
         miner_released,
         workers,
         workers_expected,
+        workers_rejected=False,
         disk_percent=0,
         db_healthy=True,
         db_reset_seq=0,
@@ -252,12 +258,9 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         # --- Node down / recovered (consume NodeHealthMonitor edges) ---
         alerts += self._node_edges("Monero", monero_down, "_prev_monero_down")
         alerts += self._stale_edges(monero_stale)
-        if tari_required:
-            alerts += self._node_edges("Tari", tari_down, "_prev_tari_down")
-        else:
-            # Keep the baseline current while Tari is non-blocking, so flipping it back to
-            # required later doesn't fire a stale edge from a state we never alerted on.
-            self._prev_tari_down = tari_down
+        alerts += self._monero_health_edges(monero_health)
+        # Required controls worker failover, never whether a Tari outage alerts.
+        alerts += self._tari_node_edges(tari_down, tari_required, workers_rejected)
 
         # --- Sync finished (one-shot when the gate first opens) ---
         if self._prev_released is None:
@@ -462,9 +465,9 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
 
     async def tor_heal_alert(self, text):
         """Push the Tor guard self-heal note (#424). Deliberately not behind a per-event toggle:
-        it fires at most once per outage, only after a heal restored the very path the alert
-        sinks ride (so a broken egress can never even attempt it), and an operator who opted
-        into the heal wants to know it acted. No-op when every sink is off.
+        it reports recovery and saturated circuit history to an operator who opted into the
+        heal. Saturation warnings may fail while egress is broken; the healer retries those
+        until a sink delivers. No-op when every sink is off.
 
         Returns the text when at least one sink reported delivery, else None: every sink's
         ``send`` returns True only on success, so a caller can retry an undelivered alert (#2464)."""

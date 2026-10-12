@@ -356,7 +356,7 @@ scenario 'source "$INT_DIR/lib/rigforge-apply-settle.sh"' \
     'source "$INT_DIR/lib/rigforge-writable-keys.sh"' \
     '_worker_detail() { printf "%s" "{\"rig_config\":{\"DONATION\":7},\"history\":[{\"change_id\":\"c1\",\"status\":\"applied\"}]}"; }' \
     '_worker_apply() { printf "dash|%s\n" "$2" >>"$APPLY_LOG"; printf "{\"status\":\"applied\",\"change_id\":\"c1\",\"changed_keys\":[\"DONATION\"]}"; }' \
-    'wait_for() { return 0; }' \
+    'wait_for() { shift 3; [ "$1" != _pred_history_row_terminal ] || "$@"; }' \
     'run_rigforge_writable_keys rig1 >/dev/null 2>&1' \
     'echo "OUTSTANDING=$(rig_key_outstanding)"' \
     'exit 0' >/dev/null

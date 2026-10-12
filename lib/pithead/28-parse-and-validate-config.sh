@@ -1,8 +1,6 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
-    if ! jq -e . "$CONFIG_FILE" >/dev/null 2>&1; then
-        error "$CONFIG_FILE is not valid JSON."
-    fi
+    validate_config_document
 
     # Central .env line-injection guard (#33 hardening). No config string value may carry a
     # control character (newline, CR, tab, …). A raw newline in a value that renders into .env
@@ -48,9 +46,6 @@ parse_and_validate_config() {
     case "$TARI_WALLET" in
     *[[:space:]]*) error "tari.wallet_address contains whitespace — a Tari address (base58 or emoji) has none. Check for a stray space or line break in $CONFIG_FILE." ;;
     esac
-    if [ "$MONERO_WALLET" == "your_monero_wallet_address" ] || [ "$TARI_WALLET" == "your_tari_wallet_address" ]; then
-        error "Wallet addresses in $CONFIG_FILE are still the template placeholders. Set your real addresses."
-    fi
     # p2pool pays out via coinbase, which CANNOT go to a subaddress or integrated address — it requires a
     # PRIMARY/standard address (XvB credits by the same address too). A wrong type mines but is NEVER
     # paid, silently — so hard-fail here rather than let someone lose rewards (#250).
@@ -94,11 +89,12 @@ parse_and_validate_config() {
         fi
         # A view key is 64 lowercase hex chars. Reject a malformed value before it reaches the wallet.
         if ! printf '%s' "$MONERO_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "monero.view_key must be the 64-character hex PRIVATE VIEW KEY for monero.wallet_address (get it from your wallet: 'View Key' / 'wallet_secret_view_key'). Got ${#MONERO_VIEW_KEY} chars."
+            error "monero.view_key must be the 64-character hex SECRET VIEW KEY for monero.wallet_address (Monero GUI: Settings › Wallet › Show seed & keys › 'Secret view key'; monero-wallet-cli: viewkey). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#MONERO_VIEW_KEY} chars."
         fi
         case "$PAYOUT_SCAN_HEIGHT" in
-        '' | auto | [0-9]*) ;;
-        *) error "monero.payout_scan_height must be \"auto\" or a block height (integer). Got \"$PAYOUT_SCAN_HEIGHT\"." ;;
+        '' | auto) ;;
+        *[!0-9]*) error "monero.payout_scan_height must be \"auto\" or a block height (integer)." ;;
+        *) ;;
         esac
         PAYOUT_CONFIRM_ENABLED=true
     fi
@@ -123,11 +119,7 @@ parse_and_validate_config() {
         fi
         # Tari view / public-spend keys are 64 lowercase hex chars (32-byte Ristretto scalar / point).
         if ! printf '%s' "$TARI_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (from your Tari wallet: 'export-view-key-and-spend-key'). Got ${#TARI_VIEW_KEY} chars."
-        fi
-        # A view-only Tari wallet needs the PUBLIC spend key too — require both together.
-        if ! printf '%s' "$TARI_SPEND_PUBLIC_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "tari.spend_public_key must be the 64-character hex PUBLIC SPEND KEY for the Tari payout address (exported alongside the view key). Set it whenever tari.view_key is set."
+            error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (Tari Universe: 'view_private_key_hex' in config_wallet.json; minotari_console_wallet: export-view-key-and-spend-key). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#TARI_VIEW_KEY} chars."
         fi
         # "auto" or a day no later than today: a future day scans from the tip, missing past payouts.
         local tari_today=$((($(date +%s) - 1640995200) / 86400))
@@ -138,6 +130,8 @@ parse_and_validate_config() {
         esac
         TARI_PAYOUT_CONFIRM_ENABLED=true
     fi
+
+    validate_payout_keys
 
     # Bridge network subnet (#180): configurable so the stack can avoid colliding with a 172.28.0.0/24
     # already in use on the host (Docker else errors "Pool overlaps with other one on this address
@@ -446,4 +440,6 @@ parse_and_validate_config() {
     if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_CLIENT_AUTH" != "true" ]; then
         error "dashboard.control.enabled is true on a published onion (dashboard.onion.enabled) but dashboard.onion.client_auth is false. A root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable .onion. Set dashboard.onion.client_auth: true (the default) and re-run."
     fi
+    stamp_config_version
+
 }

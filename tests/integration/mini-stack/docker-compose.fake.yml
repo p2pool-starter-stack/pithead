@@ -58,12 +58,8 @@ services:
       MONERO_NODE_USERNAME: ""
       MONERO_NODE_PASSWORD: ""
       MONERO_NODE_HOST: "fake-monerod"
-      # Must equal MONERO_NODE_HOST so the dashboard takes the "local" RPC-driven path
-      # (mining_dashboard.collector.logs.get_monero_sync_status) instead of the "remote" path,
-      # which never probes reachability and makes monerod-down/#31/#564 a silent no-op — the
-      # fake-monerod container below was wired at the network level but never actually read for
-      # node-health without this.
-      LOCAL_MONERO_HOST: "fake-monerod"
+      # Override in scenario 11 to exercise the remote RPC path against the same fake.
+      LOCAL_MONERO_HOST: "${LOCAL_MONERO_HOST:-fake-monerod}"
       MONERO_PRUNE: "true"
       TARI_GRPC_ADDRESS: "fake-tari:18142"
       DOCKER_PROXY_URL: "tcp://docker-proxy:2375"
@@ -92,6 +88,7 @@ services:
       PROXY_AUTH_TOKEN: "itest"
       UPDATE_INTERVAL: "2"
       NODE_DOWN_AFTER_SEC: "4"
+      TARI_NODE_DOWN_AFTER_SEC: "4"
       NODE_RECOVERY_AFTER_SEC: "3"
       # Healthchecks.io dead-man's switch (#79), pointed at the fake receiver so the e2e proves the
       # REAL loop fires a heartbeat over a real HTTP call (not a mock). The ping URL is the on switch;

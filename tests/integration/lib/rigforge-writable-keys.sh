@@ -113,9 +113,9 @@ _settle_worker_apply_key() { # <rig> <key> <want-json> <dial-result-json> [sampl
 }
 
 # One reversible round trip on one writable key: apply the probe, assert the RIG reports it, assert
-# the #185 history row for THAT change_id is terminal, then restore the original and assert the rig
-# reports that too. The restore runs whatever the assertions said — a mid-leg red must not strand a
-# borrowed production miner on a probe value.
+# the #185 history row for THAT change_id is terminal, then restore the original and confirm
+# config and terminal history. The restore runs whatever the assertions said — a mid-leg red
+# must not strand a borrowed production miner on a probe value.
 _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
     local rig="$1" key="$2" orig="$3" probe="$4" res status ckeys change_id
     it_step "Worker Inspect edit: $key $orig -> $probe via /api/control/worker-apply…"
@@ -137,16 +137,12 @@ _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
     it_step "reverting $key $probe -> ${orig}…"
     res="$(_worker_apply "$rig" "$(jq -nc --arg k "$key" --argjson v "$orig" '{($k): $v}')")"
     if [ "$key" = DONATION ]; then
-        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res" sample-revert)"
+        IFS='|' read -r status _ change_id <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res" sample-revert)"
     else
-        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res")"
+        IFS='|' read -r status _ change_id <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res")"
     fi
     assert_eq "$key edit reverted on the rig (#1236)" "$status" "applied"
-    # Retired only on a CONFIRMED revert. A revert that came back anything else stays on the books
-    # so the EXIT trap retries it — the assertion above has already red, and trusting it to have
-    # restored the rig would be trusting the thing that just told us it did not. (#1379)
-    [ "$status" = "applied" ] && rig_key_clear dash "$rig" "$key"
-    return 0
+    _finish_worker_revert "$rig" "$key" "$status" "$change_id"
 }
 
 # #1236, and the refusals. Three of the six writable keys are deliberately NOT driven here, and the
@@ -195,7 +191,7 @@ run_rigforge_writable_keys() { # <rig>
     else
         probe=0
         [ "$orig" -eq 0 ] && probe=1
-        _writable_key_round_trip "$rig" DONATION "$orig" "$probe"
+        _writable_key_round_trip "$rig" DONATION "$orig" "$probe" || return 1
     fi
 
     # watchdog_interval_min: a second scalar key, and the safest change on the list — the watchdog
@@ -209,7 +205,7 @@ run_rigforge_writable_keys() { # <rig>
     else
         probe=$((orig + 1))
         [ "$orig" -ge 1440 ] && probe=$((orig - 1))
-        _writable_key_round_trip "$rig" watchdog_interval_min "$orig" "$probe"
+        _writable_key_round_trip "$rig" watchdog_interval_min "$orig" "$probe" || return 1
     fi
 }
 

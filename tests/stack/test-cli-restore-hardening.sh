@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 echo "== black-box: administrative restore stages and constrains archives =="
+build_backup_sandbox
 CR="$SANDBOX/cli-restore"
 ROOTS="$CR/roots"
 mkdir -p "$ROOTS/${BK#/}/data/tor" "$ROOTS/${BK#/}/data/dashboard" "$CR/tmp"

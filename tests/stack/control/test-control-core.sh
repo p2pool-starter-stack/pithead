@@ -380,8 +380,12 @@ assert_eq "monero endpoint named in preview_values" \
 assert_eq "tari endpoint named in preview_values" \
     "$(jq -r '.preview_values[] | select(.key=="tari.remote.host") | .new' "$RESULTS/$UUID3.json" 2>/dev/null)" "reserved-tari.example"
 rm -f "$RESULTS/$UUID3.json" "$STAGED/$UUID3.json"
+# shellcheck source=tests/stack/control/config-concurrency.sh
+source "$HERE/control/config-concurrency.sh"
 # Restore the baseline this file's own tail is documented to leave behind (pool mini, local mode,
 # node_password "p", dashboard password "a control passphrase") — test-secrets-masking.sh, sourced
 # right after this file, reads that exact state rather than re-establishing it itself.
 control_config mini
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+# shellcheck source=tests/stack/control/config-version.sh
+source "$HERE/control/config-version.sh"

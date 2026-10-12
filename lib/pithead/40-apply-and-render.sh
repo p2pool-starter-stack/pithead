@@ -127,21 +127,12 @@ recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-
         warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
 }
 
-rearm_sync_gate_marker() { # <dashboard-dir>: plant sync-gate-reset without following what is there
-    local t
-    t=$(mktemp "$1/.sync-gate-reset.XXXXXX") || return 1
-    mv -f -T "$t" "$1/sync-gate-reset" || {
-        rm -f "$t"
-        return 1
-    }
-}
-
 apply() {
     # apply reaches its mutating window down two different paths (a normal change, and the retry
     # after a previous apply committed the config but did not finish recreating containers), so it
     # tracks its own hold rather than acquiring twice — the depth counter would then never reach
     # zero and the lock would outlive the verb inside a single process.
-    local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_published=0 dashboard_carry_target=""
+    local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_target=""
     local assume_yes=0 dry_run=0 porcelain=0 arg
     for arg in "$@"; do
         case "$arg" in
@@ -187,7 +178,10 @@ apply() {
     # the marker is present, re-apply re-attempts the recreate even when the rendered config matches.
     local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
-    # A retried recreate keeps the sync-gate re-arm its first attempt decided on (#2763).
+    # Armed before .env commits, cleared when apply ends: a retry would otherwise keep the old login hash (#3332).
+    local caddy_marker="${ENV_FILE}.caddy-restart-pending" caddy_pending=0
+    [ -f "$caddy_marker" ] && caddy_pending=1
+    grep -qx rearm-tari-only "$apply_marker" 2>/dev/null && rearm_sync_gate=2
     grep -qx rearm-sync-gate "$apply_marker" 2>/dev/null && rearm_sync_gate=1
 
     local destructive=0 caddy_changed=0 caddy_before="" caddy_had=0 wallet_keys=() line flag msg old new
@@ -200,14 +194,16 @@ apply() {
             new=$(env_get_file "$newenv" "$key")
             # Payout-wallet change (#375): remember WHICH wallet keys change for the typed
             # confirmation below — one prompt per key, so a Monero+Tari double change can't
-            # ride through on a single typed prefix.
+            # ride through on a single typed suffix.
             case "$key" in MONERO_WALLET_ADDRESS | TARI_WALLET_ADDRESS) wallet_keys+=("$key") ;; esac
             # #2360: remember the active dashboard.data_dir for the carry before .env publication.
             # The separate historical-default migration runs later, after service configuration.
             [ "$key" == "DASHBOARD_DATA_DIR" ] && dashboard_data_dir_old="$old"
-            # #2763: a required chain now dials another node (remote<->local, a new endpoint)
-            # that may not have synced, so the #35 release earned on the old node no longer holds.
-            case "$key" in MONERO_NODE_HOST | MONERO_RPC_PORT | TARI_MODE | TARI_GRPC_ADDRESS) rearm_sync_gate=1 ;; esac
+            # Monero changes take precedence over Tari-only re-arms.
+            case "$key" in
+            MONERO_NODE_HOST | MONERO_RPC_PORT) rearm_sync_gate=1 ;;
+            TARI_MODE | TARI_GRPC_ADDRESS) [ "$rearm_sync_gate" -eq 1 ] || rearm_sync_gate=2 ;;
+            esac
             line=$(describe_change "$key" "$old" "$new")
             flag=${line%%$'\t'*}
             msg=${line#*$'\t'}
@@ -225,7 +221,7 @@ apply() {
 
         if [ "${#wallet_keys[@]}" -gt 0 ] && [ "$assume_yes" -eq 0 ]; then
             # A payout-wallet change upgrades the generic y/N to a typed confirmation (#375):
-            # every future reward goes to the new address, so the operator must type its first
+            # every future reward goes to the new address, so the operator must type its last
             # 8 characters — once PER changed wallet key (a Monero and a Tari change are two
             # separate redirects; each needs its own typed confirm). This is the strongest
             # confirm, so it stands in for the y/N even when other disruptive changes ride
@@ -233,10 +229,10 @@ apply() {
             local wkey wnew wallet_new8 wlabel
             for wkey in "${wallet_keys[@]}"; do
                 wnew=$(env_get_file "$newenv" "$wkey")
-                wallet_new8="${wnew:0:8}" # never the full address — previews and prompts stay truncated
+                wallet_new8="${wnew: -8}" # never the full address — previews and prompts stay truncated
                 [ "$wkey" == "MONERO_WALLET_ADDRESS" ] && wlabel="Monero" || wlabel="Tari"
                 warn "The $wlabel payout wallet address is changing — ALL future $wlabel rewards go to the new address."
-                warn "Confirm by typing the first 8 characters of the new address ($wallet_new8)."
+                warn "Confirm by typing the last 8 characters of the new address ($wallet_new8)."
                 read -r -p "Confirm: " CONFIRM || true
                 if [ "$CONFIRM" != "$wallet_new8" ]; then
                     rm -f "$newenv"
@@ -268,12 +264,14 @@ apply() {
                 dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
                 : >"$apply_marker"
                 dashboard_carry_recovery=1
-                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published" "$incomplete"; rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
+                PITHEAD_DASHBOARD_CARRY_RECOVERY=("$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" 0 "$incomplete") # #2785: EXIT outlives apply's locals after errexit.
+                trap 'recover_dashboard_data_carry "${PITHEAD_DASHBOARD_CARRY_RECOVERY[@]}"; rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
             fi
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
-            [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
+            [ "$dashboard_carry_recovery" -eq 0 ] || PITHEAD_DASHBOARD_CARRY_RECOVERY[4]=1
         fi
         lan_guard_arm_transition "$newenv" || error "The LAN-only source rule could not be armed before changing .env."
+        : >"$caddy_marker"
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -292,27 +290,33 @@ apply() {
             caddy_before=$(cat "Caddyfile")
         fi
         generate_caddyfile
-        if [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; then
+        if [ "$caddy_pending" -eq 1 ] || { [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; }; then
             caddy_changed=1
         fi
     else
         rm -f "$newenv"
         if [ "$incomplete" -eq 0 ]; then
-            # #33: converge the control-runner units BEFORE returning. A box whose units point at
-            # a dead install has an unchanged config by definition — the fault is in the unit
-            # files, not config.json — so returning here first made `apply` the one thing that
-            # could not repair it, while doctor was telling the operator to run exactly that.
-            # Idempotent and sudo-free when the units already match.
+            # Host state may change without an .env diff: converge units and local_miner (#3090).
             mutation_lock_acquire apply
+            if [ "$caddy_pending" -eq 1 ]; then
+                generate_caddyfile
+                docker compose restart caddy
+                rm -f "$caddy_marker"
+            fi
             provision_control_runner
             provision_firewall_check_units || error "Firewall check units could not be provisioned."
             reconcile_appliance_hostname
             apply_refresh_appliance_tls # #1265: the mint doctor sends the operator here for
+            render_local_miner_config
+            provision_local_miner || true
             log "No configuration changes detected. Nothing to apply."
             mutation_lock_release
+            announce_dashboard_url
             return 0
         fi
         warn "A previous apply updated the config but did not finish recreating containers — retrying."
+        caddy_changed=$caddy_pending
+        [ "$caddy_pending" -eq 0 ] || generate_caddyfile
     fi
 
     # The retry branch reaches here without a hold; the changed branch already has one.
@@ -337,40 +341,36 @@ apply() {
     # before the rules go in. Idempotent, so the common case
     # (already installed from `up`) is a cheap re-assert; the .env it reads was committed just above.
     apply_tor_egress_firewall
-    # Mark the recreate in-flight: cleared only after a SUCCESSFUL `up`, so a failure here (image
-    # build error, a port already bound, a failed health/dependency gate, daemon hiccup) leaves the
-    # marker for the next apply to retry instead of no-opping on the already-committed config (#125).
-    if [ "$rearm_sync_gate" -eq 1 ]; then echo rearm-sync-gate >"$apply_marker"; else : >"$apply_marker"; fi
-    # One-time move of the dashboard data out of the install dir (#455) — after the confirmed
-    # commit above (never before the operator said yes) and under the marker, so a failed move is
-    # retried; the recreate below then mounts the migrated directory.
+    # Keep recreate and reset scope retryable until up succeeds (#125).
+    case "$rearm_sync_gate" in
+    1) echo rearm-sync-gate >"$apply_marker" ;;
+    2) echo rearm-tari-only >"$apply_marker" ;;
+    *) : >"$apply_marker" ;;
+    esac
     migrate_dashboard_data
-    # Re-arm the sync gate with the restore's marker (#2626), after the move above so its target
-    # is still empty. Each key that sets rearm_sync_gate reaches the dashboard's environment (the
-    # port via MONERO_RPC_URL), so the up below recreates it and it reads the marker at start. It
-    # holds the miner until the new node syncs (or releases on the first cycle if it already has).
-    # The directory belongs to the dashboard's uid (ensure_directories), hence sudo when the
-    # operator's is another. Whatever that uid left at the path is never opened: mktemp creates a
-    # fresh file (O_EXCL) and `mv -T` renames it over the entry, replacing a planted symlink
-    # instead of following it, and refusing a directory.
-    if [ "$rearm_sync_gate" -eq 1 ]; then
-        rearm_sync_gate_marker "$DASHBOARD_DIR" 2>/dev/null ||
-            sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\"" _ "$DASHBOARD_DIR" || true
-        # Judge the result, not the exit status: only a regular file at the path re-arms the gate.
-        [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
+    # Write after data migration and before recreation. Tari-only resets retain the earned
+    # mining release; a full reset waits for both required chains. Atomic replacement does
+    # not follow a planted symlink; a directory fails closed and leaves the retry marker.
+    if [ "$rearm_sync_gate" -ne 0 ]; then
+        # A stale marker can satisfy the file check, so one writer must report success.
+        { rearm_sync_gate_marker "$DASHBOARD_DIR" "$rearm_sync_gate" 2>/dev/null ||
+            sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\" \"\$2\"" _ "$DASHBOARD_DIR" "$rearm_sync_gate"; } &&
+            [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
             error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset); re-run '$0 apply' to retry."
     fi
-    # Compose recreates only the services whose resolved config changed. --remove-orphans covers
-    # services that left the compose file entirely; a profile-deactivated service is NOT an orphan
-    # to compose, so compose_up_checked removes those containers itself before the up (#795).
+    # Recreate changed services; compose_up_checked also removes inactive profiles (#795).
     if ! compose_up_checked -d --remove-orphans; then
         warn "Config files were updated but containers were NOT recreated ('docker compose up' failed)."
         warn "Fix the cause shown above, then re-run '$0 apply' (it will retry the recreate) — or '$0 up'."
+        # A recreate that failed mid-stop leaves the dashboard stopped, and with it the terminal
+        # result the operator is waiting on (#3300). Bring only it back; the failure still stands.
+        compose_up_checked -d --no-deps dashboard ||
+            warn "The dashboard could not be restarted either — run '$0 up' to bring it back."
         exit 1 # leave $apply_marker in place so the retry re-attempts the recreate
     fi
     if [ "$dashboard_carry_recovery" -eq 1 ]; then
-        dashboard_carry_recovery=0
         trap 'rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
+        unset PITHEAD_DASHBOARD_CARRY_RECOVERY
     fi
     reconcile_appliance_hostname
     # Caddy mounts the Caddyfile read-only, so a content change alone won't recreate it.
@@ -388,7 +388,7 @@ apply() {
             docker compose restart caddy
         fi
     fi
-    rm -f "$apply_marker"
+    rm -f "$apply_marker" "$caddy_marker"
     # Converge the built-in miner on a toggle without waiting for a reboot (#796): start it when
     # local_miner just turned on, stop it when it turned off. After the recreate above so the
     # stratum the miner dials is the freshly-applied one. Best-effort, same posture as setup.

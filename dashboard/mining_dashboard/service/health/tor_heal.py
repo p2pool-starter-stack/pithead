@@ -1,10 +1,8 @@
-"""Opt-in Tor clearnet recovery without changing guards by default.
+"""Bounded Tor clearnet recovery when tor.auto_heal is enabled.
 
-Each failed probe is corroborated on a fresh SOCKS-auth circuit and a second target. After a
-sustained outage, two bounded NEWNYM requests go through the audited host control runner. A
-final container restart is disruptive and re-dials local Monero; neither NEWNYM nor a clearnet
-failure authorizes DROPGUARDS or deletion of Tor state. Saturated circuit-history recovery is
-an explicit operator command with independent chain-connectivity evidence.
+Corroborate failed probes on isolated circuits and two targets before bounded NEWNYM requests.
+For saturated history, the final step requests host-gated tor-recover, including its persistent
+six-hour cooldown and identity checks. Otherwise a final restart re-dials local Monero.
 """
 
 import asyncio
@@ -23,6 +21,7 @@ from mining_dashboard.config.config import (
 )
 from mining_dashboard.helper.http import bounded_get
 from mining_dashboard.service import control_service
+from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
 
 logger = logging.getLogger("TorHeal")
 
@@ -40,11 +39,24 @@ MAX_ATTEMPTS = 3  # two circuit refreshes, then one container restart
 # lucky 204 must NOT close the outage: under the issue's own scenario (overloaded Tor, egress
 # flapping) that would refill the budget and clear the cooldown every blip.
 RECOVERY_CONFIRM_PROBES = 2  # ~10 min sustained egress before the budget resets
+# Tor's stop: SIGTERM, `t` seconds of grace, then SIGKILL. Docker holds the request open until the
+# container is down, and a wedged Tor took over 60 s (#3032). The HTTP timeout outlasts grace + kill.
+TOR_STOP_GRACE_SEC = 15
+TOR_STOP_REQUEST_TIMEOUT_SEC = 120
+# An API stop is not undone by `restart: unless-stopped`, so the heal must end with Tor running:
+# an unconfirmed start is retried a bounded number of times (start is idempotent: 304 if running).
+TOR_START_ATTEMPTS = 3
+TOR_START_RETRY_DELAY_SEC = 5
+# After an unconfirmed stop Docker may still be stopping Tor, and a start then answers 304 "already
+# running" while Tor goes down behind it. Wait (bounded: grace + kill + slack) for it to read down.
+TOR_SETTLE_SEC = 30
+TOR_SETTLE_POLL_SEC = 5
 
 
-class TorEgressHealer:
+class TorEgressHealer(TorHistoryMixin):
     """Probe and recover Tor egress under a fixed cadence, cooldown and attempt cap."""
 
+    HISTORY_TIMEOUT_SEC = PROBE_INTERVAL_SEC
     CONTAINER = "tor"
     MONEROD = "monerod"
 
@@ -73,10 +85,21 @@ class TorEgressHealer:
         self._last_attempt = None  # cooldown anchor
         self._ok_streak = 0  # consecutive OK probes (sustained-recovery counter, post-restart)
         self._warned_exhausted = False  # give-up warning is logged once per outage, not every probe
+        self._pending_recovery = None
+        self._tor_started = None  # last seen Tor container start (epoch); None until observed
+        self._own_restart = False  # the healer restarted Tor since that reading
+        self._recovery_notice = None
         self._pending_refresh = None
         self._pending_since = None
         self._failure_evidence = ""
         self._recovery_step = None
+        self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
+        self._history_since = None
+        self._history_outage = None
+        self._clear_history = False
+        self._pending_history = None  # read-only tor-history request awaiting its result
+        self._warned_saturated = False  # saturated-history alert is sent once per outage
+        self.saturated_history = False  # latest host reading, for status surfaces
         if self.enabled:
             logger.info(
                 "Tor egress self-heal enabled: probing every %ds; recovery after %dm "
@@ -105,23 +128,17 @@ class TorEgressHealer:
         return False, "; ".join(evidence)
 
     def decide(self, ok, now):
-        """Fold one probe result into the outage state; return the action to take.
+        """Fold a probe into outage state; return heal, exhausted, recovered, or None.
 
-        Returns ``None``, ``"heal"`` (one recovery attempt), ``"exhausted"``, or
-        ``"recovered"`` after two corroborated successes.
-        """
+        Recovery requires two corroborated successes."""
         if ok:
-            if self._attempts == 0:
-                # No restart spent yet — a single healthy probe just clears a sub-threshold
-                # blip. Nothing to protect, so reset immediately (unchanged blip semantics).
+            if self._attempts == 0 and not self._newnym_unconfirmed and not self.saturated_history:
+                # A healthy probe clears a blip that never reached a recovery action.
                 self._failing_since = None
                 self._ok_streak = 0
                 return None
-            # We have already restarted this outage. Require SUSTAINED recovery before
-            # refilling the budget and clearing the cooldown: a lone 204 during a flapping,
-            # overloaded-Tor outage must not reset the cap (#424 review). Budget and cooldown
-            # anchor are preserved until the streak confirms, so a relapse resumes where it
-            # left off instead of getting a fresh set of restarts.
+            # Two successes confirm recovery; a lone response during a flapping outage
+            # preserves the attempt budget and cooldown, including rejected NEWNYM rounds.
             self._ok_streak += 1
             if self._ok_streak < RECOVERY_CONFIRM_PROBES:
                 return None
@@ -148,6 +165,27 @@ class TorEgressHealer:
         self._last_attempt = now
         return "heal"
 
+    async def _observe_tor_start(self) -> None:
+        """Start a fresh outage window when Tor restarted without the healer's doing.
+
+        A restart by the operator, ``./pithead`` or Docker is a recovery the healer did not
+        perform, so the old clock, budget and cooldown no longer describe the Tor that is running.
+        A restart the healer issued itself is adopted into the baseline and keeps counting. A Tor that
+        restarts more often than BROKEN_AFTER_SEC (a crash loop) therefore never reaches an action."""
+        started = (await get_container_health()).get(self.CONTAINER, {}).get("started_at")
+        if started is None:
+            return
+        if self._tor_started is not None and started > self._tor_started and not self._own_restart:
+            logger.info("Tor restarted outside the self-heal; starting a fresh outage window.")
+            self._failing_since = None
+            self._attempts = 0
+            self._last_attempt = None
+            self._ok_streak = 0
+            self._warned_exhausted = False
+            self._newnym_unconfirmed = False
+        self._tor_started = started
+        self._own_restart = False
+
     def refund_attempt(self):
         """Refund an unconfirmed NEWNYM; keep the ongoing outage clock."""
         if self._attempts > 0:
@@ -160,6 +198,31 @@ class TorEgressHealer:
         would publish its ports on 0.0.0.0 without it."""
         return bool((await get_container_health()).get(self.MONEROD, {}).get("running"))
 
+    async def _wait_tor_down(self) -> None:
+        """Poll until Tor reads not running, at most TOR_SETTLE_SEC (an in-flight stop settles)."""
+        for _ in range(TOR_SETTLE_SEC // TOR_SETTLE_POLL_SEC):
+            if not (await get_container_health()).get(self.CONTAINER, {}).get("running"):
+                return
+            await asyncio.sleep(TOR_SETTLE_POLL_SEC)
+
+    async def _ensure_tor_running(self, stopped: bool) -> bool:
+        """Start Tor after the stop, whatever the stop reported (#3032).
+
+        A stop whose response is lost may still have stopped the container, and Docker leaves a
+        stopped container down. Start it and retry an unconfirmed start, bounded. A "running"
+        inspect is not trusted: after a timed-out stop it may predate the in-flight stop, and a 304
+        to an early start would be answered by a container about to go down, so an unconfirmed
+        stop is given time to settle before the start.
+        """
+        if not stopped:
+            await self._wait_tor_down()
+        for attempt in range(TOR_START_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(TOR_START_RETRY_DELAY_SEC)
+            if await self._docker.start(self.CONTAINER, request_timeout=60):
+                return True
+        return False
+
     async def check(self) -> None:
         """Probe (throttled) and act. Called every data-loop cycle; never raises."""
         if not self.enabled:
@@ -169,6 +232,12 @@ class TorEgressHealer:
             return
         self._last_probe = now
         try:
+            if await self._read_recovery(now):
+                return
+            await self._observe_tor_start()
+            await self._read_history()
+            if self._clear_history:
+                self._request_history()
             if self._pending_refresh is not None:
                 result = control_service.result(self._pending_refresh)
                 if result is None:
@@ -178,10 +247,19 @@ class TorEgressHealer:
                 self._pending_refresh = None
                 self._pending_since = None
                 if result.get("status") != "applied":
+                    # An unconfirmed NEWNYM never escalates to the disruptive restart; the
+                    # saturated-history reading below tells the operator what will help.
                     self.refund_attempt()
                     self._last_attempt = now
-                    logger.warning("Tor NEWNYM was not confirmed by the host control runner")
+                    self._newnym_unconfirmed = True
+                    logger.warning(
+                        "Tor NEWNYM was not confirmed by the host control runner (%s: %s)",
+                        result.get("status"),
+                        result.get("error"),
+                    )
+                    self._request_history()
                     return
+                self._newnym_unconfirmed = False
                 self._recovery_step = "NEWNYM"
             probe = await asyncio.to_thread(self._probe)
             ok, evidence = probe
@@ -190,6 +268,7 @@ class TorEgressHealer:
             outage_minutes = (now - self._failing_since) / 60 if self._failing_since else 0
             action = self.decide(ok, now)
             if action == "heal":
+                self._request_history()  # Read on the first round, then refresh each round.
                 if self._attempts < MAX_ATTEMPTS:
                     logger.warning(
                         "Tor clearnet egress failed for %.0f minutes: %s. "
@@ -212,16 +291,32 @@ class TorEgressHealer:
                         return
                     self._pending_since = now
                     return
+                if self.saturated_history:
+                    try:
+                        self._pending_recovery = control_service.submit(
+                            "tor-recover", actor="tor-heal"
+                        )
+                        self._recovery_requested_at = now
+                        self._own_restart = True
+                    except OSError:
+                        self._recovery_notice = (
+                            "Tor state recovery could not be submitted; no restart was attempted."
+                        )
+                        await self._read_recovery(now)
+                    return
                 logger.warning(
                     "Tor clearnet egress failed for %.0f minutes after circuit "
                     "refresh: %s. Restarting Tor; mining connections will drop.",
                     outage_minutes,
                     evidence,
                 )
+                self._own_restart = True
                 stopped = await self._docker.stop(
-                    self.CONTAINER, stop_timeout=15, request_timeout=60
+                    self.CONTAINER,
+                    stop_timeout=TOR_STOP_GRACE_SEC,
+                    request_timeout=TOR_STOP_REQUEST_TIMEOUT_SEC,
                 )
-                started = await self._docker.start(self.CONTAINER, request_timeout=60)
+                started = await self._ensure_tor_running(stopped)
                 # False means unconfirmed, not unissued: a timed-out POST may have mutated
                 # the daemon. Keep the attempt and cooldown even when both responses are lost.
                 self._recovery_step = (
@@ -239,11 +334,8 @@ class TorEgressHealer:
                     MAX_ATTEMPTS,
                 )
                 if started and self._restart_monerod and await self._monerod_running():
-                    # The tor restart just killed every SOCKS connection; monerod holds its
-                    # dead peer sockets and can sit at 0 in / 0 out peers for hours while
-                    # looking healthy (#972). Cycle it so it re-dials through the fresh tor.
-                    # monerod's stop_grace_period is 1m, so the stop timeout matches it and the
-                    # HTTP timeout outlasts the stop (#234's lesson).
+                    # Tor killed the SOCKS connections; cycle Monero's dead peer sockets (#972).
+                    # Match its 1m stop grace and let the HTTP timeout outlast it (#234).
                     logger.warning(
                         "Restarting monerod alongside tor so it re-dials its peers through "
                         "the fresh Tor (#972)."
@@ -259,6 +351,9 @@ class TorEgressHealer:
                             "monerod' (#972)."
                         )
             elif action == "exhausted":
+                # Keep diagnostics and undelivered warnings alive without another mutation.
+                if self._history_since is None or now - self._history_since >= COOLDOWN_SEC:
+                    self._request_history()
                 if not self._warned_exhausted:
                     self._warned_exhausted = True
                     logger.warning(
@@ -274,6 +369,14 @@ class TorEgressHealer:
                     self._failure_evidence,
                     evidence,
                 )
+                self._newnym_unconfirmed = False
+                self._warned_saturated = False
+                self._pending_history = None
+                self.saturated_history = False
+                if self._history_outage is not None:
+                    self._history_outage = None
+                    self._clear_history = True
+                    self._request_history()
                 if self._notify is not None:
                     await self._notify(
                         f"\U0001f9c5 Tor clearnet egress recovered following "

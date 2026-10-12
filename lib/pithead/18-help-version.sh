@@ -46,7 +46,7 @@ Inspection:
                             webhook, and ntfy sink. Reports each result without printing its
                             URL or token; Healthchecks is excluded because a ping moves its
                             dead-man switch.
-  tor-recover check|apply   Check saturated Tor circuit history with stalled local Monero;
+  tor-recover check|apply   Check saturated Tor history with stalled Monero or bootstrap;
                             apply backs up only circuit state and restarts Tor after a
                             persistent cooldown. Requires explicit operator action.
   doctor [--json]           Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk,
@@ -174,7 +174,8 @@ Maintenance:
                             fired every 2 minutes by the pithead-egress timer.
   lan-guard-check           Check the live LAN-only source rule. If it is missing,
                             invalidate the node start marker and stop nodes that
-                            publish LAN ports. Fired by pithead-lan.timer.
+                            publish LAN ports. If it is live, start a node that
+                            crashed (non-zero exit). Fired by pithead-lan.timer.
 
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a

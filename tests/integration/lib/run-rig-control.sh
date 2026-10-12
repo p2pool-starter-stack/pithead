@@ -28,9 +28,9 @@ _max_temp_round_trip() { # <rig> <orig-max_temp_c-or-empty>
         assert_eq "worker-apply recorded in the per-worker history (#185/#1471)" "$(_settle_history_row "$rig" "$change_id")" "applied"
         it_step "reverting max_temp_c $new_maxt -> ${orig_maxt}…"
         res="$(_worker_apply "$rig" "{\"max_temp_c\":$orig_maxt}")"
-        IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
+        IFS='|' read -r status _ change_id <<<"$(_settle_worker_apply_maxt "$rig" "$orig_maxt" "$res")"
         assert_eq "reversible edit reverted on the rig (#513)" "$status" "applied"
-        [ "$status" = "applied" ] && rig_key_clear dash "$rig" max_temp_c # (#1379)
+        _finish_worker_revert "$rig" max_temp_c "$status" "$change_id" || return 1
     fi
 }
 
@@ -134,7 +134,71 @@ run_rigforge_control() {
             return 1
         fi
     fi
+    _RIG_SETUP_SAMPLE=null
+    local _RIG_SETUP_STATE=''
     if ! wait_for 120 5 "dashboard to re-read the selected rig after control setup" _pred_rig_present "$rig"; then
+        # Retain the final predicate observation and fixed probe classes before restore (#2890).
+        # No raw response/log text is written; Docker reads are time-, line- and byte-bounded.
+        printf '%s\n' "$_RIG_SETUP_SAMPLE" >"$OUT_DIR/rigforge-control.selected-rig.json" ||
+            it_warn "selected-rig state diagnostics could not be retained"
+        local probe_logs probe_names probe_log_rc=0
+        probe_logs="$(rx 'timeout 5 docker logs --since 10m --tail=200 dashboard 2>&1' 2>/dev/null | head -c 65536)" || probe_log_rc=$?
+        # Credential warnings normalize the name; attribute them only to a unique endpoint.
+        probe_names="$(printf '%s\n%s' "$ctrl_config" "$_RIG_SETUP_STATE" | timeout 5 python3 -c '
+import json
+import sys
+
+text = sys.stdin.read().lstrip()
+config, end = json.JSONDecoder().raw_decode(text)
+try:
+    state = json.loads(text[end:])
+except ValueError:
+    state = {}
+workers = state.get("workers", []) if isinstance(state, dict) else []
+workers = [w for w in workers if isinstance(w, dict) and isinstance(w.get("name"), str)] if isinstance(workers, list) else []
+entries = config.get("workers", {}).get("list", [])
+port = config.get("workers", {}).get("api_port", 8080)
+def token(name):
+    return name.split("+")[0].strip()[:128]
+def endpoint(worker):
+    ip = worker.get("ip", "")
+    ip = ip.strip() if isinstance(ip, str) else ""
+    if ip.count(":") == 1 and ip.rpartition(":")[2].isdigit():
+        ip = ip.rpartition(":")[0]
+    override = next((e for e in entries if e.get("name") == token(worker["name"])), None)
+    if override is None:
+        override = next((e for e in entries if ip and e.get("host") == ip), {})
+    return override.get("host", ip), override.get("port", port)
+name = sys.argv[1]
+selected = next((w for w in workers if w["name"] == name), None)
+host, effective_port = endpoint(selected) if selected is not None else ("", port)
+matches = sum(token(w["name"]) == token(name) and endpoint(w) == (host, effective_port) for w in workers) if selected is not None else 0
+print(json.dumps({"full": repr(name), "token": repr(token(name)), "host": host,
+                  "url": f"http://{host}:{effective_port}/1/summary", "unique": bool(host) and matches == 1}))
+' "$rig" 2>/dev/null)" &&
+            printf '%s' "$probe_logs" | jq -Rsc --argjson names "$probe_names" --argjson rc "$probe_log_rc" '
+            split("\n") | map(index("Worker ") as $start | select($start != null) |
+                .[$start + 7:] |
+                (if startswith($names.full + " (") then $names.full
+                 elif startswith($names.token + " (") then $names.token else empty end) as $matched |
+                .[($matched | length) + 2:] |
+                capture("^(?<host>[^)]*)\\): xmrig API probe failed at (?<url>\\S+) — (?<failure>.*)") as $probe |
+                $probe.failure |
+                (if startswith("adopted rig\u0027s read credential unavailable.") or startswith("probe token missing.") then "credential-unavailable"
+                elif test("^HTTP (401|403)(\\.|$)") then "http-auth-refusal"
+                elif startswith("JSONDecodeError:") or startswith("HTTP 200 but body was ") then "invalid-body"
+                elif test("^HTTP [0-9]{3}(\\.|$)") then "http-response"
+                elif test("^\\w*TimeoutError:") then "timeout"
+                elif test("^\\w*(ConnectorError|ConnectionError):") then "connection"
+                elif test("^body over [0-9]+ bytes(\\.|$)") then "oversized-body"
+                else "other-probe-failure" end) as $class |
+                select(if $class == "credential-unavailable" then
+                    $matched == $names.token and $names.unique and $probe.host == $names.host and $probe.url == $names.url
+                    else $matched == $names.full end) | $class) |
+            group_by(.) | {log_read_exit:$rc, classes:map({classification:.[0], count:length})}' \
+                >"$OUT_DIR/rigforge-control.probe-classes.json" ||
+            it_warn "selected-rig probe classifications could not be retained"
+        _RIG_SETUP_STATE=''
         if [ "$supplied" = 1 ]; then
             it_fail "supplied rig exposes its enriched feed after control setup" "worker '$rig' never appeared"
         else
@@ -175,12 +239,15 @@ run_rigforge_control() {
     # leave the rig mis-tuned.
     local orig_maxt
     orig_maxt="$(printf '%s' "$st" | jq -r --arg n "$rig" 'first(.workers[]? | select(.name==$n) | .rigforge.stats[]? | select(.label=="Temp / max") | .value) // empty' 2>/dev/null | sed -n 's#.*/ *\([0-9][0-9]*\).*#\1#p')"
-    _max_temp_round_trip "$rig" "$orig_maxt"
 
     # Lives in rigforge-writable-keys.sh: the legs read each original from the rig's OWN reported
     # config (.rig_config, #1235/rigforge#253) rather than from a record of what we last pushed, and
     # the three keys not driven there carry their reasons with them.
-    run_rigforge_writable_keys "$rig"
+    if ! _max_temp_round_trip "$rig" "$orig_maxt" || ! run_rigforge_writable_keys "$rig"; then
+        capture_artifacts "rigforge-control" "$OUT_DIR"
+        _restore_rig_control_baseline
+        return 1
+    fi
     run_rigforge_pools "$rig"
 
     run_rigforge_reverse "$rig" "$orig_maxt"

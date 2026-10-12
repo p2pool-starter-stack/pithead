@@ -1,36 +1,10 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Worker-config domain (#1105 Phase 1, appliance lane): per-worker token masking and host-side
-# restore, across the two config shapes that carry rig credentials. A per-rig token lives in a
-# VARIABLE-LENGTH array, which puts it outside the fixed CONTROL_SECRET_PATHS walk that covers the
-# scalar secrets, so each shape needs its own proof that the property still holds — the masked
-# prefill copy must sentinel every set token rather than the first one, and the staging swap must
-# restore each sentinel from the live token rather than committing the sentinel itself. The legacy
-# removed 1.x dashboard.workers[] shape (#172/#679) and the workers.list[] shape (#506) separately
-# because they are read by different code paths, not because the property differs.
-# Sourced by tests/stack/run.sh.
-#
-# THIS FILE IS POSITION-LOCKED AND IS NOT SOURCEABLE ON ITS OWN — both deliberately. It inherits
-# the control sandbox that the black-box control-channel run builds once and then mutates in a
-# chain: $C and $CTRL_LOG come from lib.sh's build_control_sandbox, and $AUDIT, $MASKED, $REQS,
-# $RESULTS and $STAGED from sections that #1105 R12 moved out of run.sh into
-# test-control-core.sh, sourced earlier. Nothing here builds a sandbox, and nothing here should.
-# The sections commit through the real gate, so they write into the shared request spool and
-# append to the shared audit log — and two sections that run AFTER this one, both now in
-# test-spool-audit.sh, count exactly that: "audit log growth is bounded (#349)" measures the
-# audit log's length, and "spool intake cap + symlink refusal + stale sweep (#33 hardening)"
-# asserts the request spool holds exactly ten overflow intents and then none. A fresh sandbox
-# built here, or this file sourced at any other point in the run's order, moves those counts and
-# reds two domains that never changed. Sourcing in place is what keeps them right, so the
-# ordering is a contract rather than an accident, and it is stated here because a survived
-# accident and an honoured contract look identical from a green suite.
-#
-# That is the same contract test-control-add-only-ssrf.sh already ships under: split out for the
-# file-budget ratchet, inheriting the fixtures of the section it came from.
-#
-# Every other name the block reads it also assigns — the request UUIDs it drives the gate with are
-# its own. From lib.sh it calls assert_eq, run_pending and run_sourced, and also ok and bad
-# directly, inside the case blocks that check no secret leaked.
+# Per-worker token sentinels mask each credential and restore live tokens by worker name.
+# The shared fixture seeds fresh processes and preserves existing config and spool state.
+
+ensure_control_fixture
+
 echo "== black-box: per-worker token mask + host-side restore, legacy dashboard.workers (#172/#679) =="
 # dashboard.workers[].token is a per-rig credential living in a VARIABLE-LENGTH array — out of the
 # fixed CONTROL_SECRET_PATHS walk. The masked prefill copy must sentinel each set token (extends

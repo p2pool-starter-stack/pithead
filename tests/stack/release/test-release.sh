@@ -132,7 +132,7 @@ assert_contains "appliance cut signs its disposable probe with the release leaf 
     'rauc --cert "$PITHEAD_RAUC_CERT" --key "$PITHEAD_RAUC_KEY" bundle "$work_dir/probe" "$work_dir/probe.raucb"'
 assert_contains "appliance cut verifies a leaf-signed probe against the baked keyring (#2825)" "$CUT_DOC" \
     'rauc info --keyring "$work_dir/mnt/etc/rauc/keyring.pem" "$work_dir/probe.raucb"'
-CHECKLIST_DOC="$(cat "$ROOT/docs/dev/manual-release-checklist.md")"
+CHECKLIST_DOC="$(cat "$ROOT/docs/dev/manual-qa/release/cutting-and-after.md")"
 assert_contains "cut checklist requires the root's offline backup (#2825)" "$CHECKLIST_DOC" \
     'root private key has an offline backup'
 # Bundle completeness: the pull-based bundle must ship every ./build/* path the compose MOUNTS at
@@ -183,7 +183,7 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
     # make_bundle now digest-pins the first-party images (#376), so it needs the promoted digests
     # promote would have captured -- a full repo@sha256 ref, as set_digest stores them.
-    for _s in "${IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
+    for _s in "${PUBLISHED_IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
     make_bundle "$WORKDIR/pithead.tar.gz" >/dev/null 2>&1
     cp "$WORKDIR/pithead/docker-compose.yml" "$SANDBOX/bundle-compose.yml" 2>/dev/null || true
     tar tzf "$WORKDIR/pithead.tar.gz" 2>/dev/null
@@ -289,6 +289,25 @@ assert_contains "manifest names the tari NODE pin (#1138)" "$(cat "$man_out" 2>/
     "- tari node: \`ghcr.io/tari-project/minotari_node:"
 assert_contains "manifest names the tari CONSOLE WALLET pin (#1138)" "$(cat "$man_out" 2>/dev/null)" \
     "- tari console wallet: \`ghcr.io/tari-project/minotari_console_wallet:"
+assert_contains "manifest names the published appliance rootfs (#1353)" "$(cat "$man_out" 2>/dev/null)" \
+    "ghcr.io/p2pool-starter-stack/pithead-os-rootfs:v9.9.9"
+rigforge_ref="$(sed -n 's/^ARG RIGFORGE_REF=//p' "$ROOT/os/rootfs/Dockerfile")"
+# shellcheck disable=SC1090
+rigforge_pin="$(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    pin rigforge
+)"
+if [ -n "$rigforge_pin" ]; then
+    ok "pin rigforge is non-empty"
+else
+    bad "pin rigforge is non-empty" "got an empty ref"
+fi
+assert_eq "pin rigforge equals the baked Dockerfile ref" "$rigforge_pin" "$rigforge_ref"
+grep -Fxq -- "- rigforge: \`$rigforge_ref\`" "$man_out"
+assert_rc "manifest names the exact baked RigForge ref" "$?" "0"
 # The ingredients manifest's component pins must resolve to a real value present in each Dockerfile —
 # a drift guard so a renamed ARG can't silently emit an empty pin in the release notes.
 for svc in p2pool monero xmrig-proxy; do
@@ -354,3 +373,17 @@ done
 ver_file="$(tr -d ' \t\r\n' <"$ROOT/VERSION")"
 ver_pyproject="$(grep -oE '^version = "[^"]+"' "$ROOT/dashboard/pyproject.toml" | head -1 | cut -d'"' -f2)"
 assert_eq "pyproject.toml version matches VERSION (#44)" "$ver_pyproject" "$ver_file"
+
+# Check the actual release content, not just the extractor's synthetic fixtures.
+release_notes_real="$(
+    cd "$ROOT" || exit
+    # shellcheck source=scripts/release/bundle.sh
+    source "$ROOT/scripts/release/bundle.sh"
+    TAG=v2.0.0 changelog_notes
+)"
+assert_rc "the real 2.0.0 changelog extracts successfully" "$?" "0"
+assert_contains "the real release notes include Known issues" "$release_notes_real" '### Known issues'
+assert_contains "the real release notes include the Tor control issue link" "$release_notes_real" \
+    '[#3166](https://github.com/p2pool-starter-stack/pithead/issues/3166)'
+assert_not_contains "the real release notes exclude Unreleased" "$release_notes_real" '## [Unreleased]'
+unset release_notes_real

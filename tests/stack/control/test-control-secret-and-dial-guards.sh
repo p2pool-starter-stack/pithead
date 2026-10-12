@@ -287,6 +287,8 @@ assert_contains "the dual-stack pin prefers the IPv4 answer" "$(cat "$REBIND_DIR
 # survive into the dashboard's result, even when the rig accepted the write.
 cat >"$REBIND_DIR/bin/curl" <<'EOF'
 #!/usr/bin/env bash
+# Real curl reads --config - before responding; drain the piped header to avoid SIGPIPE.
+cat >/dev/null
 while [ "$#" -gt 0 ]; do
     if [ "$1" = -o ]; then out="$2"; shift 2; else shift; fi
 done

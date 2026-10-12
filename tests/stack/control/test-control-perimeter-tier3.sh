@@ -12,7 +12,10 @@ RESULTS="$C/data/control/results"
 # The envelope a compromised container writes for itself: no operator typed any of it.
 SELF_ENVELOPE='{"payout_suffixes":{}}'
 # A second checksum-valid mainnet primary (the Monero project's legacy donation address).
-ATTACKER_WALLET="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"
+# shellcheck source=tests/integration/fixtures/payout-pairs.sh
+source "$ROOT/tests/integration/fixtures/payout-pairs.sh"
+ATTACKER_WALLET="$PAYOUT_MONERO1"
+VALID_TARI="$PAYOUT_TARI1"
 
 echo "== black-box: perimeter settings require confirmation and then apply (#1959) =="
 # Baseline from the host CLI, never the gate, so what the cases below protect is real.
@@ -82,7 +85,7 @@ gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
 assert_eq "confirmed tor-egress-firewall disable applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 
 # A view key reveals every incoming payout amount and time, so it confirms rather than direct-commits.
-MONERO_VIEW_KEY=$(printf '1%.0s' {1..64})
+MONERO_VIEW_KEY="$PAYOUT_VIEW1"
 jq --arg k "$MONERO_VIEW_KEY" '.monero.view_key=$k' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "monero view-key set is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
@@ -116,9 +119,9 @@ confirm_scalar "Telegram destination" '.telegram.bot_token="654321:confirmed-ABC
 confirm_scalar "ntfy destination" '.notifications.ntfy={url:"https://ntfy.example/topic",token:"ntfy-secret"}' '.notifications.ntfy.url + ":" + .notifications.ntfy.token' "https://ntfy.example/topic:ntfy-secret"
 unset -f confirm_scalar
 
-TARI_VIEW_KEY=$(printf '2%.0s' {1..64})
-TARI_SPEND_KEY=$(printf '3%.0s' {1..64})
-jq --arg v "$TARI_VIEW_KEY" --arg s "$TARI_SPEND_KEY" '.tari.view_key=$v | .tari.spend_public_key=$s' "$C/config.json" >"$C/cand.json"
+TARI_VIEW_KEY="$PAYOUT_VIEW1"
+TARI_SPEND_KEY="$PAYOUT_TARI_PUBLIC1"
+jq --arg v "$TARI_VIEW_KEY" --arg s "$TARI_SPEND_KEY" '.tari.view_key=$v | .tari.spend_public_key=$s | .tari.wallet_address="'"$PAYOUT_TARI1"'"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "Tari payout-confirmation keys refuse without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
