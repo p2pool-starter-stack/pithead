@@ -2,6 +2,8 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/os/phases/reset-config.sh
 source "$SCRIPT_DIR/phases/reset-config.sh" || return $?
+# shellcheck source=tests/os/phases/reset-slot.sh
+source "$SCRIPT_DIR/phases/reset-slot.sh" || return $?
 phase_reset() {
     info "phase: reset (factory-reset ESP marker + wedged-/data recovery — opt-in, destructive)"
     local img token tries jar scode names deadline
@@ -95,7 +97,12 @@ phase_reset() {
 
     # leg 0 (#2347): config-reset must keep chains and the onion address, clear the config, and
     # re-arm the wizard — on the SAME provisioned guest, before leg 1 wipes it.
-    _phase_reset_config || return
+    if _phase_reset_config; then
+        _phase_reset_slot || return
+    else
+        it_skip_leg reset-slot "leg 0 did not finish" missing
+        return
+    fi
 
     # ---- leg 1: factory-reset must wipe /data and return a FRESH machine to the wizard ----
     info "leg 1 — factory-reset must wipe /data and return a FRESH machine to the wizard"

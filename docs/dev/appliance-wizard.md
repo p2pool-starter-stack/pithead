@@ -492,8 +492,14 @@ Five steps, each answering a hardware-validated failure:
    `pithead status` passes (#1265): that drift is the machine's address list, not the slot. A slot
    that boots but is not healthy stays uncommitted on purpose: that is the state A/B fallback exists
    for.
-   Unprovisioned machines never commit — GRUB's clear-and-retry keeps them booting, and a bad
-   update before provisioning reverts.
+   Fresh unprovisioned machines never commit, and an unverified update before provisioning
+   reverts. `config-reset` records an already-good booted slot with its exact `BUILD_COMMIT`,
+   only after the provisioned boot unit has completed successfully in the current boot. Once the
+   reset wizard container starts, firstboot restores that slot's good state on each configless
+   boot, including a reboot with setup still open. The record remains until the provisioned
+   health gate succeeds. A different slot or source cannot use it. The next provisioned boot
+   still runs all three health gates; reset does not commit an unverified update.
+
 5. **`pithead local-miner`** — converge the built-in RigForge worker to `local_miner.enabled`,
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a

@@ -242,4 +242,5 @@ CR_PROBES
     else
         bad "monerod height regressed or is unreadable after config-reset (before: $cr_height_before, after: ${cr_height_after:-none})"
     fi
+
 }
