@@ -146,7 +146,7 @@ check_hugepages_reserved() {
                 short="${short} If monerod's own RandomX pages leave fewer than ${P2POOL_RANDOMX_DATASET_PAGES} free when P2Pool starts, ${fallback}"
             fi
         fi
-        dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool. To keep it across reboots, put '$(randomx_boot_params)' on GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub in place of any other hugepages= value, then run 'sudo update-grub' and reboot; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
+        dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool. For persistence, accept setup's GRUB drop-in and reboot after it verifies the generated kernel entries; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
     fi
 }
 
@@ -295,9 +295,9 @@ monerod_peers_and_tip() { # <user> <pass> <url>
         hdr=$(curl -fsS --max-time 8 -H 'Content-Type: application/json' \
             -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)
     fi
-    # RPC input must be a bounded integer, never an expression for Bash to evaluate.
+    # RPC input must be a bounded positive integer; zero means the tip time is unavailable.
     ts=$(printf '%s' "$hdr" | jq -r '.result.block_header.timestamp |
-        select(type == "number" and . >= 0 and . <= 9999999999 and . == floor)' 2>/dev/null)
+        select(type == "number" and . > 0 and . <= 9999999999 and . == floor)' 2>/dev/null)
     [[ "$ts" =~ ^[0-9]{1,10}$ ]] || ts=""
     if [ -n "$ts" ]; then
         age=$(($(date +%s) - 10#$ts))

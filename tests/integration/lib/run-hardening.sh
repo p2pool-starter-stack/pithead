@@ -1,7 +1,13 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 _set_env_token() { # _set_env_token <value>
-    rx "awk -v t=$(quote_arg "$1") '/^PROXY_AUTH_TOKEN=/{print \"PROXY_AUTH_TOKEN=\" t; next} {print}' .env > .env.itest && mv .env.itest .env"
+    rx "(
+        umask 077
+        tmp=\$(mktemp .env.itest.XXXXXX) || exit 1
+        trap 'rm -f \"\$tmp\"' EXIT
+        awk -v t=$(quote_arg "$1") '/^PROXY_AUTH_TOKEN=/{print \"PROXY_AUTH_TOKEN=\" t; next} {print}' .env > \"\$tmp\" &&
+            chown --reference=.env \"\$tmp\" && mv -f \"\$tmp\" .env
+    )"
 }
 
 # Drop a file into the control spool on the box (mirrors push_config's stdin-over-ssh transfer so
@@ -121,7 +127,6 @@ run_hardening() {
         it_skip_phase "hardening" "remote mode: no local containers/systemd to exercise" "by-design"
         return 0
     fi
-
     # 1. Read-only rootfs is LIVE at runtime (#377), not just declared in compose. We must assert
     #    the failure is specifically EROFS ("Read-only file system"), NOT just any error: the
     #    containers run non-root (#255), so `touch /` on a WRITABLE rootfs already fails with EACCES
@@ -139,7 +144,6 @@ run_hardening() {
                 "expected 'Read-only file system', got: ${probe_out:-<write SUCCEEDED — rootfs is writable>}"
         fi
     done
-
     # 2. The onion is reachable from OUTSIDE (privacy surface, #343/#360) and SURVIVES the #424 heal
     #    action. An independent external Tor client (its own image/tor/circuits) fetches the dashboard
     #    onion over the real Tor network — no stack SOCKS or plumbing involved. First a baseline; then
@@ -174,7 +178,6 @@ run_hardening() {
             fi
         fi
     fi
-
     # 3. The #33 control channel end-to-end THROUGH THE REAL SYSTEMD PATH UNIT. Tier-1 runs
     #    control-run-pending by hand; only here does pithead-control.path actually fire on a spooled
     #    file. Needs a dashboard password (control refuses to enable without one). Enable control,
@@ -205,6 +208,59 @@ run_hardening() {
     if [ -z "$cdir" ]; then
         it_skip_leg "control spool round-trips" "CONTROL_DIR not set on the box"
     else
+        # Raw refusal must survive the real systemd control runner, before staging via jq.
+        local raw_doc raw_id raw_path raw_kind raw_error raw_before
+        raw_before="$(rx 'sha256sum config.json .env')"
+        for raw_kind in top nested placeholder; do
+            case "$raw_kind" in
+            top)
+                raw_doc='{"monero":{},"monero":{}}'
+                raw_path=monero
+                ;;
+            nested)
+                raw_doc='{"dashboard":{"auth":{"password":"first","password":"last"}}}'
+                raw_path=dashboard.auth.password
+                ;;
+            placeholder)
+                raw_doc='{"dashboard":{"auth":{"password":"PASTE_secret"}}}'
+                raw_path=dashboard.auth.password
+                ;;
+            esac
+            raw_id="$(_uuid4)"
+            _spool_write "$cdir/requests/$raw_id.json" \
+                "$(printf '{"id":"%s","action":"preview","actor":"itest","config":%s}' "$raw_id" "$raw_doc")"
+            st="$(_wait_control_status "$cdir" "$raw_id" "" 60 || echo timeout)"
+            assert_eq "raw config $raw_kind refused by systemd control runner (#3098)" "$st" rejected
+            raw_error="$(rx "jq -r '.error // empty' $(quote_arg "$cdir/results/$raw_id.json") 2>/dev/null")"
+            assert_contains "raw config $raw_kind refusal names its path (#3098)" "$raw_error" "$raw_path"
+        done
+        assert_eq "raw config refusals preserve config.json and env (#3098)" \
+            "$(rx 'sha256sum config.json .env')" "$raw_before"
+
+        # A hand-edited raw host file must fail before the renderer can hide its defects.
+        local bad_host host_read host_rc
+        for raw_kind in duplicate placeholder; do
+            if [ "$raw_kind" = duplicate ]; then
+                bad_host="${ctrl_config%\}} , \"p2pool\":{} }"
+                raw_path=p2pool
+            else
+                bad_host="$(printf '%s' "$ctrl_config" | jq '.dashboard.auth.password="PASTE_private"')"
+                raw_path=dashboard.auth.password
+            fi
+            push_config "$bad_host"
+            pithead control-run-pending >/dev/null 2>&1 || true
+            if host_read="$(rx 'docker exec dashboard python3 -c "from mining_dashboard.service.control_service import read_config; read_config()"' 2>&1)"; then host_rc=0; else host_rc=$?; fi
+            assert_rc "invalid raw host $raw_kind blocks dashboard read (#3098)" "$host_rc" 1
+            assert_contains "invalid raw host $raw_kind read names its path (#3098)" "$host_read" "$raw_path"
+        done
+        push_config "$ctrl_config"
+        pithead control-run-pending >/dev/null 2>&1
+        assert_rc "corrected raw host config restores dashboard read (#3098)" \
+            "$(
+                rx 'docker exec dashboard python3 -c "from mining_dashboard.service.control_service import read_config; read_config()"' >/dev/null 2>&1
+                echo $?
+            )" 0
+
         # 3a. A NON-sensitive change (an allowlisted alert toggle) committed via the spool must be
         #     applied BY THE PATH UNIT — not by us calling control-run-pending.
         # Use an allowlisted key that renders UNCONDITIONALLY: DASHBOARD_CHECK_UPDATES is always
@@ -240,11 +296,12 @@ run_hardening() {
 
         # 3b. A wallet swap previews behind typed confirmation (#2305). Give the commit a valid
         #     payout suffix but omit APPLY: refusal must come from the host confirmation gate,
-        #     not from an incomplete approval envelope or address validation.
+        #     not from an incomplete approval envelope or address validation. Clear the old
+        #     wallet's view key only in this refused candidate; it cannot match the new address.
         local uuid_bad bad_cfg wallet_before preview suffix
         uuid_bad="$(_uuid4)"
         wallet_before="$(env_on_box MONERO_WALLET_ADDRESS)"
-        bad_cfg="$(printf '%s' "$ctrl_config" | jq -c '.monero.wallet_address="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"')"
+        bad_cfg="$(printf '%s' "$ctrl_config" | jq -c '.monero.view_key="" | .monero.wallet_address="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"')"
         _spool_write "$cdir/requests/$uuid_bad.json" \
             "$(printf '%s' "$bad_cfg" | jq -c --arg id "$uuid_bad" '{id:$id,action:"preview",actor:"itest",config:.}')"
         st="$(_wait_control_status "$cdir" "$uuid_bad" "" 60 || echo timeout)"
@@ -264,6 +321,13 @@ run_hardening() {
         else
             it_fail "unconfirmed wallet change left config.json and .env untouched (#33)" "wallet address changed (values withheld)"
         fi
+    fi
+
+    if probe_out="$(rx "timeout 600 python3 tests/integration/lib/access_log_retention.py")" &&
+        grep -qx 'access-log-retention: complete' <<<"$probe_out"; then
+        it_pass "failed logins retained beyond 256 KiB and native gzip rotation (#3265)"
+    else
+        it_fail "failed logins retained beyond 256 KiB and native gzip rotation (#3265)" "$probe_out"
     fi
 
     # Restore the baseline ourselves: re-applying with control off uninstalls the path unit, so the
@@ -299,26 +363,32 @@ run_auth_fail_closed() {
     fi
 
     local fails_before="$IT_FAIL"
-
     # 1. Empty the token; `pithead up` must refuse to start AND name the documented fix.
     it_step "emptying PROXY_AUTH_TOKEN in .env and running 'pithead up'…"
-    _set_env_token ""
+    if ! _set_env_token ""; then
+        it_fail "empty PROXY_AUTH_TOKEN for fail-closed probe" "environment replacement failed"
+        return 1
+    fi
     local out rc
     out="$(pithead up 2>&1)"
     rc=$?
     assert_ne "pithead up fails closed (non-zero exit) on an empty PROXY_AUTH_TOKEN" "$rc" "0"
     assert_contains "compose guard refuses the unauthenticated proxy API (#153)" \
         "$out" "refusing to start an unauthenticated xmrig-proxy control API"
-
     # 2. Restore the EXACT original token (apply would mint a new one) and recover.
     it_step "restoring the original PROXY_AUTH_TOKEN and recovering…"
-    _set_env_token "$orig"
-    assert_eq "original PROXY_AUTH_TOKEN restored verbatim" "$(env_on_box PROXY_AUTH_TOKEN)" "$orig"
+    _set_env_token "$orig" || it_fail "restore PROXY_AUTH_TOKEN" "environment replacement failed"
+    if [ "$(env_on_box PROXY_AUTH_TOKEN)" = "$orig" ]; then
+        it_pass "original PROXY_AUTH_TOKEN restored verbatim"
+    else
+        it_fail "original PROXY_AUTH_TOKEN restored verbatim" "restored token differs from the original"
+    fi
     pithead up >/dev/null 2>&1 || it_warn "recovery 'pithead up' returned non-zero; check the box."
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "stack healthy again after token restore" "$?" "0"
 
+    rr_web_ports_owned_by_dashboard "auth recovery" || true
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "auth-fail-closed" "$OUT_DIR"
 }
 

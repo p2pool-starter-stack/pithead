@@ -375,3 +375,8 @@ run_sourced "$WKFD" wizard_keep_failed_config >/dev/null 2>&1
 assert_rc "the keep succeeds on a machine that never rendered an .env" "$?" "0"
 assert_eq "no .env is created by the failure path" "$([ -e "$WKFD/.env" ] || echo absent)" "absent"
 rm -rf "$WKFD"
+
+# Pure credential generation and hostile-target carry checks; no guest or live disk.
+connection_out=$(bash "$ROOT/tests/os/selftest-miner-connection.sh" 2>&1)
+assert_rc "miner connection credential/carry selftest" "$?" 0
+assert_contains "miner connection selftest executes its assertions" "$connection_out" "PASS: miner connection"

@@ -17,11 +17,13 @@ import pytest
 from mining_dashboard.service.workers.worker_adopt import (
     DEFAULT_API_PORT,
     DEFAULT_CONTROL_PORT,
+    FLEET_API_PORT_ERROR,
     HOST_RE,
     NAME_RE,
     TOKEN_RE,
     host_is_internal,
     new_worker_entries,
+    validate_fleet_api_port,
     validate_new_worker_entries,
     validate_worker_descriptor,
 )
@@ -342,3 +344,22 @@ class TestHostIsInternal:
         # returned address — lives in pithead's `_control_host_is_internal` and runs at commit
         # time on the host; see tests/stack/control/test-control-add-only-ssrf.sh for that coverage.
         assert host_is_internal("a-hostname-that-is-not-a-known-alias", {}) is False
+
+
+class TestFleetApiPort:
+    @pytest.mark.parametrize("port", [1, 8080, 65535])
+    def test_in_range_accepted(self, port):
+        assert validate_fleet_api_port({"workers": {"api_port": port}}) == ""
+
+    @pytest.mark.parametrize(
+        "proposed", [{}, {"workers": {}}, {"workers": {"api_port": None}}, "x"]
+    )
+    def test_absent_means_default(self, proposed):
+        assert validate_fleet_api_port(proposed) == ""
+
+    @pytest.mark.parametrize(
+        "port",
+        [0, 65536, -1, True, False, 80.5, 8080.0, "8080", "", [], {}, float("inf"), float("nan")],
+    )
+    def test_invalid_refused(self, port):
+        assert validate_fleet_api_port({"workers": {"api_port": port}}) == FLEET_API_PORT_ERROR

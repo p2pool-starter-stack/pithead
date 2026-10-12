@@ -7,8 +7,10 @@
 # which is how #462 shipped. The leg sets a view key and spend key with a host-side apply (the
 # dashboard refuses those keys by design) and checks that the wallet stays up, reports healthy,
 # owns its volume, wrote its own config into it and names only the local node. A scratch guest has no synced Tari
-# chain, so finding payouts is the e2e row's job, not this one. The keys are a valid scalar and the
-# Ristretto basepoint: they parse, and they belong to no real wallet. The config is restored after.
+# chain, so finding payouts is the e2e row's job, not this one. The address and keys are the public
+# synthetic pair for private scalar 1 (the Ristretto basepoint): apply checks that the view key
+# belongs to the address, and no funds use them. The config is restored after.
+TARI_WALLET_TEST_ADDRESS=12M2aZjsSvTTcaFyzLxARkvwdxv8UHJeJBA6E1pEoP967ydCL8tv17vktNDHhqDgFg5LxtHrp9Wsd1cuhyW1p6fzimM
 TARI_WALLET_TEST_VIEW_KEY=0100000000000000000000000000000000000000000000000000000000000000
 TARI_WALLET_TEST_SPEND_KEY=e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76
 
@@ -64,7 +66,7 @@ phase_provision_tari_wallet() { # <phase-rc>
     }
     if ! _ssh "set -eu
 cd /data/pithead
-jq -c '.tari.mode = \"local\" | .tari.view_key = \"$TARI_WALLET_TEST_VIEW_KEY\" | .tari.spend_public_key = \"$TARI_WALLET_TEST_SPEND_KEY\" | .tari.payout_scan_birthday = \"1425\"' config.json >config.json.tari-wallet-test
+jq -c '.tari.mode = \"local\" | .tari.wallet_address = \"$TARI_WALLET_TEST_ADDRESS\" | .tari.view_key = \"$TARI_WALLET_TEST_VIEW_KEY\" | .tari.spend_public_key = \"$TARI_WALLET_TEST_SPEND_KEY\" | .tari.payout_scan_birthday = \"1425\"' config.json >config.json.tari-wallet-test
 mv config.json.tari-wallet-test config.json
 ./pithead apply -y" >/dev/null 2>&1; then
         bad "Tari wallet: ./pithead apply -y did not accept a view key and spend key"
@@ -113,10 +115,12 @@ mv config.json.tari-wallet-test config.json
     else
         bad "Tari wallet: the wallet volume root is owned by '${owner:-unknown}', not uid 1000"
     fi
-    if _ssh "podman exec tari-wallet test -f /var/tari/wallet/mainnet/config/wallet/log4rs.yml" 2>/dev/null; then
-        ok "Tari wallet: the wallet wrote its own config into /var/tari/wallet"
+    # The wallet's base is the active identity's directory under the volume (#3096); Tari appends
+    # the network to it. Ownership above and the persisted database below prove writability.
+    if _ssh "podman exec tari-wallet sh -c 'test -f /var/tari/wallet/payout-\$(cat /var/tari/wallet/.payout-active)/mainnet/config/wallet/log4rs.yml'" 2>/dev/null; then
+        ok "Tari wallet: the wallet wrote its own config into its active identity directory under /var/tari/wallet"
     else
-        bad "Tari wallet: no wallet config under /var/tari/wallet — the volume is not writable"
+        bad "Tari wallet: config not found under the active identity directory of /var/tari/wallet"
     fi
     node="http://$(_ssh "sed -n 's/^TARI_GRPC_ADDRESS=//p' /data/pithead/.env" 2>/dev/null | tr -d '\r\n' | cut -d: -f1):9000"
     # Every process's argv, not PID 1's: the container runs under an init (#2657), so PID 1 is the init.

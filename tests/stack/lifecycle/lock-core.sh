@@ -9,6 +9,8 @@ echo "== unit: the mutation lock serialises mutating windows (#1342) =="
 # re-invocation of pithead inside a hold, and counts nesting correctly.
 LKDIR="$SANDBOX/lock"
 mkdir -p "$LKDIR"
+# These fixtures exercise configured Compose mutations; configless shutdown has its own suite.
+: >"$LKDIR/.env"
 LKBIN="$SANDBOX/lockbin"
 make_stubs "$LKBIN"
 LKFILE="$LKDIR/explicit.lock"
@@ -317,6 +319,10 @@ assert_contains "the mutation it could not serialise still runs" "$(cat "$LKLOG"
 # which is #1059 wearing a green tick.
 LKROOT="$SANDBOX/deploy"
 mkdir -p "$LKROOT/pithead-v1.0.0" "$LKROOT/pithead-v2.0.0" "$LKROOT/plain-a" "$LKROOT/plain-b"
+for lk_fixture in pithead-v1.0.0 pithead-v2.0.0 plain-a plain-b; do
+    : >"$LKROOT/$lk_fixture/.env"
+done
+unset lk_fixture
 # Hold a window in one dir; drive a mutating verb from its sibling. `env -u PITHEAD_LOCK_HELD`
 # because the concurrent actor is a SEPARATE process tree — inheriting the marker would make the
 # child skip the lock entirely and the case would pass without ever contending.

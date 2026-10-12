@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -42,6 +42,7 @@
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #           Closes with a cut mid first-boot image load on a fresh guest (the #1029 class, #2067).
 #   reset   config-reset clears config but preserves the chain and onion through reconfiguration;
+#           a real A/B update then proves wizard, CLI restore and open-setup reboot recovery;
 #           factory-reset's ESP marker then wipes /data and returns a FRESH machine to the wizard;
 #           a corrupt /data superblock drives wedged-/data recovery.
 #   image-upgrade  signed v1.20.0 -> candidate -> exact rollback on guest-local reflink XFS
@@ -67,6 +68,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/secure-boot-boot-verdict.sh"
 # shellcheck source=tests/os/failure-evidence.sh
 . "$SCRIPT_DIR/failure-evidence.sh"
+# shellcheck source=tests/os/staging-failure-evidence.sh
+. "$SCRIPT_DIR/staging-failure-evidence.sh"
 # shellcheck source=tests/os/tor-health-evidence.sh
 . "$SCRIPT_DIR/tor-health-evidence.sh"
 # shellcheck source=tests/os/zero-container-evidence.sh
@@ -96,6 +99,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-diagnostics-leg.sh"
 # shellcheck source=tests/os/appliance-config-approval-leg.sh
 . "$SCRIPT_DIR/appliance-config-approval-leg.sh"
+# shellcheck source=tests/os/appliance-earnings-leg.sh
+. "$SCRIPT_DIR/appliance-earnings-leg.sh"
 # shellcheck source=tests/os/appliance-tari-mode-leg.sh
 . "$SCRIPT_DIR/appliance-tari-mode-leg.sh"
 # shellcheck source=tests/os/caddy-failure-evidence.sh
@@ -134,6 +139,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/control-runner-recovery-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
+# shellcheck source=tests/os/rig-config-meta-wait.sh
+. "$SCRIPT_DIR/rig-config-meta-wait.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
 . "$SCRIPT_DIR/rig-control-off-leg.sh"
 # shellcheck source=tests/os/rig-share-leg.sh
@@ -180,8 +187,12 @@ FAIL=0
 OS_RUN_SUITE=1
 # shellcheck source=tests/os/lib/core.sh
 source "$SCRIPT_DIR/lib/core.sh" || exit $?
+# shellcheck source=tests/os/wizard-redirect-leg.sh
+source "$SCRIPT_DIR/wizard-redirect-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/boot.sh
 source "$SCRIPT_DIR/phases/boot.sh" || exit $?
+# shellcheck source=tests/os/phases/update-spare-slot.sh
+source "$SCRIPT_DIR/phases/update-spare-slot.sh" || exit $?
 # shellcheck source=tests/os/phases/update.sh
 source "$SCRIPT_DIR/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh
@@ -192,6 +203,8 @@ source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
 source "$SCRIPT_DIR/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh
 source "$SCRIPT_DIR/phases/provision.sh" || exit $?
+# shellcheck source=tests/os/phases/setup-defaults.sh
+source "$SCRIPT_DIR/phases/setup-defaults.sh" || exit $?
 # shellcheck source=tests/os/phases/media.sh
 source "$SCRIPT_DIR/phases/media.sh" || exit $?
 # shellcheck source=tests/os/phases/rig.sh
@@ -208,6 +221,8 @@ source "$SCRIPT_DIR/phases/image-upgrade.sh" || exit $?
 source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
 source "$SCRIPT_DIR/phases/stack.sh" || exit $?
+# shellcheck source=tests/os/phases/tor-heal.sh
+source "$SCRIPT_DIR/phases/tor-heal.sh" || exit $?
 require_host
 require_clean_bench
 if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
@@ -235,6 +250,7 @@ boot) _run_phase boot phase_boot ;;
 update) _run_phase update phase_update ;;
 install) _run_phase install phase_install ;;
 provision) _run_phase provision phase_provision ;;
+setup-defaults) _run_phase setup-defaults phase_setup_defaults ;;
 rig) _run_phase rig phase_rig ;;
 rigmedia) _run_phase rigmedia phase_rigmedia ;;
 media) _run_phase media phase_media ;;
@@ -243,6 +259,7 @@ reset) _run_phase reset phase_reset ;;
 image-upgrade) _run_phase image-upgrade phase_image_upgrade ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
 stack) _run_phase stack phase_stack ;;
+tor-heal) _run_phase tor-heal phase_tor_heal ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
@@ -251,6 +268,7 @@ all)
     _run_phase update phase_update
     _run_phase install phase_install
     _run_phase provision phase_provision
+    _run_phase setup-defaults phase_setup_defaults
     _run_phase rig phase_rig
     _run_phase rigmedia phase_rigmedia
     _run_phase media phase_media

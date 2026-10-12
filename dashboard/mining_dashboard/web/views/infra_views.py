@@ -198,26 +198,26 @@ def build_workers(workers, rigforge_release=None):
 
 
 # --------------------------------------------------------------------------------------
-# Energy & profit calculator (Issue #260, Tari revenue #520): fleet power draw + efficiency, and —
-# once the operator sets an electricity price (and an XMR price) — the net profit after power.
-# Setting a Tari price too folds the estimated Tari merge-mining revenue into gross so a Tari
-# merge-miner's net profit isn't silently undercounted (P2Pool-only was the #520 bug). The server
-# totals the measured draw and publishes the prices; the client does the per-day/month/year
-# arithmetic and the net = gross − cost, scaling gross with the same what-if hashrate the earnings
-# card already uses (one source of truth, #61). Deliberately NO price feed for either coin: fetching
-# one is a clearnet egress this privacy-first stack avoids (#160) — an opt-in Tor-routed feed is
-# deferred, see #520 — so all prices are operator-supplied.
+# Energy & profit calculator: the server totals measured/estimated draw and publishes prices;
+# the client projects kWh, cost and gross − cost over day/month/year. P2Pool and priced Tari
+# earnings use the card's shared what-if hashrate. Usable current-tier XvB rewards are tempered
+# by measured delivery before they reach the client. Prices are optional: configured by default,
+# or from the opt-in CoinGecko-over-Tor feed, with configured prices as its fallback.
 # --------------------------------------------------------------------------------------
 
 _ENERGY_DISCLAIMER = (
     "Power draw is measured (RAPL, 15s sample) or your per-worker estimate; a worker reporting "
     "neither is excluded and the fleet total is marked incomplete. kWh and cost extrapolate the "
-    "current draw at a constant rate — a naive projection, not a metered bill. Net profit is "
+    "current draw at a constant rate — a naive projection, not a metered bill. Gross revenue is "
     "P2Pool XMR earnings valued at the XMR price in use (your configured price, or the live "
     "CoinGecko-over-Tor feed when dashboard.energy.price_feed is on), plus Tari merge-mining "
-    "earnings valued at the Tari price when one is set (0/unset counts P2Pool XMR only) — minus "
-    "power cost. XvB stays excluded: it's raffle status, not a clean per-day income estimate. "
-    "Estimates, not guarantees."
+    "earnings when merge-mining and a Tari price are available, plus a fresh current donor-tier "
+    "XvB estimate valued at the same XMR price when usable. XvB is tempered by your wallet's "
+    "measured delivery when enough wins exist, else the measured delivery band's midpoint; "
+    "missing or stale estimates are excluded. Net subtracts power cost and needs both an XMR "
+    "price and an electricity price. Missing prices leave those figures unavailable. Partial "
+    "power coverage understates cost and can overstate net. Mining payouts vary and the XvB "
+    "raffle draw is random among qualifiers. Estimates, not guarantees."
 )
 
 

@@ -73,6 +73,9 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # literal, and one passing `${ev}` from test-control-editable-allowlist.sh's loop over 25
 # spelled-out event names. That one is a loop variable over a fixed list, so the whole class is
 # run-invariant today. #2671 later added two wrappers with 15 calls, all bare literals.
+# #2631 adds sb_audit with eight call sites, all bare string-literal labels. Its invalid-block
+# labels interpolate arg over five fixed inputs (one derived from the committed STACK_BLOCKS),
+# so both additions are invariant for a given tree. No measured or sandbox value reaches them.
 #   * COUNT THE WRAPPERS, NOT THE ROWS. The first pass said "eight wrappers, 55 calls" because it
 #     counted ROWS: a row is <file>|<index>, so test-config.sh|2 collapses three wrappers and
 #     test-rig-worker.sh|3 three more. Twelve and 87 are the numbers the imperative below is about;
@@ -81,15 +84,36 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 #   * `lib.sh|1` is not a call site at all — it is assert_eq/assert_contains/assert_not_contains/
 #     assert_rc forwarding their <label> to ok(); every label funnels through it, so it is listed
 #     for completeness and says nothing about any one domain.
+# #3098 adds raw and verb over literal document/command lists; no measured value.
+# #3043 adds pin_case over the fixed staging/unset/empty/synthetic list; no measured value.
 # WHAT THIS ROW STILL DOES NOT PROVE: it pins the SET of interpolating labels, not the VALUES. A new
 # caller handing one of these wrappers a measured value keeps the set identical and the row green —
 # the caller audit above is a point-in-time reading, not a standing instrument. Re-run it when a
 # wrapper gains callers; that is the residual #1740 could not close and this row does not either.
 # No label in tests/stack uses $* or $#, the special parameters past $@. They are seeded below
 # anyway, so all three have a control that can fail, not two branches that pass by construction.
+# #2936's invalid_port labels use the five literal inputs in test-tor-port-validation.sh.
+# Payout pair labels use fixed chains, vectors, view-key fields, identity/frame states
+# and the wrapper/dropped UID phases with literal -0/-KILL signals.
+# #3099's mono/tari labels use the six literal local/remote/off combinations in the wizard test.
+# #3090's ca_enabled labels use only the fixed true/false toggle loop.
+# #2461's _xp_row labels use fixed surface and true/false loops; the password field
+# is only empty or "set", never the fixture password, an address or a measured value.
+# Boot-media labels use fixed transport/media cases (usb/sata/nvme/fail and
+# usb/internal/absent/unknown), expected usb/internal values, named fixtures, and
+# title rows 1..4; no measured value enters a PASS label.
+# #3278's rcf_status labels range over running/restarting/paused, a fixed status list.
+# #3204's rcm_invalid labels range over four fixed JSON fixtures, never measured input.
+# GRUB labels use only the three literal parameter names and ten literal fixture modes.
+# Reset-slot labels use fixed pending/bad/gate and slot/source/stopped/revoked/rauc cases.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
+test-appliance-boot-labels.sh|expected
+test-appliance-boot-labels.sh|fixture
+test-appliance-boot-labels.sh|medium
+test-appliance-boot-labels.sh|row
+test-appliance-boot-labels.sh|tran
 test-appliance-boot.sh|ph
 test-appliance-hostname.sh|mode
 test-appliance-hostname.sh|op
@@ -99,11 +123,16 @@ test-appliance-identity.sh|1
 test-appliance-identity.sh|f
 test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
+test-appliance-reset-slot.sh|rs_case
+test-appliance-rig-config-merge.sh|rcm_invalid
+test-config-document.sh|raw
+test-config-document.sh|verb
 test-config.sh|2
 test-config.sh|bad_port
 test-config.sh|checked
 test-config.sh|core_checked
 test-confirm-approval.sh|secret_key
+test-connection-announce.sh|ca_enabled
 test-control-add-only-ssrf.sh|2
 test-control-add-only-ssrf.sh|3
 test-control-core.sh|reowned
@@ -115,14 +144,25 @@ test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT
 test-control-secret-and-dial-guards.sh|HOOKS
 test-control-ssrf-host-local.sh|2
+test-doctor-exposure.sh|_xp_row
 test-doctor-surface.sh|_s
 test-doctor.sh|ip
+test-grub-hugepages.sh|mode
+test-grub-hugepages.sh|param
+test-payout-wallet-pairs.sh|chain
+test-payout-wallet-pairs.sh|field
+test-payout-wallet-pairs.sh|k
+test-payout-wallet-pairs.sh|phase
+test-payout-wallet-pairs.sh|signal
+test-payout-wallet-pairs.sh|state
 test-recovery-address-gates.sh|_rag_v
 test-recovery-address-gates.sh|label
+test-release-verify.sh|pin_case
 test-release.sh|comp
 test-release.sh|pin_rel
 test-release.sh|svc
 test-render-quadlet.sh|f
+test-restore-configless.sh|rcf_status
 test-rig-worker.sh|3
 test-secrets-masking.sh|1
 test-secrets.sh|ev
@@ -130,10 +170,16 @@ test-secrets.sh|host_ram_mb
 test-secrets.sh|mem
 test-spool-audit.sh|audit_lines
 test-spool-audit.sh|audit_size
+test-suite-blocks.sh|1
+test-suite-blocks.sh|arg
 test-tor-network.sh|v
+test-tor-port-validation.sh|invalid_port
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
+test-wizard-tari.sh|mono
+test-wizard-tari.sh|size
+test-wizard-tari.sh|tari
 VDEXP
 )"
 mapfile -t stack_fragments < <(find "$ROOT/tests/stack" -type f -name 'test-*.sh' | sort)

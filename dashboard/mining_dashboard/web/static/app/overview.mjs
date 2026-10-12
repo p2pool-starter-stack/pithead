@@ -81,6 +81,12 @@ function NodeStats({ state }) {
 
 function GlobalStats({ state }) {
   const p = state.pool;
+  if (p.syncing)
+    return html`
+    <div class="card card-advanced" id="card-global">
+        <h2>Global P2Pool Stats</h2>
+        <p class="status-warn" role="status">P2Pool is syncing its sidechain</p>
+    </div>`;
   // Headline = the pool's own money/health figures (hashrate, whether it's finding blocks, when
   // it last did); sidechain internals, peers and uptime are reference detail, not a glance figure.
   const headline = html`
@@ -185,8 +191,14 @@ function NetworkCard({ state }) {
 // pool's last block (pool-wide, not a payout to you), the expected time for your hashrate to find a
 // sidechain share, luck, and YOUR PPLNS share-weight (sum of your share difficulty in the window —
 // not p2pool's pool-wide pplnsWeight shown in the node stats).
-function CadenceCard({ cadence }) {
+function CadenceCard({ cadence, syncing }) {
   if (!cadence) return null;
+  if (syncing)
+    return html`
+    <div class="card card-advanced" id="card-cadence">
+        <h2>Pool Cadence & Luck</h2>
+        <p class="status-warn" role="status">P2Pool is syncing its sidechain</p>
+    </div>`;
   return html`
     <div class="card card-advanced" id="card-cadence">
         <h2>Pool Cadence & Luck</h2>

@@ -28,7 +28,6 @@
 #   carries the results-dir-pollution risk the rig-worker cut's token-mask pair hit.
 build_val_sandbox
 DOCKER_LOG="$V/docker.log"
-
 echo "== unit: stack_restart — scoped tor restart (#424) =="
 # `restart` bare restarts the whole stack; `restart tor` restarts ONLY tor (fresh guard
 # selection when clearnet egress is stuck); anything else is rejected — other containers must
@@ -56,7 +55,6 @@ rc=$?
 assert_rc "restart rejects any service but tor/monerod" "$rc" "1"
 assert_contains "restart rejection names the contract" "$out" "takes no argument, 'tor'"
 assert_eq "rejected restart touches no container" "$(cat "$RSTLOG")" ""
-
 echo "== regression: mkdir runs before chown -R of the same tree (#550) =="
 # prepare_directories and reset_dashboard used to `sudo chown -R` a data dir tree and only THEN
 # `mkdir -p` inside it (the p2pool stats subdir) — EACCES for any operator uid != APP_UID, since
@@ -156,40 +154,8 @@ PATH="$EO/findbin:$PATH" run_sourced "$EO" ensure_owner "$EO/tree" "$myuid" "$my
 assert_not_contains "the ownership scan is recursive (no -maxdepth)" "$(cat "$EO/find.log")" "-maxdepth"
 assert_contains "the ownership scan keys off foreign uid" "$(cat "$EO/find.log")" "! -uid $myuid"
 
-echo "== black-box: 'pithead up' under the migration hold starts everything but the chain (#851) =="
-# PITHEAD_HOLD_CHAIN=1 is set by the appliance boot path on the first boot of a data_migration
-# bundle: the chain services (the lmdb holders) must not start before the A/B slot commits. The
-# compose service list comes from a dedicated stub because the shared one answers nothing for
-# `compose config --services`, and stack_status's tests rely on exactly that.
-HCB="$SANDBOX/hold-chain-bin"
-mkdir -p "$HCB"
-cat >"$HCB/docker" <<'EOF'
-#!/usr/bin/env bash
-echo "[docker] $*" >> "${DOCKER_LOG:-/dev/null}"
-case "$*" in
-"compose config --services") printf 'tor\nmonerod\ntari\nwallet-rpc\ntari-wallet\np2pool\nxmrig-proxy\ncaddy\ndashboard\n' ;;
-esac
-exit 0
-EOF
-chmod +x "$HCB/docker"
-HOLD_LOG=$(mktemp)
-seed_env
-out="$(cd "$V" && DOCKER_LOG="$HOLD_LOG" PATH="$HCB:$V/bin:$PATH" PITHEAD_HOLD_CHAIN=1 ./pithead up 2>&1)"
-assert_rc "up succeeds under the hold" "$?" "0"
-assert_contains "the hold is announced for the journal" "$out" "holding chain services"
-up_line=$(grep "compose up" "$HOLD_LOG" | tail -1)
-assert_contains "tor still starts under the hold" "$up_line" "tor"
-assert_contains "p2pool still starts under the hold" "$up_line" "p2pool"
-assert_contains "the dashboard still starts under the hold" "$up_line" "dashboard"
-assert_not_contains "monerod is withheld" "$up_line" "monerod"
-assert_not_contains "tari and tari-wallet are withheld" "$up_line" "tari"
-assert_not_contains "wallet-rpc is withheld" "$up_line" "wallet-rpc"
-# Without the env the same sandbox starts the whole stack — the hold is opt-in per boot.
-HOLD_LOG2=$(mktemp)
-(cd "$V" && DOCKER_LOG="$HOLD_LOG2" PATH="$HCB:$V/bin:$PATH" ./pithead up >/dev/null 2>&1)
-up_line2=$(grep "compose up" "$HOLD_LOG2" | tail -1)
-assert_not_contains "a plain up names no service subset" "$up_line2" "p2pool"
-rm -f "$HOLD_LOG" "$HOLD_LOG2"
+# shellcheck source=tests/stack/lifecycle/migration-hold.sh
+source "$HERE/lifecycle/migration-hold.sh" || return $?
 
 # Healthchecks.io (#79): absent => no ping URL (off).
 seed_env
@@ -255,7 +221,7 @@ case "$*" in
   "exec tor cat /var/lib/tor/monero/hostname") echo "mona.onion"; exit 0 ;;
   "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion"; exit 0 ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion"; exit 0 ;;
-  "compose up --pull never -d --remove-orphans") [ "${FAIL_UP:-0}" = "1" ] && exit 1 || exit 0 ;;
+  "compose up --pull never -d --remove-orphans"|"compose up --pull never -d --no-deps dashboard") [ "${FAIL_UP:-0}" = "1" ] && { echo "engine refused: $*"; exit 1; } || exit 0 ;;
 esac
 exit 0
 EOF
@@ -272,24 +238,24 @@ COMPOSE_PROFILES=local_node
 EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$A/config.json"
 # First apply: real config delta committed, but `compose up` FAILS -> marker left, rc 1, guidance.
-out="$(cd "$A" && FAIL_UP=1 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
+out="$(cd "$A" && DOCKER_LOG="$A/docker.log" FAIL_UP=1 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
 assert_rc "apply fails (rc 1) when compose up fails" "$rc" "1"
 assert_contains "apply prints recovery guidance" "$out" "were NOT recreated"
-if [ -f "$A/.env.apply-incomplete" ]; then mk=present; else mk=absent; fi
-assert_eq "apply leaves the incomplete marker" "$mk" "present"
-# Second apply: config already committed (no delta), but the marker forces a retry, not a silent no-op.
-out="$(cd "$A" && FAIL_UP=0 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_eq "apply leaves the incomplete and caddy-restart markers (#3332)" "$(find "$A" -maxdepth 1 \( -name .env.apply-incomplete -o -name .env.caddy-restart-pending \) | wc -l)" "2"
+assert_contains "a failed dashboard-alone restart (#3300) shows the engine's reason" "$out" "engine refused: compose up --pull never -d --no-deps dashboard"
+# Second apply: no delta, but the marker forces a retry that must also restart caddy, which the failed run never did (#3332).
+: >"$A/docker.log"
+out="$(cd "$A" && DOCKER_LOG="$A/docker.log" FAIL_UP=0 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
 assert_rc "re-apply retries and succeeds (rc 0)" "$rc" "0"
 assert_contains "re-apply re-attempts the recreate" "$out" "retrying"
-if [ -f "$A/.env.apply-incomplete" ]; then mk=present; else mk=absent; fi
-assert_eq "marker cleared after a successful retry" "$mk" "absent"
+assert_contains "re-apply restarts caddy the failed run never restarted" "$(cat "$A/docker.log")" "compose restart caddy"
+assert_eq "markers cleared after a successful retry" "$(find "$A" -maxdepth 1 \( -name .env.apply-incomplete -o -name .env.caddy-restart-pending \) | wc -l)" "0"
 
 echo "== black-box: compose_up_checked retries a transient container-state race once (#2293) =="
-# A docker stub that fails `compose up` with the exact state-conflict shape observed on bench-ci job
-# 388 (a container still mid-transition from its own prior start) on the FIRST call only, then
-# succeeds — proving the retry happens inside a single apply, not across a second dashboard commit.
+# A docker stub that fails `compose up` with the state-conflict shape seen on bench-ci job 388 on the
+# FIRST call only, then succeeds — the retry happens inside a single apply, not a second commit.
 R2="$SANDBOX/racecompose"
 mkdir -p "$R2/build/tari" "$R2/dashboard" "$R2/bin" "$R2/data/monero" "$R2/data/tari" "$R2/data/p2pool/stats" "$R2/data/tor" "$R2/data/dashboard"
 : >"$R2/dashboard/Dockerfile"
@@ -344,6 +310,7 @@ RL="$SANDBOX/reloc"
 mkdir -p "$RL/bin"
 cp "$STACK" "$RL/pithead"
 make_stubs "$RL/bin"
+printf '{}\n' >"$RL/config.json"
 # Deployed, but .env names data dirs that don't exist — as if the install was moved/copied or a
 # second checkout is being run. The stack would silently re-sync; `up` must warn first.
 cat >"$RL/.env" <<EOF

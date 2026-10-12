@@ -1,14 +1,8 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Dashboard domain (#1105 Phase 1, appliance lane): the dashboard's own login (Caddy basic_auth
-# enable/disable/change previews plus the actual basic_auth block in the rendered Caddyfile, #8),
-# generate_caddyfile's scheme/port/Host-header render (secure vs. plain HTTP; a custom HOST_PORT
-# moving the vhost off 80/443; the :80 redirect's and :443's own catch-alls so an unmatched Host
-# never falls through to Caddy's silent empty-200 default, #1123/#1132/#740), the v2 global-address
-# guard that keeps a globally-routable address off both the site list AND the `bind` line — Caddy
-# runs a single wildcard listener that matches on Host content alone, so filtering the site list is
-# not sufficient — and dashboard_sync_progress's one-curl re-render of /api/state behind `pithead
-# status` (#384).
+# The global-address guard fences both site names AND bind addresses: Caddy's wildcard
+# listener matches Host content, so filtering only the site list is insufficient.
+# dashboard_sync_progress re-renders /api/state with one curl (#384).
 #
 # The dashboard-onion cluster (vhost render, client-auth crypto, rotate/upgrade/apply capture
 # flows, status) is its own domain in test-dashboard-onion.sh, conventionally sourced after this
@@ -518,7 +512,7 @@ exit "${CURL_RC:-0}"
 EOF
 chmod +x "$SP/bin/curl"
 # Monero mid-sync + Tari still discovering its target height: both surface, monero with numbers.
-sp_body='{"sync":{"monero":{"state":"syncing","percent":87,"current":2451000,"target":2810000,"remaining":359000},"tari":{"state":"loading","percent":0,"current":0,"target":0,"remaining":0}}}'
+sp_body='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":87,"current":2451000,"target":2810000,"remaining":359000},"tari":{"state":"loading","percent":0,"current":0,"target":0,"remaining":0}}}'
 out="$(CURL_BODY="$sp_body" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: monero syncing shows percent + blocks-to-go" "$out" "87% (2451000 / 2810000 blocks, 359000 to go)"
 assert_contains "sync progress: no-target chain reads as discovering" "$out" "discovering the target height"
@@ -528,7 +522,7 @@ sp_done='{"sync":{"monero":{"state":"done","percent":100,"current":10,"target":1
 assert_eq "sync progress: both synced -> silent" \
     "$(CURL_BODY="$sp_done" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
 # Only monero still syncing: the synced tari is omitted (not listed as done).
-sp_partial='{"sync":{"monero":{"state":"syncing","percent":42,"current":100,"target":238,"remaining":138},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
+sp_partial='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":42,"current":100,"target":238,"remaining":138},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
 out="$(CURL_BODY="$sp_partial" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: partial -> monero listed" "$out" "monero"
 assert_not_contains "sync progress: partial -> synced tari omitted" "$out" "tari"
@@ -554,6 +548,7 @@ hash1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_HASH_B64)"
 fp1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)"
 [ -n "$hash1" ] && ok "auth hash persisted (base64)" || bad "auth hash persisted (base64)" "empty"
 [ -n "$fp1" ] && ok "auth fingerprint persisted" || bad "auth fingerprint persisted" "empty"
+assert_contains "auth hashing disables container logs" "$(cat "$AUTH_LOG")" "run --rm -i --log-driver none "
 assert_contains "auth hashed via the pinned caddy image" "$(cat "$AUTH_LOG")" "hash-password"
 assert_not_contains "auth password stays out of docker argv" "$(cat "$AUTH_LOG")" "hunter2hunter2"
 assert_contains "Caddyfile gains basic_auth" "$(cat "$V/Caddyfile")" "basic_auth"
@@ -577,6 +572,7 @@ esac
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "proxy":{"donate_level":1}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"freshpass99"}} }\n' "$WALLET" >"$V/config.json"
 : >"$AUTH_LOG"
 out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_contains "password rotation disables container logs" "$(cat "$AUTH_LOG")" "run --rm -i --log-driver none "
 assert_contains "changed password re-hashes" "$(cat "$AUTH_LOG")" "hash-password"
 assert_eq "changed password updates fingerprint" "$([ "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)" != "$fp1" ] && echo changed)" "changed"
 assert_contains "auth change recreates caddy" "$(cat "$AUTH_LOG")" "restart caddy"
@@ -589,3 +585,7 @@ case "$(cat "$V/Caddyfile")" in
 *basic_auth*) bad "auth disable drops basic_auth" "basic_auth still present in the Caddyfile" ;;
 *) ok "auth disable drops basic_auth" ;;
 esac
+
+# Required Tari failover distinguishes long RPC outages from live progress.
+assert_contains "Tari-required preview names the outage window" "$(run_sourced "$SANDBOX" describe_change TARI_REQUIRED false true)" "15-minute Tari RPC outage"
+assert_contains "Tari-required preview exempts progress states" "$(run_sourced "$SANDBOX" describe_change TARI_REQUIRED false true)" "startup, migration and syncing only alert"

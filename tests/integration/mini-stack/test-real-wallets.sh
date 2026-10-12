@@ -94,3 +94,47 @@ compose up -d --no-deps wallet-rpc tari-wallet
 probe monero "$MONERO_ADDR" match
 probe tari "$TARI_ADDR" match
 echo 'PASS: both pinned wallets initialize on fresh volumes and answer with the configured addresses'
+
+# Real persisted wallets must change, revert and adopt their legacy layout without recreation.
+# shellcheck source=tests/integration/fixtures/payout-pairs.sh
+source "$ROOT/tests/integration/fixtures/payout-pairs.sh"
+monero_inode() { compose exec -T wallet-rpc sh -c 'd=${WALLET_DIR:-/home/ubuntu/wallets}; stat -c %i "$d/payout-wallet-$(cat "$d/.payout-active").keys"'; }
+tari_inode() { compose exec -T tari-wallet sh -c 'find "$WALLET_DIR/payout-$(cat "$WALLET_DIR/.payout-active")" -name console_wallet.db -exec stat -c %i {} \;'; }
+MI="$(monero_inode)" TI="$(tari_inode)"
+[ -n "$MI" ] && [ -n "$TI" ]
+export MONERO_WALLET_ADDRESS="$PAYOUT_MONERO2" TARI_WALLET_ADDRESS="$PAYOUT_TARI2" MONERO_VIEW_KEY="$PAYOUT_VIEW2"
+write_tari_secret "$PAYOUT_VIEW2"
+compose up -d --no-deps wallet-rpc tari-wallet
+probe monero "$PAYOUT_MONERO2" match
+probe tari "$PAYOUT_TARI2" match
+[ "$(monero_inode)" != "$MI" ] && [ "$(tari_inode)" != "$TI" ]
+export MONERO_WALLET_ADDRESS="$PAYOUT_MONERO1" TARI_WALLET_ADDRESS="$PAYOUT_TARI1" MONERO_VIEW_KEY="$PAYOUT_VIEW1"
+write_tari_secret "$PAYOUT_VIEW1"
+compose up -d --no-deps wallet-rpc tari-wallet
+probe monero "$PAYOUT_MONERO1" match
+probe tari "$PAYOUT_TARI1" match
+[ "$(monero_inode)" = "$MI" ] && [ "$(tari_inode)" = "$TI" ]
+compose exec -T wallet-rpc test ! -e /tmp/gen.json
+echo 'PASS: both pinned wallets reopen the retained inode after change and revert'
+
+# Manufacture the former layout from the actual saved wallets, with both daemons stopped.
+compose stop wallet-rpc tari-wallet
+compose run --rm --no-deps --entrypoint sh wallet-rpc -c '
+    WALLET_DIR=${WALLET_DIR:-/home/ubuntu/wallets}
+    f="$WALLET_DIR/payout-wallet-$(cat "$WALLET_DIR/.payout-active")"
+    mv "$f.keys" "$WALLET_DIR/payout-wallet.keys"
+    mv "$f" "$WALLET_DIR/payout-wallet"
+    rm -f "$WALLET_DIR/.payout-active" "$WALLET_DIR/.legacy-wallet-identity"
+'
+compose run --rm --no-deps --entrypoint sh tari-wallet -c '
+    f="$WALLET_DIR/payout-$(cat "$WALLET_DIR/.payout-active")"
+    for entry in "$f"/*; do mv "$entry" "$WALLET_DIR/"; done
+    rmdir "$f"
+    rm -f "$WALLET_DIR/.payout-active" "$WALLET_DIR/.legacy-wallet-identity"
+'
+compose up -d --no-deps wallet-rpc tari-wallet
+probe monero "$PAYOUT_MONERO1" match
+probe tari "$PAYOUT_TARI1" match
+[ "$(monero_inode)" = "$MI" ] && [ "$(tari_inode)" = "$TI" ]
+compose exec -T wallet-rpc test ! -e /tmp/gen.json
+echo 'PASS: both pinned wallets adopt the legacy cache/database without creating another wallet'

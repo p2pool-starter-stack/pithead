@@ -196,3 +196,27 @@ class TestAdoptGuardOnPreview:
             "/api/control/preview", json={"config": proposed}, headers=CONTROL_HEADERS
         )
         assert resp.status == 202
+
+
+class TestFleetApiPortGuardOnPreview:
+    """#3358: an out-of-range fleet workers.api_port never reaches the spool, so never the APPLY gate."""
+
+    @pytest.mark.parametrize("port", [0, 65536, -1, True, 80.5, "8080"])
+    async def test_invalid_port_refused_before_spooling(self, control_client, control_spool, port):
+        resp = await control_client.post(
+            "/api/control/preview",
+            json={"config": {"workers": {"api_port": port}}},
+            headers=CONTROL_HEADERS,
+        )
+        assert resp.status == 400
+        assert "workers.api_port" in await resp.text()
+        assert list((control_spool / "requests").glob("*.json")) == []
+
+    @pytest.mark.parametrize("port", [1, 65535])
+    async def test_boundary_port_reaches_the_spool(self, control_client, control_spool, port):
+        resp = await control_client.post(
+            "/api/control/preview",
+            json={"config": {"workers": {"api_port": port}}},
+            headers=CONTROL_HEADERS,
+        )
+        assert resp.status == 202

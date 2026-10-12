@@ -1,8 +1,27 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 _pred_rig_present() { # <rig-name>
-    local s
-    s="$(api_state)"
+    local s rc=0
+    s="$(api_state)" || rc=$?
+    # Correlate normalized warning identities in memory only; never persist this raw poll.
+    _RIG_SETUP_STATE="$s"
+    # Keep only typed, allowlisted observations from this exact poll, never a raw worker/name.
+    _RIG_SETUP_SAMPLE="$(printf '%s' "$s" | jq -Rsc --arg n "$1" --argjson rc "$rc" \
+        --arg utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+        def bool: if type == "boolean" then . else null end;
+        (try fromjson catch null) as $s |
+        (if ($s | type) == "object" and ($s.workers | type) == "array"
+         then first($s.workers[] | objects | select(.name == $n)) // null else null end) as $w |
+        {sampled_utc:$utc, state_transport_exit:$rc,
+         state_valid:(($s | type) == "object" and ($s.workers | type) == "array"),
+         worker_found:($w != null),
+         status:($w.status | if . == "online" or . == "offline" then . else null end),
+         api_ok:($w.api_ok | bool), adopted:($w.adopted | bool),
+         rigforge_present:(($w.rigforge | type) == "object"),
+         version_present:($w.rigforge.version != null), stale:($w.rigforge.stale | bool),
+         generated_at:($w.rigforge.generated_at | if type == "string" then
+             if test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$") then . else null end
+             else null end)}' 2>/dev/null)" || _RIG_SETUP_SAMPLE='{"state_valid":false}'
     [ -n "$s" ] || return 1
     [ -n "$(printf '%s' "$s" | jq -r --arg n "$1" 'first(.workers[]? | select(.name==$n and .rigforge.version != null) | .name) // empty' 2>/dev/null)" ]
 }
