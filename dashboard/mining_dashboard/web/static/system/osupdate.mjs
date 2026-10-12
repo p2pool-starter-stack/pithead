@@ -14,7 +14,14 @@
 
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
-import { osBadgeLabel, rebootAskPane, rebootConfirmPane, vtag } from "./osreboot.mjs";
+import {
+  hostAnswered,
+  osBadgeLabel,
+  rebootAskPane,
+  rebootConfirmPane,
+  vtag,
+  waitForDashboard,
+} from "./osreboot.mjs";
 import { verdictText } from "./osverdict.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
@@ -141,15 +148,7 @@ export class OsUpdateControl extends Component {
     this.modalRef = createRef();
   }
   componentDidUpdate() {
-    // A terminal host verdict supersedes the local Rebooting phase: the reconnect loop gives up
-    // after its bounded attempts and never clears it, so a tab that outlived the outage would
-    // stay trapped behind a modal the host has already answered. A verdict that predates this
-    // reboot (same ts) is not an answer; a still-pending reboot keeps showing Rebooting.
-    if (this.state.phase !== "rebooting") return;
-    const os = this.props.os;
-    const v = os && os.verdict;
-    const terminal = v && (v.outcome === "updated" || v.outcome === "rolled_back");
-    if (os && os.step === "idle" && terminal && v.ts !== this.rebootVerdictTs)
+    if (this.state.phase === "rebooting" && hostAnswered(this.props.os, this.rebootVerdictTs))
       this.setState({ phase: "closed", confirmText: "" });
   }
   cancel() {
@@ -283,22 +282,9 @@ export class OsUpdateControl extends Component {
     this.reconnect();
   }
 
-  // The static "reconnecting" behaviour: poll until the dashboard answers again, then reload —
-  // the fresh state carries the post-reboot verdict banner.
-  async reconnect(max = 300) {
-    for (let i = 0; i < max; i++) {
-      await new Promise((r) => setTimeout(r, POLL_MS));
-      if (this.state.phase !== "rebooting") return; // the host's verdict already answered
-      try {
-        const res = await fetch("/api/state?range=1h");
-        if (res.ok) {
-          window.location.reload();
-          return;
-        }
-      } catch {
-        /* still rebooting */
-      }
-    }
+  // Poll until the dashboard answers again, then reload (the fresh state carries the verdict).
+  reconnect(max = 300) {
+    return waitForDashboard(() => this.state.phase === "rebooting", POLL_MS, max);
   }
 
   renderBody() {

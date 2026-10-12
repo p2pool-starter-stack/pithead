@@ -334,33 +334,6 @@ test("reboot() still reconnects when the host actually accepts the reboot", asyn
   assert.equal(reconnectCalled, true);
 });
 
-test("a terminal host verdict supersedes the local Rebooting phase (#3415)", () => {
-  const verdict = (outcome, ts) => ({ outcome, from: "1.0.0", to: "2.0.0", ts });
-  const cases = [
-    // [props.os, phase before, rebootVerdictTs, expected phase]
-    [{ step: "idle", verdict: verdict("updated", 1) }, "rebooting", undefined, "closed"],
-    [{ step: "idle", verdict: verdict("rolled_back", 2) }, "rebooting", undefined, "closed"],
-    // a genuinely pending reboot keeps showing Rebooting
-    [{ step: "reboot-pending", version: "2.0.0" }, "rebooting", undefined, "rebooting"],
-    [{ step: "idle" }, "rebooting", undefined, "rebooting"],
-    // the verdict of an earlier update is not this reboot's answer
-    [{ step: "idle", verdict: verdict("updated", 1) }, "rebooting", 1, "rebooting"],
-    // only the Rebooting phase is superseded
-    [{ step: "idle", verdict: verdict("updated", 1) }, "error", undefined, "error"],
-  ];
-  for (const [os, phase, ts, want] of cases) {
-    const c = inst({ os, enabled: true });
-    c.state.phase = phase;
-    c.rebootVerdictTs = ts;
-    let next = null;
-    c.setState = (patch) => {
-      next = patch.phase;
-    };
-    c.componentDidUpdate();
-    assert.equal(next ?? phase, want, JSON.stringify([os, phase, ts]));
-  }
-});
-
 test("Download with only a passive badge asks the host to check before it downloads", async () => {
   // The first thing a fresh appliance ever does with this feature. target.json is written only by
   // os-check, so a download posted straight off the passive badge is refused by the host and the
