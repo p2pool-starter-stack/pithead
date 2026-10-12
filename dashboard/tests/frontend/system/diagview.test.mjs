@@ -369,3 +369,18 @@ test("the browser service list has not drifted from the host's allowlist", () =>
   assert.ok(!DIAG_CONTAINERS.includes("wallet-rpc"));
   assert.ok(!DIAG_CONTAINERS.includes("tari-wallet"));
 });
+
+
+test("saturated Tor history is a failing Tor diagnostic with the operator recovery command", () => {
+  const message = "Tor's circuit-build-time history is saturated and clearnet egress stays down after the heal's NEWNYM rounds — NEWNYM cannot clear it. Run './pithead tor-recover check', then './pithead tor-recover apply'.";
+  const doctor = { checks: [{ status: "fail", message }] };
+  const tor = groupDoctorRows(doctor).services.find(({ name }) => name === "tor");
+  assert.equal(tor.status, "fail");
+  assert.deepEqual(tor.checks, [{ status: "fail", message }]);
+  const panel = inst({}, { healthPhase: "done", healthResult: { doctor } });
+  const out = renderToString(panel.renderService(tor, true));
+  assert.match(out, /saturated/);
+  assert.match(out, /status-bad/);
+  assert.match(out, /pithead tor-recover check/);
+  assert.match(out, /pithead tor-recover apply/);
+});

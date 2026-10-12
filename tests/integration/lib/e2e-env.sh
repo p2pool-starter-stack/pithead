@@ -11,9 +11,9 @@
 #
 #   workers-offline    skip-accounting.sh assert_mining_state: a --check run found 0 workers
 #                      online. bench-ci accepts it in its check mode only.
-#   tari-not-done      e2e.sh wait_synced (deploy_branch's post-deploy wait) gave up, or the readiness
-#                      phase's `Tari is synced` assertion (run-scenario.sh) refused, with the Tari
-#                      panel still loading or syncing. bench-ci retries this one once.
+#   tari-not-done      e2e.sh wait_synced (deploy_branch's post-deploy wait) gave up with the Tari
+#                      panel still loading or syncing, or the readiness phase (run-scenario.sh)
+#                      failed on its `Tari is synced` row alone. bench-ci retries this one once.
 #   tari-sync-timeout  lib.sh assert_tari_synced_required failed on a Tari still loading or syncing
 #                      after wait_tari_synced timed out, in local-pruned-main-secure-tari only.
 #   readiness          detached-harness.sh harness_pregate: the readiness phase refused the

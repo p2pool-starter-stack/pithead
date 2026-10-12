@@ -2,8 +2,8 @@
 other config edit uses, no new write route — pre-validates a proposal's newly-appended
 ``workers.list[]`` entries before it ever spools to the host-side runner.
 
-This is the dashboard's own defense-in-depth mirror of pithead's ``control_approval_gate`` add-only
-exception (the actual security authority, exercised at commit); these tests prove the mirror is
+This is the dashboard's own defense-in-depth mirror of pithead's ``control_worker_append`` append-only
+check (the actual security authority, run at preview and at commit); these tests prove the mirror is
 WIRED IN to the real request handler, not just correct in isolation (that's
 ``tests/service/workers/test_worker_adopt.py``). Each rejection test would pass right through (200/202,
 request spooled) if the guard call in ``handle_control_preview`` were removed or its condition
@@ -188,11 +188,35 @@ class TestAdoptGuardOnPreview:
     ):
         # The adopt guard only pre-validates NEW entries — repointing an EXISTING one isn't "new"
         # (test_worker_adopt.py proves that at the unit level), so it must sail past this guard
-        # and reach the spool. The host's own add-only gate is the one that refuses it, at commit
+        # and reach the spool. The host's own add-only gate is the one that refuses it, at preview
         # (bash-side, not exercised here) — this test only pins that this guard doesn't double up
         # on that job and accidentally block something it was never meant to police.
         proposed = _proposed([{**LIVE_RIG1, "host": "ATTACKER"}])
         resp = await control_client.post(
             "/api/control/preview", json={"config": proposed}, headers=CONTROL_HEADERS
+        )
+        assert resp.status == 202
+
+
+class TestFleetApiPortGuardOnPreview:
+    """#3358: an out-of-range fleet workers.api_port never reaches the spool, so never the APPLY gate."""
+
+    @pytest.mark.parametrize("port", [0, 65536, -1, True, 80.5, "8080"])
+    async def test_invalid_port_refused_before_spooling(self, control_client, control_spool, port):
+        resp = await control_client.post(
+            "/api/control/preview",
+            json={"config": {"workers": {"api_port": port}}},
+            headers=CONTROL_HEADERS,
+        )
+        assert resp.status == 400
+        assert "workers.api_port" in await resp.text()
+        assert list((control_spool / "requests").glob("*.json")) == []
+
+    @pytest.mark.parametrize("port", [1, 65535])
+    async def test_boundary_port_reaches_the_spool(self, control_client, control_spool, port):
+        resp = await control_client.post(
+            "/api/control/preview",
+            json={"config": {"workers": {"api_port": port}}},
+            headers=CONTROL_HEADERS,
         )
         assert resp.status == 202

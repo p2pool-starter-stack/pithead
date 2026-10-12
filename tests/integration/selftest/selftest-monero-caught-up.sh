@@ -32,7 +32,7 @@
 # HOW THIS FILE MEASURES. Part A runs the REAL snippet — `rx` in `IT_MODE=local` against a fake box
 # directory, with a fake `curl` on PATH and the REAL `jq`. Nothing about `monero_caught_up` is
 # stubbed, so the rows exercise the shipped text rather than a paraphrase of it. Part B lifts the
-# two shipped classification lines OUT of run.sh by `grep` and `eval`s them against a stubbed
+# shipped classification lines/blocks OUT of run.sh and `eval`s them against a stubbed
 # predicate; it therefore cannot pass against a run.sh that has been rewritten back to two-valued.
 #
 # PROVEN ABLE TO FAIL — five mutations, each RE-RUN against the text that actually shipped, and
@@ -91,6 +91,7 @@ cat >"$FAKEBIN/curl" <<'CURL_EOF'
 #!/bin/sh
 # Stands in for the dial only. FAKE_CURL_BODY empty + a nonzero rc is what a refused connection, a
 # timeout, a 401 under -f and any non-2xx all look like to the caller: no body on stdout.
+[ -z "${FAKE_CURL_EXPECT_URL:-}" ] || case " $* " in *" $FAKE_CURL_EXPECT_URL "*) ;; *) exit 3 ;; esac
 [ -n "${FAKE_CURL_BODY:-}" ] && printf '%s' "$FAKE_CURL_BODY"
 exit "${FAKE_CURL_RC:-0}"
 CURL_EOF
@@ -152,6 +153,10 @@ printf 'MONERO_NODE_USERNAME=rpcuser\nMONERO_NODE_PASSWORD=rpcpass\n' >>"$BOX/.e
 assert_rc "the authenticated dial classifies could-not-ask too" "$(_mcu_rc '' 7)" "2"
 assert_rc "the authenticated dial still answers caught-up" "$(_mcu_rc '{"status":"OK","synchronized":true,"target_height":800000}' 0)" "0"
 
+printf '{"monero":{"mode":"remote","remote":{"host":"fd00::10","rpc_port":28081}}}\n' >"$BOX/config.json"
+assert_rc "legacy remote IPv6 fallback brackets the host" \
+    "$(FAKE_CURL_EXPECT_URL='http://[fd00::10]:28081/get_info' _mcu_rc '{"status":"OK","synchronized":true}' 0)" "0"
+
 # --- Part B: the SHIPPED classification lines ---------------------------------------------------
 # Lifted out of run.sh by grep rather than restated here. A copy of the mapping written into this
 # file would be an assertion sourced from the thing it tests; lifting the real line means a run.sh
@@ -161,6 +166,10 @@ _classify() { # <shipped line> <rc monero_caught_up returns>
     # shellcheck disable=SC2329  # all three stubs are reached indirectly, by the `eval` below
     (
         monero_caught_up() { return "$MC_RC"; }
+        wait_for() {
+            shift 3
+            "$@"
+        }
         it_pass() { printf 'PASS|%s|\n' "$1"; }
         it_fail() { printf 'FAIL|%s|%s\n' "$1" "${2:-}"; }
         eval "$1"
@@ -175,7 +184,11 @@ for _site in "assert_running_state:monerod reports synced (RPC)" "readiness:Mone
     # under test. An anchor carrying `elif [ $? = 1 ]` would make every mutation of the mapping red
     # this presence row instead of the classification rows below — the guard would mask the
     # measurement, and a battery would read as firing while proving nothing about the mapping.
-    _line="$(grep -F 'monero_caught_up' "$HERE/../run.sh" "$HERE/../lib"/run-*.sh | sed 's/^[^:]*://' | grep -F "it_pass \"$_anchor\"")"
+    if [ "$_name" = readiness ]; then
+        _line="$(sed -n '/^_pred_readiness_monero() {$/,/^}$/p; /^    local monero_bound=/,/^    fi$/p' "$HERE/../lib/run-scenario.sh")"
+    else
+        _line="$(grep -F 'monero_caught_up' "$HERE/../run.sh" "$HERE/../lib"/run-*.sh | sed 's/^[^:]*://' | grep -F "it_pass \"$_anchor\"")"
+    fi
     if [ -z "$_line" ]; then
         it_fail "$_name: the call site is present in run.sh" "no monero_caught_up line carrying: $_anchor"
         continue

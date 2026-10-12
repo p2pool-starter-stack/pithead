@@ -1,0 +1,10 @@
+-N DOCKER-USER
+-A DOCKER-USER -m comment --comment pithead-tor-egress -m conntrack --ctstate RELATED,ESTABLISHED --ctdir REPLY -j ACCEPT
+-A DOCKER-USER -s 172.28.0.25/32 -m comment --comment pithead-tor-egress -j ACCEPT
+-A DOCKER-USER -s 172.28.0.0/24 -d 10.0.0.0/8 -m comment --comment pithead-tor-egress -j ACCEPT
+-A DOCKER-USER -s 172.28.0.0/24 -d 172.16.0.0/12 -m comment --comment pithead-tor-egress -j ACCEPT
+-A DOCKER-USER -s 172.28.0.0/24 -d 192.168.0.0/16 -m comment --comment pithead-tor-egress -j ACCEPT
+-A DOCKER-USER -s 172.28.0.0/24 -d 100.64.0.0/10 -m comment --comment pithead-tor-egress -j ACCEPT
+-A DOCKER-USER -s 172.28.0.0/24 -p tcp -m comment --comment pithead-tor-egress -m conntrack --ctstate ESTABLISHED -j REJECT --reject-with tcp-reset
+-A DOCKER-USER -s 172.28.0.0/24 -m comment --comment pithead-tor-egress -j DROP
+-A DOCKER-USER -j RETURN

@@ -1,37 +1,30 @@
 # --- Tor-only egress enforcement (#270) ---------------------------------------------------------
-# Fail-closed host firewall so a misconfigured/buggy bridge daemon (monerod/p2pool/tari/xmrig-proxy)
-# CAN'T leak the home IP: each may reach the LAN, the other containers and the Tor SOCKS, but any
-# DIRECT clearnet dial is DROPPED — only the `tor` container reaches the internet. Rules live in
-# Docker's DOCKER-USER chain (preserved across Docker restarts), installed BEFORE containers start on
-# every path that brings a clearnet-capable app up — `up`, `upgrade`, `apply`, `reset-dashboard` (so
-# there is no startup window to grandfather a leak past) — and removed at `down`. Needs
-# root (sudo), like the GRUB/HugePages steps. The allow-set is IPv4 (mining_net is IPv4-only by
-# design); the nft backend also fences IPv6 off the mining bridge if mining_net ever gains a v6
-# subnet, so the backstop can't silently fail open. Opt out with
-# network.tor_egress_firewall=false. Proven by tests/integration/benchmarks/bench-verify-egress.sh.
-# See docs/privacy.md.
+# Host firewall installed before container starts. The selected node syncs may use
+# their fixed IPv4 addresses until their markers are written; all other public dials are
+# dropped. The nft backend also fences IPv6. See docs/privacy.md.
 #
-# Two enforcement backends, one allow-set. Docker adds a `FORWARD -> DOCKER-USER` jump when it
-# creates a network, so on the DIY/Docker channel the rules live in DOCKER-USER (iptables). The
-# appliance runs podman + netavark, which never adds that jump — DOCKER-USER is orphaned there and
-# the DROP never fires. On the podman path we instead install an independent `inet pithead_egress`
-# nftables table hooked at forward priority -5 (ahead of netavark's priority-0 accept), owning no
-# chain shared with netavark so it survives netavark reprogramming its own table. apply/remove/doctor
-# all branch on container_engine.
+# Docker uses DOCKER-USER; podman/netavark uses an independent nft forward hook at priority -5.
+# apply/remove/doctor select the backend through container_engine.
 TOR_EGRESS_TAG="pithead-tor-egress"
 TOR_EGRESS_NFT_TABLE="pithead_egress"
 
 # Ordered iptables rule bodies (no chain/comment) for <subnet> <tor_ip>. Pure (args only) so it
-# unit-tests; ACCEPTs first, DROP last — the order is load-bearing.
-tor_egress_rules() { # <subnet> <tor_ip>
-    local subnet="$1" tor_ip="$2"
+# unit-tests; ACCEPTs first, DROP last — the order is load-bearing. conntrack accepts REPLIES only,
+# and an app's own established TCP flow to a public address is reset (#2672): a dial made while the
+# rules were absent (a re-apply, a rolled-back insert) no longer stays open under them.
+tor_egress_rules() { # <subnet> <tor_ip> [sync-ip ...]
+    local subnet="$1" tor_ip="$2" ip
+    shift 2
     printf '%s\n' \
-        "-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" \
+        "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT" \
         "-s $tor_ip -j ACCEPT" \
         "-s $subnet -d 10.0.0.0/8 -j ACCEPT" \
         "-s $subnet -d 172.16.0.0/12 -j ACCEPT" \
         "-s $subnet -d 192.168.0.0/16 -j ACCEPT" \
-        "-s $subnet -d 100.64.0.0/10 -j ACCEPT" \
+        "-s $subnet -d 100.64.0.0/10 -j ACCEPT"
+    for ip in "$@"; do printf '%s\n' "-s $ip -j ACCEPT"; done
+    printf '%s\n' \
+        "-s $subnet -p tcp -m conntrack --ctstate ESTABLISHED -j REJECT --reject-with tcp-reset" \
         "-s $subnet -j DROP"
 }
 
@@ -40,33 +33,34 @@ tor_egress_rules() { # <subnet> <tor_ip>
 # canonical atomic idempotent-replace: `add table` no-ops if it already exists, `delete` then clears
 # it, and the block recreates it fresh — the whole file loads as one transaction. The base chain is
 # hooked at forward priority -5 so it evaluates before netavark's priority-0 blanket accept; a `drop`
-# there is terminal across the ruleset. accepts come first so LAN/Tor/established traffic skips the
-# final subnet-wide drop, mirroring the iptables order.
+# there is terminal across the ruleset. The rule order mirrors tor_egress_rules, reset included.
 #
-# The optional third arg is the mining bridge interface. mining_net is IPv4-only by design, so it is
-# empty on every normal apply and the ruleset stays v4-only. If mining_net ever gains an IPv6 subnet
-# the caller resolves the bridge and passes it here, which appends the v6 fail-closed backstop: there
-# is no assigned v6 range to source-match, so the drop is keyed on the mining bridge INTERFACE — the
-# host's own IPv6 forwarding on every other interface is left untouched.
-render_tor_egress_nft() { # <subnet> <tor_ip> [<mining_bridge>]
-    local subnet="$1" tor_ip="$2" br="${3:-}"
+# The optional third arg is the mining bridge, passed only if mining_net ever gains an IPv6 subnet
+# (it is IPv4-only by design). It appends the v6 fail-closed backstop, keyed on that INTERFACE since
+# there is no assigned v6 range to source-match, leaving v6 forwarded on any other interface alone.
+render_tor_egress_nft() { # <subnet> <tor_ip> [<mining_bridge> [sync-ip ...]]
+    local subnet="$1" tor_ip="$2" br="${3:-}" ip
+    shift 2
+    [ "$#" -eq 0 ] || shift
     printf '%s\n' \
         "add table inet $TOR_EGRESS_NFT_TABLE" \
         "delete table inet $TOR_EGRESS_NFT_TABLE" \
         "table inet $TOR_EGRESS_NFT_TABLE {" \
         "  chain forward {" \
         "    type filter hook forward priority -5; policy accept;" \
-        "    ct state established,related accept" \
+        "    ct direction reply ct state established,related accept" \
         "    ip saddr $tor_ip accept" \
         "    ip saddr $subnet ip daddr 10.0.0.0/8 accept" \
         "    ip saddr $subnet ip daddr 172.16.0.0/12 accept" \
         "    ip saddr $subnet ip daddr 192.168.0.0/16 accept" \
-        "    ip saddr $subnet ip daddr 100.64.0.0/10 accept" \
+        "    ip saddr $subnet ip daddr 100.64.0.0/10 accept"
+    for ip in "$@"; do printf '%s\n' "    ip saddr $ip accept"; done
+    printf '%s\n' \
+        "    ip saddr $subnet meta l4proto tcp ct state established reject with tcp reset" \
         "    ip saddr $subnet drop"
-    # IPv6 backstop, only when mining_net actually has v6 (br set). ct established,related above is
-    # family-agnostic and already spares return traffic; here we allow the v6 LAN (ULA fc00::/7 +
-    # link-local fe80::/10) off the mining bridge and drop everything else it originates. Scoped to
-    # iifname so it can never touch v6 forwarded from any other interface.
+    # IPv6 backstop (br set). The reply ct accept above is family-agnostic; here the v6 LAN (ULA
+    # fc00::/7 + link-local fe80::/10) is allowed off the mining bridge and the rest it originates
+    # dropped, scoped to iifname so v6 forwarded from any other interface is never touched.
     if [ -n "$br" ]; then
         printf '%s\n' \
             "    iifname \"$br\" ip6 daddr fc00::/7 accept" \
@@ -169,141 +163,6 @@ tor_egress_cidr_contains() { # <container> <member>
     [ "$(($(tor_egress_ip_to_int "$cip") & mask))" = "$(($(tor_egress_ip_to_int "$mip") & mask))" ]
 }
 
-# Tokenise one `iptables -S` rule line the way libxtables writes it: whitespace-separated tokens,
-# where a value that needs it is written as a double-quoted run with `\"` and `\\` escapes. Prints
-# one token per line, prefixed `b:` when it was written bare and `q:` when any of it came out of a
-# quoted run. The caller needs that distinction: a quoted value is a value however much it spells
-# a flag, which is the whole reason `-m string --string "! -s 0.0.0.0/0 x"` could not be read by
-# any amount of substring scanning.
-#
-# rc 1 = the line cannot be read unambiguously (an unterminated quote, a trailing backslash). The
-# caller reads that as shadowing: a rule we cannot parse is a rule we cannot clear.
-tor_egress_tokenise() { # <rule line>
-    local line="$1" n i=0 c tok="" have=0 quoted=0 closed
-    n=${#line}
-    while [ "$i" -lt "$n" ]; do
-        c="${line:$i:1}"
-        case "$c" in
-        [[:space:]])
-            if [ "$have" = 1 ]; then
-                if [ "$quoted" = 1 ]; then printf 'q:%s\n' "$tok"; else printf 'b:%s\n' "$tok"; fi
-                tok=""
-                have=0
-                quoted=0
-            fi
-            i=$((i + 1))
-            ;;
-        '"')
-            i=$((i + 1))
-            have=1
-            quoted=1
-            closed=0
-            while [ "$i" -lt "$n" ]; do
-                c="${line:$i:1}"
-                if [ "$c" = '\' ]; then
-                    i=$((i + 1))
-                    [ "$i" -lt "$n" ] || return 1
-                    tok="$tok${line:$i:1}"
-                    i=$((i + 1))
-                    continue
-                fi
-                if [ "$c" = '"' ]; then
-                    closed=1
-                    i=$((i + 1))
-                    break
-                fi
-                tok="$tok$c"
-                i=$((i + 1))
-            done
-            [ "$closed" = 1 ] || return 1
-            ;;
-        *)
-            tok="$tok$c"
-            have=1
-            i=$((i + 1))
-            ;;
-        esac
-    done
-    if [ "$have" = 1 ]; then
-        if [ "$quoted" = 1 ]; then printf 'q:%s\n' "$tok"; else printf 'b:%s\n' "$tok"; fi
-    fi
-    return 0
-}
-
-# Can this foreign DOCKER-USER rule decide a packet our DROP is meant to decide? rc 0 = yes, or we
-# cannot prove otherwise; rc 1 = no, it cannot match the mining subnet. EVERY uncertain answer is
-# rc 0: a line the tokeniser refuses, a `-s` value that is not a CIDR, a second `-s`, a flag whose
-# value never arrived, or no `-s` at all (an unscoped ACCEPT matches everything, us included).
-#
-# TOKENS, not a substring scan — and not a scan with the quoted values stripped out first either.
-# Three cuts of this check searched the raw line for `" -s "`, and each lost to a free-text match
-# value containing it: `--comment` first, then `--comment` again past a strip that removed only
-# the first clause (and only `--comment`), then `-m string --string`, which no amount of
-# comment-stripping ever covered. There is no scan-shaped fix: ANY quoted value ahead of `-s`
-# hijacks a positional search. Read left to right instead, where `-s` counts only as a bare token
-# of its own, negation is a bare `!` immediately before it, and a quoted value is exactly one
-# token that is never mistaken for the flag it spells.
-tor_egress_rule_shadows() { # <rule line> <subnet>
-    local line="$1" subnet="$2" tokens tok kind want="" seen=0 negated=0 prev="" foreign_net="" target=""
-    tokens=$(tor_egress_tokenise "$line") || return 0
-    while IFS= read -r tok; do
-        kind="${tok%%:*}"
-        tok="${tok#*:}"
-        if [ -n "$want" ]; then
-            case "$want" in
-            s) foreign_net="$tok" ;;
-            j) target="$tok" ;;
-            esac
-            want=""
-            prev=""
-            continue
-        fi
-        # A quoted token is a value. It can open nothing, negate nothing, and target nothing.
-        if [ "$kind" = q ]; then
-            prev=""
-            continue
-        fi
-        case "$tok" in
-        '!') prev='!' ;;
-        -s | --source | --src)
-            [ "$seen" = 0 ] || return 0 # two sources on one rule: we cannot say which one decides
-            seen=1
-            negated=0
-            [ "$prev" != '!' ] || negated=1
-            want=s
-            prev=""
-            ;;
-        -j | --jump | -g | --goto)
-            want=j
-            prev=""
-            ;;
-        *) prev="" ;;
-        esac
-    done <<<"$tokens"
-    [ -z "$want" ] || return 0 # a flag whose value never arrived
-    # Only a rule that TERMINATES the chain can take the verdict away from our DROP. A foreign
-    # LOG (or a foreign DROP) leaves the packet to the rules below it, ours included.
-    case "$target" in
-    ACCEPT | RETURN) ;;
-    *) return 1 ;;
-    esac
-    # DOCKER-USER is host-wide and shared with every other compose project (ufw-docker writes
-    # there), so a rule that cannot match us must NOT be called shadowing, or the verdict fires
-    # permanently on healthy hosts and stops meaning anything the one time it matters.
-    [ "$seen" = 1 ] || return 0
-    tor_egress_valid_cidr "$foreign_net" || return 0
-    tor_egress_valid_cidr "$subnet" || return 0
-    if [ "$negated" = 1 ]; then
-        # A NEGATED accept matches every packet whose source is OUTSIDE <cidr> — the opposite test
-        # from a plain match. It shadows unless the mining subnet sits ENTIRELY inside <cidr>:
-        # a disjoint `! -s <unrelated>` matches OUR subnet precisely because it is disjoint.
-        tor_egress_cidr_contains "$foreign_net" "$subnet" && return 1
-        return 0
-    fi
-    tor_egress_cidr_overlaps "$foreign_net" "$subnet" && return 0
-    return 1
-}
-
 # rc 0 = enforced. 1 = definitively NOT enforced (we read the ruleset; the rules are not in it).
 # 2 = CANNOT be enforced at all (the backend's tool is absent — not an unknown, a certainty that
 # nothing is dropping). 3 = genuinely unreadable (no passwordless sudo), the only verdict that is
@@ -353,6 +212,7 @@ tor_egress_enforced() {
             | ($r | map(any(has("drop"))) | index(true)) as $d
             | $d != null and (($r[0:$d] // []) | all(is_unconditional_accept | not))
         ' >/dev/null 2>&1 <<<"$out" || return 1
+        tor_egress_sync_rules_match nft "$out" || return 1
         return 0
     fi
     command -v iptables >/dev/null 2>&1 || return 2
@@ -363,10 +223,13 @@ tor_egress_enforced() {
     sudo -n iptables -S >/dev/null 2>&1 || return 3
     out=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || return 1
     grep -qE -- "$TOR_EGRESS_TAG.* -j DROP" <<<"$out" || return 1
+    # Include selected first-sync ACCEPTs in the live precedence check; presence alone would call
+    # an ACCEPT below this chain's terminal DROP an active exception.
+    tor_egress_sync_rules_match iptables "$out" || return 1
     # iptables is FIRST MATCH WINS, so a rule ABOVE our DROP makes it dead while it is still
     # "present". Inserting an ACCEPT at DOCKER-USER position 1 is a documented ufw/firewalld
     # workaround, and this function measured rc 0 — "enforced" — with the DROP unreachable behind
-    # one. We install positions 1..7 with the DROP last, so anything untagged above it is foreign
+    # one. We install positions 1..8 with the DROP last, so anything untagged above it is foreign
     # and we cannot claim our drop decides. `-N`/`-P` are chain declarations, not rules; Docker's
     # own `-j RETURN` sits BELOW our inserts, so this loop breaks before ever reaching it.
     local line subnet
@@ -390,9 +253,18 @@ tor_egress_enforced() {
     # firewall BEFORE compose, so on a first-ever `up` the jump legitimately does not exist yet (see
     # apply_tor_egress_iptables' own note) — alarming there would cry wolf on every fresh install.
     # doctor only runs this with the stack already up, where a missing jump IS the orphaned chain.
-    local fwd
+    local fwd fwd_line jump_seen=0 canonical_jump
     fwd=$(sudo -n iptables -S FORWARD 2>/dev/null) || return 4
-    grep -qF -- '-j DOCKER-USER' <<<"$fwd" || return 4
+    canonical_jump=$(tor_egress_iptables_canonical '-A FORWARD -j DOCKER-USER')
+    while IFS= read -r fwd_line; do
+        [[ "$fwd_line" == -A\ FORWARD\ * ]] || continue
+        if [ "$(tor_egress_iptables_canonical "$fwd_line" 2>/dev/null)" = "$canonical_jump" ]; then
+            jump_seen=1
+            break
+        fi
+        tor_egress_rule_shadows "$fwd_line" "$subnet" && return 4
+    done <<<"$fwd"
+    [ "$jump_seen" = 1 ] || return 4
     return 0
 }
 
@@ -416,13 +288,16 @@ tor_egress_verify_or_warn() { # <success message>
     # itself is what separates the two; a silent `log` in the second case is an apply that should
     # have alarmed and did not.
     4)
-        # mining_stack_running, NOT container_is_running tor. Tor can be down while p2pool/monerod/
-        # xmrig-proxy keep running — a live, clearnet-capable stack — and keying on tor reported
-        # that as the benign first-boot case. Measured on exactly that state before this change.
-        if mining_stack_running; then
-            warn "egress-apply:jump-missing — the Tor-egress rules are installed but NOTHING JUMPS TO DOCKER-USER while the stack is running. Clearnet egress is NOT fail-closed."
+        # A stopped existing network may not cause Docker to recreate the missing jump on the next
+        # `up`, so only an absent network is first-boot staging. A failed network listing is unknown,
+        # not proof of absence. Running mining containers also make the gap a live failure.
+        local networks
+        networks=$(docker network ls --format '{{.Name}}' 2>/dev/null) || networks=unreadable
+        if mining_stack_running || grep -qxF mining_net <<<"$networks" || [ "$networks" = unreadable ]; then
+            warn "egress-apply:jump-missing — the Tor-egress rules are installed but NOTHING JUMPS TO DOCKER-USER on an existing or unverified mining network. Clearnet egress is NOT fail-closed."
         else
             log "Tor-egress rules staged in DOCKER-USER; they take effect once the container engine adds its FORWARD jump. 'pithead doctor' verifies it against the running stack."
+            rc=0
         fi
         ;;
     # Reachable and present, but something foreign sits above our DROP. We cannot say the drop is
@@ -430,103 +305,5 @@ tor_egress_verify_or_warn() { # <success message>
     5) warn "egress-apply:shadowed — a rule that is not ours sits ABOVE the Tor-egress DROP in DOCKER-USER, so the DROP may never be reached. Clearnet egress is NOT provably fail-closed. Inspect with 'sudo iptables -S DOCKER-USER'." ;;
     *) warn "egress-apply:verify-unreadable — the Tor-egress rules installed, but reading them back needs passwordless sudo, so enforcement is UNPROVEN." ;;
     esac
-}
-
-# Remove every rule we previously installed — idempotent, config-agnostic, engine-agnostic. Clears
-# BOTH backends so a re-apply (or an engine change) can't leave a stale set behind: drop the nft
-# table if present, then delete the tagged DOCKER-USER rules if present.
-remove_tor_egress_firewall() {
-    if command -v nft >/dev/null 2>&1; then
-        sudo nft delete table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null || true
-    fi
-    command -v iptables >/dev/null 2>&1 || return 0
-    local saved match line
-    saved=$(sudo iptables-save 2>/dev/null) || return 0
-    # Our tagged DOCKER-USER rules (empty if none). `|| true` so a no-match grep (rc 1, under
-    # `set -e`/pipefail) doesn't abort — removal is best-effort + idempotent.
-    match=$(printf '%s\n' "$saved" | grep -- '^-A DOCKER-USER' | grep -F -- "$TOR_EGRESS_TAG") || true
-    [ -n "$match" ] || return 0
-    while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        # shellcheck disable=SC2086  # intentional word-splitting of the saved rule spec
-        sudo iptables -D DOCKER-USER ${line#-A DOCKER-USER } 2>/dev/null || true
-    done <<<"$match"
-    return 0
-}
-
-# Install (or re-install, idempotently) the fail-closed Tor-only egress rules. Reads the toggle +
-# subnet from .env so it works in the `up` path (where config.json isn't re-parsed). Branches to the
-# engine's forward-hook mechanism: nftables under podman/netavark, DOCKER-USER under Docker.
-apply_tor_egress_firewall() {
-    local enabled subnet tor_ip
-    enabled=$(env_get TOR_EGRESS_FIREWALL 2>/dev/null)
-    [ -n "$enabled" ] || enabled=true
-    remove_tor_egress_firewall # clear stale rules so a re-apply is idempotent
-    if [ "$(normalize_bool "$enabled")" != "true" ]; then
-        warn "Tor-only egress firewall is OFF (network.tor_egress_firewall=false) — a misconfigured app could reach clearnet."
-        return 0
-    fi
-    subnet=$(env_get NETWORK_SUBNET 2>/dev/null)
-    [ -n "$subnet" ] || subnet="172.28.0.0/24"
-    tor_ip=$(env_get NETWORK_PREFIX 2>/dev/null)
-    [ -n "$tor_ip" ] || tor_ip="172.28.0"
-    tor_ip="${tor_ip}.25"
-    if [ "$(container_engine)" = "podman" ]; then
-        apply_tor_egress_nft "$subnet" "$tor_ip"
-    else
-        apply_tor_egress_iptables "$subnet" "$tor_ip"
-    fi
-}
-
-# Appliance/netavark path: load the independent nft table (atomic, idempotent-replace), then PROVE
-# it landed before saying so.
-apply_tor_egress_nft() { # <subnet> <tor_ip>
-    local subnet="$1" tor_ip="$2" br rc=0
-    if ! command -v nft >/dev/null 2>&1; then
-        warn "egress-apply:nft-missing — nftables not found, cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
-        return 0
-    fi
-    # mining_net is IPv4-only by design, so br is empty and the ruleset stays v4-only. If it ever
-    # gains an IPv6 subnet we key a v6 fail-closed drop on its bridge interface. rc 3 means v6 is
-    # present but the bridge couldn't be resolved — refuse rather than load a v4-only firewall we'd
-    # then wrongly report as fail-closed (a v6 clearnet leak would fall through policy accept).
-    #
-    # `|| rc=$?`, not a bare assignment followed by `rc=$?` (#2059): the program runs under
-    # `set -Eeuo pipefail`, where `br=$(f)` with a non-zero f is a failing simple command — errexit
-    # fires and the shell is GONE before the next line can read $?. The refusal below was therefore
-    # unreachable, and a v6-capable mining_net killed `up` mid-stack_up with rc 3 and no message at
-    # all. Guarding the assignment is what makes the branch it guards able to run.
-    br=$(mining_net_ipv6_bridge) || rc=$?
-    if [ "$rc" -eq 3 ]; then
-        warn "egress-apply:v6-bridge-unresolved — mining_net has an IPv6 subnet but its bridge interface could not be resolved. REFUSING to install a v4-only egress firewall that would leave IPv6 clearnet un-fenced. Recreate mining_net or set network.tor_egress_firewall=false to acknowledge."
-        return 0
-    fi
-    if ! render_tor_egress_nft "$subnet" "$tor_ip" "$br" | sudo nft -f - 2>/dev/null; then
-        warn "egress-apply:nft-load-failed — could not install the Tor-egress firewall (needs root + nftables). Stack runs, but clearnet egress is NOT fail-closed."
-        return 0
-    fi
-    tor_egress_verify_or_warn "Tor-only egress enforced: clearnet dials from $subnet${br:+ (IPv4) and via $br (IPv6)} dropped except via Tor ($tor_ip)."
-}
-
-# DIY/Docker path: insert the tagged rules into DOCKER-USER, which Docker jumps to from FORWARD.
-apply_tor_egress_iptables() { # <subnet> <tor_ip>
-    local subnet="$1" tor_ip="$2" pos=1 rule
-    if ! command -v iptables >/dev/null 2>&1; then
-        warn "egress-apply:iptables-missing — iptables not found, cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
-        return 0
-    fi
-    # DOCKER-USER may not exist yet on a first-ever `up` (Docker creates it with its first network).
-    # Pre-create it so installing here — before compose runs — succeeds; Docker adopts the existing
-    # chain and adds the FORWARD jump. Harmless (-N fails with rc 1) once the chain is already there.
-    sudo iptables -N DOCKER-USER 2>/dev/null || true
-    while IFS= read -r rule; do
-        # shellcheck disable=SC2086  # intentional word-splitting of the rule body
-        if ! sudo iptables -I DOCKER-USER "$pos" -m comment --comment "$TOR_EGRESS_TAG" $rule 2>/dev/null; then
-            warn "egress-apply:iptables-insert-failed — could not install the Tor-egress firewall (needs root + iptables). Stack runs, but clearnet egress is NOT fail-closed."
-            remove_tor_egress_firewall
-            return 0
-        fi
-        pos=$((pos + 1))
-    done < <(tor_egress_rules "$subnet" "$tor_ip")
-    tor_egress_verify_or_warn "Tor-only egress enforced: clearnet dials from $subnet dropped except via Tor ($tor_ip)."
+    [ "$rc" = 0 ]
 }

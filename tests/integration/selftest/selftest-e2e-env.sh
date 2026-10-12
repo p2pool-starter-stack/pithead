@@ -67,7 +67,7 @@ assert_eq "--no-mining-asserts skips the leg: nothing" "$(mining_of 1 1 0 1)" ""
 assert_eq "0 expected workers never fails the leg: nothing" "$(mining_of 1 0 0 0)" ""
 
 echo "== tari-not-done: deploy_branch's post-deploy wait gives up on Tari (wait_synced) =="
-synced_of() { # <state> -> the lines wait_synced printed, then its rc
+synced_of() { # <state> [wait_synced's 2nd argument] -> the lines wait_synced printed, then its rc
     # shellcheck disable=SC2329  # the stubs are called by the eval'd wait_synced
     (
         STATE="$1"
@@ -76,13 +76,15 @@ synced_of() { # <state> -> the lines wait_synced printed, then its rc
         sleep() { :; }
         on_bench() { printf '%s' "$STATE"; }
         eval "$WAIT_SRC"
-        wait_synced 0
+        wait_synced 0 "${2:-}"
         echo "rc=$?"
     ) 2>/dev/null | grep -a -e 'e2e-env:' -e '^rc='
 }
 assert_eq "Tari still syncing after the wait says tari-not-done" "$(synced_of done/syncing)" $'e2e-env: tari-not-done\nrc=1'
 assert_eq "Tari still loading after the wait says tari-not-done" "$(synced_of done/loading)" $'e2e-env: tari-not-done\nrc=1'
 assert_eq "both chains behind: Tari is still not done" "$(synced_of loading/syncing)" $'e2e-env: tari-not-done\nrc=1'
+assert_eq "the preflight's wait leaves its refusal to chains-behind" "$(synced_of done/syncing preflight)" "rc=1"
+assert_eq "so does the restore's baseline wait" "$(synced_of done/syncing restore)" "rc=1"
 assert_eq "Monero behind, Tari done: not a Tari abort" "$(synced_of loading/done)" "rc=1"
 assert_eq "a dashboard that never answered is the branch's" "$(synced_of "")" "rc=1"
 assert_eq "a dashboard without the panels is the branch's" "$(synced_of null/null)" "rc=1"
@@ -96,15 +98,17 @@ readiness_of() { # <tari state> -> the lines the readiness phase printed
     (
         TARI_STATE="$1" FULL_DATA_DIR="" PRUNED_DATA_DIR="" BASELINE_PRUNE=1
         monero_caught_up() { return 0; }
+        wait_for() { shift 3 && "$@"; } # one look, as if the bounded wait had expired
         pithead() { return 0; }
         env_on_box() { :; }
-        rx() { case "$1" in *api/state*) printf '{"sync":{"tari":{"state":"%s"}}}' "$TARI_STATE" ;; *) return 1 ;; esac }
+        rx() { case "$1" in *api/state*) printf '{"sync":{"tari":{"state":"%s"}}}' "$TARI_STATE" ;; *backups*) return 0 ;; *) return 1 ;; esac }
+        IT_FAIL=0 IT_FAILED_NAMES="" # so Tari's row is the only one that can fail
         assert_release_readiness
     ) 2>/dev/null | said
 }
 assert_eq "readiness refusing on a syncing Tari says tari-not-done" "$(readiness_of syncing)" "e2e-env: tari-not-done"
 assert_eq "readiness refusing on a loading Tari says tari-not-done" "$(readiness_of loading)" "e2e-env: tari-not-done"
-assert_eq "a dashboard that did not answer names no Tari (harness_pregate says readiness)" "$(readiness_of "")" ""
+assert_eq "Tari's row as the readiness phase's only failure is the key, whatever the dashboard read" "$(readiness_of "")" "e2e-env: tari-not-done"
 assert_eq "a Tari that is done says nothing (the phase's other refusals are harness_pregate's)" \
     "$(readiness_of "done")" ""
 
@@ -189,6 +193,7 @@ preflight_of() { # <sync summary> [skip_preflight] -> the lines preflight printe
         parent_lock_checkpoint() { :; }
         stack_image_census() { :; }
         on_bench() { case "$1" in *api/state*) printf '%s' "$SYNC" ;; esac }
+        wait_synced() { [ "$(printf '%s' "$SYNC" | awk '{print $1 "/" $3}')" = done/done ]; } # settled elsewhere
         eval "$(sed -n '/^die() {/,/^}$/p' "$E2E_SRC")"
         eval "$PREFLIGHT_SRC"
         preflight
