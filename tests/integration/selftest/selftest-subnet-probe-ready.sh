@@ -42,8 +42,8 @@ run_case() (
     it_step() { :; }
     it_warn() { :; }
     timeout() {
-        [ "$1" = 10 ] || return 2
-        shift
+        [ "$1" = --kill-after=2 ] && [ "$2" = 10 ] || return 2
+        shift 2
         [ "$CASE" != stalled ] || return 124
         "$@"
     }
@@ -92,7 +92,7 @@ run_case() (
             ;;
         *'openssl x509 -in'*) [ "$CASE" = wrong-cert ] && echo other || echo served ;;
         *'HostConfig.Dns'*) echo '[127.0.0.1]' ;;
-        *'json .Args'*) echo '--donate-level=0' ;;
+        *'cat /proc/1/cmdline'*) echo '--donate-level=0' ;;
         *) echo 1 ;;
         esac
     }
@@ -111,6 +111,12 @@ run_case() (
     assert_pool_type() { :; }
     assert_mining_state() { :; }
     assert_egress_dial_pair() { :; }
+    assert_miner_connection_live() { :; }
+    assert_proxy_password_live() {
+        # The unchanged password check precedes TLS; inject a distinct later hold here.
+        echo TLS >"$SCRATCH/stage"
+        NOW=0
+    }
     assert_num_ge() { :; }
     assert_contains() { :; }
     assert_rc() { :; }
@@ -121,11 +127,6 @@ run_case() (
         fi
     }
     it_pass() {
-        # Inject a distinct later hold immediately before TLS as well as the UID hold.
-        if [[ "$1" == 'default-off stratum: '* ]]; then
-            echo TLS >"$SCRATCH/stage"
-            NOW=0
-        fi
         printf 'PASS %s\n' "$1"
     }
     assert_eq() {

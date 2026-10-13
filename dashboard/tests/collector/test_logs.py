@@ -249,15 +249,26 @@ class TestDispatch:
 
     async def test_remote_when_other_host(self):
         with (
-            patch.object(logs, "MONERO_NODE_HOST", "10.0.0.9"),
+            patch.object(logs, "MONERO_NODE_HOST", "remote.example"),
+            patch.object(
+                logs._monero_client, "get_sync_status", return_value={"is_syncing": False}
+            ),
+            patch.object(logs, "get_monero_peers", AsyncMock()) as peers,
+        ):
+            assert await logs.get_monero_sync_status() == {"is_syncing": False, "reachable": True}
+        peers.assert_not_called()
+
+    async def test_remote_outage_is_unreachable_despite_stale_stats(self):
+        with (
+            patch.object(logs, "MONERO_NODE_HOST", "remote.example"),
+            patch.object(logs._monero_client, "get_sync_status", return_value=None),
             patch.object(
                 logs,
                 "_get_remote_monero_sync_status",
                 AsyncMock(return_value={"is_syncing": False}),
             ),
         ):
-            # Remote node is reported reachable so reject-workers no-ops for it (Issue #31).
-            assert await logs.get_monero_sync_status() == {"is_syncing": False, "reachable": True}
+            assert await logs.get_monero_sync_status() == {"is_syncing": False, "reachable": False}
 
 
 class _FakeFile:
@@ -294,3 +305,14 @@ class TestLocalMoneroPeers:
         ):
             status = await logs._get_local_monero_sync_status()
         assert status["peers_out"] is None and status["peers_in"] is None
+
+
+async def test_malformed_remote_rpc_reply_reports_unreachable():
+    with (
+        patch.object(logs, "MONERO_NODE_HOST", "remote.example"),
+        patch.object(logs._monero_client, "get_info", return_value={"height": [1]}),
+        patch.object(
+            logs, "_get_remote_monero_sync_status", AsyncMock(return_value={"is_syncing": False})
+        ),
+    ):
+        assert await logs.get_monero_sync_status() == {"is_syncing": False, "reachable": False}

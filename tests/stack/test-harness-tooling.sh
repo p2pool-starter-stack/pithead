@@ -42,8 +42,8 @@ echo "== unit: #2879 rootfs dependency refresh =="
 dockerfile="$ROOT/os/rootfs/Dockerfile"
 assert_eq "Compose release pin" "$(sed -n 's/^ARG COMPOSE_VERSION=//p' "$dockerfile")" "v5.5.1"
 assert_eq "Compose commit pin" "$(sed -n 's/^ARG COMPOSE_COMMIT=//p' "$dockerfile")" "5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de"
-assert_eq "Compose keeps only the x/mod and grpc floors" "$(sed -n 's/^ARG COMPOSE_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"'
-assert_eq "Cosign keeps the x/mod and grpc floors" "$(sed -n 's/^ARG COSIGN_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"'
+assert_eq "Compose keeps only the x/mod, x/net and grpc floors" "$(sed -n 's/^ARG COMPOSE_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"'
+assert_eq "Cosign keeps the x/mod, x/net and grpc floors" "$(sed -n 's/^ARG COSIGN_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"'
 assert_eq "only the two live Trivy exceptions remain" \
     "$(grep -E '^CVE-' "$ROOT/.config/trivyignore")" \
     $'CVE-2026-23949\nCVE-2026-24049'
@@ -132,6 +132,10 @@ bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
 bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null
 assert_rc "the OS runner module and control lifecycle guard self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-restore-p2pool-startup.sh" >/dev/null 2>&1
+assert_rc "restore startup rejects P2Pool crashes across its bounded window" "$?" "0"
+bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null
+assert_rc "Tor heal guest and offline-image harness controls pass" "$?" "0"
 bash "$ROOT/tests/os/appliance-hostname-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#1966 appliance hostname verdict self-test passes" "$?" "0"
 bash "$ROOT/tests/os/appliance-diagnostics-leg.sh" --self-test >/dev/null 2>&1
@@ -261,3 +265,7 @@ bash "$ROOT/scripts/watch/scheduled-run-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "scheduled-run watch self-test passes" "$?" "0"
 # shellcheck source=tests/stack/lib/verdict-label-determinism.sh
 source "$HERE/lib/verdict-label-determinism.sh"
+
+# The soak's canned readings and stubbed driver are pure shell; no SSH or containers run here.
+bash "$ROOT/tests/os/soak-probe.sh" --self-test >"$SANDBOX/soak-selftest.log" 2>&1
+assert_rc "soak probe selftest passes" "$?" "0"

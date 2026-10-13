@@ -67,6 +67,12 @@ control_process_request() { # <claimed-file> <control-dir>
         warn "Control request has a malformed id — discarded (no result can be addressed)."
         return 0
     fi
+    local document_error
+    if ! document_error=$(config_document_error "$file" request); then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$document_error" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
+        return 0
+    fi
     # `container` and `lines` ride the read-only diagnostics verbs (#943). They widen this closed
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
@@ -95,6 +101,16 @@ control_process_request() { # <claimed-file> <control-dir>
         elif ! control_tor_newnym "$cdir" "$id" "$actor"; then
             control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"host mutation lock unavailable",ts:(now|floor)}')"
             control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        fi
+        ;;
+    tor-recover)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ] ||
+            [ "$actor" != tor-heal ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid recovery request or auto-heal disabled",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+        else
+            control_tor_recover "$cdir" "$id" "$actor"
         fi
         ;;
     tor-history)

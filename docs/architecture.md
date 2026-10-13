@@ -256,8 +256,9 @@ rounds. It donates the minimum needed to hold the target tier and routes the res
 2. **Dynamic proxy reconfiguration.** A feedback controller watches your measured 1h / 24h donation
    averages and reconfigures the `xmrig-proxy` to send just enough time to XvB to stay in tier:
    ramping donation up when you fall behind and easing off as you catch up, with the remainder going
-   to P2Pool. The controller edits the proxy config only; your workers keep their existing connection
-   to `3333` and need no changes.
+   to P2Pool. With `xvb.enabled: false`, the engine stays on P2Pool for the full cycle;
+   a missing donation average does not end the dwell early. The controller edits the proxy config
+   only; your workers keep their existing connection to `3333` and need no changes.
 
 3. **Round protection.** XvB terminates a won bonus round if your credited 1h average drops below
    the round minimum while the round runs, so the controller guards wins two ways. It holds the 1h

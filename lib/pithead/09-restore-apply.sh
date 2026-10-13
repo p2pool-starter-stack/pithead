@@ -211,6 +211,11 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>] [<dest
         printf 'archive does not contain a usable configuration' >"$errf"
         return 1
     fi
+    err=$(restore_config_version_error "$staged_cfg")
+    if [ -n "$err" ]; then
+        printf '%s' "$err" >"$errf"
+        return 1
+    fi
     # Validated through the COPY — parse_and_validate_config fills in generated fields as it
     # goes (consume_preseed_config's own reasoning), and only a config that survives this is
     # ever promoted to the real config.json.
@@ -220,12 +225,14 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>] [<dest
     fi
 
     if [ -n "$cfg_dest" ]; then
-        # Installer door: the credentials card needs the config while the full tree stays in the
-        # volatile encrypted archive until the installer applies it to target data.
-        restore_setup_publish_file "$staged_cfg" "$cfg_dest" || {
+        # The private installer card needs the preserved generated password as well as config.
+        if ! restore_card_stratum_seed "$staged_cfg" "$tree/$root$ENV_FILE" "$tmp/stratum-password" ||
+            ! restore_setup_publish_file "$tmp/stratum-password" "$cfg_dest.stratum-password" ||
+            ! restore_setup_publish_file "$staged_cfg" "$cfg_dest"; then
+            rm -f "$cfg_dest.stratum-password"
             printf 'could not apply the backup files' >"$errf"
             return 1
-        }
+        fi
         return 0
     fi
     if ! restore_canonicalize_derived "$staged_cfg" "$tree/$root$ENV_FILE" "$tree/${root}Caddyfile"; then

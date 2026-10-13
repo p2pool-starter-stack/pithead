@@ -53,6 +53,13 @@ if [ "$DATA_MIGRATION" = true ] && [ -z "$MIN_OS_VERSION" ]; then
     echo "PITHEAD_DATA_MIGRATION=true needs PITHEAD_MIN_OS_VERSION=X.Y.Z — the floor below which the migrated /data cannot be read" >&2
     exit 2
 fi
+# A release bundle declares both fields, even when it does not migrate (#3167). The default above
+# is "no migration", so a hand build that forgot the variables would ship a migrating release with
+# no floor, and nothing here can infer that the payload migrates. --dev keeps the defaults.
+if [ "$DEV" -eq 0 ] && { [ -z "${PITHEAD_DATA_MIGRATION+set}" ] || [ -z "${PITHEAD_MIN_OS_VERSION+set}" ]; }; then
+    echo "a release bundle must declare PITHEAD_DATA_MIGRATION=true|false and PITHEAD_MIN_OS_VERSION (X.Y.Z, or empty when it does not migrate); see the data-migration contract in docs/dev/appliance-release.md" >&2
+    exit 2
+fi
 # shellcheck source=os/rauc/populate-slot.sh
 . os/rauc/populate-slot.sh
 WORK=$(mktemp -d)

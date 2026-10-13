@@ -3,11 +3,10 @@ vocabulary every hop is coloured by, and the per-request marking of which nodes 
 machine's own (#1040).
 
 Split out of ``egress.py`` because that module sits at its file-budget ceiling and this is the
-part of it that is data rather than logic. ``egress`` imports back from here; the dependency runs
-one way, and re-exporting ``TOPOLOGY_NODES`` keeps every existing importer working unchanged.
-The route constants live here because ``node_route`` needs them and ``egress`` has no room — and
-``egress`` re-exports them, so every existing importer of
-``egress.LOCAL`` and friends keeps working unchanged.
+part of it that is data rather than logic. ``egress`` and ``topology`` import from here; the
+dependency runs one way. The route constants live here because ``node_route`` needs them, and
+``egress`` re-exports them, so every existing importer of ``egress.LOCAL`` and friends keeps
+working unchanged.
 """
 
 import ipaddress

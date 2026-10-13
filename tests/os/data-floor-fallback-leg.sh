@@ -70,20 +70,22 @@ _floor_state() {
     _ssh "cd /data/pithead && printf '%s|%s|%s' \"\$(cat .os-data-floor 2>/dev/null)\" \"\$(cat .os-data-floor.prev 2>/dev/null)\" \"\$(cat .os-migration-pending 2>/dev/null)\"" 2>/dev/null | tr -d ' \r\n'
 }
 
-# Reboot into the just-installed slot and wait until the guest is back on the slot carrying marker
-# $1 with its boot gate PASSED (the commit line in this boot's journal). The reboot is OBSERVED
-# before anything is polled (#1651): the boot that issued it still carries marker $1 and a
-# committed line in its own journal, so a probe it answered while shutting down satisfied the
-# predicate off the OLD boot — and `-b -1` in the caller then named the wrong boot. SSH answers
-# on the failing slot too, while it loads images and tries to bring the stack up, so the marker
-# is what tells the two apart. $2 = seconds: a failed `up` reboots within minutes, a gate that
-# loops 90 rounds takes ~15 min, and the fallback boot then re-loads images — allow for all three.
+# Reboot into the just-installed slot and wait for a nonempty marker OTHER than $1 (the
+# failing bundle's literal marker), with its boot gate PASSED (the commit line in this boot's
+# journal). The previous slot can carry v1 or vmig, depending on earlier legs' slot history.
+# Observe a new boot before polling (#1651): the old boot already has a different marker and
+# a commit line, so a probe answered while shutting down must not satisfy the predicate.
+# SSH answers on the failing slot too, so neither a different marker nor a commit alone is
+# sufficient. $2 = seconds: allow for the failing boot's gate and the fallback's image reload.
 _floor_fallback_wait() {
-    local deadline=$(($(date +%s) + $2)) got
+    local deadline=$(($(date +%s) + $2)) got marker committed
     _reboot_wait reboot "$2" || return 1
     while [ "$(date +%s)" -lt "$deadline" ]; do
         got=$(SSH_TIMEOUT=20 _ssh "cat /etc/pithead-test-marker 2>/dev/null; journalctl -u pithead-boot -b 2>/dev/null | grep -c 'booted slot committed'" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
-        case "$got" in "$1 "[1-9]*) return 0 ;; esac
+        read -r marker committed <<<"$got"
+        if [ -n "$marker" ] && [ "$marker" != "$1" ]; then
+            case "$committed" in [1-9]*) return 0 ;; esac
+        fi
         sleep 15
     done
     return 1
@@ -144,7 +146,7 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
         bad "after the install, floor|prev|marker = '$state', want '$vfail|$floor0|$vfail'"
         return
     fi
-    if _floor_fallback_wait vmig 1800; then
+    if _floor_fallback_wait vfail 1800; then
         ok "the $vfail slot never committed — the guest is back on the previous slot with its gate passed"
     else
         bad "the guest did not come back on the previous slot with a passed gate within 30 min (marker/journal: '$(SSH_TIMEOUT=20 _ssh "cat /etc/pithead-test-marker; journalctl -u pithead-boot -b | tail -3" 2>/dev/null | tr '\n' ' ')')"
@@ -203,7 +205,7 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
         return
     fi
     _ssh "rm -f /data/pithead/.os-data-floor.prev"
-    if _floor_fallback_wait vmig 1800; then
+    if _floor_fallback_wait vfail 1800; then
         ok "the $vfail slot never committed again — back on the previous slot"
     else
         bad "the guest did not come back on the previous slot within 30 min (second fallback)"

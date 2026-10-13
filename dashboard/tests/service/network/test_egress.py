@@ -6,13 +6,12 @@ from mining_dashboard.service.network.egress import (
     CLEARNET,
     INACTIVE,
     LOCAL,
-    TOPOLOGY_NODES,
     TOR,
     _sinks_all_private,
     compute_egress_posture,
-    compute_topology,
 )
-from mining_dashboard.service.network.topology_graph import NODE_ROUTES
+from mining_dashboard.service.network.topology import compute_topology
+from mining_dashboard.service.network.topology_graph import NODE_ROUTES, TOPOLOGY_NODES
 
 
 def _conn(posture, component, needle):

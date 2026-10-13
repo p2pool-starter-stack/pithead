@@ -110,6 +110,13 @@ check_installer_cache() {
         echo "retry-trivy-scan: MISMATCH — it must set skip-setup-trivy: true and declare no version: (a second, ungated pin)"
         fail=1
     fi
+    if grep -qE '^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*sleep[[:space:]]+[0-9]+' "$RETRY_ACTION" &&
+        grep -qE 'TRIVY_DB_REPOSITORY:[[:space:]]*ghcr\.io/[^,]+,[^,]+' "$RETRY_ACTION"; then
+        echo "retry-trivy-scan: waits, then tries ghcr.io ahead of the mirror for the vulnerability DB (#3296)"
+    else
+        echo "retry-trivy-scan: MISMATCH — it must sleep before re-scanning and set TRIVY_DB_REPOSITORY with ghcr.io first and a fallback (#3296)"
+        fail=1
+    fi
     if [ "$fail" -eq 1 ]; then
         echo "Fix: install trivy once per job via ./.github/actions/install-trivy with the version: the parity gate reads," \
             "and give every trivy-action step skip-setup-trivy: true and no version: of its own (#1290, #2214)."
@@ -173,7 +180,17 @@ if [ "${1:-}" = "--self-test" ]; then
     INSTALL_ACTION="$tmp/install.yml"
     write_composite "$INSTALL_ACTION" 1
     RETRY_ACTION="$tmp/retry.yml"
-    printf 'runs:\n  steps:\n    - with:\n        skip-setup-trivy: true\n' >"$RETRY_ACTION"
+    write_retry() { # <wait:0|1> <db-env:0|1>
+        {
+            echo "runs:"
+            echo "  steps:"
+            [ "$1" = "1" ] && printf '    - run: sleep 30\n      shell: bash\n'
+            echo "    - uses: aquasecurity/trivy-action@0000000000000000000000000000000000000000"
+            [ "$2" = "1" ] && printf '      env:\n        TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2\n'
+            printf '      with:\n        skip-setup-trivy: true\n'
+        } >"$RETRY_ACTION"
+    }
+    write_retry 1 1
     GATE_WORKFLOWS="$ok_a $ok_b $ok_c"
     rc=0
     out="$(check_installer_cache)" || rc=$?
@@ -233,12 +250,22 @@ EOF
         "$(printf '%s\n' "$out" | grep -c 'ci.yml: INERT PIN — 1 version: line(s)')" "1"
     write_file "$ok_a" 1 1 v0.73.0
 
-    printf 'runs:\n  steps:\n    - with:\n        version: v0.73.0\n' >"$RETRY_ACTION"
+    printf 'runs:\n  steps:\n    - run: sleep 30\n    - env:\n        TRIVY_DB_REPOSITORY: ghcr.io/a:2,b:2\n      with:\n        version: v0.73.0\n' >"$RETRY_ACTION"
     rc=0
     out="$(check_installer_cache)" || rc=$?
     st "a second pin in retry-trivy-scan -> rc 1" "$rc" "1"
     st "and it is named as an ungated second pin" \
-        "$(printf '%s\n' "$out" | grep -c 'retry-trivy-scan: MISMATCH')" "1"
+        "$(printf '%s\n' "$out" | grep -c 'retry-trivy-scan: MISMATCH — it must set skip-setup')" "1"
+
+    write_retry 0 1
+    rc=0
+    out="$(check_installer_cache)" || rc=$?
+    st "a retry with no wait -> rc 1" "$rc" "1"
+    write_retry 1 0
+    rc=0
+    out="$(check_installer_cache)" || rc=$?
+    st "a retry with no DB fallback -> rc 1" "$rc" "1"
+    st "and it is named" "$(printf '%s\n' "$out" | grep -c 'retry-trivy-scan: MISMATCH — it must sleep')" "1"
 
     echo "lint-trivy-installer-cache self-test: $pass ok, $fail_ct failed"
     [ "$fail_ct" -eq 0 ]

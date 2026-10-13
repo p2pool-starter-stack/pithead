@@ -98,8 +98,7 @@ control_result_stamp_id() { # <result-json> <id>
 }
 dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code crc=0
-    out=$(dashboard_control_post "$route" "$body") || crc=$?
-    control_request_evidence "$route" post "$crc" "$out"
+    out=$(control_request_post "$route" "$body" "$deadline") || crc=$?
     if [ "$crc" -eq 0 ]; then
         response_code=${out##*$'\n'}
         if [[ $response_code =~ ^[0-9]{3}$ ]]; then

@@ -33,7 +33,7 @@
 # `+dirty` suffix, because raising a module edits go.mod and Go stamps that truthfully. It is also
 # why the tree state below says dirty: this binary IS built from a modified tree, and a build that
 # claimed otherwise would be lying about the provenance this paragraph exists to describe.
-FROM golang:1.26.8-trixie@sha256:bdca99a00bc16590cb1a0bb4e698f5fc5d6a64e4d5eef13d9f18a0ee08e5fa65 AS gobuild
+FROM golang:1.26.9-trixie@sha256:f89535b7caea67fa9ff0ba009894bff8f3be915e49cb635477c8ce04e045db5d AS gobuild
 
 ARG COMPOSE_VERSION=v5.5.1
 ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
@@ -45,15 +45,15 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # the module beats muting the scanner. Per-binary because the findings differ, and EXACT versions
 # because `go get` will happily DOWNGRADE a module that is already newer.
 #
-#   golang.org/x/mod       v0.40.0   CVE-2026-56864 / CVE-2026-56865. Indirect in both: cosign
-#                                    v3.1.3 pins v0.37.0; compose v5.5.1 selects v0.40.0.
+#   golang.org/x/mod       v0.41.0   CVE-2026-56864 / CVE-2026-56865; indirect: cosign pins v0.37.0,
+#                                    compose v0.40.0; x/net v0.60.0 needs v0.41.0 in both.
+#   golang.org/x/net       v0.60.0   CVE-2026-78669 (HIGH), both: each selects v0.58.0. #3319.
 #   google.golang.org/grpc v1.83.2   CVE-2026-84445 (HIGH), both binaries. Third trip down this
 #                                    ladder: #1153's v1.82.1 (GHSA-hrxh-6v49-42gf) aged into
 #                                    CVE-2026-84304, whose v1.83.1 aged into this. #1655.
 #
-# WHAT A RAISE ACTUALLY MOVES: `go get X@v Y@v` upgrades the whole closure minimum-version
-# selection needs to satisfy X and Y, not just X and Y. Compose v5.5.1 already selects
-# x/crypto v0.56.0; retaining its former v0.55.0 raise would downgrade it.
+# WHAT A RAISE ACTUALLY MOVES: `go get X@v Y@v` upgrades the whole closure minimum-version selection
+# needs to satisfy X and Y. Compose already selects x/crypto v0.56.0; its former v0.55.0 would downgrade it.
 #
 # Every entry here is debt, not a feature: drop it the moment an upstream release makes it a no-op,
 # and delete its .config/trivyignore mute in the SAME change — a mute left over a finding you have just
@@ -61,8 +61,8 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # survived in that file until #1153. Verify by re-running the scan against the built binaries with
 # NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
 # left two other HIGH findings standing.
-ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
+ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
+ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
 ENV CGO_ENABLED=0
 
 # Blobless clone then detach to the commit: the tag is only a convenience for the version string.
@@ -187,7 +187,7 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # build because nothing can be installed later — apt cannot run on the read-only root, and even
 # a rw-remount install leaves its /etc state (alternatives, ld.so.cache) on the volatile overlay
 # where the first reboot breaks the compiler. RIGFORGE_REF pins rigforge's develop commit
-# f5ff0479, the code that becomes v1.18.0 after the 2.0.0 soak; then pin releases by commit.
+# b2d4c3d9, the code that becomes v1.18.0 after the 2.0.0 soak; then pin releases by commit.
 # v1.16.0 is the floor for the HugePages pool ceiling: hugepages_pool_ceiling_mb (rigforge#398,
 # filed from #1103) is absent from v1.15.1's tree entirely, and declaring it into one fails OPEN —
 # parse_config never reads the key, so the rendered config would look capped and behave as today.
@@ -201,7 +201,7 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
-ARG RIGFORGE_REF=f5ff0479473ad5fb2c0605a1219dd3721517a171
+ARG RIGFORGE_REF=b2d4c3d9ca1da74d0e6d5ccce772d401acc8be03
 RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
     && mkdir -p /opt/rigforge \

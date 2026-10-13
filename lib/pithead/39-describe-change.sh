@@ -45,6 +45,7 @@ describe_change() {
         local) msg="Tari merge-mining ON, local node ($old → local) — the tari container starts and SYNCs the chain (large download / disk use) unless its data dir already holds one." ;;
         *) msg="Tari merge-mining ON, external node ($old → remote) — p2pool merge-mines against the node at tari.remote; no tari container runs on this host." ;;
         esac
+        [ "$new" == off ] || msg+=" Monero mining continues; merge-mining starts when Tari has synced (on an already-mining machine)."
         ;;
     MONERO_WALLET_ADDRESS)
         flag=DEST
@@ -152,6 +153,7 @@ describe_change() {
         ;;
     MONERO_NODE_HOST | MONERO_RPC_PORT | MONERO_ZMQ_PORT | TARI_GRPC_ADDRESS)
         flag=CONFIRM msg="${key%%_*} node endpoint ($key): ${old:-unset} → $new — the stack points its RPC client THERE and trusts the chain data, block templates and share heights that address returns. Confirm-gated, not free-commit, because it moves TRUST rather than disk; the host probes the new endpoint before accepting it, and putting the old address back reverses it."
+        [ "$key" != TARI_GRPC_ADDRESS ] || msg+=" Monero mining continues; merge-mining starts when Tari has synced (on an already-mining machine)."
         ;;
     MONERO_NODE_USERNAME | MONERO_NODE_PASSWORD)
         # #2333/#2367: confirm-gated like the endpoint fields above, never a refusal — the owner's
@@ -166,7 +168,7 @@ describe_change() {
         ;;
     TARI_REQUIRED)
         if [ "$new" == "true" ]; then
-            msg="Tari → required — a Tari outage rejects workers, the miner waits for Tari's sync, and a Tari-only sync takes over the dashboard."
+            msg="Tari → required — a 15-minute Tari RPC outage rejects workers (startup, migration and syncing only alert), the miner waits for Tari's sync, and a Tari-only sync takes over the dashboard."
         else
             msg="Tari → non-blocking — keep mining Monero through a Tari outage, start as soon as Monero is synced, and keep the operational dashboard while Tari syncs."
         fi
@@ -322,7 +324,7 @@ describe_change() {
             msg="Payout confirmation view key SET — a view-only monero-wallet-rpc starts and scans the local node for confirmed payouts (it can see incoming amounts, never spend)."
         else
             flag=DEST
-            msg="Payout confirmation view key CHANGED — the view-only wallet-rpc is recreated and rescans."
+            msg="Payout confirmation view key CHANGED — a new view-only wallet is opened for this address (the previous one is kept)."
         fi
         ;;
     WALLET_RPC_PASSWORD)
@@ -349,7 +351,7 @@ describe_change() {
             msg="Tari payout confirmation view key SET — a view-only minotari_console_wallet starts and scans the local Tari node for confirmed payouts (it can see incoming amounts, never spend)."
         else
             flag=DEST
-            msg="Tari payout confirmation view key CHANGED — the view-only tari-wallet is recreated and rescans."
+            msg="Tari payout confirmation view key CHANGED — a new view-only wallet is opened for this address (the previous one is kept)."
         fi
         ;;
     TARI_WALLET_PASSWORD)

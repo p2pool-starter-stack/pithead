@@ -117,3 +117,8 @@ updates:
     groups:
       test-harness:
         patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/dashboard/tests/browser"
+    schedule:
+      interval: "weekly"

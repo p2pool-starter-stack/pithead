@@ -21,6 +21,8 @@ from mining_dashboard.web.server import create_app
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("Main")
 
+SHUTDOWN_TIMEOUT = 3.0
+
 
 def build_app() -> web.Application:
     """Wire up state, clients, services and the web application.
@@ -77,7 +79,10 @@ def main() -> None:
     logger.info("Initializing Dashboard Web Server securely on 127.0.0.1:8000")
     # Bound to localhost (127.0.0.1) so it is inaccessible from the local network directly;
     # traffic is securely routed through the Caddy proxy.
-    web.run_app(app, host="127.0.0.1", port=8000, print=None)
+    # aiohttp waits shutdown_timeout (60s by default) for open connections to drain; the engine
+    # stops the container after its grace period and SIGKILLs it, which an apply recreating the
+    # dashboard then reports as a failed stop (#3300). Drain well inside that grace period.
+    web.run_app(app, host="127.0.0.1", port=8000, print=None, shutdown_timeout=SHUTDOWN_TIMEOUT)
 
 
 if __name__ == "__main__":

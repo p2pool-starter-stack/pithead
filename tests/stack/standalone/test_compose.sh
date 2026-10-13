@@ -147,7 +147,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # leaving the other was green. The two would then run different socket-proxy builds, which is exactly
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
-expect_present "caddy pinned by digest" "caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52"
+expect_present "caddy pinned by digest" "caddy:2.11.7@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772"
 expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.

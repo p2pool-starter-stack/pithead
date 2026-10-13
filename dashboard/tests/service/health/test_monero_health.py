@@ -40,6 +40,7 @@ def test_zero_out_peers_is_red_only_once_sustained():
     assert v["level"] == "red" and v["peerless"] and not v["stalled"]
     assert v["reasons"] == [f"0 outgoing peers for {PEERLESS_SEC // 60} min"]
     assert "restart monerod" in v["advice"]
+    assert "./pithead tor-recover check" in v["advice"]
 
 
 def test_one_peer_clears_peerless_and_restarts_the_clock():

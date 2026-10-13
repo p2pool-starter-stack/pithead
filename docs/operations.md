@@ -17,7 +17,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead logs [service]` | Follow logs for all containers, or a single service (e.g. `logs p2pool`). |
 | `./pithead status` | Show container status and health-check every expected service. Warns about anything down/unhealthy and exits non-zero if so (handy for cron/monitoring). Profile-aware, and treats a stopped `p2pool`/`xmrig-proxy` as intentional during a node-down failover or while the miner is held until the chains sync. |
 | `./pithead test-alert` | Send one marked test message through every configured Telegram, webhook, and ntfy sink. Prints one result per sink without exposing URLs or tokens and exits non-zero if any configured sink fails. Healthchecks is reported as excluded because a ping would move the dead-man switch. |
-| `./pithead doctor` | Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk, `.env`/onion state, and container status — plus runtime checks: the Tor container is actually running while the mining stack runs (a loud FAIL when it's down — the privacy backbone is dead), the Tor-egress firewall rules are actually installed (a reboot silently drops them while the containers auto-restart), something is listening on the stratum port (`p2pool.stratum_port`, default `3333`, and whether that port sits on a public IP), the dashboard app answers behind its container, a clearnet request through Tor's SOCKS succeeds (a failing Tor guard breaks Healthchecks/Telegram/XvB while mining still works — fix with `./pithead restart tor`, or set `tor.auto_heal: true` to automate it), a local monerod reports `synchronized` from its own RPC (a node stranded at 0 peers by a Tor restart keeps a green healthcheck while mining sits on a stale tip — fix with `./pithead restart monerod`, #972), and, on the appliance, Caddy has no wildcard or public-address dashboard listener and the served certificate covers every name Caddy answers on without expiring within 30 days (fix either with `./pithead apply`; an unreadable certificate file warns instead of failing, so a read hiccup can't reboot-loop the box). A paste-able health report. |
+| `./pithead doctor` | Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk, `.env`/onion state, and container status — plus runtime checks: the Tor container is actually running while the mining stack runs (a loud FAIL when it's down — the privacy backbone is dead), the Tor-egress firewall rules are actually installed (a reboot silently drops them while the containers auto-restart), something is listening on the stratum port (`p2pool.stratum_port`, default `3333`, and whether that port sits on a public IP), the dashboard app answers behind its container, a clearnet request through Tor's SOCKS succeeds (a failing Tor guard breaks Healthchecks/Telegram/XvB while mining still works — fix with `./pithead restart tor`, or set `tor.auto_heal: true` with a dashboard login and `dashboard.control.enabled: true` to automate it), a local monerod reports `synchronized` from its own RPC (a node stranded at 0 peers by a Tor restart keeps a green healthcheck while mining sits on a stale tip — fix with `./pithead restart monerod`, #972), and, on the appliance, Caddy has no wildcard or public-address dashboard listener and the served certificate covers every name Caddy answers on without expiring within 30 days (fix either with `./pithead apply`; an unreadable certificate file warns instead of failing, so a read hiccup can't reboot-loop the box). A paste-able health report. |
 | `./pithead backup` | Save `config.json`, `.env`, `Caddyfile`, the Tor onion keys, and the dashboard's database (your hashrate history & settings) to a timestamped, passphrase-encrypted archive under `backups/` (checks free space first; stops a running stack, except caddy, for a clean copy, then restarts everything). If startup fails with unhealthy Tor and its circuit history has the saturated signature, backup discards only Tor's `state` file before retrying; onion keys remain. Other startup failures retain their original error and diagnostics. `--with-chains` also includes the blockchain data; `--no-encrypt` writes a plaintext `tar.gz`; `-y` / `--yes` skips the prompts (low free space and stopping the stack). |
 | `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
@@ -29,7 +29,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead lan-guard-check` | Check the live LAN-only source rule. If it is missing, remove the node start marker and stop the nodes that publish LAN ports; if a stop cannot be verified, try restoring the rule on all three fixed node ports and keep reporting failure until the stop is verified. Fired every two minutes by `pithead-lan.timer`; `up`, `apply` and `upgrade` install the timer while a LAN port is configured or still published by a node. Run `./pithead up` after fixing the firewall to restore access. |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
-| `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. If Compose shutdown fails, print its error and warn that containers may still be running, then continue the wipe (exit 0 on completion). |
 | `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: removes everything pithead put on this host, including the egress firewall rules with their `pithead-egress.service` boot unit and `pithead-egress.timer` check, the LAN-only source rule and its `pithead-lan.timer` check, and deletes NO data, on any flag. Prints the three-column inventory below, resolved for this box, and the exact command to delete the rest. Refuses in a `pithead-vX.Y.Z` directory that `current` does not point at, because every version directory drives the same live stack: run it in the live directory, and delete an old version directory by hand. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
@@ -212,11 +212,14 @@ later silence is unhealthy. This container grace never hides dashboard wallet re
 It exits non-zero when something needs attention, so you can wire it into a cron/monitoring check.
 A stopped `p2pool`/`xmrig-proxy` is reported as intentional, not an error: the dashboard stops it
 either to fail workers over a node-down outage or while the miner is held until the required chains
-finish their initial sync. When a chain is still syncing, `status` reads the dashboard's own
-`/api/state` and prints its progress inline — a line per chain with the percent and the number of
-blocks left, so you don't have to open the dashboard to see how far off release is. No ETA is
-shown: block rate isn't sampled, so the blocks-remaining count is the honest figure. The lines are
-skipped once both chains are synced, or when the dashboard app isn't answering yet.
+finish their initial sync. While the dashboard's global sync gate (`/api/state.syncing`) is on,
+`status` reads `/api/state` and prints each chain's progress inline — a line per chain with the
+percent and the number of blocks left, so you don't have to open the dashboard to see how far off
+release is. A Tari row is never listed while `TARI_REQUIRED=false`. No ETA is shown: block rate
+isn't sampled, so the blocks-remaining count is the honest figure. The lines are skipped when the
+gate is off, or when the dashboard app isn't answering yet. When the gate is off and a miner is
+stopped anyway, the reason reads "the dashboard reports no chain sync in progress — check the
+dashboard and the container logs" instead of claiming a sync hold.
 
 **Start / stop / restart:**
 
@@ -233,7 +236,7 @@ skipped once both chains are synced, or when the dashboard app isn't answering y
 nothing is written or recreated. `--porcelain` makes the output machine-readable
 (`FLAG<TAB>KEY<TAB>MESSAGE` per row); the dashboard control runner uses exactly this.
 
-**Changing the payout wallet:** `apply` asks you to type the first 8 characters of the new address
+**Changing the payout wallet:** `apply` asks you to type the last 8 characters of the new address
 (a bare `y` is not enough for the one change that redirects every future reward; `apply -y` skips
 the prompt for automation). Changing both the Monero and Tari addresses in one `apply` prompts
 once per address. The dashboard also watches the wallet p2pool actually mines to: any
@@ -344,7 +347,12 @@ method, path, and the authenticated user — to `./data/caddy-logs/access.log`
 ([#349](https://github.com/p2pool-starter-stack/pithead/issues/349)). It is always on. Caddy
 redacts credential headers by default, so no password material lands in it, and Caddy's native
 rolling caps it at 4 MiB per file, the current file plus two rolled ones (~12 MiB worst case).
-The dashboard's Configuration view surfaces the same data:
+The dashboard reads the active file and at most two timestamped `access-*.log` or
+`access-*.log.gz` generations. Each plain-file tail and each gzip decompressed prefix is
+capped at 4 MiB; compressed input is also capped at 4 MiB per generation. One summary
+reads at most 12 MiB of JSON and 8 MiB of compressed input. Oversized files, missing or
+corrupt generations, and Caddy retention can omit records from the last-24-hour count.
+The dashboard's Configuration view surfaces these bounded records:
 [recent accesses and a failed-login count](dashboard.md#access-log-and-recent-config-changes).
 
 How to read it, given the dashboard is reachable over a Tor onion
@@ -567,7 +575,7 @@ pin the TLS fingerprint need the new values.
 | item | why it stays | to remove it by hand |
 |---|---|---|
 | apt packages `jq`, `openssl`, `docker.io`, `docker-compose-v2` | other software on the box may use them | `sudo apt-get remove <pkgs>` |
-| GRUB HugePages cmdline | reverting needs `update-grub` and a reboot the verb must not trigger | restore `/etc/default/grub.bak`, `sudo update-grub`, reboot |
+| GRUB HugePages cmdline | reverting needs `update-grub` and a reboot the verb must not trigger | remove `/etc/default/grub.d/zz-pithead-hugepages.cfg`, restore `/etc/default/grub.bak` if an older setup edited the defaults, `sudo update-grub`, reboot |
 | runtime HugePages pool | resets on reboot anyway | `sudo sysctl -w vm.nr_hugepages=0` |
 
 ## The deploy-box layout
@@ -686,7 +694,24 @@ Include the blockchains (larger, slower) with:
 ./pithead backup --with-chains   # also include the blockchain data
 ```
 
-To recover (on a new machine, or after a wipe) copy the archive back and run:
+To recover a DIY installation, run from the original installation directory. After
+`config-reset`, no setup or manual `.env` is needed: the reset retains only the trusted data
+paths in an owner-only `.restore-paths` record. Restore removes that record after success.
+On a fresh installation, default data directories need no prior configuration. For custom data
+directories without a reset record, configure the original paths in `config.json` and run
+`./pithead render` before restoring; an archive cannot authorize new destination paths.
+
+On the appliance, `config-reset` reboots into the setup wizard. After a successful provisioned
+boot, the reset records the current good slot and exact image source. When the wizard container
+starts, firstboot restores that same slot's good state on each configless boot, including a
+reboot while setup is still open. The record remains until a provisioned boot passes its health
+gate, so reset, CLI restore and setup followed by a normal reboot keep the intended slot. An
+unverified slot keeps its normal fallback; the next provisioned boot still requires the stack
+health gate. If you restore from the shell instead of the wizard page, the wizard closes its
+page within seconds of `config.json` returning, which frees ports 80 and 443 for Caddy; run
+`./pithead up` after that.
+
+Copy the archive back and run:
 
 ```bash
 ./pithead down                       # stop the stack first so files restore cleanly
@@ -697,8 +722,12 @@ To recover (on a new machine, or after a wipe) copy the archive back and run:
 `restore` detects the format from the archive itself — encrypted backups ask for the passphrase
 (or read `PITHEAD_BACKUP_PASSPHRASE`), and plaintext archives from earlier releases restore
 unchanged, no flag needed. A wrong passphrase, or a corrupt or truncated archive of either format,
-fails before anything on disk is touched. `restore` also refuses unless Compose confirms that all
-services are stopped. It stages the archive privately, accepts only the configured files and data
+fails before anything on disk is touched. `restore` also refuses while services are running,
+restarting, or paused. With `.env` absent, restore checks the engine's project labels directly;
+`down` stops and removes those containers without interpolating Compose, keeping data and named
+volumes. Networks remain until a configured Compose shutdown. The pinned `pithead` project and
+this directory's legacy project are checked; legacy containers must also carry this directory's
+working-directory label. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
 the validated proxy token, wallet RPC and database passwords, and Tor identities are retained
@@ -722,9 +751,9 @@ install may already have synced chain data, and replacing it would force a resyn
 files that only the archive has. The wizard replaces its Tor and dashboard directories normally.
 
 > NOTE: The archive stores the source box's absolute paths, and `restore` puts every file back
-> exactly where it came from. On a machine laid out differently (another user, another install
-> directory), the files land in the old box's directory tree — not the install you ran `restore`
-> from. Recreate the original path (or move the install there) before restoring.
+> exactly where it came from, after validating the destinations. A different installation path
+> is refused rather than redirected into the old directory tree. Recreate the original
+> installation path and configure any custom data paths before restoring.
 
 > NOTE: After a restore, Caddy regenerates the dashboard's HTTPS certificate, so the browser shows
 > its "not trusted" warning once. Accept it as on first setup.
@@ -818,7 +847,14 @@ failure shows up there rather than as a Tor error. Same private-range requiremen
 
 **HugePages shows as disabled / low.**
 Persistent HugePages require a GRUB change and a **reboot**. Re-run `./pithead setup` (without
-`--skip-optimize`) and reboot when prompted.
+`--skip-optimize`). Setup writes its own `/etc/default/grub.d/zz-pithead-hugepages.cfg`, preserves
+user drop-ins and console arguments, and verifies the generated kernel entries. If verification
+fails, check later GRUB drop-ins and the generated `/boot/grub/grub.cfg`, then re-run setup.
+Reboot only after verification succeeds; confirm `HugePages_Total` in `/proc/meminfo` afterwards.
+An unchanged setup with those flags already in the running kernel does not request another reboot.
+Setup automatically repairs its managed drop-in and recognizable legacy Pithead reservations.
+Other reservations, including differently ordered legacy flags or a plural THP typo, require
+interactive confirmation; setup preserves the main defaults rather than rewriting the typo there.
 
 **Tor egress broken while mining works.**
 Healthchecks reports the host down and Telegram commands go quiet, yet workers keep hashing.
@@ -836,10 +872,18 @@ own within minutes; monerod does **not** — it keeps its dead SOCKS connections
 0 peers for hours while its healthcheck stays green (#972) — so a local monerod is restarted
 right after tor is healthy again and re-dials in about a minute. Re-run `./pithead doctor` to
 confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_heal: true` in `config.json` and run
-`./pithead apply`. The dashboard probes every five minutes with a new SOCKS circuit per request.
+`./pithead apply`. Its circuit refreshes and state recovery go through the host control runner,
+and a refresh must be confirmed before the final restart, so the heal also needs
+`dashboard.control.enabled: true` (the appliance sets it only when a dashboard login exists);
+without it the heal only probes and logs warnings, and sends a recovery note when egress returns.
+Doctor reports this configuration as INFO and names the login and control prerequisite or manual Tor restart. The dashboard probes every five minutes with a new SOCKS circuit per request.
 A failed request is corroborated against a second target before it counts toward the 15-minute
 outage window. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
-continued failure after accepted refreshes permits one Tor container restart, which also re-dials
+continued failure after accepted refreshes permits one final action. With saturated circuit history,
+the dashboard submits `tor-recover`; the host runs the existing recovery gates, including the
+persistent six-hour cooldown, and backs up state before resetting guards. A refused or failed
+recovery is logged and alerted without a fallback restart. Otherwise it performs one Tor container
+restart, which also re-dials
 a running local Monero once Tor's start is confirmed. A failed or timed-out stop/start response
 is an uncertain mutation: the restart attempt and cooldown remain spent, including when both
 responses are unconfirmed. The stop request waits up to two minutes (15 seconds of grace, then the
@@ -854,17 +898,22 @@ restart: the dashboard warns and retries after 30 minutes while the outage persi
 cannot take another automatic action until the host accepts a request. Each step and its probe
 evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
 circuits, duration and preceding action into the Telegram note; the action is not credited as the
-cause of recovery. No automatic step
-changes guards or deletes Tor state. When NEWNYM is unconfirmed or did not restore egress, the
-monitor asks the host for a read-only reading of Tor's circuit-history state. A saturated
+cause of recovery. On the first heal round, 15 minutes into sustained failure, the
+monitor asks the host for a read-only reading of Tor's circuit-history state, then refreshes it
+on later rounds. A saturated
 history (abandoned count and total build times both at 1000, no `CircuitBuildTimeBin`) is logged
 on each such round, sent once per outage to the alert sinks (failed delivery retries on later rounds), and names `./pithead tor-recover`;
-`./pithead doctor` reports it as a FAIL, also shown in the Tor section of Service diagnostics after a health check. Appliance diagnostics name the need for an operator with host shell access. The action budget is three per outage; after that the
-monitor warns until egress recovers. The feature remains off by default.
+`./pithead doctor` reports it as a FAIL, also shown in the Tor section of Service diagnostics after a health check. The doctor check does not require an outage record or auto-heal: saturated history plus live egress failure is enough for a FAIL. The action budget is three per outage; after that the
+monitor warns until egress recovers. A Tor start the monitor did not cause (an operator, `./pithead` or
+Docker restart) opens a fresh outage window and resets the clock, budget and cooldown, so a Tor that
+restarts more often than every 15 minutes never reaches an action or the warning. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
+state reset sends one alert per outage explaining the saturated history and guard reset.
 
 **Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed
 bootstrap, a failed clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
-reports invalid circuit build timing, run `./pithead tor-recover check`. This read-only check
+reports invalid circuit build timing, run `./pithead tor-recover check`. A refused precondition
+prints its warning and exits 1 without the unexpected-abort diagnostic; no recovery is applied.
+This read-only check
 validates the live Tor data mount and the saturated history signature. When local Monero RPC
 answers, it requires peerless, stalled Monero across three minutes (0 outgoing peers at one height,
 whatever `synchronized` says: monerod keeps its last value after losing every peer), with real
@@ -875,8 +924,7 @@ two invalid circuit-timing warnings must appear in the last 200 log lines from t
 unreadable diagnostics refuse recovery. A third class covers a synchronized Monero behind dead
 egress: two failed heal rounds from the same sustained outage, recorded by the host at least
 15 minutes apart, plus a live check that both clearnet targets still fail through Tor's SOCKS.
-The healer requests these readings only after 15 minutes of corroborated failure and an
-unconfirmed or ineffective NEWNYM. Recovery clears the outage evidence; the persistent 24-hour
+The healer requests these readings from the first round after 15 minutes of corroborated failure. Recovery clears the outage evidence; the persistent 24-hour
 NEWNYM budget remains separate. After the automatic action budget is spent, read-only observations continue every 30 minutes.
 The host retains the last two spaced rounds. Evidence older than one hour since the last observation is
 refused. A Tor whose egress answers is refused. It uses sudo for read-only access to Tor-owned state
@@ -936,8 +984,9 @@ stalled height still turns the card red without peer visibility. The container h
 also fails after 30 minutes without a rise past its best height, even with outgoing peers;
 its monotonic height clock resets on a new container run or an unavailable height reading.
 A syncing local node has no at-tip verdict; a node marked stale by the sync monitor is red.
-Doctor omits the last-block age when the RPC timestamp is malformed or outside its integer
-bound. The chain verdict turns red, with the numbers, when monerod has had 0 outgoing peers for
+Doctor omits the last-block age when the RPC timestamp is zero, absent, malformed or outside
+its positive-integer bound. An unavailable tip time does not imply a stale node; peer and
+initial-sync warnings still apply. The chain verdict turns red, with the numbers, when monerod has had 0 outgoing peers for
 10 minutes (`NODE_STALE_AFTER_SEC`) or its height has not moved for 30 minutes (Monero blocks
 arrive about every 2). A red local verdict adds a “Monero chain unhealthy” header badge with the
 reason and recovery advice. It also fails `./pithead doctor` (the Monero sync check prints the

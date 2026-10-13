@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+source "$SCRIPT_DIR/miner-connection-leg.sh" || return $?
 # The provision leg proper, plus the one assertion that must survive its aborts.
 #
 # #2059: the Tor-only egress ENFORCEMENT backstop used to be the last ~55 lines of the body below,
@@ -56,6 +57,7 @@ _phase_provision_initial_body() {
         bad "wizard gate never served"
         return 1
     }
+    phase_wizard_redirect
     stage_dashboard_exposure_addresses || return 1
 
     jar=$(mktemp)
@@ -118,6 +120,11 @@ _phase_provision_initial_body() {
     else
         bad "the card's password is not a generated one: $(printf '%s' "$handoff_body" | jq -c '.password // null')"
     fi
+    if wizard_miner_connection_card_valid "$handoff_body" off false; then
+        ok "new setup hand-off explicitly has no stratum password (#3092)"
+    else
+        bad "new setup hand-off explicitly has no stratum password (#3092)"
+    fi
     scode=$(curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "handoff acknowledgement did not return 200 (got ${scode:-none})"
@@ -171,6 +178,12 @@ _phase_provision_initial_body() {
         stack_never_up_evidence # the unit states alone do not name the dependency `up` waits on
         info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
         return 1
+    fi
+    # Healthy read-only refusal, before unrelated day-two legs can abort this guest (#3262).
+    if SSH_TIMEOUT=45 _ssh 'timeout 40 bash -s' <"$SCRIPT_DIR/tor-recovery-refusal-guest.sh"; then
+        ok "guest healthy Tor recovery refusal exits 1 without unexpected-abort advice (#3262)"
+    else
+        bad "guest healthy Tor recovery refusal proof failed (#3262)"
     fi
     # The fresh-chain sync gate may hold P2Pool, but the bundled Monero listener must already
     # accept Tor's bridge dial. A torrc entry alone does not prove this across containers (#2936).
@@ -226,17 +239,25 @@ _phase_provision_initial_body() {
         bad "no HTTP answer behind caddy on :443 within 5m (last: $code)"
         return 1
     fi
+    phase_dashboard_redirect
     phase_provision_dashboard_exposure || return 1
-    phase_provision_address_watch
-
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
-    phase_provision_xvb_routing
+    phase_provision_earnings_assets "$pv_user" "$pv_pass" || return 1
+    phase_provision_address_watch "$pv_user" "$pv_pass"
+
+    phase_miner_connection_installed "$handoff_body"
     if [ -n "$pv_pass" ] && curl -sSk -u "$pv_user:$pv_pass" "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.step' >/dev/null 2>&1; then
         ok "appliance state carries os_update — the dashboard OS-update control renders"
     else
         bad "no os_update in /api/state — the appliance has no reachable OS-update control"
+    fi
+    # Inspect inside the guest: never print credential-bearing journal lines into evidence.
+    if SSH_TIMEOUT=60 _ssh 'bash -s' <"$SCRIPT_DIR/credential-journals.sh"; then
+        ok "firstboot and system journals contain no bcrypt credential (#3131)"
+    else
+        bad "firstboot or system journal contains bcrypt, or could not be checked (#3131)"
     fi
     phase_provision_control_regressions "$pv_user" "$pv_pass"
     phase_provision_control_recovery "$ip" "$pv_user" "$pv_pass"
@@ -320,6 +341,19 @@ _phase_provision_initial_body() {
         bad "the built-in miner's config does not dial the machine's own stratum (pools: $(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
     fi
 
+    # Same-apply convergence: exercise both toggles while the original boot is still running.
+    local miner_toggle_out miner_toggle_rc
+    miner_toggle_out=$(_ssh 'TMPDIR=/data bash -s' <"$SCRIPT_DIR/appliance-local-miner-leg.sh" 2>&1)
+    miner_toggle_rc=$?
+    if [ "$miner_toggle_rc" -eq 0 ]; then ok "local-miner apply toggle probe completes (#3090)"; else bad "local-miner apply toggle probe failed (#3090)"; fi
+    local miner_toggle_marker
+    for miner_toggle_marker in \
+        'disable apply stopped xmrig and removed derived config without reboot' \
+        'enable apply started xmrig and rendered its pool without reboot' \
+        'original configuration restored'; do
+        if [[ "$miner_toggle_out" == *"local-miner: $miner_toggle_marker"* ]]; then ok "$miner_toggle_marker (#3090)"; else bad "$miner_toggle_marker (#3090)"; fi
+    done
+
     # Runs LAST, after the fresh-chain sync-gate checks above (#2333): its own local-node login
     # edits are quick, but its remote-node round trip recreates monerod/tari and can poll up to 10
     # minutes for the Tari chain_id proof. Placed any earlier, that wall-clock cost — not a bug in
@@ -327,5 +361,28 @@ _phase_provision_initial_body() {
     # the sync-gate-hold checks above run, so they'd stop finding the "still syncing" hold they
     # exist to prove (job 1044/1113/1172/1173: the checks above went red only once this leg's own
     # round trip completed and consumed several extra minutes before them).
+    # Exercise the fixed read-only collector without opening a soak on this disposable guest.
+    local soak_dir soak_rc=0 soak_today
+    soak_dir=$(mktemp -d) || {
+        bad "soak probe scratch directory unavailable (#3188)"
+        return 1
+    }
+    PITHEAD_SOAK_KEY="$KEY" bash "$SCRIPT_DIR/soak-probe.sh" "$ip" "$soak_dir" --read >/dev/null 2>&1 || soak_rc=$?
+    # shellcheck source=tests/os/soak-record.sh
+    source "$SCRIPT_DIR/soak-record.sh"
+    if [ "$soak_rc" -eq 0 ] && soak_live_read_verdict "$soak_dir/read.env"; then
+        ok "soak probe live read records memory, firewall and every optional instrument (#3188)"
+        # Fixed whitelist: no raw env, addresses, credentials or firewall listings enter the log.
+        soak_today=$(sed -n '/^\(mem_.*_kib\|swap_.*_kib\|.*_chain_mib\|tari_height\|p2pool_.*\|proxy_.*\|tor_bootstrap_pct\|firewall_present\|firewall_hash\|first_sync_exemption\|container_stats\)=/p' "$soak_dir/read.env")
+        info "soak recorded readings (#3188): $soak_today"
+    else
+        bad "soak probe live read unavailable or instrument contract incomplete (#3188)"
+    fi
+    if [ ! -e "$soak_dir/started" ] && [ ! -e "$soak_dir/day0.env" ]; then
+        ok "soak probe live proof opens no soak window (#3188)"
+    else
+        bad "soak probe live proof unexpectedly opened a soak window (#3188)"
+    fi
+    rm -rf "$soak_dir"
     phase_provision_remote_node_regressions "$pv_user" "$pv_pass" || bad "reserved-node regression phase aborted before completing required checks"
 }

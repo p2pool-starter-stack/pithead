@@ -90,14 +90,14 @@ rm -rf "$BD"
 
 echo "== static: the restore is wired into the fallback branch, and the commit consumes the record (#1393) =="
 # Both call sites sit below pithead-boot's sourcing boundary, so they are asserted by the text
-# of the script rather than driven: the restore is the else-branch of the hold decision, and the
-# commit-side marker removal names the record too, so a consumed record cannot outlive its
+# of the script rather than driven: the restore handles a non-matching marker result, and
+# the commit-side marker removal names the record too, so a consumed record cannot outlive its
 # migration. Text, not behaviour — said so here, and the battery's fallback leg is the tier above.
 BOOT="$ROOT/os/overlay/pithead-boot"
-hold_else=$(awk '/^if \[ -f \.os-migration-pending \]/{f=1} f&&/^fi$/{print; exit} f' "$BOOT")
-assert_contains "the hold decision's else-branch calls the restore" "$hold_else" "restore_data_floor_after_fallback"
-assert_contains "the else-branch is the NON-matching marker (hold_chain stays 0)" "$hold_else" "hold_chain=1
-else"
+hold_else=$(awk '/^case "\$migration_rc" in$/{f=1} f&&/^esac$/{print; exit} f' "$BOOT")
+assert_contains "the hold decision restores on a non-matching marker" "$hold_else" "restore_data_floor_after_fallback"
+assert_contains "the non-matching marker restores while a matching one sets hold_chain" "$hold_else" "0) hold_chain=1 ;;
+1) restore_data_floor_after_fallback ;;"
 assert_eq "the commit-side removal names the record beside the marker" \
     "$(grep -c '^ *rm -f \.os-migration-pending \.os-data-floor\.prev$' "$BOOT")" "1"
 

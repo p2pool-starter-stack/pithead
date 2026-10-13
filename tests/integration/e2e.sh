@@ -30,7 +30,7 @@ source "$HERE/lib/rig-supply.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
 # restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
 # shellcheck source=tests/integration/lib/restore-proof.sh
-source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" || exit $? # chain-keep: #2639
+source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" && source "$HERE/lib/restore-mining-ready.sh" || exit $? # chain-keep: #2639; mining-ready: #3152
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" && source "$HERE/lib/wallet-fixture.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
@@ -278,10 +278,10 @@ restore_all() {
             RESTORE_PROOF_FAILED=1
         fi
         # Job 1677: status passed before the sync gate stopped p2pool. Wait for its release.
-        if wait_synced 1500 restore && wait_bench_healthy 300; then
+        if wait_synced 1500 restore && wait_bench_healthy 300 && wait_restore_mining_ready 1500; then
             ok "baseline stack healthy again"
         else
-            warn "baseline stack did not regain synced chains and running services before restore proof"
+            warn "baseline stack did not regain synced chains and running mining services before restore proof"
             RESTORE_PROOF_FAILED=1
         fi
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
@@ -376,6 +376,7 @@ preflight() {
     parent_lock_checkpoint "the first bench touch" || die "Parent-held bench lock is not continuous."
     on_bench 'echo ok >/dev/null' || die "Cannot SSH to test-bench host '$BENCH_HOST'."
     ok "SSH to $BENCH_HOST"
+    harness_clear_check_evidence || die "Cannot clear prior doctor check evidence."
     on_bench "test -x '$CANONICAL_DIR/pithead'" || die "No pithead at $CANONICAL_DIR on $BENCH_HOST."
     on_bench "cd '$CANONICAL_DIR' && ./pithead status >/dev/null 2>&1" &&
         ok "canonical stack is currently healthy" ||
@@ -659,7 +660,6 @@ run_harness() {
     on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/  /'
     return "${rc:-1}"
 }
-
 # --- Main -------------------------------------------------------------------
 main() {
     log "Pithead e2e — branch '$BRANCH' → $BENCH_HOST (mode=$MODE)$([ "$KEEP" = 1 ] && echo '  [--keep: no restore]')"

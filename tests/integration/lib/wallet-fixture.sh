@@ -4,7 +4,8 @@ WALLET_CACHE_SNAPSHOT=""
 WALLET_CACHE_IMPORTED=0
 
 wallet_fixture_command() {
-    on_bench "python3 - $(quote_arg "$1") $(quote_arg "$RESTORE_DIR") $(quote_arg "$WALLET_CACHE_SNAPSHOT") $(quote_arg "$E2E_DIR")" <"$HERE/lib/wallet-fixture.py"
+    cat "$HERE/lib/wallet_fixture_capture.py" "$HERE/lib/wallet-fixture.py" |
+        on_bench "python3 - $(quote_arg "$1") $(quote_arg "$RESTORE_DIR") $(quote_arg "$WALLET_CACHE_SNAPSHOT") $(quote_arg "$E2E_DIR")"
 }
 
 wallet_fixture_receipt() {

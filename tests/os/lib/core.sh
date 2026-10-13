@@ -210,6 +210,7 @@ _build_image() {
         tail -12 /tmp/os-fault-build.log >&2
         return 1
     }
+    [ -z "${2:-}" ] || bash tests/os/build-label-fixture.sh "$2" os/build/pithead-root.tar || return 1
     os/rauc/mkimage.sh --dev >>/tmp/os-fault-build.log 2>&1 || return 1
     # Every image a phase boots gets the static verification first, in --test mode. The check
     # that matters most is the archive-vs-tree comparison: stale wizard images reached three

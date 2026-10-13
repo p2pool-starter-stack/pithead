@@ -32,7 +32,7 @@ running_services() { rx "docker compose ps --services --status running 2>/dev/nu
 
 # Two consecutive running samples reject a transient release before a second sync-gate hold.
 _pred_mining_probe_running() {
-    if rx 'running=$(timeout 10 docker compose ps --services --status running) && grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"'; then
+    if rx 'running=$(timeout --kill-after=2 10 docker compose ps --services --status running) && grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"'; then
         mining_probe_samples=$((mining_probe_samples + 1))
     else
         mining_probe_samples=0
@@ -47,7 +47,7 @@ assert_mining_probe_ready() {
     else
         it_fail "mining services running before $probe" "both services did not remain running for two consecutive samples within 1500s"
     fi
-    # A failed prerequisite never suppresses the caller's UID or TLS assertions.
+    # A failed prerequisite never suppresses the caller's fixture assertions.
 }
 
 # Print "<state> <health>" for one service, exactly as stack_status reads it: state is the
@@ -244,6 +244,13 @@ run_scenario() {
             assert_egress_posture
         else
             it_fail "turning P2Pool clearnet off removes its live firewall exemption (#2790)" "apply or live readback failed"
+        fi
+    fi
+    if [ "$name" = local-pruned-main-payout-pairs ]; then
+        if rx 'timeout 3600 bash tests/integration/payout-pairs/run.sh' >"$OUT_DIR/payout-pairs.log" 2>&1; then
+            it_pass "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)"
+        else
+            it_fail "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)" "see payout-pairs.log"
         fi
     fi
     # If this scenario turned anything red, grab artifacts for it.

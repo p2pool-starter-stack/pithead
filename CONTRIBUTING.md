@@ -56,6 +56,8 @@ The shell suite refuses to run directly on macOS and that refusal is correct: th
 are written against GNU `sed`/`stat`, BSD tools differ without failing loudly, and an
 unmodified `develop` scores 3708 passed / 148 failed there. The container is how you get a
 verdict that means something. The dashboard and frontend unit suites still run fine on the host.
+The standalone soak probe is also portable: run `bash tests/os/soak-probe.sh --self-test`
+on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require GNU tools.
 
 ## Development workflow
 

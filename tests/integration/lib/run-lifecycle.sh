@@ -1,34 +1,39 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034 # LIFECYCLE_STACK_INTACT is read by the phase gate in run.sh
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-background-sync.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 run_lifecycle() {
-    # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"
-    local lifecycle_ok=1
+    local lifecycle_ok=1 reset_failed=0 # reset_failed: 1 changed state, 2 left the stack intact (#3342)
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
+    lifecycle_gate_sample before-wizard-defaults
+    run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
-    # restart brings the stack back healthy.
+    prove_wallet_supersession
+    lifecycle_gate_sample before-restart
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after restart" "$?" "0"
-
-    # #2654: a source checkout ups with --pull never, so a digest-pinned third-party image that is
-    # gone from the engine (after `uninstall`, or on a new host) left its services down. Remove the
-    # socket-proxy image (docker-proxy and docker-control, both profile-free) and prove `up` fetches it.
+    lifecycle_gate_sample after-restart
+    run_connection_announcements || return 1
+    # Remove the socket-proxy image and prove up fetches a missing pinned image (#2654).
     if rx 'test -f dashboard/Dockerfile'; then
         local proxy_ref proxy_id proxy_fails="$IT_FAIL"
         proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"
         proxy_id="$(rx "docker image inspect --format '{{.Id}}' $(quote_arg "$proxy_ref")" 2>/dev/null)"
+        lifecycle_gate_sample before-image-down
         it_step "removing the pinned socket-proxy image, then pithead up (#2654)…"
         if [ -n "$proxy_ref" ] && [ -n "$proxy_id" ] && pithead down >/dev/null 2>&1 &&
             rx "docker image rm -f $(quote_arg "$proxy_id")" >/dev/null 2>&1; then
             local up_out up_rc
             up_out="$(pithead up 2>&1)"
             up_rc=$?
+            lifecycle_gate_sample after-image-up
             assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
             # The failing pull or up names its cause; job 1280 lost it to /dev/null (#2755).
             [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
@@ -50,10 +55,8 @@ run_lifecycle() {
     else
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
-
     run_source_image_reconcile || return 1
-    # apply that changes the sidechain recreates only the affected containers, preserving
-    # secrets. We flip main<->mini and assert the token/onions are untouched, then revert.
+    run_tari_background_sync || return 1
     local cur_pool fp_before
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
@@ -88,7 +91,6 @@ run_lifecycle() {
     # .pool.type lags a sidechain switch until peers on the new chain connect — wait + three-way
     # verdict, don't assert cold on a peer-timing state (#54, #687).
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
-
     # Node-down failover (#31): stop monerod -> status non-zero (node down), dashboard rejects
     # workers (xmrig-proxy stopped) -> start monerod -> readmitted -> status 0 again.
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
@@ -105,7 +107,6 @@ run_lifecycle() {
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
-
     # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
     # restore brings them back. We change the pool, restore, and assert the pool reverted and
     # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check
@@ -115,9 +116,12 @@ run_lifecycle() {
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
         if [ -n "$arch" ]; then
-            local fp_b backed_pool fp_after
+            local fp_b backed_pool fp_after gate_marker_before gate_marker_after
             if ! fp_b="$(upgrade_secret_fingerprints)" || [ -z "$fp_b" ]; then
                 it_fail "backup secrets fingerprint readable" "could not fingerprint backed-up secrets"
+                lifecycle_ok=0
+            elif ! gate_marker_before="$(sync_gate_marker_state)"; then
+                it_fail "backed-up sync-gate policy readable" "missing path or invalid marker"
                 lifecycle_ok=0
             elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
                 it_fail "backed-up pool state readable" "dashboard did not report pool.type before restore"
@@ -134,16 +138,11 @@ run_lifecycle() {
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
                     lifecycle_ok=0
                 fi
-                # Operator ruling on #2626: `./pithead restore` is same-box recovery, not the
-                # cross-hardware carry restore_apply() handles, so it must NOT hold the miner behind
-                # the sync gate — this bench's chains never desynced. No marker, and p2pool comes
-                # back up on `up`'s own schedule rather than sitting stopped behind a hold `status`
-                # wouldn't flag (it treats a gate-stopped p2pool as intentional).
-                local ddir
-                ddir="$(env_on_box DASHBOARD_DATA_DIR)"
-                if [ -n "$ddir" ]; then
-                    assert_eq "restore plants no sync-gate marker (#2626, same-box recovery)" \
-                        "$(rx "sudo test -e $(quote_arg "$ddir/sync-gate-reset")" 2>/dev/null && echo present || echo none)" none
+                if ! gate_marker_after="$(sync_gate_marker_state)" || [ "$gate_marker_after" != "$gate_marker_before" ]; then
+                    it_fail "restore preserves sync-gate policy without a new hold (#2626)" "marker changed or unreadable"
+                    lifecycle_ok=0
+                else
+                    it_pass "restore preserves sync-gate policy without a new hold (#2626)"
                 fi
                 if wait_for 60 5 "p2pool running after restore, not held (#2626)" \
                     _pred_p2pool_running; then
@@ -176,7 +175,6 @@ run_lifecycle() {
         it_fail "pithead backup succeeded" "backup returned non-zero"
         lifecycle_ok=0
     fi
-
     # Confirmed dashboard.data_dir carry (#2360): DASHBOARD_DATA_DIR is CONFIRM-class both from
     # the dashboard (typed APPLY) and the host CLI (folded into the disruptive y/N, exercised here
     # with -y) — same apply()-time carry either way. Without it the recreated dashboard would open
@@ -222,8 +220,10 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
-    run_uninstall_round_trip || lifecycle_ok=0
-    [ "$lifecycle_ok" = 1 ]
+    run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
+    [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
+    [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
+    [ "$lifecycle_ok$reset_failed" = 10 ]
 }
 
 # A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
@@ -323,7 +323,6 @@ run_uninstall_round_trip() {
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
     assert_eq "uninstall removes every derived path and .env" "$left" ""
 
-    # An operator's setup here generates the secrets that lived only in .env anew (docs/operations.md).
     # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
     # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
     # wallet volume created under a new password would not open under the restored old one.
@@ -335,6 +334,7 @@ run_uninstall_round_trip() {
     out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
     rc=$?
     assert_rc "setup after uninstall succeeded" "$rc" "0"
+    rr_web_ports_owned_by_dashboard "setup after uninstall" || return 1
     [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -n 15 | redact | sed 's/^/        /'
     if wait_status_ok 600; then
         it_pass "status OK after setup-after-uninstall"

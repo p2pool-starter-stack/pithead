@@ -233,14 +233,14 @@ async def _get_monero_sync_status_from_logs():
 
 
 async def get_monero_sync_status():
-    """
-    Determines whether to check local docker logs or P2Pool's network stats
-    based on the configured MONERO_NODE_HOST.
-    """
+    """Probe the configured node's RPC; use logs or P2Pool stats only as display fallbacks."""
     if MONERO_NODE_HOST == LOCAL_MONERO_HOST:
         return await _get_local_monero_sync_status()
-    # Remote node: we don't probe its RPC, so report it reachable — the reject-workers
-    # feature (Issue #31) deliberately no-ops for remote nodes (p2pool manages those).
+    rpc_status = await asyncio.to_thread(_monero_client.get_sync_status)
+    if rpc_status is not None:
+        rpc_status["reachable"] = True
+        return rpc_status
+    # P2Pool stats can remain stale after a remote outage. They are no proof of reachability.
     status = await _get_remote_monero_sync_status()
-    status.setdefault("reachable", True)
+    status["reachable"] = False
     return status

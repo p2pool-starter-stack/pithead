@@ -372,6 +372,7 @@ services:
       # bundled node's fixed bridge IP) and remote (a third-party/fleet-shared node's host:port);
       # the fallback here is the stock local default for a bare `docker compose up` bypassing
       # pithead. Harmless either way — this service never runs in remote mode (the gate above).
+      - TARI_WALLET_ADDRESS=${TARI_WALLET_ADDRESS}
       - TARI_BASE_NODE_GRPC_ADDRESS=${TARI_GRPC_ADDRESS:-172.28.0.27:18142}
       - TARI_WALLET_BIRTHDAY=${TARI_WALLET_BIRTHDAY:-auto}
       - TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143
@@ -622,6 +623,10 @@ services:
         PITHEAD_GIT_BRANCH: ${PITHEAD_GIT_BRANCH:-}
         PITHEAD_RELEASE: ${PITHEAD_RELEASE:-}
     container_name: dashboard
+    # Room for the drain in main.py (3s) plus background-task cancel and the SQLite close. A stop that
+    # outruns the grace period is SIGKILLed and the engine can answer the stop with a 500, which
+    # fails an apply mid-recreate with the dashboard down (#3300).
+    stop_grace_period: 30s
     # Memory ceiling (#132 — see monerod). A small aiohttp + SQLite app (~0.06 GiB observed); a tight
     # cap is pure upside — a memory regression OOM-restarts the dashboard, not the revenue services.
     mem_limit: 512m
@@ -689,6 +694,9 @@ services:
         bind:
           create_host_path: false
     environment:
+      - PROXY_STRATUM_PASSWORD=${PROXY_STRATUM_PASSWORD:-}
+      - PROXY_STRATUM_TLS=${PROXY_STRATUM_TLS:-false}
+      - STRATUM_TLS_FINGERPRINT=${STRATUM_TLS_FINGERPRINT:-}
       - HOST_IP=${HOST_IP:-127.0.0.1}
       # Timezone for dashboard timestamps/charts. Set via `dashboard.timezone` in config.json
       # (`auto` = the host's timezone, auto-detected); pithead renders it to DASHBOARD_TZ in
@@ -989,7 +997,7 @@ services:
   # Bridges the local 127.0.0.1 application binding to the LAN
   # Serves HTTPS or HTTP depending on configuration
   caddy:
-    image: caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52
+    image: caddy:2.11.7@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772
     container_name: caddy
     # Memory ceiling (#132 — see monerod). Reverse proxy + local TLS only (~13 MiB observed).
     mem_limit: 128m

@@ -75,7 +75,10 @@ bad() { ROWS+=("$1"); }
 _build_bundle_stamped() { printf '%s' "$T/bundle"; }
 bundle_build_evidence() { :; }
 osupdate_failure_evidence() { :; }
-_floor_fallback_wait() { return 0; }
+_floor_fallback_wait() {
+    [ "$1" = vfail ] && [ "$2" = 1800 ] || fail "wait must exclude the literal failing marker"
+    return 0
+}
 _floor_state() {
     local seq=("99.0.0|1.0.0|99.0.0" "1.0.0||" "99.0.0|1.0.0|99.0.0" "99.0.0||")
     echo x >>"$T/state-calls"

@@ -210,6 +210,7 @@ pin() {
     tari-wallet) grep -oE 'ghcr.io/tari-project/minotari_console_wallet:[^ ]+' docker-compose.yml | head -1 ;;
     caddy) grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' docker-compose.yml | head -1 ;;
     socket-proxy) grep -oE 'tecnativa/docker-socket-proxy:[^ ]+' docker-compose.yml | head -1 ;;
+    rigforge) grep -oE '^ARG RIGFORGE_REF=.*' os/rootfs/Dockerfile | cut -d= -f2 ;;
     esac
 }
 

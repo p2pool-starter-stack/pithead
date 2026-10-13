@@ -357,18 +357,30 @@ MergeMiningClientTari tari://tari.fixture:18142 uses chain_id 0123456789abcdef'
     return 0
 )
 
-# The one invariant behind #2060's control rows: the POST must outlast the window the dashboard
-# itself waits before handing back a pollable id. Both numbers are read from their own sources — a
-# literal repeated here would keep passing after either side moved, which is exactly how an 8s cap
-# survived beside a 30s server wait and a 420s outer deadline.
+# The actual POST timeout must outlast the server answer window (#2060).
+# Also exercise the retry override; reading a declared default would miss a hard-coded curl cap.
 _control_post_timeout_self_test() (
     local here cap window
     here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-    cap=$(awk '/^dashboard_control_post\(\)/, /^}/' "$here/appliance-config-approval-leg.sh" |
-        sed -n 's/.* -m \([0-9][0-9]*\) .*/\1/p')
+    # shellcheck source=tests/os/appliance-config-approval-leg.sh
+    . "$here/appliance-config-approval-leg.sh"
+    # shellcheck disable=SC2034 # POST URL reads ip through dynamic scope
+    local ip=fixture
+    dashboard_curl() {
+        cat >/dev/null
+        while [ "$#" -gt 0 ]; do
+            if [ "$1" = -m ]; then
+                printf '%s' "$2"
+                return 0
+            fi
+            shift
+        done
+        return 1
+    }
+    cap=$(dashboard_control_post preview '{}') || return 1
+    [ "$(dashboard_control_post preview '{}' 7)" = 7 ] || return 1
     window=$(sed -n 's/^CONTROL_WAIT_S *= *float(os.environ.get("CONTROL_WAIT_S", *\([0-9][0-9.]*\))).*/\1/p' \
         "$here/../../dashboard/mining_dashboard/config/config.py")
-    # Either read coming back empty means the shape it keys on moved; that is a failure, not a pass.
     [ -n "$cap" ] && [ -n "$window" ] || return 1
     awk -v c="$cap" -v w="$window" 'BEGIN { exit !(c > w) }'
 )

@@ -5,7 +5,7 @@
 # p2pool.pool, dashboard auth) plus a few high-level "how should this run" shape questions —
 # tari.mode among them (#1916), asked by wizard_ask_tari in the same place and the same three-way
 # shape the browser wizard asks it, so the two setup paths cannot answer it differently.
-# Everything else keeps its config.reference.json default, silently — see wizard_print_pointer.
+# New installs write XvB off and private initial sync explicitly; other defaults are inherited.
 # workers.list (also in the shortlist, #529) isn't asked inline: it's a variable-length list of
 # per-rig objects, not a single answer, and the standard fleet needs no entries at all (see
 # docs/workers.md) — so it's covered by the closing pointer instead of a prompt, matching the
@@ -37,7 +37,7 @@ ensure_config_exists() {
 
 # Stage 1 (required — only the operator can answer these): the Monero payout address, local/remote
 # node (+ remote details), the Tari merge-mining question (delegated to wizard_ask_tari), pool tier,
-# and an optional dashboard login. Sets globals consumed by wizard_write_config: IN_MONERO_WALLET,
+# and a generated dashboard login (with an explicit opt-out). Sets globals consumed by wizard_write_config: IN_MONERO_WALLET,
 # MONERO_MODE_WIZ, REMOTE_HOST, REMOTE_RPC, REMOTE_ZMQ, IN_MONERO_USER, IN_MONERO_PASS, POOL_TIER,
 # IN_DASH_USER, IN_DASH_PASS — plus wizard_ask_tari's own.
 wizard_ask_core() {
@@ -107,19 +107,27 @@ wizard_ask_core() {
         ;;
     esac
 
-    # Dashboard login (core shortlist, #529) — optional, Enter-through: no login is the safe
-    # default on a private LAN, so blank means "skip", not "generate one for me."
     echo ""
-    echo "--- Dashboard Login (optional) ---"
-    echo "No login by default (fine on a private LAN). Set one if you'd like — Enter to skip."
+    echo "--- Dashboard Login ---"
     read -r -p "Dashboard username [admin]: " IN_DASH_USER || true
     IN_DASH_USER="${IN_DASH_USER:-admin}"
     while :; do
-        read -r -s -p "Dashboard password (8+ chars, Enter to skip): " IN_DASH_PASS || break
+        read -r -s -p "Dashboard password (8+ chars, Enter to generate, 'none' for no login): " IN_DASH_PASS || true
         echo ""
-        [ -z "$IN_DASH_PASS" ] && break
+        [ "$IN_DASH_PASS" == "none" ] && {
+            IN_DASH_PASS=""
+            break
+        }
+        if [ -z "$IN_DASH_PASS" ]; then
+            IN_DASH_PASS=$(generate_node_password) || error "Could not generate a dashboard password. Setup aborted."
+            [[ "$IN_DASH_PASS" =~ ^[A-Za-z0-9]{32}$ ]] || error "Could not generate a dashboard password. Setup aborted."
+            echo "Dashboard login: $IN_DASH_USER"
+            echo "Generated dashboard password: $IN_DASH_PASS"
+            echo "Save it now — it is also stored in your owner-only config.json."
+            break
+        fi
         [ "${#IN_DASH_PASS}" -ge 8 ] && break
-        echo "  ✗ Must be at least 8 characters (or blank to skip). Try again." >&2
+        echo "  ✗ Must be at least 8 characters. Try again." >&2
     done
 }
 
@@ -131,50 +139,42 @@ wizard_port() {
     is_valid_port "$1" && printf '%s' "$1" || printf '%s' "$2"
 }
 
-# The Enter-through answer to "Merge-mine Tari?" (#1916), derived from free disk rather than fixed.
-# The bundled Tari node adds a 200 GiB budget on top of Monero's, so a fixed yes commits
-# an undersized host to a first sync that fills its disk, and a fixed no drops the stack's headline
-# feature on a host with room to spare. Sets WIZ_TARI_DEFAULT to "local" or "off", and PRINTS the
-# one-line reason for it — the operator reads the measurement, not just the verdict it produced.
-# Printing rather than returning the reason is deliberate: a `$(...)` caller would run this in a
-# subshell, where a second global could be set and silently lost.
+# The Enter-through answer to "Merge-mine Tari?" (#1916, #3333). Tari merge-mining is an opt-in
+# beta for new installs: the node and wallet are pre-release upstream builds, the node over Tor is
+# offline for part of each day, and the bundled node adds a 200 GiB budget on top of Monero's. So
+# Enter means "off". The one exception is a data disk that already holds a Tari chain
+# (wizard_tari_chain_held): a reinstall that keeps its data must not silently drop merge-mining.
+# Sets WIZ_TARI_DEFAULT to "local" or "off", and PRINTS the one-line reason for it — the operator
+# reads the measurement, not just the verdict it produced. Printing rather than returning the reason
+# is deliberate: a `$(...)` caller would run this in a subshell, where a second global could be set
+# and silently lost.
 #
 # Budget figures and mount resolution come from disk_component_gib / disk_fs_mount, the same source
-# doctor's Disk check and preflight_resources read, so a host offered "local" here is not a host
-# doctor then warns about. ./data is the location because config.json — the file that could move a
-# data_dir — is what this wizard is being run to write.
-#
-# Best-effort: a mount or a df that will not resolve gives "local", which is what every pre-#1916
-# run did and what an omitted tari.mode still means, and the line says the disk could not be read.
+# doctor's Disk check and preflight_resources read. ./data is the location because config.json —
+# the file that could move a data_dir — is what this wizard is being run to write. The free-space
+# line is information for someone who answers Yes; it no longer decides the default.
 # Args: <monero_mode> — "remote" leaves Monero's chain out of the budget; it lives on another host.
 wizard_tari_disk_default() {
-    local monero_mode="$1" mount avail_kb avail_h need_gib comp verdict
-    need_gib=0
-    for comp in tari p2pool dashboard tor; do
-        need_gib=$((need_gib + $(disk_component_gib "$comp")))
-    done
-    [ "$monero_mode" == "remote" ] || need_gib=$((need_gib + $(disk_component_gib monero 1)))
-
+    local monero_mode="$1" mount avail_kb avail_h need_gib fit
+    if wizard_tari_chain_held; then
+        WIZ_TARI_DEFAULT="local"
+        echo "Disk: a Tari chain is already on this machine's data disk, so keeping merge-mining on is the default."
+        return 0
+    fi
+    WIZ_TARI_DEFAULT="off"
+    need_gib=$(wizard_stack_need_gib "$monero_mode")
     mount=$(disk_fs_mount "$PWD/data" 2>/dev/null) || mount=""
     avail_kb=""
     if [ -n "$mount" ]; then
         avail_kb=$(df -P "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_kb=""
     fi
     if [ -z "$avail_kb" ]; then
-        WIZ_TARI_DEFAULT="local"
-        echo "Disk: could not read the free space where $PWD/data will live, so running the bundled node is the default. The whole stack needs ~${need_gib} GiB there."
+        echo "Disk: could not read the free space where $PWD/data will live. The whole stack with the bundled Tari node needs ~${need_gib} GiB there. Tari merge-mining is a beta, so declining is the default."
         return 0
     fi
     avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_h=""
-    # One sentence, one verdict clause: the two outcomes cannot drift apart on a later edit.
-    if [ "$avail_kb" -ge "$((need_gib * 1048576))" ] 2>/dev/null; then
-        WIZ_TARI_DEFAULT="local"
-        verdict="it fits, so running it is the default."
-    else
-        WIZ_TARI_DEFAULT="off"
-        verdict="it does not fit, so declining is the default. Option 3 keeps the chain off this disk."
-    fi
-    echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GiB there — $verdict"
+    if [ "$avail_kb" -ge "$((need_gib * 1048576))" ] 2>/dev/null; then fit="it fits"; else fit="it does not fit"; fi
+    echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GiB there — $fit. Tari merge-mining is a beta, so declining is the default."
 }
 
 # Stage 1b (#1855/#1916): does this machine merge-mine Tari at all, and against whose node?
@@ -198,10 +198,12 @@ wizard_ask_tari() {
     echo ""
     echo "--- Tari merge-mining ---"
     echo "Merge-mining earns Tari from the same work that mines Monero, so it costs no hashrate —"
-    echo "but it needs its own payout address and a Tari base node."
+    echo "but it needs its own payout address and a Tari base node. This is a beta: the Tari"
+    echo "software is a pre-release build, and the bundled node downloads and syncs a Tari chain"
+    echo "over Tor, which takes days."
     echo "  1) No — mine Monero only"
-    echo "  2) Yes — run the bundled Tari node on this machine"
-    echo "  3) Yes — use a Tari node I already run"
+    echo "  2) Yes (beta) — run the bundled Tari node on this machine"
+    echo "  3) Yes (beta) — use a Tari node I already run"
     wizard_tari_disk_default "$MONERO_MODE_WIZ" # prints the Disk: line, sets WIZ_TARI_DEFAULT
     dflt=2
     [ "$WIZ_TARI_DEFAULT" == "off" ] && dflt=1
@@ -250,9 +252,17 @@ wizard_ask_shape() {
     echo ""
     echo "--- A Few More (Enter for the default) ---"
 
-    read -r -p "First sync: private over Tor (days), or clearnet (hours; your IP visible to peers, then auto-switches to Tor)? (y/N = private): " IN_CLEARNET || true
+    read -r -p "Enable fast initial sync over clearnet for local chains? (y/N): " IN_CLEARNET || true
     CLEARNET_SYNC=false
-    [[ "$IN_CLEARNET" =~ ^[Yy] ]] && CLEARNET_SYNC=true
+    if [[ "$IN_CLEARNET" =~ ^[Yy] ]]; then
+        CLEARNET_SYNC=true
+        local networks=""
+        [ "$MONERO_MODE_WIZ" == "local" ] && networks="the Monero network"
+        if [ "$TARI_MODE_WIZ" == "local" ]; then
+            networks="${networks:+$networks and }the Tari network"
+        fi
+        [ -z "$networks" ] || warn "Fast sync exposes your IP address to $networks until the initial sync finishes."
+    fi
 
     read -r -p "Reach the dashboard from outside your LAN over Tor? (y/N): " IN_ONION || true
     ONION_ENABLED=false
@@ -275,6 +285,17 @@ wizard_ask_shape() {
     read -r -p "Also mine on this machine with its spare CPU (co-locate a RigForge worker)? (y/N): " IN_LOCAL_MINER || true
     LOCAL_MINER=false
     [[ "$IN_LOCAL_MINER" =~ ^[Yy] ]] && LOCAL_MINER=true
+
+    wizard_ask_stratum_password
+}
+
+wizard_ask_stratum_password() {
+    read -r -p "Enable stratum password? (y/N): " IN_STRATUM_AUTH || true
+    WIZ_STRATUM_PASSWORD=""
+    if [[ "$IN_STRATUM_AUTH" =~ ^[Yy] ]]; then
+        WIZ_STRATUM_PASSWORD=$(openssl rand -hex 12) || error "Could not generate the stratum password. Setup stopped."
+        [[ "$WIZ_STRATUM_PASSWORD" =~ ^[0-9a-f]{24}$ ]] || error "Could not generate the stratum password. Setup stopped."
+    fi
 }
 
 # Assembles config.json from the globals wizard_ask_core/wizard_ask_shape set, and writes it.
@@ -287,9 +308,11 @@ wizard_write_config() {
         --arg mp "$IN_MONERO_PASS" \
         --arg tmode "$TARI_MODE_WIZ" \
         --arg pool "$POOL_TIER" \
+        --arg stratum_password "${WIZ_STRATUM_PASSWORD:-}" \
         '{monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: $mp},
           tari: {mode: $tmode},
-          p2pool: {pool: $pool, stratum_password: "auto"},
+          p2pool: {pool: $pool, stratum_password: $stratum_password},
+          xvb: {enabled: false},
           dashboard: {secure: true}}')
 
     # tari.mode is written EXPLICITLY, and it is the one key here that departs from the rest of the
@@ -300,7 +323,9 @@ wizard_write_config() {
     # so the key is absent rather than written empty. Same two rules as the browser wizard's
     # build_config, for the same two reasons.
     if [ "$TARI_MODE_WIZ" != "off" ]; then
-        cfg=$(jq --arg tw "$IN_TARI_WALLET" '.tari.wallet_address = $tw' <<<"$cfg")
+        # A Yes on a new install must not let an opted-in beta Tari hold or reject Monero mining
+        # (#3333); an operator can raise dashboard.tari_required in the config later.
+        cfg=$(jq --arg tw "$IN_TARI_WALLET" '.tari.wallet_address = $tw | .dashboard.tari_required = false' <<<"$cfg")
     fi
 
     if [ "$TARI_MODE_WIZ" == "remote" ]; then
@@ -317,9 +342,9 @@ wizard_write_config() {
         cfg=$(jq --arg u "$IN_DASH_USER" --arg p "$IN_DASH_PASS" '.dashboard.auth = {username: $u, password: $p}' <<<"$cfg")
     fi
 
-    if [ "$CLEARNET_SYNC" = true ]; then
-        cfg=$(jq '.monero.clearnet_initial_sync = true | .tari.clearnet_initial_sync = true' <<<"$cfg")
-    fi
+    cfg=$(jq --argjson fast "$CLEARNET_SYNC" \
+        '.monero.clearnet_initial_sync = ($fast and .monero.mode != "remote") |
+         .tari.clearnet_initial_sync = ($fast and .tari.mode == "local")' <<<"$cfg")
 
     if [ "$ONION_ENABLED" = true ]; then
         # Password (if still unset) and client-auth are handled downstream by

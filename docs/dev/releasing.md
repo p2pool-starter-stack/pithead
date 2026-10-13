@@ -36,7 +36,7 @@ The product version lives in a top-level [`VERSION`](../../VERSION) file: plain 
 
 ## Component pins = an ingredients manifest
 
-Every component stays pinned (build ARGs and image tags). The pins are the ingredients lockfile
+Every component stays pinned (build ARGs, commit refs and image tags). The pins are the ingredients lockfile
 of each product release, not independent releases:
 
 - The dashboard surfaces them as "what's inside vX.Y.Z" (component info is already shown).
@@ -59,8 +59,10 @@ reports and never bumps: a Tari or
 request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
 bumps on the component pins for the same reason.
 
+The release ingredients manifest records the appliance's baked RigForge commit from
+`RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
-cannot change what is baked; that row resolves the latest release tag to the commit it names and
+cannot change what is baked; the pin watcher resolves the latest release tag to the commit it names and
 compares the two commits. Comparing the commit against the tag directly would read stale for ever,
 including straight after a correct bump.
 
@@ -209,7 +211,10 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    [Signed releases](#signed-releases).
 8. Publish GitHub Release: create the git tag `vX.Y.Z`, fast-forward `main` to the tagged commit
    (see [Branch mechanics](#branch-mechanics)), write the release notes from the `CHANGELOG.md`
-   entry, and attach release assets: a pinned `docker-compose.yml` / config bundle referencing
+   entry matching the tag (including its Known issues section, excluding Unreleased and other
+   versions). If the tag has no entry, warn on stderr and use the first non-Unreleased section;
+   if the changelog is absent, use `Pithead <TAG>`. Attach release assets: a pinned
+   `docker-compose.yml` / config bundle referencing
    `${STACK_VERSION}=vX.Y.Z`, its detached signature (`pithead.tar.gz.sig`), plus the ingredients
    manifest (exact component versions + promoted image digests). The install bundle includes the
    generated CLI and top-level operator guides, but no source slices, appliance code, tests,
