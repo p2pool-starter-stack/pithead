@@ -74,6 +74,7 @@ drive_backup() { # <reported-container-mount> -> run_rotate_onion rc
     ) >/dev/null 2>&1
 }
 
+echo "== recovery copies stay outside container mounts =="
 mkdir -p "$BOX/backups/child"
 CHILD_MOUNT="$(cd "$BOX/backups/child" && pwd -P)"
 drive_backup "$CHILD_MOUNT"

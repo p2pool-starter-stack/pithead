@@ -113,10 +113,13 @@ DEPLOY_ORDER="$({
     BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e
     parent_lock_checkpoint() { :; }
     prepare_rotate_onion_fixture() { echo prepare; }
-    deploy_keeping_chain() { echo deploy; }
+    # shellcheck source=tests/integration/lib/chain-keep.sh
+    source "$HERE/../lib/chain-keep.sh"
+    ROTATE_FIXTURE_REQUIRED=1
+    chain_snapshot() { echo snapshot >&2; }
     bootstrap_rotate_onion_fixture() { echo bootstrap; }
     log() { :; }
-    on_bench() { :; }
+    on_bench() { case "$1" in *'./pithead upgrade'*) echo upgrade ;; esac }
     step() { :; }
     wait_bench_healthy() { :; }
     wait_synced() { :; }
@@ -125,9 +128,9 @@ DEPLOY_ORDER="$({
     die() { return 1; }
     eval "$DEPLOY_SRC"
     deploy_branch
-})"
-assert_eq "fixture preparation precedes the deploy, but identity minting follows its chain snapshot" \
-    "$DEPLOY_ORDER" "$(printf 'prepare\ndeploy\nbootstrap')"
+} 2>&1)"
+assert_eq "fixture identities are minted after the baseline snapshot and before consumers start" \
+    "$DEPLOY_ORDER" "$(printf 'prepare\nsnapshot\nbootstrap\nupgrade')"
 
 RESTORE_SRC="$(sed -n '/^restore_all() {$/,/^}$/p' "$E2E_SRC")"
 assert_eq "the restore extraction is the whole function" \

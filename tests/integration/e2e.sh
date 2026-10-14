@@ -586,7 +586,6 @@ deploy_branch() {
     # Upgrade builds branch images; apply would reuse them (#272). Keep unchanged chain nodes (#2639).
     log "Deploying the branch on $BENCH_HOST (pithead upgrade — re-render configs + rebuild first-party images)"
     deploy_keeping_chain || die "pithead upgrade failed in $E2E_DIR — branch did not deploy."
-    bootstrap_rotate_onion_fixture || die "Failed to provision the isolated dashboard-onion fixture."
     on_bench "cd '$E2E_DIR' && docker compose images --format '{{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'p2pool|dashboard|monero|tor|xmrig' || true" | while IFS= read -r l; do step "image: $l"; done
     wait_bench_healthy 300 || warn "stack applied but not yet healthy; the harness will wait on real readiness signals"
     wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."

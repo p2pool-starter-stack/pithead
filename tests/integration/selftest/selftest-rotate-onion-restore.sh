@@ -63,6 +63,7 @@ trial() {
     [ "$rc" -ne 0 ] && [ "$(cat "$calls")" = "$expected" ]
 }
 
+echo "== identity restoration survives failure and interruption =="
 trial failure && it_pass "a failed onion rotation restores its identity before the safety archive" ||
     it_fail "a failed onion rotation restores its identity before the safety archive"
 trial interruption && it_pass "an interrupted onion rotation restores its identity before the safety archive" ||
