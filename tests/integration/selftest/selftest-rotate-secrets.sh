@@ -80,6 +80,7 @@ assert_contains "the detached runner forwards the persistent-hold capability" "$
 drive_phase() { # <fixture dir> <success|restore-failure|interrupted>
     (
         local fixture="$1" failure="$2"
+        IT_FAIL=0
         source "$HERE/../lib/borrow-fixture.sh"
         source "$HERE/../lib/borrow-rearm.sh"
         source "$HERE/../lib/run-safety.sh"
@@ -112,13 +113,18 @@ drive_phase() { # <fixture dir> <success|restore-failure|interrupted>
         }
         baseline_up() { return 0; }
         wait_status_ok() { return 0; }
-        _rotate_proxy_token_accepted() { return 0; }
+        _rotate_proxy_token_accepted() {
+            [ "$1:${2:-200}" = new-token:200 ] || [ "$1:${2:-200}" = old-token:403 ]
+        }
         _rotate_proxy_live_args() { printf '%s' new-pass; }
-        _rotate_proxy_upstream_active() { return 0; }
+        _rotate_proxy_upstream_active() {
+            [ "$(jq -r '.pools[0].pass' "$fixture/miner.json")" = new-pass ] && test -f "$fixture/count"
+        }
         _rotate_p2pool_monero_live() { return 0; }
         _rotate_stratum_auth() { return 0; }
         _rotate_rig_accepted() {
             local count
+            [ "$(jq -r '.pools[0].pass' "$fixture/miner.json")" = new-pass ] || return 1
             count="$(cat "$fixture/count" 2>/dev/null || echo 0)"
             printf '%s' "$count"
             printf '%s' "$((count + 1))" >"$fixture/count"
@@ -151,6 +157,7 @@ drive_phase() { # <fixture dir> <success|restore-failure|interrupted>
         }
         run_rotate_secrets >/dev/null 2>&1
         phase_rc=$?
+        [ "$IT_FAIL" -eq 0 ] || phase_rc=1
         touch "$fixture/continued"
         exit "$phase_rc"
     )

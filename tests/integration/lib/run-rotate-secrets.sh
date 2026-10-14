@@ -183,10 +183,11 @@ run_rotate_secrets() {
     else
         it_fail "xmrig-proxy control API accepts the new PROXY_AUTH_TOKEN (recreated, not restarted)" "new token did not receive HTTP 200 after 60s"
     fi
-    if _rotate_proxy_token_accepted "$old_proxy_token" 401; then
+    # The pinned proxy returns 403 for a mismatched Bearer token (401 means no auth header).
+    if _rotate_proxy_token_accepted "$old_proxy_token" 403; then
         it_pass "xmrig-proxy control API refuses the old PROXY_AUTH_TOKEN"
     else
-        it_fail "xmrig-proxy control API refuses the old PROXY_AUTH_TOKEN" "old token did not receive an explicit 401"
+        it_fail "xmrig-proxy control API refuses the old PROXY_AUTH_TOKEN" "old token did not receive an explicit 403"
     fi
 
     # The control-API wait above already settled on the recreated container, so its running argv is
@@ -226,6 +227,11 @@ run_rotate_secrets() {
     #    including p2pool's usable Monero connection.
     pithead status >/dev/null 2>&1
     assert_rc "pithead status OK after the rotate-secrets recreate" "$?" "0"
+    # The proxy opens its upstream for an authenticated miner; rearm before waiting for it.
+    local accepted_before=""
+    if [ -n "${RIG_NAME:-}" ] && wait_borrow_rearm rotate-stratum; then
+        accepted_before="$(_rotate_rig_accepted)" || accepted_before=""
+    fi
     if wait_for 60 3 "xmrig-proxy to connect to its p2pool upstream" _rotate_proxy_upstream_active; then
         it_pass "xmrig-proxy has an active p2pool upstream after rotation"
     else
@@ -247,9 +253,7 @@ run_rotate_secrets() {
         it_fail "stratum login explicitly refuses the old password" "no explicit password refusal"
     fi
     if [ -n "${RIG_NAME:-}" ]; then
-        local accepted_before
-        if wait_borrow_rearm rotate-stratum && accepted_before="$(_rotate_rig_accepted)" &&
-            [[ "$accepted_before" =~ ^[0-9]+$ ]] &&
+        if [[ "$accepted_before" =~ ^[0-9]+$ ]] &&
             wait_for 300 5 "the reserved miner to submit an accepted share with the new stratum password" _rotate_proxy_accepted_after "$accepted_before"; then
             it_pass "reserved miner reconnected and submitted an accepted share with the new stratum password"
         else

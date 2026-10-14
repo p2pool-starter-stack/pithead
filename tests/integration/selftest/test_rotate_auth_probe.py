@@ -64,7 +64,7 @@ class StratumProbeTest(unittest.TestCase):
             ),
         }
         with patch.dict(sys.modules, modules):
-            for status in (200, 401, 500):
+            for status in (200, 401, 403, 500):
                 request.return_value.status_code = status
                 self.assertEqual(PROBE.proxy_status("private-test-token"), status)
             constructor.assert_called_with("unused", 1, "private-test-token")
