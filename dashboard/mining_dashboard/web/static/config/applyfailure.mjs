@@ -98,12 +98,13 @@ export function upgradeFailure(result, appliance) {
 //
 // A `rejected` commit (a stale preview, #3376) was refused before anything was written, so the
 // "saved but not running" and "previous config kept" lines would both be false: it says the change
-// was not applied and to preview again, on either branch, and keeps the host's own reason.
+// was not applied or saved on either branch and shows the host's own reason, which names the
+// remedy (preview again for a stale preview, the missing confirmation for an approval gate). It
+// invents none, per #1213.
 export function applyFailure(result, appliance) {
   if (result.status === "rejected") {
     return [
-      html`<p class="status-bad">Your change was not applied or saved. Preview it again before
-          applying.</p>`,
+      html`<p class="status-bad">Your change was not applied or saved.</p>`,
       result.error ? html`<p class="status-bad">${result.error}</p>` : null,
     ];
   }

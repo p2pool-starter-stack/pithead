@@ -126,9 +126,9 @@ test("a dropped appliance prop degrades to the host wording, not to a blank card
 
 // Proves the failed arm of ConfigView's `done` state actually consults this.props.appliance,
 // which the module-level tests above cannot see.
-function doneCard(props) {
+function doneCard(props, result = RESULT) {
   const view = new ConfigView(props);
-  view.state = { ...view.state, phase: "done", result: RESULT };
+  view.state = { ...view.state, phase: "done", result };
   return renderToString(view.render());
 }
 
@@ -153,18 +153,25 @@ test("an applied result is untouched by #1769 on either branch", () => {
   }
 });
 
-test("a stale preview is reported as not applied, not saved-but-not-running (#3376)", () => {
-  const result = {
+test("a rejected commit is reported as not applied, not saved-but-not-running (#3376)", () => {
+  const stale = {
     status: "rejected",
     error: "the configuration changed after this preview was made — preview again",
   };
-  for (const appliance of [true, false]) {
-    const out = renderToString(applyFailure(result, appliance));
-    assert.match(out, /configuration changed after this preview was made/);
-    assert.match(out, /not applied/);
-    assert.match(out, /Preview it again/);
-    assert.doesNotMatch(out, /Your change was saved but is not running/);
-    assert.doesNotMatch(out, /previous config(uration)? is kept/);
+  const gate = { status: "rejected", error: "type APPLY to confirm" };
+  for (const result of [stale, gate]) {
+    for (const onAppliance of [true, false]) {
+      for (const out of [
+        renderToString(applyFailure(result, onAppliance)),
+        doneCard({ appliance: onAppliance }, result),
+      ]) {
+        assert.ok(out.includes(result.error), "the host's own reason stays visible");
+        assert.match(out, /not applied or saved/);
+        assert.doesNotMatch(out, /Your change was saved but is not running/);
+        assert.doesNotMatch(out, /previous config(uration)? is kept/);
+        assert.doesNotMatch(out, /Below is this machine's own log/);
+      }
+    }
   }
 });
 
