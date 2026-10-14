@@ -484,7 +484,6 @@ rig_lock_remote() { # rig_lock_remote <project> <suite> <shared|""> <dest> [ssh 
 # against a real readiness signal — not a fixed "sleep and hope" (issue #54). Returns 0 on
 # success, 1 on timeout.
 now_s() { date +%s; }
-
 wait_for() { # wait_for <timeout_s> <interval_s> <desc> <predicate-cmd...>
     local timeout="$1" interval="$2" desc="$3"
     shift 3
@@ -494,12 +493,12 @@ wait_for() { # wait_for <timeout_s> <interval_s> <desc> <predicate-cmd...>
         if "$@"; then return 0; fi
         if [ "$(now_s)" -ge "$deadline" ]; then
             it_warn "timed out after ${timeout}s waiting for ${desc}"
+            capture_subnet_timeout_once readiness
             return 1
         fi
         sleep "$interval"
     done
 }
-
 # Predicate: two status OK reads with unchanged container start times and restart counts.
 _pred_status_ok() { status_ok_without_churn; }
 
@@ -670,6 +669,7 @@ assert_tari_synced_required() { # <state>
 }
 wait_hashes_flowing() { wait_for "${1:-300}" 5 "stratum hashes flowing" _pred_hashes_flowing; }
 # --- Artifact capture (best-effort; never masks the test result) --------------
+source "${BASH_SOURCE[0]%/*}/lib/subnet-diagnostics.sh" || return $?
 source "${BASH_SOURCE[0]%/*}/lib/wallet-diagnostics.sh" || return $?
 capture_artifacts() {
     local scenario="$1" outdir="$2"

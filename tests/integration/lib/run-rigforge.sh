@@ -61,8 +61,6 @@ run_rigforge_integration() { # [rig-name]
     it_step "full dashboard->rig config push + rollback (#185) is a manual runbook step — it restarts the borrowed loaner and needs the rig's control API opted in"
 }
 
-source "${BASH_SOURCE[0]%/*}/subnet-diagnostics.sh" || return $?
-
 # --- Moved-subnet phase (--subnet) ------------------------------------------
 # Assert a config's network.subnet reached the LIVE stack, not just the rendered compose (#180/#201).
 # Config-derived (default 172.28.0.0/24), local mode only. The two named highest-value checks from

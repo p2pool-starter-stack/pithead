@@ -2,7 +2,6 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 source "${BASH_SOURCE[0]%/*}/egress-probe.sh" || return $?
 source "${BASH_SOURCE[0]%/*}/miner-connection.sh" || return $?
-source "${BASH_SOURCE[0]%/*}/subnet-diagnostics.sh" || return $?
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     local name="$1" config="$2"

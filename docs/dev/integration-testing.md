@@ -1146,9 +1146,12 @@ reached the live `.env`, the docker bridge, Tor's rendered torrc, monerod's envs
 dashboard's SSRF CIDR + Tor SOCKS, `P2POOL_URL`, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344)
 onion vhost gateway, waits up to 1500 seconds for the sync gate to release p2pool and xmrig-proxy,
 runs the standard running-state battery including live UID and TLS checks, then brings the box back
-to its baseline subnet. At the first failed status, node-sync, miner-release or hash readiness
-wait, capture `subnet-first-timeout/` before the next wait or live assertion. The running-state
-battery's 1500-second release timeout uses the same capture, once per subnet phase. A timeout
+to its baseline subnet. The shared readiness waiter captures `subnet-first-timeout/` at its
+first timeout within the subnet phase, before returning to the next wait or live assertion.
+This includes the running-state battery's 1500-second release wait, later 150-second Monero
+panel/RPC waits, 180-second hash wait and delegated readiness waits, once per subnet phase.
+The trigger uses the fixed stage `readiness`, excluding predicate descriptions and arguments.
+A timeout
 leaves every existing UID, TLS, service and sync assertion binding; collection errors do not
 stop the battery or baseline restoration.
 
@@ -1173,7 +1176,9 @@ Tor container or a successful later probe does not establish the cause of an ear
 Only typed numbers, booleans, fixed labels and validated timestamps leave the collector.
 Cookies, credentials, peer/relay identities, targets, addresses, paths and raw errors are
 excluded. Probe failures retain a fixed error class and numeric exit code when available.
-The pure `selftest-subnet-diagnostics.sh` exercises first-timeout ordering, restricted and
+The pure `selftest-subnet-later-timeout.sh` runs the real running-state battery with earlier
+readiness succeeding and later panel, RPC or hash waits timing out.
+`selftest-subnet-diagnostics.sh` exercises first-timeout ordering, restricted and
 unavailable RPC, malformed control replies, secret/topology exclusion, command bounds,
 collector and artifact failures, and preserved assertions/restoration.
 The matrix carries a `local-pruned-main-subnet` row for axis bookkeeping; the
