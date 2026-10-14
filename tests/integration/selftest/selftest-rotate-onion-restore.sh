@@ -9,6 +9,8 @@ ROOT="$HERE/.."
 # shellcheck source=tests/integration/lib.sh
 source "$ROOT/lib.sh"
 INTEGRATION_RUN_SUITE=1
+# shellcheck source=tests/integration/lib/run-onion-targets.sh
+source "$ROOT/lib/run-onion-targets.sh"
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$ROOT/lib/run-hardening.sh"
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
