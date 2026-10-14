@@ -291,7 +291,10 @@ restore_all() {
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
         RESTORE_PROOF_FAILED=1
     fi
-    cleanup_rotate_onion_fixture || { warn "FAILED to remove the isolated onion fixture after baseline convergence."; RESTORE_PROOF_FAILED=1; }
+    cleanup_rotate_onion_fixture || {
+        warn "FAILED to remove the isolated onion fixture after baseline convergence."
+        RESTORE_PROOF_FAILED=1
+    }
 
     # 3. Chains sanity: they must be untouched (the whole point).
     local sync
@@ -580,10 +583,7 @@ borrow_miner() {
 deploy_branch() {
     parent_lock_checkpoint deploy || die "Parent-held bench lock was lost before deploy."
     prepare_rotate_onion_fixture || die "Failed to prepare the isolated dashboard-onion fixture."
-    # #272: `pithead apply` runs `compose up --pull` (never --build), so it would test whatever images
-    # were last built on the box, not this branch. `pithead upgrade` re-renders the generated configs
-    # (inject_service_configs) AND rebuilds the first-party images from build/ (--build) before
-    # recreating — so a Dockerfile/entrypoint change is under test. Unchanged chain nodes stay (#2639).
+    # Upgrade builds branch images; apply would reuse them (#272). Keep unchanged chain nodes (#2639).
     log "Deploying the branch on $BENCH_HOST (pithead upgrade — re-render configs + rebuild first-party images)"
     deploy_keeping_chain || die "pithead upgrade failed in $E2E_DIR — branch did not deploy."
     bootstrap_rotate_onion_fixture || die "Failed to provision the isolated dashboard-onion fixture."
