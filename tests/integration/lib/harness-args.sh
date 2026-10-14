@@ -86,7 +86,7 @@ bootstrap_rotate_onion_fixture() {
     on_bench "
         set -e
         cd $(quote_arg "$E2E_DIR")
-        ./pithead render >/dev/null
+        PITHEAD_STEAL_CONTROL_UNITS=1 ./pithead render >/dev/null
         ./pithead rotate-dashboard-onion -y >/dev/null
     "
 }

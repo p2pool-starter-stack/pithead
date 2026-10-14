@@ -177,9 +177,10 @@ printf '%s\n' '#!/bin/sh' \
     'printf "%s\n" "$*" >>.pithead-calls' \
     'dir=$(jq -r .tor.data_dir config.json)' \
     'case "$1" in' \
-    'render) sed "s|^TOR_DATA_DIR=.*|TOR_DATA_DIR=$dir|" .env >.env.test ;;' \
+    'render) [ "${PITHEAD_STEAL_CONTROL_UNITS:-0}" = 1 ] || exit 29; sed "s|^TOR_DATA_DIR=.*|TOR_DATA_DIR=$dir|" .env >.env.test ;;' \
     'rotate-dashboard-onion)' \
     '    [ "$2" = -y ]' \
+    '    [ "${PITHEAD_STEAL_CONTROL_UNITS:-0}" = 0 ] || exit 29' \
     '    for svc in p2pool dashboard monero tari; do' \
     '        mkdir -p "$dir/$svc"' \
     '        char=a; case "$svc" in dashboard) char=b ;; monero) char=c ;; tari) char=d ;; esac' \
@@ -240,9 +241,9 @@ if prepare_rotate_onion_fixture && bootstrap_rotate_onion_fixture &&
     [ "$(awk -F= '$1 == "TOR_DATA_DIR" { print $2 }' "$E2E_DIR/.env")" = "$ROTATE_FIXTURE_DIR" ] &&
     [ "$(grep -c '=placeholder$' "$E2E_DIR/.env")" = 0 ] &&
     [ "$(cat "$ROTATE_FIXTURE_DIR.attestation")" = "$ROTATE_FIXTURE_DIR" ]; then
-    it_pass "fixture provisioning mints test-only dashboard and mining identities"
+    it_pass "fixture provisioning mints isolated identities with unit adoption scoped to render"
 else
-    it_fail "fixture provisioning mints test-only dashboard and mining identities"
+    it_fail "fixture provisioning mints isolated identities with unit adoption scoped to render"
 fi
 fixture="$ROTATE_FIXTURE_DIR"
 export MOUNTED_FIXTURE="$fixture"
