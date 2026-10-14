@@ -150,7 +150,7 @@ writable by group or world (0600 is recommended; 0644 is accepted). Symlinks are
 
 The file accepts only `BENCH_CI_APP_ID`, `BENCH_CI_APP_SLUG`, `RELEASE_INTEGRATION_ARGS`, and
 `RELEASE_TOOL_PATH`, one `NAME=value` per line. Blank lines, comments beginning with `#`, an optional
-`export ` prefix, and matching single or double quotes are accepted. Values are literal: `$`,
+`export` prefix followed by a space, and matching single or double quotes are accepted. Values are literal: `$`,
 backticks, and `~` are not expanded, so write absolute paths. Existing environment settings win,
 including empty values. Preflight logs names and counts, never values. Any other name or malformed
 assignment stops the run with the file's basename and line number. Keep secrets in the signing-key

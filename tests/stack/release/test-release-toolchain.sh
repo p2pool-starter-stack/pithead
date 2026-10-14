@@ -238,6 +238,8 @@ load_release_env
 [ "$RELEASE_TOOL_PATH" = '`literal`~$HOME' ]
 DRY_RUN=1
 SKIP_TESTS=1
+# Assert command content independently of terminal colors, using the real run() printer.
+C_RESET="" C_YELLOW=""
 test_gate
 SH
 )"
