@@ -49,11 +49,23 @@ def monero_info(raw):
 
 def monero_transfer(raw, method):
     obj = json.loads(raw)["result"]
-    if obj.get("status") != "OK" or obj.get("restricted") is True:
+    if (
+        obj.get("status") != "OK"
+        or obj.get("restricted") is True
+        or obj.get("untrusted") is not False
+    ):
         raise ValueError
     fields = "height target_height next_needed_pruning_seed"
     out = numbers(obj, fields)
-    rows = obj["connections"] if method == "get_connections" else obj["peers"]
+    if method == "sync_info" and any(
+        type(obj.get(key)) is not int or key not in out for key in fields.split()
+    ):
+        raise ValueError
+    # Monero v0.18.5.1 epee omits empty STL containers, including peers/spans.
+    # contrib/epee/include/serialization/keyvalue_serialization_overloads.h:serialize_stl_container_t_obj
+    key = "connections" if method == "get_connections" else "peers"
+    rows = obj.get(key, [])
+    out["peer_list_encoding"] = "present" if key in obj else "omitted-empty"
     if not isinstance(rows, list):
         raise ValueError
     out["peers"] = []
@@ -77,7 +89,12 @@ def monero_transfer(raw, method):
         out["peers"].append(peer)
     out["peer_count"] = len(rows)
     out["peers_clipped"] = len(rows) > 64
-    spans = obj["spans"] if method == "sync_info" else []
+    spans = obj.get("spans", []) if method == "sync_info" else []
+    out["spans_encoding"] = (
+        ("present" if "spans" in obj else "omitted-empty")
+        if method == "sync_info"
+        else "not-applicable"
+    )
     if not isinstance(spans, list) or any(not isinstance(row, dict) for row in spans):
         raise ValueError
     out["spans"] = [

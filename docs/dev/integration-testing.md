@@ -1164,7 +1164,11 @@ circuit-build-history counters; container start times and stable opaque identity
 rendered/live subnet and proxy comparisons; and live firewall enforcement exit status,
 actions and counters. Monero reads the unpublished loopback admin listener inside its
 container, with Digest credentials sent to curl on stdin. A restricted or missing visibility
-flag makes peer counts unavailable, never zero, and suppresses transfer probes. A healthy
+flag makes peer counts unavailable, never zero, and suppresses transfer probes. Transfer
+responses must report local trusted success; `sync_info` also requires its height, target
+and pruning-seed scalars. Monero omits empty peer/span containers on the wire; the summary
+normalizes those lists only after validating those required fields and retains whether
+each list was present or omitted. Null or malformed lists remain probe errors. A healthy
 Tor container or a successful later probe does not establish the cause of an earlier stall.
 Only typed numbers, booleans, fixed labels and validated timestamps leave the collector.
 Cookies, credentials, peer/relay identities, targets, addresses, paths and raw errors are

@@ -60,35 +60,40 @@ class Diagnostics(unittest.TestCase):
             "send_count": PRIVATE_FIXTURE,
         }
         out = d.monero_transfer(
-            json.dumps({"result": {"status": "OK", "connections": [peer] * 65}}), "get_connections"
+            json.dumps(
+                {"result": {"status": "OK", "untrusted": False, "connections": [peer] * 65}}
+            ),
+            "get_connections",
         )
         self.assertEqual(out["peer_count"], 65)
         self.assertEqual(len(out["peers"]), 64)
         self.assertTrue(out["peers_clipped"])
         self.assertEqual(out["peers"][0]["recv_count"], 42)
         self.assertNotIn(PRIVATE_FIXTURE, json.dumps(out))
-        out = d.monero_transfer(
-            json.dumps(
+        response = {
+            "status": "OK",
+            "untrusted": False,
+            "height": 100,
+            "target_height": 183,
+            "next_needed_pruning_seed": 0,
+            "peers": [{"info": peer}],
+            "spans": [
                 {
-                    "result": {
-                        "status": "OK",
-                        "height": 100,
-                        "peers": [{"info": peer}],
-                        "spans": [
-                            {
-                                "start_block_height": 101,
-                                "nblocks": 10,
-                                "size": 8000,
-                                "connection_id": PRIVATE_FIXTURE,
-                            }
-                        ],
-                    }
+                    "start_block_height": 101,
+                    "nblocks": 10,
+                    "size": 8000,
+                    "connection_id": PRIVATE_FIXTURE,
                 }
-            ),
-            "sync_info",
-        )
+            ],
+        }
+        out = d.monero_transfer(json.dumps({"result": response}), "sync_info")
         self.assertEqual(out["spans"][0]["nblocks"], 10)
         self.assertNotIn(PRIVATE_FIXTURE, json.dumps(out))
+        response.pop("spans")
+        out = d.monero_transfer(json.dumps({"result": response}), "sync_info")
+        self.assertEqual(out["spans"], [])
+        self.assertEqual(out["spans_encoding"], "omitted-empty")
+        self.assertEqual(out["peer_count"], 1)
         with self.assertRaises(ValueError):
             d.monero_transfer('{"result":{"status":"OK","restricted":true}}', "sync_info")
 
@@ -150,16 +155,38 @@ class Diagnostics(unittest.TestCase):
         self.assertNotIn(PRIVATE_FIXTURE, json.dumps(out))
         self.assertNotIn("198.51.100.3", json.dumps(out))
 
-    def test_missing_numeric_fields_and_transfer_arrays_are_not_empty_readings(self):
+    def test_empty_container_omission_requires_valid_mandatory_rpc_fields(self):
         for missing in ("height", "target_height", "outgoing_connections_count"):
             obj = dict(INFO)
             obj.pop(missing)
             with self.assertRaises(ValueError):
                 d.monero_info(json.dumps(obj))
         for method in ("get_connections", "sync_info"):
+            base = {
+                "status": "OK",
+                "untrusted": False,
+                "height": 100,
+                "target_height": 0,
+                "next_needed_pruning_seed": 0,
+            }
+            out = d.monero_transfer(json.dumps({"result": base}), method)
+            self.assertEqual(out["peer_count"], 0)
+            self.assertEqual(out["peer_list_encoding"], "omitted-empty")
+            if method == "sync_info":
+                self.assertEqual(out["spans_encoding"], "omitted-empty")
+                for key in ("height", "target_height", "next_needed_pruning_seed"):
+                    with self.assertRaises(ValueError):
+                        d.monero_transfer(json.dumps({"result": {**base, key: None}}), method)
             for obj in (
                 {"status": "OK"},
-                {"status": "OK", "connections": None, "peers": None, "spans": []},
+                {"status": "OK", "untrusted": True},
+                {
+                    "status": "OK",
+                    "untrusted": False,
+                    "connections": None,
+                    "peers": None,
+                    "spans": [],
+                },
                 {"status": "OK", "connections": [{}], "peers": [{}], "spans": []},
                 {"status": "OK", "connections": [None], "peers": [None], "spans": []},
             ):
@@ -323,9 +350,10 @@ class Diagnostics(unittest.TestCase):
             if "18085/get_info" in cmd:
                 return {"exit_code": 0}, json.dumps(INFO)
             if "18085/json_rpc" in cmd:
-                return {
-                    "exit_code": 0
-                }, '{"result":{"status":"OK","height":100,"connections":[],"peers":[],"spans":[]}}'
+                return (
+                    {"exit_code": 0},
+                    '{"result":{"status":"OK","untrusted":false,"height":100,"target_height":0,"next_needed_pruning_seed":0,"connections":[],"peers":[],"spans":[]}}',
+                )
             if "AUTHENTICATE" in cmd:
                 field = "circuit-status" if "circuit-status" in cmd else "stream-status"
                 return {"exit_code": 0}, f"250 OK\n250-{field}=\n250 OK\n250 closing connection\n"

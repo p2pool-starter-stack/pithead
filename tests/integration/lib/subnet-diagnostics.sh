@@ -32,7 +32,7 @@ capture_subnet_timeout_once() {
     SUBNET_TIMEOUT_CAPTURED=1
     local dir="$OUT_DIR/subnet-first-timeout" rc=0
     if ! mkdir -p "$dir"; then
-        it_warn "subnet first-timeout diagnostics: artifact directory unavailable"
+        it_err "subnet first-timeout diagnostics: artifact directory creation failed"
         return 0
     fi
     printf 'stage=%s utc=%s\n' "$1" "$(date -u +%FT%TZ)" >"$dir/trigger.txt" || true

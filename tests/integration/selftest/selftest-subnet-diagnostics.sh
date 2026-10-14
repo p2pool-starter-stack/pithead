@@ -128,7 +128,8 @@ assert_eq 'collector runs before live service sampling and assertions' "$(cat "$
 (
     OUT_DIR="$td/not-a-directory" SUBNET_TIMEOUT_ACTIVE=1 SUBNET_TIMEOUT_CAPTURED=0
     touch "$OUT_DIR"
-    capture_subnet_timeout_once status >/dev/null 2>&1
+    capture_subnet_timeout_once status >"$td/artifact-error.log" 2>&1
+    grep -Fq "subnet first-timeout diagnostics: artifact directory creation failed" "$td/artifact-error.log"
     [ "$SUBNET_TIMEOUT_CAPTURED" = 1 ]
 )
 assert_rc 'artifact failure leaves the original control flow intact' "$?" 0
