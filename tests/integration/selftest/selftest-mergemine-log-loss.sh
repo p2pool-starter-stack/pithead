@@ -51,6 +51,8 @@ mm_expect() {
     assert_contains "$1" "$out" "COUNTS $2"
 }
 
+echo "== retained startup, evidence-loss heuristic and fresh round-trip proof =="
+
 mm_expect "complete startup without a client remains red" "0 1 0 0 0"
 MM_FIXTURE_OLDEST=2026-10-09T02:24:17.500000000Z
 mm_expect "normal delayed startup without a client remains red" "0 1 0 0 0"
