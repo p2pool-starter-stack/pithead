@@ -97,6 +97,10 @@ cleanup_rotate_onion_fixture() {
     case "$ROTATE_FIXTURE_DIR" in "$parent"/rotate-onion-fixture.*) ;; *) return 1 ;; esac
     on_bench "
         set -e
+        recovery=$(quote_arg "$E2E_DIR/backups/rotate-onion-identity-preserve")
+        snapshot=$(quote_arg "$E2E_DIR/backups/rotate-onion-env-preserve")
+        sudo -n test ! -e \"\$recovery\" && sudo -n test ! -L \"\$recovery\" &&
+            test ! -e \"\$snapshot\" && test ! -L \"\$snapshot\" || exit 1
         cids=\$(docker ps -aq) || exit 1
         for cid in \$cids; do
             mounts=\$(docker inspect --format '{{range .Mounts}}{{println .Source}}{{end}}' \"\$cid\") || exit 1
@@ -110,12 +114,6 @@ cleanup_rotate_onion_fixture() {
 \$mounts
 EOF
         done
-        snapshot=$(quote_arg "$E2E_DIR/backups/rotate-onion-env-preserve")
-        if test -e \"\$snapshot\" || test -L \"\$snapshot\"; then
-            test -d $(quote_arg "$E2E_DIR/backups") && test ! -L $(quote_arg "$E2E_DIR/backups")
-            test -f \"\$snapshot\" && test ! -L \"\$snapshot\"
-            rm -f -- \"\$snapshot\"
-        fi
         sudo -n test ! -L $(quote_arg "$ROTATE_FIXTURE_DIR")
         sudo -n rm -rf --one-file-system -- $(quote_arg "$ROTATE_FIXTURE_DIR")
         sudo -n rm -f -- $(quote_arg "$ROTATE_FIXTURE_DIR.attestation")

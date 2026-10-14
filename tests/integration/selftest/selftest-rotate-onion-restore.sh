@@ -72,7 +72,7 @@ if (
     ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
     ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
     ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
-    rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
+    rx() { case "$1" in *"sudo -n cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'keys\n'; }
     rotate_onion_env_fingerprint() { printf 'envs\n'; }
     pithead() { :; }
@@ -85,11 +85,41 @@ else
     it_fail "restore verifies the keys and hostname derived from the restored hidden-service identity"
 fi
 
+SUDO_BOX="$WORK/sudo-box" SUDO_LOG="$WORK/bare-sudo"
+mkdir -p "$SUDO_BOX/dashboard" "$SUDO_BOX/dashboard.itest-preserve"
+printf 'old.onion\n' >"$SUDO_BOX/dashboard.itest-preserve/hostname"
+(
+    ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR="$SUDO_BOX/dashboard"
+    ROTATE_ONION_BACKUP_DIR="$SUDO_BOX/dashboard.itest-preserve" ROTATE_ONION_ENV_BACKUP="$SUDO_BOX/missing-env"
+    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
+    rx() {
+        SUDO_LOG="$SUDO_LOG" SNIPPET="$1" bash -c '
+            sudo() {
+                [ "$1" = -n ] || { printf "bare sudo: %s\n" "$*" >>"$SUDO_LOG"; return 97; }
+                shift; command "$@"
+            }
+            docker() { :; }
+            eval "$SNIPPET"
+        '
+    }
+    rotate_onion_key_fingerprint() { printf 'keys\n'; }
+    rotate_onion_env_fingerprint() {
+        [ "$1" != "$ROTATE_ONION_ENV_BACKUP" ] || return 1
+        printf 'envs\n'
+    }
+    pithead() { :; }
+    wait_status_ok() { :; }
+    _onion_reachable_external() { :; }
+    rotate_onion_restore && [ "$ROTATE_ONION_RESTORE_ARMED" = 0 ] &&
+        [ "$(cat "$ROTATE_ONION_HS_DIR/hostname")" = old.onion ] && [ ! -e "$SUDO_LOG" ]
+) && it_pass "the executed restore path uses noninteractive sudo for every privileged operation" ||
+    it_fail "the executed restore path uses noninteractive sudo for every privileged operation"
+
 if (
     ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
     ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
     ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
-    rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
+    rx() { case "$1" in *"sudo -n cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'wrong-keys\n'; }
     rotate_onion_env_fingerprint() { printf 'envs\n'; }
     pithead() { :; }
@@ -120,7 +150,7 @@ if (
     ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
     ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
     render_calls=0
-    rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
+    rx() { case "$1" in *"sudo -n cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'keys\n'; }
     rotate_onion_env_fingerprint() { printf 'envs\n'; }
     pithead() {
@@ -144,7 +174,7 @@ if (
     rx() {
         case "$1" in
         "test -e /fixture/env"*) return 1 ;;
-        *"sudo cat"*) printf 'old.onion\n' ;;
+        *"sudo -n cat"*) printf 'old.onion\n' ;;
         esac
     }
     rotate_onion_key_fingerprint() { printf 'keys\n'; }

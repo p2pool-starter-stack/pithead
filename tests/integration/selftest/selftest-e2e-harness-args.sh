@@ -276,14 +276,28 @@ else
 fi
 unset DOCKER_INSPECT_FIRST_FAIL
 unset MOUNTED_FIXTURE
-mkdir -p "$E2E_DIR/backups"
+mkdir -p "$E2E_DIR/backups/rotate-onion-identity-preserve"
+printf 'saved-hidden-service-key\n' >"$E2E_DIR/backups/rotate-onion-identity-preserve/hs_ed25519_secret_key"
+if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ] && [ -e "$fixture.attestation" ]; then
+    it_pass "fixture cleanup preserves the host-only onion identity recovery directory"
+else
+    it_fail "fixture cleanup preserves the host-only onion identity recovery directory"
+fi
+rm -rf "$E2E_DIR/backups/rotate-onion-identity-preserve"
 printf 'fixture-client-credential\n' >"$E2E_DIR/backups/rotate-onion-env-preserve"
 chmod 600 "$E2E_DIR/backups/rotate-onion-env-preserve"
-if cleanup_rotate_onion_fixture && [ -z "$ROTATE_FIXTURE_DIR" ] && [ ! -e "$fixture" ] &&
-    [ ! -e "$fixture.attestation" ] && [ ! -e "$E2E_DIR/backups/rotate-onion-env-preserve" ]; then
-    it_pass "fixture cleanup removes Tor data, marker, and credential snapshot"
+if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ] && [ -e "$fixture.attestation" ] &&
+    [ -f "$E2E_DIR/backups/rotate-onion-env-preserve" ]; then
+    it_pass "fixture cleanup preserves an owner-only client credential recovery snapshot"
 else
-    it_fail "fixture cleanup removes Tor data, marker, and credential snapshot"
+    it_fail "fixture cleanup preserves an owner-only client credential recovery snapshot"
+fi
+rm -f "$E2E_DIR/backups/rotate-onion-env-preserve"
+if cleanup_rotate_onion_fixture && [ -z "$ROTATE_FIXTURE_DIR" ] && [ ! -e "$fixture" ] &&
+    [ ! -e "$fixture.attestation" ]; then
+    it_pass "fixture cleanup removes Tor data and marker after phase recovery copies are gone"
+else
+    it_fail "fixture cleanup removes Tor data and marker after phase recovery copies are gone"
 fi
 
 echo ""

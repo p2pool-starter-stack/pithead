@@ -122,11 +122,11 @@ rotate_onion_restore() {
     fi
     rx "
         set -e
-        if sudo test -d $(quote_arg "$ROTATE_ONION_BACKUP_DIR") && sudo test ! -L $(quote_arg "$ROTATE_ONION_BACKUP_DIR"); then
+        if sudo -n test -d $(quote_arg "$ROTATE_ONION_BACKUP_DIR") && sudo -n test ! -L $(quote_arg "$ROTATE_ONION_BACKUP_DIR"); then
             docker compose stop tor >/dev/null 2>&1
-            sudo rm -rf $(quote_arg "$ROTATE_ONION_HS_DIR")
-            sudo mv $(quote_arg "$ROTATE_ONION_BACKUP_DIR") $(quote_arg "$ROTATE_ONION_HS_DIR")
-        elif sudo test -e $(quote_arg "$ROTATE_ONION_BACKUP_DIR") || sudo test -L $(quote_arg "$ROTATE_ONION_BACKUP_DIR"); then exit 1; fi
+            sudo -n rm -rf $(quote_arg "$ROTATE_ONION_HS_DIR")
+            sudo -n mv $(quote_arg "$ROTATE_ONION_BACKUP_DIR") $(quote_arg "$ROTATE_ONION_HS_DIR")
+        elif sudo -n test -e $(quote_arg "$ROTATE_ONION_BACKUP_DIR") || sudo -n test -L $(quote_arg "$ROTATE_ONION_BACKUP_DIR"); then exit 1; fi
         if [ $has_snapshot = 1 ]; then
             umask 077
             env_tmp=.env.itest.\$\$
@@ -152,7 +152,7 @@ rotate_onion_restore() {
     " >/dev/null 2>&1 || return 1
     key_fp="$(rotate_onion_key_fingerprint "$ROTATE_ONION_HS_DIR")" || return 1
     [ "$key_fp" = "$ROTATE_ONION_OLD_KEY_FP" ] || return 1
-    [ "$(rx "sudo test -f $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") && sudo test ! -L $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") && sudo cat $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") 2>/dev/null")" = "$ROTATE_ONION_OLD_ADDRESS" ] || return 1
+    [ "$(rx "sudo -n test -f $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") && sudo -n test ! -L $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") && sudo -n cat $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") 2>/dev/null")" = "$ROTATE_ONION_OLD_ADDRESS" ] || return 1
     current_fp="$(rotate_onion_env_fingerprint .env)" || return 1
     [ "$current_fp" = "$ROTATE_ONION_OLD_ENV_FP" ] || return 1
     pithead render >/dev/null 2>&1 &&
@@ -186,7 +186,7 @@ run_rotate_onion() {
     local tor_data_dir hs_dir backup_dir env_backup old_key_fp old_client_fp old_env_fp old_mining_fp
     tor_data_dir="$(rotate_onion_data_dir "$(env_on_box TOR_DATA_DIR)")"
     hs_dir="$tor_data_dir/dashboard"
-    backup_dir="$tor_data_dir/dashboard.itest-preserve"
+    backup_dir="backups/rotate-onion-identity-preserve"
     env_backup="backups/rotate-onion-env-preserve"
     if [ -z "$tor_data_dir" ] || [ "$tor_data_dir" != "$IT_ROTATE_ONION_FIXTURE_ATTESTATION" ] || ! rx "
         set -e
@@ -223,8 +223,10 @@ run_rotate_onion() {
 
     if ! rx '
         set -e -o pipefail
+        umask 077
         mkdir -p backups
         test -d backups && test ! -L backups && test -O backups
+        chmod 700 backups
         snapshot_dir=$(readlink -f backups)
         cids=$(docker ps -aq)
         test -n "$cids"
@@ -235,6 +237,7 @@ run_rotate_onion() {
             [ -n "$source" ] || continue
             [ "$source" != / ] || exit 1
             case "$snapshot_dir/" in "$source"/*) exit 1 ;; esac
+            case "$source/" in "$snapshot_dir/"*) exit 1 ;; esac
         done <<<"$mount_sources"
     '; then
         it_fail "client credential backup has an owner-only host directory" "refusing to place the credential in a container-mounted or unowned directory"
@@ -361,7 +364,7 @@ run_rotate_onion() {
     else
         it_fail "restored fixture keeps every mining hidden-service identity unchanged" "a mining hidden-service key changed or became unreadable"
     fi
-    assert_eq "Tor serves the restored hidden-service identity" "$(rx "sudo cat $(quote_arg "$hs_dir/hostname") 2>/dev/null")" "$old_onion"
+    assert_eq "Tor serves the restored hidden-service identity" "$(rx "sudo -n cat $(quote_arg "$hs_dir/hostname") 2>/dev/null")" "$old_onion"
     assert_eq "the previous onion address is restored" "$(env_on_box DASHBOARD_ONION_ADDRESS)" "$old_onion"
     case "$(rx "cat Caddyfile 2>/dev/null")" in
     *"$old_onion"*) it_pass "Caddyfile names the restored onion's vhost again" ;;
