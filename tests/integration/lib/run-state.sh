@@ -2,6 +2,7 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 source "${BASH_SOURCE[0]%/*}/egress-probe.sh" || return $?
 source "${BASH_SOURCE[0]%/*}/miner-connection.sh" || return $?
+source "${BASH_SOURCE[0]%/*}/subnet-diagnostics.sh" || return $?
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     local name="$1" config="$2"
@@ -45,7 +46,7 @@ assert_running_state() {
             "$(pithead doctor 2>&1)" "Tor-only egress firewall is installed"
     fi
     # 1. Wait for the sync gate to release both miners before sampling live services, UID and TLS.
-    wait_for 1500 5 "p2pool and xmrig-proxy after sync gate" rx 'running=$(docker compose ps --services --status running); grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"' || true
+    wait_for 1500 5 "p2pool and xmrig-proxy after sync gate" rx 'running=$(docker compose ps --services --status running); grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"' || { [ "$name" != subnet ] || capture_subnet_timeout_once mining-release; }
     local running expected svc
     running="$(running_services)"
     expected="$(expected_services "$config")"

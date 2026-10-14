@@ -249,6 +249,7 @@ Useful flags (full list in `run.sh --help`):
 | `--auth-fail-closed` | Also empty `PROXY_AUTH_TOKEN` in `.env` and assert `pithead up` refuses to start (the live counterpart to the tier-1 compose-config check, [#153](https://github.com/p2pool-starter-stack/pithead/issues/153)/[#203](https://github.com/p2pool-starter-stack/pithead/issues/203)), then restore the exact token and recover. Token edits keep the temporary and replacement `.env` owner-only (0600), preserve its owner and group, and remove the temporary file on failure. Restore mismatches report no token values. `selftest-auth-fail-closed.sh` covers permissions under a 022 umask and a failed-restore negative control without a live stack. Destructive-then-restored; ssh or local mode. |
 | `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`, and leaves the rig on it); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). A failed phase stops every later requested phase, and the summary lists each of them under "did NOT run". |
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
+| `--subnet-diagnostics` | Read-only smoke of the first-timeout collector against the selected local stack. Requires unrestricted Monero info/transfers, authenticated Tor circuit/stream readings, build-history counters, network/proxy summaries and live firewall enforcement. Retains `subnet-diagnostics-smoke/summary.jsonl`. The e2e wrapper accepts this as a selected phase in deploying modes; `check` still reads only the existing baseline harness and cannot prove candidate collector code. No subnet move or injected stall is part of this phase. |
 | `--subnet` | Also bring the stack down then up on a non-default `network.subnet` (`10.84.0.0/24`) and assert the moved prefix reached `.env`, the docker bridge, Tor's render-at-start IP, monerod's proxy IP, the dashboard SSRF CIDR, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344) onion vhost, then run the standard battery ([#201](https://github.com/p2pool-starter-stack/pithead/issues/201)/[#180](https://github.com/p2pool-starter-stack/pithead/issues/180)). Destructive-then-restored; local mode only. |
 | `--safety-backup` | Take a `pithead backup` before the destructive scenarios and auto-roll-back (down → restore → up) if anything fails; the archive is removed on success. Restore retains a valid dashboard-login bcrypt hash when its archived password fingerprint matches the restored configuration. A failed rollback names whether restore, startup, health, exact configuration, or secret verification failed; secret verification names only the mismatched category, never values or hashes. Recommended for the destructive matrix on a precious box; also exercises backup/restore end-to-end. |
 | `--keep` | Don't restore the original config (leave the box on the last scenario). |
@@ -1145,7 +1146,32 @@ reached the live `.env`, the docker bridge, Tor's rendered torrc, monerod's envs
 dashboard's SSRF CIDR + Tor SOCKS, `P2POOL_URL`, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344)
 onion vhost gateway, waits up to 1500 seconds for the sync gate to release p2pool and xmrig-proxy,
 runs the standard running-state battery including live UID and TLS checks, then brings the box back
-to its baseline subnet. A release timeout leaves those checks binding and records the wait timeout.
+to its baseline subnet. At the first failed status, node-sync, miner-release or hash readiness
+wait, capture `subnet-first-timeout/` before the next wait or live assertion. The running-state
+battery's 1500-second release timeout uses the same capture, once per subnet phase. A timeout
+leaves every existing UID, TLS, service and sync assertion binding; collection errors do not
+stop the battery or baseline restoration.
+
+`trigger.txt` records the wait stage and UTC time; `summary.jsonl` records timestamped probe
+results; `collector-exit.txt` records the collector's actual exit code. Each command has a
+5-second deadline and a 128 KiB stdout limit, with a process-group kill on timeout or overflow.
+The whole collector has a 120-second deadline and a hard kill 2 seconds later. A final
+`collection` record marks completion; its absence means collection was interrupted.
+
+The summaries include Monero admin-RPC height/target, sync flags, peer counts, bounded peer
+transfer counters and queued sync spans; Tor authenticated circuit/stream state counts and
+circuit-build-history counters; container start times and stable opaque identity tokens;
+rendered/live subnet and proxy comparisons; and live firewall enforcement exit status,
+actions and counters. Monero reads the unpublished loopback admin listener inside its
+container, with Digest credentials sent to curl on stdin. A restricted or missing visibility
+flag makes peer counts unavailable, never zero, and suppresses transfer probes. A healthy
+Tor container or a successful later probe does not establish the cause of an earlier stall.
+Only typed numbers, booleans, fixed labels and validated timestamps leave the collector.
+Cookies, credentials, peer/relay identities, targets, addresses, paths and raw errors are
+excluded. Probe failures retain a fixed error class and numeric exit code when available.
+The pure `selftest-subnet-diagnostics.sh` exercises first-timeout ordering, restricted and
+unavailable RPC, malformed control replies, secret/topology exclusion, command bounds,
+collector and artifact failures, and preserved assertions/restoration.
 The matrix carries a `local-pruned-main-subnet` row for axis bookkeeping; the
 hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it for real.
 

@@ -3,11 +3,9 @@
 usage() {
     cat <<'EOF'
 Pithead integration test runner
-
 USAGE:
   run.sh --host <user@host> [options]     drive the box over SSH
   run.sh --local            [options]     drive a stack on this machine
-
 CONNECTION:
   --host <user@host>     SSH destination of the test server
   --identity <keyfile>   SSH private key (adds -i <keyfile>)
@@ -18,7 +16,6 @@ CONNECTION:
                          shell would expand it before the box sees it.
   --pithead <cmd>        how to invoke pithead on the box (default: ./pithead;
                          use "sudo ./pithead" if docker needs root there)
-
 MATRIX:
   --check                NON-DESTRUCTIVE: assert the box's current live state only — no config
                          changes, no apply, no restore. The safe first run / health check.
@@ -120,6 +117,7 @@ MATRIX:
   --rig-name <name>      exact borrowed rig NAME from its protected RigForge config.
   --rigforge-bootstrap-version <tag>  explicitly bootstrap that rig before feed-dependent checks.
   --rig-control-port <p> the rig's writable control API port (default: 8082, #185).
+  --subnet-diagnostics    read-only smoke of first-timeout diagnostic sources (no subnet move).
   --subnet               also run the moved-subnet phase (#201/#180), local mode only: bring the
                          stack DOWN then UP on a non-default network.subnet (10.84.0.0/24) — the one
                          axis a hot apply can't move — and assert the moved prefix reached .env, the
@@ -138,7 +136,6 @@ Scenarios whose prerequisites are missing (a full/pruned alt data dir, or a remo
 are reported SKIPPED — never silently dropped, never mutating the canonical synced chain.
 EOF
 }
-
 # --- Arg parsing ------------------------------------------------------------
 # shellcheck disable=SC2034  # the data-dir / remote-host globals are consumed by lib.sh:resolve_overrides
 parse_args() {
@@ -329,6 +326,10 @@ parse_args() {
             RIG_CONTROL_PORT="$2"
             shift 2
             ;;
+        --subnet-diagnostics)
+            RUN_SUBNET_DIAGNOSTICS=1
+            shift
+            ;;
         --subnet)
             RUN_SUBNET=1
             shift
@@ -359,7 +360,6 @@ parse_args() {
             ;;
         esac
     done
-
     if [ "$IT_MODE" = "ssh" ] && [ -z "$IT_SSH_DEST" ]; then
         it_err "Provide --host <user@host> or --local. See --help."
         exit 2

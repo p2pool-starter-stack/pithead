@@ -61,6 +61,8 @@ run_rigforge_integration() { # [rig-name]
     it_step "full dashboard->rig config push + rollback (#185) is a manual runbook step — it restarts the borrowed loaner and needs the rig's control API opted in"
 }
 
+source "${BASH_SOURCE[0]%/*}/subnet-diagnostics.sh" || return $?
+
 # --- Moved-subnet phase (--subnet) ------------------------------------------
 # Assert a config's network.subnet reached the LIVE stack, not just the rendered compose (#180/#201).
 # Config-derived (default 172.28.0.0/24), local mode only. The two named highest-value checks from
@@ -158,6 +160,8 @@ run_subnet_scenario() {
     fi
 
     local fails_before="$IT_FAIL"
+    # shellcheck disable=SC2034 # dynamically read by the timeout helper
+    local SUBNET_TIMEOUT_ACTIVE=1 SUBNET_TIMEOUT_CAPTURED=0
     it_step "moving the stack onto $subnet (down -> up — Compose can't hot-move the bridge subnet)…"
     push_config "$config"
     pithead down >/dev/null 2>&1
@@ -166,14 +170,14 @@ run_subnet_scenario() {
     if ! pithead apply -y >"$OUT_DIR/subnet.apply.log" 2>&1; then
         it_fail "apply on the moved subnet succeeded" "see $OUT_DIR/subnet.apply.log"
     fi
-    wait_status_ok 300 || true
-    wait_monero_synced 120 || true
-    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || true
-    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || true
+    wait_status_ok 300 || capture_subnet_timeout_once status
+    wait_monero_synced 120 || capture_subnet_timeout_once monero-sync
+    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || capture_subnet_timeout_once miner-release
+    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || capture_subnet_timeout_once hashes
     # The down/up restarted Tari too, so — like the per-scenario deploy path — let it close its
     # post-restart offline gap before assert_running_state's sync check, or we catch it mid-"loading".
     if [ "$(jq_get "$config" '.dashboard.tari_required')" = "true" ]; then
-        wait_tari_synced 300 || true
+        wait_tari_synced 300 || capture_subnet_timeout_once tari-sync
     fi
 
     # Subnet-specific live checks + the standard running-state battery on the moved subnet.

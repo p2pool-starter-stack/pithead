@@ -56,7 +56,7 @@ RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
 RUN_RIGFORGE=0
 RUN_RIGFORGE_CONTROL=0
-RUN_SUBNET=0
+RUN_SUBNET=0 RUN_SUBNET_DIAGNOSTICS=0
 RUN_IMAGE_UPGRADE=0
 IMAGE_UPGRADE_FROM_SHA=""
 IMAGE_UPGRADE_TO_SHA=""
@@ -285,6 +285,7 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_TARI_STRANDED" = "1" ] && run_tari_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MONERO_STRANDED" = "1" ] && run_monero_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
+    [ "${RUN_SUBNET_DIAGNOSTICS:-0}" = 1 ] && run_subnet_diagnostics_smoke
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
