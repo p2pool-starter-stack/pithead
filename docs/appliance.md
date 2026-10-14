@@ -10,11 +10,19 @@ manage the host.
 
 ## What you need
 
+The RAM and chain-storage figures below size a coordinator, with or without a local worker.
+For worker-only, use [worker hardware requirements](hardware.md#choose-the-arrangement): it runs
+no chains. UEFI, wired ethernet and boot/install media requirements still apply to both roles;
+a rig can [run from the USB stick](#the-disk) without an internal chain disk.
+
 - An x86-64 machine with UEFI you can dedicate to mining. It will be **erased**.
 - 16 GB RAM or more — that is the supported floor, not a suggestion: the appliance reserves
   6 GB of it for mining at every boot. With less RAM it still boots, but it prints a warning
   on the machine's screen and shrinks that reservation — mining runs slower and everything
-  else runs squeezed, at every boot until the machine has 16 GB.
+  else runs squeezed, at every boot until the machine has 16 GB. If that warning never reaches
+  the physical console (a serial line can lose a message to a login prompt claiming it at the
+  wrong moment), the line is always in the journal: `journalctl -u pithead-hugepages` on that
+  machine.
 - An internal SSD or NVMe with room for the chains. The stack budgets
   320 GiB for Monero in either prune mode and 200 GiB for a local Tari node, so
   **600 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
@@ -28,8 +36,8 @@ manage the host.
 - A USB stick, **16 GB or larger** — the image writes 5 GB to the stick, whatever the size of the download.
 - A second computer with a browser, on the same network.
 
-The machine runs continuously. A slow disk or a USB-resident install will not keep up:
-install to an internal drive.
+A coordinator with local chains runs continuously and needs an internal SSD or NVMe; do not
+keep its chain data on the USB stick. A worker-only rig can run from the stick as described below.
 
 **Set the machine to power on by itself after an outage.** This is a firmware setting, not
 something the appliance can do for you, and the default on most machines is to stay off.
@@ -41,14 +49,52 @@ outage happened while the machine was already down.
 
 ## 1. Write the image to a USB stick
 
-Download `pithead-os-vX.Y.Z.img` and verify the checksum. Then write it with
-[balenaEtcher](https://etcher.balena.io/), or from a terminal:
+Download `pithead-os-vX.Y.Z.img.xz` and `pithead-os-vX.Y.Z.img.xz.sha256` from the same release
+into one folder, and run the commands below from that folder.
+
+**Check the download** before you write anything. On Linux:
 
 ```bash
-sudo dd if=pithead-os-vX.Y.Z.img of=/dev/sdX bs=4M status=progress conv=fsync
+sha256sum -c pithead-os-vX.Y.Z.img.xz.sha256
 ```
 
-`/dev/sdX` is the USB stick. Check it twice — `dd` will erase whatever you name.
+On macOS:
+
+```bash
+shasum -a 256 -c pithead-os-vX.Y.Z.img.xz.sha256
+```
+
+A good download prints `pithead-os-vX.Y.Z.img.xz: OK`. `FAILED`, `FAILED open or read` or
+`did NOT match` means the file is damaged, incomplete or not in this folder: delete the `.img.xz`,
+download it again and repeat the check. Do not write an image that fails it.
+
+**Write the stick on Linux.** `/dev/sdX` is the USB stick: find it with
+`lsblk -o NAME,SIZE,MODEL,TRAN`, where it is the disk with `usb` under `TRAN`. Check it twice —
+`dd` will erase whatever you name.
+
+```bash
+xz -dc pithead-os-vX.Y.Z.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+```
+
+`xz -dc` decompresses as it writes and leaves the `.xz` intact; the stick receives the full 5 GiB
+image.
+
+**Write the stick on macOS 14 or later** with [easydd](https://github.com/VijitSingh97/easydd),
+which lists only external disks and asks you to type the disk's path before it writes. Install
+[Homebrew](https://brew.sh) if you do not have it, then install easydd and `xz`, decompress the
+image and write it:
+
+```bash
+brew tap vijitsingh97/easydd https://github.com/VijitSingh97/easydd.git
+brew install vijitsingh97/easydd/easydd xz
+xz -dk pithead-os-vX.Y.Z.img.xz
+easydd pithead-os-vX.Y.Z.img
+```
+
+easydd takes only the decompressed `.img`, so leave 5 GiB free for it; `-k` keeps the `.xz` so the
+checksum can be run again. Enter the stick's number from the list (check its name and size),
+type its `/dev/diskN` path to confirm, then enter your password. Wait for **Done**: easydd ejects
+the stick when the write finishes.
 
 ## 2. Boot the machine from the stick
 
@@ -86,7 +132,19 @@ changes later (its network address moves, or you pin a custom hostname) — then
 certificate for the new names and you accept the warning again, once. The machine —
 there is no authority that could vouch for a box on your network. The warning means "nobody
 else vouched for this", not "something is wrong". Compare the fingerprint on the console with
-the one your browser shows under the warning's details, then continue. The setup page is
+the one your browser shows under the warning's details. Stop on a mismatch; continue only after
+they match. If an open dashboard tab keeps retrying after a certificate replacement, open the
+same dashboard address in a new tab to inspect the warning and verify the current fingerprint
+at the appliance console. Accept only the matching replacement; the original tab then
+reconnects through its normal polls. To read the current dashboard fingerprint, log in at the
+appliance console and run:
+
+```bash
+openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -fingerprint -sha256
+```
+
+Use this current certificate, not the setup page's earlier fingerprint or the miner's stratum
+TLS fingerprint. The setup page is
 encrypted either way, which matters because what you type into it includes node passwords and,
 if you use the advanced view, anything else in the configuration.
 
@@ -135,6 +193,12 @@ Before the disk, the page asks what the machine is going to be. This is the firs
 because it decides everything else the page asks — and, for one of the three answers, whether
 the machine gets a dashboard at all.
 
+These are three arrangements built from coordinator and rig roles; **Pithead + RigForge**
+sets the coordinator's local-miner option. Compare their [hardware budgets](hardware.md#choose-the-arrangement)
+and [miner connection instructions](workers.md) before choosing. Tari is optional for either
+coordinator arrangement: decline merge-mining to run Monero only, with no Tari payout address
+or Tari node required.
+
 | Choice | What it produces |
 |---|---|
 | **Pithead** | A coordinator: p2pool, xmrig-proxy, Tor and the dashboard, plus the Monero and Tari nodes for whichever of the two you keep on this machine (the setup page asks). Does not mine itself unless you turn on the built-in miner. |
@@ -157,7 +221,8 @@ because the token guards every API on the rig — the miner's own included, so n
 network can read or change it. From then on its own console is the only place to look at it, the
 same way you would watch any other machine on the network. A rig pointed at a pool with no
 IPv4 address (an onion address, say) keeps the token and the read-only feed but runs with
-control off, since RigForge refuses a writable path it cannot pin to one source.
+control off, since RigForge refuses a writable path it cannot pin to one source — the card
+says so and why, instead of pointing you at an adopt form the rig will not answer.
 Where the machine cannot fill a line in, the card leaves that line out rather than
 showing a blank beside its label: with no IPv4 address yet it tells you to read the
 address off the console once the machine is up, and on the rare failure to mint a token
@@ -227,20 +292,25 @@ questions.
 single wrong character pays a stranger. The page checks the address as you paste it and tells
 you immediately if it is the wrong kind: p2pool cannot pay a subaddress (starting `8`) or an
 integrated address, only your **primary** address, which starts with `4`.
+Use a dedicated mining wallet: P2Pool payout addresses are public ([P2Pool's guidance](https://github.com/SChernykh/p2pool/releases/tag/v4.18.1)).
 
 Then a handful of choices, all with sensible defaults:
 
 | Question | Default | When to change it |
 |---|---|---|
-| Merge-mine Tari? | no | Off on a new machine. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. It cannot be turned on from the dashboard afterwards — the Configuration view does not carry this switch; set the machine up again from the boot menu to change it. |
+| Merge-mine Tari? (beta) | off | Tari merge-mining is an opt-in beta: Enter means no, because Tari runs on pre-release upstream software and a yes downloads and syncs a Tari chain over Tor, which takes days. The exception is a reinstall that keeps the data disk’s chains, where Enter keeps it on. The bundled node needs the whole stack to fit (528 GiB with local Monero, 208 GiB with remote Monero). A yes also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero mining. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. You can change the mode and payout address later from the Configuration view behind confirmation. |
 | P2Pool sidechain | mini | `nano` for a single low-power rig, `main` only for very large hashrate. Changeable later. |
 | Telegram bot | — | Optional. Alerts and status commands; needs both the token and the chat id. |
 | Monero node | run it here | Point at a node you already run. It has to be on your own network — a private address (10.x, 172.16–31.x, 192.168.x) or one reached over a VPN — because the machine only lets the mining containers dial private ranges; everything else goes through Tor. |
 | Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
-| Join the XMRvsBeast raffle? | on | Off if you would rather send every hash to your own P2Pool payouts. On, the switching engine donates only enough hashrate to hold your tier and routes the rest to P2Pool; donating past a tier's threshold earns nothing extra, because the raffle picks its winners at random. Changeable later. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
-| First sync | private over Tor | Faster over the open internet if days of syncing is too slow; it uses Tor afterwards either way. |
+| First sync | private over Tor | Faster over clearnet: hours instead of days. This opts every local chain into fast sync and exposes your IP address to the Monero network and, if Tari runs locally, the Tari network until initial sync finishes. With the firewall on, only those local nodes are exempted. The host closes and verifies its exception before the Tor restart, then verifies the live daemon and rules before clearing the warning. The firewall and each clearnet option are confirmed settings in the Configuration view. |
+| Enable stratum password? | no | Yes generates a password every miner must send; it then appears on the hand-off card, in the dashboard's **Connect a miner** block and in the CLI output of `setup` and `apply`. With No, miners connect without one. Existing and restored configurations keep their current setting; the form-submit fallback (no JavaScript) follows the same rule. Change it later with `p2pool.stratum_password` ([configuration](configuration.md#configuration-reference)). |
 | Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
+
+XvB is off on a new install and is not asked. Enable it later from the Configuration view.
+If the machine cannot generate or save its dashboard login, first boot stops before handing
+off credentials or provisioning. The explicit "No login" choice still bypasses generation.
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
 with a default that is right for almost every home rig lives one level down, in **Advanced**,
@@ -270,14 +340,22 @@ Only when everything passes does the page show the things you must save:
 - the **dashboard login** (generated, or the one you chose)
 - the **dashboard address** (`https://pithead.local`)
 - where to **point your miners** (`stratum+tcp://pithead.local:3333`)
+- the **stratum password**, or **No stratum password** when it is off
+- the **TLS fingerprint** when stratum TLS is enabled
 
-A remote node's address is not a one-time answer. If the node you point at goes away, moves, or
-you want to try another one, the dashboard's Configuration view changes it on a running machine:
-type `APPLY` to confirm, and the machine dials the new endpoint and refuses it if nothing answers
-there ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). The node's RPC
-username and password are the exception and stay fixed at setup.
+A remote node's address and RPC login are not one-time answers. The dashboard's Configuration view
+changes either on a running machine: type `APPLY` to confirm, and the host checks the staged
+endpoint with the staged login before it commits the pair
+([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). Changing one login field in
+local-node mode preserves its masked partner and applies the pair to the local services together. A changed endpoint needs explicit replacement
+credentials: a masked login never follows it to a new node.
 
-**Copy the login somewhere safe, then press "I saved these — erase the disk and install."**
+After provisioning, **Connect a miner** in the dashboard shows the LAN pool URL and the TLS
+fingerprint when enabled. The block offers Reveal and Copy for a configured stratum password,
+including on a dashboard without a login: anyone on that LAN can retrieve it. If it is off,
+the block says **No stratum password**.
+
+**Copy the login and any stratum password somewhere safe, then press "I saved these — erase the disk and install."**
 Nothing touches the disk until that press. The install takes a few minutes, and when it
 finishes **the machine switches itself off.** That is the end of the install, not a crash.
 
@@ -290,31 +368,63 @@ Then the last three steps you will ever do at this machine:
 The machine boots from its own disk and **provisions itself with the configuration you just
 confirmed** — no second setup page, no second token. Pulling and starting the stack takes
 10–30 minutes on a home connection, its console narrates the progress, and when it finishes
-the dashboard is at the address above, behind the login you saved. (The login is also in
-`config.json` on the machine if you lose it.)
+the dashboard is at the address above, behind the login you saved. If you lose the login,
+use **Set up again** or [a settings USB stick](#changing-settings-with-a-usb-stick) to replace it.
 
 There is nothing to click before the power-off, on purpose: until it goes dark the machine is
 running *from* the stick, so the stick cannot come out while it runs. (If you pull it out
 early, the machine stops responding — hold the power button, leave the stick out, and switch
 it on. An install that had already reported success is safe on the disk.)
 
-Most of the configuration stays editable from the dashboard afterwards — see
-[configuration](configuration.md) for everything you can tune. Be aware of one honest limit
-in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
-password, per-rig worker entries) can be set **here, at install**, but not changed from the
-dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts or repoint a rig's control address and token to one it controls. A
-shell-less appliance adopting a new rig after install therefore needs the USB-stick route below,
-not the dashboard. Changing any of these later does not mean reinstalling: write the new settings
-to a
-FAT stick as `pithead-config.json`, insert it and reboot — see
-[Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
-media and power-cycle the machine is authority over it already, so that channel may set any
-supported setting, including what no remote channel is allowed to touch. Release images reject
-retired SSH settings.
+Reference settings stay editable from the dashboard afterwards — see
+[configuration](configuration.md). Security-sensitive changes, including payout destinations,
+require the signed-in operator to review full non-secret values and complete the confirmation step.
+Dashboard authentication is the access-control perimeter; the typed confirmation prevents paste
+mistakes, not a compromised dashboard process. The dashboard password and the two tamper-alarm
+toggles are changeable there too, behind typed `APPLY` and the confirmation step, with a warning
+that names the cost first: the password is also the console `root` login, so a new one replaces
+both, and a silenced alarm stops reporting the change it watches. Rigs are narrower: the dashboard can adopt a new rig
+(Worker Inspect's adopt form, confirmed by typing `APPLY`), but it cannot repoint, reorder or
+remove a rig it already controls. See
+[Changing settings with a USB stick](#changing-settings-with-a-usb-stick).
+
+The USB-stick route stays available for everything the dashboard can set and for what it cannot:
+write the new settings to a FAT stick as `pithead-config.json`, insert it and reboot. Being able to
+insert media and power-cycle the machine is authority over it already, so that channel may set any
+supported setting without the dashboard's confirmation step. Release images reject retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
+
+### Reaching it from outside your network, over Tor
+
+Turn it on during setup. Open **Advanced** at the bottom of the setup page and set
+`dashboard.onion.enabled` to `true` in the configuration shown there. Leave
+`dashboard.onion.client_auth` at `true`: setup refuses the config editor and the onion together
+without it. The machine publishes the dashboard as a Tor hidden service — no port forwarding, no
+VPN, no public IP — and its `.onion` address appears under the machine name at the top of the
+dashboard, with a **Copy** button.
+
+After setup, the Configuration view can change this switch too. Turning the onion on or off is a
+confirmed change: review the preview, type `APPLY`, and complete the confirmation step. Keep
+`dashboard.onion.client_auth` at `true` while the config editor is on, or the change is refused.
+[A USB stick](#changing-settings-with-a-usb-stick) and **Set up again** remain available.
+
+The address alone will not open it. An appliance keeps its config editor on, and pithead refuses
+to publish a config editor behind nothing but a password on an anonymously-reachable address, so
+an appliance onion always runs with Tor **client authorization**: it does not answer at all unless
+your browser holds the machine's client key. Next to the address is a **Show client key** button —
+press it and the machine hands the key over **once**, in both the forms a Tor client might want.
+Save it there and then; the machine wipes the temporary result moments later. Pressing the
+button again reveals the same client key; **Set up again** also keeps it. Every reveal is written to the
+configuration history, so you can see whether anyone else has asked for it.
+
+Then follow [connecting with client
+authorization](configuration.md#remote-access-over-tor-onion-service) for your Tor client. A
+leaked key cannot be rotated from the dashboard. At the console, run
+`cd /data/pithead && ./pithead rotate-dashboard-onion` to replace both the onion address and
+client key. Without a console, reinstall with **Fresh start, keep the blockchains** or
+**Wipe everything**; both erase the old Tor identity.
 
 ## What the machine does on its own
 
@@ -336,7 +446,13 @@ would not:
 The appliance keeps **two copies of the system**, and only one runs at a time. An update
 is written to the copy that is idle, so the running system is never modified in place.
 The machine installs an update, reboots into the new version, and checks that the stack
-came up. If it did not — it fails to boot, or the stack does not start — **the machine
+came up. While the health gate waits, every sixth failed check prints elapsed minutes
+to the screen, serial console and journal, with an approximate 16-minute wait and a
+reminder to leave the machine powered on. Six checks take about a minute plus the
+time spent checking health; the estimate is not a deadline. Console writes are
+best-effort, and a missing console does not stop the journal message or health gate.
+A gate that passes in its first minute prints no progress line.
+If the stack does not start, or the machine fails to boot, **the machine
 goes back to the previous version on its own**, with nobody present: it restarts itself
 once, and that restart lands on the copy that was working. That is the entire point of
 keeping two copies.
@@ -356,10 +472,12 @@ available. Start it again once the other operation has finished.
 Updates are applied from the dashboard: an **OS updates** control in the header checks
 for a new release, downloads its signed image to the data partition (over Tor, resumable
 — mining keeps running), verifies the file on the machine before anything is written to
-the idle copy, installs it, and then waits for you: **nothing reboots on its own**. The
-reboot is a separately confirmed step, the only one that pauses mining — typically under
-five minutes — and after it the machine runs its normal health checks before keeping the
-new version. A banner reports the outcome, including an automatic return to the previous
+the idle copy, installs it, and arms that copy for the next reboot. Install does not order a
+reboot, but **any reboot boots the update**, including a power cut, watchdog restart or
+**Set up again**. The dashboard reboot action expires after 24 hours; that does not disarm
+the installed slot. The downloaded bundle is deleted after a successful install. Confirm
+the dashboard reboot separately; mining pauses typically under five minutes, then the
+machine runs its normal health checks before keeping the new version. A banner reports the outcome, including an automatic return to the previous
 version if the new one failed — and, when those health checks were what held it back,
 which check it was, so a return is never mistaken for a bad release. One thing the machine
 repairs on its own during that wait: a network address that arrived after the certificate
@@ -367,9 +485,16 @@ was made gets a fresh certificate minted there and then, instead of failing the 
 and returning to the previous version. If the certificate still does not match after that,
 the machine keeps the new version and notes the gap in its boot log and with the update's
 recorded outcome: the mismatch is about this machine's addresses, not the update, and
-running `pithead apply` on the machine mints the certificate — that command now does so
+running `cd /data/pithead && ./pithead apply` at the console mints the certificate — that command now does so
 even when the configuration is unchanged. The machine refuses images that are unsigned, built for
-different hardware, or older than what it runs; there is no override. If another operation is changing the stack when you start an
+different hardware, or older than what it runs. The dashboard has no downgrade override.
+At the console, `cd /data/pithead && ./pithead os-update BUNDLE --allow-downgrade` installs
+an older signed image, but never one below the `/data` migration floor. It also refuses an update
+that migrates the chain data when the data partition lacks room for the Tari migration. That
+migration writes a compacted copy of the Tari database beside the old one, so the machine needs
+free space of the database's current size plus 5 GiB. The refusal names the size needed and the
+size free, and the downloaded image stays on the machine, so you can free space and install it
+again. If another operation is changing the stack when you start an
 install, the install is not started at all: nothing is written to the idle copy and the
 dashboard says so rather than reporting a failed install. Start it again once that
 operation has finished. See
@@ -395,13 +520,21 @@ Every start shows a short menu for five seconds, then boots by itself. You never
 touch it: the machine keeps two copies of the system and boots the last one that worked,
 so an update that fails to come up is undone on the next start without you.
 
+Every title begins with **USB drive:** or **Internal disk:**, identifying the disk whose
+menu you are viewing. An installation made from an earlier image shows neither prefix: an
+update replaces the system slots, not its boot menu. The image starts with the USB label;
+if written directly to an internal disk, it corrects the label after the first boot. A
+transport that does not report USB reads as internal, including some enclosures and card
+readers. Use the firmware boot picker to identify the device when needed.
+
 - The first entry names the Pithead version the machine chose, its slot, and **current**.
   The other populated slot names its version and says **previous**. Two slots may hold the
   same version; **slot A** and **slot B** still tell them apart.
 - A slot the installer verified as unused says **empty**. An older installation with no saved
   version says **Pithead version unknown** until that slot boots and repairs its label.
-- **Set up again** opens the setup page, keeping everything the machine already has. Use it
-  when a machine's answers need changing and there is no other way in. A RigForge rig has no
+- **Set up again (setup wizard; keeps saved settings)** opens the setup page, keeping
+  everything the machine already has. Use it when a machine's answers need changing and
+  there is no other way in. A RigForge rig has no
   dashboard and no login, so this entry is its only way back to the setup page from the
   machine itself.
 
@@ -454,9 +587,21 @@ resync from the network on their own.
 The archive is encrypted, and the machine picks the passphrase for you: a long, random
 one, shown exactly once, right after the archive is ready. There is no way to see it
 again — the page shows it inside a downloadable kit (the passphrase, the archive's name,
-and what it contains), and warns you before it moves on. Save the kit and download the
-archive together, and keep them somewhere other than this machine. Without the
-passphrase, the archive cannot be opened.
+and what it contains). Save the kit first, then download the archive, and keep both somewhere
+other than this machine. Leave the recovery page open until both downloads finish and check
+the saved files before closing it. The archive link keeps this page available if the browser
+blocks the transfer; retry the same link without creating another backup. Reloading or leaving
+the recovery page discards its passphrase, and the host removes its copy after its existing
+short expiry window. Without the passphrase, the archive cannot be opened.
+
+If Chrome blocks the archive, check **Downloads** for the reason and verify the dashboard
+certificate. Save the kit, keep the recovery page open, and copy its archive link. Open a
+clean Chrome profile with no extensions, verify the dashboard certificate and sign in there,
+then open the copied archive link. Do not create another backup to retry the download.
+If a managed policy blocks it,
+ask its administrator to approve downloads from the appliance origin or provide another
+approved way to save the encrypted archive; do not bypass the policy. **Backup created**
+means the file exists on the host, not that a complete off-machine copy has been saved.
 
 Putting a backup to use is the [Recovering from a backup](#recovering-from-a-backup)
 section below: a fresh install accepts the archive and its passphrase in place of the
@@ -468,15 +613,16 @@ There are two ways to reset the machine, and the difference between them is days
 time. Both run from a shell — log in at the console as `root` with the dashboard password
 (the appliance has no uninstall; these resets are its equivalents).
 
-**Config reset** clears your settings and reopens the setup wizard, and keeps everything
-else. The synced chain, your wallet, the Tor onion keys and your dashboard history all
-stay on the machine, so the wizard opens on a box that is still fully synced — you re-enter
+**Config reset** starts over from a blank form; this machine's identity is kept. The synced
+chain, your wallet, the Tor onion keys and your dashboard history all stay on the machine, so the wizard opens on a box that is still fully synced — you re-enter
 your answers and it is running again in minutes, at the same onion address. Reach for this
-when you want to change a setting the wizard owns, or hand the machine to someone else
-without a resync.
+when you want to re-enter the wizard answers. To hand the machine to someone else without
+a resync, reinstall with **Fresh start, keep the blockchains**: it erases settings, wallets,
+Tor identities and dashboard history while keeping the chains. Without a shell, use
+**Set up again** to change answers, or [a settings USB stick](#changing-settings-with-a-usb-stick).
 
 ```
-pithead config-reset
+cd /data/pithead && ./pithead config-reset
 ```
 
 **Factory reset** erases the whole data area — chain, wallet, Tor keys, settings, all of
@@ -484,18 +630,21 @@ it — and reboots to a blank setup wizard, exactly as the machine shipped. The 
 follows takes days, so use config reset first unless you truly want nothing kept.
 
 ```
-pithead factory-reset
+cd /data/pithead && ./pithead factory-reset
 ```
 
 Both ask you to type the reset name before they do anything. The machine reboots itself
 into setup when the reset is done.
+Config reset continues with the configuration wipe and reboot even if Compose fails to
+stop the stack. It prints the Compose error and a warning that containers may still be
+running. Exit status 0 means the reset completed; it does not confirm a clean shutdown.
 
 A machine that comes back to the setup wizard **without** being asked to is a different
 event: the data area would not mount, and the machine repaired it or, failing that,
 reinitialized it to get itself back. Repair is tried first and goes as far as rebuilding
 the filesystem's superblock from a backup copy — a data area is only ever erased when
 nothing could mount it. When that does happen the setup page itself says so, dated, and
-`pithead doctor` reports the same fact for a support conversation on a machine with a
+`cd /data/pithead && ./pithead doctor` reports the same fact for a support conversation on a machine with a
 shell. If you have a backup, restore it instead of setting up as a fresh machine — a
 factory reset you asked for never shows this notice.
 
@@ -510,7 +659,7 @@ archive it downloads and the passphrase from its kit are exactly what restore as
 console works too — log in as `root` with the dashboard password and run:
 
 ```
-pithead backup
+cd /data/pithead && ./pithead backup
 ```
 
 This writes the same kind of encrypted archive under `backups/`, with a passphrase you type
@@ -520,6 +669,10 @@ re-syncs — and restore opens it with whichever passphrase sealed it: the kit's
 Copy the archive off the machine and keep the passphrase somewhere else — the archive is
 useless without it, and the machine you are backing up is exactly the thing you might lose
 next.
+
+**Switch the old machine off first, and keep it off.** Restore reproduces its full identity,
+including the machine name, Tor onion keys and dashboard login. Running both machines
+with that identity causes name and onion-service conflicts.
 
 **Restore it at setup.** Write a fresh image, boot the machine, and on the setup page choose
 "Restoring an existing Pithead? Upload its backup instead." above the form. Upload the archive
@@ -534,6 +687,11 @@ This works on the installation medium's combined page too.
 
 A wrong passphrase or a damaged archive is rejected with the reason, and the page keeps the restore
 form open so you can correct it and retry or return to the normal form — restore never blocks setup.
+A restore that fails while writing its files puts back the machine's previous configuration, Tor
+keys, and dashboard database, and removes any chain files it added. If one of them cannot be put
+back, the error says so, and the previous copy stays beside it under a `.restore-old` name. If a
+file the restore added cannot be removed, the error says that too, and the file stays under its
+`.restore` name or in the chain data directory.
 Restore is available at first setup and from the saved-setup screen. In both cases it runs through
 setup again; the day-two `restore` command is the separate path for restoring a running stack in
 place.
@@ -611,7 +769,7 @@ stack mines mainnet.
 
 **"Wrong passphrase or corrupt archive."** Confirm you copied the whole `.tar.gz.enc` file (a
 partial copy fails the same way) and typed the passphrase exactly as it was set when you ran
-`pithead backup`. Nothing is written until this check passes — retry from the same page.
+`cd /data/pithead && ./pithead backup`. Nothing is written until this check passes — retry from the same page.
 
 **It came back on the old version after an update.** That is the safety mechanism working:
 the new version did not come up healthy, so the machine restarted itself and went back.

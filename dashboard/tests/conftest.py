@@ -18,6 +18,19 @@ def _isolate_db(tmp_path, monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _prune_sampler_off(monkeypatch):
+    """Pin the stores' probabilistic retention sampler OFF by default (#1814).
+
+    Every ``DELETE FROM`` in the storage mixins is gated on ``random.random() < 0.05`` — the only
+    thing ``random.random`` is used for in this package. Fixtures all over the suite stamp FIXED
+    calendar timestamps, which age out of their table's retention window as the real clock moves
+    past them, so a sampler that happened to fire would delete rows a test had just written and
+    fail it at random. Pinning it high makes the whole suite deterministic; a test that is about
+    retention re-patches this to 0.0 and asserts the delete."""
+    monkeypatch.setattr("random.random", lambda: 1.0)
+
+
 @pytest.fixture
 def state_manager():
     """A real StateManager backed by an in-memory SQLite database."""

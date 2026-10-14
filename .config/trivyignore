@@ -38,28 +38,3 @@ CVE-2026-24049
 # COMPILES docker-compose and cosign itself on a pinned, patched toolchain (os/rootfs/Dockerfile,
 # the gobuild stage), so stdlib findings are fixed at the source instead of accepted. If a stdlib
 # CVE appears here again, the answer is to bump the builder image, not to add a line below.
-# util-linux family (bsdutils, libblkid1, liblastlog2-2, libmount1, libsmartcols1, libuuid1, login,
-# mount, util-linux) — FOUR advisories now, all with the same fix and the same clearing condition.
-# The fix is a base-distro point release, 2.41.5-0+deb13u1, and no published python:3.11-slim
-# carries it: `docker pull python:3.11-slim` returns the very digest dashboard/Dockerfile
-# already pins, and it still ships 2.41-5. So this cannot be closed by dependabot or by a manual
-# base bump — only by upstream rebuilding the image on the fixed Debian packages. Verified by
-# pulling the tag and reading dpkg, not from the release notes (#1156).
-#
-# Same shape as the openssl mute this file carried until 2026-08-24 (CVE-2026-45447, cleared once the
-# pinned bases took the fix): `--ignore-unfixed` hid these until Debian published a fix, at
-# which point they reddened every branch at once with no change on our side. 53615 arrived that way
-# on 2026-08-17 and the other three on 2026-08-20, between one CI run and the next on a branch
-# nobody had touched. Each date is the day that ID's mute landed here, so
-# `git log --follow -S <the ID> -- .config/trivyignore` re-derives one rather than trusting this line.
-#
-# Cleared when a base bump brings 2.41.5-0+deb13u1 in — `docker run --rm python:3.11-slim
-# dpkg-query -W util-linux` is the one-line check, and all four go together. Nothing re-surfaces
-# these on its own: the weekly CVE sweep (#833) scans WITH this file applied, so a muted finding
-# never reaches it (#1174). scripts/watch/trivyignore-watch.sh checks whether an ID like these still
-# shows up in any image the file covers — weekly now, via .github/workflows/trivyignore-watch.yml
-# on the default branch, which checks this lane out to run it (#1174).
-CVE-2026-53612
-CVE-2026-53613
-CVE-2026-53614
-CVE-2026-53615

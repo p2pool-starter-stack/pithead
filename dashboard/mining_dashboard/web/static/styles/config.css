@@ -3,7 +3,7 @@
  * keys, and the preview/confirm modal listing the same change rows `pithead apply` prints
  * (DEST rows styled as warnings). Sections regroup around a pinned core group + collapsible
  * natural sections (#529) — collapsed <details>, the same pattern as .egress-details above. */
-.config-section h3 {
+.config-section h2 {
   margin-top: 0;
   text-transform: capitalize;
 }
@@ -83,21 +83,15 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
-.config-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: 20px;
-}
 .config-modal {
-  max-width: 640px;
-  width: 100%;
+  box-sizing: border-box;
+  width: min(640px, calc(100% - 32px));
   max-height: 80vh;
   overflow-y: auto;
+  margin: 5vh auto;
+}
+.config-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
 }
 .config-preview-list {
   padding-left: 1.2rem;

@@ -78,6 +78,14 @@ test("the sync screen says a Tari-required change lands on apply, not live (#188
   assert.match(header, /takes effect once you apply the change/);
 });
 
+// #1859: the percentage climbs with no visible reload, so a screen-reader user needs a live
+// region to hear it change at all — silent otherwise for the whole sync.
+test("the sync percentage is a live region (#1859)", () => {
+  const out = renderToString(SyncView({ sync: SYNCING }));
+  const matches = out.match(/class="progress-text" role="status" aria-live="polite">/g) || [];
+  assert.equal(matches.length, 2, "expected a live region on both the Monero and the Tari gauge");
+});
+
 test("the screen promises it clears itself, so waiting is not mistaken for hanging (#1886)", () => {
   assert.match(headerOf(renderToString(SyncView({ sync: SYNCING }))), /clears itself once the required chains are ready/);
 });

@@ -80,8 +80,10 @@ control_os_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget co
 # The local-bundle refusals shared by os-verify and os-install (install re-runs them so a result
 # can never go stale between the two clicks). Echoes the refusal reason; empty = pass. Returns 0
 # for a real verdict — the caller deletes a refused bundle, only bundles that verify may sit
-# staged — and 3 when rauc itself could not run, where the caller KEEPS the bundle: deleting a
-# multi-GB Tor download is a verdict too, and a tool that never ran has not earned one.
+# staged — and 3 when the refusal is not a verdict on the bundle, where the caller KEEPS it:
+# deleting a multi-GB Tor download is a verdict too. That is rauc failing to run, which has not
+# earned one, and a /data volume short of the room a Tari migration needs, where freeing space is
+# the fix and the same bundle installs after it.
 os_verify_bundle_reason() { # <bundle> <target-tag>
     local bundle="$1" tag="$2" rc=0
     # Signature first: `rauc info` verifies the bundle signature against the system keyring
@@ -140,6 +142,13 @@ os_verify_bundle_reason() { # <bundle> <target-tag>
     if [ "v$bundle_version" != "$tag" ]; then
         printf '%s' "the downloaded bundle stamps itself '${bundle_version:-unstamped}' but the published release is $tag — refusing a version-mismatched file; it was deleted."
         return 0
+    fi
+    # Last, so a bundle refused on its own merits above is still deleted: the room a Tari
+    # migration needs on /data, the same refusal `pithead os-update` makes (shared guard).
+    reason=$(os_update_migration_space_guard "$(os_bundle_meta "$bundle" data_migration)")
+    if [ -n "$reason" ]; then
+        printf '%s' "$reason The downloaded update was kept."
+        return 3
     fi
     return 0
 }

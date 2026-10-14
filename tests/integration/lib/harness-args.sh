@@ -4,34 +4,33 @@
 # any bench work, exactly like the --scenario mode restriction next to its call site: --mode check
 # runs nothing but --check, so a destructive addition here would join a run the mode promises never
 # touches anything.
-validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS
+validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS and HARNESS_SCENARIO_ARGS
     HARNESS_PHASE_ARGS=""
     ROTATE_FIXTURE_ATTESTATION=""
     ROTATE_FIXTURE_REQUIRED=0
+    HARNESS_SCENARIO_ARGS=""
     [ "${#HARNESS_ARGS[@]}" -eq 0 ] && return 0
     [ "$MODE" != "check" ] || die "--harness-arg is not supported with --mode check."
     local i=0 arg next
     while [ "$i" -lt "${#HARNESS_ARGS[@]}" ]; do
         arg="${HARNESS_ARGS[$i]}"
         case "$arg" in
-        --rotate-onion)
-            [ "${KEEP:-0}" != 1 ] || die "--rotate-onion cannot be combined with --keep; its isolated identity must be removed."
-            ROTATE_FIXTURE_REQUIRED=1
+        --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --rotate-onion | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke | --alert-egress | --mergemine-submit | --mergemine-localnet | --tari-stranded | --monero-stranded)
             HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
-            i=$((i + 1))
-            ;;
-        --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke)
-            HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
+            if [ "$arg" = --rotate-onion ]; then
+                [ "${KEEP:-0}" != 1 ] || die "--rotate-onion cannot be combined with --keep; its isolated identity must be removed."
+                ROTATE_FIXTURE_REQUIRED=1
+            fi
             i=$((i + 1))
             ;;
         --scenario)
             next="${HARNESS_ARGS[$((i + 1))]:-}"
             [[ "$next" =~ ^[a-z0-9-]+$ ]] || die "--harness-arg --scenario needs a name matching ^[a-z0-9-]+\$ as the NEXT --harness-arg (got '$next')."
-            HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS --scenario $(quote_arg "$next")"
+            HARNESS_SCENARIO_ARGS="$HARNESS_SCENARIO_ARGS --scenario $(quote_arg "$next")"
             i=$((i + 2))
             ;;
         *)
-            die "--harness-arg does not accept '$arg' — allowed: --lifecycle, --fault-injection, --auth-fail-closed, --hardening, --rotate-onion, --subnet, --safety-backup, --rigforge, --rigforge-control, --xvb-routing-smoke, --scenario <name>."
+            die "--harness-arg does not accept '$arg' — allowed: --lifecycle, --fault-injection, --auth-fail-closed, --hardening, --rotate-onion, --subnet, --safety-backup, --rigforge, --rigforge-control, --xvb-routing-smoke, --alert-egress, --mergemine-submit, --mergemine-localnet, --tari-stranded, --monero-stranded, --scenario <name>."
             ;;
         esac
     done

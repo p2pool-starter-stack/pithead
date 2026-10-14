@@ -8,7 +8,8 @@
 // copy once the operator navigates away (a reload starts a fresh idle card). Save-it-now is not
 // a UI suggestion, it is the only chance — match that in the copy, not just the code.
 
-import { Component, html } from "../app/preact.mjs";
+import { Modal } from "../app/modal.mjs";
+import { Component, createRef, html } from "../app/preact.mjs";
 import { failureLog } from "../config/applyfailure.mjs";
 import { pollResult } from "../config/configview.mjs";
 import { fmtEpoch } from "./securityview.mjs";
@@ -60,6 +61,14 @@ export class BackupPanel extends Component {
     super(props);
     // idle | confirm | creating | kit | failed
     this.state = { phase: "idle", id: null, result: null };
+    this.modalRef = createRef();
+  }
+
+  // Escape and the confirm modal's Cancel both land here. Creating is a no-op — the stack is
+  // stopped and archiving — the note in that phase's body says why Escape doesn't close it.
+  cancel() {
+    if (this.state.phase === "creating") return;
+    this.modalRef.current?.close();
   }
 
   async run() {
@@ -77,9 +86,8 @@ export class BackupPanel extends Component {
   }
 
   renderConfirm() {
-    return html`<div class="config-modal-backdrop">
-        <div class="card config-modal">
-            <h3>Create a backup</h3>
+    return html`<${Modal} ref=${this.modalRef} title="Create a backup"
+        onCancel=${() => this.cancel()} onClose=${() => this.setState({ phase: "idle" })}>
             <p>The host stops the stack, archives config.json, .env, the Tor onion-service keys
             and the dashboard database into an encrypted file, then starts the stack again.
             Mining and this dashboard pause while the stack restarts. Appliance tests took roughly
@@ -87,38 +95,44 @@ export class BackupPanel extends Component {
             <p>The passphrase is generated on the host and shown once, right after this. There is
             no way to see it again — download the kit or write it down when it appears.</p>
             <div class="config-modal-actions">
-                <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle" })}>Cancel</button>
+                <button class="btn-toggle" onClick=${() => this.cancel()}>Cancel</button>
                 <button class="btn-toggle active" onClick=${() => this.run()}>Create backup</button>
             </div>
-        </div>
-    </div>`;
+    </${Modal}>`;
   }
 
   renderCreating() {
-    return html`<div class="config-modal-backdrop">
-        <div class="card config-modal">
-            <h3>Creating a backup…</h3>
+    return html`<${Modal} ref=${this.modalRef} title="Creating a backup…"
+        onCancel=${() => this.cancel()} onClose=${() => this.setState({ phase: "idle" })}>
             <p class="text-muted">The stack is stopping, archiving, and starting again. This page
             may briefly disconnect — leave it open; it shows the passphrase when the archive is
             ready.</p>
-        </div>
-    </div>`;
+            <p class="text-muted text-xs">This can't be interrupted — wait for it to finish.</p>
+    </${Modal}>`;
   }
 
   renderKit(id, result) {
     const kitText = buildKitText(result);
     const kitHref = "data:text/plain;charset=utf-8," + encodeURIComponent(kitText);
     return html`<div class="card">
-        <h3>Backup created</h3>
+        <h2>Backup created</h2>
         <p class="status-warn">Save this passphrase now — it is shown once and cannot be
         recovered. Without it, the archive is useless.</p>
         <p class="config-error-tail kit-passphrase font-mono">${result.passphrase}</p>
         <p class="text-muted text-xs">Archive: <span class="font-mono">${result.archive}</span>${" "}
         — created ${fmtEpoch(result.ts)}</p>
         <p class="text-muted text-xs">Contains: ${(result.contents || []).join(", ")}.</p>
+        <p>Save the kit first. Keep this page open until both downloads finish, and check the
+        saved files before closing it. Creating the archive does not prove it was saved off
+        this machine.</p>
+        <p class="text-muted text-xs">If the archive is blocked, check your browser's Downloads
+        for the reason. Retry this download with extensions disabled after checking the
+        dashboard certificate. Do not bypass a managed download policy or create another
+        backup just to retry the download.</p>
         <div class="config-actions">
             <a class="btn-toggle active" href=${kitHref} download=${kitFilename(result.archive)}>Download kit (.txt)</a>
-            <a class="btn-toggle" href=${"/api/control/backup-download?id=" + encodeURIComponent(id)}>Download archive</a>
+            <a class="btn-toggle" href=${"/api/control/backup-download?id=" + encodeURIComponent(id)}
+                target="_blank" rel="noopener noreferrer">Download archive</a>
             <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", id: null, result: null })}>I've saved it — close</button>
         </div>
     </div>`;
@@ -128,7 +142,7 @@ export class BackupPanel extends Component {
     const error = result && result.error;
     const log = result && result.log;
     return html`<div class="card">
-        <h3>Backup</h3>
+        <h2>Backup</h2>
         <p class="status-bad">Backup did not complete.</p>
         ${error ? html`<p class="status-bad">${error}</p>` : null}
         ${failureLog(log, this.props.appliance, "backup")}
@@ -147,27 +161,27 @@ export class BackupPanel extends Component {
       // password leaves it off DELIBERATELY and permanently. Nothing returns. Name the login.
       if (this.props.appliance) {
         return html`<div class="card">
-            <h3>Backup</h3>
+            <h2>Backup</h2>
             <p>Backup is off because this machine was set up without a dashboard login. The
             control channel it exports through sits behind that login, so it stays off until
             this machine has one — set a password under Set up again in the boot menu.</p>
         </div>`;
       }
       return html`<div class="card">
-          <h3>Backup</h3>
-          <p>Backup export is off with the rest of the control channel. To enable it, set
-          <code>dashboard.control.enabled: true</code> in <code>config.json</code> on the host
-          and run <code>./pithead apply</code>. It requires a dashboard login.</p>
+          <h2>Backup</h2>
+          <p>Backup export is off with the rest of the control channel — see Configuration.</p>
       </div>`;
     }
     const { phase, id, result } = this.state;
     if (phase === "kit" && result) return this.renderKit(id, result);
     if (phase === "failed") return this.renderFailed(result);
     let modal = null;
-    if (phase === "confirm") modal = this.renderConfirm();
+    // Hidden but mounted views must not hold a modal open (ConfigView does the same, #3288).
+    if (this.props.active === false) modal = null;
+    else if (phase === "confirm") modal = this.renderConfirm();
     else if (phase === "creating") modal = this.renderCreating();
     return html`<div class="card">
-        <h3>Backup</h3>
+        <h2>Backup</h2>
         <p>Export an encrypted archive of config.json, .env, the Tor onion-service keys, and the
         dashboard database — the state a dead box takes with it. Blockchains are excluded; they
         re-sync.</p>

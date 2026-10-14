@@ -22,7 +22,7 @@ export const EstTable = ({ unit, day, month, year, price, currency, title }) => 
     <div class="est-scroll">
     <table class="est-table" title=${title || ""}>
         <thead><tr>
-            <th></th>
+            <th scope="col"><span class="sr-only">Row</span></th>
             <th scope="col">${unit}</th>
             ${haveFiat ? html`<th scope="col">≈ ${currency || "USD"}</th>` : null}
         </tr></thead>

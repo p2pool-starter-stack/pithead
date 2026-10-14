@@ -15,7 +15,7 @@ function ComponentHealth({ topology, egress }) {
   const summaryClass = ok ? "ok" : leaks ? "bad" : "warn";
   return html`
     <div class="card card-advanced" id="card-egress">
-        <h3>Stack Topology & Egress</h3>
+        <h2>Stack Topology & Egress</h2>
         <div class=${"egress-summary c-" + summaryClass}>
             ${ok ? "🛡️" : "⚠️"} ${topology.summary.label}
         </div>
@@ -39,7 +39,9 @@ function ComponentHealth({ topology, egress }) {
                                             >${conn.to}${
                                               conn.blocked_by_firewall
                                                 ? html` <span class="egress-note">(firewall-blocked)</span>`
-                                                : ""
+                                                : conn.chosen_clearnet
+                                                  ? html` <span class="egress-note">(your choice: your IP is visible to this destination)</span>`
+                                                  : ""
                                             }</span
                                         >
                                     </li>`;

@@ -12,3 +12,7 @@ redact_it_password() {
         cat
     fi
 }
+
+# Assertion details may contain already-scrubbed KEY=value diagnostics on one folded line.
+# Share only the identity shape here: the full line filter would discard the useful tail.
+redact_onions() { sed -E 's/[a-z2-7]{56}\.onion/<redacted>.onion/g'; }

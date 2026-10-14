@@ -21,18 +21,16 @@ headroom, and #1369's fix — an exact-id provenance lookup the 50-row history w
 """
 
 import json
+import random
 import sqlite3
 import time
 from typing import Any
 
-# The credential strip the rig-read path already uses on ``rig_config``
-# (``client/xmrig_client._rig_writable_config``), reused here rather than restated: a second copy
-# of the key list and the depth walk is a second place for them to drift, and this table feeds the
-# SAME editor prefill that one defends (#1543). The service -> client direction is the one
-# ``data_helpers``, ``worker_refresh`` and ``data_service`` already take; ``xmrig_client`` reaches
-# back only as far as ``control_service``, which imports ``config`` and nothing else, so this
-# closes no cycle.
+# The credential strip the rig-read path already uses (``client/xmrig_client._rig_writable_config``),
+# reused rather than restated — a second key list is a second place for it to drift, and this table
+# feeds the SAME editor prefill that one defends (#1543).
 from mining_dashboard.client.xmrig_client import strip_credentials
+from mining_dashboard.config.config import HISTORY_RETENTION_SEC
 
 # The full terminal vocabulary the rig's control mirror can report (#1009) — applied/rejected/
 # rolled_back/failed from a control-apply, plus noop (already on target)/throttled (retry-later)
@@ -312,15 +310,13 @@ class WorkerConfigStoreMixin:
 
     def note_worker_revision(self, worker: str, meta: dict | None) -> dict | None:
         """Record the config revision ``worker`` is serving NOW and report an edit that nothing
-        recorded (#1551) — the one door #1542 leaves open.
-
-        Takes the ALREADY-VALIDATED meta from ``client/rig_config_meta.parse_config_meta``, never a
-        raw rig body: parsing a remote feed is the client layer's job, and this stays a store.
+        recorded (#1551) — the one door #1542 leaves open. Takes the ALREADY-VALIDATED meta from
+        ``client/rig_config_meta.parse_config_meta``, never a raw rig body: parsing a remote feed
+        is the client layer's job, and this stays a store.
 
         Read-then-write under the one ``_db_lock``, in a single method, because the comparison IS
         the read: two polls of the same rig interleaving a read and a write would both see the same
-        "previous" and one of the two moves would go unreported. Same handle, same lock, same
-        transaction scope as every other accessor here (#1369).
+        "previous" and one of the two moves would go unreported.
 
         Returns ``None`` for the ordinary case — nothing to compare (a rig seen for the first time,
         or one serving no revision), a revision that has not moved, or a move that WAS recorded.
@@ -328,21 +324,19 @@ class WorkerConfigStoreMixin:
         ``last_change_id`` beside it: a hand-edit underneath RigForge, which moves the revision and
         stamps nothing, so neither #1345's provenance line nor #1367's ``config_drift`` can see it.
 
-        The same write maintains ``drift_from`` for ``get_worker_revision_drift`` (#1564) — the
-        read and the comparison are already here, so the Inspect line costs no second query and no
-        second lock scope. ``_next_drift_from`` carries that rule.
+        The same write maintains ``drift_from`` for ``get_worker_revision_drift`` (#1564), so the
+        Inspect line costs no second query or lock scope. ``_next_drift_from`` carries that rule.
 
         It fails CLOSED like ``get_worker_config_change``: any read/write error returns ``None`` and
-        accuses nobody. A missed detection is a poll's delay — the next poll compares against the
-        same stored row, because a failed write leaves it unchanged — whereas a false accusation is
-        a permanent audit row naming an operator's rig for something it did not do.
+        accuses nobody — a missed detection is a poll's delay, whereas a false accusation is a
+        permanent audit row naming an operator's rig for something it did not do.
 
-        ``worker`` is the one field here a rig still chooses freely — ``meta`` arrives through
-        ``parse_config_meta``, whose ``_token`` charset a lone surrogate cannot match — so it is the
-        member checked by ``_bindable`` (#1696). A name sqlite cannot bind says nothing, in the same
-        closed direction: a name we cannot store is one we cannot compare against. That cost is
-        disclosed and is NOT the poll's delay above — a rig naming itself with a lone surrogate goes
-        unchecked for drift for as long as it keeps that name.
+        ``worker`` is the one field here a rig still chooses freely, checked by ``_bindable``
+        (#1696): a name sqlite cannot bind says nothing, since we can't compare against what we
+        can't store — disclosed rather than fixed.
+
+        Prunes its own table by ``ts`` on a 5% sample (#1811): ``ts`` refreshes on every live poll,
+        so only a name gone silent the full retention window is ever the row removed.
         """
         revision = (meta or {}).get("revision")
         if not worker or not revision or not _bindable(worker):
@@ -360,11 +354,17 @@ class WorkerConfigStoreMixin:
                 )
                 row = cursor.fetchone()
                 drift_from = _next_drift_from(row, revision, last_change_id)
+                now = time.time()
                 self._conn.execute(
                     "INSERT OR REPLACE INTO worker_config_revision "
                     "(worker, revision, last_change_id, ts, drift_from) VALUES (?, ?, ?, ?, ?)",
-                    (worker, revision, last_change_id, time.time(), drift_from),
+                    (worker, revision, last_change_id, now, drift_from),
                 )
+                if random.random() < 0.05:  # noqa: S311 — pruning sampler, not a security context
+                    self._conn.execute(
+                        "DELETE FROM worker_config_revision WHERE ts < ?",
+                        (now - HISTORY_RETENTION_SEC,),
+                    )
                 self._conn.commit()
         except sqlite3.Error as e:
             self._db_error("Worker Revision Write Error", e)

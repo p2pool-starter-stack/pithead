@@ -155,6 +155,10 @@ test("BackupPanel kit phase reveals the passphrase exactly once, with download l
   assert.match(out, /pithead-backup-20260813-000000\.tar\.gz\.enc/);
   assert.match(out, new RegExp(`/api/control/backup-download\\?id=${ID}`));
   assert.match(out, /Download kit/);
+  // Failed archive navigation must never replace the only page holding the recovery kit.
+  assert.match(out, /target="_blank"/);
+  assert.match(out, /rel="noopener noreferrer"/);
+  assert.match(out, /Save the kit first/);
   assert.match(out, /I.ve saved it/);
 });
 
@@ -196,13 +200,31 @@ test("BackupPanel on the appliance names the login, not a channel that is coming
   assert.doesNotMatch(out, /config\.json/);
 });
 
-test("BackupPanel off a non-appliance host keeps the remedy — the appliance branch is narrow (#1854)", () => {
+test("BackupPanel off a non-appliance host points at Configuration instead of repeating the remedy (#1871)", () => {
   const out = renderToString(inst({ enabled: false, appliance: false }).render());
-  assert.match(out, /pithead apply/);
+  assert.match(out, /see Configuration/);
+  assert.doesNotMatch(out, /pithead apply/);
+  assert.doesNotMatch(out, /config\.json/);
 });
 
 test("BackupPanel names both halves the operator has to keep — archive and kit (#1854)", () => {
   const out = renderToString(inst({ enabled: true }).render());
   assert.match(out, /Keep both halves/);
   assert.match(out, /passphrase/);
+});
+
+// --- Native <dialog> modal (#1876) -----------------------------------------------------
+
+test("the backup confirm and creating modals are <dialog>s, not backdrop divs", () => {
+  const titles = { confirm: "Create a backup", creating: "Creating a backup…" };
+  for (const phase of ["confirm", "creating"]) {
+    const c = inst({ enabled: true });
+    c.state.phase = phase;
+    const out = renderToString(c.render());
+    assert.match(out, /<dialog class="card config-modal"/, phase);
+    assert.match(out, /role="dialog"/, phase);
+    assert.match(out, /aria-modal="true"/, phase);
+    assert.match(out, new RegExp(`aria-label="${titles[phase].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`), phase);
+    assert.doesNotMatch(out, /config-modal-backdrop/, phase);
+  }
 });

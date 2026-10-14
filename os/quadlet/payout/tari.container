@@ -4,7 +4,7 @@ After=tor.service
 Requires=tor.service
 [Container]
 ContainerName=tari
-Image=quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:824fd6ec21d618805317d7eede374d6782906eeae17d2fc8aaad4df6205f94e0
+Image=ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec
 Network=mining.network
 IP=172.28.0.27
 User=1000:1000
@@ -19,6 +19,7 @@ Tmpfs=/tmp:size=64m,mode=1777
 PublishPort=127.0.0.1:18142:18142
 ReadOnly=true
 NoNewPrivileges=true
+RunInit=true
 StopTimeout=60
 PodmanArgs=--memory 7680m --memory-swap 7680m
 HealthCmd=ps | grep '[m]inotari_node' || exit 1

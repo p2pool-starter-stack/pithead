@@ -30,50 +30,12 @@
   font-weight: 600;
 }
 
-/* Theme switcher (Issue #43): a small fixed segmented control in the bottom-right that picks
- * light / auto / dark. Kept visually quiet — muted icons on a subtle pill — with the active
- * segment raised. The chosen mode is persisted in localStorage and re-applied before the first
- * paint (see dashboard.js / theme-init.js), so it survives reloads and stack restarts. */
+/* Theme switcher (Issue #43; moved into the header, #1860): light / auto / dark, in flow next to
+ * the version badges, on the same .toggle-group/.btn-toggle pattern as the view switch. The
+ * chosen mode is persisted in localStorage and re-applied before the first paint (see
+ * dashboard.js / theme-init.js), so it survives reloads and stack restarts. */
 .theme-switcher {
-  position: fixed;
-  bottom: 16px;
-  right: 16px;
-  z-index: 50;
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-}
-.theme-seg {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-.theme-seg:hover {
-  color: var(--text);
-}
-.theme-seg.active {
-  background: var(--elevated);
-  color: var(--text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
-}
-.theme-seg svg {
-  display: block;
+  margin-left: 8px;
 }
 
 /* View Modes */

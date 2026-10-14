@@ -12,23 +12,76 @@ _rig_mining_up() { # <tries>, 10 s apart — 0 once the xmrig unit is active wit
 
 phase_rig() {
     info "phase: rig (the OTHER machine this image installs — mines instead of coordinating)"
-    # Recorded at phase ENTRY, before the first build or boot: the dashboard-scoped legs (hostname
-    # identity, diagnostics, tari-mode switch, egress backstop — all phase_provision_* in
-    # appliance-*-leg.sh) cannot apply to a rig whatever this run goes on to do, and a fact known
-    # before anything runs must not be reported only by the runs that get far enough to reach it.
-    # A guest that dies at the image build and one that finishes the phase enumerate the same row.
     it_skip_leg "hostname identity, diagnostics, tari-mode switch and egress backstop legs" \
         "a rig has no dashboard, no control API and no compose stack at all to assert any of these against" by-design
-    # One image, two machines. Every other phase proves the coordinator; this one proves that
-    # answering "RigForge" produces a box with no stack at all, mining the baked binary without
-    # compiling or reaching the network, that takes an A/B update exactly like a coordinator. A
-    # rig has no dashboard to complain through, so one that never starts is invisible otherwise.
-    local img token jar body scode marker card card_tok rtok pcode ptries=0
+    local img token jar body scode marker card card_tok rtok pcode ptries=0 cid cstat meta0 meta1
 
     img=$(_build_image v1) || {
         bad "image build failed (/tmp/os-fault-build.log)"
         return
     }
+
+    # #1843: a disk-install rig lands its staged pithead-rig.json straight off the ESP — no
+    # wizard round trip. Stage a TOKENLESS one directly there, exactly as pre-#1836 media would,
+    # and boot: the guard must refuse it and fall to the setup page, never mint one unseen. This
+    # spends a throwaway copy of the image; the rig boot below uses the untouched original.
+    # Every staging step fails LOUDLY: a leg that silently staged nothing would boot a pristine
+    # image, pass the role and page checks for the wrong reason, and report the guard proven.
+    local land_disk="/srv/code/bench-vm/pithead-rig-token-landing.img" land_loop land_mnt land_tries=0 land_warn
+    cp "$img" "$land_disk" || {
+        bad "could not copy the image for the tokenless-landing leg"
+        return
+    }
+    land_loop=$(losetup -Pf --show "$land_disk") || {
+        bad "could not attach a loop device to the tokenless-landing image"
+        return
+    }
+    while [ ! -e "${land_loop}p1" ] && [ "$land_tries" -lt 50 ]; do
+        sleep 0.1
+        land_tries=$((land_tries + 1))
+    done
+    [ -e "${land_loop}p1" ] || {
+        bad "the tokenless-landing image's ESP partition never appeared (${land_loop}p1)"
+        losetup -d "$land_loop"
+        return
+    }
+    land_mnt=$(mktemp -d)
+    mount "${land_loop}p1" "$land_mnt" || {
+        bad "could not mount the tokenless-landing image's ESP (${land_loop}p1)"
+        losetup -d "$land_loop"
+        return
+    }
+    printf '{"pool":"127.0.0.1:22","worker":"kvm-rig"}' >"$land_mnt/pithead-rig.json"
+    jq -e .pool "$land_mnt/pithead-rig.json" >/dev/null 2>&1 &&
+        ok "the tokenless rig file reads back off the staged ESP before the boot" ||
+        bad "the tokenless rig file did not read back off the staged ESP — the leg would prove nothing"
+    umount "$land_mnt"
+    rmdir "$land_mnt"
+    losetup -d "$land_loop"
+    if _vm_boot_disk "$land_disk" && _wait_ssh 240; then
+        [ "$(_ssh 'cat /data/pithead/machine-role 2>/dev/null' | tr -d '\r\n')" = "rig" ] &&
+            bad "a tokenless staged rig file landed anyway — the #1843 guard did not fire" ||
+            ok "#1843: a tokenless staged rig file is refused, never landed as a rig"
+        _wait_setup_page 120 &&
+            ok "#1843: the machine falls to the setup page instead of mining unadoptably" ||
+            bad "#1843: the setup page never came up after the refusal"
+        # POSITIVE evidence that the guard itself ran, which the two checks above cannot give:
+        # a pristine image with nothing staged passes both for the wrong reason. This line comes
+        # from the guard's own else-branch (lib/pithead/12-firstboot-wizard.sh).
+        land_warn=$(_ssh "journalctl -b --no-pager -o cat | grep -m1 unusable" 2>/dev/null | tr -d '\r')
+        [ -n "$land_warn" ] &&
+            ok "#1843: the guard ran — boot journal: $(printf '%s' "$land_warn" | cut -c1-140)" ||
+            bad "#1843: no 'unusable' line in the boot journal — the guard never ran on this boot"
+        # Refused is still readable: the file may carry a stratum password and a VFAT ESP keeps
+        # no mode 600, so the refusal scrubs it exactly as the consumed path does.
+        _ssh "test ! -e /boot/efi/pithead-rig.json" &&
+            ok "#1843: the refused file was scrubbed off the ESP (it may hold a stratum password)" ||
+            bad "#1843: the refused file still sits on the ESP, unprotected on VFAT"
+    else
+        bad "the tokenless-landing guest never answered SSH (ip: ${ip:-none})"
+    fi
+    rm -f "$land_disk"
+
     _vm_boot_disk "$img" && _wait_ssh 240 || {
         bad "guest never answered SSH (ip: ${ip:-none})"
         return
@@ -130,7 +183,13 @@ phase_rig() {
     [ "$pcode" = "401" ] && ok "the sister feed refuses without the token (401)" || bad "the sister feed answered '${pcode}' without a token"
     pcode=$(_rig_http http://127.0.0.1:8080/1/summary)
     case "$pcode" in 401 | 403) ok "XMRig's own API is closed without the token ($pcode)" ;; *) bad "XMRig's API on 8080 answered '${pcode}' with no token — still open on the LAN" ;; esac
-    pcode=$(_rig_http http://127.0.0.1:8082/)
+    ptries=0
+    while [ "$ptries" -lt 12 ]; do
+        pcode=$(_rig_http http://127.0.0.1:8082/)
+        [ -n "$pcode" ] && [ "$pcode" != "000" ] && break
+        sleep 5
+        ptries=$((ptries + 1))
+    done
     [ -n "$pcode" ] && [ "$pcode" != "000" ] && ok "the control port listens (loopback answers $pcode)" || bad "the control port does not answer even on loopback ('${pcode}')"
     pcode=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8082/" 2>/dev/null)
     [ "${pcode:-000}" = "000" ] && ok "the control port is unreachable from an unpinned source (this host)" || bad "the control port answered '$pcode' from an unpinned source"
@@ -155,6 +214,22 @@ phase_rig() {
 
     # ---- reboot: pithead-boot owns a rig now, and commits its slot -------------------------
     info "reboot leg — the rig must come back mining, and commit its own slot"
+    # #3204: apply on loopback, reboot, then require unchanged config_meta (no drift).
+    cid=$(_ssh "curl -s -m 10 -X POST -H 'Authorization: Bearer $rtok' -H 'Content-Type: application/json' -d '{\"max_temp_c\":77}' http://127.0.0.1:8082/apply | jq -r '.change_id // empty'" 2>/dev/null | tr -d '\r\n')
+    [[ "$cid" =~ ^[0-9a-f]{16}$ ]] || {
+        bad "the control path did not accept a max_temp_c change"
+        return
+    }
+    ok "the control path accepted a max_temp_c change ($cid)"
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        cstat=$(_ssh "curl -s -m 5 -H 'Authorization: Bearer $rtok' 'http://127.0.0.1:8082/status?change_id=$cid' | jq -r '.status // empty'" 2>/dev/null | tr -d '\r\n')
+        case "$cstat" in applied | rejected | rolled_back | failed) break ;; esac
+        sleep 5
+    done
+    [ "$cstat" = "applied" ] && ok "the control change was applied" || bad "the control change ended '${cstat:-unknown}', not applied"
+    meta0=$(rig_config_meta_wait "$rtok" "$cid")
+    [ "$(jq -r '.last_change_id // ""' <<<"$meta0" 2>/dev/null)" = "$cid" ] &&
+        ok "the rig's feed attributes the new revision to that change" || bad "config_meta does not carry the change id before the reboot: ${meta0:-unreadable}"
     _reboot_wait reboot 300 || {
         bad "the rig never returned from the reboot"
         return
@@ -162,6 +237,13 @@ phase_rig() {
     _rig_mining_up 24 &&
         ok "the rig returned mining with no hands on it (its unit lives in /run and died with the reboot)" ||
         bad "the rig did not return after the reboot — its runtime unit was never re-rendered"
+    [ "$(_ssh "jq -r .max_temp_c /data/rigforge/config.json" | tr -d '\r\n')" = "77" ] &&
+        ok "a control-path edit (max_temp_c) survived the reboot's config rebuild (#3204)" ||
+        bad "the reboot's config rebuild reverted a control-path edit (max_temp_c)"
+    meta1=$(rig_config_meta_wait "$rtok")
+    [ -n "$meta0" ] && [ "$meta1" = "$meta0" ] &&
+        ok "no drift across the reboot: config_meta revision and last_change_id are unchanged" ||
+        bad "config_meta changed across the reboot (Pithead would flag drift): $meta0 -> ${meta1:-unreadable}"
     # XMRig starts before pithead-boot finishes its final mark-good and exit, so its active state
     # alone is not proof that this RemainAfterExit unit has settled. The shared wait also proves
     # that the boot unit, rather than the condition-skipped wizard, ran this boot.
@@ -190,7 +272,50 @@ phase_rig() {
         ;;
     *) bad "the rig never self-committed — grubenv: ${genv:-unreadable}" ;;
     esac
+
+    # ---- power cut (M13, #2067b): the reboot leg above proves a CLEAN return; this proves the
+    # same "mining unaided" fact after a virsh destroy instead — the rig half of M13's Restore on
+    # AC power loss, which a KVM guest cannot show (that's a firmware setting) but a real power cut
+    # against a virtual disk still can.
+    info "power-cut leg — the rig must come back mining after a cut, not just a clean reboot"
+    local before
+    before=$(_boot_id) || {
+        bad "could not read the rig boot id before the power cut"
+        return
+    }
+    virsh destroy "$VM" >/dev/null 2>&1 || {
+        bad "could not cut power to the mining rig"
+        return
+    }
+    sleep 3
+    virsh start "$VM" >/dev/null 2>&1 || {
+        bad "could not restore power to the mining rig"
+        return
+    }
+    if _wait_new_boot "$before" 300; then
+        ok "the rig survived a power cut — booted"
+    else
+        bad "the rig is BRICKED — no boot after a power cut while mining (disqualifying)"
+        return
+    fi
+    _rig_mining_up 24 &&
+        ok "the rig returned mining with no hands on it after a power cut" ||
+        bad "the rig did not return mining after a power cut"
+    genv=""
+    tries3=0
+    while [ "$tries3" -lt 18 ]; do
+        genv=$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')
+        case "$genv" in *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*) break ;; esac
+        sleep 10
+        tries3=$((tries3 + 1))
+    done
+    case "$genv" in
+    *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*) ok "the rig is still committed after the power cut (A_OK=1 A_TRY=0)" ;;
+    *) bad "the rig is not committed after the power cut — grubenv: ${genv:-unreadable}" ;;
+    esac
+
     rig_setup_again_legs "$card_tok" "$token" # #1318: Keep it, then Set up again as the same rig (tests/os/setup-again-leg.sh)
+    rig_control_off_leg "$card_tok"           # #1867: a pool host with no IPv4 (tests/os/rig-control-off-leg.sh); restores the rig for the legs below
 
     # ---- A/B update: identical pipeline, identical outcome --------------------------------
     info "update leg — a rig takes a bundle exactly like a coordinator"
@@ -252,5 +377,19 @@ phase_rig() {
     marker=$(_ssh cat /etc/pithead-test-marker | tr -d '\r\n')
     [ "$marker" = "v2" ] && ok "COMMIT: the update persists on the rig across reboot" ||
         bad "expected v2 on the rig after commit, got '$marker'"
+
+    # #2063: no accepted share has ever been proven on the appliance channel — this rig's own pool
+    # is its own sshd (#796), by design. A coordinator this battery itself boots in remote-node mode
+    # (#2062's precondition) clears the sync gate, so the rig can mine into a real p2pool instead.
+    local rn_mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rn_rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" rn_zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
+    if [ -z "$rn_mh" ] || [ -z "$rn_rpc" ] || [ -z "$rn_zmq" ]; then
+        it_skip_leg "the rig mines an accepted share against a booted coordinator (#2063)" \
+            "no reserved remote Monero node for this bench — set PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT and PITHEAD_OS_MONERO_ZMQ_PORT to run it" missing
+    else
+        rig_share_leg "$img" "$rn_mh" "$rn_rpc" "$rn_zmq" \
+            "${PITHEAD_OS_MONERO_NODE_USERNAME:-}" "${PITHEAD_OS_MONERO_NODE_PASSWORD:-}" \
+            "${PITHEAD_OS_TARI_NODE_HOST:-}" "${PITHEAD_OS_TARI_GRPC_PORT:-}" "$ip"
+    fi
+
     rig_setup_again_coordinator_leg "$token" # #1318: Set up again as a coordinator, from the updated slot
 }

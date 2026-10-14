@@ -12,7 +12,7 @@ const netCls = (v) => (v !== null && Number.isFinite(v) && v < 0 ? "c-bad" : "c-
 
 const SharesStat = ({ sw, label = "Share in Window" }) => html`
     <div class="stat-card">
-        <h5>${label}</h5>
+        <p class="stat-label">${label}</p>
         <p><span class=${sw.ok ? "status-ok" : "status-bad"}>${sw.count}</span></p>
     </div>`;
 
@@ -65,17 +65,18 @@ const THEME_ICON = {
   dark: () => svgIcon(html`<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />`),
 };
 
-// Fixed bottom-right segmented control to pick light / auto / dark (Issue #43). Icon-only and
-// visually quiet, with the active segment raised; the order/labels come from logic.mjs. Rendered
-// in every app state (loading / sync / dashboard) so it's always reachable; the choice is
-// persisted by the onTheme handler in dashboard.js.
+// Segmented control to pick light / auto / dark (Issue #43; moved into the header, #1860). Icon
+// buttons on the same .toggle-group/.btn-toggle pattern as the Simple/Advanced/Configuration
+// switch, so it reads as one family of controls instead of a one-off widget. Rendered in every
+// app state (loading / sync / dashboard) so it's always reachable; the choice is persisted by the
+// onTheme handler in dashboard.js.
 const ThemeSwitcher = ({ theme, onTheme }) => {
   const current = theme || "auto";
   return html`
-    <div class="theme-switcher" role="group" aria-label="Theme">
+    <div class="toggle-group theme-switcher" role="group" aria-label="Theme">
         ${THEME_ORDER.map(
           (id) => html`
-            <button type="button" class=${"theme-seg" + (id === current ? " active" : "")}
+            <button type="button" class=${"btn-toggle" + (id === current ? " active" : "")}
                     title=${"Theme: " + THEME_LABELS[id]} aria-label=${THEME_LABELS[id]}
                     aria-pressed=${id === current} onClick=${() => onTheme(id)}>
                 ${THEME_ICON[id]()}

@@ -1,23 +1,14 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Release-PUBLISH domain (#1105 Phase 1): what a cut DOES against a registry — the GHCR
-# read-after-push retry, the release-toolchain preflight, release-smoke's upgraded-install
-# resolution, pull-vs-build mode detection, and the bundle's macOS-xattr hygiene guard. Split from
-# test-release.sh, which keeps the side-effect-free helpers. Sourced by tests/stack/run.sh after it.
-#
-# The four script paths are re-derived here rather than inherited from test-release.sh, the same
-# reason test-release-signing.sh re-derives its own: a fragment that depends on an earlier
-# fragment's variables breaks silently when the suite is reordered, and `source "$REL" 2>/dev/null`
-# hides exactly that failure as a pile of "command not found".
+# Release-publish tests: registry retries, toolchain preflight, release smoke and bundle hygiene.
+# Paths are re-derived so this fragment remains independent of suite order.
 REL="$ROOT/scripts/release/release.sh"
 REL_IMAGES="$ROOT/scripts/release/images.sh"
 REL_BUNDLE="$ROOT/scripts/release/bundle.sh"
 STACK_VERSION="v$(cat "$ROOT/VERSION")"
 echo "== unit: release.sh registry read retries GHCR read-after-push lag (#429) =="
-# manifest_digest reads a tag GHCR just accepted, which can 404 or serve a STALE digest for a few
-# seconds (read-after-push lag) — this killed stage-4 digest capture twice on the v1.3.1 cut. So the
-# retry is not only for empty reads: it loops until the EXPECTED digest appears, and the counter
-# proves it stayed bounded. Backoff is forced to 0 to keep the test instant.
+# GHCR can briefly 404 or serve a stale digest after push. Prove the retry reaches the expected
+# digest and stays bounded; zero backoff keeps the test instant.
 RETRY_CNT="$SANDBOX/inspect.count"
 # shellcheck disable=SC1090,SC2034  # dynamic source; REGISTRY_READ_* are read by the sourced retry helper
 retry_out="$(
@@ -60,7 +51,6 @@ assert_contains "exhausted retries -> empty digest (caller dies)" "$exhaust_out"
 # The smoke stage's raw manifest read has the same read-after-push exposure — wire it through the retry.
 assert_contains "smoke stage reads the captured digest via retry_registry_read (#429)" \
     "$(cat "$REL_IMAGES")" 'retry_registry_read buildx_inspect "$digest" --raw'
-
 # #557: the test above disables errexit (`set +eu`, right after sourcing) to observe the bare helper
 # in isolation, which happens to mask a real bug in stage_push itself: the bare
 # `digest="$(manifest_digest ...)"` assignment aborts under release.sh's own `set -euo pipefail`
@@ -75,6 +65,7 @@ stage_push_out="$(
         source "$REL" 2>/dev/null
         DRY_RUN=0
         IMAGES=(tor)
+        PUBLISHED_IMAGES=(tor)
         REGISTRY="ghcr.io/test"
         REGISTRY_READ_RETRIES=1
         REGISTRY_READ_BACKOFF=0
@@ -124,6 +115,91 @@ tc_rc=$?
 assert_rc "missing tool -> preflight fails fast (rc 1)" "$tc_rc" "1"
 assert_contains "the missing tool is named" "$tc_out" "shfmt"
 assert_contains "error points at the provisioning doc" "$tc_out" "release-server.md"
+echo "== unit: release.sh requires the exact-SHA bench tier-4 status (#1996) =="
+bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug] [dry-run]
+    local BENCH_STATUSES="$1" BENCH_RESOLVED_APP_ID="${2:-4242}"
+    local BENCH_EXPECTED_APP_ID="${3-4242}" BENCH_APP_SLUG="${4-bench-ci}" BENCH_DRY_RUN="${5:-0}"
+    (
+        cd "$ROOT" || exit
+        set --
+        export BENCH_CI_APP_ID="$BENCH_EXPECTED_APP_ID"
+        if [ -n "$BENCH_APP_SLUG" ]; then export BENCH_CI_APP_SLUG="$BENCH_APP_SLUG"; else unset BENCH_CI_APP_SLUG; fi
+        # shellcheck disable=SC1090  # dynamic source
+        source "$REL" 2>/dev/null
+        set +eu
+        # shellcheck disable=SC2034  # consumed by the sourced gate
+        GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
+        # shellcheck disable=SC2034  # consumed by the sourced gate; set after the source, which resets it
+        DRY_RUN="$BENCH_DRY_RUN"
+        gh() {
+            case "$2" in
+            apps/bench-ci) printf '{"id":%s}\n' "$BENCH_RESOLVED_APP_ID" ;;
+            repos/p2pool-starter-stack/pithead/commits/0123456789abcdef0123456789abcdef01234567/statuses\?per_page=100)
+                printf '%s\n' "$BENCH_STATUSES"
+                ;;
+            *) return 64 ;;
+            esac
+        }
+        require_bench_tier4
+    )
+}
+bench_ok="$(bench_tier4_gate '[{"context":"other","state":"success","creator":{"login":"bench-ci[bot]"}},{"context":"bench-ci/tier4","state":"success","creator":{"login":"bench-ci[bot]"}}]' 2>&1)"
+assert_rc "a successful bench status permits the release" "$?" "0"
+assert_contains "the passing status names the exact release commit" "$bench_ok" "0123456789abcdef0123456789abcdef01234567"
+bench_missing="$(bench_tier4_gate '[]' 2>&1)"
+assert_rc "a missing bench status refuses the release" "$?" "1"
+assert_contains "the missing status refusal names the required context" "$bench_missing" "bench-ci/tier4"
+bench_failed="$(bench_tier4_gate '[{"context":"bench-ci/tier4","state":"failure","creator":{"login":"bench-ci[bot]"}}]' 2>&1)"
+assert_rc "a failed bench status refuses the release" "$?" "1"
+assert_contains "the failed status is reported as failure" "$bench_failed" "got: failure"
+bench_forged="$(bench_tier4_gate '[{"context":"bench-ci/tier4","state":"success","creator":{"login":"other-app[bot]"}}]' 2>&1)"
+assert_rc "the same context from another actor refuses the release" "$?" "1"
+assert_contains "the forged status cannot impersonate the required App" "$bench_forged" "from GitHub App 4242"
+bench_wrong_app="$(bench_tier4_gate '[{"context":"bench-ci/tier4","state":"success","creator":{"login":"bench-ci[bot]"}}]' 9999 2>&1)"
+assert_rc "an App slug resolving to the wrong id refuses the release" "$?" "1"
+assert_contains "the App-id mismatch names both ids" "$bench_wrong_app" "id 9999, expected 4242"
+bench_no_app_id="$(bench_tier4_gate '[]' 4242 '' 2>&1)"
+assert_rc "an unpinned App id refuses the release" "$?" "1"
+assert_contains "the missing App-id refusal names its setting" "$bench_no_app_id" "BENCH_CI_APP_ID"
+bench_bad_slug="$(bench_tier4_gate '[]' 4242 4242 'Bench CI!' 2>&1)"
+assert_rc "an invalid App slug refuses the release" "$?" "1"
+assert_contains "the invalid-slug refusal names its setting" "$bench_bad_slug" "BENCH_CI_APP_SLUG"
+bench_no_slug="$(bench_tier4_gate '[]' 4242 4242 '' 2>&1)"
+assert_rc "an unset App slug refuses the release" "$?" "1"
+assert_contains "the unset-slug refusal names its setting, not a defaulted App" "$bench_no_slug" "BENCH_CI_APP_SLUG"
+# --dry-run previews the verdict instead of dying on it (#1108, signing). MUTATION PROOF: drop the DRY_RUN carve-out from require_bench_tier4 and these go red.
+bench_dry_missing="$(bench_tier4_gate '[]' 4242 4242 bench-ci 1 2>&1)"
+assert_rc "a missing bench status only warns under --dry-run" "$?" "0"
+assert_contains "the dry-run warning still names the required context" "$bench_dry_missing" "bench-ci/tier4"
+bench_dry_no_app_id="$(bench_tier4_gate '[{"context":"bench-ci/tier4","state":"success","creator":{"login":"bench-ci[bot]"}}]' 4242 '' bench-ci 1 2>&1)"
+assert_rc "an unpinned App id only warns under --dry-run" "$?" "0"
+assert_contains "the dry-run warning names the unset setting" "$bench_dry_no_app_id" "BENCH_CI_APP_ID"
+assert_contains "the dry run still performs the status lookup it can" "$bench_dry_no_app_id" "Bench tier-4 gate passed"
+# The gate is only worth anything if it refuses BEFORE release bytes are built and promoted — a gate
+# that ran after stage_push would have already produced the artefacts it is meant to withhold. #2243
+# removed the --resume-promote branch this ordering was previously proven through, so drive the real
+# linear main() with each stage stubbed to a trace. MUTATION PROOF: move require_bench_tier4 below
+# stage_push in release.sh and the expected order goes red.
+gate_order="$SANDBOX/gate-order"
+# shellcheck disable=SC1090,SC2034,SC2329  # dynamic source; stubs are called by the sourced main
+(
+    cd "$ROOT" || exit 1
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    preflight() { :; }
+    require_bench_tier4() { printf 'bench\n' >>"$gate_order"; }
+    test_gate() { :; }
+    build_images() { printf 'build\n' >>"$gate_order"; }
+    stage_push() { :; }
+    smoke_test() { :; }
+    promote() { printf 'promote\n' >>"$gate_order"; }
+    sign_images() { :; }
+    publish() { :; }
+    DRY_RUN=0 IMAGES=(tor) TAG=v9.9.9 REGISTRY=ghcr.io/test
+    main
+) >/dev/null 2>&1
+assert_eq "the bench gate runs before any build or promotion" "$(tr '\n' ' ' <"$gate_order")" "bench build promote "
 echo "== unit: release.sh limits dirty trees to dry runs (#2240) =="
 dirty_marker="$(mktemp "$ROOT/.release-allow-dirty-test.XXXXXX")"
 release_tree_gate() { # <dry-run> <allow-dirty>

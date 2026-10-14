@@ -18,8 +18,12 @@
 phase_crossupdate() {
     info "phase: crossupdate (a provisioned N-1 guest upgraded to the candidate built from HEAD)"
     local old="${PITHEAD_OLD_IMAGE:-}"
+    # #2356: this is a MISSING skip, not a failure — a job that requested options.old_image would
+    # have run this phase for real; one that did not never could have. Unlike the provision phase's
+    # reserved-node row (a mandatory release gate, a counted failure by design), crossupdate is
+    # opt-in and deliberately excluded from --phase all for exactly this reason.
     [ -n "$old" ] && [ -f "$old" ] || {
-        bad "PITHEAD_OLD_IMAGE not set or not a file — this phase needs bench-ci's tier4-kvm options.old_image (docs/dev/testing-strategy.md)"
+        it_skip_phase "crossupdate" "PITHEAD_OLD_IMAGE not set or not a file — this phase needs bench-ci's tier4-kvm options.old_image (docs/dev/testing-strategy.md)" missing
         return
     }
 
@@ -51,6 +55,13 @@ phase_crossupdate() {
         return
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return
+    fi
 
     local id_old hostkey_fp_old
     id_old=$(_ssh cat /etc/machine-id)
@@ -165,6 +176,13 @@ phase_crossupdate() {
         case "$names" in *dashboard*caddy* | *caddy*dashboard*) break ;; esac
         sleep 15
     done
+    # The swapped slot's `up` may still hold the mutation lock behind tor's healthcheck (#2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished after the slot swap ($(provisioning_state))"
+    else
+        bad "provisioning never finished after the slot swap, or its setup failed; the runtime config cannot be read ($(provisioning_state))"
+        return
+    fi
     local live_wallet="" wdeadline verdict
     wdeadline=$(($(date +%s) + 180))
     while [ "$(date +%s)" -lt "$wdeadline" ]; do

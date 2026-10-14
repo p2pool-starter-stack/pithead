@@ -37,6 +37,20 @@ services:
     volumes:
       - dashboard_data:/data
       - dashboard_stats:/app/stats:ro
+      # Production control boundary: only requests is writable; results, audit and the host-masked
+      # config are read-only. The host runner remains outside this container.
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/requests:/control/requests
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/results:/control/results:ro
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/audit:/control/audit:ro
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/masked:/control/masked:ro
+      - ../../../config.reference.json:/host-config/config.reference.json:ro
+      - ../../../config.core-keys.json:/host-config/config.core-keys.json:ro
+      - type: bind
+        source: ${PITHEAD_LOCK_FILE:?PITHEAD_LOCK_FILE is required}
+        target: /pithead-lock
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       HOST_IP: "127.0.0.1"
       TZ: "Etc/UTC"
@@ -44,12 +58,8 @@ services:
       MONERO_NODE_USERNAME: ""
       MONERO_NODE_PASSWORD: ""
       MONERO_NODE_HOST: "fake-monerod"
-      # Must equal MONERO_NODE_HOST so the dashboard takes the "local" RPC-driven path
-      # (mining_dashboard.collector.logs.get_monero_sync_status) instead of the "remote" path,
-      # which never probes reachability and makes monerod-down/#31/#564 a silent no-op — the
-      # fake-monerod container below was wired at the network level but never actually read for
-      # node-health without this.
-      LOCAL_MONERO_HOST: "fake-monerod"
+      # Override in scenario 11 to exercise the remote RPC path against the same fake.
+      LOCAL_MONERO_HOST: "${LOCAL_MONERO_HOST:-fake-monerod}"
       MONERO_PRUNE: "true"
       TARI_GRPC_ADDRESS: "fake-tari:18142"
       DOCKER_PROXY_URL: "tcp://docker-proxy:2375"
@@ -71,15 +81,14 @@ services:
       WALLET_RPC_USERNAME: ""
       WALLET_RPC_PASSWORD: ""
       TARI_PAYOUT_CONFIRM_ENABLED: "${TARI_PAYOUT_CONFIRM_ENABLED:-true}"
+      TARI_WALLET_ADDRESS: "tari-test-wallet"
       TARI_WALLET_GRPC_ADDRESS: "fake-tari-wallet:18143"
-      # A local webhook gives the payout scenario a real alert transport to observe.
-      NOTIFY_WEBHOOK_URLS: "http://fake-hc:9000/alerts"
-      NOTIFY_TOR: "false"
       PROXY_HOST: "xmrig-proxy"
       PROXY_API_PORT: "3344"
       PROXY_AUTH_TOKEN: "itest"
       UPDATE_INTERVAL: "2"
       NODE_DOWN_AFTER_SEC: "4"
+      TARI_NODE_DOWN_AFTER_SEC: "4"
       NODE_RECOVERY_AFTER_SEC: "3"
       # Healthchecks.io dead-man's switch (#79), pointed at the fake receiver so the e2e proves the
       # REAL loop fires a heartbeat over a real HTTP call (not a mock). The ping URL is the on switch;
@@ -87,7 +96,16 @@ services:
       # blank the shared TOR_SOCKS_PROXY — the client then pings the fake receiver directly.
       HEALTHCHECKS_PING_URL: "http://fake-hc:9000/ph"
       TOR_SOCKS_PROXY: ""
-    depends_on: [fake-monerod, fake-tari, fake-wallet-rpc, fake-tari-wallet, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc]
+      DASHBOARD_CONTROL_ENABLED: "true"
+      TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-true}"
+      TELEGRAM_BOT_TOKEN: "itest-token"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-itest-chat}"
+      TELEGRAM_API_BASE: "${TELEGRAM_API_BASE:-http://fake-sink:9000}"
+      NOTIFY_WEBHOOK_URLS: "${NOTIFY_WEBHOOK_URLS-http://fake-sink:9000/webhook}"
+      NTFY_URL: "${NTFY_URL-http://fake-sink:9000/ntfy}"
+      NTFY_TOKEN: "itest-token"
+      NOTIFY_TOR: "false"
+    depends_on: [fake-monerod, fake-tari, fake-wallet-rpc, fake-tari-wallet, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc, fake-sink]
 
   fake-monerod:
     image: *fake_image
@@ -131,6 +149,25 @@ services:
     command: ["python3", "/fakes/fake_tari_wallet.py", "--grpc-port", "18143", "--control-port", "18153"]
     volumes: ["../fakes:/fakes:ro"]
 
+  # The real image and health script: the wrapper rejects a missing secret, then the harness
+  # keeps the container alive long enough for Docker to record the failed gRPC healthcheck.
+  tari-wallet-broken:
+    profiles: [wallet-health]
+    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
+    container_name: itest-tari-wallet-broken
+    networks: [itestnet]
+    entrypoint: ["/bin/sh", "-c", "/wallet-config/entrypoint.sh || sleep 60"]
+    environment:
+      TARI_WALLET_SECRET_FILE_IN: /run/secrets/broken
+      WALLET_DIR: /tmp/wallet
+      PAYOUT_SCAN_GRACE_SEC: "0"
+    volumes: ["../../../build/tari-wallet:/wallet-config:ro"]
+    healthcheck:
+      test: ["CMD", "/wallet-config/wallet-healthcheck.sh"]
+      interval: 1s
+      timeout: 5s
+      retries: 1
+
   # Stand-ins for the miner containers: real, named containers the dashboard genuinely
   # stops/starts via docker-control. They just idle.
   p2pool:
@@ -153,7 +190,16 @@ services:
     container_name: itest-fake-hc
     networks: [itestnet]
     entrypoint: []
-    command: ["python3", "/fakes/fake_hc.py", "--port", "9000", "--log", "/tmp/pings.log", "--event-log", "/tmp/events.log"]
+    command: ["python3", "/fakes/fake_hc.py", "--port", "9000", "--log", "/tmp/pings.log"]
+    volumes:
+      - "../fakes:/fakes:ro"
+
+  fake-sink:
+    image: *fake_image
+    container_name: itest-fake-sink
+    networks: [itestnet]
+    entrypoint: []
+    command: ["python3", "/fakes/fake_sink.py", "--port", "9000"]
     volumes:
       - "../fakes:/fakes:ro"
 

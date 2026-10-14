@@ -110,6 +110,12 @@ tr:last-child td {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* The "not tracked" hints (#1861) are prose, not the long unspaced token overflow-wrap:anywhere
+ * above exists for — wrapping them anywhere broke "monero.view_key" as "monero.view_k" / "ey".
+ * Scope those cells to the browser default: wrap at spaces only. */
+.eva-table td.eva-hint {
+  overflow-wrap: normal;
+}
 .est-heading {
   margin: 14px 0 6px 0;
   font-size: 0.7rem;

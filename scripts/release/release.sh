@@ -6,7 +6,7 @@
 #
 #   1. Preflight      clean tree, read VERSION, ensure the tag isn't already released, resolve pins
 #   2. Test gate      `make test` (+ the #54 integration matrix, unless skipped) — blocking
-#   3. Build          build the 5 first-party images with OCI labels + the release version baked in
+#   3. Build          build the 5 stack images plus the appliance rootfs
 #   4. Stage          push to a staging tag (:vX.Y.Z-rc.N) on GHCR and capture immutable digests
 #   5. Smoke          pull the STAGED images back and verify they resolve to the right version
 #   6. Promote        re-tag the smoke-tested digests to :vX.Y.Z + :latest (no rebuild) and push
@@ -37,6 +37,8 @@
 #   PITHEAD_REGISTRY        Registry namespace (default: ghcr.io/p2pool-starter-stack).
 #   PITHEAD_IMAGE_PREFIX    Image-name prefix (default: pithead-) -> ghcr.io/.../pithead-dashboard.
 #   GHCR_USER / GHCR_TOKEN  Registry login. Token falls back to GITHUB_TOKEN, then `gh auth token`.
+#   BENCH_CI_APP_ID       Numeric id of the installed bench-ci GitHub App (required, no default).
+#   BENCH_CI_APP_SLUG     Slug of that same App: pithead-bench-ci (required, no default).
 #   RELEASE_INTEGRATION_ARGS  Extra args passed to `make test-integration ARGS=...` (the #54 gate).
 #   RELEASE_SMOKE_CMD       Optional command run during the smoke stage for a fuller functional check.
 #   COSIGN_KEY / COSIGN_PASSWORD  Release signing (#376): path to the cosign private key on this box
@@ -52,9 +54,10 @@ set -euo pipefail
 REGISTRY="${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}"
 IMAGE_PREFIX="${PITHEAD_IMAGE_PREFIX:-pithead-}"
 
-# The 5 first-party images, by build-dir / image-name suffix (build context = "build/<suffix>",
+# The 5 stack images, by build-dir / image-name suffix (build context = "build/<suffix>",
 # published image = "$REGISTRY/${IMAGE_PREFIX}<suffix>"). The compose service for "monero" is "monerod". dashboard is the one exception — build context "dashboard/" at the repo root (#1106) — see build_images() below.
 IMAGES=(tor monero p2pool xmrig-proxy dashboard)
+PUBLISHED_IMAGES=("${IMAGES[@]}" os-rootfs)
 
 # Target platform(s) for the published images. linux/amd64 ONLY: the bundled binaries are x86_64
 # (monero/p2pool/xmrig-proxy ship `linux-x64`, and xmrig-proxy has NO arm64 build at all — so an arm64
@@ -203,10 +206,11 @@ pin() {
     # bumped together, and the release notes have to name both or a wallet-only move reads as
     # unchanged (#1138). tests/stack/standalone/test_compose.sh asserts the two carry the same tag, so the
     # lockstep this relies on is guarded rather than assumed.
-    tari) grep -oE 'quay.io/tarilabs/minotari_node:[^ ]+' docker-compose.yml | head -1 ;;
-    tari-wallet) grep -oE 'quay.io/tarilabs/minotari_console_wallet:[^ ]+' docker-compose.yml | head -1 ;;
+    tari) grep -oE 'ghcr.io/tari-project/minotari_node:[^ ]+' docker-compose.yml | head -1 ;;
+    tari-wallet) grep -oE 'ghcr.io/tari-project/minotari_console_wallet:[^ ]+' docker-compose.yml | head -1 ;;
     caddy) grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' docker-compose.yml | head -1 ;;
     socket-proxy) grep -oE 'tecnativa/docker-socket-proxy:[^ ]+' docker-compose.yml | head -1 ;;
+    rigforge) grep -oE '^ARG RIGFORGE_REF=.*' os/rootfs/Dockerfile | cut -d= -f2 ;;
     esac
 }
 
@@ -225,6 +229,7 @@ source "$RELEASE_LIB_DIR/bundle.sh"
 main() {
     log "Pithead release pipeline (#44)$([ "$DRY_RUN" -eq 1 ] && echo '  [DRY RUN]')"
     preflight
+    require_bench_tier4
     WORKDIR="$(mktemp -d)" # holds the captured digests, the ingredients manifest and the bundle
     test_gate
     build_images

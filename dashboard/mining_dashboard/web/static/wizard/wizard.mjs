@@ -1,5 +1,5 @@
 import { Component, html, render } from "../app/preact.mjs";
-import { jsonSyntaxError } from "../config/configlogic.mjs";
+import { parseConfigJson } from "../config/configlogic.mjs";
 import { coerceForPath, pathGet, pathSet } from "../config/configsync.mjs";
 import { needsNodeProbe } from "../network/nodeprobe.mjs";
 import { renderRestore, renderRigFields } from "./formparts.mjs";
@@ -7,6 +7,7 @@ import { savedRoleOrSetup } from "./savedrole.mjs";
 import { renderSetup } from "./setup.mjs";
 import { Done, Gate, Installing } from "./stages.mjs";
 import * as failure from "./wizardfailure.mjs";
+import { applyDiskDefault, selectTarget, syncInitialChains } from "./wizardmining.mjs";
 
 const RESTORE_MAX_BYTES = 64 * 1024 * 1024;
 
@@ -16,6 +17,10 @@ export class WizardApp extends Component {
     error: "",
     cfg: {},
     reference: {},
+    diskBudget: {},
+    newMachine: false,
+    tariTouched: false,
+    fastSync: false,
     disks: [],
     chosen: "",
     confirm: "",
@@ -40,11 +45,13 @@ export class WizardApp extends Component {
     // of role/install-target — an uploaded backup replaces the config the operator would
     // otherwise type in.
     restoreMode: false,
+    restoreEnabled: false,
     restoreFile: null,
     restorePassphrase: "",
     restorePassphraseVisible: false,
     status: "",
     handoff: null,
+    savedDashboard: "",
     moneroWalletTouched: false,
   };
 
@@ -64,6 +71,8 @@ export class WizardApp extends Component {
       // one page, one submission (config + disk + wipe), one credentials card, then the erase.
       ...failure.restoredState(s, this.state),
       reference: s.reference,
+      diskBudget: s.disk_budget || {},
+      newMachine: s.new_machine === true,
       disks: s.disks,
       error: s.error || "",
       rigDefaults: s.rig_defaults || {},
@@ -71,18 +80,27 @@ export class WizardApp extends Component {
       handoff: s.handoff || null,
       savedRole: s.saved_role || null,
       nodeProbe: s.node_probe || null,
+      restoreEnabled: s.restore_enabled === true,
     };
+    if (!next.restoreEnabled) {
+      next.restoreMode = false;
+      next.restoreFile = null;
+      next.restorePassphrase = "";
+      next.restorePassphraseVisible = false;
+    }
     // The host's discovery pre-fills the rig fields, but only while they are untouched — the
     // form polls, and a half-typed pool address must survive it (same rule as cfg below).
     if (!this.state.rigPool && !this.state.rigWorker) {
       next.rigPool = (s.rig_defaults || {}).pool || "";
       next.rigWorker = (s.rig_defaults || {}).worker || "";
     }
-    // The wait is over once the server either moved on or rejected: both end "Validating…".
     if (this.state.submitting && (next.stage !== "setup" || next.error)) next.submitting = false;
     // Do not clobber in-progress editing with the server's copy once the form is up.
     if (this.state.stage !== "setup" || !this.state.cfg || !Object.keys(this.state.cfg).length) {
       next.cfg = s.config;
+      next.fastSync = Boolean(
+        s.config.monero?.clearnet_initial_sync || s.config.tari?.clearnet_initial_sync,
+      );
       next.jsonText = JSON.stringify(s.config, null, 2);
     }
     this.setState(next);
@@ -93,8 +111,6 @@ export class WizardApp extends Component {
     await this.loadState(); // an existing session cookie skips the gate
   }
 
-  // One loop after submit: refresh the SERVER's stage (which carries the handoff when it is
-  // published) and the human-readable status line. No client-side stage guessing.
   poll() {
     const tick = async () => {
       try {
@@ -132,13 +148,22 @@ export class WizardApp extends Component {
     }
   };
 
-  // Field edit → config → JSON pane. The JSON is the single source of what gets submitted.
+  pickDisk = (e) => selectTarget(this, e.target.value, "keep");
+  changeWipe = (e) => selectTarget(this, this.state.chosen, e.target.value);
+
   edit = (path) => (e) => {
     const raw = e.target.type === "checkbox" ? String(e.target.checked) : e.target.value;
     const cfg = this.state.cfg;
     pathSet(cfg, path, coerceForPath(this.state.reference, path, raw));
+    const fast = path === "monero.clearnet_initial_sync" ? raw === "true" : this.state.fastSync;
+    if (path === "monero.mode") applyDiskDefault(this, cfg);
+    if (["monero.mode", "tari.mode", "monero.clearnet_initial_sync"].includes(path)) {
+      syncInitialChains(cfg, fast);
+    }
     this.setState({
       cfg,
+      fastSync: fast,
+      ...(path === "tari.mode" ? { tariTouched: true } : {}),
       jsonText: JSON.stringify(cfg, null, 2),
       ...(path === "monero.wallet_address" ? { moneroWalletTouched: true } : {}),
     });
@@ -166,12 +191,13 @@ export class WizardApp extends Component {
   // JSON pane edit → config → fields. Hand-edited JSON wins; shape errors show as typed.
   editJson = (e) => {
     const text = e.target.value;
-    const err = jsonSyntaxError(text);
-    if (err) {
-      this.setState({ jsonText: text, jsonError: err });
+    const { config: cfg, error } = parseConfigJson(text);
+    if (error) {
+      this.setState({ jsonText: text, jsonError: error });
       return;
     }
-    this.setState({ jsonText: text, jsonError: "", cfg: JSON.parse(text) });
+    const fastSync = Boolean(cfg.monero?.clearnet_initial_sync || cfg.tari?.clearnet_initial_sync);
+    this.setState({ jsonText: text, jsonError: "", cfg, fastSync, tariTouched: true });
   };
 
   submit = async (e) => {
@@ -262,6 +288,10 @@ export class WizardApp extends Component {
   // without a round trip.
   submitRestore = async (e) => {
     e.preventDefault();
+    if (!this.state.restoreEnabled) {
+      this.setState({ error: "Restore requires HTTPS. Reboot after setup TLS is available." });
+      return;
+    }
     if (!this.state.restoreFile) {
       this.setState({ error: "Choose a backup archive to upload." });
       return;
@@ -310,8 +340,13 @@ export class WizardApp extends Component {
   };
 
   ack = async () => {
+    // The server drops the handoff once acknowledged, so the "provisioning" screen that follows
+    // has no handoff of its own to read the applied address from (#2350) — keep the one field it
+    // still needs before loadState() clears it.
+    const savedDashboard = this.state.handoff && this.state.handoff.dashboard;
     await fetch("/handoff-ack", { method: "POST" });
-    await this.loadState(); // the server drops out of the handoff stage; the view follows
+    await this.loadState();
+    if (savedDashboard) this.setState({ savedDashboard });
   };
 
   // The rig role's whole form: where the pool is, what to call the machine, an optional
@@ -340,6 +375,7 @@ export class WizardApp extends Component {
     else if (stage === "installing") view = html`<${Installing} status=${status} />`;
     else if (stage === "done")
       view = html`<${Done} status=${status} handoff=${this.state.handoff}
+        savedDashboard=${this.state.savedDashboard}
         installer=${this.state.installer} stick=${this.state.chosen === "usb"}
         rig=${this.state.role === "rig"} onAck=${this.ack} />`;
     else view = savedRoleOrSetup(this);

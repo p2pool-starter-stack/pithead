@@ -1,14 +1,5 @@
-"""XvB, earnings and top-bar badges for the dashboard: the ``/api/state`` sections that turn
-raffle status, donation tiers and expected payouts into display values (Issues #12, #27, #118).
-
-Split out of ``web/views/views.py`` (#1105). Everything here is presentation: the badge list the top bar
-renders, the expected-XMR/XTM inputs the earnings calculator shows, the measured-vs-published
-realization band, and the tier calculator's copy. ``views.py`` stays the facade — ``build_state``
-assembles these sections and ``service/notify/telegram_commands.py`` imports :func:`build_badges` from
-there — so the move is invisible to consumers.
-
-Nothing here formats HTML; it emits tokens and display strings and lets the client render.
-"""
+"""XvB, earnings and header badges emitted through ``/api/state``.
+Presentation data only; the client renders the tokens and display strings."""
 
 import time
 
@@ -163,6 +154,15 @@ def build_badges(data, metrics, mode_variant, db_healthy=True, wallet_change=Non
     # Node-down badges (Issue #31) — shown whenever a node is unreachable, regardless of sync.
     if metrics.monero.down:
         badges.append({"text": "monerod DOWN", "variant": "bad"})
+    health = (data.get("monero_sync") or {}).get("health") or {}
+    if monero_is_local() and not metrics.monero.down and health.get("level") == "red":
+        badges.append(
+            {
+                "text": "Monero chain unhealthy",
+                "variant": "bad",
+                "title": "; ".join([*(health.get("reasons") or []), health.get("advice") or ""]),
+            }
+        )
     if metrics.tari.down:
         badges.append({"text": "Tari DOWN", "variant": "bad"})
     if data.get("workers_rejected"):
@@ -547,19 +547,19 @@ def build_earnings(data, metrics, payouts=None, tari_payouts=None, xvb_day=None)
         "tari_reward": metrics.tari_reward,  # full XTM paid per Tari block (solo, lumpy)
         # Current-tier XvB expected reward, XMR/day, folded into the net-profit estimate (#712).
         # None unless XvB is on with a fresh published estimate for the tier the fleet holds now.
-        # build_state tempers this by measured delivery (xvb_tempered_day, #902) before the
-        # payload ships — clients never see the raw published figure.
+        # build_state tempers this by measured delivery before publishing.
         "xvb_day": xvb_day,
         "pool_difficulty": metrics.pool_difficulty,  # for expected time-to-share (diff/hr)
         "block_reward": f"{reward_atomic / 1e12:.4f} XMR",  # context, server-formatted like NetworkCard
         "disclaimer": _EARNINGS_DISCLAIMER,
-        # Confirmed on-chain payouts (#381), beside the estimate above. {"enabled": False} when the
-        # view-only wallet feature is off — the UI then shows only the estimate.
-        "confirmed": confirmed_payouts_summary(payouts),
-        # Confirmed Tari payouts (#462), beside the Tari time-to-block estimate. XTM (microTari),
-        # {"enabled": False} when the Tari view-only wallet feature is off.
+        "confirmed": confirmed_payouts_summary(
+            payouts, wallet_status=(data.get("payout_wallet") or {}).get("monero")
+        ),
         "tari_confirmed": confirmed_payouts_summary(
-            tari_payouts, divisor=MICRO_PER_XTM, unit="xtm"
+            tari_payouts,
+            divisor=MICRO_PER_XTM,
+            unit="xtm",
+            wallet_status=(data.get("payout_wallet") or {}).get("tari"),
         ),
     }
 
@@ -591,9 +591,7 @@ def build_earnings_vs_actual(
     percent, a count that small is luck either way. **XvB** keeps only its win count and last-win
     recency — its XMR value lives in the combined row by construction.
 
-    Raw numbers out; the client formats. ``actual``/``blocks``/``xtm`` are None while the matching
-    payout-confirmation feature is off — the card then hints at the view key instead of showing a
-    zero that would read as "earned nothing"."""
+    Raw numbers out; the client formats. ``actual``/``blocks``/``xtm`` are None while the matching payout-confirmation feature is off — the card then hints at a view key instead of a zero that would read as "earned nothing" (never for Tari under a remote node — ``is_local`` says so)."""
     now = now if now is not None else time.time()
     conf = earnings["confirmed"]
     tari_conf = earnings["tari_confirmed"]
@@ -649,6 +647,8 @@ def build_earnings_vs_actual(
         "blocks_30d": tari_conf.get("n_30d") if tari_conf.get("enabled") else None,
         "xtm_30d": tari_conf.get("xtm_30d") if tari_conf.get("enabled") else None,
         "partial": bool((tari_conf.get("partial") or {}).get("30d")),
+        # Tri-state, not coerced to bool: None (tari.mode off) must stay distinct from remote.
+        "is_local": metrics.tari_local,
     }
     stamps = [w.get("ts", 0) or 0 for w in (raffle_wins or [])]
     xvb = {

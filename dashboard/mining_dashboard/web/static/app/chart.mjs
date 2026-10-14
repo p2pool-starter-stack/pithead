@@ -16,6 +16,8 @@
 // gestures hand the visible window up via onZoom, which refetches that window from the server at
 // duration-adaptive resolution — so zooming in reveals finer data.
 
+import { avgControls, rangeControls } from "./chart-controls.mjs";
+import { chartAriaLabel, workerChartAriaLabel } from "./chartalt.mjs";
 import { bandBorderWidth, clampZoomWindow, fmtHashrate, fmtTimestamp } from "./logic.mjs";
 import { Component, createRef, html } from "./preact.mjs";
 
@@ -65,7 +67,6 @@ const SERIES = [
   // Only offered when there's XvB donation history to draw (see the legend filter in render).
   { key: "xvb_donation", label: "XvB donation %", idx: 6, dot: "dot-xvb-donation" },
 ];
-
 // Smallest zoom window (ms) — guards against requesting a sub-sample slice (30s native cadence).
 const MIN_ZOOM_MS = 60000;
 // Coalesce a flurry of wheel/pan events into one refetch.
@@ -473,32 +474,13 @@ export class ChartCard extends Component {
     const zoomed = !!props.window;
     return html`
         <div class="card">
-            <div class="chart-controls" role="group" aria-label="Chart range">
+            <div class="chart-controls chart-controls-collapsible" role="group" aria-label="Chart range">
                 <span class="chart-control-label text-small mr-1">Range:</span>
-                ${RANGES.map(
-                  // Real buttons like the Avg/legend siblings (#657); the ?range= deep link
-                  // survives because setRange writes it via history.replaceState.
-                  ([r, label]) => html`<button type="button"
-                    class=${"btn-range" + (!zoomed && props.range === r ? " active" : "")}
-                    aria-pressed=${!zoomed && props.range === r}
-                    title=${"Chart range: " + label}
-                    onClick=${() => props.onRange(r)}>${label}</button>`,
-                )}
-                ${
-                  zoomed
-                    ? html`<button class="btn-range btn-reset" onClick=${() => props.onResetZoom()}>↺ Reset zoom</button>`
-                    : html`<span class="text-muted text-xs ml-2">Drag to zoom · Shift-drag to pan · Ctrl-scroll to zoom</span>`
-                }
+                ${rangeControls(RANGES, zoomed, props)}
             </div>
-            <div class="chart-controls" role="group" aria-label="Hashrate averaging window">
+            <div class="chart-controls chart-controls-collapsible" role="group" aria-label="Hashrate averaging window">
                 <span class="chart-control-label text-small mr-1" title="Which hashrate-averaging window the chart plots">Avg:</span>
-                ${WINDOWS.map(
-                  ([w, label]) => html`<button type="button"
-                    class=${"btn-range" + (props.avgWindow === w ? " active" : "")}
-                    aria-pressed=${props.avgWindow === w}
-                    title=${WINDOW_HINT[w] || label + " average"}
-                    onClick=${() => props.onAvgWindow && props.onAvgWindow(w)}>${label}</button>`,
-                )}
+                ${avgControls(WINDOWS, WINDOW_HINT, props)}
             </div>
             <div class="chart-legend" role="group" aria-label="Toggle series">
                 ${SERIES.filter(
@@ -513,7 +495,7 @@ export class ChartCard extends Component {
                     </button>`;
                 })}
             </div>
-            <div class="chart-wrap"><canvas ref=${this.canvasRef}></canvas></div>
+            <div class="chart-wrap"><canvas role="img" aria-label=${chartAriaLabel(props.chart, props.avgWindow, WINDOWS)} ref=${this.canvasRef}></canvas></div>
         </div>`;
   }
 }
@@ -674,7 +656,7 @@ export class WorkerChartCard extends Component {
             ${
               empty
                 ? html`<p class="text-muted text-small">No hashrate history for this rig yet.</p>`
-                : html`<div class="chart-wrap"><canvas ref=${this.canvasRef}></canvas></div>`
+                : html`<div class="chart-wrap"><canvas role="img" aria-label=${workerChartAriaLabel(props.chart.hashrate)} ref=${this.canvasRef}></canvas></div>`
             }
         </div>`;
   }

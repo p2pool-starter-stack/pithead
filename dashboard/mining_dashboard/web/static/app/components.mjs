@@ -6,9 +6,11 @@ import { DiagnosticsPanel } from "../system/diagview.mjs";
 import { OsVerdictBanner } from "../system/osupdate.mjs";
 import { SecurityPanel } from "../system/securityview.mjs";
 import { SyncView } from "../system/syncview.mjs";
+import { MinerConnection } from "../workers/minerconnection.mjs";
 import { WorkersTable } from "../workers/workertable.mjs";
 import { WorkerInspect } from "../workers/workerview.mjs";
 import { ChartCard } from "./chart.mjs";
+import { ConnectionRecovery } from "./connectionrecovery.mjs";
 import { EarningsCard, ExpectedVsActualCard } from "./earnings.mjs";
 import { Header } from "./header.mjs";
 import {
@@ -20,7 +22,7 @@ import {
   TariCard,
   XvBStats,
 } from "./overview.mjs";
-import { Fragment, html } from "./preact.mjs";
+import { Component, Fragment, html } from "./preact.mjs";
 import { HeroBand, ThemeSwitcher } from "./ui.mjs";
 
 // One-time discoverability hint (#425): the earnings + XvB tier calculators are Advanced-view
@@ -38,62 +40,74 @@ function AdvancedHint({ ui, onView, onDismissHint }) {
     </div>`;
 }
 
-function DashboardView({
-  state,
-  ui,
-  onRange,
-  onSort,
-  onView,
-  onZoom,
-  onResetZoom,
-  onToggleSeries,
-  onAvgWindow,
-  onDismissHint,
-  onInspect,
-}) {
-  const advanced = ui.view === "advanced";
-  const configView = ui.view === "config";
-  // Backup is its own view, not a card below the config editor (#1854): an operator handed a
-  // working machine has to be able to find "take a backup" without reading the editor first.
-  const backupView = ui.view === "backup";
-  // Layout by operator relevance (#159): the at-a-glance chart and the rigs themselves lead (this
-  // stack may drive many machines), then this stack's own detail cards, then pool-wide and network
-  // context as reference at the bottom — "mine" first, "the world" last.
-  // Within "Your Stack" (#991, reopened): the section packs into CSS columns now, not CSS grid
-  // rows, so a card's height no longer forces blank space under a shorter neighbour regardless of
-  // which cards a given render state actually shows (XvB disabled, no earnings yet, ...) — the
-  // tall-with-tall/short-with-short pairing this comment used to describe was a workaround for
-  // grid's row-stretch behaviour and is moot under column packing. Order here still sets the
-  // column-major reading order, so it stays "mine" first, "the world" last, same as above.
-  // Overview is Simple-view-only (display:none in Advanced) and ExpectedVsActualCard shows in
-  // both views — neither is constrained by this ordering.
-  return html`
-    <div id="dashboard-view" class=${advanced ? "mode-advanced" : ""}>
-        <div class="view-controls">
+class DashboardView extends Component {
+  constructor(props) {
+    super(props);
+    this.configVisited = false;
+    this.state = { configDirty: false };
+    this.onConfigDirty = (configDirty) => this.setState({ configDirty });
+  }
+  render() {
+    const {
+      state,
+      ui,
+      onRange,
+      onSort,
+      onView,
+      onZoom,
+      onResetZoom,
+      onToggleSeries,
+      onAvgWindow,
+      onDismissHint,
+      onInspect,
+      suspended,
+    } = this.props;
+    const advanced = ui.view === "advanced";
+    const configView = ui.view === "config";
+    if (configView) this.configVisited = true;
+    // Backup is its own view, not a card below the config editor (#1854): an operator handed a
+    // working machine has to be able to find "take a backup" without reading the editor first.
+    const backupView = ui.view === "backup";
+    // Layout by operator relevance (#159): the at-a-glance chart and the rigs themselves lead (this
+    // stack may drive many machines), then this stack's own detail cards, then pool-wide and network
+    // context as reference at the bottom — "mine" first, "the world" last.
+    // Within "Your Stack" (#991, reopened): the section packs into CSS columns now, not CSS grid
+    // rows, so a card's height no longer forces blank space under a shorter neighbour regardless of
+    // which cards a given render state actually shows (XvB disabled, no earnings yet, ...) — the
+    // tall-with-tall/short-with-short pairing this comment used to describe was a workaround for
+    // grid's row-stretch behaviour and is moot under column packing. Order here still sets the
+    // column-major reading order, so it stays "mine" first, "the world" last, same as above.
+    // Overview is Simple-view-only (display:none in Advanced) and ExpectedVsActualCard shows in
+    // both views — neither is constrained by this ordering.
+    // While the chain syncs (`suspended`) App shows SyncView instead; this view stays mounted but
+    // hidden, so a retained configuration draft is not unmounted with it (#3288).
+    return html`
+    <div id="dashboard-view" class=${advanced ? "mode-advanced" : ""} hidden=${suspended}>
+        <nav class="view-controls" aria-label="View">
             <div class="toggle-group" role="group" aria-label="Dashboard view">
                 <button class=${"btn-toggle" + (!advanced && !configView && !backupView ? " active" : "")} aria-pressed=${!advanced && !configView && !backupView}
                     title="Chart, workers and the headline numbers" onClick=${() => onView("simple")}>Simple</button>
                 <button class=${"btn-toggle" + (advanced ? " active" : "")} aria-pressed=${advanced}
                     title="Every stats card, calculators and diagnostics" onClick=${() => onView("advanced")}>Advanced</button>
                 <button class=${"btn-toggle" + (configView ? " active" : "")} aria-pressed=${configView}
-                    title="View or edit the stack configuration" onClick=${() => onView("config")}>Configuration</button>
+                    title="View or edit the stack configuration" onClick=${() => onView("config")}>Configuration${this.state.configDirty ? " — Unsaved changes" : ""}</button>
                 <button class=${"btn-toggle" + (backupView ? " active" : "")} aria-pressed=${backupView}
                     title="Export an encrypted copy of this machine's configuration and secrets" onClick=${() => onView("backup")}>Backup</button>
             </div>
-        </div>
+        </nav>
         <${AdvancedHint} ui=${ui} onView=${onView} onDismissHint=${onDismissHint} />
         ${
-          configView
-            ? html`<div class="card-stack"><${ConfigView} appliance=${!!state.os_update} /><${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} /></div>`
+          this.configVisited
+            ? html`<div class="card-stack"><div hidden=${!configView}><${ConfigView} active=${configView && !suspended} focus=${ui.configFocus} appliance=${!!state.os_update} onDirtyChange=${this.onConfigDirty} /></div>${configView ? html`<${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} />` : null}</div>`
             : null
         }
         ${
           backupView
-            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} /></div>`
+            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} active=${!suspended} /></div>`
             : null
         }
         ${
-          configView || backupView
+          configView || backupView || suspended
             ? null
             : html`
         <div class="grid">
@@ -103,7 +117,7 @@ function DashboardView({
                           onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow} />
         </div>
         <div class="grid">
-            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.host_ip} stratumPort=${state.stratum_port}
+            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.host_ip && state.host_ip !== "Unknown Host" ? state.host_ip : state.host_addr} stratumPort=${state.stratum_port}
                              onInspect=${state.control_enabled ? onInspect : null} />
         </div>
         <div class="grid-section-label">Your Stack</div>
@@ -112,11 +126,11 @@ function DashboardView({
             <${XvBStats} state=${state} />
             <${EarningsCard} earnings=${state.earnings} xvb=${state.xvb_calc} energy=${state.energy} />
             <${NodeStats} state=${state} />
-            <${ExpectedVsActualCard} summary=${state.earnings_summary} />
+            <${ExpectedVsActualCard} summary=${state.earnings_summary} onView=${onView} />
             <${TariCard} tari=${state.tari} local=${state.sync?.tari?.local} />
-            <${CadenceCard} cadence=${state.cadence} />
+            <${CadenceCard} cadence=${state.cadence} syncing=${state.pool.syncing} />
         </div>
-        <div class="grid-section-label">The Wider Pool</div>
+        <div class="grid-section-label card-advanced">The Wider Pool</div>
         <div class="grid grid-columns">
             <${GlobalStats} state=${state} />
             <${NetworkCard} state=${state} />
@@ -124,6 +138,7 @@ function DashboardView({
         </div>`
         }
     </div>`;
+  }
 }
 
 // --- Root ----------------------------------------------------------------------------
@@ -131,6 +146,7 @@ function DashboardView({
 export function App({
   state,
   connected,
+  recoveryNeeded = false,
   ui,
   onRange,
   onSort,
@@ -144,8 +160,12 @@ export function App({
   onInspect,
   onCloseInspect,
 }) {
-  // The theme toggle is fixed-position and always available, even before the first data load.
-  const switcher = html`<${ThemeSwitcher} theme=${ui.theme} onTheme=${onTheme} />`;
+  // Before the first data load there is no header to hold it (#1860), so the loading screen keeps
+  // its own copy — wrapped in its own landmark (labelled <section>), since at that point it is
+  // fixed-position chrome sibling to <main> and nothing else, and would otherwise sit outside
+  // every landmark (axe `region`). Once state exists it lives inside Header, next to the version
+  // badges, and needs no wrapper of its own.
+  const switcher = html`<section aria-label="Theme"><${ThemeSwitcher} theme=${ui.theme} onTheme=${onTheme} /></section>`;
   // Worker Inspect overlay (#185): opened from a worker name in the table; the panel does its own
   // fetch/apply/poll. `key` remounts it when a different worker is picked. Only reachable when the
   // control channel is on (the trigger is gated on state.control_enabled).
@@ -155,31 +175,34 @@ export function App({
       : null;
   if (!state) {
     return html`<${Fragment}>
-            <div class="loading">${
+            <main class="loading">${
               connected
                 ? "Connecting to the dashboard… If this machine is still syncing its first chain, progress appears here in a moment."
                 : "Cannot reach the dashboard."
-            }</div>
+            }${!connected && recoveryNeeded ? html`<${ConnectionRecovery} />` : null}</main>
             ${switcher}
         <//>`;
   }
   return html`<${Fragment}>
-        <${Header} state=${state} />
-        <${OsVerdictBanner} os=${state.os_update} />
-        ${!connected ? html`<div class="disconnected-banner">Disconnected — showing data from ${state.last_update}. Retrying…</div>` : null}
-        ${
-          state.syncing
-            ? html`<${SyncView} sync=${state.sync} />`
-            : html`<${Fragment}>
-                <${HeroBand} state=${state} />
-                <${MineCartTrain} chart=${state.chart} blocks=${state.blocks} payouts=${state.payouts} />
-                <${DashboardView} state=${state} ui=${ui} onRange=${onRange} onSort=${onSort}
-                                  onView=${onView} onZoom=${onZoom} onResetZoom=${onResetZoom}
-                                  onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow}
-                                  onDismissHint=${onDismissHint} onInspect=${onInspect} />
-              <//>`
-        }
+        <${Header} state=${state} theme=${ui.theme} onTheme=${onTheme} />
+        <main id="dashboard-main">
+            <${OsVerdictBanner} os=${state.os_update} />
+            ${!connected ? html`<div class="disconnected-banner" role="status" aria-live="polite">Disconnected — showing data from ${state.last_update}. Retrying…${recoveryNeeded ? html`<${ConnectionRecovery} />` : null}</div>` : null}
+            <${MinerConnection} />
+            ${
+              state.syncing
+                ? html`<${SyncView} sync=${state.sync} />`
+                : html`<${Fragment}>
+                    <${HeroBand} state=${state} />
+                    <${MineCartTrain} chart=${state.chart} blocks=${state.blocks} payouts=${state.payouts} />
+                  <//>`
+            }
+            <${DashboardView} state=${state} ui=${ui} onRange=${onRange} onSort=${onSort}
+                              onView=${onView} onZoom=${onZoom} onResetZoom=${onResetZoom}
+                              onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow}
+                              onDismissHint=${onDismissHint} onInspect=${onInspect}
+                              suspended=${!!state.syncing} />
+        </main>
         ${inspect}
-        ${switcher}
     <//>`;
 }

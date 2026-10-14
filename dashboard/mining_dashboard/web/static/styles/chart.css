@@ -43,6 +43,39 @@
   color: var(--text);
 }
 
+/* Phone control rows (Issue #1874): at 390px the button row's last pill (All / 24 Hr) is 8px
+ * short of fitting and wraps onto its own line, stacking Range/Avg/legend into five rows before
+ * any chart data. Below the app's phone breakpoint (#83), collapse each Range/Avg button row into
+ * one native <select> instead — desktop/tablet keep the buttons, where they fit on one line.
+ * Scoped to .chart-controls-collapsible (ChartCard's own Range/Avg rows), not the bare
+ * .chart-controls class — that class is shared by WorkerChartCard's range row and the Security
+ * view's log filters, neither of which got a <select> fallback, so hiding their buttons here
+ * would strand them with no control at all. :not(.btn-reset) spares the zoom-reset button, which
+ * isn't part of either preset row. */
+.chart-controls-select {
+  display: none;
+}
+@media (max-width: 640px) {
+  .chart-controls-collapsible .btn-range:not(.btn-reset) {
+    display: none;
+  }
+  .chart-controls-select {
+    display: inline-block;
+  }
+}
+
+/* The drag/pan/scroll-to-zoom hint only makes sense with a mouse — hidden by default and shown
+ * only when a fine pointer (mouse/trackpad) is present, rather than gated on viewport width, so a
+ * touch laptop in a narrow window still sees the buttons/select it can actually use. */
+.chart-drag-hint {
+  display: none;
+}
+@media (any-pointer: fine) {
+  .chart-drag-hint {
+    display: inline;
+  }
+}
+
 /* Series show/hide toggles (Issue #47): a quiet legend; click a chip to toggle that series.
  * A hidden series is dimmed + struck through. Swatch colours track the theme palette. */
 .chart-legend {

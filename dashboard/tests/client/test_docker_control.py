@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import threading
 from unittest.mock import MagicMock, patch
 
 import mining_dashboard.client.docker.docker_control as dc_mod
@@ -15,6 +17,18 @@ class _AsyncCM:
 
     async def __aexit__(self, *exc):
         return False
+
+
+class _BlockingCM(_AsyncCM):
+    def __init__(self, value, entered, release):
+        super().__init__(value)
+        self.entered = entered
+        self.release = release
+
+    async def __aenter__(self):
+        self.entered.set()
+        await self.release.wait()
+        return self._value
 
 
 class _Stream:
@@ -53,16 +67,27 @@ def _session_returning(resp):
     return session
 
 
+def _control(tmp_path, proxy_url="tcp://h:2375"):
+    lock = tmp_path / "pithead.lock"
+    lock.touch()
+    return DockerControl(proxy_url=proxy_url, lock_file=lock)
+
+
+def _open_lock(path):
+    return open(path, "rb")
+
+
 class TestUrl:
     def test_tcp_scheme_rewritten_to_http(self):
         c = DockerControl(proxy_url="tcp://172.28.0.30:2375")
         assert c.base_url == "http://172.28.0.30:2375"
+        assert c.lock_file == "/pithead-lock"
 
 
 class TestStopStart:
-    async def test_stop_success_204(self):
+    async def test_stop_success_204(self, tmp_path):
         session = _session_returning(_FakeResp(204))
-        c = DockerControl(proxy_url="tcp://h:2375")
+        c = _control(tmp_path)
         with patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
             assert await c.stop("xmrig-proxy") is True
         # Hits the stop endpoint with a stop-timeout param.
@@ -70,22 +95,22 @@ class TestStopStart:
         assert url == "http://h:2375/containers/xmrig-proxy/stop"
         assert session.post.call_args.kwargs["params"] == {"t": 10}
 
-    async def test_already_stopped_304_is_success(self):
+    async def test_already_stopped_304_is_success(self, tmp_path):
         session = _session_returning(_FakeResp(304))
-        c = DockerControl(proxy_url="tcp://h:2375")
+        c = _control(tmp_path)
         with patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
             assert await c.stop("xmrig-proxy") is True
 
-    async def test_start_success(self):
+    async def test_start_success(self, tmp_path):
         session = _session_returning(_FakeResp(204))
-        c = DockerControl(proxy_url="tcp://h:2375")
+        c = _control(tmp_path)
         with patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
             assert await c.start("xmrig-proxy") is True
         assert session.post.call_args.args[0] == "http://h:2375/containers/xmrig-proxy/start"
 
-    async def test_error_status_returns_false(self, caplog):
+    async def test_error_status_returns_false(self, caplog, tmp_path):
         session = _session_returning(_FakeResp(403, "forbidden"))
-        c = DockerControl(proxy_url="tcp://h:2375")
+        c = _control(tmp_path)
         with caplog.at_level(logging.ERROR):
             with patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
                 assert await c.stop("xmrig-proxy") is False
@@ -93,20 +118,117 @@ class TestStopStart:
         # it, not the loss of the one thing that says WHY the container refused to stop.
         assert "forbidden" in caplog.text
 
-    async def test_an_oversized_error_body_is_refused(self, caplog):
+    async def test_an_oversized_error_body_is_refused(self, caplog, tmp_path):
         """The 200-char slice in the log line only ever trimmed what was PRINTED — the whole body
         was buffered first, so an error response was the one unbounded read here (#1360). Both
         versions return False, so the distinguishing evidence is the log: unbounded, the body
         reaches it; bounded, a size refusal does."""
         session = _session_returning(_FakeResp(403, "z" * (MAX_RESPONSE_BYTES + 1), chunk=65536))
-        c = DockerControl(proxy_url="tcp://h:2375")
+        c = _control(tmp_path)
         with caplog.at_level(logging.ERROR):
             with patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
                 assert await c.stop("xmrig-proxy") is False
         assert "exceeded" in caplog.text
         assert "zzz" not in caplog.text
 
-    async def test_connection_error_returns_false(self):
-        c = DockerControl(proxy_url="tcp://h:2375")
+    async def test_connection_error_returns_false(self, tmp_path):
+        c = _control(tmp_path)
         with patch.object(dc_mod.aiohttp, "ClientSession", side_effect=OSError("refused")):
             assert await c.start("xmrig-proxy") is False
+
+    async def test_cli_hold_delays_dashboard_mutation(self, tmp_path):
+        """An approved apply already holding the inode keeps the dashboard out of the engine."""
+        c = _control(tmp_path)
+        session = _session_returning(_FakeResp(204))
+        holder = _open_lock(c.lock_file)
+        real_flock = dc_mod.fcntl.flock
+        real_flock(holder, dc_mod.fcntl.LOCK_EX)
+        attempted = threading.Event()
+
+        def observed_flock(lock, operation):
+            if operation & dc_mod.fcntl.LOCK_EX:
+                attempted.set()
+            return real_flock(lock, operation)
+
+        try:
+            with (
+                patch.object(dc_mod.fcntl, "flock", side_effect=observed_flock),
+                patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)),
+            ):
+                task = asyncio.create_task(c.start("p2pool"))
+                assert await asyncio.to_thread(attempted.wait, 1)
+                assert session.post.call_count == 0
+                real_flock(holder, dc_mod.fcntl.LOCK_UN)
+                assert await task is True
+        finally:
+            real_flock(holder, dc_mod.fcntl.LOCK_UN)
+            holder.close()
+
+    async def test_dashboard_hold_delays_cli_mutation(self, tmp_path):
+        """A dashboard request holds the inode until the engine has answered, blocking apply."""
+        c = _control(tmp_path)
+        entered, release = asyncio.Event(), asyncio.Event()
+        session = MagicMock()
+        session.post.return_value = _BlockingCM(_FakeResp(204), entered, release)
+        with patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
+            task = asyncio.create_task(c.stop("p2pool"))
+            await asyncio.wait_for(entered.wait(), 1)
+            contender = _open_lock(c.lock_file)
+            blocked = False
+            try:
+                dc_mod.fcntl.flock(contender, dc_mod.fcntl.LOCK_EX | dc_mod.fcntl.LOCK_NB)
+            except BlockingIOError:
+                blocked = True
+            assert blocked
+            release.set()
+            assert await task is True
+            dc_mod.fcntl.flock(contender, dc_mod.fcntl.LOCK_EX | dc_mod.fcntl.LOCK_NB)
+            dc_mod.fcntl.flock(contender, dc_mod.fcntl.LOCK_UN)
+            contender.close()
+
+    async def test_failed_request_releases_lock(self, tmp_path):
+        c = _control(tmp_path)
+        with patch.object(dc_mod.aiohttp, "ClientSession", side_effect=OSError("refused")):
+            assert await c.start("p2pool") is False
+        with _open_lock(c.lock_file) as contender:
+            dc_mod.fcntl.flock(contender, dc_mod.fcntl.LOCK_EX | dc_mod.fcntl.LOCK_NB)
+            dc_mod.fcntl.flock(contender, dc_mod.fcntl.LOCK_UN)
+
+    async def test_cancelled_lock_wait_closes_file(self, tmp_path):
+        c = _control(tmp_path)
+        lock = MagicMock()
+        attempted = asyncio.Event()
+
+        def unavailable(*_args):
+            attempted.set()
+            raise BlockingIOError
+
+        with (
+            patch.object(c, "_open_lock", return_value=lock),
+            patch.object(dc_mod.fcntl, "flock", side_effect=unavailable),
+        ):
+            task = asyncio.create_task(c.start("p2pool"))
+            await asyncio.wait_for(attempted.wait(), 1)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        lock.close.assert_called_once()
+
+    async def test_flock_error_closes_file(self, tmp_path):
+        c = _control(tmp_path)
+        lock = MagicMock()
+        with (
+            patch.object(c, "_open_lock", return_value=lock),
+            patch.object(dc_mod.fcntl, "flock", side_effect=OSError("broken")),
+        ):
+            assert await c.start("p2pool") is False
+        lock.close.assert_called_once()
+
+    async def test_missing_lock_refuses_engine_mutation(self, tmp_path):
+        c = DockerControl(proxy_url="tcp://h:2375", lock_file=tmp_path / "missing")
+        session = _session_returning(_FakeResp(204))
+        with patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
+            assert await c.start("p2pool") is False
+        assert session.post.call_count == 0

@@ -245,6 +245,17 @@ test("a rig with samples renders the range control and the chart canvas, not the
   assert.match(out, /1 Wk/);
 });
 
+// #1859: a bare <canvas> has nothing for a screen reader to read; it needs role="img" plus a
+// label stating what it shows, since axe/AT gets nothing from pixels.
+test("the worker hashrate canvas carries a text alternative (#1859)", () => {
+  const detail = {
+    ...DETAIL,
+    hashrate_history: { hashrate: [{ x: 1000, y: 500 }], markers: [] },
+  };
+  const out = renderToString(readyInstance(detail).render());
+  assert.match(out, /<canvas role="img" aria-label="Hashrate chart: 500\.00 H\/s"/);
+});
+
 test("only the current chart range button is marked active", () => {
   const detail = { ...DETAIL, hashrate_history: { hashrate: [{ x: 1, y: 1 }], markers: [] } };
   const inst = readyInstance(detail);
@@ -303,4 +314,96 @@ test("a detail payload missing hashrate_history entirely still renders (defensiv
   delete withoutChart.hashrate_history;
   const out = renderToString(readyInstance(withoutChart).render());
   assert.match(out, /No hashrate history for this rig yet/);
+});
+
+// --- Live regions (#1859) ---------------------------------------------------------------------
+//
+// The dialog updates its own text asynchronously (a fetch lands, an apply resolves) with no
+// reload for a screen reader to notice — each of these needs a live region or the change is
+// silent to anyone not looking at the screen at that moment.
+
+test("the loading state is a live region", () => {
+  const inst = new WorkerInspect({ name: "rig1", onClose: () => {} });
+  const out = renderToString(inst.render());
+  assert.match(out, /role="status" aria-live="polite">Loading…/);
+});
+
+test("an apply result (StatusLine) is a live region", () => {
+  const inst = readyInstance();
+  inst.state.result = { status: "applied" };
+  const out = renderToString(inst.render());
+  assert.match(out, /role="status" aria-live="polite">\s*applied/i);
+});
+
+// --- Escape / backdrop discarding an unsaved edit (#1877) ----------------------------------
+
+test("Escape (the dialog's cancel event) is prevented while a table edit is unsaved, and the edit survives", () => {
+  const inst = readyInstance();
+  inst.state.tableEdits = { DONATION: "9" };
+  const vnode = inst.render();
+  let prevented = false;
+  vnode.props.onCancel({ preventDefault: () => (prevented = true) });
+  assert.equal(prevented, true);
+  assert.deepEqual(inst.state.tableEdits, { DONATION: "9" }); // panel stayed open, edit intact
+});
+
+test("Escape is prevented while the JSON textarea differs from the loaded snapshot", () => {
+  const inst = readyInstance();
+  inst.state.mode = "json";
+  inst.onJsonInput(JSON.stringify({ DONATION: 9 }));
+  const vnode = inst.render();
+  let prevented = false;
+  vnode.props.onCancel({ preventDefault: () => (prevented = true) });
+  assert.equal(prevented, true);
+});
+
+test("Escape is not prevented when nothing is unsaved", () => {
+  const inst = readyInstance();
+  const vnode = inst.render();
+  let prevented = false;
+  vnode.props.onCancel({ preventDefault: () => (prevented = true) });
+  assert.equal(prevented, false);
+});
+
+test("a backdrop click does not close the dialog while an edit is unsaved", () => {
+  const inst = readyInstance();
+  inst.state.tableEdits = { DONATION: "9" };
+  let closed = false;
+  inst.dialogRef.current = { close: () => (closed = true) };
+  const vnode = inst.render();
+  vnode.props.onClick({ target: inst.dialogRef.current });
+  assert.equal(closed, false);
+});
+
+test("a backdrop click closes the dialog when there is nothing unsaved", () => {
+  const inst = readyInstance();
+  let closed = false;
+  inst.dialogRef.current = { close: () => (closed = true) };
+  const vnode = inst.render();
+  vnode.props.onClick({ target: inst.dialogRef.current });
+  assert.equal(closed, true);
+});
+
+test("an unsaved edit shows a line under Apply instead of a confirm() prompt", () => {
+  const inst = readyInstance();
+  inst.state.tableEdits = { DONATION: "9" };
+  const out = renderToString(inst.render());
+  assert.match(out, /Unsaved/);
+});
+
+test("the unsaved-edit line stays out of the way while an apply is in flight", () => {
+  const inst = readyInstance();
+  inst.state.tableEdits = { DONATION: "9" };
+  inst.state.busy = true; // an apply already carrying those edits to the rig
+  assert.doesNotMatch(renderToString(inst.render()), /Unsaved/);
+});
+
+test("no unsaved-edit line when the panel is clean", () => {
+  const out = renderToString(readyInstance().render());
+  assert.doesNotMatch(out, /Unsaved/);
+});
+
+test("the worker title is focusable so componentDidMount can move initial focus there", () => {
+  const out = renderToString(readyInstance().render());
+  assert.match(out, /<h2[^>]*tabindex="-1"[^>]*>Worker · rig1<\/h2>/);
 });

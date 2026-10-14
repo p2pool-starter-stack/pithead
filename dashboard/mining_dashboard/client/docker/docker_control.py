@@ -1,3 +1,5 @@
+import asyncio
+import fcntl
 import logging
 
 import aiohttp
@@ -23,13 +25,33 @@ class DockerControl:
     leaves the port open-but-dead and they stall instead.
     """
 
-    def __init__(self, proxy_url=DOCKER_CONTROL_URL, timeout=DOCKER_TIMEOUT):
+    def __init__(
+        self, proxy_url=DOCKER_CONTROL_URL, timeout=DOCKER_TIMEOUT, lock_file="/pithead-lock"
+    ):
         # aiohttp needs an http:// scheme even though the env var uses tcp://.
         base = proxy_url
         if base.startswith("tcp://"):
             base = base.replace("tcp://", "http://")
         self.base_url = base.rstrip("/")
         self.timeout = timeout
+        self.lock_file = lock_file
+
+    def _open_lock(self):
+        lock = open(self.lock_file, "rb")
+        return lock
+
+    async def _acquire_lock(self):
+        lock = self._open_lock()
+        try:
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return lock
+                except BlockingIOError:
+                    await asyncio.sleep(0.1)
+        except (OSError, asyncio.CancelledError):
+            lock.close()
+            raise
 
     async def stop(self, container, stop_timeout=10, quiet=False, request_timeout=None):
         """Stop a container. Returns True on success (incl. already-stopped).
@@ -66,6 +88,13 @@ class DockerControl:
     ) -> bool:
         url = f"{self.base_url}{path}"
         try:
+            # Every dashboard start/stop routes here. The CLI takes the same inode before config
+            # writes and compose; both sides therefore acquire lock→engine and never nest the lock.
+            lock = await self._acquire_lock()
+        except OSError as e:
+            logger.error(f"Container {container} {action} refused: pithead lock unavailable: {e}")
+            return False
+        try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     url, params=params, timeout=request_timeout or self.timeout
@@ -88,3 +117,5 @@ class DockerControl:
         except Exception as e:
             logger.error(f"Container {container} {action} error via {self.base_url}: {e}")
             return False
+        finally:
+            lock.close()

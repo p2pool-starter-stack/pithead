@@ -55,7 +55,7 @@ assert_eq "setup is quiet: no public IP" "$out" ""
 out="$(STRATUM_BIND=0.0.0.0 PATH="$IPBIN:$PATH" run_sourced "$SANDBOX" check_stratum_exposure doctor 2>&1)"
 assert_contains "doctor OK: no public IP" "$out" "No public IP"
 
-# Narrowed bind short-circuits BEFORE the IP check (public stub present): quiet setup / OK doctor.
+# Narrowed to a LAN address of its own (public stub present, but doesn't match this bind, #1803): quiet setup / OK doctor.
 make_ip_stub "$PUBLIC_IFACE"
 out="$(STRATUM_BIND=192.168.1.5 PATH="$IPBIN:$PATH" run_sourced "$SANDBOX" check_stratum_exposure setup 2>&1)"
 assert_eq "setup is quiet: bind narrowed to a LAN IP" "$out" ""
@@ -64,56 +64,9 @@ assert_contains "doctor OK: bind narrowed to a LAN IP" "$out" "not all interface
 
 echo "== unit: doctor runtime checks — egress firewall / stratum listening / dashboard probe (#383) =="
 # Each check degrades to an info skip on every can't-check path and only judges what it confirmed.
-# Stub the whole toolchain: docker answers the running-container filter from RUNNING_CONTAINERS,
-# sudo denies via SUDO_DENY or execs through to the iptables stub (tag presence via IPT_TAGGED),
-# ss prints SS_OUT, curl exits CURL_RC.
-DRBIN="$SANDBOX/drbin"
-mkdir -p "$DRBIN"
-cat >"$DRBIN/docker" <<'EOF'
-#!/usr/bin/env bash
-name=$(printf '%s' "$*" | sed -n 's/.*name=\^\([a-z0-9-]*\)\$.*/\1/p')
-case " ${RUNNING_CONTAINERS:-} " in *" $name "*) echo cid123 ;; esac
-exit 0
-EOF
-cat >"$DRBIN/sudo" <<'EOF'
-#!/usr/bin/env bash
-[ "${SUDO_DENY:-0}" = "1" ] && exit 1
-[ "$1" = "-n" ] && shift
-exec "$@"
-EOF
-cat >"$DRBIN/iptables" <<'EOF'
-#!/usr/bin/env bash
-# `-S FORWARD` answers the jump Docker adds with its first network. This stub ignored its arguments,
-# so once the check asserted REACHABILITY (#2091) it read a healthy host as an orphaned chain.
-[ "$*" = "-S FORWARD" ] && exec echo '-A FORWARD -j DOCKER-USER'
-[ "${IPT_TAGGED:-0}" = "1" ] || exec echo '-P DOCKER-USER ACCEPT'
-echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT'
-echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
-EOF
-cat >"$DRBIN/ss" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "${SS_OUT:-}"
-EOF
-cat >"$DRBIN/curl" <<'EOF'
-#!/usr/bin/env bash
-[ -n "${CURL_BODY:-}" ] && printf '%s' "$CURL_BODY"
-exit "${CURL_RC:-0}"
-EOF
-# nft for the podman/netavark doctor path: `list tables` always answers (the sudo-readable probe);
-# `list table inet pithead_egress` emits a forward-hooked, dropping ruleset only when NFT_HOOK=1,
-# else exits 1 (table absent). Lets a test distinguish "installed & traversed" from "missing".
-cat >"$DRBIN/nft" <<'EOF'
-#!/usr/bin/env bash
-# Speaks JSON: the check reads `nft -j` to ask if the drop is a rule IN the forward-hooked chain.
-case "$*" in
-*"list tables") echo "table inet netavark" ;;
-*"list table inet pithead_egress")
-    [ "${NFT_HOOK:-0}" = "1" ] || exit 1
-    printf '%s\n' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}' ;;
-esac
-exit 0
-EOF
-chmod +x "$DRBIN"/*
+# Stub the whole toolchain: docker answers the running-container filter from RUNNING_CONTAINERS, sudo denies
+# via SUDO_DENY or execs through to the iptables stub (tag presence via IPT_TAGGED), ss prints SS_OUT, curl exits CURL_RC.
+build_doctor_stubs
 
 # container_is_running: filter answered vs not.
 RUNNING_CONTAINERS="tor" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" container_is_running tor
@@ -401,13 +354,11 @@ make_status_stub "$ST/bin"
 printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=local_node,local_tari\nHOST_IP=box.lan\n' >"$ST/.env"
 ALL_UP="tor=running:healthy monerod=running:healthy p2pool=running:none tari=running:healthy xmrig-proxy=running:none dashboard=running:none docker-proxy=running:none docker-control=running:none caddy=running:none"
 
-# All services up -> success, friendly summary.
 out="$(cd "$ST" && FAKE_STATES="$ALL_UP" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
 rc=$?
 assert_rc "status: all up exits 0" "$rc" "0"
 assert_contains "status: all-up summary" "$out" "All expected services are up"
 
-# A node down + proxy stopped -> node flagged, proxy treated as intentional failover.
 NODE_DOWN="${ALL_UP/monerod=running:healthy/monerod=exited:none}"
 NODE_DOWN="${NODE_DOWN/xmrig-proxy=running:none/xmrig-proxy=exited:none}"
 out="$(cd "$ST" && FAKE_STATES="$NODE_DOWN" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
@@ -415,9 +366,7 @@ rc=$?
 assert_rc "status: node down exits 1" "$rc" "1"
 assert_contains "status: proxy stop is intentional" "$out" "likely intentional"
 
-# A stopped p2pool/xmrig-proxy with healthy nodes is intentional — the nodes pass their
-# healthchecks while still syncing and the dashboard holds the miner until they're synced
-# (#35), so status reports it as likely-intentional (exit 0), not a fault.
+# A genuinely stopped miner is the intentional #35 sync hold, so status exits 0.
 PROXY_ONLY="${ALL_UP/xmrig-proxy=running:none/xmrig-proxy=exited:none}"
 out="$(cd "$ST" && FAKE_STATES="$PROXY_ONLY" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
 rc=$?
@@ -430,15 +379,19 @@ rc=$?
 assert_rc "status: p2pool stop under sync hold exits 0" "$rc" "0"
 assert_contains "status: p2pool stop notes sync hold" "$out" "finish syncing"
 
-# Remote-node mode: the bundled monerod is not expected even if absent.
+RESTARTING_MINER="${ALL_UP/xmrig-proxy=running:none/xmrig-proxy=restarting:none}"
+out="$(cd "$ST" && FAKE_STATES="$RESTARTING_MINER" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
+rc=$?
+assert_rc "status: restarting sync-gated miner exits 1" "$rc" "1"
+assert_contains "status: restarting sync-gated miner is named" "$out" "xmrig-proxy   restarting"
+assert_not_contains "status: restarting sync-gated miner is never called intentional" "$out" "likely intentional"
+
 printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=\nHOST_IP=box.lan\n' >"$ST/.env"
 REMOTE="tor=running:healthy monerod=missing p2pool=running:none tari=running:healthy xmrig-proxy=running:none dashboard=running:none docker-proxy=running:none docker-control=running:none caddy=running:none"
 out="$(cd "$ST" && FAKE_STATES="$REMOTE" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
 rc=$?
 assert_rc "status: remote mode ignores monerod" "$rc" "0"
 
-# Remote Tari mode (#103): the bundled tari container is not expected even if absent, mirroring
-# monerod above — COMPOSE_PROFILES carries local_node (Monero local) but no local_tari.
 printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=local_node\nHOST_IP=box.lan\n' >"$ST/.env"
 REMOTE_TARI="tor=running:healthy monerod=running:healthy p2pool=running:none tari=missing xmrig-proxy=running:none dashboard=running:none docker-proxy=running:none docker-control=running:none caddy=running:none"
 out="$(cd "$ST" && FAKE_STATES="$REMOTE_TARI" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"

@@ -51,6 +51,32 @@ class TestResponsiveLayout:
         css = await _served_css(client)
         assert ".brand-host" in css and "overflow-wrap" in css
 
+    async def test_hero_value_does_not_break_mid_word(self, client):
+        # .hero-value used to share .brand-host's overflow-wrap:anywhere, which licenses a break
+        # inside a short word like "P2POOL" on a narrow hero column (#1870) — .brand-host still
+        # needs "anywhere" for an unbroken hostname, but the hero tile's short mode/hashrate text
+        # doesn't, so it must opt out and instead shrink at the same narrow breakpoint the
+        # badge-row scroll strip uses below.
+        css = await _served_css(client)
+        rule = re.search(r"\.hero-value\s*\{([^}]*)\}", css)
+        assert rule and "overflow-wrap: normal" in rule.group(1)
+        assert re.search(r"@media[^{]*max-width:\s*720px[^}]*\.hero-value\s*\{[^}]*font-size", css)
+
+    async def test_badge_row_scrolls_only_between_phone_and_720px(self, client):
+        # The badge-row scroll strip (#1870) stacks status badges five deep between the phone
+        # breakpoint (640px, sync.css) and ~720px. Its selector, `.brand .flex.items-center`
+        # (three classes), outranks the phone breakpoint's `.header .items-center` (two classes)
+        # on specificity alone — without the `min-width: 641px` lower bound this rule silently
+        # overrides the phone tier's row-per-item wrap too, which happened once already inside
+        # this PR undetected by CI. Assert the bound is attached to THIS rule, not just present
+        # somewhere in the sheet, so removing or detaching it fails here.
+        css = await _served_css(client)
+        assert re.search(
+            r"@media[^{]*min-width:\s*641px[^{]*max-width:\s*720px[^{]*\{"
+            r"\s*\.brand \.flex\.items-center\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto",
+            css,
+        )
+
     async def test_host_at_separator_styled_and_rendered(self, client):
         # The "hostname @ ip" subtitle (#119) renders the @ as a dimmed connector span, so the
         # markup must emit `.brand-host-at` and the CSS must carry a matching dimming rule.

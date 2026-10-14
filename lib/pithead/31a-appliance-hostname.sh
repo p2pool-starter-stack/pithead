@@ -1,6 +1,7 @@
 # A bare dashboard.host label names the appliance. Existing DNS/IP pins remain certificate
 # addresses; Docker hosts never change identity. config.json on /data is the persistent source:
-# boot's render restores the kernel hostname after each reboot or A/B update, without /etc writes.
+# boot's render restores the kernel and /etc/hostname after each reboot or A/B update, through the
+# /run-backed overlay (#790) rather than a write that would need to survive an A/B slot switch.
 appliance_hostname_label() {
     is_appliance || return 0
     local name="${DASHBOARD_HOST:-}"
@@ -61,8 +62,18 @@ reconcile_appliance_hostname() {
     if appliance_reconcile_mdns_interfaces; then refresh=1; fi
     name=$(appliance_hostname_label)
     if [ -n "$name" ]; then
-        if [ "$(hostname)" != "$name" ]; then
-            sudo hostname "$name" || error "Could not set this appliance's hostname. Retry apply."
+        # Static too, not just transient (#2350): a `hostname` call alone left `hostnamectl
+        # --static` and socket.gethostname() answering the old name after every rename, so
+        # anything that reads the box's identity off /etc/hostname rather than the live kernel
+        # value (systemd-hostnamed, a container's own UTS namespace) stayed stale. `hostnamectl
+        # hostname` sets both from the one call — no second source of truth to keep in sync.
+        if [ "$(hostname)" != "$name" ] || [ "$(hostnamectl --static 2>/dev/null)" != "$name" ]; then
+            # /etc/hostname sits on the read-only root like everything else hostnamectl and
+            # avahi's config write through: the /run-backed overlay (#790) that makes the write
+            # succeed and re-derives it from config.json on every boot, same as the mDNS
+            # interface list below.
+            ensure_etc_overlay &&
+                sudo hostnamectl hostname "$name" || error "Could not set this appliance's hostname. Retry apply."
         fi
         # Avahi may already be running under the old name. try-restart leaves a not-yet-started
         # boot unit alone, and also retries a previous failed announcement on an unchanged apply.

@@ -86,3 +86,15 @@ test("handoff card: credentials shown once, provisioning gated on the ack", () =
   assert.match(dark, /stop responding/);
   assert.match(dark, /pithead\.local/);
 });
+
+test("dark-period notice, once acked on a renamed box, names the applied host — not pithead.local (#2350)", () => {
+  // The server drops the handoff the instant it is acknowledged, so this screen has nothing of
+  // its own to read the address from — the caller (WizardApp.ack) must have carried the applied
+  // dashboard address over as savedDashboard before that happened.
+  const out = renderToString(
+    html`<${Done} status="" handoff=${null} savedDashboard="https://garden-box.local" onAck=${() => {}} />`,
+  );
+  assert.match(out, /stop responding/);
+  assert.match(out, /garden-box\.local/);
+  assert.doesNotMatch(out, /pithead\.local/);
+});

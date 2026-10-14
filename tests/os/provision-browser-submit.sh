@@ -1,24 +1,10 @@
 # shellcheck shell=bash
 #
-# The browser-shaped wizard submit for phase_provision (#1846). Sourced by tests/os/run.sh;
-# tests/stack/test-harness-tooling.sh drives `--self-test` (tier 1, no guest).
-# What a person's browser sends is not the no-JS field form: wizard.mjs takes the page's own
-# served config (/api/wizard-state .config — the reference merged with the last attempt), sets the
-# operator's answers on the same paths the page uses, and POSTs it whole as `config=<JSON>`
-# beside `auth_mode=auto` (the recommended "generate a strong password for me"). The old leg
-# posted `monero_wallet=…&pool=…`, which build_config() turns into a config server-side, so the
-# path the operator actually took — and the one that refused on Both — never ran through the
-# gate. A sibling, not rows in run.sh, which sits at its 3423-line ceiling.
-#
-# $1 ip, $2 authenticated cookie jar, then any extra form fields (`disk=vda`, `wipe=data` — the
-# installer's disk half rides beside the config) -> prints the HTTP status of /submit (or a short
-# reason when the page never served a config), the same contract the inline curl had.
-# Reads /api/wizard-state the way a person waits for a page: up to six reads 5 s apart, until the jq
-# filter in $3 yields a value. One cold read at -m 5 is not a verdict (#1932), and a fixture
-# control built on one reddens with one word (#1936). On a hit WIZ_STATE holds the value (a raw
-# string, or compact JSON) and the return is 0; otherwise WIZ_STATE is empty, the return is 1, and
-# WIZ_STATE_WHY names what the last read saw — status, curl's rc, the read count, the head of the
-# body — so the log discriminates a refusal from a timeout from a non-JSON page.
+# Browser-shaped wizard submission: read the served config, set the page's answer paths,
+# then POST the whole JSON beside auth_mode=auto. Tier 1 drives --self-test without a guest.
+# Poll six times, 5 s apart; WIZ_STATE holds the selected value, WIZ_STATE_WHY the last failure.
+# shellcheck source=tests/os/control-request-evidence.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/control-request-evidence.sh"
 wizard_state_poll() { # <ip> <jar> <jq-filter>
     local raw="" http="" crc=0 tries=0
     WIZ_STATE="" WIZ_STATE_WHY=""
@@ -66,34 +52,34 @@ provision_browser_submit() { # <ip> <jar> [field=value]...
 provision_page_error() { # <ip> <jar>
     curl -sSk -b "$2" -m 5 "https://$1/api/wizard-state" 2>/dev/null | jq -r '.error // ""' 2>/dev/null
 }
-node_preflight_state_retained() { # <submit-response-json> <wizard-state-json> <expected-wallet>
-    printf '%s' "$1" | jq -e '
-        .error == "The node name did not resolve to an address." and
+node_preflight_refused() { # <response-json> <state-json> <wallet> <host> <reason> <error-substring>
+    printf '%s' "$1" | jq -e --arg reason "$5" --arg err "$6" '
+        (.error | contains($err)) and
         .node_probe.ok == false and .node_probe.configured == 1 and .node_probe.probed == 1 and
-        any(.node_probe.probes[]; .target == "tari" and .reason == "dns" and .ok == false)' >/dev/null &&
-        printf '%s' "$2" | jq -e --arg m "$3" '
+        any(.node_probe.probes[]; .target == "tari" and .reason == $reason and .ok == false)' >/dev/null &&
+        printf '%s' "$2" | jq -e --arg m "$3" --arg h "$4" '
             .stage == "setup" and .config.monero.wallet_address == $m and
-            .config.tari.remote.host == "unreachable.invalid"' >/dev/null
+            .config.tari.remote.host == $h' >/dev/null
 }
 # This refusal is separate from later setup failure recovery: the protocol preflight stays on the
 # form, retains safe answers, and publishes the exact failed Tari row. The caller then submits the
 # corrected local choice; a post-validation setup fault has its own leg once that product seam lands.
-provision_node_preflight_retention() { # <ip> <authenticated-cookie-jar>
-    local ip="$1" jar="$2" state cfg code raw body
+provision_node_preflight() { # <ip> <jar> <host> <reason> <error-substring> <label>
+    local ip="$1" jar="$2" host="$3" reason="$4" err="$5" label="$6" state cfg code raw body
     state=$(curl -fsSk -b "$jar" -m 5 "https://$ip/api/wizard-state" 2>/dev/null) || return 1
-    cfg=$(printf '%s' "$state" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" '
+    cfg=$(printf '%s' "$state" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" --arg h "$host" '
         .config | .monero.wallet_address = $m | .tari.wallet_address = $t |
-        .tari.mode = "remote" | .tari.remote.host = "unreachable.invalid" |
+        .tari.mode = "remote" | .tari.remote.host = $h |
         .tari.remote.grpc_port = 18142 | .p2pool.pool = "mini" | .local_miner.enabled = true') || return 1
     raw=$(curl -sSk -b "$jar" -m 20 --data-urlencode "config=$cfg" --data-urlencode "auth_mode=auto" \
         "https://$ip/submit" -w '\n%{http_code}' 2>/dev/null)
     code=${raw##*$'\n'}
     body=${raw%$'\n'*}
     state=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/wizard-state" 2>/dev/null)
-    if [ "$code" = "400" ] && node_preflight_state_retained "$body" "$state" "$HARNESS_WALLET"; then
-        ok "remote-node preflight refuses the unreachable Tari consumer and retains safe answers"
+    if [ "$code" = "400" ] && node_preflight_refused "$body" "$state" "$HARNESS_WALLET" "$host" "$reason" "$err"; then
+        ok "remote-node preflight refuses $label and retains safe answers"
     else
-        bad "remote-node preflight did not return the named Tari refusal with retained values (HTTP ${code:-none})"
+        bad "remote-node preflight did not refuse $label with retained values (HTTP ${code:-none})"
         return 1
     fi
 }
@@ -105,24 +91,25 @@ dashboard_curl() {
     auth=${auth//\"/\\\"}
     curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
-# /api/control/result never echoes the request id back (only the POST handlers for preview/commit
-# merge it in) — the real frontend (backupview.mjs's runBackup) knows this and keeps the id it
-# already resolved from the POST, re-attaching it client-side (`{ id, ...result }`) rather than
-# trusting the polled body. Match that here, once, in the shared poller: every verb whose POST
-# never resolves synchronously (backup, unlike preview/commit, ALWAYS 202s) reaches its terminal
-# status purely through polling and would otherwise hand callers a result with no `.id` at all (#2300).
+# Poll results omit the id. Reattach the resolved POST id for every verb, including backup,
+# whose POST always returns 202 and whose terminal result arrives only through polling.
 control_result_stamp_id() { # <result-json> <id>
     printf '%s' "$1" | jq -c --arg id "$2" '. + {id:$id}' 2>/dev/null || printf '%s' "$1"
 }
 dashboard_control_request() { # <route> <json-body> [deadline-seconds]
-    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code
-    if out=$(dashboard_control_post "$route" "$body"); then
+    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code crc=0
+    out=$(control_request_post "$route" "$body" "$deadline") || crc=$?
+    if [ "$crc" -eq 0 ]; then
         response_code=${out##*$'\n'}
         if [[ $response_code =~ ^[0-9]{3}$ ]]; then
             out=${out%$'\n'*}
             # curl's 000 and a proxy's 5xx can follow an accepted request while the dashboard
             # restarts. A received 4xx is a definite refusal; the caller id is otherwise pollable.
-            case "$response_code" in 000 | 2* | 5*) ;; *) return 1 ;; esac
+            case "$response_code" in 000 | 2* | 5*) ;; *)
+                control_request_guest_evidence
+                return 1
+                ;;
+            esac
         fi
         if [[ $response_code =~ ^5 ]]; then
             # A failing proxy can name another request; the fresh preview id in the caller wins.
@@ -142,7 +129,10 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
     # An explicit server refusal has no id and must stay fast rather than polling a deadline out.
-    [ -n "$rid" ] || return 1
+    [ -n "$rid" ] || {
+        control_request_guest_evidence
+        return 1
+    }
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
@@ -159,8 +149,15 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
             ;;
         esac
         sleep 3
-        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null) || out=""
+        crc=0
+        out=$(dashboard_curl -sSk -m 8 -w '\n%{http_code}' "https://$ip/api/control/result?id=$rid" 2>/dev/null) || crc=$?
+        control_request_evidence "$route" poll "$crc" "$out" "$rid"
+        response_code=${out##*$'\n'}
+        [[ $response_code =~ ^[0-9]{3}$ ]] && out=${out%$'\n'*}
+        [ "$crc" -eq 0 ] || out=""
     done
+    control_request_evidence "$route" deadline "$crc" "$out" "$rid"
+    control_request_guest_evidence
     return 1
 }
 # The control runner's own answer, bounded, for a row whose evidence IS that answer (#2060).
@@ -168,9 +165,13 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
 # guest. An empty result is its own sentence: `dashboard_control_request` returns nothing both
 # when the POST was refused and when the request never left pending before its deadline, and a
 # row that printed the same thing for that as for a rejected apply would hide the difference.
-control_result_payload() { # <result-json>
+control_result_payload() { # <result-json> [landed]
     [ -n "$1" ] || {
-        printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
+        if [ "${2:-}" = landed ]; then
+            printf 'requested change landed, but no result file was written — runner completion is unknown'
+        else
+            printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
+        fi
         return 0
     }
     printf '%s' "$1" | jq -r '"status=\(.status // "none") error=\(.error // "none") id=\(.id // "none")"' 2>/dev/null ||
@@ -178,7 +179,7 @@ control_result_payload() { # <result-json>
 }
 
 phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
-    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names
+    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names live_state
     live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
         bad "post-provision control: live config could not be read"
         return
@@ -199,7 +200,9 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s' "$live" | jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null; then
         ok "post-provision benign setting applies through the dashboard control runner"
     else
-        bad "post-provision benign setting did not land ($(control_result_payload "$result"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
+        live_state=unknown
+        printf '%s' "$live" | jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null 2>&1 && live_state=landed
+        bad "post-provision benign control request did not complete ($(control_result_payload "$result" "$live_state"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
         return
     fi
     # No re-read and no emptiness guard: reaching this line means the row above parsed $live as
@@ -240,7 +243,9 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s' "$live" | jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null; then
         ok "post-provision disruptive setting applies with typed approval"
     else
-        bad "post-provision approved setting did not land ($(control_result_payload "$result"); live out_peers=$(printf '%s' "${live:-null}" | jq -r '.monero.out_peers // "unreadable"' 2>/dev/null || echo unreadable), want $peers)"
+        live_state=unknown
+        printf '%s' "$live" | jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null 2>&1 && live_state=landed
+        bad "post-provision approved control request did not complete ($(control_result_payload "$result" "$live_state"); live out_peers=$(printf '%s' "${live:-null}" | jq -r '.monero.out_peers // "unreadable"' 2>/dev/null || echo unreadable), want $peers)"
         return
     fi
     proposed=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
@@ -285,12 +290,12 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     esac
 }
 _recovery_self_test() {
-    local response='{"error":"The node name did not resolve to an address.","node_probe":{"ok":false,"configured":1,"probed":1,"probes":[{"target":"tari","reason":"dns","ok":false}]}}'
-    local state='{"stage":"setup","config":{"monero":{"wallet_address":"wallet"},"tari":{"remote":{"host":"unreachable.invalid"}}}}'
-    node_preflight_state_retained "$response" "$state" wallet || return 1
-    ! node_preflight_state_retained "${response/\"dns\"/\"protocol\"}" "$state" wallet || return 1
-    ! node_preflight_state_retained "$response" "${state/\"setup\"/\"failed\"}" wallet || return 1
-    ! node_preflight_state_retained "$response" "${state/\"wallet\"/\"lost\"}" wallet || return 1
+    local response='{"error":"The node name did not resolve to an address.","node_probe":{"ok":false,"configured":1,"probed":1,"probes":[{"target":"tari","reason":"dns","ok":false}]}}' state='{"stage":"setup","config":{"monero":{"wallet_address":"wallet"},"tari":{"remote":{"host":"unreachable.invalid"}}}}'
+    node_preflight_refused "$response" "$state" wallet unreachable.invalid dns "The node name did not resolve to an address." || return 1
+    ! node_preflight_refused "${response/\"dns\"/\"protocol\"}" "$state" wallet unreachable.invalid dns "" || return 1
+    ! node_preflight_refused "$response" "${state/\"setup\"/\"failed\"}" wallet unreachable.invalid dns "" || return 1
+    ! node_preflight_refused "$response" "${state/\"wallet\"/\"lost\"}" wallet unreachable.invalid dns "" || return 1
+    node_preflight_loopback_self_test || return 1
     local HARNESS_WALLET=wallet HARNESS_TARI=tari PROVISION_DASHBOARD_HOST=fixture-box cfg
     cfg=$(provision_browser_config '{"telegram":{"bot_token":"","chat_id":""}}') || return 1
     # #2076: the shaper seeds wallets, mode and host and touches NOTHING under .telegram — an empty
@@ -308,6 +313,7 @@ _recovery_self_test() {
     *) return 1 ;;
     esac
     case "$(control_result_payload '')" in *'never returned'*) ;; *) return 1 ;; esac
+    case "$(control_result_payload '' landed)" in *'change landed'*'completion is unknown'*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"status":"applied"')" in *unparseable*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"id":"r2"}')" in 'status=none error=none id=r2') ;; *) return 1 ;; esac
     # /api/control/result never echoes the id back — a verb like backup that always resolves
@@ -387,12 +393,12 @@ _wsp_self_test() {
 }
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
     set -uo pipefail # what tests/os/run.sh runs the helpers under
-    # shellcheck source=tests/os/appliance-config-approval-leg.sh
     . "$(cd "$(dirname "$0")" && pwd)/appliance-config-approval-leg.sh"
     # shellcheck source=tests/os/setup-failure-recovery-leg.sh
     . "$(cd "$(dirname "$0")" && pwd)/setup-failure-recovery-leg.sh"
+    . "$(cd "$(dirname "$0")" && pwd)/node-preflight-loopback-leg.sh"
     # shellcheck source=tests/integration/lib/mergemine-probe.sh
     . "$(cd "$(dirname "$0")/../integration/lib" && pwd)/mergemine-probe.sh"
-    _wsp_self_test && _recovery_self_test && _setup_failure_self_test && _approval_self_test
+    _control_request_evidence_self_test && _wsp_self_test && _recovery_self_test && _setup_failure_self_test && _approval_self_test && _remote_node_self_test
     exit $?
 fi

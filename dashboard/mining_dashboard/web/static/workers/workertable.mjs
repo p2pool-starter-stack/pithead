@@ -9,18 +9,15 @@ function PoolBadge({ pool }) {
   return html`<span class="badge badge-bad">Unknown</span>`;
 }
 
-// RigForge enriched feed (#235): a monospace version badge plus health / power / tune / watchdog
-// chips, all built server-side (infra_views._rigforge_display) so the client stays a dumb renderer.
+// RigForge enriched feed (#235): attention and live chips (warn/bad states, power, temperature),
+// built server-side (rigforge_views.rigforge_display) so the client stays a dumb renderer. Static
+// detail (version, board, HugePages, tune, autotune) lives in Worker Inspect, not in this row (#3031).
 // A plain-xmrig worker has no `rigforge` block and renders nothing extra — no chips, no error, no
 // empty placeholder, exactly as today. Each chip is a {text, variant, title}; only present-data
 // chips are emitted, so a rig with no RAPL shows no power chip.
 function RigForgeChips({ rf }) {
   if (!rf) return null;
-  return html`${
-    rf.version
-      ? html` <span class="badge badge-outline version-badge" title="RigForge version">rf ${rf.version}</span>`
-      : null
-  }${(rf.chips || []).map(
+  return html`${(rf.chips || []).map(
     (c) => html` <span class=${"badge badge-" + c.variant} title=${c.title || ""}>${c.text}</span>`,
   )}`;
 }
@@ -87,7 +84,7 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onIns
     const port = stratumPort || 3333; // configurable via p2pool.stratum_port (#172)
     return html`
         <div class="card">
-            <h3>Workers Alive</h3>
+            <h2>Workers Alive</h2>
             <div class="workers-empty">
                 <p>No workers connected yet.</p>
                 <p class="text-muted">Point each rig at <code>${addr}:${port}</code> and it appears here —${" "}
@@ -99,15 +96,16 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onIns
   const rows = sortWorkers(workers, ui.sortIndex, ui.sortAsc);
   return html`
     <div class="card">
-        <h3>Workers Alive</h3>
+        <h2>Workers Alive</h2>
         <div class="table-scroll">
             <table id="workers-table">
+                <caption class="sr-only">Workers</caption>
                 <thead>
                     <tr>${WORKER_COLUMNS.map(
                       // Sorted column carries the direction, visibly (arrow) and for AT (aria-sort);
                       // the title makes clickability discoverable (#656). A real <button> click
                       // target so keyboard users can sort too (#671), focusable without extra wiring.
-                      (c, i) => html`<th
+                      (c, i) => html`<th scope="col"
                             class=${i === ui.sortIndex ? "sorted" : null}
                             aria-sort=${i === ui.sortIndex ? (ui.sortAsc ? "ascending" : "descending") : null}><button
                               type="button" class="th-sort-btn" onClick=${() => onSort(i)}
