@@ -63,7 +63,6 @@ if [ "$#" -gt 1 ] || ! [[ "$1" =~ ^[1-9][0-9]*$ ]] || [ "${#1}" -gt "${#STACK_BL
 fi
 STACK_BLOCK="$1"
 in_block() { [ "$1" = "$STACK_BLOCK" ]; }
-
 if in_block 1; then
     bash "$HERE/test_control_audit_order.sh"
     assert_rc "control audit precedes result" "$?" "0"
@@ -85,7 +84,6 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-verify.sh" && domain_ran test-release-verify.sh "$_d0" "$?" || domain_ran test-release-verify.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-signing.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-signing.sh" && domain_ran test-release-signing.sh "$_d0" "$?" || domain_ran test-release-signing.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/dashboard/test-dashboard.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard.sh" && domain_ran test-dashboard.sh "$_d0" "$?" || domain_ran test-dashboard.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-dashboard-bridge-bind.sh disable=SC2015

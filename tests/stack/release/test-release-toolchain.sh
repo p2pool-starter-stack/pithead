@@ -43,11 +43,11 @@ SH
         )"
         rt_rc=$?
         # MUTATION PROOF: unconditionally check tools and skip=1 fails; skip dry runs and dry=1 passes incorrectly.
-        assert_rc "no tools: dry=$dry skip=$skip" "$rt_rc" "$((1 - skip))"
+        assert_rc "toolchain guard honors skip in real and dry runs" "$rt_rc" "$((1 - skip))"
         if [ "$skip" -eq 0 ]; then
             for t in shellcheck shfmt node npx uv uvx; do
                 # MUTATION PROOF: stop after the first missing tool and later names disappear.
-                assert_contains "missing tool $t is named (dry=$dry)" "$rt_out" "$t"
+                assert_contains "every missing tool is named" "$rt_out" "$t"
             done
             # MUTATION PROOF: remove the effective PATH diagnostic.
             assert_contains "failure prints effective PATH" "$rt_out" "Effective PATH: $RTB"
@@ -67,10 +67,10 @@ printf 'FIRST=%s\n' "\${PATH%%:*}"
 SH
     )"
     # MUTATION PROOF: keep the tools off PATH or skip the dry-run check.
-    assert_rc "full toolchain present -> preflight passes (dry=$dry)" "$?" "0"
+    assert_rc "full toolchain present -> preflight passes" "$?" "0"
     for t in shellcheck shfmt node npx uv uvx; do
         # MUTATION PROOF: suppress the resolved-tool log.
-        assert_contains "resolved $t path (dry=$dry)" "$rt_out" "$RT_TOOLS/$t"
+        assert_contains "every resolved tool path is logged" "$rt_out" "$RT_TOOLS/$t"
     done
     # MUTATION PROOF: append RELEASE_TOOL_PATH rather than prepend it.
     assert_contains "tool directory is first on PATH" "$rt_out" "FIRST=$RT_TOOLS"
@@ -120,7 +120,7 @@ apply_release_path
 SH
     )"
     # MUTATION PROOF: drop absolute/empty/existence/mode validation for this element.
-    assert_rc "unsafe tool path rejected: $element" "$?" "1"
+    assert_rc "unsafe tool path rejected" "$?" "1"
     # MUTATION PROOF: omit the rejected element from the diagnostic (empty elements use '').
     case "$element" in *::*) rt_bad="''" ;; *:) rt_bad="''" ;; *) rt_bad="$element" ;; esac
     assert_contains "unsafe tool path is diagnosed" "$rt_out" "$rt_bad"
@@ -139,6 +139,27 @@ printf 'BENCH_CI_APP_ID=%s\nBENCH_CI_APP_SLUG=%s\nRELEASE_INTEGRATION_ARGS=%s\nR
 chmod 0600 "$RT_KEYS/env"
 rt_out="$(
     rt_drive <<'SH'
+# Preflight must load the file and apply its PATH before any subsequent gate.
+RELEASE_TOOL_PATH="${RT_EXTRA}"
+# The file must supply the App setting while the environment supplies the tool directory.
+bash() { :; }
+git() { printf '%s\n' "$PWD"; }
+docker() { :; }
+require_clean_release_tree() {
+    [ "$BENCH_CI_APP_ID" = release-env-sentinel-3446 ] || exit 2
+    [ "${PATH%%:*}" = "$RT_EXTRA" ] || exit 3
+    /bin/sh -c 'command -v shfmt'
+    exit 0
+}
+preflight
+SH
+)"
+# MUTATION PROOF: remove load_release_env or apply_release_path from preflight, or move either after the clean-tree gate.
+assert_rc "preflight loads settings and PATH before gates" "$?" "0"
+# MUTATION PROOF: fail to export the adjusted PATH before the first gate.
+assert_contains "preflight child sees tool directory" "$rt_out" "$RT_TOOLS/shfmt"
+rt_out="$(
+    rt_drive <<'SH'
 load_release_env
 for name in BENCH_CI_APP_ID BENCH_CI_APP_SLUG RELEASE_INTEGRATION_ARGS RELEASE_TOOL_PATH; do
     [ "${!name}" = release-env-sentinel-3446 ] || exit 2
@@ -155,7 +176,7 @@ assert_rc "env values loaded and exported" "$?" "0"
 assert_not_contains "loader never logs values" "$rt_out" "$RT_SENTINEL"
 for name in BENCH_CI_APP_ID BENCH_CI_APP_SLUG RELEASE_INTEGRATION_ARGS RELEASE_TOOL_PATH; do
     # MUTATION PROOF: omit per-name provenance logging.
-    assert_contains "loader names $name" "$rt_out" "loaded $name"
+    assert_contains "loader names each setting" "$rt_out" "loaded $name"
 done
 # MUTATION PROOF: omit the loaded count.
 assert_contains "loader reports count" "$rt_out" "4 loaded, 0 retained"
@@ -181,7 +202,7 @@ load_release_env
 SH
     )"
     # MUTATION PROOF: accept this unknown/invalid name.
-    assert_rc "unknown or invalid name rejected: $name" "$?" "1"
+    assert_rc "unknown or invalid name rejected" "$?" "1"
     # MUTATION PROOF: omit the basename/line diagnostic.
     assert_contains "bad name identifies file and line" "$rt_out" "env line 2"
     # MUTATION PROOF: print the rejected line's value.
@@ -234,7 +255,7 @@ SH
     rt_rc=$?
     case "$mode" in 066*) rt_expected=1 ;; *) rt_expected=0 ;; esac
     # MUTATION PROOF: weaken mode & 022 or reject safe modes.
-    assert_rc "env mode $mode" "$rt_rc" "$rt_expected"
+    assert_rc "env mode policy enforced" "$rt_rc" "$rt_expected"
 done
 ln -s "$RT_KEYS/env" "$RT_KEYS/link"
 rt_out="$(
