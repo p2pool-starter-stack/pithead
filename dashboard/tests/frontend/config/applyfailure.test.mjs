@@ -158,7 +158,10 @@ test("a rejected commit is reported as not applied, not saved-but-not-running (#
     status: "rejected",
     error: "the configuration changed after this preview was made — preview again",
   };
-  const gate = { status: "rejected", error: "this change is disruptive (rig adoption) — type APPLY in the dashboard to confirm." };
+  const gate = {
+    status: "rejected",
+    error: "this change is disruptive (rig adoption) — type APPLY in the dashboard to confirm.",
+  };
   for (const result of [stale, gate]) {
     for (const onAppliance of [true, false]) {
       for (const out of [
