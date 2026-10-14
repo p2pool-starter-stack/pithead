@@ -5,7 +5,7 @@ import socket
 import sys
 
 
-def login(password, host):
+def login(password, host, require_upstream=False):
     request = {
         "id": 1,
         "method": "login",
@@ -19,21 +19,34 @@ def login(password, host):
             if len(line) > 65536 or not line.endswith(b"\n"):
                 return "failed"
             reply = json.loads(line)
-        if not isinstance(reply, dict) or reply.get("id") != 1:
-            return "failed"
-        error = reply.get("error")
-        if isinstance(error, dict) and error.get("message") == "Permission denied":
-            return "refused"
-        result = reply.get("result")
-        if not error and isinstance(result, dict) and result.get("status") == "OK":
-            job = result.get("job")
-            if isinstance(job, dict) and all(
-                isinstance(job.get(key), str) and job[key] for key in ("blob", "job_id", "target")
-            ):
-                return "accepted"
+            if not isinstance(reply, dict) or reply.get("id") != 1:
+                return "failed"
+            error = reply.get("error")
+            if isinstance(error, dict) and error.get("message") == "Permission denied":
+                return "refused"
+            result = reply.get("result")
+            if not error and isinstance(result, dict) and result.get("status") == "OK":
+                job = result.get("job")
+                if isinstance(job, dict) and all(
+                    isinstance(job.get(key), str) and job[key]
+                    for key in ("blob", "job_id", "target")
+                ):
+                    # Simple mode drops its upstream when the last authenticated client closes.
+                    if not require_upstream or proxy_upstream_active():
+                        return "accepted"
     except (OSError, ValueError):
         pass
     return "failed"
+
+
+def proxy_upstream_active():
+    from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient
+    from mining_dashboard.config.config import PROXY_API_PORT, PROXY_AUTH_TOKEN, PROXY_HOST
+
+    summary = XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN).get_summary()
+    upstreams = summary.get("upstreams") if isinstance(summary, dict) else None
+    active = upstreams.get("active") if isinstance(upstreams, dict) else None
+    return type(active) is int and active > 0
 
 
 def proxy_status(token):
@@ -51,5 +64,9 @@ if __name__ == "__main__":
     from mining_dashboard.config.config import PROXY_HOST
 
     secret = sys.stdin.read()
-    verdict = str(proxy_status(secret)) if sys.argv[1] == "http" else login(secret, PROXY_HOST)
+    verdict = (
+        str(proxy_status(secret))
+        if sys.argv[1] == "http"
+        else login(secret, PROXY_HOST, require_upstream=sys.argv[1] == "stratum-route")
+    )
     sys.exit(0 if verdict == sys.argv[2] else 1)

@@ -77,7 +77,7 @@ assert_contains "the detached runner forwards the persistent-hold capability" "$
 
 # Drive the REAL phase, controller handshake and safety EXIT trap against local files. Only
 # daemon/SSH endpoints are substituted; no container, service, miner or network is used.
-drive_phase() { # <fixture dir> <success|restore-failure|interrupted>
+drive_phase() { # <fixture dir> <success|restore-failure|interrupted> [no-rig]
     (
         local fixture="$1" failure="$2"
         IT_FAIL=0
@@ -85,6 +85,7 @@ drive_phase() { # <fixture dir> <success|restore-failure|interrupted>
         source "$HERE/../lib/borrow-rearm.sh"
         source "$HERE/../lib/run-safety.sh"
         export RIG_NAME=selected CI_RIG_RECOVERY_HOLD=1 WORKERS=1 BENCH_HOST=bench.example
+        if [ "${3:-}" = no-rig ]; then RIG_NAME="" WORKERS=0; fi
         export E2E_DIR="$fixture" MINER_XMRIG_CONFIG="$fixture/miner.json" MINER_ROTATE_CFG_BACKUP=""
         IT_BORROW_REARM_REQUEST="$fixture/request" IT_BORROW_REARM_ACK="$fixture/ack" IT_BORROW_REARM_TOKEN=run-123
         printf '%s' '{"p2pool":{"stratum_password":"auto"}}' >"$fixture/config.json"
@@ -118,10 +119,17 @@ drive_phase() { # <fixture dir> <success|restore-failure|interrupted>
         }
         _rotate_proxy_live_args() { printf '%s' new-pass; }
         _rotate_proxy_upstream_active() {
+            if [ -z "$RIG_NAME" ]; then
+                test -f "$fixture/authenticated"
+                return
+            fi
             [ "$(jq -r '.pools[0].pass' "$fixture/miner.json")" = new-pass ] && test -f "$fixture/count"
         }
         _rotate_p2pool_monero_live() { return 0; }
-        _rotate_stratum_auth() { return 0; }
+        _rotate_stratum_auth() {
+            [ "$2" != accepted ] || touch "$fixture/authenticated"
+            return 0
+        }
         _rotate_rig_accepted() {
             local count
             [ "$(jq -r '.pools[0].pass' "$fixture/miner.json")" = new-pass ] || return 1
@@ -182,6 +190,12 @@ for scenario in success restore-failure interrupted; do
         fi
     fi
 done
+
+mkdir "$d/no-rig"
+drive_phase "$d/no-rig" success no-rig 2>/dev/null
+assert_rc "the complete no-rig phase authenticates before observing its upstream" "$?" 0
+assert_eq "the no-rig phase restores the exact secrets" "$(cmp -s "$d/no-rig/.env" "$d/no-rig/original.env" && echo restored)" restored
+assert_eq "the no-rig phase cleans its rotation copies" "$(find "$d/no-rig" -name '*.bak-*' | wc -l | tr -d ' ')" 0
 
 echo "selftest-rotate-secrets: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ]

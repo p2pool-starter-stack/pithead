@@ -17,12 +17,13 @@ SPEC.loader.exec_module(PROBE)
 
 
 class StratumProbeTest(unittest.TestCase):
-    def probe(self, response):
+    def probe(self, response, require_upstream=False):
         connection = MagicMock()
+        self.connection = connection
         connection.__enter__.return_value = connection
         connection.makefile.return_value = io.BytesIO(response)
         with patch.object(PROBE.socket, "create_connection", return_value=connection):
-            verdict = PROBE.login("private-test-password", "unused")
+            verdict = PROBE.login("private-test-password", "unused", require_upstream)
         sent = json.loads(connection.sendall.call_args.args[0])
         self.assertEqual(sent["params"]["pass"], "private-test-password")
         return verdict
@@ -50,6 +51,53 @@ class StratumProbeTest(unittest.TestCase):
     def test_network_error_is_neither_acceptance_nor_refusal(self):
         with patch.object(PROBE.socket, "create_connection", side_effect=TimeoutError):
             self.assertEqual(PROBE.login("private-test-password", "unused"), "failed")
+
+    def test_route_checks_upstream_while_authenticated_connection_is_open(self):
+        response = (
+            b'{"id":1,"result":{"status":"OK","job":{"blob":"b","job_id":"j","target":"t"}}}\n'
+        )
+
+        def active():
+            self.connection.__exit__.assert_not_called()
+            return True
+
+        with patch.object(PROBE, "proxy_upstream_active", side_effect=active) as check:
+            self.assertEqual(self.probe(response, require_upstream=True), "accepted")
+            check.assert_called_once()
+            self.connection.__exit__.assert_called_once()
+
+    def test_route_requires_both_authentication_and_an_observed_upstream(self):
+        response = (
+            b'{"id":1,"result":{"status":"OK","job":{"blob":"b","job_id":"j","target":"t"}}}\n'
+        )
+        with patch.object(PROBE, "proxy_upstream_active", return_value=False) as check:
+            self.assertEqual(self.probe(response, require_upstream=True), "failed")
+            check.reset_mock()
+            self.assertEqual(self.probe(b'{"id":1,"error":{}}\n', require_upstream=True), "failed")
+            check.assert_not_called()
+        with patch.object(PROBE, "proxy_upstream_active", side_effect=TimeoutError):
+            self.assertEqual(self.probe(response, require_upstream=True), "failed")
+
+    def test_upstream_summary_requires_a_positive_integer_not_a_missing_or_malformed_value(self):
+        client = MagicMock()
+        constructor = MagicMock(return_value=client)
+        sample = "private-test-token"
+        modules = {
+            "mining_dashboard.client.xmrig_proxy_client": SimpleNamespace(
+                XMRigProxyClient=constructor
+            ),
+            "mining_dashboard.config.config": SimpleNamespace(
+                PROXY_HOST="unused", PROXY_API_PORT=1, PROXY_AUTH_TOKEN=sample
+            ),
+        }
+        with patch.dict(sys.modules, modules):
+            for summary in (None, [], {}, {"upstreams": []}):
+                client.get_summary.return_value = summary
+                self.assertFalse(PROBE.proxy_upstream_active())
+            for value in (None, 0, -1, True, "1", 1):
+                client.get_summary.return_value = {"upstreams": {"active": value}}
+                self.assertEqual(PROBE.proxy_upstream_active(), type(value) is int and value > 0)
+            constructor.assert_called_with("unused", 1, "private-test-token")
 
     def test_http_probe_uses_explicit_status_and_bounded_private_client(self):
         client = MagicMock(base_url="unused")

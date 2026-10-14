@@ -21,14 +21,11 @@ _rotate_proxy_token_accepted() { # <token> [expected HTTP code]
     printf '%s' "$1" | rx "docker exec -i dashboard python3 -c $(quote_arg "$(cat "$HERE/rotate-auth-probe.py")") http '${2:-200}'" --stdin >/dev/null 2>&1
 }
 
-_rotate_stratum_auth() { # <password> <accepted|refused>
-    printf '%s' "$1" | rx "docker exec -i dashboard python3 -c $(quote_arg "$(cat "$HERE/rotate-auth-probe.py")") stratum $2" --stdin >/dev/null 2>&1
+_rotate_stratum_auth() { # <password> <accepted|refused> [stratum-route]
+    printf '%s' "$1" | rx "docker exec -i dashboard python3 -c $(quote_arg "$(cat "$HERE/rotate-auth-probe.py")") ${3:-stratum} $2" --stdin >/dev/null 2>&1
 }
 
-_rotate_proxy_summary() {
-    rx "docker exec dashboard python3 -c 'import json; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; from mining_dashboard.config.config import PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN; print(json.dumps(XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN).get_summary()))' 2>/dev/null"
-}
-_rotate_proxy_upstream_active() { [ "$(printf '%s' "$(_rotate_proxy_summary)" | jq -r '.upstreams.active // 0' 2>/dev/null)" -gt 0 ] 2>/dev/null; }
+_rotate_proxy_upstream_active() { _rotate_stratum_auth "$1" accepted stratum-route; }
 _rotate_rig_accepted() {
     rx "docker exec dashboard python3 -c 'import json; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; from mining_dashboard.config.config import PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN; print(json.dumps(XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN).get_workers()))' 2>/dev/null" |
         jq -er --arg name "$RIG_NAME" '[.workers[] | select(.[0] == $name) | .[3]] | max // 0'
@@ -232,7 +229,12 @@ run_rotate_secrets() {
     if [ -n "${RIG_NAME:-}" ] && wait_borrow_rearm rotate-stratum; then
         accepted_before="$(_rotate_rig_accepted)" || accepted_before=""
     fi
-    if wait_for 60 3 "xmrig-proxy to connect to its p2pool upstream" _rotate_proxy_upstream_active; then
+    if wait_for 60 3 "the proxy to accept the new stratum password" _rotate_stratum_auth "$new_stratum_pass" accepted; then
+        it_pass "stratum login accepts the new password and returns a mining job"
+    else
+        it_fail "stratum login accepts the new password and returns a mining job" "no valid authenticated job"
+    fi
+    if wait_for 60 3 "xmrig-proxy to connect to its p2pool upstream" _rotate_proxy_upstream_active "$new_stratum_pass"; then
         it_pass "xmrig-proxy has an active p2pool upstream after rotation"
     else
         it_fail "xmrig-proxy has an active p2pool upstream after rotation" "summary never reported an active upstream"
@@ -241,11 +243,6 @@ run_rotate_secrets() {
         it_pass "p2pool refreshed live Monero-backed network stats after rotation"
     else
         it_fail "p2pool refreshed live Monero-backed network stats after rotation" "stats file or last Monero ZMQ message predates the rotation"
-    fi
-    if wait_for 60 3 "the proxy to accept the new stratum password" _rotate_stratum_auth "$new_stratum_pass" accepted; then
-        it_pass "stratum login accepts the new password and returns a mining job"
-    else
-        it_fail "stratum login accepts the new password and returns a mining job" "no valid authenticated job"
     fi
     if _rotate_stratum_auth "$old_stratum_pass" refused; then
         it_pass "stratum login explicitly refuses the old password"
