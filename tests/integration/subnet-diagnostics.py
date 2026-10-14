@@ -59,7 +59,7 @@ def run(argv, seconds=5, limit=LIMIT):
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
                     if isinstance(exc, InterruptedError):
-                        raise SystemExit(128 + signal.SIGTERM)
+                        raise SystemExit(128 + signal.SIGTERM) from None
                     return {
                         "error": "output-limit" if isinstance(exc, OverflowError) else "timeout"
                     }, None
