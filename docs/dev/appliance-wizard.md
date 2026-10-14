@@ -50,6 +50,19 @@ root-owned volatile storage while the installer applies it directly to target da
 finishes either path headlessly, with no second wizard. A missing ack installs nothing: the erase
 waits for a human, and a timeout hands the form back intact.
 
+The connection card includes a stratum password or explicit absence and, when enabled, the
+TLS fingerprint. The password question defaults off in the CLI, JavaScript page and form-submit
+fallback. The typed wizard stores an enabled password as a generated literal; existing `"auto"`
+configurations retain their mode and rendered seed. A config-only installer restore publishes
+only its validated stratum seed beside the private candidate, then removes that sidecar.
+
+Before the card, the host resolves credentials once. Installed setup reuses or creates its
+stratum certificate in its final data directory. The installer retains a kept target's existing
+pair through a read-only mount, or creates one in the root-only volatile carry directory. After
+installation it copies that pair directly to target data, never to the ESP. The install request
+must still name the target and wipe choice whose identity the card showed. Cleanup removes the
+carry along with the existing restore credentials.
+
 On a reinstall the form opens with the previous machine's answers. When the inventory holds
 exactly one disk that already carries an install, the host mounts its data partition
 read-only, reads the previous `config.json`, strips every secret
@@ -63,8 +76,11 @@ wins and no config crosses.
 
 Before a pre-fill reaches the form, the server moves the removed `xmrig_proxy.*` and
 `dashboard.workers[]` names to `xvb.*` and `workers.list[]`. It then drops keys absent from the
-current reference schema. The same preparation runs again on submit, so a hand-edited JSON pane
-cannot put an obsolete or unknown name back into the host's candidate. Known keys keep their
+current reference schema. The JSON pane refuses duplicate keys before updating the form.
+The submit endpoint also refuses duplicates and case-insensitive `PASTE_` / `YOUR_` string
+placeholders before normalization or staging, including in unknown keys. Refusals name the
+key path without echoing values. The same preparation runs again on submit, so a hand-edited
+JSON pane cannot put an obsolete or unknown name back into the host's candidate. Known keys keep their
 values and types for the host parser to validate; the wizard never weakens that gate. The page
 lists changed key paths without rendering their values.
 
@@ -313,6 +329,13 @@ which the wizard's pre-provisioning trust level does not assume.
 
 ## The certificate lifecycle
 
+The plain setup port redirects to HTTPS. The host passes its global interface addresses
+in `WIZARD_HOST_ADDRESSES`, excluding bridge interfaces before starting the container.
+The console and log banners use the same list. A recognised Host header keeps the typed
+address or machine name; an unknown header uses the first host address, or `pithead.local`
+when the inventory is unavailable. The container socket address never selects a redirect.
+Caddy keeps a recognised typed host after provisioning.
+
 **One certificate for the machine's whole life**, at `appliance_tls_dir()`
 (`/data/pithead/data/tls`), presented by the wizard *and* by Caddy afterwards.
 
@@ -444,9 +467,14 @@ Five steps, each answering a hardware-validated failure:
    started the stack into its own oneshot cgroup, and systemd SIGKILLed the containers it
    had just spawned.
 4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes three gates.
-   First the dashboard must answer through caddy on a *listed* vhost (`localhost`; bare
-   `127.0.0.1` hits Caddy's empty default site and proves nothing) — the end of the
-   derived-config → caddy → dashboard chain. Second `pithead doctor --json` must exit clean: it
+   First the dashboard must answer through Caddy on the vhost rendered in `.env`, with the
+   connection forced to loopback and the exact `/.pithead-boot-health` path rewritten to `/`.
+   The probe sends a capability derived from the owner-only salted login hash on curl's stdin.
+   Caddy requires the capability and removes it from logs and upstream requests; only this
+   credential-free local request gets the boot marker in its access log. Its locked 401
+   proves the login gate answers without adding a failed-login warning. With login off, the
+   dashboard must return a nonempty page. This checks the derived-config → Caddy → dashboard
+   chain. Second `pithead doctor --json` must exit clean: it
    FAILs on a crashed revenue container (monerod/p2pool/tari, including one an interrupted compose
    recreate left under its temporary `<id>_<service>` name), a dead Tor backbone, or a missing
    egress firewall, so a slot that serves a dashboard while mining is dead does not commit. Third
@@ -467,8 +495,14 @@ Five steps, each answering a hardware-validated failure:
    `pithead status` passes (#1265): that drift is the machine's address list, not the slot. A slot
    that boots but is not healthy stays uncommitted on purpose: that is the state A/B fallback exists
    for.
-   Unprovisioned machines never commit — GRUB's clear-and-retry keeps them booting, and a bad
-   update before provisioning reverts.
+   Fresh unprovisioned machines never commit, and an unverified update before provisioning
+   reverts. `config-reset` records an already-good booted slot with its exact `BUILD_COMMIT`,
+   only after the provisioned boot unit has completed successfully in the current boot. Once the
+   reset wizard container starts, firstboot restores that slot's good state on each configless
+   boot, including a reboot with setup still open. The record remains until the provisioned
+   health gate succeeds. A different slot or source cannot use it. The next provisioned boot
+   still runs all three health gates; reset does not commit an unverified update.
+
 5. **`pithead local-miner`** — converge the built-in RigForge worker to `local_miner.enabled`,
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a
@@ -514,7 +548,7 @@ had a gap between it and the next one.
 | the artifact | `tests/os/verify-image.sh` | both role paths present in the shipped image: the boot script's fork, the unit conditions that admit each role, the baked prebuilt, no swap anywhere |
 | the real thing | `tests/os/run.sh --phase provision` | token from the console → submit → handoff → ack → running stack → built-in miner up and its shares accepted → reboot through a corrupted Caddyfile → no failed units → slot self-commit → miner back |
 | the other real thing | `tests/os/run.sh --phase rig` | the same page answered `RigForge` → rig card with no login → mining from the byte-identical baked binary → **no containers at all** → reboot owned by `pithead-boot`, wizard closed → slot self-commit on an unanswered pool → A/B install, uncommitted rollback, self-commit, persistence |
-| the restore leg | `tests/os/run.sh --phase install` | a real encrypted backup taken off a live machine after its provisioning units have finished (the wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps` looks live, #1945), then a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, each uploaded through `/submit-restore` on a FRESH installer boot instead of the form, the second onto the first's kept disk; the powered-off installer medium is inspected for leftover restore credentials, and the powered-off target is inspected before first boot to prove its ESP has no restore secret and its data partition has the validated state plus only a non-secret handoff marker. The running wallet, Tor identity and opaque RPC/onion secrets must match each archive, the dashboard hash and fingerprint follow the rule in step 4 of the restore flow (kept while the fingerprint matches the preserved password), both the fixture's chain sentinel and the target's pre-restore sentinel must survive, and the fixture's removed 1.x keys (`xmrig_proxy.*`, `telegram.control`) must migrate or drop as documented without leaving a `config.json.bak-1x` on `/data` |
+| the restore leg | `tests/os/run.sh --phase install` | a real encrypted backup taken off a live machine after its provisioning units have finished (the wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps` looks live, #1945), then a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, each uploaded through `/submit-restore` on a FRESH installer boot instead of the form, the second onto the first's kept disk; the powered-off installer medium is inspected for leftover restore credentials, and the powered-off target is inspected before first boot to prove its ESP has no restore secret and its data partition has the validated state plus only a non-secret handoff marker. The created P2Pool container's configured wallet, Tor identity and opaque RPC/onion secrets must match each archive. The startup probe requires the fresh sync-gate hold first. Before its one start, it rejects prior crashes, restarts and OOM kills; a stopped exit 137 is eligible only when bounded logs from that container start show both SIGTERM and stopping. After proving the sync-gate hold, the harness pauses the dashboard, starts that restored P2Pool container once, and requires it to remain running with exit code zero and zero restarts across four samples over 30 seconds. It then stops P2Pool, restores the dashboard and rechecks the sync gate; failures name the probe checkpoint and include bounded daemon and kernel diagnostics. Prior stop evidence is escaped and limited to 30 lines of 240 columns; the start bound uses the shared Go-time-to-RFC3339 converter. This proves startup, not synced mining. The dashboard hash and fingerprint follow the rule in step 4 of the restore flow (kept while the fingerprint matches the preserved password), both the fixture's chain sentinel and the target's pre-restore sentinel must survive, and the fixture's removed 1.x keys (`xmrig_proxy.*`, `telegram.control`) must migrate or drop as documented without leaving a `config.json.bak-1x` on `/data` |
 
 The orchestration row is the one that was missing. pytest proved the endpoint published the
 credentials; a render probe proved the card renders given them; nothing proved the app *asked*.

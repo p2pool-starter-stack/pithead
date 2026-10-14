@@ -26,10 +26,11 @@ TOR_EGRESS_BOOT_UNIT="pithead-egress.service"
 # partial install over-blocks instead of opening the box. The `-D` lines first make a manual
 # restart idempotent (a start with the rules already present replaces rather than stacks them);
 # the `-` prefix lets them fail when the rule is absent, which at boot it always is.
-render_tor_egress_boot_unit() { # <iptables> <subnet> <tor_ip>
-    local ipt="$1" rule i
+render_tor_egress_boot_unit() { # <iptables> <subnet> <tor_ip> [sync-ip ...]
+    local ipt="$1" subnet="$2" tor_ip="$3" rule i ip chain marker cmd qmarker qipt qtag qip
+    shift 3
     local -a rules
-    mapfile -t rules < <(tor_egress_rules "$2" "$3")
+    mapfile -t rules < <(tor_egress_rules "$subnet" "$tor_ip")
     cat <<EOF
 [Unit]
 Description=pithead Tor-only egress firewall, restored before Docker starts containers
@@ -45,8 +46,34 @@ EOF
     for rule in "${rules[@]}"; do
         printf 'ExecStart=-%s -D DOCKER-USER -m comment --comment %s %s\n' "$ipt" "$TOR_EGRESS_TAG" "$rule"
     done
+    for ip in "$@"; do
+        printf 'ExecStart=-%s -D DOCKER-USER -m comment --comment %s -s %s -j ACCEPT\n' "$ipt" "$TOR_EGRESS_TAG" "$ip"
+    done
     for ((i = ${#rules[@]} - 1; i >= 0; i--)); do
         printf 'ExecStart=%s -I DOCKER-USER 1 -m comment --comment %s %s\n' "$ipt" "$TOR_EGRESS_TAG" "${rules[$i]}"
+    done
+    # Check markers at boot: an old unit must not reopen a completed sync or a disabled choice
+    # when its rewrite failed after the live firewall removed that exception.
+    for ip in "$@"; do
+        case "$ip" in
+        *.26) chain=monero ;;
+        *.27) chain=tari ;;
+        *.28) marker="$(tor_egress_choice_marker)/p2pool" ;;
+        *.29) marker="$(tor_egress_choice_marker)/xvb" ;;
+        *) return 1 ;;
+        esac
+        if [ -n "${chain:-}" ]; then marker="$(clearnet_state_dir)/$chain.synced"; fi
+        printf -v qmarker '%q' "$marker"
+        printf -v qipt '%q' "$ipt"
+        printf -v qtag '%q' "$TOR_EGRESS_TAG"
+        printf -v qip '%q' "$ip"
+        if [ -n "${chain:-}" ]; then
+            cmd="if test ! -e $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
+        else
+            cmd="if test -d $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
+        fi
+        printf "ExecStart=/bin/bash -c '%s'\n" "$cmd"
+        chain=
     done
     cat <<EOF
 
@@ -67,12 +94,12 @@ tor_egress_boot_unit_applies() {
 # Write and enable the unit, or leave it when it already matches and is enabled, which keeps a
 # routine apply from reloading systemd. Enable, not --now: the live rules are apply's job, and
 # starting the unit here would insert them a second time.
-provision_tor_egress_boot_unit() { # <subnet> <tor_ip>
+provision_tor_egress_boot_unit() { # <subnet> <tor_ip> [sync-ip ...]
     tor_egress_boot_unit_applies || return 0
     local ipt unit_dir want
     ipt=$(command -v iptables) || return 0
     unit_dir=$(control_unit_dir)
-    want=$(render_tor_egress_boot_unit "$ipt" "$1" "$2")
+    want=$(render_tor_egress_boot_unit "$ipt" "$@")
     if [ "$(cat "$unit_dir/$TOR_EGRESS_BOOT_UNIT" 2>/dev/null)" = "$want" ] &&
         systemctl is-enabled "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1; then
         return 0

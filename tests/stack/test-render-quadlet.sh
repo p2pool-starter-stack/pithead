@@ -32,6 +32,8 @@ echo "== unit: render-quadlet parity vs os/quadlet fixtures (#77 phase 1) =="
 # an updated fixture.
 QOUT="$SANDBOX/quadlet-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/fixture.env" "$QOUT" >/dev/null
+assert_contains "remote Quadlet Tor receives P2Pool onion port (#2936)" \
+    "$(sed -n 's/^Environment=//p' "$QOUT/tor.container")" '"P2POOL_PORT=37888"'
 for f in mining.network proxy.network tor.container p2pool.container xmrig-proxy.container \
     caddy.container docker-proxy.container docker-control.container dashboard.container; do
     assert_eq "quadlet parity: $f" "$(diff -u "$ROOT/os/quadlet/$f" "$QOUT/$f" 2>&1 | head -c 300)" ""
@@ -122,6 +124,8 @@ assert_eq "#2040: literal % is doubled so systemd does not expand %H to the host
 # The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/local/fixture.env" "$QLOCAL" >/dev/null
+assert_contains "local Quadlet Tor receives P2Pool onion port (#2936)" \
+    "$(sed -n 's/^Environment=//p' "$QLOCAL/tor.container")" '"P2POOL_PORT=37888"'
 for f in mining.network proxy.network tor.container monerod.container tari.container \
     p2pool.container xmrig-proxy.container caddy.container docker-proxy.container \
     docker-control.container dashboard.container; do
@@ -140,6 +144,10 @@ for f in mining.network proxy.network tor.container monerod.container tari.conta
     caddy.container docker-proxy.container docker-control.container dashboard.container; do
     assert_eq "quadlet payout parity: $f" "$(diff -u "$ROOT/os/quadlet/payout/$f" "$QPAY/$f" 2>&1 | head -c 300)" ""
 done
+# #2657: the console wallet must not be PID 1: a zombie PID 1 cannot be signalled, so a stop fails.
+assert_eq "#2657: tari-wallet runs under podman's init (RunInit)" "$(grep -c '^RunInit=true$' "$QPAY/tari-wallet.container")" "1"
+assert_eq "#2899: tari-wallet has the same 10 s container stop timeout as Compose" "$(awk '/^\[Container\]$/{in_container=1;next} /^\[/{in_container=0} in_container && /^StopTimeout=10$/{n++} END{print n+0}' "$QPAY/tari-wallet.container")" "1"
+assert_eq "payout profiles keep Tor's quadlet unchanged (#2859)" "$(diff -u "$QLOCAL/tor.container" "$QPAY/tor.container" 2>&1)" ""
 # The appliance must run the Tari the compose stack runs: #2604 moved compose to v6.0.1-pre.0 and
 # the quadlet pins stayed on 6.0.0 with an amd64-only wallet digest (#2624). Read each compose
 # service's image off the file itself and compare it with the rendered unit's Image=.
@@ -149,4 +157,6 @@ done)
 assert_eq "compose parse finds both Tari images (control)" "$(grep -c '^ghcr.io/tari-project/minotari_' <<<"$compose_tari")" "2"
 assert_eq "quadlet Tari node and wallet images match compose (#2624)" \
     "$(sed -n 's/^Image=//p' "$QPAY/tari.container" "$QPAY/tari-wallet.container")" "$compose_tari"
+assert_eq "tari-wallet quadlet can repair and drop uid (#2454)" "$(grep -Ec '^(User=0:0|AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID)$' "$QPAY/tari-wallet.container")" "2"
+assert_contains "tari-wallet healthcheck probes gRPC (#2498)" "$(cat "$QPAY/tari-wallet.container")" "HealthCmd=/wallet-config/wallet-healthcheck.sh"
 assert_eq "local render emits no wallet units" "$(find "$QLOCAL" -name 'wallet-rpc.container' -o -name 'tari-wallet.container' | wc -l | tr -d ' ')" "0"

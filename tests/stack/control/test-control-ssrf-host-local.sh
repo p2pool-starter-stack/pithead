@@ -48,6 +48,8 @@ ADDRS
     ;;
 "-4 route show default") echo "default via 10.20.0.1 dev br0 proto dhcp src 10.20.0.2 metric 100" ;;
 "-6 route show default") echo "default via fe80::1 dev br0 proto ra metric 100 pref medium" ;;
+# The route-local check (#1959) sees nothing local here, so these rows prove #2671's list alone.
+"route get "*) echo "\$3 via 10.20.0.1 dev br0" ;;
 *) exit 1 ;;
 esac
 IP_STUB

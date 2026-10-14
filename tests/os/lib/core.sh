@@ -210,6 +210,7 @@ _build_image() {
         tail -12 /tmp/os-fault-build.log >&2
         return 1
     }
+    [ -z "${2:-}" ] || bash tests/os/build-label-fixture.sh "$2" os/build/pithead-root.tar || return 1
     os/rauc/mkimage.sh --dev >>/tmp/os-fault-build.log 2>&1 || return 1
     # Every image a phase boots gets the static verification first, in --test mode. The check
     # that matters most is the archive-vs-tree comparison: stale wizard images reached three
@@ -233,9 +234,18 @@ _build_bundle() {
 
 # Bundles are signed with the dev chain and RAUC verifies them against the keyring baked into the
 # slot, so nothing but the bundle itself needs staging.
+#
+# Bounded, and loud on failure (#3049): an unbounded quiet scp that closed mid-transfer left rc=255
+# and nothing else. STAGE_TIMEOUT caps the copy (default 3600 s, deliberately far above any bundle
+# copy, as _ssh's ceiling is) and the keepalive makes a dead peer fail rather than hang. scp's
+# stderr stays on the console so the job log keeps "Connection closed"; a caller that wants it for
+# its own evidence sets STAGE_ERR (the floor leg does, locally). Returns scp's rc; 124 is the
+# timeout kill.
 _stage_bundle() { # $1 bundle path
-    scp -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q \
-        "$1" "root@$ip:/data/update.bundle"
+    local errto="${STAGE_ERR:-/dev/stderr}"
+    timeout "${STAGE_TIMEOUT:-3600}" scp -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=8 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+        "$1" "root@$ip:/data/update.bundle" 2>>"$errto"
 }
 
 # Per-updater command vocabulary — the ONLY updater-specific part of the battery.
@@ -342,9 +352,9 @@ require_clean_bench() {
 }
 cleanup() {
     local approval_cleanup_rc=0
+    package_appliance_cleanup || approval_cleanup_rc=$?
     declare -F approval_fixture_cleanup >/dev/null && approval_fixture_cleanup || approval_cleanup_rc=$?
-    # Preserve the console on failure; an at-assertion no-clobber copy remains authoritative.
-    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then
+    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then # Preserve the console on failure.
         cp "$SERIAL" "$SERIAL.failed" 2>/dev/null &&
             info "console from the failed run kept at $SERIAL.failed"
     fi
@@ -360,6 +370,8 @@ cleanup() {
     [ "$approval_cleanup_rc" -eq 0 ] || exit "$approval_cleanup_rc"
 }
 trap cleanup EXIT
+# Read the serial file directly: grep -q on a pipe can SIGPIPE its writer under pipefail.
+serial_has() { grep -aEq "$1" "$SERIAL"; }
 # Wait until the serial log matches a pattern, or time out. $1 pattern, $2 seconds.
 wait_serial() {
     local pat="$1" deadline=$(($(date +%s) + ${2:-180}))

@@ -7,6 +7,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/appliance-config-approval-leg.sh"
 
 FAIL=0
+ip=fixture-address
+dashboard_curl() { printf 'cfg?._config_version_newer ? "Saving is blocked" : null'; }
 sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
 hostname_runtime_snapshot() { printf unchanged; }
 sensitive_preview() {

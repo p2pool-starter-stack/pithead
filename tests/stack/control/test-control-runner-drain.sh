@@ -164,3 +164,33 @@ assert_eq "a shell apply during a lock-free runner verb acquires the window at o
 wait "$PCL_RUNNER" 2>/dev/null || true
 unset PCL PCL_HOLDER PCL_RUNNER rc out
 unset -f pcl_runner pcl_held pcl_started
+
+echo "== unit: the runner reads one private request snapshot after claiming the spool file =="
+SNAP="$SANDBOX/control-snapshot"
+mkdir -p "$SNAP/requests"
+SNAP_ID="11111111-1111-4111-8111-111111111111"
+printf '{"id":"%s","action":"preview"}\n' "$SNAP_ID" >"$SNAP/requests/request.json"
+(
+    # A writer can keep this descriptor after the runner moves and chmods the inode.
+    exec 9<>"$SNAP/requests/request.json"
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    env_get() { [ "$1" = DASHBOARD_CONTROL_ENABLED ] && printf true || printf '%s' "$SNAP"; }
+    render_masked_config() { :; }
+    control_redact_stale_kits() { :; }
+    control_process_request() {
+        jq -r '.action' "$1" >"$SNAP/before"
+        printf '{"id":"%s","action":"upgrade"}\n' "$SNAP_ID" >&9
+        jq -r '.action' "$1" >"$SNAP/after"
+        jq -r '.action' "$SNAP/.claim.${PITHEAD_CONTROL_RUNNER_PID}" >"$SNAP/claimed-after-write"
+    }
+    control_run_pending >/dev/null 2>&1
+)
+assert_eq "a held write descriptor does not change the request being processed" \
+    "$(cat "$SNAP/before" "$SNAP/after")" "$(printf 'preview\npreview')"
+assert_eq "the held descriptor really changed the claimed inode" \
+    "$(cat "$SNAP/claimed-after-write")" "upgrade"
+assert_eq "the runner removes its private request snapshot" \
+    "$(find "$SNAP" -maxdepth 1 -name '.request.*' -print -quit)" ""
+unset SNAP SNAP_ID

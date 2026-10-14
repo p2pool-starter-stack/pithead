@@ -61,10 +61,19 @@ scan_grace_active() {
 
 if wallet_rpc get_version 3 >/dev/null; then
     # Answering and caught up: retire the scan grace so future RPC failures read as real.
-    [ -f "$SCAN_MARKER" ] && caught_up && { rm -f "$SCAN_MARKER" 2>/dev/null || true; }
+    if [ -f "$SCAN_MARKER" ]; then
+        caught_up && { rm -f "$SCAN_MARKER" 2>/dev/null || true; }
+        printf 'wallet_rpc=answering wallet_height=%s daemon_height=%s\n' "${wallet_h:-unknown}" "${daemon_h:-unknown}"
+    else
+        echo 'wallet_rpc=answering scan_marker=absent'
+    fi
     exit 0
 fi
 
 # RPC silent. Healthy only for a bounded first scan; else it's a fault.
-[ -f "$SCAN_MARKER" ] && scan_grace_active && exit 0
+if [ -f "$SCAN_MARKER" ] && scan_grace_active; then
+    echo 'wallet_rpc=unreachable scan_grace=active'
+    exit 0
+fi
+echo 'wallet_rpc=unreachable scan_grace=inactive'
 exit 1

@@ -20,24 +20,35 @@ source "$HERE/../lib.sh"
 echo "== readiness health row waits, then names the unhealthy service (#2656) =="
 
 MODULE="$HERE/../lib/run-scenario.sh"
-READINESS_SRC="$(sed -n '/^_pred_readiness_status() {/p; /^status_verdict_lines() {/p; /^assert_release_readiness() {$/,/^}$/p' "$MODULE")"
+READINESS_SRC="$(sed -n '/^_pred_readiness_monero() {$/,/^}$/p; /^_pred_readiness_status() {/p; /^status_verdict_lines() {/p; /^assert_release_readiness() {$/,/^}$/p' "$MODULE")"
 assert_contains "the extraction has the status predicate" "$READINESS_SRC" "_pred_readiness_status() {"
 assert_contains "the extraction has the verdict filter" "$READINESS_SRC" "status_verdict_lines() {"
 assert_eq "the extraction ends with the whole readiness function" \
     "$(printf '%s\n' "$READINESS_SRC" | sed -n '/^assert_release_readiness() {$/p;$p' | tr '\n' ' ')" "assert_release_readiness() { } "
 
 SECRET_PASS="readiness-selftest-stratum-pass"
-drive_readiness() { # <healthy-at-second|never> -> "fails=<n> clock=<s>" then the row output
+drive_readiness() { # <healthy-at-second|never> [tari-done-at-second|never] [env-mode] [monero-done-at-second|never|unreachable] -> result and rows
     (
         # shellcheck disable=SC2034 # IT_FAIL/IT_PASS are read after the eval'd function returns
-        IT_FAIL=0 IT_PASS=0 FAKE_NOW=0 HEALTHY_AT="$1" IT_GREEN='' IT_RED='' IT_RESET=''
+        IT_FAIL=0 IT_PASS=0 IT_FAILED_NAMES="" FAKE_NOW=0 HEALTHY_AT="$1" TARI_DONE_AT="${2:-0}" ENV_MODE="${3:-600}" MONERO_DONE_AT="${4:-0}" IT_GREEN='' IT_RED='' IT_RESET=''
         now_s() { printf '%s' "$FAKE_NOW"; }
         sleep() { FAKE_NOW=$((FAKE_NOW + $1)); }
-        monero_caught_up() { return 0; }
+        monero_caught_up() {
+            [ "$MONERO_DONE_AT" = unreachable ] && return 2
+            [ "$MONERO_DONE_AT" = never ] && return 1
+            [ "$FAKE_NOW" -ge "$MONERO_DONE_AT" ]
+        }
         api_state() { printf '{}'; }
-        jq_get() { printf 'done'; }
+        jq_get() {
+            if [ "$1" = '{}' ] && [ "$2" = '.sync.tari.state' ] &&
+                { [ "$TARI_DONE_AT" = never ] || [ "$FAKE_NOW" -lt "$TARI_DONE_AT" ]; }; then
+                printf 'loading'
+            else
+                printf 'done'
+            fi
+        }
         env_on_box() { :; }
-        box_mode() { printf 600; }
+        box_mode() { printf '%s' "$ENV_MODE"; }
         rx() { return 0; }
         it_log() { :; }
         it_warn() { :; }
@@ -69,6 +80,38 @@ row_of() { awk '/stack is healthy \(pithead status\)/ { on = 1; print; next } on
 HEALTHY_NOW="$(drive_readiness 0)"
 assert_eq "a healthy stack passes on the first read" "$(head -n1 <<<"$HEALTHY_NOW")" "fails=0 clock=0"
 assert_contains "the healthy row is a pass" "$HEALTHY_NOW" "✓ stack is healthy (pithead status)"
+
+MONERO_SETTLES="$(drive_readiness 0 0 600 20)"
+assert_eq "Monero caught up after 20s passes readiness" "$(head -n1 <<<"$MONERO_SETTLES")" "fails=0 clock=20"
+assert_contains "the settled Monero row is a pass" "$MONERO_SETTLES" "✓ Monero is synced (chain reusable by the matrix)"
+
+MONERO_STAYS="$(drive_readiness 0 0 600 never)"
+assert_eq "Monero never caught up fails after 240s" "$(head -n1 <<<"$MONERO_STAYS")" "fails=1 clock=240"
+assert_contains "Monero behind retains its diagnostic" "$MONERO_STAYS" "monerod answered: not caught up"
+
+MONERO_UNREACHABLE="$(drive_readiness 0 0 600 unreachable)"
+assert_eq "Monero rc 2 fails after 240s" "$(head -n1 <<<"$MONERO_UNREACHABLE")" "fails=1 clock=240"
+assert_contains "Monero rc 2 retains its diagnostic" "$MONERO_UNREACHABLE" "monerod could not be asked"
+
+TARI_SETTLES="$(drive_readiness 0 15)"
+assert_eq "a brief Tari sync dip settles before readiness proceeds" "$(head -n1 <<<"$TARI_SETTLES")" "fails=0 clock=15"
+assert_contains "the settled Tari row is a pass" "$TARI_SETTLES" "✓ Tari is synced (chain reusable by the matrix)"
+case "$TARI_SETTLES" in
+*'e2e-env:'*) it_fail "a settled Tari dip is not classified as an environment refusal" "$TARI_SETTLES" ;;
+*) it_pass "a settled Tari dip is not classified as an environment refusal" ;;
+esac
+
+TARI_STAYS="$(drive_readiness 0 never)"
+assert_eq "Tari stuck off tip fails one row after the bound" "$(head -n1 <<<"$TARI_STAYS")" "fails=1 clock=240"
+assert_contains "the Tari failure names its bound" "$TARI_STAYS" "dashboard did not report Tari done within 240s"
+assert_contains "Tari-only expiry asks the runner for its environment retry" "$TARI_STAYS" "e2e-env: tari-not-done"
+
+TARI_AND_ENV_BAD="$(drive_readiness 0 never 644)"
+assert_eq "Tari plus a security failure keeps both rows" "$(head -n1 <<<"$TARI_AND_ENV_BAD" | cut -d' ' -f1)" "fails=2"
+case "$TARI_AND_ENV_BAD" in
+*'e2e-env:'*) it_fail "another failure cannot be excused as a Tari environment wait" "$TARI_AND_ENV_BAD" ;;
+*) it_pass "another failure cannot be excused as a Tari environment wait" ;;
+esac
 
 SETTLES="$(drive_readiness 60)"
 assert_eq "a stack that settles within the bound passes the whole readiness run" "$(head -n1 <<<"$SETTLES")" "fails=0 clock=60"

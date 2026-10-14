@@ -25,11 +25,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # Dockerfile is READ, never written, and resolved from SCRIPT_DIR rather than cwd; an unreadable
 # one SKIPS, and exit refuses a skip (#1064), so this cannot go quiet the way its predecessor did.
 DOCKERFILE="$SCRIPT_DIR/../../os/rootfs/Dockerfile"
-rigforge_ref_matches() { # <image-root> <dockerfile> — 0 iff the recorded ref IS the pinned one
-    local rec pin
+rigforge_ref_matches() { # <image-root> <dockerfile> — 0 iff the record matches the pin and baked version
+    local rec pin version
     rec=$(sed -n 's/^ref=\([^ ]*\).*/\1/p' "$1/opt/rigforge/RIGFORGE_REF" 2>/dev/null)
     pin="${PITHEAD_RIGFORGE_REF:-$(sed -n 's/^ARG RIGFORGE_REF=\([^ ]*\).*/\1/p' "$2" 2>/dev/null)}"
-    [[ "$pin" =~ ^[0-9a-f]{40}$ ]] && [ -n "$rec" ] && [ "$rec" = "$pin" ]
+    version=$(tr -d ' \t\r\n' 2>/dev/null <"$1/opt/rigforge/VERSION")
+    [[ "$pin" =~ ^[0-9a-f]{40}$ ]] && [ -n "$rec" ] && [ "$rec" = "$pin" ] && [ -n "$version" ] &&
+        [ "$(cat "$1/opt/rigforge/RIGFORGE_REF" 2>/dev/null)" = "ref=$pin version=$version" ]
 }
 # shellcheck source=tests/os/verify-image-artifact-helpers.sh
 . "$SCRIPT_DIR/verify-image-artifact-helpers.sh"
@@ -109,8 +111,9 @@ echo "==> boot path (each location burned us once)"
 chk "BOOTX64.EFI at the fallback path" '[ -s "$ESP/EFI/BOOT/BOOTX64.EFI" ]'
 chk "grub.cfg in the prefix dir" '[ -s "$ESP/grub/grub.cfg" ]'
 chk "grubenv in the prefix dir, not the ESP root" '[ -s "$ESP/grub/grubenv" ] && [ ! -e "$ESP/grubenv" ]'
+chk "grubenv seeds USB media before first boot" 'grub-editenv "$ESP/grub/grubenv" list | grep -qx "MEDIA=usb"'
 chk "grubenv seeds slot A good" 'grub-editenv "$ESP/grub/grubenv" list | grep -q "A_OK=1"'
-chk "grubenv names slot A's version and records slot B empty" 'grub-editenv "$ESP/grub/grubenv" list | grep -q "^A_VERSION=$(tr -d "[:space:]" <"$ROOT/opt/pithead/VERSION")$" && grub-editenv "$ESP/grub/grubenv" list | grep -q "^B_VERSION=$"'
+chk "grubenv names slot A's version and records slot B empty" 'grub-editenv "$ESP/grub/grubenv" list | grep -q "^A_VERSION=$(bash os/overlay/pithead-boot-version menu-version "$ROOT/opt/pithead/VERSION")$" && grub-editenv "$ESP/grub/grubenv" list | grep -q "^B_VERSION=$"'
 chk "kernel root by probed PARTUUID, never label" 'grep -q "probe --set=PU --part-uuid" "$ESP/grub/grub.cfg"'
 # The console carries the token and the password; chatter that scrolls them away is a defect.
 chk "console is quieted so the token stays readable" 'grep -q "loglevel=4" "$ESP/grub/grub.cfg"'
@@ -125,6 +128,8 @@ chk "avahi ships a rewritable allow-interfaces line" 'grep -qE "^#?allow-interfa
 # Boot recovery is compose-owned (#792): pithead-boot renders + ups + health-gates the slot commit.
 chk "pithead-boot unit enabled" 'test -L "$ROOT/etc/systemd/system/multi-user.target.wants/pithead-boot.service"'
 chk "pithead-boot script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-boot"'
+chk "serial getty port check shipped executable" 'test -x "$ROOT/usr/local/sbin/pithead-serial-port-present"'
+chk "serial getty condition shipped as a drop-in" 'test -s "$ROOT/etc/systemd/system/serial-getty@ttyS0.service.d/override.conf"'
 # Physical-presence config channel (#786 sub-issue D): pithead-boot's one stage before render,
 # no unit of its own.
 chk "pithead-media-config script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-media-config"'
@@ -161,6 +166,7 @@ chk "hugepage reservation baked (RandomX dataset must land in hugetlbfs)" 'grep 
 # The low-RAM sizing that corrects that sysctl at boot: without it a small machine gets the
 # silent 6 GiB carve-out back.
 chk "hugepages sizing unit enabled (low-RAM boots degrade loudly, not silently)" 'test -L "$ROOT/etc/systemd/system/multi-user.target.wants/pithead-hugepages.service"'
+chk "address watch timer enabled and its script executable (#2463)" 'test -L "$ROOT/etc/systemd/system/timers.target.wants/pithead-address-watch.timer" && test -f "$ROOT/etc/systemd/system/pithead-address-watch.service" && test -x "$ROOT/usr/local/sbin/pithead-address-watch"'
 chk "hugepages sizing script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-hugepages"'
 # The pool's second writer (#1724): the miner unit must not be able to grow nr_hugepages through either sysfs subtree xmrig writes. The live unit's readback is the battery's; this pins the ship.
 chk "miner unit drop-in fences BOTH hugepage sysfs subtrees (#1724)" 'grep -qxF "ReadOnlyPaths=/sys/devices/system/node /sys/kernel/mm/hugepages" "$ROOT/etc/systemd/system/xmrig.service.d/pithead-hugepages.conf"'
@@ -213,9 +219,9 @@ echo "==> the built-in miner (local_miner on the appliance)"
 # piece surfaces as a miner that silently never starts — on a machine with no shell.
 chk "rigforge tree baked" '[ -x "$ROOT/opt/rigforge/rigforge.sh" ]'
 if [ -r "$DOCKERFILE" ]; then
-    chk "rigforge ref recorded AND equal to the pin" 'rigforge_ref_matches "$ROOT" "$DOCKERFILE"'
+    chk "rigforge ref and version recorded AND equal to the baked tree" 'rigforge_ref_matches "$ROOT" "$DOCKERFILE"'
 else
-    skip "rigforge ref recorded AND equal to the pin" "os/rootfs/Dockerfile not readable"
+    skip "rigforge ref and version recorded AND equal to the baked tree" "os/rootfs/Dockerfile not readable"
 fi
 chk "prebuilt xmrig baked (Tor-only box cannot clone)" '[ -x "$ROOT/opt/rigforge/prebuilt/xmrig/build/xmrig" ]'
 chk "prebuilt commit marker matches rigforge's pin" '[ "$(cat "$ROOT/opt/rigforge/prebuilt/xmrig/.rigforge-commit")" = "$(sed -n "s/^XMRIG_COMMIT=\"\${XMRIG_COMMIT:-\(.*\)}\"$/\1/p" "$ROOT/opt/rigforge/rigforge.sh")" ]'

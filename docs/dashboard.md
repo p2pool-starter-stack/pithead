@@ -9,6 +9,15 @@ chains are synced it switches to the operational view.
 
 ---
 
+## Connect a miner
+
+The **Connect a miner** block is available while syncing and in the running dashboard. It shows
+the LAN pool URL and, when stratum TLS is enabled, the certificate's SHA-256 fingerprint.
+A configured stratum password has Reveal and Copy controls. With dashboard authentication
+disabled, anyone on that LAN can retrieve it; enable a dashboard login before sharing access.
+An onion-published dashboard requires a login. With no stratum password, the block says
+**No stratum password** and miners connect without one.
+
 ## Sync Mode
 
 The dashboard shows Sync Mode the first time you start the stack, or any time the Monero or Tari
@@ -49,18 +58,25 @@ While the chains sync, the dashboard keeps `p2pool` and `xmrig-proxy` stopped (a
 badge shows next to the hostname) and starts them once the chains are ready. A local Monero node is
 ready when monerod itself reports `synchronized`, so a node that has just restarted and has no peers
 yet keeps the miner held. Running p2pool against an unsynced node does nothing and floods Tari's logs
-with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. A restore at
-setup is the exception: the release belongs to the machine the backup was taken on, so after such a
-restore the dashboard holds the miner again until this machine's chains are ready. `./pithead
-restore`, the same-box recovery command, is not this door — its box's chains never desynced, so it
-keeps whatever gate state the backup carried. By default the stack waits for both Monero and Tari. With
-[`dashboard.tari_required: false`](configuration.md) it waits only for Monero and mines while Tari
-finishes syncing in the background.
+with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. Two changes
+are exceptions. A restore at setup: the release belongs to the machine the backup was taken on, so
+after such a restore the dashboard holds the miner again until this machine's chains are ready.
+`./pithead restore`, the same-box recovery command, is not this door — its box's chains never
+desynced, so it keeps whatever gate state the backup carried. An applied Monero node host or RPC-port change also re-arms the full hold until the
+required chains are ready. A change only to Tari's mode or endpoint on an already-mining
+machine preserves its earned release: Monero mining continues; merge-mining starts when Tari
+has synced. A transient unavailable sample of the unchanged Monero endpoint during apply
+does not re-hold mining; a sustained outage uses the debounced worker-failover path. The Tari
+card shows its progress in the operational dashboard. This policy survives dashboard restarts,
+but a later Monero change or setup restore restores the full hold. A machine that has never
+released mining still waits for both chains by default.
+With [`dashboard.tari_required: false`](configuration.md) the initial hold waits only for
+Monero and mines while Tari finishes syncing in the background.
 
-With `tari.mode: remote` the wait is on that node: the dashboard reads sync state from
-`tari.remote.host` over gRPC, so a remote node still catching up holds the miner exactly as a local
-one would. Set `dashboard.tari_required: false` if you'd rather not have someone else's node gate
-your Monero mining.
+With `tari.mode: remote` the dashboard reads sync state from `tari.remote.host` over gRPC.
+A remote node still catching up holds the first mining release or a full re-arm, just as a
+local node would. An earned Tari-only endpoint change keeps Monero mining while that node
+catches up. Set `dashboard.tari_required: false` to omit Tari from the first-install/full-reset hold.
 
 > **Want to skip most of the wait?** Point the stack at an existing synced blockchain, or connect
 > to a remote node. See [Configuration › Reusing an existing node](configuration.md#reusing-an-existing-node).
@@ -79,7 +95,13 @@ the node logs directly:
 
 ## The operational view
 
-Once both nodes are synced, the dashboard shows the operational view.
+Once both nodes are synced, the dashboard shows the operational view. P2Pool then syncs its
+own sidechain. While its reported difficulty is at the default minimum (100,000) and its
+sidechain height is below its reported PPLNS window, **Global P2Pool Stats** and
+**Pool Cadence & Luck** show "P2Pool is syncing its sidechain" instead of pool figures.
+Local worker hashrate remains visible. The cards return to their figures on the next poll
+when that bootstrap state clears. P2Pool's data API has no explicit sync flag or progress
+percentage; this detects its initial minimum-difficulty view, not later stalls or peer loss.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./images/launch/simple.png">
@@ -93,7 +115,13 @@ sort, the earnings tab, and the topology mesh toggle — are also
 remembered across reloads. A poll that fails —
 or hangs, as a dropped Tor circuit can — aborts after 25 seconds and shows a red banner naming the
 timestamp of the data still on screen ("Disconnected — showing data from …"); it clears on the next
-successful refresh.
+successful refresh. After polls keep failing for 60 seconds, recovery guidance appears, including
+on the initial loading screen and during chain sync. Reload the page or open the same address in
+a new tab to inspect a browser warning or login prompt. On an appliance, an address change can
+replace the certificate even when the hostname stays the same. Compare a replacement
+certificate's SHA-256 fingerprint with the current one on the appliance console; stop on a
+mismatch and accept only a match. Polling reconnects after trust is restored. The page cannot
+distinguish certificate, network and authentication failures.
 
 ### Top bar
 
@@ -187,9 +215,9 @@ there is no history to show.
 
 ### Node status & failover
 
-If a local node becomes unreachable, a red `monerod DOWN` or `Tari DOWN` badge appears in the top
-bar (after 90 seconds continuously unreachable, clearing after 60 seconds of confirmed
-reachability, so a momentary blip doesn't flap). Sync state is read from monerod's
+If a local or remote node becomes unreachable, a red `monerod DOWN` or `Tari DOWN` badge
+appears in the top bar: Monero after 90 seconds, Tari after 15 minutes continuously
+unreachable. Both clear after 60 seconds of confirmed reachability. Sync state is read from monerod's
 `get_info` RPC and Tari's gRPC, so "down" means the node itself is unreachable, not just that a log
 line changed.
 
@@ -221,20 +249,21 @@ serves them as `blocks`, `disk_growth`, and `xvb_history`, range-filtered the sa
 overlay reads `xvb_history`; only `disk_growth` is persistence and API exposure alone, no
 renderer yet.
 
-While monerod is down, the dashboard rejects workers so they fail over to the backup pools you've
-configured, rather than sitting idle on a stack that can't mine. A sustained outage stops the
-`xmrig-proxy` container (a `Workers rejected` badge shows) and a confirmed recovery restarts it.
-monerod is required to mine, so a monerod outage always rejects. Rejection never triggers for a
-remote monerod — the stack doesn't probe a node it doesn't run, so that node always reads as
-reachable and p2pool manages the connection itself. Readmission waits for monerod to be
-confirmed healthy, not merely no-longer-down, so a dashboard restart mid-outage doesn't wave
-workers back onto a stack that still can't mine.
+A sustained outage of a required node stops `xmrig-proxy` so workers fail over to their
+configured backup pools. A `Workers rejected` badge shows; confirmed recovery restarts the
+proxy. Monero is always required, for local and remote nodes. The dashboard probes the
+configured Monero RPC; stale P2Pool stats do not count as reachability. Monero uses a 90-second outage debounce; Tari uses 15 minutes. Both require 60 seconds
+of confirmed reachability for recovery. Readmission waits for every required node
+to be confirmed healthy, so a dashboard restart mid-outage does not admit workers prematurely.
 
-A Tari outage never rejects workers, regardless of [`dashboard.tari_required`](configuration.md):
-p2pool keeps mining Monero through a Tari-only outage, so kicking workers to their backup pools
-over Tari alone would trade partial revenue for none. The outage still shows up — the Tari panel
-and its alerts track it independently — but the fleet keeps mining. That holds for a remote Tari
-node too, which the dashboard reaches over gRPC at `tari.remote.host`.
+With [`dashboard.tari_required: true`](configuration.md) (the default), a Tari outage also
+rejects workers, for local and remote Tari nodes. This costs Monero revenue until Tari recovers:
+p2pool could keep mining Monero through a Tari-only outage. Set `dashboard.tari_required: false`
+to keep accepting workers and earning Monero during Tari outages. Tari-down alerts fire
+either way. A live Tari readiness reply that reports startup or migration, or a live sync
+reading, is progress rather than an outage: it alerts but never rejects workers. The dashboard
+checks `GetNetworkState` readiness when `GetTipInfo` fails; stale cached progress cannot hide
+an RPC outage. The initial-sync hold still waits for required chains on a new stack.
 
 **Non-blocking Tari.** With `tari_required: false`, a Tari-only (re)sync doesn't take over the
 screen: the operational view stays up, mining continues, and a `Tari syncing` badge shows Tari's
@@ -331,16 +360,21 @@ A live table of every connected rig: worker name, IP, uptime, and per-worker has
 and 10m windows — the same 10m window the chart's averaging toggle and Telegram's totals report —
 for spotting a rig that has dropped off or is underperforming. A
 worker whose direct API is unreachable still counts (with proxy-derived hashrate); a worker whose
-miner has stopped drops out of the total. On a narrow screen the table scrolls sideways within its
+miner has stopped drops out of the total. A failed proxy worker fetch retains the last successful
+worker list for less than five minutes from that fetch; after that, cached workers stop counting
+as online. A nonempty response missing `workers` is a failed fetch. A successful empty list
+stops counting disconnected workers immediately. On a narrow screen the table scrolls sideways within its
 card so columns stay readable. Until the first worker ever connects, the card shows a connect hint
 ("point each rig at `<host-ip>:3333`") in place of the empty table; see
 [Connecting Miners](workers.md).
 
 A [RigForge](https://github.com/p2pool-starter-stack/rigforge) rig that serves its enriched read API
-adds a version badge and a row of chips next to its name — CPU governor and throttling state,
-firmware board, HugePages, power draw and H/s-per-watt, the active tuning target and next autotune,
-and watchdog temperature. Alarming states (throttling, thermal hold, a non-performance governor) read
-red or amber; the rest are muted read-outs. Each chip shows only when the rig reports that field, so
+adds chips next to its name for what needs attention or changes minute to minute: alarming states
+(throttling, thermal hold, a non-performance governor) read red or amber, and power draw in watts and
+watchdog temperature are muted read-outs, with the efficiency and temperature ceiling in each chip's
+tooltip. The static detail (agent version, firmware board, HugePages, governor when healthy, tuning
+target, next autotune) lives in the worker's Inspect dialog, so the table fits a 1280px viewport
+without scrolling sideways. Each chip shows only when the rig reports that field, so
 a partial reading never leaves a blank, and a plain-xmrig rig shows no chips at all. If RigForge is up
 but its miner isn't, the rig stays in the table with a **miner down** chip rather than dropping to
 offline. Point the rig's descriptor at the enriched feed to turn this on — see
@@ -408,6 +442,15 @@ Either way, click **Apply to rig**; RigForge validates the change, applies it, a
 doesn't come back to a live hashrate — rolls it back on its own. The panel shows the outcome
 (applied / rejected / rolled back — or failed with the rig's reason, when its own rollback
 path broke) and appends it to the history.
+
+> NOTE: `DONATION` below the rig's built-in minimum has no effect. Appliance rigs run stock XMRig,
+> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig has the same
+> floor at the level it was compiled with, and lowering it needs a rebuild. Worker Inspect shows the
+> value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
+> report XMRig's live donate level.
+
+> **Remote rig control is beta in 2.0.0.** An appliance rig listens for control at every boot,
+> pinned to the coordinator and gated by its token; dashboard writes need the rig adopted first.
 
 To make a rig editable, give it `host`, `token`, and (unless it's the default `8082`) `control_port`
 in its [`workers.list[]`](configuration.md#configuration-reference) descriptor. A rig with neither
@@ -636,6 +679,12 @@ detail: **My P2Pool Node Stats**, **Global P2Pool Stats**, **XvB Donation Stats*
 **P2Pool Earnings (estimated)** calculator below. The
 expected-vs-actual table stays in both views. The choice is remembered across reloads.
 
+The **XMR Network** card's tick means monerod is at the tip with peers: **Node Health**, **Peers**
+(outgoing / incoming) and **Height Moved** (the age of the last height change) sit in its headline,
+and hovering them says what green means. It goes red with the numbers after 10 minutes with no
+outgoing peers or 30 minutes with no new height. A remote node's peers are not visible, so the card
+says so instead of guessing.
+
 **XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
 sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
 remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or
@@ -700,7 +749,7 @@ It is scoped to P2Pool — **not** an XvB calculator:
 
 | Field | Meaning |
 |---|---|
-| **Your P2Pool Hashrate** | The hashrate the estimate is based on. Defaults to your **P2Pool 1h average** (the same figure the header shows, excluding any XvB-donated portion); type a different value (e.g. `50k`, `1.2 MH/s`) to see a **what-if** projection if you added or removed P2Pool hashpower. |
+| **Your P2Pool Hashrate** | The hashrate the estimate is based on. Defaults to your **P2Pool 1h average** (the same figure the header shows, excluding any XvB-donated portion). Enter a non-negative decimal (e.g. `50000`, `.5`) with an optional `k`, `M`, or `G` multiplier and optional `H/s` (case-insensitive, whitespace allowed between parts), such as `50k` or `1.2 MH/s`, for a **what-if** projection. Commas must group thousands in the integer part (e.g. `1,000`, `1,234.5 kH/s`). Malformed comma grouping, scientific notation, trailing text, and values that overflow H/s are rejected; hashrate-based estimates show `—` for invalid or blank input. |
 | **XMR Day / Month / Year** | Expected Monero earned over each horizon, computed as `hashrate × block reward ÷ network difficulty`, the standard variance-free mining expectation. P2Pool's zero-fee PPLNS payout makes this the right long-run expectation. |
 | **Est. Time to Tari Block** | Expected time for your hashrate to solo-find one Tari block: `network difficulty ÷ hashrate`. This is the honest headline for solo merge-mining — the reward lands here, all at once. `—` while merge-mining is inactive or Tari is still syncing. |
 | **XTM per Block** | The full Tari block reward paid when you find a block — you get all of it at once, not spread over time. Shown whenever the reward is known (the Tari Merge-Mining card shows the same figure): it depends on the Tari chain, not on your hashrate or the merge-mine channel. |
@@ -724,6 +773,8 @@ worker whose feed reports no watts (macOS, a non-RigForge rig, an older kit) can
 estimate: add `"watts": <number>` to its `workers.list[]` descriptor and it counts toward the
 total, marked *estimated*. A worker with neither a measured nor a configured draw is left out and
 the **Fleet Power** figure turns amber to show the total is a lower bound, not a fabricated zero.
+Its kWh and power cost are incomplete too; net can read too high when some workers' draw is
+unknown. With no power inputs the tab is unavailable, rather than showing a measured zero.
 
 The tab always shows fleet watts and H/s-per-watt, plus the same Day / Month / Year table as the
 other tabs — here its columns grow as prices are set. **kWh** (a naive extrapolation of the
@@ -755,6 +806,10 @@ tooltip label it `XvB (est.)` and say exactly what the figure counts, so it is n
 partial. XvB folds in only while its published estimate is fresh (the same staleness rule as the
 *XvB Donation Stats* card) and you clear a donor tier; otherwise it is left out rather than
 guessed, and the label reverts to P2Pool (and Tari, if priced) alone.
+The API's energy disclaimer describes these same conditional contributions. The tooltips name
+missing XvB as having no usable fresh donor-tier estimate, and missing Tari as having no priced
+merge-mining estimate. All earnings remain subject to mining variance; projected kWh is not a
+metered bill.
 
 Prices come from one of two places, and the card always says which:
 
@@ -773,6 +828,9 @@ card), the XvB tab's published-reward table and a fiat mirror of the tier compar
 feed (with age) or config.json — so no fiat figure is ever unattributed.
 
 ### Payout confirmation
+
+> **Beta in 2.0.0.** Payout confirmation is optional and off until you set a view key; a defect seen
+> only with it enabled may ship as a known issue.
 
 Everything above is a **model**. The earnings card also shows what actually landed in your wallet,
 when you give the stack a way to check the chain. Set `monero.view_key` (the private **view** key
@@ -812,56 +870,189 @@ The dashboard polls the wallet on a slow cadence (about every 5 minutes) and rec
 payout to a small local table, so a restart never re-alerts. Coinbase outputs become spendable only
 after 60 blocks; a payout is recorded and announced when it's **confirmed in a block**, not when it
 matures — once, never twice. A pruned node confirms payouts fine (coinbase outputs are never pruned). If the
-wallet is still doing its first scan or is briefly unreachable, the confirmed figure stays put
-rather than erroring.
+wallet is still doing its first scan or is briefly unreachable, the confirmed totals stay put.
+The card checks each enabled payout wallet every dashboard cycle and remembers whether its slower
+payout scan answered. A wallet whose address probe or payout scan stops answering turns the card red
+after the node-down debounce (`NODE_DOWN_AFTER_SEC`, default 90 seconds),
+with the time it became unreachable; an empty answered scan leaves the card normal. The outage
+time stays visible until answers remain healthy through `NODE_RECOVERY_AFTER_SEC` (default 60
+seconds). A wallet whose own address differs from the configured payout address shows both
+addresses and a red warning.
+Each enabled wallet emits one debounced `payout_wallet_down` alert per outage when alert delivery
+is configured. If sending that alert raises an error, the card still turns red and the dashboard
+retries the alert on the next checks while the failure persists, up to three attempts per outage.
+Healthy answers during the recovery debounce do not retry the down alert. This alert has no
+event-specific opt-out. The Tari container's bounded first-scan
+health grace does not delay the card or alert.
 
 > **The view key is a secret. Treat it like a password.** A view key **cannot spend** — it can only
 > scan — but it reveals every incoming payout amount and its timing to anyone who can read it. The
-> stack keeps it in the owner-only `.env`, never logs or echoes it, keeps it off the dashboard
-> Configuration editor, and never puts it on a container command line. It stays on the box: the
-> view-only `monero-wallet-rpc` is published only to the host loopback (`127.0.0.1:18082`), runs
+> stack keeps it in the owner-only `.env`, never logs or echoes it, sends only a masked sentinel to
+> the Configuration editor and browser, and never puts it on a container command line. Replacing it
+> from Configuration requires typed `APPLY`. The wallet receives the key and the dashboard receives
+> its wallet RPC credential at runtime, so masking protects the editor/browser, not a compromised
+> backend process. It stays on the box: the view-only `monero-wallet-rpc` is published only to the
+> host loopback (`127.0.0.1:18082`), runs
 > non-root with a read-only root filesystem, and authenticates the dashboard with a generated
 > password. **Phase 1 is local node only** — scanning through a third-party daemon would change the
-> trust story, so a view key set with `monero.mode: remote` is refused. To rotate it, get a fresh
-> view key from your wallet and replace `monero.view_key`. Leave `monero.view_key` empty (the
+> trust story, so a view key set with `monero.mode: remote` is refused. To change payout wallets, replace
+> the address and its matching `monero.view_key`; apply rejects a mismatched pair. Leave `monero.view_key` empty (the
 > default) and none of this runs — the card shows only the estimate.
 
 The **Tari** side of the merge-mine works the same way (#462). Tari merge-mining here is solo — the
 whole block reward lands at once when your hashrate finds a Tari block, so a payout is a rare, large
-event worth confirming. Set `tari.view_key` and `tari.spend_public_key` (both exported from your
-Tari wallet) and the stack runs a **view-only** `minotari_console_wallet` against your local Tari
+event worth confirming. Set `tari.view_key` for the dual-key `tari.wallet_address` (Tari Universe’s default) and the stack runs a **view-only** `minotari_console_wallet` against your local Tari
 node. The Tari tab of the earnings card then shows **Confirmed** XTM totals (24 hours, 7 days,
 all-time) beside the time-to-block estimate, and the same `payout_confirmed` alert fires once per
 Tari payout, carrying the chain. The Tari view key is a secret and is handled exactly like the
-Monero one — owner-only `.env`, never logged or on a container command line, off the Configuration
-editor — with one extra safeguard: because Tari has no key-import file, the three wallet secrets are
-delivered to the container through a tmpfs secret mount, so they never appear in `docker inspect`.
+Monero one — owner-only `.env`, never logged or on a container command line, and visible to the
+Configuration editor/browser only as a masked sentinel; replacement requires typed `APPLY`. The
+running wallet necessarily receives the key. As an extra safeguard, because Tari has no key-import
+file, the three wallet secrets are delivered in an owner-only host file bind-mounted read-only into
+the wallet container, so their values never appear in `docker inspect`. The pinned wallet does not
+shut down on SIGTERM or SIGINT ([upstream issue](https://github.com/tari-project/tari/issues/8063)),
+so a container stop kills it after 10 seconds. The appliance test requires the pinned wallet to
+reopen the same SQLite database after this stop, retain its nonempty public identity (compared by
+fingerprint without logging the address) and reported state,
+and provide readable logs with no database-integrity errors before the forced stop is accepted.
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
-the Unix epoch), not a block height. Leave `tari.view_key` empty and none of the Tari half runs.
+2022-01-01, as Tari Universe's `wallet_birthday`), not a block height. The wallet scans only through
+the local node's wallet HTTP service on the internal network, never Tari's public fallback node. Leave `tari.view_key` empty and none of the Tari half runs.
 
-#### Exporting your keys
+Each address/view-key pair keeps a separate view-only wallet. Changing the pair opens its wallet
+and keeps the previous one; reverting reopens the saved scan progress. Apply verifies that each
+view key belongs to its address. A fresh Monero wallet starts 100 blocks behind the local tip
+unless `monero.payout_scan_height` is set. Tari keeps its configured birthday. On upgrade, the
+legacy wallet is adopted without a rescan only after its own address matches the configured
+address. The pinned wallet binary reads a private copy of the legacy keys or database; Monero's
+optional `.address.txt` is not an ownership check. A mismatch or unreadable identity leaves the
+legacy files untouched and unclaimed, and opens a fresh wallet for the configured pair.
 
-**Monero.** Open the wallet that owns your payout address in `monero-wallet-cli` and run:
+#### Getting your view keys
 
-```text
-viewkey
-```
+Payout confirmation needs one secret from each wallet, its **private view key**, plus the wallet's
+**restore point** so the first scan starts where the wallet was born instead of at genesis. The
+steps below cover the two standard desktop wallets, the Monero GUI wallet and Tari Universe; the
+command-line wallets follow. A view key can only *see* incoming payments, never spend them.
+**Never give the stack your spend key, seed words, mnemonic, PIN or wallet password.**
 
-It prints the secret and public view keys; copy the **secret** one into `monero.view_key`. In the
-Monero GUI the same key is under **Settings → Seed & keys** as *Secret view key*. Do not copy the
-spend key or the mnemonic seed — the stack only ever needs the view key.
+| Setting | What it is | Format |
+|---|---|---|
+| `monero.view_key` | Monero **secret** view key | 64 lowercase hex characters |
+| `monero.payout_scan_height` | Monero wallet restore height | block height (integer), or `auto` |
+| `tari.view_key` | Tari **private** view key | 64 lowercase hex characters |
+| `tari.payout_scan_birthday` | Tari wallet birthday | days since 2022-01-01 (integer), or `auto` |
 
-**Tari.** Export both keys in one command from the wallet that owns your payout address:
+Apply checks each view key against its address (`monero.wallet_address`, `tari.wallet_address`)
+and refuses a key from another wallet, so a wrong key fails at apply instead of scanning forever.
+
+##### Monero GUI wallet
+
+Menu names are from the English Monero GUI v0.18.x; translated or older versions may differ. The
+official [View Only Wallets guide](https://www.getmonero.org/resources/user-guides/view_only.html)
+uses the same Settings › Wallet path.
+
+1. Open the wallet that owns your payout address (`monero.wallet_address`, the primary address
+   starting with `4`).
+2. Click **Settings** in the left panel (Ctrl+E, or ⌃E on macOS), then the **Wallet** tab.
+3. Click **Show seed & keys** and enter your wallet password.
+4. Shield your screen: this page also shows your **Mnemonic seed** and **Secret spend key** in
+   plain text.
+5. Under **Primary address & Keys**, check that **Primary address** is your payout address, then
+   copy **Secret view key** into `monero.view_key`. Not *Public view key*: it is also 64 hex
+   characters, but it is not the private key, so apply refuses it. Not *Secret spend key*, and
+   not the *Mnemonic seed*.
+6. Under **Wallet restore height**, copy **Block #** into `monero.payout_scan_height` so past
+   payouts are found. If it reads `0`, use a block height from before your first payout, or leave
+   `auto`.
+7. Close the page. Do **not** use the **Export wallet** QR labelled *Spendable Wallet*: it contains
+   your spend key.
+
+*Hardware wallets:* the GUI shows a Secret view key field; whether that value works for scanning
+has not been checked on a device, so test with a small payout first.
+
+*Monero address generated by Tari Universe?* Universe shows its **Monero Seed Words** under
+Settings › **Wallet** but has no screen for the Monero view key. Restore those 25 words in the
+Monero GUI (**Restore wallet from keys or mnemonic seed**) on a machine you trust, set a restore
+height near when you first ran Universe, then follow the steps above. Never type the words
+anywhere else, including Pithead.
+
+##### Tari Universe
+
+Tari Universe has no screen that shows the view key (checked on v1.6.15). It keeps the key in a
+plain-text settings file:
+
+| System | File |
+|---|---|
+| macOS | `~/Library/Application Support/com.tari.universe/app_configs/mainnet/config_wallet.json` (seen on an install) |
+| Windows | `%APPDATA%\com.tari.universe\app_configs\mainnet\config_wallet.json` (from the source; not yet checked on an install) |
+| Linux | `~/.config/com.tari.universe/app_configs/mainnet/config_wallet.json`, or under `$XDG_CONFIG_HOME` (from the source; not yet checked on an install) |
+
+Beta builds use `com.tari.universe.beta`, and sandboxed packages may use another folder; if the
+file is not there, search for `config_wallet.json` under your system's app-config folder.
+
+1. Open `config_wallet.json` read-only in a text editor. Do not change it, and do not paste the
+   whole file anywhere.
+2. In the `"tari_wallet_details"` section, check that `"tari_address"` (base58) is your
+   `tari.wallet_address`. Settings › **Wallet** › **Tari Wallet Address** in Universe shows the
+   same wallet. If `"selected_external_tari_address"` is set, Universe mines to an outside address
+   and the keys in this file belong to Universe's own wallet, not to that address.
+3. Copy `"view_private_key_hex"` into `tari.view_key`.
+4. Copy `"wallet_birthday"` (a plain number) into `tari.payout_scan_birthday`. If apply rejects it,
+   or you are unsure, use `auto`.
+
+The file's `"spend_public_key_hex"` is a **public** key. You do not need it: apply derives the
+public spend key from your address, and `tari.spend_public_key` is only checked against the
+address if you set it. There is no secret spend key in this file, and the stack never needs one.
+
+*Only have seed words?* Universe's Settings › **Wallet** tab can restore a 24-word Tari seed, which
+replaces the wallet it holds. Check that the resulting address matches `tari.wallet_address`
+before using any key.
+
+**Your Tari address must be dual-key.** Only a dual-key address carries a public view key to check
+the private view key against, so apply refuses a single-key `tari.wallet_address` while
+`tari.view_key` is set. Every wallet Tari Universe creates is dual-key. Mining to a single-key
+address still works; only confirmation needs the dual key. By length:
+
+- **dual-key:** about 90 characters in base58 (more with a payment ID), or 67 or more emoji;
+- **single-key:** about 46 characters in base58, or exactly 35 emoji.
+
+The first characters do not tell them apart.
+
+##### Command-line wallets
+
+**Monero.** Open the wallet in `monero-wallet-cli` and run `viewkey`; copy the **secret** view key.
+
+**Tari.** From the wallet that owns your payout address:
 
 ```bash
 minotari_console_wallet --base-path <your-wallet-dir> export-view-key-and-spend-key
 ```
 
-Enter the wallet password when prompted. It prints the private **view key** (goes in
-`tari.view_key`) and the public **spend key** (goes in `tari.spend_public_key`).
+It prints the private **view key** (for `tari.view_key`) and the public spend key, which apply
+derives on its own.
 
-Set the keys in `config.json` and run `./pithead apply`. Key reference: the `monero.view_key` and
-`tari.*` rows in [Configuration](configuration.md#configuration-reference).
+##### Where to put them
+
+Add the values under `monero` and `tari` in `config.json` and run `./pithead apply`, or enter them
+in the dashboard's **Configuration** view behind a typed `APPLY`. Placeholders:
+
+```json
+"monero": { "view_key": "<64 hex>", "payout_scan_height": <block height> },
+"tari":   { "view_key": "<64 hex>", "payout_scan_birthday": <days since 2022-01-01> }
+```
+
+> **Keep view keys private.** A view key cannot move funds, but anyone holding it can see every
+> payment you receive, with amounts and times. Paste it only into `config.json` or the
+> Configuration view, never into chats, screenshots or issues. Tari Universe keeps it unencrypted
+> in `config_wallet.json`, so copy the one field, not the file.
+
+Sources for the menus and paths: [monero-gui v0.18.5.2](https://github.com/monero-project/monero-gui/tree/v0.18.5.2)
+(`pages/settings/SettingsWallet.qml`, `pages/Keys.qml`), the
+[getmonero.org view-only guide](https://www.getmonero.org/resources/user-guides/view_only.html), and
+[Tari Universe v1.6.15](https://github.com/tari-project/universe/tree/v1.6.15)
+(`src-tauri/src/internal_wallet.rs`, `public/locales/en/settings.json`). Key reference: the
+`monero.view_key` and `tari.*` rows in [Configuration](configuration.md#configuration-reference).
 
 ### XvB Tier (raffle)
 
@@ -952,13 +1143,20 @@ wallet, so it refuses to run without a login), and run `./pithead apply`. A **Co
 button sits next to the Simple/Advanced toggle whether or not the channel is on; with it off, the
 view explains how to turn it on and nothing else.
 
+The panel does not show the `config_version` stamp. Only a newer stamp shows a card warning
+that saving is blocked while the config contains settings this version does not know:
+update the OS first. Form, JSON and API edits to the stamp are ignored, and previews and recent
+changes omit it. See [configuration versioning](configuration.md#configuration-reference).
+
 One editing surface: the form on top and, beneath it, a collapsed **Advanced** pane holding
 the full proposed configuration — both live views of a single candidate. Editing
 a field rewrites the pane; editing the pane refills the fields. The pane shows the whole
 candidate, developer-only keys aside (named below). Save sends the complete explicit
 configuration because the host stages and commits it as a replacement, but removes every
-`config.reference.json` default that was absent from `config.json` and remains untouched. Existing
-values and masked secrets survive, while a placeholder default can't be committed as if the
+`config.reference.json` default that was absent from `config.json` and remains untouched, default
+arrays such as `workers.list` and `notifications.webhooks` included, so a one-field save adds no
+empty containers. Existing values and masked secrets survive, while a placeholder default can't be
+committed as if the
 operator had typed it
 ([#2365](https://github.com/p2pool-starter-stack/pithead/issues/2365)). (This is the setup
 wizard's pattern — the first page and the config tab now behave identically.) The pieces:
@@ -983,18 +1181,16 @@ wizard's pattern — the first page and the config tab now behave identically.) 
   have an intentional named group, so a new key cannot silently vanish or drift into an **Other**
   bucket. `workers.list[]` (the per-rig descriptors) isn't a form field
   here — a variable-length list has no single form control for it; edit the complete list in the
-  Advanced JSON pane. Changes to existing rig hosts and tokens require approval.
+  Advanced JSON pane. Only an appended rig commits, behind the typed `APPLY` and the host's
+  worker-target checks; repointing, reordering or removing an existing descriptor is refused.
   [Worker Inspect](#worker-inspect) is a different thing:
   it retunes the *rig's own* settings (pools, donation, autotune, watchdog, temperature cap)
   through that rig's control API, never the stack's descriptor list.
 
-  Ordinary fields are editable directly. A smaller set of operationally-disruptive
-  fields — the four service data directories, the stratum port, the clearnet initial-sync toggles,
-  enabling Monero pruning, the Monero outbound-peer count, and the remote Monero and Tari node
-  endpoints — render **editable but confirm-gated**
-  ([#719](https://github.com/p2pool-starter-stack/pithead/issues/719)): editable, tooltipped
-  "you'll type `APPLY` to confirm at Save". Sensitive fields require the signed-in dashboard user
-  and the confirmation envelope described below. All three sets come from the host policy and are surfaced on `GET /api/config`
+  Ordinary fields are editable directly. Other editable settings below the physical-presence
+  boundary renders **editable but confirm-gated**, tooltipped "you'll type `APPLY` to confirm at
+  Save". This includes disruptive settings and values that redirect funds, traffic, credentials or
+  control. All three policy sets are surfaced on `GET /api/config`
   as `_editable_keys`, `_confirm_keys`, and `_approval_keys`, so the form cannot silently choose a
   weaker policy than the commit path.
 - **The Advanced pane** is the whole editable candidate as one text block, for operators who'd rather
@@ -1005,21 +1201,42 @@ wizard's pattern — the first page and the config tab now behave identically.) 
   the form grouping does not constrain it — the machine still validates it under the same free,
   confirm, approval, and never-approve classes.
 
+Switching between Configuration, Simple, Advanced and Backup keeps your draft in memory,
+including invalid JSON. **Unsaved changes** beside the Configuration button marks unfinished
+edits. Return to Configuration to finish them; the marker clears after a successful apply or
+**Discard edits**. When the stack enters its synchronization screen the editor is hidden, not
+unmounted, so the draft and the marker are still there when the dashboard returns. The page only
+shows the loading screen before its first state response, when no editor exists yet. Drafts are
+not stored across a browser reload or close. The page cannot observe an HTTP authentication change,
+so a re-authenticated tab keeps its draft until it is reloaded
+([#3323](https://github.com/p2pool-starter-stack/pithead/issues/3323) tracks a reset).
+
 The flow mirrors the CLI's `apply`:
 
 1. The form/textarea is prefilled from a pre-masked copy of `config.json` the host renders into the
    control spool ([#440](https://github.com/p2pool-starter-stack/pithead/issues/440)). Secrets (the
    dashboard password, the Telegram bot token, node RPC credentials, the stratum password) show as
-   "set — leave blank to keep"; their values never enter the dashboard container, let alone the
-   browser — leaving one untouched sends a sentinel back (the Advanced pane shows it as a
-   `__secret__` marker and carries it verbatim), blanking a previously-edited secret field
-   restores the sentinel rather than setting an empty value, and the host swaps in the live
-   value when it stages the change.
+   "set — leave blank to keep"; their values never enter the editor or browser through this mount.
+   Leaving one untouched sends a sentinel back (the Advanced pane shows it as a `__secret__` marker
+   and carries it verbatim), blanking a previously-edited secret field restores the sentinel rather
+   than setting an empty value, and the host swaps in the live value when it stages the change. That
+   reuse is bound to the existing destination: repointing the Monero RPC endpoint or an ntfy URL
+   requires entering its associated credential for the new destination, and a worker descriptor
+   cannot be repointed from the dashboard at all (only a new rig can be adopted). The running
+   dashboard still receives the runtime credentials it needs for node probes, worker reads, and
+   notifications, so a full backend compromise can read those environment values; masking is the
+   editor/browser and raw-config boundary, not process isolation.
 2. **Save & preview changes** stages the edited config on the host, which dry-runs it and returns
    the same change preview `./pithead apply` prints — one row per changed setting, disruptive rows
    (⚠) styled as warnings. A config that fails validation is rejected here with pithead's own
-   error message; nothing is applied. Sensitive changes also show the complete old and new
-   non-secret payout or endpoint value; secret values remain masked.
+   error message; nothing is applied. The host validates and stages from one private copy of the
+   claimed request, so a writer holding the original spool file open cannot change it mid-preview.
+   Sensitive changes also show complete old and new non-secret
+   values; secret values remain masked.
+   A preview belongs to the config it was made against: if another tab or `./pithead apply`
+   changes the config before you confirm, the commit is rejected with "preview again" and nothing
+   is written, so a stale preview never overwrites the newer change
+   ([#3352](https://github.com/p2pool-starter-stack/pithead/issues/3352)).
 3. Confirm. If the preview flags any change disruptive (⚠), you must type `APPLY` first. A payout
    change also requires the final eight characters of the new address. The
    commit runs `pithead apply -y` on the host and recreates only the containers whose config
@@ -1031,34 +1248,26 @@ The flow mirrors the CLI's `apply`:
    ([#2366](https://github.com/p2pool-starter-stack/pithead/issues/2366)). Your typed confirmation rides to the host gate, which requires it before a
    confirm-gated change proceeds — a change confirmed this way is recorded in the audit log as a
    `commit-confirmed` action, distinct from an ordinary commit. A sensitive commit additionally
-   carries a confirmation envelope, which the host validates: it may contain payout suffixes and
-   **nothing else**, so the dashboard cannot smuggle in an actor, a preview id or a self-asserted
-   approver, and the host re-checks each suffix against the staged config rather than the browser's
-   labels. The commit is recorded against the signed-in dashboard user. Until
+   carries a confirmation envelope, which may contain payout suffixes and nothing else; the host
+   re-checks each suffix against the staged config rather than the browser's labels. This shape is
+   typo protection, not identity: the dashboard writes the request actor and the envelope itself.
+   The audit records the signed-in actor reported by the dashboard. Until
    [#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076) this step also required a
    tap in Telegram and recorded a `commit-approved` action with an approver; the bot is read-only
    now, that leg is gone, and nothing writes an approver.
+   When the apply fails, **Back to the form** returns to the draft you submitted, unsaved marker
+   included, so you can correct it and retry. **Discard draft and reload from host** replaces the
+   draft with the host's configuration. After a successful apply, **Back to the form** reloads it.
+   The error card shown when the commit request itself fails (an HTTP error, an unreadable response,
+   or a poll timeout; a timeout does not mean the apply failed) offers the same two actions. Only a
+   failed first load, which has no draft, offers a plain **Reload**.
 
-Every reference setting belongs to an explicit policy class. The ordinary allowlist covers routine
-operations. A second, confirm-gated allowlist
-([#719](https://github.com/p2pool-starter-stack/pithead/issues/719)) adds the
-operationally-disruptive-but-recoverable settings — a data-directory move (re-sync), a stratum-port
-change (rigs repoint), a clearnet initial-sync enable (host IP exposed during IBD, auto-reverts),
-enabling Monero pruning, the Monero outbound-peer count (bounded, but the biggest
-steady-state knob on the shared Tor daemon's load), the remote Monero and Tari **node
-endpoints** ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)), and
-**`tari.mode`** — whether this machine merge-mines at all, and whether the bundled Tari node runs
-([#1929](https://github.com/p2pool-starter-stack/pithead/issues/1929)) — which commit
-only behind typed `APPLY`. Turning Tari off stops the node and the merge-mining and removes the
-container, but leaves the chain on disk, so turning it back on resumes rather than re-syncing.
-Turning it on for a machine that has no `tari.wallet_address` also changes a payout destination,
-which is a sensitive change; a machine set up with Tari on can switch freely.
-`monero.mode` is deliberately not in this class: stopping the chain this stack exists to mine is
-not a recoverable operational tweak. Type-to-confirm is intent friction, not authentication. The
-sensitive class covers funds, traffic, control, authentication, and sensitive behavior; it is
-recorded host-side against the preview id, staged digest, and signed-in dashboard actor, and adds
-the typed suffix check for payout destinations. The machine re-derives the changed paths and
-expected suffixes rather than trusting browser labels.
+Every reference setting belongs to a policy class. The ordinary allowlist covers routine
+operations; all remaining values confirm unless they are in the physical-presence set. Typed
+confirmation is intent friction, not authentication. The machine re-derives changed paths and
+expected payout suffixes rather than trusting browser labels. Node endpoints also receive a
+host-side reachability probe, worker targets receive SSRF checks, and dashboard-confirmed data
+directories must stay under data roots the stack already uses.
 Both edit modes use the same policy. Secrets are never included in preview or audit values.
 
 The Telegram approval that once sat on this class was removed in
@@ -1068,10 +1277,12 @@ signed-in operator, the typed `APPLY` for a disruptive change, and the payout su
 friction and typo protection, not a second identity. A sensitive commit no longer depends on
 Telegram being configured, so it works the same on a stack that never set the bot up.
 
-The existing physical-presence boundary is unchanged: the dashboard password and the two tamper
-alarms cannot be changed from the dashboard at all. The machine refuses them ahead of every other
-check and directs the operator to use a configuration stick. This prevents the configuration
-page from weakening the evidence its own later changes would be judged by.
+Since #2367 no reference field is refused from this page. The dashboard password and the two
+tamper alarms left the physical-presence boundary; only retired SSH settings remain behind it.
+They confirm like a payout change, with typed `APPLY` and the confirmation envelope. The host
+preview names the cost before you confirm: a new password logs other sessions out and is also the
+appliance's console `root` login; switching an alarm off stops it reporting the change it
+watches.
 
 A node-endpoint or RPC-login change has a second gate behind the typed `APPLY`: before a remote-node
 commit is accepted, the host dials the endpoint with the staged login and refuses a pair it cannot
@@ -1090,8 +1301,9 @@ credentials can also be changed through typed confirmation in local-node mode; t
 is preserved and the pair is applied to monerod, P2Pool, and the dashboard together. Secret values
 stay masked in the browser, preview, result, and audit trail.
 
-On an appliance a refusal never tells you to open a shell you do not have: where a DIY host is told
-to edit `config.json` and run `./pithead apply`, the appliance is pointed at **Set up again**.
+On an appliance a genuine refusal never tells you to open a shell you do not have: a
+physical-presence change points to the configuration stick, and a destination outside the allowed
+data roots points to **Set up again**.
 
 A dashboard-confirmed data-directory move
 ([#728](https://github.com/p2pool-starter-stack/pithead/issues/728)) is held to a tighter rule than
@@ -1099,11 +1311,14 @@ the same move from the host CLI. The host guard is a blocklist — it refuses th
 (`/`, `$HOME`, bare mounts) but lets a shell operator relocate data anywhere else, which is
 proportionate to shell trust. A confirmed move from the dashboard is instead held to an
 **allowlist**: the new location must sit under the stack's own data root (the install dir's
-`data/`) or a parent the stack already keeps its data in (a co-located data root, #455). A move to
-any other absolute path — another user's home, another service's volume — is refused even with the
-typed `APPLY` and stays host-CLI only. This is the one place a confirmed data-dir move differs from
-`./pithead apply`: the destination path is narrowed, because the move is now reachable at dashboard
-trust rather than shell trust.
+`data/`) or the dedicated parent shared by Monero, Tari, P2Pool, and Tor (#455). A move to any other
+absolute path — another user's home, another service's volume, or a broad parent such as
+`/var/lib` — is refused even with the typed `APPLY` and stays host-CLI only. The same applies below
+the dashboard database, clearnet-state mount, or internal control spool: the dashboard can write
+the first two and the request leg of the third, so none may become an ancestor of a root-owned data
+move. This is the one place a confirmed data-dir move differs from `./pithead apply`: the
+destination path is narrowed, because the move is now reachable at dashboard trust rather than
+shell trust.
 
 Once approved, `dashboard.data_dir` is also the one `data_dir` that `apply` carries: it copies the
 live SQLite database to the new path, verifies the copy, then lets the recreate mount it — the
@@ -1112,7 +1327,9 @@ would silently re-seed it, swallowing a payout change bundled with the move. A n
 a copy that fails or doesn't verify, refuses the whole apply instead of guessing which copy is live
 ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)); the other four `data_dir`s
 still only re-point the mount (see [Configuration › Data directories](configuration.md#data-directories)).
-If the recreate fails after the new path is published, `apply` restarts the existing dashboard
+If apply aborts before publishing the new path, it removes its unpublished copy and restarts the
+existing dashboard so the move can be retried. If it aborts after publication, it keeps the copy
+and retry marker. `apply` restarts the existing dashboard
 container, which is still mounted on the old path: rows written until the retried `apply` recreates
 it land in the old database, not the carried copy.
 
@@ -1145,12 +1362,22 @@ Below the form, the Configuration view shows two read-only security panels
 ([#349](https://github.com/p2pool-starter-stack/pithead/issues/349)):
 
 - **Access log.** Recent dashboard requests from Caddy's access log — time, HTTP status, method,
-  path, and the logged-in user — plus a count of failed logins (401s) in the last 24 hours. Over
+  path, and the logged-in user — plus a count of failed logins (401s) timestamped within the
+  last 24 hours among bounded retained records. Reads cover the active file and the two newest
+  Caddy generations, up to 4 MiB per file. The reader accepts timestamped `access-<timestamp>-size.log`
+  backups from the pinned Caddy, legacy `access-<timestamp>.log` backups, and their gzip forms.
+  Plain and compressed copies share one timestamp slot. Missing generations, retention, or byte limits can
+  omit failures; a zero count does not prove there were no failed logins. Over
   Tor there is no source IP to trace or block, so the signal is the *rate* of failures: five or
   more in a day shows a warning to rotate the dashboard password (set a new
   `dashboard.auth.password`, run `./pithead apply`) and, if the onion address may have leaked,
   `./pithead rotate-dashboard-onion`. The log is always on; entries appear once Caddy has handled
-  a request on this version.
+  a request on this version. The exact credential-free appliance boot probe stays visible in
+  the table but is excluded from the failure count and warning. Caddy marks it only on a
+  loopback connection to `/.pithead-boot-health` carrying the private boot capability.
+  The capability is derived from the owner-only salted login hash and removed from logs
+  and upstream requests. Ordinary requests, wrong passwords, and network clients requesting
+  that path, including through a local reverse proxy, still count.
 - **Recent config changes.** The control channel's host-side audit trail: one row per handled
   request — timestamp, dashboard user, operation, outcome, and the *names* of the settings
   that changed. Initial wizard provisioning is named as provisioning instead of a host edit, and a
@@ -1165,7 +1392,7 @@ that range), the search narrows as you type, and filtering happens on the server
 deeper than the on-screen tail is still found — the access log's read stays size-bounded either
 way. Below the row, a pager reports how many entries matched and walks them a page at a time —
 pick 5 to 100 rows per page, step with Prev/Next. A filter with no matches says so; the
-failed-login counter always describes the whole log, never the filtered slice.
+failed-login counter always describes the bounded retained records, never the filtered slice.
 
 Both panels read host-written files through read-only mounts, and the dashboard treats every
 field in them as hostile input — a request path is attacker-chosen bytes — so each string is
@@ -1240,11 +1467,9 @@ appliance there is no shell, so where the DIY stack says to run `./pithead apply
 the log view, or the setup page while the machine is still unprovisioned.
 
 Where the appliance offers nothing that would fix it, the report says so and stops, rather than
-naming a command you cannot run or a page that is no longer there. Three cases are worth knowing,
+naming a command you cannot run or a page that is no longer there. Two cases are worth knowing,
 because each is a real dead end rather than an oversight:
 
-- **A payout address is not editable from the dashboard at all**, so the report tells you that
-  correcting it needs console access.
 - **The setup page closes permanently once the machine is provisioned.** Setup that did not finish
   can only be reported after that point, so the report does not send you back to a page that is
   gone.
@@ -1265,7 +1490,7 @@ other three hidden services — the Monero node's, the Tari node's and P2Pool's 
 than by address, so there is nothing of theirs on this page to hide.
 
 The two surfaces disagree about your dashboard's **own** onion on purpose: the header shows it in
-full, with a **Copy** button, because a machine you cannot reach is a machine you cannot fix — and,
+full, with a **Copy address** button, because a machine you cannot reach is a machine you cannot fix — and,
 when client authorization is on and the config editor with it, a **Show client key** button beside
 it, because on a machine with no shell an address nothing can open is the same as no address at
 all. The key is not in this container: the button asks the host, the host answers once through the
@@ -1411,7 +1636,9 @@ On a [Pithead OS appliance](appliance.md) the tarball upgrade above is refused �
 updates through signed OS images, and the header shows an **OS updates** control instead. It
 drives the appliance's A/B update from the browser, one explicit step at a time, through the same
 control channel as everything else on this page: the dashboard container only asks, and the host
-re-derives and re-verifies every step itself.
+re-derives and re-verifies every step itself. **Close** dismisses the dialog in one click, including
+after an update-check error, and returns focus to **OS updates**. **Retry** remains available
+when there is a target to download.
 
 1. **Check.** The host asks the release API (over Tor) for the latest release and its OS bundle.
    The dashboard's passive new-release badge covers the same ground hourly, from inside the
@@ -1433,10 +1660,13 @@ re-derives and re-verifies every step itself.
    needed and the size free, and keeps the file: free space, then verify and install again. The
    install step runs the same check again.
 4. **Install.** The verified bundle is written to the idle system slot, with progress shown.
-   Mining keeps running; nothing about the running system changes yet.
-5. **Reboot.** Nothing reboots on its own. The reboot is its own confirmed action (type
-   `REBOOT`), and it is the only step that pauses mining — typically under five minutes. The
-   page waits and reconnects when the dashboard returns.
+   Mining keeps running, and the downloaded bundle is deleted. The idle slot is now armed:
+   **any reboot boots the update**, including a power cut, watchdog restart or **Set up again**.
+5. **Reboot.** Install does not order a reboot. The dashboard action is separately confirmed
+   (type `REBOOT`) and expires 24 hours after install; expiry does not disarm the slot.
+   After expiry, check, download, verify and install again to re-arm that dashboard action,
+   or reboot at the console. Reboot pauses mining — typically under five minutes. The page
+   waits and reconnects when the dashboard returns.
 
 After the reboot the machine health-checks itself before committing the new version — the same
 gate every appliance boot runs. A banner reports the outcome: updated to the new version, or

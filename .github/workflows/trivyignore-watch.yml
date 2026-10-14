@@ -6,8 +6,9 @@ name: Trivyignore mute watch
 #
 # Why this exists at all: the weekly CVE sweep (#833) scans WITH `.config/trivyignore` applied, so a
 # muted finding is invisible to it by construction — a mute that outlives its finding rots
-# silently. scripts/watch/trivyignore-watch.sh rebuilds every covered image exactly the way the gate
-# does, scans them with NO ignore file, and names an ID obsolete only when it is absent from ALL
+# silently. scripts/watch/trivyignore-watch.sh fetches the VERSION tag and stages generated
+# rootfs inputs as os-rootfs.yml does, then rebuilds every covered image, scans them with NO ignore file,
+# and names an ID obsolete only when it is absent from ALL
 # of them (a per-image check confidently deletes live mutes — the trap in the script header).
 #
 # This file lives on the DEFAULT branch on purpose: a `schedule:` is read from the default branch

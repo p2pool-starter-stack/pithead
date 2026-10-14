@@ -168,6 +168,22 @@ phase_provision_egress_backstop() { # <phase-rc>
     else
         ok "mining_net is IPv4-only (no global v6 in the container) — v6 clearnet dial not possible, backstop not exercised"
     fi
+    # The dashboard's view of the same backstop (#2599): pithead-egress.timer (rendered into /run each
+    # boot, OnBootSec=2min) must be active, and its read-only check must have written rc 0.
+    if [ "$(_ssh 'systemctl is-active pithead-egress.timer' 2>/dev/null)" = active ]; then
+        ok "pithead-egress.timer is active on the appliance — the dashboard gets the live firewall verdict (#2599)"
+    else
+        bad "pithead-egress.timer is not active on the appliance — the dashboard shows the egress firewall as unverified (#2599)"
+    fi
+    local status deadline=$(($(date +%s) + ${EGRESS_STATUS_TIMEOUT:-240}))
+    until status=$(_ssh "jq -c '[.rc, .verdict]' /data/pithead/data/control/results/egress-status.json" 2>/dev/null) &&
+        [ "$status" = '[0,"enforced"]' ] || [ "$(date +%s)" -ge "$deadline" ]; do sleep 10; done
+    if [ "$status" = '[0,"enforced"]' ]; then
+        ok "the host check wrote rc 0 (enforced) for the dashboard (#2599)"
+    else
+        bad "the host check did not write an enforced verdict for the dashboard (got: ${status:-no file}) (#2599)"
+        _egress_capture_diagnostics
+    fi
     return 0
 }
 
@@ -175,12 +191,12 @@ phase_provision_egress_backstop() { # <phase-rc>
 # caller. Prints one line per guest command (`call ...`) and per reported row (`ok ...`/`bad ...`).
 # <guest>: unreachable | no-curl (curl exits 127) | no-cat (cat exits 127) | v4-only | global-v6 |
 # dial-lost (both direct dials die in podman, 125) | dial-refused (both are refused, curl 7) |
-# fail-open (both connect) | tor-down (the SOCKS dial fails, curl 7). All but v4-only hold a global
-# v6 address. Otherwise the guest is well behaved: the direct dials time out (28) and the Tor SOCKS
-# dial succeeds.
+# fail-open (both connect) | tor-down (SOCKS dial fails, curl 7) | no-status (no #2599 timer or file).
+# All but v4-only hold a global v6 address. Otherwise well behaved: direct dials time out (28), the
+# Tor SOCKS dial succeeds, the timer is active and the status file reads enforced.
 _egress_drive() { # <phase-rc> <guest>
     (
-        guest=$2
+        guest=$2 EGRESS_STATUS_TIMEOUT=0
         ok() { printf 'ok %s\n' "$1"; }
         bad() { printf 'bad %s\n' "$1"; }
         info() { :; }
@@ -191,6 +207,8 @@ _egress_drive() { # <phase-rc> <guest>
             case "$1" in
             true) return 0 ;;
             *"podman ps"*) printf 'monerod\n' ;;
+            *"is-active pithead-egress.timer"*) [ "$guest" = no-status ] || printf 'active\n' ;;
+            *egress-status.json*) [ "$guest" = no-status ] || printf '[0,"enforced"]\n' ;;
             *--socks5-hostname*) if [ "$guest" = tor-down ]; then return 7; else return 0; fi ;;
             *"/usr/bin/curl --version"*) [ "$guest" != no-curl ] || return 127 ;;
             *"/usr/bin/cat /proc/net/if_inet6"*)
@@ -273,6 +291,12 @@ _egress_self_test() {
         printf 'a container with only lo and link-local v6 was not read as IPv4-only: %s\n' "$out" >&2
         f=$((f + 1))
     }
+    out=$(_egress_drive 0 no-status) # #2599: red when no timer or status file exists
+    grep -q '^bad pithead-egress.timer is not active' <<<"$out" &&
+        grep -q '^bad the host check did not write an enforced verdict' <<<"$out" || {
+        printf 'a guest with no egress-status timer or file was not reported: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
     out=$(_egress_drive 0 global-v6)
     grep -q "^call podman exec monerod /usr/bin/curl .*2606:4700" <<<"$out" &&
         grep -q '^ok direct IPv6 clearnet dial from a mining container is dropped' <<<"$out" || {
@@ -335,12 +359,12 @@ _egress_self_test() {
 
     # The property #2059 is actually about: the backstop runs even when the provision body ABORTS,
     # and the body's rc still propagates (so an abort keeps stopping the reboot/migration legs).
-    # Driven through the real caller with both halves stubbed — a source grep would still pass on a
-    # wrapper that called the leg and then swallowed the rc, or that was never called at all.
+    # Drive the real caller with stubbed halves; a source grep cannot prove execution or rc propagation.
     local caller
     caller="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh"
     (
-        OS_RUN_SUITE=1 ran=0
+        # shellcheck disable=SC2034 # sourced phase reads the suite marker and runner path.
+        OS_RUN_SUITE=1 SCRIPT_DIR="${caller%/phases/*}" ran=0
         # shellcheck source=tests/os/phases/provision-initial.sh
         . "$caller" # an unreachable caller fails here, which is the same verdict
         _phase_provision_initial_body() { return 7; }

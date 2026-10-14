@@ -21,6 +21,12 @@
 # tests/inventory.sh lists them as UNSOURCED) — they carry no marker check and must not gain one.
 # shellcheck disable=SC2034  # sourced library: this marker and the fixtures are read by run.sh
 STACK_SUITE=1
+# shellcheck source=tests/stack/lib/doctor-stubs.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/doctor-stubs.sh" || exit 1
+# shellcheck source=tests/stack/lib/backup-fixtures.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/backup-fixtures.sh" || exit 1
+# shellcheck source=tests/stack/lib/control-fixtures.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/control-fixtures.sh" || exit 1
 # shellcheck source=tests/stack/lib/config-read-sites.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config-read-sites.sh"
 
@@ -192,14 +198,29 @@ case "$*" in
   *hash-password*)
     # Fake `caddy hash-password` (#8): a per-password digest so enable/change paths differ, and it
     # never echoes the plaintext back (real bcrypt doesn't either) — keeps the leak checks honest.
-    _pw="${*##*--plaintext }"
+    [[ "$*" == *"run --rm -i "* && "$*" != *"--plaintext"* ]] || exit 1
+    IFS= read -r _pw || exit 1
     _d="$(printf '%s' "$_pw" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-22)"
     printf '$2y$14$%s\n' "$_d" ;;
 esac
 exit 0
 EOF
-    printf '#!/usr/bin/env bash\nexit 0\n' >"$bin/sudo"
-    chmod +x "$bin/docker" "$bin/sudo"
+    cat >"$bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" != -n ] || shift
+case "$*" in
+  'iptables -S PITHEAD-LAN') echo '-A PITHEAD-LAN -j DROP' ;;
+  'iptables -S DOCKER-USER')
+    for port in 18081 18083 18142; do
+      echo "-A DOCKER-USER -p tcp -m tcp --dport $port -m conntrack --ctstate NEW -m comment --comment pithead-lan-guard -j PITHEAD-LAN"
+    done ;;
+  'iptables -S FORWARD') echo '-A FORWARD -j DOCKER-USER' ;;
+esac
+exit 0
+EOF
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$bin/iptables"
+    printf '#!/usr/bin/env bash\ncat >/dev/null\n' >"$bin/iptables-restore"
+    chmod +x "$bin/docker" "$bin/sudo" "$bin/iptables" "$bin/iptables-restore"
 }
 
 # --- shared test fixtures hoisted from run.sh (#1105 Phase 1, module 1b), verbatim ---------

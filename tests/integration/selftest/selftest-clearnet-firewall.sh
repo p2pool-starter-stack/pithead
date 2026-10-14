@@ -2,10 +2,10 @@
 #
 # Self-test for the clearnet-sync scenario's egress-firewall handling (#2649).
 #
-# With the egress firewall on, render_env ignores clearnet_initial_sync, so the matrix's clearnet
-# scenario must turn the firewall off to show a real clearnet sync and the #234 transition back to
-# Tor. It must also turn the firewall back on before it ends: restore_firewall_after_clearnet
-# re-applies the same config with only the firewall flipped, then checks the rules, the zeroed .env
+# With the egress firewall on, render_env preserves clearnet_initial_sync, so the matrix's clearnet
+# scenario keeps the firewall on to show a real clearnet sync and the #234 transition back to
+# Tor. A firewall-off legacy configuration may still turn it back on: restore_firewall_after_clearnet
+# re-applies the same config with only the firewall flipped, then checks the rules, the retained .env
 # flags and the completed sync's markers. These cases pin that step against stubs, so a live
 # matrix run is not the first place a broken restore shows up.
 #
@@ -24,15 +24,18 @@ INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-matrix.sh
 source "$HERE/../lib/run-matrix.sh"
 
-echo "== clearnet scenario runs with the egress firewall off (#2649) =="
+echo "== clearnet scenario runs with the egress firewall on (#2678) =="
 ovr="$(scenario_overrides local-pruned-main-clearnet-sync)"
-assert_contains "the clearnet scenario turns the egress firewall off" "$ovr" "network.tor_egress_firewall=false"
+case "$ovr" in
+*network.tor_egress_firewall=false*) it_fail "clearnet scenario keeps the default-on firewall" "$ovr" ;;
+*) it_pass "clearnet scenario keeps the default-on firewall" ;;
+esac
 others="$(scenario_matrix | grep -v '^local-pruned-main-clearnet-sync' | grep -v '^local-pruned-main-firewall-off' | grep -c 'tor_egress_firewall' || true)"
 assert_eq "no other scenario turns the firewall off" "$others" "0"
 
-echo "== clearnet_flag_effective: the flag counts only with the firewall off (#2649) =="
-assert_eq "flag true + firewall false -> effective, firewall absent -> not" \
-    "$(clearnet_flag_effective '{"monero":{"clearnet_initial_sync":true},"network":{"tor_egress_firewall":false}}' monero) $(clearnet_flag_effective '{"monero":{"clearnet_initial_sync":true}}' monero)" "true false"
+echo "== clearnet_flag_effective: the flag counts with the firewall on (#2678) =="
+assert_eq "flag true with firewall off or on -> effective" \
+    "$(clearnet_flag_effective '{"monero":{"clearnet_initial_sync":true},"network":{"tor_egress_firewall":false}}' monero) $(clearnet_flag_effective '{"monero":{"clearnet_initial_sync":true}}' monero)" "true true"
 
 echo "== restore_firewall_after_clearnet (#2649) =="
 # Stubs for the box: a config.json, an .env the fake apply rewrites, and a marker directory.
@@ -54,8 +57,7 @@ pithead() {
         [ "$APPLY_RC" = 0 ] || return 1
         local fw on
         fw="$(jq -r '.network.tor_egress_firewall' "$BOX/config.json")"
-        on=false
-        [ "$fw" = "false" ] && on=true
+        on=true
         printf 'TOR_EGRESS_FIREWALL=%s\nMONERO_CLEARNET_SYNC=%s\nTARI_CLEARNET_SYNC=%s\nCLEARNET_STATE_DIR=%s\n' \
             "$fw" "$on" "$on" "$BOX/state" >"$BOX/.env"
         [ "$DROP_MARKERS" = 0 ] || rm -f "$BOX/state/"*.synced
@@ -87,8 +89,8 @@ got="$(run_restore "$CN")"
 assert_eq "the restore pushes the same config with only the firewall back on" \
     "$(jq -c . "$BOX/config.json")" "$(printf '%s' "$CN" | jq -c '.network.tor_egress_firewall = true')"
 assert_contains "the restore proves the firewall is installed again" "$got" "P:egress firewall back on after the clearnet sync (#2649)"
-assert_contains "the restore proves the monero flag is ignored" "$got" "P:firewall on: monero clearnet flag ignored (#2649)"
-assert_contains "the restore proves the tari flag is ignored" "$got" "P:firewall on: tari clearnet flag ignored (#2649)"
+assert_contains "the restore retains the monero flag" "$got" "P:firewall on: monero clearnet flag retained (#2678)"
+assert_contains "the restore retains the tari flag" "$got" "P:firewall on: tari clearnet flag retained (#2678)"
 assert_contains "the restore proves the monero sync stays spent" "$got" "P:firewall on: the completed monero clearnet sync stays spent (#234/#2649)"
 assert_contains "the restore proves the tari sync stays spent" "$got" "P:firewall on: the completed tari clearnet sync stays spent (#234/#2649)"
 case "$got" in

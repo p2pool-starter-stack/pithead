@@ -37,10 +37,10 @@ cat >"$RS/bin/docker" <<'EOF'
 case "$*" in
   "compose ps --status running -q") exit 0 ;; # empty output -> stack treated as not running
   *hash-password*)
-    # Fake `caddy hash-password` (matches lib.sh's make_stubs): the restore fixtures below carry a
-    # real dashboard.auth.password, and a restore whose live .env lost its matching fingerprint
-    # (an earlier case in this file re-derived it without one) falls through to actually hashing.
-    _pw="${*##*--plaintext }"
+    # Fake `caddy hash-password`: restore fixtures carry a password; a missing matching fingerprint
+    # (re-derived earlier in this file) falls through to hashing.
+    [[ "$*" == *"run --rm -i "* && "$*" != *"--plaintext"* ]] || exit 1
+    IFS= read -r _pw || exit 1
     _d="$(printf '%s' "$_pw" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-22)"
     printf '$2y$14$%s\n' "$_d"
     ;;
@@ -176,7 +176,7 @@ assert_eq "installer restore consumes the volatile submitted passphrase" "$([ -f
 cp "$rarchive" "$RSPOOL/restore-archive" && printf hunter2 >"$RSECRET/restore-passphrase"
 RFAILCARRY="$RS/volatile/failure-carry"
 RFAILCONFIG="$RS/volatile/failure-config.json"
-out=$(cd "$RS" && PITHEAD_RESTORE_CARRY_DIR="$RFAILCARRY" run_sourced "$RS" eval 'wizard_spool_publish() { [ "$2" != restore-inflight ]; }; firstboot_consume_restore "$RSPOOL" 1 "$RSECRET" "$RFAILCONFIG" || echo "rc$?"')
+out=$(cd "$RS" && PITHEAD_RESTORE_CARRY_DIR="$RFAILCARRY" PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'wizard_spool_publish() { [ "$2" != restore-inflight ]; }; firstboot_consume_restore "$RSPOOL" 1 "$RSECRET" "$RFAILCONFIG" || echo "rc$?"')
 assert_contains "marker publication failure rejects the restore" "$out" rc1
 assert_eq "marker publication failure clears the volatile candidate" "$([ -e "$RFAILCONFIG" ] || echo gone)" gone
 assert_eq "marker publication failure clears the volatile carry" "$([ -e "$RFAILCARRY" ] || echo gone)" gone
@@ -197,7 +197,7 @@ chmod +x "$RINST/fake-install"
 touch "$RINST/carry/archive"
 printf cleanup-fixture-secret >"$RINST/carry/pass"
 printf 'vda\tkeep' >"$RINST/spool/install-request"
-PITHEAD_INSTALL_BIN="$RINST/fake-install" FAKE_SKIP="$RINST/skipped-preseeds" run_sourced "$RS" eval 'install_restore_to_target() { printf "%s\n" "Could not clear temporary target restore files safely." >&2; return 1; }; consume_install_request "$RINST/spool" "" "$RINST/carry"' >/dev/null 2>&1
+PITHEAD_INSTALL_BIN="$RINST/fake-install" FAKE_SKIP="$RINST/skipped-preseeds" PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'install_restore_to_target() { printf "%s\n" "Could not clear temporary target restore files safely." >&2; return 1; }; consume_install_request "$RINST/spool" "" "$RINST/carry"' >/dev/null 2>&1
 assert_rc "target restore cleanup failure rejects the install" "$?" 1
 assert_eq "restore installs suppress unrelated pre-seed copies" "$([ -f "$RINST/skipped-preseeds" ] && echo yes)" yes
 assert_contains "target restore cleanup failure reaches the page" "$(cat "$RINST/spool/error.txt")" 'Could not clear temporary target restore files safely'
@@ -262,14 +262,14 @@ assert_contains "restore decrypt staging uses the dedicated volatile root" "$(ca
 assert_eq "restore decrypt staging never follows the carry parent" "$(awk -v p="-d $RS/stage/.restore.XXXXXXXXXX" '$0 != p {print}' "$RS/stage-pattern")" ""
 
 # Volatile cleanup failures are reported, never hidden, and never echo the secret they failed on.
-out=$(PITHEAD_RESTORE_CARRY_DIR="$RCARRY" run_sourced "$RS" eval '
+out=$(PITHEAD_RESTORE_CARRY_DIR="$RCARRY" PATH="$RS/bin:$PATH" run_sourced "$RS" eval '
     rm() { return 1; }
     clear_restore_carry
 ' 2>&1)
 assert_contains "volatile carry cleanup failure is visible" "$out" 'Could not clear the temporary restore handoff'
 assert_not_contains "volatile cleanup warning never reveals the passphrase" "$out" hunter2
 printf stage-cleanup-secret >"$RS/setup-secret"
-out=$(run_sourced "$RS" eval 'rm() { return 1; }; clear_restore_stage "$RS/volatile/.restore.failed"; clear_setup_candidate "$RS/setup-secret"' 2>&1)
+out=$(PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'rm() { return 1; }; clear_restore_stage "$RS/volatile/.restore.failed"; clear_setup_candidate "$RS/setup-secret"' 2>&1)
 assert_contains "private stage cleanup failure is visible" "$out" 'Could not clear the private restore staging area'
 assert_contains "temporary config cleanup failure is visible" "$out" 'Could not clear temporary setup credentials'
 assert_not_contains "private cleanup warnings never reveal content" "$out" stage-cleanup-secret
@@ -278,7 +278,7 @@ printf interrupted-secret >"$legacy_snapshot/value"
 rm -rf "$RCARRY" "$RDATA" && clear_restore_submission "$RSPOOL" "$RSECRET" && rm -f "$RSPOOL/applied" "$RCANDIDATE"
 printf 'CADDY-ORIG\n' >"$RS/Caddyfile" && printf 'DBDATA-ORIG\n' >"$RS/data/dashboard/dashboard.db" # fixtures back to their case-1 state for the cases below
 touch "$RS/.restore-incomplete"
-out=$(run_sourced "$RS" firstboot_wizard 2>&1 || echo "rc$?")
+out=$(PATH="$RS/bin:$PATH" run_sourced "$RS" firstboot_wizard 2>&1 || echo "rc$?")
 assert_contains "first boot refuses an incomplete installed restore" "$out" 'installed restore is incomplete'
 assert_eq "first boot sweeps old snapshots before refusing an incomplete restore" "$([ -e "$legacy_snapshot" ] || echo gone)" gone
 rm -f "$RS/.restore-incomplete"
@@ -306,13 +306,12 @@ EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":true,"host":"old-bundle.lan"} }\n' "$WALLET" >"$OLDROOT/config.json"
 printf 'CADDY-OLDROOT\n' >"$OLDROOT/Caddyfile"
 printf 'ONIONKEY-OLDROOT\n' >"$OLDROOT/data/tor/hs_ed25519_secret_key"
+printf 'CircuitBuildAbandonedCount 1000\n' >"$OLDROOT/data/tor/state"
 printf 'DBDATA-OLDROOT\n' >"$OLDROOT/data/dashboard/dashboard.db"
 printf 'MONERO-CHAIN-OLDROOT\n' >"$OLDROOT/data/monero/lmdb-sentinel"
 printf 'TARI-CHAIN-OLDROOT\n' >"$OLDROOT/data/tari/db-sentinel"
 printf 'P2POOL-CHAIN-OLDROOT\n' >"$OLDROOT/data/p2pool/db-sentinel"
-# A SECOND name in each chain dir, the one the target plants too (#2195): the archive therefore
-# ships both a name the target lacks (the sentinels above) and a name it already holds (these), so
-# the merge's two halves — add what is missing, keep what is already there — each get their own row.
+# These names also exist on the target (#2195); test additions and collisions separately.
 printf 'MONERO-CHAIN-OLDROOT\n' >"$OLDROOT/data/monero/chain-state"
 printf 'TARI-CHAIN-OLDROOT\n' >"$OLDROOT/data/tari/chain-state"
 printf 'P2POOL-CHAIN-OLDROOT\n' >"$OLDROOT/data/p2pool/chain-state"
@@ -347,6 +346,7 @@ rc=$?
 assert_rc "cross-root restore with colliding target chain data returns 0 (#2195)" "$rc" "0"
 assert_contains "cross-root restore carries the source box's config" "$(cat "$RS/config.json" 2>/dev/null)" "old-bundle.lan"
 assert_eq "cross-root restore brings back the onion key" "$(cat "$RS/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-OLDROOT"
+assert_eq "cross-root restore discards Tor circuit state" "$([ -e "$RS/data/tor/state" ] || echo absent)" absent
 assert_eq "cross-root restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-OLDROOT"
 assert_eq "cross-root restore brings back the monero chain data" "$(cat "$RS/data/monero/lmdb-sentinel" 2>/dev/null)" "MONERO-CHAIN-OLDROOT"
 assert_eq "cross-root restore brings back the tari chain data" "$(cat "$RS/data/tari/db-sentinel" 2>/dev/null)" "TARI-CHAIN-OLDROOT"
@@ -361,44 +361,44 @@ printf 'DBDATA-ORIG\n' >"$RS/data/dashboard/dashboard.db"
 
 # Expected-member policy is shared by the wizard and carried-archive doors (#1971).
 # These are ordinary fixture files. The added note is outside the backup item list.
-run_sourced "$RS" restore_setup_members "${RS#/}/config.json" "${RS#/}/"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_members "${RS#/}/config.json" "${RS#/}/"
 assert_rc "member policy accepts a mapped configuration file" "$?" 0
-run_sourced "$RS" restore_setup_members "${RS#/}/data/tor/" "${RS#/}/"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_members "${RS#/}/data/tor/" "${RS#/}/"
 assert_rc "member policy accepts a mapped data directory" "$?" 0
-run_sourced "$RS" restore_setup_members "${RS#/}/config.json/" "${RS#/}/"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_members "${RS#/}/config.json/" "${RS#/}/"
 assert_rc "member policy refuses a directory in place of configuration" "$?" 1
-run_sourced "$RS" restore_setup_members "${RS#/}/data/tor" "${RS#/}/"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_members "${RS#/}/data/tor" "${RS#/}/"
 assert_rc "member policy refuses a file in place of a data directory" "$?" 1
 mixed_root_members="${RS#/}/config.json
 other/root/data/tor/"
-run_sourced "$RS" restore_setup_members "$mixed_root_members" "${RS#/}/"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_members "$mixed_root_members" "${RS#/}/"
 assert_rc "member policy refuses a member outside the given root" "$?" 1
 two_depth_configs="a/config.json
 b/config.json"
-run_sourced "$RS" restore_setup_root "$two_depth_configs"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_root "$two_depth_configs"
 assert_rc "root detection refuses config.json at two depths" "$?" 1
-PITHEAD_CONFIG_FILE="$RS/config.json" run_sourced "$RS" restore_setup_root "${RS#/}/config.json"
+PITHEAD_CONFIG_FILE="$RS/config.json" PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_root "${RS#/}/config.json"
 assert_rc "root detection refuses an absolute CONFIG_FILE override" "$?" 1
-out=$(PITHEAD_CONFIG_FILE="$RS/config.json" run_sourced "$RS" restore_setup_config_path)
+out=$(PITHEAD_CONFIG_FILE="$RS/config.json" PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_config_path)
 assert_eq "absolute config override is not prefixed with the working directory" "$out" "$RS/config.json"
 printf 'one\ntwo\n' >"$RS/restore-names"
 printf '%s\n' '-rw------- root/root 4 2026-01-01 00:00 one' '-rw------- root/root 5 2026-01-01 00:00 two' >"$RS/restore-verbose"
-run_sourced "$RS" restore_setup_archive_within_limits "$RS/restore-names" "$RS/restore-verbose" 2 9
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_archive_within_limits "$RS/restore-names" "$RS/restore-verbose" 2 9
 assert_rc "restore expansion limit accepts its exact bounds" "$?" 0
-run_sourced "$RS" restore_setup_archive_within_limits "$RS/restore-names" "$RS/restore-verbose" 1 9
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_archive_within_limits "$RS/restore-names" "$RS/restore-verbose" 1 9
 assert_rc "restore expansion limit rejects excess members" "$?" 1
-run_sourced "$RS" restore_setup_archive_within_limits "$RS/restore-names" "$RS/restore-verbose" 2 8
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_archive_within_limits "$RS/restore-names" "$RS/restore-verbose" 2 8
 assert_rc "restore expansion limit rejects excess bytes" "$?" 1
 printf '%s\n' '-rw------- owner with spaces 999999999 2026-01-01 item' >"$RS/restore-verbose"
-run_sourced "$RS" restore_setup_archive_within_limits "$RS/restore-names" "$RS/restore-verbose" 2 9
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_archive_within_limits "$RS/restore-names" "$RS/restore-verbose" 2 9
 assert_rc "restore expansion limit rejects an ambiguous owner field" "$?" 1
 printf publish-secret >"$RS/publish-source"
-out=$(run_sourced "$RS" eval 'install() { return 1; }; rm() { return 1; }; restore_setup_publish_file "$RS/publish-source" "$RS/publish-dest"' 2>&1)
+out=$(PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'install() { return 1; }; rm() { return 1; }; restore_setup_publish_file "$RS/publish-source" "$RS/publish-dest"' 2>&1)
 assert_contains "failed atomic publication reports cleanup failure" "$out" 'Could not clear temporary setup credentials'
 assert_not_contains "failed publication cleanup never reveals content" "$out" publish-secret
 mkdir "$RS/list-fixture"
 for n in $(seq 1 200); do printf x >"$RS/list-fixture/member-$n-abcdefghijklmnopqrstuvwxyz"; done
 tar -czf "$RS/list-fixture.tar.gz" -C "$RS/list-fixture" .
-if run_sourced "$RS" restore_setup_tar_list "$RS/list-fixture.tar.gz" -tvzf "$RS/list-output" 1 30; then out=accepted; else out=refused; fi
+if PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_tar_list "$RS/list-fixture.tar.gz" -tvzf "$RS/list-output" 1 30; then out=accepted; else out=refused; fi
 assert_eq "archive listing is stopped at its output cap" "$out" refused
 rm -f "$RS/restore-names" "$RS/restore-verbose"

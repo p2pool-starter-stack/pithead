@@ -12,10 +12,10 @@ dashboard, no Linux to set up.
 > ```bash
 > curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz
 > cd pithead
-> cp config.minimal.json config.json   # set your Monero + Tari payout addresses
 > ./pithead setup
 > ```
 >
+> Have a Monero payout address ready; Tari merge-mining is an optional beta, off unless you say yes, and has its own payout address.
 > Let it run, then open the dashboard at `https://<your-hostname>`.
 
 ---
@@ -28,7 +28,7 @@ dashboard, no Linux to set up.
 | CPU | A processor with AVX2 support for RandomX performance. |
 | RAM | 16 GB minimum with HugePages enabled (~6 GB is reserved for RandomX); 32 GB for a full node or long uptimes. |
 | Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
-| Software | Docker Engine, Docker Compose V2, `jq`, and `openssl`. |
+| Software | Docker Engine, Docker Compose V2, `jq`, `openssl`, and `python3`. |
 
 > 📐 Sizing guidance for the stack host — minimum vs. recommended specs, plus ways to run leaner —
 > is in **[Hardware Requirements](hardware.md)**. Miner specs live in
@@ -44,7 +44,7 @@ You don't have to install the software dependencies yourself. `setup` checks for
 Ubuntu, offers to install anything missing. To do it manually:
 
 ```bash
-sudo apt update && sudo apt install -y jq docker.io docker-compose-v2 openssl
+sudo apt update && sudo apt install -y jq docker.io docker-compose-v2 openssl python3
 ```
 
 On an unsupported OS, or if dependency detection misfires on an unusual setup, run setup with
@@ -60,12 +60,13 @@ dashboard shows the real version and the update-checker works:
 ```bash
 curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz
 cd pithead
-cp config.minimal.json config.json   # then set your Monero + Tari payout addresses
 ```
 
-`config.minimal.json` is minimal: just your two payout addresses. `setup` fills in defaults for
-everything else. For the full set of knobs, copy `config.reference.json` instead. Have your
-Monero and Tari payout addresses ready (Tari wallets are sometimes labeled Minotari, same thing).
+Leave `config.json` absent to use the setup wizard. Have a Monero payout address ready, and a
+Tari payout address if you enable merge-mining (Tari wallets are sometimes labeled Minotari).
+For a manual configuration, copy `config.minimal.json` or `config.reference.json` to `config.json`
+and edit it before setup; these files inherit the reference defaults rather than the wizard's
+new-install choices.
 
 ### Alternative: build from source
 
@@ -76,7 +77,6 @@ stack, clone the repo. pithead sees the `build/` context and builds locally, tag
 ```bash
 git clone https://github.com/p2pool-starter-stack/pithead.git
 cd pithead && make
-cp config.minimal.json config.json   # then set your payout addresses
 ```
 
 Release archives already include the generated `pithead` executable. Git clones keep only its
@@ -95,33 +95,41 @@ numbered sources, so `make` builds the executable before the first `./pithead` c
 
 Setup walks through five stages. It's interactive on the first run and safe to re-run later.
 
-1. **Dependency check.** Verifies Docker, Docker Compose, `jq`, and `openssl` are present. On
+1. **Dependency check.** Verifies Docker, Docker Compose, `jq`, `openssl`, and `python3` are present. On
    Ubuntu it offers to `apt install` anything missing; on other systems it tells you what to
    install. Skip with `--skip-deps`.
 
 2. **Interactive configuration.** Asks only what only you can answer, in two short stages, then
    fills in the rest and writes a minimal `config.json`, locked down to owner-only (`chmod 600`).
+   Use a dedicated Monero mining wallet: P2Pool payout addresses are public
+   ([P2Pool's guidance](https://github.com/SChernykh/p2pool/releases/tag/v4.18.1)).
    - **Required:** your Monero wallet address; whether you're running a local Monero node (the
      default — the stack runs its own) or connecting to a remote one, with a local node's RPC
      credentials auto-generated; and your P2Pool pool tier (`main`/`mini`/`nano` — pick low if
      you're not sure, a high-hashrate default silently starves a small rig of shares). An
-     optional dashboard login, Enter to skip.
-   - **Merge-mine Tari?** Three answers: no, run the bundled Tari node here, or use a Tari node
-     you already run. A yes asks for your Tari payout address, and "a node I already run" asks
+     dashboard login, generated on Enter and printed once; enter `none` to opt out.
+   - **Merge-mine Tari? (beta)** Three answers: no, run the bundled Tari node here, or use a Tari
+     node you already run. Tari runs on pre-release upstream software, so Enter means no. Yes
+     downloads and syncs a Tari chain over Tor, which takes days. A yes asks for your Tari payout address, and "a node I already run" asks
      for its host and gRPC port — see [Remote Tari node](configuration.md#remote-tari-node). A no
      asks nothing further and stores no Tari address; nothing merge-mines and no Tari node runs.
      The wizard writes `tari.mode` explicitly whichever way you answer, so the answer survives.
-     The default offered depends on free disk where `./data` will live: the bundled Tari node
-     adds a 200 GiB budget on top of Monero's, so a host with room for the whole stack is
-     offered yes and one without is offered no. The wizard prints the figure it measured and the
-     one it compared against, and the answer is yours either way. Changeable later from the
+     The one exception is a reinstall that keeps its data: when `./data/tari` already holds half
+     the Tari budget or more, Enter keeps the bundled node on, so it does not silently drop
+     merge-mining. The wizard prints the free space it measured against the whole-stack budget
+     (the bundled Tari node adds 200 GiB to Monero's) for anyone who says yes. A yes on a new
+     install also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero
+     mining. Changeable later from the
      dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.
    - Once the config is written, setup asks one more thing: the hostname you'll use to reach the
      dashboard in a browser. Enter accepts this machine's hostname.
-   - **A few more, Enter for the default:** a faster clearnet initial sync instead of the private
-     Tor default; reaching the dashboard from outside your LAN over Tor; Telegram alerts; and
+   - **A few more, Enter for the default:** a faster clearnet initial sync (hours instead of days,
+     for every local chain, exposing your IP address to the Monero network and, when Tari runs
+     locally, the Tari network until initial sync finishes) instead of
+     the private Tor default; reaching the dashboard from outside your LAN over Tor; Telegram alerts; and
      whether this machine should also mine with its spare CPU (a co-located RigForge worker).
-   - Everything else — ports, XvB tuning, energy pricing, per-worker overrides, and more — keeps
+   - XvB is off and is not asked; enable it later from the Configuration view.
+   - Everything else — ports, energy pricing, per-worker overrides, and more — keeps
      its documented default; the wizard prints a pointer to `config.json` and
      [Configuration](configuration.md) at the end for anyone who wants it.
 
@@ -130,8 +138,12 @@ Setup walks through five stages. It's interactive on the first run and safe to r
    in remote mode gets no inbound onion — it accepts its own peers where it runs.
 
 4. **Kernel optimization (Linux only).** Configures HugePages for RandomX performance. Making
-   HugePages persistent edits GRUB and requires a reboot. You're prompted before any GRUB change,
-   and you can skip this whole stage with `--skip-optimize`.
+   HugePages persistent adds `/etc/default/grub.d/zz-pithead-hugepages.cfg` and requires a reboot.
+   Setup preserves existing boot arguments, including cloud console settings, and verifies the
+   generated kernel entries after `update-grub`. It repairs previous Pithead reservations on
+   re-run; a new or unrecognized reservation requires confirmation. An unchanged setup on a host
+   already booted with the verified flags continues to Start without requesting another reboot.
+   Skip this stage with `--skip-optimize`.
 
 5. **Start.** Once everything is provisioned, setup offers to start the stack.
 
@@ -181,8 +193,9 @@ both states.
 > against a node on another machine — see [Remote Tari node](configuration.md#remote-tari-node).
 
 > Sync crawling over Tor? The default routes the first sync over Tor for privacy, which is slow.
-> You can opt into a faster clearnet initial sync for Monero and/or Tari, with the egress firewall
-> turned off for the sync; each node switches back to Tor automatically once it's synced. It's default-off and privacy-relevant, so read the
+> You can opt into a faster clearnet initial sync for Monero and/or Tari while the egress firewall
+> stays on. It takes hours instead of days, exposes your IP to that chain's peers during the sync,
+> and switches each node back to Tor automatically when it finishes; the warning stays until the host verifies the live daemon and firewall. Read the
 > trade-off first:
 > [Optional clearnet initial sync](privacy.md#optional-clearnet-initial-sync-off-by-default).
 

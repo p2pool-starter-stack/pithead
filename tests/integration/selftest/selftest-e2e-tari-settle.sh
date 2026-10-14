@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Self-test (#2455): deploy_branch's post-recreate settle must actually outlast a recreated
-# tari's real reconnect time, or the one-shot Tari readiness row right after it (which never
-# retries) fails on a tari that is merely still reconnecting, not unsynced. Standalone (not
+# tari's real reconnect time, or the bounded Tari readiness row right after it
+# can expire while tari is still reconnecting. Standalone (not
 # folded into selftest-e2e-phases.sh) so it never pushes that file past its
 # docs/dev/file-budget.tsv ceiling — same reasoning as selftest-harness-pregate.sh.
 #
@@ -63,6 +63,34 @@ assert_eq "an already-synced bench returns 0 immediately" "$(run_wait_synced 5 d
 assert_eq "a delayed Tari reconnect proceeds once the existing done/done predicate passes" \
     "$(run_wait_synced 5 loading/loading done/done)" "0"
 assert_eq "a bench stuck loading returns 1 once its OWN timeout elapses" "$(run_wait_synced 1 loading/loading)" "1"
+
+PREFLIGHT_SYNC_SRC="$(sed -n '/^    if \[ "$SKIP_PREFLIGHT" = "1" \]; then/,/^    fi$/p' "$E2E_SRC")"
+run_preflight_sync() { # <initial> <after-one-poll>
+    (
+        STATE="$1"
+        NEXT="$2"
+        # shellcheck disable=SC2034 # read by the extracted preflight block
+        SKIP_PREFLIGHT=0
+        ok() { :; }
+        warn() { :; }
+        die() { exit 1; }
+        sleep() { STATE="$NEXT"; }
+        on_bench() {
+            if [[ "$1" == *current* ]]; then
+                printf 'loading 0/0 loading 0/0'
+            else
+                printf '%s' "$STATE"
+            fi
+        }
+        eval "$WAIT_SRC"
+        eval "$PREFLIGHT_SYNC_SRC"
+    ) >/dev/null 2>&1
+    echo "$?"
+}
+assert_eq "preflight waits through transient dashboard loading before accepting synced chains" \
+    "$(run_preflight_sync loading/loading done/done)" "0"
+assert_eq "preflight trusts a successful sync wait despite a later loading diagnostic sample" \
+    "$(run_preflight_sync done/done loading/loading)" "0"
 
 # --- The other caller that runs the SAME `pithead upgrade` with the SAME short-wait defect ---
 # run-matrix.sh/run-rigforge.sh also call wait_tari_synced 300, but their wait feeds into

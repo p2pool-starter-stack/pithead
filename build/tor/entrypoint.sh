@@ -6,6 +6,14 @@
 set -eu
 
 : "${NETWORK_PREFIX:=172.28.0}"
+: "${P2POOL_PORT:=37888}"
+case "$P2POOL_PORT" in
+37888 | 37889 | 37890) ;;
+*)
+    echo "invalid P2POOL_PORT" >&2
+    exit 1
+    ;;
+esac
 # TORRC_TEMPLATE is a test seam so the shell suite can render against build/tor/torrc.template; the
 # container always uses the baked-in default.  # ponytail: default unchanged, only overridden in tests
 : "${TORRC_TEMPLATE:=/etc/tor/torrc.template}"
@@ -17,7 +25,7 @@ set -eu
 # inside the running container.  # ponytail: default unchanged, only overridden in tests
 : "${TORRC_OUT:=/tmp/torrc}"
 
-sed "s/__NETWORK_PREFIX__/${NETWORK_PREFIX}/g" "$TORRC_TEMPLATE" >"$TORRC_OUT"
+sed -e "s/__NETWORK_PREFIX__/${NETWORK_PREFIX}/g" -e "s/__P2POOL_PORT__/${P2POOL_PORT}/g" "$TORRC_TEMPLATE" >"$TORRC_OUT"
 
 # Node inbound hidden services (#103): the bundled monerod and Tari containers only start under
 # their compose profiles, so publish each node's onion only then — in remote mode the onion would

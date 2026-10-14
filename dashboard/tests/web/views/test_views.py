@@ -441,7 +441,7 @@ def _set_egress_config(monkeypatch, **over):
     """Pin the live egress knobs so the #170 panel is deterministic regardless of the test env.
 
     Defaults are the privacy-safe resting config (firewall on, everything over Tor, local node);
-    pass overrides to model a leak. ``egress_posture_from_config`` / ``topology_from_config`` read
+    pass overrides to model a selected route or leak. The egress and topology builders read
     these off the config module at call time, so patching them steers ``build_state``'s payload.
     """
     safe = {
@@ -479,24 +479,23 @@ class TestEgressTopology:
         assert "Tor-only" in badge["text"]
         assert st["egress"]["summary"]["all_tor"] is True
 
-    def test_xvb_tor_off_stays_a_tor_only_badge(self, _data, _state_mgr, monkeypatch):
-        # xvb.tor gates only the xmrig-proxy donation dial; the dashboard's stats fetch is
-        # unconditionally Tor (#163/#701), so with the firewall on nothing leaks — badge stays green.
+    def test_xvb_tor_off_shows_chosen_clearnet_badge(self, _data, _state_mgr, monkeypatch):
+        # The donation dial is the selected clearnet route; the stats fetch still uses Tor.
         _set_egress_config(monkeypatch, XVB_TOR_ENABLED=False)
         st = build_state(_data(), _state_mgr(), "all")
-        assert st["badges"][-1]["variant"] == "ok"
+        assert st["badges"][-1]["variant"] == "warn"
+        assert "XvB clearnet by your choice" in st["badges"][-1]["text"]
         assert st["egress"]["summary"]["leaks"] == 0
 
-    def test_clearnet_leak_emits_a_warning_badge(self, _data, _state_mgr, monkeypatch):
-        # A real leak (clearnet sidechain peers with the firewall down) must flip the badge to a
-        # loud warning and the topology summary to "warn".
+    def test_p2pool_choice_emits_a_warning_badge(self, _data, _state_mgr, monkeypatch):
+        # The sidechain peer dial stays visibly selected even if the firewall is off.
         _set_egress_config(monkeypatch, P2POOL_CLEARNET=True, TOR_EGRESS_FIREWALL=False)
         st = build_state(_data(), _state_mgr(), "all")
         badge = st["badges"][-1]
-        assert badge["variant"] == "bad"
-        assert "clearnet egress" in badge["text"]
+        assert badge["variant"] == "warn"
+        assert "P2Pool clearnet by your choice" in badge["text"]
         assert st["topology"]["summary"]["level"] == "warn"
-        assert st["egress"]["summary"]["leaks"] >= 1
+        assert st["egress"]["summary"]["leaks"] == 0
 
     def test_remote_monerod_is_reflected_in_the_payload(self, _data, _state_mgr, monkeypatch):
         # #1350: a private-addressed remote monerod is a LAN hop and charges neither counter; a
@@ -510,7 +509,7 @@ class TestEgressTopology:
         assert _payload("10.0.0.9") == ({"p2pool": "lan", "dashboard": "lan"}, 0)
         assert _payload("8.8.8.8") == ({"p2pool": "clearnet", "dashboard": "clearnet"}, 1)
 
-    def test_payload_stays_json_serializable_with_a_leak(self, _data, _state_mgr, monkeypatch):
+    def test_json_payload_with_chosen_route(self, _data, _state_mgr, monkeypatch):
         _set_egress_config(monkeypatch, P2POOL_CLEARNET=True, TOR_EGRESS_FIREWALL=False)
         json.dumps(build_state(_data(), _state_mgr(), "all"))
 

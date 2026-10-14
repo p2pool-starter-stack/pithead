@@ -1,10 +1,11 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+source "$SCRIPT_DIR/miner-connection-leg.sh" || return $?
 _phase_install_initial() {
     info "phase: disk install (USB-style boot -> pithead-install -> boot from the target)"
 
     info "building the installer image (test SSH key + marker v1)"
-    img=$(_build_image v1) || {
+    img=$(_build_image v1 rc3) || {
         bad "image build failed (/tmp/os-fault-build.log)"
         return 1
     }
@@ -60,6 +61,12 @@ _phase_install_initial() {
         return 1
     }
     ok "image boots as removable media ($ip)"
+    bash "$SCRIPT_DIR/build-label-boot-leg.sh" "$SERIAL" 0 "$(tr -d '[:space:]' <VERSION)" rc3 usb A && ok "labelled USB first menu shows rc3" || bad "labelled USB first menu lacks rc3"
+    if _ssh 'grub-editenv /boot/efi/grub/grubenv list | grep -qx "MEDIA=usb"'; then
+        ok "installer USB stick records USB media in the real grubenv"
+    else
+        bad "installer USB stick did not record USB media in the real grubenv"
+    fi
 
     # Plant the foreign disk's filesystem and sentinel before the inventory is read: M4 must
     # prove a disk that already carries someone else's data is still correctly offered for
@@ -172,8 +179,11 @@ _phase_install_initial() {
         return 1
     fi
 
-    body="monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini&disk=vda&confirm=vda&wipe=keep"
-    scode=$(curl -sSk -b "$jar" --data "$body" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
+    local install_config install_handoff=""
+    install_config=$(jq -nc --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" \
+        '{monero:{wallet_address:$m},tari:{wallet_address:$t},p2pool:{pool:"mini",stratum_password:"auto",stratum_tls:true}}')
+    scode=$(curl -sSk -b "$jar" --data-urlencode "config=$install_config" --data 'disk=vda&confirm=vda&wipe=keep' \
+        "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "combined submit (config + disk) did not return 200 (got ${scode:-none})"
         rm -f "$jar"
@@ -182,7 +192,8 @@ _phase_install_initial() {
     ok "ONE submission carried config + disk + confirmation"
     tries2=0
     while [ "$tries2" -lt 24 ]; do
-        curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null | grep -q '"password"' && break
+        install_handoff=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null)
+        grep -q '"password"' <<<"$install_handoff" && break
         sleep 5
         tries2=$((tries2 + 1))
     done
@@ -192,6 +203,11 @@ _phase_install_initial() {
         return 1
     }
     ok "credentials published BEFORE anything touched the disk"
+    if wizard_miner_connection_card_valid "$install_handoff" auto true; then
+        ok "installer hand-off includes the auto stratum password and TLS fingerprint (#3092)"
+    else
+        bad "installer hand-off includes the auto stratum password and TLS fingerprint (#3092)"
+    fi
     curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
     rm -f "$jar"
     # The ack releases the erase; the machine installs and powers ITSELF off.
@@ -228,6 +244,7 @@ _phase_install_initial() {
         bad "installed system never answered SSH (ip: ${ip:-none})"
         return 1
     }
+    bash "$SCRIPT_DIR/build-label-boot-leg.sh" "$SERIAL" 0 "$(tr -d '[:space:]' <VERSION)" rc3 internal A && ok "installed disk first menu shows rc3" || bad "installer did not seed rc3 on the target"
     ok "installed system boots from the internal disk"
 
     # findmnt reports the by-partlabel symlink the cmdline named; resolve to the parent disk
@@ -279,6 +296,11 @@ _phase_install_initial() {
         bad "the consumed pre-seed (with credentials) is still on the installed system's ESP"
     else
         ok "consumed pre-seed removed from the installed system's ESP"
+    fi
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        phase_miner_connection_installed "$install_handoff"
+    else
+        bad "installed connection identity cannot be checked before provisioning succeeds (#3092)"
     fi
 
     # ---- M4: the disk left alone stays alone -----------------------------------------------

@@ -174,7 +174,7 @@ Installs still on **v1.18.1 or v1.19.0** verify releases with a host `cosign` bi
 container introduced in v1.19.1, and an upgrade runs the code the box is already on — so those
 installs refuse the upgrade until cosign is installed once. Use the pinned **v2.6.3**, not the
 newest: cosign v3 satisfies the check and then fails the verification. See
-[Releasing › Upgrading an install older than v1.19.1](docs/dev/releasing.md#upgrading-an-install-older-than-v1191).
+[Releasing › Upgrading an install older than v1.19.1](dev/releasing.md#upgrading-an-install-older-than-v1191).
 
 ## [1.19.1] - 2026-08-17
 
@@ -337,7 +337,7 @@ assets mean 1.18.0 itself can never be amended, hence the new number.
   tiles, and the stats panel disappear instead of showing dashes. When XvB is on, the win
   forecast follows the tier the donation actually targets, not only the tier already held.
 - **The XvB delivery study ships in the repo
-  ([docs/research/xvb-delivery-study](docs/research/xvb-delivery-study/PAPER.md)).** The full
+  ([docs/research/xvb-delivery-study](research/xvb-delivery-study/PAPER.md)).** The full
   paper — methods, per-round data, figures, analysis scripts, and checksummed source archives —
   documents how the measured band was derived and how to reproduce it.
 
@@ -486,11 +486,11 @@ assets mean 1.18.0 itself can never be amended, hence the new number.
   plaintext and unauthenticated (p2pool has no way to speak TLS or auth to it), so use a node you
   trust: its operator, or anyone on the network path, can silently redirect Tari rewards. Monero
   mining is unaffected either way. LAN/trusted-network only for now — a `.onion` remote is a
-  follow-up. See [Configuration › Remote Tari node](docs/configuration.md#remote-tari-node).
+  follow-up. See [Configuration › Remote Tari node](configuration.md#remote-tari-node).
 - Dual-distribution plan (#77/#78): the architecture decision record for shipping Pithead as a
   curl-installed Compose stack, a flashable immutable appliance (Debian 13 + Rugix A/B, Podman
   Quadlet), and a git clone — one release manifest across all three. Dev doc only, no behaviour
-  change. See [`docs/dev/dual-distribution-plan.md`](docs/dev/dual-distribution-plan.md).
+  change. See [`docs/dev/dual-distribution-plan.md`](dev/dual-distribution-plan.md).
 
 ### Changed
 
@@ -554,7 +554,7 @@ assets mean 1.18.0 itself can never be amended, hence the new number.
   stack. In HTTPS mode a custom port also drops Caddy's automatic HTTP→HTTPS redirect (which would
   otherwise hold port 80), leaving that to the fronting proxy. Caddy stays in the path, so the
   `dashboard.auth` login is unaffected. Split from the co-hosting umbrella (#181). See
-  [Configuration › Co-hosting on a shared server](docs/configuration.md#co-hosting-on-a-shared-server).
+  [Configuration › Co-hosting on a shared server](configuration.md#co-hosting-on-a-shared-server).
 - **Confirmed payouts on the dashboard** (#381). The on-chain payout totals the stack already
   scans for now surface in the earnings card: a **Confirmed on-chain** block under the Monero
   estimate shows 24-hour, 7-day, and all-time XMR plus the time since the last payout (and the same
@@ -608,7 +608,7 @@ assets mean 1.18.0 itself can never be amended, hence the new number.
   stratum secret already in `.env`. The co-located worker self-registers through the proxy like any
   other rig. Pithead only declares the intent and hands off those values; RigForge owns all
   host-level tuning (HugePages, GRUB, MSR, governor) and the miner service. See
-  [docs/workers.md](docs/workers.md#mine-on-the-stack-host-itself).
+  [docs/workers.md](workers.md#mine-on-the-stack-host-itself).
 - **Warm XvB donation state on a backup stack (#249).** On a two-host failover pair — same wallet,
   workers listing both hosts in `pools[]` — the backup's XvB donation controller used to cold-start
   when the fleet failed over to it: the closed-loop split restarted from the feedforward estimate
@@ -1348,11 +1348,11 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   is the writable allowlist only. The dashboard container **never holds the rig's token**: it spools
   the worker name plus the change, and the host-side control runner resolves the rig's address and
   bearer from `config.json` and dials the rig — so a compromised container can neither read the token
-  nor point the write at an arbitrary host (the [#122 SSRF](docs/workers.md) rule). Each rig needs
+  nor point the write at an arbitrary host (the [#122 SSRF](workers.md) rule). Each rig needs
   `host`, `token`, and (if not the default `8082`) `control_port` in its `dashboard.workers[]`
   descriptor to be editable. RigForge keeps no config history on the rig, so Pithead owns it; the
   rig's enriched feed doesn't expose the writable values, so the editor prefills from the last config
-  the dashboard applied. See [Dashboard › Worker Inspect](docs/dashboard.md#worker-inspect).
+  the dashboard applied. See [Dashboard › Worker Inspect](dashboard.md#worker-inspect).
 
 - **Contract test for the RigForge worker API ↔ dashboard seam (#209).** A tier-2 contract test
   points the real `XMRigWorkerClient` at a controllable fake RigForge worker API over a real socket
@@ -1375,7 +1375,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   stack avoids — so both prices are operator-supplied; leave either unset and that layer stays
   hidden. Net profit is P2Pool XMR only: Tari is lumpy solo merge-mining (priced separately) and XvB
   is raffle status, not income, so both are excluded, as the earnings card already frames them. See
-  [Dashboard › Energy & profit](docs/dashboard.md#energy--profit).
+  [Dashboard › Energy & profit](dashboard.md#energy--profit).
 
 - **Read RigForge's enriched worker feed on the dashboard (#235).** A RigForge rig serves an
   enriched read API on port `8081` — the same `/1/summary` the dashboard already polls, plus a
@@ -1388,9 +1388,9 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   chips, no error. A rig whose RigForge is up but whose miner has stopped stays in the table with a
   **miner down** chip instead of dropping to offline. Every enriched field is nullable, so a rig with
   no RAPL shows no power chip and a disabled watchdog shows no temperature. The [#122 SSRF
-  guard](docs/workers.md) is unchanged — the dashboard still polls only the operator-set descriptor
+  guard](workers.md) is unchanged — the dashboard still polls only the operator-set descriptor
   host/port, never a miner-advertised value. See [Connecting
-  Miners](docs/workers.md#rigforge-enriched-feed).
+  Miners](workers.md#rigforge-enriched-feed).
 
 - **Confirm Tari payouts on-chain, too (#462).** The Tari sibling of #381, for the other half of
   the merge-mine. Tari merge-mining here is solo — the whole block reward lands at once when your
@@ -1407,7 +1407,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   safeguard — because Tari has no key-import file, the wallet secrets reach the container through a
   tmpfs secret mount, so they never appear in `docker inspect`. Off by default (empty view key =
   nothing new runs); **local Tari node only.** See
-  [Dashboard › Payout confirmation](docs/dashboard.md#payout-confirmation).
+  [Dashboard › Payout confirmation](dashboard.md#payout-confirmation).
 
 - **Confirm payouts on-chain with a view-only wallet (#381).** Every earnings figure the dashboard
   shows is an *estimate*; nothing checked that a P2Pool payout actually landed in your wallet.
@@ -1424,7 +1424,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   non-root with a read-only root filesystem, is published only to the host loopback
   (`127.0.0.1:18082`), and is password-authenticated. Off by default (empty view key = nothing new
   runs); **local node only** — a view key set with `monero.mode: remote` is refused. See
-  [Dashboard › Payout confirmation](docs/dashboard.md#payout-confirmation).
+  [Dashboard › Payout confirmation](dashboard.md#payout-confirmation).
 
 - **Telegram control commands: `/restart` and `/apply` (#338).** The Telegram bot, until now
   strictly read-only, can accept two commands that act on the host: `/restart` recreates the stack
@@ -1438,7 +1438,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   validates and runs the fixed verb and audits the actor (`tg-<user-id>`) and outcome. Requires
   `dashboard.control` (the spool + runner) and the read-only command bot; a config-*changing* apply
   stays in the dashboard editor behind its default-deny allowlist. See
-  [Telegram › Control commands](docs/telegram.md#control-commands).
+  [Telegram › Control commands](telegram.md#control-commands).
 
 - **Configurable stratum port & per-worker endpoints (#172).** `p2pool.stratum_port` (default
   `3333`) sets the port the stratum endpoint your rigs connect to is published on — thread through
@@ -1453,7 +1453,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   operator-set in `config.json` and is never taken from a miner-advertised value — the dashboard
   never sends a configured token to a miner-controlled host (SSRF guard, #122). The standard path
   (3333 / 8080 / token = rig name) needs no config. Pairs with rigforge#21 (`pool.port`) and
-  rigforge#23 (`api.port`). See [Connecting Miners](docs/workers.md).
+  rigforge#23 (`api.port`). See [Connecting Miners](workers.md).
 
 - **Alert sinks beyond Telegram: generic JSON webhook + ntfy (#380).** Every alert the stack
   produces — node down/recovered, worker offline/joined/left, sync, disk, DB, XvB, clearnet
@@ -1467,7 +1467,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   URLs, the ntfy token) never logged or echoed, and **Tor-routed by default** so the endpoint
   sees a Tor exit, not your host IP. `notifications.tor: false` is the LAN/self-hosted carve-out
   (Tor exits can't reach private addresses) — with it, clearnet endpoints see your host IP. See
-  [Telegram › Webhook and ntfy sinks](docs/telegram.md#webhook-and-ntfy-sinks).
+  [Telegram › Webhook and ntfy sinks](telegram.md#webhook-and-ntfy-sinks).
 
 ### Changed
 
@@ -1481,7 +1481,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   dashboard, move, verify the DB arrived; an explicit `dashboard.data_dir` is warned about and
   left alone, and data at both locations stops the run instead of guessing). The canonical layout
   — `current`, one rollback version dir, the shared data root — is documented in
-  [Operations › The deploy-box layout](docs/operations.md#the-deploy-box-layout), replacing the
+  [Operations › The deploy-box layout](operations.md#the-deploy-box-layout), replacing the
   hand-written per-box READMEs.
 
 ### Fixed
@@ -1564,7 +1564,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   is also secret-free. A fully compromised dashboard container can now read masked config,
   results, and the audit log, and ask to change an allowlisted key — nothing else. The copy is
   re-rendered on every `setup`/`apply`/`upgrade` and runner pass, so it never serves stale state
-  for long. See [SECURITY.md](SECURITY.md#secret-trust-boundary-for-dashboard-config-editing).
+  for long. See [SECURITY.md](../SECURITY.md#secret-trust-boundary-for-dashboard-config-editing).
 
 - **Image verification is bound to the pulled bytes (#451).** `verify_release_images` now cosign-
   verifies the immutable `@sha256` digest the bundled compose pins each first-party image to (#461),
@@ -1597,7 +1597,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   note; if egress stays broken (the Tor network itself overloaded), it stops restarting and keeps
   warning. Off by default: a tor restart drops all circuits, so the stack never restarts its
   privacy boundary unbidden. The doctor WARN now names both fixes. See
-  [Operations › Troubleshooting](docs/operations.md#troubleshooting).
+  [Operations › Troubleshooting](operations.md#troubleshooting).
 - **Simple view points at the Advanced-only calculators (#425).** The P2Pool Earnings card — the
   XMR/XTM estimates and the XvB tier calculator — renders only in Advanced view, and operators on
   the default Simple view concluded it didn't exist. Simple view now shows a one-time dismissible
@@ -1611,7 +1611,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   unchanged. `pithead-completion.bash` (repo root, shipped in the release bundle) adds
   tab-completion for subcommands and `logs <service>` in bash and zsh; a test pins its command
   list to the CLI dispatch so the two can't drift. See
-  [Operations](docs/operations.md#chaining-commands).
+  [Operations](operations.md#chaining-commands).
 - **`pithead rotate-secrets` regenerates the stack's internal credentials in one command (#378).**
   After a suspected leak (a backup that left the box, a pasted `.env`), one command rotates the
   local Monero RPC password (skipped in remote mode — that credential belongs to the remote node),
@@ -1621,7 +1621,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   values stay recoverable in owner-only `config.json.bak-<timestamp>` / `.env.bak-<timestamp>`
   copies taken before anything changes, and a failed recreate leaves the retry marker so
   `./pithead apply` finishes the job. The dashboard onion keeps its own `rotate-dashboard-onion`.
-  See [Operations › Rotating the internal secrets](docs/operations.md#rotating-the-internal-secrets).
+  See [Operations › Rotating the internal secrets](operations.md#rotating-the-internal-secrets).
 - **`pithead backup` encrypts archives by default (#374).** The backup archive carries the stack's
   full secret material (`.env`, the onion private keys, the dashboard DB), and its `chmod 600` only
   protects it on the local disk. `backup` now prompts for a passphrase (twice) and streams the tar
@@ -1678,7 +1678,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   rotate-the-password/onion nudge when failures spike — over Tor there is no source IP, so the
   rate of 401s *is* the intrusion signal. Every field read from either log is treated as hostile
   input and whitelisted to a safe character set before display. See
-  [Operations › Watching for intruders](docs/operations.md#watching-for-intruders).
+  [Operations › Watching for intruders](operations.md#watching-for-intruders).
 - **`status` shows per-chain sync progress (#384).** While a chain is still syncing, `./pithead
   status` reads the dashboard's own `/api/state` and prints each chain's percent and blocks
   remaining inline, instead of only pointing you at the dashboard. No ETA is shown — block rate
@@ -1695,7 +1695,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   pasted diagnostics report carries the version.
 - **`CODE_OF_CONDUCT.md`** — the Contributor Covenant v2.1, filling the last empty slot in the
   GitHub community profile. Enforcement reports go through the same private channel as security
-  reports (see [`SECURITY.md`](SECURITY.md)). CONTRIBUTING links it (#372).
+  reports (see [`SECURITY.md`](../SECURITY.md)). CONTRIBUTING links it (#372).
 
 ### Changed
 
@@ -1749,7 +1749,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   missing cosign binary aborts the upgrade with nothing pulled or restarted. Installs without
   `cosign.pub` (bundles up to v1.3.x) keep today's TLS-to-GitHub + tag-pinning behaviour with a
   loud warning, and `doctor` reports the verification state. See
-  [Releasing › Signed releases](docs/dev/releasing.md#signed-releases).
+  [Releasing › Signed releases](dev/releasing.md#signed-releases).
 - **Read-only root filesystems on every service (#377).** tor, monerod, tari, p2pool, xmrig-proxy
   and the dashboard now run with `read_only: true` like Caddy and the two socket proxies already
   did. Each service keeps exactly its verified write paths: the bind-mounted data dir plus a
@@ -1881,7 +1881,7 @@ Around that arc: a payout-wallet tamper tripwire, three new `doctor` runtime che
   no longer goes unnoticed.
 - **Prometheus `/metrics` endpoint (#379).** ~28 `pithead_*` gauges rendered from the metrics the
   dashboard already computes — no new dependency, same bind and auth as the dashboard. Scrape
-  example in [docs/monitoring.md](docs/monitoring.md).
+  example in [docs/monitoring.md](monitoring.md).
 - **Telegram `/status` shows the 24h P2Pool/XvB split (#365)** when XvB is enabled, using the same
   math as the daily digest.
 - **Three `doctor` runtime checks (#383).** The Tor-egress firewall rules are actually installed (a
@@ -1982,7 +1982,7 @@ proxy token) are untouched.
   (`/status`, `/hashrate`, `/workers`, `/sync`, `/system`, `/pool`, `/xvb`, `/earnings`, `/info`,
   `/help`) from a single configured chat. Alerts and commands are separate opt-ins, every event has a
   toggle, and both the sends and the command poll ride the bridge Tor SOCKS (#340), so Telegram sees a
-  Tor exit and not your host IP. See [`docs/telegram.md`](docs/telegram.md).
+  Tor exit and not your host IP. See [`docs/telegram.md`](telegram.md).
 - **Healthchecks.io dead-man's switch (#79).** Opt-in. Set `healthchecks.ping_url` and the dashboard
   pings it every cycle; if the whole host dies the pings stop and Healthchecks.io alerts you on the
   *absence* of a ping — the one failure mode an in-stack notifier can't report. The ping always rides
@@ -1994,7 +1994,7 @@ proxy token) are untouched.
   authorization (the onion does not respond without your client key), and `pithead` refuses to publish
   it unless the dashboard password is at least 16 characters. This is inbound access and does not
   change the egress posture. See
-  [Remote access over Tor](docs/configuration.md#remote-access-over-tor-onion-service).
+  [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service).
 
 ### Changed
 
@@ -2121,7 +2121,7 @@ CLI (re-download the bundle / `pithead upgrade` to pick it up).
 
 **Already running an earlier version?** Run `./pithead doctor` — it tells you whether your Monero payout
 address is a subaddress (i.e. you've been mining unpaid). Install/upgrade: see
-[Getting Started](docs/getting-started.md) and [Updating the stack](docs/operations.md#updating-the-stack).
+[Getting Started](getting-started.md) and [Updating the stack](operations.md#updating-the-stack).
 
 ## [1.0.2] - 2026-06-14
 
@@ -2147,7 +2147,7 @@ cd pithead && cp config.json.template config.json   # set your Monero + Tari pay
 ./pithead setup
 ```
 
-See [Getting Started](docs/getting-started.md) and [Updating the stack](docs/operations.md#updating-the-stack).
+See [Getting Started](getting-started.md) and [Updating the stack](operations.md#updating-the-stack).
 
 ## [1.0.1] - 2026-06-13
 
@@ -2172,7 +2172,7 @@ that the **system clock is NTP-synchronized** (clock skew gets shares/blocks rej
 
 ### Install / Upgrade
 
-**Install** — download the latest release bundle (pulls the published, tested images) and run setup; see the [quickstart](docs/getting-started.md):
+**Install** — download the latest release bundle (pulls the published, tested images) and run setup; see the [quickstart](getting-started.md):
 
 ```sh
 curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz
@@ -2180,7 +2180,7 @@ cd pithead && cp config.json.template config.json   # set your Monero + Tari pay
 ./pithead setup
 ```
 
-**Upgrade** — re-download the bundle over your install (or `git pull` for a source checkout), then `./pithead upgrade`. It **re-renders the generated config itself** — the P2Pool v4.16 monerod settings (`out-peers`, the clearnet-window priority nodes) and the new `doctor` clock check are picked up automatically — so **no separate `./pithead apply` is needed for this release**, and your `config.json` plus preserved secrets (Tor onions, RPC credentials, proxy token) are kept untouched. Run `./pithead apply` only when *you* edit `config.json` — e.g. to opt into the new, default-off [clearnet initial sync](docs/privacy.md). See [`docs/operations.md`](docs/operations.md) for the full lifecycle reference.
+**Upgrade** — re-download the bundle over your install (or `git pull` for a source checkout), then `./pithead upgrade`. It **re-renders the generated config itself** — the P2Pool v4.16 monerod settings (`out-peers`, the clearnet-window priority nodes) and the new `doctor` clock check are picked up automatically — so **no separate `./pithead apply` is needed for this release**, and your `config.json` plus preserved secrets (Tor onions, RPC credentials, proxy token) are kept untouched. Run `./pithead apply` only when *you* edit `config.json` — e.g. to opt into the new, default-off [clearnet initial sync](privacy.md). See [`docs/operations.md`](operations.md) for the full lifecycle reference.
 
 ### Added
 
@@ -2193,7 +2193,7 @@ cd pithead && cp config.json.template config.json   # set your Monero + Tari pay
   **always rides Tor** (the shared bridge SOCKS) so the endpoint sees a Tor exit, not your host IP,
   so paste a Tor-reachable URL (hosted `hc-ping.com`, or a self-hosted onion/public instance). Fails
   silently when offline / Tor down. The URL is the on/off switch and is stored as a secret in the
-  owner-only `.env`. See [`docs/monitoring.md`](docs/monitoring.md) (#79).
+  owner-only `.env`. See [`docs/monitoring.md`](monitoring.md) (#79).
 - **Telegram operator bot — push alerts + on-demand status** (#121, #45): the dashboard can push a
   high-value set of operational alerts to Telegram — a **🚀 "Pithead online"** heartbeat on start,
   **node down / recovered**, **worker offline / back online**, **new worker joined / left**, **sync
@@ -2222,7 +2222,7 @@ cd pithead && cp config.json.template config.json   # set your Monero + Tari pay
   Messages are prefixed with the dashboard hostname so multiple stacks can share one chat. Full
   walkthrough — creating a bot, finding your chat id, the command list, and the "one chat, two bots"
   pattern for sharing a chat with the Healthchecks.io monitor (#79) — in
-  [`docs/telegram.md`](docs/telegram.md).
+  [`docs/telegram.md`](telegram.md).
 - **Host & performance warning badges + alerts** (#104): the top bar now surfaces the persistent
   host conditions `setup` warns about, derived from **live** metrics (so they self-correct): **⚠
   HugePages off** (RandomX capped until reserved), **⚠ Low RAM** (under 16 GB — Tari can OOM during
@@ -2242,7 +2242,7 @@ cd pithead && cp config.json.template config.json   # set your Monero + Tari pay
   drop, green for the recovery; hover for the size) that is **persisted**, so an overnight drop is
   still visible in the morning, and — when Telegram is on — pushes a **`hashrate_loss`** alert and
   counts toward the daily incident roll-up. Both knobs are documented in
-  [`docs/configuration.md`](docs/configuration.md); the alert in [`docs/telegram.md`](docs/telegram.md).
+  [`docs/configuration.md`](configuration.md); the alert in [`docs/telegram.md`](telegram.md).
 - **Optional clearnet initial sync (#183).** A default-off, per-component opt-in
   (`monero.clearnet_initial_sync` / `tari.clearnet_initial_sync`) that lets a node do its **one-time
   initial block download over clearnet** — much faster than over bandwidth-capped Tor circuits, which
@@ -2716,7 +2716,7 @@ cd pithead && cp config.json.template config.json   # set your Monero + Tari pay
   (they were readable via `docker inspect`); the healthcheck now reads them from the container
   environment via a script.
 - Documented that the stratum port defaults to all interfaces and should be firewalled to the
-  LAN — see [Connecting Miners › Firewall](docs/workers.md#firewall).
+  LAN — see [Connecting Miners › Firewall](workers.md#firewall).
 - All externally-pulled base/runtime images are now pinned by immutable `@sha256` digest
   (caddy, docker-socket-proxy, the Tari node, and the `ubuntu`/`python`/`alpine` build bases),
   so a re-pushed tag or a registry MITM can't silently change the running image (#135).

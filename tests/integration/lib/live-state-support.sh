@@ -344,3 +344,32 @@ start_restored_baseline() {
     # shellcheck disable=SC2034 # read by live-upgrade-support.sh:restore_upgrade_baseline
     BASELINE_START_STEP=""
 }
+
+# Capture both volatile worker readings from one fresh response on every rollback poll.
+# These variables are local to restore_upgrade_baseline (Bash dynamic scope).
+_pred_upgrade_workers_capture() {
+    state="$(api_state)"
+    restored_workers="$(jq -r '.workers[]?.name' <<<"$state" 2>/dev/null | sort -u)"
+    [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] &&
+        [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null
+}
+
+upgrade_miner_observation_start() {
+    rx 'printf "%s %s\n" "$(date +%s)" "$(systemctl show xmrig.service -p MainPID --value 2>/dev/null)"' 2>/dev/null || true
+}
+
+upgrade_miner_observation_finish() { # <target epoch and pre-restore MainPID>
+    local epoch before after changed=unavailable recovery=unavailable journal
+    read -r epoch before <<<"$1"
+    after="$(rx 'systemctl show xmrig.service -p MainPID --value' 2>/dev/null)" || after=""
+    if [[ "$before" =~ ^[1-9][0-9]*$ && "$after" =~ ^[1-9][0-9]*$ ]]; then
+        changed=no
+        [ "$before" = "$after" ] || changed=yes
+    fi
+    if [[ "$epoch" =~ ^[0-9]+$ ]] &&
+        journal="$(rx "journalctl -u pithead-miner-recovery.service --since=@$epoch --no-pager -o cat -n 50" 2>/dev/null)"; then
+        recovery=no
+        [[ "$journal" != *'pithead-miner-recovery: active local miner disconnected for 300 seconds; restarting xmrig'* ]] || recovery=yes
+    fi
+    it_log "rollback miner observation: MainPID changed=$changed; recovery-agent journal line=$recovery"
+}

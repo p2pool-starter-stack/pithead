@@ -80,6 +80,27 @@ seed_cr
 rm -f "$rebooted"
 out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PITHEAD_REBOOT_CMD="touch $rebooted" PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1)
 assert_eq "config-reset on the appliance reboots into firstboot" "$([ -f "$rebooted" ] && echo yes)" "yes"
+# A failed shutdown remains best-effort, but its real stderr and continuation must be visible.
+seed_cr
+rm -f "$rebooted"
+cat >"$CR/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+if [ "$*" = "compose down --remove-orphans" ]; then
+    echo "compose: synthetic shutdown failure" >&2
+    exit 125
+fi
+exit 0
+EOF
+out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PITHEAD_REBOOT_CMD="touch $rebooted" PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1)
+assert_rc "config-reset continues after a failed shutdown" "$?" "0"
+assert_contains "config-reset exposes the Compose stderr" "$out" "compose: synthetic shutdown failure"
+assert_contains "config-reset identifies the failed shutdown and intentional wipe" "$out" "Stack shutdown failed — continuing with the config wipe."
+assert_contains "config-reset warns that containers may still run" "$out" "Containers may still be running"
+assert_eq "failed shutdown still clears configuration and reboots" \
+    "$([ ! -f "$CR/config.json" ] && [ ! -f "$CR/.env" ] && [ ! -f "$CR/Caddyfile" ] && [ ! -f "$CR/machine-role" ] && [ -f "$rebooted" ] && echo cleared-and-rebooting)" "cleared-and-rebooting"
+assert_eq "failed shutdown keeps the chain and Tor identity" \
+    "$([ -f "$CR/data/monero/blockchain" ] && [ -f "$CR/data/tor/hostname" ] && echo kept)" "kept"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$CR/bin/docker"
 # Already unprovisioned: nothing to reset.
 out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1) || true
 assert_contains "config-reset refuses when config.json is absent" "$out" "already unprovisioned"

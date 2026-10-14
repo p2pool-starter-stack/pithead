@@ -7,6 +7,12 @@ source "$HERE/lib/live-upgrade-support.sh"
 source "$HERE/lib/live-state-support.sh"
 # shellcheck source=tests/integration/lib/live-xvb-support.sh
 source "$HERE/lib/live-xvb-support.sh"
+_pred_worker_set_capture() { # expected set, output variable in the caller
+    local observed
+    observed="$(worker_names)"
+    [ "$observed" = "$1" ] || return 1
+    printf -v "$2" '%s' "$observed"
+}
 run_image_upgrade() {
     # shellcheck disable=SC2034 # read by lib.sh's reporters to label assertions and artifacts
     IT_CURRENT_SCENARIO="image-upgrade"
@@ -14,6 +20,7 @@ run_image_upgrade() {
     it_log "── cross-version image upgrade phase ────────────────"
 
     local before_state before_rev before_images before_revisions before_secrets before_workers before_telemetry candidate_refs fails_before="$IT_FAIL"
+    local after_workers=""
     local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs before_first_refs candidate_all_refs before_mounts_rc capture_gaps inside_dirs
     # #2057: safety_backup() (run before this) stops and restarts the whole stack around the
     # archive, which resets p2pool's stratum session and the proxy's worker count exactly like an
@@ -187,10 +194,15 @@ run_image_upgrade() {
     # reconnect at >18min for, and unlike run-matrix.sh/run-rigforge.sh's tari waits, this one
     # feeds straight into a hard it_fail with no assert_tari_synced_required lag tolerance.
     wait_tari_synced 1500 || it_fail "Tari resynchronized after image upgrade" "sync did not reach done"
-    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_for 240 5 "the exact pre-upgrade worker set" _pred_worker_set "$before_workers" || it_fail "workers returned after image upgrade" "the exact pre-upgrade worker set did not return"
+    if [ "$SKIP_MINING_ASSERTS" = "1" ]; then
+        after_workers="$(worker_names)"
+    else
+        wait_for "${BOUND_RECONNECT:-480}" 5 "the exact pre-upgrade worker set" _pred_worker_set_capture "$before_workers" after_workers ||
+            it_fail "workers returned after image upgrade" "the exact pre-upgrade worker set did not return"
+    fi
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 360 || it_fail "hashes resumed after image upgrade" "stratum hashes stayed idle"
 
-    local after_state after_monero after_monero_id after_monero_tip after_rev after_images after_revisions after_refs after_all_refs after_secrets after_workers after_telemetry missing_workers name safe_name
+    local after_state after_monero after_monero_id after_monero_tip after_rev after_images after_revisions after_refs after_all_refs after_secrets after_telemetry missing_workers name safe_name
     after_state="$(api_state)"
     after_rev="$(dashboard_image_revision)"
     after_images="$(compose_image_ids)"
@@ -205,7 +217,6 @@ run_image_upgrade() {
             "a required .env category or Tor onion-key file set is absent/unreadable"
         after_secrets="UNREADABLE"
     fi
-    after_workers="$(worker_names)"
     if ! after_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH")"; then
         it_fail "post-upgrade durable dashboard state is readable" "required tables are absent or unreadable"
         after_telemetry="UNREADABLE"
@@ -287,6 +298,27 @@ run_image_upgrade() {
         it_fail "durable dashboard rows survived the image migration" \
             "lost:$(telemetry_rows_lost "$before_telemetry" "$after_telemetry")$([ "$after_telemetry" != UNREADABLE ] || printf ' (after-upgrade rows unreadable)')"
     fi
+    assert_upgrade_config_version
     assert_telemetry_tables_present
     [ "$IT_FAIL" -le "$fails_before" ] || capture_artifacts "image-upgrade" "$OUT_DIR"
+}
+
+assert_upgrade_config_version() {
+    local config_stamp code_version recent_changes
+    config_stamp=$(rx "cd '$UPGRADE_CANDIDATE_DIR' && jq -r '.config_version // empty' config.json")
+    code_version=$(rx "cd '$UPGRADE_CANDIDATE_DIR' && cat VERSION")
+    code_version=${code_version%%[-+]*}
+    if [[ "$code_version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]] && [ "$config_stamp" = "$code_version" ]; then
+        it_pass "upgraded config stamp matches candidate VERSION core"
+    else
+        it_fail "upgraded config stamp matches candidate VERSION core" "release version unavailable or stamp mismatch"
+    fi
+    local payload
+    payload=$(base64 <"$HERE/lib/config-version-audit.py" | tr -d '\n')
+    recent_changes=$(rx "printf %s $(quote_arg "$payload") | base64 -d | docker exec -i dashboard python3 -" 2>/dev/null)
+    if [ "$recent_changes" = clean ]; then
+        it_pass "image upgrade records no config_version recent-change row"
+    else
+        it_fail "image upgrade records no config_version recent-change row" "recent changes unavailable or stamp key recorded"
+    fi
 }

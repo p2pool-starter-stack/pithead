@@ -11,18 +11,16 @@ mining_stack_running() {
     container_is_running p2pool || container_is_running monerod || container_is_running xmrig-proxy
 }
 
-# doctor (#563): the tor container is unconditional (no compose profile gates it — it's the
-# Tor-first backbone in every deployment, remote-node mode included). So "revenue containers up
-# but tor down" is never a legitimate state: it means tor crashed or was stopped individually
-# while the stack kept mining, leaving clearnet dials no longer fail-closed and every off-box
-# connection (Healthchecks, Telegram, XvB, p2pool/Tari peers) without its Tor path. FAIL loudly so
-# doctor can't report all-clear on a silent privacy outage. A clean `down` (nothing running) is
-# fine — nothing to guard.
+# Tor down while mining runs is a privacy outage; a clean stack shutdown is expected.
 check_tor_running() {
+    if [ "$(normalize_bool "$(env_get TOR_AUTO_HEAL)")" = true ] &&
+        [ "$(normalize_bool "$(env_get DASHBOARD_CONTROL_ENABLED)")" != true ]; then
+        dr_info "Tor auto-heal only probes and logs while dashboard control is disabled. Set a dashboard login and enable dashboard control for automatic recovery, or restart Tor by hand."
+    fi
     if container_is_running tor; then
         dr_ok "Tor container is running — the privacy backbone is up."
     elif mining_stack_running; then
-        dr_fail_surface "The Tor container is DOWN while the mining stack is still running — the privacy backbone is dead: clearnet dials are no longer fail-closed and off-box connections (Healthchecks, Telegram, XvB, peers) have lost their Tor path. Restart it ('./pithead restart tor'; set tor.auto_heal:true to self-heal), or bring the stack down ('./pithead down')." "The Tor container is DOWN while the mining stack is still running — the privacy backbone is dead: clearnet dials are no longer fail-closed and off-box connections (Healthchecks, Telegram, XvB, peers) have lost their Tor path. There is no dashboard control that restarts Tor on its own."
+        dr_fail_surface "The Tor container is DOWN while the mining stack is still running — the privacy backbone is dead: clearnet dials are no longer fail-closed and off-box connections (Healthchecks, Telegram, XvB, peers) have lost their Tor path. Restart it ('./pithead restart tor'; set tor.auto_heal:true with a dashboard login and dashboard.control.enabled:true to self-heal), or bring the stack down ('./pithead down')." "The Tor container is DOWN while the mining stack is still running — the privacy backbone is dead: clearnet dials are no longer fail-closed and off-box connections (Healthchecks, Telegram, XvB, peers) have lost their Tor path. There is no dashboard control that restarts Tor on its own."
     else
         dr_info_surface "Tor container isn't running — the stack is down (expected after './pithead down')." "Tor container isn't running — the mining stack is down, which is expected while it is stopped."
     fi
@@ -322,7 +320,7 @@ check_revenue_containers() {
 # mining (onion/established circuits) keeps working, so the stack otherwise looks healthy. One
 # SOCKS request through the tor container to a robust no-content endpoint distinguishes "Tor
 # down" (container health already shows that) from "Tor up but exits failing" — the state that
-# needs a tor restart to pick fresh guards. WARN not FAIL: Tor weather is transient and this
+# may need a circuit refresh; this single probe is only a warning. WARN not FAIL: Tor weather is transient and this
 # must not fail cron health gates on a slow circuit.
 check_tor_clearnet_egress() {
     if ! container_is_running tor; then
@@ -342,9 +340,23 @@ check_tor_clearnet_egress() {
         "https://www.google.com/generate_204" 2>/dev/null; then
         dr_ok "Tor clearnet egress works — Healthchecks, Telegram, and XvB can reach their services."
     else
-        dr_warn_surface "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats are likely down while mining still works (a failing Tor guard does this). Fix: './pithead restart tor' picks fresh guards; set tor.auto_heal:true in config.json to have the stack do this itself." "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats are likely down while mining still works (a failing Tor guard does this). There is no dashboard control that restarts Tor on its own."
+        dr_warn_surface "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats may be down while mining still works. Check with a second target; run './pithead restart tor' for manual recovery, or set tor.auto_heal:true with a dashboard login and dashboard.control.enabled:true in config.json for bounded circuit refresh before one restart." "Tor is up but a clearnet request through its SOCKS timed out — Healthchecks pings, Telegram, and XvB stats may be down while mining still works. Check with a second target; run './pithead restart tor' for manual recovery."
     fi
     return 0
+}
+
+# doctor (#3052): Tor's circuit-build-time history saturated while the dashboard heal's NEWNYM
+# rounds went unanswered. NEWNYM cannot clear it; the explicit operator recovery can. Read-only,
+# and silent when the state is not readable (no sudo) or the heal has no sustained-outage record.
+check_tor_circuit_history() {
+    local dir
+    container_is_running tor || return 0
+    # Never stop doctor at a password prompt: skip unless root or passwordless sudo.
+    [ "$(id -u)" = 0 ] || sudo -n true 2>/dev/null || return 0
+    dir=$(tor_recovery_mount 2>/dev/null) || return 0
+    tor_recovery_state_saturated "$dir/state" || return 0
+    tor_recovery_egress_down || return 0
+    dr_fail_surface "Tor's circuit-build-time history is saturated and clearnet egress is down — NEWNYM cannot clear it. Run './pithead tor-recover check', then './pithead tor-recover apply'." "Tor's circuit-build-time history is saturated and clearnet egress is down. When auto-heal is enabled, its final step requests host-gated state recovery; otherwise enable auto-heal or ask an operator to run the recovery check."
 }
 
 # doctor (#972): a monerod that survived a tor restart with every SOCKS peer dead looks healthy —
@@ -375,6 +387,7 @@ check_monerod_synchronized() {
         dr_info "Monero sync check skipped — monerod's RPC did not answer (the container table above shows whether it is still starting)."
         return 0
     fi
+    monerod_peers_and_tip "$user" "$pass" "$url"
     if printf '%s' "$body" | jq -e '(.status == "OK") and (.synchronized == true)' >/dev/null 2>&1; then
         dr_ok "monerod reports synchronized with the Monero network."
     else

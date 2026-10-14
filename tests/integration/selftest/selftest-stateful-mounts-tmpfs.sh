@@ -23,7 +23,7 @@ fixture='[{"Mounts":[
 ]}]'
 # The same select() clause stateful_mounts() runs (tests/integration/lib/live-upgrade-support.sh),
 # against a service name "$s" the way the real snippet supplies it.
-out="$(jq -r --arg s p2pool '.[0].Mounts[] | select(.RW == true and .Type != "tmpfs" and (.Destination | IN("/var/lib/tor","/home/ubuntu/.bitmonero","/home/ubuntu/wallets","/var/tari/node","/home/ubuntu/wallet","/home/ubuntu","/data","/clearnet-state","/control/requests","/var/log/caddy"))) | [$s,.Destination,.Source,.Type] | @tsv' <<<"$fixture")"
+out="$(jq -r --arg s p2pool '.[0].Mounts[] | select(.RW == true and .Type != "tmpfs" and (.Destination | IN("/var/lib/tor","/home/ubuntu/.bitmonero","/home/ubuntu/wallets","/var/tari/node","/var/tari/wallet","/home/ubuntu","/data","/clearnet-state","/control/requests","/var/log/caddy"))) | [$s,.Destination,.Source,.Type] | @tsv' <<<"$fixture")"
 [ "$(printf '%s\n' "$out" | wc -l)" = 2 ]
 printf '%s\n' "$out" | grep -Fq $'p2pool\t/home/ubuntu\t/data/pithead-v1.20.0/data/p2pool\tbind'
 printf '%s\n' "$out" | grep -Fq $'p2pool\t/var/lib/tor\t/data/pithead-v1.20.0/data/tor\tbind'

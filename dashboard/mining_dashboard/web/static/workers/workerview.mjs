@@ -261,7 +261,7 @@ export class WorkerInspect extends Component {
             ${
               canEdit
                 ? html`
-            <p class="text-muted text-xs">Writable keys: <span class="font-mono">${(detail.writable_keys || []).join(", ")}</span>. Prefilled with what the rig is running now, read from its own feed. A box falls back to the last config applied from here, or says so when the value cannot be read at all — a rig that is offline, or one running a RigForge older than the release that started publishing them. The rig validates and rolls back if the miner doesn't come back live.</p>
+            <p class="text-muted text-xs">Writable keys: <span class="font-mono">${(detail.writable_keys || []).join(", ")}</span>. Prefilled with what the rig is running now, read from its own feed. A box falls back to the last config applied from here, or says so when the value cannot be read at all — a rig that is offline, or one running a RigForge older than the release that started publishing them. The rig validates and rolls back if the miner doesn't come back live. A <span class="font-mono">DONATION</span> below the rig's built-in minimum has no effect: stock XMRig, which appliance rigs run, keeps donating at least 1%, and the dashboard shows the value configured, not the rate the miner runs.</p>
             <div class="toggle-group mb-1" role="group" aria-label="Worker config mode">
                 <button class=${"btn-toggle" + (mode === "table" ? " active" : "")} aria-pressed=${mode === "table"}
                     title="View the config as a table" onClick=${() => this.setMode("table")}>Table</button>

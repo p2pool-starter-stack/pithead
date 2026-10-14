@@ -30,6 +30,26 @@ env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
 # monerod is absent in remote mode.
 running_services() { rx "docker compose ps --services --status running 2>/dev/null | sort"; }
 
+# Two consecutive running samples reject a transient release before a second sync-gate hold.
+_pred_mining_probe_running() {
+    if rx 'running=$(timeout --kill-after=2 10 docker compose ps --services --status running) && grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"'; then
+        mining_probe_samples=$((mining_probe_samples + 1))
+    else
+        mining_probe_samples=0
+    fi
+    [ "$mining_probe_samples" -ge 2 ]
+}
+
+assert_mining_probe_ready() {
+    local probe="$1" mining_probe_samples=0
+    if wait_for 1500 5 "mining services running before $probe" _pred_mining_probe_running; then
+        it_pass "mining services running before $probe"
+    else
+        it_fail "mining services running before $probe" "both services did not remain running for two consecutive samples within 1500s"
+    fi
+    # A failed prerequisite never suppresses the caller's fixture assertions.
+}
+
 # Print "<state> <health>" for one service, exactly as stack_status reads it: state is the
 # container State.Status (running/exited/paused/restarting/…) and health is the healthcheck
 # verdict (healthy/unhealthy/starting/none), or "missing none" when absent. The fault-injection
@@ -125,7 +145,7 @@ record_manifest() {
 # globals RESOLVED / SKIP_REASON.
 
 run_scenario() {
-    local name="$1" overrides="$2"
+    local name="$1" overrides="$2" sync_dir=""
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="$name"
     echo ""
@@ -146,12 +166,48 @@ run_scenario() {
     fi
     push_config "$config"
 
+    # Hold the two dashboard-writable marker paths as directories for this one scenario. The
+    # supervisor cannot commit the transition yet, so the running daemons have time to establish
+    # real clearnet peers while the host firewall remains on. Release them immediately after the
+    # live egress sample; then the ordinary supervisor performs the automatic transition.
+    if [ "$name" = local-pruned-main-clearnet-sync ]; then
+        sync_dir="$(env_on_box CLEARNET_STATE_DIR)"
+        [ -n "$sync_dir" ] || sync_dir="$IT_REMOTE_DIR/data/clearnet-state"
+        if ! rx "mkdir -p $(quote_arg "$sync_dir") && rm -f $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced") && mkdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")"; then
+            it_fail "stage live clearnet sync window (#2678)" "could not reserve the marker paths"
+            return 0
+        fi
+    fi
+
     it_step "applying config (pithead apply -y)…"
     if ! pithead apply -y >"$OUT_DIR/${name}.apply.log" 2>&1; then
+        [ -z "$sync_dir" ] || rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")" >/dev/null 2>&1
         it_fail "apply succeeded" "see $OUT_DIR/${name}.apply.log"
         capture_artifacts "$name" "$OUT_DIR"
         restore_firewall_after_clearnet "$name" "$config"
         return 0
+    fi
+
+    if [ -n "$sync_dir" ]; then
+        # The staged directories hold the supervisor, but also (correctly) suppress the firewall
+        # exceptions and make the entrypoints start on Tor. Pause the supervisor, clear the staging
+        # paths, install the now-authorized exceptions, and restart the nodes before sampling peers.
+        if rx 'docker compose pause dashboard'; then
+            if rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")" &&
+                rx "sudo -n bash -c 'source ./pithead; apply_tor_egress_firewall refresh'" &&
+                rx 'docker compose restart monerod tari'; then
+                wait_for 180 5 "clearnet node containers running (#2678)" rx \
+                    'docker compose ps --services --status running | grep -Fx monerod && docker compose ps --services --status running | grep -Fx tari' || true
+                assert_egress_posture node-sync
+                it_pass "release clearnet marker paths for automatic Tor transition (#2678)"
+            else
+                it_fail "stage live clearnet sync window (#2678)" "firewall refresh or node restart failed"
+            fi
+            rx 'docker compose unpause dashboard' || it_fail "resume sync supervisor (#2678)" "dashboard stayed paused"
+        else
+            it_fail "stage live clearnet sync window (#2678)" "could not pause dashboard"
+            rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")" || true
+        fi
     fi
 
     # Wait for the stack to settle on real readiness signals before asserting. The miner/hash
@@ -163,8 +219,11 @@ run_scenario() {
     # until peers on the new chain connect — wait for the dashboard to classify it (issue #54).
     local _pool
     _pool="$(jq_get "$config" '.p2pool.pool')"
-    _pool="${_pool:-main}"
+    _pool="${_pool:-mini}"
     wait_pool_ready 180 "$(pool_label "$_pool")" || true
+    if [ "$name" = local-pruned-main-p2pool-clearnet ]; then
+        assert_egress_posture p2pool-choice
+    fi
     # End-to-end mining: p2pool's stratum hash counter resets on restart and climbs only once the
     # proxy's upstream reconnects and a share lands — wait for it before asserting hashes>0 (issue #54).
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || true
@@ -176,26 +235,38 @@ run_scenario() {
 
     local fails_before="$IT_FAIL"
     assert_scenario "$name" "$config"
+    if [ "$name" = local-pruned-main-p2pool-clearnet ]; then
+        push_config "$(printf '%s' "$config" | jq '.p2pool.clearnet = false')"
+        if pithead apply -y >"$OUT_DIR/${name}.tor.apply.log" 2>&1 &&
+            rx "sudo -n bash -c 'source ./pithead; tor_egress_enforced'"; then
+            it_pass "turning P2Pool clearnet off removes its live firewall exemption (#2790)"
+            wait_pool_ready 180 "$(pool_label "$_pool")" || true
+            assert_egress_posture
+        else
+            it_fail "turning P2Pool clearnet off removes its live firewall exemption (#2790)" "apply or live readback failed"
+        fi
+    fi
+    if [ "$name" = local-pruned-main-payout-pairs ]; then
+        if rx 'timeout 3600 bash tests/integration/payout-pairs/run.sh' >"$OUT_DIR/payout-pairs.log" 2>&1; then
+            it_pass "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)"
+        else
+            it_fail "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)" "see payout-pairs.log"
+        fi
+    fi
     # If this scenario turned anything red, grab artifacts for it.
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "$name" "$OUT_DIR"
     restore_firewall_after_clearnet "$name" "$config"
     return 0
 }
 
-# Whether a chain's clearnet_initial_sync flag actually reaches its daemon: render_env ignores it
-# while the egress firewall is on (#2649). One caller, assert_running_state in run-state.sh; it
-# lives here to keep that file under its file-budget ceiling.
+# A chosen chain's clearnet flag reaches its daemon even with the firewall on (#2678).
 clearnet_flag_effective() { # <config> <chain: monero|tari> -> true|false
-    [ "$(jq_get "$1" ".$2.clearnet_initial_sync")" = "true" ] &&
-        [ "$(jq_get "$1" '.network.tor_egress_firewall')" = "false" ] && echo true || echo false
+    [ "$(jq_get "$1" ".$2.clearnet_initial_sync")" = "true" ] && echo true || echo false
 }
 
-# The clearnet-sync scenario runs with the egress firewall off, the only way its flags reach the
-# daemons (#2649). Before that scenario ends, turn the firewall back on with the flags left set and
-# prove what the operator then gets: the rules are installed again, render_env zeroes both .env
-# flags, and a sync that already completed stays spent. The marker survives the apply, so turning
-# the firewall off again later would not put a synced node back on clearnet. Any other config is
-# left alone.
+# A legacy firewall-off clearnet scenario still restores the firewall before leaving the bench.
+# Keep the flags and spent markers during that restore; the default-on sync scenario does not
+# enter this helper. Every other config is left alone.
 restore_firewall_after_clearnet() { # <name> <config>
     local name="$1" config="$2" sdir chain had=""
     [ "$(jq_get "$config" '.network.tor_egress_firewall')" = "false" ] || return 0
@@ -218,8 +289,8 @@ restore_firewall_after_clearnet() { # <name> <config>
     fi
     wait_status_ok 240 || true
     assert_contains "egress firewall back on after the clearnet sync (#2649)" "$(pithead doctor 2>&1)" "egress firewall is installed"
-    assert_eq "firewall on: monero clearnet flag ignored (#2649)" "$(env_on_box MONERO_CLEARNET_SYNC)" "false"
-    assert_eq "firewall on: tari clearnet flag ignored (#2649)" "$(env_on_box TARI_CLEARNET_SYNC)" "false"
+    assert_eq "firewall on: monero clearnet flag retained (#2678)" "$(env_on_box MONERO_CLEARNET_SYNC)" "true"
+    assert_eq "firewall on: tari clearnet flag retained (#2678)" "$(env_on_box TARI_CLEARNET_SYNC)" "true"
     for chain in $had; do
         if rx "test -f $(quote_arg "$sdir/$chain.synced")"; then
             it_pass "firewall on: the completed $chain clearnet sync stays spent (#234/#2649)"

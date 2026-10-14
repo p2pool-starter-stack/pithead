@@ -96,3 +96,15 @@ provisioning_state() { # one line for a verdict: unit states + whether one ran, 
 unit_ran_this_boot() {
     [ "$(_ssh "systemctl show -p ConditionResult --value $1" 2>/dev/null | tr -d '\r\n')" = yes ]
 }
+
+# SSH returning after a reboot does not mean systemd has evaluated this unit's conditions yet.
+# ConditionResult=no before evaluation looks exactly like a skipped unit (#2836).
+wait_unit_condition_evaluated() { # $1 = unit name; return 1 at the bounded deadline
+    local n stamp
+    for ((n = 0; n < ${UNIT_CONDITION_ATTEMPTS:-30}; n++)); do
+        stamp=$(SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-3}" _ssh "systemctl show -p ConditionTimestampMonotonic --value $1" 2>/dev/null | tr -d '\r\n')
+        [[ "$stamp" =~ ^[1-9][0-9]*$ ]] && return 0
+        sleep "${UNIT_CONDITION_POLL_S:-1}"
+    done
+    return 1
+}
