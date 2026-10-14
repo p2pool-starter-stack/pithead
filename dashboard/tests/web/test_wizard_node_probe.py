@@ -322,7 +322,7 @@ async def test_an_unresolvable_name_keeps_the_dns_refusal():
     assert failure == ("dns", "The node name did not resolve to an address.")
 
 
-async def test_a_name_resolving_to_a_private_ipv4_is_pinned_into_the_rendered_candidate(
+async def test_a_dual_stack_name_is_pinned_to_its_private_ipv4_in_the_rendered_candidate(
     monkeypatch,
 ):
     monkeypatch.setattr(wizard_node_probe, "_monero_rpc", lambda *_args: (True, "ok", "rpc"))
@@ -331,7 +331,7 @@ async def test_a_name_resolving_to_a_private_ipv4_is_pinned_into_the_rendered_ca
         return True, "ok", "zmq"
 
     monkeypatch.setattr(wizard_node_probe, "_monero_zmq", zmq)
-    with _fake_resolver("10.20.30.40"):
+    with _fake_resolver("10.20.30.40", "fd00::1"):
         cfg = _candidate()
         cfg["monero"]["remote"]["host"] = "node.example"
         report = await wizard_node_probe.probe_remote_nodes(cfg)
