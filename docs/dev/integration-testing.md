@@ -793,6 +793,21 @@ For one representative config:
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
   stop `monerod` → `status` returns non-zero (node down) and the dashboard rejects workers
   (stops `xmrig-proxy`) → start `monerod` → workers readmitted → `status` → `0`.
+  The recovery wait remains 240 seconds. Its final status invocation has a 30-second
+  transport deadline; a timeout fails the same `status OK after node recovery` row.
+  A non-zero final status saves `results/node-recovery.failure.json` before backup/restore.
+  It records that invocation's exit code, elapsed wait and wait exit code, recognized
+  service-verdict lines from its stdout/stderr, and the count of omitted lines. Other
+  status text, including Compose topology, credentials and onion URLs, is excluded.
+  The failure then samples dashboard sync/pool state and node-health level, plus the
+  six relevant containers' state, health, restart count, exit code and OOM flag. These
+  later samples have separate 15-second transport deadlines and do not replace the
+  asserted invocation. Each probe drains output while retaining at most 64 KiB, records
+  its exit code, timeout and truncation, and excludes unrecognized fields and values.
+  Missing, malformed, failed or truncated projections are explicitly unavailable;
+  an evidence-write failure adds a failed evidence row without changing the status row.
+  Success adds no failure artifact or supplementary probes. These diagnostics do not
+  establish the cause of a historical failure or change its verdict.
 - Uninstall → setup round trip ([#2379](https://github.com/p2pool-starter-stack/pithead/issues/2379)):
   the stack is stopped, every kept path (each `*_DATA_DIR`, `config.json`, `backups/`) is
   snapshotted, and `uninstall -y` must leave that snapshot identical, with no allowed writes. Files

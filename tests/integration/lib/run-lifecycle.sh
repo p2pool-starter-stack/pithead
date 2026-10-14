@@ -4,6 +4,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tari-background-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
+# shellcheck source=tests/integration/lib/node-recovery-evidence.sh
+source "$(dirname "${BASH_SOURCE[0]}")/node-recovery-evidence.sh" || exit $?
 run_lifecycle() {
     IT_CURRENT_SCENARIO="lifecycle"
     local lifecycle_ok=1 reset_failed=0 # reset_failed: 1 changed state, 2 left the stack intact (#3342)
@@ -101,9 +103,7 @@ run_lifecycle() {
         assert_rc "status non-zero when node down" "$?" "1"
         it_step "starting monerod and waiting for readmit…"
         rx "docker compose start monerod" >/dev/null 2>&1
-        wait_status_ok 240 || true
-        pithead status >/dev/null 2>&1
-        assert_rc "status OK after node recovery" "$?" "0"
+        assert_node_recovery_status
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
