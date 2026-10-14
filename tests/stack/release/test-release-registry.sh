@@ -1,7 +1,7 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # release globals/stubs are consumed across dynamic sources
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # Registry writes and index-digest parsing; every external operation is a recording stub.
+echo "== unit: release registry contracts =="
 REL="$ROOT/scripts/release/release.sh"
 REG_TEST="$SANDBOX/registry"
 mkdir -p "$REG_TEST"
@@ -9,6 +9,7 @@ INDEX="sha256:$(printf '%064d' 1)"
 CHILD="sha256:$(printf '%064d' 2)"
 PADDED="$ROOT/tests/stack/fixtures/imagetools/inspect-padded.txt"
 # shellcheck disable=SC1090,SC2034
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_case() (
     local action="$1"
     shift
@@ -35,6 +36,7 @@ registry_case() (
 registry_out="$(registry_case promote 2>&1)"
 assert_rc "promote accepts the padded index digest" "$?" 0
 # MUTATION PROOF: accepting any digest or an indented child makes these promotions succeed.
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_mismatch() {
     REGISTRY_READ_RETRIES=4
     buildx_inspect() {
@@ -66,6 +68,7 @@ assert_eq "release parser returns the fixture's index" "$parsed" "$INDEX"
 assert_contains "appliance parser pins the same index" "$pinned" "@$parsed"
 assert_not_contains "appliance parser rejects child digest" "$pinned" "$CHILD"
 # The command's final stderr line is the failure: classification must wait for tee to flush.
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_write_stub() {
     local n
     n="$(($(cat "$REG_TEST/count") + 1))"
@@ -75,6 +78,7 @@ registry_write_stub() {
         return 7
     fi
 }
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_write_stage() {
     local verb="$1" fixture_rootfs=os/build/pithead-root.tar
     REGISTRY_WRITE_RETRIES=3 REGISTRY_WRITE_BACKOFF=10
@@ -119,6 +123,7 @@ done
 assert_eq "rootfs builds only once" "$(cat "$REG_TEST/build-count")" 1
 assert_eq "rootfs publishes its handoff after push succeeds" "$([ -s "$REG_TEST/rootfs/os/build/pithead-root.tar.sha256" ] && echo yes)" yes
 # MUTATION PROOF: ignoring limits, returning 1, or dropping the final status breaks exhaustion.
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_exhaust() {
     FAIL_WRITES=20
     retry_registry_write registry_write_stub
@@ -128,6 +133,7 @@ assert_rc "exhaustion preserves command status 7" "$?" 7
 assert_eq "persistent failure uses exactly the bound" "$(cat "$REG_TEST/count")" 3
 assert_contains "final warning names attempts and last status" "$registry_out" "after 3 attempts: received unexpected HTTP status: 502 Bad Gateway"
 # MUTATION PROOF: retrying unknown/permanent failures or scanning all stderr breaks single-shot cases.
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_permanent() {
     WRITE_ERROR="$1" FAIL_WRITES=20
     failing() { registry_write_stub; }
@@ -162,6 +168,7 @@ for error in 'unexpected status from PUT request to registry.invalid: 500 Intern
     assert_eq "classified transient write attempts three times" "$(cat "$REG_TEST/count")" 3
 done
 # MUTATION PROOF: changing defaults or removing the 60-second cap changes recorded delays.
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_cap() {
     REGISTRY_WRITE_RETRIES=10
     FAIL_WRITES=9
@@ -170,6 +177,7 @@ registry_cap() {
 registry_out="$(registry_case registry_cap 2>&1)"
 assert_rc "ten attempts can recover" "$?" 0
 assert_eq "write backoff doubles then caps at 60" "$(cat "$REG_TEST/sleeps")" $'10\n20\n40\n60\n60\n60\n60\n60\n60'
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_defaults() { printf '%s %s %s %s' "$REGISTRY_READ_RETRIES" "$REGISTRY_READ_BACKOFF" "$REGISTRY_WRITE_RETRIES" "$REGISTRY_WRITE_BACKOFF"; }
 # Read defaults in their own sourced shell, without registry_case's focused overrides.
 # shellcheck disable=SC1090
@@ -180,6 +188,7 @@ registry_out="$(
 )"
 assert_eq "read/write defaults are 12x10 and 3x10" "$registry_out" '12 10 3 10'
 # MUTATION PROOF: a failed sleep must not leave the captured stderr file or change command status.
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_failed_sleep() {
     TMPDIR="$REG_TEST/temps"
     mkdir -p "$TMPDIR"
@@ -190,6 +199,7 @@ registry_out="$(registry_case registry_failed_sleep 2>&1)"
 assert_rc "failed backoff preserves the failed write's status" "$?" 7
 assert_eq "failed backoff leaves no stderr temporary file" "$(ls -A "$REG_TEST/temps")" ''
 # MUTATION PROOF: moving/removing per-call validation lets an invalid policy run the command.
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_invalid() {
     if [ "$1" = retries ]; then REGISTRY_WRITE_RETRIES="$2"; else REGISTRY_WRITE_BACKOFF="$2"; fi
     retry_registry_write registry_write_stub
@@ -205,6 +215,7 @@ for value in -1 abc 61; do
     assert_eq "invalid delay executes nothing" "$(cat "$REG_TEST/count")" 0
 done
 # MUTATION PROOF: bypassing run or retrying printed commands creates writes/sleeps in dry-run.
+# shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 registry_dry() {
     DRY_RUN=1
     "$1"
