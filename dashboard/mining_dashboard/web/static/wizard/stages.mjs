@@ -162,6 +162,8 @@ export const Done = ({
             <${Field} label="Dashboard password"><code class="wizard-mono">${handoff.password}</code><//>
             <${Field} label="Dashboard address"><code class="wizard-mono">${handoff.dashboard}</code><//>
             <${Field} label="Point miners at"><code class="wizard-mono">${handoff.stratum}</code><//>
+            <${Field} label="Stratum password"><code class="wizard-mono">${handoff.stratum_password || "No stratum password"}</code><//>
+            ${handoff.stratum_tls && html`<${Field} label="TLS fingerprint"><code class="wizard-mono">${handoff.stratum_fingerprint || "Unavailable — return to setup."}</code><//>`}
             <button type="button" class="btn-toggle active" onClick=${onAck}>
                 ${installer ? "I saved these — erase the disk and install" : "I saved these — start provisioning"}</button>
             <${Note}>${

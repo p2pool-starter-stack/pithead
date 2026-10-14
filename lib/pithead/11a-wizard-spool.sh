@@ -183,6 +183,7 @@ stage_wizard_spool() { # <spool-dir> -> fingerprint on stdout
     local ref=/opt/pithead/config.reference.json
     [ -f "$ref" ] || ref="$PWD/config.reference.json"
     wizard_spool_publish "$spool" config.reference.json cat "$ref" || return 1
+    wizard_spool_publish "$spool" disk-budget.json wizard_disk_budget || return 1
     # The rig pre-fill and (#1318) the saved role ride beside the reference — derived fresh each
     # boot, like the disk inventory, so machine 2 on a fleet stick never opens on machine 1's.
     publish_rig_defaults "$spool" || return 1

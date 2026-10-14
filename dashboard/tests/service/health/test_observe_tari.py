@@ -33,6 +33,7 @@ def test_off_mode_judges_nothing(monkeypatch):
     asyncio.run(DataSetupMixin._observe_tari(host, MagicMock(), sync))
     assert "health" not in sync
     host.tari_chain.check.assert_not_awaited()
+    host.tari_health.update.assert_not_called()
 
 
 def test_the_verdict_is_attached_for_the_panel_doctor_and_status(monkeypatch):

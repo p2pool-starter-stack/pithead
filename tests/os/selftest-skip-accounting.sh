@@ -143,7 +143,7 @@ _rig_first_fallible="$(grep -n '_build_image' "$HERE/phases/rig.sh" | head -1 | 
 
 echo "== legs 1-3 name what only another invocation proves, as missing (#2055 G1) =="
 # by-design would book a real, reachable gap as accepted — #1083's failure mode one level up.
-# Each of these three IS provable, by --phase provision or --phase all on this same box.
+# Each of these two IS provable, by --phase provision or --phase all on this same box.
 # Each row is checked with the class it is actually written with — the call spans two lines, so
 # the class is on the continuation. A bare count would have passed on the leg-4 downgrade line,
 # which is also (correctly) missing: the assertion has to name the row it is judging.
@@ -151,8 +151,23 @@ row_class() { # <row name> -> the class on that it_skip_leg call, or "none"
     grep -A1 -F "it_skip_leg \"$1" "$HERE/phases/update.sh" |
         sed -n 's/.*" \([a-z-]*\)$/\1/p' | head -1 | grep . || echo none
 }
-for row in "held-chain release" "boot-menu version repair" "/data-floor restore"; do
+for row in "held-chain release" "/data-floor restore"; do
     assert_eq "the $row row is enumerated, classed missing" "$(row_class "$row")" "missing"
+done
+
+echo "== boot-menu repair is now asserted by the unconditional slot-label unit =="
+repair=$(sed -n '/^    _ssh .*BUILD_LABEL.*grub-editenv/p' "$HERE/phases/update.sh")
+assert_ne "update extracts a live label-and-grubenv assertion" "$repair" ""
+for fixture_rc in 0 1; do
+    verdict=$(
+        _ssh() { return "$fixture_rc"; }
+        ok() { printf 'pass'; }
+        bad() { printf 'fail'; }
+        eval "$repair"
+    )
+    expected=pass
+    [ "$fixture_rc" = 0 ] || expected=fail
+    assert_eq "live boot-menu repair rc $fixture_rc is counted $expected" "$verdict" "$expected"
 done
 
 echo "== #2356: crossupdate's own absent-input gate is a named, classed missing PHASE skip =="

@@ -132,4 +132,10 @@ _phase_install_fresh_start() {
         bad "installer never answered after Fresh Start"
         return 1
     }
+    # SSH precedes firstboot's target-disk inventory and read-only prefill mounts.
+    # Wait for the page served after those probes before the remaining wipe/plant writes.
+    _wait_setup_page 180 || {
+        bad "installer setup page never became ready after Fresh Start — refusing the remaining wipe legs"
+        return 1
+    }
 }

@@ -25,7 +25,7 @@ STALLED_SEC = 30 * 60
 
 RESTART_ADVICE = (
     "restart monerod ('./pithead restart monerod') to re-dial peers; if it stays red, check "
-    "the node's peer connections in its logs"
+    "Tor with './pithead tor-recover check' (read-only; requires saturated history)"
 )
 
 

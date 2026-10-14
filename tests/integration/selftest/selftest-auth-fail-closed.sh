@@ -77,9 +77,13 @@ pithead() {
     return 0
 }
 wait_status_ok() { return 0; }
+# Web ownership fault controls run the real helper in selftest-reset-restore.sh.
+rr_web_ports_owned_by_dashboard() { [ "$1" = "auth recovery" ] && touch "$TD/web-checked"; }
+
 capture_artifacts() { touch "$TD/captured"; }
 export OUT_DIR="$TD"
 run_auth_fail_closed >"$TD/positive.log" 2>&1
+if [ -f "$TD/web-checked" ]; then it_pass "auth recovery checks web ownership"; else it_fail "auth recovery checks web ownership" "helper was not called"; fi
 assert_eq "successful phase preserves every assertion" "$IT_FAIL" 0
 assert_eq "successful phase restores exact token" "$(env_on_box PROXY_AUTH_TOKEN)" "$original"
 # Inject a wrong restoration through the same writer, leaving the phase comparison intact.

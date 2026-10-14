@@ -2,6 +2,8 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/os/phases/reset-config.sh
 source "$SCRIPT_DIR/phases/reset-config.sh" || return $?
+# shellcheck source=tests/os/phases/reset-slot.sh
+source "$SCRIPT_DIR/phases/reset-slot.sh" || return $?
 phase_reset() {
     info "phase: reset (factory-reset ESP marker + wedged-/data recovery — opt-in, destructive)"
     local img token tries jar scode names deadline
@@ -85,10 +87,22 @@ phase_reset() {
         return
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return
+    fi
 
     # leg 0 (#2347): config-reset must keep chains and the onion address, clear the config, and
     # re-arm the wizard — on the SAME provisioned guest, before leg 1 wipes it.
-    _phase_reset_config || return
+    if _phase_reset_config; then
+        _phase_reset_slot || return
+    else
+        it_skip_leg reset-slot "leg 0 did not finish" missing
+        return
+    fi
 
     # ---- leg 1: factory-reset must wipe /data and return a FRESH machine to the wizard ----
     info "leg 1 — factory-reset must wipe /data and return a FRESH machine to the wizard"

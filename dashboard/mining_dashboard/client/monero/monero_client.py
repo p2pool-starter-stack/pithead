@@ -56,8 +56,8 @@ class MoneroClient:
 
         try:
             data = resp.json()
-        except ValueError:
-            logger.error("monerod get_info returned a non-JSON body")
+        except (ValueError, RecursionError):
+            logger.error("monerod get_info returned an invalid JSON body")
             return None
 
         # A JSON body is not necessarily a JSON OBJECT. An array, string, number or null parses
@@ -93,17 +93,27 @@ class MoneroClient:
         `synchronized` is monerod's raw network-sync verdict, passed through for the peer-loss
         detector (#972): after a tor restart a stranded node can read as "synced" here (stale
         target_height 0) while `synchronized` is false. Only this RPC path sets the key — the
-        log-scrape fallback and remote nodes have no verdict, and the detector treats absence
+        log/stats fallback has no verdict, and the detector treats absence
         as no verdict.
         """
         info = self.get_info()
         if info is None:
             return None
 
-        height = int(info.get("height", 0) or 0)
-        target = int(info.get("target_height", 0) or 0)
-        db_size = int(info.get("database_size", 0) or 0)
-        synchronized = bool(info.get("synchronized", False))
+        # Remote nodes are untrusted: malformed fields must feed the unreachable path,
+        # not abort the whole data loop before its failover monitor runs.
+        for field in ("height", "target_height", "database_size"):
+            value = info.get(field, 0)
+            if type(value) is not int or not 0 <= value <= 2**64 - 1:
+                logger.warning("monerod get_info has invalid %s", field)
+                return None
+        synchronized = info.get("synchronized", False)
+        if type(synchronized) is not bool:
+            logger.warning("monerod get_info has invalid synchronized flag")
+            return None
+        height = info.get("height", 0)
+        target = info.get("target_height", 0)
+        db_size = info.get("database_size", 0)
         # Peer counts are NOT read here (#2921): this endpoint is restricted, and a restricted
         # get_info answers 0 for them. They come from the healthcheck's observation
         # (collector.containers.get_monero_peers), attached by the caller.

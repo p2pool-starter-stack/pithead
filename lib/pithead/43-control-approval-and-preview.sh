@@ -1,9 +1,10 @@
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
     local approval_required=0 needs_confirm=0
+    config_document_error "$CONFIG_FILE" || return 1
+    config_document_error "$staged" || return 1
     control_policy_gate "$staged" || return 1
-    # Fail closed if we cannot re-derive the change set (the staged config was validated at
-    # preview, so a dry-run failure here means something changed — refuse).
+    # Re-derive the change set: a dry-run failure after preview refuses the commit.
     local carried_ssh=0
     control_carried_ssh "$staged" && carried_ssh=1
     if ! porcelain=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>/dev/null); then
@@ -85,11 +86,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # Host-shell data paths use a catastrophic-root blocklist; dashboard moves use the tighter
     # allowlist and symlink boundary because a confirmed commit later mkdir/chown's as root.
     control_validate_data_dir_destinations "$staged" || return 1
-    # Confirm-gate (#719): an in-scope CONFIRM row PROCEEDS only with the operator's typed
-    # confirmation. The token is a fixed literal ("APPLY"), orthogonal to the value being set — it
-    # is friction that forces the operator to acknowledge an expensive/disruptive op, NOT a security
-    # control (the perimeter above is the boundary). control_commit records a confirmed change
-    # distinctly in the audit log via the marker file touched here.
+    # Disruptive changes require typed APPLY; record confirmed commits via the marker below.
     # An adopted rig (#2641) is confirmed the same way: the dashboard will send it a write token.
     printf '%s\n' "$porcelain" | grep -qE $'^(CONFIRM|DEST)\t' && needs_confirm=1
     [ -z "$worker_new" ] || needs_confirm=1
@@ -136,14 +133,19 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
 control_preview() { # <request-file> <id> <actor> <control-dir>
     local file="$1" id="$2" actor="$3" cdir="$4"
     local staged="$cdir/staged/$id.json" errf="$cdir/staged/.$id.err" out result
+    local basef="$cdir/staged/.$id.base" base_sum=""
+    base_sum=$(control_live_config_sum) # the revision this preview diffs against (#3352)
+    if ! out=$(config_document_error "$CONFIG_FILE"); then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$out" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+        return 0
+    fi
     if [ "$(jq -r '.config | type' "$file")" != "object" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"config must be a JSON object",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi
-    # A masked worker credential may survive an ordinary round-trip, but never an endpoint repoint.
-    # Restoring the old bearer by name after host/port/control_port changed would send a secret the
-    # container never knew to a destination it chose. Make the operator provide the replacement.
+    # Require a replacement credential for a masked worker endpoint repoint.
     if ! jq -e --slurpfile live "$CONFIG_FILE" '
         def endpoint($api_port): [(.host // null), (.port // $api_port), (.control_port // 8082)];
         (reduce (($live[0].workers.list // []) | reverse | .[]) as $w ({};
@@ -171,7 +173,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         return 0
     fi
     # Restore masked secrets from live config host-side (#440); unset secrets become "".
-    # The staged copy is host-only and created under umask 077 (#33 hardening).
     # Per-worker token sentinels (#172) get the same swap, but out of the fixed-path walk: they
     # live in the variable-length descriptor array at workers.list[] (#506) — so restore each from
     # the LIVE token matched by worker name (first-declared wins on duplicate names, matching the
@@ -197,6 +198,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             | if ($v | type) == "object" and $v.__secret__ == true
               then setpath($p; (($live[0] | try getpath($p) catch null) // ""))
               else . end)
+        | if ($live[0] | has("config_version")) then .config_version = $live[0].config_version else del(.config_version) end
         | if (.workers | type) == "object" and (.workers.list | type) == "array"
           then .workers.list |= map(
               if (.token | type) == "object" and .token.__secret__ == true
@@ -222,6 +224,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                 else . end)
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
+    (umask 077 && printf '%s\n' "$base_sum" >"$basef")
     local policy_error
     if policy_error=$(control_preview_policy_error "$staged"); then
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$policy_error" '{status:"rejected",error:$e,ts:(now|floor)}')"
@@ -334,7 +337,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     else
         # Validation failed — reject with pithead's own error tail; nothing stays staged.
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$errf")" '{status:"rejected",log:$e,ts:(now|floor)}')"
-        rm -f "$staged"
+        rm -f "$staged" "$basef"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
     fi
     rm -f "$errf"
@@ -345,23 +348,14 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
 control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     local id="$1" actor="$2" cdir="$3" confirm="${4:-}" approval="${5:-null}"
     local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0 carried_ssh=0
-    if [ ! -f "$staged" ]; then
-        control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
-        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"no staged intent for this id — preview first",ts:(now|floor)}')"
-        return 0
-    fi
-    if [ -z "$(find "$staged" -mmin -10 2>/dev/null)" ]; then
-        rm -f "$staged"
-        control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
-        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"staged intent expired (older than 10 minutes) — preview again",ts:(now|floor)}')"
-        return 0
-    fi
+    local basef="$cdir/staged/.$id.base"
+    control_commit_unusable "$id" "$actor" "$cdir" && return 0
     # On refusal the gate's stdout is the reason; on approval it is the changed key names, which
     # the audit entries below record — WHAT changed, by name only (#349).
     local gate_out audit_keys=""
     if ! gate_out=$(control_approval_gate "$staged" "$confirm" "$id" "$actor" "$approval" "$cdir"); then
         [ -n "$gate_out" ] || gate_out="approval denied"
-        rm -f "$staged" "${staged}.confirmed"
+        rm -f "$staged" "$basef" "${staged}.confirmed"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$gate_out" '{status:"rejected",error:$e,ts:(now|floor)}')"
         return 0
@@ -396,5 +390,5 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
         control_audit "$cdir/audit/control.log" "$id" "$actor" "$audit_action" "failed" "$audit_keys" "$approver"
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$logf")" --arg b "${CONFIG_FILE}.bak-control" '{status:"failed",error:$e,backup:$b,ts:(now|floor)}')"
     fi
-    rm -f "$staged" "$logf" "${staged}.confirmed"
+    rm -f "$staged" "$basef" "$logf" "${staged}.confirmed"
 }

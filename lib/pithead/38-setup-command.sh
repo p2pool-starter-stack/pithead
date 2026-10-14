@@ -56,6 +56,7 @@ setup() {
     # Provisioning is done. Everything below is either a message or an interactive "start now?",
     # so the hold ends here; the stack_up it may call takes its own.
     mutation_lock_release
+    announce_dashboard_url
     if [ "$REBOOT_REQUIRED" = true ]; then
         echo -e "\n${C_YELLOW}[!] ATTENTION: System optimization requires a reboot.${C_RESET}"
         echo "Please run: 'sudo reboot' now."

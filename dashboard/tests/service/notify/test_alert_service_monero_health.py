@@ -41,6 +41,7 @@ class TestMoneroHealthEdges:
         assert _keys(out) == [AlertService.EVT_NODE_DOWN]
         assert "no outgoing peers (0 out, 3 in)" in out[0][1]
         assert "restart monerod" in out[0][1]
+        assert "./pithead tor-recover check" in out[0][1]
         assert _mh(svc, _h(level="red", peerless=True, peers_out=0)) == []  # no repeat
         assert _keys(_mh(svc, _h())) == [AlertService.EVT_NODE_RECOVERED]
 
@@ -50,6 +51,8 @@ class TestMoneroHealthEdges:
         out = _mh(svc, _h(level="red", stalled=True, height=77, advance_age_sec=1900))
         assert _keys(out) == [AlertService.EVT_NODE_DOWN]
         assert "height 77 has not moved for 31 min" in out[0][1]
+        assert "restart monerod" in out[0][1]
+        assert "./pithead tor-recover check" in out[0][1]
         assert _mh(svc, _h(level="red", stalled=True, height=77, advance_age_sec=2000)) == []
         assert _keys(_mh(svc, _h())) == [AlertService.EVT_NODE_RECOVERED]
 
