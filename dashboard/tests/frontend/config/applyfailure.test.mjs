@@ -153,6 +153,21 @@ test("an applied result is untouched by #1769 on either branch", () => {
   }
 });
 
+test("a stale preview is reported as not applied, not saved-but-not-running (#3376)", () => {
+  const result = {
+    status: "rejected",
+    error: "the configuration changed after this preview was made — preview again",
+  };
+  for (const appliance of [true, false]) {
+    const out = renderToString(applyFailure(result, appliance));
+    assert.match(out, /configuration changed after this preview was made/);
+    assert.match(out, /not applied/);
+    assert.match(out, /Preview it again/);
+    assert.doesNotMatch(out, /Your change was saved but is not running/);
+    assert.doesNotMatch(out, /previous config(uration)? is kept/);
+  }
+});
+
 // #1859: the outcome (applied or failed) lands with no cue for a screen-reader user who isn't
 // looking at the screen when the async apply resolves — a live region announces it either way.
 test("the done-phase outcome is a live region on both the applied and the failed branch", () => {

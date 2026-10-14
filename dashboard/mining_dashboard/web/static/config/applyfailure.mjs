@@ -95,7 +95,18 @@ export function upgradeFailure(result, appliance) {
 // interpolation, with no literal tag for htm to anchor on, and a child array is a shape both
 // Preact and the tests' render probe handle without that question arising at all. A null entry
 // (no log, or the host branch's absent caption) is dropped by both, as it is anywhere else.
+//
+// A `rejected` commit (a stale preview, #3376) was refused before anything was written, so the
+// "saved but not running" and "previous config kept" lines would both be false: it says the change
+// was not applied and to preview again, on either branch, and keeps the host's own reason.
 export function applyFailure(result, appliance) {
+  if (result.status === "rejected") {
+    return [
+      html`<p class="status-bad">Your change was not applied or saved. Preview it again before
+          applying.</p>`,
+      result.error ? html`<p class="status-bad">${result.error}</p>` : null,
+    ];
+  }
   return [
     backupLine(result, appliance),
     logCaption(appliance),
