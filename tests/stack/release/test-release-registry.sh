@@ -76,7 +76,7 @@ registry_write_stub() {
     fi
 }
 registry_write_stage() {
-    local verb="$1"
+    local verb="$1" fixture_rootfs=os/build/pithead-root.tar
     REGISTRY_WRITE_RETRIES=3 REGISTRY_WRITE_BACKOFF=10
     ensure_buildx_builder() { :; }
     docker() {
@@ -90,16 +90,16 @@ registry_write_stage() {
         mkdir -p "$REG_TEST/rootfs/os/build"
         cd "$REG_TEST/rootfs" || exit
         printf 0 >"$REG_TEST/build-count"
-        rm -f os/build/pithead-root.tar.sha256*
+        rm -f "$fixture_rootfs.sha256" "$fixture_rootfs.sha256.tmp"
         run() {
             if [ "$1" = env ]; then
                 printf '%s' "$(($(cat "$REG_TEST/build-count") + 1))" >"$REG_TEST/build-count"
-                printf rootfs >os/build/pithead-root.tar
+                printf rootfs >"$fixture_rootfs"
             else "$@"; fi
         }
         verify_release_rootfs_tar() { :; }
         docker() {
-            [ ! -e os/build/pithead-root.tar.sha256 ] || return 9
+            [ ! -e "$fixture_rootfs.sha256" ] || return 9
             registry_write_stub
         }
         ;;
