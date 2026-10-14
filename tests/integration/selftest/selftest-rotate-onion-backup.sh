@@ -54,7 +54,7 @@ drive_backup() { # <reported-container-mount> -> run_rotate_onion rc
                 stat() {
                     case "$1:$2" in
                     -c:%u) printf "0\n" ;;
-                    -c:%a) command stat -f %Lp "$3" ;;
+                    -c:%a) command stat -c %a "$3" 2>/dev/null || command stat -f %Lp "$3" ;;
                     *) command stat "$@" ;;
                     esac
                 }
