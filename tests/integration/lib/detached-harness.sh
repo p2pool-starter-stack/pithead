@@ -59,7 +59,7 @@ harness_finished() {
 
 # Called at wrapper preflight (all modes) and before inline pregates.
 harness_clear_check_evidence() {
-    on_bench "rm -rf $(quote_arg "$E2E_DIR/results/pregate-check")" || {
+    on_bench "rm -rf $(quote_arg "$E2E_DIR/results/pregate-check") $(quote_arg "$E2E_DIR/results/pregate-readiness")" || {
         warn "could not clear prior check evidence"
         return 1
     }
@@ -85,8 +85,7 @@ harness_pregate() { # <workers> <no_mining flags>
     # Clear it before readiness too: a refused job must not collect an earlier job's check.
     harness_clear_check_evidence || return 1
     for phase in readiness check; do
-        out_arg=""
-        [ "$phase" != check ] || out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-check")"
+        out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-$phase")"
         on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" || {
             warn "$phase reported issues (see above) — destructive phases refused"
             return 1

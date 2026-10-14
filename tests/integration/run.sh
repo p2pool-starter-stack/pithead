@@ -40,6 +40,9 @@ source "$HERE/lib/mergemine-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/hugepage-probe.sh
 source "$HERE/lib/hugepage-probe.sh" || exit $?
 
+# shellcheck source=tests/integration/lib/p2pool-diagnostics.sh
+source "$HERE/lib/p2pool-diagnostics.sh" || exit $?
+
 # --- Defaults / globals -----------------------------------------------------
 IT_MODE="ssh"
 IT_SSH_DEST=""
@@ -188,6 +191,9 @@ main() {
     # Non-destructive release-server fitness assessment.
     if [ "$READINESS" = "1" ]; then
         assert_release_readiness
+        if [ "$IT_FAIL" -ne 0 ]; then
+            capture_p2pool_diagnostics "$OUT_DIR/readiness" || it_warn "P2Pool readiness evidence unavailable"
+        fi
         summary
         return
     fi

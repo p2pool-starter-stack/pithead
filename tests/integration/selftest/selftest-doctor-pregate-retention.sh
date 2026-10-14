@@ -40,7 +40,12 @@ pithead() {
     printf 'invocation rc %s\n' "$DOCTOR_RC" >&2
     return "$DOCTOR_RC"
 }
-[ "$phase" != --readiness ] || [ "${TEST_READINESS_FAIL:-0}" = 0 ] || exit 1
+if [ "$phase" = --readiness ] && [ "${TEST_READINESS_FAIL:-0}" = 1 ]; then
+    preflight || exit 1
+    mkdir -p "$OUT_DIR/readiness"
+    echo candidate-crash >"$OUT_DIR/readiness/p2pool-crash.txt"
+    exit 1
+fi
 preflight || exit 1
 [ "$phase" != --check ] || assert_doctor_ok
 [ "$IT_FAIL" -eq 0 ]
@@ -81,12 +86,19 @@ for DOCTOR_RC in 0 7 0; do
     previous="${evidence[0]}"
 done
 echo "== refused readiness cannot collect an earlier job's doctor evidence =="
+mkdir -p "$E2E_DIR/results/pregate-readiness/readiness"
+echo stale-crash >"$E2E_DIR/results/pregate-readiness/readiness/stale.txt"
 export TEST_READINESS_FAIL=1
 rc=0
 harness_pregate 1 '' >"$TEST_DIR/refused.log" || rc=$?
 [ "$rc" = 1 ] || exit 1
 [ ! -e "$previous" ] || exit 1
 [ ! -e "$E2E_DIR/results/pregate-check" ] || exit 1
+[ ! -e "$E2E_DIR/results/pregate-readiness/readiness/stale.txt" ] || exit 1
+[ "$(cat "$E2E_DIR/results/pregate-readiness/readiness/p2pool-crash.txt")" = candidate-crash ] || exit 1
+# Simulated restoration replaces the candidate, without replacing its retained transcript.
+on_bench "cd $(quote_arg "$E2E_DIR") && bash tests/integration/run.sh --scenario" >"$TEST_DIR/restored.log" || exit 1
+[ "$(cat "$E2E_DIR/results/pregate-readiness/readiness/p2pool-crash.txt")" = candidate-crash ] || exit 1
 echo '== check-mode wrapper preflight removes evidence before an early refusal =='
 mkdir -p "$E2E_DIR/results/pregate-check/check/doctor-asserted.stale"
 PREFLIGHT_SRC="$(sed -n '/^preflight() {$/,/^}$/p' "$HERE/../e2e.sh")"

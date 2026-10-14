@@ -1182,6 +1182,16 @@ this transcript across phase cleanup. The same invocation is also saved under
 `results/check/doctor-asserted.*/output.txt` with `exit-code.txt`, in a separate directory per
 invocation. The e2e wrapper sends the check pregate to its collected
 `results/pregate-check/` directory, separate from the destructive harness's results.
+A failed readiness pregate also writes `results/pregate-readiness/readiness/p2pool-crash.txt`
+before the wrapper restores the baseline. It pins the candidate container ID and records its
+image, exit/OOM/restart state, the last 200 timestamped log lines (at most 64 KiB), and
+die/OOM/restart events from the preceding 20 minutes (at most 16 KiB). Each Docker command
+has a five-second deadline and two-second kill grace. The existing log redactor filters the
+result and the harness transcript retains it under the `p2pool-crash:` prefix,
+separate from assertion rows; no environment or raw command-line dump is collected. Capture is best-effort and
+never turns a failed readiness verdict into a pass. A restored container is a different
+generation; its healthy state cannot explain the original crash. Missing events do not prove
+that no crash occurred. Both pregate directories are cleared before each job.
 Its `check/doctor-asserted.*/output.txt` and `exit-code.txt` survive the destructive
 preflight. The wrapper clears prior check results at preflight in every mode and again before
 readiness, so a refused job or a read-only check cannot collect prior doctor evidence.
