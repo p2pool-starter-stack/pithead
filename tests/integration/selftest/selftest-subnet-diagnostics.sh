@@ -156,12 +156,13 @@ assert_rc 'runner accepts the selected diagnostics smoke' "$?" 0
     [ "$HARNESS_PHASE_ARGS" = ' --subnet-diagnostics' ]
 )
 assert_rc 'e2e wrapper forwards only the allowlisted diagnostics flag' "$?" 0
-for smoke_case in valid missing restricted interrupted; do
+for smoke_case in valid missing restricted interrupted missing-containers missing-counters; do
     (
         OUT_DIR="$td/smoke-$smoke_case" IT_FAIL=0
         collect_subnet_diagnostics() {
             mkdir -p "$1"
-            for probe in monero-admin-info monero-get_connections monero-sync_info tor-circuit-status tor-stream-status tor-build-history live-network monero-proxy tor-control-bind firewall-enforcement; do
+            for probe in rendered-network container-monerod container-tari container-tor container-dashboard container-p2pool container-xmrig-proxy monero-admin-info monero-get_connections monero-sync_info tor-circuit-status tor-stream-status tor-build-history live-network monero-proxy tor-control-bind firewall-enforcement; do
+                [ "$smoke_case" != missing-containers ] || [[ "$probe" != container-* ]] || continue
                 [ "$smoke_case" != missing ] || [ "$probe" != tor-stream-status ] || continue
                 if [ "$probe" = monero-admin-info ]; then
                     visibility=unrestricted
@@ -169,6 +170,7 @@ for smoke_case in valid missing restricted interrupted; do
                     printf '{"probe":"%s","summary":{"rpc_visibility":"%s"}}\n' "$probe" "$visibility"
                 else printf '{"probe":"%s","summary":{}}\n' "$probe"; fi
             done >"$1/summary.jsonl"
+            [ "$smoke_case" = missing-counters ] || echo '{"probe":"firewall-iptables","summary":{"count":3}}' >>"$1/summary.jsonl"
             [ "$smoke_case" = interrupted ] || echo '{"probe":"collection","complete":true}' >>"$1/summary.jsonl"
         }
         run_subnet_diagnostics_smoke >/dev/null

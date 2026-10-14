@@ -13,7 +13,7 @@ run_subnet_diagnostics_smoke() {
     local dir="$OUT_DIR/subnet-diagnostics-smoke" rc=0 probe
     collect_subnet_diagnostics "$dir" || rc=$?
     assert_rc "subnet diagnostics: bounded collector completes" "$rc" 0
-    for probe in monero-admin-info monero-get_connections monero-sync_info tor-circuit-status tor-stream-status tor-build-history live-network monero-proxy tor-control-bind firewall-enforcement; do
+    for probe in rendered-network container-monerod container-tari container-tor container-dashboard container-p2pool container-xmrig-proxy monero-admin-info monero-get_connections monero-sync_info tor-circuit-status tor-stream-status tor-build-history live-network monero-proxy tor-control-bind firewall-enforcement; do
         jq -es --arg probe "$probe" 'any(.[]; .probe == $probe and has("summary") and (has("error") | not))' \
             "$dir/summary.jsonl" >/dev/null 2>&1
         assert_rc "subnet diagnostics: $probe readable" "$?" 0
@@ -21,6 +21,9 @@ run_subnet_diagnostics_smoke() {
     jq -es 'any(.[]; .probe == "monero-admin-info" and .summary.rpc_visibility == "unrestricted") and any(.[]; .probe == "collection" and .complete == true)' \
         "$dir/summary.jsonl" >/dev/null 2>&1
     assert_rc "subnet diagnostics: authenticated admin readings and completion retained" "$?" 0
+    jq -es 'any(.[]; (.probe == "firewall-iptables" or .probe == "firewall-nft") and (has("error") | not) and .summary.count > 0)' \
+        "$dir/summary.jsonl" >/dev/null 2>&1
+    assert_rc "subnet diagnostics: live firewall counters retained" "$?" 0
 }
 
 capture_subnet_timeout_once() {
