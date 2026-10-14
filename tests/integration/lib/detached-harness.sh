@@ -71,11 +71,12 @@ harness_clear_check_evidence() {
 # here refuses the destructive phases rather than reporting their fallout as a branch regression.
 # A readiness refusal is the bench's, and is said to bench-ci as `readiness` (lib/e2e-env.sh) unless
 # the phase already named Tari itself or its stack-health row failed (the branch's): a busy rig lock
-# or a lost SSH refuses there too. A capture that fails (tee, mktemp) refuses and prints no marker. A check
-# refusal says nothing: that phase reads the deployed branch. The phase's stdout is teed to find
-# that line; tee reads to EOF, so #2457's SIGPIPE cannot return, and the verdict is on_bench's own.
+# or a lost SSH refuses there too. A check refusal says nothing: that phase reads the deployed branch.
+# Both of the phase's streams pass through a tee whose status is checked, and the classification
+# reads only what was recorded; a capture or read that fails refuses and prints no marker. The tees
+# read to EOF, so #2457's SIGPIPE cannot return, and the verdict is on_bench's own.
 harness_pregate() { # <workers> <no_mining flags>
-    local phase lock_pair out_arg said errf st
+    local phase lock_pair out_arg said errf stf st rc_on rc_err said_rc health_rc
     # Fed as a here-string rather than a pipe (#2457). The sub-phase does read both lines, so a pipe
     # carried the bytes correctly — but a pipeline whose reader can return before the write lands
     # leaves this writing into a closed pipe, and `set -o pipefail` then promotes that SIGPIPE to the
@@ -86,32 +87,52 @@ harness_pregate() { # <workers> <no_mining flags>
     # rather than reading an empty line. Nothing consumes that rc — the remote command joins its
     # reads with `;`, not `&&`, and sets no `-e` — so the values, and the phase's verdict, are unchanged.
     lock_pair="$(printf '%s\n%s' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}")"
-    said="$(mktemp)" && errf="$(mktemp)" || return 1
+    said="" errf="" stf=""
+    said="$(mktemp)" && errf="$(mktemp)" && stf="$(mktemp)" || {
+        rm -f "$said" "$errf" "$stf"
+        return 1
+    }
     # Keep the asserted check invocation outside the destructive harness's results cleanup.
     # Clear it before readiness too: a refused job must not collect an earlier job's check.
     harness_clear_check_evidence || {
-        rm -f "$said" "$errf"
+        rm -f "$said" "$errf" "$stf"
         return 1
     }
     for phase in readiness check; do
         out_arg=""
         [ "$phase" != check ] || out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-check")"
-        on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>"$errf" | tee "$said"
+        # stderr goes through the inner tee, stdout (via fd 3) through the outer one. Both pipelines
+        # are waited for; the inner statuses come back through $stf, itself a checked write.
+        (
+            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
+            printf '%s %s\n' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}" >"$stf"
+        ) 3>&1 | tee "$said"
         st=("${PIPESTATUS[@]}")
-        cat "$errf" >&2
-        if [ "${st[1]}" != 0 ]; then # the capture failed: refuse, and say nothing the bench could be blamed for
+        rc_on="" rc_err=""
+        if [ "${st[0]}" != 0 ] || [ "${st[1]}" != 0 ] || ! read -r rc_on rc_err <"$stf" ||
+            [ "$rc_err" != 0 ] || ! [[ "$rc_on" =~ ^[0-9]+$ ]]; then
             warn "could not record the $phase phase's output — destructive phases refused"
-            rm -f "$said" "$errf"
+            rm -f "$said" "$errf" "$stf"
             return 1
         fi
-        [ "${st[0]}" = 0 ] && continue
+        [ "$rc_on" = 0 ] && continue
         warn "$phase reported issues (see above) — destructive phases refused"
-        # A stack that is not healthy after the deploy is the branch's to explain, not the bench's.
-        [ "$phase" = check ] || grep -aEq '^[[:space:]]*e2e-env: ' "$said" || grep -aEq '(✗|- readiness:).*stack is healthy \(pithead status\)' "$said" "$errf" || e2e_env readiness
-        rm -f "$said" "$errf"
+        if [ "$phase" = readiness ]; then
+            # A stack that is not healthy after the deploy is the branch's to explain, not the bench's.
+            grep -aEq '^[[:space:]]*e2e-env: ' "$said"
+            said_rc=$?
+            grep -aEq '(✗|- readiness:).*stack is healthy \(pithead status\)' "$said" "$errf"
+            health_rc=$?
+            if [ "$said_rc" -gt 1 ] || [ "$health_rc" -gt 1 ]; then
+                warn "could not read the readiness phase's recorded output"
+            elif [ "$said_rc" = 1 ] && [ "$health_rc" = 1 ]; then
+                e2e_env readiness
+            fi
+        fi
+        rm -f "$said" "$errf" "$stf"
         return 1
     done
-    rm -f "$said" "$errf"
+    rm -f "$said" "$errf" "$stf"
 }
 
 # The detached launch's stdin, one record per line, in the order run_harness reads them: the rig

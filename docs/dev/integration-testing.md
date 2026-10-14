@@ -341,6 +341,8 @@ conclude the job `error: environment` instead of `failure`
 
 A refusal by the pregate's current-state check phase adds no `readiness` line, because that phase
 reads the deployed branch. A dashboard that does not answer the post-deploy wait or the Tari timeout prints no Tari key, because the branch may have broken it.
+The pregate records both of each phase's output streams and classifies only what it recorded. If a
+recording or a read of it fails, the pregate refuses the destructive phases and prints no line.
 `workers-offline` is printed by every `--check` run, the pregate's included; bench-ci accepts it
 only in its `check` mode. [`tests/integration/lib/e2e-env.sh`](../../tests/integration/lib/e2e-env.sh) holds the
 printer and the key list, and `selftest-e2e-env.sh` drives each of these paths and fails on a
