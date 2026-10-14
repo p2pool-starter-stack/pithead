@@ -49,7 +49,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from mining_dashboard.config.config import TIER_DEFAULTS
-from mining_dashboard.service.network.egress import LOCAL, compute_egress_posture, compute_topology
+from mining_dashboard.service.network.egress import LOCAL, compute_egress_posture
+from mining_dashboard.service.network.topology import compute_topology
 from mining_dashboard.service.xvb.algo_service import AlgoService
 
 # The privacy-safe resting config: firewall on, p2pool over Tor, XvB over Tor, local node, no sync,
