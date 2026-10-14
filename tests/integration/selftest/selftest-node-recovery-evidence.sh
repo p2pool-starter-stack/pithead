@@ -23,15 +23,15 @@ rx() {
         return "$RECOVERY_PROBE_RC"
     fi
     case "$1" in
-        'pithead status')
-            echo status >>"$RECOVERY_TEST_DIR/calls"
-            printf '  ⚠ monerod       running but UNHEALTHY\n'
-            printf '  ✗ tari          restarting (possible crash loop — check logs)\n' >&2
-            echo 'private arbitrary credential and topology must be omitted'
-            return "$RECOVERY_TEST_RC"
-            ;;
-        curl*) printf '{"syncing":true,"pool":{"type":"Mini","syncing":true},"sync":{"monero":{"state":"syncing","current":12,"target":15},"tari":{"state":"done"}},"monero":{"health":{"level":"red"}},"host_addr":"private-value"}' ;;
-        docker*) printf '{"service":"/monerod","state":"running","health":"unhealthy","restarts":3,"exit_code":0,"oom_killed":false,"secret":"private-value"}\n' ;;
+    'pithead status')
+        echo status >>"$RECOVERY_TEST_DIR/calls"
+        printf '  ⚠ monerod       running but UNHEALTHY\n'
+        printf '  ✗ tari          restarting (possible crash loop — check logs)\n' >&2
+        echo 'private arbitrary credential and topology must be omitted'
+        return "$RECOVERY_TEST_RC"
+        ;;
+    curl*) printf '{"syncing":true,"pool":{"type":"Mini","syncing":true},"sync":{"monero":{"state":"syncing","current":12,"target":15},"tari":{"state":"done"}},"monero":{"health":{"level":"red"}},"host_addr":"private-value"}' ;;
+    docker*) printf '{"service":"/monerod","state":"running","health":"unhealthy","restarts":3,"exit_code":0,"oom_killed":false,"secret":"private-value"}\n' ;;
     esac
 }
 printf 10 >"$TEST_DIR/clock"

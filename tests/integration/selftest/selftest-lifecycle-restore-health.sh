@@ -62,7 +62,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
         assert_node_recovery_status() { :; } # Boundary capture has its own selftest.
-        run_tari_background_sync() { :; } # driven by its own runtime leg and selftest
+        run_tari_background_sync() { :; }    # driven by its own runtime leg and selftest
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;
