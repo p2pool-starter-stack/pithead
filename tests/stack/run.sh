@@ -112,6 +112,8 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release.sh" && domain_ran test-release.sh "$_d0" "$?" || domain_ran test-release.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-notes.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-notes.sh" && domain_ran test-release-notes.sh "$_d0" "$?" || domain_ran test-release-notes.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/release/test-release-toolchain.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-toolchain.sh" && domain_ran test-release-toolchain.sh "$_d0" "$?" || domain_ran test-release-toolchain.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-publish.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-publish.sh" && domain_ran test-release-publish.sh "$_d0" "$?" || domain_ran test-release-publish.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-rootfs-publish.sh disable=SC2015
