@@ -1,65 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Control-channel confirm-gate domain (#1105 Phase 1, appliance lane): the sections that prove an
-# in-scope disruptive change cannot land on a plain commit. A disruptive edit staged without the
-# token is held; the same edit with typed APPLY applies; sensitive values additionally require the
-# confirmation-envelope shape (#719/#1959).
-# Since #2076 it also holds the sensitive class's typed payout-confirmation envelope (the Telegram
-# approval tap that used to follow it is gone), and, last in the file, the removed-key migration
-# that keeps this same gate from false-rejecting an upgrading operator's config.json.
-# Sourced by tests/stack/run.sh.
-#
-# THIS FILE IS DELIBERATELY NOT STANDALONE-SOURCEABLE, AND THAT IS THE CORRECT CALL HERE.
-# It follows the shipped add-only-ssrf disclosure precedent — source in place, position-locked,
-# dependency disclosed here — rather than the self-arm pattern most domain files use. "It should
-# self-arm like its neighbours" is the obvious review note and it is wrong for this domain:
-#
-# - This domain is a pure CONSUMER of the control sandbox. It never calls build_control_sandbox();
-#   test-control-core.sh calls it once, in the control-core domain sourced ahead, and $C, $CTRL_LOG
-#   and $WALLET reach here from it.
-#   (That section lived in run.sh until #1105 R12 moved it into its own domain file.)
-# - This domain is position-locked by what it READS, not by anything a second builder call would
-#   overwrite. Calling build_control_sandbox() here would be harmless, and that is why it buys
-#   nothing: $C is the fixed path "$SANDBOX/control", its mkdir -p only creates, its copies are
-#   static inputs, and seed_control_env/control_config are DEFINED inside it and never called — so
-#   the builder writes no config.json and touches nothing under data/control/{requests,staged,
-#   results,audit}. It could not establish the state this domain depends on, only running in
-#   position after the sections that accumulate it can.
-#   This domain drives the control channel repeatedly through `pithead apply -y` and run_pending
-#   against the shared spool, and it opens by establishing a clean applied baseline that its own
-#   later assertions and the sections after it read back.
-# - $REQS, $RESULTS, $STAGED and $AUDIT are NOT the builder's. They are assigned by the
-#   control-run-pending section, in test-control-core.sh, sourced before this stanza — an ordering
-#   dependency, same class as any other. They are deliberately NOT seeded here: each is a plain
-#   derivation from $C, so a seed would duplicate that file's definitions and could drift from them,
-#   and it would buy nothing, because $C itself keeps this file non-standalone either way.
-# - $WALLET is NOT a top-level constant, and getting that right matters here. lib.sh assigns it
-#   only INSIDE the two sandbox builders, as WALLET="${WALLET:-$VALID_PRIMARY}", and run.sh never
-#   assigns it at all — so $WALLET reaches this domain from the same build_control_sandbox call
-#   that provides $C, by the same ordering dependency, and belongs in the disclosure above rather
-#   than filed as a constant. A defaulting fix retires a coupling only for CALLERS, and a split
-#   manufactures non-callers.
-# - $VALID_TARI is a lib.sh top-level constant, assigned at column one outside every function.
-# - THE DEPENDENCY IS ALSO IN FUNCTION FORM, not only in variables. control_config() is not a
-#   top-level lib.sh function: it is defined INSIDE build_control_sandbox(), so it does not exist
-#   until that builder has run. This domain calls it, which is a second, independent reason the
-#   file cannot stand alone — and one a variable-only sweep cannot see. The other provider
-#   functions it calls are top-level: assert_eq, assert_contains, run_pending, and ok/bad beneath
-#   the assertions. It does NOT call seed_env or seed_control_env.
-# - preview_clearnet() is defined in the moved text and is not unset at its end, so it outlives
-#   the source exactly as it outlived its old position in run.sh. No other file under tests/stack/
-#   uses that name, so nothing downstream can see a definition it did not see before.
-# - $UUID3 is assigned HERE, in the moved text. It is READ BY test-data-management.sh, whose
-#   stanza run.sh sources immediately after this one — a dependency this split creates, disclosed
-#   on both sides and guarded there.
-#
-# The source stanza sits at this block's own vacated position, so every assertion runs in the
-# order it always ran, and the applied baseline this domain leaves behind still reaches the
-# sections that follow it. The anchor is a correctness requirement in this cut, not a preference.
-#
-# The guard below is the ambient contract made executable: sourced out of position, this file
-# stops on a named variable instead of degrading into assertions against an unbuilt sandbox.
-: "${C:?}" "${CTRL_LOG:?}" "${WALLET:?}" "${VALID_TARI:?}" "${REQS:?}" "${RESULTS:?}" "${STAGED:?}" "${AUDIT:?}"
+# Disruptive edits require typed APPLY; sensitive edits also require the confirmation envelope.
+# The shared fixture seeds fresh processes and preserves existing config and spool state.
+
+ensure_control_fixture
 
 echo "== black-box: confirm-gate — an in-scope disruptive change needs a typed APPLY (#719) =="
 assert_eq "reference default enables XvB" "$(jq -r '.xvb.enabled' "$ROOT/config.reference.json")" "true"

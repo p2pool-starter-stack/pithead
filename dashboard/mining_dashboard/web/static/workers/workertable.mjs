@@ -9,18 +9,15 @@ function PoolBadge({ pool }) {
   return html`<span class="badge badge-bad">Unknown</span>`;
 }
 
-// RigForge enriched feed (#235): a monospace version badge plus health / power / tune / watchdog
-// chips, all built server-side (infra_views._rigforge_display) so the client stays a dumb renderer.
+// RigForge enriched feed (#235): attention and live chips (warn/bad states, power, temperature),
+// built server-side (rigforge_views.rigforge_display) so the client stays a dumb renderer. Static
+// detail (version, board, HugePages, tune, autotune) lives in Worker Inspect, not in this row (#3031).
 // A plain-xmrig worker has no `rigforge` block and renders nothing extra — no chips, no error, no
 // empty placeholder, exactly as today. Each chip is a {text, variant, title}; only present-data
 // chips are emitted, so a rig with no RAPL shows no power chip.
 function RigForgeChips({ rf }) {
   if (!rf) return null;
-  return html`${
-    rf.version
-      ? html` <span class="badge badge-outline version-badge" title="RigForge version">rf ${rf.version}</span>`
-      : null
-  }${(rf.chips || []).map(
+  return html`${(rf.chips || []).map(
     (c) => html` <span class=${"badge badge-" + c.variant} title=${c.title || ""}>${c.text}</span>`,
   )}`;
 }

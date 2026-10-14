@@ -31,9 +31,9 @@ assert_contains "186 pages: names the shortfall in MiB" "$out" "(5772 MiB short)
 assert_contains "186 pages: says P2Pool's dataset does not fit" "$out" "too few for P2Pool's RandomX dataset: P2Pool puts its RandomX dataset (1040 pages) and caches in ordinary RAM instead"
 assert_contains "186 pages: says what that costs the machine" "$out" "up to 2592 MiB, which its 4 GiB memory limit holds but the rest of the machine loses."
 assert_contains "186 pages: names setup as the fix" "$out" "Run './pithead setup'"
-assert_contains "186 pages: names the full boot parameters for GRUB" "$out" "put 'hugepagesz=2M hugepages=3072 transparent_hugepage=never' on GRUB_CMDLINE_LINUX_DEFAULT"
-assert_contains "186 pages: says to replace a stale hugepages= value" "$out" "in place of any other hugepages= value"
-assert_contains "186 pages: names update-grub and the reboot" "$out" "run 'sudo update-grub' and reboot"
+assert_contains "186 pages: names the persistent drop-in" "$out" "accept setup's GRUB drop-in"
+assert_contains "186 pages: requires generated-entry verification" "$out" "verifies the generated kernel entries"
+assert_contains "186 pages: reboot follows verification" "$out" "reboot after it verifies"
 
 # The stack's full budget: OK, and the only verdict.
 _meminfo 3072 1800
@@ -112,6 +112,8 @@ out="$(_hp 0)"
 assert_contains "0 pages: WARN names the RAM the fallback costs" "$out" "⚠ WARN HugePages_Total is 0: P2Pool puts its RandomX dataset (1040 pages) and caches in ordinary RAM instead: up to 2592 MiB, which its 4 GiB memory limit holds but the rest of the machine loses."
 assert_not_contains "0 pages: no 'slower' wording" "$out" "slower"
 assert_contains "0 pages: names setup as the fix" "$out" "Run './pithead setup'"
+assert_contains "0 pages: persistence uses verified drop-in" "$out" "accept setup's GRUB drop-in"
+assert_not_contains "0 pages: no overridden main-defaults advice" "$out" "GRUB_CMDLINE_LINUX_DEFAULT"
 assert_not_contains "0 pages: never a FAIL" "$out" "FAIL"
 printf 'MemTotal:       16318412 kB\n' >"$MEMD/meminfo"
 out="$(_hp 0)"

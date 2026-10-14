@@ -74,19 +74,32 @@ dashboard_onion_status() {
     fi
 }
 
+# The dashboard's own global sync gate: prints true/false from /api/state.syncing, nothing and
+# non-zero when the app isn't answering or jq is missing (#3351).
+dashboard_syncing() {
+    command -v jq >/dev/null 2>&1 || return 1
+    curl -fsS --max-time 3 "http://127.0.0.1:8000/api/state" 2>/dev/null | jq -er '.syncing | if type == "boolean" then tostring else empty end' 2>/dev/null
+}
+
 # Re-render the dashboard's live per-chain initial-sync progress (#384) as human lines for `status`,
-# so a held miner shows real numbers instead of only "check the dashboard". Reads the same /api/state
+# so a held miner shows real numbers instead of only "check the dashboard". Prints nothing unless the
+# dashboard's global gate (.syncing) is on, so `.syncing=false` with a Tari row stuck at "loading"
+# never reads as a hold (#3351), and never lists Tari while TARI_REQUIRED=false. Reads the same /api/state
 # the UI does (127.0.0.1:8000 — host-local, no auth) and prints one line per chain that isn't synced
 # yet. No ETA: the block rate isn't sampled here, so 'remaining' blocks is the honest figure. Prints
 # nothing and returns non-zero when every chain is done, the dashboard app isn't answering yet (stack
 # still starting, or down), or jq is missing — so `status` degrades quietly.
 dashboard_sync_progress() {
     command -v jq >/dev/null 2>&1 || return 1
-    local body rows
+    local body rows tari_required
+    tari_required=$(env_get TARI_REQUIRED 2>/dev/null || true)
     body=$(curl -fsS --max-time 3 "http://127.0.0.1:8000/api/state" 2>/dev/null) || return 1
-    rows=$(printf '%s' "$body" | jq -r '
-        (.sync // {}) | to_entries[]
+    # Only the dashboard's own global gate (.syncing) holds the miner; a non-required Tari row
+    # (tari.mode off, or dashboard.tari_required false) is passive and never listed (#3351).
+    rows=$(printf '%s' "$body" | jq -r --arg tari_required "${tari_required:-true}" '
+        select(.syncing == true) | (.sync // {}) | to_entries[]
         | select(.value.state != "done")
+        | select(.key != "tari" or $tari_required != "false")
         | [.key,
            (.value.state // "loading"),
            (.value.percent // 0),
@@ -212,13 +225,17 @@ stack_status() {
     # fail workers over a node-down (#31), and holds the miner until the required chains finish
     # syncing (#35). We can't tell those apart from a genuine fault here (a healthy node can
     # still be syncing), so report it as likely-intentional and point at the dashboard.
-    local held name st why
+    local held name st why sync_flag
+    [ -n "$p2pool_state$proxy_state" ] && sync_flag=$(dashboard_syncing || true)
     for held in "p2pool=$p2pool_state" "xmrig-proxy=$proxy_state"; do
         name=${held%%=*}
         st=${held#*=}
         [ -z "$st" ] && continue
         if [ "$node_down" -eq 1 ]; then
             why="a node is down, so workers were rejected to fail over to backups"
+        elif [ "$sync_flag" = false ]; then
+            # The dashboard reports no global sync, so the chains are not what stopped it (#3351).
+            why="the dashboard reports no chain sync in progress — check the dashboard and the container logs"
         else
             why="held until the required chains finish syncing — check the dashboard"
         fi

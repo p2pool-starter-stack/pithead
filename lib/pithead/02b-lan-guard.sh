@@ -356,9 +356,9 @@ check_lan_guard_hold() { # <port>...
         elif [ "$(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)" = 78 ]; then
             why="it refused to start because the LAN-only source rule was not in place"
         else
-            why="it exited (code $(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)), and with LAN access on Docker does not restart it"
+            why="it exited (code $(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)), and with LAN access on Docker does not restart it; $LAN_GUARD_CHECK_TIMER starts it within 2 minutes while the LAN-only source rule is live"
         fi
-        dr_fail_surface "$c is down: $why. Run './pithead up' to start it." "$c is down and nothing restarts it by itself."
+        dr_fail_surface "$c is down: $why. Run './pithead up' to start it." "$c is down; it is started again within 2 minutes if the LAN-only source rule is live."
     done
 }
 

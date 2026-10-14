@@ -197,7 +197,7 @@ run_image_upgrade() {
     if [ "$SKIP_MINING_ASSERTS" = "1" ]; then
         after_workers="$(worker_names)"
     else
-        wait_for 240 5 "the exact pre-upgrade worker set" _pred_worker_set_capture "$before_workers" after_workers ||
+        wait_for "${BOUND_RECONNECT:-480}" 5 "the exact pre-upgrade worker set" _pred_worker_set_capture "$before_workers" after_workers ||
             it_fail "workers returned after image upgrade" "the exact pre-upgrade worker set did not return"
     fi
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 360 || it_fail "hashes resumed after image upgrade" "stratum hashes stayed idle"
@@ -298,6 +298,27 @@ run_image_upgrade() {
         it_fail "durable dashboard rows survived the image migration" \
             "lost:$(telemetry_rows_lost "$before_telemetry" "$after_telemetry")$([ "$after_telemetry" != UNREADABLE ] || printf ' (after-upgrade rows unreadable)')"
     fi
+    assert_upgrade_config_version
     assert_telemetry_tables_present
     [ "$IT_FAIL" -le "$fails_before" ] || capture_artifacts "image-upgrade" "$OUT_DIR"
+}
+
+assert_upgrade_config_version() {
+    local config_stamp code_version recent_changes
+    config_stamp=$(rx "cd '$UPGRADE_CANDIDATE_DIR' && jq -r '.config_version // empty' config.json")
+    code_version=$(rx "cd '$UPGRADE_CANDIDATE_DIR' && cat VERSION")
+    code_version=${code_version%%[-+]*}
+    if [[ "$code_version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]] && [ "$config_stamp" = "$code_version" ]; then
+        it_pass "upgraded config stamp matches candidate VERSION core"
+    else
+        it_fail "upgraded config stamp matches candidate VERSION core" "release version unavailable or stamp mismatch"
+    fi
+    local payload
+    payload=$(base64 <"$HERE/lib/config-version-audit.py" | tr -d '\n')
+    recent_changes=$(rx "printf %s $(quote_arg "$payload") | base64 -d | docker exec -i dashboard python3 -" 2>/dev/null)
+    if [ "$recent_changes" = clean ]; then
+        it_pass "image upgrade records no config_version recent-change row"
+    else
+        it_fail "image upgrade records no config_version recent-change row" "recent changes unavailable or stamp key recorded"
+    fi
 }

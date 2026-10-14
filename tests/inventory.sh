@@ -174,7 +174,7 @@ check_source_set() { # <sourcer> <expected-list> <minimum>
 }
 
 stack_expected=$(
-    printf '%s\n' lib.sh
+    printf '%s\n' lib.sh tests/stack/lib/suite-blocks.sh | sed 's|^tests/stack/||'
     find tests/stack -type f -name 'test-*.sh' -print | sed 's|^tests/stack/||'
 )
 stack_expected=$(printf '%s\n' "$stack_expected" | sort)
@@ -185,12 +185,14 @@ check_source_set tests/stack/run.sh "$stack_expected" 50
 integration_expected=$(
     printf '%s\n' lib.sh scenarios.sh
     find tests/integration/lib -maxdepth 1 -type f -name '*.sh' \
-        ! -name rig-supply.sh ! -name restore-proof.sh ! -name restore-chain-sync.sh ! -name chain-keep.sh ! -name skip-accounting.sh \
+        ! -name rig-supply.sh ! -name restore-proof.sh ! -name restore-chain-sync.sh ! -name chain-keep.sh ! -name restore-mining-ready.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
-        ! -name harness-args.sh ! -name run-lifecycle-wallet-fixture.sh \
-        ! -name redact-it-password.sh ! -name wallet-diagnostics.sh \
-        ! -name remote-endpoints.sh \
-        ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh -print |
+        ! -name harness-args.sh ! -name run-channel.sh ! -name run-lifecycle-wallet-fixture.sh ! -name run-tari-background-sync.sh \
+        ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh \
+        ! -name remote-endpoints.sh ! -name wallet-fixture.sh \
+        ! -name readiness-churn.sh ! -name reset-restore-web.sh \
+        ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh \
+        ! -name miner-connection.sh ! -name xvb-off-dwell.sh -print |
         sed 's|^tests/integration/||'
 )
 integration_expected=$(printf '%s\n' "$integration_expected" | sort)

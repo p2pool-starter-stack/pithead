@@ -6,16 +6,14 @@
 #   tests/integration/e2e.sh <branch> [options]
 #   tests/integration/e2e.sh claude/my-feature --mode matrix
 #
-#   4. Borrows a miner (set MINER_HOST): backs up its xmrig config and repoints it at the test bench so
-#      the live matrix has a real worker mining through this stack.
-#   5. Deploys the branch (`pithead upgrade` — re-renders configs AND rebuilds the branch's first-party
-#      images from build/, so a Dockerfile/entrypoint change is actually tested #272) and runs the live
-#      harness (tests/integration/run.sh) DETACHED on the box so an SSH drop can't kill a long matrix.
-#   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even on failure or Ctrl-C
-#      (an EXIT trap), with no `pithead down`: chain nodes the branch left unchanged keep running throughout (#2639),
-#      and the synced chains are never touched. The restore then PROVES the live stack matches the on-disk
-#      config (#971): a credential marker baked into a running container must equal the on-disk .env's line, and
-#      monerod must answer a host-side authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
+#   4. Borrows a miner (set MINER_HOST), backs up its xmrig config and repoints it at the test bench.
+#   5. Deploys the branch (`pithead upgrade`, including its first-party images; #272), then runs the
+#      live harness detached on the box so an SSH drop cannot kill a long matrix.
+#   6. ALWAYS restores, even on failure or Ctrl-C (an EXIT trap): the miner's pool config, the prepared
+#      wallet cache, then the canonical stack with no `pithead down`, so unchanged chain nodes keep running
+#      and the synced chains are never touched (#2639). It then PROVES the live stack matches the on-disk
+#      config (#971): a container's baked credential marker must equal the on-disk .env line, and monerod
+#      must answer an authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
 #
 # The Compose project name is pinned to "pithead", so the e2e and canonical checkouts drive the SAME containers and shared chains — two
 # code copies of one stack, run one at a time. That's why borrow→test→restore is a code/image swap, not a re-sync.
@@ -32,9 +30,9 @@ source "$HERE/lib/rig-supply.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
 # restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
 # shellcheck source=tests/integration/lib/restore-proof.sh
-source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" || exit $? # chain-keep: #2639
+source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" && source "$HERE/lib/restore-mining-ready.sh" || exit $? # chain-keep: #2639; mining-ready: #3152
 # shellcheck source=tests/integration/lib/detached-harness.sh
-source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" || exit $?
+source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" && source "$HERE/lib/wallet-fixture.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -268,6 +266,7 @@ restore_all() {
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade"
     fi
+    wallet_fixture_restore || exit 1 # an uncertain import must never let the baseline wallet start
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
         # A scenario can recreate a test-checkout container after the branch deploy.
         if ! recreate_test_checkout_containers; then
@@ -275,15 +274,15 @@ restore_all() {
             RESTORE_PROOF_FAILED=1
         fi
         # Job 1677: status passed before the sync gate stopped p2pool. Wait for its release.
-        if wait_synced 1500 restore && wait_bench_healthy 300; then
+        if wait_synced 1500 restore && wait_bench_healthy 300 && wait_restore_mining_ready 1500; then
             ok "baseline stack healthy again"
         else
-            warn "baseline stack did not regain synced chains and running services before restore proof"
+            warn "baseline stack did not regain synced chains and running mining services before restore proof"
             RESTORE_PROOF_FAILED=1
         fi
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
-        verify_restore_proof || RESTORE_PROOF_FAILED=1
+        verify_restore_proof && wallet_fixture_verify || RESTORE_PROOF_FAILED=1
     else
         warn "baseline restore command failed in $RESTORE_DIR — check the command output above."
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
@@ -373,6 +372,7 @@ preflight() {
     parent_lock_checkpoint "the first bench touch" || die "Parent-held bench lock is not continuous."
     on_bench 'echo ok >/dev/null' || die "Cannot SSH to test-bench host '$BENCH_HOST'."
     ok "SSH to $BENCH_HOST"
+    harness_clear_check_evidence || die "Cannot clear prior doctor check evidence."
     on_bench "test -x '$CANONICAL_DIR/pithead'" || die "No pithead at $CANONICAL_DIR on $BENCH_HOST."
     on_bench "cd '$CANONICAL_DIR' && ./pithead status >/dev/null 2>&1" &&
         ok "canonical stack is currently healthy" ||
@@ -653,7 +653,6 @@ run_harness() {
     on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/  /'
     return "${rc:-1}"
 }
-
 # --- Main -------------------------------------------------------------------
 main() {
     log "Pithead e2e — branch '$BRANCH' → $BENCH_HOST (mode=$MODE)$([ "$KEEP" = 1 ] && echo '  [--keep: no restore]')"
@@ -662,6 +661,7 @@ main() {
     # --check is a read-only assessment of the LIVE stack: no backup, no borrowed miner, no deploy.
     if [ "$MODE" != "check" ]; then
         backup_stack
+        wallet_fixture_capture
         borrow_miner
         deploy_branch
     fi

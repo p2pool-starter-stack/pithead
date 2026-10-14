@@ -45,11 +45,13 @@ test('EarningsCard Energy tab folds the current-tier XvB estimate into net, labe
     // measured delivery, never face value (#902).
     assert.match(html, /XvB is an estimate, tempered by measured delivery/);
     assert.match(html, /never XvB(?:'|&#39;)s face value/);
+    assert.match(html, /at the XMR price in use/);
+    assert.match(html, /Excludes Tari \(no priced merge-mining estimate\)/);
     assert.doesNotMatch(html, /Excludes XvB/);
     assert.doesNotMatch(html, /P2Pool XMR only, after power/);
 });
 
-test('EarningsCard Energy tab: net label/tooltip byte-identical to pre-#712 when no XvB estimate', () => {
+test('EarningsCard Energy tab explains missing XvB as an unavailable estimate', () => {
     const s = clone();
     s.earnings.available = true;
     s.earnings.coeff_day = 1e-8;
@@ -58,13 +60,66 @@ test('EarningsCard Energy tab: net label/tooltip byte-identical to pre-#712 when
     s.energy.xmr_price = 150;
     const html = renderApp({ state: s });
     assert.match(html, /P2Pool XMR only, after power/);
-    // The exact pre-#712 tooltip, XvB still called out as excluded.
+    // A missing estimate is the exclusion gate, not a claim that XvB can never be estimated.
     assert.match(
         html,
-        /Excludes Tari \(set dashboard\.energy\.tari_price to include it\) and XvB \(raffle status, not a per-day income estimate\)\./,
+        /Excludes Tari \(no priced merge-mining estimate\) and XvB \(no usable fresh donor-tier estimate\)\./,
     );
     assert.doesNotMatch(html, /XvB \(est\.\)/);
     assert.doesNotMatch(html, /XvB is an estimate/);
+    assert.match(html, /Mining payouts vary; estimates, not guarantees/);
+    assert.doesNotMatch(html, /raffle status, not a per-day income estimate/);
+});
+
+test('EarningsCard Energy tab explains missing XvB with priced Tari and live prices', () => {
+    const s = clone();
+    s.earnings.available = true;
+    s.earnings.coeff_day = 1e-8;
+    s.earnings.tari_available = true;
+    s.earnings.tari_coeff_day = 1e-6;
+    s.earnings.xvb_day = null;
+    s.energy.cost_per_kwh = 0.2;
+    s.energy.xmr_price = 150;
+    s.energy.tari_price = 2;
+    s.energy.price_source = { feed: true, live: true, age_sec: 60 };
+    const html = renderApp({ state: s });
+    assert.match(html, /P2Pool \+ Tari, after power/);
+    assert.match(html, /earnings at the prices in use/);
+    assert.match(html, /Excludes XvB \(no usable fresh donor-tier estimate\)/);
+    assert.doesNotMatch(html, /at your set prices|raffle status, not a per-day income estimate/);
+});
+
+test('EarningsCard Energy tab qualifies partial power coverage and hides absent prices', () => {
+    const s = clone();
+    s.earnings.available = true;
+    s.earnings.coeff_day = 1e-8;
+    s.energy.incomplete = true;
+    s.energy.cost_per_kwh = 0.2;
+    s.energy.xmr_price = 0;
+    const html = renderApp({ state: s });
+    assert.match(html, /lower bound: some workers report neither and are excluded/);
+    assert.match(html, /scope="col">Power Cost</);
+    assert.doesNotMatch(html, /scope="col"[^>]*>Net</);
+    assert.match(html, /to see revenue and net profit/);
+});
+
+test('EarningsCard Energy tab names all three contributions and qualifies incomplete net', () => {
+    const s = clone();
+    s.earnings.available = true;
+    s.earnings.coeff_day = 1e-8;
+    s.earnings.tari_available = true;
+    s.earnings.tari_coeff_day = 1e-6;
+    s.earnings.xvb_day = 0.002;
+    s.energy.cost_per_kwh = 0.2;
+    s.energy.xmr_price = 150;
+    s.energy.tari_price = 2;
+    s.energy.incomplete = true;
+    const html = renderApp({ state: s });
+    assert.match(html, /P2Pool \+ Tari \+ XvB \(est\.\), after power/);
+    assert.match(html, /earnings at the prices in use/);
+    assert.match(html, /XvB is an estimate, tempered by measured delivery/);
+    assert.match(html, /Power coverage is incomplete; cost is understated and net may be overstated/);
+    assert.doesNotMatch(html, /Excludes Tari|Excludes XvB/);
 });
 
 test('EarningsCard grows fiat rows + a price provenance line once a price is known (#520)', () => {

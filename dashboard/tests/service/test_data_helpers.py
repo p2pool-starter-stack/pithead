@@ -10,14 +10,14 @@ proved themselves by moving test bodies verbatim and real pytest fixtures would 
 call sites inside the same change.  The cuts are finished, so #1541 moved both copies into
 ``tests/service/conftest.py`` as a factory fixture; the tests below take it as a parameter.
 
-``TestXvbWinnersGate`` carries one wiring test that drives ``DataService._sync_xvb_winners``; the
-class moves whole rather than being split, to keep the 1:1 byte-identical property, which is why
-this module imports ``DataService``.
+``TestXvbWinnersGate`` drives ``DataService._sync_xvb_winners``, so it imports ``DataService``.
 """
 
 import json
 import time
 from unittest.mock import MagicMock
+
+import pytest
 
 import mining_dashboard.service.data_helpers as dh_mod
 from mining_dashboard.service.data_helpers import (
@@ -199,10 +199,10 @@ class TestNormalizeProxyWorkers:
         assert w["ip"] == "0.0.0.0"
         assert (w["h10"], w["h60"], w["h15"]) == (0, 0, 0)
 
-    def test_missing_payload_returns_empty(self):
-        assert _normalize_proxy_workers(None) == []
-        assert _normalize_proxy_workers({}) == []
-        assert _normalize_proxy_workers({"nope": 1}) == []
+    def test_empty_payload_returns_empty_but_missing_workers_raises(self):
+        assert _normalize_proxy_workers(None) == _normalize_proxy_workers({}) == []
+        with pytest.raises(ValueError, match="missing workers"):
+            _normalize_proxy_workers({"nope": 1})
 
 
 class TestParseProxySummary:

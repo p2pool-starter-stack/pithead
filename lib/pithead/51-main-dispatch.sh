@@ -84,7 +84,6 @@ main() {
         ;;
     down)
         _reject_options down "$@"
-        require_env
         stack_down
         ;;
     restart)
@@ -93,6 +92,7 @@ main() {
         ;;
     tor-recover)
         [ "$#" -eq 1 ] || error "Usage: ./pithead tor-recover check|apply"
+        local _PITHEAD_TOR_RECOVERY_CLI=1
         tor_recover "$1"
         ;;
     upgrade)

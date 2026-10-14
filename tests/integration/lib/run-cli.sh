@@ -27,9 +27,9 @@ MATRIX:
                          headroom, secrets not world-readable, dashboard localhost-only).
   --scenario <name>      run only one scenario (see --list)
   --workers <n>          miners expected online while mining (default: 2)
-  --no-mining-asserts    SKIP the two mining assertions (workers online, stratum hashes) with a
-                         logged notice — for a box with no miner connected (e2e --no-miner, #905).
-                         Every other assertion stays binding.
+  --no-mining-asserts    SKIP mining assertions (workers online, stratum hashes, cold-cache
+                         mining recovery) and the Tor clearnet probe fault, which requires a
+                         live miner. Each skip is logged; other assertions stay binding (#905).
   --remote-monero-host <h>  external node for the remote-mode scenario — a BARE host or IP, never
                             host:port (pithead appends the port itself, #1491)
   --remote-monero-rpc-port <p>  that node's RPC port, when it is not the default 18081

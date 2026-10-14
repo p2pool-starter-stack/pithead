@@ -1,11 +1,15 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from mining_dashboard.client.tari.generated import base_node_pb2 as bn
 from mining_dashboard.client.tari.tari_client import TariClient
 
 
 def _client_with_stub():
     client = TariClient()
     stub = MagicMock()
+    stub.GetNetworkState = AsyncMock(side_effect=RuntimeError("unavailable"))
     client._channel = MagicMock()
     client._channel.close = AsyncMock()
     client._stub = stub  # _ensure_channel returns this since _channel is set
@@ -102,3 +106,49 @@ class TestClose:
         await client.close()
         chan.close.assert_awaited_once()
         assert client._channel is None
+
+
+@pytest.mark.parametrize("state", [0, 1, 10, 20, 21, 22, 32, 34])
+async def test_live_startup_readiness_is_reachable_and_syncing(state):
+    client, stub = _client_with_stub()
+    reply = bn.GetNetworkStateResponse()
+    reply.readiness_status.state = state
+    stub.GetTipInfo = AsyncMock(side_effect=RuntimeError("initializing"))
+    stub.GetNetworkState = AsyncMock(return_value=reply)
+    status = await client.get_sync_status()
+    assert status == {
+        "is_syncing": True,
+        "initializing": "starting",
+        "percent": 0,
+        "reachable": True,
+    }
+
+
+async def test_live_migration_overrides_cached_synced_state():
+    client, stub = _client_with_stub()
+    client._last_sync_status = {"is_syncing": False, "current": 500}
+    reply = bn.GetNetworkStateResponse()
+    reply.readiness_status.migration.current_block = 250
+    reply.readiness_status.migration.total_blocks = 500
+    stub.GetTipInfo = AsyncMock(side_effect=RuntimeError("initializing"))
+    stub.GetNetworkState = AsyncMock(return_value=reply)
+    assert (await client.get_sync_status())["initializing"] == "migrating"
+
+
+@pytest.mark.parametrize("state", [None, 100, 99])
+async def test_absent_ready_or_unknown_readiness_cannot_mask_tip_rpc_failure(state):
+    client, stub = _client_with_stub()
+    reply = bn.GetNetworkStateResponse()
+    if state is not None:
+        reply.readiness_status.state = state
+    stub.GetTipInfo = AsyncMock(side_effect=RuntimeError("down"))
+    stub.GetNetworkState = AsyncMock(return_value=reply)
+    assert await client.get_sync_status() == {"is_syncing": False, "reachable": False}
+
+
+async def test_channel_creation_failure_is_unreachable():
+    client = TariClient()
+    client._ensure_channel = MagicMock(side_effect=RuntimeError("channel unavailable"))
+    client._fetch_initializing_status = AsyncMock()
+    assert await client.get_sync_status() == {"is_syncing": False, "reachable": False}
+    client._fetch_initializing_status.assert_not_awaited()

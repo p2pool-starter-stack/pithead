@@ -1,77 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Control-channel data-management domain (#1105 Phase 1, appliance lane): the sections that prove
-# where a dashboard-confirmed data-dir move may point, and that the confirm gate does not tax the
-# ordinary case. #719 made the *_DATA_DIR moves confirm-gated, but assert_safe_dir is a BLOCKLIST,
-# so a confirmed move could still target any non-blocklisted absolute path; control_approval_gate
-# narrows the DESTINATION to an allowlist for control-channel moves (#728). The second section is
-# the other side of that bargain: a NON-destructive commit still proceeds with no token at all
-# (#33), so the gate refuses the disruptive shape without gating everything.
-# Sourced by tests/stack/run.sh.
-#
-# THIS FILE IS DELIBERATELY NOT STANDALONE-SOURCEABLE, AND THAT IS THE CORRECT CALL HERE.
-# It follows the shipped add-only-ssrf disclosure precedent — source in place, position-locked,
-# dependency disclosed here — rather than the self-arm pattern most domain files use. "It should
-# self-arm like its neighbours" is the obvious review note and it is wrong for this domain:
-#
-# - This domain is a pure CONSUMER of the control sandbox. It never calls build_control_sandbox();
-#   test-control-core.sh calls it once, in the control-core domain sourced ahead, and $C, $CTRL_LOG,
-#   $SANDBOX and $WALLET reach here from it or from lib.sh.
-#   (That section lived in run.sh until #1105 R12 moved it into its own domain file.)
-# - This domain is position-locked by what it READS, not by anything a second builder call would
-#   overwrite. Calling build_control_sandbox() here would be harmless, and that is why it buys
-#   nothing: $C is the fixed path "$SANDBOX/control", its mkdir -p only creates, its copies are
-#   static inputs, and seed_control_env/control_config are DEFINED inside it and never called — so
-#   the builder writes no config.json and touches nothing under data/control/{requests,staged,
-#   results,audit}. It could not establish the state this domain depends on, only running in
-#   position after the sections that accumulate it can.
-#   Its closing section reads back config state that the confirm-gate domain applied just before
-#   it — a file-to-file dependency carried by $UUID3, which no builder call can supply.
-#   The coupling that DOES bite here is write-side, and it has a recorded firing: the rig-worker
-#   token-mask cluster moved with a re-derived $C, its applies wrote EXTRA result files into the
-#   shared results dir, and a still-in-run.sh assertion counting that dir went red. That is
-#   pollution of a counted directory — a different mechanism from anything being reset.
-#   RETRACTED (#1105 R12): that firing's stated MECHANISM does not reproduce at the tip — the
-#   apply path writes nothing into results/ unless is_appliance(), which no sandbox run
-#   satisfies. The RED was real; WHY is not established, and the full re-derivation is in
-#   test-rig-worker.sh's header. This domain's position-lock rests on what it READS, not on it.
-#
-# Re-derivations, audited over this WHOLE file, this header included. The audit script is
-# lane-local and is NOT in this repo, so nothing below rests on it: each claim is written to be
-# re-derived here with git and grep alone, and should be treated as a claim to check.
-# - $REQS, $RESULTS and $STAGED are NOT the builder's. They are assigned by the control-run-pending
-#   section, in test-control-core.sh, sourced before this stanza — an ordering dependency, same class
-#   as any other. They are deliberately NOT seeded here: each is a plain derivation from $C, so a
-#   seed would duplicate that file's definitions and could drift from them, and it would buy nothing,
-#   because $C itself keeps this file non-standalone either way.
-# - $WALLET is NOT a top-level constant. lib.sh assigns it only INSIDE the two sandbox builders, as
-#   WALLET="${WALLET:-$VALID_PRIMARY}", and run.sh never assigns it at all — so it reaches this
-#   domain from the same build_control_sandbox call that provides $C, by the same ordering
-#   dependency, and belongs in the disclosure above rather than filed as a constant.
-# - $SANDBOX and $VALID_TARI ARE lib.sh top-level constants, assigned at column one outside every
-#   function. That distinction is the whole point of checking the column rather than trusting that
-#   a name resolves to lib.sh at all.
-# - $UUID3 IS INHERITED FROM test-confirm-approval.sh, which assigns it in ITS moved text and whose
-#   stanza run.sh sources immediately before this one. This is a file-to-file dependency that the
-#   split creates — it did not exist while both sections lived in run.sh — so it is disclosed on
-#   both sides and guarded below. $UUID7 and $EVIL_DIR are assigned here, in the moved text.
-# - THE DEPENDENCY IS ALSO IN FUNCTION FORM, not only in variables. control_config() is not a
-#   top-level lib.sh function: it is defined INSIDE build_control_sandbox(), so it does not exist
-#   until that builder has run. This domain calls it, which is a second, independent reason the
-#   file cannot stand alone — and one a variable-only sweep cannot see. The other provider
-#   functions it calls are top-level: assert_eq, assert_contains, assert_rc, run_pending,
-#   run_sourced, and ok/bad beneath the assertions. It does NOT call seed_env or seed_control_env.
-# - preview_move() is defined in the moved text and is not unset at its end, so it outlives the
-#   source exactly as it outlived its old position in run.sh. No other file under tests/stack/
-#   uses that name, so nothing downstream can see a definition it did not see before.
-#
-# The source stanza sits at this block's own vacated position, immediately after the confirm-gate
-# domain it inherits $UUID3 from, so every assertion runs in the order it always ran. The anchor
-# is a correctness requirement in this cut, not a preference.
-#
-# The guard below is the ambient contract made executable: sourced out of position, this file
-# stops on a named variable instead of degrading into assertions against an unbuilt sandbox.
-: "${C:?}" "${CTRL_LOG:?}" "${SANDBOX:?}" "${WALLET:?}" "${VALID_TARI:?}" "${UUID3:?}" "${REQS:?}" "${RESULTS:?}" "${STAGED:?}"
+# Dashboard data moves are confined to the stack data root; host operations retain their contract.
+# The shared fixture seeds fresh processes and preserves existing config and spool state.
+
+ensure_control_fixture
 
 echo "== black-box: a dashboard-confirmed data-dir move is allowlisted to the stack data root (#728) =="
 # #719/#1959 made the five configured *_DATA_DIR moves confirm-gated. assert_safe_dir is a BLOCKLIST, so a

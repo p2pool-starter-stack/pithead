@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/integration/lib/run-channel.sh
+source "${BASH_SOURCE[0]%/*}/run-channel.sh" || exit $?
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
 # Create the wallet volume through the profile that owns it, then leave the
@@ -115,4 +117,15 @@ cleanup_failed_tari_wallet_fixture() {
         ! rx "docker volume rm $(quote_arg "$IT_UNRELATED_VOLUME_NAME")" >/dev/null 2>&1; then
         it_fail "failed fixture removes its unrelated volume" "volume cleanup failed"
     fi
+}
+
+prove_wallet_supersession() {
+    skip_appliance_checkout_probe \
+        "the wallet supersession proof tool is not shipped; strict proof runs on DIY" \
+        "wallet supersession proves live identity, isolated opening and retained evidence (#3133)" && return 0
+    local supersession_out supersession_rc
+    supersession_out="$(rx 'python3 tests/integration/tools/prove-wallet-supersession.py .')"
+    supersession_rc=$?
+    assert_rc "wallet supersession proves live identity, isolated opening and retained evidence (#3133)" "$supersession_rc" "0"
+    [ "$supersession_rc" -eq 0 ] || printf '%s\n' "$supersession_out" | redact
 }

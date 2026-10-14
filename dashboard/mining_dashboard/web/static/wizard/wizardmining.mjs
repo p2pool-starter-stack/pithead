@@ -33,12 +33,13 @@ export function tariAnswer(mode) {
 export const TariSection = ({ answer, v, on }) => html`<h2>Tari merge-mining</h2>
     <${RadioField} label="Merge-mine Tari?" name="tari-mode" value=${answer}
         onChange=${on("tariMode")} options=${[
-          ["off", "No", "Mine Monero only (default)."],
-          ["local", "Yes, with the bundled node", "Run a Tari node on this machine."],
-          ["remote", "Yes, with my node", "Use a Tari node I already run."],
+          ["off", "No", "Mine Monero only."],
+          ["local", "Yes (beta), with the bundled node", "Run a Tari node on this machine."],
+          ["remote", "Yes (beta), with my node", "Use a Tari node I already run."],
         ]} />
-    <${Note}>Merge-mining earns Tari from the same work that mines Monero, so it costs no
-    hashrate — but it needs its own payout address and a node of its own, and the bundled node
+    <${Note}>Merge-mining Tari is a beta. It earns Tari from the same work that mines Monero, so it
+    costs no hashrate. Choosing Yes downloads and syncs a Tari chain over Tor, which takes days.
+    It needs its own payout address and a node of its own, and the bundled node
     adds a 200 GiB disk budget on top of Monero's. The Configuration view carries this switch, so
     you can turn it off and back on later behind a typed APPLY; turning it off keeps the chain data
     on disk, so it resumes rather than re-syncing. Answering No stores no payout address, and
@@ -68,15 +69,45 @@ export const TariSection = ({ answer, v, on }) => html`<h2>Tari merge-mining</h2
       </div>`
     }`;
 
-// The raffle switch (#1848). Opt-OUT, unlike Tari: `xvb.enabled` is true in the reference, so the
-// default answer here is the one a machine already had, and only a No changes anything. There is
-// no follow-up question by design — the donor id and tier keep their defaults and stay editable
-// from the dashboard, which is where the raffle's own decision table lives.
-export const XvbField = ({ v, on }) => html`<${RadioField} label="Join the XMRvsBeast raffle?"
-        name="xvb" value=${String(v("xvb") ?? true)} onChange=${on("xvb")} options=${[
-          ["true", "Yes", "Donate a slice of hashrate to the raffle (default)."],
-          ["false", "No", "Send everything to P2Pool."],
-        ]} />
-    <${Note}>The switching engine donates only enough hashrate to hold your target tier and routes
-    everything else to P2Pool. Donating above a tier's threshold earns nothing extra, because the
-    raffle picks its winners at random.<//>`;
+// Tari merge-mining is an opt-in beta (#3333): the default is off, unless the disk being kept
+// already holds a Tari chain. Only the installer's data-wipe option keeps chains; a booted data
+// disk reports its own chain size in the budget. The host does the measuring.
+export function tariDiskDefault(budget, disks, target, wipe = "keep") {
+  const held = disks.length
+    ? disks.find((item) => item.name === target)?.state === "pithead-with-data" && wipe === "data"
+    : budget.tari_chain_held === true;
+  return held ? "local" : "off";
+}
+
+export function syncInitialChains(cfg, fast) {
+  for (const chain of ["monero", "tari"]) {
+    if (!Object.hasOwn(cfg, chain)) cfg[chain] = {};
+    const section = cfg[chain];
+    if (section && typeof section === "object" && !Array.isArray(section)) {
+      section.clearnet_initial_sync = fast && (section.mode ?? "local") === "local";
+    }
+  }
+}
+
+export function fastSyncWarning(cfg) {
+  const networks = ["monero", "tari"]
+    .filter((chain) => cfg[chain]?.clearnet_initial_sync)
+    .map((chain) => `the ${chain === "monero" ? "Monero" : "Tari"} network`);
+  return networks.length
+    ? `Fast sync exposes your IP address to ${networks.join(" and ")} until the initial sync finishes.`
+    : "";
+}
+
+export function applyDiskDefault(app, cfg, chosen = app.state.chosen, wipe = app.state.wipe) {
+  if (app.state.newMachine && !app.state.tariTouched) {
+    cfg.tari ||= {};
+    cfg.tari.mode = tariDiskDefault(app.state.diskBudget, app.state.disks, chosen, wipe);
+  }
+}
+
+export function selectTarget(app, chosen, wipe) {
+  const cfg = app.state.cfg;
+  applyDiskDefault(app, cfg, chosen, wipe);
+  syncInitialChains(cfg, app.state.fastSync);
+  app.setState({ chosen, wipe, cfg, jsonText: JSON.stringify(cfg, null, 2) });
+}

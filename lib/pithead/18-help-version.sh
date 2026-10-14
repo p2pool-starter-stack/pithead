@@ -174,7 +174,8 @@ Maintenance:
                             fired every 2 minutes by the pithead-egress timer.
   lan-guard-check           Check the live LAN-only source rule. If it is missing,
                             invalidate the node start marker and stop nodes that
-                            publish LAN ports. Fired by pithead-lan.timer.
+                            publish LAN ports. If it is live, start a node that
+                            crashed (non-zero exit). Fired by pithead-lan.timer.
 
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a

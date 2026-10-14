@@ -39,9 +39,21 @@ def rigforge_display(rf, proxy_online=False):
         }
     rows = []
 
-    def add(label, value, chip, variant, title):
+    def add(label, value, chip, variant, title, listed=None):
+        # Worker Inspect shows every row. The worker list shows only rows that need attention
+        # (warn/bad) or change minute to minute (`listed`, a {text, title} override); the rest is
+        # static detail that would widen the name cell and push the table sideways.
+        if listed is None and variant in ("warn", "bad"):
+            listed = {}
         rows.append(
-            {"label": label, "value": value, "chip": chip, "variant": variant, "title": title}
+            {
+                "label": label,
+                "value": value,
+                "chip": chip,
+                "variant": variant,
+                "title": title,
+                "listed": listed,
+            }
         )
 
     if rf.get("miner_down"):
@@ -95,7 +107,14 @@ def rigforge_display(rf, proxy_online=False):
         if efficiency is not None:
             parts.append(f"{_fmt(round(efficiency, 1))} H/s·W")
         text = " · ".join(parts)
-        add("Power / efficiency", text, text, "outline", "Power draw / efficiency.")
+        add(
+            "Power / efficiency",
+            text,
+            text,
+            "outline",
+            "Power draw / efficiency.",
+            {"text": parts[0], "title": f"Power draw / efficiency: {text}"},
+        )
 
     tune = rf.get("tune") or {}
     if tune.get("target"):
@@ -130,7 +149,17 @@ def rigforge_display(rf, proxy_online=False):
             text = f"{_fmt(round(temp, 1))}°C"
             if maximum is not None:
                 text += f" / {_fmt(maximum)}°C"
-            add("Temp / max", text, text, "outline", "Watchdog temperature / ceiling.")
+            add(
+                "Temp / max",
+                text,
+                text,
+                "outline",
+                "Watchdog temperature / ceiling.",
+                {
+                    "text": f"{_fmt(round(temp, 1))}°C",
+                    "title": f"Watchdog temperature / ceiling: {text}",
+                },
+            )
 
     return {
         "generated_at": rf.get("generated_at"),
@@ -138,7 +167,13 @@ def rigforge_display(rf, proxy_online=False):
         "version": rf.get("version"),
         "miner_down": bool(rf.get("miner_down")),
         "chips": [
-            {"text": row["chip"], "variant": row["variant"], "title": row["title"]} for row in rows
+            {
+                "text": row["listed"].get("text", row["chip"]),
+                "variant": row["variant"],
+                "title": row["listed"].get("title", row["title"]),
+            }
+            for row in rows
+            if row["listed"] is not None
         ],
         "stats": [
             {

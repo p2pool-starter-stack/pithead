@@ -128,6 +128,14 @@ drive() { # <case> -> round-trip-rc|failures
         wait_status_ok() { :; }
         env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
         has_compose_profile() { case ",$1," in *",$2,"*) return 0 ;; *) return 1 ;; esac }
+        rr_web_ports_owned_by_dashboard() {
+            [ "$1" = "setup after uninstall" ] || return 1
+            touch "$B/web-checked"
+            [ "$FAKE_CASE" != web-fails ] || {
+                it_fail "web ownership" "injected fault"
+                return 1
+            }
+        }
         run_uninstall_round_trip >"$B/run.log"
         result=$?
         if [ "$1" = no-wallet-seed ]; then
@@ -164,6 +172,7 @@ drive() { # <case> -> round-trip-rc|failures
     )
 }
 
+assert_eq "setup refuses a failed web ownership check" "$(drive web-fails)" "1|1"
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
 assert_eq "remote Tari mode skips wallet creation and still completes uninstall" "$(drive remote-tari)" "0|0"
 assert_eq "a preexisting owned wallet volume is reset, then Compose creates it" "$(drive owned-preexisting)" "0|0"
