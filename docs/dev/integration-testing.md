@@ -335,7 +335,7 @@ conclude the job `error: environment` instead of `failure`
 |---|---|
 | `chains-behind` | the pre-flight above finds a chain not `done` |
 | `tari-not-done` | the post-deploy wait gives up with Tari still `loading` or `syncing`, or the readiness phase fails on its `Tari is synced` row alone |
-| `readiness` | the readiness phase refuses the destructive phases for any other reason, including a failure besides Tari's, a busy rig lock or a lost SSH connection |
+| `readiness` | the readiness phase refuses the destructive phases for any other reason, such as a busy rig lock or a lost SSH connection. Not when its `stack is healthy` row failed, on stdout or in the stderr summary: the branch's deploy may have broken the stack |
 | `tari-sync-timeout` | `local-pruned-main-secure-tari`'s Tari wait times out and its required Tari check then finds Tari still `loading` or `syncing` |
 | `workers-offline` | a `--check` run finds no worker online at all |
 

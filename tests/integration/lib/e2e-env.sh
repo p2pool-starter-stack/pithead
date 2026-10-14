@@ -17,8 +17,9 @@
 #   tari-sync-timeout  lib.sh assert_tari_synced_required failed on a Tari still loading or syncing
 #                      after wait_tari_synced timed out, in local-pruned-main-secure-tari only.
 #   readiness          detached-harness.sh harness_pregate: the readiness phase refused the
-#                      destructive phases for any reason but Tari. Never its check phase, which
-#                      runs against the deployed branch.
+#                      destructive phases for any reason but Tari or a failed stack-health row.
+#                      Never its check phase, which runs against the deployed branch, and never
+#                      after a capture failure of the harness's own.
 #   chains-behind      e2e.sh preflight: the bench chains are not at tip (#914).
 #
 # A dashboard that does not answer is never the bench's here: the branch may have broken it.
