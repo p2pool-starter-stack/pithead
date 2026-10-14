@@ -164,7 +164,10 @@ Release notes, where operators actually read it. The branch model itself is in
 Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
 additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
 release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
-and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. The
+and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. They
+may come from the [release env file](release-server.md#the-lintrelease-toolchain). Dry runs enforce
+the lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does
+not run `make test` or the integration matrix: it prints their commands. The
 bench publishes that status only after its full tier-4 suite completes; a missing, failed,
 unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
 verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
@@ -247,7 +250,7 @@ a single, validated bundle.
 Two runs of the matrix are required, and the automated one is the smaller of the two:
 
 1. `release.sh` stage 2 runs the non-destructive `--readiness` assessment against the live
-   stack. Export the harness arguments on the release box before `make release`:
+   stack. Set the harness arguments in the release env file or export them before `make release`:
 
    ```bash
    export RELEASE_INTEGRATION_ARGS="--local --dir <live-stack-dir> --readiness"

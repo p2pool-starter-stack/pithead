@@ -40,6 +40,10 @@
 #   BENCH_CI_APP_ID       Numeric id of the installed bench-ci GitHub App (required, no default).
 #   BENCH_CI_APP_SLUG     Slug of that same App: pithead-bench-ci (required, no default).
 #   RELEASE_INTEGRATION_ARGS  Extra args passed to `make test-integration ARGS=...` (the #54 gate).
+#   PITHEAD_RELEASE_ENV    Env file (default: $RELEASE_KEY_DIR/env); explicit missing file is fatal.
+#   RELEASE_TOOL_PATH      Colon-separated absolute tool directories prepended to PATH.
+#   The env file may set BENCH_CI_APP_ID, BENCH_CI_APP_SLUG, RELEASE_INTEGRATION_ARGS,
+#   and RELEASE_TOOL_PATH; values are literal and existing environment settings win.
 #   RELEASE_SMOKE_CMD       Optional command run during the smoke stage for a fuller functional check.
 #   COSIGN_KEY / COSIGN_PASSWORD  Release signing (#376): path to the cosign private key on this box
 #                           and its passphrase. Promoted digests + the bundle get key signatures;
