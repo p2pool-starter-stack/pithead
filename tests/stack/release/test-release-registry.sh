@@ -150,13 +150,13 @@ registry_permanent() {
     fi
     retry_registry_write failing
 }
-for error in 'denied: permission_denied' unauthorized '403 Forbidden' 'manifest unknown' 'name unknown' 'digest mismatch' 'invalid digest' empty old 'bytes: 502' 'digest sha256:502000' $'received unexpected HTTP status: 502 Bad Gateway\n403 Forbidden'; do
+for error in 'denied: permission_denied' unauthorized '403 Forbidden' $'received unexpected HTTP status: 502 Bad Gateway\nunexpected status code 401' 'manifest unknown' 'name unknown' 'digest mismatch' 'invalid digest' empty old 'bytes: 502' 'digest sha256:502000' $'received unexpected HTTP status: 502 Bad Gateway\n403 Forbidden'; do
     registry_out="$(registry_case registry_permanent "$error" 2>&1)"
     assert_rc "unclassified/permanent write preserves status" "$?" 7
     assert_eq "unclassified/permanent write is never retried" "$(cat "$REG_TEST/count")" 1
 done
 # MUTATION PROOF: missing status-context or network-error classification leaves transient writes red.
-for error in 'unexpected status from PUT request to registry.invalid: 500 Internal Server Error' 'unexpected status code 503 Service Unavailable' 'received unexpected HTTP status: 504 Gateway Timeout' 'connection reset by peer' 'TLS handshake timeout' 'i/o timeout' 'unexpected EOF'; do
+for error in 'unexpected status from PUT request to registry.invalid: 500 Internal Server Error' 'unexpected status from PUT request to https://registry.invalid/v2/uploads/785377ae?digest=sha256:abc403def: 502 Bad Gateway' 'unexpected status code 503 Service Unavailable' 'received unexpected HTTP status: 504 Gateway Timeout' 'connection reset by peer' 'TLS handshake timeout' 'i/o timeout' 'unexpected EOF'; do
     registry_out="$(WRITE_ERROR="$error" registry_case retry_registry_write registry_write_stub 2>&1)"
     assert_rc "classified transient write recovers" "$?" 0
     assert_eq "classified transient write attempts three times" "$(cat "$REG_TEST/count")" 3
@@ -179,6 +179,16 @@ registry_out="$(
     registry_defaults
 )"
 assert_eq "read/write defaults are 12x10 and 3x10" "$registry_out" '12 10 3 10'
+# MUTATION PROOF: a failed sleep must not leave the captured stderr file or change command status.
+registry_failed_sleep() {
+    TMPDIR="$REG_TEST/temps"
+    mkdir -p "$TMPDIR"
+    sleep() { return 9; }
+    retry_registry_write registry_write_stub
+}
+registry_out="$(registry_case registry_failed_sleep 2>&1)"
+assert_rc "failed backoff preserves the failed write's status" "$?" 7
+assert_eq "failed backoff leaves no stderr temporary file" "$(ls -A "$REG_TEST/temps")" ''
 # MUTATION PROOF: moving/removing per-call validation lets an invalid policy run the command.
 registry_invalid() {
     if [ "$1" = retries ]; then REGISTRY_WRITE_RETRIES="$2"; else REGISTRY_WRITE_BACKOFF="$2"; fi

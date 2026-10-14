@@ -211,6 +211,7 @@ check_registry_write_tuning() {
 retry_registry_write() {
     check_registry_write_tuning
     local attempt=1 delay="$REGISTRY_WRITE_BACKOFF" errfile rc tail_text matched
+    local status_context='status.*:[[:space:]]*|status([[:space:]]+code)?[[:space:]]+'
     errfile="$(mktemp)" || return 1
     while :; do
         # Wait for tee to finish before inspecting the last stderr line; preserve stdout separately.
@@ -221,11 +222,11 @@ retry_registry_write() {
             rc="${PIPESTATUS[0]}"
         fi
         tail_text="$(tail -n 20 "$errfile")"
-        if grep -Eiq 'unauthorized|denied|forbidden|(^|[^0-9])(401|403)([^0-9]|$)|manifest unknown|name unknown|digest.*(mismatch|invalid)|(mismatch|invalid).*digest' <<<"$tail_text"; then
+        if grep -Eiq "unauthorized|denied|forbidden|($status_context)(401|403)([[:space:]]|$)|manifest unknown|name unknown|digest[[:space:]_-]+(mismatch|invalid)|(mismatch|invalid)[[:space:]_-]+digest" <<<"$tail_text"; then
             rm -f "$errfile"
             return "$rc"
         fi
-        matched="$(grep -Ei 'status([^[:digit:]]|[[:digit:]][^[:digit:]])*(500|502|503|504)([^[:digit:]]|$)|connection reset by peer|TLS handshake timeout|i/o timeout|unexpected EOF' <<<"$tail_text" | tail -n 1)" || true
+        matched="$(grep -Ei "($status_context)(500|502|503|504)([[:space:]]|$)|connection reset by peer|TLS handshake timeout|i/o timeout|unexpected EOF" <<<"$tail_text" | tail -n 1)" || true
         if [ -z "$matched" ]; then
             rm -f "$errfile"
             return "$rc"
@@ -236,7 +237,10 @@ retry_registry_write() {
             return "$rc"
         fi
         warn "registry write failed (attempt $attempt/$REGISTRY_WRITE_RETRIES): $matched — retrying in ${delay}s..."
-        sleep "$delay"
+        if ! sleep "$delay"; then
+            rm -f "$errfile"
+            return "$rc"
+        fi
         attempt=$((attempt + 1))
         delay=$((delay * 2))
         [ "$delay" -le 60 ] || delay=60

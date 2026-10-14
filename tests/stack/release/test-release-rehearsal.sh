@@ -211,4 +211,11 @@ rehearsal_out="$(rehearsal_case rehearsal_missing_config 2>&1)"
 assert_rc "missing buildkitd config fails preflight" "$?" 1
 assert_contains "missing config is explained" "$rehearsal_out" 'must name a readable file'
 assert_eq "missing config reaches no external tool" "$(cat "$REHEARSAL_TEST/calls")" ''
-unset -f rehearsal_case rehearsal_credentials rehearsal_login rehearsal_ghcr_login rehearsal_ghcr_fallback rehearsal_lookalike rehearsal_production rehearsal_invalid_policy rehearsal_custom_policy rehearsal_main rehearsal_builder rehearsal_existing_builder rehearsal_missing_config
+# MUTATION PROOF: readability alone accepts a directory instead of a configuration file.
+rehearsal_directory_config() {
+    PITHEAD_BUILDKITD_CONFIG="$REHEARSAL_TEST"
+    check_registry_policy
+}
+rehearsal_out="$(rehearsal_case rehearsal_directory_config 2>&1)"
+assert_rc "a directory is not a readable buildkitd config file" "$?" 1
+unset -f rehearsal_case rehearsal_credentials rehearsal_login rehearsal_ghcr_login rehearsal_ghcr_fallback rehearsal_lookalike rehearsal_production rehearsal_invalid_policy rehearsal_custom_policy rehearsal_main rehearsal_builder rehearsal_existing_builder rehearsal_missing_config rehearsal_directory_config
