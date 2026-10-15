@@ -45,6 +45,7 @@ PY
         assert_host_claims_spent_sync /fixture/state true false
     )
 }
+echo "== dashboard same-text marker replay permission proof =="
 REPLAY_CASE=denied
 assert_contains "explicit same-text write denial passes" "$(probe)" "P:dashboard cannot replay spent monero marker in place"
 REPLAY_CASE=accepted
