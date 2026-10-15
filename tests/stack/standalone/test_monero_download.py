@@ -88,6 +88,7 @@ class MoneroDownloadTests(unittest.TestCase):
         self.server.requests = []
         self.server.stopping = threading.Event()
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(self.cert, Path(self.scratch.name) / "key.pem")
         self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
         self.thread = threading.Thread(target=self.server.serve_forever)
