@@ -124,6 +124,10 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 `service/audit_service.py` sanitizes and summarizes those records. Rotation tests
 live in `tests/service/test_access_log.py`.
 
+`tests/service/network/prove-clearnet-replay.sh` runs the marker replay cases through
+`make test-clearnet-replay-proof`. The GitHub dashboard job retains the source commits,
+Linux/ext4 identification and all 100 case verdicts in its output.
+
 Keep polling order, database locks, and transaction scopes intact when extracting
 helpers. The storage mixins share `StateManager`'s connection and lock; the
 atomicity and annotation tests in `tests/service/` check those boundaries.
