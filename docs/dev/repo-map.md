@@ -218,6 +218,12 @@ records; effective Caddy configuration is reported only as matcher/log-destinati
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
+`tests/integration/lib/tari-readiness.sh` supplies the running-state battery's fresh
+required-Tari observation. `mergemine-probe.sh` in the same directory binds the gRPC
+proof to the current container epoch. Their pure controls live in
+`tests/integration/selftest/selftest-run-state-tari-observation.sh` and
+`tests/integration/selftest/selftest-mergemine-readiness.sh`; Make discovers both through
+the existing selftest glob.
 Coordinator connection announcements and unchanged-apply miner calls are covered by
 `tests/stack/test-connection-announce.sh`; the lifecycle phase runs
 `tests/integration/lib/run-connection-announcements.sh` against the deployed DIY CLI.

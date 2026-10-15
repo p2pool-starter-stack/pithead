@@ -2,6 +2,8 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 source "${BASH_SOURCE[0]%/*}/egress-probe.sh" || return $?
 source "${BASH_SOURCE[0]%/*}/miner-connection.sh" || return $?
+source "${BASH_SOURCE[0]%/*}/tari-readiness.sh" || return $?
+
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     local name="$1" config="$2"
@@ -185,11 +187,12 @@ assert_running_state() {
         it_step "stratum conns=${conns:-?} (informational)"
     fi
 
-    # 7. Tari sync-gate posture matches tari_required. The sync verdict tolerates post-restart
-    #    target re-discovery ONLY once Tari has proved "done" earlier this run (#746).
+    # 7. Tari sync-gate posture matches tari_required. Take a bounded fresh sample here: the state
+    #    cached before the Monero, ZMQ and mining waits can describe an earlier restart epoch, and
+    #    an earlier scenario's earned lag tolerance must not excuse a persistent failure (#3059).
     assert_eq "TARI_REQUIRED env matches config" "$(env_on_box TARI_REQUIRED)" "${tari_req:-true}"
     if [ "$tari_req" = "true" ]; then
-        assert_tari_synced_required "$(jq_get "$st" '.sync.tari.state')"
+        assert_fresh_tari_synced_required
     fi
 
     # 7b. The #170 Stack Topology & Egress panel rides on /api/state, derived live from config.
