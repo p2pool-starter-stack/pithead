@@ -63,7 +63,7 @@ assert_contains "missing scratch credentials warn" "$rehearsal_out" 'skipping lo
 assert_contains "scratch rootfs reports skipped anonymous-read check" "$rehearsal_out" 'Skipping anonymous-read check'
 assert_eq "scratch stages never call gh" "$(cat "$REHEARSAL_TEST/gh")" ''
 for forbidden in ghcr.io github-sentinel ghcr-sentinel 'docker login' 'curl '; do
-    assert_not_contains "scratch transport excludes $forbidden" "$(cat "$REHEARSAL_TEST/calls" "$REHEARSAL_TEST/stdin")" "$forbidden"
+    assert_not_contains "scratch transport excludes production hosts, credentials and network calls" "$(cat "$REHEARSAL_TEST/calls" "$REHEARSAL_TEST/stdin")" "$forbidden"
 done
 # MUTATION PROOF: ignoring scratch credentials, using argv for tokens, or falling back to gh breaks login.
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
@@ -119,8 +119,9 @@ rehearsal_production() {
 }
 for dry in 0 1; do
     for action in check_registry_policy preflight; do
+        printf "Production rehearsal case: %s, dry-run=%s\n" "$action" "$dry"
         rehearsal_out="$(rehearsal_case rehearsal_production "$dry" "$action" 2>&1)"
-        assert_rc "production rehearsal fails before $action in mode $dry" "$?" 1
+        assert_rc "production rehearsal fails policy and preflight in both modes" "$?" 1
         assert_contains "production refusal explains the policy" "$rehearsal_out" 'requires a non-production registry namespace'
         assert_eq "production policy precedes all tools" "$(cat "$REHEARSAL_TEST/calls")" ''
     done

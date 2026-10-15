@@ -112,13 +112,14 @@ registry_write_stage() {
 }
 # MUTATION PROOF: removing any one of the four wrappers leaves that stage at one failed attempt.
 for verb in build_images build_rootfs_image promote sign_images; do
+    printf "Registry write case: %s\n" "$verb"
     registry_out="$(registry_case registry_write_stage "$verb" 2>&1)"
-    assert_rc "$verb retries two final-line 502s then succeeds" "$?" 0
-    assert_eq "$verb makes exactly three writes" "$(cat "$REG_TEST/count")" 3
-    assert_eq "$verb doubles its delay" "$(cat "$REG_TEST/sleeps")" $'10\n20'
-    assert_contains "$verb warns on first attempt" "$registry_out" "attempt 1/3"
-    assert_contains "$verb warns on second attempt" "$registry_out" "attempt 2/3"
-    assert_contains "$verb names the status and delay" "$registry_out" "502 Bad Gateway — retrying in 20s"
+    assert_rc "write stage retries two final-line 502s then succeeds" "$?" 0
+    assert_eq "write stage makes exactly three writes" "$(cat "$REG_TEST/count")" 3
+    assert_eq "write stage doubles its delay" "$(cat "$REG_TEST/sleeps")" $'10\n20'
+    assert_contains "write stage warns on first attempt" "$registry_out" "attempt 1/3"
+    assert_contains "write stage warns on second attempt" "$registry_out" "attempt 2/3"
+    assert_contains "write stage names the status and delay" "$registry_out" "502 Bad Gateway — retrying in 20s"
 done
 assert_eq "rootfs builds only once" "$(cat "$REG_TEST/build-count")" 1
 assert_eq "rootfs publishes its handoff after push succeeds" "$([ -s "$REG_TEST/rootfs/os/build/pithead-root.tar.sha256" ] && echo yes)" yes
@@ -221,11 +222,12 @@ registry_dry() {
     "$1"
 }
 for verb in build_images promote; do
+    printf "Dry-run write case: %s\n" "$verb"
     registry_out="$(registry_case registry_dry "$verb" 2>&1)"
-    assert_rc "dry-run $verb completes" "$?" 0
-    assert_eq "dry-run $verb invokes no docker" "$(cat "$REG_TEST/calls")" ''
-    assert_eq "dry-run $verb never sleeps" "$(cat "$REG_TEST/sleeps")" ''
+    assert_rc "dry-run write stage completes" "$?" 0
+    assert_eq "dry-run write stage invokes no docker" "$(cat "$REG_TEST/calls")" ''
+    assert_eq "dry-run write stage never sleeps" "$(cat "$REG_TEST/sleeps")" ''
     if [ "$verb" = build_images ]; then pattern='docker buildx build build/tor'; else pattern='docker buildx imagetools create'; fi
-    assert_eq "dry-run $verb prints write once" "$(printf '%s\n' "$registry_out" | grep -c "$pattern")" 1
+    assert_eq "dry-run write stage prints write once" "$(printf '%s\n' "$registry_out" | grep -c "$pattern")" 1
 done
 unset -f registry_case registry_mismatch registry_write_stub registry_write_stage registry_exhaust registry_permanent registry_cap registry_defaults registry_invalid registry_dry
