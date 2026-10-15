@@ -101,5 +101,14 @@ assert_eq "persistently unreadable state is a distinct binding failure" \
     "$(run_case 1 '' '')" \
     "FAIL|read-error|1|300|10|no readable final /api/state sample within 300s"
 
+# A transport can return a partial response before failing; its body cannot earn a pass.
+api_state() {
+    printf '%s\n' '{"sync":{"tari":{"state":"done"}}}'
+    return 17
+}
+assert_eq "a failed API read cannot pass through a successful-looking body" \
+    "$(run_case 1 ignored ignored)" \
+    "FAIL|read-error|1|300|10|no readable final /api/state sample within 300s"
+
 echo "selftest-run-state-tari-observation: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ]

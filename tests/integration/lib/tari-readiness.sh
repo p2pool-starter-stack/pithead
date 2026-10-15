@@ -2,8 +2,7 @@
 
 _pred_fresh_tari_synced() {
     local st
-    st="$(api_state)"
-    if [ -z "$st" ]; then
+    if ! st="$(api_state)" || [ -z "$st" ]; then
         TARI_READINESS_OBSERVATION=read-error
         return 1
     fi
