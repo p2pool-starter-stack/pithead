@@ -10,9 +10,7 @@ _pred_fresh_tari_synced() {
     [ "$TARI_READINESS_OBSERVATION" = "done" ]
 }
 
-# The required-Tari row needs its own post-restart sample. A successful predicate leaves the exact
-# sample for the binding verdict; exhaustion remains a failure even if another scenario earned the
-# shared post-restart lag tolerance earlier in the run (#746/#3059).
+# Exhaustion fails even when an earlier scenario earned the post-restart lag tolerance (#746/#3059).
 assert_fresh_tari_synced_required() {
     TARI_READINESS_OBSERVATION=read-error
     if wait_for 300 10 "fresh required-Tari sync state" _pred_fresh_tari_synced; then

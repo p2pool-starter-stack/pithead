@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-#
 # Pure regression for the required-Tari verdict in run-state.sh (#3059).
-# The selftest runner globs this directory, so no registration is needed.
-#
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,8 +17,7 @@ source "$HERE/../lib/run-state.sh"
 
 echo "== required Tari uses a fresh bounded observation (#3059) =="
 
-# Extract and drive the real required-Tari block. Against the old caller, the stale cached `st`
-# below produces WARN from an earlier TARI_SEEN_DONE while the fresh samples go unread.
+# Drives the real required-Tari block so a stale cached `st` cannot pass unnoticed.
 RUN_STATE="$HERE/../lib/run-state.sh"
 TARI_BLOCK="$(sed -n '/^    # 7\. Tari sync-gate posture/,/^    # 7b\./p' "$RUN_STATE" | sed '$d')"
 assert_contains "required-Tari block extraction retains its env binding" \
@@ -49,8 +45,7 @@ run_case() { # <seen-done> <api-state> [api-state]
     shift
     set_states "$@"
     (
-        # The generic wait loop has separate selftests. Drive this wrapper without sleeping while
-        # retaining its real predicate, exact timeout/cadence, and success/exhaustion behavior.
+        # wait_for has its own selftests; this stub skips the sleeps and keeps the predicate.
         wait_for() {
             WAIT_TIMEOUT="$1"
             WAIT_INTERVAL="$2"

@@ -46,14 +46,8 @@
 # always reports "absent" looks identical to a working one right up to the moment it matters.
 # Strip the escapes first, then match. The self-test carries the fired negative control.
 #
-# THE SIGNAL BELONGS TO ONE STARTUP EPOCH. One healthy sample put the three lines ~17.5s after
-# start at positions 68/69/71, but prerequisite retries can delay them beyond any fixed head cap.
-# Reads therefore start at the current container's StartedAt, retain an exact chain_id separately,
-# and bound only the allowlisted lines transferred back.
+# The signal belongs to one startup epoch, and prerequisite retries can delay it past any head cap.
 
-# A restart may spend well past the old first-2000-lines window retrying prerequisites before the
-# client is constructed. Poll the current epoch instead; only this many allowlisted lines cross on
-# each read, and the newest lines win. The fixed two-minute budget keeps persistent failure bounded.
 MM_READY_TIMEOUT=120
 MM_READY_INTERVAL=2
 MM_CAPTURE_LINES=200
@@ -110,8 +104,7 @@ mm_started() {
     printf '%s\n' "$started" | mm_rfc3339
 }
 
-# A replacement can theoretically reuse a timestamp at the engine's precision. Bind observations
-# to both immutable container ID and StartedAt; only the latter is passed to `logs --since`.
+# The container ID guards against a replacement that reuses StartedAt at the engine's precision.
 mm_epoch() {
     local raw id started
     raw="$(rx "timeout ${MM_LOG_READ_TIMEOUT} docker inspect p2pool --format '{{.Id}}|{{.State.StartedAt}}'" 2>/dev/null)" || return 1
@@ -136,8 +129,7 @@ mm_rfc3339() {
 #                        p2pool in place, and the log then still carries the old startup's
 #                        chain_id line — which would satisfy this assertion while the live client
 #                        never reached Tari. StartedAt moves with the restart; the log does not.
-#   target-side filter  transfers only a bounded tail of allowlisted lines, while retaining the
-#                       newest chain_id even if later chatter would otherwise evict it.
+#   target-side filter  transfers a bounded tail of allowlisted lines plus the newest chain_id.
 #
 # `docker inspect` is used with --format naming ONE field. Unformatted, it prints `.Args`, which
 # on this stack carries both wallet addresses, the RPC credential and the onion address; the same
@@ -147,8 +139,7 @@ mm_capture_startup() { # [expected StartedAt]
     local started raw log_rc command
     started="${1:-$(mm_started)}"
     [ -n "$started" ] || return 1
-    # Keep the last exact success separately so later local chatter cannot evict it from the ring.
-    # `cut` bounds a maliciously long log line as well as the number of transferred lines.
+    # The chain_id line is kept apart so later chatter cannot evict it from the ring.
     command="timeout ${MM_LOG_READ_TIMEOUT} docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | grep -a MergeMiningClientTari | awk -v n=${MM_CAPTURE_LINES} '/uses chain_id/{chain=\$0} {ring[NR%n]=\$0} END {if(chain!=\"\") print chain; first=(NR<n?1:NR-n+1); for(i=first;i<=NR;i++) print ring[i%n]}' | cut -c 1-${MM_CAPTURE_LINE_BYTES}; printf '\\n__PITHEAD_MM_LOG_RC=%s\\n' \"\${PIPESTATUS[0]}\""
     raw="$(rx "bash -c $(quote_arg "$command")" 2>/dev/null)" || return 2
     log_rc="$(printf '%s\n' "$raw" | sed -n 's/^__PITHEAD_MM_LOG_RC=//p' | tail -n 1)"
@@ -156,9 +147,7 @@ mm_capture_startup() { # [expected StartedAt]
     printf '%s\n' "$raw" | sed '/^__PITHEAD_MM_LOG_RC=/d'
 }
 
-# Observe one unchanged container epoch until it proves a round-trip or the deadline expires.
-# Output is `<verdict>|<epoch>`; return 0 only for a round-trip, 2 for an unreadable log. A restart
-# discards every byte captured for the prior epoch, including a stale success.
+# Prints `<verdict>|<epoch>`; returns 0 for a round-trip, 1 for none by the deadline, 2 for an unreadable log.
 mm_await_roundtrip() {
     local deadline epoch after started lines verdict="absent" now
     epoch="$(mm_epoch)" || {

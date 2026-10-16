@@ -105,10 +105,7 @@ assert_contains "the unprefixed docker logs form still reads roundtrip" \
 
 echo "== the capture is bounded to the current container run, and leaks nothing =="
 
-# Stubbing `rx` rather than `mm_capture_startup` is what reaches the epoch and transfer bounds
-# inside it. Both are invisible to a test that stubs the whole function. Recording the composed
-# command asserts WHICH command is sent to the target — a claim
-# about the gesture, not about docker's behaviour, and it is named that way below.
+# Stubbing `rx` rather than `mm_capture_startup` keeps the epoch and transfer bounds under test.
 # The recorder writes to a FILE, not a variable. `mm_capture_startup` is called through `$(...)`,
 # and a command substitution is a subshell: a variable assigned inside it is gone by the time the
 # assertion reads it. That is not hypothetical here — it was the first version of this block, and

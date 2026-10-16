@@ -187,9 +187,7 @@ assert_running_state() {
         it_step "stratum conns=${conns:-?} (informational)"
     fi
 
-    # 7. Tari sync-gate posture matches tari_required. Take a bounded fresh sample here: the state
-    #    cached before the Monero, ZMQ and mining waits can describe an earlier restart epoch, and
-    #    an earlier scenario's earned lag tolerance must not excuse a persistent failure (#3059).
+    # 7. Tari sync-gate posture matches tari_required, from a fresh sample since `st` predates the waits (#3059).
     assert_eq "TARI_REQUIRED env matches config" "$(env_on_box TARI_REQUIRED)" "${tari_req:-true}"
     if [ "$tari_req" = "true" ]; then
         assert_fresh_tari_synced_required
