@@ -15,6 +15,9 @@ subnet_line="$(printf '%s\n' "$MAIN_SRC" | grep -n 'run_subnet_scenario' | tail 
 assert_eq "verified pool re-arm is after RigForge control and before lifecycle/subnet" \
     "$([ "$control_line" -lt "$rearm_line" ] && [ "$rearm_line" -lt "$lifecycle_line" ] && [ "$rearm_line" -lt "$subnet_line" ] && echo yes)" "yes"
 
+assert_eq "subnet runs before lifecycle's uninstall removes wallet_data (#3026)" \
+    "$([ "$rearm_line" -lt "$subnet_line" ] && [ "$subnet_line" -lt "$lifecycle_line" ] && echo yes)" "yes"
+
 drive_rearm() { # <ack: 0|1> -> request-exists|failure-count
     (
         IT_FAIL=0
