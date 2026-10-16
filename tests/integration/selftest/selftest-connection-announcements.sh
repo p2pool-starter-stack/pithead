@@ -6,13 +6,19 @@ ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 source "$ROOT/tests/integration/lib/run-source-image.sh"
 # shellcheck source=tests/integration/lib/run-connection-announcements.sh
 source "$ROOT/tests/integration/lib/run-connection-announcements.sh"
+# shellcheck source=tests/integration/lib/skip-accounting.sh
+source "$ROOT/tests/integration/lib/skip-accounting.sh"
+it_warn() { :; }
+it_err() { :; }
 echo "== connection announcement probe fails closed =="
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/key.pem" -out "$fixture/cert.pem" -days 1 -subj /CN=fixture >/dev/null 2>&1
 printf 'PROXY_TLS_DIR=%s\n' "$fixture" >"$fixture/.env"
 printf '{"dashboard":{"host":"fixture-box"}}\n' >"$fixture/config.json"
-mkdir -p "$fixture/tests/integration/tools"
+mkdir -p "$fixture/tests/integration/tools" "$fixture/tests/integration/lib"
+cp "$ROOT/tests/integration/lib/run-lifecycle-miners.sh" "$fixture/tests/integration/lib/"
+SKIP_MINING_ASSERTS=1 # This fixture tests credential announcements; mining has dedicated controls.
 cp "$ROOT/tests/integration/tools/connection-setup-pty.py" "$fixture/tests/integration/tools/"
 cat >"$fixture/pithead" <<'FAKE'
 #!/usr/bin/env bash
@@ -72,6 +78,7 @@ chmod +x "$fixture/pithead"
 probe=$(connection_announcements_snippet)
 (cd "$fixture" && bash -c "$probe") >"$fixture/output" 2>&1
 grep -Fq 'connections: no-change apply matches rendered credentials and preserves env' "$fixture/output"
+[ "$(grep -c '^connections: mining skipped:' "$fixture/output")" = 4 ]
 expected_gate_stages=$'before-setup\nafter-setup\nafter-up\nafter-apply\nafter-no-change'
 [ "$(retain_lifecycle_gate_samples <"$fixture/output" | awk '{print $2}')" = "$expected_gate_stages" ]
 echo 'PASS: complete connection probe executes its final assertion'
@@ -105,6 +112,8 @@ it_pass() { :; }
 it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
 rm -f "$fixture/apply-count"
 run_connection_announcements
+[ "$IT_SKIPPED_LEGS" = 4 ] && [ "$IT_SKIPPED_BY_DESIGN" = 4 ]
+[ "$(grep -c '^SKIP:' "$fixture/connection-announcements.log")" = 4 ]
 [ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = "$expected_gate_stages" ]
 ! grep -Fq 'fixture.pool-pass' "$fixture/lifecycle-gate.log"
 

@@ -143,6 +143,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/rig-config-meta-wait.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
 . "$SCRIPT_DIR/rig-control-off-leg.sh"
+# shellcheck source=tests/os/appliance-miner-recovery.sh
+. "$SCRIPT_DIR/appliance-miner-recovery.sh"
 # shellcheck source=tests/os/rig-share-leg.sh
 . "$SCRIPT_DIR/rig-share-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # The lifecycle's real prefix must sample every restart/image-fixture boundary in order.
 set -euo pipefail
+lifecycle_mining_step() {
+    shift
+    "$@"
+} # Mining convergence has dedicated controls.
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 # shellcheck source=tests/integration/lib/run-source-image.sh
 source "$ROOT/tests/integration/lib/run-source-image.sh"
@@ -12,7 +16,7 @@ IT_FAIL=0
 wallet_proof_calls=0
 # Execute the original lifecycle prefix through the real source-image runner; later pool/wallet
 # legs do not concern these diagnostics and have their own complete lifecycle selftests.
-eval "$(sed -n '/^run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d')
+eval "$(sed -n '/^_run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d;1s/^_run_lifecycle/run_lifecycle/')
 }"
 rx() {
     case "$1" in

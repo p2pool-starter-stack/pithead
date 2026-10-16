@@ -1,0 +1,12 @@
+[Unit]
+Description=Recover a disconnected appliance local miner
+ConditionPathIsMountPoint=/data
+ConditionPathExists=/data/pithead/config.json
+After=podman.socket
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+Environment=USER=root
+ExecStart=/usr/local/sbin/pithead-miner-recovery
+TimeoutStartSec=25s
