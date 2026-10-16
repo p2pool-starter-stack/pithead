@@ -105,7 +105,7 @@ assert_contains "the unprefixed docker logs form still reads roundtrip" \
 
 echo "== the capture is bounded to the current container run, and leaks nothing =="
 
-# Stubbing `rx` rather than `mm_capture_startup` keeps the epoch and transfer bounds under test.
+# Recording the command sent through `rx` pins the gesture, not docker's behaviour.
 # The recorder writes to a FILE, not a variable. `mm_capture_startup` is called through `$(...)`,
 # and a command substitution is a subshell: a variable assigned inside it is gone by the time the
 # assertion reads it. That is not hypothetical here — it was the first version of this block, and
@@ -141,8 +141,8 @@ assert_rc "a readable start time makes the capture succeed" "$cap_rc" "0"
 assert_num_gt "the command recorder actually captured something" "$(printf '%s' "$MM_RX_LOG" | wc -c)" 0
 assert_contains "the log read is bounded by the container's OWN start time" "$MM_RX_LOG" '--since\ 2026-08-28T23:52:05.827654553Z\ p2pool'
 case "$MM_RX_LOG" in
-*--tail*) it_fail "the log read never asks docker for a tail" "the composed command asked for a tail" ;;
-*) it_pass "the log read never asks docker for a tail" ;;
+*--tail* | *head*) it_fail "the log read has no docker tail or first-lines cap" "the composed command capped the log" ;;
+*) it_pass "the log read has no docker tail or first-lines cap" ;;
 esac
 assert_contains "the transferred log is a bounded tail of matching lines" "$MM_RX_LOG" "n=$MM_CAPTURE_LINES"
 assert_contains "each transferred line has a byte bound" "$MM_RX_LOG" "1-$MM_CAPTURE_LINE_BYTES"
