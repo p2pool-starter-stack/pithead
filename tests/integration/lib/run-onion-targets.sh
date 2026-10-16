@@ -44,7 +44,7 @@ assert_onion_targets() { # <monero mode> <pool name>
     fi
 }
 
-# Probe from outside the stack so a pass proves the real inbound path; the client key never leaves the box.
+# Probe from outside the stack so a pass proves the real inbound path; exits follow tor-client/probe.sh, 3 on error.
 _onion_reachable_external() {
     local onion="${1:-}" saved_env="${2:-}" out rc snippet
     [ -n "$onion" ] || onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
