@@ -583,7 +583,7 @@ borrow_miner() {
 deploy_branch() {
     parent_lock_checkpoint deploy || die "Parent-held bench lock was lost before deploy."
     prepare_rotate_onion_fixture || die "Failed to prepare the isolated dashboard-onion fixture."
-    # Upgrade builds branch images; apply would reuse them (#272). Keep unchanged chain nodes (#2639).
+    # Upgrade, not apply, rebuilds branch images (#272) and keeps unchanged chain nodes (#2639).
     log "Deploying the branch on $BENCH_HOST (pithead upgrade — re-render configs + rebuild first-party images)"
     deploy_keeping_chain || die "pithead upgrade failed in $E2E_DIR — branch did not deploy."
     on_bench "cd '$E2E_DIR' && docker compose images --format '{{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'p2pool|dashboard|monero|tor|xmrig' || true" | while IFS= read -r l; do step "image: $l"; done

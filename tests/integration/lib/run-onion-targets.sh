@@ -44,18 +44,7 @@ assert_onion_targets() { # <monero mode> <pool name>
     fi
 }
 
-# Reach the dashboard onion from an INDEPENDENT external Tor client — its own tor + curl, its own
-# circuits, sharing nothing with the stack (tests/integration/tor-client/). It reaches the onion
-# over the REAL Tor network exactly as a remote user would, so a pass proves the whole inbound path
-# (hidden service published + reachable, client-auth key accepted, Caddy answering) from OUTSIDE the
-# trust boundary — using none of the stack's own SOCKS/plumbing. Returns 0 if Caddy answered (200 or
-# 401 — we deliberately don't hold the login, so its auth challenge counts as reachable). The client
-# key is piped source->container stdin entirely on the box: it never crosses to the harness, an ssh
-# argument, or `docker inspect`. Everything runs on the bench (it has docker + the Tor network).
-# <onion> defaults to the box's CURRENT address. <saved-env> optionally names an owner-only env
-# snapshot on the box, used by the rotate-onion phase to probe the retired address with its old key.
-# Returns the probe contract unchanged: 0 reachable, 1 bootstrapped but unreachable, 2 Tor did not
-# bootstrap, and 3 for build/transport/malformed-output errors.
+# An independent Tor client proves the real inbound path while the client key stays on the box.
 _onion_reachable_external() {
     local onion="${1:-}" saved_env="${2:-}" out rc snippet
     [ -n "$onion" ] || onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"

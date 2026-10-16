@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034 # fixture globals are consumed by sourced functions and child shells
-# The phase's hidden-service backup lies outside config.json/.env, so prove the real EXIT path
-# calls it first on both an ordinary failure and a supervisor interruption.
+# The hidden-service backup lies outside config.json/.env, so EXIT must restore it on failure and interruption.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

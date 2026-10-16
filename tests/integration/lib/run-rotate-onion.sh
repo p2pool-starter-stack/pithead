@@ -164,14 +164,7 @@ rotate_onion_restore() {
     ROTATE_ONION_RESTORE_ARMED=0
 }
 
-# Tier-4 leg for `rotate-dashboard-onion` (#2345): 0 invocations under tests/integration or
-# tests/os before this — tier-1 only ever runs it sourced against a stubbed engine. This proves,
-# on a real box: the new address answers over the real Tor network, the OLD address stops
-# answering (its hidden-service keys were wiped, not just re-keyed), the Caddyfile names only the
-# new vhost (#546's regression), HOST_IP survives (#356's regression), and the client-auth key
-# actually changed. It then restores the pre-rotation onion identity itself — the end-of-run
-# config restore only reverts config.json/.env, and the onion's real identity is the ed25519 key
-# files under TOR_DATA_DIR, which live outside both.
+# The end-of-run restore covers only config.json/.env, so this leg restores TOR_DATA_DIR's identity itself.
 run_rotate_onion() {
     # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
     IT_CURRENT_SCENARIO="rotate-onion"
@@ -297,7 +290,7 @@ run_rotate_onion() {
     ROTATE_ONION_OLD_ADDRESS="$old_onion"
     ROTATE_ONION_OLD_KEY_FP="$old_key_fp"
     ROTATE_ONION_OLD_ENV_FP="$old_env_fp"
-    # Arm last: before this assignment no identity has changed; after it every restore input is set.
+    # Arm last so the trap never restores from a partly set identity.
     ROTATE_ONION_RESTORE_ARMED=1
 
     it_step "rotating the dashboard onion…"
