@@ -133,6 +133,8 @@ jobs:
       - name: Run appliance hugepages suite
         # #1103 co-location refusal on the reduced tier.
         run: bash tests/stack/standalone/test_appliance_hugepages.sh
+      - name: Run clearnet marker attestation contract
+        run: python3 tests/stack/standalone/test_clearnet_attestation.py
       - name: Test-inventory drift check
         # The inventory generator is grep-based; it exits non-zero when any suite it
         # enumerates counts zero — i.e. a suite moved or changed shape and the inventory

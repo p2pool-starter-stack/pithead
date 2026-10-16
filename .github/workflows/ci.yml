@@ -48,7 +48,7 @@ jobs:
           checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd # Linux x86_64 release archive
           enable-cache: false
       - name: Dashboard tests + coverage gate (emits coverage.xml)
-        run: make test-dashboard
+        run: make test-dashboard test-clearnet-replay-proof PROOF_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
       - name: "Patch-coverage gate — changed lines >=90% (diff-cover vs the PR's own base, #286)"
         # GITHUB_BASE_REF is set on pull_request runs; push runs fall back to develop. Grading a PR
         # against develop instead of its base branch charges it the base branch's whole coverage
