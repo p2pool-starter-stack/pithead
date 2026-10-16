@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exercise the real capture pipelines against timestamped logs, without a daemon.
+# The log-loss path needs proof without a live daemon to rotate.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
@@ -15,8 +15,7 @@ MM_FIXTURE_SYNCED=0
 MM_FIXTURE_RECENT_RC=0
 MM_FIXTURE_TRACE=$(mktemp)
 trap 'rm -f "$MM_FIXTURE_TRACE"' EXIT
-# Run the actual remote command and its filters locally, replacing only Docker.
-# The oldest line contains secrets: only its engine timestamp may cross rx.
+# Fake Docker, not the filters, so the real awk must cut the secret-bearing oldest line to its timestamp.
 docker() {
     case "$1" in
     inspect) printf '%s\n' "$MM_FIXTURE_START" ;;
