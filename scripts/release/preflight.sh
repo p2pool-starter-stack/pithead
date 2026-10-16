@@ -57,15 +57,90 @@ require_bench_tier4() {
     ok "Bench tier-4 gate passed for $GIT_COMMIT."
 }
 
+load_release_env() {
+    local file="${PITHEAD_RELEASE_ENV:-$RELEASE_KEY_DIR/env}" label line name value mode
+    local number=0 loaded=0 retained=0
+    label="${file##*/}"
+    [ ! -L "$file" ] || die "Release env $label is a symlink."
+    if [ ! -e "$file" ]; then
+        [ -z "${PITHEAD_RELEASE_ENV+x}" ] || die "Release env $label does not exist."
+        return 0
+    fi
+    [ -f "$file" ] && [ -O "$file" ] || die "Release env $label must be a regular file owned by the invoking user."
+    mode="$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file")" || die "Could not read permissions of release env $label."
+    [[ "$mode" =~ ^[0-7]+$ ]] || die "Invalid permissions of release env $label."
+    [ "$((8#$mode & 022))" -eq 0 ] || die "Release env $label is group- or world-writable."
+    while IFS= read -r line || [ -n "$line" ]; do
+        number=$((number + 1))
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        line="${line#export }"
+        name="${line%%=*}"
+        [[ "$line" == *=* && "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+            die "Release env $label line $number: malformed assignment."
+        case "$name" in
+        BENCH_CI_APP_ID | BENCH_CI_APP_SLUG | RELEASE_INTEGRATION_ARGS | RELEASE_TOOL_PATH) ;;
+        *) die "Release env $label line $number: name is not allowed." ;;
+        esac
+        value="${line#*=}"
+        case "$value" in
+        \"* | \'*)
+            [ "${#value}" -ge 2 ] && [ "${value:0:1}" = "${value: -1}" ] ||
+                die "Release env $label line $number: unmatched quote."
+            value="${value:1:${#value}-2}"
+            ;;
+        *\" | *\') die "Release env $label line $number: unmatched quote." ;;
+        esac
+        if [ "${!name+x}" = x ]; then
+            log "Release env $label: $name already set in environment."
+            retained=$((retained + 1))
+        else
+            export "$name=$value"
+            log "Release env $label: loaded $name."
+            loaded=$((loaded + 1))
+        fi
+    done <"$file"
+    log "Release env $label: $loaded loaded, $retained retained."
+}
+
+apply_release_path() {
+    local rest="${RELEASE_TOOL_PATH:-}" element mode
+    [ -n "$rest" ] || return 0
+    while :; do
+        element="${rest%%:*}"
+        case "$element" in
+        /*) ;;
+        *) die "RELEASE_TOOL_PATH element '$element' must be an absolute directory (empty elements are refused)." ;;
+        esac
+        [ -d "$element" ] || die "RELEASE_TOOL_PATH element '$element' is not an existing directory."
+        mode="$(stat -L -c %a "$element" 2>/dev/null || stat -L -f %Lp "$element")" ||
+            die "Could not read permissions of RELEASE_TOOL_PATH element '$element'."
+        [[ "$mode" =~ ^[0-7]+$ ]] || die "Invalid permissions of RELEASE_TOOL_PATH element '$element'."
+        [ "$((8#$mode & 022))" -eq 0 ] || die "RELEASE_TOOL_PATH element '$element' is group- or world-writable."
+        [[ "$rest" == *:* ]] || break
+        rest="${rest#*:}"
+    done
+    PATH="$RELEASE_TOOL_PATH:$PATH"
+    export PATH
+}
+
 check_release_toolchain() {
-    local tool missing=()
+    local tool resolved missing=()
     for tool in "${LINT_TOOLCHAIN[@]}"; do
-        command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+        if resolved="$(command -v "$tool")"; then
+            log "Lint/test tool $tool: $resolved"
+        else
+            missing+=("$tool")
+        fi
     done
     if [ "${#missing[@]}" -gt 0 ]; then
-        die "Missing lint/test tool(s): ${missing[*]} — the release box needs the lint toolchain before the test gate can run. Provision it (apt + the pinned uv installer): see docs/dev/release-server.md § Provisioning the server. (Or --skip-tests to bypass the gate — NOT recommended.)"
+        die "Missing lint/test tool(s): ${missing[*]}. Effective PATH: $PATH. Set RELEASE_TOOL_PATH to the installed tool directories; see docs/dev/release-server.md § The lint/release toolchain."
     fi
     ok "Lint/test toolchain present (${LINT_TOOLCHAIN[*]})."
+}
+
+require_release_toolchain() {
+    [ "$SKIP_TESTS" -eq 1 ] || check_release_toolchain
 }
 
 require_clean_release_tree() {
@@ -212,8 +287,25 @@ check_verifier_image() {
     ok "Release verifier validated end to end (${img##*@}: signs, verifies, refuses a tampered blob)."
 }
 
+check_registry_policy() {
+    check_registry_write_tuning
+    if [ -n "${PITHEAD_BUILDKITD_CONFIG:-}" ] &&
+        { [ ! -f "$PITHEAD_BUILDKITD_CONFIG" ] || [ ! -r "$PITHEAD_BUILDKITD_CONFIG" ]; }; then
+        die "PITHEAD_BUILDKITD_CONFIG must name a readable file."
+    fi
+    if [ "${PITHEAD_REHEARSAL:-0}" = 1 ] && [ "$REGISTRY" = "$PROD_REGISTRY" ]; then
+        die "PITHEAD_REHEARSAL=1 requires a non-production registry namespace."
+    fi
+    if [ "$REGISTRY" != "$PROD_REGISTRY" ] && [ "$DRY_RUN" -eq 0 ] && [ "${PITHEAD_REHEARSAL:-0}" != 1 ]; then
+        warn "A real cut will publish a bundle naming $REGISTRY; PITHEAD_REHEARSAL=1 rehearses without tagging."
+    fi
+}
+
 preflight() {
+    check_registry_policy
     stage "1/7  Preflight"
+    load_release_env
+    apply_release_path
     REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
     # release.sh enables errexit before calling this stage.
     # shellcheck disable=SC2164
@@ -227,9 +319,7 @@ preflight() {
     command -v docker >/dev/null 2>&1 || die "docker is required."
     docker buildx version >/dev/null 2>&1 || die "docker buildx is required (for digest-level promotion)."
     # Only the test gate needs the lint toolchain — skip the check when it does not run.
-    if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_TESTS" -eq 0 ]; then
-        check_release_toolchain
-    fi
+    require_release_toolchain
     apply_signing_defaults
     resolve_signing
     check_verifier_image
