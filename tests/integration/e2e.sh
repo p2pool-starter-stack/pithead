@@ -193,7 +193,7 @@ CONTROL_VERDICT_BEFORE=""
 RESTORE_DIR="$CANONICAL_DIR"
 # --- Restore: fires ONCE on EXIT, Ctrl-C included. Never add INT/TERM (#1401) ----
 restore_all() {
-    local rc=$?
+    local rc=${1:-$?}
     [ "$RESTORED" = "1" ] && return
     RESTORED=1
     # --check deploys nothing, borrows nothing and takes no backup, so there is nothing to put
@@ -317,7 +317,7 @@ restore_all() {
     fi
     if [ "$rc" -eq 0 ]; then ok "restore complete."; else warn "restore complete (the run itself failed — see above)."; fi
 }
-trap restore_all EXIT
+trap e2e_exit EXIT
 # --- Small waiters / helpers ------------------------------------------------
 wait_bench_healthy() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300}))

@@ -30,6 +30,19 @@ that reads it depends on the `pithead` build target, while the live E2E provisio
 cleaning its source checkout. A clean clone therefore exercises the same generated CLI as a local
 developer; release bundles and appliance images receive a pre-generated copy.
 
+Monero's image build uses `build/monero/download.sh` to fetch the versioned CLI archive from
+`downloads.getmonero.org`, then `dlsrc.getmonero.org` after a transport failure. Each source gets
+one attempt with a 20-second connection limit inside a 300-second total transfer deadline:
+at most 600 seconds of network time, including continuously slow transfers. Both sources use
+HTTPS and the existing `MONERO_HASH` pin. A checksum mismatch stops the build immediately;
+exhausted sources fail explicitly, and partial files are removed before any extraction.
+The fallback is an alternate endpoint, not a guarantee of independent origins or availability.
+`tests/stack/standalone/test_monero_download.py`, run by `make test-tools` in CI, executes the real
+downloader against local HTTPS fixtures with shorter deadlines. It checks primary success,
+slow-primary and HTTP-error recovery, checksum rejection on both sources, bounded exhaustion,
+HTTPS downgrade refusal and Dockerfile wiring. It needs curl, OpenSSL and sha256sum, without
+Docker or public-network access. The Dockerfile still requires the current-head tier-4 proof below.
+
 The fakes are the enabler. The whole control plane is env-configurable (`MONERO_RPC_URL`,
 `TARI_GRPC_ADDRESS`, `DOCKER_CONTROL_URL`, `NODE_DOWN_AFTER_SEC`, `UPDATE_INTERVAL`, …), so the
 real code points at small controllable servers and drives the entire state machine in seconds, in
