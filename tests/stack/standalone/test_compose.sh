@@ -447,8 +447,8 @@ jq_assert "custom stratum port moves the publish and container port (#172)" \
     '.services["xmrig-proxy"].ports | any((.published == "4444") and (.target == 4444))' "$PORT_JSON"
 jq_assert "custom stratum port moves the -b bind (#172)" \
     '.services["xmrig-proxy"].command | any(. == "0.0.0.0:4444")' "$PORT_JSON"
-jq_assert "custom stratum port reaches the dashboard hint env (#172)" \
-    '.services.dashboard.environment["STRATUM_PORT"] == "4444"' "$PORT_JSON"
+jq_assert "custom stratum port and the bind reach the dashboard hint env (#172, #3384)" \
+    '.services.dashboard.environment | (.STRATUM_PORT == "4444") and (.STRATUM_BIND == "0.0.0.0")' "$PORT_JSON"
 jq_assert "internal p2pool stratum stays :3333 under a custom port (#172)" \
     '.services["p2pool"].command | any(. == "0.0.0.0:3333")' "$PORT_JSON"
 jq_assert "proxy upstream (P2POOL_URL) stays the internal :3333 (#172)" \
