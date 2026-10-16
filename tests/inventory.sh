@@ -192,7 +192,7 @@ integration_expected=$(
         ! -name remote-endpoints.sh ! -name wallet-fixture.sh \
         ! -name readiness-churn.sh ! -name reset-restore-web.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh \
-        ! -name miner-connection.sh ! -name xvb-off-dwell.sh -print |
+        ! -name miner-connection.sh ! -name tari-readiness.sh ! -name xvb-off-dwell.sh -print |
         sed 's|^tests/integration/||'
 )
 integration_expected=$(printf '%s\n' "$integration_expected" | sort)
