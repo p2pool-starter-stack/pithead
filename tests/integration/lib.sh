@@ -442,9 +442,9 @@ rig_lock() { # rig_lock <project> <suite> [shared]
 
 # Take the rig lock ON a remote box and hold it for the lifetime of THIS process. The remote
 # bash receives the verbatim helper over ssh stdin, acquires, answers RIG_LOCK_OK, then blocks
-# reading the still-open pipe; local FD 8 keeps that pipe open, so the remote shell — and with
-# it the kernel lock — dies the moment this process does, kill -9 included: the same crash
-# semantics as holding FD 9 locally, one hop out. Busy propagates as the helper's exit 75; an
+# reading the still-open pipe. FD 8 keeps it open; descendants can inherit that writer too.
+# e2e_exit explicitly ends and reaps this child after restore instead of relying on EOF.
+# Busy propagates as the helper's exit 75; an
 # ssh failure propagates as ssh's own exit code. Uses fixed local FD 8 (bash 3.2 has no
 # dynamic fds), so: one remote lock per process — enough for run.sh (the target box) and
 # e2e.sh (the borrowed loaner rig; its bench lock is taken by the run.sh it launches there).
@@ -468,11 +468,11 @@ rig_lock_remote() { # rig_lock_remote <project> <suite> <shared|""> <dest> [ssh 
     IFS= read -r ack <"$d/out" || true
     rm -rf "$d" # the open FDs outlive the fifo names
     if [ "$ack" != "RIG_LOCK_OK" ]; then
-        # No ack: the remote helper exited 75 (its busy message already reached our stderr
-        # via ssh) or ssh itself failed — either way the run must not touch the box.
+        # No ack: the remote helper refused or SSH failed; no target mutation is permitted.
         local rc
         wait "$RIG_LOCK_SSH_PID" 2>/dev/null
         rc=$?
+        RIG_LOCK_SSH_PID=""
         [ "$rc" -eq 0 ] && rc=1 # EOF without the ack is never success
         it_err "could not take the rig lock on $dest (exit $rc)"
         exit "$rc"
