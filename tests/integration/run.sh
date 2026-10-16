@@ -264,9 +264,7 @@ main() {
             [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
         done
     fi
-    # Subnet runs before lifecycle: its running-state battery asserts the Monero payout wallet is
-    # caught up, and lifecycle's uninstall removes wallet_data by design, so after lifecycle the
-    # wallet is mid-rescan (#3026). The phase restores the baseline subnet itself (down/up).
+    # Before lifecycle, whose uninstall removes wallet_data and leaves the payout wallet rescanning (#3026).
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
         run_lifecycle || lifecycle_ok=0
