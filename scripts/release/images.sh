@@ -35,7 +35,9 @@ ensure_buildx_builder() {
     [ "$DRY_RUN" -eq 1 ] && return 0
     if ! docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2>&1; then
         log "Creating cross-build buildx builder '$BUILDX_BUILDER' (docker-container driver + QEMU)..."
-        run docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --bootstrap >/dev/null
+        local args=()
+        [ -z "${PITHEAD_BUILDKITD_CONFIG:-}" ] || args+=(--buildkitd-config "$PITHEAD_BUILDKITD_CONFIG")
+        run docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --bootstrap ${args[@]+"${args[@]}"} >/dev/null
     fi
 }
 
@@ -73,7 +75,7 @@ build_images() {
                 --build-arg "PITHEAD_GIT_BRANCH=$GIT_BRANCH"
             )
         fi
-        run "${args[@]}"
+        retry_registry_write run "${args[@]}"
     done
     build_rootfs_image
     ok "Built + pushed all 6 images for $PLATFORMS."
@@ -106,7 +108,7 @@ build_rootfs_image() {
     repo="$(image_for os-rootfs)"
     if [ "$DRY_RUN" -eq 1 ]; then
         run env PITHEAD_ROOTFS_TAG="$repo:$STAGING_TAG" PITHEAD_PIN_TAG="$STAGING_TAG" PITHEAD_WIZARD_IMAGE="$(image_for dashboard)@sha256:$(printf '%064d' 0)" os/build-image.sh
-        run docker push "$repo:$STAGING_TAG"
+        retry_registry_write run docker push "$repo:$STAGING_TAG"
         return
     fi
     rm -f "$rootfs_tar.sha256" "$rootfs_tar.sha256.tmp"
@@ -120,7 +122,7 @@ build_rootfs_image() {
     verify_release_rootfs_tar "$rootfs_tar" ||
         die "Refusing to push $repo:$STAGING_TAG: the exported rootfs is not the release variant."
     sha256sum "$rootfs_tar" | awk '{print $1}' >"$rootfs_tar.sha256.tmp"
-    if run docker push "$repo:$STAGING_TAG"; then
+    if retry_registry_write run docker push "$repo:$STAGING_TAG"; then
         mv "$rootfs_tar.sha256.tmp" "$rootfs_tar.sha256"
     else
         rm -f "$rootfs_tar.sha256.tmp"
@@ -156,13 +158,22 @@ stage_push() {
 
 ghcr_login() {
     local registry_host="${REGISTRY%%/*}" user token
-    user="${GHCR_USER:-}"
-    token="${GHCR_TOKEN:-${GITHUB_TOKEN:-}}"
-    [ -n "$token" ] || token="$(gh auth token 2>/dev/null || true)"
-    [ -n "$user" ] || user="$(gh api user --jq .login 2>/dev/null || true)"
-    if [ -z "$token" ]; then
-        warn "No registry token (GHCR_TOKEN / GITHUB_TOKEN / gh auth) — assuming docker is already logged in to $registry_host."
-        return 0
+    if [ "$registry_host" = ghcr.io ]; then
+        user="${GHCR_USER:-}"
+        token="${GHCR_TOKEN:-${GITHUB_TOKEN:-}}"
+        [ -n "$token" ] || token="$(gh auth token 2>/dev/null || true)"
+        [ -n "$user" ] || user="$(gh api user --jq .login 2>/dev/null || true)"
+        if [ -z "$token" ]; then
+            warn "No registry token (GHCR_TOKEN / GITHUB_TOKEN / gh auth) — assuming docker is already logged in to $registry_host."
+            return 0
+        fi
+    else
+        user="${PITHEAD_REGISTRY_USER:-}"
+        token="${PITHEAD_REGISTRY_TOKEN:-}"
+        if [ -z "$user" ] || [ -z "$token" ]; then
+            warn "No PITHEAD_REGISTRY_USER / PITHEAD_REGISTRY_TOKEN — skipping login to $registry_host."
+            return 0
+        fi
     fi
     # IMPORTANT: never route the token through run()/any echo. Pipe it straight to docker via stdin.
     if [ "$DRY_RUN" -eq 1 ]; then
@@ -199,6 +210,8 @@ smoke_test() {
                     got="$(anonymous_ghcr_digest "$repo" "$STAGING_TAG")" || true
                     [ "$got" = "${digest##*@}" ] ||
                         die "Smoke: $repo:$STAGING_TAG is not anonymously readable at the captured digest. New GHCR packages default to private; make pithead-os-rootfs public, then start the release again."
+                else
+                    log "Skipping anonymous-read check for non-GHCR registry $repo."
                 fi
                 got="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{.Os}}/{{.Architecture}}' "$digest" 2>/dev/null || true)"
                 [ "$got" = "$STACK_VERSION ${PLATFORMS%%,*}" ] ||
@@ -238,13 +251,15 @@ promote() {
     confirm "Promote the smoke-tested digests to $TAG and :latest (publishes user-facing tags)?" ||
         die "Promotion cancelled — nothing user-facing was published."
     ghcr_login
-    local suffix repo digest expected got tag_ref
+    local suffix repo digest expected got tag_ref args
     for suffix in "${PUBLISHED_IMAGES[@]}"; do
         repo="$(image_for "$suffix")"
         digest="$(get_digest "$suffix")"
         is_digest_ref_for "$digest" "$repo" || die "No valid lowercase sha256 digest for $suffix — stage first."
         log "Promoting $digest -> :$TAG, :latest"
-        run docker buildx imagetools create --tag "$repo:$TAG" --tag "$repo:latest" "$digest"
+        args=()
+        [ -z "${PITHEAD_BUILDKITD_CONFIG:-}" ] || args+=(--builder "$BUILDX_BUILDER")
+        retry_registry_write run docker buildx imagetools create ${args[@]+"${args[@]}"} --tag "$repo:$TAG" --tag "$repo:latest" "$digest"
         if [ "$DRY_RUN" -eq 0 ]; then
             expected="${digest##*@}"
             for tag_ref in "$repo:$TAG" "$repo:latest"; do
@@ -276,7 +291,7 @@ sign_images() {
         digest="$(get_digest "$suffix")"
         [ -n "$digest" ] || die "No staged digest for $suffix — nothing to sign."
         log "Signing $digest"
-        run cosign sign --key "${COSIGN_KEY:-}" --tlog-upload=false --yes "$digest"
+        retry_registry_write run cosign sign --key "${COSIGN_KEY:-}" --tlog-upload=false --yes "$digest"
     done
     ok "Signed all 6 promoted digests (verify with the committed cosign.pub)."
 }

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Release-publish tests: registry retries, toolchain preflight, release smoke and bundle hygiene.
+# Release-publish tests: registry retries, release smoke and bundle hygiene.
 # Paths are re-derived so this fragment remains independent of suite order.
 REL="$ROOT/scripts/release/release.sh"
 REL_IMAGES="$ROOT/scripts/release/images.sh"
@@ -83,38 +83,6 @@ assert_contains "stage_push, real errexit: crafted die() reaches the operator (#
 resume_out="$(cd "$ROOT" && bash "$REL" --resume-promote 2>&1)"
 assert_rc "--resume-promote refuses a replaced staging tag" "$?" "1"
 assert_contains "--resume-promote has no mutable-tag recovery path" "$resume_out" "Unknown option: --resume-promote"
-echo "== unit: release.sh preflight checks the lint toolchain (#426) =="
-# A reimaged release box loses shellcheck/shfmt/node/uv — the v1.3.0 cut died ~1 min in mid-gate with a
-# bare `shellcheck: not found`. check_release_toolchain must fail fast BEFORE building, naming the tool
-# and the provisioning doc. Point PATH at a sandbox of stub tools so the host's real PATH doesn't decide.
-RTB="$SANDBOX/release-tools"
-mkdir -p "$RTB"
-for t in shellcheck shfmt node npx uv uvx; do
-    printf '#!/usr/bin/env bash\nexit 0\n' >"$RTB/$t"
-    chmod +x "$RTB/$t"
-done
-# shellcheck disable=SC1090
-(
-    cd "$ROOT" || exit
-    set --
-    source "$REL" 2>/dev/null
-    set +eu
-    PATH="$RTB" check_release_toolchain >/dev/null 2>&1
-)
-assert_rc "full toolchain present -> preflight passes" "$?" "0"
-rm -f "$RTB/shfmt" # simulate a reimaged box missing one tool
-# shellcheck disable=SC1090
-tc_out="$(
-    cd "$ROOT" || exit
-    set --
-    source "$REL" 2>/dev/null
-    set +eu
-    PATH="$RTB" check_release_toolchain 2>&1
-)"
-tc_rc=$?
-assert_rc "missing tool -> preflight fails fast (rc 1)" "$tc_rc" "1"
-assert_contains "the missing tool is named" "$tc_out" "shfmt"
-assert_contains "error points at the provisioning doc" "$tc_out" "release-server.md"
 echo "== unit: release.sh requires the exact-SHA bench tier-4 status (#1996) =="
 bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug] [dry-run]
     local BENCH_STATUSES="$1" BENCH_RESOLVED_APP_ID="${2:-4242}"

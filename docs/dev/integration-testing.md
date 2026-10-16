@@ -1039,6 +1039,13 @@ cancelled CI job used to leave a borrowed production miner on a probe value, whi
 `restore_all` reported a clean restore of the *pool* config and said nothing about the writable keys
 ([#1379](https://github.com/p2pool-starter-stack/pithead/issues/1379)).
 
+The wrapper runs its restore inside the EXIT handler, then explicitly ends and reaps its own
+loaner SSH child. This also runs after post-deploy readiness refusal, restore failure and
+`--keep`. Restoration retains the reservation until it finishes or refuses. Sending an exit
+command before closing the lease pipe prevents inherited writers from keeping the child alive;
+cleanup neither removes a remote holder nor signals another borrower's process. Parent-owned
+reservations remain the parent's responsibility. The original run or restore failure stays nonzero.
+
 `rig-key-ledger.sh` closes that window. A key goes on a ledger when its write is sent — before, not
 after, so the apply itself is covered — and comes off only when its revert is **confirmed applied**
 (for `pools`, whose restore value is the probe itself, when the rig answers `applied`, `rejected`
@@ -1184,7 +1191,16 @@ On a scenario failure, the harness also captures fresh diagnostic snapshots (red
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
 probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the first
 failed missing-image `up` or dashboard data-dir carry, before cleanup can replace
-Tor's failing state. The shared Tor-egress control also records each original SOCKS
+Tor's failing state. A failed Worker Inspect read or enriched-telemetry assertion saves
+`results/worker-detail.failure.json` before the write guards or restoration. It projects the
+selected worker from the judged `/api/state` read and the judged `/api/worker` response:
+presence, typed `found`, online/offline status, API availability and RigForge presence,
+version presence, stale verdict and validated UTC generation time. A stale detail without a
+version records `version_withheld_as_stale`; unavailable staleness stays unknown. The fixed
+projection omits names, addresses, credentials, configs and free text, stays below 2048 bytes,
+and has a five-second computation bound. Invalid JSON and capture failures are explicit.
+No request, retry or wait is added; the original assertion and failure count are unchanged.
+The shared Tor-egress control also records each original SOCKS
 request in `results/tor-egress-probes/probe-<sequence>.txt` and the harness transcript,
 before the caller reports its verdict or restores the stack. Each record contains the
 per-run sequence, original target/SSH exit status, harness-observed elapsed seconds and

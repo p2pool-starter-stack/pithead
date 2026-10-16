@@ -2,9 +2,9 @@
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # Release domain (#1105 Phase 1): release.sh's side-effect-free logic — the semver/image-name
 # helpers, the ingredient manifest, and the bundle-contents/build-mounts checks. The publish side
-# (registry retry, toolchain preflight, smoke resolution, pull-vs-build mode, xattr hygiene) is
+# (registry retry, smoke resolution, pull-vs-build mode, xattr hygiene) is
 # test-release-publish.sh; signing/refusal/pinned-verifier is test-release-signing.sh and the
-# install-side verifier is test-release-verify.sh. Sourced by tests/stack/run.sh after lib.sh.
+# toolchain/env preflight is test-release-toolchain.sh; the install-side verifier is test-release-verify.sh. Sourced by tests/stack/run.sh after lib.sh.
 # (Assertions left in run.sh despite sharing a section marker with moved content: the #291
 # firewall-ordering assertions trailing cosign_container_path — tor/network, not release; the XvB
 # tier-threshold drift guard trailing "release.sh pure logic" — dashboard, not release; the
