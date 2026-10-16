@@ -14,7 +14,7 @@ for stage in panel rpc hashes; do
         OUT_DIR="$td/$stage" SUBNET_TIMEOUT_ACTIVE=1 SUBNET_TIMEOUT_CAPTURED=0
         SKIP_MINING_ASSERTS=0 EXPECTED_WORKERS=1
         mkdir -p "$OUT_DIR"
-        # Only the selected later predicate fails. The initial release succeeds.
+        # Only the selected later predicate fails, so earlier waits succeed.
         now_s() {
             local tick=0
             [ ! -f "$OUT_DIR/clock" ] || read -r tick <"$OUT_DIR/clock"

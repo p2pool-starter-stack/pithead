@@ -61,8 +61,7 @@ def monero_transfer(raw, method):
         type(obj.get(key)) is not int or key not in out for key in fields.split()
     ):
         raise ValueError
-    # Monero v0.18.5.1 epee omits empty STL containers, including peers/spans.
-    # contrib/epee/include/serialization/keyvalue_serialization_overloads.h:serialize_stl_container_t_obj
+    # Monero v0.18.5.1 epee serialization omits empty containers such as peers and spans.
     key = "connections" if method == "get_connections" else "peers"
     rows = obj.get(key, [])
     out["peer_list_encoding"] = "present" if key in obj else "omitted-empty"

@@ -36,7 +36,7 @@ capture_subnet_timeout_once() {
         return 0
     fi
     printf 'stage=%s utc=%s\n' "$1" "$(date -u +%FT%TZ)" >"$dir/trigger.txt" || true
-    # Subnet runs only in local mode. No raw stderr is retained; typed probe errors are JSONL.
+    # Only typed JSONL is kept so raw probe stderr cannot leak into artifacts.
     collect_subnet_diagnostics "$dir" || rc=$?
     it_step "subnet first-timeout diagnostics retained (collector exit $rc)"
     return 0
