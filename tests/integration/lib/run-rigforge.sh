@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+source "${BASH_SOURCE[0]%/*}/worker-detail-diagnostics.sh" || return $?
 run_rigforge_integration() { # [rig-name]
     # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
     IT_CURRENT_SCENARIO="rigforge-integration"
@@ -40,7 +41,7 @@ run_rigforge_integration() { # [rig-name]
 
     # 2a. Worker Inspect READ: GET /api/worker?name=<rig> returns the rig's detail carrying the
     #     enriched telemetry (plus the config prefill + history).
-    local detail
+    local detail fails_before="$IT_FAIL"
     detail="$(_worker_detail "$rig" || true)"
     if [ -n "$detail" ] && printf '%s' "$detail" | jq -e '.name' >/dev/null 2>&1; then
         it_pass "Worker Inspect read returns the rig's detail (#185)"
@@ -49,6 +50,7 @@ run_rigforge_integration() { # [rig-name]
     else
         it_fail "Worker Inspect read returns the rig's detail (#185)" "GET /api/worker returned no valid JSON: ${detail:0:120}"
     fi
+    [ "$IT_FAIL" -eq "$fails_before" ] || capture_worker_detail_failure "$rig" "$st" "$detail" || true
 
     # 2b. Worker Inspect WRITE-path fail-closed guards (#185) — proven WITHOUT mutating the borrowed
     #     rig: a POST missing the X-Pithead-Control CSRF header is refused (403), and a non-writable key
