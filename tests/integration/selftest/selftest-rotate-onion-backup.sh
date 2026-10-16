@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034 # globals are consumed by sourced functions
-# Drive the real rotate-onion backup path without Docker or a bench.
+# Tier 1 has no Docker, so drive the real backup path against stubs.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

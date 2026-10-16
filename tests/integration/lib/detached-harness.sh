@@ -95,9 +95,10 @@ harness_pregate() { # <workers> <no_mining flags>
 }
 
 # The detached launch's stdin, one record per line, in the order run_harness reads them: the rig
-# token, the parent lock pair, the two base64 JSON inputs, the payout-confirm wallet keys, and fixture
-# (#2675). Secrets ride stdin, never the remote command line where ps on the bench shows them. The
-# JSON may span lines, hence base64; a newline in any other record would shift the ones after it.
+# token, the parent lock pair, the two base64 JSON inputs, the payout-confirm row's wallet keys
+# (#2675), then the onion fixture attestation. Secrets ride stdin, never the remote command line
+# where ps on the bench shows them. The JSON may span lines, hence base64; a newline in any other
+# record would shift the ones after it.
 harness_launch_records() {
     local rollback_b64 pools_b64 record
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
