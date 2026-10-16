@@ -139,6 +139,7 @@ assert_rc "wait_tari_synced still passes when Tari is synced" "$?" "0"
 
 echo "== readiness: harness_pregate's readiness phase refused (never its check phase) =="
 pregate_of() { # <failing phase|none> [readiness names Tari: 1] [check says workers-offline: 1] [mode] [nofile] -> lines, rc
+    # mode: health-out | health-err | health-tari | diag-err | tee; nofile makes every capture write fail.
     # shellcheck disable=SC2034,SC2329  # the stubs and inputs are read by harness_pregate
     (
         E2E_DIR=/srv/code/pithead-e2e FAIL="$1" TARI="${2:-0}" WORKERS_LINE="${3:-0}" MODE="${4:-}"

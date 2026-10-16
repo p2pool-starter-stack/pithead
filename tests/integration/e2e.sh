@@ -324,8 +324,7 @@ wait_bench_healthy() { # <timeout_s>
         sleep 10
     done
 }
-# After a deploy, monerod re-confirms its tip in seconds but tari rebuilds its Tor circuits first
-# (>18min, #2455). Wait for both "done" so the bounded Tari readiness row starts on a synced chain.
+# Tari rebuilds its Tor circuits after a deploy (>18min, #2455), so the readiness row waits for a synced chain.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st refusal="destructive phases"
     [ "${2:-}" = restore ] && refusal="baseline proof"

@@ -652,11 +652,7 @@ assert_pool_switched() { # <label> <expected-pool-label>
     assert_pool_type "$1" "$(jq_get "$(api_state)" '.pool.type')" "$2"
 }
 
-# Tari sync verdict for tari_required scenarios (#746). Every per-scenario restart sends Tari back
-# through target-height discovery ('loading'), which over Tor can outlast wait_tari_synced's window:
-# an in-progress state, not a sync failure. But lag tolerance must not mask a Tari that NEVER syncs,
-# so it is earned: "done" passes and records the proof (TARI_SEEN_DONE); loading/syncing AFTER that
-# proof warns; anything else, or an in-progress state on the first look, fails the gate.
+# Restart lag over Tor is tolerated only once Tari proved "done" this run (#746, docs/dev/integration-testing.md).
 assert_tari_synced_required() { # <state>
     if [ "$1" = "done" ]; then
         TARI_SEEN_DONE=1
