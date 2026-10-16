@@ -246,6 +246,7 @@ mm_leg_outcome() { # <synced-rc> <capture> -> "<pass> <fail> <skipped-legs> <by-
         # boxes this harness runs on monerod IS synced, so that branch would otherwise never be
         # exercised here.
         monero_caught_up() { return "$MM_STUB_SYNCED"; }
+        mm_startup_lost() { return 1; }
         # The sentinel matters. `mm_capture_startup` has TWO distinct empty outcomes in production
         # and the leg treats them differently: it returns non-zero when the container's start time
         # cannot be read at all, and returns ZERO with empty output when the log simply held no
@@ -303,6 +304,7 @@ for mm_case in "" "$MM_LOCAL_ONLY"; do
     out="$(
         mm_capture_startup() { printf '%s' "$mm_case"; }
         mm_startup_excerpt() { printf 'EXCERPT-SENTINEL\n'; }
+        mm_startup_lost() { return 1; }
         monero_caught_up() { return 0; }
         IT_FAIL=0
         assert_mergemine_roundtrip

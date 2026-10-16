@@ -130,6 +130,40 @@ mm_capture_startup() {
     rx "docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | head -n ${MM_WINDOW_LINES} | grep -a MergeMiningClientTari || true" 2>/dev/null
 }
 
+# Rotation can drop startup lines, so a first line past a 60 s allowance hints at, never proves, lost evidence.
+mm_startup_lost() {
+    local started oldest
+    started="$(mm_started)" || return 1
+    oldest="$(rx "docker logs --timestamps --since $(quote_arg "$started") p2pool 2>&1 | head -n 1 | awk '\$1 ~ /^[0-9][0-9][0-9][0-9]-/ {print \$1}'" 2>/dev/null)" || return 1
+    python3 - "$started" "$oldest" <<'MM_TIME'
+import re
+import sys
+from datetime import datetime
+from decimal import Decimal
+
+
+def instant(text):
+    match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})", text)
+    if not match:
+        raise ValueError("invalid engine timestamp")
+    whole = datetime.fromisoformat(match[1] + match[3].replace("Z", "+00:00"))
+    return whole, Decimal("0." + (match[2] or "0"))
+
+
+try:
+    (start, sf), (oldest, of) = map(instant, sys.argv[1:])
+    lost = Decimal(str((oldest - start).total_seconds())) + of - sf > 60
+except ValueError:
+    lost = False
+sys.exit(0 if lost else 1)
+MM_TIME
+}
+
+# A local client line cannot prove Tari answered, so lost evidence is judged on a fresh bounded window.
+mm_capture_recent() {
+    rx "docker compose logs --no-color --since 60s p2pool 2>&1 | tail -n ${MM_WINDOW_LINES} | grep -a MergeMiningClientTari || true" 2>/dev/null
+}
+
 # Diagnostic lines from the same window, for a FAIL only (#2326). An empty capture cannot say
 # whether p2pool built no client, the client could not reach Tari, or the log was never read; these
 # lines can: a `compose logs` error, the entrypoint's launch and bridge lines, p2pool's Tari and error
@@ -192,13 +226,21 @@ mm_mask_excerpt() {
 # legs against absent, synced-fake and partial-fake monerods). Covering it means running against
 # a synced chain, not supplying something.
 #
-# Every case the reorder moves, it moves OUT of the skip ledger into a pass or a fail; no case
-# that previously passed or failed can become a skip. That direction is the safety argument, and
-# the self-test asserts all three moved cases rather than resting on it.
+# Suspected evidence loss without fresh proof is a `missing` skip, never a by-design one.
 assert_mergemine_roundtrip() {
     local lines verdict excerpt=""
     if ! lines="$(mm_capture_startup)"; then
         it_fail "p2pool merge-mining gRPC round-trip (#1397)" "could not read p2pool's container start time"
+        return 0
+    fi
+    if ! mm_roundtrip_verdict "$lines" >/dev/null && mm_startup_lost; then
+        lines="$(mm_capture_recent)" || lines=""
+        if verdict="$(mm_roundtrip_verdict "$lines")"; then
+            it_pass "p2pool reached the Tari node over gRPC — fresh ${verdict} (#1397)"
+        else
+            it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" \
+                "oldest retained log timestamp is more than 60 seconds after container start; startup evidence may have been lost (conservative heuristic), and no fresh round-trip proof is available" missing
+        fi
         return 0
     fi
     if [ -z "$lines" ] && ! monero_caught_up; then
