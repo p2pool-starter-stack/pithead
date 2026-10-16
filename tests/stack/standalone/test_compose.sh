@@ -253,14 +253,6 @@ else
     fails=$((fails + 1))
 fi
 
-LOOP_ENV="$(mktemp)"
-sed 's/^STRATUM_BIND=.*/STRATUM_BIND=127.0.0.1/' "$ENV_FILE" >"$LOOP_ENV"
-LOOP_JSON="$(docker compose --env-file "$LOOP_ENV" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
-rm -f "$LOOP_ENV"
-jq_assert "dashboard carries a non-default STRATUM_BIND from the env file (#3384)" \
-    '.services.dashboard.environment.STRATUM_BIND == "127.0.0.1"' "$LOOP_JSON"
-jq_assert "dashboard carries the default STRATUM_BIND (#3384)" '.services.dashboard.environment.STRATUM_BIND == "0.0.0.0"'
-
 # Control-channel spool mounts (#33): the rw/ro split IS the trust boundary. requests/ is the
 # dashboard's ONLY writable leg; results/, audit/ and the pre-masked config prefill (#440) are
 # read-only; staged/ is never mounted at all — so the container can ask, but cannot forge a
@@ -447,7 +439,7 @@ jq_assert "default -b bind stays 0.0.0.0:3333 (#172)" \
 PORT_ENV="$(mktemp)"
 {
     cat "$ENV_FILE"
-    printf 'STRATUM_PORT=4444\n'
+    printf 'STRATUM_PORT=4444\nSTRATUM_BIND=127.0.0.1\n'
 } >"$PORT_ENV"
 PORT_JSON="$(docker compose --env-file "$PORT_ENV" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
 rm -f "$PORT_ENV"
@@ -455,8 +447,8 @@ jq_assert "custom stratum port moves the publish and container port (#172)" \
     '.services["xmrig-proxy"].ports | any((.published == "4444") and (.target == 4444))' "$PORT_JSON"
 jq_assert "custom stratum port moves the -b bind (#172)" \
     '.services["xmrig-proxy"].command | any(. == "0.0.0.0:4444")' "$PORT_JSON"
-jq_assert "custom stratum port and the bind reach the dashboard hint env (#172, #3384)" \
-    '.services.dashboard.environment | (.STRATUM_PORT == "4444") and (.STRATUM_BIND == "0.0.0.0")' "$PORT_JSON"
+jq_assert "custom stratum port and a non-default bind reach the dashboard hint env (#172, #3384)" \
+    '.services.dashboard.environment | (.STRATUM_PORT == "4444") and (.STRATUM_BIND == "127.0.0.1")' "$PORT_JSON"
 jq_assert "internal p2pool stratum stays :3333 under a custom port (#172)" \
     '.services["p2pool"].command | any(. == "0.0.0.0:3333")' "$PORT_JSON"
 jq_assert "proxy upstream (P2POOL_URL) stays the internal :3333 (#172)" \

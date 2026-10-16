@@ -16,6 +16,15 @@ def stratum_endpoint():
     return host, bind == "127.0.0.1"
 
 
+def stratum_state():
+    host, local_only = stratum_endpoint()
+    return {
+        "stratum_port": config.STRATUM_PORT,
+        "stratum_host": host,
+        "stratum_local_only": local_only,
+    }
+
+
 async def handle_miner_connection(request):
     password = os.environ.get("PROXY_STRATUM_PASSWORD", "")
     # Every route sits behind Caddy's configured login. The owner also permits credentials
