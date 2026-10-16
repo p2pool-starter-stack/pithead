@@ -46,8 +46,7 @@ test('WorkersTable sort headers are real buttons, so keyboard can sort (#671)', 
 });
 
 test('WorkersTable with no workers shows the connect hint instead of a bare table (#385)', () => {
-    // The server resolves stratum_host (display address, else host IP), so the hint never shows
-    // the docs placeholder while a host is known (#1873).
+    // A known host must never fall back to the docs placeholder (#1873).
     const s = clone();
     s.workers = [];
     const html = renderApp({ state: s });

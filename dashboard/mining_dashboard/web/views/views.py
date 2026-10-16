@@ -323,7 +323,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         # line. None whenever the onion is off or not yet provisioned, so the header renders
         # nothing rather than an empty row. Never carries client-auth key material.
         "dashboard_onion": dashboard_onion(),
-        **stratum_state(),  # port (#172) and bind-derived host feed the "point your rigs at" hint
+        **stratum_state(),
         "version": resolve_version(),
         # {available, latest, url} | None — new-release badge (#224), self-consistency-guarded:
         # never advertise the version already running (#664).
