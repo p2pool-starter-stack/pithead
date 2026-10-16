@@ -139,7 +139,7 @@ mm_capture_startup() { # [expected StartedAt]
     local started raw log_rc command
     started="${1:-$(mm_started)}"
     [ -n "$started" ] || return 1
-    # The chain_id line is kept apart so later chatter cannot evict it from the ring.
+    # The chain_id line is kept apart so chatter cannot evict it, and `cut` bounds a hostile line's length.
     command="timeout ${MM_LOG_READ_TIMEOUT} docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | grep -a MergeMiningClientTari | awk -v n=${MM_CAPTURE_LINES} '/uses chain_id/{chain=\$0} {ring[NR%n]=\$0} END {if(chain!=\"\") print chain; first=(NR<n?1:NR-n+1); for(i=first;i<=NR;i++) print ring[i%n]}' | cut -c 1-${MM_CAPTURE_LINE_BYTES}; printf '\\n__PITHEAD_MM_LOG_RC=%s\\n' \"\${PIPESTATUS[0]}\""
     raw="$(rx "bash -c $(quote_arg "$command")" 2>/dev/null)" || return 2
     log_rc="$(printf '%s\n' "$raw" | sed -n 's/^__PITHEAD_MM_LOG_RC=//p' | tail -n 1)"
@@ -147,7 +147,7 @@ mm_capture_startup() { # [expected StartedAt]
     printf '%s\n' "$raw" | sed '/^__PITHEAD_MM_LOG_RC=/d'
 }
 
-# Prints `<verdict>|<epoch>`; returns 0 for a round-trip, 1 for none by the deadline, 2 for an unreadable log.
+# Prints `<verdict>|<epoch>`; returns 0 for a round-trip, 1 at the deadline, 2 on an unreadable epoch or log.
 mm_await_roundtrip() {
     local deadline epoch after started lines verdict="absent" now
     epoch="$(mm_epoch)" || {

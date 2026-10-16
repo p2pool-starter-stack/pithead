@@ -4,7 +4,7 @@
 # leg's three outcomes, driven from CAPTURED log bytes with no stack, no container, no network.
 #
 # The fixtures below were captured on the live stack, 2026-08-30, through the probe's own
-# gesture (`docker compose logs --no-color --since <StartedAt> p2pool | grep`), escapes
+# gesture (`docker compose logs --no-color --since <StartedAt> p2pool | head | grep`), escapes
 # and service prefix intact. They are captured rather than hand-built for the same reason
 # selftest-zmq-probe.sh captures its frames: a hand-built fixture agrees with whatever the
 # author believed, so it cannot fail when the real wire format moves.

@@ -187,7 +187,7 @@ assert_running_state() {
         it_step "stratum conns=${conns:-?} (informational)"
     fi
 
-    # 7. Tari sync-gate posture matches tari_required, from a fresh sample since `st` predates the waits (#3059).
+    # 7. Tari sync-gate posture matches tari_required; a cached `st` may predate Tari's re-sync (#3059).
     assert_eq "TARI_REQUIRED env matches config" "$(env_on_box TARI_REQUIRED)" "${tari_req:-true}"
     if [ "$tari_req" = "true" ]; then
         assert_fresh_tari_synced_required
