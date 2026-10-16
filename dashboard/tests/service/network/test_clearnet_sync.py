@@ -333,8 +333,7 @@ async def test_replayed_marker_text_does_not_reuse_host_proof(tmp_path, monkeypa
         original = os.fstat(fd)
     finally:
         os.close(fd)
-    # Model a dashboard-writable in-place replay with the attested inode AND ctime.
-    # A privileged test writer supplies the trigger; the dashboard cannot edit a claimed marker.
+    # A privileged writer replays in place because the dashboard cannot edit a claimed marker.
     marker.write_text(value)
     assert marker.stat().st_ino == original.st_ino
     fields = {key: getattr(original, key) for key in dir(original) if key.startswith("st_")}

@@ -38,8 +38,7 @@ class ClearnetAttestationTest(unittest.TestCase):
         (tmp_path / "results" / f"clearnet-{chain}-tor.json").write_text(json.dumps(result))
         marker.write_text(value)
         self.assertEqual(marker.stat().st_ino, st.st_ino)
-        # The reader executes unchanged, with metadata supplied by a simulated host claim.
-        # Pin ctime to the old proof to exercise the collision, independently of the filesystem clock.
+        # Pin ctime to the old proof so the collision does not depend on the filesystem clock.
         metadata = {
             "st_uid": uid,
             "st_mode": 0o100000 | mode,

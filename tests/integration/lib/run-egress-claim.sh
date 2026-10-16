@@ -11,8 +11,7 @@ assert_host_claims_spent_sync() { # <state-dir> <monero-on> <tari-on>
         else
             it_fail "dashboard cannot reopen spent $chain clearnet sync (#2678)" "marker missing"
         fi
-        # Use the dashboard's own uid and the old bytes. Only an explicit permission denial
-        # counts; a missing marker, unreadable input or failed docker exec is not replay proof.
+        # Only an explicit permission denial is replay proof, not a missing marker or failed exec.
         if replay=$(rx "docker exec dashboard python3 -c '
 from pathlib import Path
 marker = Path(\"/clearnet-state/$chain.synced\")

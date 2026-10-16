@@ -27,8 +27,7 @@ def tor_attested(state_dir, name) -> bool | None:
         )
         try:
             marker_stat = os.fstat(fd)
-            # Only the host's claim can make this transition eligible for attestation.
-            # Text, inode and ctime can all survive a dashboard-writable replay.
+            # Text, inode and ctime survive a dashboard-writable replay, so only the host claim counts.
             if (
                 not stat.S_ISREG(marker_stat.st_mode)
                 or marker_stat.st_uid != 0
