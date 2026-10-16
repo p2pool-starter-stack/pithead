@@ -44,9 +44,9 @@ redact() {
 }
 # --- Assertions -------------------------------------------------------------
 # Counters are global so the runner can total them across scenarios. The skip buckets and the
-# three helpers that move them live next door, as does bench-ci's e2e-env line (lib/e2e-env.sh);
-# sourced here so anything that has lib.sh has them. Fail CLOSED: resolve them from this file's
-# directory; a harness that merely warns would miscount every skip, or excuse nothing, in silence.
+# three helpers that move them live next door; sourced here so anything that has lib.sh has them.
+# Fail CLOSED: resolve the helper from this file's directory; a harness that merely warns would
+# miscount every skip in silence.
 # shellcheck source=tests/integration/lib/skip-accounting.sh
 source "${BASH_SOURCE[0]%/*}/lib/skip-accounting.sh" && source "${BASH_SOURCE[0]%/*}/lib/e2e-env.sh" ||
     {
@@ -656,7 +656,7 @@ assert_pool_switched() { # <label> <expected-pool-label>
 # through target-height discovery ('loading'), which over Tor can outlast wait_tari_synced's window:
 # an in-progress state, not a sync failure. But lag tolerance must not mask a Tari that NEVER syncs,
 # so it is earned: "done" passes and records the proof (TARI_SEEN_DONE); loading/syncing AFTER that
-# proof warns; anything else, or an in-progress state on the first look, fails the gate. (e2e-env.sh)
+# proof warns; anything else, or an in-progress state on the first look, fails the gate.
 assert_tari_synced_required() { # <state>
     if [ "$1" = "done" ]; then
         TARI_SEEN_DONE=1

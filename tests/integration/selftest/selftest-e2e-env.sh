@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
-#
-# Self-test (#2643, bench-ci#613): every place the harness stops because of the bench prints the
-# one line bench-ci's tier4-e2e reads, `e2e-env: <key>`, alone on stdout and at most once, and no
-# other path prints it. bench-ci used to grep this harness's prose instead, and a reworded warning
-# turned a bench abort into a branch failure; the post-deploy Tari wait had already drifted.
-#
-# Each case drives the function a live run calls (assert_mining_state, wait_synced, the readiness
-# phase, wait_tari_synced + assert_tari_synced_required, harness_pregate, preflight, run_harness)
-# with only SSH, sleep and the dashboard stubbed, and asserts every line that mentions e2e-env:
-# in its output. No server, no bench, no rig. Run directly, or via `make test-integration-selftest`.
-#
+# Self-test (#2643): each bench abort path prints one `e2e-env: <key>` line, driven through the real functions.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,7 +19,6 @@ E2E_SRC="$HERE/../e2e.sh"
 said() { grep -a 'e2e-env:' || true; } # every line that mentions the prefix, well-formed or not
 
 # --- Extract the real e2e.sh functions, never a re-spelling --------------------------------
-# Fail CLOSED: an extraction that stops matching must go red, not quietly test nothing.
 extract() { # <name> -> the function's source
     sed -n "/^$1() {/,/^}\$/p" "$E2E_SRC"
 }
@@ -150,10 +139,6 @@ assert_rc "wait_tari_synced still passes when Tari is synced" "$?" "0"
 
 echo "== readiness: harness_pregate's readiness phase refused (never its check phase) =="
 pregate_of() { # <failing phase|none> [readiness names Tari: 1] [check says workers-offline: 1] [mode] [nofile] -> lines, rc
-    # mode: health-out | health-err (readiness fails its stack-health row, seen on stdout / only in the
-    # stderr summary), health-tari (that and Tari's row, so no Tari-only marker), diag-err (a stderr
-    # line from a phase that may pass), tee (capture fails). nofile: no file may be written (ulimit -f 0),
-    # so every capture write fails while the transport itself still answers.
     # shellcheck disable=SC2034,SC2329  # the stubs and inputs are read by harness_pregate
     (
         E2E_DIR=/srv/code/pithead-e2e FAIL="$1" TARI="${2:-0}" WORKERS_LINE="${3:-0}" MODE="${4:-}"
@@ -274,8 +259,7 @@ assert_eq "two heartbeats and the replay carry the line once, indented as the re
     "$(harness_of)" $'  e2e-env: workers-offline\nrc=1'
 
 echo "== census: the only lines that print the key are the documented ones =="
-# A new call site is a new excuse bench-ci will honour; it has to be added here, and to the key
-# table in lib/e2e-env.sh, by someone who has read both.
+# A new call site is a new excuse bench-ci will honour, so it must be listed here.
 census="$(cd "$HERE/.." && grep -rnoE '\be2e_env [a-z-]+' --include=*.sh . | grep -v '^./selftest/' |
     sed -E 's/^\.\/([^:]+):[0-9]+:e2e_env /\1 /' | LC_ALL=C sort)"
 assert_eq "e2e_env call sites" "$census" "$(printf '%s\n' \

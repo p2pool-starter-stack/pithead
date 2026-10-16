@@ -329,7 +329,10 @@ phases and exits through the normal restore trap; it never asks the harness to g
 Where a run stops because of the bench rather than the branch, the harness says so on one stdout
 line of its own, `e2e-env: <key>`, at most once per run. bench-ci's `tier4-e2e` reads that line to
 conclude the job `error: environment` instead of `failure`
-([bench-ci#613](https://github.com/p2pool-starter-stack/bench-ci/issues/613)). The five keys:
+([bench-ci#613](https://github.com/p2pool-starter-stack/bench-ci/issues/613)). The line may be
+indented but carries nothing else: no `[ITEST]`, `!` or colour codes. Any other shape or key excuses
+nothing. The heartbeat tail of the detached harness drops the line, so the full-log replay is its
+only copy. The five keys:
 
 | Key | Printed when |
 |---|---|

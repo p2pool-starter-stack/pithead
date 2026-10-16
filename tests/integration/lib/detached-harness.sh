@@ -69,12 +69,7 @@ harness_clear_check_evidence() {
 # then the current-state battery. Both are read-only and cheap, and BOTH are binding — a run that
 # warned and carried on graded the branch against a bench that was already broken, so a failure
 # here refuses the destructive phases rather than reporting their fallout as a branch regression.
-# A readiness refusal is the bench's, and is said to bench-ci as `readiness` (lib/e2e-env.sh) unless
-# the phase already named Tari itself or its stack-health row failed (the branch's): a busy rig lock
-# or a lost SSH refuses there too. A check refusal says nothing: that phase reads the deployed branch.
-# Both of the phase's streams pass through a tee whose status is checked, and the classification
-# reads only what was recorded; a capture or read that fails refuses and prints no marker. The tees
-# read to EOF, so #2457's SIGPIPE cannot return, and the verdict is on_bench's own.
+# Only a readiness refusal on a healthy stack is the bench's, so only it prints `readiness` (docs/dev/integration-testing.md).
 harness_pregate() { # <workers> <no_mining flags>
     local phase lock_pair out_arg said errf stf st rc_on rc_err said_rc health_rc
     # Fed as a here-string rather than a pipe (#2457). The sub-phase does read both lines, so a pipe
@@ -101,8 +96,7 @@ harness_pregate() { # <workers> <no_mining flags>
     for phase in readiness check; do
         out_arg=""
         [ "$phase" != check ] || out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-check")"
-        # stderr goes through the inner tee, stdout (via fd 3) through the outer one. Both pipelines
-        # are waited for; the inner statuses come back through $stf, itself a checked write.
+        # Both streams go through checked tees, so a lost capture cannot excuse an unhealthy stack.
         (
             on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
             printf '%s %s\n' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}" >"$stf"

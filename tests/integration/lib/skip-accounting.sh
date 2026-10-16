@@ -100,9 +100,7 @@ it_skip_leg() {
 # flag suppresses them; there is no auto-detection here (a live worker-count of zero from a
 # genuinely fallen-off rig must stay indistinguishable from a parked bench unless the operator
 # says so explicitly — see #1082's fail-open discussion).
-# A --check run that finds no worker online at all stops on the bench's miners, not the branch, and
-# says so to bench-ci (lib/e2e-env.sh). The matrix's scenarios never do: a missing borrowed worker
-# there is the branch's, and one line per run must not be spent on it before a Tari timeout.
+# Only a --check run's zero workers is the bench's; a matrix scenario's missing worker is the branch's.
 assert_mining_state() { # <skip: 0|1> <workers> <hashes> <expected-workers>
     if [ "$1" = "1" ]; then
         it_skip_leg "workers online + stratum total hashes (#905/#1082)" "no miner attached to this box (--no-mining-asserts) — drop the flag (and attach a miner) to make these binding again"
