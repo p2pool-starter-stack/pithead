@@ -5,14 +5,12 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib.sh
-# Resolved from this script at runtime.
-# shellcheck disable=SC1091
+# shellcheck disable=SC1091 # path resolved at runtime
 source "$HERE/../lib.sh"
 # shellcheck source=tests/integration/lib/tari-readiness.sh
 source "$HERE/../lib/tari-readiness.sh"
 # shellcheck source=tests/integration/lib/run-state.sh
-# Resolved from this script at runtime.
-# shellcheck disable=SC1091
+# shellcheck disable=SC1091 # path resolved at runtime
 source "$HERE/../lib/run-state.sh"
 
 echo "== required Tari uses a fresh bounded observation (#3059) =="
@@ -45,7 +43,7 @@ run_case() { # <seen-done> <api-state> [api-state]
     shift
     set_states "$@"
     (
-        # wait_for has its own selftests; this stub skips the sleeps and keeps the predicate.
+        # The stub skips the sleeps but keeps the real predicate and its success/exhaustion exit.
         wait_for() {
             WAIT_TIMEOUT="$1"
             WAIT_INTERVAL="$2"

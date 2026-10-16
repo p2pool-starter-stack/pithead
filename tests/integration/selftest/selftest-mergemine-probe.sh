@@ -139,13 +139,17 @@ assert_rc "a readable start time makes the capture succeed" "$cap_rc" "0"
 # as absences — is satisfiable by an empty recording, so an unarmed recorder would report a clean
 # sweep over nothing.
 assert_num_gt "the command recorder actually captured something" "$(printf '%s' "$MM_RX_LOG" | wc -c)" 0
-assert_contains "the log read is bounded by the container's OWN start time" "$MM_RX_LOG" "2026-08-28T23:52:05.827654553Z"
+assert_contains "the log read is bounded by the container's OWN start time" "$MM_RX_LOG" '--since\ 2026-08-28T23:52:05.827654553Z\ p2pool'
+case "$MM_RX_LOG" in
+*--tail*) it_fail "the log read never asks docker for a tail" "the composed command asked for a tail" ;;
+*) it_pass "the log read never asks docker for a tail" ;;
+esac
 assert_contains "the transferred log is a bounded tail of matching lines" "$MM_RX_LOG" "n=$MM_CAPTURE_LINES"
 assert_contains "each transferred line has a byte bound" "$MM_RX_LOG" "1-$MM_CAPTURE_LINE_BYTES"
 # Leak safety, as a checked claim rather than a comment: the filter runs ON THE TARGET, so the
 # argv line — which carries both wallets, the RPC credential and the onion (#1582/#1585/#1586) —
 # is never transferred. And `docker inspect` names ONE field, so it cannot print .Args.
-assert_contains "only merge-mining lines are asked to cross the wire" "$MM_RX_LOG" "MergeMiningClientTari"
+assert_contains "only merge-mining lines are asked to cross the wire" "$MM_RX_LOG" 'grep\ -a\ MergeMiningClientTari'
 assert_contains "docker inspect names a single field, never the whole object" "$MM_RX_LOG" "--format '{{.State.StartedAt}}'"
 # End to end through the real capture: canned log bytes in, verdict out.
 assert_contains "a captured startup window reads roundtrip end to end" "$(mm_roundtrip_verdict "$cap")" "roundtrip $MM_CHAIN_ID"
@@ -170,7 +174,7 @@ MM_RX_STARTED="2026-09-20 05:54:04.957178532 +0000 UTC"
 : >"$MM_RX_LOG_FILE"
 mm_capture_startup >/dev/null
 assert_contains "podman's StartedAt is rewritten to RFC 3339 before it bounds the read" \
-    "$(cat "$MM_RX_LOG_FILE")" "2026-09-20T05:54:04.957178532+00:00"
+    "$(cat "$MM_RX_LOG_FILE")" '--since\ 2026-09-20T05:54:04.957178532+00:00\ p2pool'
 MM_RX_STARTED="2026-09-20 01:54:04 -0400 EDT"
 assert_eq "a non-UTC podman offset, with no fraction, keeps its offset" "$(mm_started)" "2026-09-20T01:54:04-04:00"
 MM_RX_STARTED="2026-08-28T23:52:05.827654553Z"
