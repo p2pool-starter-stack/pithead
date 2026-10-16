@@ -6,8 +6,8 @@ assert_scenario() {
     assert_xvb_off_no_dwell_churn
     # Namespace probes, rule flushes and node restarts belong only to deploying scenarios.
     assert_lan_guard_live "$config"
-    local again
-    again="$(pithead apply -y 2>&1)"
+    assert_lan_guard_marker_startup
+    local again; again="$(pithead apply -y 2>&1)"
     assert_contains "re-apply is a no-op" "$again" "No configuration changes detected"
 }
 

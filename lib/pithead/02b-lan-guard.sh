@@ -31,11 +31,16 @@ LAN_GUARD_BINDS="MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:1814
 LAN_GUARD_MARKER="data/lan-guard/enforced"
 BOOT_ID_FILE="${PITHEAD_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
 lan_guard_mark() {
-    local tmp
-    mkdir -p "${LAN_GUARD_MARKER%/*}" || return 1
-    tmp=$(mktemp "${LAN_GUARD_MARKER}.XXXXXX") || return 1
-    if ! cat "$BOOT_ID_FILE" >"$tmp" || ! chmod 644 "$tmp" || ! mv -f "$tmp" "$LAN_GUARD_MARKER"; then
-        rm -f "$tmp"
+    local tmp boot_id dir="${LAN_GUARD_MARKER%/*}"
+    local -a writer=()
+    boot_id=$(cat "$BOOT_ID_FILE") || return 1
+    mkdir -p "$dir" 2>/dev/null || sudo -n mkdir -p "$dir" || return 1
+    # Boot and privileged startup can leave a root-owned 0755 directory. Keep its metadata.
+    [ -w "$dir" ] || writer=(sudo -n)
+    tmp=$("${writer[@]}" mktemp "${LAN_GUARD_MARKER}.XXXXXX") || return 1
+    if ! printf '%s\n' "$boot_id" | "${writer[@]}" tee "$tmp" >/dev/null ||
+        ! "${writer[@]}" chmod 644 "$tmp" || ! "${writer[@]}" mv -f "$tmp" "$LAN_GUARD_MARKER"; then
+        "${writer[@]}" rm -f "$tmp"
         return 1
     fi
 }
@@ -55,7 +60,6 @@ lan_guard_teardown() { # <verb>
     [ "$rc" = 2 ] && why="monerod or tari may still be running (or the engine cannot say)"
     [ "$rc" = 0 ] || error "$1 stopped: $why, so the LAN-only source rule stays."
 }
-
 # The key:port pairs whose .env bind is anything but loopback, one per line.
 lan_guard_published() {
     local kp
@@ -63,7 +67,6 @@ lan_guard_published() {
         case "$(env_get "${kp%%:*}" 2>/dev/null)" in '' | 127.0.0.1) ;; *) printf '%s\n' "$kp" ;; esac
     done
 }
-
 # Include ports still published by running containers after .env changed but Compose did not
 # converge. If the engine cannot be read, watch all fixed ports rather than dropping the timer.
 lan_guard_watched_ports() {
@@ -90,7 +93,6 @@ lan_guard_watched_ports() {
         printf '%s\n' "$p"
     done
 }
-
 # A bind moving from LAN to loopback still belongs to the old container until Compose recreates
 # it. Stop that container before replacing the firewall rules; a failed Compose must not leave
 # the old all-interface listener running after its jump has been removed.
@@ -131,7 +133,6 @@ lan_guard_stop_rebound_nodes() {
     done
     return 0
 }
-
 # `iptables-restore --noflush` input for <port>...: declaring our chain flushes and refills it, the
 # stale tagged jumps (<old jump spec> lines on stdin, as `iptables -S` prints them) are deleted and
 # the new ones inserted at the top of DOCKER-USER, all in one commit, so no packet sees a half-built

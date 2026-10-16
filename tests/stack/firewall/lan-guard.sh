@@ -291,7 +291,6 @@ for lg_case in "LG_LIVE=0" "LG_LIVE=1 LG_APPLIANCE=1" "LG_LIVE=1 PITHEAD_ENGINE=
     (export $lg_case LG_RUNNING=0 && lg 'compose_up -d' >/dev/null)
     assert_eq "$lg_case: compose keeps the default restart" "$(cat "$LG_COMPOSE.restart")" "restart=unless-stopped,unless-stopped"
 done
-
 rm -f "$LG_UNIT" "$LG_SYSTEMCTL"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
 assert_eq "a live apply writes the unit for the published ports" "$(cat "$LG_UNIT" 2>/dev/null)" \
@@ -326,7 +325,6 @@ assert_contains "uninstall completes" "$lg_out" "Uninstalled."
 assert_eq "uninstall removes the unit" "$(test -e "$LG_UNIT" && echo present)" ""
 assert_eq "...and the hold" "$(test -e "$LG_HOLD" && echo present)" ""
 mv "$LGD/.env.keep" "$LGD/.env" # uninstall removes .env too
-
 echo "== doctor tells a port held on loopback from one exposed without the rule (#2616) =="
 lg_out="$(LG_LIVE=1 LG_ENABLED=0 lg check_lan_guard)"
 assert_contains "rule live and its boot unit enabled: OK" "$lg_out" "LAN-only sources enforced on port(s) 18142"
@@ -342,7 +340,6 @@ assert_contains "rule missing and the port on loopback: says it is held, and why
 assert_contains "...naming the reason" "$lg_out" "not in the live ruleset"
 lg_out="$(LG_LIVE=1 LG_FOREIGN='-A DOCKER-USER -j ACCEPT' LG_PUBLISHED=0.0.0.0 lg check_lan_guard)"
 assert_contains "a foreign ACCEPT above our jumps is not called enforced" "$lg_out" "not ours accepts traffic above it"
-
 echo "== doctor names a held or exited LAN-access node, and a restart policy that would beat the rule (#2749) =="
 lg_out="$(LG_LIVE=1 LG_ENABLED=0 LG_RUNNING=0 LG_GUARD_FAILED=0 lg check_lan_guard)"
 assert_contains "guard failed at boot: tari is down, held, with the recovery" "$lg_out" \
@@ -388,3 +385,6 @@ lg_out="$(LG_LIVE=1 lg 'lan_guard_mark; mutation_lock_acquire() { :; }; docker()
 assert_eq "a down whose stop fails leaves the marker (the nodes may still run)" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" "present"
 # shellcheck source=tests/stack/firewall/lan-guard-check.sh
 source "$ROOT/tests/stack/firewall/lan-guard-check.sh"
+
+# shellcheck source=tests/stack/firewall/lan-guard-marker.sh
+source "$HERE/firewall/lan-guard-marker.sh" || return $?
