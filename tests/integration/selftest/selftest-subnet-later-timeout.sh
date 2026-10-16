@@ -80,7 +80,6 @@ for stage in panel rpc hashes; do
     )
     assert_rc "earlier release succeeds; later $stage timeout captures before assertion" "$?" 0
 done
-# The shared waiter must keep its verdict, limits and non-subnet behavior.
 (
     OUT_DIR="$td/waiter" SUBNET_TIMEOUT_ACTIVE=1 SUBNET_TIMEOUT_CAPTURED=0
     mkdir -p "$OUT_DIR"

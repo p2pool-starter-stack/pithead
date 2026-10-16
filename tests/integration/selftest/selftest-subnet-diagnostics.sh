@@ -124,7 +124,6 @@ assert_eq 'first release wait retains its 1500s deadline and 5s cadence' "$(cat 
 assert_eq 'collector runs before live service sampling and assertions' "$(cat "$td/battery-order")" \
     $'diagnostic\nsamples\nassertion'
 
-# A failed artifact write is also best-effort, and unrelated batteries never collect.
 (
     OUT_DIR="$td/not-a-directory" SUBNET_TIMEOUT_ACTIVE=1 SUBNET_TIMEOUT_CAPTURED=0
     touch "$OUT_DIR"
@@ -138,7 +137,6 @@ assert_rc 'artifact failure leaves the original control flow intact' "$?" 0
     capture_subnet_timeout_once status
 )
 assert_rc 'unrelated running-state batteries cannot invoke subnet collection' "$?" 0
-# Selected smoke phase must be discoverable/allowlisted and reject missing live proof.
 (
     source "$HERE/../lib/run-cli.sh"
     IT_SSH_OPTS=() IT_MODE=local IT_REMOTE_DIR=. RUN_SUBNET_DIAGNOSTICS=0

@@ -8,7 +8,7 @@ import selectors
 import signal
 import subprocess
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from subnet_diagnostic_summary import (
@@ -19,6 +19,8 @@ from subnet_diagnostic_summary import (
     tor_control,
     tor_history,
 )
+
+UTC = timezone.utc  # noqa: UP017 — the box's python3 may predate 3.11.
 
 LIMIT = 131072
 SERVICES = ("monerod", "tari", "tor", "dashboard", "p2pool", "xmrig-proxy")
