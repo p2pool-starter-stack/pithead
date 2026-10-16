@@ -75,4 +75,29 @@ else
     it_fail "a failed push is reported as an inconclusive (not leaked) verdict"
 fi
 
+echo "== assert_egress_posture: an INCONCLUSIVE row names the app it could not sample (#2769) =="
+
+if (
+    IT_MODE="local"
+    IT_REMOTE_DIR="/remote/pithead"
+    rx() {
+        case "$1" in
+        "bash "*)
+            printf '%s\n' "  ! wallet-rpc: could not read live IPv4 TCP sockets (poll 1/3)" \
+                "  ✓ p2pool: 0 direct" "  ✓ monerod: 0 direct" "  ✓ tari: 0 direct" "  ✓ dashboard: 0 direct" \
+                "[verify-egress] INCONCLUSIVE — no app was observed, Tor has no relay connection, or a required sample was unreadable."
+            ;;
+        esac
+    }
+    IT_FAIL=0
+    out_file="$(mktemp)"
+    trap 'rm -f "$out_file"' EXIT
+    assert_egress_posture tor-down >"$out_file" 2>&1
+    [ "$IT_FAIL" -eq 1 ] && grep -q "! wallet-rpc: could not read" "$out_file"
+); then
+    it_pass "the INCONCLUSIVE detail keeps the verifier's ! lines"
+else
+    it_fail "the INCONCLUSIVE detail keeps the verifier's ! lines"
+fi
+
 [ "$IT_FAIL" -eq 0 ]
