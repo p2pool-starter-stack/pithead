@@ -253,6 +253,14 @@ else
     fails=$((fails + 1))
 fi
 
+LOOP_ENV="$(mktemp)"
+sed 's/^STRATUM_BIND=.*/STRATUM_BIND=127.0.0.1/' "$ENV_FILE" >"$LOOP_ENV"
+LOOP_JSON="$(docker compose --env-file "$LOOP_ENV" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
+rm -f "$LOOP_ENV"
+jq_assert "dashboard carries a non-default STRATUM_BIND from the env file (#3384)" \
+    '.services.dashboard.environment.STRATUM_BIND == "127.0.0.1"' "$LOOP_JSON"
+jq_assert "dashboard carries the default STRATUM_BIND (#3384)" '.services.dashboard.environment.STRATUM_BIND == "0.0.0.0"'
+
 # Control-channel spool mounts (#33): the rw/ro split IS the trust boundary. requests/ is the
 # dashboard's ONLY writable leg; results/, audit/ and the pre-masked config prefill (#440) are
 # read-only; staged/ is never mounted at all — so the container can ask, but cannot forge a

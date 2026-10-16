@@ -46,14 +46,14 @@ test('WorkersTable sort headers are real buttons, so keyboard can sort (#671)', 
 });
 
 test('WorkersTable with no workers shows the connect hint instead of a bare table (#385)', () => {
-    // The fixture's host_ip is "Unknown Host" but host_addr carries a real IP — the hint must
-    // fall back to it rather than the docs placeholder (#1873).
+    // The server resolves stratum_host (display address, else host IP), so the hint never shows
+    // the docs placeholder while a host is known (#1873).
     const s = clone();
     s.workers = [];
     const html = renderApp({ state: s });
     assert.match(html, /Workers Alive/);
     assert.match(html, /No workers connected yet/);
-    assert.match(html, new RegExp(`${s.host_addr}:3333`));
+    assert.match(html, new RegExp(`${s.stratum_host}:3333`));
     assert.doesNotMatch(html, /YOUR_STACK_IP/);
     assert.match(html, /docs\/workers\.md/); // links the workers guide
     assert.doesNotMatch(html, /workers-table/); // no empty table skeleton
@@ -63,16 +63,27 @@ test('WorkersTable with no workers shows the connect hint instead of a bare tabl
 test('WorkersTable connect hint falls back to the docs placeholder only when host_addr is also unset (#1873)', () => {
     const s = clone();
     s.workers = [];
-    s.host_ip = 'Unknown Host';
-    s.host_addr = null;
+    s.stratum_host = 'Unknown Host';
     const html = renderApp({ state: s });
     assert.match(html, /YOUR_STACK_IP:3333/);
+});
+
+test('WorkersTable connect hint follows a loopback stratum bind and says local only (#3384)', () => {
+    const s = clone();
+    s.workers = [];
+    s.host_ip = '192.168.1.10';
+    s.stratum_host = '127.0.0.1';
+    s.stratum_local_only = true;
+    const html = renderApp({ state: s });
+    assert.match(html, /<code>127\.0\.0\.1:3333<\/code>/);
+    assert.doesNotMatch(html, /<code>192\.168\.1\.10/);
+    assert.match(html, /Local connections only/);
 });
 
 test('WorkersTable connect hint uses the real host IP when known (#385)', () => {
     const s = clone();
     s.workers = [];
-    s.host_ip = '192.168.1.10';
+    s.stratum_host = '192.168.1.10';
     const html = renderApp({ state: s });
     assert.match(html, /192\.168\.1\.10:3333/);
     assert.doesNotMatch(html, /Unknown Host:3333/);
@@ -80,7 +91,7 @@ test('WorkersTable connect hint uses the real host IP when known (#385)', () => 
     // rigs must point.
     const custom = clone();
     custom.workers = [];
-    custom.host_ip = '192.168.1.10';
+    custom.stratum_host = '192.168.1.10';
     custom.stratum_port = 4444;
     assert.match(renderApp({ state: custom }), /192\.168\.1\.10:4444/);
     // A populated fleet — even all-offline — keeps the table, never the hint.
