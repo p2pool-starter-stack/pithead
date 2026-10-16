@@ -52,11 +52,12 @@ test-integration-selftest: pithead ## Integration harness logic and local transp
 	for t in tests/integration/selftest/*.sh; do bash "$$t" || exit 1; done
 	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
 
-test-tools: ## Bounded-log sanitizer and CI workflow guards (no services or dependencies)
+test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
 	python3 tests/stack/standalone/test_tor_saturated_fixture.py
+	python3 tests/stack/standalone/test_monero_download.py
 	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'
