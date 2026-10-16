@@ -25,7 +25,7 @@ SERVICES = ("monerod", "tari", "tor", "dashboard", "p2pool", "xmrig-proxy")
 
 
 def run(argv, seconds=5, limit=LIMIT):
-    """Cap stdout and wall time; discard stderr and kill the entire probe group."""
+    """A hung or noisy probe must not stall the timeout path or leak raw stderr."""
     started = time.monotonic()
     data = bytearray()
     try:

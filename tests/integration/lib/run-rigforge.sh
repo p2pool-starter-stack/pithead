@@ -168,14 +168,14 @@ run_subnet_scenario() {
     if ! pithead apply -y >"$OUT_DIR/subnet.apply.log" 2>&1; then
         it_fail "apply on the moved subnet succeeded" "see $OUT_DIR/subnet.apply.log"
     fi
-    wait_status_ok 300 || capture_subnet_timeout_once status
-    wait_monero_synced 120 || capture_subnet_timeout_once monero-sync
-    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || capture_subnet_timeout_once miner-release
-    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || capture_subnet_timeout_once hashes
+    wait_status_ok 300 || true
+    wait_monero_synced 120 || true
+    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || true
+    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || true
     # The down/up restarted Tari too, so — like the per-scenario deploy path — let it close its
     # post-restart offline gap before assert_running_state's sync check, or we catch it mid-"loading".
     if [ "$(jq_get "$config" '.dashboard.tari_required')" = "true" ]; then
-        wait_tari_synced 300 || capture_subnet_timeout_once tari-sync
+        wait_tari_synced 300 || true
     fi
 
     # Subnet-specific live checks + the standard running-state battery on the moved subnet.

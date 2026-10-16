@@ -61,7 +61,7 @@ def monero_transfer(raw, method):
         type(obj.get(key)) is not int or key not in out for key in fields.split()
     ):
         raise ValueError
-    # Monero v0.18.5.1 epee serialization omits empty containers such as peers and spans.
+    # Monero v0.18.5.1 epee (keyvalue_serialization_overloads.h) omits empty peer/span lists.
     key = "connections" if method == "get_connections" else "peers"
     rows = obj.get(key, [])
     out["peer_list_encoding"] = "present" if key in obj else "omitted-empty"
@@ -104,7 +104,7 @@ def monero_transfer(raw, method):
 
 
 def tor_control(raw, field):
-    """Validate authentication and GETINFO framing before interpreting empty populations."""
+    """Empty counts mean nothing until authentication and GETINFO framing are proven."""
     lines = raw.splitlines()
     if not lines or lines.pop(0) != "250 OK" or lines[-2:] != ["250 OK", "250 closing connection"]:
         raise ValueError

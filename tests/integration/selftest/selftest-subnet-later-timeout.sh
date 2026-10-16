@@ -14,7 +14,6 @@ for stage in panel rpc hashes; do
         OUT_DIR="$td/$stage" SUBNET_TIMEOUT_ACTIVE=1 SUBNET_TIMEOUT_CAPTURED=0
         SKIP_MINING_ASSERTS=0 EXPECTED_WORKERS=1
         mkdir -p "$OUT_DIR"
-        # Only the selected later predicate fails, so earlier waits succeed.
         now_s() {
             local tick=0
             [ ! -f "$OUT_DIR/clock" ] || read -r tick <"$OUT_DIR/clock"
@@ -54,7 +53,6 @@ for stage in panel rpc hashes; do
             [ "$stage" != panel ]
         }
         monero_caught_up() {
-            # When the panel failed, the following RPC predicate must see the snapshot.
             if [ "$stage" = panel ]; then
                 [ -s "$OUT_DIR/subnet-first-timeout/summary.jsonl" ] || exit 9
             fi
@@ -65,7 +63,6 @@ for stage in panel rpc hashes; do
         zmq_pub_probe() { :; }
         assert_zmq_publishes() { :; }
         assert_pool_type() { :; }
-        # Binding RPC failure still runs after the best-effort collector fails.
         it_fail() {
             echo failure >>"$OUT_DIR/order"
             [ -s "$OUT_DIR/subnet-first-timeout/summary.jsonl" ] || exit 9

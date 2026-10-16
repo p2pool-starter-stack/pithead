@@ -30,23 +30,23 @@ phase_case() (
     pithead() { echo "pithead $*" >>"$OUT_DIR/order"; }
     wait_status_ok() {
         echo "wait status $1" >>"$OUT_DIR/order"
-        [ "$stage" != status ]
+        [ "$stage" != status ] || wait_for 0 5 status false
     }
     wait_monero_synced() {
         echo "wait monero $1" >>"$OUT_DIR/order"
-        [ "$stage" != monero-sync ]
+        [ "$stage" != monero-sync ] || wait_for 0 5 monero-sync false
     }
     wait_miner_running() {
         echo "wait miner $1" >>"$OUT_DIR/order"
-        [ "$stage" != miner-release ]
+        [ "$stage" != miner-release ] || wait_for 0 5 miner-release false
     }
     wait_hashes_flowing() {
         echo "wait hashes $1" >>"$OUT_DIR/order"
-        [ "$stage" != hashes ]
+        [ "$stage" != hashes ] || wait_for 0 5 hashes false
     }
     wait_tari_synced() {
         echo "wait tari $1" >>"$OUT_DIR/order"
-        [ "$stage" != tari-sync ]
+        [ "$stage" != tari-sync ] || wait_for 0 5 tari-sync false
     }
     rx() {
         echo "collect $1" >>"$OUT_DIR/order"
@@ -55,13 +55,12 @@ phase_case() (
     }
     assert_subnet_live() { echo subnet-live >>"$OUT_DIR/order"; }
     assert_running_state() {
-        [ "$stage" != mining-release ] || capture_subnet_timeout_once mining-release
+        [ "$stage" != mining-release ] || wait_for 0 5 mining-release false || true
         # Later failure must not overwrite the first capture or skip assertions.
-        capture_subnet_timeout_once later-timeout
+        wait_for 0 5 later-timeout false || true
         echo battery >>"$OUT_DIR/order"
         it_fail 'original UID/TLS failure' 'still binding'
     }
-    # Do not collect on the success path in this fixture.
     if [ "$stage" = ready ]; then assert_running_state() { echo battery >>"$OUT_DIR/order"; }; fi
     capture_artifacts() { echo general-artifacts >>"$OUT_DIR/order"; }
     run_subnet_scenario >/dev/null
@@ -71,14 +70,13 @@ phase_case() (
     else
         [ "$IT_FAIL" = 1 ] || exit 1
         [ "$(grep -c '^collect ' "$OUT_DIR/order")" = 1 ] || exit 1
-        grep -q "^stage=$stage " "$OUT_DIR/subnet-first-timeout/trigger.txt" || exit 1
+        grep -q "^stage=readiness " "$OUT_DIR/subnet-first-timeout/trigger.txt" || exit 1
         grep -Fxq "collector_exit=$collector_rc" "$OUT_DIR/subnet-first-timeout/collector-exit.txt" || exit 1
         local collected battery
         collected=$(grep -n '^collect ' "$OUT_DIR/order" | cut -d: -f1)
         battery=$(grep -n '^battery$' "$OUT_DIR/order" | cut -d: -f1)
         [ "$collected" -lt "$battery" ] || exit 1
     fi
-    # The original wait limits and unconditional down/apply restoration remain in order.
     grep -Fxq 'wait status 300' "$OUT_DIR/order" || exit 1
     grep -Fxq 'wait monero 120' "$OUT_DIR/order" || exit 1
     grep -Fxq 'wait miner 180' "$OUT_DIR/order" || exit 1
@@ -95,17 +93,19 @@ done
 phase_case status 124
 assert_rc 'collector timeout preserves original assertions and restoration' "$?" 0
 
-# Execute the actual running-state entry through its first live service assertion.
 (
     OUT_DIR="$td/battery" SUBNET_TIMEOUT_ACTIVE=1 SUBNET_TIMEOUT_CAPTURED=0
     jq_get() { case "$2" in .monero.mode | .tari.mode) echo local ;; *) echo false ;; esac }
     clearnet_flag_effective() { echo false; }
-    wait_for() {
-        printf '%s %s\n' "$1" "$2" >"$td/release-wait"
-        return 1
+    now_s() {
+        local n=0
+        [ ! -f "$td/clock" ] || read -r n <"$td/clock"
+        echo "$((n + 1))" >"$td/clock"
+        case "$n" in 0) echo 0 ;; 1) echo 1499 ;; 2) echo 1500 ;; *) echo 99999 ;; esac
     }
+    sleep() { echo "$1" >>"$td/release-wait"; }
     rx() {
-        echo diagnostic >>"$td/battery-order"
+        case "$1" in *subnet-diagnostics.py*) echo diagnostic >>"$td/battery-order" ;; esac
         return 1
     }
     running_services() {
@@ -120,7 +120,7 @@ assert_rc 'collector timeout preserves original assertions and restoration' "$?"
     assert_running_state subnet '{}'
 )
 assert_rc 'actual battery still executes assertions after collector failure' "$?" 0
-assert_eq 'first release wait retains its 1500s deadline and 5s cadence' "$(cat "$td/release-wait")" '1500 5'
+assert_eq 'first release wait retains its 1500s deadline and 5s cadence' "$(cat "$td/release-wait")" 5
 assert_eq 'collector runs before live service sampling and assertions' "$(cat "$td/battery-order")" \
     $'diagnostic\nsamples\nassertion'
 

@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Read-only capture at the first readiness timeout, before further waits or restoration.
+# Later waits and restoration replace the failing state, so the first timeout is captured.
 collect_subnet_diagnostics() { # <artifact directory>
     local dir="$1" rc=0
     mkdir -p "$dir" || return 1
