@@ -27,9 +27,7 @@ repoint_miner() {
     miner_reload
 }
 
-# The e2e controller alone holds the miner SSH connection and the original restore anchor. The
-# phase asks it to replace the temporary test-pool password; stdin keeps that credential out of
-# command lines and the short-lived file is readable only by the rig owner.
+# Stdin keeps the credential out of command lines.
 rotate_borrowed_stratum_password() { # stdin: new password
     [ "${CI_RIG_RECOVERY_HOLD:-0}" = 1 ] || return 1
     [ -n "${MINER_ROTATE_CFG_BACKUP:-}" ] || return 1
@@ -51,8 +49,7 @@ restore_borrowed_stratum_password() {
     MINER_ROTATE_CFG_BACKUP=""
 }
 
-# Keep the recovery anchor until BOTH the exact bytes and the miner service verify. The runner
-# independently restores its original backups and owns the durable hold if any proof fails.
+# Keep the recovery anchor until both the exact bytes and the miner service verify.
 restore_miner_config() { # <backup>
     on_miner "cp -a '$1' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && cmp -s '$1' '$MINER_XMRIG_CONFIG'" || return 1
     miner_reload && wait_for 60 2 "the restored miner service" miner_service_active || return 1

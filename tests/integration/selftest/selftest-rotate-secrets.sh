@@ -57,10 +57,10 @@ rx() { printf '%s' '{"workers":[["selected","unused",1,1]]}'; }
 _rotate_proxy_accepted_after 0
 assert_rc "the selected rig's new accepted share proves reconnection" "$?" 0
 
-# The remote command itself is evaluated; undefined quote_arg on the target cannot hide.
 env_on_box() { printf '%s' "$d/pool"; }
 mkdir -p "$d/pool/stats/local"
 printf '%s' '{"zmq_last_active":0}' >"$d/pool/stats/local/p2p"
+# Evaluate the remote command so a helper undefined on the target fails the test.
 rx() { eval "$1"; }
 _rotate_p2pool_monero_live "$(($(date +%s) - 1))"
 assert_rc "fresh post-rotation Monero ZMQ evidence is accepted" "$?" 0
@@ -75,8 +75,7 @@ on_bench() { cat >"$d/runner.sh"; }
 harness_install_runner
 assert_contains "the detached runner forwards the persistent-hold capability" "$(cat "$d/runner.sh")" 'export CI_RIG_RECOVERY_HOLD=1'
 
-# Drive the REAL phase, controller handshake and safety EXIT trap against local files. Only
-# daemon/SSH endpoints are substituted; no container, service, miner or network is used.
+# Only daemon and SSH endpoints are substituted so the real phase and traps run.
 drive_phase() { # <fixture dir> <success|restore-failure|interrupted> [no-rig]
     (
         local fixture="$1" failure="$2"

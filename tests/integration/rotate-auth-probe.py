@@ -1,4 +1,4 @@
-"""Bounded proxy authentication probes. Credentials arrive on stdin; nothing is printed."""
+"""Bounded proxy authentication probes that read credentials from stdin and never print them."""
 
 import json
 import socket

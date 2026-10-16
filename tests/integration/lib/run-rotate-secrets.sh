@@ -1,22 +1,15 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
-# xmrig-proxy's live argv (#2344): its entrypoint appends --access-password from
-# PROXY_STRATUM_PASSWORD, so Docker's configured `.Args` is deliberately not the live command.
+# Read live argv because the entrypoint appends --access-password after Docker's configured args.
 _rotate_proxy_live_args() { rx "docker exec xmrig-proxy sh -c 'tr \"\\0\" \"\\n\" </proc/1/cmdline' 2>/dev/null"; }
 
-# Host-side authed get_info — the same probe restore-proof.sh runs after an e2e restore, here run
-# against THIS box's live monerod. Echoes rpc-ok only when monerod actually accepts <user>:<pass>
-# over RPC digest auth, proving the credential is live in the running container rather than just
-# written to config.json/.env.
+# Only an accepted digest login proves the credential is live in the running monerod.
 _rotate_monero_rpc_probe() { # <user> <pass> -> rpc-ok | rpc-refused | rpc-fail
     printf '%s\0%s' "$1" "$2" | jq -Rs 'split("\u0000") | {user: .[0], pass: .[1]}' | rx 'auth=$(cat); url=$(grep -E "^MONERO_RPC_URL=" .env 2>/dev/null | cut -d= -f2-); [ -n "$url" ] || url=http://127.0.0.1:18081; body=$(printf "user = %s\n" "$(printf "%s" "$auth" | jq -r "[.user,.pass] | join(\":\") | @json")" | curl -sS --max-time 8 --digest -K - -w "\n%{http_code}" "$url/get_info" 2>/dev/null) || { echo rpc-fail; exit; }; code=${body##*$'\''\n'\''}; [ "$code" != 401 ] || { echo rpc-refused; exit; }; [ "$code" = 200 ] && printf "%s" "${body%$'\''\n'\''*}" | jq -e ".status==\"OK\"" >/dev/null 2>&1 && echo rpc-ok || echo rpc-fail' --stdin
 }
 
-# Dial xmrig-proxy's control API from the dashboard container (same network, same client the
-# dashboard itself uses — live-upgrade-support.sh:proxy_active_route) with an EXPLICIT token rather
-# than whatever the dashboard currently holds. Require the expected HTTP status; a transport
-# failure is not evidence that the old token was refused.
+# A transport failure is not evidence that a token was refused, so require the exact HTTP status.
 _rotate_proxy_token_accepted() { # <token> [expected HTTP code]
     printf '%s' "$1" | rx "docker exec -i dashboard python3 -c $(quote_arg "$(cat "$HERE/rotate-auth-probe.py")") http '${2:-200}'" --stdin >/dev/null 2>&1
 }
@@ -34,8 +27,7 @@ _rotate_proxy_accepted_after() { [ "$(_rotate_rig_accepted)" -gt "$1" ] 2>/dev/n
 _rotate_p2pool_monero_live() { # <rotation epoch>
     local stats
     stats="$(quote_arg "$(env_on_box P2POOL_DATA_DIR)/stats/local/p2p")"
-    # p2pool reports seconds SINCE the last ZMQ message, not its epoch. Require both a newly
-    # written stats file and a ZMQ message received after this rotation (p2pool v4.18.1).
+    # p2pool reports seconds since the last ZMQ message, not an epoch.
     rx "now=\$(date +%s); test \"\$(stat -c %Y $stats)\" -ge '$1' && jq -e --argjson elapsed \"\$((now - $1))\" '.zmq_last_active | type == \"number\" and . >= 0 and . < \$elapsed' $stats >/dev/null"
 }
 
@@ -61,8 +53,7 @@ _rotate_cleanup_baks() {
 _rotate_abort_restore() {
     local rc=$?
     safety_abort_restore
-    # Failed or interrupted restore retains the owner-only recovery copies. The successful
-    # safety abort clears its armed flag only after exact config/secrets/health verification.
+    # Recovery copies survive until exact safety restoration verifies.
     if [ "${_SAFETY_RESTORE_ARMED:-1}" = 0 ] && ! _rotate_cleanup_baks; then
         it_fail "interrupted rotation recovery-copy cleanup verified" "inventory or removal failed"
         exit 1
@@ -70,11 +61,7 @@ _rotate_abort_restore() {
     return "$rc"
 }
 
-# Tier-4 leg for `rotate-secrets` (#2344): prove monerod, p2pool and the proxy survive a credential
-# rotation and catch a restart-instead-of-recreate regression (#356's shape).
-# DESTRUCTIVE-then-restored via the harness's own safety
-# backup, which --rotate-secrets requires (run-cli.sh) — it is the anchor this leg restores from,
-# never a second archive of its own.
+# Destructive leg restored from the harness safety backup that --rotate-secrets requires.
 run_rotate_secrets() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="rotate-secrets"
@@ -99,10 +86,7 @@ run_rotate_secrets() {
     local local_mode=0
     has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node && local_mode=1
 
-    # Exercise the stratum-password path deliberately: most scenarios leave p2pool.stratum_password
-    # unset (auth off), which would make rotate_secrets skip the rig-facing credential entirely —
-    # the operator-visible half of this verb ("every rig is rejected"). Force it "auto" for this
-    # phase only; the safety restore reverts that posture and every original secret.
+    # rotate_secrets skips the stratum credential when auth is off, so force it on here.
     local orig_stratum_mode
     orig_stratum_mode="$(rx "jq -r '.p2pool.stratum_password // \"\"' config.json" 2>/dev/null)"
     if [ "$orig_stratum_mode" != "auto" ]; then
@@ -114,8 +98,7 @@ run_rotate_secrets() {
         fi
     fi
 
-    # rotate_secrets regenerates MONERO_PASS only — MONERO_NODE_USERNAME never rotates — so one
-    # user value serves both the old- and new-credential probes below.
+    # MONERO_NODE_USERNAME never rotates, so one user serves both probes.
     local old_proxy_token old_stratum_pass old_monero_pass="" monero_user=""
     old_proxy_token="$(env_on_box PROXY_AUTH_TOKEN)"
     old_stratum_pass="$(env_on_box PROXY_STRATUM_PASSWORD)"
@@ -137,10 +120,7 @@ run_rotate_secrets() {
     [ "$rc" = 0 ] || return 1
     wait_status_ok 240 || true
 
-    # The .bak-<stamp> safety copies (#2344 concern 5): nothing sweeps them today (backup archives a
-    # fixed file list; support-bundle reads config.json/.env by name, never a glob) — they are an
-    # orphaned side effect holding the OLD secrets. Owner-only is asserted; removing them IS this
-    # leg's own cleanup, since no product path does it.
+    # The .bak copies hold the old secrets, so they must be owner-only.
     local bak_config bak_env
     bak_config="$(_rotate_new_baks | grep '^config.json.bak-')"
     bak_env="$(_rotate_new_baks | grep '^.env.bak-')"
@@ -166,15 +146,7 @@ run_rotate_secrets() {
         it_fail "stratum access-password rotated" "rotated value equals its prior value"
     fi
 
-    # 1. Recreate, not restart: the new token/password must be LIVE in the running containers, and
-    #    the old ones must be gone from them — not just written to config.json/.env (#356's shape).
-    #    xmrig-proxy's healthcheck (build/xmrig-proxy/healthcheck.sh) is a bare TCP connect, so
-    #    `pithead status`/wait_status_ok can read it healthy the instant the listener socket binds
-    #    — before the recreated container has finished wiring the new token internally. A real bench
-    #    run hit exactly that: the new token's get_config() failed ~0.3s after wait_status_ok
-    #    returned, while monerod's (heavier) RPC handshake had already settled. Give it the same
-    #    bounded settle window every other post-recreate check in this harness gets, not one
-    #    point-in-time probe.
+    # The proxy healthcheck is a bare TCP connect, so wait for the new token to settle.
     if wait_for 60 3 "xmrig-proxy control API to accept the new PROXY_AUTH_TOKEN" _rotate_proxy_token_accepted "$new_proxy_token"; then
         it_pass "xmrig-proxy control API accepts the new PROXY_AUTH_TOKEN (recreated, not restarted)"
     else
@@ -187,10 +159,7 @@ run_rotate_secrets() {
         it_fail "xmrig-proxy control API refuses the old PROXY_AUTH_TOKEN" "old token did not receive an explicit 403"
     fi
 
-    # The control-API wait above already settled on the recreated container, so its running argv is
-    # safe to read once here. The failure
-    # detail never echoes proxy_args itself (or the passwords) — it is the live --access-password
-    # value, and it_fail's output is not secret-redacted the way a captured artifact is.
+    # Never echo proxy_args: it holds the live password and it_fail output is not redacted.
     local proxy_args
     proxy_args="$(_rotate_proxy_live_args)"
     case "$proxy_args" in
@@ -202,8 +171,7 @@ run_rotate_secrets() {
     *) it_pass "xmrig-proxy live argv no longer carries the OLD stratum access-password" ;;
     esac
 
-    # 2. monerod RPC: the exact restart-vs-recreate regression, asserted from the other side (#2344
-    #    concern 1) — remote mode owns no local monerod, and rotate_secrets itself skips this credential.
+    # Remote mode owns no local monerod and rotate_secrets skips its credential.
     if [ "$local_mode" = 1 ]; then
         if [ "$(_rotate_monero_rpc_probe "$monero_user" "$new_monero_pass")" = "rpc-ok" ]; then
             it_pass "monerod RPC answers with the new password (recreated, not restarted)"
@@ -219,12 +187,9 @@ run_rotate_secrets() {
         it_skip_leg "monerod RPC credential rotation" "monero.mode=remote — the credential belongs to the remote node; rotate_secrets itself skips it" "by-design"
     fi
 
-    # 3. A live upstream is stronger than the configured route: it confirms the proxy has connected
-    #    to p2pool. With a reserved miner, an accepted post-rotation share proves the full route,
-    #    including p2pool's usable Monero connection.
     pithead status >/dev/null 2>&1
     assert_rc "pithead status OK after the rotate-secrets recreate" "$?" "0"
-    # The proxy opens its upstream for an authenticated miner; rearm before waiting for it.
+    # The proxy opens its upstream only for an authenticated miner, so rotate the rig's password first.
     local accepted_before=""
     if [ -n "${RIG_NAME:-}" ] && wait_borrow_rearm rotate-stratum; then
         accepted_before="$(_rotate_rig_accepted)" || accepted_before=""
@@ -259,9 +224,6 @@ run_rotate_secrets() {
         wait_borrow_rearm restore-stratum || it_fail "reserved miner's temporary stratum credential restored" "controller did not verify the pre-rotation borrowed config"
     fi
 
-    # Restore: the harness's own safety backup is the anchor (#2344) — a second archive here would
-    # duplicate it. Brings config.json (including the original stratum_password posture), .env and
-    # every secret back to what the box carried before this phase ever touched it.
     it_step "restoring the pre-rotation secrets from the safety backup…"
     if ! safety_restore_exact; then
         it_fail "rotate-secrets phase restored the pre-run baseline" "restore/up/health-wait failed; safety archive retained at $SAFETY_ARCHIVE"
@@ -270,6 +232,7 @@ run_rotate_secrets() {
         return 1
     fi
     assert_eq "restore reverts to the exact pre-rotation secrets" "$(secret_fingerprint)" "$BASELINE_SECRET_FP"
+    # No product path sweeps the .bak copies, so this leg removes its own.
     if _rotate_cleanup_baks; then
         it_pass "rotate-secrets cleanup removes only its owner-only .bak-<stamp> copies"
     else
@@ -277,9 +240,7 @@ run_rotate_secrets() {
     fi
     trap safety_abort_restore EXIT
 
-    # 4. Mining resumes after the recreate (#2344 concern 4) — asserted here, once the box is back on
-    #    its original stratum posture, so a real attached miner with no stored 'pass' is never
-    #    penalised for a password THIS phase invented and already reverted.
+    # Check mining after restore so a miner with no stored pass is not refused a reverted password.
     if [ "$SKIP_MINING_ASSERTS" != "1" ]; then
         wait_stratum_hashes 180 || true
         local st workers hashes
