@@ -19,6 +19,8 @@ export INTEGRATION_RUN_SUITE=1
 source "$ROOT/lib/run-tari-stranded.sh"
 # shellcheck source=tests/integration/lib/run-monero-stranded.sh
 source "$ROOT/lib/run-monero-stranded.sh"
+# shellcheck source=tests/integration/lib/run-faults.sh
+source "$ROOT/lib/run-faults.sh"
 
 FAKE="$(mktemp -d)"
 trap 'rm -rf "$FAKE"' EXIT
@@ -72,6 +74,7 @@ case "$1" in
     ;;
 -C)
     shift
+    [ "${FAKE_REFUSE_CHECK:-0}" = 1 ] && exit 1
     printf '%s\n' "-A $*" | norm | grep -Fxqf - <(norm <"$f")
     ;;
 -D)
@@ -113,6 +116,7 @@ reset_fake() {
     printf '%s\n' "$TARI" "$KEEP3" "$KEEP4" >"$FAKE/ns-4343.rules"
     printf '%s\n' "$KEEP1" >"$FAKE/ns-4444.rules"
     : >"$FAKE/calls"
+    rm -f "$FAKE/trap.out"
 }
 tagged() { cat "$FAKE"/ns-*.rules | grep -cE -- '--comment "?pithead-e2e-fault-'; }
 
@@ -130,7 +134,7 @@ assert_eq "every change is a single -D OUTPUT of a listed rule" "$(grep -c ': -D
 assert_eq "nothing is flushed, deleted by chain, inserted or re-policed" "$(grep -cE ': -(F|X|P|A|I)( |$)' "$FAKE/calls")" "0"
 assert_eq "a container that is not running is never entered" "$(grep -c '^0:' "$FAKE/calls")" "0"
 
-echo "== the scan needs nothing beyond a POSIX sh, whatever shell the box logs in with =="
+echo "== the scan needs nothing beyond a POSIX sh, not bash =="
 reset_fake
 sh -c "prefix=$FAULT_RULE_PREFIX; $(fault_rules_snippet)" >"$FAKE/sh.out" 2>&1
 assert_eq "sh removes the same two rules" "$(grep -c '^removed ' "$FAKE/sh.out")" "2"
@@ -157,7 +161,7 @@ assert_contains "the failure names the container and the tag" "$out" "fault rule
 assert_eq "the rule is still there" "$(grep -c 'pithead-e2e-fault-tor-probe' "$FAKE/ns-4242.rules")" "1"
 assert_eq "one delete was tried per namespace, not a loop" "$(grep -c ': -D ' "$FAKE/calls")" "2"
 
-echo "== a missing docker answers with nothing and fails nothing =="
+echo "== no running container answers with nothing and fails nothing =="
 reset_fake
 : >"$FAKE/containers"
 assert_eq "no container, no change" "$(fault_rules_clear_all 2>&1)" ""
@@ -227,6 +231,33 @@ assert_eq "tari and monero abort handlers clear then restore" "$(tr '\n' ' ' <"$
 ) >"$FAKE/tari.out" 2>&1
 assert_eq "the tari leg clears stale rules before it injects its own" "$(grep -n 'clear\|ns -I' "$FAKE/tari.calls" | head -2 | cut -d: -f2 | tr '\n' ' ')" "clear ns -I OUTPUT -d 172.28.0.5 -m comment --comment pithead-e2e-fault-tari-stranded -j DROP "
 
+echo "== the fault-injection phase clears at its start and again once the stack is back up =="
+reset_fake
+(
+    LOG="$FAKE/phase.log"
+    : >"$LOG"
+    has_compose_profile() { return 0; }
+    env_on_box() { echo /data; }
+    wait_for() { return 0; }
+    wait_status_ok() { return 0; }
+    capture_artifacts() { :; }
+    rx() { echo "rx $1" >>"$LOG"; }
+    fault_rules_clear_all() { echo clear >>"$LOG"; }
+    for leg in $(declare -F | awk '$3 ~ /^fault_/ && $3 !~ /^fault_rules_/ {print $3}'); do
+        eval "$leg() { echo $leg >>\"\$LOG\"; }"
+    done
+    run_fault_injection
+) >/dev/null 2>&1
+assert_eq "the phase clears before its first leg injects" "$(head -n1 "$FAKE/phase.log")" "clear"
+assert_eq "and clears between bringing Tor back and restarting the dashboard" \
+    "$(sed -n '/^rx docker compose up -d tor$/,/^rx docker compose restart dashboard$/p' "$FAKE/phase.log" | grep -c '^clear$')" "1"
+assert_eq "no leg-specific rule delete is left in the phase" "$(grep -c 'pithead-e2e-fault' "$FAKE/phase.log")" "0"
+
+echo "== every leg tags its rule with the prefix the sweep looks for =="
+assert_eq "tari-stranded" "${TARI_STRAND_TAG#"$FAULT_RULE_PREFIX"}" "tari-stranded"
+assert_eq "monero-stranded" "${MONERO_STRAND_TAG#"$FAULT_RULE_PREFIX"}" "monero-stranded"
+assert_eq "tor-probe" "$(grep -ohE "${FAULT_RULE_PREFIX}[a-z-]*" "$ROOT/lib/run-tor-probe-fault.sh" | sort -u)" "${FAULT_RULE_PREFIX}tor-probe"
+
 echo "== the Tor-probe leg =="
 cat >"$FAKE/victim.sh" <<'VICTIM'
 set -uo pipefail
@@ -237,6 +268,7 @@ source "$ROOT/lib/run-tor-probe-fault.sh"
 [ "${NO_TRAP:-0}" != 1 ] || fault_rules_trap_arm() { :; }
 IT_MODE=local
 IT_REMOTE_DIR=$FAKE
+BASELINE_CONFIG='{}'
 env_on_box() { case "$1" in NETWORK_PREFIX) echo 172.28.0 ;; *) echo true ;; esac; }
 wait_for() { return 0; }
 _tor_probe_mining_sample() { echo 100; }
@@ -244,12 +276,14 @@ push_config() { return 0; }
 pithead() { return 0; }
 wait_status_ok() { return 0; }
 sleep() {
+    [ "${FAST:-0}" != 1 ] || return 0
     echo IN_LOOP >>"$FAKE/marker"
     command sleep 30
 }
 fault_tor_probe_egress
+printf '%s\n' "$(trap -p EXIT)" >"$FAKE/trap.out"
 VICTIM
-run_victim() { # <NO_TRAP value>: start the leg, wait for its fault window, then deliver TERM to its group
+run_victim() { # <NO_TRAP value> [signal]: start the leg, wait for its fault window, then signal its group
     local pid spun=0
     : >"$FAKE/marker"
     set -m
@@ -261,7 +295,7 @@ run_victim() { # <NO_TRAP value>: start the leg, wait for its fault window, then
         spun=$((spun + 1))
         [ "$spun" -gt 600 ] && break
     done
-    kill -TERM -- "-$pid" 2>/dev/null
+    kill -"${2:-TERM}" -- "-$pid" 2>/dev/null
     wait "$pid" 2>/dev/null
     VICTIM_RC=$?
 }
@@ -287,6 +321,23 @@ assert_eq "the harness died of the TERM, it did not carry on" "$VICTIM_RC" "143"
 reset_fake
 run_victim 1
 assert_eq "control: without the trap the TERM leaves the rule behind, so the instrument can see a leak" "$(grep -c 'pithead-e2e-fault-tor-probe' "$FAKE/ns-4242.rules")" "1"
+
+reset_fake
+run_victim 0 INT
+assert_eq "an INT during the Tor-probe leg leaves zero tagged rules" "$(tagged)" "0"
+assert_eq "and the harness died of the INT" "$VICTIM_RC" "130"
+
+reset_fake
+: >"$FAKE/ns-4242.rules"
+FAST=1 ROOT="$ROOT" bash "$FAKE/victim.sh" >"$FAKE/victim.out" 2>&1
+assert_eq "a leg that runs to the end inserts and deletes its rule" "$(grep -cE '^4242: -[ID] OUTPUT' "$FAKE/calls")" "2"
+assert_eq "and leaves no EXIT trap of its own behind" "$(grep -c fault_rules_exit "$FAKE/trap.out")" "0"
+
+reset_fake
+: >"$FAKE/ns-4242.rules"
+FAST=1 FAKE_REFUSE_CHECK=1 ROOT="$ROOT" bash "$FAKE/victim.sh" >"$FAKE/victim.out" 2>&1
+assert_eq "a leg whose rule does not verify deletes it" "$(grep -cE '^4242: -[ID] OUTPUT' "$FAKE/calls")" "2"
+assert_eq "and leaves no EXIT trap of its own behind" "$(grep -c fault_rules_exit "$FAKE/trap.out")" "0"
 
 echo "selftest-fault-rules: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ]
