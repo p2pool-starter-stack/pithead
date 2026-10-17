@@ -460,6 +460,10 @@ lines. The probe then redacts them and masks every IPv4 and IPv6 address, creden
 `name:value` and `name=value` tokens, and alphanumeric runs of 40 or more characters. From those lines, a log-read error,
 bad launch arguments and an unreachable Tari node each look different.
 
+The wallet fixture recovery interface ([wallet-recovery.md](wallet-recovery.md)) is proved by
+`selftest-wallet-recovery.sh` against a stubbed Docker, baseline start and readiness gate; its live
+path runs only on a reserved bench.
+
 The wallet supersession proof (#3133) and CLI connection announcement probe (#3090)
 require tools from the DIY checkout that the appliance image does not ship. The
 lifecycle phase identifies the appliance with the CLI's `is_appliance` predicate

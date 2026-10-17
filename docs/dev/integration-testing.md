@@ -460,6 +460,9 @@ via an `EXIT` trap):
    Superseded snapshots use the separate [wrapper supersession interface](wallet-supersession.md).
    That operation proves archived/live wallet identity, retains the original restoration receipt
    and archives, and refuses restoration replay. It does not establish original restoration.
+   A snapshot whose job ended before this restore completed is restored by the
+   [wrapper recovery interface](wallet-recovery.md), which runs the same import, baseline start and
+   readiness gates and ends with the `VERIFIED` receipt.
    Lifecycle runs prove the operation on a separate private snapshot, including real offline
    opening of isolated copies, idempotence and evidence preservation.
    How the baseline comes back depends on what it is. A release bundle gets `pithead apply` then
