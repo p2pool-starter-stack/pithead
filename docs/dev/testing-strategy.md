@@ -60,7 +60,7 @@ gate for anything that changes what runs on a box. The rows mirror bench-ci's "W
 |---|---|
 | `build/<service>/`: a Dockerfile, an entrypoint, a config template, a healthcheck, a seed list | tiers 1 to 3 green, then a bench-ci `tier4-e2e` job with `options.mode` `targeted` (or `matrix`): the branch is built and deployed, the service starts from the rendered file and reports healthy |
 | compose files, config rendering (`lib/pithead/*.sh` apply, render and inject paths, `config.reference.json`, templates), the control plane, anything that stops or starts a container | the same `tier4-e2e` `targeted` or `matrix` job |
-| deploy, upgrade and restore paths, merge-mining, Tor, real miners | `tier4-e2e`, `targeted` or `matrix`, or the phase or scenario that exercises it |
+| deploy, upgrade and restore paths, merge-mining, Tor, real miners | `tier4-e2e`, `targeted` or `matrix`, or the phase or scenario that exercises it (`phases: ["sweep"]` runs every scenario without the destructive phases) |
 | `os/`, RAUC, the wizard, first boot, the installer, updates | `tier4-kvm`, one phase at a time; the two [release phase groups](releasing.md#which-gates-are-automated-and-which-are-not) before a release |
 | the RigForge worker to stack contract | rigforge `tier4-e2e` |
 | dashboard logic and its tests, docs, workflows, scripts that never run on a box | tiers 1 to 3 are the proof; the PR body names this row as the reason no bench job ran |

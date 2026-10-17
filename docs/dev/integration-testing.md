@@ -553,9 +553,18 @@ the rig identity, the pregate and the restore still run. `--scenario <name>` alo
 the scenario; it keeps the mode's and borrowed rig's phases. Only an allowlisted
 `run.sh` phase flag is accepted — `--lifecycle`, `--fault-injection`, `--auth-fail-closed`,
 `--hardening`, `--rotate-onion`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
-`--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —
-and anything else is refused before any bench work, never built into a shell string from the raw
-value. Not supported with `--mode check`, which runs nothing but `--check` by design.
+`--xvb-routing-smoke`, `--sweep`, or `--scenario <name>` as two `--harness-arg` (the flag, then the
+name) — and anything else is refused before any bench work, never built into a shell string from
+the raw value. Not supported with `--mode check`, which runs nothing but `--check` by design.
+
+`--harness-arg --sweep` runs every scenario of the sweep, the way `--mode matrix` does, without the
+destructive phases: it drops the mode's single scenario, adds `--safety-backup`, and launches no
+other phase unless you hand-pick one (the sweep runs first). It is the only allowlisted token
+`run.sh` never sees, because the sweep is what `run.sh` does when no scenario is pinned. A single
+scenario contradicts it and is refused. `--mode matrix` is unchanged: the sweep plus the
+destructive phases. The sweep alone takes about 2.5 hours. bench-ci lists a commit's selectable
+phases from the allowlist arm in `lib/harness-args.sh`, so `sweep` is a `phases` value at any
+commit that carries it.
 
 ---
 

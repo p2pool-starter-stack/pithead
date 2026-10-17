@@ -85,7 +85,7 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
-  --harness-arg <f> run this run.sh phase instead of the mode's (repeatable, allowlisted; see lib/harness-args.sh)
+  --harness-arg <f> run this run.sh phase instead of the mode's (repeatable, allowlisted; --sweep = every scenario)
   --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
@@ -605,7 +605,7 @@ run_harness() {
     [ "$MODE" = "check" ] && target_dir="$RESTORE_DIR"
     case "$MODE" in
     check) phases="--check" ;;
-    targeted) phases="--scenario local-pruned-main-secure-tari${HARNESS_PHASE_ARGS:- --auth-fail-closed --lifecycle}" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
+    targeted) phases="${TARGETED_SCENARIO_ARGS---scenario local-pruned-main-secure-tari}${HARNESS_PHASE_ARGS:- --auth-fail-closed --lifecycle}" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
     matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO")}${HARNESS_PHASE_ARGS:- --safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet}" ;;
     esac
     [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"

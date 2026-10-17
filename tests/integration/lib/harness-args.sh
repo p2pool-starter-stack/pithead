@@ -4,8 +4,9 @@
 # any bench work, exactly like the --scenario mode restriction next to its call site: --mode check
 # runs nothing but --check, so a destructive addition here would join a run the mode promises never
 # touches anything.
-validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS and HARNESS_SCENARIO_ARGS
+validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS, HARNESS_SCENARIO_ARGS, TARGETED_SCENARIO_ARGS
     HARNESS_PHASE_ARGS=""
+    unset TARGETED_SCENARIO_ARGS
     ROTATE_FIXTURE_ATTESTATION=""
     ROTATE_FIXTURE_REQUIRED=0
     HARNESS_SCENARIO_ARGS=""
@@ -15,7 +16,7 @@ validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS and HA
     while [ "$i" -lt "${#HARNESS_ARGS[@]}" ]; do
         arg="${HARNESS_ARGS[$i]}"
         case "$arg" in
-        --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --rotate-onion | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke | --alert-egress | --mergemine-submit | --mergemine-localnet | --tari-stranded | --monero-stranded)
+        --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --rotate-onion | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke | --alert-egress | --mergemine-submit | --mergemine-localnet | --tari-stranded | --monero-stranded | --sweep)
             HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
             if [ "$arg" = --rotate-onion ]; then
                 [ "${KEEP:-0}" != 1 ] || die "--rotate-onion cannot be combined with --keep; its isolated identity must be removed."
@@ -30,10 +31,20 @@ validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS and HA
             i=$((i + 2))
             ;;
         *)
-            die "--harness-arg does not accept '$arg' — allowed: --lifecycle, --fault-injection, --auth-fail-closed, --hardening, --rotate-onion, --subnet, --safety-backup, --rigforge, --rigforge-control, --xvb-routing-smoke, --alert-egress, --mergemine-submit, --mergemine-localnet, --tari-stranded, --monero-stranded, --scenario <name>."
+            die "--harness-arg does not accept '$arg' — allowed: --lifecycle, --fault-injection, --auth-fail-closed, --hardening, --rotate-onion, --subnet, --safety-backup, --rigforge, --rigforge-control, --xvb-routing-smoke, --alert-egress, --mergemine-submit, --mergemine-localnet, --tari-stranded, --monero-stranded, --sweep, --scenario <name>."
             ;;
         esac
     done
+    # --sweep is not a run.sh flag: the sweep is what run.sh does when no scenario is pinned.
+    case " $HARNESS_PHASE_ARGS " in
+    *" --sweep "*)
+        [ -z "${SCENARIO:-}$HARNESS_SCENARIO_ARGS" ] || die "--harness-arg --sweep runs every scenario; it cannot be combined with a scenario."
+        HARNESS_PHASE_ARGS="${HARNESS_PHASE_ARGS// --sweep/}"
+        case " $HARNESS_PHASE_ARGS " in *" --safety-backup "*) ;; *) HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS --safety-backup" ;; esac
+        # shellcheck disable=SC2034 # consumed by e2e.sh:run_harness
+        TARGETED_SCENARIO_ARGS=""
+        ;;
+    esac
 }
 
 prepare_rotate_onion_fixture() {
