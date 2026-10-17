@@ -3,6 +3,7 @@ name: N-1 backup fixture
 on:
   push:
     paths:
+      - lib/pithead/25-address-types.sh
       - tests/os/fixtures/v1.20.0/generate.sh
       - tests/os/fixtures/v1.20.0/selftest-wallets.py
       - .github/workflows/n1-backup-fixture.yml
