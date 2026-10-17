@@ -31,6 +31,8 @@ source "$HERE/lib/rig-key-ledger.sh" || exit $? # must precede any module that m
 source "$HERE/lib/rigforge-writable-keys.sh" || exit $?
 # shellcheck source=tests/integration/lib/rigforge-upgrade.sh
 source "$HERE/lib/rigforge-upgrade.sh" || exit $?
+# shellcheck source=tests/integration/lib/fault-rules.sh
+source "$HERE/lib/fault-rules.sh" || exit $?
 # shellcheck source=tests/integration/lib/borrow-rearm.sh
 source "$HERE/lib/borrow-rearm.sh" || exit $?
 # shellcheck source=tests/integration/lib/zmq-probe.sh

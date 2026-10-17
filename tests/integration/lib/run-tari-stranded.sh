@@ -66,7 +66,7 @@ tari_restore_config() {
 
 tari_strand_abort() {
     local rc=$?
-    tari_strand_remove_all
+    fault_rules_clear_all
     tari_restore_config
     [ -n "${_TARI_STRAND_FOREIGN_TRAP:-}" ] && eval "$_TARI_STRAND_FOREIGN_TRAP"
     return "$rc"
@@ -95,6 +95,7 @@ run_tari_stranded() {
         return 0
     fi
     local tor t0 tari_start p2pool_start fails_before="$IT_FAIL"
+    fault_rules_clear_all
     tor="$(rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' tor" 2>/dev/null | head -n1)"
     if [ -z "$tor" ]; then
         it_fail "tari-stranded: tor address" "empty — fault not injected"
