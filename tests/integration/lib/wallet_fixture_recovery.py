@@ -51,7 +51,15 @@ def refusing(reason):
         raise
     except InterruptedError:
         raise Refusal("interrupted") from None
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError):
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        subprocess.SubprocessError,
+        tarfile.TarError,
+    ) as error:
+        print(f"wallet recovery refused: {reason} ({type(error).__name__})", file=sys.stderr)
         raise Refusal(reason) from None
 
 
@@ -346,7 +354,8 @@ def run(argv, raw, steps=None):
         return 1, json.dumps({"schema": 1, "status": "REFUSED", "reason": refusal.reason})
     except InterruptedError:
         return 1, json.dumps({"schema": 1, "status": "REFUSED", "reason": "interrupted"})
-    except Exception:  # noqa: BLE001
+    except Exception as error:  # noqa: BLE001
+        print(f"wallet recovery failed: {type(error).__name__}", file=sys.stderr)
         return 1, json.dumps({"schema": 1, "status": "REFUSED", "reason": "internal"})
     finally:
         if lock is not None:

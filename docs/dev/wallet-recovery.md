@@ -72,7 +72,8 @@ is reachable only from `READY`.
 ## Verdict and refusals
 
 Stdout carries one JSON object and nothing else. The shell steps and the restore log to stderr, which can
-name containers and, when the wallet fails to stop, carry its last log lines. Success exits 0:
+name containers and, when the wallet fails to stop, carry its last log lines. A refusal adds one stderr
+line with its reason and the exception class, never the message. Success exits 0:
 
 ```json
 {

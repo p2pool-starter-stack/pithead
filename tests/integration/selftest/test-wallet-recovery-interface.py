@@ -2,6 +2,7 @@
 
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -96,10 +97,14 @@ class InterfaceTest(base.RecoveryBase):
             self.assertEqual(
                 json.loads(text), {"schema": 1, "status": "REFUSED", "reason": "receipt"}
             )
-            with patch.object(recovery, "recover", side_effect=RuntimeError("secret path")):
+            with (
+                patch.object(recovery, "recover", side_effect=RuntimeError("secret path")),
+                patch("sys.stderr", io.StringIO()) as log,
+            ):
                 code, text = recovery.run(argv, raw, self.steps)
             self.assertEqual(json.loads(text)["reason"], "internal")
-            self.assertNotIn("secret path", text)
+            self.assertNotIn("secret path", text + log.getvalue())
+            self.assertIn("RuntimeError", log.getvalue())
             with patch.object(recovery, "recover", side_effect=InterruptedError):
                 self.assertEqual(
                     json.loads(recovery.run(argv, raw, self.steps)[1])["reason"], "interrupted"
