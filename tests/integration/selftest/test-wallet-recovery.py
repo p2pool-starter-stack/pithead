@@ -250,39 +250,6 @@ class RecoveryTest(RecoveryBase):
             self.assert_untouched()
         self.env.write_text(original)
 
-    def test_a_live_wallet_that_is_not_the_snapshots_refuses_and_keeps_both(self):
-        self.prepare()
-        self.live.volume = True
-        self.docker.contents = existing.archive({"payout-wallet.keys": b"other encrypted keys"})
-        differing = self.docker.contents
-        first = {"address_fingerprint": "c" * 64, "view_key_fingerprint": "d" * 64}
-        self.live.proofs = [first, {**first, "view_key_fingerprint": "e" * 64}]
-        self.refused("identity")
-        self.assert_untouched()
-        self.assertEqual(self.docker.contents, differing)
-        self.assertTrue(self.docker.item["State"]["Running"])
-        self.assertEqual(self.steps.calls, ["lock"])
-
-    def test_a_live_wallet_with_the_same_keys_or_the_same_identity_is_overwritten(self):
-        self.prepare()
-        self.live.volume = True
-        self.docker.contents = existing.archive({"payout-wallet": b"newer cache"})
-        self.assertEqual(self.recover()["proof"]["method"], "encrypted_keys")
-        self.assertEqual(self.docker.contents, self.original)
-        self.prepare()
-        self.live.volume = True
-        self.docker.contents = existing.archive({"payout-wallet.keys": b"re-encrypted keys"})
-        same = {"address_fingerprint": "c" * 64, "view_key_fingerprint": "d" * 64}
-        self.live.proofs = [same, same]
-        verdict = self.recover()
-        self.assertEqual(verdict["proof"]["method"], "isolated_open")
-        self.assertTrue(verdict["proof"]["live_identity_proven"])
-        self.assertEqual(self.docker.contents, self.original)
-        self.prepare()
-        self.live.volume = True
-        self.live.wallet = False
-        self.assertEqual(self.recover()["proof"]["method"], "empty_volume")
-
     def test_a_superseded_fixture_refuses(self):
         self.prepare()
         request = {

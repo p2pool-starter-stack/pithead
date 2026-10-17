@@ -16,9 +16,13 @@ baseline, and the readiness gate lives in this repository's harness.
 ## Caller contract
 
 Run `tests/integration/lib/wallet_fixture_recovery.py` from its source checkout, as the snapshot
-owner, with the adjacent `wallet-fixture.py`, `wallet_fixture_supersession.py` and
-`wallet-fixture-recovery.sh` and the harness libraries they source. Pass the baseline checkout, the
-snapshot directory and the original job directory, and one JSON request on stdin (at most 16384 bytes):
+owner, with the files it loads and sources kept at their relative layout: `tests/integration/lib.sh`
+and, in `tests/integration/lib/`, the Python files `wallet-fixture.py` and
+`wallet_fixture_supersession.py` and the scripts `wallet-fixture-recovery.sh`, `chain-keep.sh`,
+`parent-lock.sh`, `readiness-churn.sh`, `redact-it-password.sh`, `remote-endpoints.sh`,
+`reset-restore-web.sh`, `restore-mining-ready.sh`, `run-tari-wallet.sh`, `skip-accounting.sh` and
+`wallet-diagnostics.sh`. Pass the baseline checkout, the snapshot directory and the original job
+directory, and one JSON request on stdin (at most 16384 bytes):
 
 ```bash
 python3 tests/integration/lib/wallet_fixture_recovery.py \
@@ -52,10 +56,12 @@ replace. The baseline start is bounded at 3600 seconds and the readiness gate at
    (`ARMED`, `NOT_PROVEN` or `READY`), that the baseline wallet identity in `.env` still equals the
    snapshot's, and the archive digests and manifest. A superseded fixture, an active helper container
    named for the snapshot, or a lock that does not verify refuses here.
-2. Prove the live wallet before its volume is overwritten. With no wallet volume or no payout wallet in
-   it, there is nothing to protect. Otherwise the supersession proof applies: equal encrypted key-file
-   digests, or equal primary address and view key opened in isolated containers. A different wallet
-   refuses and leaves the live wallet running.
+2. Prove the live wallet before its volume is overwritten, on a snapshot whose import has not started
+   (stage `captured`). With no wallet volume or no payout wallet in it, there is nothing to protect.
+   Otherwise the supersession proof applies: equal encrypted key-file digests, or equal primary address
+   and view key opened in isolated containers. A different wallet refuses and leaves the live wallet
+   running. A retry after the import started (stage `restoring` or `import_verified`) skips the proof:
+   the volume is already the snapshot's to overwrite, and the baseline identity in step 1 binds it.
 3. `restore` with the wallet container stopped, as `e2e.sh` runs it. The helper containers are
    removed on an interrupt too.
 4. Start the baseline through the command the e2e restore uses (`pithead upgrade` for a source
@@ -64,6 +70,10 @@ replace. The baseline start is bounded at 3600 seconds and the readiness gate at
 5. Run the same readiness gate (`assert_payout_wallet_ready confirmed Monero`): the 1200-second Monero
    catch-up and the 420-second authenticated dashboard and address checks.
 6. Verify the lock again, write `READY`, run `cleanup` to remove the archives, then write `VERIFIED`.
+
+The start does not run `recreate_test_checkout_containers` or `verify_restore_proof`, which `e2e.sh`
+runs before it verifies the wallet, so `VERIFIED` vouches for the wallet only: the caller proves the rest
+of the baseline stack before relying on it.
 
 `READY` is written from `ARMED`, `READY`, and (only here) `NOT_PROVEN`: the receipt state machine refuses
 that last transition everywhere else, because only a full restore and the gate justify it. `VERIFIED`
@@ -93,9 +103,9 @@ line with its reason and the exception class, never the message. Success exits 0
 ```
 
 `method` is `encrypted_keys` or `isolated_open` (a live wallet was compared), `empty_volume` or
-`no_volume` (nothing live to compare), or `resumed` (see below). The verdict holds booleans and sha256
-fingerprints only: no address, view key, credential or path. The wrapper validates this closed shape
-before it writes `READY`.
+`no_volume` (nothing live to compare), or `resumed` (no live comparison in this run; see below). The
+verdict holds booleans and sha256 fingerprints only: no address, view key, credential or path. The
+wrapper validates this closed shape before it writes `READY`.
 
 A refusal exits 1 with a fixed reason and no other text:
 
@@ -120,18 +130,21 @@ both keep the fence the runner holds.
 
 ## Retry and resume
 
-An import interrupted at `restoring` re-imports from scratch on retry. A run that finished `cleanup`
-but not the `VERIFIED` write leaves stage `ready` with the archives gone; the retry skips the import,
-starts the baseline, runs the gate again and writes the receipts. A receipt left at `READY` retries the
-same way.
+An import interrupted at `restoring` re-imports from scratch on retry, whatever state the wallet
+consumer is in by then (removed, exited non-zero, or still scanning), and reports `resumed`. A run that
+finished `cleanup` but not the `VERIFIED` write leaves stage `ready` with the archives gone; the retry
+skips the import, starts the baseline, runs the gate again and writes the receipts. A receipt left at
+`READY` retries the same way.
 
 ## Verification
 
 `tests/integration/selftest/selftest-wallet-recovery.sh` runs without Docker or a wallet. The Python
-tests (`test-wallet-recovery.py`, `test-wallet-recovery-interface.py`) cover the success path, an
-interrupted import resumed from `restoring`, a corrupt archive, a wallet identity that does not match
-(configuration and live), a superseded fixture, an active helper, unsafe receipts and job directories,
-a failed start or gate, a failure after `READY`, the stage `ready` resume, the closed request and verdict
-schemas, the rig lock, and the process-group stop on a timeout. The shell checks cover the start
+tests (`test-wallet-recovery.py`, `test-wallet-recovery-interface.py` and
+`test-wallet-recovery-live.py`) cover the success path, an interrupted import resumed from
+`restoring`, a corrupt archive, a wallet identity that does not match (configuration and live), a live
+wallet in the e2e checkout or a third one, a retry after the import began with the consumer gone, a
+superseded fixture, an active helper, unsafe receipts and job directories, a failed start or gate, a
+failure after `READY`, the stage `ready` resume, the closed request and verdict schemas, the rig lock
+held for the whole run, and the process-group stop on a timeout. The shell checks cover the start
 command for a source checkout and a bundle, the reused readiness gate and the lock verification. The
 live path (real Docker, the baseline start and the gate) is proved only on a reserved bench.

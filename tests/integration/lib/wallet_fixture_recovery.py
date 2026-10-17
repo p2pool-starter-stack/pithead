@@ -159,16 +159,19 @@ class HelperSteps:
             stdout=sys.stderr,
             stderr=sys.stderr,
             start_new_session=True,
+            umask=0o022,
             pass_fds=(int(fd),) if fd.isdigit() and int(fd) > 2 else (),
         )
         try:
             code = process.wait(timeout=timeout)
         except BaseException:
-            os.killpg(process.pid, signal.SIGTERM)
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGTERM)
             try:
                 process.wait(timeout=30)
             except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
             raise
         if code != 0:
@@ -289,8 +292,9 @@ def recover(fixture, retire, directory, baseline, job, raw, steps, branch):
         steps.lock_check()
     method = "resumed"
     if stage != "ready":
-        with refusing("identity"):
-            method = live_method(fixture, retire, state, directory, baseline, branch)
+        if stage == "captured":
+            with refusing("identity"):
+                method = live_method(fixture, retire, state, directory, baseline, branch)
         with refusing("import"):
             try:
                 fixture.restore(directory, baseline, branch)

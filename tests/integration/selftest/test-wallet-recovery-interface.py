@@ -11,7 +11,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 HERE = Path(__file__).resolve().parent
 
@@ -131,6 +131,37 @@ class InterfaceTest(base.RecoveryBase):
         ):
             self.assertIsNone(recovery.hold_bench_lock())
 
+    def test_run_holds_the_rig_lock_for_the_whole_recovery_and_releases_it(self):
+        self.prepare()
+        modules = {"wallet-fixture.py": fixture, "wallet_fixture_supersession.py": retire}
+        argv = [str(self.baseline), str(self.directory), str(self.job)]
+        raw = json.dumps(self.request).encode()
+        during = []
+        start = self.steps.start
+
+        def held_start():
+            with self.assertRaises(recovery.Refusal) as context:
+                recovery.hold_bench_lock()
+            during.append(context.exception.reason)
+            start()
+
+        self.steps.start = held_start
+        with (
+            patch.object(recovery, "load_module", lambda name, filename: modules[filename]),
+            patch.dict(os.environ, {"RIG_LOCK_FILE": str(self.root / "rig.lock")}),
+        ):
+            os.environ.pop("RIG_LOCK_PARENT_ACTOR", None)
+            os.environ.pop("RIG_LOCK_PARENT_NONCE", None)
+            holder = recovery.hold_bench_lock()
+            code, text = recovery.run(argv, raw, self.steps)
+            self.assertEqual((code, json.loads(text)["reason"]), (1, "busy"))
+            self.assertEqual((self.docker.calls, self.steps.calls, during), ([], [], []))
+            self.assert_untouched()
+            os.close(holder)
+            self.assertEqual(recovery.run(argv, raw, self.steps)[0], 0)
+            self.assertEqual(during, ["busy"])
+            os.close(recovery.hold_bench_lock())
+
 
 class HelperStepsTest(unittest.TestCase):
     def setUp(self):
@@ -152,6 +183,31 @@ class HelperStepsTest(unittest.TestCase):
         self.assertEqual(out.read_text(), "start /baseline")
         with self.script("exit 3\n"), self.assertRaises(subprocess.CalledProcessError):
             recovery.HelperSteps("/baseline").ready()
+
+    def test_the_helper_runs_under_a_normal_umask_not_the_wrapper_private_one(self):
+        out = self.root / "umask"
+        previous = os.umask(0o077)
+        try:
+            with self.script(f"umask >{out}\n"):
+                recovery.HelperSteps("/baseline").start()
+        finally:
+            os.umask(previous)
+        self.assertEqual(out.read_text().strip(), "0022")
+
+    def test_a_vanished_process_group_does_not_mask_the_original_interrupt(self):
+        process = Mock(pid=1)
+        process.wait.side_effect = [
+            InterruptedError("signal"),
+            subprocess.TimeoutExpired("x", 30),
+            0,
+        ]
+        with (
+            patch.object(recovery.subprocess, "Popen", return_value=process),
+            patch.object(recovery.os, "killpg", side_effect=ProcessLookupError),
+            self.assertRaises(InterruptedError),
+        ):
+            recovery.HelperSteps("/baseline").run("start", 5)
+        self.assertEqual(process.wait.call_count, 3)
 
     def test_helper_output_never_reaches_the_verdict_stream(self):
         helper = self.root / "helper.sh"
