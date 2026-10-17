@@ -840,6 +840,15 @@ tier 3/4:
   every axis value is covered.
 - A failure mode needing real containers → a fault in `run.sh`'s fault-injection phase (tier 4)
   and/or a mini-stack scenario (tier 3).
+- A fault that installs a kernel rule → give its comment the `pithead-e2e-fault-` prefix. The leg
+  calls `fault_rules_clear_all` before it injects. While its rule exists, an EXIT trap calls it
+  again: `fault_rules_trap_arm` just before the insert and `fault_rules_trap_disarm` after the
+  leg's own delete, or the leg's own abort handler as the stranded legs have. The fault-injection
+  phase clears at its start and end too. `fault_rules_clear_all` deletes tagged rules in every
+  running container's network namespace and no others, and does nothing when none exist. The trap
+  names `EXIT` only, which TERM and INT also run (#1401). A SIGKILL runs no trap, so a runner that
+  kills the harness hard has to remove the tag itself. `selftest-fault-rules.sh` proves each of
+  these with stubbed `docker`, `nsenter` and `iptables`.
 
 Keep each situation at the lowest honest tier; don't re-prove logic with a heavier harness.
 
