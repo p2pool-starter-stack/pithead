@@ -563,7 +563,7 @@ other phase unless you hand-pick one (the sweep runs first). It is the only allo
 `run.sh` never sees, because the sweep is what `run.sh` does when no scenario is pinned. A single
 scenario contradicts it and is refused. `--mode matrix` is unchanged: the sweep plus the
 destructive phases. The sweep alone takes about 2.5 hours. bench-ci lists a commit's selectable
-phases from the allowlist arm in `lib/harness-args.sh`, so `sweep` is a `phases` value at any
+phases from the allowlist arm in `tests/integration/lib/harness-args.sh`, so `sweep` is a `phases` value at any
 commit that carries it.
 
 ---

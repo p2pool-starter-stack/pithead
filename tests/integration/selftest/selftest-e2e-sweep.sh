@@ -87,11 +87,11 @@ assert_eq "--mode matrix with the token is the same sweep" \
 
 echo "== nothing else changes =="
 assert_eq "targeted without the token still pins its scenario and runs its preset" \
-    "$(phase_set "$(phases_of targeted 0 '')")" "--auth-fail-closed --lifecycle --no-mining-asserts --scenario local-pruned-main-secure-tari "
+    "$(phases_of targeted 0 '')" "--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle --no-mining-asserts"
 assert_eq "a hand-picked targeted phase still keeps the preset's scenario" \
-    "$(phase_set "$(phases_of targeted 0 '' --hardening)")" "--hardening --no-mining-asserts --scenario local-pruned-main-secure-tari "
+    "$(phases_of targeted 0 '' --hardening)" "--scenario local-pruned-main-secure-tari --hardening --no-mining-asserts"
 assert_eq "--mode matrix still means the sweep plus the destructive phases" \
-    "$(phase_set "$(phases_of matrix 0 '')")" "--auth-fail-closed --fault-injection --hardening --lifecycle --no-mining-asserts --safety-backup --subnet "
+    "$(phases_of matrix 0 '')" " --safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet --no-mining-asserts"
 
 echo "== a single scenario contradicts the sweep and is refused before any bench work =="
 assert_contains "--harness-arg --scenario with the token" \
@@ -133,5 +133,5 @@ PY
 assert_contains "sweep is in the discoverable phase list" " $advertised " " sweep "
 assert_contains "and the earlier phases are still there" " $advertised " " lifecycle "
 
-printf '\npassed: %s, failed: %s\n' "$IT_PASS" "$IT_FAIL"
+echo "selftest-e2e-sweep: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ]
