@@ -10,6 +10,7 @@ from tests.web._server_support import app_data, client  # noqa: F401, F811
 @pytest.fixture(autouse=True)
 def connection_env(monkeypatch):
     monkeypatch.setattr(config, "HOST_IP", "192.0.2.8")
+    monkeypatch.setattr(config, "STRATUM_BIND", "0.0.0.0", raising=False)
     monkeypatch.setattr(config, "STRATUM_PORT", 4444)
     for key in (
         "PROXY_STRATUM_PASSWORD",
@@ -57,3 +58,21 @@ async def test_tls_fingerprint_is_public_and_ipv6_url_is_bracketed(client, monke
     assert body["url"] == "stratum+ssl://[2001:db8::1]:4444"
     assert body["tls"] is True
     assert body["fingerprint"] == "a" * 64
+
+
+@pytest.mark.parametrize(
+    ("bind", "advertised_host"),
+    [("0.0.0.0", "192.0.2.8"), ("192.0.2.9", "192.0.2.9")],
+)
+async def test_pool_url_follows_the_stratum_listener(client, monkeypatch, bind, advertised_host):
+    monkeypatch.setattr(config, "STRATUM_BIND", bind)
+    body = await (await client.get("/api/miner-connection")).json()
+    assert body["url"] == f"stratum+tcp://{advertised_host}:4444"
+    assert body["local_only"] is False
+
+
+async def test_loopback_listener_is_not_advertised_on_the_lan(client, monkeypatch):
+    monkeypatch.setattr(config, "STRATUM_BIND", "127.0.0.1")
+    body = await (await client.get("/api/miner-connection")).json()
+    assert body["url"] == "stratum+tcp://127.0.0.1:4444"
+    assert body["local_only"] is True
