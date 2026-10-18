@@ -43,3 +43,31 @@ assert_onion_targets() { # <monero mode> <pool name>
         fi
     fi
 }
+
+# Probe from outside the stack so a pass proves the real inbound path; exits follow tor-client/probe.sh, 3 on error.
+_onion_reachable_external() {
+    local onion="${1:-}" saved_env="${2:-}" out rc snippet
+    [ -n "$onion" ] || onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
+    [ -n "$onion" ] && [ "$onion" != "placeholder" ] || return 2
+    printf '%s\n' "$onion" | grep -Eq '^[a-z2-7]{56}\.onion$' || return 3
+    rx "docker build -q -t pithead-tor-client-test tests/integration/tor-client/ >/dev/null 2>&1" || return 3
+    if [ -n "$saved_env" ]; then
+        snippet="priv=\$(sudo -n awk -F= '\$1 == \"DASHBOARD_ONION_CLIENT_PRIVKEY\" { print substr(\$0, index(\$0, \"=\") + 1) }' $(quote_arg "$saved_env"));"
+        snippet="$snippet [ -n \"\$priv\" ] || exit 4; line=$(quote_arg "${onion%.onion}:descriptor:x25519:")\$priv;"
+    else
+        snippet="line=\$(./pithead onion-client-key 2>/dev/null | grep -E 'descriptor:x25519:' | head -1 || true);"
+    fi
+    snippet="$snippet if [ -n \"\$line\" ]; then printf '%s\n' \"\$line\" | docker run -i --rm -e ONION_ADDR=$(quote_arg "$onion") -e AUTH_STDIN=1 pithead-tor-client-test;"
+    snippet="$snippet else docker run --rm -e ONION_ADDR=$(quote_arg "$onion") pithead-tor-client-test; fi"
+    if out="$(rx "$snippet" 2>&1)"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    case "$rc:$out" in
+    0:*PROBE-OK:*) return 0 ;;
+    1:*PROBE-FAIL:*"HTTP 000"*) return 1 ;;
+    2:*PROBE-FAIL:*) return 2 ;;
+    *) return 3 ;;
+    esac
+}

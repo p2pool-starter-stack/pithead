@@ -69,6 +69,8 @@ rejected_before_ssh_args "a --scenario name with metacharacters never reaches SS
     --harness-arg --scenario --harness-arg 'name;touch'
 rejected_before_ssh_args "--harness-arg is refused outright with --mode check" \
     --harness-arg '--lifecycle' --mode check
+rejected_before_ssh_args "--rotate-onion refuses --keep so the isolated identity cannot survive the run" \
+    --harness-arg '--rotate-onion' --keep
 # #2464: the stranded-Tari leg is selectable by bench-ci's one-phase request, and forwarded as-is.
 harness_phase_args_of() ( # <args...> -> HARNESS_PHASE_ARGS, or the refusal
     # shellcheck source=tests/integration/lib/harness-args.sh

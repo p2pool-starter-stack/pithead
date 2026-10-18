@@ -105,11 +105,9 @@ MATRIX:
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
                          recover. DESTRUCTIVE-then-restored; works in both ssh and local mode.
-  --hardening            also run the v1.4 hardening phase (#377/#33/#424), local mode only:
-                         read-only rootfs rejects writes live, the systemd control path unit fires
-                         on a spooled request (allowlisted change applies, sensitive change
-                         refused), and the stack recovers from a tor restart. DESTRUCTIVE-then-
-                         restored (enables then disables the control channel).
+  --hardening            local-only: rootfs write refusal, control path-unit apply/refusal, Tor recovery.
+                         DESTRUCTIVE-then-restored; enables then disables control (#377/#33/#424).
+  --rotate-onion         rotate an isolated onion fixture; prove reachability, retirement and restore (#2345).
   --rigforge             also run the RigForge integration phase (#185/#235/#260): assert the
                          dashboard consumed a REAL rigforge rig's enriched feed and Worker Inspect
                          reads it. Non-destructive; self-skips if no rigforge rig is connected.
@@ -140,7 +138,6 @@ Scenarios whose prerequisites are missing (a full/pruned alt data dir, or a remo
 are reported SKIPPED — never silently dropped, never mutating the canonical synced chain.
 EOF
 }
-
 # --- Arg parsing ------------------------------------------------------------
 # shellcheck disable=SC2034  # the data-dir / remote-host globals are consumed by lib.sh:resolve_overrides
 parse_args() {
@@ -307,6 +304,10 @@ parse_args() {
             RUN_HARDENING=1
             shift
             ;;
+        --rotate-onion)
+            RUN_ROTATE_ONION=1
+            shift
+            ;;
         --rigforge)
             RUN_RIGFORGE=1
             shift
@@ -365,7 +366,6 @@ parse_args() {
             ;;
         esac
     done
-
     if [ "$IT_MODE" = "ssh" ] && [ -z "$IT_SSH_DEST" ]; then
         it_err "Provide --host <user@host> or --local. See --help."
         exit 2

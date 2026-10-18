@@ -12,7 +12,8 @@ The endpoint is the `xmrig-proxy` service on port `3333` by default. Every succe
 set. This includes an `apply` with no configuration changes and a host with local mining enabled.
 When stratum TLS is enabled, the output also includes the certificate fingerprint to pin on rigs.
 The pool URL uses the dashboard hostname for an all-interface bind, or the configured stratum
-bind address; a loopback bind permits local connections only.
+bind address; a loopback bind permits local connections only. The dashboard's Connect a miner card
+follows the same rule and says so for a loopback bind.
 
 > Do not put a wallet address in your miner config. The P2Pool service on the stack handles payouts.
 > Miners only need to know where the stack is.

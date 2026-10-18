@@ -772,6 +772,7 @@ services:
       # The operator-facing stratum port (#172), display-only here: the "point your rigs at
       # host:PORT" hint and the egress topology label track the real published port.
       - STRATUM_PORT=${STRATUM_PORT:-3333}
+      - STRATUM_BIND=${STRATUM_BIND:-0.0.0.0}
       # Socket proxies are isolated on proxy_net and published only to the host loopback (#345), so
       # the host-networked dashboard reaches them here — mining containers cannot.
       - DOCKER_PROXY_URL=tcp://127.0.0.1:12375

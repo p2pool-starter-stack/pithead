@@ -76,7 +76,7 @@ const ProxyTotals = ({ summary }) => {
     </div>`;
 };
 
-function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onInspect }) {
+function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, localOnly, onInspect }) {
   // First-run empty state (#385): show the one action to take instead of empty headers.
   // `workers` includes offline rigs, so a temporarily all-offline fleet keeps its (red) table.
   if ((workers || []).length === 0) {
@@ -90,6 +90,7 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onIns
                 <p class="text-muted">Point each rig at <code>${addr}:${port}</code> and it appears here —${" "}
                     see the <a href="https://github.com/p2pool-starter-stack/pithead/blob/main/docs/workers.md"
                         target="_blank" rel="noopener noreferrer">workers guide</a>.</p>
+                ${localOnly && html`<p class="text-muted">Local connections only.</p>`}
             </div>
         </div>`;
   }
