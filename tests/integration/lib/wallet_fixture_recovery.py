@@ -127,7 +127,8 @@ def validate_verdict(verdict):
 
 def fingerprints(fixture, state):
     """The verdict's archive and keys digests, from a snapshot that names exactly one prepared pair."""
-    result = (state["archive_sha256"], state["contents"][fixture.wallet_keys(state["contents"])][2])
+    keys = state["contents"][fixture.wallet_keys(state["contents"])]
+    result = (state["archive_sha256"], keys[2] if len(keys) > 2 else None)
     if any(not isinstance(value, str) or not HEX64.fullmatch(value) for value in result):
         raise ValueError("recorded wallet fingerprint is malformed")
     return result

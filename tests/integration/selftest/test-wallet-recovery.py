@@ -359,7 +359,7 @@ class RecoveryTest(RecoveryBase):
         keys = fixture.wallet_keys(state["contents"])
         good = state["contents"][keys]
         self.steps.calls.clear()
-        for damage in (["m", 1, "not-a-sha256"], None):
+        for damage in (["m", 1, "not-a-sha256"], ["m", 1], None):
             del state["contents"][keys]
             if damage:
                 state["contents"][keys] = damage
