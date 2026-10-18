@@ -562,7 +562,9 @@ destructive phases: it drops the mode's single scenario, adds `--safety-backup`,
 other phase unless you hand-pick one (the sweep runs first). It is the only allowlisted token
 `run.sh` never sees, because the sweep is what `run.sh` does when no scenario is pinned. A single
 scenario contradicts it and is refused. `--mode matrix` is unchanged: the sweep plus the
-destructive phases. The sweep alone takes about 2.5 hours. bench-ci lists a commit's selectable
+destructive phases. The sweep alone takes a little over 3 hours: the develop nightly ran its
+scenarios first to last in about 3 h 10 min, and a sweep-only run capped at 180 minutes stopped inside
+its last scenario, so a sweep-only run needs a cap of at least 240 minutes. bench-ci lists a commit's selectable
 phases from the allowlist arm in `tests/integration/lib/harness-args.sh`, so `sweep` is a `phases` value at any
 commit that carries it.
 
