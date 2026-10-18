@@ -57,6 +57,13 @@ FAIL_AFTER=yes deploy_keeping_chain
 assert_rc "post-upgrade snapshot failure stops the deploy" "$?" 1
 assert_eq "post-upgrade failure never runs a second up" "$(grep -c 'pithead up$' "$CMDS")" 0
 unset PS_FAIL
+ROTATE_FIXTURE_REQUIRED=1
+bootstrap_rotate_onion_fixture() { return 17; }
+: >"$CMDS"
+deploy_keeping_chain
+assert_rc "failed fixture provisioning refuses deployment" "$?" 1
+assert_eq "failed fixture provisioning starts no consumer" "$(cat "$CMDS")" ''
+unset ROTATE_FIXTURE_REQUIRED
 for missing in ' ' 'torid ' ' T1'; do
     assert_eq "incomplete Tor identity is never a match" \
         "$(chain_keep_verdict 'config=c files=f' 'config=c files=f' image image "$missing" "$missing" yes)" 'recreate tor'

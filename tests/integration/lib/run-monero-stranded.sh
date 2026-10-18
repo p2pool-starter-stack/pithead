@@ -46,7 +46,7 @@ monero_restore_config() {
 }
 monero_strand_abort() {
     local rc=$?
-    monero_strand_remove_all
+    fault_rules_clear_all
     monero_restore_config
     [ -n "${_MONERO_STRAND_FOREIGN_TRAP:-}" ] && eval "$_MONERO_STRAND_FOREIGN_TRAP"
     return "$rc"
@@ -176,6 +176,7 @@ run_monero_stranded() {
         return 0
     fi
     local tor t0 started fails_before="$IT_FAIL"
+    fault_rules_clear_all
     tor="$(rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' tor" 2>/dev/null | head -n1)"
     if [ -z "$tor" ]; then
         it_fail "monero-stranded: tor address" "empty — fault not injected"
