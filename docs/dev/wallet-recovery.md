@@ -47,8 +47,10 @@ expected commit, no job in progress, and the bench reserved. The wrapper does no
 verifies the reservation instead of taking it when the runner holds the rig lock (`RIG_LOCK_PARENT_*`,
 the same proof `e2e.sh` checks), and takes the rig lock itself otherwise. `E2E_DIR` (default
 `/srv/code/pithead-e2e`) names the dedicated e2e checkout whose wallet container the recovery may also
-replace. The baseline start is bounded at 3600 seconds and the readiness gate at 1800; a runner timeout of
-7200 seconds covers the worst case with the import, and a typical run takes a fraction of it.
+replace. The baseline start is bounded at 3600 seconds and the readiness gate at 1800. A typical run takes a
+fraction of 7200 seconds, the runner timeout to start from; the bounded steps alone (image loads, the
+live-wallet proof, two graceful stops, the start and the gate) can add up to more. A timeout lands as
+`interrupted`, which the same request resumes.
 
 ## Steps
 
@@ -144,7 +146,39 @@ tests (`test-wallet-recovery.py`, `test-wallet-recovery-interface.py` and
 `restoring`, a corrupt archive, a wallet identity that does not match (configuration and live), a live
 wallet in the e2e checkout or a third one, a retry after the import began with the consumer gone, a
 superseded fixture, an active helper, unsafe receipts and job directories, a failed start or gate, a
-failure after `READY`, the stage `ready` resume, the closed request and verdict schemas, the rig lock
-held for the whole run, and the process-group stop on a timeout. The shell checks cover the start
-command for a source checkout and a bundle, the reused readiness gate and the lock verification. The
-live path (real Docker, the baseline start and the gate) is proved only on a reserved bench.
+failure after `READY`, the stage `ready` resume, a malformed recorded keys fingerprint refused as
+`verdict` with the receipt left at `READY`, the closed request and verdict schemas, the rig lock held
+for the whole run, and the process-group stop on a timeout. The shell checks cover the start command
+for a source checkout and a bundle, the reused readiness gate and the lock verification.
+
+The live path (real Docker, the baseline start and the gate) is proved by the lifecycle phase on a DIY
+checkout, as a `tier4-e2e` job with `phases: [lifecycle]` on the PR's head and a borrowed miner. The
+phase runs `tests/integration/tools/prove-wallet-recovery.py` after the supersession proof, on the
+harness's own prepared wallet and never on another job's evidence:
+
+1. Wait for the running wallet's scan marker to clear, then capture a private snapshot and record an
+   `ARMED` receipt in a job directory of the proof's own, as a cancelled job leaves them. Refuse
+   `VERIFIED` from `ARMED`, so a `VERIFIED` receipt later proves `READY` was written first.
+2. Run `wallet_fixture_recovery.py` as a subprocess with the documented arguments and request. Its
+   standard error goes to a private log in the proof's scratch. When no runner lock is claimed the
+   harness already holds the rig lock, so the recovery locks a private file instead of contending with
+   its own ancestor; a claimed runner lock and its descriptor pass through unchanged. A run is limited to
+   7200 seconds and is stopped with `SIGTERM`, never killed.
+3. Require the verdict to be valid, to echo the request, to carry the snapshot's own archive and keys
+   fingerprints, and to report a live comparison (`encrypted_keys` or `isolated_open`) with the import
+   verified and the wallet ready.
+4. Require the `VERIFIED` receipt; only `state.json` left in the snapshot with stage `ready`; only the
+   receipt in the job directory; no helper container for the snapshot and no proof directory left.
+5. Run the same request again and require the refusal `receipt`.
+
+`selftest-wallet-recovery-proof.sh` covers the proof's plumbing, assertions and failure labels and the shell
+leg without a bench.
+
+The shell leg then waits for `pithead status` to report OK and runs the payout-wallet gate once more
+in the harness's own accounting. The proof prints fixed stage labels and, on failure, one JSON object
+with a fixed `failed_stage` and `failure_reason`, the recovery's own closed refusal reason, and the log
+path; the shell leg prints that object and the last 40 log lines through `redact`. A failed proof
+leaves the snapshot at its stage and the receipt `ARMED`, so the same request retries from the top, and
+ends the lifecycle phase. The wrapper's restore of its own snapshot still runs at the end of the job.
+Appliance lifecycle runs record a named `by-design` skip because the proof tool is not shipped in the
+image; on DIY a missing tool fails.
