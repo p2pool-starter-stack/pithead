@@ -96,6 +96,7 @@ drive_restore_rc() {
         control_units_verdict() { echo on-target; }
         wallet_fixture_restore() { :; }; wallet_fixture_verify() { :; }; chain_restore_prepare() { :; }
         recreate_test_checkout_containers() { :; }
+        cleanup_rotate_onion_fixture() { echo cleanup >>"$log"; }
         wait_synced() { echo synced >>"$log"; }; wait_bench_healthy() { echo healthy >>"$log"; }
         '"$MINING_STUB_SRC"'
         verify_restore_proof() { echo proof >>"$log"; }
@@ -109,9 +110,9 @@ drive_restore_rc() {
     ' 2>/dev/null
 }
 assert_eq "the wait runs after health and before the proof" \
-    "$(drive_restore_rc 0)" "synced healthy mining proof "
+    "$(drive_restore_rc 0)" "synced healthy mining proof cleanup "
 assert_eq "a failed wait fails the restore but still runs the proof" \
-    "$(drive_restore_rc 1)" "synced healthy mining proof exit:1 "
+    "$(drive_restore_rc 1)" "synced healthy mining proof cleanup exit:1 "
 
 echo ""
 printf 'restore-mining-ready self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"

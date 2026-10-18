@@ -389,6 +389,8 @@
     "wallet": "Unknown",
     "wallet_short": "Unknown"
   },
+  "stratum_host": "100.68.38.126",
+  "stratum_local_only": false,
   "stratum_port": 3333,
   "sync": {
     "monero": {

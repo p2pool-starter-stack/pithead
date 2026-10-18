@@ -287,7 +287,22 @@ check_verifier_image() {
     ok "Release verifier validated end to end (${img##*@}: signs, verifies, refuses a tampered blob)."
 }
 
+check_registry_policy() {
+    check_registry_write_tuning
+    if [ -n "${PITHEAD_BUILDKITD_CONFIG:-}" ] &&
+        { [ ! -f "$PITHEAD_BUILDKITD_CONFIG" ] || [ ! -r "$PITHEAD_BUILDKITD_CONFIG" ]; }; then
+        die "PITHEAD_BUILDKITD_CONFIG must name a readable file."
+    fi
+    if [ "${PITHEAD_REHEARSAL:-0}" = 1 ] && [ "$REGISTRY" = "$PROD_REGISTRY" ]; then
+        die "PITHEAD_REHEARSAL=1 requires a non-production registry namespace."
+    fi
+    if [ "$REGISTRY" != "$PROD_REGISTRY" ] && [ "$DRY_RUN" -eq 0 ] && [ "${PITHEAD_REHEARSAL:-0}" != 1 ]; then
+        warn "A real cut will publish a bundle naming $REGISTRY; PITHEAD_REHEARSAL=1 rehearses without tagging."
+    fi
+}
+
 preflight() {
+    check_registry_policy
     stage "1/7  Preflight"
     load_release_env
     apply_release_path
