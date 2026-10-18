@@ -33,15 +33,16 @@ reset_counts() {
 export TEST_APPLIANCE=1
 reset_counts
 prove_wallet_supersession
+prove_wallet_recovery
 run_connection_announcements
 [ "$IT_PASS" -eq 0 ] && [ "$IT_FAIL" -eq 0 ]
-[ "$IT_SKIPPED_LEGS" -eq 6 ] && [ "$IT_SKIPPED_BY_DESIGN" -eq 6 ]
+[ "$IT_SKIPPED_LEGS" -eq 7 ] && [ "$IT_SKIPPED_BY_DESIGN" -eq 7 ]
 [ "$IT_SKIPPED_MISSING" -eq 0 ]
-[ "$(wc -l <"$fixture/commands")" -eq 2 ]
-[[ "$IT_SKIPPED_NAMES" == *'(#3133)'* && "$IT_SKIPPED_NAMES" == *'(#3090)'* ]]
+[ "$(wc -l <"$fixture/commands")" -eq 3 ]
+[[ "$IT_SKIPPED_NAMES" == *'(#3133)'* && "$IT_SKIPPED_NAMES" == *'(#3483)'* && "$IT_SKIPPED_NAMES" == *'(#3090)'* ]]
 [[ "$IT_SKIPPED_NAMES" == *'appliance channel:'* && "$IT_SKIPPED_NAMES" == *'not shipped'* ]]
 [ ! -e "$fixture/connection-announcements.log" ]
-echo 'PASS: appliance without a tests tree records six named by-design skips and runs no checkout probe'
+echo 'PASS: appliance without a tests tree records seven named by-design skips and runs no checkout probe'
 
 export TEST_APPLIANCE=0
 for transport in 0 1; do
@@ -59,6 +60,12 @@ for transport in 0 1; do
     [ "$IT_SKIPPED_LEGS" -eq 0 ]
     grep -Fq 'connection-setup-pty.py' "$fixture/commands"
     echo "PASS: missing DIY tools remain failures with channel transport failure=$transport"
+    reset_counts
+    prove_wallet_recovery || true
+    [ "$IT_FAIL" -eq 1 ] && [ "$IT_PASS" -eq 0 ]
+    [ "$IT_SKIPPED_LEGS" -eq 0 ]
+    grep -Fq 'python3 tests/integration/tools/prove-wallet-recovery.py .' "$fixture/commands"
+    echo "PASS: a missing DIY recovery tool remains a failure with channel transport failure=$transport"
 done
 export TEST_TRANSPORT_FAILURE=0
 mkdir -p "$fixture/tests/integration/tools"
