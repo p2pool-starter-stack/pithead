@@ -89,9 +89,9 @@ class RecoveryBase(unittest.TestCase):
 
         return call
 
-    def prepare(self, receipt="ARMED"):
+    def prepare(self, receipt="ARMED", snapshot=None):
         self.docker.item["State"]["Running"] = True
-        self.docker.contents = existing.archive()
+        self.docker.contents = snapshot or existing.archive()
         self.directory = self.capture()
         self.original = self.docker.contents
         self.job = self.root / "12"
@@ -340,25 +340,47 @@ class RecoveryTest(RecoveryBase):
         self.assertEqual(verdict["status"], "RESTORED")
         self.assertEqual(self.receipt(), b"VERIFIED\n")
 
-    def test_a_malformed_recorded_keys_digest_refuses_the_verdict_and_keeps_the_receipt_ready(self):
+    def test_a_snapshot_with_several_retained_pairs_refuses_before_any_mutation(self):
+        other = "payout-wallet-" + "b" * 64
+        self.prepare(snapshot=existing.archive({other: b"cache", other + ".keys": b"keys"}))
+        self.assertEqual(json.loads(self.saved["state.json"])["stage"], "captured")
+        for _ in range(2):
+            self.refused("pair")
+            self.assertFalse(self.docker.calls)
+            self.assertEqual(self.steps.calls, [])
+            self.assert_untouched()
+
+    def test_a_tampered_ready_state_refuses_before_anything_runs(self):
         self.prepare()
         fixture.restore(self.directory, self.baseline, self.root / "branch")
         fixture.receipt(self.job, "READY")
         fixture.cleanup(self.directory, self.baseline)
         state = json.loads((self.directory / "state.json").read_text())
         keys = fixture.wallet_keys(state["contents"])
-        good = state["contents"][keys][2]
-        state["contents"][keys][2] = "not-a-sha256"
+        good = state["contents"][keys]
+        self.steps.calls.clear()
+        for damage in (["m", 1, "not-a-sha256"], None):
+            del state["contents"][keys]
+            if damage:
+                state["contents"][keys] = damage
+            fixture.write_state(self.directory, state)
+            self.assertEqual((self.directory / "state.json").stat().st_mode & 0o777, 0o600)
+            self.refused("pair")
+            self.assertEqual(self.steps.calls, [])
+            self.assertEqual(self.receipt(), b"READY\n")
+            self.assertEqual({p.name for p in self.directory.iterdir()}, {"state.json"})
+        state["contents"][keys] = good
         fixture.write_state(self.directory, state)
-        self.assertEqual((self.directory / "state.json").stat().st_mode & 0o777, 0o600)
-        self.refused("verdict")
-        self.assertEqual(self.steps.calls, ["lock", "start", "ready", "lock"])
-        self.assertEqual(self.receipt(), b"READY\n")
-        self.assertEqual({p.name for p in self.directory.iterdir()}, {"state.json"})
-        state["contents"][keys][2] = good
-        fixture.write_state(self.directory, state)
-        self.assertEqual(self.recover()["proof"]["keys_fingerprint"], good)
+        self.assertEqual(self.recover()["proof"]["keys_fingerprint"], good[2])
         self.assertEqual(self.receipt(), b"VERIFIED\n")
+
+    def test_a_verdict_that_fails_its_schema_keeps_the_receipt_and_the_fence(self):
+        self.prepare()
+        with patch.object(recovery, "validate_verdict", side_effect=ValueError("schema")):
+            self.refused("verdict")
+        self.assertEqual(self.steps.calls, ["lock", "start", "ready", "lock"])
+        self.assertEqual(self.receipt(), b"ARMED\n")
+        self.assertTrue((self.directory / "wallet.tar").exists())
 
     def test_a_completed_cleanup_without_a_verified_receipt_resumes_without_importing(self):
         self.prepare()

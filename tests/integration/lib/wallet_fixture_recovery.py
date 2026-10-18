@@ -125,6 +125,14 @@ def validate_verdict(verdict):
     request_data(json.dumps(verdict["request"]).encode())
 
 
+def fingerprints(fixture, state):
+    """The verdict's archive and keys digests, from a snapshot that names exactly one prepared pair."""
+    result = (state["archive_sha256"], state["contents"][fixture.wallet_keys(state["contents"])][2])
+    if any(not isinstance(value, str) or not HEX64.fullmatch(value) for value in result):
+        raise ValueError("recorded wallet fingerprint is malformed")
+    return result
+
+
 def hold_bench_lock():
     """Take the rig flock e2e.sh takes, unless the runner holds it and the helper verifies it."""
     if os.environ.get("RIG_LOCK_PARENT_ACTOR") or os.environ.get("RIG_LOCK_PARENT_NONCE"):
@@ -277,6 +285,8 @@ def recover(fixture, retire, directory, baseline, job, raw, steps, branch):
             raise ValueError("baseline wallet identity changed")
     with refusing("archive"):
         state = fixture.load(directory, baseline, cleanup_only=stage == "ready")
+    with refusing("pair"):
+        archive_fingerprint, keys_fingerprint = fingerprints(fixture, state)
     with refusing("helper"):
         helpers = fixture.docker(
             "ps",
@@ -316,8 +326,8 @@ def recover(fixture, retire, directory, baseline, job, raw, steps, branch):
             "live_identity_proven": method in LIVE_METHODS,
             "import_verified": True,
             "wallet_ready": True,
-            "archive_fingerprint": state["archive_sha256"],
-            "keys_fingerprint": state["contents"][fixture.wallet_keys(state["contents"])][2],
+            "archive_fingerprint": archive_fingerprint,
+            "keys_fingerprint": keys_fingerprint,
         },
         "receipt_fingerprint": VERIFIED,
     }

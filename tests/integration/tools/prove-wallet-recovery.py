@@ -30,6 +30,7 @@ REASONS = {
     "helper",
     "identity",
     "archive",
+    "pair",
     "busy",
     "lock",
     "import",

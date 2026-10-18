@@ -474,7 +474,7 @@ announcement probe (#3090) require tools from the DIY checkout that the applianc
 lifecycle phase identifies the appliance with the CLI's `is_appliance` predicate
 and records seven named `by-design` skips: one supersession row, one recovery row and five
 connection rows. The appliance wizard owns setup; these skips do not prove appliance credential
-presentation. On DIY, both probes remain binding, including when a tool is missing
+presentation. On DIY, all three probes remain binding, including when a tool is missing
 or channel identification fails. Tier-1 channel regressions exercise the skips and
 these refusal paths; live proof requires both KVM `stack` and DIY `lifecycle` runs.
 

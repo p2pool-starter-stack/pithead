@@ -56,8 +56,10 @@ live-wallet proof, two graceful stops, the start and the gate) can add up to mor
 
 1. Validate the request, the owner-only job directory and snapshot, the archive sizes, the receipt
    (`ARMED`, `NOT_PROVEN` or `READY`), that the baseline wallet identity in `.env` still equals the
-   snapshot's, and the archive digests and manifest. A superseded fixture, an active helper container
-   named for the snapshot, or a lock that does not verify refuses here.
+   snapshot's, and the archive digests and manifest. The manifest must name exactly one prepared wallet
+   pair, and the archive and keys fingerprints the verdict will carry are read and checked now, before
+   anything changes. A superseded fixture, an active helper container named for the snapshot, or a lock
+   that does not verify refuses here.
 2. Prove the live wallet before its volume is overwritten, on a snapshot whose import has not started
    (stage `captured`). With no wallet volume or no payout wallet in it, there is nothing to protect.
    Otherwise the supersession proof applies: equal encrypted key-file digests, or equal primary address
@@ -84,8 +86,16 @@ is reachable only from `READY`.
 ## Verdict and refusals
 
 Stdout carries one JSON object and nothing else. The shell steps and the restore log to stderr, which can
-name containers and, when the wallet fails to stop, carry its last log lines. A refusal adds one stderr
-line with its reason and the exception class, never the message. Success exits 0:
+name containers and, when the wallet fails to stop, carry its last log lines. For a bundle baseline the
+start step runs `pithead apply -y` and `pithead up`, which print the stratum access password in clear
+when one is set (`announce_stratum_auth` in `lib/pithead/13-announce.sh`). `redact` in
+`tests/integration/lib.sh` does not mask that line, so stderr must stay private: send it to an owner-only
+file, never to a job log or any other stream the runner publishes. A source-checkout baseline starts with
+`pithead upgrade`, which prints no password; the lifecycle leg's baseline is a source checkout, so the
+log tail it prints through `redact` on a failure carries none.
+
+A refusal adds one stderr line with its reason and the exception class, never the message. Success
+exits 0:
 
 ```json
 {
@@ -120,6 +130,7 @@ A refusal exits 1 with a fixed reason and no other text:
 | `request`, `evidence` | Malformed request, wrong argument count, or an unsafe or mismatched job directory, snapshot or archive size |
 | `superseded`, `receipt`, `helper` | The fixture is retired, the receipt is not `ARMED`, `NOT_PROVEN` or `READY`, or a helper container for the snapshot is active |
 | `identity`, `archive` | The baseline wallet identity changed or the live wallet is not the snapshot's; the archive or image digest, or the manifest, differs |
+| `pair` | The snapshot does not name exactly one prepared wallet pair (several retained pairs, or no keys file), or a recorded archive or keys fingerprint is missing or malformed |
 | `busy`, `lock` | The rig lock is held elsewhere, or the runner's lock no longer verifies |
 | `import`, `startup`, `readiness` | The restore, the baseline start, or the readiness gate failed or timed out |
 | `verdict`, `seal` | The verdict failed its own schema (before any receipt is written), or a receipt or cleanup write failed |
@@ -146,10 +157,12 @@ tests (`test-wallet-recovery.py`, `test-wallet-recovery-interface.py` and
 `restoring`, a corrupt archive, a wallet identity that does not match (configuration and live), a live
 wallet in the e2e checkout or a third one, a retry after the import began with the consumer gone, a
 superseded fixture, an active helper, unsafe receipts and job directories, a failed start or gate, a
-failure after `READY`, the stage `ready` resume, a malformed recorded keys fingerprint refused as
-`verdict` with the receipt left at `READY`, the closed request and verdict schemas, the rig lock held
-for the whole run, and the process-group stop on a timeout. The shell checks cover the start command
-for a source checkout and a bundle, the reused readiness gate and the lock verification.
+failure after `READY`, the stage `ready` resume, a snapshot with several retained wallet pairs and a
+tampered recorded fingerprint refused as `pair` before any lock, start or import with the receipt and
+stage unchanged, a verdict that fails its schema refused as `verdict`, the closed request and verdict
+schemas, the rig lock held for the whole run, and the process-group stop on a timeout. The shell checks
+cover the start command for a source checkout and a bundle, the reused readiness gate and the lock
+verification.
 
 The live path (real Docker, the baseline start and the gate) is proved by the lifecycle phase on a DIY
 checkout, as a `tier4-e2e` job with `phases: [lifecycle]` on the PR's head and a borrowed miner. The
@@ -172,7 +185,8 @@ harness's own prepared wallet and never on another job's evidence:
 5. Run the same request again and require the refusal `receipt`.
 
 `selftest-wallet-recovery-proof.sh` covers the proof's plumbing, assertions and failure labels and the shell
-leg without a bench.
+leg without a bench. `selftest-lifecycle-gate-wiring.sh` requires a failed proof to end `run_lifecycle` with
+a non-zero status before the next boundary sample.
 
 The shell leg then waits for `pithead status` to report OK and runs the payout-wallet gate once more
 in the harness's own accounting. The proof prints fixed stage labels and, on failure, one JSON object
