@@ -27,6 +27,7 @@ fault_tor_probe_egress() {
         it_fail "Tor probe fault requires the egress firewall" "network.tor_egress_firewall=false"
         return
     fi
+    fault_rules_clear_all
     if ! wait_for 180 10 "proxy workers online for Tor fault" _tor_probe_mining_sample >/dev/null; then
         it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
@@ -57,10 +58,12 @@ fault_tor_probe_egress() {
         return
     }
     rule="-d ${prefix}.25 -p tcp --dport 9050 -m comment --comment pithead-e2e-fault-tor-probe -j DROP"
+    fault_rules_trap_arm
     if ! tor_probe_ns_ipt "-I OUTPUT $rule" >/dev/null ||
         ! tor_probe_ns_ipt "-C OUTPUT $rule" >/dev/null; then
         it_fail "Tor probe fault installed the dashboard namespace rule" "iptables rule absent"
         tor_probe_ns_ipt "-D OUTPUT $rule" >/dev/null 2>&1 || true
+        fault_rules_trap_disarm
         return
     fi
     it_pass "Tor probe fault blocks dashboard SOCKS traffic in its OUTPUT chain"
@@ -95,6 +98,7 @@ fault_tor_probe_egress() {
         it_fail "Tor probe fault dropped live dashboard SOCKS packets" "the rule saw no traffic"
     fi
     tor_probe_ns_ipt "-D OUTPUT $rule" >/dev/null 2>&1 || true
+    fault_rules_trap_disarm
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
     assert_rc "Tor-egress firewall remains enforced after fault" "$?" "0"
     if wait_for 900 30 "Tor egress recovered after circuit refresh" \

@@ -76,6 +76,8 @@ assert_eq "node RPC login stays one systemd argument (#2333)" \
 assert_eq "remote render emits no node units" "$(find "$QOUT" -name 'monerod.container' -o -name 'tari.container' | wc -l | tr -d ' ')" "0"
 assert_contains "remote render passes TARI_MODE to the dashboard" \
     "$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container")" '"TARI_MODE=remote"'
+assert_contains "quadlet dashboard carries the stratum bind (#3384)" \
+    "$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container")" '"STRATUM_BIND=0.0.0.0"'
 # The two render targets share one dashboard, and a variable added to the compose service can be
 # left off the quadlet unit with nothing red (#1896: the three DASHBOARD_ONION_* values the header
 # reads reached compose in #1880 and the unit not at all). Pin the DASHBOARD_* cluster, the keys
