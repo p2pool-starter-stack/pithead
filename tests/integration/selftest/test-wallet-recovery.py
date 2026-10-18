@@ -340,6 +340,26 @@ class RecoveryTest(RecoveryBase):
         self.assertEqual(verdict["status"], "RESTORED")
         self.assertEqual(self.receipt(), b"VERIFIED\n")
 
+    def test_a_malformed_recorded_keys_digest_refuses_the_verdict_and_keeps_the_receipt_ready(self):
+        self.prepare()
+        fixture.restore(self.directory, self.baseline, self.root / "branch")
+        fixture.receipt(self.job, "READY")
+        fixture.cleanup(self.directory, self.baseline)
+        state = json.loads((self.directory / "state.json").read_text())
+        keys = fixture.wallet_keys(state["contents"])
+        good = state["contents"][keys][2]
+        state["contents"][keys][2] = "not-a-sha256"
+        fixture.write_state(self.directory, state)
+        self.assertEqual((self.directory / "state.json").stat().st_mode & 0o777, 0o600)
+        self.refused("verdict")
+        self.assertEqual(self.steps.calls, ["lock", "start", "ready", "lock"])
+        self.assertEqual(self.receipt(), b"READY\n")
+        self.assertEqual({p.name for p in self.directory.iterdir()}, {"state.json"})
+        state["contents"][keys][2] = good
+        fixture.write_state(self.directory, state)
+        self.assertEqual(self.recover()["proof"]["keys_fingerprint"], good)
+        self.assertEqual(self.receipt(), b"VERIFIED\n")
+
     def test_a_completed_cleanup_without_a_verified_receipt_resumes_without_importing(self):
         self.prepare()
         fixture.restore(self.directory, self.baseline, self.root / "branch")
