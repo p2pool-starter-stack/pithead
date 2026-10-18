@@ -461,12 +461,21 @@ lines. The probe then redacts them and masks every IPv4 and IPv6 address, creden
 `name:value` and `name=value` tokens, and alphanumeric runs of 40 or more characters. From those lines, a log-read error,
 bad launch arguments and an unreachable Tari node each look different.
 
-The wallet supersession proof (#3133) and CLI connection announcement probe (#3090)
-require tools from the DIY checkout that the appliance image does not ship. The
+The wallet fixture recovery interface ([wallet-recovery.md](wallet-recovery.md)) is proved by
+`selftest-wallet-recovery.sh` against a stubbed Docker, baseline start and readiness gate. Its live
+path is proved by the lifecycle phase on a DIY checkout: `tools/prove-wallet-recovery.py` arms a
+separate private snapshot of the harness's own prepared wallet and runs the operator entry point on
+it with real Docker, the baseline start and the payout-wallet gate. That makes the change a
+`tier4-e2e` row of [What a PR must prove](#what-a-pr-must-prove): a job with `phases: [lifecycle]`
+on the PR's head, with a borrowed miner because the lifecycle's Tari mining-continuity trial
+refuses `no_rig`.
+
+The wallet supersession proof (#3133), wallet recovery proof (#3483) and CLI connection
+announcement probe (#3090) require tools from the DIY checkout that the appliance image does not ship. The
 lifecycle phase identifies the appliance with the CLI's `is_appliance` predicate
-and records six named `by-design` skips: one supersession row and five connection
-rows. The appliance wizard owns setup; these skips do not prove appliance credential
-presentation. On DIY, both probes remain binding, including when a tool is missing
+and records seven named `by-design` skips: one supersession row, one recovery row and five
+connection rows. The appliance wizard owns setup; these skips do not prove appliance credential
+presentation. On DIY, all three probes remain binding, including when a tool is missing
 or channel identification fails. Tier-1 channel regressions exercise the skips and
 these refusal paths; live proof requires both KVM `stack` and DIY `lifecycle` runs.
 
