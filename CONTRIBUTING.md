@@ -123,9 +123,9 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
    - **test-stack** — the `pithead` shell test suite.
    - **test-compose** — `docker-compose.yml` interpolation validation.
    - **test-integration-selftest** — the integration harness's logic and bounded local transport fixtures.
-   - **test-tools** — bounded build-log sanitization, the shell suite's block and aggregation timeout guards,
-     and a check that all four CI uv installs pin the same action, uv version, and archive checksum,
-     without running a build.
+   - **test-tools** — bounded build-log sanitization, shell-suite timeout guards, pinned CI uv installs,
+     and Monero archive download recovery, integrity and deadline checks against a local HTTPS fixture.
+     The download tests need curl, OpenSSL and sha256sum; they run without Docker or public-network access.
    - **test-fakes** — the tier-2 contract test (real dashboard clients vs controllable fakes).
 
    Bigger, infra-dependent suites run separately: `make test-mini-stack` (tier-3 docker) and

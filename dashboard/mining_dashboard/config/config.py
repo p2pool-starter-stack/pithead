@@ -119,6 +119,7 @@ API_TIMEOUT = 1  # Connection timeout (seconds) for worker API calls
 # topology label; the actual bind/publish is compose's job. p2pool's container-internal stratum
 # stays fixed at :3333 regardless.
 STRATUM_PORT = int(os.environ.get("STRATUM_PORT", 3333))
+STRATUM_BIND = os.environ.get("STRATUM_BIND") or "0.0.0.0"
 
 # The stack's internal docker bridge subnet. The dashboard runs network_mode: host and a connecting
 # miner fully controls its worker name/ip via stratum, yet per-worker stats are fetched at a host

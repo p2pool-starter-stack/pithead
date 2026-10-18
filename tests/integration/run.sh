@@ -31,6 +31,8 @@ source "$HERE/lib/rig-key-ledger.sh" || exit $? # must precede any module that m
 source "$HERE/lib/rigforge-writable-keys.sh" || exit $?
 # shellcheck source=tests/integration/lib/rigforge-upgrade.sh
 source "$HERE/lib/rigforge-upgrade.sh" || exit $?
+# shellcheck source=tests/integration/lib/fault-rules.sh
+source "$HERE/lib/fault-rules.sh" || exit $?
 # shellcheck source=tests/integration/lib/borrow-rearm.sh
 source "$HERE/lib/borrow-rearm.sh" || exit $?
 # shellcheck source=tests/integration/lib/zmq-probe.sh
@@ -54,6 +56,7 @@ RUN_LIFECYCLE=0
 RUN_FAULTS=0
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
+RUN_ROTATE_ONION=0
 RUN_RIGFORGE=0
 RUN_RIGFORGE_CONTROL=0
 RUN_SUBNET=0
@@ -128,6 +131,8 @@ source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
 source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-rotate-onion.sh
+source "$HERE/lib/run-rotate-onion.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rigforge.sh
@@ -279,6 +284,7 @@ main() {
     fi # fault-injection gate
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_ONION" = "1" ] && run_rotate_onion
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ALERT_EGRESS" = "1" ] && run_alert_egress_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_SUBMIT" = "1" ] && run_mergemine_submit
