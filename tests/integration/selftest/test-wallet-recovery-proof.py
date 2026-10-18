@@ -185,6 +185,7 @@ class FailureTest(ProofBase):
             (subprocess.CalledProcessError(1, [LEAK]), "command_failed"),
             (subprocess.TimeoutExpired([LEAK], 30), "command_timeout"),
             (OSError(LEAK), "evidence_unavailable"),
+            (InterruptedError(LEAK), "interrupted"),
         ):
             with self.subTest(label=label), patch.object(fixture, "capture", side_effect=error):
                 self.assertEqual(self.result()["failure_reason"], label)

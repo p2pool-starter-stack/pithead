@@ -252,6 +252,8 @@ def run_proof(baseline):
         reason = (
             error.reason if isinstance(error, ProofFailure) else supersession.failure_reason(error)
         )
+        if isinstance(error, InterruptedError):
+            reason = "interrupted"
         extra = error.extra if isinstance(error, ProofFailure) else {}
         return 1, {
             "schema": 1,
