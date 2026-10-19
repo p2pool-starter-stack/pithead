@@ -16,6 +16,10 @@ validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS, HARNE
     while [ "$i" -lt "${#HARNESS_ARGS[@]}" ]; do
         arg="${HARNESS_ARGS[$i]}"
         case "$arg" in
+        --tari-data)
+            select_tari_data "${HARNESS_ARGS[$((i + 1))]:-}"
+            i=$((i + 2))
+            ;;
         --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --rotate-onion | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke | --rotate-secrets | --alert-egress | --mergemine-submit | --mergemine-localnet | --tari-stranded | --monero-stranded | --sweep)
             HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
             if [ "$arg" = --rotate-onion ]; then

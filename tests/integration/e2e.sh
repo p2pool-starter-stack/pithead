@@ -9,11 +9,7 @@
 #   4. Borrows a miner (set MINER_HOST), backs up its xmrig config and repoints it at the test bench.
 #   5. Deploys the branch (`pithead upgrade`, including its first-party images; #272), then runs the
 #      live harness detached on the box so an SSH drop cannot kill a long matrix.
-#   6. ALWAYS restores, even on failure or Ctrl-C (an EXIT trap): the miner's pool config, the prepared
-#      wallet cache, then the canonical stack with no `pithead down`, so unchanged chain nodes keep running
-#      and the synced chains are never touched (#2639). It then PROVES the live stack matches the on-disk
-#      config (#971): a container's baked credential marker must equal the on-disk .env line, and monerod
-#      must answer an authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
+#   6. Restores through an EXIT trap; snapshot mode fences uncertain Tari restoration.
 #
 # The Compose project name is pinned to "pithead", so the e2e and canonical checkouts drive the SAME containers and shared chains — two
 # code copies of one stack, run one at a time. That's why borrow→test→restore is a code/image swap, not a re-sync.
@@ -33,6 +29,7 @@ source "$HERE/lib/borrow-fixture.sh" || exit $?
 source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" && source "$HERE/lib/restore-mining-ready.sh" || exit $? # chain-keep: #2639; mining-ready: #3152
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" && source "$HERE/lib/wallet-fixture.sh" || exit $?
+source "$HERE/lib/tari-snapshot.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -86,6 +83,7 @@ OPTIONS:
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
   --harness-arg <f> run this run.sh phase instead of the mode's (repeatable, allowlisted; --sweep = every scenario)
+  --tari-data snapshot preserve pre-run Tari data in private CoW snapshots (bench-ci only)
   --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
@@ -123,6 +121,10 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     --harness-arg) HARNESS_ARGS+=("$2") && shift 2 ;;
+    --tari-data)
+        select_tari_data "${2:-}"
+        shift 2
+        ;;
     --bench)
         BENCH_HOST="$2"
         shift 2
@@ -165,6 +167,7 @@ done
 case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targeted|matrix (got '$MODE')." ;; esac
 [ -z "$SCENARIO" ] || [ "$MODE" = matrix ] || die "--scenario is only supported with --mode matrix."
 [[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO" && validate_harness_args
+validate_tari_data
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
@@ -210,6 +213,7 @@ restore_all() {
         exit 1
     }
     parent_lock_miner_restore || die "Refusing an unreserved miner restore; preserve $MINER_CFG_BACKUP."
+    tari_snapshot_before_restore || exit 1
     echo ""
     log "Restoring everything to the pre-run state…"
     # 1. Miner: put its original pool config back and nudge xmrig to reconnect.
@@ -282,6 +286,7 @@ restore_all() {
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
         verify_restore_proof && wallet_fixture_verify || RESTORE_PROOF_FAILED=1
+        [ "$RESTORE_PROOF_FAILED" != 0 ] || tari_snapshot_verify || RESTORE_PROOF_FAILED=1
     else
         warn "baseline restore command failed in $RESTORE_DIR — check the command output above."
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
@@ -581,6 +586,7 @@ deploy_branch() {
     # Upgrade, not apply, rebuilds branch images (#272) and keeps unchanged chain nodes (#2639).
     log "Deploying the branch on $BENCH_HOST (pithead upgrade — re-render configs + rebuild first-party images)"
     deploy_keeping_chain || die "pithead upgrade failed in $E2E_DIR — branch did not deploy."
+    tari_snapshot_branch
     on_bench "cd '$E2E_DIR' && docker compose images --format '{{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'p2pool|dashboard|monero|tor|xmrig' || true" | while IFS= read -r l; do step "image: $l"; done
     wait_bench_healthy 300 || warn "stack applied but not yet healthy; the harness will wait on real readiness signals"
     wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."
@@ -660,6 +666,7 @@ main() {
     if [ "$MODE" != "check" ]; then
         backup_stack
         wallet_fixture_capture
+        tari_snapshot_capture
         borrow_miner
         deploy_branch
     fi

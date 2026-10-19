@@ -27,7 +27,19 @@ capture_state_snapshots() { # <stateful mount TSV>
         done <<<"$kept"
         [ "$covered" = 0 ] || continue
         parent="$(dirname "$source")" base="$(basename "$source")"
-        snap="$parent/.pithead-live-$base-$nonce"
+        if [ -n "${UPGRADE_SNAPSHOT_ROOT:-}" ]; then
+            case "$UPGRADE_SNAPSHOT_ROOT/" in "$source/"*)
+                UPGRADE_SNAPSHOT_REASON="snapshot-inside-source"
+                return 1
+                ;;
+            esac
+            [[ "$UPGRADE_SNAPSHOT_ROOT" = /* && "$UPGRADE_SNAPSHOT_ROOT" != / ]] &&
+                rx "test -d $(quote_arg "$UPGRADE_SNAPSHOT_ROOT") && test ! -L $(quote_arg "$UPGRADE_SNAPSHOT_ROOT")" || {
+                UPGRADE_SNAPSHOT_REASON="unsafe-snapshot-root"
+                return 1
+            }
+        fi
+        snap="${UPGRADE_SNAPSHOT_ROOT:-$parent}/.pithead-live-$base-$nonce"
         reflink=always
         [ "$type" != volume ] || reflink=auto
         if ! rx "test -d $(quote_arg "$source")"; then
@@ -63,7 +75,7 @@ restore_state_snapshots() {
     local source snap replacement old nonce journal=""
     nonce="$$-$(date +%s)"
     while IFS=$'\t' read -r source snap; do
-        if [ -z "$source" ] || [ -z "$snap" ] || [[ "$source" != /* || "$source" = / || "$snap" != "$(dirname "$source")/.pithead-live-"* ]]; then
+        if [ -z "$source" ] || [ -z "$snap" ] || [[ "$source" != /* || "$source" = / || "$snap" != "${UPGRADE_SNAPSHOT_ROOT:-$(dirname "$source")}/.pithead-live-"* ]]; then
             cleanup_restore_replacements "$journal"
             return 1
         fi
@@ -83,6 +95,7 @@ restore_state_snapshots() {
         # nothing undoes. Recording first can only over-describe, and rollback_restored_state
         # distinguishes "never swapped" from "swapped" by looking at the box.
         UPGRADE_STATE_OLD_DIRS="$source"$'\t'"$old${UPGRADE_STATE_OLD_DIRS:+$'\n'$UPGRADE_STATE_OLD_DIRS}"
+        if declare -F state_snapshot_checkpoint >/dev/null; then state_snapshot_checkpoint || return 1; fi
         rx "sudo -n mv -- $(quote_arg "$source") $(quote_arg "$old") && { sudo -n mv -- $(quote_arg "$replacement") $(quote_arg "$source") || { sudo -n mv -- $(quote_arg "$old") $(quote_arg "$source"); false; }; }" || {
             rollback_restored_state
             cleanup_restore_replacements "$journal"
@@ -127,13 +140,14 @@ rollback_restored_state() {
 }
 
 cleanup_state_snapshots() {
-    local _source snap
+    local _source snap failed=0
     while IFS=$'\t' read -r _source snap; do
-        [ -z "$snap" ] || rx "sudo -n rm -rf -- $(quote_arg "$snap")" >/dev/null 2>&1 || true
+        [ -z "$snap" ] || rx "sudo -n rm -rf -- $(quote_arg "$snap") && test ! -e $(quote_arg "$snap")" >/dev/null 2>&1 || failed=1
     done <<<"${UPGRADE_STATE_SNAPSHOTS:-}"
     while IFS=$'\t' read -r _source snap; do
-        [ -z "$snap" ] || rx "sudo -n rm -rf -- $(quote_arg "$snap")" >/dev/null 2>&1 || true
+        [ -z "$snap" ] || rx "sudo -n rm -rf -- $(quote_arg "$snap") && test ! -e $(quote_arg "$snap")" >/dev/null 2>&1 || failed=1
     done <<<"${UPGRADE_STATE_OLD_DIRS:-}"
+    [ "${UPGRADE_SNAPSHOT_STRICT:-0}" != 1 ] || return "$failed"
 }
 
 derived_state_fingerprint() {

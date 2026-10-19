@@ -316,6 +316,14 @@ tests/integration/e2e.sh claude/my-feature --mode matrix   # full config sweep (
 checkout so its harness code is available, then runs those reads against the currently active install
 directory. It does not take a stack backup, borrow a miner, deploy the branch, or run a restore.
 
+Use `--tari-data snapshot` to preserve the pre-run Tari node and wallet through the existing shared
+capture and restore helpers. The same option can be forwarded as the adjacent pair
+`--harness-arg --tari-data --harness-arg snapshot`; it is accepted only for bench-ci jobs carrying
+the `CI_TARI_SNAPSHOT_RESTORE_STATE` contract from bench-ci commit
+`c09cc3ca59ce6b3f8a272adf577ed57e685de75c`. The private job scratch must be on the same
+copy-on-write filesystem as the Tari node bind source; a named wallet volume may be copied. The
+wrapper refuses a non-CoW bind filesystem or insufficient free space.
+
 Pre-flight, before anything is locked or borrowed: the wrapper waits up to 120 seconds for both
 chains to read `done` on the bench dashboard's sync panels. This allows a brief `loading` state
 while the dashboard polls an already-synced node. If the wait expires, it prints each
@@ -469,6 +477,17 @@ via an `EXIT` trap):
    Bench CI stores the snapshot on the job filesystem and the wrapper durably arms an owner-only
    restoration receipt before deployment. Failed restoration preserves the receipt and private
    scratch; a lost job refuses another forward run. Standalone snapshots use `/var/tmp`.
+   With `--tari-data snapshot`, the Tari snapshot takes stopped-writer captures, records the
+   original mounts, and writes a branch-only marker. It requires the runner's bounded JSON contract
+   and the job scratch on the node bind filesystem; no-CoW storage or insufficient free space
+   refuses the run. After branch startup, it tests a second clean Tari restart, restores the
+   captured data before baseline startup, then proves unchanged mounts, an absent marker, and a
+   direct Tari gRPC health call before recording `VERIFIED`. The stop wait is bounded at 7,200
+   seconds; uncertainty keeps the recovery reservation and snapshots, records restoration as
+   unproven, and does not start the baseline. If migration remains active, the path does not
+   deliberately stop Tari, restore over live data, start the baseline, or delete snapshots. The
+   contract does not claim that the container survives supervisor TERM/KILL. Migration-timing rows
+   remain `missing` until a real migration is exercised.
 6. Restores the miner's original pool config and the baseline stack. Restore targets the directory
    the live stack actually ran from — read at preflight off the running container's
    `com.docker.compose.project.working_dir` label — which on a release box is the per-version bundle
