@@ -139,7 +139,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   requires its running stack to carry the prior-release wallet, Tor identity and secrets while
   both the fixture's and the target's chain-data sentinels survive. The fixture's removed 1.x
   `xmrig_proxy` settings must move to `xvb` unchanged without leaving a `config.json.bak-1x`,
-  and `telegram.control` must be dropped.
+  and `telegram.control` must be dropped. The `N-1 backup fixture` workflow runs
+  `fixtures/v1.20.0/selftest-wallets.py` before generating the encrypted backup, including
+  on changes to `lib/pithead/25-address-types.sh`. The
+  generator extracts checksum helpers from each named CLI validator, then derives
+  deterministic public keys from a public throwaway seed. The Docker-free selftest
+  requires Python 3 and libsodium; it checks repeated output, both checksums, all four
+  curve points and the complete CLI address verdicts. Never fund these addresses.
 - **setup-defaults** — a fresh 40 GiB guest accepts the wizard defaults without a Tari override; proves Tor sync, XvB off, persisted choices, a generated working dashboard login, and firstboot/system journals free of bcrypt credentials.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard

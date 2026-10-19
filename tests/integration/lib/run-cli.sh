@@ -105,11 +105,9 @@ MATRIX:
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
                          recover. DESTRUCTIVE-then-restored; works in both ssh and local mode.
-  --hardening            also run the v1.4 hardening phase (#377/#33/#424), local mode only:
-                         read-only rootfs rejects writes live, the systemd control path unit fires
-                         on a spooled request (allowlisted change applies, sensitive change
-                         refused), and the stack recovers from a tor restart. DESTRUCTIVE-then-
-                         restored (enables then disables the control channel).
+  --hardening            local-only: rootfs write refusal, control path-unit apply/refusal, Tor recovery.
+                         DESTRUCTIVE-then-restored; enables then disables control (#377/#33/#424).
+  --rotate-onion         rotate an isolated onion fixture; prove reachability, retirement and restore (#2345).
   --rigforge             also run the RigForge integration phase (#185/#235/#260): assert the
                          dashboard consumed a REAL rigforge rig's enriched feed and Worker Inspect
                          reads it. Non-destructive; self-skips if no rigforge rig is connected.
@@ -120,6 +118,8 @@ MATRIX:
   --rig-name <name>      exact borrowed rig NAME from its protected RigForge config.
   --rigforge-bootstrap-version <tag>  explicitly bootstrap that rig before feed-dependent checks.
   --rig-control-port <p> the rig's writable control API port (default: 8082, #185).
+  --rotate-secrets       verify live new/old credentials and miner reconnection, then restore.
+                         Requires --safety-backup; a reserved rig also needs a runner-owned recovery hold.
   --subnet               also run the moved-subnet phase (#201/#180), local mode only: bring the
                          stack DOWN then UP on a non-default network.subnet (10.84.0.0/24) — the one
                          axis a hot apply can't move — and assert the moved prefix reached .env, the
@@ -138,7 +138,6 @@ Scenarios whose prerequisites are missing (a full/pruned alt data dir, or a remo
 are reported SKIPPED — never silently dropped, never mutating the canonical synced chain.
 EOF
 }
-
 # --- Arg parsing ------------------------------------------------------------
 # shellcheck disable=SC2034  # the data-dir / remote-host globals are consumed by lib.sh:resolve_overrides
 parse_args() {
@@ -305,6 +304,10 @@ parse_args() {
             RUN_HARDENING=1
             shift
             ;;
+        --rotate-onion)
+            RUN_ROTATE_ONION=1
+            shift
+            ;;
         --rigforge)
             RUN_RIGFORGE=1
             shift
@@ -333,6 +336,10 @@ parse_args() {
             RUN_SUBNET=1
             shift
             ;;
+        --rotate-secrets)
+            RUN_ROTATE_SECRETS=1
+            shift
+            ;;
         --safety-backup)
             SAFETY_BACKUP=1
             shift
@@ -359,7 +366,6 @@ parse_args() {
             ;;
         esac
     done
-
     if [ "$IT_MODE" = "ssh" ] && [ -z "$IT_SSH_DEST" ]; then
         it_err "Provide --host <user@host> or --local. See --help."
         exit 2
@@ -389,6 +395,10 @@ parse_args() {
             it_err "--image-upgrade old and new commits must differ."
             exit 2
         }
+    fi
+    if [ "$RUN_ROTATE_SECRETS" = "1" ] && [ "$SAFETY_BACKUP" != "1" ]; then
+        it_err "--rotate-secrets requires --safety-backup — its archive is this phase's own restore anchor."
+        exit 2
     fi
     validate_live_gate_args
     # Both gates read mining as their success signal, so silencing those assertions would leave

@@ -129,3 +129,23 @@ prove_wallet_supersession() {
     assert_rc "wallet supersession proves live identity, isolated opening and retained evidence (#3133)" "$supersession_rc" "0"
     [ "$supersession_rc" -eq 0 ] || printf '%s\n' "$supersession_out" | redact
 }
+
+prove_wallet_recovery() {
+    local row="wallet recovery restores a retained private snapshot, starts the baseline and passes the payout gate (#3483)"
+    skip_appliance_checkout_probe \
+        "the wallet recovery proof tool is not shipped; strict proof runs on DIY" "$row" && return 0
+    local recovery_out recovery_rc recovery_log
+    recovery_out="$(rx 'python3 tests/integration/tools/prove-wallet-recovery.py .')"
+    recovery_rc=$?
+    assert_rc "$row" "$recovery_rc" "0"
+    if [ "$recovery_rc" -ne 0 ]; then
+        printf '%s\n' "$recovery_out" | redact
+        recovery_log="$(jq -r '.log // empty' <<<"$recovery_out" 2>/dev/null)"
+        [ -z "$recovery_log" ] || rx "tail -n 40 $(quote_arg "$recovery_log")" 2>/dev/null | redact
+        return 1
+    fi
+    wait_status_ok 240 || true
+    pithead status >/dev/null 2>&1
+    assert_rc "status OK after the recovery started the baseline (#3483)" "$?" "0"
+    assert_payout_wallet_ready confirmed Monero
+}
