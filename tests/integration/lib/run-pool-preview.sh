@@ -13,11 +13,11 @@ run_p2pool_preview() {
     else
         expected="P2Pool sidechain peers over CLEARNET"
     fi
-    preview="$(rx '
-        candidate=$(mktemp) || exit 1
-        trap '\''rm -f "$candidate"'\'' EXIT
-        jq '\''.p2pool.clearnet = ((.p2pool.clearnet // false) | not)'\'' config.json >"$candidate" || exit 1
-        PITHEAD_CONFIG_FILE="$candidate" '"$invocation"' apply --dry-run --porcelain' 2>&1)"
+    preview="$(rx "
+        candidate=\$(mktemp) || exit 1
+        trap 'rm -f \"\$candidate\"' EXIT
+        jq '.p2pool.clearnet = ((.p2pool.clearnet // false) | not)' config.json >\"\$candidate\" || exit 1
+        PITHEAD_CONFIG_FILE=\"\$candidate\" $invocation apply --dry-run --porcelain" 2>&1)"
     preview_rc=$?
     assert_rc "P2Pool route-only dry-run succeeds (#3382)" "$preview_rc" "0"
     assert_contains "P2Pool route-only preview retains the exposure row (#3382)" "$preview" "$expected"
