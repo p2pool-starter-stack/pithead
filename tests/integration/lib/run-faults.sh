@@ -211,36 +211,57 @@ fault_clock_drift() {
         "$(printf '%s' "$out" | grep -c 'NOT NTP-synchronized')" "0"
 }
 
-# ENOSPC / db-unhealthy verdict (#383): fault_db_readonly (above) proves the #131 db_healthy flag
-# under a PERMISSION failure (chmod a-w); a genuinely FULL disk is a different real failure mode
-# (ENOSPC, not EACCES) and is never forced — only a disk-headroom *warning* is checked (doctor's
-# check_disk_grouped). A 1MiB tmpfs bind-mounted OVER the dashboard data dir shadows its real
-# contents (nothing on the box's actual disk is touched; unmounting restores them) and fills solid,
-# so the dashboard's sqlite writes there hit a REAL kernel ENOSPC. Reuses the same db_healthy
-# predicate/assertions as fault_db_readonly — the trigger differs, the observable contract doesn't.
+_pred_disk_badge_is() {
+    api_state | jq -e --arg expected "$1" '
+        (.system.disk.percent | rtrimstr("%") | tonumber) as $percent |
+        (.badges | type == "array") and
+        if $expected == "bad" then
+            $percent >= 95 and any(.badges[];
+                .variant == "bad" and (.text | test("^⚠ Disk [0-9]+% full$")))
+        else
+            $percent < 85 and all(.badges[]; (.text | test("Disk [0-9]+% full$")) | not)
+        end' >/dev/null 2>&1
+}
+
+# A disposable mount shadows the real database so ENOSPC cannot fill the host disk.
 fault_disk_enospc() {
-    local ddir
+    local ddir fill_out
     ddir="$(env_on_box DASHBOARD_DATA_DIR)"
     if [ -z "$ddir" ]; then
-        it_skip_leg "ENOSPC fault" "no DASHBOARD_DATA_DIR in .env"
+        it_fail "ENOSPC fault" "no DASHBOARD_DATA_DIR in .env"
         return 0
     fi
     it_step "fault: mount a 1MiB tmpfs over the dashboard data dir and fill it (real ENOSPC, #383)…"
-    if ! rx "sudo mount -t tmpfs -o size=1m,uid=1000,gid=1000 tmpfs $(quote_arg "$ddir")" >/dev/null 2>&1; then
-        it_skip_leg "ENOSPC fault" "could not mount a tmpfs over the data dir (no root / tmpfs support?)"
+    if ! rx "sudo mount -t tmpfs -o size=1m,uid=1000,gid=1000,mode=1777 tmpfs $(quote_arg "$ddir")" >/dev/null 2>&1; then
+        it_fail "ENOSPC fault" "could not mount a tmpfs over the data dir"
         return 0
     fi
-    rx "dd if=/dev/zero of=$(quote_arg "$ddir/.itest-fill") bs=1M count=4 >/dev/null 2>&1" >/dev/null 2>&1 || true
+    fill_out=$(rx "LC_ALL=C dd if=/dev/zero of=$(quote_arg "$ddir/.itest-fill") bs=1M count=4" 2>&1) || true
+    if [[ "$fill_out" == *'No space left on device'* ]]; then
+        it_pass "tmpfs fill reaches real ENOSPC"
+    else
+        it_fail "tmpfs fill reaches real ENOSPC" "fill did not report No space left on device"
+    fi
     rx "docker compose restart dashboard" >/dev/null 2>&1
     wait_for 90 5 "dashboard to report db_healthy=false under real ENOSPC" _pred_db_healthy_is false || true
     assert_eq "db_healthy false under a real full disk (ENOSPC, #383)" \
         "$(jq_get "$(api_state)" '.db_healthy')" "false"
+    if wait_for 90 5 "dashboard critical disk badge under ENOSPC" _pred_disk_badge_is bad; then
+        it_pass "critical disk badge under real ENOSPC"
+    else
+        it_fail "critical disk badge under real ENOSPC" "no bad Disk N% full badge with at least 95% usage within 90s"
+    fi
     it_step "recover: unmount the tmpfs, restoring the real data dir…"
     rx "sudo umount $(quote_arg "$ddir")" >/dev/null 2>&1
     rx "docker compose restart dashboard" >/dev/null 2>&1
     wait_for 90 5 "dashboard to report db_healthy=true after ENOSPC recovery" _pred_db_healthy_is true || true
     assert_eq "db_healthy true after real disk restored" \
         "$(jq_get "$(api_state)" '.db_healthy')" "true"
+    if wait_for 90 5 "dashboard disk badge to clear after ENOSPC" _pred_disk_badge_is clear; then
+        it_pass "disk badge clears after real disk restored"
+    else
+        it_fail "disk badge clears after real disk restored" "disk usage did not fall below 85% with no disk badge within 90s"
+    fi
 }
 
 # P2Pool seed-node DNS with a cold peer cache (#2496). --socks5 does not stop p2pool's seed loader:

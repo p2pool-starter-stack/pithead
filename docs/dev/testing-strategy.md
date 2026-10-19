@@ -808,7 +808,12 @@ tier 3/4:
   classifies a real unsynced report correctly, then the shadow is dropped and recovery is asserted.
 - **Disk-full / ENOSPC verdict.** ✅ Now a tier-4 `--fault-injection` case: a 1MiB tmpfs bind-mounted
   over the dashboard data dir and filled solid forces a real kernel ENOSPC (distinct from
-  `fault_db_readonly`'s EACCES), and asserts `db_healthy:false`, then unmounts and asserts recovery.
+  `fault_db_readonly`'s EACCES). The leg polls `/api/state` for `db_healthy:false`, at least
+  95% disk usage and a bad `Disk N% full` badge. After unmount and dashboard restart it requires
+  `db_healthy:true`, usage below 85% and no disk badge. Missing data or a failed mount fails the leg.
+  `selftest-disk-enospc.sh` checks missing, wrong and stale badges, unreadable state and delayed
+  observations. Amber thresholds and alert edges remain unit-tested; notification delivery and
+  ext4 reserved-block accounting are outside this tmpfs leg.
 - **Tor-container-down partial start.** ✅ Now a tier-4 `--fault-injection` case (#563, TOP PRIVACY
   PRIORITY): `docker compose stop tor` and assert BOTH no clearnet egress leak appears (reuses
   `bench-verify-egress.sh`'s `/proc/net/tcp` proof, the same one the steady-state battery runs) and
