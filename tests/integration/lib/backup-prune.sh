@@ -4,15 +4,24 @@
 
 BACKUP_PRUNE_SCRIPT='
 d=$1; keep=$2; shift 2
+markers="$d/.pithead-e2e-safety"
+[ ! -L "$markers" ] || exit 1
+mkdir -m 700 -p -- "$markers" || exit 1
+current=${1:-}
+case "$current" in pithead-backup-????????-??????.tar.gz) ;; *) exit 1 ;; esac
+[ -f "$d/$current" ] && [ ! -L "$d/$current" ] || exit 1
+[ ! -L "$markers/$current" ] || exit 1
+: >"$markers/$current" || exit 1
 n=0; i=0
 for f in $(ls -1 "$d" 2>/dev/null | grep -E "^pithead-backup-[0-9]{8}-[0-9]{6}\.tar\.gz\$" | sort -r); do
     [ -f "$d/$f" ] && [ ! -L "$d/$f" ] || continue
+    [ -f "$markers/$f" ] && [ ! -L "$markers/$f" ] || continue
     i=$((i + 1))
     [ "$i" -gt "$keep" ] || continue
     skip=0
     for p in "$@"; do [ "$f" != "$p" ] || skip=1; done
     [ "$skip" -eq 0 ] || continue
-    rm -f -- "$d/$f" && n=$((n + 1))
+    rm -f -- "$d/$f" && { rm -f -- "$markers/$f"; n=$((n + 1)); }
 done
 echo "pruned $n old safety backup(s) from $d (kept the newest $keep)"
 '

@@ -504,7 +504,7 @@ backup_stack() {
         printf '%s\n' "$out" >&2
         die "pithead backup failed (exit $rc): $(printf '%s\n' "$out" | tail -n 20 | paste -sd'|' -)"
     }
-    SAFETY_ARCHIVE="$(on_bench "ls -t '$CANONICAL_DIR'/backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1")"
+    SAFETY_ARCHIVE="$(printf '%s\n' "$out" | sed -n 's/^.*Backup written to: //p' | tail -n1)"
     [ -n "$SAFETY_ARCHIVE" ] || die "Backup ran but produced no archive."
     ok "safety backup: $SAFETY_ARCHIVE"
     backup_prune on_bench "$CANONICAL_DIR/backups" "$SAFETY_ARCHIVE"

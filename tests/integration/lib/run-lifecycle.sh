@@ -107,14 +107,12 @@ run_lifecycle() {
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
-    # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
-    # restore brings them back. We change the pool, restore, and assert the pool reverted and
-    # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check
-    # the rollback net makes (#2579), exercised here on a run that does not fail.
+    # Restore must recover the original pool and every secret category (#102, #2579).
     it_step "backup → restore round-trip…"
-    if pithead backup -y --no-encrypt >/dev/null 2>&1; then
-        local arch
-        arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"; [ -z "$arch" ] || backup_prune rx backups "$arch" "${SAFETY_ARCHIVE:-}"
+    local backup_out arch
+    if backup_out="$(pithead backup -y --no-encrypt 2>&1)"; then
+        arch="$(printf '%s\n' "$backup_out" | sed -n 's/^.*Backup written to: //p' | tail -n1)"
+        [ -z "$arch" ] || backup_prune rx backups "$arch" "${SAFETY_ARCHIVE:-}"
         if [ -n "$arch" ]; then
             local fp_b backed_pool fp_after gate_marker_before gate_marker_after
             if ! fp_b="$(upgrade_secret_fingerprints)" || [ -z "$fp_b" ]; then
