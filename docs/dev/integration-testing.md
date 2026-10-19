@@ -469,7 +469,18 @@ via an `EXIT` trap):
    Bench CI stores the snapshot on the job filesystem and the wrapper durably arms an owner-only
    restoration receipt before deployment. Failed restoration preserves the receipt and private
    scratch; a lost job refuses another forward run. Standalone snapshots use `/var/tmp`.
-6. Restores the miner's original pool config and the baseline stack. Restore targets the directory
+6. Drains the detached harness, then restores the miner's original pool config and the baseline
+   stack. Before restoration, an optional `IT_E2E_PRE_RESTORE_HOOK` names one local executable
+   path, invoked directly with the saved original wrapper exit status as its sole argument.
+   It inherits the wrapper environment, including runner-owned scratch and artifact locations;
+   it is not sent over SSH or evaluated as shell text. The runner owns the callback and its
+   bounded candidate diagnostics. Missing or empty settings preserve the existing restore path.
+   Check mode and `--keep` never invoke it. Deploying runs invoke it after ordinary failure,
+   a failed readiness pregate or cancellation, once the detached harness has drained and before
+   candidate containers are removed or replaced. Execution uses `timeout` with a 90-second limit
+   and a five-second hard-kill grace. Callback output is discarded; a nonzero exit, missing or
+   non-executable file, timeout or signal emits only a fixed warning. Restoration continues and
+   the callback cannot change the saved verdict. Restore targets the directory
    the live stack actually ran from — read at preflight off the running container's
    `com.docker.compose.project.working_dir` label — which on a release box is the per-version bundle
    dir, not `CANONICAL_DIR`. That keeps the restore from handing the `pithead` project locally-built

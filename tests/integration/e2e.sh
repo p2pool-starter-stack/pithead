@@ -100,6 +100,7 @@ ENV OVERRIDES: BENCH_HOST, MINER_HOST, CANONICAL_DIR, E2E_DIR, MINER_XMRIG_CONFI
   RIG_HOST, RIG_NAME, IT_RIG_TOKEN, IT_RIG_ROLLBACK_CHANGES, IT_RIG_POOLS_PROBE, RIG_CONTROL_PORT, RIGFORGE_CONFIG, RIGFORGE_BOOTSTRAP_VERSION,
   IT_MONERO_VIEW_KEY, IT_TARI_VIEW_KEY, IT_TARI_SPEND_PUBLIC_KEY (payout-confirm row; sent to the harness on stdin)
   IT_SCRATCH_DIR (existing target scratch directory; inherited as TMPDIR by target commands and the detached harness)
+  IT_E2E_PRE_RESTORE_HOOK (local executable path; receives the original exit status after harness drain, before restore)
 
 EXAMPLES:
   tests/integration/e2e.sh claude/my-feature                 # targeted (the default), borrow the miner
@@ -193,7 +194,7 @@ CONTROL_VERDICT_BEFORE=""
 RESTORE_DIR="$CANONICAL_DIR"
 # --- Restore: fires ONCE on EXIT, Ctrl-C included. Never add INT/TERM (#1401) ----
 restore_all() {
-    local rc=${1:-$?}
+    local rc=${1:-$?} hook="${IT_E2E_PRE_RESTORE_HOOK:-}"
     [ "$RESTORED" = "1" ] && return
     RESTORED=1
     # --check deploys nothing, borrows nothing and takes no backup, so there is nothing to put
@@ -205,6 +206,12 @@ restore_all() {
         return
     fi
     drain_harness_or_refuse
+    if [ -n "$hook" ]; then
+        [[ "$hook" = /* ]] || hook="./$hook"
+        if ! { [ -f "$hook" ] && [ -x "$hook" ] && timeout --kill-after=5s 90s "$hook" "$rc"; } >/dev/null 2>&1; then
+            warn "E2E pre-restore hook failed; continuing restoration."
+        fi
+    fi
     parent_lock_checkpoint restore || {
         warn "Refusing an unreserved restore; preserve $MINER_CFG_BACKUP and repair the bench by hand."
         exit 1
