@@ -275,8 +275,12 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   concurrent guest as a remote-node coordinator (`stack`'s own #2062 helper, from the SAME image —
   no second build), re-points the already-proven rig at that guest's stratum through the "Set up
   again" menu entry, and reads the coordinator's own `/api/state` until BOTH the rig's worker and
-  the coordinator's built-in miner show `accepted > 0`. A bench with no reserved remote Monero node
-  counts it a `missing` leg skip, the same env vars the `stack` phase needs.
+  the coordinator's built-in miner show `accepted > 0`. It then cuts the coordinator's power,
+  waits for a new boot, and requires both accepted counters to advance between post-boot
+  samples (#3077). Counter resets are allowed; stale counts or only one miner advancing fail.
+  `selftest-rig-share-power-cut.sh` exercises the polling and failure paths without guests.
+  A bench with no reserved remote Monero node counts both checks as `missing` leg skips,
+  using the same env vars the `stack` phase needs.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the

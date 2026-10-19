@@ -433,7 +433,8 @@ plain reboot, a virsh power cut with unattended mining and slot commit recovery,
 leg committing on a rig. Its own share leg (#2063) then re-points the rig at a SECOND, concurrent
 guest the battery itself boots as a remote-node coordinator (the same precondition as #2062) and
 proves an accepted share both ways — the rig's own worker and the coordinator's built-in miner —
-so an accepted share at a real p2pool is no longer manual-only. What it still does not prove: MSR
+then cuts the coordinator's power, verifies a new boot, and requires both accepted counters to
+advance again (#3077). What it still does not prove: MSR
 tuning or hugepages via `doctor` (a KVM guest cannot take RandomX MSR writes), a dashboard-driven
 adopt or config push, or firmware Restore-on-AC-Power-Loss on a real rig — those still need a real
 loaner box. M14 — run-from-USB, never installed — is now the `rigmedia` KVM phase
