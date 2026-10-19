@@ -9,6 +9,8 @@ echo "== unit: the mutation lock serialises mutating windows (#1342) =="
 # re-invocation of pithead inside a hold, and counts nesting correctly.
 LKDIR="$SANDBOX/lock"
 mkdir -p "$LKDIR"
+# These fixtures exercise configured Compose mutations; configless shutdown has its own suite.
+: >"$LKDIR/.env"
 LKBIN="$SANDBOX/lockbin"
 make_stubs "$LKBIN"
 LKFILE="$LKDIR/explicit.lock"
@@ -78,6 +80,17 @@ out="$(PITHEAD_LOCK_FILE="$LKFILE" PITHEAD_LOCK_TIMEOUT=1 DOCKER_LOG="$LKLOG" PA
 rc=$?
 assert_rc "a window that completed is available to the next verb" "$rc" "0"
 assert_eq "release clears the record, so nothing can name a holder that has gone" "$(cat "$LKFILE")" ""
+
+# The dashboard runs as a different uid and opens this inode read-only. A caller's restrictive
+# umask must not turn every dashboard start/stop into a fail-closed permissions error.
+LKMODE="$LKDIR/restrictive-umask.lock"
+rm -f "$LKMODE"
+mode=$(
+    umask 077
+    PITHEAD_LOCK_FILE="$LKMODE" run_sourced "$LKDIR" mutation_lock_acquire mode
+    file_mode "$LKMODE"
+)
+assert_eq "the shared lock stays dashboard-readable under umask 077 (#2218)" "$mode" "644"
 
 # Arm the STALE-RECORD fixture the three cases below need, and note why they need it: with the
 # lock file empty, `verb=backup` exists nowhere on disk and "never reported under the previous
@@ -306,6 +319,10 @@ assert_contains "the mutation it could not serialise still runs" "$(cat "$LKLOG"
 # which is #1059 wearing a green tick.
 LKROOT="$SANDBOX/deploy"
 mkdir -p "$LKROOT/pithead-v1.0.0" "$LKROOT/pithead-v2.0.0" "$LKROOT/plain-a" "$LKROOT/plain-b"
+for lk_fixture in pithead-v1.0.0 pithead-v2.0.0 plain-a plain-b; do
+    : >"$LKROOT/$lk_fixture/.env"
+done
+unset lk_fixture
 # Hold a window in one dir; drive a mutating verb from its sibling. `env -u PITHEAD_LOCK_HELD`
 # because the concurrent actor is a SEPARATE process tree — inheriting the marker would make the
 # child skip the lock entirely and the case would pass without ever contending.
@@ -337,3 +354,24 @@ assert_eq "a versioned install keys its lock on the deploy root its siblings sha
     "$([ -f "$LKROOT/.pithead.lock" ] && echo present || echo absent)" "present"
 assert_eq "and leaves no second, uncontendable lock inside the version dir" \
     "$([ -f "$LKROOT/pithead-v1.0.0/.pithead.lock" ] && echo present || echo absent)" "absent"
+
+# compose_up passes the already-resolved host path into Compose interpolation. That is the source
+# bind-mounted into the dashboard, so an override and a versioned deploy cannot silently coordinate
+# on a different inode from the CLI hold.
+lock_compose_path_probe() {
+    (
+        cd "$LKROOT/pithead-v1.0.0" || exit 9
+        export PITHEAD_LOCK_FILE="$LKFILE"
+        # shellcheck disable=SC1090
+        source "$STACK"
+        lan_guard_watched_ports() { :; } # this probe checks the lock bind, not node publishes
+        docker() {
+            [ "$1" != ps ] || return 0 # no running node in this lock-path fixture
+            printf '%s' "$PITHEAD_LOCK_FILE"
+        }
+        compose_up -d
+    )
+}
+assert_eq "compose gives the dashboard the same resolved lock path the CLI holds (#2218)" \
+    "$(lock_compose_path_probe)" "$LKFILE"
+unset -f lock_compose_path_probe

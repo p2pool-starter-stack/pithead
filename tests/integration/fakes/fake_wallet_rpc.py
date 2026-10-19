@@ -44,6 +44,8 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path.rstrip("/") == "/control":
             if "transfers" in req:
                 self.server.state["transfers"] = req["transfers"]
+            if "address" in req:
+                self.server.state["address"] = req["address"]
             if req.get("reset_calls"):
                 self.server.state["calls"] = 0
             self._send(200, self.server.state)
@@ -52,6 +54,16 @@ class _Handler(BaseHTTPRequestHandler):
         method = req.get("method")
         if method == "get_version":
             self._send(200, {"jsonrpc": "2.0", "id": "0", "result": {"version": 65558}})
+            return
+        if method == "get_address":
+            self._send(
+                200,
+                {
+                    "jsonrpc": "2.0",
+                    "id": "0",
+                    "result": {"address": self.server.state.get("address", "")},
+                },
+            )
             return
         if method == "get_transfers":
             self.server.state["calls"] += 1
@@ -78,7 +90,12 @@ class FakeWalletRpc:
     """Context manager that runs the fake on an ephemeral port in a background thread."""
 
     def __init__(self, port=0, host="127.0.0.1", transfers=None):
-        self.state = {"transfers": list(transfers or []), "calls": 0, "last_min_height": 0}
+        self.state = {
+            "transfers": list(transfers or []),
+            "calls": 0,
+            "last_min_height": 0,
+            "address": "49iTestWalletPlaceholderXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        }
         self._srv = _Server((host, port), self.state)
         self.host, self.port = self._srv.server_address
 
@@ -104,7 +121,15 @@ def main():
     ap.add_argument("--port", type=int, default=18082)
     ap.add_argument("--host", default="0.0.0.0")  # noqa: S104 — test-only container
     args = ap.parse_args()
-    srv = _Server((args.host, args.port), {"transfers": [], "calls": 0, "last_min_height": 0})
+    srv = _Server(
+        (args.host, args.port),
+        {
+            "transfers": [],
+            "calls": 0,
+            "last_min_height": 0,
+            "address": "49iTestWalletPlaceholderXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        },
+    )
     print(f"fake-wallet-rpc listening on {args.host}:{args.port}", flush=True)
     try:
         srv.serve_forever()

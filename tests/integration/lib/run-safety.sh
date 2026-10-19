@@ -1,7 +1,10 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 safety_backup() {
-    [ "$SAFETY_BACKUP" = "1" ] || return 0
+    if [ "$SAFETY_BACKUP" != "1" ]; then
+        [ "$RUN_ROTATE_ONION" != "1" ] || arm_safety_abort_restore
+        return 0
+    fi
     [ "$RUN_IMAGE_UPGRADE" != "1" ] || UPGRADE_TELEMETRY_EPOCH="$(rx 'date +%s')"
     it_log "Taking a safety backup before destructive scenarios (pithead backup -y)…"
     # Read the archive path the CLI itself reports, not `ls -t backups/*` — a concurrent bench
@@ -34,6 +37,13 @@ safety_backup() {
     fi
     wait_status_ok 240 || {
         it_fail "stack recovered after safety backup" "pithead status did not become healthy"
+        # This gate fails before any scenario can capture its usual diagnostics. Capture before the
+        # recovery changes the state, but never let diagnostic I/O alter that recovery or its verdict.
+        local recovery_dir="$OUT_DIR/safety-backup-recovery"
+        if mkdir -p "$recovery_dir"; then
+            rx "docker compose ps" 2>&1 | redact >"$recovery_dir/compose-ps.txt" || true
+            rx "$IT_PITHEAD status" 2>&1 | redact >"$recovery_dir/health-check.txt" || true
+        fi
         safety_restore_exact && safety_cleanup || true
         return 1
     }
@@ -50,19 +60,32 @@ safety_backup() {
 # Restore the box to the exact pre-test baseline and VERIFY it landed: config byte-identical and
 # every wallet/proxy/dashboard/RPC/onion secret category unchanged. A rollback that is not
 # verified is not a rollback — on any failure the archive is retained for manual recovery.
+safety_secret_drift_categories() { # <baseline category=hash lines> <actual category=hash lines>
+    local category baseline actual drift=""
+    while IFS='=' read -r category baseline; do
+        [ -n "$category" ] || continue
+        actual="$(sed -n "s/^${category}=//p" <<<"$2")"
+        [ "$actual" = "$baseline" ] || drift="${drift:+$drift,}$category"
+    done <<<"$1"
+    printf '%s' "$drift"
+}
+
 safety_restore_exact() {
+    local restored_secrets
     pithead down >/dev/null 2>&1 || true
     SAFETY_RESTORE_FAIL_REASON=""
     if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
         SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
-    elif ! strict_pithead up >/dev/null 2>&1; then
+    elif ! baseline_up >/dev/null 2>&1; then
         SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
     elif ! wait_status_ok 240; then
         SAFETY_RESTORE_FAIL_REASON="pithead status did not become healthy within 240s"
     elif [ "$(rx 'cat config.json' 2>/dev/null)" != "$BASELINE_CONFIG" ]; then
         SAFETY_RESTORE_FAIL_REASON="restored config.json does not match the baseline byte-for-byte"
-    elif [ "$(upgrade_secret_fingerprints)" != "$BASELINE_EXACT_SECRET_FP" ]; then
-        SAFETY_RESTORE_FAIL_REASON="restored wallet/proxy/dashboard/RPC/onion secrets do not match the baseline"
+    elif ! restored_secrets="$(upgrade_secret_fingerprints)"; then
+        SAFETY_RESTORE_FAIL_REASON="restored secret categories are unreadable"
+    elif [ "$restored_secrets" != "$BASELINE_EXACT_SECRET_FP" ]; then
+        SAFETY_RESTORE_FAIL_REASON="restored secret categories do not match the baseline: $(safety_secret_drift_categories "$BASELINE_EXACT_SECRET_FP" "$restored_secrets")"
     fi
     if [ -n "$SAFETY_RESTORE_FAIL_REASON" ]; then
         SAFETY_RESTORE_FAILED=1
@@ -96,18 +119,26 @@ safety_rollback_if_failed() {
 # — e.g. the rig-key ledger's (#1379) — because `trap … EXIT` replaces rather than appends.
 safety_abort_restore() {
     local original_rc=$? restore_failed=0
+    # config.json/.env backups do not include the onion identity directory.
+    if [ "${ROTATE_ONION_RESTORE_ARMED:-0}" = "1" ] && ! rotate_onion_restore; then
+        restore_failed=1
+        it_warn "interrupted onion rotation could not restore its original identity"
+    fi
     # Defaulted: this runs as an EXIT trap, where an unbound variable would abort the trap itself
     # and lose the restore entirely. The default is the SAFE direction — "no failure recorded yet",
     # so the restore is attempted.
-    if [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
+    if [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
         it_warn "interrupted destructive run — restoring the safety backup"
         safety_restore_exact || restore_failed=1
-    elif [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then
+    elif [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then
         # A restore already failed this run. Retrying it here would repeat its opening `pithead
         # down` and fail the same way, so the run would END with the stack stopped even after the
         # in-run restore had put it back. One attempt, then hand the box to a human with the
         # archive still on it.
         it_warn "a rollback already failed this run — not retrying at exit; archive retained at ${SAFETY_ARCHIVE:-<none>}"
+    fi
+    if [ "${RUN_UNINSTALL:-0}" = 1 ] && ! rx 'rm -f .env.itest-round-trip && test ! -e .env.itest-round-trip'; then
+        restore_failed=1
     fi
     [ -z "$_SAFETY_FOREIGN_TRAP" ] || eval "$_SAFETY_FOREIGN_TRAP"
     [ "$restore_failed" = 0 ] || exit 1

@@ -41,9 +41,10 @@ prepare_directories() {
     sudo chown -R 100:101 "$TOR_DATA_DIR"
     sudo chown -R "$APP_UID":"$APP_GID" "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$DASHBOARD_DIR"
     sudo chmod -R 755 "$P2POOL_DIR/stats"
-    # World-writable so the dashboard container (its own uid) can drop the clearnet auto-transition
-    # marker (#234) while monerod/tari mount it read-only. It holds only non-secret state markers.
-    sudo chmod 777 "$CLEARNET_STATE_DIR" 2>/dev/null || chmod 777 "$CLEARNET_STATE_DIR" 2>/dev/null || true
+    # Dashboard can create a transition marker, but cannot remove the root-owned marker after the
+    # host claims it. The sticky bit keeps that one-way transition spent across apply/reboot.
+    sudo chown root:root "$CLEARNET_STATE_DIR" && sudo chmod 1777 "$CLEARNET_STATE_DIR" ||
+        error "Could not secure clearnet transition state directory."
     prepare_control_dirs
     # #261: setup reaches compose through THIS function (stack_up never runs ensure_directories),
     # so a hand-written config with stratum_tls:true at first setup must get its keypair here —

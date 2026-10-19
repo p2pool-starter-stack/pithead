@@ -1,7 +1,51 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import mining_dashboard.client.tari.tari_wallet_client as wallet_mod
+from mining_dashboard.client.tari.address import _EMOJI, address_key, decode_address
 from mining_dashboard.client.tari.tari_wallet_client import TariWalletClient
+
+
+def test_tari_base58_and_emoji_reference_addresses_have_same_keys():
+    base58 = "126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+    emoji = "🐢📟🍼🌈🍓🚓➕🎸🍆🍷🎣🍗📿😂🥊⏰🍯👾🤔👒🍾👀🍼🌊🎷📟😈🚨👙🍈🌈🛵🤢🍔🔋👙🚽🤑🎽🎓🎓🐀🐜🐴🥄🚿📷💰👶👍🎉🍄🎢🔌🐋🚰🚑💅👢🦂🐬🐋🍗🍸🎹🏀🍄"
+    assert address_key(decode_address(base58)) == address_key(decode_address(emoji))
+
+
+async def test_scan_distinguishes_empty_answer_from_unreachable():
+    client = TariWalletClient()
+    client._ensure_channel = MagicMock(return_value=MagicMock())
+    client._scan_completed_transactions = AsyncMock(return_value=[])
+    assert await client.scan() == ([], True)
+    client._scan_completed_transactions.side_effect = RuntimeError("gRPC down")
+    assert await client.scan() == ([], False)
+
+
+async def test_legacy_payout_method_keeps_a_normalization_failure_quiet():
+    client = TariWalletClient()
+    client.scan = AsyncMock(side_effect=ValueError("bad transaction"))
+    assert await client.get_confirmed_payouts() == []
+
+
+async def test_embedded_payment_id_emoji_matches_wallet_raw_keys():
+    key = bytes(range(64))
+    wallet_raw = b"\x00\x02" + key + b"\x00"
+    configured = "".join(_EMOJI[byte] for byte in b"\x00\x06" + key + b"invoice\x00")
+    assert address_key(decode_address(configured)) == b"\x00" + key
+    client = TariWalletClient()
+    client._channel = MagicMock()
+    client._stub = MagicMock()
+    client._stub.GetCompleteAddress = AsyncMock(
+        return_value=SimpleNamespace(
+            interactive_address=wallet_raw,
+            one_sided_address=b"",
+            interactive_address_base58="canonical",
+            one_sided_address_base58="",
+            interactive_address_emoji="",
+            one_sided_address_emoji="",
+        )
+    )
+    assert await client.payout_addresses(configured) == (["canonical"], True)
 
 
 def _tx(
@@ -118,6 +162,15 @@ class TestGetConfirmedPayouts:
         client, _ = _client_with_stub(_tx(tx_id=9, direction=0, status=5))
         out = await client.get_confirmed_payouts()
         assert [p["txid"] for p in out] == ["9"]
+
+    async def test_locked_confirmed_statuses_count_even_if_direction_unknown(self):
+        # Tari 6.0.0's *_CONFIRMED_LOCKED statuses (15-17) mark a mined output that has not matured.
+        # It is already a payout (#1129); status 14 (COINBASE_NOT_IN_BLOCK_CHAIN) still is not.
+        client, _ = _client_with_stub(
+            *(_tx(tx_id=s, direction=0, status=s) for s in (14, 15, 16, 17)),
+        )
+        out = await client.get_confirmed_payouts()
+        assert [p["txid"] for p in out] == ["15", "16", "17"]
 
     async def test_non_numeric_field_is_skipped_not_aborting_scan(self):
         # A field that can't be coerced to a number raises in the parse block; skip that row, keep

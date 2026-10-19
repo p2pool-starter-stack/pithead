@@ -31,12 +31,16 @@ source "$HERE/lib/rig-key-ledger.sh" || exit $? # must precede any module that m
 source "$HERE/lib/rigforge-writable-keys.sh" || exit $?
 # shellcheck source=tests/integration/lib/rigforge-upgrade.sh
 source "$HERE/lib/rigforge-upgrade.sh" || exit $?
+# shellcheck source=tests/integration/lib/fault-rules.sh
+source "$HERE/lib/fault-rules.sh" || exit $?
 # shellcheck source=tests/integration/lib/borrow-rearm.sh
 source "$HERE/lib/borrow-rearm.sh" || exit $?
 # shellcheck source=tests/integration/lib/zmq-probe.sh
 source "$HERE/lib/zmq-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 source "$HERE/lib/mergemine-probe.sh" || exit $?
+# shellcheck source=tests/integration/lib/hugepage-probe.sh
+source "$HERE/lib/hugepage-probe.sh" || exit $?
 
 # --- Defaults / globals -----------------------------------------------------
 IT_MODE="ssh"
@@ -49,18 +53,24 @@ ONLY_SCENARIO=""
 CHECK_ONLY=0
 READINESS=0
 RUN_LIFECYCLE=0
+RUN_UNINSTALL=0
 RUN_FAULTS=0
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
+RUN_ROTATE_ONION=0
 RUN_RIGFORGE=0
 RUN_RIGFORGE_CONTROL=0
 RUN_SUBNET=0
-RUN_UNINSTALL=0
+RUN_ROTATE_SECRETS=0
 RUN_IMAGE_UPGRADE=0
 IMAGE_UPGRADE_FROM_SHA=""
 IMAGE_UPGRADE_TO_SHA=""
 RUN_XVB_ROUTING=0
 RUN_ALERT_EGRESS=0
+RUN_MERGEMINE_SUBMIT=0
+RUN_TARI_STRANDED=0
+RUN_MONERO_STRANDED=0
+RUN_MERGEMINE_LOCALNET=0
 RIG_HOST=""
 RIG_NAME=""
 RIGFORGE_BOOTSTRAP_VERSION=""
@@ -78,7 +88,6 @@ REMOTE_MONERO_HOST=""
 REMOTE_MONERO_RPC_PORT=""
 REMOTE_MONERO_ZMQ_PORT=""
 REMOTE_TARI_HOST=""
-IT_APPLIANCE_CHANNEL=0
 PRUNED_DATA_DIR=""
 FULL_DATA_DIR=""
 OUT_DIR="$HERE/results"
@@ -92,19 +101,44 @@ INTEGRATION_RUN_SUITE=1
 source "$HERE/lib/run-cli.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-matrix.sh
 source "$HERE/lib/run-matrix.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-egress-claim.sh
+source "$HERE/lib/run-egress-claim.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-onion-targets.sh
+source "$HERE/lib/run-onion-targets.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-state.sh
 source "$HERE/lib/run-state.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-wallet.sh
+source "$HERE/lib/run-tari-wallet.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-lan-guard.sh
+source "$HERE/lib/run-lan-guard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-scenario.sh
 source "$HERE/lib/run-scenario.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-source-image.sh
+source "$HERE/lib/run-source-image.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-wizard-defaults.sh
+source "$HERE/lib/run-wizard-defaults.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-connection-announcements.sh
+source "$HERE/lib/run-connection-announcements.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-reset-restore.sh
+source "$HERE/lib/run-reset-restore.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-rotate-secrets.sh
+source "$HERE/lib/run-rotate-secrets.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$HERE/lib/run-faults.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-pool-sync-fault.sh
+source "$HERE/lib/run-pool-sync-fault.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tor-probe-fault.sh
+source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-egress-status.sh
+source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-rotate-onion.sh
+source "$HERE/lib/run-rotate-onion.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh" || exit $?
-# shellcheck source=tests/integration/lib/run-uninstall.sh
 source "$HERE/lib/run-uninstall.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rigforge.sh
 source "$HERE/lib/run-rigforge.sh" || exit $?
@@ -116,10 +150,22 @@ source "$HERE/lib/run-rig-reverse.sh" || exit $?
 source "$HERE/lib/live-gates.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-alert-egress.sh
 source "$HERE/lib/run-alert-egress.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-mergemine-submit.sh
+source "$HERE/lib/run-mergemine-submit.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-stranded.sh
+source "$HERE/lib/run-tari-stranded.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-monero-stranded.sh
+source "$HERE/lib/run-monero-stranded.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
+source "$HERE/lib/run-mergemine-localnet.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
     parse_args "$@"
+    if [ "$RUN_UNINSTALL" = 1 ] && [ "$SAFETY_BACKUP" != 1 ]; then
+        it_err "--uninstall requires --safety-backup."
+        return 2
+    fi
 
     # Bench coordination (#430): take the shared-rig flock ON THE TARGET before the first
     # service/API-touching action (preflight already reads the box), and hold it for the whole
@@ -142,6 +188,15 @@ main() {
         rig_lock_remote pithead "$lock_suite" "$lock_shared" "$IT_SSH_DEST" "${IT_SSH_OPTS[@]}"
     fi
 
+    if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+        rx 'test "$TMPDIR" = "$IT_SCRATCH_DIR" && test -d "$TMPDIR" && test ! -L "$TMPDIR" &&
+            f=$(mktemp "$TMPDIR/rx-scratch.XXXXXX") || exit 1
+            scratch_device=$(stat -c %d "$f") && parent_device=$(stat -c %d "$TMPDIR/..") &&
+                test -n "$scratch_device" && test "$scratch_device" = "$parent_device"
+            rc=$?; rm -f "$f" || exit 1; exit "$rc"'
+        assert_rc "runner scratch usable in target rx shell (bench-ci#965)" "$?" 0
+        [ "$IT_FAIL" -eq 0 ] || return 1
+    fi
     preflight
 
     # Non-destructive release-server fitness assessment.
@@ -164,6 +219,8 @@ main() {
         return
     fi
     [ -z "$SAFETY_ARCHIVE" ] || arm_safety_abort_restore
+    # Sampled for the whole destructive run, restore included; gated before each summary (#2685).
+    hugepages_begin
 
     # Upgrade first: old images are still running when the harness starts, and every later phase
     # then exercises the declared candidate image set. Do not mutate further after a failed
@@ -180,6 +237,7 @@ main() {
             fi
             [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
             safety_cleanup
+            hugepages_finish
             summary
             return
         fi
@@ -208,19 +266,51 @@ main() {
     elif [ "$RUN_RIGFORGE" = "1" ]; then
         run_rigforge_integration
     fi
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ] && run_lifecycle
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
+    local lifecycle_ok=1 _gated
+    LIFECYCLE_STACK_INTACT=0
+    # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
+    # name every requested one in the summary instead of dropping it silently (#2755).
+    if [ "$rig_control_ok" != 1 ]; then
+        for _gated in LIFECYCLE:lifecycle ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
+            XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
+            MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet UNINSTALL:uninstall; do
+            local _flag="RUN_${_gated%%:*}"
+            [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
+        done
+    fi
+    if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
+        run_lifecycle || lifecycle_ok=0
+    fi
+    if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
+        # Faults need the healthy stack a passing lifecycle leaves (#2501); a requested phase that
+        # does not run is named in the summary, never dropped silently (#2755).
+        # A lifecycle row that failed without disturbing the stack still leaves faults a healthy one.
+        if [ "$lifecycle_ok" = 1 ] || [ "$LIFECYCLE_STACK_INTACT" = 1 ]; then
+            run_fault_injection
+        else
+            it_skip_phase "fault-injection" "the lifecycle phase failed, so there is no healthy stack to inject faults into (#2501)"
+        fi
+    fi # fault-injection gate
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_SECRETS" = "1" ] && run_rotate_secrets
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_ONION" = "1" ] && run_rotate_onion
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ALERT_EGRESS" = "1" ] && run_alert_egress_smoke
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_SUBMIT" = "1" ] && run_mergemine_submit
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_TARI_STRANDED" = "1" ] && run_tari_stranded
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_MONERO_STRANDED" = "1" ] && run_monero_stranded
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
-    # Uninstall absolutely last: it tears the checkout down (containers, images, .env, the
-    # systemd/firewall state) before re-provisioning it from what it kept. Every other phase
-    # assumes a live, applied stack to move between scenarios.
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_UNINSTALL" = "1" ] && run_uninstall_phase
+
+    if [ "$rig_control_ok" = 1 ] && [ "$RUN_UNINSTALL" = "1" ] && ! run_uninstall_phase; then
+        safety_cleanup
+        hugepages_finish
+        summary
+        return 1
+    fi
 
     # An image gate always returns the exact old release and its quiesced writable state. Other runs
     # roll back only on failure, then put config.json back where it started. Drop the archive only
@@ -233,6 +323,7 @@ main() {
     fi
     [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
     safety_cleanup
+    hugepages_finish
     summary
 }
 

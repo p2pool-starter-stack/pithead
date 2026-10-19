@@ -42,6 +42,9 @@ make test-container ARGS="--ssh make test-integration ARGS='--host user@box --di
 make test                 # local gates; needs Docker, but no live test server
 make test-dashboard       # dashboard pytest + 80% coverage gate
 make test-stack           # pithead shell suite
+bash tests/stack/run.sh 3 # one of the shell suite's five blocks, as one CI leg runs it
+# Run one #2048 prerequisite independently, with no predecessor fragment:
+bash -uo pipefail -c 'source tests/stack/lib.sh; source tests/stack/test-spool-audit.sh; [ "$PASS" -gt 0 ] && [ "$FAIL" -eq 0 ]'
 make test-fakes           # tier-2 contract test (real clients vs fakes)
 make test-integration-selftest   # the integration harness's own logic
 make test-inventory       # write a generated (git-ignored) coverage list to docs/dev/test-inventory.md
@@ -184,3 +187,32 @@ now baked into the tests.
 - Run `--check` first. Against any real box, `run.sh --check` asserts the current live state
   non-destructively (no config change). It's the safe way to validate before the config-churning
   matrix.
+
+## Native browser regressions
+
+Install the locked Playwright runner and browsers, then run the suite:
+
+```bash
+npm ci --prefix dashboard/tests/browser --ignore-scripts
+dashboard/tests/browser/node_modules/.bin/playwright install chromium firefox webkit
+make test-browser
+```
+
+On Linux, add `--with-deps` to the install command. The separate `browser.yml` workflow
+installs these dependencies and runs Chromium, Firefox, WebKit and mobile Chromium.
+Missing dependencies fail the suite. Pure frontend tests remain dependency-free.
+See [browser testing](browser-testing.md) for focused runs, failure artifacts and coverage limits.
+The backup regression serves the production backup component over
+self-signed HTTPS, accepts the browser's certificate interstitial, and records the exact Chromium
+version in both fresh-profile and explicitly disabled-extension runs. CI repeats the backup tests
+with Google Chrome for Testing 141.0.7390.37; its executable can also be selected with
+`PITHEAD_BACKUP_BROWSER_EXECUTABLE`. It saves the kit and a
+22 MiB encrypted fixture through the GUI, compares archive length and SHA-256, decrypts with the
+saved kit, and verifies gzip/tar integrity and member bytes. A client-blocked transfer must leave
+the kit available for retry without another backup request; an interrupted transfer must report
+a failed download and permit a complete retry. These fixtures do not contact an
+appliance, prove host backup creation, or identify an operator's extension or managed policy.
+
+The configuration draft browser regression exercises valid edits and invalid JSON through
+Simple, Advanced and Backup, dirty markers, reset, failed apply and successful apply. The
+provision phase also fetches the shipped editor modules through the appliance dashboard.

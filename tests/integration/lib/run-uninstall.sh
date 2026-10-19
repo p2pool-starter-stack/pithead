@@ -1,220 +1,131 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# --uninstall phase (#2343): `uninstall` is the DIY channel's clean exit and, before this, the
-# only harness that ever ran it was tier-1's sandbox with docker/sudo stubbed out. This proves the
-# abort path changes nothing, the keep-list (config.json + the *_DATA_DIR paths named in the
-# "kept" message) survives on the REAL disk, the kernel firewall rules and the systemd control
-# units it installed are REALLY gone, then that `setup` re-provisions the checkout from what was
-# kept — no resync, the round trip the verb's own closing message promises. DESTRUCTIVE, ordered
-# last: it tears the checkout down and restores the exact pre-run safety archive itself, so it
-# does not depend on the box's normal down/apply restore. It also owns its OWN recovery on a
-# failure (see _uninstall_phase_recover) rather than leaning on the harness's generic safety
-# rollback, whose 240s wait is sized for a hot apply, not a full re-provision (#2343 job 635).
-#
-# Job 635's first real-box run measured both snapshots wrong: `fp_before` was taken while the
-# stack was still RUNNING, so a live LMDB/SQLite writer made monero/tari/dashboard look different
-# after uninstall's own shutdown — not a wipe, a shutdown checkpoint the "before" snapshot never
-# saw. Both snapshots are now taken with the stack stopped but still present (`docker compose stop`
-# before `fp_before`; uninstall's internal `down` must still remove its containers and firewall), and the aggregate
-# size+count check is replaced with per-file content hashes, so a real deletion or rewrite
-# shows up as a named path in the diff instead of a number that a shutdown checkpoint can also move.
-_uninstall_dir_listing() { # <dir> -> "<sha256> <path>" lines, sorted; a stable snapshot
-    local command
-    command="test -d $(quote_arg "$1") && test ! -L $(quote_arg "$1") && find $(quote_arg "$1") -type f -exec sha256sum {} + | sort"
-    rx "sudo -n bash -o pipefail -c $(quote_arg "$command")"
+
+_uninstall_data_dirs() {
+    rx 'set -e; source ./pithead </dev/null; for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do value=$(env_get_file .env "$key"); test -n "$value"; printf "%s\n" "$value"; done'
 }
 
-_uninstall_snapshot_dirs() { # <newline-separated dirs> -> one labeled listing block per dir
-    local dir listing
+_uninstall_host_inventory() {
+    rx 'set -e; docker container ls -aq --no-trunc; docker image ls -q --no-trunc; docker volume ls -q; units=$(systemctl list-unit-files --no-legend && systemctl list-units --all --no-legend); printf "%s\n" "$units" | awk "/pithead-(control|egress|lan)[-.]/"; sudo -n iptables-save; if command -v nft >/dev/null; then sudo -n nft list tables; fi'
+}
+
+_uninstall_capture_baseline() {
+    local dir
+    local -a kept=()
+    data_dirs="$(_uninstall_data_dirs)" && [ "$(printf '%s\n' "$data_dirs" | wc -l)" -eq 5 ] || return 1
+    while IFS= read -r dir; do kept+=("$dir"); done <<<"$data_dirs"
+    kept_snapshot="$(kept_data_snapshot_snippet "${kept[@]}" config.json backups)"
+    rx 'docker compose stop' >/dev/null 2>&1 &&
+        kept_before="$(rx "$kept_snapshot")" && [ -n "$kept_before" ] &&
+        compose_ids_before="$(rx 'docker compose ps -aq')" && [ -n "$compose_ids_before" ]
+}
+
+_uninstall_phase_recover() {
+    local cleanup_ok=1 restore_ok=1
+    rx 'rm -f .env.itest-round-trip && test ! -e .env.itest-round-trip' || cleanup_ok=0
+    safety_restore_exact || restore_ok=0
+    if [ "$cleanup_ok$restore_ok" = 11 ]; then
+        it_pass "uninstall phase restored the exact healthy baseline without outer rollback"
+        return 0
+    fi
+    it_fail "uninstall phase restored the exact healthy baseline without outer rollback" "temporary secret copy cleanup or exact recovery failed: $SAFETY_RESTORE_FAIL_REASON"
+    return 1
+}
+
+_uninstall_after_remove() {
+    local containers units firewall id left=0 missing=0 dir kept_after
+    if kept_after="$(rx "$kept_snapshot")"; then
+        if [ "$kept_after" = "$kept_before" ]; then
+            it_pass "uninstall preserves every configured data dir byte-identically"
+        else
+            it_fail "uninstall preserves every configured data dir byte-identically" "a kept file or directory changed"
+        fi
+    else
+        it_fail "uninstall preserves every configured data dir byte-identically" "kept-path snapshot failed"
+    fi
+    if containers="$(rx 'docker container ls -aq --no-trunc')"; then
+        while IFS= read -r id; do
+            [ -z "$id" ] || ! grep -Fxq "$id" <<<"$containers" || left=$((left + 1))
+        done <<<"$compose_ids_before"
+        assert_eq "compose project removed" "$left" "0"
+    else
+        it_fail "compose project removed" "Docker container inventory failed"
+    fi
+    if units="$(rx 'systemctl list-unit-files --no-legend && systemctl list-units --all --no-legend')"; then
+        assert_eq "every pithead systemd unit removed (control runner, egress, LAN guard)" \
+            "$(grep -Ec 'pithead-(control|egress|lan)[-.]' <<<"$units" || true)" "0"
+    else
+        it_fail "every pithead systemd unit removed (control runner, egress, LAN guard)" "systemd inventory failed"
+    fi
+    if firewall="$(rx 'set -e; sudo -n iptables-save; if command -v nft >/dev/null; then sudo -n nft list tables; fi')"; then
+        assert_eq "tor egress firewall rules removed from the kernel" \
+            "$(grep -Ec 'pithead-tor-egress|table inet pithead_egress' <<<"$firewall" || true)" "0"
+    else
+        it_fail "tor egress firewall rules removed from the kernel" "kernel rule inventory failed"
+    fi
+    assert_contains "the kept message names config.json" "$1" "config.json"
     while IFS= read -r dir; do
-        [ -n "$dir" ] || continue
-        listing="$(_uninstall_dir_listing "$dir")" || return
-        printf '=== %s ===\n%s\n' "$dir" "$listing"
-    done <<<"$1"
-}
-
-_uninstall_file_hash() { # <file> -> sha256, failing if the file cannot be hashed
-    local checksum
-    checksum="$(rx "sha256sum $(quote_arg "$1")")" || return
-    [[ "$checksum" =~ ^[0-9a-fA-F]{64}[[:space:]] ]] || return 1
-    printf '%s\n' "${checksum%% *}"
-}
-
-_uninstall_data_dirs() { # decoded configured data paths, one per line
-    # shellcheck disable=SC2016  # $key expands in the remote shell rx invokes.
-    rx 'set -e; source ./pithead </dev/null; for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do env_get_file .env "$key"; printf "\\n"; done'
-}
-
-# Self-heal (#2343 job 635): a failure partway through the destructive step below must not strand
-# the box for the outer safety rollback to find — this phase requires --safety-backup, so the
-# pre-run archive is right here. Puts the box back with the SAME restore this phase already
-# validates elsewhere (backup -> restore -> up), not a repeat of whichever step just failed.
-_uninstall_phase_recover() { # <IT_FAIL count before the destructive step>
-    [ "$IT_FAIL" -gt "$1" ] || return 0
-    it_warn "uninstall phase failed — restoring the pre-run safety archive and bringing the stack back…"
-    pithead down >/dev/null 2>&1
-    pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1
-    pithead up >/dev/null 2>&1
-    wait_status_ok 240 || it_warn "uninstall phase recovery did not report healthy — the outer safety rollback will retry"
+        [[ "$1" == *"$dir"* ]] || missing=$((missing + 1))
+    done <<<"$data_dirs"
+    assert_eq "the kept message names every configured data dir" "$missing" "0"
+    [ "$IT_FAIL" -eq "$phase_fails_before" ] || return 1
+    [ "${UNINSTALL_INJECT_RECOVERY:-0}" != 1 ] || return 99
 }
 
 run_uninstall_phase() {
-    # shellcheck disable=SC2034  # shared through the assembled runner scope
+    local phase_fails_before="$IT_FAIL" data_dirs compose_ids_before kept_snapshot kept_before before after snapshot abort_out abort_rc rc before_host after_host after_kept
+    # shellcheck disable=SC2034
     IT_CURRENT_SCENARIO="uninstall"
-    echo ""
-    it_log "── uninstall phase (#2343) ─────────────────────────"
-
-    it_step "abort path (wrong confirm word)…"
-    local abort_out abort_rc
+    it_log "── uninstall phase ─────────────────────────"
+    snapshot="$(kept_data_snapshot_snippet .env Caddyfile)"
+    if ! _uninstall_capture_baseline ||
+        ! before="$(rx "$snapshot")" || [ -z "$before" ] ||
+        ! before_host="$(_uninstall_host_inventory)"; then
+        it_fail "abort baseline captured before uninstall" "quiescing, file snapshot, or host inventory failed"
+        _uninstall_phase_recover || return 1
+        return 1
+    fi
     abort_out="$(rx "printf 'nope\n' | $IT_PITHEAD uninstall" 2>&1)"
     abort_rc=$?
     assert_rc "aborted uninstall exits 1" "$abort_rc" "1"
     assert_contains "aborted uninstall reports nothing changed" "$abort_out" "Aborted"
     assert_eq ".env still present after the abort" "$(rx 'test -f .env && echo yes || echo no')" "yes"
-
-    # The keep-list, read the same way the verb reads it: from .env BEFORE it is removed. Reuse
-    # env_get_file so a dotenv-rendered path with spaces, $, quotes, or escapes round-trips.
-    local dirs raw_dirs dir dir_count snapshot_paths fp_before fp_after config_before config_before_fp setup_secret_fp first_party_images pulled_images img compose_ids_before
-    if ! raw_dirs="$(_uninstall_data_dirs)"; then
-        it_fail "configured data directories are readable before uninstall" "could not read .env with env_get_file"
-        return
-    fi
-    dir_count=0
-    while IFS= read -r dir; do
-        if [ -z "$dir" ]; then
-            it_fail "configured data directories are readable before uninstall" "a configured data directory is empty"
-            return
-        fi
-        dir_count=$((dir_count + 1))
-    done <<<"$raw_dirs"
-    if [ "$dir_count" -ne 5 ]; then
-        it_fail "configured data directories are readable before uninstall" "expected five configured data directories, got $dir_count"
-        return
-    fi
-    dirs="$(printf '%s\n' "$raw_dirs" | sort -u)"
-    # Quiesce BEFORE the "before" snapshot (see the file header): both snapshots below are of a
-    # stopped stack, so a clean-shutdown checkpoint (dashboard's sqlite -wal/-shm, tor's lock
-    # file) already happened before either is taken, and can't be mistaken for uninstall wiping it.
-    if ! rx 'docker compose stop >/dev/null'; then
-        it_fail "stack quiesced before uninstall snapshot" "docker compose stop failed"
-        return
-    fi
-    snapshot_paths="${dirs}"$'\nbackups'
-    if ! fp_before="$(_uninstall_snapshot_dirs "$snapshot_paths")"; then
-        it_fail "kept data and backups are readable before uninstall" "a configured path is missing, symlinked, or unreadable"
-        return
-    fi
-    config_before="$(rx 'cat config.json' 2>/dev/null)"
-    if ! config_before_fp="$(_uninstall_file_hash config.json)"; then
-        it_fail "config.json is readable before uninstall" "sha256sum config.json failed"
-        return
-    fi
-    if ! img="$(rx 'docker compose config --images')"; then
-        it_fail "compose image inventory captured" "docker compose config --images failed"
-        return
-    fi
-    if ! compose_ids_before="$(rx 'docker compose ps -aq')" || [ -z "$compose_ids_before" ]; then
-        it_fail "compose container inventory captured" "docker compose ps -aq returned no containers"
-        return
-    fi
-    while IFS= read -r dir; do
-        case "$dir" in
-        "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-"*) first_party_images+="${dir}"$'\n' ;;
-        *) [ -n "$dir" ] && pulled_images+="${dir}"$'\n' ;;
-        esac
-    done <<<"$img"
-
-    local fails_before="$IT_FAIL"
-    it_step "pithead uninstall -y…"
-    if ! pithead uninstall -y >"$OUT_DIR/uninstall.log" 2>&1; then
-        it_fail "uninstall succeeded" "see $OUT_DIR/uninstall.log"
-        _uninstall_phase_recover "$fails_before"
-        return
-    fi
-
-    local compose_ids compose_count control_units firewall_rules
-    if ! compose_ids="$(rx 'docker container ls -aq --no-trunc')"; then
-        it_fail "compose project removed" "docker container ls failed"
-    else
-        compose_count=0
-        while IFS= read -r dir; do
-            [ -n "$dir" ] || continue
-            printf '%s\n' "$compose_ids" | grep -Fxq "$dir" && compose_count=$((compose_count + 1))
-        done <<<"$compose_ids_before"
-        assert_eq "compose project removed" "$compose_count" "0"
-    fi
-    if ! control_units="$(rx 'systemctl list-unit-files --no-legend && systemctl list-units --all --no-legend')"; then
-        it_fail "control-runner systemd units removed" "systemctl inspection failed"
-    else
-        assert_eq "control-runner systemd units removed" "$(printf '%s\n' "$control_units" | grep -c pithead-control || true)" "0"
-    fi
-    if ! firewall_rules="$(rx 'if command -v nft >/dev/null; then sudo nft list tables && sudo iptables-save; else sudo iptables-save; fi')"; then
-        it_fail "tor egress firewall rules removed from the kernel" "firewall inspection failed"
-    else
-        assert_eq "tor egress firewall rules removed from the kernel" "$(printf '%s\n' "$firewall_rules" | grep -Ec 'pithead-tor-egress|table inet pithead_egress' || true)" "0"
-    fi
-    while IFS= read -r img; do
-        [ -n "$img" ] || continue
-        if rx "docker image inspect $(quote_arg "$img") >/dev/null 2>&1"; then
-            it_fail "pithead-built image removed" "$img remains after uninstall"
+    if after="$(rx "$snapshot")" && after_host="$(_uninstall_host_inventory)" &&
+        after_kept="$(rx "$kept_snapshot")"; then
+        if [ "$after" = "$before" ] && [ "$after_host" = "$before_host" ] && [ "$after_kept" = "$kept_before" ]; then
+            it_pass "aborted uninstall preserves every file and host resource"
         else
-            it_pass "pithead-built image removed"
+            it_fail "aborted uninstall preserves every file and host resource" "the stopped checkout changed"
         fi
-    done <<<"$first_party_images"
-    while IFS= read -r img; do
-        [ -n "$img" ] || continue
-        if rx "docker image inspect $(quote_arg "$img") >/dev/null 2>&1"; then
-            it_pass "pulled third-party image kept"
-        else
-            it_fail "pulled third-party image kept" "$img is absent after uninstall"
-        fi
-    done <<<"$pulled_images"
-    assert_eq ".env removed" "$(rx 'test -f .env && echo yes || echo no')" "no"
-    if ! fp_after="$(_uninstall_file_hash config.json)"; then
-        it_fail "config.json kept, byte-identical" "sha256sum config.json failed after uninstall"
     else
-        assert_eq "config.json kept, byte-identical" "$fp_after" "$config_before_fp"
+        it_fail "aborted uninstall preserves every file and host resource" "post-abort snapshot failed"
+    fi
+    if [ "$IT_FAIL" -ne "$phase_fails_before" ]; then
+        _uninstall_phase_recover || return 1
+        return 1
     fi
 
-    local uninstall_log
-    uninstall_log="$(cat "$OUT_DIR/uninstall.log" 2>/dev/null)"
-    assert_contains "the kept message names config.json" "$uninstall_log" "config.json"
-    assert_contains "the kept message names backups/" "$uninstall_log" "backups/"
-    while IFS= read -r dir; do
-        [ -n "$dir" ] || continue
-        assert_contains "the kept message names $dir" "$uninstall_log" "$dir"
-    done <<<"$dirs"
-    if ! fp_after="$(_uninstall_snapshot_dirs "$snapshot_paths")"; then
-        it_fail "kept data and backups are readable after uninstall" "a configured path is missing, symlinked, or unreadable"
-    elif [ "$fp_after" = "$fp_before" ]; then
-        it_pass "kept data dirs unchanged on disk (per-file content hashes, stack quiesced both sides)"
-    else
-        it_fail "kept data dirs unchanged on disk (per-file content hashes, stack quiesced both sides)" \
-            "$(diff <(printf '%s\n' "$fp_before") <(printf '%s\n' "$fp_after") | head -40)"
+    # Interrupt after real removal to prove recovery without the runner's outer restore.
+    local UNINSTALL_INJECT_RECOVERY=1
+    run_uninstall_round_trip
+    rc=$?
+    if [ "$rc" -ne 99 ] || [ "$IT_FAIL" -ne "$phase_fails_before" ]; then
+        it_fail "uninstall recovery fault reached the uninstalled checkout" "expected injected return 99, got $rc"
+        _uninstall_phase_recover || return 1
+        return 1
     fi
-
-    it_step "re-provisioning from the kept config.json (pithead setup)…"
-    if ! pithead setup >"$OUT_DIR/uninstall-setup.log" 2>&1; then
-        it_fail "setup re-provisioned the uninstalled checkout" "see $OUT_DIR/uninstall-setup.log"
-        _uninstall_phase_recover "$fails_before"
-        return
+    it_pass "uninstall recovery fault reached the uninstalled checkout"
+    _uninstall_phase_recover || return 1
+    _SAFETY_RESTORE_ARMED=1
+    UNINSTALL_INJECT_RECOVERY=0
+    if ! _uninstall_capture_baseline; then
+        it_fail "recovered uninstall baseline is readable" "data or container inventory failed"
+        _uninstall_phase_recover || return 1
+        return 1
     fi
-    wait_status_ok 240 || it_fail "stack healthy after re-provisioning" "pithead status did not become OK"
-    if ! fp_after="$(_uninstall_file_hash config.json)"; then
-        it_fail "re-provisioned config matches the kept one" "sha256sum config.json failed after setup"
-    else
-        assert_eq "re-provisioned config matches the kept one" "$fp_after" "$config_before_fp"
+    if ! run_uninstall_round_trip || [ "$IT_FAIL" -ne "$phase_fails_before" ]; then
+        _uninstall_phase_recover || return 1
+        return 1
     fi
-    setup_secret_fp="$(secret_fingerprint)"
-    if rx "grep -qE '^PROXY_AUTH_TOKEN=.+$' .env && grep -qE '^[A-Z]+_ONION_ADDRESS=.+$' .env"; then
-        it_pass "re-provisioned proxy and onion state populated"
-    else
-        it_fail "re-provisioned proxy and onion state populated" "required proxy or onion state is missing"
-    fi
-    assert_running_state "uninstall" "$config_before" "$setup_secret_fp"
-    if [ "$IT_FAIL" -eq "$fails_before" ] && [ "$KEEP_STATE" != "1" ]; then
-        it_step "restoring the exact pre-uninstall baseline…"
-        safety_restore_exact || it_fail "uninstall phase restored the exact pre-run baseline" "$SAFETY_RESTORE_FAIL_REASON"
-    fi
-    _uninstall_phase_recover "$fails_before"
+    return 0
 }

@@ -32,6 +32,7 @@ function readyView(cfg = CFG, coreKeys = CORE_KEYS) {
     cfg,
     sections: buildSections(cfg),
     coreKeys,
+    defaultKeys: cfg._default_keys || [],
     candidate,
     pristine: text,
     editText: text,
@@ -186,7 +187,7 @@ test("a field edit lands in the candidate, typed, and rewrites the pane (#785)",
   inst.onFieldEdit(pool, "main");
   const staged = inst.buildProposed();
   assert.equal(staged.config.p2pool.pool, "main");
-  assert.equal(staged.config.monero.wallet_address, "4AAAA"); // untouched fields survive
+  assert.equal(staged.config.monero.mode, "local"); // explicit live values survive the full candidate
   assert.match(inst.state.editText, /"pool": "main"/); // the pane shows the same truth
 });
 
@@ -215,13 +216,13 @@ test("a pane mid-typo keeps the last good candidate and blocks Save with the rea
 
 // --- Masked-secret sentinel semantics survive the candidate model (#508/#440) -----------------
 
-test("an untouched masked secret keeps its sentinel in the staged config", () => {
+test("an untouched masked secret reaches the host as its keep sentinel", () => {
   const inst = readyView();
-  assert.match(inst.state.editText, /__secret__/); // visible in the pane, as a marker
+  assert.match(inst.state.editText, /__secret__/); // still visible in the pane, as a marker
   assert.deepEqual(inst.buildProposed().config.dashboard.auth.password, { __secret__: true });
 });
 
-test("blanking a secret field means KEEP — the sentinel returns, never an empty string", () => {
+test("blanking a secret field means KEEP — a typed-then-reblanked secret restores its sentinel", () => {
   const inst = readyView();
   const pw = { key: "dashboard.auth.password", type: "secret", value: "" };
   inst.onFieldEdit(pw, "hunter2hunter2");
@@ -264,4 +265,24 @@ test("the fill button is a no-op when the file picker is dismissed with no file"
   const before = inst.state.editText;
   inst.onFilePick({ target: { files: [] } });
   assert.equal(inst.state.editText, before);
+});
+
+
+test("payout form asks only for Tari's view key; the spend key is derived from its address", () => {
+  const out = renderToString(readyView({ tari: { view_key: "", spend_public_key: "" } }, []).render());
+  assert.match(out, /view_key/);
+  assert.doesNotMatch(out, /config-field-name">[^<]*spend_public_key/);
+});
+
+
+test("changing Tari's address clears an inherited spend key but preserves a JSON override", () => {
+  const cfg = { tari: { wallet_address: "old", spend_public_key: "old-key", view_key: "" } };
+  const field = { key: "tari.wallet_address", type: "string" };
+  const inst = readyView(cfg, []);
+  inst.onFieldEdit(field, "new");
+  assert.equal(inst.state.candidate.tari.spend_public_key, "");
+  const explicit = readyView(cfg, []);
+  explicit.state.candidate.tari.spend_public_key = "new-explicit-key";
+  explicit.onFieldEdit(field, "new");
+  assert.equal(explicit.state.candidate.tari.spend_public_key, "new-explicit-key");
 });

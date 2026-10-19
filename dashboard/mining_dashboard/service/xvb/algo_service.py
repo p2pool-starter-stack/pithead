@@ -394,8 +394,8 @@ class AlgoService:
         self, held_decision, current_hr, stable_hr, p2pool_stats, p2p_stats, xvb_stats, shares
     ):
         """
-        Whether a p2pool dwell should end early. Re-runs the decision WITHOUT
-        advancing the calibration loop and ends the dwell only when it *changed*
+        With XvB enabled, re-runs the decision WITHOUT advancing the calibration
+        loop and ends the dwell only when it *changed*
         from the decision the dwell was started under, or when a fresh 1h average
         has slipped below the tier (catch-up — undershoot loses the tier, which is
         worse than waste).
@@ -404,12 +404,12 @@ class AlgoService:
         "would we donate at all?" (``decision in ("XVB", "SPLIT")``) — is a
         tautology during a SPLIT remainder: the fraction is static while
         ``advance=False``, so the recomputed decision is SPLIT by construction and
-        every remainder collapsed to a single check tick. The actuated donation
-        duty became slice/(slice + tick) instead of slice/cycle — an order of
-        magnitude above the commanded fraction at small fractions — and the
-        controller could not unwind it (its command was already near 0). That is
-        the sustained credited overshoot of #423.
+        every remainder collapsed to a single check tick, causing #423's sustained
+        credited overshoot: slice/(slice + tick) instead of slice/cycle.
         """
+        if not ENABLE_XVB:
+            return False
+
         decision, _ = self.get_decision(
             current_hr,
             stable_hr,

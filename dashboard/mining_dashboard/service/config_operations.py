@@ -1,15 +1,29 @@
 """Pure classification helpers for the day-two configuration surface."""
 
-NEVER_APPROVE_PATHS = frozenset(
-    {
-        "dashboard.auth.password",
-        "telegram.events.wallet_changed",
-        "telegram.events.clearnet_exposed",
-    }
-)
+import os
+import re
+
+from .health.update_checker import parse_semver
+
+
+def config_version_metadata(cfg, host):
+    """Compare the live stamp against the image VERSION, without inventing an absent stamp."""
+    stamp = host.get("config_version")
+    if stamp is None:
+        cfg.pop("config_version", None)
+    current = parse_semver(os.environ.get("PITHEAD_VERSION", ""))
+    stamped = (
+        parse_semver(stamp)
+        if isinstance(stamp, str) and re.fullmatch(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}", stamp)
+        else None
+    )
+    cfg["_config_version_newer"] = bool(current and stamped and stamped > current)
+    return cfg
+
 
 EDITOR_METADATA = frozenset(
     {
+        "_config_version_newer",
         "_core_keys",
         "_editable_keys",
         "_confirm_keys",
@@ -24,24 +38,21 @@ def _is_secret_sentinel(value):
     return isinstance(value, dict) and value.get("__secret__") is True
 
 
-def leaf_paths(node, prefix=()):
-    """Yield scalar schema paths; arrays use their dedicated/JSON surfaces."""
+def leaf_paths(node, prefix=(), include_arrays=False):
+    """Yield scalar schema paths; arrays use their dedicated/JSON surfaces unless asked for."""
     for key, value in node.items():
-        if key.startswith("_"):
+        if key.startswith("_") or (not prefix and key == "config_version"):
             continue
         path = (*prefix, key)
         if isinstance(value, dict) and not _is_secret_sentinel(value):
-            yield from leaf_paths(value, path)
-        elif not isinstance(value, list):
+            yield from leaf_paths(value, path, include_arrays)
+        elif include_arrays or not isinstance(value, list):
             yield ".".join(path)
 
 
-# Env-var -> config-path map for the APPROVAL-gated tier (2026-09-13 perimeter audit), mirroring pithead's
-# CONTROL_DASHBOARD_APPROVAL_KEYS exactly as control_service's two maps mirror their allowlists
-# (drift-guarded in tests/service/test_env_key_perimeter.py). This is the NARROWEST tier and the
-# one to be most suspicious of: #2076 removed the second identity it rested on, so its envelope is
-# a typed confirmation the dashboard container can write itself. pithead's own list carries the
-# full argument for what may join it -- read that before adding anything here.
+# Env-var -> config-path map for the legacy approval-envelope tier, mirrored from pithead and
+# drift-guarded in tests/service/test_env_key_perimeter.py. The envelope is confirmation metadata
+# the dashboard can write itself, not a second identity.
 APPROVAL_ENV_KEY_PATHS = {
     "TELEGRAM_ENABLED": ("telegram.enabled",),
     "TELEGRAM_COMMANDS_ENABLED": ("telegram.commands.enabled",),
@@ -53,16 +64,7 @@ APPROVAL_ONLY_PATHS = ("dashboard.energy.price_feed",)
 
 
 def approval_paths(reference, cfg, free_paths, confirm_paths):
-    """Return the NAMED approval-tier leaves that exist in the schema and are not already free.
-
-    The tier used to be "every schema leaf that is not free, not confirm and not
-    physical-presence" (#1978), so that every reference leaf had some route. Once #2076 removed the
-    second identity that tier rested on, that rule meant the dashboard offered the whole security
-    perimeter -- wallets, view keys, node and stratum credentials, the Tor egress firewall, onion
-    exposure, the control channel's own switch -- behind an envelope the container writes itself.
-    The tier is a short named list now (2026-09-13 perimeter audit); a leaf in none of the three tiers is host-only and
-    renders disabled, which is what SECURITY.md and docs/appliance.md promise operators.
-    """
+    """Return named approval-envelope leaves that exist and are not already classified."""
     free = set(free_paths)
     confirm = set(confirm_paths)
     named = {p for t in APPROVAL_ENV_KEY_PATHS.values() for p in t}.union(APPROVAL_ONLY_PATHS)
@@ -72,15 +74,28 @@ def approval_paths(reference, cfg, free_paths, confirm_paths):
         if path in named
         and path not in free
         and path not in confirm
-        and path not in NEVER_APPROVE_PATHS
+        # #2367: no field is refused from the panel; only retired `ssh.*` stays out (release
+        # images reject it), matching CONTROL_DASHBOARD_NEVER_PATHS on the host.
         and not path.startswith("ssh.")
     )
 
 
+def confirmed_paths(reference, free_paths, confirm_paths, approval_paths):
+    """Route every remaining schema leaf through typed confirmation (#1959)."""
+    classified = set(free_paths) | set(confirm_paths) | set(approval_paths)
+    return sorted(
+        path
+        for path in leaf_paths(reference)
+        if path not in classified and not path.startswith("ssh.")
+    )
+
+
 def missing_default_paths(reference, host, getter):
-    """Return schema leaves omitted by the sparse host config."""
+    """Return schema leaves, array defaults included, omitted by the sparse host config (#3355)."""
     return [
-        dotted for dotted in leaf_paths(reference) if not getter(host, tuple(dotted.split(".")))[0]
+        dotted
+        for dotted in leaf_paths(reference, include_arrays=True)
+        if not getter(host, tuple(dotted.split(".")))[0]
     ]
 
 

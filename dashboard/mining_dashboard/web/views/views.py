@@ -28,11 +28,13 @@ from mining_dashboard.helper.utils import (
 )
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics
-from mining_dashboard.service.network.egress import egress_posture_from_config, topology_from_config
+from mining_dashboard.service.network.egress import egress_posture_from_config
+from mining_dashboard.service.network.topology import topology_from_config
 from mining_dashboard.version import resolve_version
 
 # The chart/window hub lives in web/views/charts.py (#1105). views.py stays the facade: the last two
 # are re-exported unused so `server.py`'s existing `from ...web.views import` keeps resolving.
+from mining_dashboard.web.miner_connection import stratum_state
 from mining_dashboard.web.views.charts import (
     _filter_events,  # noqa: F401 — re-export for worker_detail.py
     build_chart,
@@ -43,10 +45,6 @@ from mining_dashboard.web.views.charts import (
 # The header's address block lives in web/views/header.py (#1853): the hostname/IP line and the
 # .onion URL under it are ways IN to the machine, not readings off it.
 from mining_dashboard.web.views.header import dashboard_onion, host_display_addr
-
-# The host/rig/node status sections live in web/views/infra_views.py (#1105). views.py stays the
-# facade: build_state assembles these sections, build_pool_network uses the address elider, and
-# the last two are re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
 from mining_dashboard.web.views.infra_views import (
     _rigforge_display,  # noqa: F401 — re-export for worker_detail.py
     _shorten,
@@ -58,6 +56,11 @@ from mining_dashboard.web.views.infra_views import (
     build_workers,
     rigforge_update_for,  # noqa: F401 — re-export for worker_detail.py
 )
+
+# The host/rig/node status sections live in web/views/infra_views.py (#1105). views.py stays the
+# facade: build_state assembles these sections, build_pool_network uses the address elider, and
+# the last two are re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
+from mining_dashboard.web.views.monero_view import build_monero
 
 # The time-series sections live in web/views/series_views.py (#1105). views.py stays the facade:
 # build_state assembles these sections and reads the palette and the window reject rate, and
@@ -163,6 +166,7 @@ def build_pool_network(data, metrics):
         },
         "pool": {
             "type": metrics.pool_type,
+            "syncing": local_pool.get("syncing", False),
             "sidechain_height": local_pool.get("sidechain_height", 0),
             "diff": f"{metrics.pool_difficulty / 1e6:.2f} M",
             "hr": format_hashrate(metrics.pool_hashrate),
@@ -182,18 +186,9 @@ def build_pool_network(data, metrics):
             "hash": _shorten(str(network.get("hash", "N/A")), threshold=20),
             "ts": format_time_abs(network.get("timestamp", 0)),
         },
-        "monero": {
-            "mode": metrics.monero_mode,
-            "db_size": _monero_db_size(data.get("monero_sync", {})),
-        },
+        "monero": build_monero(data, metrics),
         "shares_window": {"count": metrics.shares_in_window, "ok": metrics.shares_in_window > 0},
     }
-
-
-def _monero_db_size(monero_sync):
-    """Human-readable on-disk Monero DB size (Issue #32); em-dash when unknown."""
-    db_bytes = monero_sync.get("db_size", 0) or 0
-    return f"{db_bytes / 1e9:.1f} GB" if db_bytes > 0 else "—"
 
 
 # --------------------------------------------------------------------------------------
@@ -311,9 +306,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     earnings["xvb_day"] = xvb_tempered_day(earnings["xvb_day"], xvb_realized)
 
     egress = egress_posture_from_config()  # per-component egress route + privacy roll-up (#170)
-    topology = (
-        topology_from_config()
-    )  # full stack wiring for the topology panel (#170); shares summary
+    topology = topology_from_config()  # full stack wiring for the panel (#170); shares summary
     badges = build_badges(
         data, metrics, mode_tok, db_healthy, wallet_change=recent_wallet_change(state_mgr)
     )
@@ -330,8 +323,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         # line. None whenever the onion is off or not yet provisioned, so the header renders
         # nothing rather than an empty row. Never carries client-auth key material.
         "dashboard_onion": dashboard_onion(),
-        # The operator-facing stratum port (#172) — feeds the "point your rigs at host:PORT" hint.
-        "stratum_port": config.STRATUM_PORT,
+        **stratum_state(),
         "version": resolve_version(),
         # {available, latest, url} | None — new-release badge (#224), self-consistency-guarded:
         # never advertise the version already running (#664).

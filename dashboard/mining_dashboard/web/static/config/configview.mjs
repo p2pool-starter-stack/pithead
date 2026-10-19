@@ -4,38 +4,28 @@
 // confirm modal (destructive changes need a typed APPLY) → POST /api/control/commit → result.
 // The view only ever ASKS — every request rides the X-Pithead-Control header (CSRF guard) and
 // the host decides. When the channel is off the routes 404 and this view explains how to enable.
-//
-// ONE editing surface, the wizard's pattern (#785): the form sections on top and the candidate
-// config beneath as a collapsed JSON pane — both live, both views of a single `candidate`
-// object. Editing a field rewrites the candidate (typed by the field, via configsync's shared
-// coerceForType) and the pane re-renders; editing the pane replaces it and the fields refill.
-//
-// The form pins a `core` group — the wizard's own shortlist, `_core_keys` on the fetched config,
-// sourced from config.core-keys.json so the two never drift apart — above LOGICAL sections
-// (#611, buildSections) an operator recognizes, each a native <details> collapsed by default;
-// noisy clusters nest one deeper (#612, nestSection). A field the control gate won't commit —
-// `_editable_keys` (#613, markEditable) — renders disabled with no listener wired, so the FORM
-// can never change it; the pane can (it always could, as the old JSON mode), and the
-// closed-schema gate on the host remains the only validation authority. Secrets arrive masked as
-// sentinels, render blank with a keep-hint, and an untouched or re-blanked secret keeps its
-// sentinel — "blank means keep" survives the model change.
+// The form and JSON pane edit one candidate. Core keys come from config.core-keys.json;
+// other fields are grouped by logical section. The host's closed-schema gate validates both.
+// Disabled form fields have no listener. Masked secrets stay unchanged when left blank.
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
+import { Field, validNumber } from "./configfield.mjs";
 import {
   buildSections,
   editableCandidate,
+  explicitCandidate,
   isSecretSentinel,
   jsonSyntaxError,
   markEditable,
   nestSection,
   parseConfigJson,
   regroupCore,
-  SECRET_HINT,
 } from "./configlogic.mjs";
 import { PreviewModal } from "./configpreview.mjs";
-import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
-import { controlCommitResult } from "./controlclient.mjs";
+import { coerceForType, focusSection, pathGet, pathSet } from "./configsync.mjs";
+import { ConfigVersion } from "./configversion.mjs";
+import { controlCommitResult, requirePreviewResponse } from "./controlclient.mjs";
 
 export { editableCandidate, PreviewModal };
 
@@ -82,55 +72,6 @@ export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
   );
 }
 
-const HOST_ONLY_TITLE = "Host-only — edit config.json and run ./pithead apply";
-// #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review modal makes you type APPLY. The tooltip sets that expectation up front.
-const CONFIRM_TITLE = "Editable — this change is disruptive; you'll type APPLY to confirm at Save";
-const APPROVAL_TITLE = "Editable — this sensitive change is recorded under your signed-in identity";
-// `full` (#529): the pinned Core card mixes fields from several sections, so its rows need the
-// FULL dotted key ("monero.wallet_address") to stay unambiguous. A natural section keeps the
-// shorter relative label ONLY while all its fields share one top-level key (its heading then says
-// the rest); a logical section that mixes top-level keys (#611 — Wallets & payout spans monero.*
-// AND tari.*) gets full keys too, or monero.view_key and tari.view_key would both render as a
-// bare "view_key" (and System / advanced would show four identical "data_dir" rows).
-//
-// `field.editable` (#613): a physical-presence-only field renders disabled, with no
-// onChange/onInput wired, so it cannot enter the form's staged edits. Preact skips an event prop
-// entirely when it is `undefined`, so passing `undefined` rather than a no-op is what actually removes the listener.
-const Field = ({ field, value, onEdit, full }) => {
-  const editable = field.editable !== false;
-  const label = full ? field.key : field.path.slice(1).join(".") || field.path[0];
-  const title = !editable
-    ? HOST_ONLY_TITLE
-    : field.confirm
-      ? CONFIRM_TITLE
-      : field.approval
-        ? APPROVAL_TITLE
-        : undefined;
-  const change = editable ? (e) => onEdit(field, e.target.value) : undefined;
-  let input;
-  if (field.type === "boolean") {
-    input = html`<select value=${String(value)} disabled=${!editable} onChange=${change}>
-        <option value="true">true</option>
-        <option value="false">false</option>
-    </select>`;
-  } else if (field.type === "select") {
-    input = html`<select value=${value} disabled=${!editable} onChange=${change}>
-        ${field.options.map((o) => html`<option value=${o}>${o}</option>`)}
-    </select>`;
-  } else if (field.type === "secret") {
-    input = html`<input type="password" value=${value} placeholder=${SECRET_HINT}
-        disabled=${!editable} onInput=${change} />`;
-  } else {
-    input = html`<input type=${field.type === "number" ? "number" : "text"} value=${value}
-        disabled=${!editable} onInput=${change} />`;
-  }
-  return html`<label class="config-field" title=${title}>
-      <span class="config-field-name">${label}${field.defaulted ? " (default)" : ""}</span>
-      ${input}
-      ${field.warning ? html`<span class="config-field-warning">⚠ ${field.warning}</span>` : null}
-  </label>`;
-};
-
 export class ConfigView extends Component {
   constructor(props) {
     super(props);
@@ -144,6 +85,7 @@ export class ConfigView extends Component {
       approvalKeys: [],
       defaultKeys: [],
       lastApply: null,
+      drafts: {}, // numeric fields' in-progress text, by config key (#3350)
       candidate: null, // the ONE config both the fields and the JSON pane edit (#785)
       pristine: "", // candidate's serialization at load — dirtiness is a comparison, not a flag
       editText: "",
@@ -159,14 +101,15 @@ export class ConfigView extends Component {
   componentDidMount() {
     this.load();
   }
+  componentDidUpdate(_previousProps, { editText, pristine }) {
+    const dirty = this.state.editText !== this.state.pristine;
+    if (dirty !== (editText !== pristine)) this.props.onDirtyChange?.(dirty);
+  }
   async load() {
     try {
       const res = await fetch("/api/config");
-      if (res.status === 404) {
-        this.setState({ phase: "disabled" });
-        return;
-      }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (res.status === 404) return this.setState({ phase: "disabled" });
+      await requirePreviewResponse(res);
       const cfg = await res.json();
       const candidate = editableCandidate(cfg);
       const text = JSON.stringify(candidate, null, 2);
@@ -181,9 +124,11 @@ export class ConfigView extends Component {
         defaultKeys: cfg._default_keys || [],
         lastApply: cfg._last_apply || null,
         candidate,
+        drafts: {},
         pristine: text,
         editText: text,
         jsonError: null,
+        error: null,
       });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
@@ -192,20 +137,41 @@ export class ConfigView extends Component {
 
   // Field -> candidate -> pane. The field's declared type drives coercion (shared
   // configsync.coerceForType), so a port stays a number and a toggle a boolean in the JSON.
-  // A secret blanked out returns to what the server sent — the sentinel for a set secret —
-  // because blank has always meant KEEP, and the model change must not quietly turn it into
-  // "set to empty string".
+  // A numeric field keeps the operator's text as a draft while they type (#3350): re-rendering
+  // "0." or "-" from the coerced candidate rewrites the next keystroke. The candidate only takes
+  // a draft that parses; otherwise it keeps its last valid number and the field is flagged.
   onFieldEdit(field, raw) {
     const { candidate, cfg } = this.state;
+    if (field.type === "number") {
+      const drafts = { ...this.state.drafts, [field.key]: raw };
+      if (!validNumber(raw)) {
+        this.setState({ drafts });
+        return;
+      }
+      pathSet(candidate, field.key, coerceForType("number", raw));
+      this.setState({
+        drafts,
+        candidate,
+        editText: JSON.stringify(candidate, null, 2),
+        jsonError: null,
+      });
+      return;
+    }
     const value =
       field.type === "secret" && raw === ""
         ? pathGet(cfg, field.key)
         : coerceForType(field.type, raw);
+    if (
+      field.key === "tari.wallet_address" &&
+      value !== pathGet(candidate, field.key) &&
+      pathGet(candidate, "tari.spend_public_key") === pathGet(cfg, "tari.spend_public_key")
+    ) {
+      pathSet(candidate, "tari.spend_public_key", "");
+    }
     pathSet(candidate, field.key, value);
     this.setState({ candidate, editText: JSON.stringify(candidate, null, 2), jsonError: null });
   }
 
-  // Pane -> candidate -> fields. Invalid pane text leaves the last good candidate as Save input.
   onJsonInput(text) {
     const err = jsonSyntaxError(text);
     if (err) {
@@ -222,7 +188,15 @@ export class ConfigView extends Component {
       JSON.stringify(candidate) === JSON.stringify(staged.config)
         ? text
         : JSON.stringify(candidate, null, 2);
-    this.setState({ editText, jsonError: null, candidate });
+    // Keep invalid drafts (still being fixed) and valid ones whose number the pane left alone
+    // (0.10 vs 0.1); drop a valid draft the pane changed, so the field follows it.
+    const drafts = Object.fromEntries(
+      Object.entries(this.state.drafts).filter(
+        ([key, raw]) =>
+          !validNumber(raw) || coerceForType("number", raw) === pathGet(candidate, key),
+      ),
+    );
+    this.setState({ editText, jsonError: null, candidate, drafts });
   }
   onFilePick(e) {
     const file = e.target.files[0];
@@ -238,11 +212,11 @@ export class ConfigView extends Component {
     return pollResult(id, skip);
   }
 
-  // The candidate is the proposed config. A pane mid-typo blocks Save via jsonError instead.
+  // Keep explicit values; only read_config's untouched defaults were absent from config.json.
   buildProposed() {
-    const { candidate, jsonError } = this.state;
+    const { candidate, defaultKeys, jsonError, pristine } = this.state;
     if (jsonError) return { error: jsonError };
-    return { config: candidate };
+    return { config: explicitCandidate(JSON.parse(pristine || "{}"), candidate, defaultKeys) };
   }
 
   async save() {
@@ -259,7 +233,7 @@ export class ConfigView extends Component {
         headers: CONTROL_HEADERS,
         body: JSON.stringify({ config: proposed }),
       });
-      if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+      await requirePreviewResponse(res);
       let out = await res.json();
       if (out.status === "pending") out = { id: out.id, ...(await this.poll(out.id)) };
       if (out.status === "rejected") {
@@ -296,7 +270,8 @@ export class ConfigView extends Component {
       const out = restarting
         ? await this.poll(id, "previewed")
         : await controlCommitResult(res, id, this.poll.bind(this));
-      this.setState({ phase: "done", result: out });
+      const pristine = out.status === "applied" ? this.state.editText : this.state.pristine;
+      this.setState({ phase: "done", result: out, pristine });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
     }
@@ -309,7 +284,7 @@ export class ConfigView extends Component {
   // cluster (telegram.events, the notification sinks, healthchecks) into its own nested <details>,
   // one level deeper, also collapsed by default.
   renderForm(core, groups) {
-    const { candidate } = this.state;
+    const { candidate, drafts } = this.state;
     const onEdit = (f, v) => this.onFieldEdit(f, v);
     // A set secret arrives as a sentinel and renders blank behind its keep-hint placeholder;
     // everything else shows the candidate's live value, so pane edits are visible immediately.
@@ -319,7 +294,9 @@ export class ConfigView extends Component {
       return typeof v === "object" ? JSON.stringify(v) : String(v);
     };
     const field = (f, full) =>
-      html`<${Field} field=${f} value=${displayValue(f)} full=${full} onEdit=${onEdit} />`;
+      html`<${Field} field=${f} value=${f.key in drafts ? drafts[f.key] : displayValue(f)}
+        invalid=${f.key in drafts && !validNumber(drafts[f.key])}
+        full=${full} onEdit=${onEdit} />`;
     return html`<div class="grid">
         ${
           core.length
@@ -335,7 +312,7 @@ export class ConfigView extends Component {
           // keys via its subgroups (Notifications: telegram + notifications + healthchecks, each
           // in its own labelled <details>) keeps short labels for the flat telegram.* remainder.
           const mixed = new Set(fields.map((f) => f.path[0])).size > 1;
-          return html`<details class="card config-section">
+          return html`<details class="card config-section" data-section=${s.name} ref=${(d) => d && focusSection(d, s.name, this.props.focus)}>
               <summary>${s.name}</summary>
               ${s.description ? html`<p class="text-muted text-xs">${s.description}</p>` : null}
               ${fields.map((f) => field(f, mixed))}
@@ -352,7 +329,7 @@ export class ConfigView extends Component {
 
   // The JSON pane (#785, the wizard's pattern): the whole candidate beneath the form, collapsed
   // by default, two-way live — never a separate mode. Load-from-file fills it (FileReader, no
-  // upload); it shows byte-for-byte what Save previews, minus the hidden paths (#1850).
+  // upload); Save sends this candidate minus untouched reference defaults (#2365).
   renderJson(editText, jsonError, busy) {
     return html`<details class="card config-section">
         <summary><strong>Advanced</strong> — the configuration this page sends</summary>
@@ -402,7 +379,8 @@ export class ConfigView extends Component {
       return html`<div class="card">
           <h2>Configuration</h2>
           <p class="status-bad">${error}</p>
-          <button class="btn-toggle" onClick=${() => this.load()}>Reload</button>
+          ${this.state.candidate ? html`<button class="btn-toggle" onClick=${() => this.setState({ phase: "form", preview: null, error: null })}>Back to the form</button>` : null}
+          <button class="btn-toggle" onClick=${() => this.load()}>${this.state.candidate ? "Discard draft and reload from host" : "Reload"}</button>
       </div>`;
     }
     if (phase === "done") {
@@ -414,17 +392,20 @@ export class ConfigView extends Component {
               ? html`<p class="status-ok">Changes applied — only the affected containers were recreated.</p>`
               : applyFailure(result, this.props.appliance)
           }</div>
-          <button class="btn-toggle" onClick=${() => this.load()}>Back to the form</button>
+          <button class="btn-toggle" onClick=${() => (ok ? this.load() : this.setState({ phase: "form", result: null }))}>Back to the form</button>
+          ${ok ? null : html`<button class="btn-toggle" onClick=${() => this.load()}>Discard draft and reload from host</button>`}
       </div>`;
     }
     const busy = phase === "previewing" || phase === "committing";
     const dirty = editText !== this.state.pristine;
-    const canSave = dirty && !jsonError;
+    const badDraft = Object.values(this.state.drafts).some((raw) => !validNumber(raw));
+    const canSave = dirty && !jsonError && !badDraft;
     const { core, sections: groups } = regroupCore(
       markEditable(sections, editableKeys, confirmKeys, approvalKeys, defaultKeys),
       coreKeys,
     );
     return html`<div class="config-view">
+        <${ConfigVersion} cfg=${this.state.cfg} />
         ${error ? previewFailure(error, this.props.appliance) : null}
         ${
           lastApply?.status === "failed"
@@ -445,7 +426,7 @@ export class ConfigView extends Component {
         </div>
         <p class="sr-only" role="status" aria-live="polite">${phase === "previewing" ? "Previewing changes…" : ""}</p>
         ${
-          phase === "confirm" || phase === "committing"
+          this.props.active !== false && (phase === "confirm" || phase === "committing")
             ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${preview} confirmText=${confirmText}
                   onConfirmText=${(t) => this.setState({ confirmText: t })}
                   payoutSuffixes=${payoutSuffixes}

@@ -21,6 +21,12 @@
 # tests/inventory.sh lists them as UNSOURCED) — they carry no marker check and must not gain one.
 # shellcheck disable=SC2034  # sourced library: this marker and the fixtures are read by run.sh
 STACK_SUITE=1
+# shellcheck source=tests/stack/lib/doctor-stubs.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/doctor-stubs.sh" || exit 1
+# shellcheck source=tests/stack/lib/backup-fixtures.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/backup-fixtures.sh" || exit 1
+# shellcheck source=tests/stack/lib/control-fixtures.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/control-fixtures.sh" || exit 1
 # shellcheck source=tests/stack/lib/config-read-sites.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config-read-sites.sh"
 
@@ -171,6 +177,9 @@ mk_tmpdir _sbx
 # shellcheck disable=SC2154
 SANDBOX="$(cd "$_sbx" && pwd -P)"
 trap 'rm -rf "$SANDBOX"' EXIT
+# The restore handoff roots default to root-only /run paths; a non-root suite must never reach them.
+export PITHEAD_RESTORE_SUBMISSION_DIR="$SANDBOX/.run/restore-submit" PITHEAD_RESTORE_STAGE_ROOT="$SANDBOX/.run/restore-stage" \
+    PITHEAD_RESTORE_CARRY_DIR="$SANDBOX/.run/restore-carry"
 
 # A fake docker that records calls and answers the few queries setup/apply make.
 make_stubs() {
@@ -186,22 +195,32 @@ case "$*" in
   "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion" ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion" ;;
   "exec p2pool cat /proc/1/cmdline") printf '%s' "${P2POOL_PROC1:-}" ;;  # #273: tests set the running p2pool argv
-  "compose config --images")
-    # One pithead-built ref and one pulled third-party ref (Tari's shape) — #2343's uninstall
-    # `docker rmi` filter must remove only the former.
-    printf '%s\n' "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}" \
-        "quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:deadbeef00000000000000000000000000000000000000000000000000000000" ;;
   *hash-password*)
     # Fake `caddy hash-password` (#8): a per-password digest so enable/change paths differ, and it
     # never echoes the plaintext back (real bcrypt doesn't either) — keeps the leak checks honest.
-    _pw="${*##*--plaintext }"
+    [[ "$*" == *"run --rm -i "* && "$*" != *"--plaintext"* ]] || exit 1
+    IFS= read -r _pw || exit 1
     _d="$(printf '%s' "$_pw" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-22)"
     printf '$2y$14$%s\n' "$_d" ;;
 esac
 exit 0
 EOF
-    printf '#!/usr/bin/env bash\nexit 0\n' >"$bin/sudo"
-    chmod +x "$bin/docker" "$bin/sudo"
+    cat >"$bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" != -n ] || shift
+case "$*" in
+  'iptables -S PITHEAD-LAN') echo '-A PITHEAD-LAN -j DROP' ;;
+  'iptables -S DOCKER-USER')
+    for port in 18081 18083 18142; do
+      echo "-A DOCKER-USER -p tcp -m tcp --dport $port -m conntrack --ctstate NEW -m comment --comment pithead-lan-guard -j PITHEAD-LAN"
+    done ;;
+  'iptables -S FORWARD') echo '-A FORWARD -j DOCKER-USER' ;;
+esac
+exit 0
+EOF
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$bin/iptables"
+    printf '#!/usr/bin/env bash\ncat >/dev/null\n' >"$bin/iptables-restore"
+    chmod +x "$bin/docker" "$bin/sudo" "$bin/iptables" "$bin/iptables-restore"
 }
 
 # --- shared test fixtures hoisted from run.sh (#1105 Phase 1, module 1b), verbatim ---------
@@ -241,6 +260,7 @@ case "$1" in
 info | pull) exit 0 ;;
 image) exit 0 ;; # `image inspect` -> pinned verifier already local, nothing pulled
 run)
+    [ -z "${COSIGN_DOCKER_LOG:-}" ] || echo "[docker] $*" >>"$COSIGN_DOCKER_LOG"
     shift
     # Drop the run flags up to and including the pinned verifier image; what remains is the cosign
     # argv the caller actually asked for.
@@ -254,6 +274,7 @@ run)
         esac
     done
     echo "[cosign] $*" >>"${COSIGN_LOG:-/dev/null}"
+    [ -z "${COSIGN_STDERR:-}" ] || printf '%s\n' "$COSIGN_STDERR" >&2
     exit "${COSIGN_RC:-0}"
     ;;
 esac
