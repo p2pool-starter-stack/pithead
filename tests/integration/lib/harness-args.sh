@@ -16,7 +16,7 @@ validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS, HARNE
     while [ "$i" -lt "${#HARNESS_ARGS[@]}" ]; do
         arg="${HARNESS_ARGS[$i]}"
         case "$arg" in
-        --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --rotate-onion | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke | --rotate-secrets | --alert-egress | --mergemine-submit | --mergemine-localnet | --tari-stranded | --monero-stranded | --sweep)
+        --backup-only | --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --rotate-onion | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke | --rotate-secrets | --alert-egress | --mergemine-submit | --mergemine-localnet | --tari-stranded | --monero-stranded | --sweep)
             HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
             if [ "$arg" = --rotate-onion ]; then
                 [ "${KEEP:-0}" != 1 ] || die "--rotate-onion cannot be combined with --keep; its isolated identity must be removed."
@@ -31,10 +31,18 @@ validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS, HARNE
             i=$((i + 2))
             ;;
         *)
-            die "--harness-arg does not accept '$arg' — allowed: --lifecycle, --fault-injection, --auth-fail-closed, --hardening, --rotate-onion, --subnet, --safety-backup, --rigforge, --rigforge-control, --xvb-routing-smoke, --rotate-secrets, --alert-egress, --mergemine-submit, --mergemine-localnet, --tari-stranded, --monero-stranded, --sweep, --scenario <name>."
+            die "--harness-arg does not accept '$arg' — allowed: --backup-only, --lifecycle, --fault-injection, --auth-fail-closed, --hardening, --rotate-onion, --subnet, --safety-backup, --rigforge, --rigforge-control, --xvb-routing-smoke, --rotate-secrets, --alert-egress, --mergemine-submit, --mergemine-localnet, --tari-stranded, --monero-stranded, --sweep, --scenario <name>."
             ;;
         esac
     done
+    case " $HARNESS_PHASE_ARGS " in
+    *" --backup-only "*)
+        [ "${#HARNESS_ARGS[@]}" -eq 1 ] && [ -z "${SCENARIO:-}" ] &&
+            [ "${BORROW_MINER:-1}" = 0 ] && [ "${KEEP:-0}" = 0 ] ||
+            die "--backup-only requires --no-miner and cannot be combined with other harness arguments, --scenario or --keep."
+        TARGETED_SCENARIO_ARGS=""
+        ;;
+    esac
     # --sweep is not a run.sh flag: the sweep is what run.sh does when no scenario is pinned.
     case " $HARNESS_PHASE_ARGS " in
     *" --sweep "*)
