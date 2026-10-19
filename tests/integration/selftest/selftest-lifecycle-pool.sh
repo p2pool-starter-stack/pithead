@@ -48,6 +48,7 @@ drive_pool_transition() {
     )
 }
 
+echo "== lifecycle pool transition and failure handling =="
 assert_eq "a Main scenario switches to Mini while preserving the saved payout" \
     "$(drive_pool_transition '{"p2pool":{"pool":"main"}}' 'P2POOL_FLAGS=--host fixture')" \
     '0|main|0|fixture-payout'
