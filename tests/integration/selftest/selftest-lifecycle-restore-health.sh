@@ -69,9 +69,9 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             *) printf absent ;;
             esac
         }
-        prove_wallet_supersession() { :; }    # Identity proof has its own selftest.
-        prove_wallet_recovery() { :; }        # Recovery proof has its own selftest.
-        tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
+        prove_wallet_supersession() { :; }  # Identity proof has its own selftest.
+        prove_wallet_recovery() { :; }      # Recovery proof has its own selftest.
+        tor_recovery_healthy_probe() { :; } # Live Tor proof is outside this restore fixture.
         run_support_bundle() { :; }
         run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
         # shellcheck disable=SC2034 # RESET_RESTORE_STACK_INTACT is read by the extracted lifecycle function
