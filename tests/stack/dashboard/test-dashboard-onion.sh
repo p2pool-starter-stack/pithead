@@ -1,17 +1,6 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Dashboard-onion domain (#1105 Phase 1, appliance lane): the dashboard-onion cluster stacked on
-# test-dashboard.sh — generate_caddyfile's onion vhost render (the bridge-gateway HTTP site plus,
-# once the .onion address is provisioned, its own self-signed HTTPS vhost, #343), the shared
-# access-log render across ALL vhosts (LAN + onion HTTP + onion HTTPS, #349), the onion client-auth
-# crypto (portable base32, the x25519 keypair, provision_onion_client_auth's authorized_clients
-# descriptor and its 0700/0700/0600 mode discipline), ensure_onion_password's fail-closed
-# auto-generated password (both directly and through stack_upgrade, which must run it BEFORE
-# validation), the rotate-dashboard-onion command flow (resolving the host before render_env,
-# preserving DEPLOYMENT_COMPLETED), the upgrade/apply/rotate capture flows that must re-render the
-# Caddyfile in the SAME run rather than waiting on a later, possibly-no-op apply (#356/#546), and
-# dashboard_onion_status's status/doctor resolver (the onion URL + reach-it hint, never the client
-# private key, #343).
+# Dashboard-onion rendering, keys, password generation and lifecycle capture.
 # Sourced by tests/stack/run.sh, conventionally after test-dashboard.sh — but not required (#1330):
 # $auth_hb64 and $caddy_https used to be globals left behind there, so a reordered/inserted source
 # line broke this file with a confusing empty-string mismatch. Both are re-derived locally below.
@@ -206,6 +195,8 @@ printf '{"dashboard":{"onion":{"enabled":true}}}' >"$upg_autopw_dir/config.json"
     generate_caddyfile() { :; }
     migrate_compose_project() { :; }
     apply_tor_egress_firewall() { :; }
+    provision_egress_check_units() { :; }
+    provision_lan_guard_check_units() { :; }
     compose_up_checked() { :; }
     is_source_checkout() { return 1; }
     docker() { :; }
@@ -271,6 +262,8 @@ upg_capture() { # <onion_enabled> <current_onion> -> "captured" when provision r
     log() { :; }
     docker() { :; }
     apply_tor_egress_firewall() { :; }
+    provision_egress_check_units() { :; }
+    provision_lan_guard_check_units() { :; }
     compose_up_checked() { :; }
     provision_dashboard_onion() {
         DASHBOARD_ONION="upgcap5678.onion"
@@ -326,6 +319,8 @@ caddy_apply_capture=$(
     provision_control_runner() { :; }
     migrate_compose_project() { :; }
     apply_tor_egress_firewall() { :; }
+    provision_egress_check_units() { :; }
+    provision_lan_guard_check_units() { :; }
     migrate_dashboard_data() { :; }
     compose_up_checked() { :; }
     announce_dashboard_url() { :; }

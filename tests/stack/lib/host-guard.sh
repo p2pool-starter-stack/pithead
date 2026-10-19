@@ -20,7 +20,7 @@ systemctl:is-active*|systemctl:is-enabled*|systemctl:is-failed*|systemctl:is-sys
     exit 1
     ;;
 esac
-printf '%s\n' "$tool" >>"${STACK_HOST_GUARD_LOG:?}"
+printf '%s in %s\n' "$tool" "${PWD##*/}" >>"${STACK_HOST_GUARD_LOG:?}"
 printf 'tests: undeclared host command: %s; provide a sandbox fixture\n' "$tool" >&2
 exit 125
 GUARD
@@ -42,4 +42,17 @@ stack_sandbox_cleanup() {
     stack_host_guard_check || rc=1
     rm -rf "$SANDBOX"
     exit "$rc"
+}
+
+make_host_tool_stubs() {
+    local bin="$1" tool
+    shift
+    mkdir -p "$bin"
+    for tool in "$@"; do
+        case "$tool" in
+        *-restore) printf '#!/usr/bin/env bash\ncat >/dev/null\n' >"$bin/$tool" ;;
+        *) printf '#!/usr/bin/env bash\nexit 0\n' >"$bin/$tool" ;;
+        esac
+        chmod +x "$bin/$tool"
+    done
 }

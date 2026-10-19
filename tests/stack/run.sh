@@ -251,7 +251,7 @@ if in_block 4; then
         webhooks: ["https://hooks.example/LEAK-hookA", "", "https://hooks.example/LEAK-hookB"],
         ntfy: {url: "https://ntfy.example/LEAK-ntfyurl", token: "LEAK-ntfytoken"},
         tor: true}' "$C/config.json" >"$C/config.json.tmp" && mv "$C/config.json.tmp" "$C/config.json"
-    run_sourced "$C" render_masked_config "$C/data/control" >/dev/null 2>&1
+    PATH="$C/bin:$PATH" run_sourced "$C" render_masked_config "$C/data/control" >/dev/null 2>&1
     assert_eq "ntfy url masked to the sentinel" "$(jq -c '.notifications.ntfy.url' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
     assert_eq "ntfy token masked to the sentinel" "$(jq -c '.notifications.ntfy.token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
     assert_eq "first webhook entry masked to the sentinel with its slot (#2373)" "$(jq -c '.notifications.webhooks[0]' "$MASKED" 2>/dev/null)" '{"__secret__":true,"slot":0}'

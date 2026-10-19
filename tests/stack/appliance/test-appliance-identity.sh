@@ -133,7 +133,7 @@ pcr791_run() { # <PITHEAD_APPLIANCE value> — run the install branch, echo reco
         warn() { :; }
         # a file, not a stream: the function /dev/null's both stdout AND stderr on some calls
         sudo() { echo "sudo:$*" >>"$PCR791/calls"; }
-        PITHEAD_APPLIANCE="$1" CONTROL_DIR="$PCR791/control" DASHBOARD_CONTROL_ENABLED=true provision_control_runner
+        PITHEAD_UNIT_DIR="" PITHEAD_APPLIANCE="$1" CONTROL_DIR="$PCR791/control" DASHBOARD_CONTROL_ENABLED=true provision_control_runner
     )
 }
 : >"$PCR791/calls"

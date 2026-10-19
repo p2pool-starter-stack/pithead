@@ -71,8 +71,8 @@ tests/stack/appliance/test-appliance-os-update.sh	457
 tests/stack/appliance/test-appliance-restore.sh	404
 tests/stack/appliance/test-appliance-rig-miner.sh	466
 tests/stack/control/test-control-add-only-ssrf.sh	447
-tests/stack/control/test-control-upgrade.sh	795
-tests/stack/dashboard/test-dashboard-onion.sh	422
+tests/stack/control/test-control-upgrade.sh	790
+tests/stack/dashboard/test-dashboard-onion.sh	417
 tests/stack/dashboard/test-dashboard.sh	591
 tests/stack/doctor/test-doctor.sh	470
 tests/stack/standalone/test_compose.sh	462

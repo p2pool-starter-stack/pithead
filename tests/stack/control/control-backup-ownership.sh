@@ -69,6 +69,7 @@ else
         "$XB/ctl/staged" "$XB/ctl/results" "$XB/ctl/audit"
     cp "$STACK" "$XB/pithead"
     cp "$ROOT/build/tari/config.toml.template" "$XB/build/tari/"
+    make_host_tool_stubs "$XB/bin" systemctl iptables iptables-save iptables-restore nft
     XB_DOCKER_LOG="$XB/docker.log"
     : >"$XB_DOCKER_LOG"
     cat >"$XB/bin/docker" <<EOS

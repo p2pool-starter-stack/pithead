@@ -31,14 +31,7 @@ REQS="$C/data/control/requests"
 RESULTS="$C/data/control/results"
 
 echo "== black-box: a failed upgrade never repoints the control-runner units (#1070) =="
-# The units are host-global and bake an absolute path. On a one-click deploy stack_upgrade runs from
-# the NEW version dir while `current ->` still names the old one, so provisioning them before the
-# release is live points them at a dir that may never become the install. That is what bricked
-# pithead-prod: the image gate aborted, `current` never moved, and the path unit was left watching a
-# spool the running dashboard does not write to — silently killing the control channel, and with it
-# the one-click upgrade that would have fixed it. Provisioning must therefore come last, after
-# update_current_symlink. Both directions are asserted: the ordering on success, and — the one that
-# actually bites — that an abort at the gate repoints nothing at all.
+# Provision only after a successful upgrade moves current.
 upg_step_order() { # <verify_release_images body> — the step markers stack_upgrade reaches, in order
     (
         cd "$SANDBOX" || exit
@@ -57,6 +50,8 @@ upg_step_order() { # <verify_release_images body> — the step markers stack_upg
         generate_caddyfile() { :; }
         migrate_compose_project() { :; }
         apply_tor_egress_firewall() { :; }
+        provision_egress_check_units() { :; }
+        provision_lan_guard_check_units() { :; }
         migrate_dashboard_data() { :; }
         is_source_checkout() { return 1; }
         log() { :; }

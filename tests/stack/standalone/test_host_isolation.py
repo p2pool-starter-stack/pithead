@@ -65,6 +65,7 @@ class HostIsolation(unittest.TestCase):
             "GUARD": str(GUARD),
             "PATH": str(host_bin) + os.pathsep + os.environ["PATH"],
             "STACK": str(ROOT / "pithead"),
+            "ROOT": str(ROOT),
             "PITHEAD_UNIT_DIR": str(self.host),
         }
 
@@ -77,6 +78,7 @@ class HostIsolation(unittest.TestCase):
                 "trap stack_sandbox_cleanup EXIT; " + body,
             ],
             env=self.env,
+            cwd=self.sandbox,
             capture_output=True,
             text=True,
             timeout=20,
@@ -95,6 +97,7 @@ class HostIsolation(unittest.TestCase):
                 "printf leaked | iptables-restore; nft -f - </dev/null",
             ],
             env=self.env,
+            cwd=self.sandbox,
             capture_output=True,
             text=True,
             timeout=20,
@@ -132,6 +135,32 @@ class HostIsolation(unittest.TestCase):
     def test_child_process_cannot_hide_a_blocked_mutation(self):
         result = self.run_guard('bash -c "systemctl daemon-reload" >/dev/null 2>&1 || true; exit 0')
         self.assertEqual(result.returncode, 1, result.stderr)
+        self.assert_host_preserved()
+
+    def test_explicit_tool_fixtures_leave_other_mutations_guarded(self):
+        result = self.run_guard(
+            'make_host_tool_stubs "$SANDBOX/bin" systemctl iptables-restore; '
+            'export PATH="$SANDBOX/bin:$PATH"; '
+            "systemctl daemon-reload; printf rules | iptables-restore; "
+            "nft -f - </dev/null >/dev/null 2>&1 || true; exit 0"
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("nft in sandbox", result.stderr)
+        self.assertNotIn("systemctl in", result.stderr)
+        self.assertNotIn("iptables-restore in", result.stderr)
+        self.assert_host_preserved()
+
+    def test_tari_render_fixture_uses_declared_config_and_cleanup_paths(self):
+        result = self.run_guard(
+            'WORK_DIR="$SANDBOX"; source "$ROOT/tests/stack/fixtures/tari-render.sh"; '
+            'source "$STACK"; TARI_ONION=abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion; '
+            "NETWORK_PREFIX=172.28.0; mkdir -p build/tari; "
+            'cp "$ROOT/build/tari/config.toml.template" build/tari/; '
+            "inject_service_configs; test -s build/tari/config.toml; "
+            'test "$CONFIG_FILE" = "$WORK_DIR/config.json"'
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
         self.assert_host_preserved()
 
     def test_cleanup_preserves_failure_status(self):

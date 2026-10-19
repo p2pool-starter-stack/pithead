@@ -142,7 +142,8 @@ use the captured `STACK_FIXTURE_SUDO` executable explicitly for their sandbox fi
 The guards cover command lookup, not absolute executable paths or tests that replace `PATH` entirely.
 `tests/stack/standalone/test_host_isolation.py` runs through `make test-tools` and
 checks blocked mutations, child-process failures, and preservation of pre-existing
-unit and firewall fixtures after success, failure and interruption.
+unit and firewall fixtures after success, failure and interruption. It also checks
+that the Tari parser fixture renders with its own config and bounded cleanup paths.
 
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the

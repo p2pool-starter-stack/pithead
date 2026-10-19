@@ -12,6 +12,7 @@ mkdir -p "$PP/src/dashboard" "$PP/rel/build/tari"
 pp_up() {
     (
         cd "$1" || exit
+        export PITHEAD_UNIT_DIR="$PP/units"
         set --
         # shellcheck disable=SC1090
         source "$STACK" 2>/dev/null
