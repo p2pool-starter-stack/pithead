@@ -3,11 +3,9 @@
 usage() {
     cat <<'EOF'
 Pithead integration test runner
-
 USAGE:
   run.sh --host <user@host> [options]     drive the box over SSH
   run.sh --local            [options]     drive a stack on this machine
-
 CONNECTION:
   --host <user@host>     SSH destination of the test server
   --identity <keyfile>   SSH private key (adds -i <keyfile>)
@@ -18,13 +16,13 @@ CONNECTION:
                          shell would expand it before the box sees it.
   --pithead <cmd>        how to invoke pithead on the box (default: ./pithead;
                          use "sudo ./pithead" if docker needs root there)
-
 MATRIX:
   --check                NON-DESTRUCTIVE: assert the box's current live state only — no config
                          changes, no apply, no restore. The safe first run / health check.
   --readiness            NON-DESTRUCTIVE: assess whether the box is fit to be a release/
                          validation server (synced chains reusable, snapshot-capable FS, disk
                          headroom, secrets not world-readable, dashboard localhost-only).
+  --backup-only          take and validate a safety backup, then stop; exclusive of other phases
   --scenario <name>      run only one scenario (see --list)
   --workers <n>          miners expected online while mining (default: 2)
   --no-mining-asserts    SKIP mining assertions (workers online, stratum hashes, cold-cache
@@ -45,7 +43,7 @@ MATRIX:
   --safety-backup        take a `pithead backup` BEFORE the destructive scenarios; if anything
                          fails, automatically roll the box back to it (down → restore → up).
                          The archive is removed on success. Recommended for the destructive
-                         matrix on a precious box. Also exercises backup/restore end-to-end.
+                         matrix on a precious box. Modifier only: scenarios and phases still run.
   --fault-injection      also run the fault-injection phase: deliberately break monerod
                          (stop / SIGSTOP / remove) and assert pithead's status verdicts
                          (down / unhealthy / missing) and the failover→recovery cycle. Also
@@ -340,8 +338,9 @@ parse_args() {
             RUN_ROTATE_SECRETS=1
             shift
             ;;
-        --safety-backup)
+        --safety-backup | --backup-only)
             SAFETY_BACKUP=1
+            [ "$1" != --backup-only ] || BACKUP_ONLY=1
             shift
             ;;
         --keep)
@@ -400,6 +399,7 @@ parse_args() {
         it_err "--rotate-secrets requires --safety-backup — its archive is this phase's own restore anchor."
         exit 2
     fi
+    validate_backup_only_args
     validate_live_gate_args
     # Both gates read mining as their success signal, so silencing those assertions would leave
     # them asserting nothing that matters.
