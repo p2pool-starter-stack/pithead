@@ -77,11 +77,18 @@ accepted_before_ssh_args() {
 }
 accepted_before_ssh_args "check mode accepts zero workers without borrowing" --mode check --no-miner --workers 0
 accepted_before_ssh_args "check mode accepts zero workers with the default borrow flag" --mode check --workers 0
+accepted_before_ssh_args "check mode accepts positive workers with the default borrow flag" --mode check --workers 2
 for mode in targeted matrix; do
     accepted_before_ssh_args "$mode without a miner accepts zero workers" --mode "$mode" --no-miner --workers 0
     rejected_before_ssh_args "$mode borrowing still rejects zero workers" --mode "$mode" --workers 0
 done
+for workers in bad '1;touch' -1 1.5 ''; do
+    rejected_before_ssh_args "check mode with the default borrow flag rejects invalid worker count '$workers'" \
+        --mode check --workers "$workers"
+done
 for args_mode in check targeted matrix; do
+    accepted_before_ssh_args "$args_mode without a miner accepts positive workers" \
+        --mode "$args_mode" --no-miner --workers 2
     for workers in bad '1;touch' -1 1.5 ''; do
         rejected_before_ssh_args "$args_mode without a miner rejects invalid worker count '$workers'" \
             --mode "$args_mode" --no-miner --workers "$workers"
