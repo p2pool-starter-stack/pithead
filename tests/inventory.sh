@@ -63,7 +63,7 @@ while IFS= read -r f; do n_stack=$((n_stack + $(sh_sections "$f" | count))); don
 # iterated directly rather than through a word-split string, for the reason given above it.
 n_selftest=0
 for f in tests/integration/selftest/*.sh; do n_selftest=$((n_selftest + $(sh_sections "$f" | count))); done
-n_scen=$(awk -F'\t' 'NF>1{print $1}' <(sed -n '/scenario_matrix() {/,/^EOF/p' tests/integration/scenarios.sh | grep -E '\t') | count)
+n_scen=$(awk -F'\t' 'NF>1{print $1}' <(sed -n '/scenario_matrix() {/,/^EOF/p' tests/integration/scenarios.sh | grep -E $'\t') | count)
 n_axes=$(grep -cE '=' <(sed -n '/axis_coverage() {/,/^EOF/p' tests/integration/scenarios.sh | grep -E '^[a-z].*='))
 n_mini=$(grep -cE 'log "scenario [0-9]' tests/integration/mini-stack/run-mini-stack.sh)
 
