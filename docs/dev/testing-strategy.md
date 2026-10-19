@@ -806,9 +806,16 @@ tier 3/4:
   answers). ✅ Its NTP/clock-drift check is now fault-injected too (`--fault-injection`): a
   PATH-shadowed `timedatectl` (no real clock skew — mining is time-sensitive) proves doctor
   classifies a real unsynced report correctly, then the shadow is dropped and recovery is asserted.
-- **Disk-full / ENOSPC verdict.** ✅ Now a tier-4 `--fault-injection` case: a 1MiB tmpfs bind-mounted
-  over the dashboard data dir and filled solid forces a real kernel ENOSPC (distinct from
-  `fault_db_readonly`'s EACCES), and asserts `db_healthy:false`, then unmounts and asserts recovery.
+- **Disk-full / ENOSPC verdict.** A tier-4 `--fault-injection` case mounts a run-specific
+  1 MiB tmpfs over the dashboard data directory, requires real ENOSPC, and polls
+  `db_healthy:false`. One target-side lifecycle handles normal exit and HUP/INT/TERM:
+  it removes only the visible mount with the recorded ID, source, type and exact target,
+  verifies the original covering filesystem is visible, then restarts the dashboard and
+  polls `db_healthy:true`. An unverified cleanup restores the host firewall, stops later phases and
+  automatic backup restoration, and retains the safety archive for operator recovery.
+  `selftest-enospc-cleanup.sh` covers underlying mounts, refused and
+  ambiguous mounts, foreign mounts, failed cleanup, interrupted faults and failed recovery.
+  SIGKILL and host power loss cannot run shell cleanup; they require baseline recovery.
 - **Tor-container-down partial start.** ✅ Now a tier-4 `--fault-injection` case (#563, TOP PRIVACY
   PRIORITY): `docker compose stop tor` and assert BOTH no clearnet egress leak appears (reuses
   `bench-verify-egress.sh`'s `/proc/net/tcp` proof, the same one the steady-state battery runs) and

@@ -329,3 +329,7 @@ Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugep
 `lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
+
+The ENOSPC fault lifecycle is `tests/integration/lib/disk-enospc-target.sh`, transmitted
+through the shared target wrapper by `run-faults.sh`. Its mount ownership and interruption
+controls are in `tests/integration/selftest/selftest-enospc-cleanup.sh`.
