@@ -136,10 +136,14 @@ lock_unrecorded_score() {
 LKREADY="$LKDIR/unrecorded.ready"
 rm -f "$LKREADY"
 lock_unrecorded_ready() { [ -e "$LKREADY" ]; }
+lock_unrecorded_await() { wait_while_alive "$LKEXT" lock_unrecorded_ready; }
 (
     exec 8>>"$LKFILE"
     flock -n 8 || exit 2
-    lock_unrecorded_ready
+    true &
+    LKEXT=$!
+    wait "$LKEXT"
+    lock_unrecorded_await
 )
 rc=$?
 assert_rc "a competing lock probe cannot signal the unrecorded holder is ready (#2638)" "$rc" "1"
@@ -150,9 +154,11 @@ assert_rc "a competing lock probe cannot signal the unrecorded holder is ready (
     exec sleep 60
 ) &
 LKEXT=$!
-assert_rc "the unrecorded holder signals ownership without a competing probe (#2638)" \
-    "$(wait_while_alive "$LKEXT" lock_unrecorded_ready && echo 0 || echo 1)" "0"
-lock_unrecorded_score
+if lock_unrecorded_await; then
+    lock_unrecorded_score
+else
+    bad "the unrecorded holder takes the window" "the holder exited without signaling ownership"
+fi
 kill "$LKEXT" 2>/dev/null
 wait "$LKEXT" 2>/dev/null
 
