@@ -256,6 +256,12 @@ and require tier-4 appliance proof when changed.
 
 ### G. CLI lifecycle (`pithead`)
 
+The unrecorded mutation-lock fixture waits for a separate readiness marker written by its
+holder after acquisition. Polling the lock itself can take it briefly and make the holder's
+nonblocking acquisition fail. A tier-1 control holds the lock from another process and verifies
+that this alone cannot signal readiness; the live-holder cases still check refusal and stale-record
+diagnostics against the real lock.
+
 | Situation | Trigger | Tier |
 |---|---|---|
 | Config validation, secret preservation, `apply` no-op/destructive guards | sourced fns | 1 ✅ |

@@ -132,14 +132,26 @@ lock_unrecorded_score() {
     assert_contains "an unrecorded holder is reported as unrecorded" "$out" "holder unrecorded"
     assert_not_contains "and is never reported under the previous holder's name" "$out" "verb=backup"
 }
+# Only the holder signals readiness, so polling cannot steal its nonblocking flock.
+LKREADY="$LKDIR/unrecorded.ready"
+rm -f "$LKREADY"
+lock_unrecorded_ready() { [ -e "$LKREADY" ]; }
+(
+    exec 8>>"$LKFILE"
+    flock -n 8 || exit 2
+    lock_unrecorded_ready
+)
+rc=$?
+assert_rc "a competing lock probe cannot signal the unrecorded holder is ready (#2638)" "$rc" "1"
 (
     exec 9>>"$LKFILE"
     flock -n 9 || exit 1
+    : >"$LKREADY"
     exec sleep 60
 ) &
 LKEXT=$!
-lock_held() { [ "$(lock_state)" = "held" ]; } # #1495: see wait_while_alive in lib.sh
-wait_while_alive "$LKEXT" lock_held
+assert_rc "the unrecorded holder signals ownership without a competing probe (#2638)" \
+    "$(wait_while_alive "$LKEXT" lock_unrecorded_ready && echo 0 || echo 1)" "0"
 lock_unrecorded_score
 kill "$LKEXT" 2>/dev/null
 wait "$LKEXT" 2>/dev/null
