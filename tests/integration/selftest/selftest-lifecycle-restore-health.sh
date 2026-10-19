@@ -35,6 +35,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             trace_lifecycle "capture:$1"
         }
         pithead() {
+            [ "$1" != backup ] || touch "$OUT_DIR/backup"
             [ "$RESTORE_CASE:$1:$PUSH_COUNT" != carry-apply-fails:down:3 ] || trace_lifecycle carry-cleanup-down
             case "$RESTORE_CASE:$1" in
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
@@ -73,6 +74,12 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         prove_wallet_recovery() { :; }        # Recovery proof has its own selftest.
         tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
         run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
+        run_backup_ownership() {
+            [ "$RESTORE_CASE" != backup-ownership-fails ] || {
+                it_fail
+                return 1
+            }
+        }
         # shellcheck disable=SC2034 # RESET_RESTORE_STACK_INTACT is read by the extracted lifecycle function
         run_reset_restore() { # the leg is driven by selftest-reset-restore.sh
             case "$RESTORE_CASE" in
@@ -127,6 +134,9 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
+        if [ "$RESTORE_CASE" = backup-ownership-fails ]; then
+            printf '|backup=%s|uninstall=%s' "$([ -e "$OUT_DIR/backup" ] && echo yes || echo no)" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)"
+        fi
     )
 }
 
@@ -152,6 +162,8 @@ for missing_call in \
 done
 
 assert_eq "a failed wizard defaults proof stops lifecycle" "$(drive_restore yes wizard-defaults-fails)" "1|1"
+assert_eq "a failed backup ownership proof stops lifecycle before round-trip backup or uninstall" \
+    "$(drive_restore yes backup-ownership-fails)" "1|1|backup=no|uninstall=no"
 assert_eq "a healthy restore succeeds" "$(drive_restore yes)" "0|0"
 assert_eq "an unhealthy restore fails lifecycle" "$(drive_restore no)" "1|1"
 assert_eq "a failed backup fails lifecycle" "$(drive_restore yes backup-fails)" "1|1"
