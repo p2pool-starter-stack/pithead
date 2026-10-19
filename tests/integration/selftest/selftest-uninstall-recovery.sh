@@ -112,6 +112,7 @@ drive() (
         "$(grep -c '^restore$' "$box/commands")" "$(grep -c '^roundtrip$' "$box/commands")"
 )
 
+echo "== uninstall preservation and phase-owned recovery =="
 assert_eq 'the live-removal fault recovers exactly before a successful second round trip' "$(drive clean)" '0|0|1|2'
 assert_eq '--keep still proves injected recovery and leaves the successful rebuilt state' "$(drive keep)" '0|0|1|2'
 assert_eq 'a missing config snapshot refuses uninstall and restores before returning' "$(drive missing-config)" '1|1|1|0'
