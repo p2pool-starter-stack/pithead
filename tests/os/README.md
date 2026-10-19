@@ -127,9 +127,12 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Also asserts `/data` grew to fill the disk, and that host identity (SSH host-key fingerprint,
   machine-id) survives the A/B swap (#894/#895) — both live on `/data`, untouched by the slot
   swap.
-- **install** — boot the image as removable media beside a blank disk, run the disk installer,
-  then boot the target and prove the copied system is COMPLETE — the `/var` overlay made an
-  incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:
+- **install** — stage a chosen token and valid config on the ESP before the first removable-media
+  boot, authenticate case and prefix variants, and check prefilled answers with no disk selected.
+  Reboot with malformed JSON and require serial rejection with a blank form, then install and
+  require the target ESP to consume the staged config. Boot the image as removable media beside a
+  blank disk, run the disk installer, then boot the target and prove the copied system is COMPLETE —
+  the `/var` overlay made an incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:
   `/data` must survive a second install over the same disk, and the three-way wipe choice
   (`keep`/`data`/`all`) is asserted on the raw partition. After Fresh Start returns to the
   installer, wait up to 180 seconds for the setup page before the remaining wipe and plant
@@ -200,6 +203,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   and closing A/B migration update. A dashboard-password edit commits through the panel behind
   typed `APPLY` and the approval envelope, after its preview names the lockout and console-login
   costs; the new login must read the dashboard, and the fixture password is restored the same way.
+  The same password change checks root-password status and, through a guest-only probe, that its
+  hash equals the dashboard password; `/etc`'s upperdir must be under `/run` on tmpfs. It repeats
+  those checks after the password change, an unaided reboot while changed, and restoration.
   The shared dashboard control poller records POST and poll metadata on stderr: timestamp, route,
   curl exit code, HTTP status, response size, JSON/error presence, UUID and allowlisted result
   status. A refused or untrackable POST and an exhausted deadline also capture the guest control
@@ -284,12 +290,15 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   disk stays byte-for-byte untouched. Reaching the wizard again from a stick-run rig needs the
   bootloader path (#1318) and is not this leg's job.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
-  ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
+  ESP pre-seed path, then attaches a separate settings stick carrying a changed `config.json` and
   reboots. Asserts the exact diff appears on the console (the changed wallet address in full, read
-  directly from the serial file so an early match cannot be lost to a broken pipe, a
-  changed secret only named, never shown), the countdown applies the change, the changed setting
-  takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
-  the stick mid-countdown cancels the change instead.
+  directly from the serial file so an early match cannot be lost to a broken pipe, a changed secret
+  only named, never shown). The countdown applies the change, settings the minimal stick did not
+  name are preserved, and the applied file is consumed. A second reboot proves pulling the stick
+  mid-countdown cancels the change. A separate password-recovery stick changes the dashboard
+  password: serial names `dashboard.auth.password` without its value, the old login returns 401,
+  the new login returns 2xx, and the settings file is consumed. An unreadable stick fails the
+  consumption check rather than counting as an absent file.
 - **fault** — power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is
   disqualifying. A closing leg (the #1029 class, #2067) boots a FRESH guest and destroys it while
   its very first boot is loading the baked container images from the archive — the interrupted

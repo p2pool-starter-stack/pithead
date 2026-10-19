@@ -1,11 +1,13 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/os/media-password-leg.sh
+source "$SCRIPT_DIR/media-password-leg.sh" || return $?
 _make_media_stick() {
     local path="$1" json="$2" loop mnt tries=0
     rm -f "$path"
     truncate -s 64M "$path"
     sgdisk -n1:0:0 -t1:0700 "$path" >/dev/null
-    loop=$(losetup -Pf --show "$path")
+    loop=$(losetup -Pf --show "$path") || return 2
     while [ ! -e "${loop}p1" ] && [ "$tries" -lt 50 ]; do
         sleep 0.1
         tries=$((tries + 1))
@@ -40,18 +42,23 @@ _detach_media_stick() {
 # to prove the applied stick was consumed. Host-side, so the disk must already be detached from the guest.
 _media_stick_has_config() {
     local path="$1" loop mnt tries=0 rc=1
-    loop=$(losetup -Pf --show "$path")
+    loop=$(losetup -Pf --show "$path") || return 2
     while [ ! -e "${loop}p1" ] && [ "$tries" -lt 50 ]; do
         sleep 0.1
         tries=$((tries + 1))
     done
-    mnt=$(mktemp -d)
-    mount -o ro "${loop}p1" "$mnt" 2>/dev/null && {
-        [ -f "$mnt/pithead-config.json" ] && rc=0
-        umount "$mnt"
+    mnt=$(mktemp -d) || {
+        losetup -d "$loop"
+        return 2
     }
-    rmdir "$mnt"
-    losetup -d "$loop"
+    if mount -o ro "${loop}p1" "$mnt" 2>/dev/null; then
+        [ -f "$mnt/pithead-config.json" ] && rc=0
+        umount "$mnt" || rc=2
+    else
+        rc=2
+    fi
+    rmdir "$mnt" || rc=2
+    losetup -d "$loop" || rc=2
     return $rc
 }
 
@@ -198,11 +205,13 @@ phase_media() {
 
     _detach_media_stick
     sleep 2
-    if _media_stick_has_config "$stick1"; then
-        bad "the applied stick still carries pithead-config.json — it would re-apply next boot"
-    else
-        ok "the applied stick is consumed — it cannot re-apply on a later boot"
-    fi
+    local stick_rc=0
+    _media_stick_has_config "$stick1" || stick_rc=$?
+    case "$stick_rc" in
+    0) bad "the applied stick still carries pithead-config.json — it would re-apply next boot" ;;
+    1) ok "the applied stick is consumed — it cannot re-apply on a later boot" ;;
+    *) bad "the applied stick could not be inspected for consumption" ;;
+    esac
     rm -f "$stick1"
 
     # ---- abort leg: pulling the media mid-countdown cancels the change -----------------------
@@ -234,4 +243,5 @@ phase_media() {
     [ "$pool_now" = "nano" ] && ok "a cancelled change never took effect (p2pool.pool stayed nano)" ||
         bad "a cancelled change altered the running config anyway (p2pool.pool is '${pool_now:-unknown}')"
     rm -f "$stick2"
+    media_password_recovery "$old_user" "$old_pw"
 }
