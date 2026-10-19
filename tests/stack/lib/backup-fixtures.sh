@@ -28,6 +28,7 @@ if [ "$1" = cp ] && [ "$3" = --remove-destination ]; then cmd="$1" arg="$2"; shi
 exec "$@"
 EOF
     chmod +x "$BK/bin/docker" "$BK/bin/sudo"
+    make_host_tool_stubs "$BK/bin" nft
     cat >"$BK/.env" <<EOF
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion

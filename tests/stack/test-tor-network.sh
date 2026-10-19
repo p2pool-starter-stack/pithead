@@ -1,18 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # Tor egress rules, lifecycle ordering, clearnet switches, node configs and onion provisioning.
-# Sourced by tests/stack/run.sh.
-#
-# Re-derivations (the sandbox-builder WALLET/$V trap — see #1305, still open on this lane):
-# - $V / $WALLET: lib.sh's build_val_sandbox() sets both; the "config validation" black-box calls
-#   it once, ahead of the two sections below that read them — that section lives in test-config.sh,
-#   sourced ahead of this file (a generic multi-field validator, not tor-specific).
-#   build_val_sandbox() is idempotent (a fixed $SANDBOX/val path, mkdir -p, template copies), so
-#   calling it again here is a safe no-op re-affirm as currently sourced, and correct on its own if
-#   a future reorder ever moves this file's source line earlier than that section.
-# - $DOCKER_LOG: the "apply preserves secrets + propagates" black-box sets it ($V/docker.log); it lives
-#   in test-secrets.sh, sourced ahead of this file (a generic multi-key regression, not tor-specific).
-# No section here reads $C — the control-channel sandbox is untouched by this cut.
+# Rebuild shared values so these cases do not depend on earlier domains (#1305).
 build_val_sandbox
 DOCKER_LOG="$V/docker.log"
 echo "== unit: tor_egress_rules — fail-closed Tor-only egress ruleset (#270) =="
@@ -511,6 +500,8 @@ prov_probe() { # <MONERO_MODE> <TARI_MODE> -> "<onions asked for>|<MONERO_ONION>
         # shellcheck disable=SC1090
         source "$STACK"
         set +e
+        apply_tor_egress_firewall() { :; }
+        lan_guard_prepare_up() { :; }
         : >asked
         log() { :; }
         docker() { :; }
@@ -545,6 +536,8 @@ node_onion_probe() { # provision_node_onions recreates tor and captures a newly 
         # shellcheck disable=SC1090
         source "$STACK"
         set +e
+        apply_tor_egress_firewall() { :; }
+        lan_guard_prepare_up() { :; }
         : >asked
         : >dockerlog
         : >renders

@@ -29,12 +29,18 @@ EOF
 chmod +x "$KRBIN/docker"
 KRLOG="$KR/docker.log"
 
+kr_compose_up() {
+    apply_tor_egress_firewall() { :; }
+    lan_guard_prepare_up() { :; }
+    compose_up_checked "$@"
+}
+
 kr_up() { # <keep> <running> <compose_up_checked args...> -> rc; the up line lands in $KRLOG
     local keep="$1" running="$2"
     shift 2
     : >"$KRLOG"
     PITHEAD_UNIT_DIR="$KR/units" DOCKER_LOG="$KRLOG" RUNNING_STUB="$running" PITHEAD_KEEP_RUNNING="$keep" PATH="$KRBIN:$PATH" \
-        run_sourced "$KR" compose_up_checked "$@" >"$KR/out" 2>&1
+        run_sourced "$KR" kr_compose_up "$@" >"$KR/out" 2>&1
 }
 kr_line() { grep 'compose up' "$KRLOG" | tail -1; }
 kr_names() { kr_line | tr ' ' '\n'; } # one word per line, so 'tari' never matches 'tari-wallet'

@@ -16,6 +16,8 @@ rn_out=$(
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
+    apply_tor_egress_firewall() { :; }
+    lan_guard_prepare_up() { :; }
     sleep() { :; }
     docker() {
         case "$*" in
@@ -53,6 +55,8 @@ st_out=$(
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
+    apply_tor_egress_firewall() { :; }
+    lan_guard_prepare_up() { :; }
     sleep() { :; }
     docker() {
         case "$*" in
@@ -79,6 +83,8 @@ st_out=$(
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
+    apply_tor_egress_firewall() { :; }
+    lan_guard_prepare_up() { :; }
     sleep() { :; }
     docker() {
         case "$*" in

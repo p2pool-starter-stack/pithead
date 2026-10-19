@@ -365,6 +365,8 @@ lock_compose_path_probe() {
         # shellcheck disable=SC1090
         source "$STACK"
         lan_guard_watched_ports() { :; } # this probe checks the lock bind, not node publishes
+        apply_tor_egress_firewall() { :; }
+        lan_guard_prepare_up() { :; }
         docker() {
             [ "$1" != ps ] || return 0 # no running node in this lock-path fixture
             printf '%s' "$PITHEAD_LOCK_FILE"

@@ -82,4 +82,4 @@ tests/stack/test-cli.sh	410
 tests/stack/test-config.sh	705
 tests/stack/test-monero-tari.sh	557
 tests/stack/test-rig-worker.sh	616
-tests/stack/test-tor-network.sh	583
+tests/stack/test-tor-network.sh	576

@@ -24,6 +24,8 @@ pp_up() {
             [ "$PP_FAIL" != fail ] || [ "$2" != pull ]
         }
         remove_deactivated_profile_containers() { :; }
+        apply_tor_egress_firewall() { :; }
+        lan_guard_prepare_up() { :; }
         lan_guard_watched_ports() { :; } # the image-pull probe has no published node ports
         mutation_lock_path() { echo /dev/null; }
         compose_up_checked -d
