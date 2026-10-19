@@ -43,6 +43,15 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             } ;; # the third push is the carry
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
+            up-long-fails:up)
+                echo 'Stratum password: fixture-secret'
+                echo 'Stratum authentication is ON: every rig must connect with pass "fixture-secret" (set it as the xmrig/RigForge stratum password).'
+                echo 'No such image: tecnativa/docker-socket-proxy:v0.5.0@sha256:x' >&2
+                printf 'compose output %s\n' {1..30}
+                echo 'PROXY_AUTH_TOKEN=fixture-secret' >&2
+                echo 'final up diagnostic'
+                return 1
+                ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
         }
@@ -187,6 +196,13 @@ SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev
 assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
 assert_contains "a failed missing-image up captures Tor's first unhealthy state (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
 assert_eq "missing-image up captures Tor before the next image operation (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-up\npost-up-image-inspect'
+assert_eq "a long failed missing-image up fails lifecycle (#3345)" "$(SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-long-fails)" "1|1"
+assert_contains "a long failed missing-image up keeps its early cause (#3345)" "$(cat "$LIFECYCLE_OUT")" "No such image"
+assert_contains "a long failed missing-image up keeps its final line (#3345)" "$(cat "$LIFECYCLE_OUT")" "final up diagnostic"
+assert_contains "a long failed missing-image up redacts credentials (#3345)" "$(cat "$LIFECYCLE_OUT")" "PROXY_AUTH_TOKEN=<redacted>"
+assert_contains "a long failed missing-image up redacts the password announcement (#3345)" "$(cat "$LIFECYCLE_OUT")" "Stratum password: <redacted>"
+assert_contains "a long failed missing-image up redacts the rig instructions (#3345)" "$(cat "$LIFECYCLE_OUT")" "connect with pass <redacted>"
+assert_eq "a long failed missing-image up never prints credentials (#3345)" "$(grep -c fixture-secret "$LIFECYCLE_OUT" || true)" "0"
 : >"$LIFECYCLE_TRACE_OUT"
 LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-apply-fails >/dev/null || it_fail "carry apply diagnostic fixture executes"
 assert_contains "a failed carry captures Tor before cleanup (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
