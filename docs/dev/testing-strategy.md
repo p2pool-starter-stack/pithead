@@ -669,7 +669,7 @@ handful of suites are invoked as their own CI step instead and are listed as exe
 | Fake-daemon **docker mini-stack** | 3 | PRs touching the harness, dashboard, CLI source, or workflow | ✅ (own workflow) |
 | **Live config matrix** on real nodes | 4 | manual / pre-release | ✅ **release gate** ([#44](https://github.com/p2pool-starter-stack/pithead/issues/44)) |
 | **Targeted live run** for a change to what runs on a box (`build/`, compose, config rendering, the control plane, deploy, upgrade, restore, merge-mining, Tor, miners) | 4 | every such PR, on its head (bench-ci `tier4-e2e`, `targeted` or `matrix`) | ✅ required: the adversarial review returns a PR without it |
-| **KVM appliance battery** (`tests/os/run.sh`) | 4 | every PR touching `os/`, RAUC, the wizard, first boot, the installer or updates, on its head (bench-ci `tier4-kvm`, one phase at a time); `all` phases against the exact commit, pre-cut | ✅ **release gate for the image**, enforced by `release.sh`'s `bench-ci/tier4` preflight ([appliance-release.md](appliance-release.md)) |
+| **KVM appliance battery** (`tests/os/run.sh`) | 4 | every PR touching `os/`, RAUC, the wizard, first boot, the installer or updates, on its head (bench-ci `tier4-kvm`, one phase at a time); all required phases in separate capped jobs against the exact commit, pre-cut | ✅ **release gate for the image**, enforced by `release.sh`'s `bench-ci/tier4` preflight ([appliance-release.md](appliance-release.md)) |
 
 Tiers 1 and 2 run on every PR; tier 3 runs for the paths named above. Tier 4 is the blocking
 pre-release gate (see [Releasing](releasing.md)) because it needs the real synced nodes, and,

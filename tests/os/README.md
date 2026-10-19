@@ -358,9 +358,18 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 
 `--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means every phase except
-crossupdate, including image-upgrade, fault, reset and stack, and the full run is required once for
-every RC candidate.
+the selected battery; the run exits non-zero if anything failed. Standalone `--phase all`
+runs boot, update, install, provision, setup-defaults, rig, rigmedia, media, fault, reset,
+image-upgrade and stack in order. Crossupdate and tor-heal are selected separately.
+
+Prove the full required battery on every RC candidate using separate capped bench-ci jobs,
+not a single `phases: ["all"]` submission. bench-ci admission refuses `all` before job
+creation and returns explicit `phase_groups` from the submitted commit plus the existing
+timeout ceiling. Submit each required phase group with its inputs and retain all job
+references for the candidate. Do not omit phases or raise the cap to fit a single job.
+Completed rows remain independently valid when a later phase fails or times out.
+See [the release procedure](../../docs/dev/releasing.md#which-gates-are-automated-and-which-are-not)
+for the aggregate gate; standalone `--phase all` remains available outside bench-ci.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
 phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input

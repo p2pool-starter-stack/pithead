@@ -46,15 +46,16 @@ awk '
 BENCH_CI_URL=https://bench.invalid/bench-ci bash "$RECIPE_TEST_DIR/recipe.sh"
 
 jq -es --arg sha "$RECIPE_TEST_SHA" '
-    length == 3 and
+    length == 13 and
     all(.[]; .repo == "pithead" and .commit == $sha and .ref == "release/" + $sha) and
-    (map(.idempotency_key) | unique | length == 3) and
-    (.[0].tier == "tier4-kvm" and .[1].tier == "tier4-kvm") and
-    (.[0].options.phases == ["boot","update","install","provision"]) and
-    (.[1].options.phases == ["rig","rigmedia","media","fault","reset","image-upgrade","stack"]) and
-    all(.[0:2][]; .timeout_minutes == 240 and (.after // []) == [] and (.status_gate // false) == false) and
-    (.[2].tier == "tier4-e2e" and .[2].status_gate == true and .[2].after == [1,2]) and
-    (.[2].options.mode == "targeted" and (.[2].options | has("no_rig") | not))
+    (map(.idempotency_key) | unique | length == 13) and
+    (map(select(.tier == "tier4-kvm")) | map(.options.phases) == [
+        ["boot"], ["update"], ["install"], ["provision"], ["setup-defaults"], ["rig"],
+        ["rigmedia"], ["media"], ["fault"], ["reset"], ["image-upgrade"], ["stack"]
+    ]) and
+    all(.[0:12][]; .tier == "tier4-kvm" and .timeout_minutes == 240 and (.after // []) == [] and (.status_gate // false) == false) and
+    (.[12].tier == "tier4-e2e" and .[12].status_gate == true and .[12].after == [range(1;13)]) and
+    (.[12].options.mode == "targeted" and (.[12].options | has("no_rig") | not))
 ' "$RECIPE_TEST_DIR/jobs.jsonl" >/dev/null
 
 cut_doc=$(sed -n '/^## Cutting a release/,/^## Shipping a bad release/p' "$ROOT/docs/dev/appliance-release.md")

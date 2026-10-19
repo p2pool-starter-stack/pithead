@@ -298,13 +298,13 @@ The update phase also packages its built v1 `system.img` and dev-signed v2 bundl
 asset sizes and checksums, and compares the decompressed image with the original.
 Its phase log retains the sizes and hashes; harness cleanup removes the packaged copies.
 This checks the release packaging path with test signing, not the final release-key artifacts.
-`--phase all` runs all eight — boot, update, install, provision, rig, media, fault and reset.
-Expect roughly 25 minutes per phase, most of it image builds, so budget an evening rather
-than a coffee break. It ran five of the eight until #1064, which meant a cut that followed
-this page ran none of the destructive phases: the power cuts, the corrupt-bundle refusal, the
-factory reset, the wedged-`/data` recovery and the whole media channel. Record the dated
-per-phase pass count in the release issue for the tip actually being cut — an old green
-standing in for a new one is the same defect wearing a different hat.
+Phase durations vary; use retained job durations to plan the gate. The full battery exceeds
+the 240-minute job cap. Submit explicit phase groups through bench-ci; admission refuses
+`all` before job creation and returns per-commit phase groups and the existing timeout
+ceiling. Preserve every required phase across those jobs. Standalone `--phase all` remains
+available outside capped bench-ci jobs. Record per-phase pass counts and job references
+for the exact candidate commit in the release issue. Completed rows remain independently
+valid when a later phase fails or times out.
 
 Two harness rules worth knowing before you lose an afternoon to them:
 
@@ -512,9 +512,10 @@ channels share the final cut commit, one version and one GitHub Release.
    operator-visible change included since prep and set its heading to the current UTC date.
    `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
    cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
-   submit two independent bench-ci `tier4-kvm` jobs on this exact SHA, with
-   `timeout_minutes=240` each: `boot,update,install,provision` and
-   `rig,rigmedia,media,fault,reset,image-upgrade,stack`. Record both job IDs in the release issue.
+   submit independent bench-ci `tier4-kvm` jobs on this exact SHA, one required phase per job
+   with `timeout_minutes=240`. Include boot, update, install, provision, setup-defaults, rig,
+   rigmedia, media, fault, reset, image-upgrade and stack; add any separately required
+   crossupdate or tor-heal proof with its inputs. Record every job ID in the release issue.
    Follow [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not)
    for wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel
    either KVM group. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
