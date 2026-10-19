@@ -1423,6 +1423,11 @@ SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on
 so the harness itself is held to the same lint/test standard as the rest of the stack.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
+`selftest-inventory-floors.sh` runs the real inventory with empty stderr as its control, then
+copies the unchanged gate into fixtures with each aggregate counter one below its declared
+floor and the other counters at their floors. Each case requires exit 1 and the diagnostic
+naming that counter, count and floor. It rejects missing fixture coverage and nonpositive
+floors; it does not seed the per-file or source-set guards.
 `selftest-check-lan-guard.sh` checks read-only and deploying dispatch with unrelated
 assertions, including onion targets, explicitly stubbed. It retains the LAN probes,
 timer flush and boot recovery assertions and rejects unexpected missing commands,
