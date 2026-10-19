@@ -43,7 +43,7 @@ launch_of() { # <harness-phase-args> [borrow-miner] [mode] [scenario] [harness-s
                 cat >"$STDIN_FILE"
                 echo 4242
                 ;;
-            *"&& echo done"*) echo done ;;
+            *"&& echo done"*) echo "done" ;;
             *e2e-harness.done*)
                 echo 0
                 return 0

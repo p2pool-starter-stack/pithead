@@ -58,7 +58,7 @@ capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globa
                 cat >"$STDIN_FILE"
                 echo 4242
                 ;;
-            *"&& echo done"*) echo done ;;
+            *"&& echo done"*) echo "done" ;;
             *e2e-harness.done*) echo 0 ;;
             *) cat >/dev/null ;;
             esac
