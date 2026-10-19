@@ -118,7 +118,7 @@ assert_shipped_config_version_asset() {
 # Commit a dashboard-password change and read its verdict from the host's result spool: the
 # dashboard's own result poll authenticates with the login this very commit replaces (#2367).
 password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current login) by dynamic scope
-    local live proposed rid result tries=0
+    local live proposed rid result="" tries=0
     live=$(sensitive_live_config) || {
         bad "dashboard-password repoint NOT exercised: /api/config unreadable before the commit"
         return 1
@@ -138,8 +138,8 @@ password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current
     dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY",approve:true,payout_suffixes:{}}')" 20 >/dev/null || true
     while [ "$tries" -lt 140 ]; do
         result=$(_ssh "cat /data/pithead/data/control/results/$rid.json" 2>/dev/null) &&
-            ! printf '%s' "$result" | jq -e '.status | IN("pending","accepted","running")' >/dev/null 2>&1 && break
-        result="" tries=$((tries + 1))
+            ! printf '%s' "$result" | jq -e '.status | IN("pending","accepted","running","previewed")' >/dev/null 2>&1 && break
+        tries=$((tries + 1))
         sleep 3
     done
     dashboard_password_repoint_applied_verdict "$result" && return 0
@@ -257,7 +257,7 @@ _config_version_asset_phase_self_test() (
 
 _password_commit_via_host_self_test() (
     local msg="Dashboard login password CHANGED — a mistyped password locks this session out, and on the appliance it is also the console root login."
-    local good preview committed
+    local good preview committed reads sleeps=0 failure=""
     good=$(jq -nc --arg m "$msg" '{id:"r1",status:"previewed",approval_required:true,changes:[{msg:$m}]}')
     sensitive_live_config() { printf '{"dashboard":{"auth":{"password":"old"}}}'; }
     sensitive_preview() { APPROVAL_PREVIEW=$preview APPROVAL_REQUEST_ID=r1; }
@@ -265,7 +265,8 @@ _password_commit_via_host_self_test() (
         committed=1
         return 1
     }
-    bad() { :; }
+    bad() { failure=$1; }
+    sleep() { sleeps=$((sleeps + 1)); }
     _ssh() { printf '{"status":"applied"}'; }
     preview=$good committed=0
     password_commit_via_host new && [ "$committed" = 1 ] || exit 1
@@ -279,6 +280,34 @@ _password_commit_via_host_self_test() (
     preview=$good committed=0
     _ssh() { printf '{"status":"rejected","error":"type APPLY"}'; }
     ! password_commit_via_host new || exit 1
+    reads=$(mktemp)
+    trap 'rm -f "$reads"' EXIT
+    printf '0\n' >"$reads"
+    _ssh() {
+        local count
+        count=$(cat "$reads")
+        count=$((count + 1))
+        printf '%s\n' "$count" >"$reads"
+        if [ "$count" -le 3 ]; then
+            printf '{"id":"r1","status":"previewed"}'
+        else
+            printf '{"id":"r1","status":"applied"}'
+        fi
+    }
+    committed=0 failure="" sleeps=0
+    password_commit_via_host new && [ "$committed" = 1 ] || exit 1
+    [ "$(cat "$reads")" = 4 ] && [ "$sleeps" = 3 ] && [ -z "$failure" ] || exit 1
+    _ssh() {
+        local count
+        count=$(cat "$reads")
+        printf '%s\n' "$((count + 1))" >"$reads"
+        printf '{"id":"r1","status":"previewed"}'
+    }
+    printf '0\n' >"$reads"
+    committed=0 failure="" sleeps=0
+    ! password_commit_via_host new && [ "$committed" = 1 ] || exit 1
+    [ "$(cat "$reads")" = 140 ] && [ "$sleeps" = 140 ] || exit 1
+    case "$failure" in *status=previewed*) ;; *) exit 1 ;; esac
 )
 
 _hostname_landed_fallback_self_test() (
