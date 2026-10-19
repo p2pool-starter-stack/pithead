@@ -5,7 +5,7 @@ assert_node_recovery_status() {
     started="$(now_s)"
     wait_status_ok 240 || wait_rc=$?
     elapsed=$(($(now_s) - started))
-    # Reuse rx with its exact local/SSH settings in a bounded child; never export credentials.
+    # Reuse the existing transport without exporting credentials.
     script="$(declare -f rx quote_arg)"
     for name in IT_MODE IT_REMOTE_DIR IT_PITHEAD IT_SSH_DEST IT_SSH_OPTS; do
         if declare -p "$name" >/dev/null 2>&1; then

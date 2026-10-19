@@ -10,6 +10,7 @@ export RECOVERY_TEST_DIR="$TEST_DIR"
 IT_MODE=local IT_REMOTE_DIR="$TEST_DIR" IT_PITHEAD=pithead
 OUT_DIR="$TEST_DIR/results"
 mkdir -p "$OUT_DIR"
+echo "== node recovery failure-boundary evidence =="
 export RECOVERY_TEST_RC=19
 now_s() { cat "$TEST_DIR/clock"; }
 wait_status_ok() {

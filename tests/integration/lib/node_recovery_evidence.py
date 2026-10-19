@@ -82,8 +82,7 @@ def number(value):
 
 
 def status_output(raw, truncated=False):
-    # Status also prints auth, onion URLs and Compose topology. Retain only complete,
-    # recognized service-verdict lines; never copy arbitrary suffixes or error messages.
+    # Only complete service verdicts are safe to retain from status.
     if truncated:
         raw = raw.rsplit(b"\n", 1)[0] if b"\n" in raw else b""
     text = re.sub(r"\x1b\[[0-9;]*m", "", raw.decode("utf-8", "replace"))
