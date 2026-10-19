@@ -10,6 +10,7 @@ echo "== unit: PITHEAD_KEEP_RUNNING scopes compose_up_checked (#2639) =="
 KR="$SANDBOX/keep-running"
 KRBIN="$KR/bin"
 mkdir -p "$KRBIN"
+make_host_tool_stubs "$KRBIN" systemctl
 printf 'COMPOSE_PROFILES=local_node,local_tari,payout_confirm,tari_payout_confirm\n' >"$KR/.env"
 # RUNNING_STUB lists the containers `docker ps` reports running; the service list is the stack's.
 cat >"$KRBIN/docker" <<'EOF'
@@ -32,7 +33,7 @@ kr_up() { # <keep> <running> <compose_up_checked args...> -> rc; the up line lan
     local keep="$1" running="$2"
     shift 2
     : >"$KRLOG"
-    DOCKER_LOG="$KRLOG" RUNNING_STUB="$running" PITHEAD_KEEP_RUNNING="$keep" PATH="$KRBIN:$PATH" \
+    PITHEAD_UNIT_DIR="$KR/units" DOCKER_LOG="$KRLOG" RUNNING_STUB="$running" PITHEAD_KEEP_RUNNING="$keep" PATH="$KRBIN:$PATH" \
         run_sourced "$KR" compose_up_checked "$@" >"$KR/out" 2>&1
 }
 kr_line() { grep 'compose up' "$KRLOG" | tail -1; }

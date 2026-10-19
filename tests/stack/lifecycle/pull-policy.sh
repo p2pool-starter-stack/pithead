@@ -7,12 +7,13 @@
 echo "== unit: compose_up_checked fetches missing non-buildable images on a source checkout (#2654) =="
 PP="$SANDBOX/pull2654"
 mkdir -p "$PP/src/dashboard" "$PP/rel/build/tari"
+make_host_tool_stubs "$PP/bin" systemctl
 : >"$PP/src/dashboard/Dockerfile"
 # $1 = checkout dir, $2 = `fail` to make the pull fail. Prints every docker argv in call order.
 pp_up() {
     (
         cd "$1" || exit
-        export PITHEAD_UNIT_DIR="$PP/units"
+        export PITHEAD_UNIT_DIR="$PP/units" PATH="$PP/bin:$PATH"
         set --
         # shellcheck disable=SC1090
         source "$STACK" 2>/dev/null

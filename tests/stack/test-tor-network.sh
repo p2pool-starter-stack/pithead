@@ -501,15 +501,13 @@ assert_contains "Monero anonymous listener accepts Tor on the bridge (#2936)" \
 unset tor_both_local tor_remote_tari tor_both_remote
 
 echo "== unit: onion provisioning follows node mode (#103) =="
-# pithead's half of the same gate: a hidden service that is never published has no hostname to wait
-# for, so provision_tor must not block on a remote node's onion (a 60s timeout, then a fatal error),
-# and the address stays a placeholder. wait_for_onion is stubbed — the polling itself is the docker
-# layer, and it runs in a command substitution, so the probe records asks in a file.
+# Record onion requests so command substitutions cannot lose the probe's observations.
 ONP="$SANDBOX/onion-prov"
-mkdir -p "$ONP"
+make_host_tool_stubs "$ONP/bin" systemctl
 prov_probe() { # <MONERO_MODE> <TARI_MODE> -> "<onions asked for>|<MONERO_ONION>|<TARI_ONION>|<P2POOL_ONION>"
     (
         cd "$ONP" || exit
+        export PITHEAD_UNIT_DIR="$ONP/units" PATH="$ONP/bin:$PATH"
         # shellcheck disable=SC1090
         source "$STACK"
         set +e
@@ -542,6 +540,7 @@ assert_eq "provision_tor waits for the local node only in a mixed setup (#103)" 
 node_onion_probe() { # provision_node_onions recreates tor and captures a newly local node's onion before it starts. <MONERO_MODE> <MONERO_ONION> <TARI_MODE> <TARI_ONION> -> "<docker calls>|<asked>|<MONERO_ONION>|<TARI_ONION>|<renders>"
     (
         cd "$ONP" || exit
+        export PITHEAD_UNIT_DIR="$ONP/units" PATH="$ONP/bin:$PATH"
         [ "${5:-}" != source ] || { mkdir -p dashboard && : >dashboard/Dockerfile; }
         # shellcheck disable=SC1090
         source "$STACK"

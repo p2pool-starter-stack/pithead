@@ -10,6 +10,7 @@
 echo "== unit: stack_backup — caddy stays up across the backup's own stop (#2364) =="
 CD="$SANDBOX/backup-caddy-stays-up"
 mkdir -p "$CD/build/tari" "$CD/data/tor" "$CD/data/dashboard" "$CD/bin"
+make_host_tool_stubs "$CD/bin" systemctl iptables iptables-save iptables-restore nft
 cp "$STACK" "$CD/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$CD/build/tari/"
 DOCKER_LOG="$CD/docker.log"
