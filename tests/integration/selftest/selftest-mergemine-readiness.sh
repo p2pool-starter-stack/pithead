@@ -123,6 +123,7 @@ mm_final_race_outcome() { # <verdict> <monero-rc>
         }
         mm_epoch() { printf 'epoch-new\n'; }
         monero_caught_up() { return "$MM_RACE_MONERO_RC"; }
+        mm_startup_lost() { return 1; }
         # shellcheck disable=SC2034 # harness counters consumed dynamically by assertion helpers
         IT_PASS=0 IT_FAIL=0 IT_SKIPPED_LEGS=0 IT_SKIPPED_BY_DESIGN=0 IT_SKIPPED_MISSING=0 IT_SKIPPED_NAMES=""
         assert_mergemine_roundtrip >/dev/null 2>&1

@@ -13,6 +13,7 @@ MM_FIXTURE_STARTUP=""
 MM_FIXTURE_RECENT=""
 MM_FIXTURE_SYNCED=0
 MM_FIXTURE_RECENT_RC=0
+MM_FIXTURE_RESTART=
 MM_READY_TIMEOUT=0 MM_READY_INTERVAL=0
 MM_FIXTURE_DIR=$(mktemp -d)
 MM_FIXTURE_TRACE="$MM_FIXTURE_DIR/trace"
@@ -25,13 +26,14 @@ cat >"$MM_FIXTURE_DIR/bin/docker" <<'MM_DOCKER'
 case "$1" in
 inspect)
     case "$*" in
-    *.Id*) printf 'fixture-id|%s\n' "$MM_FIXTURE_START" ;;
+    *.Id*) printf 'fixture-id%s|%s\n' "$([ -e "$MM_FIXTURE_DIR/restarted" ] && echo -2)" "$MM_FIXTURE_START" ;;
     *) printf '%s\n' "$MM_FIXTURE_START" ;;
     esac
     ;;
 logs) printf '%s wallet=fixture-secret\n' "$MM_FIXTURE_OLDEST" >&2 ;;
 compose)
     if [[ " $* " == *" --since 60s "* ]]; then
+        [ -z "$MM_FIXTURE_RESTART" ] || : >"$MM_FIXTURE_DIR/restarted"
         printf '%s\n' "$MM_FIXTURE_RECENT"
         exit "$MM_FIXTURE_RECENT_RC"
     fi
@@ -43,8 +45,8 @@ MM_DOCKER
 chmod +x "$MM_FIXTURE_DIR/bin/timeout" "$MM_FIXTURE_DIR/bin/docker"
 rx() {
     printf '%s\n' "$1" >>"$MM_FIXTURE_TRACE"
-    export MM_FIXTURE_START MM_FIXTURE_OLDEST MM_FIXTURE_STARTUP MM_FIXTURE_RECENT MM_FIXTURE_RECENT_RC
-    PATH="$MM_FIXTURE_DIR/bin:$PATH" bash -c "$1"
+    export MM_FIXTURE_START MM_FIXTURE_OLDEST MM_FIXTURE_STARTUP MM_FIXTURE_RECENT MM_FIXTURE_RECENT_RC MM_FIXTURE_DIR MM_FIXTURE_RESTART
+    PATH="$MM_FIXTURE_DIR/bin:$PATH" bash -c "$1" | tee -a "$MM_FIXTURE_DIR/wire"
 }
 monero_caught_up() { return "$MM_FIXTURE_SYNCED"; }
 mm_outcome() {
@@ -82,6 +84,10 @@ MM_FIXTURE_RECENT='p2pool | MergeMiningClientTari worker thread ready'
 mm_expect "a fresh local-only client line cannot pass" "0 0 1 1 0"
 MM_FIXTURE_RECENT=$'p2pool | \033[0;90mMergeMiningClientTari \033[0mtari://node.fixture:18142 uses chain_id 0123456789abcdef'
 mm_expect "rotated logs with a fresh chain_id round-trip pass" "1 0 0 0 0"
+MM_FIXTURE_RESTART=1
+mm_expect "a restart during the fresh-window read refuses the verdict" "0 1 0 0 0"
+rm -f "$MM_FIXTURE_DIR/restarted"
+MM_FIXTURE_RESTART=
 assert_contains "fallback uses a fresh bounded window" "$(cat "$MM_FIXTURE_TRACE")" "--since 60s"
 assert_contains "fallback is capped" "$(cat "$MM_FIXTURE_TRACE")" "tail -n 2000"
 MM_FIXTURE_STARTUP='p2pool | MergeMiningClientTari worker thread ready'
@@ -101,6 +107,10 @@ mm_expect "complete-log negative control cannot borrow fresh proof" "0 1 0 0 0"
 case "$(cat "$MM_FIXTURE_TRACE")" in
 *"--since 60s"*) it_fail "complete logs never invoke the fallback" ;;
 *) it_pass "complete logs never invoke the fallback" ;;
+esac
+case "$(cat "$MM_FIXTURE_DIR/wire")" in
+*fixture-secret*) it_fail "the oldest line's payload never crosses the wire" ;;
+*) it_pass "the oldest line's payload never crosses the wire" ;;
 esac
 MM_FIXTURE_OLDEST=not-a-timestamp
 mm_expect "an invalid oldest timestamp cannot hide a missing client" "0 1 0 0 0"

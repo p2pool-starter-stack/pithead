@@ -189,7 +189,7 @@ mm_await_roundtrip() {
 mm_startup_lost() {
     local started oldest
     started="$(mm_started)" || return 1
-    oldest="$(rx "docker logs --timestamps --since $(quote_arg "$started") p2pool 2>&1 | head -n 1 | awk '\$1 ~ /^[0-9][0-9][0-9][0-9]-/ {print \$1}'" 2>/dev/null)" || return 1
+    oldest="$(rx "timeout ${MM_LOG_READ_TIMEOUT} docker logs --timestamps --since $(quote_arg "$started") p2pool 2>&1 | head -n 1 | awk '\$1 ~ /^[0-9][0-9][0-9][0-9]-/ {print \$1}'" 2>/dev/null)" || return 1
     python3 - "$started" "$oldest" <<'MM_TIME'
 import re
 import sys
@@ -216,7 +216,7 @@ MM_TIME
 
 # A local client line cannot prove Tari answered, so lost evidence is judged on a fresh bounded window.
 mm_capture_recent() {
-    rx "docker compose logs --no-color --since 60s p2pool 2>&1 | tail -n ${MM_RECENT_LINES} | grep -a MergeMiningClientTari | cut -c 1-${MM_CAPTURE_LINE_BYTES} || true" 2>/dev/null
+    rx "timeout ${MM_LOG_READ_TIMEOUT} docker compose logs --no-color --since 60s p2pool 2>&1 | tail -n ${MM_RECENT_LINES} | grep -a MergeMiningClientTari | cut -c 1-${MM_CAPTURE_LINE_BYTES} || true" 2>/dev/null
 }
 
 # Diagnostic lines from the same window, for a FAIL only (#2326). An empty capture cannot say
@@ -299,7 +299,10 @@ assert_mergemine_roundtrip() {
             current="$(mm_epoch)" || current=""
             if [ "$current" = "$epoch" ]; then
                 lines="$(mm_capture_recent)" || lines=""
-                if verdict="$(mm_roundtrip_verdict "$lines")"; then
+                current="$(mm_epoch)" || current=""
+                if [ "$current" != "$epoch" ]; then
+                    it_fail "p2pool merge-mining gRPC round-trip (#1397)" "p2pool restarted during the fresh-window read; refusing a verdict from the prior container epoch"
+                elif verdict="$(mm_roundtrip_verdict "$lines")"; then
                     it_pass "p2pool reached the Tari node over gRPC — fresh ${verdict} (#1397)"
                 else
                     it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" \
