@@ -13,7 +13,6 @@
 # no-argument run keeps the same process boundaries. stack_blocks_audit refuses missing or duplicate
 # stanzas, missing domain accounting, and a workflow matrix that does not list every block.
 set -uo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_BLOCKS=5
 # shellcheck source=tests/stack/lib.sh
@@ -28,7 +27,6 @@ fi
 # that starts run.sh itself cannot append to it.
 _tally="${STACK_TALLY:-}"
 unset STACK_TALLY
-
 stack_verdict() { # <label>: the summary line, and the suite's exit status
     echo ""
     printf '%s: \033[1;32m%d passed\033[0m, ' "$1" "$PASS"
@@ -114,6 +112,8 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-toolchain.sh" && domain_ran test-release-toolchain.sh "$_d0" "$?" || domain_ran test-release-toolchain.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-publish.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-publish.sh" && domain_ran test-release-publish.sh "$_d0" "$?" || domain_ran test-release-publish.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-registry.sh" && domain_ran test-release-registry.sh "$_d0" "$?" || domain_ran test-release-registry.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-rehearsal.sh" && domain_ran test-release-rehearsal.sh "$_d0" "$?" || domain_ran test-release-rehearsal.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-rootfs-publish.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-rootfs-publish.sh" && domain_ran test-release-rootfs-publish.sh "$_d0" "$?" || domain_ran test-release-rootfs-publish.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-unit-helpers.sh disable=SC2015

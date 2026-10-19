@@ -350,7 +350,7 @@ CN_ATTEST_PROBE=$(
 )
 assert_contains "host does not attest before the daemon starts on Tor" "$CN_ATTEST_PROBE" "before=no"
 assert_contains "host attests only after live Tor and firewall readback" "$CN_ATTEST_PROBE" "after=verified:00000000-0000-4000-8000-000000000001"
-assert_eq "matching host attestation clears the transition" "$(run_sourced "$V" clearnet_tor_attested monero && echo yes)" "yes"
+assert_eq "matching result cannot attest a dashboard-owned marker" "$(run_sourced "$V" clearnet_tor_attested monero && echo yes || echo no)" "no"
 printf '00000000-0000-4000-8000-000000000002\n' >"$CN_SDIR/monero.synced"
 if run_sourced "$V" clearnet_tor_attested monero; then
     bad "stale host result cannot complete a new transition" "accepted prior marker"
@@ -380,8 +380,8 @@ with open(sys.argv[2], "w") as fh:
 PYFIXTURE
 done
 if run_sourced "$V" clearnet_sync_active; then
-    bad "verified Tor completion clears exposure warning" "still active"
-else ok "verified Tor completion clears exposure warning"; fi
+    ok "dashboard-owned markers keep exposure warning despite matching results"
+else bad "dashboard-owned markers keep exposure warning despite matching results" "unclaimed marker accepted"; fi
 # The sandbox's sudo normally no-ops every command. Model the host-owned marker cleanup here.
 cp "$V/bin/sudo" "$V/bin/sudo.before-clearnet"
 printf '#!/usr/bin/env bash\n[ "$1" != rm ] || exec "$@"\nexit 0\n' >"$V/bin/sudo"

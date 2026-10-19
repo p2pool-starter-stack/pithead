@@ -15,6 +15,7 @@ run_lifecycle() {
     run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
+    prove_wallet_recovery || return 1
     lifecycle_gate_sample before-restart
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
@@ -59,10 +60,9 @@ run_lifecycle() {
     fi
     run_source_image_reconcile || return 1
     run_tari_background_sync || return 1
-    local cur_pool fp_before
+    local cur_pool fp_before other
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
-    local other
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
     fp_before="$(secret_fingerprint)"
     # ensure_owner whole-tree migration (#255): plant a root-owned file UNDER a data dir (the

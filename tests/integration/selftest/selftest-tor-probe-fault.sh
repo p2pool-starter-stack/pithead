@@ -5,6 +5,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
+# shellcheck source=tests/integration/lib/fault-rules.sh
+source "$HERE/../lib/fault-rules.sh"
 # shellcheck source=tests/integration/lib/run-tor-probe-fault.sh
 source "$HERE/../lib/run-tor-probe-fault.sh"
 
@@ -61,8 +63,11 @@ for flag in 0 unset; do
         if [ "$flag" = unset ]; then unset SKIP_MINING_ASSERTS; else SKIP_MINING_ASSERTS=$flag; fi
         waited=0
         env_on_box() { echo true; }
+        cleared=0
+        fault_rules_clear_all() { cleared=$((cleared + 1)); }
         wait_for() {
             check test "$1" -eq 180
+            check test "$cleared" -eq 1
             check test "$2" -eq 10
             check test "$4" = _tor_probe_mining_sample
             waited=$((waited + 1))

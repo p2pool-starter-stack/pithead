@@ -126,9 +126,9 @@ test("a dropped appliance prop degrades to the host wording, not to a blank card
 
 // Proves the failed arm of ConfigView's `done` state actually consults this.props.appliance,
 // which the module-level tests above cannot see.
-function doneCard(props) {
+function doneCard(props, result = RESULT) {
   const view = new ConfigView(props);
-  view.state = { ...view.state, phase: "done", result: RESULT };
+  view.state = { ...view.state, phase: "done", result };
   return renderToString(view.render());
 }
 
@@ -150,6 +150,31 @@ test("an applied result is untouched by #1769 on either branch", () => {
     const out = renderToString(view.render());
     assert.match(out, /Changes applied/);
     assert.doesNotMatch(out, /Apply failed/);
+  }
+});
+
+test("a rejected commit is reported as not applied, not saved-but-not-running (#3376)", () => {
+  const stale = {
+    status: "rejected",
+    error: "the configuration changed after this preview was made — preview again",
+  };
+  const gate = {
+    status: "rejected",
+    error: "this change is disruptive (rig adoption) — type APPLY in the dashboard to confirm.",
+  };
+  for (const result of [stale, gate]) {
+    for (const onAppliance of [true, false]) {
+      for (const out of [
+        renderToString(applyFailure(result, onAppliance)),
+        doneCard({ appliance: onAppliance }, result),
+      ]) {
+        assert.ok(out.includes(result.error), "the host's own reason stays visible");
+        assert.match(out, /not applied or saved/);
+        assert.doesNotMatch(out, /Your change was saved but is not running/);
+        assert.doesNotMatch(out, /previous config(uration)? is kept/);
+        assert.doesNotMatch(out, /Below is this machine's own log/);
+      }
+    }
   }
 });
 

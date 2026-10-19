@@ -28,7 +28,7 @@ try:
         os.close(fd)
     with open(sys.argv[2]) as fh:
         result = json.load(fh)
-    valid = stat.S_ISREG(st.st_mode) and result == {
+    valid = stat.S_ISREG(st.st_mode) and st.st_uid == 0 and not st.st_mode & 0o022 and result == {
         "status": "verified", "marker": marker, "inode": st.st_ino, "ctime_ns": st.st_ctime_ns
     }
 except (OSError, UnicodeError, ValueError):

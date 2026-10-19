@@ -389,11 +389,15 @@ clearnet peers without opening the entire stack's egress.
 
 The dashboard tracks each chain's sync state. When a clearnet node reports fully synced, it writes
 that chain's persistent marker and asks the host to remove its firewall exception. The host claims
-the marker so the dashboard cannot delete it to reopen clearnet, then verifies
+the marker so the dashboard cannot delete or rewrite it to reopen clearnet, then verifies
 the live rules before the dashboard restarts the node on Tor. It then verifies that the running
 daemon's P2P proxy points to this stack's Tor SOCKS endpoint, checks the firewall rules, and writes
 a host-owned completion result for that transition.
-The dashboard keeps the warning until that result matches the current marker. A failed refresh or
+The dashboard and CLI keep the warning until that result matches the current marker's random UUID,
+inode and ctime, and the marker is root-owned with no group or other write permission. Matching
+text and filesystem timestamps alone cannot attest a dashboard-writable replay. This boundary
+protects against dashboard writes; privileged rewrites of an otherwise identical claimed marker
+are outside it. A failed refresh or
 verification leaves the transition pending and retries; it never clears the marker to reopen
 clearnet. A malformed marker path cannot block status or host removal of that chain's exemption. The
 transition stays pending until the host can claim a valid marker, restart the daemon on Tor, and

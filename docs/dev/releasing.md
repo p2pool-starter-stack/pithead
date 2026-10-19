@@ -240,6 +240,37 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    upgrade. See [Post-publish smoke test](#post-publish-smoke-test-459). This is the only step gated
    *behind* the publish, because it checks the published artifact, not a branch.
 
+### Rehearsing against a scratch registry
+
+Set `PITHEAD_REHEARSAL=1` and `PITHEAD_REGISTRY` to a non-production registry namespace.
+Rehearsal refuses the production namespace even with `--dry-run`. It runs every normal gate
+(preflight including signing, tier-4 status, the test gate and smoke), promotes and signs the
+scratch images, then stops before `publish`: no git tag, GitHub Release or install bundle is
+published. Release runs, including draft releases, require the owner's sign-off.
+
+For a registry other than `ghcr.io`, set `PITHEAD_REGISTRY_USER` and `PITHEAD_REGISTRY_TOKEN` if
+login is needed. The token goes to Docker on stdin; GitHub credentials and `gh` fallbacks apply
+only to `ghcr.io`. Without both scratch credentials, login is skipped with a warning and Docker's
+existing authentication is used. The rootfs anonymous-read check is skipped with a log message
+outside GHCR; all other smoke checks still run. A custom namespace without the rehearsal marker
+is allowed for a real cut, with a warning that the published bundle will name that registry.
+
+Prepare registry trust on the release host. For a private CA or plain HTTP, set
+`PITHEAD_BUILDKITD_CONFIG` to a readable BuildKit daemon configuration file and choose a separate
+`PITHEAD_BUILDX_BUILDER` name. The configuration is used when creating that builder; an existing
+builder is never reconfigured. Promotion and inspection also select that builder when the
+configuration is set. Configure Docker daemon CA trust and cosign's `SSL_CERT_FILE` on the host
+as needed; the release script does not install certificates or change daemon configuration.
+
+Registry reads allow 12 attempts with a 10-second delay by default; override with
+`PITHEAD_REGISTRY_READ_RETRIES` and `PITHEAD_REGISTRY_READ_BACKOFF`. Verification compares the
+parsed index digest exactly, including when inspect pads its fields. Registry writes allow
+3 total attempts with an initial 10-second delay, doubled per retry up to 60 seconds. Set
+`PITHEAD_REGISTRY_WRITE_RETRIES` (1–10) and `PITHEAD_REGISTRY_WRITE_BACKOFF` (0–60 seconds) to tune
+writes. Only classified transient registry statuses (500, 502, 503, 504) and connection failures
+retry; authentication, missing manifests, invalid or mismatched digests and unclassified failures
+stop immediately. Rootfs retries repeat the push, not the build or export verification.
+
 ### Pre-release gate (#54)
 
 The [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration test matrix is a
