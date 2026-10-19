@@ -1,0 +1,152 @@
+name: Issue 3058 acceptance proof
+on:
+  push:
+    branches: [agent/3058-acceptance-proof]
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UV_PYTHON_DOWNLOADS: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd
+          enable-cache: false
+      - name: Save unchanged issue acceptance script outside checkout
+        run: |
+          cat > "$RUNNER_TEMP/accept_3058.py" <<'PY'
+          """Acceptance check for p2pool-starter-stack/pithead#3058.
+          
+          Save this file OUTSIDE the repo (for example /tmp/accept_3058.py) so it is never committed.
+          Run from dashboard/ on the PR head:
+              uv run --locked --extra test python /tmp/accept_3058.py
+          Prints PASS/FAIL per check and exits 0 only when every check passes. Production code is
+          mutated in place for one check and restored in a finally block.
+          """
+          import os
+          import re
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+          
+          FILE = "tests/service/test_storage_telemetry.py"
+          TEST = FILE + "::TestTelemetryTableHealth::test_a_failed_recovery_reads_unhealthy"
+          ALLOWED = {"dashboard/" + FILE, "CHANGELOG.md"}
+          STORAGE = Path("mining_dashboard/service/storage_service.py")
+          RECONNECT = "self._conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)"
+          PLUGIN = '''
+          import os, sqlite3, pytest
+          _ORIGINAL = sqlite3.connect
+          
+          @pytest.hookimpl(hookwrapper=True)
+          def pytest_runtest_call(item):
+              yield
+              if sqlite3.connect is not _ORIGINAL:  # still inside the test: its monkeypatch is not undone yet
+                  with open(os.environ["ACCEPT_3058_MARK"], "a") as f:
+                      f.write(item.nodeid + "\\n")
+          '''
+          ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+          results = []
+          
+          
+          def report(name, ok, detail=""):
+              results.append(ok)
+              print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  [{detail}]" if detail else ""), flush=True)
+          
+          
+          def run_pytest(*args, env=ENV):
+              cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                     "-o", "addopts=--import-mode=importlib", *args]
+              code = subprocess.run(cmd, capture_output=True, text=True, env=env).returncode
+              return {0: "pass", 1: "fail"}.get(code, f"error(pytest exit {code})")
+          
+          
+          subprocess.run(["git", "fetch", "-q", "origin", "develop"], check=False)
+          base = subprocess.run(["git", "merge-base", "origin/develop", "HEAD"],
+                                capture_output=True, text=True).stdout.strip()
+          changed = set(subprocess.run(["git", "diff", "--name-only", base], capture_output=True,
+                                       text=True, cwd="..").stdout.split())
+          report("C1 the telemetry test file is changed, and nothing outside it (CHANGELOG.md allowed)",
+                 "dashboard/" + FILE in changed and changed <= ALLOWED, f"changed: {sorted(changed)}")
+          
+          text = Path(FILE).read_text()
+          hits = re.findall(r"""sqlite3\.connect["']|sqlite3,\s*["']connect["']""", text)
+          report("C2 the file has no patch target naming the sqlite3 module's connect", not hits, f"found {hits}" if hits else "")
+          report("C3 the test and its file pass unmutated", run_pytest(FILE) == "pass")
+          
+          with tempfile.TemporaryDirectory() as tmp:
+              Path(tmp, "accept_3058_plugin.py").write_text(PLUGIN)
+              mark = Path(tmp, "mark")
+              env = {**ENV, "PYTHONPATH": tmp + os.pathsep + ENV.get("PYTHONPATH", ""),
+                     "ACCEPT_3058_MARK": str(mark)}
+              outcome = run_pytest("-p", "accept_3058_plugin", FILE, env=env)
+              replaced = mark.read_text().split() if mark.exists() else []
+              report("C4 no test in the telemetry file replaces sqlite3.connect process-wide",
+                     outcome == "pass" and not replaced, f"pytest {outcome}; replaced in {replaced}")
+          
+              cov_env = {**ENV, "COVERAGE_FILE": str(Path(tmp, "cov"))}
+              two = run_pytest("--cov=mining_dashboard", "--cov-context=test", "--cov-report=", FILE,
+                               "tests/service/test_storage_worker.py", env=cov_env)
+              report("C5 per-test coverage over the telemetry and worker storage files runs clean",
+                     two == "pass", f"got {two}")
+              full = run_pytest("--cov=mining_dashboard", "--cov-context=test", "--cov-report=", env=cov_env)
+              report("C6 per-test coverage over the full dashboard suite runs clean", full == "pass",
+                     f"got {full}")
+          
+          src = STORAGE.read_text()
+          start = src.find("def _recover_corrupt_db")
+          at = src.find(RECONNECT, start)
+          if start < 0 or at < 0:
+              got = "error(reconnect anchor not found in _recover_corrupt_db)"
+          else:
+              try:
+                  STORAGE.write_text(src[:at] + RECONNECT.replace("sqlite3.connect", '__import__("sqlite3").connect')
+                                     + src[at + len(RECONNECT):])
+                  got = run_pytest(TEST)
+              finally:
+                  STORAGE.write_text(src)
+          report("C7 reconnect bypasses storage_service's sqlite3 name: the test must fail", got == "fail",
+                 f"got {got}")
+          
+          report("C8 make test-dashboard exits 0",
+                 subprocess.run(["make", "-C", "..", "test-dashboard"], capture_output=True, env=ENV).returncode == 0)
+          
+          print(f"\n{'ACCEPTED' if all(results) else 'NOT ACCEPTED'}: {sum(results)}/{len(results)} checks pass")
+          sys.exit(0 if all(results) else 1)
+          PY
+      - name: RED on unfixed develop
+        run: |
+          git checkout --detach a10dbf0bdf34d6f77f42acbeadca1387ed392167
+          echo "Source $(git rev-parse HEAD)"
+          cd dashboard
+          set +e
+          uv run --locked --extra test python "$RUNNER_TEMP/accept_3058.py" > "$RUNNER_TEMP/accept-base.log" 2>&1
+          result=$?
+          set -e
+          cat "$RUNNER_TEMP/accept-base.log"
+          test "$result" -eq 1
+          grep -q "^FAIL  C4 " "$RUNNER_TEMP/accept-base.log"
+          grep -q "NOT ACCEPTED:" "$RUNNER_TEMP/accept-base.log"
+          git diff --exit-code
+      - name: GREEN on exact PR head
+        if: always()
+        run: |
+          git checkout --detach 16b7783d8aafa5b3b90511186ce53f5ab592af82
+          test "$(git rev-parse HEAD)" = "16b7783d8aafa5b3b90511186ce53f5ab592af82"
+          echo "Source $(git rev-parse HEAD)"
+          cd dashboard
+          uv run --locked --extra test python "$RUNNER_TEMP/accept_3058.py"
+          git diff --exit-code
+          make -C .. test-patch-coverage
