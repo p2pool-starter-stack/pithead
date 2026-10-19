@@ -36,6 +36,7 @@ assert_eq "the settle's stdout is the result and nothing else" "$out" "applied|m
 # harness. Assert it is still emitted — on stderr, where wait_for's own timeout warning goes.
 err="$(_settle_worker_apply max_temp_c "the rig to report max_temp_c=101 applied" "$res" _pred_settles_now 2>&1 >/dev/null)"
 assert_contains "the progress banner is redirected, not deleted" "$err" "waiting for the rig to report max_temp_c=101 applied"
+assert_contains "the accepted request's ID is in the wait banner for bench-ci #913" "$err" "change_id=c-banner"
 
 echo "== _history_row_status: the row is read by change_id, never 'the newest' (#1471) =="
 # _worker_detail is the CALLER's, injected exactly like the readback predicates this module already
@@ -111,17 +112,10 @@ _worker_detail() { # "accepted" on the first read, "applied" from the second onw
 }
 assert_eq "a row still 'accepted' at settle time is waited to its terminal status" \
     "$(_settle_history_row r c-late)" "applied"
-# Second conjunct, a DIFFERENT mechanism on purpose: the status assertion alone would also pass a
-# function that read the row once and got lucky on ordering. The unwaited form reads exactly twice
-# (predicate never runs; one read for the result); the waited form re-reads after the interval.
+# Two distinct reads must observe accepted, then applied. The file counter starts at one,
+# so reaching three proves the wait performed both reads; the result uses the cached second read.
 assert_num_ge "the wait re-read the row rather than settling on one look" "$(cat "$TICKS")" "3"
-# What this case does NOT discriminate, said so it is not read as covering more than it does: a
-# predicate that treats "accepted" as TERMINAL passes both assertions above. It returns on the
-# first read, and the result read is then the second — the one that converges — so the status
-# comes back "applied" for the wrong reason and the tick count still reaches 3. That mutation is
-# owned by the "a still-'accepted' row is NOT terminal" case in the block above; delete that case
-# and nothing here replaces it. Converging on the third read instead would cover it twice at the
-# price of a second real interval, which is not worth paying for a mutation already killed.
+# Treating accepted as terminal is separately rejected by the predicate tests above.
 
 echo "== _settle_history_row: a row that never settles must not read as 'applied' (#1471) =="
 # The other half, stubbed rather than real so it costs nothing — the 90s bound is the function's
@@ -131,7 +125,11 @@ echo "== _settle_history_row: a row that never settles must not read as 'applied
 # wait_for for its own case, so this stub does not reach it.
 STUB_HIST='[{"change_id":"c-stuck","status":"accepted"}]'
 _worker_detail() { printf '{"history":%s}' "$STUB_HIST"; }
-wait_for() { return 1; }
+wait_for() {
+    shift 3
+    "$@"
+    return 1
+}
 assert_eq "a timed-out settle reports the status the row is stuck at, so the caller can name it" \
     "$(_settle_history_row r c-stuck)" "accepted"
 
@@ -167,6 +165,212 @@ echo "== _settle_worker_apply_maxt: '|'-joined output survives an empty MIDDLE f
 # to split on at all) fails this: the whole string lands in rstatus instead of just "rejected".
 IFS='|' read -r rstatus rckeys rchange_id <<<"$(_settle_worker_apply_maxt rig1 101 "$res")"
 assert_eq "empty middle field (ckeys) does not shift change_id left" "$rstatus,$rckeys,$rchange_id" "rejected,,"
+
+echo "== exact-ID history handoff samples (#2761) =="
+log="$(mktemp)"
+bound_log="$(mktemp)"
+trap 'rm -f "$log" "$bound_log"' EXIT
+RIG_HOST=example.test
+RIG_CONTROL_PORT=8082
+IT_RIG_TOKEN=changeme
+STUB_DETAIL='{"snapshot_at":1790760000.25,"status":"online","history":[{"change_id":"ffffffffffffffff","status":"failed"},{"change_id":"0123456789abcdef","status":"accepted"}],"rigforge":{"generated_at":"2026-09-30T13:15:30Z","stale":false},"rig_config":{"pools":[{"pass":"changeme"}]}}'
+api_state() { printf '%s' '{"workers":[{"name":"other","api_ok":true},{"name":"r","api_ok":false,"rigforge":{"generated_at":"2026-09-30T13:15:30Z"}}]}'; }
+STUB_FEED='{"generated_at":"2026-09-30T13:16:00Z","rigforge":{"control":{"change_id":"ffffffffffffffff","status":"failed"},"control_history":[{"change_id":"0123456789abcdef","status":"applied","reason":"changeme"}],"config":{"pools":[{"pass":"changeme"}]}}}'
+_worker_detail() { printf '%s' "$STUB_DETAIL"; }
+rx() {
+    cat >/dev/null
+    case "$1" in
+    *'/1/summary'*) printf '%s' "$STUB_FEED" ;;
+    *status*change_id*) printf '%s' '{"change_id":"0123456789abcdef","status":"applied","reason":"changeme"}' ;;
+    esac
+}
+wait_for() {
+    printf '%s' "$1" >"$bound_log"
+    shift 3
+    local i
+    for ((i = 0; i < 22; i++)); do "$@"; done
+    return 1
+}
+out="$(_settle_history_row r 0123456789abcdef 2>"$log")"
+assert_eq "history assertion retains its 90-second bound" "$(cat "$bound_log")" 90
+assert_eq "samples never promote accepted to applied" "$out" accepted
+assert_eq "diagnostics retain at most 20 samples per wait" "$(grep -c '^{' "$log")" 20
+sample="$(grep '^{' "$log" | tail -1)"
+assert_eq "exact ID is compared across dashboard, direct ring and status despite a newer current slot" \
+    "$(printf '%s' "$sample" | jq -c '[.history_handoff.change_id,.history_handoff.dashboard.history,.history_handoff.direct.history,.history_handoff.direct.current,.history_handoff.outcome.status]')" \
+    '["0123456789abcdef","accepted","applied","absent","applied"]'
+assert_eq "collector result is matched by worker and retains failed probe plus feed stamp" \
+    "$(printf '%s' "$sample" | jq -c '[.history_handoff.collector.api_ok,.history_handoff.collector.feed_at]')" \
+    '[false,"2026-09-30T13:15:30Z"]'
+assert_eq "snapshot and both feed generation times survive" \
+    "$(printf '%s' "$sample" | jq -c '[.history_handoff.dashboard.snapshot_at,.history_handoff.dashboard.feed_at,.history_handoff.direct.feed_at]')" \
+    '[1790760000.25,"2026-09-30T13:15:30Z","2026-09-30T13:16:00Z"]'
+if grep -Eq 'changeme|example\.test|pass|reason' "$log"; then
+    it_fail "samples exclude credentials, reasons, config and topology" "unsafe output"
+else
+    it_pass "samples exclude credentials, reasons, config and topology"
+fi
+STUB_DETAIL='{"history":[{"change_id":"0123456789abcdef","status":"changeme"}],"rigforge":{"generated_at":"changeme","stale":"changeme"}}'
+STUB_FEED='{"generated_at":"changeme","rigforge":{"control_history":[{"change_id":"0123456789abcdef","status":"changeme"}]}}'
+_history_handoff_sample 0123456789abcdef "$STUB_DETAIL" 2>"$log"
+assert_eq "malicious reflected scalars are replaced" \
+    "$(jq -c '[.history_handoff.dashboard.history,.history_handoff.dashboard.feed_at,.history_handoff.direct.history]' "$log")" \
+    '["unrecognized","invalid_or_absent","unrecognized"]'
+if grep -q 'changeme' "$log"; then it_fail "no reflected credential" "unsafe output"; else it_pass "no reflected credential"; fi
+rx() {
+    cat >/dev/null
+    return 1
+}
+_history_handoff_sample 0123456789abcdef '' 2>"$log"
+assert_eq "failed polls are named without hiding either failed surface" \
+    "$(jq -c '[.history_handoff.dashboard.poll,.history_handoff.direct_poll,.history_handoff.direct.poll,.history_handoff.status_poll]' "$log")" \
+    '["invalid_or_failed","failed","invalid_or_failed","failed"]'
+_history_handoff_sample 0123456789abcdef '{}{}' 2>"$log"
+assert_eq "multiple JSON responses are invalid rather than breaking the combined sample" \
+    "$(jq -r '.history_handoff.dashboard.poll' "$log")" invalid_or_failed
+IT_RIG_TOKEN=''
+_history_handoff_sample 0123456789abcdef '{}' 2>"$log"
+assert_eq "missing credentials are explicitly unavailable" "$(jq -r '.history_handoff.direct_poll' "$log")" unavailable
+_history_handoff_sample 'changeme' '{}' 2>"$log"
+assert_eq "malformed IDs never reach output or a dial" "$(wc -c <"$log" | tr -d ' ')" 0
+
+echo "== slow diagnostics cannot accept history observed after the deadline =="
+# Use the genuine wait loop with a file-backed clock, so command substitutions share time.
+# Failed reads consume their HTTP limits without a real 90-second sleep or a server.
+(
+    source "$HERE/../lib.sh"
+    IT_RIG_TOKEN=changeme
+    clock_file="$(mktemp)"
+    warning_file="$(mktemp)"
+    trap 'rm -f "$clock_file" "$warning_file"' EXIT
+    advance() { printf '%s\n' "$(($(cat "$clock_file") + $1))" >"$clock_file"; }
+    now_s() { cat "$clock_file"; }
+    sleep() { advance "$1"; }
+    _worker_detail() {
+        advance "$read_delay"
+        local status=accepted
+        [ "$(now_s)" -lt "$applied_at" ] || status=applied
+        printf '{"history":[{"change_id":"0123456789abcdef","status":"%s"}]}' "$status"
+    }
+    rx() {
+        cat >/dev/null
+        advance "$probe_delay"
+        return 1
+    }
+    api_state() {
+        advance "$collector_delay"
+        return 1
+    }
+    read_delay=0 probe_delay=3 collector_delay=10 applied_at=95
+    printf '0\n' >"$clock_file"
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "slow failed probes cannot turn 95-second convergence into a pass" "$out" accepted
+    assert_contains "deadline failure is reported" "$(cat "$warning_file")" "timed out after 90s"
+    assert_num_ge "the proof actually consumes the diagnostic limits" "$(now_s)" 95
+    printf '0\n' >"$clock_file"
+    applied_at=84
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "a terminal history read before the deadline passes even when diagnostics finish later" "$out" applied
+    printf '0\n' >"$clock_file"
+    read_delay=10 probe_delay=0 collector_delay=0 applied_at=95
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "a dashboard read that finishes after the deadline cannot pass" "$out" accepted
+    [ "$IT_FAIL" -eq 0 ]
+) && it_pass "deadline regressions reject late convergence" || it_fail "deadline regressions" "late convergence escaped the 90-second boundary"
+
+echo "== failed transport cannot supply an applied history observation =="
+(
+    source "$HERE/../lib.sh"
+    warning_file="$(mktemp)"
+    trap 'rm -f "$warning_file"' EXIT
+    now_s() { printf '0'; }
+    IT_RIG_TOKEN=''
+    api_state() { printf '{}'; }
+    _worker_detail() {
+        printf '{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}'
+        return 255
+    }
+    wait_for() {
+        shift 3
+        "$@"
+    }
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "valid applied JSON from a failed transport cannot pass" "$out" ""
+    assert_eq "failed transport has an explicit dashboard observation" \
+        "$(jq -r '.history_handoff.dashboard.poll' "$warning_file")" failed
+    assert_eq "failed transport body never supplies a history status" \
+        "$(jq -r '.history_handoff.dashboard.history // "absent"' "$warning_file")" absent
+    _HISTORY_ROW_STATUS=accepted _HISTORY_SAMPLE_COUNT=0
+    _pred_history_row_terminal r 0123456789abcdef 2>"$warning_file"
+    assert_eq "a failed read remains nonterminal" "$?" 1
+    assert_eq "a failed read preserves the last successful accepted observation" "$_HISTORY_ROW_STATUS" accepted
+    [ "$IT_FAIL" -eq 0 ]
+) && it_pass "failed dashboard transport is rejected" || it_fail "failed dashboard transport" "failed read supplied a verdict or lacked a failure marker"
+
+echo "== partial decoder output cannot supply an applied history observation =="
+(
+    source "$HERE/../lib.sh"
+    warning_file="$(mktemp)"
+    trap 'rm -f "$warning_file"' EXIT
+    now_s() { printf '0'; }
+    IT_RIG_TOKEN=''
+    api_state() { printf '{}'; }
+    decoder_body='{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}garbage'
+    _worker_detail() { printf '%s' "$decoder_body"; }
+    wait_for() {
+        shift 3
+        "$@"
+    }
+    out="$(_settle_history_row r 0123456789abcdef 2>"$warning_file")"
+    assert_eq "applied JSON followed by junk cannot pass" "$out" ""
+    assert_eq "failed JSON decoding has an explicit invalid observation" \
+        "$(jq -r '.history_handoff.dashboard.poll' "$warning_file")" invalid_or_failed
+    assert_eq "partial decoder output never supplies a diagnostic history status" \
+        "$(jq -r '.history_handoff.dashboard.history // "absent"' "$warning_file")" absent
+    _HISTORY_ROW_STATUS='' _HISTORY_SAMPLE_COUNT=0
+    decoder_body='{"history":[{"change_id":"0123456789abcdef","status":"accepted"}]}'
+    _pred_history_row_terminal r 0123456789abcdef 2>"$warning_file"
+    assert_eq "the successful accepted observation remains nonterminal" "$?" 1
+    assert_eq "the successful accepted observation is cached" "$_HISTORY_ROW_STATUS" accepted
+    decoder_body='{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}garbage'
+    _pred_history_row_terminal r 0123456789abcdef 2>"$warning_file"
+    assert_eq "a failed decode remains nonterminal" "$?" 1
+    assert_eq "a failed decode preserves the last successfully decoded observation" "$_HISTORY_ROW_STATUS" accepted
+    assert_eq "the failed decode remains explicit after a successful observation" \
+        "$(jq -r '.history_handoff.dashboard.poll' "$warning_file")" invalid_or_failed
+    decoder_body='{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}{}'
+    _pred_history_row_terminal r 0123456789abcdef 2>"$warning_file"
+    assert_eq "multiple JSON documents cannot supply a terminal observation" "$?" 1
+    assert_eq "multiple JSON documents preserve the last valid observation" "$_HISTORY_ROW_STATUS" accepted
+    assert_eq "multiple JSON documents have an explicit invalid observation" \
+        "$(jq -r '.history_handoff.dashboard.poll' "$warning_file")" invalid_or_failed
+    [ "$IT_FAIL" -eq 0 ]
+) && it_pass "partial dashboard decoder output is rejected" || it_fail "partial dashboard decoder output" "invalid JSON supplied a verdict or replaced the last valid observation"
+
+echo "== successful decoding must finish within the observation budget =="
+(
+    source "$HERE/../lib.sh"
+    decoder_clock="$(mktemp)"
+    trap 'rm -f "$decoder_clock"' EXIT
+    now_s() { cat "$decoder_clock"; }
+    _worker_detail() { printf '{"history":[{"change_id":"0123456789abcdef","status":"applied"}]}'; }
+    jq() {
+        if [ "${1:-}" = -sr ]; then printf '%s\n' "$(($(now_s) + 10))" >"$decoder_clock"; fi
+        command jq "$@"
+    }
+    _HISTORY_DEADLINE=90 _HISTORY_SAMPLE_COUNT=20 _HISTORY_ROW_STATUS=accepted
+    printf '85\n' >"$decoder_clock"
+    _pred_history_row_terminal r 0123456789abcdef
+    assert_eq "a successful decode finishing after the deadline cannot pass" "$?" 1
+    assert_eq "late decoding preserves the prior accepted observation" "$_HISTORY_ROW_STATUS" accepted
+    assert_eq "the late-decoder fixture actually crosses the deadline" "$(now_s)" 95
+    printf '80\n' >"$decoder_clock"
+    _pred_history_row_terminal r 0123456789abcdef
+    assert_eq "a successful decode finishing on the boundary can pass" "$?" 0
+    assert_eq "an in-budget decode updates the history cache" "$_HISTORY_ROW_STATUS" applied
+    assert_eq "the in-budget fixture finishes exactly on the deadline" "$(now_s)" 90
+    [ "$IT_FAIL" -eq 0 ]
+) && it_pass "successful decoding respects the deadline" || it_fail "successful decoding deadline" "late decoding supplied a verdict or rejected an in-budget observation"
 
 echo ""
 echo "selftest-rigforge-apply-settle: $IT_PASS passed, $IT_FAIL failed"

@@ -153,10 +153,18 @@ onion_apply_fail_out=$(
     _control_requests_drained() { return 0; } # this leg's own drain gate (#2094); not what this test targets
     approval_capture_restore_snapshot() { return 0; }
     approval_restore_pending() { printf 'RESTORED\n'; }
-    _ssh() { return 1; } # ./pithead apply -y refuses the onion-enabled config
+    _ssh() { # ./pithead apply -y refuses the onion-enabled config
+        printf 'dependency failed to start: container tor is unhealthy\n'
+        return 1
+    }
+    tor_health_evidence() { printf 'TOR-EVIDENCE\n'; }
     ok() { :; }
     bad() { printf 'BAD:%s\n' "$1"; }
     phase_provision_dashboard_onion_exposure
 )
 assert_contains "a refused apply still restores the config" "$onion_apply_fail_out" "RESTORED"
 assert_contains "a refused apply is reported" "$onion_apply_fail_out" "BAD:onion exposure: ./pithead apply -y did not accept the onion-enabled config"
+# #2680: job 1000 discarded apply's output and never read tor's log, so the red could not say why.
+assert_contains "a refused apply shows apply's own reason" "$onion_apply_fail_out" "     | dependency failed to start: container tor is unhealthy"
+assert_contains "a refused apply dumps tor's own evidence before the cleanup recreates it" \
+    "$(printf '%s' "$onion_apply_fail_out" | grep -A1 '^TOR-EVIDENCE$')" "RESTORED"

@@ -38,8 +38,11 @@ def _archive_form(**extra):
 @pytest.fixture
 def spool(tmp_path, monkeypatch):
     sd = tmp_path / "spool"
+    restore = tmp_path / "restore"
     sd.mkdir()
+    restore.mkdir()
     monkeypatch.setenv("WIZARD_SPOOL", str(sd))
+    monkeypatch.setenv("WIZARD_RESTORE", str(restore))
     monkeypatch.setenv("WIZARD_TOKEN", "pit-X7KM2Q")
     return sd
 
@@ -53,7 +56,7 @@ def installer(spool):
 
 @pytest.fixture
 async def client(spool):
-    c = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
+    c = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None, restore_enabled=True)))
     await c.start_server()
     yield c
     await c.close()
@@ -77,11 +80,14 @@ async def _status(client):
 async def test_the_marker_is_a_per_submission_fact_not_a_one_way_write(client, installer):
     """Every submission RESTATES the medium. A one-way write is the whole bug in mirror image: a
     stick choice left by an earlier attempt would mute the install narration on a later real
-    install. Nothing here clears the marker by hand — if it did, the second half could not fail."""
+    install. The host consumes the first transaction before the second is submitted."""
     await _auth(client)
     assert (await client.post("/submit", data={**RIG, "disk": "usb"})).status == 200
     assert (installer / "stick").read_text() == "1"
     assert json.loads((installer / "rig-request.json").read_text()) == {"pool": "10.0.0.5:3333"}
+    (installer / "rig-request.json").unlink()
+    (installer / "submission-staging").unlink()
+    (installer / "submission-active").unlink()
 
     r = await client.post(
         "/submit", data={**RIG, "disk": "nvme0n1", "confirm": "nvme0n1", "wipe": "all"}
@@ -101,6 +107,8 @@ async def test_a_retarget_after_a_failed_stick_attempt_gets_the_install_narratio
     # The host fails the dial and drops the request; the page returns to the form with the error.
     (installer / "error.txt").write_text("pool unreachable")
     (installer / "rig-request.json").unlink()
+    (installer / "submission-staging").unlink()
+    (installer / "submission-active").unlink()
 
     await client.post(
         "/submit", data={**RIG, "disk": "nvme0n1", "confirm": "nvme0n1", "wipe": "all"}
@@ -194,6 +202,8 @@ async def test_a_restore_after_a_stick_attempt_gets_the_install_narration_back(c
     # The host fails the dial and drops the request; the page returns to the form with the error.
     (installer / "error.txt").write_text("pool unreachable")
     (installer / "rig-request.json").unlink()
+    (installer / "submission-staging").unlink()
+    (installer / "submission-active").unlink()
 
     r = await client.post(
         "/submit-restore", data=_archive_form(disk="nvme0n1", confirm="nvme0n1", wipe="all")

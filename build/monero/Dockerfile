@@ -1,10 +1,10 @@
 # Pinned by digest (#135) so the ubuntu:24.04 tag can't be silently re-pointed.
-FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 
 # Install system dependencies required for downloading, verifying, and configuring the node
 # 'gettext-base' provides 'envsubst' for template processing in entrypoint.sh
 RUN apt-get update && apt-get install -y \
-    wget bzip2 ca-certificates curl gettext-base \
+    bzip2 ca-certificates curl gettext-base jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Define Monero version and SHA256 hash for binary verification
@@ -15,8 +15,10 @@ ARG MONERO_HASH=22a7dda7b0cb699fdd6b7674c3b4a4465b337cc98a54983523b759e1e7cc9958
 # Download, verify integrity, and install the Monero daemon (monerod) plus monero-wallet-rpc.
 # monero-wallet-rpc ships in the SAME CLI tarball (already verified by the hash above), so the
 # view-only payout-confirmation wallet (#381) reuses this image with no new download or pin.
-RUN wget -O monero.tar.bz2 https://downloads.getmonero.org/cli/monero-linux-x64-${MONERO_VERSION}.tar.bz2 \
-    && echo "${MONERO_HASH}  monero.tar.bz2" | sha256sum -c - \
+COPY download.sh /usr/local/bin/download-monero
+RUN sh /usr/local/bin/download-monero "${MONERO_HASH}" 300 monero.tar.bz2 \
+    "https://downloads.getmonero.org/cli/monero-linux-x64-${MONERO_VERSION}.tar.bz2" \
+    "https://dlsrc.getmonero.org/cli/monero-linux-x64-${MONERO_VERSION}.tar.bz2" \
     && tar xvjf monero.tar.bz2 \
     && mv monero-*-linux-gnu-*/monerod /usr/local/bin/monerod \
     && mv monero-*-linux-gnu-*/monero-wallet-rpc /usr/local/bin/monero-wallet-rpc \
@@ -33,9 +35,14 @@ COPY wallet-entrypoint.sh /usr/local/bin/wallet-entrypoint.sh
 COPY wallet-healthcheck.sh /usr/local/bin/wallet-healthcheck.sh
 RUN chmod +x /usr/local/bin/wallet-entrypoint.sh /usr/local/bin/wallet-healthcheck.sh
 
-# RPC liveness healthcheck — reads creds from env so they stay off the compose command line (#90)
+# RPC, peer and height-progress healthcheck — reads creds from env, never from compose argv (#90, #2499)
 COPY healthcheck.sh /usr/local/bin/monerod-healthcheck.sh
 RUN chmod +x /usr/local/bin/monerod-healthcheck.sh
+
+# The peer counts (#2921): the published RPC is restricted and hides them, so this fixed helper reads the
+# admin RPC on the container's own loopback. The healthcheck and host tools (docker exec) call it.
+COPY peers.sh /usr/local/bin/monerod-peers.sh
+RUN chmod +x /usr/local/bin/monerod-peers.sh
 
 # Run non-root (#255). Reuse ubuntu:24.04's built-in 'ubuntu' user (uid 1000) and keep monerod's
 # data under that user's home — /home/ubuntu/.bitmonero, which is also monerod's native

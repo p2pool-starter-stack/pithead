@@ -4,15 +4,14 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-  # Two Monday sweeps hang off this schedule (every other job gates itself off the event, so only
-  # these two run): build-images (#833) rebuilds this branch and scans the rebuild — the only
-  # sweep that can go red before a release. sweep-shipped (#1313) scans the published ghcr images
-  # by resolved digest — a rebuild resolves apt at scan time and would hide archive fixes the
-  # shipped bytes never got — and reports into a tracking issue rather than reddening, since a
-  # fixable CVE in a shipped image asks for a patch release, a person's decision.
-  # THIS cron block is the one that fires: `schedule:` reads from the DEFAULT branch only, and
-  # `develop` is it. Change the cadence here, and prove it fired with `gh run list --json event` —
-  # a schedule that never runs looks exactly like one that ran and found nothing (#1162).
+  # Two Monday sweeps hang off this schedule (every other job gates itself off the event):
+  # build-images (#833) rebuilds this branch and scans the rebuild, the only sweep that can go red
+  # before a release; sweep-shipped (#1313) scans the published ghcr images by resolved digest
+  # and reports into a tracking issue rather than reddening, since a fixable CVE in a shipped
+  # image asks for a patch release, a person's decision.
+  # THIS cron block is the one that fires (`schedule:` reads the DEFAULT branch, `develop`). Prove
+  # a cadence change fired with `gh run list --json event`: a schedule that never runs looks
+  # exactly like one that ran and found nothing (#1162).
   schedule:
     - cron: "0 5 * * 1" # Mondays 05:00 UTC
 
@@ -43,14 +42,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - name: "Install uv (pinned — reproducible, hash-locked installs, #283)"
-        # Curl the pinned installer (same posture as hadolint below); avoids a mutable-tag action.
-        run: |
-          export UV_INSTALL_DIR="$HOME/.local/bin"   # deterministic install dir (runners may set CARGO_HOME)
-          curl -LsSf https://astral.sh/uv/0.12.13/install.sh -o /tmp/uv-install.sh; sh /tmp/uv-install.sh # download then run, never a pipe: the pipeline's status is sh's, which is 0 on empty input, so a failed download passed this step (#1788)
-          echo "$UV_INSTALL_DIR" >> "$GITHUB_PATH"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd # Linux x86_64 release archive
+          enable-cache: false
       - name: Dashboard tests + coverage gate (emits coverage.xml)
-        run: make test-dashboard
+        run: make test-dashboard test-clearnet-replay-proof PROOF_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
       - name: "Patch-coverage gate — changed lines >=90% (diff-cover vs the PR's own base, #286)"
         # GITHUB_BASE_REF is set on pull_request runs; push runs fall back to develop. Grading a PR
         # against develop instead of its base branch charges it the base branch's whole coverage
@@ -72,12 +70,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "20"
       # Pure client logic uses Node's built-in runner; the Make target first builds the generated
       # CLI read by cross-surface drift tests. There is no package.json/node_modules build step.
-      # Component rendering is covered by a manual browser smoke test, not here.
+      # Native browser journeys run separately in browser.yml.
       - name: Run frontend logic tests
         run: make test-frontend
 
@@ -90,16 +88,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
       - name: Build the dashboard test stage (installs package + runs the suite in-container)
         run: docker build --target test ./dashboard
 
   build-images:
-    # Build every build/* image, plus dashboard/ (moved out of build/, #1106), so a broken
-    # Dockerfile / COPY path / entrypoint / pinned-digest is caught in CI instead of at deploy
-    # time (#124). Previously only the dashboard test stage was built, so e.g. the Tor image's
-    # entrypoint restructure (#180) shipped with no CI safety net. Tari is an upstream image (no
-    # Dockerfile here), so it's excluded. fail-fast: false so one broken image doesn't hide the
-    # others; empty build-args keep the dashboard build working bare.
+    # Build first-party images, including dashboard; catch Dockerfile, COPY, entrypoint and pin errors (#124).
+    # Exclude upstream Tari; fail-fast: false keeps other images visible, and empty args permit a bare dashboard build.
     name: Build image (${{ matrix.service }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -121,8 +116,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
       - name: docker build ./${{ matrix.context }}
         run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
+      - name: Prove offline Tor saturated-state recovery
+        if: matrix.service == 'tor'
+        env: {TMPDIR: "${{ runner.temp }}"}
+        run: bash tests/stack/standalone/test_tor_saturated_image.sh pithead-tor:ci
       - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
         with:
           # THE live pin, and the only one: this literal is what gets installed, and it is the
@@ -160,14 +160,10 @@ jobs:
     # The half of the Monday sweep that reports on what users are running (#1313). `build-images`
     # above scans a rebuild of this branch; this scans the bytes on the registry.
     #
-    # Every leg resolves the published TAG to a DIGEST and scans the digest. That is not
-    # ceremony: a tag is a moving pointer, so "we scanned :v1.20.0" stops being a statement about
-    # any particular image the moment it moves, and the digest is the only reference that names
-    # the bytes a user pulled. The digest scanned is printed in the report.
+    # Every leg resolves the published TAG to a DIGEST and scans the digest: a tag is a moving
+    # pointer, so only the digest names the bytes a user pulled. It is printed in the report.
     #
-    # fail-fast: false so one unreachable image does not hide the other four — and a leg that
-    # fails still shows up, because the report job runs on `always()` and names any image it
-    # received no scan for as UNCHECKED rather than counting it as clean.
+    # fail-fast: false; the report job (always()) names an unscanned image UNCHECKED, not clean.
     name: Shipped-image CVE sweep (${{ matrix.service }})
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -175,7 +171,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [monero, p2pool, tor, xmrig-proxy, dashboard]
+        service: [monero, p2pool, tor, xmrig-proxy, dashboard, os-rootfs]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -241,7 +237,7 @@ jobs:
           format: json
           output: sweep-${{ matrix.service }}.json
       - name: Upload this image's scan output
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shipped-sweep-${{ matrix.service }}
           path: |
@@ -273,7 +269,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Collect every leg's scan output
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shipped-sweep-*
           merge-multiple: true
@@ -360,11 +356,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - name: Install uv (pinned)
-        run: |
-          export UV_INSTALL_DIR="$HOME/.local/bin"   # deterministic install dir (runners may set CARGO_HOME)
-          curl -LsSf https://astral.sh/uv/0.12.13/install.sh -o /tmp/uv-install.sh; sh /tmp/uv-install.sh # never a pipe — see the dashboard job's copy (#1788)
-          echo "$UV_INSTALL_DIR" >> "$GITHUB_PATH"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd # Linux x86_64 release archive
+          enable-cache: false
       - name: ruff check + format --check (config in dashboard/pyproject.toml + root ruff.toml)
         # Single source of truth: the Makefile `lint-py` target, which runs ruff via uv from the
         # locked `dev` extra — one pinned ruff for CI, pre-commit, and local devs.
@@ -380,13 +376,15 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0  # full history so the scan covers every commit, not just the tip
+      - uses: ./.github/actions/docker-registry-mirror
       - name: Scan git history for secrets (gitleaks, pinned by digest)
         # Run via the pinned image (gitleaks-action needs a license for org repos); accepted false
-        # positives live in .config/gitleaks.toml. --log-opts=HEAD scopes the scan to this ref's commits (#2203).
+        # positives live in .config/gitleaks.toml and .config/gitleaksignore; --log-opts=HEAD scans this ref (#2203).
         run: |
           docker run --rm -v "$PWD":/repo \
             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             git /repo --no-banner --redact --config /repo/.config/gitleaks.toml --gitleaks-ignore-path /repo/.config/gitleaksignore --log-opts=HEAD
+          bash scripts/lint/selftest-gitleaks-history.sh
 
   zizmor:
     name: Workflow audit (zizmor)
@@ -402,11 +400,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - name: Install uv (pinned)
-        run: |
-          export UV_INSTALL_DIR="$HOME/.local/bin"
-          curl -LsSf https://astral.sh/uv/0.12.13/install.sh -o /tmp/uv-install.sh; sh /tmp/uv-install.sh # never a pipe — see the dashboard job's copy (#1788)
-          echo "$UV_INSTALL_DIR" >> "$GITHUB_PATH"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd # Linux x86_64 release archive
+          enable-cache: false
       - name: Audit workflows (injection, token scope, self-hosted-runner risks)
         run: uvx zizmor@1.25.2 --offline .github/workflows/
 
@@ -419,6 +417,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
       - name: Validate Compose hardening and generated Caddyfiles (#90/#1037)
         run: make test-compose
 
@@ -434,17 +433,18 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0  # lint-file-budget's ratchet needs origin/develop to exist, or it skips (#1452, #1608)
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: ./.github/actions/docker-registry-mirror
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "20"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - name: Install uv (pinned)
-        run: |
-          export UV_INSTALL_DIR="$HOME/.local/bin"
-          curl -LsSf https://astral.sh/uv/0.12.13/install.sh -o /tmp/uv-install.sh; sh /tmp/uv-install.sh # never a pipe — see the dashboard job's copy (#1788)
-          echo "$UV_INSTALL_DIR" >> "$GITHUB_PATH"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd # Linux x86_64 release archive
+          enable-cache: false
       - name: Lint docs voice, operator strings, topology classes, file budget, pithead build/trivy parity, then JS/CSS (Biome), YAML, Markdown, proto (buf), TOML (taplo)
         # Single source of truth: the Makefile targets. REPO-LOCAL GATES FIRST (#1746): local checks run before network-backed surface linters.
         run: make lint-docs-voice lint-path-references lint-operator-strings lint-topology lint-file-budget lint-pithead-build lint-trivy-parity lint-js lint-yaml lint-md lint-proto lint-toml

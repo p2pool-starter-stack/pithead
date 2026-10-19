@@ -148,17 +148,34 @@ require_deployed() {
     is_deployed || error "The stack isn't fully set up yet. Run '$0 setup' first."
 }
 
+# True for a system, home, or bare mount root that must never become a recursive data-operation
+# target. Kept separate so the dashboard's narrower destination allowlist uses the exact same floor.
+_data_dir_is_broad_root() {
+    local d="$1" rest
+    case "$d" in
+    "" | / | // | /. | /root | /home | /etc | /usr | /var | /var/lib | /opt | /srv | /mnt | /media | /tmp | /bin | /sbin | /lib | /lib64 | /boot | /dev | /proc | /sys | /Users | /Applications | "${HOME:-/root}" | "/home/$REAL_USER" | "/Users/$REAL_USER")
+        return 0
+        ;;
+    /home/*)
+        rest="${d#/home/}"
+        case "$rest" in */*) ;; *) return 0 ;; esac
+        ;;
+    /Users/*)
+        rest="${d#/Users/}"
+        case "$rest" in */*) ;; *) return 0 ;; esac
+        ;;
+    esac
+    return 1
+}
+
 # Refuse data directories that would be catastrophic to chown -R / rm -rf.
 assert_safe_dir() {
     local d="$1"
-    # 1) System + top-level roots, the invoking and real user's homes, and the bare mount/parent
-    #    dirs people most often fat-finger a data_dir to. A dedicated SUBfolder of any of these
-    #    (e.g. /srv/pithead, /mnt/disk/monero) is still allowed — only the bare root is refused (#91).
-    case "$d" in
-    "" | / | // | /. | /root | /home | /etc | /usr | /var | /var/lib | /opt | /srv | /mnt | /media | /tmp | /bin | /sbin | /lib | /lib64 | /boot | /dev | /proc | /sys | /Users | /Applications | "${HOME:-/root}" | "/home/$REAL_USER" | "/Users/$REAL_USER")
+    # 1) System + top-level roots, user homes, and the bare mount/parent dirs people most often
+    #    fat-finger a data_dir to. A dedicated SUBfolder (e.g. /srv/pithead) remains allowed (#91).
+    if _data_dir_is_broad_root "$d"; then
         error "Refusing to use '$d' as a data directory — it's a system, home, or bare mount root. Choose a dedicated subfolder in $CONFIG_FILE (e.g. .../pithead-data)."
-        ;;
-    esac
+    fi
     # 2) Data dirs are stored as ABSOLUTE paths in .env; reject anything relative or containing a
     #    '..' traversal so a malformed config.json value can't resolve somewhere unexpected before
     #    a chown -R / rm -rf runs against it (#91).
@@ -168,6 +185,9 @@ assert_safe_dir() {
     esac
     case "$d" in
     *..*) error "Refusing data directory '$d' — '..' path traversal is not allowed." ;;
+    esac
+    case "$d" in
+    *//* | */./* | */.) error "Refusing data directory '$d' — empty and '.' path components are not allowed." ;;
     esac
     # 3) A ':' would split the compose bind-mount short syntax it renders into
     #    (`${MONERO_DATA_DIR}:/dest`) — e.g. a dir ending ':ro' forges a third MODE field, turning a
@@ -221,6 +241,18 @@ is_ipv4() {
         [ "$o" -le 255 ] || return 1
     done
     return 0
+}
+
+# Addresses held by container-engine interfaces (podman/docker/compose bridges and their veth
+# ends, matched by the engines' own naming so a LAN bridge like br0 or br-lan is kept), one per line; nothing when `ip` is absent. These come and go with the engine: a bridge
+# the setup wizard or a previous boot created is still in `hostname -I` when the Caddyfile is
+# rendered and gone by the time `up` starts Caddy. Listening on a literal that vanished fails the
+# whole file with "bind: cannot assign requested address" (#3406). Interface-name based, not an
+# engine query, so the answer never depends on the engine being reachable (see
+# appliance_site_names).
+container_bridge_addrs() {
+    command -v ip >/dev/null 2>&1 || return 0
+    ip -o addr show 2>/dev/null | awk '$2 ~ /^(podman[0-9]+|docker[0-9]+|br-[0-9a-f]{12}|veth[0-9a-f]*|cni-podman[0-9]+|cni[0-9]+)$/ { split($4, a, "/"); print a[1] }'
 }
 
 # True if $1 is a globally-routable (public) IP literal — i.e. NOT loopback/private/link-local/

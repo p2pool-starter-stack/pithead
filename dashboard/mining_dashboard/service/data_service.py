@@ -57,7 +57,7 @@ from mining_dashboard.service.data_audit import (
     _RIG_EDIT_WINDOW_SEC,
     DataAuditMixin,
 )
-from mining_dashboard.service.data_gates import DataGateMixin, chain_synced
+from mining_dashboard.service.data_gates import SYNC_GATE_RESET_PATH, DataGateMixin, chain_synced
 from mining_dashboard.service.data_helpers import (
     _SHARE_STAT_KEYS,
     _aggregate_hashrate,
@@ -75,6 +75,7 @@ from mining_dashboard.service.data_xvb_sync import (
 )
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.notify.telegram_commands import format_daily_summary
+from mining_dashboard.service.workers import worker_refresh
 
 logger = logging.getLogger("DataService")
 
@@ -82,17 +83,13 @@ logger = logging.getLogger("DataService")
 # Wall-clock cadences stay with the core poll loop that applies them.
 _HOURLY_CAPTURE_SEC = 3600
 _WORKER_HISTORY_CAPTURE_SEC = 300
+_PROXY_WORKERS_MAX_AGE_SEC = 300
 
 
 class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixin):
-    """
-    Core service responsible for aggregating mining statistics from various sources
-    (Local collectors, XMRig Proxy, Tari Node, etc.) and maintaining the application state.
-    """
+    """Aggregate mining statistics and maintain the application state."""
 
     _last_monero_sync = None  # last real {percent,current,target} — held across RPC blips
-
-    # On a partial-start failure stay held so the next cycle retries.
 
     async def _sync_prices(self):
         """Refresh the live XMR/XTM prices (#520) into ``latest_data["prices"]`` — a no-op with the
@@ -104,20 +101,21 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
             )
 
     async def _sync_payouts(self):
-        """Monero on-chain payout confirmation (#381). The body moved to ``payout_sync`` for #1644;
-        this stays as the poll body's call seam, and as the name the tests already reach for."""
-        await payout_sync.sync_monero(self.state_manager, self.wallet_client, self.alert_service)
+        """Monero payout poll; tests and the loop use this seam."""
+        self.monero_wallet_scan_answered = await payout_sync.sync_monero(
+            self.state_manager, self.wallet_client, self.alert_service
+        )
+        return self.monero_wallet_scan_answered
 
     async def _sync_tari_payouts(self):
-        """Tari on-chain payout confirmation (#462) — the sibling of ``_sync_payouts``, same shape
-        and same reason for staying here while its body lives in ``payout_sync``."""
-        await payout_sync.sync_tari(self.state_manager, self.tari_wallet_client, self.alert_service)
+        """Tari payout poll; the async sibling of ``_sync_payouts``."""
+        self.tari_wallet_scan_answered = await payout_sync.sync_tari(
+            self.state_manager, self.tari_wallet_client, self.alert_service
+        )
+        return self.tari_wallet_scan_answered
 
     async def run(self):
-        """
-        Main execution loop: Aggregates statistics from local collectors and external APIs.
-        Updates the `latest_data` state and persists historical metrics to the database.
-        """
+        """Poll collectors and APIs, publish state, and persist historical metrics."""
         logger.info("Service Started: Data Collection Loop")
 
         iteration_count = 0
@@ -133,16 +131,22 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
 
             while True:
                 try:
-                    # 1. Collect Local Statistics (High Frequency Polling)
                     stratum_raw = get_stratum_stats()
 
-                    # 2. Fetch Worker Statistics from XMRig Proxy + normalize the payload.
                     proxy_workers = []
                     try:
                         proxy_data = await asyncio.to_thread(self.proxy_client.get_workers)
-                        proxy_workers = _normalize_proxy_workers(proxy_data)
+                        self._last_proxy_workers = _normalize_proxy_workers(proxy_data)
+                        self._last_proxy_workers_at = time.monotonic()
                     except Exception as e:
                         logger.error(f"Proxy Data Fetch Error: {e}")
+                    if (
+                        self._last_proxy_workers_at is not None
+                        and time.monotonic() - self._last_proxy_workers_at
+                        < _PROXY_WORKERS_MAX_AGE_SEC
+                    ):
+                        # Enrichment and lifecycle mutate rows; retain the normalized snapshot.
+                        proxy_workers = [dict(w) for w in self._last_proxy_workers]
 
                     # 2b. Fetch the proxy /summary for pool-wide share totals (Issue #82). Kept
                     # separate from the workers fetch so one failing doesn't blank the other; a bad
@@ -169,12 +173,9 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                             )
 
                     # 3. Augment with Direct Worker Stats (Uptime, Hashrate) via Local API
-                    tasks = [worker_client.get_stats(w["ip"], w["name"]) for w in proxy_workers]
-                    worker_results = await asyncio.gather(*tasks)
+                    worker_results = await self._prober.probe(worker_client, proxy_workers)
 
-                    # 3a. Reconcile any #185 history row a slow rig rollback left stuck 'accepted'
-                    # (#579), and flag a rig-side out-of-band edit (#530) — rides this same poll's
-                    # results, no new dial.
+                    # Reconcile pending rig edits and flag out-of-band edits using this poll.
                     await self._reconcile_worker_config(proxy_workers, worker_results)
 
                     # 3a-2. Out-of-band audit (#530): a config.json change not made through the
@@ -194,7 +195,6 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # (#169) and drop stale offline rows past the fall-off window (#182).
                     final_workers = self._lifecycle.update(final_workers, time.time())
 
-                    # 4. Calculate Aggregates (Priority: 15m > 60s > 10s)
                     total_hr, total_h10 = _aggregate_hashrate(final_workers)
 
                     # 5. Fetch Network & Sync Status
@@ -281,13 +281,13 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                                 self._last_monero_sync or {"percent": 0, "current": 0, "target": 1}
                             )
 
-                    # 2. Global Sync Logic. monerod always drives the full-screen Sync Mode;
-                    # Tari does so only when it's required (Issue #51). A non-blocking Tari
-                    # (dashboard.tari_required:false) keeps the operational view and surfaces
-                    # its progress in the Tari panel instead of hijacking the whole dashboard.
+                    # Monero drives Sync Mode; optional Tari and an earned Tari-only re-arm
+                    # keep Tari progress in its card instead of taking over the dashboard.
                     is_monero_syncing = monero_sync.get("is_syncing", False)
                     is_tari_syncing = tari_sync.get("is_syncing", False)
-                    global_sync = is_monero_syncing or (is_tari_syncing and TARI_REQUIRED)
+                    global_sync = is_monero_syncing or (
+                        is_tari_syncing and TARI_REQUIRED and not self.sync_gate_monero_only
+                    )
                     # True when Tari is syncing but we're staying in the operational view — the
                     # UI shows a "Tari syncing" indicator rather than the takeover screen.
                     tari_syncing_passive = is_tari_syncing and not global_sync
@@ -302,22 +302,23 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
 
                     # 3. Node-down detection + worker rejection (Issue #31). Debounce each
                     # node's live reachability into a stable DOWN flag; monerod-down always
-                    # rejects, Tari-down never does — Tari stays visible in its own panel/alerts.
+                    # rejects; Tari-down rejects when Tari is required.
                     monero_down = self.monero_health.update(monero_sync.get("reachable", True))
-                    tari_down = self.tari_health.update(tari_sync.get("reachable", True))
+                    tari_down = await self._observe_tari(tari_client, tari_sync)
                     monero_sync["down"] = monero_down
                     tari_sync["down"] = tari_down
 
                     # 3b. Peer-loss staleness (#972): monerod can survive a tor restart with
                     # every SOCKS peer dead — reachable, healthcheck green, height creeping,
                     # but `synchronized: false` for hours. The RPC path is the only one that
-                    # carries the flag; absence (log-scrape fallback, remote node) is no
+                    # carries the flag; absence (log/stats fallback) is no
                     # verdict, so the monitor isn't fed and its streaks stay put.
                     monero_reports_synced = monero_sync.get("synchronized")
                     if monero_reports_synced is not None:
                         self.monero_sync_stale.update(monero_reports_synced)
                     monero_stale = self.monero_sync_stale.down
                     monero_sync["stale"] = monero_stale
+                    self._observe_monero(monero_sync)
 
                     # 4. Sync gate (Issue #35): hold p2pool + xmrig-proxy until the required
                     # chain(s) first sync, then release. monerod must be synced; Tari must be
@@ -325,10 +326,11 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # once released — before that there are no workers to fail over, and it
                     # keeps the two features from both driving xmrig-proxy.
                     await self._apply_sync_gate(
-                        monero_synced and (tari_synced or not TARI_REQUIRED)
+                        monero_synced
+                        and (tari_synced or not TARI_REQUIRED or self.sync_gate_monero_only)
                     )
                     if self.miner_released:
-                        await self._apply_worker_rejection(monero_down)
+                        await self._apply_worker_rejection(monero_down, tari_down)
 
                     # 5. Operator alerts (Issues #121/#45): push debounced node/worker/sync/host
                     # edges to Telegram. Consumes the flags computed above; worker presence is only
@@ -374,11 +376,11 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     )
                     await self.alert_service.process(
                         monero_down=monero_down,
-                        # Debounced "reachable but out of sync" (#972) — the 0-peer strand
-                        # after a tor restart that node-down can't see.
-                        monero_stale=monero_stale,
+                        monero_stale=monero_stale,  # #972 out-of-sync; health: #2499
+                        monero_health=monero_sync["health"],
                         tari_down=tari_down,
                         tari_required=TARI_REQUIRED,
+                        workers_rejected=self.workers_rejected,
                         miner_released=self.miner_released,
                         # The same worker rows the dashboard shows; the monitor reads each rig's
                         # status (DOWN = offline) so alerts line up with the on-screen state.
@@ -467,6 +469,9 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         )
                         await self.alert_service.degradation_alert(kind, drop_frac)
 
+                    worker_refresh.preserve_newer_reports(
+                        self.latest_data.get("workers", []), final_workers
+                    )
                     self.latest_data.update(
                         {
                             "workers": final_workers,
@@ -483,6 +488,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                             "tari_syncing_passive": tari_syncing_passive,
                             "workers_rejected": self.workers_rejected,
                             "miner_released": self.miner_released,
+                            "sync_gate_monero_only": self.sync_gate_monero_only,
                             "miner_held": self.miner_held,
                             "fail_closed_held": self.fail_closed_held,
                             "clearnet_sync": self.clearnet_sync_state,
@@ -499,7 +505,6 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         }
                     )
 
-                    # 6. Persist Historical Data
                     is_xvb = "XVB" in current_mode
                     p2pool_hr = 0 if is_xvb else total_hr
                     xvb_hr = total_hr if is_xvb else 0
@@ -521,7 +526,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         window_splits,
                     )
 
-                    # Create a lightweight snapshot (exclude shares entirely as they are safely in DB)
+                    await payout_sync.observe_enabled_wallets(self)
+                    # Snapshot without shares, which already live in the DB.
                     snapshot_data = self.latest_data.copy()
                     snapshot_data.pop("shares", None)
                     await asyncio.to_thread(self.state_manager.save_snapshot, snapshot_data)
@@ -604,19 +610,12 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         # 30-min wall-clock gate inside (the winners file updates ~hourly).
                         await self._sync_xvb_winners()
 
-                    # 7d. On-chain payout confirmation (#381), every 10th poll (~5 min). Independent
-                    # of XvB — gated on the view-only wallet-rpc being configured (local node + view
-                    # key). Polls get_transfers, persists new confirmed payouts, fires one alert each.
-                    #
-                    # 7d/7e are the only steps in this body wrapped per-step (#1644): both take no
-                    # poll local and write no `self` attribute, so a failure in one cannot leave a
-                    # later step reading half-written state. Everything above stays under the single
-                    # handler below — see `payout_sync` for why widening this is its own change.
+                    # Confirm payouts every 10th poll; the next health probe reads scan results.
+                    # These independent steps remain guarded per-step (#1644).
                     if self.wallet_client is not None and iteration_count % 10 == 0:
                         await payout_sync.run_isolated("Monero payout sync", self._sync_payouts)
 
-                    # 7e. Tari on-chain payout confirmation (#462), same cadence — gated on the
-                    # view-only Tari console wallet being configured (local node + tari view key).
+                    # Tari uses the same cadence.
                     if self.tari_wallet_client is not None and iteration_count % 10 == 0:
                         await payout_sync.run_isolated("Tari payout sync", self._sync_tari_payouts)
 

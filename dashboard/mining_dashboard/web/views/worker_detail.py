@@ -245,6 +245,7 @@ def build_worker_detail(name, data, state_mgr, range_arg="all", window=None):
     rig_config = (worker.get("rigforge") or {}).get("config") if worker else None
     return {
         "name": name,
+        "snapshot_at": data.get("timestamp") if data else None,
         "found": worker is not None,
         # Editable needs an operator-pinned host in config.json, never a miner-advertised one (#122).
         "editable": bool(descriptor and descriptor.get("host")),

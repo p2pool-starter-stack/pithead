@@ -61,7 +61,7 @@ test("clean history: zero failures, no rotate nudge", () => {
   const out = renderPanel({
     access: access({ entries: [{ ts: 100, status: 200, method: "GET", uri: "/", user: "admin" }] }),
   });
-  assert.match(out, /0 failed logins in the last 24 h/);
+  assert.match(out, /0 failed logins in the last 24 h \(bounded retained logs\)/);
   assert.doesNotMatch(out, /Repeated failed logins/);
   assert.match(out, /status-ok/);
 });

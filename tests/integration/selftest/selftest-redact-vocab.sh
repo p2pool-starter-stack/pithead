@@ -48,12 +48,12 @@ RENDER="$(cd "$HERE/../../.." && pwd)/lib/pithead/33-render-env.sh"
 
 # Hand-classified, and the classification IS the judgement this file encodes. A screened key in
 # none of these lists fails below BY NAME, so the rendered schema cannot drift past it.
-MUST_REDACT="DASHBOARD_AUTH_HASH_B64 DASHBOARD_AUTH_PW_FP DASHBOARD_AUTH_USER
+MUST_REDACT="TARI_EXPLORER_URL DASHBOARD_AUTH_HASH_B64 DASHBOARD_AUTH_PW_FP DASHBOARD_AUTH_USER
 DASHBOARD_ONION_CLIENT_PRIVKEY DASHBOARD_ONION_CLIENT_PUBKEY HEALTHCHECKS_PING_URL
 MONERO_NODE_PASSWORD MONERO_NODE_USERNAME MONERO_VIEW_KEY MONERO_WALLET_ADDRESS
 NOTIFY_WEBHOOK_URLS NTFY_TOKEN NTFY_URL PROXY_AUTH_TOKEN PROXY_STRATUM_PASSWORD TARI_SPEND_PUBLIC_KEY
 TARI_VIEW_KEY TARI_WALLET_ADDRESS TARI_WALLET_PASSWORD TELEGRAM_BOT_TOKEN WALLET_RPC_PASSWORD
-WALLET_RPC_USERNAME XMRIG_API_TOKEN XVB_DONOR_ID"
+WALLET_RPC_USERNAME WORKER_API_TOKENS XMRIG_API_TOKEN XVB_DONOR_ID"
 
 # Survivors, each for a stated reason. Over-redaction is safe for a secret and unsafe for anything
 # else: a bundle with its endpoints and routing ids stripped is useless for the triage it exists
@@ -62,16 +62,17 @@ WALLET_RPC_USERNAME XMRIG_API_TOKEN XVB_DONOR_ID"
 #   DASHBOARD_ONION_CLIENT_AUTH  a normalize_bool() result — literally `true` or `false`
 #   TELEGRAM_CHAT_ID             a routing id
 #   P2POOL_URL / XVB_POOL_URL    public service endpoints
-#   MONERO_WALLET_RPC_URL        an in-stack endpoint the bundle is read against
+#   MONERO_RPC_URL / MONERO_WALLET_RPC_URL  node endpoints the bundle is read against
 #   TARI_GRPC_ADDRESS / TARI_WALLET_GRPC_ADDRESS  host:port endpoints the bundle is read against
 # ⛔ STATED, not settled, for that last pair: in LOCAL mode they are bridge addresses inside the
 # stack and the IP rule's private-range protect keeps them readable, which is what a reader needs.
-# In REMOTE mode (#103) TARI_GRPC_ADDRESS is a third-party host, so a bundle discloses it. That is
-# a topology question rather than a credential one, it is not what #1621 asked, and narrowing it
-# here would strip the local-mode value that makes a bundle worth reading. Left surviving and named
+# In REMOTE mode (#103) MONERO_RPC_URL and TARI_GRPC_ADDRESS name third-party hosts, so a bundle
+# discloses them. That is a topology question rather than a credential one, it is not what #1621
+# asked. Narrowing it here would strip the local-mode value that makes a bundle worth reading.
+# Left surviving and named
 # so the next reader meets a decision rather than an oversight.
 MUST_SURVIVE="XMRIG_API_AUTH DASHBOARD_ONION_CLIENT_AUTH TELEGRAM_CHAT_ID P2POOL_URL XVB_POOL_URL
-MONERO_WALLET_RPC_URL TARI_GRPC_ADDRESS TARI_WALLET_GRPC_ADDRESS"
+MONERO_RPC_URL MONERO_WALLET_RPC_URL TARI_GRPC_ADDRESS TARI_WALLET_GRPC_ADDRESS"
 
 # ⛔ `NTFY_URL` WAS pinned here as a known gap, on the reason that the bare word `URL` could not be
 # added without taking every public endpoint above with it. True, and it was never the technique

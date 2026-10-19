@@ -9,18 +9,15 @@ function PoolBadge({ pool }) {
   return html`<span class="badge badge-bad">Unknown</span>`;
 }
 
-// RigForge enriched feed (#235): a monospace version badge plus health / power / tune / watchdog
-// chips, all built server-side (infra_views._rigforge_display) so the client stays a dumb renderer.
+// RigForge enriched feed (#235): attention and live chips (warn/bad states, power, temperature),
+// built server-side (rigforge_views.rigforge_display) so the client stays a dumb renderer. Static
+// detail (version, board, HugePages, tune, autotune) lives in Worker Inspect, not in this row (#3031).
 // A plain-xmrig worker has no `rigforge` block and renders nothing extra — no chips, no error, no
 // empty placeholder, exactly as today. Each chip is a {text, variant, title}; only present-data
 // chips are emitted, so a rig with no RAPL shows no power chip.
 function RigForgeChips({ rf }) {
   if (!rf) return null;
-  return html`${
-    rf.version
-      ? html` <span class="badge badge-outline version-badge" title="RigForge version">rf ${rf.version}</span>`
-      : null
-  }${(rf.chips || []).map(
+  return html`${(rf.chips || []).map(
     (c) => html` <span class=${"badge badge-" + c.variant} title=${c.title || ""}>${c.text}</span>`,
   )}`;
 }
@@ -79,7 +76,7 @@ const ProxyTotals = ({ summary }) => {
     </div>`;
 };
 
-function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onInspect }) {
+function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, localOnly, onInspect }) {
   // First-run empty state (#385): show the one action to take instead of empty headers.
   // `workers` includes offline rigs, so a temporarily all-offline fleet keeps its (red) table.
   if ((workers || []).length === 0) {
@@ -93,6 +90,7 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onIns
                 <p class="text-muted">Point each rig at <code>${addr}:${port}</code> and it appears here —${" "}
                     see the <a href="https://github.com/p2pool-starter-stack/pithead/blob/main/docs/workers.md"
                         target="_blank" rel="noopener noreferrer">workers guide</a>.</p>
+                ${localOnly && html`<p class="text-muted">Local connections only.</p>`}
             </div>
         </div>`;
   }
