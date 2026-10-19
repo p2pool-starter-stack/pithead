@@ -28,6 +28,8 @@ _uninstall_phase_recover() {
         it_pass "uninstall phase restored the exact healthy baseline without outer rollback"
         return 0
     fi
+    # shellcheck disable=SC2034
+    SAFETY_RESTORE_FAILED=1
     it_fail "uninstall phase restored the exact healthy baseline without outer rollback" "temporary secret copy cleanup or exact recovery failed: $SAFETY_RESTORE_FAIL_REASON"
     return 1
 }

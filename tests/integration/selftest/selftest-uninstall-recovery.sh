@@ -8,6 +8,7 @@ eval "$(sed -n '/^kept_data_snapshot_snippet() {/,/^}$/p' "$HERE/../lib/run-life
 eval "$(sed -n '/^safety_secret_drift_categories() {/,/^}$/p' "$HERE/../lib/run-safety.sh")"
 eval "$(sed -n '/^safety_restore_exact() {/,/^}$/p' "$HERE/../lib/run-safety.sh")"
 eval "$(sed -n '/^safety_abort_restore() {/,/^}$/p' "$HERE/../lib/run-safety.sh")"
+eval "$(sed -n '/^safety_cleanup() {/,/^}$/p' "$HERE/../lib/run-safety.sh")"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 
@@ -20,6 +21,7 @@ drive() (
     printf 'fixture proxy\n' >"$box/Caddyfile"
     printf 'installed\n' >"$box/resources"
     cp "$box/.env" "$box/env-baseline"
+    printf fixture >"$box/fixture"
     printf 'chain bytes\n' >"$box/monero/chain"
     # shellcheck disable=SC2034
     local IT_FAIL=0 IT_PASS=0 KEEP_STATE=0 KEPT_SNAPSHOT_SUDO="" IT_PITHEAD=./pithead
@@ -98,6 +100,10 @@ drive() (
     result=$?
     if [ -e "$box/.env.itest-round-trip" ]; then
         it_fail 'phase recovery removes its temporary secret copy' 'the duplicate .env remains' >>"$box/run.log"
+    fi
+    if [ "$test_case" = cleanup-fails ]; then
+        safety_cleanup
+        [ -f "$box/fixture" ] || it_fail 'cleanup failure retains the safety archive' 'the archive was deleted' >>"$box/run.log"
     fi
     if [ "$test_case" = keep ] && [ "$(cat "$box/resources")" != rebuilt ]; then
         it_fail '--keep retains the successful setup state' 'the exact baseline replaced the rebuilt state' >>"$box/run.log"
