@@ -363,6 +363,7 @@ for the final e2e submission:
 
 ```bash
 set -euo pipefail
+BENCH_SUBMIT_URL=${BENCH_CI_URL%%,*}
 SHA=$(git rev-parse HEAD) # run from the final develop commit
 REF=release/${SHA}
 git push origin "${SHA}:refs/heads/$REF"
@@ -372,7 +373,7 @@ for phase in boot update install provision setup-defaults rig rigmedia media fau
   printf 'KVM %s idempotency key: %s\n' "$phase" "$KVM_KEY"
   KVM_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_KEY" --arg phase "$phase" \
     '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:[$phase]},timeout_minutes:240,submitted_by:"release/devops",note:("release KVM "+$phase),idempotency_key:$key}' \
-    | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+    | curl -fsS -X POST "$BENCH_SUBMIT_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
   KVM_JOB_IDS=$(jq -cn --argjson ids "$KVM_JOB_IDS" --argjson id "$KVM_ID" '$ids + [$id]')
   printf 'KVM job: %s@%s\n' "$KVM_ID" "$SHA"
 done
@@ -406,7 +407,7 @@ printf 'e2e idempotency key: %s\n' "$E2E_KEY"
 jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MODE" \
   --argjson ids "$KVM_JOB_IDS" \
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:$ids,status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
-  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
+  | curl -fsS -X POST "$BENCH_SUBMIT_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
 ```
 
 Read the completed e2e job's full status, log, artifacts and evidence. All KVM and e2e jobs must carry the same

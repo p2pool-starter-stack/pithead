@@ -27,6 +27,7 @@ uuidgen() {
 curl() {
     local payload id
     [ -f "$RECIPE_TEST_DIR/ref-pushed" ] || return 1
+    [ "$4" = "https://bench.invalid/bench-ci/jobs" ] || return 1
     payload=$(cat)
     printf '%s\n' "$payload" | jq -c . >>"$RECIPE_TEST_DIR/jobs.jsonl"
     id=$(wc -l <"$RECIPE_TEST_DIR/jobs.jsonl")
@@ -43,7 +44,7 @@ awk '
     section && /^```$/ { code=0; next }
     code { print }
 ' "$recipe_doc" >"$RECIPE_TEST_DIR/recipe.sh"
-BENCH_CI_URL=https://bench.invalid/bench-ci bash "$RECIPE_TEST_DIR/recipe.sh"
+BENCH_CI_URL=https://bench.invalid/bench-ci,https://fallback.invalid/bench-ci bash "$RECIPE_TEST_DIR/recipe.sh"
 
 jq -es --arg sha "$RECIPE_TEST_SHA" '
     length == 13 and
