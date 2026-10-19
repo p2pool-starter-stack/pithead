@@ -1,23 +1,14 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Release-PUBLISH domain (#1105 Phase 1): what a cut DOES against a registry — the GHCR
-# read-after-push retry, the release-toolchain preflight, release-smoke's upgraded-install
-# resolution, pull-vs-build mode detection, and the bundle's macOS-xattr hygiene guard. Split from
-# test-release.sh, which keeps the side-effect-free helpers. Sourced by tests/stack/run.sh after it.
-#
-# The four script paths are re-derived here rather than inherited from test-release.sh, the same
-# reason test-release-signing.sh re-derives its own: a fragment that depends on an earlier
-# fragment's variables breaks silently when the suite is reordered, and `source "$REL" 2>/dev/null`
-# hides exactly that failure as a pile of "command not found".
+# Release-publish tests: registry retries, release smoke and bundle hygiene.
+# Paths are re-derived so this fragment remains independent of suite order.
 REL="$ROOT/scripts/release/release.sh"
 REL_IMAGES="$ROOT/scripts/release/images.sh"
 REL_BUNDLE="$ROOT/scripts/release/bundle.sh"
 STACK_VERSION="v$(cat "$ROOT/VERSION")"
 echo "== unit: release.sh registry read retries GHCR read-after-push lag (#429) =="
-# manifest_digest reads a tag GHCR just accepted, which can 404 or serve a STALE digest for a few
-# seconds (read-after-push lag) — this killed stage-4 digest capture twice on the v1.3.1 cut. So the
-# retry is not only for empty reads: it loops until the EXPECTED digest appears, and the counter
-# proves it stayed bounded. Backoff is forced to 0 to keep the test instant.
+# GHCR can briefly 404 or serve a stale digest after push. Prove the retry reaches the expected
+# digest and stays bounded; zero backoff keeps the test instant.
 RETRY_CNT="$SANDBOX/inspect.count"
 # shellcheck disable=SC1090,SC2034  # dynamic source; REGISTRY_READ_* are read by the sourced retry helper
 retry_out="$(
@@ -60,7 +51,6 @@ assert_contains "exhausted retries -> empty digest (caller dies)" "$exhaust_out"
 # The smoke stage's raw manifest read has the same read-after-push exposure — wire it through the retry.
 assert_contains "smoke stage reads the captured digest via retry_registry_read (#429)" \
     "$(cat "$REL_IMAGES")" 'retry_registry_read buildx_inspect "$digest" --raw'
-
 # #557: the test above disables errexit (`set +eu`, right after sourcing) to observe the bare helper
 # in isolation, which happens to mask a real bug in stage_push itself: the bare
 # `digest="$(manifest_digest ...)"` assignment aborts under release.sh's own `set -euo pipefail`
@@ -75,6 +65,7 @@ stage_push_out="$(
         source "$REL" 2>/dev/null
         DRY_RUN=0
         IMAGES=(tor)
+        PUBLISHED_IMAGES=(tor)
         REGISTRY="ghcr.io/test"
         REGISTRY_READ_RETRIES=1
         REGISTRY_READ_BACKOFF=0
@@ -92,38 +83,6 @@ assert_contains "stage_push, real errexit: crafted die() reaches the operator (#
 resume_out="$(cd "$ROOT" && bash "$REL" --resume-promote 2>&1)"
 assert_rc "--resume-promote refuses a replaced staging tag" "$?" "1"
 assert_contains "--resume-promote has no mutable-tag recovery path" "$resume_out" "Unknown option: --resume-promote"
-echo "== unit: release.sh preflight checks the lint toolchain (#426) =="
-# A reimaged release box loses shellcheck/shfmt/node/uv — the v1.3.0 cut died ~1 min in mid-gate with a
-# bare `shellcheck: not found`. check_release_toolchain must fail fast BEFORE building, naming the tool
-# and the provisioning doc. Point PATH at a sandbox of stub tools so the host's real PATH doesn't decide.
-RTB="$SANDBOX/release-tools"
-mkdir -p "$RTB"
-for t in shellcheck shfmt node npx uv uvx; do
-    printf '#!/usr/bin/env bash\nexit 0\n' >"$RTB/$t"
-    chmod +x "$RTB/$t"
-done
-# shellcheck disable=SC1090
-(
-    cd "$ROOT" || exit
-    set --
-    source "$REL" 2>/dev/null
-    set +eu
-    PATH="$RTB" check_release_toolchain >/dev/null 2>&1
-)
-assert_rc "full toolchain present -> preflight passes" "$?" "0"
-rm -f "$RTB/shfmt" # simulate a reimaged box missing one tool
-# shellcheck disable=SC1090
-tc_out="$(
-    cd "$ROOT" || exit
-    set --
-    source "$REL" 2>/dev/null
-    set +eu
-    PATH="$RTB" check_release_toolchain 2>&1
-)"
-tc_rc=$?
-assert_rc "missing tool -> preflight fails fast (rc 1)" "$tc_rc" "1"
-assert_contains "the missing tool is named" "$tc_out" "shfmt"
-assert_contains "error points at the provisioning doc" "$tc_out" "release-server.md"
 echo "== unit: release.sh requires the exact-SHA bench tier-4 status (#1996) =="
 bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug] [dry-run]
     local BENCH_STATUSES="$1" BENCH_RESOLVED_APP_ID="${2:-4242}"

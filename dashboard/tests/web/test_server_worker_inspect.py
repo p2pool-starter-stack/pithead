@@ -1,4 +1,7 @@
 # ruff: noqa: F403, F405
+from unittest.mock import AsyncMock
+
+from mining_dashboard.service.workers import worker_refresh
 from tests.web._server_support import *  # noqa: F403
 
 
@@ -66,6 +69,27 @@ class TestWorkerInspect:
         assert history[0]["status"] == "applied"
         assert history[0]["changes"] == scrubbed
         assert worker_client.sm.get_last_applied_worker_config("rig1") == scrubbed
+
+    async def test_donation_apply_starts_exact_id_refresh(
+        self, worker_client, control_spool, monkeypatch
+    ):
+        rid = str(uuid.uuid4())
+        monkeypatch.setattr(control_service.uuid, "uuid4", lambda: uuid.UUID(rid))
+        (control_spool / "results" / f"{rid}.json").write_text(
+            json.dumps({"status": "accepted", "change_id": "abc123", "worker": "rig1"})
+        )
+        refresh = AsyncMock(return_value=True)
+        monkeypatch.setattr(worker_refresh, "refresh_donation_after_apply", refresh)
+        resp = await worker_client.post(
+            "/api/control/worker-apply",
+            json={"worker": "rig1", "changes": {"DONATION": 0}},
+            headers=CONTROL_HEADERS,
+        )
+        assert resp.status == 200
+        await asyncio.gather(*worker_client.app["_bg_tasks"])
+        refresh.assert_awaited_once_with(
+            worker_client.app["latest_data"], worker_client.sm, "rig1", "abc123", 0
+        )
 
     async def test_worker_routes_absent_when_control_disabled(self, client):
         assert (await client.get("/api/worker?name=rig1")).status == 404

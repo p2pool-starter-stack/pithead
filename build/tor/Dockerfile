@@ -1,6 +1,6 @@
 # Pinned to a named minor version by digest (#135, #373). The digest is authoritative; the tag
 # names the Alpine minor line (3.24) so Dependabot's patch-update policy has a real version to track.
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 # Install Tor plus netcat, which the bootstrap healthcheck needs to talk to the control port.
 # Deliberately NOT xxd: the healthcheck's `xxd -p -c 256` is served by busybox's own applet, so
@@ -20,6 +20,11 @@ RUN chmod +x /usr/local/bin/tor-entrypoint.sh
 # Control-port bootstrap healthcheck (see docker-compose.yml healthcheck)
 COPY healthcheck.sh /usr/local/bin/tor-healthcheck.sh
 RUN chmod +x /usr/local/bin/tor-healthcheck.sh
+COPY control-signal.sh /usr/local/bin/tor-control-signal.sh
+RUN chmod +x /usr/local/bin/tor-control-signal.sh
+
+COPY recovery-diagnose.sh /usr/local/bin/tor-recovery-diagnose.sh
+RUN chmod +x /usr/local/bin/tor-recovery-diagnose.sh
 
 # Create the data directory and ensure the 'tor' user has ownership
 # This is critical because we switch to a non-root user below

@@ -27,7 +27,7 @@ infrastructure.
 | Channel | Artifact | Runtime | Audience |
 |---|---|---|---|
 | **curl installer** | `curl -fsSL <url>/install.sh \| bash` — installs/uses Docker CE, fetches the signed release bundle, runs `pithead setup` | Docker Compose (today's stack, unchanged) | homelabs, VPS, existing Docker users |
-| **Appliance image** | `pithead-os-vX.Y.Z.img` + RAUC update bundles | Podman/Quadlet | zero-Linux-setup users, fleets |
+| **Appliance image** | `pithead-os-vX.Y.Z.img.xz` + RAUC update bundles | Podman/Quadlet | zero-Linux-setup users, fleets |
 | **git clone** | the repo | Docker Compose | developers, contributors |
 
 Flash target: the image is written to the machine's **internal SSD/NVMe** — running
@@ -47,7 +47,7 @@ All channels consume the same release manifest: five digest-pinned GHCR images +
 `pithead` + rendered Quadlet units + config schema. The appliance embeds the same
 digests the installer pulls. Image ownership is per-service, not structural: the
 manifest already pins the Tari node from a registry we do not own
-(`quay.io/tarilabs`) — a service image moving to another repo or registry changes a
+(`ghcr.io/tari-project`) — a service image moving to another repo or registry changes a
 digest line, nothing else.
 
 curl-pipe trust mitigations: the script lives in the repo (reviewable), is served over
@@ -560,20 +560,16 @@ a machine that runs continuously and syncs 250+ GB.
 
 ### The design: one image, two modes
 
-The USB carries a compressed copy of the pristine system image on its data partition.
-When the appliance boots from removable media and finds an internal disk, the wizard's
-first screen becomes a disk picker instead of the setup form. Installing is:
+The release download is compressed before publication and decompressed while writing the USB.
+The USB carries the bootable filesystem, not an embedded installer payload. When the appliance
+boots from removable media and finds an internal disk, the wizard's first screen becomes a disk
+picker instead of the setup form. `pithead-install` creates the target layout and copies the
+running slot and ESP; it does not unpack a second image from the USB.
 
-```bash
-zstd -dc /data/install/system.img.zst | dd of=/dev/<target> bs=4M
-```
+The target bootstraps itself on first boot through the same code path the USB used. There
+is no second image payload to build, sign, or release.
 
-then reboot. The target bootstraps itself on first boot through the same code path the
-USB would have used. There is no second install mechanism to write, test, or sign — the
-installer's whole job is choosing a disk and copying bytes.
-
-Cost: roughly doubles the USB artifact (~1.8 GiB compressed today). The alternative, a
-separate slim installer image, is smaller but adds an artifact to build, sign, release
+The alternative, a separate slim installer image, adds an artifact to build, sign, release
 and test, and the destructive path would then be exercised by different code than the
 one users boot. Sized deliberately.
 

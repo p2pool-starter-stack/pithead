@@ -91,9 +91,10 @@ These explain why the yield moved, or confirm it didn't. All are available today
   - **Arm T (Tor):** `p2pool.clearnet=false` (`--socks5`), `tor_egress_firewall=true`, `xvb.tor=true` —
     the `develop` defaults (fail-closed, egress-gated).
   - **Arm C (clearnet):** `p2pool.clearnet=true`, `tor_egress_firewall=false`, `xvb.tor=false`. The
-    **firewall must be off in this arm.** The #270 Tor-egress firewall DROPs direct clearnet dials, so
-    leaving it on would give p2pool 0 sidechain peers and the arm would silently collect garbage. The
-    arm switch toggles the two together. monerod + Tari keep their Tor app-config in both arms, so only
+    **firewall was off in this recorded arm** (before #2790). The old #270 Tor-egress firewall
+    dropped P2Pool's direct dials, so leaving it on then would have given P2Pool zero sidechain
+    peers. The historical arm switch toggles the two together; current deployments can keep the
+    firewall on with P2Pool's scoped exception. monerod + Tari keep their Tor app-config in both arms, so only
     p2pool's transport differs; clearnet exposure here is the intended baseline on the test bench.
   - Only the **mining-path transport** flips. Held constant in both arms: monerod + Tari on Tor,
     **XvB disabled** (`xvb.enabled=false`, see below), the rig, hashrate, sidechain, and monerod tip.
@@ -220,8 +221,9 @@ the raw per-arm JSONL plus `events.log` are committed there (originals on the te
 this is the "materially below clearnet" case, so the trade-off is documented rather than hidden. Not
 exposing the operator's home IP to the P2Pool network is the project's core value, and **~10 % is a
 modest, opt-out-able price** for it. Operators who prioritise yield over IP privacy can set
-`p2pool.clearnet: true` (now functional; it was a no-op until the #294 firewall-toggle fix
-found during this benchmark) and accept the exposure. No per-sidechain split is warranted: the
+`p2pool.clearnet: true` and apply it with the default egress firewall still on: the host exempts
+only P2Pool's IPv4 address while the flag is set (#2790). Peers then see the operator's home IP.
+No per-sidechain split is warranted: the
 mechanism is the ~10 s share interval, common to every sidechain, so `mini` is representative. The
 absolute cost is largest on the smaller, faster chains where our share, and thus uncle sensitivity,
 is highest. This conclusion is mirrored operator-facing in [`../privacy.md`](../privacy.md).

@@ -18,3 +18,9 @@ class TestTorHealAlert:
         svc = _svc(notifier=n)
         assert await svc.tor_heal_alert("tor restarted") is None
         assert n.sent == []
+
+    async def test_none_when_no_sink_delivered(self):
+        """Every sink reports failure: nothing was delivered, so the caller may retry (#2464)."""
+        n = _FakeNotifier()
+        n.send = lambda text, event="": False
+        assert await _svc(notifier=n).tor_heal_alert("tor restarted") is None

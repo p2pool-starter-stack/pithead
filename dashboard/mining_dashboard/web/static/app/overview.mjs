@@ -81,6 +81,12 @@ function NodeStats({ state }) {
 
 function GlobalStats({ state }) {
   const p = state.pool;
+  if (p.syncing)
+    return html`
+    <div class="card card-advanced" id="card-global">
+        <h2>Global P2Pool Stats</h2>
+        <p class="status-warn" role="status">P2Pool is syncing its sidechain</p>
+    </div>`;
   // Headline = the pool's own money/health figures (hashrate, whether it's finding blocks, when
   // it last did); sidechain internals, peers and uptime are reference detail, not a glance figure.
   const headline = html`
@@ -152,12 +158,21 @@ function XvBStats({ state }) {
 function NetworkCard({ state }) {
   const n = state.network,
     m = state.monero;
+  // The tick means "at the tip, with peers" (#2499): red carries the numbers, and an absent or
+  // remote verdict stays neutral rather than pretending.
+  const health = m.health || { status: "—", peers: "—", moved: "—", tooltip: "" };
+  const healthCls =
+    health.level === "red" ? "status-bad" : health.level === "green" ? "status-ok" : "";
   // Headline = the chain's own money/health figures (height, difficulty, block reward); node
   // internals (mode, DB size, hash, network time) are reference detail.
   const headline = html`
             <${StatCard} label="Block Height" value=${n.height} />
             <${StatCard} label="Difficulty" value=${n.diff} />
-            <${StatCard} label="Reward" value=${n.reward} />`;
+            <${StatCard} label="Reward" value=${n.reward} />
+            <${StatCard} label="Node Health" value=${health.status} cls=${healthCls}
+                span=${true} title=${health.tooltip} />
+            <${StatCard} label="Peers" value=${health.peers} cls=${healthCls} title=${health.tooltip} />
+            <${StatCard} label="Height Moved" value=${health.moved} cls=${healthCls} title=${health.tooltip} />`;
   const detail = html`
             <${StatCard} label="Node" value=${nodeLocation(state.sync?.monero?.local)}
                 title="Whether this stack runs its own monerod or points at somebody else's" />
@@ -168,7 +183,7 @@ function NetworkCard({ state }) {
   return html`
     <div class="card card-advanced" id="card-network">
         <h2>XMR Network</h2>
-        <${MoreStats} prefKey="dashboardCardNetwork" headline=${headline} detail=${detail} count=${8} />
+        <${MoreStats} prefKey="dashboardCardNetwork" headline=${headline} detail=${detail} count=${11} />
     </div>`;
 }
 
@@ -176,8 +191,14 @@ function NetworkCard({ state }) {
 // pool's last block (pool-wide, not a payout to you), the expected time for your hashrate to find a
 // sidechain share, luck, and YOUR PPLNS share-weight (sum of your share difficulty in the window —
 // not p2pool's pool-wide pplnsWeight shown in the node stats).
-function CadenceCard({ cadence }) {
+function CadenceCard({ cadence, syncing }) {
   if (!cadence) return null;
+  if (syncing)
+    return html`
+    <div class="card card-advanced" id="card-cadence">
+        <h2>Pool Cadence & Luck</h2>
+        <p class="status-warn" role="status">P2Pool is syncing its sidechain</p>
+    </div>`;
   return html`
     <div class="card card-advanced" id="card-cadence">
         <h2>Pool Cadence & Luck</h2>

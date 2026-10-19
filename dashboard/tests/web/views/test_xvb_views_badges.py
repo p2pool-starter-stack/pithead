@@ -204,3 +204,37 @@ class TestBadges:
         assert not any(
             "AVX2" in b["text"] for b in build_badges({"system": {"avx2": None}}, _metrics(), "ok")
         )
+
+
+class TestMoneroChainBadge:
+    @pytest.mark.parametrize(
+        "reason", ["0 outgoing peers for 10 min", "height 77 has not moved for 30 min"]
+    )
+    def test_red_local_chain_is_named_in_header(self, _metrics, monkeypatch, reason):
+        monkeypatch.setattr(xvb_views, "monero_is_local", lambda: True)
+        health = {"level": "red", "reasons": [reason], "advice": "restart monerod"}
+        badges = build_badges({"monero_sync": {"health": health}}, _metrics(), "ok")
+        warning = next(b for b in badges if b["text"] == "Monero chain unhealthy")
+        assert warning["variant"] == "bad"
+        assert reason in warning["title"]
+        assert "restart monerod" in warning["title"]
+
+    @pytest.mark.parametrize(
+        "level,local,down",
+        [
+            ("green", True, False),
+            ("unknown", True, False),
+            ("red", False, False),
+            ("red", True, True),
+        ],
+    )
+    def test_no_chain_warning_without_local_red_verdict(
+        self, _metrics, _sync, monkeypatch, level, local, down
+    ):
+        monkeypatch.setattr(xvb_views, "monero_is_local", lambda: local)
+        badges = build_badges(
+            {"monero_sync": {"health": {"level": level}}},
+            _metrics(monero=_sync(down=down)),
+            "ok",
+        )
+        assert not any(b["text"] == "Monero chain unhealthy" for b in badges)

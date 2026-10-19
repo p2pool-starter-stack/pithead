@@ -173,7 +173,8 @@ assert_appliance_hostname_identity() { # <label> <context> <dashboard-user> <das
     local DASH_USER="$3" DASH_PASS="$4" card_src="${5:-}"
     while [ "$tries" -lt 12 ]; do
         snap=$(hostname_runtime_snapshot "$label" "$card_src")
-        IFS=$'\t' read -r kernel static env_host state_host sans avahi mdns card _stamp <<<"$snap"
+        # Tabs are IFS whitespace: use a non-whitespace separator to preserve empty columns.
+        IFS=$'\x1f' read -r kernel static env_host state_host sans avahi mdns card _stamp <<<"${snap//$'\t'/$'\x1f'}"
         named_code=$(hostname_named_http_code "$label")
         verdict=$(hostname_identity_verdict "$label" "$ip" "$kernel" "$static" "$env_host" "$state_host" "$sans" "$avahi" "$mdns" "$card" "$named_code") && {
             ok "$context names $label everywhere it is read: kernel and static hostname, rendered dashboard, certificate, mDNS, the card's dashboard and stratum addresses, and https://$label.local answering (HTTP $named_code)"
@@ -220,6 +221,34 @@ _hostname_self_test() {
     local good='DNS:fixture-box.local, IP Address:192.0.2.10' f=0
     local card='https://fixture-box.local stratum+tcp://fixture-box.local:3333'
     local stale='https://pithead.local stratum+tcp://pithead.local:3333'
+    # Drive the snapshot consumer, including empty columns with populated later fields.
+    # Stubs stay in a subshell so the remaining verdict/evidence controls keep their helpers.
+    (
+        ip=192.0.2.10
+        fields=(fixture-box fixture-box fixture-box.local fixture-box.local "$good" active "$ip" "$card" 12345)
+        hostname_runtime_snapshot() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${fields[@]}"; }
+        hostname_named_http_code() { printf 401; }
+        hostname_mdns_evidence() { :; }
+        sleep() { :; }
+        ok() { printf ready; }
+        bad() { printf '%s' "$1"; }
+        [ "$(assert_appliance_hostname_identity fixture-box snapshot user password)" = ready ] || exit 1
+        reasons=(kernel=empty static=empty env=empty state=empty cert-missing-dns avahi=empty mdns=empty card-dashboard=empty)
+        for i in 3 0 1 2 4 5 6 7; do
+            saved=${fields[$i]}
+            fields[$i]=''
+            expected="snapshot identity did not converge (${reasons[$i]}) — $(hostname_identity_payload fixture-box "$ip" "${fields[@]:0:8}" 401); mDNS evidence above"
+            if observed=$(assert_appliance_hostname_identity fixture-box snapshot user password); then
+                printf 'empty snapshot column %s incorrectly passed\n' "$i"
+                exit 1
+            fi
+            [ "$observed" = "$expected" ] || {
+                printf 'snapshot column %s: expected %s; got %s\n' "$i" "$expected" "$observed"
+                exit 1
+            }
+            fields[$i]=$saved
+        done
+    ) || f=$((f + 1))
     [ "$(hostname_identity_verdict fixture-box 192.0.2.10 fixture-box fixture-box fixture-box.local fixture-box.local "$good" active 192.0.2.10 "$card" 401)" = ready ] || f=$((f + 1))
     hostname_identity_verdict fixture-box 192.0.2.10 old fixture-box fixture-box.local fixture-box.local "$good" active 192.0.2.10 "$card" 401 >/dev/null && f=$((f + 1))
     # The static name (#2350): a kernel hostname that renamed clean but left `hostnamectl --static`

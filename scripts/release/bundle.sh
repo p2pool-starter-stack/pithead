@@ -68,7 +68,7 @@ write_manifest() {
         printf '## Ingredients — Pithead %s\n\n' "$TAG"
         printf -- '- **Version:** %s\n- **Commit:** `%s`\n- **Built:** %s\n\n' "$STACK_VERSION" "$GIT_COMMIT" "$BUILD_DATE"
         printf '### Published images (`%s`, tags `%s` + `latest`)\n\n' "$REGISTRY" "$TAG"
-        for suffix in "${IMAGES[@]}"; do
+        for suffix in "${PUBLISHED_IMAGES[@]}"; do
             repo="$(image_for "$suffix")"
             dg="$(get_digest "$suffix")"
             printf -- '- `%s`\n  - digest: `%s`\n' "$repo:$TAG" "${dg:-<not staged>}"
@@ -82,6 +82,7 @@ write_manifest() {
         printf -- '- tari console wallet: `%s`\n' "$(pin tari-wallet)"
         printf -- '- caddy: `%s`\n' "$(pin caddy)"
         printf -- '- docker-socket-proxy: `%s`\n' "$(pin socket-proxy)"
+        printf -- '- rigforge: `%s`\n' "$(pin rigforge)"
     } >"$out"
     log "Wrote ingredients manifest: $out"
 }
@@ -186,12 +187,28 @@ make_bundle() (
     log "Wrote install bundle: $out"
 )
 
-# Release notes = the top (newest) section of CHANGELOG.md — the curated, user-facing summary.
+# Release notes = the CHANGELOG section for the tag being published.
 changelog_notes() {
     if [ ! -f CHANGELOG.md ]; then
         printf 'Pithead %s\n' "$TAG"
         return
     fi
-    # Print from the first "## [" heading up to (but not including) the next one.
-    awk '/^## \[/{ if (seen) exit; seen=1 } seen' CHANGELOG.md
+    # Compare literal bracketed versions: Unreleased and other releases are excluded.
+    awk -v heading="[${TAG#v}]" '
+        /^## \[/ {
+            if (seen) exit
+            if ($2 == heading) seen=1
+        }
+        seen
+        END { if (!seen) exit 1 }
+    ' CHANGELOG.md || {
+        printf 'Warning: no CHANGELOG.md entry for release %s; using the first non-Unreleased section\n' "$TAG" >&2
+        awk '
+            /^## \[/ {
+                if (seen) exit
+                if ($2 != "[Unreleased]") seen=1
+            }
+            seen
+        ' CHANGELOG.md
+    }
 }

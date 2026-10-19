@@ -1,134 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-usage() {
-    cat <<'EOF'
-Pithead integration test runner
-
-USAGE:
-  run.sh --host <user@host> [options]     drive the box over SSH
-  run.sh --local            [options]     drive a stack on this machine
-
-CONNECTION:
-  --host <user@host>     SSH destination of the test server
-  --identity <keyfile>   SSH private key (adds -i <keyfile>)
-  --ssh-opt <opt>        extra ssh -o option (repeatable), e.g. --ssh-opt Port=2222
-  --local                run against a stack on this machine instead of over SSH
-  --dir <path>           the Pithead stack directory ON THE BOX, relative to the SSH login
-                         dir or absolute (default: pithead). Avoid a literal ~ — your local
-                         shell would expand it before the box sees it.
-  --pithead <cmd>        how to invoke pithead on the box (default: ./pithead;
-                         use "sudo ./pithead" if docker needs root there)
-
-MATRIX:
-  --check                NON-DESTRUCTIVE: assert the box's current live state only — no config
-                         changes, no apply, no restore. The safe first run / health check.
-  --readiness            NON-DESTRUCTIVE: assess whether the box is fit to be a release/
-                         validation server (synced chains reusable, snapshot-capable FS, disk
-                         headroom, secrets not world-readable, dashboard localhost-only).
-  --scenario <name>      run only one scenario (see --list)
-  --workers <n>          miners expected online while mining (default: 2)
-  --no-mining-asserts    SKIP the two mining assertions (workers online, stratum hashes) with a
-                         logged notice — for a box with no miner connected (e2e --no-miner, #905).
-                         Every other assertion stays binding.
-  --remote-monero-host <h>  external node for the remote-mode scenario — a BARE host or IP, never
-                            host:port (pithead appends the port itself, #1491)
-  --remote-monero-rpc-port <p>  that node's RPC port, when it is not the default 18081
-  --remote-monero-zmq-port <p>  that node's ZMQ port, when it is not the default 18083
-  --remote-tari-host <h>  bare host or IPv4 address for an external Tari node (#103)
-  --appliance-channel    this run is driving a KVM appliance guest, not a DIY install (#2062,
-                         tests/os/phases/stack.sh) — the ONLY effect is that the merge-mining
-                         gRPC round-trip (#1397) reports a by-design skip naming #2326 instead of
-                         failing, since that gap is real on the appliance channel and open
-                         separately; every other assertion runs exactly as it does without this flag.
-  --pruned-data-dir <d>  synced PRUNED monero data dir (enables the pruned case when the
-                         box's baseline is full)
-  --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
-                         baseline is pruned)
-  --lifecycle            also run the lifecycle phase (restart, apply secret-preservation,
-                         and the #255 ensure_owner migration: a root-owned file under a data
-                         dir must be chowned to the container uid by apply)
-  --reset-dashboard      also run the reset-dashboard phase (#2346): `pithead reset-dashboard`
-                         wipes the .env-named dirs, not an unapplied config.json path (#139),
-                         recreates them owned by APP_UID (#550), leaves the chains untouched
-                         (height never rewinds), brings dashboard/p2pool back healthy, and a
-                         forced real compose failure reaches the friendly retry message instead
-                         of a bare errexit abort (#557). DESTRUCTIVE-then-restored; requires
-                         --safety-backup so interruption restores the baseline and removes decoys.
-  --safety-backup        take a `pithead backup` BEFORE the destructive scenarios; if anything
-                         fails, automatically roll the box back to it (down → restore → up).
-                         The archive is removed on success. Recommended for the destructive
-                         matrix on a precious box. Also exercises backup/restore end-to-end.
-  --fault-injection      also run the fault-injection phase: deliberately break monerod
-                         (stop / SIGSTOP / remove) and assert pithead's status verdicts
-                         (down / unhealthy / missing) and the failover→recovery cycle. Also
-                         makes the dashboard data dir read-only and asserts /api/state flags
-                         db_healthy:false, then restores it (#202), and forces a real
-                         `iptables -I` failure and asserts the #270 firewall rolls back
-                         fail-closed (no half-open ruleset). Also stops the tor container and
-                         asserts no clearnet egress leaks while SOCKS is down AND that
-                         `doctor` flags the outage loudly (#563), shadows timedatectl for a
-                         real clock-drift verdict, and tmpfs-fills the dashboard data dir for
-                         a real ENOSPC verdict (#383). DESTRUCTIVE-then-restored; works over
-                         SSH and locally. Slow (healthcheck + node-health debounce).
-  --image-upgrade <old-sha> <new-sha>
-                         run `pithead upgrade` from a private candidate release bundle against
-                         the already-running old images and prove image revision, chain-data and
-                         height continuity, categorized secret fingerprints, workers, and mining
-                         across the change. Both arguments must be exact 40-hex Pithead commits.
-                         DESTRUCTIVE; requires --safety-backup and --local.
-  --candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>
-                         private candidate bundle, detached signature, and external trust root.
-                         Required with --image-upgrade; all paths must be absolute local files.
-  --xvb-routing-smoke    establish P2Pool routing, enable XvB at the donor tier, and poll the real
-                         controller/proxy/dashboard through one bounded XvB→P2Pool transition,
-                         then restore the original config. Requires --safety-backup, miners, a
-                         recent PPLNS share, and xvb.enabled=true ALREADY in the box's config —
-                         the gate moves an existing donor route, it does not turn XvB on for you.
-  --alert-egress         also run the live alert-egress leg (#2266): drive `pithead test-alert`
-                         through the real Tor SOCKS proxy, one leg per configured sink
-                         (IT_TELEGRAM_BOT_TOKEN + IT_TELEGRAM_CHAT_ID, IT_NTFY_URL,
-                         IT_WEBHOOK_URLS, IT_HEALTHCHECKS_PING_URL), asserting each answered.
-                         An absent credential self-skips that sink (missing); a third party
-                         refusing the dial reports as its own verdict, never a stack failure.
-                         DESTRUCTIVE-then-restored.
-  --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
-                         in .env and assert `pithead up` REFUSES to start (the live counterpart
-                         to the tier-1 compose-config check), then restore the exact token and
-                         recover. DESTRUCTIVE-then-restored; works in both ssh and local mode.
-  --hardening            also run the v1.4 hardening phase (#377/#33/#424), local mode only:
-                         read-only rootfs rejects writes live, the systemd control path unit fires
-                         on a spooled request (allowlisted change applies, sensitive change
-                         refused), and the stack recovers from a tor restart. DESTRUCTIVE-then-
-                         restored (enables then disables the control channel).
-  --rigforge             also run the RigForge integration phase (#185/#235/#260): assert the
-                         dashboard consumed a REAL rigforge rig's enriched feed and Worker Inspect
-                         reads it. Non-destructive; self-skips if no rigforge rig is connected.
-  --rigforge-control     run the real RigForge control, reversible-write, and upgrade legs.
-                         DESTRUCTIVE-then-restored; local mode and an opted-in real rig required.
-  --rig-host <h>         the borrowed rig's LAN host/IP for control dials — needed to inject a
-                         workers.list[] descriptor when the box's baseline lacks one (#513/#514/#506).
-  --rig-name <name>      exact borrowed rig NAME from its protected RigForge config.
-  --rigforge-bootstrap-version <tag>  explicitly bootstrap that rig before feed-dependent checks.
-  --rig-control-port <p> the rig's writable control API port (default: 8082, #185).
-  --subnet               also run the moved-subnet phase (#201/#180), local mode only: bring the
-                         stack DOWN then UP on a non-default network.subnet (10.84.0.0/24) — the one
-                         axis a hot apply can't move — and assert the moved prefix reached .env, the
-                         docker bridge, tor's render-at-start IP, monerod's envsubst'd proxy IP, the
-                         dashboard SSRF CIDR, and the #344 onion vhost, then run the standard
-                         running-state battery. DESTRUCTIVE-then-restored (down/up back to baseline).
-  --keep                 do NOT restore the original config.json at the end (leaves the box
-                         on the last scenario — useful for debugging)
-
-OUTPUT:
-  --out <dir>            where to write artifacts (default: tests/integration/results)
-  --list                 print the scenario matrix and axis coverage, then exit
-  -h, --help             this help
-
-Scenarios whose prerequisites are missing (a full/pruned alt data dir, or a remote endpoint)
-are reported SKIPPED — never silently dropped, never mutating the canonical synced chain.
-EOF
-}
-
 # --- Arg parsing ------------------------------------------------------------
 # shellcheck disable=SC2034  # the data-dir / remote-host globals are consumed by lib.sh:resolve_overrides
 parse_args() {
@@ -219,10 +90,6 @@ parse_args() {
             REMOTE_TARI_HOST="$2"
             shift 2
             ;;
-        --appliance-channel)
-            IT_APPLIANCE_CHANNEL=1
-            shift
-            ;;
         --pruned-data-dir)
             PRUNED_DATA_DIR="$2"
             shift 2
@@ -263,6 +130,14 @@ parse_args() {
             TRUSTED_COSIGN_PUB="$4"
             shift 4
             ;;
+        --candidate-image-key)
+            [ "$#" -ge 2 ] || {
+                it_err "--candidate-image-key requires <trusted-cosign.pub>."
+                exit 2
+            }
+            TRUSTED_IMAGE_COSIGN_PUB="$2"
+            shift 2
+            ;;
         --xvb-routing-smoke)
             RUN_XVB_ROUTING=1
             shift
@@ -271,12 +146,32 @@ parse_args() {
             RUN_ALERT_EGRESS=1
             shift
             ;;
+        --mergemine-submit)
+            RUN_MERGEMINE_SUBMIT=1
+            shift
+            ;;
+        --tari-stranded)
+            RUN_TARI_STRANDED=1
+            shift
+            ;;
+        --monero-stranded)
+            RUN_MONERO_STRANDED=1
+            shift
+            ;;
+        --mergemine-localnet)
+            RUN_MERGEMINE_LOCALNET=1
+            shift
+            ;;
         --auth-fail-closed)
             RUN_AUTH_FAIL_CLOSED=1
             shift
             ;;
         --hardening)
             RUN_HARDENING=1
+            shift
+            ;;
+        --rotate-onion)
+            RUN_ROTATE_ONION=1
             shift
             ;;
         --rigforge)
@@ -307,6 +202,10 @@ parse_args() {
             RUN_SUBNET=1
             shift
             ;;
+        --rotate-secrets)
+            RUN_ROTATE_SECRETS=1
+            shift
+            ;;
         --safety-backup)
             SAFETY_BACKUP=1
             shift
@@ -333,7 +232,6 @@ parse_args() {
             ;;
         esac
     done
-
     if [ "$IT_MODE" = "ssh" ] && [ -z "$IT_SSH_DEST" ]; then
         it_err "Provide --host <user@host> or --local. See --help."
         exit 2
@@ -366,6 +264,10 @@ parse_args() {
     fi
     if [ "$RUN_RESET_DASHBOARD" = "1" ] && [ "$SAFETY_BACKUP" != "1" ]; then
         it_err "--reset-dashboard requires --safety-backup."
+        exit 2
+    fi
+    if [ "$RUN_ROTATE_SECRETS" = "1" ] && [ "$SAFETY_BACKUP" != "1" ]; then
+        it_err "--rotate-secrets requires --safety-backup — its archive is this phase's own restore anchor."
         exit 2
     fi
     validate_live_gate_args

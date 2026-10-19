@@ -1,10 +1,6 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# --- reset-dashboard phase (--reset-dashboard) -------------------------------
-# `pithead reset-dashboard` (#2346) was tier-1-only: its bug history (#139 wrong wipe target,
-# #550 chown/mkdir order, #557 swallowed compose failure) lives entirely in real .env resolution,
-# real ownership and a real compose failure — none of which a stubbed docker/sudo can see. This
-# proves the verb against the live box, then restores it. DESTRUCTIVE-then-restored.
+# Real filesystem and Compose behavior require a live reset with rollback protection.
 _reset_dashboard_services_healthy() {
     [ "$(service_state dashboard)" = "running healthy" ] && [ "$(service_state p2pool)" = "running healthy" ]
 }
@@ -22,15 +18,17 @@ run_reset_dashboard() {
         it_fail "reset-dashboard phase preconditions" ".env is missing DASHBOARD_DATA_DIR/P2POOL_DATA_DIR"
         return
     fi
-    # An already-pulled image, captured before the first reset removes the dashboard container, so
-    # the later #557 blocker never needs a registry pull.
+    if [[ "$dashboard_dir$p2pool_dir" == *$'\n'* || "$dashboard_dir$p2pool_dir" == *$'\r'* ]]; then
+        it_fail "reset-dashboard phase preconditions" "data directories contain line breaks"
+        return
+    fi
+    # Reuse the dashboard image so the failure fixture needs no registry pull.
     local blocker_image
     blocker_image="$(rx "docker inspect --format '{{.Config.Image}}' dashboard 2>/dev/null")"
 
-    # #139: point config.json at decoy dirs WITHOUT applying, so .env (the live deployment) still
-    # names the real dirs. reset-dashboard must wipe those, never the unapplied config-only paths.
+    # Unapplied config decoys distinguish the live .env targets from config-only paths.
     local decoy_dashboard decoy_p2pool decoy_config decoy_paths
-    if ! decoy_paths="$(rx "dashboard=\$(mktemp -d $(quote_arg "${dashboard_dir}.CONFIGONLY.XXXXXX")) || exit; p2pool=\$(mktemp -d $(quote_arg "${p2pool_dir}.CONFIGONLY.XXXXXX")) || { rm -rf -- \"\$dashboard\"; exit 1; }; printf '%s\\n%s\\n' \"\$dashboard\" \"\$p2pool\"")"; then
+    if ! decoy_paths="$(rx "dashboard=''; p2pool=''; cleanup() { [ -z \"\$dashboard\" ] || rm -rf -- \"\$dashboard\"; [ -z \"\$p2pool\" ] || rm -rf -- \"\$p2pool\"; }; trap cleanup EXIT; dashboard=\$(mktemp -d $(quote_arg "${dashboard_dir}.CONFIGONLY.XXXXXX")) || exit; p2pool=\$(mktemp -d $(quote_arg "${p2pool_dir}.CONFIGONLY.XXXXXX")) || exit; printf '%s\\n%s\\n' \"\$dashboard\" \"\$p2pool\" || exit; trap - EXIT")"; then
         it_fail "reset-dashboard phase preconditions" "could not create isolated config-only decoys"
         return
     fi
@@ -56,7 +54,6 @@ run_reset_dashboard() {
     operator_uid="$(rx 'id -u' 2>/dev/null)"
     it_step "operator uid on this box: ${operator_uid:-unknown} (#550's order bug only bites when this isn't 1000)"
 
-    # Chain fingerprint (#139's whole point: wipe dashboard/p2pool, never the chains).
     local mtip mheight mblock_before theight
     mtip="$(monero_chain_tip)"
     mheight="${mtip%% *}"
@@ -84,8 +81,6 @@ run_reset_dashboard() {
     pithead reset-dashboard -y >/dev/null 2>&1
     assert_rc "reset-dashboard succeeds" "$?" "0"
 
-    # #139: the LIVE .env dirs were wiped (marker gone); the unapplied config-only decoy markers
-    # survived.
     assert_eq "reset wiped the .env dashboard dir, not the config-only one" \
         "$(rx "test -e $(quote_arg "$dashboard_dir/.itest-marker") && echo present || echo gone")" "gone"
     assert_eq "reset wiped the .env p2pool dir, not the config-only one" \
@@ -95,8 +90,6 @@ run_reset_dashboard() {
     assert_eq "reset never touched the unapplied config-only p2pool dir (#139)" \
         "$(rx "test -e $(quote_arg "$decoy_p2pool/.itest-marker") && echo present || echo absent")" "present"
 
-    # #550: recreated dirs are owned by the container uid (APP_UID=1000) — the mkdir-then-chown
-    # order this leg proves against a live filesystem, not a shadowed stub.
     assert_eq "recreated dashboard dir owned by APP_UID 1000 (#550)" \
         "$(rx "stat -c %u $(quote_arg "$dashboard_dir") 2>/dev/null")" "1000"
     assert_eq "recreated p2pool dir owned by APP_UID 1000 (#550)" \
@@ -110,8 +103,7 @@ run_reset_dashboard() {
     assert_rc "status OK after reset-dashboard" "$?" "0"
     assert_eq "dashboard container healthy after reset" "$(service_state dashboard)" "running healthy"
     assert_eq "p2pool container healthy after reset" "$(service_state p2pool)" "running healthy"
-    # p2pool starts with an empty state dir. A worker plus fresh stratum hashes and share stats prove
-    # it rejoined the sidechain rather than only passing its container healthcheck.
+    # Fresh mining telemetry must follow the reset of p2pool's session counter.
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || true
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || true
     local reset_state
@@ -120,11 +112,7 @@ run_reset_dashboard() {
         "$(jq_get "$reset_state" '.stratum.total_hashes')" "$EXPECTED_WORKERS"
     [ "$SKIP_MINING_ASSERTS" = "1" ] || assert_share_stats_live
 
-    # Chains untouched: height never rewinds, and the pre-reset tip block is byte-for-byte
-    # the same block after — proving the data dir survived rather than being wiped and resynced.
-    # The dashboard container is recreated above, so its first RPC request can race its connection
-    # to monerod even after status is healthy. Wait for the existing RPC instead of reporting this
-    # required acceptance assertion as a missing skip.
+    # Dashboard health can precede its first successful Monero RPC connection.
     wait_for 120 5 "monerod RPC after reset-dashboard" monero_chain_tip || true
     local mtip2 mheight2
     mtip2="$(monero_chain_tip)"
@@ -144,21 +132,16 @@ run_reset_dashboard() {
         it_fail "tari chain-untouched check" "dashboard did not report a numeric height before and after the reset"
     fi
 
-    # A failed reset may have left the stack unhealthy; do not inject a second destructive fault
-    # into that state. The harness's normal restore path owns recovery for this failed phase.
+    # A failed reset must reach restoration before another destructive fault.
     if [ "$IT_FAIL" -gt "$failures_before_reset" ]; then
         reset_dashboard_cleanup
         return
     fi
 
-    # #557: force a REAL compose failure once and prove the friendly branch fires instead of a bare
-    # errexit abort. A foreign container squatting the p2pool container_name blocks `docker compose
-    # up` exactly like a real name conflict would.
+    # A foreign p2pool container forces a real Compose name conflict.
     if [ -n "$blocker_image" ]; then
         it_step "forcing a real compose failure to exercise the #557 friendly-failure branch…"
-        # Hold Pithead's mutation window across the foreign container, and remove only its captured
-        # ID from an EXIT trap. The actual verb inherits the lock, so no other CLI command can race
-        # a legitimate p2pool back into the name before cleanup.
+        # Hold the mutation lock until the captured blocker is removed.
         local fail_result fail_out fail_rc
         fail_result="$(rx "source ./pithead; mutation_lock_acquire reset-dashboard-test; blocker=''; complete=0; cleanup() { [ -z \"\$blocker\" ] || docker rm -f \"\$blocker\" >/dev/null 2>&1 || true; [ \"\$complete\" = 1 ] || PITHEAD_LOCK_HELD=1 ./pithead up >/dev/null 2>&1 || true; mutation_lock_release; }; trap cleanup EXIT; docker rm -f p2pool >/dev/null 2>&1; blocker=\$(docker create --name p2pool $(quote_arg "$blocker_image")) || exit 0; if PITHEAD_LOCK_HELD=1 ./pithead reset-dashboard -y 2>&1; then rc=0; else rc=\$?; fi; complete=1; printf '\n__reset_dashboard_rc=%s\n' \"\$rc\"")"
         fail_rc="$(printf '%s\n' "$fail_result" | sed -n 's/^__reset_dashboard_rc=//p' | tail -n1)"
