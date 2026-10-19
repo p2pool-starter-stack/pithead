@@ -2,6 +2,7 @@ import { Component, html } from "../app/preact.mjs";
 
 export const ConnectionFields = ({ connection, visible, onReveal, onCopy, status }) => html`
   <p>Pool URL: <code>${connection.url}</code></p>
+  ${connection.local_only && html`<p>Stratum is bound to loopback: local connections only.</p>`}
   ${
     !connection.password_set
       ? html`<p>No stratum password</p>`

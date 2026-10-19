@@ -3,8 +3,8 @@ _RIG_LOCK_PARENT_VERIFIED=0
 #
 # Abort-safe unwind for the RigForge writable-key legs (#1379).
 #
-# `e2e.sh` installs `trap restore_all EXIT INT TERM`, which reads as full abort safety for the
-# borrowed rig. It is not: `restore_all` puts back the miner's xmrig POOL config and the baseline
+# `e2e.sh` installs `trap e2e_exit EXIT`, which restores before releasing its own loaner child.
+# This is not a writable-key unwind: `restore_all` restores xmrig's POOL config and the baseline
 # stack, and never touches the rig's RigForge writable config — DONATION, max_temp_c, autotune,
 # watchdog, watchdog_interval_min, pools. Those writes are made from run.sh and this directory's
 # other modules, in a process that had no trap of any kind. Every writable-key leg was a bare

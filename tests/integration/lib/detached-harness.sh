@@ -69,8 +69,9 @@ harness_clear_check_evidence() {
 # then the current-state battery. Both are read-only and cheap, and BOTH are binding — a run that
 # warned and carried on graded the branch against a bench that was already broken, so a failure
 # here refuses the destructive phases rather than reporting their fallout as a branch regression.
+# Only a readiness refusal on a healthy stack is the bench's, so only it prints `readiness` (docs/dev/integration-testing.md).
 harness_pregate() { # <workers> <no_mining flags>
-    local phase lock_pair out_arg
+    local phase lock_pair out_arg said errf stf st rc_on rc_err said_rc health_rc
     # Fed as a here-string rather than a pipe (#2457). The sub-phase does read both lines, so a pipe
     # carried the bytes correctly — but a pipeline whose reader can return before the write lands
     # leaves this writing into a closed pipe, and `set -o pipefail` then promotes that SIGPIPE to the
@@ -81,30 +82,65 @@ harness_pregate() { # <workers> <no_mining flags>
     # rather than reading an empty line. Nothing consumes that rc — the remote command joins its
     # reads with `;`, not `&&`, and sets no `-e` — so the values, and the phase's verdict, are unchanged.
     lock_pair="$(printf '%s\n%s' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}")"
+    said="" errf="" stf=""
+    said="$(mktemp)" && errf="$(mktemp)" && stf="$(mktemp)" || {
+        rm -f "$said" "$errf" "$stf"
+        return 1
+    }
     # Keep the asserted check invocation outside the destructive harness's results cleanup.
     # Clear it before readiness too: a refused job must not collect an earlier job's check.
-    harness_clear_check_evidence || return 1
+    harness_clear_check_evidence || {
+        rm -f "$said" "$errf" "$stf"
+        return 1
+    }
     for phase in readiness check; do
         out_arg=""
         [ "$phase" != check ] || out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-check")"
-        on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" || {
-            warn "$phase reported issues (see above) — destructive phases refused"
+        # Both streams go through checked tees, so a lost capture cannot excuse an unhealthy stack.
+        (
+            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
+            printf '%s %s\n' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}" >"$stf"
+        ) 3>&1 | tee "$said"
+        st=("${PIPESTATUS[@]}")
+        rc_on="" rc_err=""
+        if [ "${st[0]}" != 0 ] || [ "${st[1]}" != 0 ] || ! read -r rc_on rc_err <"$stf" ||
+            [ "$rc_err" != 0 ] || ! [[ "$rc_on" =~ ^[0-9]+$ ]]; then
+            warn "could not record the $phase phase's output — destructive phases refused"
+            rm -f "$said" "$errf" "$stf"
             return 1
-        }
+        fi
+        [ "$rc_on" = 0 ] && continue
+        warn "$phase reported issues (see above) — destructive phases refused"
+        if [ "$phase" = readiness ]; then
+            # A stack that is not healthy after the deploy is the branch's to explain, not the bench's.
+            grep -aEq '^[[:space:]]*e2e-env: ' "$said"
+            said_rc=$?
+            grep -aEq '(✗|- readiness:).*stack is healthy \(pithead status\)' "$said" "$errf"
+            health_rc=$?
+            if [ "$said_rc" -gt 1 ] || [ "$health_rc" -gt 1 ]; then
+                warn "could not read the readiness phase's recorded output"
+            elif [ "$said_rc" = 1 ] && [ "$health_rc" = 1 ]; then
+                e2e_env readiness
+            fi
+        fi
+        rm -f "$said" "$errf" "$stf"
+        return 1
     done
+    rm -f "$said" "$errf" "$stf"
 }
 
 # The detached launch's stdin, one record per line, in the order run_harness reads them: the rig
-# token, the parent lock pair, the two base64 JSON inputs, then the payout-confirm row's wallet keys
-# (#2675). Secrets ride stdin, never the remote command line where ps on the bench shows them. The
-# JSON may span lines, hence base64; a newline in any other record would shift the ones after it.
+# token, the parent lock pair, the two base64 JSON inputs, the payout-confirm row's wallet keys
+# (#2675), then the onion fixture attestation. Secrets ride stdin, never the remote command line
+# where ps on the bench shows them. The JSON may span lines, hence base64; a newline in any other
+# record would shift the ones after it.
 harness_launch_records() {
     local rollback_b64 pools_b64 record
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
     HARNESS_RECORDS=""
     for record in "${IT_RIG_TOKEN:-}" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" \
-        "${IT_MONERO_VIEW_KEY:-}" "${IT_TARI_VIEW_KEY:-}" "${IT_TARI_SPEND_PUBLIC_KEY:-}"; do
+        "${IT_MONERO_VIEW_KEY:-}" "${IT_TARI_VIEW_KEY:-}" "${IT_TARI_SPEND_PUBLIC_KEY:-}" "${ROTATE_FIXTURE_ATTESTATION:-}"; do
         [[ "$record" != *$'\n'* ]] || die "A harness launch record contains a newline."
         HARNESS_RECORDS+="$record"$'\n'
     done
@@ -125,6 +161,7 @@ harness_install_runner() {
     runner="$(mktemp)" || return 1
     # Pin the runner-owned target scratch even when SSH drops ambient variables.
     printf '#!/usr/bin/env bash\n' >"$runner"
+    printf 'export CI_RIG_RECOVERY_HOLD=%s\n' "$(quote_arg "${CI_RIG_RECOVERY_HOLD:-0}")" >>"$runner"
     if [ -n "${IT_SCRATCH_DIR:-}" ]; then
         printf 'export IT_SCRATCH_DIR=%s\n' "$(quote_arg "$IT_SCRATCH_DIR")" >>"$runner"
     fi

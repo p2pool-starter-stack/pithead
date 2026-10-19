@@ -393,7 +393,7 @@ $(sed 's/^/        /' <<<"${verdict:-(no service verdict lines in its output)}")
     fi
     # The runner retries a Tari-only readiness refusal after restoring the baseline.
     if [ "$IT_FAIL" -eq 1 ] && [ "$IT_FAILED_NAMES" = '\n    - readiness: Tari is synced' ]; then
-        printf 'e2e-env: tari-not-done\n'
+        e2e_env tari-not-done
     fi
 }
 
