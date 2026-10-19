@@ -609,8 +609,9 @@ Not supported with `--mode check`, which runs nothing but `--check` by design. `
 requires `--safety-backup` alongside it (also selectable via `--harness-arg`).
 
 For focused backup validation, select `backup-only` with no rig. In bench-ci, submit
-`tier4-e2e` with `options.mode: targeted`, `options.phases: ["backup-only"]` and
-`options.no_rig: true`. The equivalent wrapper selection is
+`tier4-e2e` with `options.phases: ["backup-only"]` and `options.no_rig: true`.
+Omit `options.mode`: bench-ci makes it mutually exclusive with `phases` or `scenario`.
+The equivalent wrapper selection is
 `--mode targeted --no-miner --harness-arg --backup-only`.
 The wrapper still takes its canonical rollback backup,
 deploys the candidate, checks readiness and restores the baseline. The candidate harness
