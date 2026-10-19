@@ -480,7 +480,10 @@ via an `EXIT` trap):
    candidate containers are removed or replaced. Execution uses `timeout` with a 90-second limit
    and a five-second hard-kill grace. Callback output is discarded; a nonzero exit, missing or
    non-executable file, timeout or signal emits only a fixed warning. Restoration continues and
-   the callback cannot change the saved verdict. Restore targets the directory
+   the callback cannot change the saved verdict. INT and TERM handlers immediately exit with
+   status 130 and 143 respectively; drain, callback and restoration run only in the EXIT cleanup
+   path, once. Further INT/TERM requests during cleanup are deferred without replacing the saved
+   verdict or skipping ownership release. Restore targets the directory
    the live stack actually ran from — read at preflight off the running container's
    `com.docker.compose.project.working_dir` label — which on a release box is the per-version bundle
    dir, not `CANONICAL_DIR`. That keeps the restore from handing the `pithead` project locally-built

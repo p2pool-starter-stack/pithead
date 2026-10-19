@@ -21,6 +21,7 @@ cat >"$WORK/driver" <<'SH'
 set -uo pipefail
 source "$INTEGRATION_LIB"
 source "$DETACHED_LIB"
+export WRAPPER_PID="$$"
 for fn in restore_all run_harness main; do
     eval "$(sed -n "/^$fn() {$/,/^}$/p" "$E2E_SOURCE")"
 done
@@ -44,7 +45,7 @@ borrow_miner() { :; }
 deploy_branch() { :; }
 parent_lock_checkpoint() { :; }
 parent_lock_miner_restore() { :; }
-rig_lock_remote_release() { :; }
+rig_lock_remote_release() { printf 'released\n' >>"$ARTIFACT_DIR/events"; }
 chain_restore_prepare() {
     printf 'remove:%s\n' "$(cat "$IT_SCRATCH_DIR/container")" >>"$ARTIFACT_DIR/events"
     rm "$IT_SCRATCH_DIR/container"
@@ -75,6 +76,7 @@ on_bench() {
         ;;
     "test -f 'candidate/results/e2e-harness.done'")
         [ "$TRIGGER" != cancel ] || kill -TERM "$$"
+        [ "$TRIGGER" != interrupt ] || kill -INT "$$"
         ;;
     "cat 'candidate/results/e2e-harness.done'")
         [ "$TRIGGER" != pass ] && echo 23 || echo 0
@@ -87,8 +89,9 @@ on_bench() {
         ;;
     esac
 }
-trap e2e_exit EXIT
+eval "$(sed -n '/^trap /p' "$E2E_SOURCE")"
 main
+printf 'continued\n' >>"$ARTIFACT_DIR/events"
 SH
 
 cat >"$WORK/hook ; literal" <<'SH'
@@ -100,7 +103,12 @@ printf 'PRIVATE CALLBACK OUTPUT\n' >&2
 case "$HOOK_RESULT" in
 fail) exit 7 ;;
 signal) kill -TERM "$$" ;;
+parent-term) kill -TERM "$WRAPPER_PID"; exit 7 ;;
+parent-int) kill -INT "$WRAPPER_PID"; exit 7 ;;
+group-term) kill -TERM -- "-$WRAPPER_PID"; exit 7 ;;
+group-int) kill -INT -- "-$WRAPPER_PID"; exit 7 ;;
 timeout)
+    # selftest-abort-traps: data
     trap '' TERM
     while :; do sleep 1; done
     ;;
@@ -120,20 +128,33 @@ drive() {
     : >"$ARTIFACT_DIR/events"
     local hook_env=("IT_E2E_PRE_RESTORE_HOOK=$hook")
     [ "$result" != absent ] || hook_env=(-u IT_E2E_PRE_RESTORE_HOOK)
+    local driver=(bash "$WORK/driver")
+    case "$result" in
+    group-*)
+        driver=(python3 -c 'import subprocess, sys; p = subprocess.run(sys.argv[1:], start_new_session=True); sys.exit(p.returncode if p.returncode >= 0 else 128 - p.returncode)' "${driver[@]}")
+        ;;
+    esac
     (cd "$WORK" && env "${hook_env[@]}" TRIGGER="$trigger" HOOK_RESULT="$result" \
-        bash "$WORK/driver") >"$ARTIFACT_DIR/log" 2>&1 || rc=$?
+        "${driver[@]}") >"$ARTIFACT_DIR/log" 2>&1 || rc=$?
     assert_eq "$trigger/$result preserves the original verdict" "$rc" "$expected"
     events="$(cat "$ARTIFACT_DIR/events")"
+    assert_eq "$trigger/$result releases ownership once" "$(grep -c '^released$' "$ARTIFACT_DIR/events")" 1
+    if [ "$expected" -ne 0 ]; then
+        assert_not_contains "$trigger/$result cannot continue after failure or cancellation" "$events" continued
+    fi
     if [ "${TEST_MODE:-}" = check ] || [ "${TEST_KEEP:-0}" = 1 ]; then
         assert_eq "$trigger/$result leaves the candidate alone" "$(cat "$IT_SCRATCH_DIR/container")" candidate-original-id
         assert_not_contains "$trigger/$result never invokes the callback" "$events" 'hook:'
         return
     fi
     assert_eq "$trigger/$result restores the healthy baseline" "$(cat "$IT_SCRATCH_DIR/container")" baseline-healthy-id
+    assert_eq "$trigger/$result removes the candidate once" "$(grep -c '^remove:' "$ARTIFACT_DIR/events")" 1
+    assert_eq "$trigger/$result restores once" "$(grep -c '^restored$' "$ARTIFACT_DIR/events")" 1
     if [ -n "$hook" ] && [ "$result" != missing ] && [ "$result" != non-executable ] && [ "$result" != shell-text ]; then
         assert_contains "$trigger/$result observes the original ID and sole status argument" "$events" "hook:1:$expected:candidate-original-id"
+        assert_eq "$trigger/$result invokes the callback once" "$(grep -c '^hook:' "$ARTIFACT_DIR/events")" 1
         assert_contains "$trigger/$result captures before removal" "$events" $'candidate-original-id\nremove:candidate-original-id\nrestored'
-        if [ "$trigger" != pregate ]; then
+        if [ "$trigger" != pregate ] && [ "$trigger" != pass ]; then
             assert_contains "$trigger/$result drains before capture" "$events" $'drained\nhook:'
         fi
     else
@@ -148,14 +169,23 @@ drive() {
     assert_not_contains "$trigger/$result suppresses callback output" "$(cat "$ARTIFACT_DIR/log")" 'PRIVATE CALLBACK OUTPUT'
 }
 
-for trigger in ordinary pregate cancel; do
+for trigger in ordinary pregate cancel interrupt; do
     expected=1
     [ "$trigger" != cancel ] || expected=143
+    [ "$trigger" != interrupt ] || expected=130
     drive "$trigger" success "$expected"
     drive "$trigger" fail "$expected"
 done
 drive ordinary signal 1
-drive ordinary timeout 1
+drive cancel signal 143
+drive interrupt signal 130
+drive ordinary parent-term 1
+drive pass parent-int 0
+drive cancel parent-int 143
+drive interrupt parent-term 130
+drive ordinary group-term 1
+drive cancel group-int 143
+drive cancel timeout 143
 drive pass fail 0
 drive ordinary missing 1 "$WORK/missing"
 drive ordinary non-executable 1 "$WORK/not-executable"

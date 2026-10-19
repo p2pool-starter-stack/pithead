@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Self-test for the harness's ABORT TRAPS (#1401): WALKS every `*.sh` under tests/integration/ and
-# asserts that each `trap` statement names `EXIT` and nothing else. It checked two hardcoded (file,
+# permits EXIT cleanup or the wrapper's two immediately terminating signal handlers. It checked two hardcoded (file,
 # handler) pairs until #1515, and the walk is the fix: measured, the two-site version stayed green
 # against all three shapes that reintroduce the defect — a signal added to a file the change never
 # touched, a brand-new selftest, and a second handler beside the guarded one inside e2e.sh itself.
@@ -147,6 +147,43 @@ trap_hit_is_data() { # <file> <line number of the trap line>
     [ "$(printf '%s' "$above" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')" = "$TRAP_DATA_MARKER" ]
 }
 
+trap_terminates_wrapper() {
+    if [ "$1" = "$HERE/../lib/parent-lock.sh" ]; then
+        case "$2" in
+        '    trap : INT TERM' | '        trap : INT TERM') return 0 ;;
+        esac
+    fi
+    [ "$1" = "$HERE/../e2e.sh" ] || return 1
+    case "$2" in
+    "trap 'exit 130' INT" | "trap 'exit 143' TERM") return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
+echo "== only the wrapper's exact terminating handlers are permitted =="
+while IFS='|' read -r want file line; do
+    got=no
+    trap_terminates_wrapper "$HERE/../$file" "$line" && got=yes
+    assert_eq "terminating handler in $file: [$line]" "$got" "$want"
+done <<'CASES'
+yes|e2e.sh|trap 'exit 130' INT
+yes|e2e.sh|trap 'exit 143' TERM
+no|other.sh|trap 'exit 130' INT
+no|other.sh|trap 'exit 143' TERM
+no|e2e.sh|trap 'exit 143' INT
+no|e2e.sh|trap 'exit 130' TERM
+no|e2e.sh|trap 'exit 0' TERM
+no|e2e.sh|trap 'exit 143; continue_run' TERM
+no|e2e.sh|trap cleanup TERM
+no|e2e.sh|trap 'exit 143' EXIT TERM
+yes|lib/parent-lock.sh|    trap : INT TERM
+yes|lib/parent-lock.sh|        trap : INT TERM
+no|e2e.sh|    trap : INT TERM
+no|other.sh|    trap : INT TERM
+no|other.sh|        trap : INT TERM
+no|lib/parent-lock.sh|    trap cleanup INT TERM
+CASES
+
 echo "== CONTROLS: with no trap at all, the signal MUST kill the victim (#1401) =="
 # Without these two rows a "survived" reading cannot be told from a signal that never landed.
 for sig in INT TERM; do
@@ -244,10 +281,7 @@ assert_data "an indented marker still declares the line under it data" 7 yes
 # A hit on line 1 has no line above it to read; without the guard this is `sed -n 0p`, which errors.
 assert_data "control: a trap on line 1 is not data, and asking does not error" 1 no
 
-# ONE REAL MARKED LINE IN THIS TREE, deliberately. Nothing else proves the walk below actually
-# CONSULTS trap_hit_is_data: a regression dropping that call stays green over a tree in which no line
-# is marked. Here it is load-bearing both ways — drop the call and the walk reds on this literal, and
-# the declared-data count asserted after it goes to zero.
+# The marked noncompliant fixture proves the walk consults its data classifier.
 noncompliant_literal="$(
     cat <<'LITERAL'
 # selftest-abort-traps: data
@@ -257,11 +291,8 @@ LITERAL
 assert_eq "the literal below is genuinely non-compliant — an exemption over nothing proves nothing" \
     "$(trap_line_signals "${noncompliant_literal##*$'\n'}")" "EXIT INT TERM"
 
-echo "== every trap under tests/integration/ names EXIT and nothing else (#1401/#1515) =="
-# A WALK, not a list of known sites: #1401's second live instance was found by enumerating the class,
-# and a check wired to named sites cannot enumerate anything. If one of these reds, read the block at
-# the top of this file before "fixing" it by re-adding the signals — that is the change this file
-# exists to refuse.
+echo "== every trap uses EXIT cleanup or immediately terminates the wrapper =="
+# Signal cleanup handlers still fail; only the wrapper's immediate exits are permitted.
 #
 # The scan reads the WORKING TREE, not `git ls-files`, so a file not yet `git add`ed is still swept;
 # #1486 is this same kind of check made blind in exactly that way.
@@ -281,17 +312,18 @@ while IFS= read -r hit; do
         it_warn "declared DATA, NOT asserted (#1567): ${hit_file#"$HERE"/}:$hit_line"
         continue
     fi
-    assert_eq "${hit_file#"$HERE"/}:$hit_line traps on EXIT alone (#1401)" \
-        "$(trap_line_signals "${hit_rest#*:}")" "EXIT"
+    if [ "$(trap_line_signals "${hit_rest#*:}")" = EXIT ] || trap_terminates_wrapper "$hit_file" "${hit_rest#*:}"; then
+        it_pass "${hit_file#"$HERE"/}:$hit_line preserves EXIT-only cleanup"
+    else
+        it_fail "${hit_file#"$HERE"/}:$hit_line preserves EXIT-only cleanup" "signal handler does not immediately exit with the required status"
+    fi
 done <<EOF
 $trap_scan
 EOF
 
-# Pinned exactly, not `>= 0`: every declared-data line is a hole in this walk, so one appearing or
-# disappearing must red and be looked at rather than pass quietly. The one expected here is the
-# literal above. If you added a marked line legitimately, raise this by one and say so on the PR.
-assert_eq "exactly one line in this tree is declared data — a new one is a new hole in the walk" \
-    "$TRAP_DATA_HITS" "1"
+# Pin both intentional data fixtures so new exemptions fail the guard.
+assert_eq "exactly two lines are declared data: the classifier fixture and the uncooperative callback" \
+    "$TRAP_DATA_HITS" "2"
 
 # The walk alone is silently green over a tree whose traps were all DELETED, and green is the wrong
 # answer there: restore_all is the borrowed rig's only unwind, and probe.sh's kill is what stops a

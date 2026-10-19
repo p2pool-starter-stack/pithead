@@ -185,14 +185,12 @@ RESTORE_PROOF_FAILED=0
 # credential-bake incident's, and its remediation — "re-bake from disk: docker compose up -d" —
 # does nothing whatsoever for a systemd unit. A control-channel fault needs its own words.
 CONTROL_PROOF_FAILED=0
-# What the control units looked like BEFORE the restore's converging apply, recorded so the run log
-# says whether THIS run stranded the box. The post-restore verdict cannot answer that: it runs after
-# the apply that repairs it.
+# Record the control target before restoration can repair it.
 CONTROL_VERDICT_BEFORE=""
 # Where the LIVE stack actually runs from — resolved in preflight (#454). Defaults to CANONICAL_DIR
 # so the EXIT trap always has a target even if it fires before preflight refines it.
 RESTORE_DIR="$CANONICAL_DIR"
-# --- Restore: fires ONCE on EXIT, Ctrl-C included. Never add INT/TERM (#1401) ----
+# --- Restore: cleanup runs only on EXIT --------------------------------------
 restore_all() {
     local rc=${1:-$?} hook="${IT_E2E_PRE_RESTORE_HOOK:-}"
     [ "$RESTORED" = "1" ] && return
@@ -321,6 +319,8 @@ restore_all() {
     if [ "$rc" -eq 0 ]; then ok "restore complete."; else warn "restore complete (the run itself failed — see above)."; fi
 }
 trap e2e_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 # --- Small waiters / helpers ------------------------------------------------
 wait_bench_healthy() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300}))
