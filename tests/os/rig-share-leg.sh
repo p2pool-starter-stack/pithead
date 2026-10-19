@@ -53,7 +53,7 @@ _rig_share_abort() {
 # accepted-counter checks below, none of which can trust jq to have produced a clean number.
 _gt0() { [ "${1:-0}" -gt 0 ] 2>/dev/null; }
 
-_rig_share_power_cut() (
+_rig_share_power_cut() {
     local VM="$coord_vm" DISK="$coord_disk" SERIAL="$coord_serial" ip="$coord_ip"
     local before deadline st counts rig_count own_count rig_base="" own_base=""
     before=$(_boot_id) && [ -n "$before" ] || {
@@ -98,7 +98,7 @@ _rig_share_power_cut() (
     done
     bad "M10 mining: both accepted counters did not advance within ${RIG_SHARE_WINDOW_SEC}s after the coordinator power cut"
     return 1
-)
+}
 
 # $1 already-built image (the rig's own v1), $2-$8 the remote-node inputs phase_rig read off the
 # env (mh rpc zmq mu mp th grpc), $9 the rig's own ip (so it can be restored — the coordinator boot

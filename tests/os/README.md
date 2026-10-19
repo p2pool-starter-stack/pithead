@@ -278,7 +278,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   the coordinator's built-in miner show `accepted > 0`. It then cuts the coordinator's power,
   waits for a new boot, and requires both accepted counters to advance between post-boot
   samples (#3077). Counter resets are allowed; stale counts or only one miner advancing fail.
-  `selftest-rig-share-power-cut.sh` exercises the polling and failure paths without guests.
+  `selftest-rig-share-power-cut.sh` exercises polling, cleanup and the real harness's
+  PASS/FAIL accounting without guests.
   A bench with no reserved remote Monero node counts both checks as `missing` leg skips,
   using the same env vars the `stack` phase needs.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable

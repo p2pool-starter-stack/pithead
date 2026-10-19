@@ -2,6 +2,10 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 scratch=$(mktemp -d)
+export OS_RUN_SUITE=1
+SERIAL="$scratch/serial"
+# shellcheck source=tests/os/lib/core.sh
+source "$HERE/lib/core.sh"
 trap 'rm -rf "$scratch"' EXIT
 # shellcheck source=tests/os/rig-share-leg.sh
 source "${RIG_SHARE_LEG_SOURCE:-$HERE/rig-share-leg.sh}"
@@ -10,8 +14,6 @@ fail() {
     echo "FAIL: $*" >&2
     exit 1
 }
-ok() { printf '%s\n' "$*" >>"$scratch/pass"; }
-bad() { printf '%s\n' "$*" >>"$scratch/fail"; }
 info() { :; }
 date() {
     local tick
@@ -133,38 +135,45 @@ _ssh() { return 0; }
 _rig_share_coord_teardown() { printf '%s\n' "$*" >>"$scratch/teardown"; }
 run_case() {
     local scenario="$1" expected="$2" result=0
+    local PASS=0 FAIL=0 expected_pass=9 expected_fail=0
     local VM=rig DISK="$scratch/rig.img" SERIAL="$scratch/rig.log" ip=192.0.2.1
-    for file in pass fail virsh teardown requests; do : >"$scratch/$file"; done
+    for file in virsh teardown requests; do : >"$scratch/$file"; done
     rm -f "$scratch/cut" "$scratch/new-boot"
     echo 0 >"$scratch/tick"
     echo 0 >"$scratch/polls"
-    rig_share_leg image node 18081 18083 '' '' '' '' "$ip" || result=$?
+    rig_share_leg image node 18081 18083 '' '' '' '' "$ip" >"$scratch/verdicts" || result=$?
     [ "$result" -eq "$expected" ] || fail "$scenario returned $result, expected $expected"
     [ "$VM" = rig ] && [ "$ip" = 192.0.2.1 ] &&
         [ "$DISK" = "$scratch/rig.img" ] && [ "$SERIAL" = "$scratch/rig.log" ] || fail "$scenario leaked coordinator globals"
     [ "$(wc -l <"$scratch/teardown")" -eq 1 ] || fail "$scenario did not tear down once"
     grep -Fxq "rig-coord $scratch/rig-coord.img $scratch/rig-coord.log" "$scratch/teardown" || fail "$scenario cleaned up the wrong guest"
     if [ "$expected" -eq 0 ]; then
-        [ ! -s "$scratch/fail" ] || fail "$scenario reported a failure"
-        grep -q "the rig's accepted counter advances after" "$scratch/pass" || fail "$scenario lacks post-cut rig proof"
-        grep -q "the built-in miner's accepted counter advances after" "$scratch/pass" || fail "$scenario lacks post-cut builtin proof"
+        grep -q "the rig's accepted counter advances after" "$scratch/verdicts" || fail "$scenario lacks post-cut rig proof"
+        grep -q "the built-in miner's accepted counter advances after" "$scratch/verdicts" || fail "$scenario lacks post-cut builtin proof"
         [ "$(wc -l <"$scratch/virsh")" -eq 2 ] || fail "$scenario did not destroy/start once"
         grep -Fxq 'start rig-coord' "$scratch/virsh" || fail "$scenario did not restore power"
         [ "$(wc -l <"$scratch/requests")" -ge 2 ] || fail "$scenario accepted a single snapshot"
     else
-        [ -s "$scratch/fail" ] || fail "$scenario silently failed"
-        ! grep -q 'accepted counter advances after' "$scratch/pass" || fail "$scenario claimed post-cut mining"
+        expected_pass=7 expected_fail=1
+        case "$scenario" in
+        no-initial-shares) expected_pass=4 expected_fail=2 ;;
+        boot-id-missing | destroy-fails | start-fails | boot-fails) expected_pass=6 ;;
+        esac
+        ! grep -q 'accepted counter advances after' "$scratch/verdicts" || fail "$scenario claimed post-cut mining"
     fi
+    [ "$FAIL" -eq "$expected_fail" ] || fail "$scenario harness FAIL=$FAIL, expected $expected_fail"
+    [ "$PASS" -eq "$expected_pass" ] || fail "$scenario harness PASS=$PASS, expected $expected_pass"
     case "$scenario" in
     no-initial-shares | boot-id-missing) [ ! -s "$scratch/virsh" ] || fail "$scenario cut power without a baseline" ;;
     destroy-fails) [ "$(wc -l <"$scratch/virsh")" -eq 1 ] || fail "start followed failed destroy" ;;
     start-fails | boot-fails) [ ! -s "$scratch/requests" ] || fail "$scenario polled before boot proof" ;;
     esac
 }
+run_case stale 1
 run_case advancing 0
 run_case reset 0
 run_case delayed 0
-for scenario in no-initial-shares boot-id-missing destroy-fails start-fails boot-fails stale rig-only builtin-only malformed missing-workers invalid-count negative-count fractional-count unavailable duplicate-worker; do
+for scenario in no-initial-shares boot-id-missing destroy-fails start-fails boot-fails rig-only builtin-only malformed missing-workers invalid-count negative-count fractional-count unavailable duplicate-worker; do
     run_case "$scenario" 1
 done
 printf 'selftest-rig-share-power-cut: 18 cases passed\n'
