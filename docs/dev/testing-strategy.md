@@ -811,8 +811,9 @@ tier 3/4:
   `db_healthy:false`. One target-side lifecycle handles normal exit and HUP/INT/TERM:
   it removes only the visible mount with the recorded ID, source, type and exact target,
   verifies the original covering filesystem is visible, then restarts the dashboard and
-  polls `db_healthy:true`. An unverified cleanup restores the host firewall, stops later phases and
-  automatic backup restoration, and retains the safety archive for operator recovery.
+  polls `db_healthy:true`. An unverified cleanup restores the host firewall, stops HugePages
+  sampling before reporting failure, stops later phases and automatic backup restoration,
+  and retains the safety archive for operator recovery.
   `selftest-enospc-cleanup.sh` covers underlying mounts, refused and
   ambiguous mounts, foreign mounts, failed cleanup, interrupted faults and failed recovery.
   Interruption controls signal isolated target process groups and require the signal exit status

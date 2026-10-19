@@ -283,6 +283,7 @@ main() {
             if ! run_fault_injection; then
                 SAFETY_RESTORE_FAILED=1
                 it_fail "fault phase storage verified before continuing" "ENOSPC cleanup unverified; retain the safety archive for operator recovery"
+                hugepages_finish
                 summary
                 return 1
             fi

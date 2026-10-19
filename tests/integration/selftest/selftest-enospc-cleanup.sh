@@ -230,8 +230,10 @@ gate=$(sed -n '/^    if \[ "$rig_control_ok" = 1 \] && \[ "$RUN_FAULTS" = "1" \]
 (
     export rig_control_ok=1 RUN_FAULTS=1 lifecycle_ok=1 LIFECYCLE_STACK_INTACT=0
     SAFETY_RESTORE_FAILED=0
+    sampling_finished=0
     run_fault_injection() { return 1; }
-    summary() { printf 'restore_failed=%s\n' "$SAFETY_RESTORE_FAILED"; }
+    hugepages_finish() { sampling_finished=1; }
+    summary() { printf 'restore_failed=%s sampling_finished=%s\n' "$SAFETY_RESTORE_FAILED" "$sampling_finished"; }
     run_gate() {
         eval "$gate"
         echo unsafe-continuation
@@ -240,6 +242,7 @@ gate=$(sed -n '/^    if \[ "$rig_control_ok" = 1 \] && \[ "$RUN_FAULTS" = "1" \]
 ) >"$FAKE/gate.out" 2>&1
 assert_eq "unverified ENOSPC storage stops the runner" "$?" 1
 assert_contains "unverified storage disables EXIT backup restore" "$(cat "$FAKE/gate.out")" 'restore_failed=1'
+assert_contains "unsafe storage summary waits for sampling to finish" "$(cat "$FAKE/gate.out")" 'sampling_finished=1'
 assert_eq "later phases cannot run on unverified storage" "$(grep -c '^unsafe-continuation$' "$FAKE/gate.out" || true)" 0
 printf '%s passed / %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" = 0 ]
