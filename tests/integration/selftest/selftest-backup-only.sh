@@ -73,6 +73,7 @@ run_selection() {
     ) >"$fixture/$name.log" 2>&1
 }
 
+echo "== exclusive backup-only selection, archive validation and recovery =="
 run_selection success 0 0 --backup-only
 assert_rc "backup-only succeeds" "$?" 0
 assert_eq "only reservation, preflight, backup and health run" \
