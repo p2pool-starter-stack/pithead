@@ -2,6 +2,7 @@
 # shellcheck disable=SC2034 # Globals are consumed by sourced helpers.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "== Tari snapshot restoration and interruption contracts =="
 python3 "$HERE/tari_snapshot_test.py"
 source "$HERE/../lib/tari-snapshot.sh"
 source "$HERE/../lib/harness-args.sh"
@@ -9,6 +10,7 @@ die() {
     echo "$*" >&2
     exit 1
 }
+echo "== Tari snapshot selection preserves default harness phases =="
 MODE=targeted KEEP=0
 CI_JOB_ID=7 CI_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 CI_TARI_SNAPSHOT_RESTORE_STATE=receipt IT_SCRATCH_DIR=scratch

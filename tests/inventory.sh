@@ -190,6 +190,7 @@ integration_expected=$(
         ! -name harness-args.sh ! -name e2e-env.sh ! -name run-channel.sh ! -name run-lifecycle-wallet-fixture.sh ! -name run-tari-background-sync.sh \
         ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh ! -name worker-detail-diagnostics.sh \
         ! -name remote-endpoints.sh ! -name wallet-fixture.sh ! -name wallet-fixture-recovery.sh \
+        ! -name tari-snapshot.sh ! -name tari-snapshot-target.sh \
         ! -name readiness-churn.sh ! -name reset-restore-web.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh \
         ! -name miner-connection.sh ! -name tari-readiness.sh ! -name xvb-off-dwell.sh -print |
