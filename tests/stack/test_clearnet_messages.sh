@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "== clearnet transition operator messages =="
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
 build_val_sandbox

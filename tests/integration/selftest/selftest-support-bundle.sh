@@ -3,6 +3,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 "$HERE/test_support_bundle_check.py"
+echo "== live support-bundle verification and recovery =="
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
 INTEGRATION_RUN_SUITE=1
@@ -21,6 +22,9 @@ drive_bundle() {
         temp="$(mktemp -d)"
         trap 'rm -rf "$temp"' EXIT
         IT_FAIL=0 IT_PASS=0 SAFETY_ARCHIVE=safety BASELINE_CONFIG='{}' _SAFETY_RESTORE_ARMED=1 SAFETY_RESTORE_FAILED=0
+        [ "$scenario" != fixture-fails ] || BASELINE_CONFIG=invalid-json
+        [ "$scenario" != no-safety ] || SAFETY_ARCHIVE=""
+        openssl() { [ "$scenario" != rng-fails ] && command openssl "$@"; }
         push_config() { printf '%s' "$1" >"$temp/config"; }
         pithead() {
             case "$1" in
@@ -31,7 +35,7 @@ drive_bundle() {
         wait_status_ok() { return 0; }
         rx() {
             cat >/dev/null
-            [ "$scenario" != check-fails ]
+            [ "$scenario" != check-fails ] && { [ "$scenario" != cleanup-fails ] || [[ "$1" != rm* ]]; }
         }
         safety_restore_exact() {
             touch "$temp/restored"
@@ -39,6 +43,12 @@ drive_bundle() {
             _SAFETY_RESTORE_ARMED=0
         }
         run_support_bundle >/dev/null 2>&1 || rc=$?
+        case "$scenario" in
+        rng-fails | fixture-fails | no-safety)
+            [ ! -f "$temp/restored" ] && [ ! -f "$temp/config" ] && [ "$IT_FAIL" -gt 0 ] && [ "$rc" != 0 ]
+            exit $?
+            ;;
+        esac
         [ -f "$temp/restored" ] || exit 9
         if [ "$scenario" = success ]; then
             [ "$rc:$_SAFETY_RESTORE_ARMED:$IT_FAIL" = 0:1:0 ] || exit 10
@@ -48,7 +58,7 @@ drive_bundle() {
         [ "$scenario" != restore-fails ] || [ "$SAFETY_RESTORE_FAILED" = 1 ]
     )
 }
-for scenario in success apply-fails check-fails restore-fails; do
+for scenario in success apply-fails check-fails restore-fails rng-fails fixture-fails no-safety cleanup-fails; do
     rc=0
     drive_bundle "$scenario" || rc=$?
     assert_rc "support-bundle $scenario preserves its restoration contract" "$rc" 0

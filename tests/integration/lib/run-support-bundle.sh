@@ -4,7 +4,10 @@
 run_support_bundle() {
     local dashboard_pass bot_token stratum_pass fixture before="$IT_FAIL" archive=""
     dashboard_pass="$(openssl rand -hex 24)" && stratum_pass="$(openssl rand -hex 24)" &&
-        bot_token="123456:$(openssl rand -hex 24)" || return 1
+        bot_token="123456:$(openssl rand -hex 24)" || {
+        it_fail "support-bundle fixture credentials generated" "random generation failed before any change"
+        return 1
+    }
     if [ -z "${SAFETY_ARCHIVE:-}" ]; then
         it_fail "support-bundle has a safety archive" "no credential was changed"
         return 1
@@ -12,7 +15,10 @@ run_support_bundle() {
     fixture="$(printf '%s' "$BASELINE_CONFIG" | jq --arg pass "$dashboard_pass" --arg stratum "$stratum_pass" --arg bot "$bot_token" '
         .dashboard.auth = {username: "admin", password: $pass} |
         .p2pool.stratum_password = $stratum |
-        .telegram.enabled = false | .telegram.bot_token = $bot')" || return 1
+        .telegram.enabled = false | .telegram.bot_token = $bot')" || {
+        it_fail "support-bundle fixture config rendered" "JSON transformation failed before any change"
+        return 1
+    }
     if push_config "$fixture" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 240; then
         it_pass "support-bundle fixture applied on a healthy live stack"
         local output rc
@@ -38,7 +44,12 @@ run_support_bundle() {
     _SAFETY_RESTORE_ARMED=1
     it_pass "support-bundle restores the exact baseline credentials and stack"
     case "$archive" in
-    */support-bundle-*.tar.gz) rx "rm -f -- $(quote_arg "$archive")" || return 1 ;;
+    */support-bundle-*.tar.gz)
+        rx "rm -f -- $(quote_arg "$archive")" || {
+            it_fail "support-bundle fixture archive removed" "cleanup failed after baseline restoration"
+            return 1
+        }
+        ;;
     esac
     [ "$IT_FAIL" -eq "$before" ]
 }

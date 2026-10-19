@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "== checklist samples and refusal contracts =="
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
 build_val_sandbox
