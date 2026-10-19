@@ -85,7 +85,7 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
-  --harness-arg <f> run this run.sh phase instead of the mode's (repeatable, allowlisted; --sweep = every scenario)
+  --harness-arg <f> run this run.sh phase instead of the mode's (repeatable; incl. --fault-injection-ssh; --sweep = every scenario)
   --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
@@ -616,6 +616,9 @@ run_harness() {
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
     phases="$phases${HARNESS_SCENARIO_ARGS:-}$remote_args $no_mining"
+    case " ${HARNESS_PHASE_ARGS:-} " in
+    *" --fault-injection-ssh "*) phases="$phases --fault-ssh-dest $(quote_arg "$BENCH_HOST")" ;;
+    esac
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     harness_install_runner || die "Failed to install the detached harness runner."
