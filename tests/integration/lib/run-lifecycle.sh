@@ -114,9 +114,8 @@ run_lifecycle() {
     it_step "backup → restore round-trip…"
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then
         local arch
-        arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
+        arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"; [ -z "$arch" ] || backup_prune rx backups "$arch" "${SAFETY_ARCHIVE:-}"
         if [ -n "$arch" ]; then
-            backup_prune rx backups "$arch" "${SAFETY_ARCHIVE:-}"
             local fp_b backed_pool fp_after gate_marker_before gate_marker_after
             if ! fp_b="$(upgrade_secret_fingerprints)" || [ -z "$fp_b" ]; then
                 it_fail "backup secrets fingerprint readable" "could not fingerprint backed-up secrets"
