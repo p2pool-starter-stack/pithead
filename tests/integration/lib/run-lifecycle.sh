@@ -107,10 +107,8 @@ run_lifecycle() {
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
-    # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
-    # restore brings them back. We change the pool, restore, and assert the pool reverted and
-    # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check
-    # the rollback net makes (#2579), exercised here on a run that does not fail.
+    # Restore must preserve every secret category and the sync-gate policy.
+    run_backup_ownership || return 1
     it_step "backup → restore round-trip…"
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then
         local arch

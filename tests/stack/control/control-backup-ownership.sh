@@ -54,7 +54,9 @@ if ! sudo -n true 2>/dev/null; then
         echo "  SKIP: passwordless sudo is unavailable, so the privileged GUI-backup rows did not run"
     fi
 else
-    for xb_order in "gui cli gui" "cli gui gui"; do
+    for xb_order in "gui cli" "gui cli gui" "cli gui gui"; do
+        xb_unfixed=0
+        [ "$xb_order" != "gui cli" ] || xb_unfixed=1
         XB="$(cd "$SANDBOX" && pwd -P)/backup-xsurface"
         mkdir -p "$XB/build/tari" "$XB/data/tor" "$XB/data/dashboard" "$XB/bin" \
             "$XB/ctl/staged" "$XB/ctl/results" "$XB/ctl/audit"
@@ -96,7 +98,7 @@ EOS
                 # Capture the one-time kit before redaction without changing the backup child.
                 # shellcheck disable=SC2024
                 sudo -n env PATH="$XB/bin:$PATH" PITHEAD_SELF="$XB/pithead" CONTROL_BACKUP_KIT_TTL_S=0 \
-                    bash -Eeuo pipefail -c 'cd "$1"; source ./pithead; control_kit_redact() { :; }; control_process_request "$1/req.json" "$1/ctl"' _ "$XB" >"$XB/gui.out" 2>&1
+                    bash -Eeuo pipefail -c 'cd "$1"; umask 022; source ./pithead; control_kit_redact() { :; }; if [ "$2" = 1 ]; then control_prepare_backups_dir() { :; }; fi; control_process_request "$1/req.json" "$1/ctl"' _ "$XB" "$xb_unfixed" >"$XB/gui.out" 2>&1
                 assert_rc "$xb_order: GUI backup $xb_step completes" "$?" "0"
                 assert_eq "$xb_order: GUI backup $xb_step is applied" "$(sudo -n jq -r .status "$XB/ctl/results/$xb_id.json")" "applied"
                 xb_archive="$XB/ctl/results/$xb_id.tar.gz.enc"
@@ -108,7 +110,15 @@ EOS
                 xb_owner="0:1000" xb_mode=640
             else
                 (cd "$XB" && umask 022 && PATH="$XB/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=operator-fixture-pass ./pithead backup -y) >"$XB/cli.out" 2>&1
-                assert_rc "$xb_order: operator backup $xb_step completes" "$?" "0"
+                xb_rc=$?
+                if [ "$xb_unfixed" -eq 1 ]; then
+                    assert_rc "RED with ownership fix reverted: non-root CLI backup fails after GUI backup" "$xb_rc" "1"
+                    assert_contains "RED failure is archive creation permission, not fixture access" "$(cat "$XB/cli.out")" "Permission denied"
+                    assert_eq "unfixed GUI backup leaves root ownership on the CLI destination" "$(stat -c '%u:%g:%a' "$XB/backups")" "0:0:755"
+                    assert_eq "unfixed operator backup creates no archive" "$(find "$XB/backups" -type f -name 'pithead-backup-*')" ""
+                    break
+                fi
+                assert_rc "$xb_order: operator backup $xb_step completes" "$xb_rc" "0"
                 xb_archive="$(find "$XB/backups" -name 'pithead-backup-*.tar.gz.enc' -type f)"
                 printf '%s\n' operator-fixture-pass >"$XB/pass-$xb_step"
                 xb_owner="$(id -u):$(id -g)" xb_mode=600
@@ -118,7 +128,9 @@ EOS
             printf '%s\n' "$xb_mode" >"$XB/mode-$xb_step"
             sleep 1
         done
-        for xb_step in 1 2 3; do
+        xb_steps="1 2 3"
+        [ "$xb_unfixed" -eq 0 ] || xb_steps="1"
+        for xb_step in $xb_steps; do
             xb_archive="$(cat "$XB/archive-$xb_step")"
             assert_eq "$xb_order: archive $xb_step owner:group" "$(stat -c '%u:%g' "$xb_archive")" "$(cat "$XB/owner-$xb_step")"
             assert_eq "$xb_order: archive $xb_step mode" "$(file_mode "$xb_archive")" "$(cat "$XB/mode-$xb_step")"
@@ -130,9 +142,13 @@ EOS
                 assert_contains "$xb_order: archive $xb_step contains $xb_member" "$xb_listing" "${XB#/}/$xb_member"
             done
         done
+        if [ "$xb_unfixed" -eq 1 ]; then
+            sudo -n rm -rf "$XB"
+            continue
+        fi
         assert_eq "$xb_order: backups/ belongs to the operator" "$(stat -c '%u:%g' "$XB/backups")" "$(id -u):$(id -g)"
         assert_eq "$xb_order: stack restarted after all three backups" "$(grep -c '^compose up' "$XB_DOCKER_LOG")" "3"
         sudo -n rm -rf "$XB"
     done
-    unset XB XB_DOCKER_LOG xb_order xb_step xb_surface xb_id xb_archive xb_owner xb_mode xb_listing xb_member xb_reader
+    unset XB XB_DOCKER_LOG xb_order xb_step xb_surface xb_id xb_archive xb_owner xb_mode xb_listing xb_member xb_reader xb_unfixed xb_rc xb_steps
 fi
