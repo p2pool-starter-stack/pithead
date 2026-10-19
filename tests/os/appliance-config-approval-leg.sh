@@ -257,7 +257,7 @@ _config_version_asset_phase_self_test() (
 
 _password_commit_via_host_self_test() (
     local msg="Dashboard login password CHANGED — a mistyped password locks this session out, and on the appliance it is also the console root login."
-    local good preview committed reads sleeps=0 failure=""
+    local good preview committed reads sleeps=0 failure="" preview_reads=3
     good=$(jq -nc --arg m "$msg" '{id:"r1",status:"previewed",approval_required:true,changes:[{msg:$m}]}')
     sensitive_live_config() { printf '{"dashboard":{"auth":{"password":"old"}}}'; }
     sensitive_preview() { APPROVAL_PREVIEW=$preview APPROVAL_REQUEST_ID=r1; }
@@ -284,25 +284,16 @@ _password_commit_via_host_self_test() (
     trap 'rm -f "$reads"' EXIT
     printf '0\n' >"$reads"
     _ssh() {
-        local count
-        count=$(cat "$reads")
-        count=$((count + 1))
+        local count status=previewed
+        count=$(($(cat "$reads") + 1))
         printf '%s\n' "$count" >"$reads"
-        if [ "$count" -le 3 ]; then
-            printf '{"id":"r1","status":"previewed"}'
-        else
-            printf '{"id":"r1","status":"applied"}'
-        fi
+        [ "$count" -le "$preview_reads" ] || status=applied
+        printf '{"id":"r1","status":"%s"}' "$status"
     }
     committed=0 failure="" sleeps=0
     password_commit_via_host new && [ "$committed" = 1 ] || exit 1
     [ "$(cat "$reads")" = 4 ] && [ "$sleeps" = 3 ] && [ -z "$failure" ] || exit 1
-    _ssh() {
-        local count
-        count=$(cat "$reads")
-        printf '%s\n' "$((count + 1))" >"$reads"
-        printf '{"id":"r1","status":"previewed"}'
-    }
+    preview_reads=140
     printf '0\n' >"$reads"
     committed=0 failure="" sleeps=0
     ! password_commit_via_host new && [ "$committed" = 1 ] || exit 1
