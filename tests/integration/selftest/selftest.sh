@@ -218,7 +218,9 @@ echo "== scenarios: lookup helpers =="
 assert_ne "scenario_names is non-empty" "$(scenario_names | head -n1)" ""
 assert_eq "every matrix row has a name and overrides" "$(scenario_names | grep -c .)" "$(scenario_matrix | grep -c $'\t')"
 assert_contains "overrides lookup works" "$(scenario_overrides remote-main-secure-tari)" "monero.mode=remote"
-assert_contains "remote Monero scenario disables local-only payout confirmation" "$(scenario_overrides remote-main-secure-tari)" "monero.view_key="
+REMOTE_MONERO_HOST=monero.example resolve_overrides "$(scenario_overrides remote-main-secure-tari)"
+assert_rc "remote Monero scenario resolves" "$?" 0
+assert_contains "remote Monero scenario disables local-only payout confirmation" "$RESOLVED" "monero.view_key="
 # An unknown scenario name must fail (return 1) and print nothing — never silently resolve.
 miss="$(scenario_overrides no-such-scenario)"
 rc=$?

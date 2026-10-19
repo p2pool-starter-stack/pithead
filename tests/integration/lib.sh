@@ -173,7 +173,7 @@ resolve_overrides() {
             SKIP_REASON="needs --remote-monero-host"
             return 1
         }
-        out="$out monero.remote.host=$REMOTE_MONERO_HOST"
+        out="$out monero.remote.host=$REMOTE_MONERO_HOST monero.view_key="
         out="$out${REMOTE_MONERO_RPC_PORT:+ monero.remote.rpc_port=$REMOTE_MONERO_RPC_PORT}${REMOTE_MONERO_ZMQ_PORT:+ monero.remote.zmq_port=$REMOTE_MONERO_ZMQ_PORT}"
     fi
 
@@ -183,7 +183,7 @@ resolve_overrides() {
             SKIP_REASON="needs --remote-tari-host"
             return 1
         }
-        out="$out tari.remote.host=$REMOTE_TARI_HOST"
+        out="$out tari.remote.host=$REMOTE_TARI_HOST tari.view_key= tari.spend_public_key="
     fi
 
     # Payout confirmation (#381/#462, #942): monero.view_key / tari.view_key are real wallet-scanning
