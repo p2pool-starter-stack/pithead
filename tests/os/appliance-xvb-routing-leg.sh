@@ -289,7 +289,7 @@ _xvb_self_test() (
     _xvb_case "a real XvB request that times out once and then answers is NOT a red row" 3 0 0
     : >"$XVBT_FETCH_CALLS" && XVBT_FETCH_FAILS=99
     _xvb_case "an unreachable real XvB request over guest Tor is a counted red row" 0 1 1
-    [ "$(wc -c <"$XVBT_FETCH_CALLS")" = 3 ] || { echo "xvb self-test: fetch not tried 3 times" >&2 && f=$((f + 1)); }
+    [ "$(wc -c <"$XVBT_FETCH_CALLS")" -eq 3 ] || { echo "xvb self-test: fetch not tried 3 times" >&2 && f=$((f + 1)); }
     XVBT_FETCH_FAILS=0
     # Job 629's own cause: xmrig-proxy started but its API never answered before the actuator was
     # tried, so the switch silently no-opped. That must be a counted red row on its own, before the
