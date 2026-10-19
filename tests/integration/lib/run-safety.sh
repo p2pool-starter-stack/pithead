@@ -1,5 +1,16 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+validate_backup_only_args() {
+    [ "$BACKUP_ONLY" = 1 ] || return 0
+    local option
+    for option in ${!RUN_@} CHECK_ONLY READINESS KEEP_STATE ONLY_SCENARIO; do
+        if [ "${!option}" != 0 ] && [ -n "${!option}" ]; then
+            it_err "--backup-only cannot be combined with scenarios, other phases, --check, --readiness or --keep."
+            exit 2
+        fi
+    done
+}
+
 safety_backup() {
     if [ "$SAFETY_BACKUP" != "1" ]; then
         [ "$RUN_ROTATE_ONION" != "1" ] || arm_safety_abort_restore
@@ -27,14 +38,28 @@ safety_backup() {
     it_log "Safety backup: $SAFETY_ARCHIVE"
     # Exercise backup as an assertion: the archive must list the core files we'd roll back to.
     # An archive missing either one is not a rollback net, so refuse to run the destructive phases.
-    local listing
-    listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"
-    assert_contains "backup archive contains config.json" "$listing" "config.json"
-    assert_contains "backup archive contains .env" "$listing" ".env"
-    if ! printf '%s\n' "$listing" | grep -q 'config.json' || ! printf '%s\n' "$listing" | grep -q '\.env'; then
-        safety_cleanup
+    local listing member stack_root
+    stack_root="$(rx 'pwd -P')" || {
+        it_fail "safety backup source directory resolved" "cannot verify archive destinations; archive retained"
+        return 1
+    }
+    case "$stack_root" in /*) ;; *)
+        it_fail "safety backup source directory resolved" "expected an absolute directory; archive retained"
+        return 1
+        ;;
+    esac
+    if ! listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"; then
+        it_fail "safety backup archive readable" "tar could not read the complete archive; archive retained"
         return 1
     fi
+    for member in config.json .env; do
+        if printf '%s\n' "$listing" | grep -Fx -e "${stack_root#/}/$member" -e "./${stack_root#/}/$member" >/dev/null; then
+            it_pass "backup archive contains $member"
+        else
+            it_fail "backup archive contains $member" "required member missing; archive retained"
+            return 1
+        fi
+    done
     wait_status_ok 240 || {
         it_fail "stack recovered after safety backup" "pithead status did not become healthy"
         # This gate fails before any scenario can capture its usual diagnostics. Capture before the
@@ -162,7 +187,10 @@ safety_cleanup() {
     elif [ "$KEEP_STATE" = "1" ]; then
         it_warn "--keep: leaving the safety backup at $SAFETY_ARCHIVE"
     else
-        rx "rm -f $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1 || true
+        if ! rx "rm -f -- $(quote_arg "$SAFETY_ARCHIVE") && test ! -e $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1; then
+            it_fail "safety backup archive removed" "cleanup failed; unencrypted archive retained"
+            return 1
+        fi
         it_step "removed the safety backup archive"
     fi
 }
