@@ -490,7 +490,13 @@ via an `EXIT` trap):
    records readiness; cleanup keeps the identity/content receipt so an interrupted cleanup can be
    replayed. Only completed cleanup marks restoration verified. Failed or interrupted preservation
    leaves the reservation held; generic stack health
-   cannot replace that proof. `--keep` does not capture or restore this fixture.
+   cannot replace that proof. The wrapper ignores TERM throughout EXIT restoration,
+   including in its restoration children, so cancellation during cleanup and repeated TERM
+   do not interrupt the wallet proof. This does not restart or extend bench-ci's cancellation
+   grace: 1,200 seconds normally, or 7,200 for Tari snapshots. At expiry the runner can kill
+   the remaining processes; an incomplete receipt and private snapshot still require recovery
+   and must keep the recovery reservation held. The job's cancelled conclusion is unchanged.
+   `--keep` does not capture or restore this fixture.
    Superseded snapshots use the separate [wrapper supersession interface](wallet-supersession.md).
    That operation proves archived/live wallet identity, retains the original restoration receipt
    and archives, and refuses restoration replay. It does not establish original restoration.
