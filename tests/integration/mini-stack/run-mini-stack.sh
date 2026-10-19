@@ -350,8 +350,10 @@ scenario_payout_confirmation
 log "scenario 13: Telegram command round-trip"
 set_monerod synced
 set_tari synced
-TELEGRAM_ENABLED=true TELEGRAM_COMMANDS_ENABLED=true compose up -d --force-recreate dashboard >/dev/null 2>&1
-if wait_dashboard_api && compose exec -T dashboard python3 - <"$HERE/telegram-command-wire.py"; then
+# P2Pool's height is required for the dashboard's synced display even when node RPCs are synced.
+if compose run --rm --no-deps -T p2pool sh -c 'mkdir -p /stats/network; cat > /stats/network/stats' <"$HERE/telegram-network-stats.json" >/dev/null &&
+    TELEGRAM_ENABLED=true TELEGRAM_COMMANDS_ENABLED=true compose up -d --force-recreate dashboard >/dev/null 2>&1 &&
+    wait_dashboard_api && compose exec -T dashboard python3 - <"$HERE/telegram-command-wire.py"; then
     c_ok "Telegram commands cross the real HTTP transport"
 else
     c_bad "Telegram commands cross the real HTTP transport" "command wire assertions failed"

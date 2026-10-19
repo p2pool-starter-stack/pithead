@@ -374,7 +374,7 @@ for ram_kb in 8388608 16777215 16777216 33554432; do
     # shellcheck disable=SC1090,SC2034
     ram_out="$(
         cd "$SANDBOX" && source "$STACK"
-        OS_TYPE=Linux MONERO_MODE=remote TARI_MODE=off
+        MONERO_MODE=remote TARI_MODE=off
         monero_prune_flag() { echo true; }
         check_disk_grouped() { :; }
         awk() { printf '%s\n' "$ram_kb"; }

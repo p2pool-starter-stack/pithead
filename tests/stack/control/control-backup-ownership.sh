@@ -95,13 +95,17 @@ EOS
                 sudo -n rm -f "$XB/ctl/staged/.backup-stamp"
                 # Capture the one-time kit before redaction without changing the backup child.
                 # shellcheck disable=SC2024
-                sudo -n env PATH="$XB/bin:$PATH" PITHEAD_SELF="$XB/pithead" APP_GID="$(id -g)" CONTROL_BACKUP_KIT_TTL_S=0 \
+                sudo -n env PATH="$XB/bin:$PATH" PITHEAD_SELF="$XB/pithead" CONTROL_BACKUP_KIT_TTL_S=0 \
                     bash -Eeuo pipefail -c 'cd "$1"; source ./pithead; control_kit_redact() { :; }; control_process_request "$1/req.json" "$1/ctl"' _ "$XB" >"$XB/gui.out" 2>&1
                 assert_rc "$xb_order: GUI backup $xb_step completes" "$?" "0"
-                assert_eq "$xb_order: GUI backup $xb_step is applied" "$(jq -r .status "$XB/ctl/results/$xb_id.json")" "applied"
+                assert_eq "$xb_order: GUI backup $xb_step is applied" "$(sudo -n jq -r .status "$XB/ctl/results/$xb_id.json")" "applied"
                 xb_archive="$XB/ctl/results/$xb_id.tar.gz.enc"
-                jq -er .passphrase "$XB/ctl/results/$xb_id.json" >"$XB/pass-$xb_step"
-                xb_owner="0:$(id -g)" xb_mode=640
+                (
+                    umask 077
+                    # shellcheck disable=SC2024
+                    sudo -n jq -er .passphrase "$XB/ctl/results/$xb_id.json" >"$XB/pass-$xb_step"
+                )
+                xb_owner="0:1000" xb_mode=640
             else
                 (cd "$XB" && umask 022 && PATH="$XB/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=operator-fixture-pass ./pithead backup -y) >"$XB/cli.out" 2>&1
                 assert_rc "$xb_order: operator backup $xb_step completes" "$?" "0"
@@ -118,7 +122,9 @@ EOS
             xb_archive="$(cat "$XB/archive-$xb_step")"
             assert_eq "$xb_order: archive $xb_step owner:group" "$(stat -c '%u:%g' "$xb_archive")" "$(cat "$XB/owner-$xb_step")"
             assert_eq "$xb_order: archive $xb_step mode" "$(file_mode "$xb_archive")" "$(cat "$XB/mode-$xb_step")"
-            xb_listing="$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass "file:$XB/pass-$xb_step" -in "$xb_archive" | tar -tzf -)"
+            xb_reader=()
+            [ "$(cat "$XB/mode-$xb_step")" != 640 ] || xb_reader=(sudo -n)
+            xb_listing="$("${xb_reader[@]}" openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass "file:$XB/pass-$xb_step" -in "$xb_archive" | tar -tzf -)"
             assert_rc "$xb_order: archive $xb_step decrypts with its own passphrase" "$?" "0"
             for xb_member in config.json .env data/tor/hs_ed25519_secret_key data/dashboard/dashboard.db; do
                 assert_contains "$xb_order: archive $xb_step contains $xb_member" "$xb_listing" "${XB#/}/$xb_member"
@@ -128,5 +134,5 @@ EOS
         assert_eq "$xb_order: stack restarted after all three backups" "$(grep -c '^compose up' "$XB_DOCKER_LOG")" "3"
         sudo -n rm -rf "$XB"
     done
-    unset XB XB_DOCKER_LOG xb_order xb_step xb_surface xb_id xb_archive xb_owner xb_mode xb_listing xb_member
+    unset XB XB_DOCKER_LOG xb_order xb_step xb_surface xb_id xb_archive xb_owner xb_mode xb_listing xb_member xb_reader
 fi

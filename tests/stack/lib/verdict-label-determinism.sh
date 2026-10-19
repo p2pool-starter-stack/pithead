@@ -106,6 +106,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # #3204's rcm_invalid labels range over four fixed JSON fixtures, never measured input.
 # GRUB labels use only the three literal parameter names and ten literal fixture modes.
 # Reset-slot labels use fixed pending/bad/gate and slot/source/stopped/revoked/rauc cases.
+# RAM labels use the four literal KiB fixture values.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -177,6 +178,7 @@ test-tor-port-validation.sh|invalid_port
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
+test-wizard-setup.sh|ram_kb
 test-wizard-tari.sh|mono
 test-wizard-tari.sh|size
 test-wizard-tari.sh|tari

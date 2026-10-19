@@ -43,3 +43,17 @@ def test_telegram_queue_retains_updates_until_acknowledged(tmp_path):
         server.shutdown()
         thread.join(timeout=3)
         server.server_close()
+
+
+def test_telegram_network_fixture_reaches_real_collector(tmp_path, monkeypatch):
+    from mining_dashboard.collector import pools
+
+    stats = tmp_path / "network-stats"
+    monkeypatch.setattr(pools, "NETWORK_STATS_PATH", str(stats))
+    assert pools.get_network_stats()["height"] == 0
+    fixture = Path(__file__).parents[1] / "mini-stack" / "telegram-network-stats.json"
+    stats.write_bytes(fixture.read_bytes())
+    collected = pools.get_network_stats()
+    assert collected["height"] == 3_000_000
+    assert collected["difficulty"] > 0
+    assert collected["reward"] > 0

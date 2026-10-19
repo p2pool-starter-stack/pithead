@@ -201,7 +201,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 |---|---|---|
 | Healthchecks.io liveness ping reaches the configured receiver | dashboard loop | 3 ▶ (`fake_hc`) |
 | Telegram, webhook, and ntfy receive a configured node-down alert; disabled sinks make no request | monerod down / disabled configuration | 3 ▶ (`fake_sink`) |
-| Telegram commands reply only to the configured chat, match `/api/state` figures, advance the polling offset and do not replay acknowledged updates | queued `/status` from allowed and foreign chats through `fake_sink` | 1 ✅ (logic and fake queue contract) · 3 ▶ (`telegram-command-wire.py`, real dashboard HTTP transport) |
+| Telegram commands reply only to the configured chat, match `/api/state` figures, advance the polling offset and do not replay acknowledged updates | queued `/status` from allowed and foreign chats through `fake_sink`, with a seeded P2Pool network height for the synced dashboard state | 1 ✅ (logic and fake queue contract) · 3 ▶ (`telegram-command-wire.py`, real dashboard HTTP transport) |
 
 ### D. Container health verdicts (`pithead status`)
 
