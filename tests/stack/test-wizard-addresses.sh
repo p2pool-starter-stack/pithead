@@ -48,7 +48,7 @@ for wa_chain in monero tari; do
                 esac
             } | run_sourced "$wa_dir" run_wizard >"$wa_dir/stdout" 2>"$wa_dir/stderr"
             assert_rc "$wa_chain $wa_eof EOF ($wa_existing config) aborts" "$?" 1
-            assert_contains "$wa_chain $wa_eof EOF explains the abort" "$(cat "$wa_dir/stderr")" "Aborting."
+            assert_contains "$wa_chain $wa_eof EOF explains the abort" "$(cat "$wa_dir/stderr")" "End of input while reading the"
             if [ "$wa_existing" = present ]; then
                 cmp -s "$wa_dir/original" "$wa_dir/config.json"
                 assert_rc "$wa_chain $wa_eof EOF preserves existing config bytes" "$?" 0

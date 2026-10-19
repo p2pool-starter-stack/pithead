@@ -321,6 +321,10 @@ an upgrade with a changed pair without changing the mining stack's payout config
 
 The setup wizards share host disk budgets through `lib/pithead/11b-wizard-disk-budget.sh`;
 the appliance publishes them beside the disk inventory for both submission paths.
+CLI payout retries and EOF config preservation run in
+`tests/stack/test-wizard-addresses.sh`. The lifecycle phase repeats EOF and retry checks
+through `tests/integration/lib/run-wizard-eof.sh` and `run-wizard-defaults.sh`, then
+deploys the valid wizard configuration and checks service health.
 
 `tests/os/phases/setup-defaults.sh` proves a fresh appliance with the wizard defaults,
 without the explicit Tari opt-in used by the general provision phase.

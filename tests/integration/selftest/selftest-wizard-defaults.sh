@@ -8,6 +8,8 @@ source "$HERE/../lib.sh"
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-wizard-defaults.sh
 source "$HERE/../lib/run-wizard-defaults.sh"
+# shellcheck source=tests/integration/lib/run-wizard-eof.sh
+source "$HERE/../lib/run-wizard-eof.sh"
 
 WORK="$(mktemp -d -t wizard-defaults.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
@@ -30,7 +32,7 @@ quote_arg() { printf '%q' "$1"; }
 rx() {
     case "$1" in
     *' setup --skip-deps --skip-optimize') printf 'Deployment preparation complete\n' ;;
-    *) (cd "$WORK" && PATH="$WORK/bin:$PATH" bash -c "$1" | tee "$WORK/rx.log") ;;
+    *) (cd "$WORK" && TMPDIR="$WORK" PATH="$WORK/bin:$PATH" bash -c "$1" | tee "$WORK/rx.log") ;;
     esac
 }
 push_config() {
