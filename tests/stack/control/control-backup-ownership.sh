@@ -1,16 +1,6 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Cross-surface ownership of the CLI backup destination (#3363): the GUI backup verb runs as the
-# privileged control user and starts the real `backup -y` as a child, which creates backups/. The
-# operator's own `./pithead backup` in the same checkout must still be able to write there, with no
-# manual chown, and the stack must come back after both. Two layers: glue rows (a stub child and a
-# chown shim, runnable anywhere) and the real-root rows. Unlike the glue rows in test-control-backup.sh
-# (a stub child, a chown shim) this runs the real stack_backup under real root via `sudo -n`, so it
-# needs passwordless sudo: GitHub's runners have it. Without it the rows cannot run and say so; on CI
-# (GITHUB_ACTIONS set) that is a failure, never a silent skip. Sourced from the end of
-# test-control-backup.sh with its own domain_ran call, like control-results-prune.sh, and
-# standalone-sourceable once tests/stack/lib.sh has been sourced: $SANDBOX, $STACK, $ROOT,
-# $VALID_PRIMARY and $VALID_TARI are the names it reads without assigning.
+# Privileged GUI and operator CLI backups must coexist in either order without broadening access.
 
 : "${SANDBOX:?}"
 : "${STACK:?}"
@@ -56,7 +46,7 @@ assert_eq "a backups symlink is never chowned" "$(cat "$own_d/chown.log" 2>/dev/
 rm -rf "$own_d"
 unset own_d own_id
 
-echo "== control channel: GUI backup then operator CLI backup in one checkout (#3363) =="
+echo "== control channel: GUI and CLI backup ownership in both orders =="
 if ! sudo -n true 2>/dev/null; then
     if [ -n "${GITHUB_ACTIONS:-}" ]; then
         bad "passwordless sudo is available for the cross-surface backup rows" "sudo -n failed on CI"
@@ -64,14 +54,15 @@ if ! sudo -n true 2>/dev/null; then
         echo "  SKIP: passwordless sudo is unavailable, so the privileged GUI-backup rows did not run"
     fi
 else
-    XB="$(cd "$SANDBOX" && pwd -P)/backup-xsurface"
-    mkdir -p "$XB/build/tari" "$XB/data/tor" "$XB/data/dashboard" "$XB/bin" \
-        "$XB/ctl/staged" "$XB/ctl/results" "$XB/ctl/audit"
-    cp "$STACK" "$XB/pithead"
-    cp "$ROOT/build/tari/config.toml.template" "$XB/build/tari/"
-    XB_DOCKER_LOG="$XB/docker.log"
-    : >"$XB_DOCKER_LOG"
-    cat >"$XB/bin/docker" <<EOS
+    for xb_order in "gui cli gui" "cli gui gui"; do
+        XB="$(cd "$SANDBOX" && pwd -P)/backup-xsurface"
+        mkdir -p "$XB/build/tari" "$XB/data/tor" "$XB/data/dashboard" "$XB/bin" \
+            "$XB/ctl/staged" "$XB/ctl/results" "$XB/ctl/audit"
+        cp "$STACK" "$XB/pithead"
+        cp "$ROOT/build/tari/config.toml.template" "$XB/build/tari/"
+        XB_DOCKER_LOG="$XB/docker.log"
+        : >"$XB_DOCKER_LOG"
+        cat >"$XB/bin/docker" <<EOS
 #!/usr/bin/env bash
 echo "\$*" >>"$XB_DOCKER_LOG"
 case "\$*" in
@@ -80,9 +71,9 @@ case "\$*" in
 esac
 exit 0
 EOS
-    printf '#!/usr/bin/env bash\nexec "$@"\n' >"$XB/bin/sudo"
-    chmod +x "$XB/bin/docker" "$XB/bin/sudo"
-    cat >"$XB/.env" <<'EOS'
+        printf '#!/usr/bin/env bash\nexec "$@"\n' >"$XB/bin/sudo"
+        chmod +x "$XB/bin/docker" "$XB/bin/sudo"
+        cat >"$XB/.env" <<'EOS'
 MONERO_ONION_ADDRESS=mona.onion
 TARI_ONION_ADDRESS=taria.onion
 P2POOL_ONION_ADDRESS=p2pa.onion
@@ -91,29 +82,51 @@ HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 EOS
-    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' \
-        "$VALID_PRIMARY" >"$XB/config.json"
-    xb_id="a0a0a0a0-0000-4000-8000-0000000033b3"
-    printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$xb_id" >"$XB/req.json"
-
-    # The GUI half, as the privileged control user: the real CLI is the child control_backup starts.
-    # shellcheck disable=SC2024  # the redirect is deliberately the caller's: only the command is privileged
-    sudo -n env PATH="$XB/bin:$PATH" PITHEAD_SELF="$XB/pithead" APP_GID="$(id -g)" CONTROL_BACKUP_KIT_TTL_S=0 \
-        bash -Eeuo pipefail -c 'cd "$1"; source ./pithead; shift; "$@"' _ "$XB" \
-        control_process_request "$XB/req.json" "$XB/ctl" >"$XB/gui.out" 2>&1
-    assert_eq "the GUI backup (privileged) is applied" "$(jq -r .status "$XB/ctl/results/$xb_id.json" 2>/dev/null)" "applied"
-
-    # The CLI half, as the configured non-root operator, with no chown in between.
-    (cd "$XB" && PATH="$XB/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y) >"$XB/cli.out" 2>&1
-    assert_rc "the operator's ./pithead backup -y succeeds after a GUI backup" "$?" "0"
-    xb_archive="$(ls "$XB"/backups/pithead-backup-*.tar.gz.enc 2>/dev/null | head -1)"
-    { [ -n "$xb_archive" ] && [ -s "$xb_archive" ]; } &&
-        ok "the operator's backup wrote its timestamped archive under backups/" ||
-        bad "the operator's backup wrote its timestamped archive under backups/" "$(tail -n 3 "$XB/cli.out")"
-    assert_eq "the operator's archive is chmod 600" "$(stat -c '%a' "$xb_archive" 2>/dev/null)" "600"
-    assert_eq "backups/ belongs to the operator" "$(stat -c '%u' "$XB/backups" 2>/dev/null)" "$(id -u)"
-    assert_eq "the stack was started again after each of the two backups" \
-        "$(grep -c '^compose up' "$XB_DOCKER_LOG")" "2"
-    sudo -n rm -rf "$XB"
-    unset XB XB_DOCKER_LOG xb_id xb_archive
+        printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' \
+            "$VALID_PRIMARY" >"$XB/config.json"
+        printf 'onion-identity\n' >"$XB/data/tor/hs_ed25519_secret_key"
+        printf 'dashboard-history\n' >"$XB/data/dashboard/dashboard.db"
+        xb_step=0
+        for xb_surface in $xb_order; do
+            xb_step=$((xb_step + 1))
+            xb_id="a0a0a0a0-0000-4000-8000-0000000033b$xb_step"
+            if [ "$xb_surface" = gui ]; then
+                printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$xb_id" >"$XB/req.json"
+                sudo -n rm -f "$XB/ctl/staged/.backup-stamp"
+                # Capture the one-time kit before redaction without changing the backup child.
+                # shellcheck disable=SC2024
+                sudo -n env PATH="$XB/bin:$PATH" PITHEAD_SELF="$XB/pithead" APP_GID="$(id -g)" CONTROL_BACKUP_KIT_TTL_S=0 \
+                    bash -Eeuo pipefail -c 'cd "$1"; source ./pithead; control_kit_redact() { :; }; control_process_request "$1/req.json" "$1/ctl"' _ "$XB" >"$XB/gui.out" 2>&1
+                assert_rc "$xb_order: GUI backup $xb_step completes" "$?" "0"
+                assert_eq "$xb_order: GUI backup $xb_step is applied" "$(jq -r .status "$XB/ctl/results/$xb_id.json")" "applied"
+                xb_archive="$XB/ctl/results/$xb_id.tar.gz.enc"
+                jq -er .passphrase "$XB/ctl/results/$xb_id.json" >"$XB/pass-$xb_step"
+                xb_owner="0:$(id -g)" xb_mode=640
+            else
+                (cd "$XB" && umask 022 && PATH="$XB/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=operator-fixture-pass ./pithead backup -y) >"$XB/cli.out" 2>&1
+                assert_rc "$xb_order: operator backup $xb_step completes" "$?" "0"
+                xb_archive="$(find "$XB/backups" -name 'pithead-backup-*.tar.gz.enc' -type f)"
+                printf '%s\n' operator-fixture-pass >"$XB/pass-$xb_step"
+                xb_owner="$(id -u):$(id -g)" xb_mode=600
+            fi
+            printf '%s\n' "$xb_archive" >"$XB/archive-$xb_step"
+            printf '%s\n' "$xb_owner" >"$XB/owner-$xb_step"
+            printf '%s\n' "$xb_mode" >"$XB/mode-$xb_step"
+            sleep 1
+        done
+        for xb_step in 1 2 3; do
+            xb_archive="$(cat "$XB/archive-$xb_step")"
+            assert_eq "$xb_order: archive $xb_step owner:group" "$(stat -c '%u:%g' "$xb_archive")" "$(cat "$XB/owner-$xb_step")"
+            assert_eq "$xb_order: archive $xb_step mode" "$(file_mode "$xb_archive")" "$(cat "$XB/mode-$xb_step")"
+            xb_listing="$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass "file:$XB/pass-$xb_step" -in "$xb_archive" | tar -tzf -)"
+            assert_rc "$xb_order: archive $xb_step decrypts with its own passphrase" "$?" "0"
+            for xb_member in config.json .env data/tor/hs_ed25519_secret_key data/dashboard/dashboard.db; do
+                assert_contains "$xb_order: archive $xb_step contains $xb_member" "$xb_listing" "${XB#/}/$xb_member"
+            done
+        done
+        assert_eq "$xb_order: backups/ belongs to the operator" "$(stat -c '%u:%g' "$XB/backups")" "$(id -u):$(id -g)"
+        assert_eq "$xb_order: stack restarted after all three backups" "$(grep -c '^compose up' "$XB_DOCKER_LOG")" "3"
+        sudo -n rm -rf "$XB"
+    done
+    unset XB XB_DOCKER_LOG xb_order xb_step xb_surface xb_id xb_archive xb_owner xb_mode xb_listing xb_member
 fi

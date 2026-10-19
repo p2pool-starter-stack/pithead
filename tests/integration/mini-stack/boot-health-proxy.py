@@ -112,6 +112,36 @@ elif mode == "final":
         headers = {} if value is None else {"X-Pithead-Boot-Probe": value}
         require(request(PROBE, headers=headers)[0] == 401)
     summary(23, True)
+elif mode == "auth-wire":
+    from mining_dashboard.config import config
+    from mining_dashboard.service.audit_service import access_summary
+
+    for _ in range(60):
+        try:
+            status, body = request("/", GOOD_AUTH)
+            if status == 200:
+                break
+        except (urllib.error.URLError, TimeoutError):
+            pass
+        time.sleep(0.5)
+    else:
+        raise AssertionError("authentication echo upstream not ready")
+    require(json.loads(body)["actor"] == "admin", "authenticated actor was not forwarded")
+    require(request("/")[0] == 401, "missing credentials were accepted")
+    require(request("/", BAD_AUTH)[0] == 401, "wrong credentials were accepted")
+    status, body = request("/", GOOD_AUTH, headers={"X-Auth-User": "spoofed"})
+    require(status == 200, "correct credentials were rejected")
+    require(json.loads(body)["actor"] == "admin", "client-supplied actor survived Caddy")
+    config.ACCESS_LOG_PATH = "/access-log/access.log"
+    for _ in range(50):
+        data = access_summary()
+        if data["available"] and data["failures_24h"] == 2:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("real Caddy log did not produce two audit login failures")
+    require(sum(entry["status"] == 401 for entry in data["entries"]) == 2)
+    require(any(entry["status"] == 200 for entry in data["entries"]))
 elif mode == "unlocked":
     status, body = request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})
     require(status == 200 and b"<html" in body.lower(), (status, body[:200]))

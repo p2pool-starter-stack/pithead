@@ -331,8 +331,6 @@ echo "== completion: sources cleanly + no drift from the dispatch (#94) =="
 COMP="$ROOT/pithead-completion.bash"
 bash -c "source '$COMP'" >/dev/null 2>&1
 assert_rc "completion script sources cleanly in bash" "$?" "0"
-# Drift-guard: the completion's static list, pithead's PITHEAD_COMMANDS, and the labels of main's
-# dispatch case must all be the SAME set — adding/removing a subcommand in one place fails here.
 stack_cmds="$(
     cd "$SANDBOX" || exit
     # shellcheck disable=SC1090
@@ -349,7 +347,8 @@ dispatch_cmds="$(sed -n '/case "\$cmd" in/,/^    esac$/p' "$STACK" |
 dispatch_cmds="${dispatch_cmds% }"
 assert_eq "completion list == pithead's command list" "$comp_cmds" "$stack_cmds"
 assert_eq "dispatch case labels == pithead's command list" "$dispatch_cmds" "$stack_cmds"
-# Every chainable command must be a real command.
+help_cmds="$("$STACK" help | sed -n 's/^  \([a-z][a-z-]*\)[ ,[].*/\1/p' | sort)"
+assert_eq "help lists every dispatchable verb" "$help_cmds" "$(tr ' ' '\n' <<<"$stack_cmds" | sort)"
 chain_ok=1
 for c in $(
     cd "$SANDBOX" || exit
@@ -383,7 +382,7 @@ make_stubs "$G/bin"
 out="$(cd "$G" && PATH="$G/bin:$PATH" ./pithead apply 2>&1)"
 rc=$?
 assert_rc "apply without .env fails" "$rc" "1"
-assert_contains "apply needs setup" "$out" "setup"
+assert_contains "apply needs setup" "$out" "No .env found. Run './pithead setup' first."
 
 echo "== black-box: version subcommand (#386) =="
 # The version identity must print offline and exit 0 before any setup, on both a release bundle

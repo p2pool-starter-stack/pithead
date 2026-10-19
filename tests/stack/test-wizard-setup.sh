@@ -15,12 +15,16 @@ assert_eq "wizard_ask_shape has exactly 6 read prompts (clearnet-sync, remote-ac
 echo "== unit: wizard — Enter-through defaults skip everything but the core answers (#502) =="
 W1="$SANDBOX/wizard-defaults"
 mkdir -p "$W1"
-printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >"$W1/output" 2>&1
+(
+    umask 022
+    printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard
+) >"$W1/output" 2>&1
 if [ -f "$W1/config.json" ]; then
     ok "wizard (defaults path) writes config.json"
 else
     bad "wizard (defaults path) writes config.json" "no file at $W1/config.json"
 fi
+assert_eq "wizard config is private under umask 022" "$(file_mode "$W1/config.json")" "600"
 w1_cfg="$(cat "$W1/config.json" 2>/dev/null)"
 assert_eq "defaults path: monero.wallet_address" "$(jq -r '.monero.wallet_address' <<<"$w1_cfg")" "$WALLET"
 assert_eq "defaults path: tari.wallet_address" "$(jq -r '.tari.wallet_address' <<<"$w1_cfg")" "$VALID_TARI"
@@ -364,3 +368,23 @@ assert_contains "the reason is reported at any uid" "$wkf_out" "Could not keep a
 
 unset WKF wkf_out wkf_rc
 unset -f wkf_reset
+
+echo "== unit: setup resource warning =="
+for ram_kb in 8388608 16777215 16777216 33554432; do
+    # shellcheck disable=SC1090,SC2034
+    ram_out="$(
+        cd "$SANDBOX" && source "$STACK"
+        OS_TYPE=Linux MONERO_MODE=remote TARI_MODE=off
+        monero_prune_flag() { echo true; }
+        check_disk_grouped() { :; }
+        awk() { printf '%s\n' "$ram_kb"; }
+        preflight_resources 2>&1
+    )"
+    assert_rc "RAM preflight remains warning-only at $ram_kb KiB" "$?" "0"
+    if [ "$ram_kb" -lt 16777216 ]; then
+        assert_contains "RAM below 16 GiB warns at $ram_kb KiB" "$ram_out" "Low total RAM: $((ram_kb / 1048576)) GB detected, below the recommended ~16 GB."
+    else
+        assert_not_contains "RAM at or above 16 GiB does not warn" "$ram_out" "Low total RAM"
+    fi
+done
+unset ram_kb ram_out

@@ -209,6 +209,9 @@ rootfs, and `tests/os/build-label-boot-leg.sh` checks first-menu serial titles.
 The mini-stack's `test-boot-health-proxy.sh` renders Caddy against the real dashboard;
 `boot-health-proxy.py` verifies boot-probe accounting and network forgery controls,
 including the loopback upstream supplied by `boot-health-front-proxy.py`.
+Its authentication phase uses `caddy-auth-upstream.py` to inspect the forwarded actor and
+feeds the real access log to the audit parser. `telegram-command-wire.py` drives the
+mini-stack dashboard through queued Telegram updates from `tests/integration/fakes/fake_sink.py`.
 The provision reboot leg streams `tests/os/boot-probe-evidence.py` into the deployed
 dashboard using the same retained-log reader as the summary to check the current boot
 marker, header redaction and zero failures, then
