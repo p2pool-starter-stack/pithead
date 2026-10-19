@@ -16,7 +16,6 @@ CONNECTION:
   --dir <path>           target stack dir, absolute or relative to SSH login (default: pithead).
                          Avoid literal ~, which the caller's shell expands.
   --pithead <cmd>        target CLI command (default: ./pithead; use "sudo ./pithead" for root).
-
 MATRIX:
   --check                read-only current-state assertions, without apply or restore.
   --readiness            read-only: synced chains, snapshot FS, disk space, owner-only secrets,
@@ -35,17 +34,19 @@ MATRIX:
                          box's baseline is full)
   --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
                          baseline is pruned)
-  --lifecycle            restart, apply/ownership/secrets, restore, and uninstall→setup checks.
+  --lifecycle            restart; apply must preserve secrets and chown root-owned data to the container uid;
+                         also backup→restore and uninstall→setup checks.
   --safety-backup        back up before destructive scenarios; roll back on failure (down→restore→up).
                          Remove the archive on success; recommended for destructive runs.
-  --fault-injection      stop/SIGSTOP/remove monerod; test failover, DB writes/ENOSPC, firewall,
-                         Tor, clock, DNS and sidechain recovery. Slow; destructive-then-restored.
+  --fault-injection      stop/SIGSTOP/remove monerod; assert down/unhealthy/missing verdicts and failover recovery.
+                         Test read-only/ENOSPC DB verdicts, fail-closed firewall rollback, Tor outage/doctor,
+                         clock drift, DNS and sidechain recovery. SSH or local; slow; destructive-then-restored.
   --fault-injection-ssh  run that phase's rx() calls over SSH; requires --fault-ssh-dest.
   --fault-ssh-dest <h>   SSH destination for that phase; e2e.sh supplies the bench's own alias.
   --image-upgrade <old-sha> <new-sha>
-                         upgrade from a private candidate bundle; prove image revisions, chain-data,
-                         heights, secret categories, workers and mining across the change.
-                         Both commits must be exact 40-hex; requires --safety-backup and --local.
+                         run `pithead upgrade` from a private candidate bundle against the running old images;
+                         prove image revisions, chain-data/heights, secret categories, workers and mining.
+                         DESTRUCTIVE; exact 40-hex commits; requires --safety-backup and --local.
   --candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>
                          private candidate bundle, detached signature, and external trust root.
                          Required with --image-upgrade; all paths must be absolute local files.
@@ -119,7 +120,6 @@ OUTPUT:
 Missing scenario inputs are reported SKIPPED; the canonical synced chain is never mutated.
 EOF
 }
-# --- Arg parsing ------------------------------------------------------------
 # shellcheck disable=SC2034  # the data-dir / remote-host globals are consumed by lib.sh:resolve_overrides
 parse_args() {
     while [ $# -gt 0 ]; do
