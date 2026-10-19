@@ -53,6 +53,8 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
     # cannot follow into.
     (
         exec </dev/null
+        # shellcheck source=tests/integration/lib/tari-snapshot.sh
+        source "$HERE/../lib/tari-snapshot.sh"
         MODE="${2:-targeted}" RESTORED=0 KEEP=0 MINER_CFG_BACKUP="" RESTORE_DIR=/srv/code/baseline
         E2E_DIR=/srv/code/pithead-e2e BENCH_HOST=bench SAFETY_ARCHIVE=""
         RESTORE_PROOF_FAILED=0 CONTROL_PROOF_FAILED=0 CONTROL_VERDICT_BEFORE=""

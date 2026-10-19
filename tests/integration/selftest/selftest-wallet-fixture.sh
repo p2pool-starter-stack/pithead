@@ -105,6 +105,8 @@ RESTORE_SRC="$(sed -n '/^restore_all() {$/,/^}$/p' "$HERE/e2e.sh")"
 (
     # shellcheck disable=SC2034,SC2329 # variables/functions consumed by eval of the shipped restore.
     MODE=targeted RESTORED=0 MINER_CFG_BACKUP="" RESTORE_PROOF_FAILED=0
+    # shellcheck source=tests/integration/lib/tari-snapshot.sh
+    source "$HERE/lib/tari-snapshot.sh"
     # shellcheck disable=SC2034
     CONTROL_PROOF_FAILED=0 CONTROL_VERDICT_BEFORE="" SAFETY_ARCHIVE=""
     # shellcheck disable=SC2329

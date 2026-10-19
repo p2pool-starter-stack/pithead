@@ -115,6 +115,8 @@ DEPLOY_ORDER="$({
     prepare_rotate_onion_fixture() { echo prepare; }
     # shellcheck source=tests/integration/lib/chain-keep.sh
     source "$HERE/../lib/chain-keep.sh"
+    # shellcheck source=tests/integration/lib/tari-snapshot.sh
+    source "$HERE/../lib/tari-snapshot.sh"
     ROTATE_FIXTURE_REQUIRED=1
     chain_snapshot() { echo snapshot >&2; }
     bootstrap_rotate_onion_fixture() { echo bootstrap; }

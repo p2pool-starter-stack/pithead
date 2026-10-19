@@ -85,7 +85,8 @@ assert_eq "the extraction is the whole function" \
 # shellcheck disable=SC2016 # expands inside the child shell
 MINING_STUB_SRC='wait_restore_mining_ready() { echo mining >>"$log"; return "$MINING_RC"; }'
 drive_restore_rc() {
-    RESTORE_SRC="${RESTORE_SRC}" MINING_RC="$1" bash -c '
+    RESTORE_SRC="${RESTORE_SRC}" TARI_SNAPSHOT_LIB="$HERE/../lib/tari-snapshot.sh" MINING_RC="$1" bash -c '
+        source "$TARI_SNAPSHOT_LIB"
         log="$(mktemp)"; export log
         exec </dev/null
         MODE=targeted RESTORED=0 KEEP=0 MINER_CFG_BACKUP="" RESTORE_DIR=/srv/code/baseline
