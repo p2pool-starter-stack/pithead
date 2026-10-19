@@ -71,7 +71,7 @@ p2pool_current_startup_merge_lines() {
     started=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
     [ -n "$started" ] || return 1
     printf 'PITHEAD_P2POOL_STARTED=%s\n' "$started"
-    # Uncapped, unlike MM_WINDOW_LINES (mergemine-probe.sh): a first dial to a reserved node can land its chain_id line past any cap, making "never connected" and "connected late" look alike.
+    # Uncapped: a first dial to a reserved node can land its chain_id line past any cap, making "never connected" and "connected late" look alike.
     # podman's --since refuses StartedAt's own Go form; the refusal went to grep and read "absent".
     since=$(printf '%s\n' "$started" | mm_rfc3339)
     _ssh "podman logs --since '$since' p2pool 2>&1 | grep -a MergeMiningClientTari || true" 2>/dev/null
