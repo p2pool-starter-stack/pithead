@@ -143,8 +143,8 @@ jobs:
       - name: GREEN on exact PR head
         if: always()
         run: |
-          git checkout --detach 16b7783d8aafa5b3b90511186ce53f5ab592af82
-          test "$(git rev-parse HEAD)" = "16b7783d8aafa5b3b90511186ce53f5ab592af82"
+          git checkout --detach c4498aa1dc72e90b95b87a24103d0243d60b44c2
+          test "$(git rev-parse HEAD)" = "c4498aa1dc72e90b95b87a24103d0243d60b44c2"
           echo "Source $(git rev-parse HEAD)"
           cd dashboard
           uv run --locked --extra test python "$RUNNER_TEMP/accept_3058.py"
