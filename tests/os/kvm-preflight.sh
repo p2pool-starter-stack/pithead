@@ -20,36 +20,25 @@ kvm_preflight() {
     return 1
 }
 
-# Teardown is bounded and timed (#2727): job 1194 sat 13 minutes in this function after a full
-# stack phase with no line saying which call held it. Every virsh call gets its own ceiling
-# (PITHEAD_VM_TEARDOWN_TIMEOUT, default 180 s: libvirt's own destroy escalates to SIGKILL within
-# seconds, so a longer wait is qemu stuck, not slow). Each call prints its duration, and one that
-# times out or fails prints the guest's qemu processes (state and kernel wait channel) and
-# whatever this shell still has running, so the next occurrence names itself. A timed-out
-# destroy leaves the domain listed, so the check below still refuses rather than passes.
-_virsh_bounded() {
-    # A shell-function virsh (the runner self-tests stub one) cannot run under timeout(1), which execs.
-    if declare -F virsh >/dev/null; then virsh "$@"; else timeout "${PITHEAD_VM_TEARDOWN_TIMEOUT:-180}" virsh "$@"; fi
-}
-
 _vm_teardown_step() {
     local t0 rc=0 secs
     t0=$(date +%s)
-    _virsh_bounded "$@" >/dev/null 2>&1 || rc=$?
+    timeout -k 10 "${PITHEAD_VM_TEARDOWN_TIMEOUT:-60}" virsh "$@" 2>/dev/null || rc=$?
     secs=$(($(date +%s) - t0))
     printf '     · teardown: virsh %s took %ss (rc %s)\n' "$1" "$secs" "$rc" >&2
-    [ "$rc" -eq 124 ] || return 0
-    printf '     · teardown: virsh %s timed out; still running:\n' "$1" >&2
-    ps -eo pid,ppid,stat,etimes,wchan:32,args 2>/dev/null | grep -F -- "$VM" | grep -v grep >&2
-    ps -o pid,stat,etimes,args --ppid "$$" >&2 2>/dev/null
-    return 0
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+        printf '     · teardown: virsh %s timed out; still running:\n' "$1" >&2
+        ps -eo pid,ppid,stat,etimes,wchan:32,args 2>/dev/null | grep -F -- "$VM" | grep -v grep >&2 || true
+        ps -o pid,stat,etimes,args --ppid "$$" >&2 2>/dev/null || true
+    fi
+    return "$rc"
 }
 
 vm_destroy() {
     local domains
-    _vm_teardown_step destroy "$VM"
-    _vm_teardown_step undefine "$VM" --nvram
-    domains=$(_virsh_bounded list --all --name) || return 1
+    _vm_teardown_step destroy "$VM" >/dev/null || true
+    _vm_teardown_step undefine "$VM" --nvram >/dev/null || true
+    domains=$(_vm_teardown_step list --all --name) || return 1
     ! grep -Fxq "$VM" <<<"$domains"
 }
 
@@ -59,20 +48,54 @@ vm_destroy_or_refuse() {
     return 1
 }
 
-# virsh is a PATH stub, not a function: the teardown runs it under timeout(1), which execs.
+_vm_destroy_hang_self_test() {
+    local log rc=0 call expected=124 started
+    started=$(date +%s)
+    log=$(STATE="$1" PITHEAD_VM_TEARDOWN_TIMEOUT=0.1 vm_destroy_or_refuse 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || return 1
+    if [ "$1" = term-ignoring ]; then
+        expected=137
+        [ "$(($(date +%s) - started))" -le 12 ] || return 1
+    else
+        [ "$(($(date +%s) - started))" -le 3 ] || return 1
+    fi
+    for call in destroy undefine list; do
+        grep -qE "virsh $call took [0-9]+s \(rc [0-9]+\)" <<<"$log" || return 1
+    done
+    case "$1" in
+        both-hung) call='destroy undefine' ;;
+        term-ignoring) call=destroy ;;
+        list-hung) call=list ;;
+    esac
+    for call in $call; do
+        grep -qE "virsh $call took [0-9]+s \(rc $expected\)" <<<"$log" || return 1
+        grep -q "virsh $call timed out; still running" <<<"$log" || return 1
+    done
+    grep -q fixture-qemu <<<"$log" || return 1
+    grep -q fixture-child <<<"$log"
+}
+
 _vm_destroy_self_test() (
-    local bin log
+    local bin state failures=0
     bin=$(mktemp -d)
     trap 'rm -rf "$bin"' EXIT
     cat >"$bin/virsh" <<'STUB'
 #!/usr/bin/env bash
+case "$STATE:$1" in
+both-hung:destroy | both-hung:undefine | list-hung:list) exec sleep 30 ;;
+term-ignoring:destroy) trap '' TERM; exec sleep 30 ;;
+esac
 case "$1" in
-destroy) [ "$STATE" = hung ] && exec sleep 5; exit 1 ;;
-undefine) exit 1 ;;
-list) case "$STATE" in present | hung) echo fixture ;; error) exit 2 ;; esac ;;
+destroy | undefine) exit 1 ;;
+list) case "$STATE" in present | both-hung | term-ignoring) echo fixture ;; error) exit 2 ;; esac ;;
 esac
 STUB
-    chmod +x "$bin/virsh"
+    cat >"$bin/ps" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in -eo) echo fixture-qemu ;; -o) echo fixture-child ;; esac
+STUB
+    chmod +x "$bin/virsh" "$bin/ps"
+    unset -f virsh ps
     PATH="$bin:$PATH"
     VM=fixture
     export STATE=present
@@ -81,11 +104,15 @@ STUB
     ! vm_destroy_or_refuse 2>/dev/null || return 1
     STATE=absent
     vm_destroy_or_refuse 2>/dev/null || return 1
-    # A hung virsh is cut at the ceiling and named, and the surviving domain still refuses.
-    STATE=hung
-    log=$(PITHEAD_VM_TEARDOWN_TIMEOUT=1 vm_destroy_or_refuse 2>&1) && return 1
-    grep -qE 'virsh destroy took [0-9]+s \(rc 124\)' <<<"$log" || return 1
-    grep -q 'virsh destroy timed out; still running' <<<"$log"
+    for state in both-hung term-ignoring list-hung; do
+        if _vm_destroy_hang_self_test "$state"; then
+            printf 'vm-destroy: %s PASS\n' "$state"
+        else
+            printf 'vm-destroy: %s FAIL\n' "$state" >&2
+            failures=$((failures + 1))
+        fi
+    done
+    [ "$failures" -eq 0 ]
 )
 
 if [ "${PITHEAD_OS_VM_DESTROY_SELF_TEST:-0}" = 1 ]; then
