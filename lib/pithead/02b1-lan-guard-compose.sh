@@ -79,7 +79,9 @@ lan_guard_compose_up() { # <compose up arguments>
     local rc=0 up_args=("$@")
     if lan_guard_scoped_up "$@"; then up_args+=("${LAN_GUARD_STOPPED_SERVICES[@]}" "${LAN_GUARD_REBOUND_SERVICES[@]}"); fi
     # The dashboard bind-mounts this exact lock inode across versioned installs.
+    tor_rotation_receipt up requested || true
     PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}" || rc=$?
+    tor_rotation_receipt up "$rc" || true
     if [ "$rc" = 0 ]; then
         finish_lan_guard_after_up "${up_args[@]}" || rc=1
     else

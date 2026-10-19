@@ -1,10 +1,12 @@
 import asyncio
 import fcntl
+import json
 import logging
+import re
 
 import aiohttp
 
-from mining_dashboard.config.config import DOCKER_CONTROL_URL, DOCKER_TIMEOUT
+from mining_dashboard.config.config import DOCKER_CONTROL_URL, DOCKER_PROXY_URL, DOCKER_TIMEOUT
 from mining_dashboard.helper.http import bounded_read
 
 logger = logging.getLogger("DockerControl")
@@ -39,6 +41,21 @@ class DockerControl:
     def _open_lock(self):
         lock = open(self.lock_file, "rb")
         return lock
+
+    async def identity(self, container):
+        try:
+            base = DOCKER_PROXY_URL.replace("tcp://", "http://").rstrip("/")
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{base}/containers/{container}/json", timeout=1) as resp:
+                    if resp.status != 200:
+                        return "unavailable"
+                    payload = json.loads(await bounded_read(resp.content, max_bytes=65536))
+                    identity = payload.get("Id")
+                    if isinstance(identity, str) and re.fullmatch(r"[0-9a-f]{64}", identity):
+                        return identity
+        except Exception:
+            return "unavailable"
+        return "unavailable"
 
     async def _acquire_lock(self):
         lock = self._open_lock()

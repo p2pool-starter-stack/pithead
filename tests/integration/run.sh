@@ -136,6 +136,8 @@ source "$HERE/lib/run-egress-status.sh" || exit $?
 source "$HERE/lib/run-hardening.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
 source "$HERE/lib/run-rotate-onion.sh" || exit $?
+# shellcheck source=tests/integration/lib/tor-lifecycle-receipts.sh
+source "$HERE/lib/tor-lifecycle-receipts.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rigforge.sh

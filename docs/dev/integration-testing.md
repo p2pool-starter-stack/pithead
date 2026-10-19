@@ -1224,6 +1224,25 @@ hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it
 Each run writes a manifest (`results/manifest.txt`) recording exactly what was under test: the
 stack `VERSION`, git revision, and `docker compose images`. A run is reproducible.
 
+The onion-rotation phase retains `results/tor-lifecycle/rotation.jsonl` and
+`results/tor-lifecycle/healer.jsonl` on successful and failed calls. Each receipt contains
+only a UTC timestamp, caller, operation ID, opaque engine container ID (or `unavailable`),
+requested action and result. Rotation records the command exit status; the healer records
+`confirmed` or `unconfirmed`, since a lost engine response does not prove the action failed.
+`requested` records precede the call. Receipt collection keeps at most 128 records per
+command, accepts only the fixed schema and consumes lines in 1025-byte chunks. It discards
+oversized lines, credentials, onion addresses, keys and ordinary command output.
+Receipt failures do not replace lifecycle command results or prevent recovery.
+The healer also records host-gated `recover` submissions and their terminal host result or
+unconfirmed timeout; these identify the control request, not individual host engine calls.
+
+After restoring the original onion identity, the phase invokes the deployed healer with a
+controlled probe failure and an expired cooldown to exercise its real Tor stop/start branch.
+It also makes a start request for a deliberately absent container to retain an unconfirmed
+call. Monero is not restarted by this fixture. The phase verifies both callers' receipts and
+waits for stack health. These per-job artifacts pass through ordinary artifact redaction;
+they add no persistent runtime audit history and cannot identify a historical caller.
+
 On a scenario failure, the harness captures fresh diagnostic snapshots (redacted) to `results/<scenario>/`:
 `compose-ps.txt`, `status.txt`, `doctor.txt`, `config.json`, `env.redacted.txt`,
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
