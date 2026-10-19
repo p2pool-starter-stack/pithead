@@ -24,7 +24,7 @@ The suite lives under [`tests/integration/`](../../tests/integration/):
 | `run.sh` | Entry point. Connects to the box (SSH or `--local`), iterates the config matrix, asserts, captures artifacts, restores. |
 | `scenarios.sh` | The declarative config matrix. Adding a case is a one-line data edit. |
 | `lib.sh` | Shared helpers: target I/O (SSH/local), assertions, readiness waiters, config rendering, secret redaction. |
-| `selftest.sh` | Pure-logic self-test (no server). Runs in CI on every PR. |
+| `selftest/` | Harness logic and bounded local fixtures, run by `make test-integration-selftest` in CI on every PR. The abort-trap controls signal a process group after its foreground child reports READY, keeping the victim alive until the signal. Missing readiness fails the trial and kills and reaps the group. |
 
 ---
 
