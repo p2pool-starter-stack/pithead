@@ -419,10 +419,7 @@ grep -qF 'refusal=$(fault_serial_since "$SERIAL" "$serial_before") || break' "$H
 grep -qF "legible='The container image store is damaged|Could not load the baked image archive'" "$HERE/phases/fault.sh" || exit 1
 ! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
 grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
-# Only a flushed height is owed back after a cut: monerod does not fsync each block (batched
-# flushes) (#2557). So inside the three-cut loop the height read must precede the guest sync, and
-# the sync must precede the cut; a sync hoisted above the read or out of the loop owes back a
-# height that never reached the disk.
+# Each cut must measure the height before flushing it to disk.
 m10_flush_before_cut() { # <phase file>
     sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | awk '
         index($0, "height_before=$(_monerod_height)") && !poll { poll = NR }
@@ -431,6 +428,7 @@ m10_flush_before_cut() { # <phase file>
         END { exit !(poll && flush && cut && poll < flush && flush < cut) }'
 }
 m10_flush_before_cut "$HERE/phases/provision-power-cut.sh" || exit 1
+bash "$HERE/selftest-m10-pre-cut.sh" || exit $?
 grep -qF 'verdict=$(m10_height_verdict "$height_before" "$height_after")' "$HERE/phases/provision-power-cut.sh" || exit 1
 # The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
 grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
