@@ -17,8 +17,21 @@ class HostIsolation(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.host = self.base / "host"
         self.host.mkdir()
-        for name in ("egress.service", "egress.timer", "enabled", "iptables", "nft"):
+        for name in (
+            "pithead-egress-check.service",
+            "pithead-egress.timer",
+            "pithead-lan-check.service",
+            "pithead-lan.timer",
+            "enabled",
+            "iptables",
+            "nft",
+        ):
             (self.host / name).write_text("pre-existing " + name + "\n")
+        (self.host / "iptables").write_text(
+            "-A DOCKER-USER -m comment --comment pithead-tor-egress -j DROP\n"
+            "-A DOCKER-USER -m comment --comment foreign-fixture -j RETURN\n"
+        )
+        (self.host / "nft").write_text("table inet pithead_egress { chain existing {} }\n")
         self.before = {p.name: p.read_bytes() for p in self.host.iterdir()}
         host_bin = self.base / "host-bin"
         host_bin.mkdir()
@@ -32,7 +45,15 @@ class HostIsolation(unittest.TestCase):
             "nft",
         ):
             tool = host_bin / name
-            tool.write_text('#!/usr/bin/env bash\nprintf leaked >"$HOST_FIXTURE/enabled"\n')
+            tool.write_text(
+                "#!/usr/bin/env bash\n"
+                'case "${0##*/}" in\n'
+                'iptables-save) cat "$HOST_FIXTURE/iptables" ;;\n'
+                'iptables-restore) cat >"$HOST_FIXTURE/iptables" ;;\n'
+                'iptables|ip6tables) printf leaked >"$HOST_FIXTURE/iptables" ;;\n'
+                'nft) printf leaked >"$HOST_FIXTURE/nft" ;;\n'
+                '*) printf leaked >"$HOST_FIXTURE/enabled" ;;\nesac\n'
+            )
             tool.chmod(0o755)
 
         self.sandbox = self.base / "sandbox"
@@ -44,6 +65,7 @@ class HostIsolation(unittest.TestCase):
             "GUARD": str(GUARD),
             "PATH": str(host_bin) + os.pathsep + os.environ["PATH"],
             "STACK": str(ROOT / "pithead"),
+            "PITHEAD_UNIT_DIR": str(self.host),
         }
 
     def run_guard(self, body):
@@ -65,7 +87,13 @@ class HostIsolation(unittest.TestCase):
 
     def test_host_double_detects_a_missing_guard(self):
         result = subprocess.run(  # noqa: S603
-            [BASH, "-c", "systemctl enable --now pithead-egress.timer"],
+            [
+                BASH,
+                "-c",
+                "systemctl enable --now pithead-egress.timer; "
+                "iptables-save >/dev/null; "
+                "printf leaked | iptables-restore; nft -f - </dev/null",
+            ],
             env=self.env,
             capture_output=True,
             text=True,
@@ -73,11 +101,14 @@ class HostIsolation(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.host / "enabled").read_text(), "leaked")
+        self.assertEqual((self.host / "iptables").read_text(), "leaked")
+        self.assertEqual((self.host / "nft").read_text(), "leaked")
 
     def test_undeclared_commands_fail_even_when_the_caller_ignores_errors(self):
         for command in (
-            'sudo tee "$HOST_FIXTURE/egress.service" </dev/null',
+            'sudo tee "$HOST_FIXTURE/pithead-egress-check.service" </dev/null',
             "systemctl enable --now pithead-egress.timer",
+            "systemctl isolate rescue.target",
             "iptables -A DOCKER-USER -j DROP",
             "iptables-restore </dev/null",
             "ip6tables -F",
@@ -112,9 +143,10 @@ class HostIsolation(unittest.TestCase):
         fixture_bin.mkdir()
         scripts = {
             "uname": "echo Linux\n",
+            "docker": "exit 0\n",
             "sudo": """[ "$1" != -n ] || shift
 case "$1" in
-tee) case "$2" in "$SANDBOX"/units/*) ;; *) exit 125 ;; esac ;;
+tee) case "$2" in "$SANDBOX"/units/*|"$HOST_FIXTURE"/*) ;; *) exit 125 ;; esac ;;
 systemctl|iptables|iptables-save|iptables-restore|nft) ;;
 *) exit 125 ;;
 esac
@@ -148,7 +180,7 @@ esac
                     'export PATH="$FIXTURE_BIN:$PATH" PITHEAD_ENGINE=docker; '
                     'cd "$SANDBOX"; source "$STACK"; '
                     'printf "TOR_EGRESS_FIREWALL=true\nMONERO_RPC_BIND=0.0.0.0\n" >.env; '
-                    "provision_egress_check_units; provision_lan_guard_check_units; "
+                    "provision_egress_check_units steal; provision_lan_guard_check_units steal; "
                     "apply_tor_egress_iptables 172.28.0.0/24 172.28.0.25; "
                     'test -s "$PITHEAD_UNIT_DIR/pithead-egress-check.service"; '
                     'test -s "$PITHEAD_UNIT_DIR/pithead-egress.timer"; '

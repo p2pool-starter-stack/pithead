@@ -281,9 +281,9 @@ mv "$WSS/data/firstboot" "$WSS/spool"
 unset WS_NEW_MACHINE WS_LEFT ws_file
 # A real UID boundary, not a mocked chown. CI's Linux runner supplies sudo and setpriv.
 echo "== unit: wizard spool root and page ownership =="
-if command -v setpriv >/dev/null && sudo -n true 2>/dev/null; then
+if command -v setpriv >/dev/null && "$STACK_FIXTURE_SUDO" -n true 2>/dev/null; then
     chmod 711 "$WSS"
-    sudo bash -s -- "$STACK" "$WSS" <<'ROOTCHECK'
+    "$STACK_FIXTURE_SUDO" bash -s -- "$STACK" "$WSS" <<'ROOTCHECK'
 set -euo pipefail
 source "$1"
 spool="$2/root-spool"

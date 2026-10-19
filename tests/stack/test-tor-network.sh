@@ -1,17 +1,6 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Tor-network domain (#1105 Phase 1, appliance lane): the Tor-only egress boundary and the
-# Tor<->clearnet transport switch — tor_egress_rules + render_tor_egress_nft (both the legacy
-# iptables/DOCKER-USER path and the v2 nftables/podman path, including the IPv6 backstop and its
-# refusal when the bridge can't be resolved, #855/#858), apply/remove_tor_egress_firewall end to
-# end (#270), the regression that every command installs the firewall BEFORE compose so no
-# clearnet-capable container ever starts unguarded (#276/#291), the clearnet-initial-sync helpers
-# and render on both chains including the chosen-node firewall exception (#183/#2678 — this is the Tor<->clearnet transport
-# switch, kept together with the egress rules rather than split to the monero/tari file), the node
-# configs' clearnet-DNS-egress guarantees (#161 monerod, #162 tari), tor.auto_heal (#424), the tor
-# container's own entrypoint rendering both the dashboard's opt-in onion vhost and the per-node
-# inbound onions (#343/#103), and pithead's onion-provisioning gate that never blocks on a remote
-# node's unpublished onion (#103).
+# Tor egress rules, lifecycle ordering, clearnet switches, node configs and onion provisioning.
 # Sourced by tests/stack/run.sh.
 #
 # Re-derivations (the sandbox-builder WALLET/$V trap — see #1305, still open on this lane):
@@ -101,6 +90,8 @@ echo "== black-box: apply_tor_egress_firewall routes to nftables under podman (#
 # DOCKER-USER path. Capture what gets piped to nft and assert the fail-closed ruleset landed.
 NFW="$SANDBOX/nfw"
 mkdir -p "$NFW/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$NFW/bin/systemctl"
+chmod +x "$NFW/bin/systemctl"
 printf '#!/usr/bin/env bash\nexec "$@"\n' >"$NFW/bin/sudo"
 # nft -f -: record stdin (the ruleset). Any other invocation (e.g. remove's delete) just logs args.
 cat >"$NFW/bin/nft" <<NFT
@@ -157,6 +148,8 @@ rm -f "$NFW/bin/podman" # restore the v4-only harness for anything downstream
 echo "== black-box: apply/remove_tor_egress_firewall via stubbed iptables (Docker path, #270) =="
 FW="$SANDBOX/fw"
 mkdir -p "$FW/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$FW/bin/systemctl"
+chmod +x "$FW/bin/systemctl"
 printf '#!/usr/bin/env bash\nexec "$@"\n' >"$FW/bin/sudo"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/ipt.log"\n' "$FW" >"$FW/bin/iptables"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$FW/bin/iptables-save" # no pre-existing rules
@@ -184,6 +177,8 @@ assert_eq "opt-out (network.tor_egress_firewall=false) installs no DROP" "$(grep
 # the rules already there — no `-D` outside the transaction, which would open the subnet.
 FF="$SANDBOX/fwfail"
 mkdir -p "$FF/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$FF/bin/systemctl"
+chmod +x "$FF/bin/systemctl"
 printf '#!/usr/bin/env bash\nexec "$@"\n' >"$FF/bin/sudo"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$IPT_LOG"\n' >"$FF/bin/iptables"
 printf '#!/usr/bin/env bash\necho "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP"\n' >"$FF/bin/iptables-save"

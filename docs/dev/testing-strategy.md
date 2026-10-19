@@ -137,8 +137,9 @@ host-command guards after each test's explicit fixture tools on `PATH`. Unmocked
 service and firewall probes report unavailable. Unmocked mutations are blocked and
 make the process fail at exit, even if the caller ignores the command's error.
 Provide fixture `sudo`, `systemctl` and firewall tools for tests that exercise those
-operations; keep all writes inside the fixture. The guards cover command lookup,
-not absolute executable paths or tests that replace `PATH` entirely.
+operations; keep all writes inside the fixture. The two real-UID ownership fixtures
+use the captured `STACK_FIXTURE_SUDO` executable explicitly for their sandbox files.
+The guards cover command lookup, not absolute executable paths or tests that replace `PATH` entirely.
 `tests/stack/standalone/test_host_isolation.py` runs through `make test-tools` and
 checks blocked mutations, child-process failures, and preservation of pre-existing
 unit and firewall fixtures after success, failure and interruption.

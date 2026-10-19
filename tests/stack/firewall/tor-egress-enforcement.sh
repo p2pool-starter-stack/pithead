@@ -18,10 +18,7 @@
 # Sourced by tests/stack/run.sh.
 
 # A PATH with every *sbin* directory removed, so a test can drive the "privileged tool is not
-# installed" branch without uninstalling anything. nft and iptables both live in /usr/sbin; grep,
-# tr and printf — which sourcing pithead needs — do not, so what remains is still a working shell
-# environment. Callers pair this with an assertion that the tool really did disappear: a helper
-# that silently stopped working would otherwise turn a branch test into a tautology.
+# installed" branch; callers assert that the tool really did disappear.
 path_without_sbin() {
     local d out="" IFS=:
     for d in $PATH; do
@@ -32,6 +29,8 @@ path_without_sbin() {
 
 EGV="$SANDBOX/egress-enforcement"
 mkdir -p "$EGV/bin" "$EGV/bin-nonft"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$EGV/bin/systemctl"
+chmod +x "$EGV/bin/systemctl"
 # sudo that strips its OWN flags. The `exec "$@"` stub the renderer domain uses would try to exec
 # `-n`, which makes every readback read as "unreadable" and hides the branches under test here.
 cat >"$EGV/bin/sudo" <<'SUDO'
@@ -71,7 +70,7 @@ case " ${RUNNING_CONTAINERS:-} " in *" $name "*) echo cid123 ;; esac
 exit 0
 DOCKER
 chmod +x "$EGV/bin/sudo" "$EGV/bin/nft" "$EGV/bin/docker"
-cp "$EGV/bin/sudo" "$EGV/bin/docker" "$EGV/bin-nonft/"
+cp "$EGV/bin/sudo" "$EGV/bin/docker" "$EGV/bin/systemctl" "$EGV/bin-nonft/"
 printf 'NETWORK_SUBNET=172.28.0.0/24\nNETWORK_PREFIX=172.28.0\nTOR_EGRESS_FIREWALL=true\n' >"$EGV/.env"
 
 echo "== the #858 refusal must survive errexit, the way production runs it (#2059) =="
@@ -130,7 +129,7 @@ echo "== the iptables backend proves REACHABILITY, not just presence (#855 insid
 # is a live fail-open.
 IPJ="$EGV/ipj"
 mkdir -p "$IPJ"
-cp "$EGV/bin/sudo" "$EGV/bin/docker" "$IPJ/"
+cp "$EGV/bin/sudo" "$EGV/bin/docker" "$EGV/bin/systemctl" "$IPJ/"
 # iptables: DOCKER-USER always carries our tagged rules; the FORWARD jump exists only when JUMP=1.
 cat >"$IPJ/iptables" <<'IPT'
 #!/usr/bin/env bash
@@ -191,7 +190,7 @@ echo "== 'enforced' must mean the DROP DECIDES, not that the word appears (#2059
 # enforcement, and these are the two ways that came apart.
 DEC="$EGV/decide"
 mkdir -p "$DEC"
-cp "$EGV/bin/sudo" "$EGV/bin/docker" "$DEC/"
+cp "$EGV/bin/sudo" "$EGV/bin/docker" "$EGV/bin/systemctl" "$DEC/"
 
 # (1) nft: the hooked chain only ACCEPTS; a second, unhooked chain merely CONTAINS the word "drop".
 # Two independent greps over one dump are both satisfied; the kernel drops nothing.
