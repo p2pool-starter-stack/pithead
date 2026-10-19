@@ -368,6 +368,7 @@ run_fault_injection_maybe() {
         run_fault_injection
         return
     fi
+    # shellcheck disable=SC2034 # rx() reads these dynamically scoped transport variables.
     local IT_MODE="ssh" IT_SSH_DEST="$FAULT_SSH_DEST"
     run_fault_injection
 }
