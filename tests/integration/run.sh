@@ -24,7 +24,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh" || exit $?
 # shellcheck source=tests/integration/scenarios.sh
 source "$HERE/scenarios.sh" || exit $?
-source "$HERE/lib/rigforge-apply-settle.sh" || exit $?
+source "$HERE/lib/rigforge-apply-settle.sh" && source "$HERE/lib/backup-prune.sh" || exit $?
 # shellcheck source=tests/integration/lib/rig-key-ledger.sh
 source "$HERE/lib/rig-key-ledger.sh" || exit $? # must precede any module that marks a write (#1379)
 # shellcheck source=tests/integration/lib/rigforge-writable-keys.sh
