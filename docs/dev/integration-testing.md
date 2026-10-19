@@ -1100,7 +1100,15 @@ cancelled CI job used to leave a borrowed production miner on a probe value, whi
 `restore_all` reported a clean restore of the *pool* config and said nothing about the writable keys
 ([#1379](https://github.com/p2pool-starter-stack/pithead/issues/1379)).
 
-The wrapper runs its restore inside the EXIT handler, then explicitly ends and reaps its own
+The wrapper runs the inline readiness/check pregate and its output redactors in a separate
+process group. Before restoration, its EXIT handler terminates that group, allows up to five
+seconds to stop, then kills any remaining processes and verifies that none are running. It reaps
+the pregate child before restoring, so candidate assertions cannot continue against the baseline.
+For SSH transport, each remote pregate also records its process group and start time under
+`results/`. A fresh connection drains those groups before restoration; a locked stop record
+prevents a delayed SSH launch from starting afterward. An unverified local or remote drain
+refuses restoration. Cancellation remains nonzero; readiness and check
+failures still refuse the destructive phases. The wrapper then explicitly ends and reaps its own
 loaner SSH child. This also runs after post-deploy readiness refusal, restore failure and
 `--keep`. Restoration retains the reservation until it finishes or refuses. Sending an exit
 command before closing the lease pipe prevents inherited writers from keeping the child alive;

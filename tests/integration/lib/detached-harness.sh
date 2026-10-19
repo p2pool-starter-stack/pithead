@@ -65,6 +65,15 @@ harness_clear_check_evidence() {
     }
 }
 
+pregate_on_bench() {
+    local phase="$1" command="$2"
+    if [ -n "${INLINE_PREGATE_REMOTE_BASE:-}" ]; then
+        on_bench "nohup setsid --wait bash $(quote_arg "$E2E_DIR/tests/integration/lib/inline-pregate-remote.sh") run $(quote_arg "$INLINE_PREGATE_REMOTE_BASE.$phase") $(quote_arg "$command")"
+    else
+        on_bench "$command"
+    fi
+}
+
 # Safe pre-gate for the destructive phases: readiness (is this box fit to be a release server?)
 # then the current-state battery. Both are read-only and cheap, and BOTH are binding — a run that
 # warned and carried on graded the branch against a bench that was already broken, so a failure
@@ -98,7 +107,7 @@ harness_pregate() { # <workers> <no_mining flags>
         [ "$phase" != check ] || out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-check")"
         # Both streams go through checked tees, so a lost capture cannot excuse an unhealthy stack.
         (
-            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
+            pregate_on_bench "$phase" "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
             printf '%s %s\n' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}" >"$stf"
         ) 3>&1 | tee "$said"
         st=("${PIPESTATUS[@]}")
