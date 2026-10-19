@@ -140,8 +140,9 @@ IPv4 ranges the mining container can dial and with no public IPv4 at all; the lo
 is the one pinned. Other IPv6 answers (global or unique-local) are ignored rather than refused:
 the firewall is an IPv4 allowlist and only the pinned address reaches the config, so a dual-stack
 LAN name is accepted on its A record instead of sending the operator back to typing the literal
-address (#2351). Credentials are
-used only for the RPC request and never enter the report.
+address (#2351). The host-side preflight a day-two configuration commit runs
+(`remote_node_address` in `lib/pithead/10-node-probe.sh`) applies the same acceptance rule.
+Credentials are used only for the RPC request and never enter the report.
 
 | Field | Meaning |
 |---|---|

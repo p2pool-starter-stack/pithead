@@ -34,6 +34,11 @@ remote_node_address() { # <config-file> <host>; rc 2 = unresolvable, rc 1 = addr
     resolved=$(_resolve_host_ips "$host") || return 2
     [ -n "$resolved" ] || return 2
     while IFS= read -r ip; do
+        # The firewall is an IPv4 allowlist and only the printed address is dialled, so a dual-stack name's AAAA answer is skipped (#2351).
+        if [ "$firewall" != false ] && _is_ipv6_literal "$ip"; then
+            _ipv6_is_sensitive "$ip" && return 1
+            continue
+        fi
         remote_node_ip_allowed "$ip" "$firewall" || return 1
         [ -n "$first" ] || first="$ip"
     done <<<"$resolved"
