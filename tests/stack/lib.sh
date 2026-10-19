@@ -176,7 +176,10 @@ mk_tmpdir _sbx
 # is narrower than it looks, and a lowercase name added later will need its own.
 # shellcheck disable=SC2154
 SANDBOX="$(cd "$_sbx" && pwd -P)"
-trap 'rm -rf "$SANDBOX"' EXIT
+# shellcheck source=tests/stack/lib/host-guard.sh
+source "$ROOT/tests/stack/lib/host-guard.sh" || exit 1
+stack_host_guard_init "$SANDBOX"
+trap stack_sandbox_cleanup EXIT
 # The restore handoff roots default to root-only /run paths; a non-root suite must never reach them.
 export PITHEAD_RESTORE_SUBMISSION_DIR="$SANDBOX/.run/restore-submit" PITHEAD_RESTORE_STAGE_ROOT="$SANDBOX/.run/restore-stage" \
     PITHEAD_RESTORE_CARRY_DIR="$SANDBOX/.run/restore-carry"

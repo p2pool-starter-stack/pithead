@@ -132,6 +132,17 @@ the split gives both expensive control groups separate budgets. Before any block
 accounting, and that the workflow matrix lists every block. Audit parser failures stop execution;
 tally producer failures and counts that are not nonnegative integers stop the full-run verdict.
 
+The shared shell harness redirects `PITHEAD_UNIT_DIR` into its sandbox and places
+host-command guards after each test's explicit fixture tools on `PATH`. Unmocked
+service and firewall probes report unavailable. Unmocked mutations are blocked and
+make the process fail at exit, even if the caller ignores the command's error.
+Provide fixture `sudo`, `systemctl` and firewall tools for tests that exercise those
+operations; keep all writes inside the fixture. The guards cover command lookup,
+not absolute executable paths or tests that replace `PATH` entirely.
+`tests/stack/standalone/test_host_isolation.py` runs through `make test-tools` and
+checks blocked mutations, child-process failures, and preservation of pre-existing
+unit and firewall fixtures after success, failure and interruption.
+
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the
 55 — a domain reporting success having executed nothing, and building its fixtures in the caller's

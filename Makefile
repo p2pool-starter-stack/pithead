@@ -61,6 +61,7 @@ test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
 	python3 tests/stack/standalone/test_tor_saturated_fixture.py
+	python3 tests/stack/standalone/test_host_isolation.py
 	python3 tests/stack/standalone/test_monero_download.py
 	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'

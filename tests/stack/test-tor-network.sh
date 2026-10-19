@@ -225,6 +225,10 @@ assert_contains "down removes the tagged Tor-exempt ACCEPT" "$rmlog" "-D DOCKER-
 assert_not_contains "down leaves foreign DOCKER-USER rules untouched" "$rmlog" "RETURN"
 assert_contains "down also drops the nft egress table (netavark backend)" "$(cat "$RM/nft.log" 2>/dev/null)" "delete table inet pithead_egress"
 
+make_stubs "$SANDBOX/lifecycle-bin"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$SANDBOX/lifecycle-bin/systemctl"
+chmod +x "$SANDBOX/lifecycle-bin/systemctl"
+
 echo "== regression: every command installs the Tor-egress firewall BEFORE compose (#291) =="
 # The firewall must go in BEFORE any clearnet-capable container starts, on EVERY path that brings one
 # up (#276 closed the window for stack_up; #291 + this change close it for upgrade/apply/reset). If a
@@ -236,6 +240,7 @@ echo "== regression: every command installs the Tor-egress firewall BEFORE compo
 # up: the reference path #276 fixed — pin it too so a future reorder of stack_up is caught here.
 up_order=$(
     cd "$SANDBOX" || exit
+    export PATH="$SANDBOX/lifecycle-bin:$PATH"
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
@@ -253,6 +258,7 @@ assert_eq "up applies the firewall before 'compose up' (#276)" "$(fw_then_compos
 
 upg_order=$(
     cd "$SANDBOX" || exit
+    export PATH="$SANDBOX/lifecycle-bin:$PATH"
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
@@ -281,6 +287,7 @@ assert_eq "upgrade applies the firewall before 'compose up' (#291)" "$(fw_then_c
 # This exercises the command-flow ORDER — the wiring the unit test of ensure_onion_password can't see.
 upg_onion_order=$(
     cd "$SANDBOX" || exit
+    export PATH="$SANDBOX/lifecycle-bin:$PATH"
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
@@ -311,6 +318,7 @@ assert_eq "upgrade runs ensure_onion_password before config validation (#355)" \
 # (the decision itself is black-boxed below).
 upg_sig_order=$(
     cd "$SANDBOX" || exit
+    export PATH="$SANDBOX/lifecycle-bin:$PATH"
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
@@ -342,6 +350,7 @@ assert_eq "upgrade verifies release-image signatures before 'compose up' (#376)"
 # goes missing or lands after "compose", this fails.
 up_sig_order=$(
     cd "$SANDBOX" || exit
+    export PATH="$SANDBOX/lifecycle-bin:$PATH"
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
@@ -365,6 +374,7 @@ assert_eq "first-install up verifies release-image signatures before 'compose up
 # diff (env_changed_keys returns nothing; a pre-seeded .apply-incomplete marker forces the retry).
 apply_order=$(
     cd "$SANDBOX" || exit
+    export PATH="$SANDBOX/lifecycle-bin:$PATH"
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
@@ -398,6 +408,7 @@ assert_eq "apply applies the firewall before 'compose up' (#291)" "$(fw_then_com
 # emits the compose sentinel only for the `compose up` it ends on.
 rd_order=$(
     cd "$SANDBOX" || exit
+    export PATH="$SANDBOX/lifecycle-bin:$PATH"
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
