@@ -114,38 +114,23 @@ Add a scenario to `tests/integration/mini-stack/run-mini-stack.sh`: drive the fa
 
 ### Visual check (frontend, pre-PR)
 
-The `node --test` frontend suite renders components as strings, so it cannot see a layout bug —
-an overflowing table, a wrapped stat, a broken breakpoint. Before a PR that touches the
-dashboard's look, render the real frontend in a real browser against a canned `/api/state`
-payload — no docker, no stack. The fixture half lives in the repo:
-`tests/frontend/fixtures/_gen_state.py` writes `state.json`, a real `build_state()` payload (the
-exact contract the client renders). Regenerate it whenever the payload contract changes — a
-drift guard in `tests/web/views/test_views.py` reruns the generator and fails on any structural
-difference from the checked-in fixture, down to nested keys. Then serve the real app around it:
+The `node --test` frontend suite renders components as strings and cannot see CSS layout.
+Use the [viewport screenshot command](browser-testing.md#viewport-screenshots) to capture
+both themes at a phone or desktop width, then inspect the PNGs for overflowing tables,
+wrapped stats and broken breakpoints. Capture checks run in the browser suite; geometric
+regressions still need assertions for the affected element rather than image existence alone.
+
+The browser fixture serves production assets with `tests/frontend/fixtures/state.json`, a
+real `build_state()` payload. Regenerate it when the payload contract changes:
 
 ```bash
 cd dashboard
 uv run --extra test python tests/frontend/fixtures/_gen_state.py
-python3 - <<'EOF'
-import http.server, mimetypes
-from pathlib import Path
-mimetypes.add_type("text/javascript", ".mjs")
-web, fix = Path("mining_dashboard/web"), Path("tests/frontend/fixtures/state.json")
-class H(http.server.SimpleHTTPRequestHandler):
-    def translate_path(self, path):
-        p = path.split("?")[0]
-        if p.startswith("/api/state"): return str(fix)
-        if p.startswith("/static/"): return str(web / p.lstrip("/"))
-        return str(web / "templates/index.html")
-http.server.ThreadingHTTPServer(("127.0.0.1", 8000), H).serve_forever()
-EOF
 ```
 
-Open `http://127.0.0.1:8000` and eyeball the page at a desktop and a phone width (the browser's
-device toolbar is enough). Only `/api/state` is served — every other API call fails, which the
-page tolerates; the main view is the point. This is a manual pre-PR step, not a test tier: it has
-caught real bugs (a "≈ 0.0 blocks" display, a WebKit table overflow) that the string-render tests
-structurally cannot.
+The drift guard in `tests/web/views/test_views.py` compares the generated payload structure
+with the checked-in fixture, including nested keys. See [browser testing](browser-testing.md)
+for the shared fixture's API and live-acceptance limits.
 
 ## Conventions
 
