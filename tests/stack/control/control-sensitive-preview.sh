@@ -12,6 +12,10 @@ previewed_with() { # <needle...>: previewed, envelope-gated, and one change mess
         and ([.changes[].msg] | any(. as $m | all($ARGS.positional[]; . as $n | $m | contains($n))))' \
         "$@" <"$RESULTS/$UUID5.json" 2>/dev/null
 }
+preview_without() {
+    jq -r --arg needle "$1" 'all(.changes[].msg; contains($needle) | not)' \
+        <"$RESULTS/$UUID5.json" 2>/dev/null
+}
 jq '.dashboard.auth.password="a replacement control passphrase"' "$C/config.json" >"$C/cand.json"
 preview_only "$C/cand.json"
 assert_eq "password preview is envelope-gated and names the lockout and console-login costs" \
@@ -74,6 +78,8 @@ exposure_previews "XvB-off-Tor preview with the firewall on names IP exposure" '
     "XvB donation mining OFF Tor" "XvB sees this host's IP"
 exposure_previews "P2Pool-clearnet preview with the firewall on names IP exposure" '.p2pool.clearnet=true' \
     "P2Pool sidechain peers over CLEARNET" "visible to the P2Pool network"
+assert_eq "P2Pool-clearnet preview never claims a PPLNS reset (#3382)" "$(preview_without "PPLNS")" "true"
+assert_eq "P2Pool-clearnet preview never claims a sidechain switch (#3382)" "$(preview_without "sidechain changing")" "true"
 exposure_previews "disabled XvB-off-Tor preview names the later exposure" '.xvb.enabled=false | .xvb.tor=false' \
     "there is no donation dial now" "enabling XvB later opens a direct dial"
 # Firewall off in the same candidate: the route is open and the preview names the exposure.
@@ -83,4 +89,4 @@ exposure_previews "P2Pool-clearnet preview with the firewall off names this host
     "P2Pool sidechain peers over CLEARNET" "visible to the P2Pool network"
 exposure_previews "public-IP preview names the dashboard login reachable from the internet" '.dashboard.expose_public_ip=true' \
     "Dashboard PUBLISHED" "anyone on the internet can reach the dashboard login"
-unset -f preview_only previewed_with exposure_previews
+unset -f preview_only previewed_with preview_without exposure_previews

@@ -132,6 +132,22 @@ assert_contains "PITHEAD_CONFIG_FILE override is honoured" "$out" "37890" # nano
 out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>/dev/null)"
 assert_eq "without the override, config.json shows no changes" "$out" ""
 
+jq '.p2pool.clearnet=true' "$C/config.json" >"$C/config.route" && mv "$C/config.route" "$C/config.json"
+out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>/dev/null)"
+assert_contains "route-only preview names the P2Pool clearnet change (#3382)" "$out" "P2Pool sidechain peers over CLEARNET"
+assert_not_contains "route-only preview does not claim a PPLNS reset (#3382)" "$out" "PPLNS window resets"
+control_config main
+
+out="$(run_sourced "$C" describe_change P2POOL_FLAGS '--mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns' '--mini')"
+assert_not_contains "Tor removal keeps the P2Pool sidechain (#3382)" "$out" "sidechain changing"
+assert_not_contains "Tor removal keeps the PPLNS window (#3382)" "$out" "PPLNS"
+out="$(run_sourced "$C" describe_change P2POOL_FLAGS '--mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns' '--mini --socks5 172.29.0.25:9050 --socks5-proxy-type tor --no-dns')"
+assert_not_contains "subnet-derived proxy change keeps the P2Pool sidechain (#3382)" "$out" "sidechain changing"
+assert_not_contains "subnet-derived proxy change keeps the PPLNS window (#3382)" "$out" "PPLNS"
+out="$(run_sourced "$C" describe_change P2POOL_FLAGS '--mini' '--nano')"
+assert_contains "mini to nano previews a sidechain switch (#3382)" "$out" "sidechain changing"
+assert_contains "mini to nano previews a PPLNS reset (#3382)" "$out" "PPLNS window resets"
+
 echo "== black-box: symlink-invoked stack renders physical paths (#695) =="
 # A stack managed through a deploy symlink (`current -> pithead-vX.Y.Z`) must render the same
 # .env as one managed from the physical dir: SCRIPT_DIR resolves with pwd -P, so an unedited
