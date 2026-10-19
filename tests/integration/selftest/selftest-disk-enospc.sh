@@ -14,10 +14,11 @@ drive_disk_fault() (
         case "$1" in
         'sudo mount '*)
             [ "$fault" != mount ] || return 1
-            [[ "$1" == *mode=1777* ]] || return 1
+            [[ "$1" == *mode=0700* ]] || return 1
             mounted=1
             ;;
-        'LC_ALL=C dd'*)
+        'LC_ALL=C sudo -n dd'*)
+            [[ "$1" == *oflag=excl,nofollow* ]] || return 1
             if [ "$fault" = no-enospc ]; then printf 'Permission denied' >&2; else printf 'No space left on device' >&2; fi
             return 1
             ;;

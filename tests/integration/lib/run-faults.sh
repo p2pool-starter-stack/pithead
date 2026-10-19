@@ -232,11 +232,11 @@ fault_disk_enospc() {
         return 0
     fi
     it_step "fault: mount a 1MiB tmpfs over the dashboard data dir and fill it (real ENOSPC, #383)…"
-    if ! rx "sudo mount -t tmpfs -o size=1m,uid=1000,gid=1000,mode=1777 tmpfs $(quote_arg "$ddir")" >/dev/null 2>&1; then
+    if ! rx "sudo mount -t tmpfs -o size=1m,uid=1000,gid=1000,mode=0700 tmpfs $(quote_arg "$ddir")" >/dev/null 2>&1; then
         it_fail "ENOSPC fault" "could not mount a tmpfs over the data dir"
         return 0
     fi
-    fill_out=$(rx "LC_ALL=C dd if=/dev/zero of=$(quote_arg "$ddir/.itest-fill") bs=1M count=4" 2>&1) || true
+    fill_out=$(rx "LC_ALL=C sudo -n dd if=/dev/zero of=$(quote_arg "$ddir/.itest-fill") oflag=excl,nofollow bs=1M count=4" 2>&1) || true
     if [[ "$fill_out" == *'No space left on device'* ]]; then
         it_pass "tmpfs fill reaches real ENOSPC"
     else
