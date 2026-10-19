@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
+echo "== remote pregate identity and cancellation drain =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 - "$HERE/../lib/inline-pregate-remote.sh" <<'PY'
 import os
