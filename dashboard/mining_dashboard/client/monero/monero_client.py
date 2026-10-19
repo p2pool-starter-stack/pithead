@@ -17,8 +17,8 @@ class MoneroClient:
     """
     Reads monerod state from its `get_info` RPC instead of scraping docker logs.
 
-    The dashboard runs `network_mode: host` and monerod publishes 127.0.0.1:18081, so
-    the RPC is directly reachable. Reading height/target_height from `get_info` is
+    The rendered RPC URL selects the host-published local node or the configured remote node.
+    Reading height/target_height from `get_info` is
     format-stable, unlike the log line (which broke once already when v0.18.x changed
     "Synced N/M" to "... top block candidate: X -> Y").
 
@@ -35,17 +35,19 @@ class MoneroClient:
         timeout=5,
     ):
         self.url = url.rstrip("/") + "/get_info"
-        # No creds (e.g. a remote node deployment) → send unauthenticated; the request
-        # will simply fail and the caller falls back to log scraping.
+        # No creds (e.g. a public remote node) → send unauthenticated. Failed requests fall back
+        # to log scraping.
         self._auth = HTTPDigestAuth(username, password) if username else None
         self.timeout = timeout
 
     def get_info(self) -> dict | None:
         """Return monerod's `get_info` payload as a dict, or None if unreachable/errored."""
         try:
-            resp = bounded_get(self.url, auth=self._auth, timeout=self.timeout)
+            resp = bounded_get(
+                self.url, auth=self._auth, timeout=self.timeout, allow_redirects=False
+            )
         except requests.RequestException as e:
-            logger.warning(f"monerod get_info unreachable at {self.url}: {e}")
+            logger.warning("monerod get_info unreachable (%s)", type(e).__name__)
             return None
 
         if resp.status_code != 200:
@@ -54,8 +56,8 @@ class MoneroClient:
 
         try:
             data = resp.json()
-        except ValueError:
-            logger.error("monerod get_info returned a non-JSON body")
+        except (ValueError, RecursionError):
+            logger.error("monerod get_info returned an invalid JSON body")
             return None
 
         # A JSON body is not necessarily a JSON OBJECT. An array, string, number or null parses
@@ -91,23 +93,42 @@ class MoneroClient:
         `synchronized` is monerod's raw network-sync verdict, passed through for the peer-loss
         detector (#972): after a tor restart a stranded node can read as "synced" here (stale
         target_height 0) while `synchronized` is false. Only this RPC path sets the key — the
-        log-scrape fallback and remote nodes have no verdict, and the detector treats absence
+        log/stats fallback has no verdict, and the detector treats absence
         as no verdict.
         """
         info = self.get_info()
         if info is None:
             return None
 
-        height = int(info.get("height", 0) or 0)
-        target = int(info.get("target_height", 0) or 0)
-        db_size = int(info.get("database_size", 0) or 0)
-        synchronized = bool(info.get("synchronized", False))
+        # Remote nodes are untrusted: malformed fields must feed the unreachable path,
+        # not abort the whole data loop before its failover monitor runs.
+        for field in ("height", "target_height", "database_size"):
+            value = info.get(field, 0)
+            if type(value) is not int or not 0 <= value <= 2**64 - 1:
+                logger.warning("monerod get_info has invalid %s", field)
+                return None
+        synchronized = info.get("synchronized", False)
+        if type(synchronized) is not bool:
+            logger.warning("monerod get_info has invalid synchronized flag")
+            return None
+        height = info.get("height", 0)
+        target = info.get("target_height", 0)
+        db_size = info.get("database_size", 0)
+        # Peer counts are NOT read here (#2921): this endpoint is restricted, and a restricted
+        # get_info answers 0 for them. They come from the healthcheck's observation
+        # (collector.containers.get_monero_peers), attached by the caller.
+        health = {"height": height}
 
         # `synchronized` is monerod's authoritative "caught up" flag; once synced it also
         # reports target_height: 0. Trust it over the height comparison (mirrors how the
         # Tari client trusts initial_sync_achieved).
         if synchronized or target == 0 or height >= target:
-            return {"is_syncing": False, "db_size": db_size, "synchronized": synchronized}
+            return {
+                "is_syncing": False,
+                "db_size": db_size,
+                "synchronized": synchronized,
+                **health,
+            }
 
         percent = int((height / target) * 100)
         return {
@@ -117,4 +138,5 @@ class MoneroClient:
             "percent": percent,
             "db_size": db_size,
             "synchronized": synchronized,
+            **health,
         }

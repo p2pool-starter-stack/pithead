@@ -130,7 +130,7 @@ async def test_a_renamed_rig_resolves_by_its_operator_set_host(monkeypatch):
 
 async def test_a_successful_probe_carries_the_same_adoption_fact(monkeypatch):
     # The field rides both verdicts, so it cannot flip between two polls of one unchanged rig.
-    entries = [{"name": "rig1", "token": "t0k"}]
+    entries = [{"name": "rig1", "token": {"__secret__": True}, "read_token": "read-only"}]
     ok = await _probe(monkeypatch, entries, "10.0.0.1", "rig1", status=200)
     assert ok == {"ok": True, "api_ok": True, "adopted": True}
 

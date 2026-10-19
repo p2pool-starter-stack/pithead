@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# The tier-4 load worker is opt-in and must remain one-threaded, baseline-relative,
-# and cleanup-safe. This source-level contract is the cheap guard; the live leg proves XMRig.
+# The live leg needs a cheap guard for worker ownership and evidence retention.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,6 +28,7 @@ case "$load_src" in *'cleanup_stale_load_workers'*'mktemp -d'*) ;; *) exit 1 ;; 
 case "$load_src" in *'owned()'*'cleanup-failed'*'kill -KILL'*'trap fail EXIT'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'test -z'*'wait'*'rm -rf --'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'jq -er'*'LOAD_SHARES_BEFORE" =~ ^[0-9]+$'*'stop_load_worker'*) ;; *) exit 1 ;; esac
+case "$load_src" in *'LOAD_SHARES_BEFORE='*'identity="$(on_miner'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'LOAD_BASELINE_NAMES="$(worker_names)"'*'LOAD_EXPECTED_WORKERS='*'wait_load_workers 180'*) ;; *) exit 1 ;; esac
 case "$wait_src" in *'wait_workers "${LOAD_EXPECTED_WORKERS:-$WORKERS}"'*'worker_set_ready "$names"'*'sleep 8'*) ;; *) exit 1 ;; esac
 case "$cleanup_src" in *'find /tmp'*'-uid \$(id -u)'*'stop_load_worker'*) ;; *) exit 1 ;; esac
@@ -40,7 +40,7 @@ case "$verify_src" in *'LOAD_METRICS_SAMPLED" = 1'*) exit 1 ;; esac
 grep -Fqx '    [[ "$latency" =~ ^[0-9]+(\.[0-9]+)?$ ]] || latency=null' <<<"$verify_src" || exit 1
 case "$stop_src" in *'pithead-e2e-load\.'*'cleanup-failed'*'/proc/[0-9]*/cmdline'*'q=\${f#/proc/}'*'kill -TERM'*'rm -rf'*) ;; *) exit 1 ;; esac
 case "$restore_src" in *'stop_load_worker || RESTORE_PROOF_FAILED=1'*) ;; *) exit 1 ;; esac
-case "$run_src" in *'LOAD_EXPECTED_WORKERS:-$WORKERS'*'harness_pregate "$expected_workers"'*'.e2e-run.sh'*'$expected_workers'*'deadline=$(($(date +%s) + 7200))'*'wait_load_workers 180'*load_worker_wait_tick*) ;; *) exit 1 ;; esac
+case "$run_src" in *'LOAD_EXPECTED_WORKERS:-$WORKERS'*'harness_pregate "$expected_workers"'*'.e2e-run.sh'*'$expected_workers'*'deadline=$(($(date +%s) + 7200))'*'handle_borrow_rearm'*load_worker_wait_tick*) ;; *) exit 1 ;; esac
 case "$run_src" in *'|| die '*) exit 1 ;; esac
 grep -Fqx '    verify_load_worker || hrc=1' <<<"$main_src" || exit 1
 grep -Fqx '[ "$BORROW_MINER" = 1 ] || [ "$WORKERS" -ne 3 ] 2>/dev/null || die "--workers 3 requires a borrowed miner."' "$SRC" || exit 1
@@ -139,3 +139,23 @@ sample_load_worker
     exit 1
 }
 echo "  ✓ live hash/share/process evidence survives a later empty API state"
+
+echo "== metrics artifact preserves baseline labels and the starting counter =="
+E2E_DIR="$(mktemp -d)"
+trap 'rm -rf "$E2E_DIR"' EXIT
+LOAD_INITIAL_BASELINE_NAMES="$(printf 'miner-1\nminer-"quoted"\n')"
+LOAD_BASELINE_NAMES="renamed-worker"
+LOAD_SHARES_BEFORE=1
+LOAD_SAW_READY=1 LOAD_SAW_FAILOVER=1 LOAD_SAW_RECOVERY=1
+step() { :; }
+on_bench() {
+    case "$1" in
+    *'mkdir -p'*) eval "$1" ;;
+    *'curl -sS'*) printf 0.01 ;;
+    *api/state*) printf '%s\n' "$SAMPLE_STATE" ;;
+    *'docker compose'*) printf running ;;
+    *) return 1 ;;
+    esac
+}
+verify_load_worker || exit 1
+jq -e '.baseline_workers == ["miner-1", "miner-\"quoted\""] and .accepted_before == 1 and .accepted == 5 and .saw_recovery == 1' "$E2E_DIR/results/multi-worker-metrics.json" >/dev/null || exit 1

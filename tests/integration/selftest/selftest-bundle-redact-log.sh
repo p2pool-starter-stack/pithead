@@ -50,6 +50,7 @@ REPO="$(cd -P "$HERE/../../.." && pwd -P)"
 # readonly CONFIG_FILE into this harness. `source` reads from /dev/null so it can never consume
 # the payload on stdin.
 brl() { (
+    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     bundle_redact_log
 ); }
@@ -58,6 +59,7 @@ brl() { (
 # Without this, a broken source makes every absence assertion below pass vacuously.
 echo "== unit: support-bundle log redactor is reachable (#1585) =="
 if (
+    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     declare -F bundle_redact_log >/dev/null
 ); then
@@ -124,6 +126,15 @@ OUT="$(printf -- '--rpc-login %s:%s --zmq-port 18083\n' "$RPC_USER" "$RPC_PASS" 
 case "$OUT" in
 *"$RPC_PASS"*) it_fail "the --rpc-login credential is redacted" "value survived: $OUT" ;;
 *) it_pass "the --rpc-login credential is redacted" ;;
+esac
+
+# #2414's line-selection gap does not exist here: every rule is an unanchored `g` substitution, so a
+# commented-out or indented launch line is scrubbed like a live one. Pinned so a later `^` anchor
+# cannot reopen it.
+OUT="$(printf -- '#   --rpc-login %s:%s --wallet %s\n' "$RPC_USER" "$RPC_PASS" "$MONERO_ADDR" | brl)"
+case "$OUT" in
+*"$RPC_PASS"* | *"$MONERO_ADDR"*) it_fail "a commented, indented launch line is redacted" "value survived: $OUT" ;;
+*) it_pass "a commented, indented launch line is redacted" ;;
 esac
 
 # --- NEGATIVE CONTROL -------------------------------------------------------------------------
@@ -217,6 +228,7 @@ XMR_REAL_INTEGRATED="4JMJg6ic6R584YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9U
 
 # The shipped classifier, run the same way brl() runs the shipped redactor.
 mat() { (
+    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     monero_address_type "$1"
 ); }

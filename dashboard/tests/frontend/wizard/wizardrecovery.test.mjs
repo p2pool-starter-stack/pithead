@@ -30,6 +30,7 @@ const FAILED = {
   handoff: null,
   install_attempt: { disk: "sda", wipe: "data" },
   auth_mode: "set",
+  restore_enabled: true,
   config_changes: ["xmrig_proxy.enabled → xvb.enabled"],
 };
 

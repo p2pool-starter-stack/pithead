@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329  # fake functions and dynamic globals are the controls
-# Verdicts and pure self-tests for appliance-config-approval-leg.sh.
+# Verdicts and pure self-tests for the appliance approval and node-runtime legs.
 #
 # #2076 removed the Telegram approval round-trip, and with it the fake-provider transport this file
 # used to carry: approval_fixture_arm/bind/quiesce/disarm, approval_fixture_post/preview, the
@@ -45,8 +45,45 @@ approval_bind_payload() { # <result-json> <audit-jsonl> <request-id> [landed]
     printf 'apply=%s audit=%.240s; live identity is the row printed above this one' "$apply" "$audit_v"
 }
 
-physical_presence_password_refusal_verdict() { # <control-result-json>
-    printf '%s' "$1" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null
+# #2367: the dashboard password left the physical-presence set and now commits behind typed
+# APPLY like any other unlisted leaf, so this proves the commit APPLIES rather than refuses.
+dashboard_password_repoint_applied_verdict() { # <control-result-json>
+    printf '%s' "$1" | jq -e '.status == "applied"' >/dev/null
+}
+
+# #2367: before the password commit, the host preview must be a real preview, envelope-gated, and
+# name both costs the owner required (session lockout, appliance console login) in one message.
+dashboard_password_preview_warns_verdict() { # <preview-json>
+    printf '%s' "$1" | jq -e '.status == "previewed" and .approval_required == true and
+        ([.changes[]?.msg] | any(contains("locks this session out") and contains("console root login")))' >/dev/null
+}
+
+# The pre-commit half of remote_node_runtime_verdict: the preview's rendered .env rows name the
+# endpoints p2pool is started with. Hosts always move off the bundled nodes; a port row is only
+# rendered when the port differs from the live one, so an absent port row is not a miss.
+reserved_node_rendered_endpoints_verdict() { # <preview-json> <mh> <rpc> <zmq> <th> <grpc>
+    printf '%s' "$1" | jq -e --arg mh "$2" --arg rpc "$3" --arg zmq "$4" --arg tg "$5:$6" '
+        def row($k): [.changes[]? | select(.key == $k) | .msg];
+        def to($k; $v): row($k) | any(contains("→ " + $v + " — "));
+        def port($k; $v): (row($k) | length == 0) or to($k; $v);
+        to("MONERO_NODE_HOST"; $mh) and to("TARI_GRPC_ADDRESS"; $tg) and
+        port("MONERO_RPC_PORT"; $rpc) and port("MONERO_ZMQ_PORT"; $zmq)' >/dev/null
+}
+
+_reserved_node_rendered_endpoints_self_test() {
+    local ok_rows
+    ok_rows='{"changes":[{"key":"MONERO_NODE_HOST","msg":"MONERO node endpoint (MONERO_NODE_HOST): monerod → node.fixture — x"},
+        {"key":"TARI_GRPC_ADDRESS","msg":"TARI node endpoint (TARI_GRPC_ADDRESS): tari:18142 → tari.fixture:18142 — x"}]}'
+    reserved_node_rendered_endpoints_verdict "$ok_rows" node.fixture 18081 18083 tari.fixture 18142 || return 1
+    reserved_node_rendered_endpoints_verdict "$ok_rows" other.fixture 18081 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$ok_rows" node.fixture 18081 18083 tari.fixture 9999 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_RPC_PORT",msg:"MONERO node endpoint (MONERO_RPC_PORT): 18081 → 18089 — x"}]')" \
+        node.fixture 18081 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_RPC_PORT",msg:"MONERO node endpoint (MONERO_RPC_PORT): 18081 → 18089 — x"}]')" \
+        other.fixture 18089 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_ZMQ_PORT",msg:"MONERO node endpoint (MONERO_ZMQ_PORT): 18083 → 18084 — x"}]')" \
+        node.fixture 18081 18083 tari.fixture 18142 && return 1
+    return 0
 }
 
 # Bounded, credential-scrubbed evidence for a reserved-node preview verdict (#2297). The row that
@@ -320,26 +357,38 @@ MergeMiningClientTari tari://tari.fixture:18142 uses chain_id 0123456789abcdef'
     return 0
 )
 
-# The one invariant behind #2060's control rows: the POST must outlast the window the dashboard
-# itself waits before handing back a pollable id. Both numbers are read from their own sources — a
-# literal repeated here would keep passing after either side moved, which is exactly how an 8s cap
-# survived beside a 30s server wait and a 420s outer deadline.
+# The actual POST timeout must outlast the server answer window (#2060).
+# Also exercise the retry override; reading a declared default would miss a hard-coded curl cap.
 _control_post_timeout_self_test() (
     local here cap window
     here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-    cap=$(awk '/^dashboard_control_post\(\)/, /^}/' "$here/appliance-config-approval-leg.sh" |
-        sed -n 's/.* -m \([0-9][0-9]*\) .*/\1/p')
+    # shellcheck source=tests/os/appliance-config-approval-leg.sh
+    . "$here/appliance-config-approval-leg.sh"
+    # shellcheck disable=SC2034 # POST URL reads ip through dynamic scope
+    local ip=fixture
+    dashboard_curl() {
+        cat >/dev/null
+        while [ "$#" -gt 0 ]; do
+            if [ "$1" = -m ]; then
+                printf '%s' "$2"
+                return 0
+            fi
+            shift
+        done
+        return 1
+    }
+    cap=$(dashboard_control_post preview '{}') || return 1
+    [ "$(dashboard_control_post preview '{}' 7)" = 7 ] || return 1
     window=$(sed -n 's/^CONTROL_WAIT_S *= *float(os.environ.get("CONTROL_WAIT_S", *\([0-9][0-9.]*\))).*/\1/p' \
         "$here/../../dashboard/mining_dashboard/config/config.py")
-    # Either read coming back empty means the shape it keys on moved; that is a failure, not a pass.
     [ -n "$cap" ] && [ -n "$window" ] || return 1
     awk -v c="$cap" -v w="$window" 'BEGIN { exit !(c > w) }'
 )
 
 # --- self-test (#2060) -------------------------------------------------------------------------
 #
-# Driven by tests/stack/test-harness-tooling.sh. The leg that consumes this file is at its file
-# budget, so the payload's controls live here with it rather than in the leg's own self-test.
+# Driven by tests/stack/test-harness-tooling.sh. The payload controls stay beside the verdicts they
+# exercise rather than the live guest paths.
 #
 # What must be proven is DISCRIMINATION: the row this feeds already prints one red for four
 # different defects, so a payload that printed one sentence for all four would leave it exactly
@@ -382,10 +431,10 @@ _approval_bind_payload_self_test() {
     printf 'approval-bind-payload self-test passed\n'
 }
 
-_physical_presence_password_refusal_self_test() {
-    physical_presence_password_refusal_verdict '{"status":"rejected","error":"use the configuration stick"}' || return 1
-    physical_presence_password_refusal_verdict '{"status":"applied"}' && return 1
-    physical_presence_password_refusal_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
+_dashboard_password_repoint_applied_self_test() {
+    dashboard_password_repoint_applied_verdict '{"status":"applied"}' || return 1
+    dashboard_password_repoint_applied_verdict '{"status":"rejected","error":"use the configuration stick"}' && return 1
+    dashboard_password_repoint_applied_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
     return 0
 }
 
@@ -394,6 +443,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
     f=0
     _approval_bind_payload_self_test || f=1
     _reserved_node_preview_payload_self_test || f=1
-    _physical_presence_password_refusal_self_test || f=1
+    _dashboard_password_repoint_applied_self_test || f=1
+    _reserved_node_rendered_endpoints_self_test || f=1
     exit "$f"
 fi

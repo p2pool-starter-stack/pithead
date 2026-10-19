@@ -282,3 +282,54 @@ class TestIsConfirmedBad:
         clock.advance(121)
         m.update({"dashboard": _s(restart_count=3)})
         assert m.is_confirmed_bad("dashboard") is False
+
+
+def _down(held=False, running=False, exit_code=137):
+    """A restart-"no" (unsupervised, #2749) LAN-access node container."""
+    return {
+        **_s(running=running),
+        "unsupervised": True,
+        "held_since_boot": held,
+        "exit_code": exit_code,
+    }
+
+
+class TestUnsupervisedDown:
+    """#2749: a LAN-access node on a DIY Docker host runs with restart "no"; down is an edge."""
+
+    def test_held_at_boot_alerts_from_the_first_sighting_after_the_debounce(self):
+        m, clock = _monitor()
+        assert m.update({"monerod": _down(held=True)}) == []
+        clock.advance(119)
+        assert m.update({"monerod": _down(held=True)}) == []
+        clock.advance(1)
+        assert m.update({"monerod": _down(held=True)}) == [("monerod", "held")]
+        clock.advance(600)
+        assert m.update({"monerod": _down(held=True)}) == []  # one edge per incident
+
+    def test_exited_while_running_alerts_and_recovers(self):
+        m, clock = _monitor()
+        m.update({"tari": _down(running=True)})
+        m.update({"tari": _down()})
+        clock.advance(120)
+        assert m.update({"tari": _down()}) == [("tari", "exited")]
+        assert m.is_confirmed_bad("tari")
+        m.update({"tari": _down(running=True)})
+        clock.advance(120)
+        assert m.update({"tari": _down(running=True)}) == [("tari", "recovered")]
+
+    def test_a_short_recreate_does_not_page(self):
+        m, clock = _monitor()
+        m.update({"tari": _down(running=True)})
+        m.update({"tari": _down()})
+        clock.advance(60)
+        assert m.update({"tari": _down(running=True)}) == []
+        clock.advance(120)
+        assert m.update({"tari": _down()}) == []
+
+    def test_a_supervised_exited_container_is_still_no_edge(self):
+        m, clock = _monitor()
+        m.update({"p2pool": _s()})
+        m.update({"p2pool": _s(running=False)})
+        clock.advance(600)
+        assert m.update({"p2pool": _s(running=False)}) == []

@@ -35,12 +35,6 @@ assert_contains "the done-marker poll returns through cleanup on a bench error" 
 
 # --- Drive the real function with ssh stubbed out ------------------------------------------
 # Files outlive the pipeline subshell and /dev/null keeps an unpiped stub from hanging.
-#   * e2e.sh pipes the token INTO the launch call (`printf ... | on_bench ...`), and a pipeline runs
-#     its right-hand function in a SUBSHELL — a stub recording into a variable captures nothing.
-#     Record into files, which outlive it.
-#   * The stub's `cat` must never be able to block. If a mutation removes the pipe, an unredirected
-#     `cat` reads the SCRIPT's stdin and hangs forever, which reads as a mutation that "survived"
-#     rather than one that killed. The subshell takes its stdin from /dev/null so it gets EOF.
 drive_harness() { # <mode> <borrow_miner> [rig-token] -> launch, stdin and pregate records
     local launch lf sf pf
     lf="$(mktemp)" sf="$(mktemp)" pf="$(mktemp)"
