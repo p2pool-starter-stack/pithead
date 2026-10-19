@@ -13,7 +13,7 @@ export FAKE
 mkdir -p "$FAKE/bin" "$FAKE/data dir"
 python_bin=$(command -v python3)
 {
-    echo 'REAL_USER=fixture'
+    echo 'REAL_USER=ubuntu'
     sed -n '/^_data_dir_is_broad_root() {/,/^}/p' "$ROOT/../../lib/pithead/19-small-utilities.sh"
     echo 'apply_tor_egress_firewall() { echo firewall-restored >> "$FAKE/calls"; }'
 } >"$FAKE/pithead"
@@ -36,6 +36,10 @@ with (root / 'calls').open('a') as f:
     f.write(name + ' ' + ' '.join(args) + '\n')
 def save():
     state_file.write_text(json.dumps(state))
+def interrupt(sig):
+    if os.getpgrp() != os.getppid():
+        raise SystemExit('fault target is not an isolated process-group leader')
+    os.killpg(os.getpgrp(), sig)
 if name == 'cat':
     if args == ['/proc/sys/kernel/random/uuid']:
         print('11111111-2222-3333-4444-555555555555')
@@ -48,7 +52,7 @@ elif name == 'sudo':
         args.pop(0)
     os.execvp(args[0], args)
 elif name == 'realpath':
-    print({'root-target': '/', 'broad-target': '/var/lib', 'home-target': '/home/fixture'}.get(mode, args[-1]))
+    print({'root-target': '/', 'broad-target': '/var/lib', 'home-target': '/home/ubuntu'}.get(mode, args[-1]))
 elif name == 'findmnt':
     if mode == 'unreadable-baseline' and not state['mounts']:
         sys.exit(1)
@@ -67,7 +71,7 @@ elif name == 'mount':
     state['mounts'].append('20 ' + source + ' tmpfs')
     save()
     if mode == 'mount-TERM':
-        os.kill(os.getppid(), signal.SIGTERM)
+        interrupt(signal.SIGTERM)
     if mode == 'mount-ambiguous':
         sys.exit(1)
 elif name == 'umount':
@@ -106,7 +110,7 @@ elif name == 'docker':
     state['restarts'] += 1
     save()
     if mode in ('TERM', 'HUP', 'INT') and state['restarts'] == 1:
-        os.kill(os.getppid(), getattr(signal, 'SIG' + mode))
+        interrupt(getattr(signal, 'SIG' + mode))
     if mode == 'restart-failed' and state['restarts'] == 1:
         sys.exit(1)
     if mode == 'recovery-failed' and state['restarts'] == 2:
@@ -133,12 +137,30 @@ reset_case() {
     export CASE=$1
     printf '%s\n' '{"mounts":[],"underlying":true,"restarts":0}' >"$FAKE/state"
     : >"$FAKE/calls"
-    rm -f "$FAKE/data dir/.itest-fill"
+    rm -f "$FAKE/data dir/.itest-fill" "$FAKE/target.exit"
 }
 state_value() { "$python_bin" -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$FAKE/state" "$1"; }
 env_on_box() { case "$1" in COMPOSE_PROFILES) echo local_node ;; *) echo "$FAKE/data dir" ;; esac }
 export IT_MODE=local
 export IT_REMOTE_DIR="$FAKE"
+rx() {
+    "$python_bin" - "$FAKE" "$1" <<'PYTHON'
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+def default_signals():
+    for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, signal.SIG_DFL)
+
+result = subprocess.run(['bash', '-c', sys.argv[2]], cwd=sys.argv[1],
+                        start_new_session=True, preexec_fn=default_signals)
+exit_code = result.returncode if result.returncode >= 0 else 128 - result.returncode
+Path(sys.argv[1], 'target.exit').write_text(str(exit_code))
+raise SystemExit(exit_code)
+PYTHON
+}
 wait_for() { return 0; }
 wait_status_ok() { return 0; }
 has_compose_profile() { return 0; }
@@ -170,6 +192,12 @@ for test_case in normal root-target broad-target home-target inspect-failed wron
         assert_eq "$test_case does not restart on unverified storage" "$(state_value restarts)" "$([[ "$test_case" = foreign || "$test_case" = wrong-target ]] && echo 0 || echo 1)"
         ;;
     mount-TERM | TERM | HUP | INT)
+        case "$test_case" in
+        mount-TERM | TERM) signal_exit=143 ;;
+        HUP) signal_exit=129 ;;
+        INT) signal_exit=130 ;;
+        esac
+        assert_eq "$test_case terminates the target with its signal status" "$(cat "$FAKE/target.exit")" "$signal_exit"
         grep -Fxq 'ENOSPC dashboard recovered' "$FAKE/out"
         assert_rc "$test_case records dashboard recovery" "$?" 0
         assert_eq "$test_case removes the temporary mount" "$(state_value mounts)" '[]'

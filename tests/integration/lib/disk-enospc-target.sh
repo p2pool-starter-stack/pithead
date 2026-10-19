@@ -36,7 +36,6 @@ wait_db() {
 cleanup() {
     local rc=$? current restored=0
     trap - EXIT
-    trap '' HUP INT TERM
     if [ "$attempted" = 1 ]; then
         current=$(mount_row) || current=""
         if is_owned "$current" && { [ -z "$owned" ] || [ "$current" = "$owned" ]; }; then
@@ -63,7 +62,6 @@ cleanup() {
     exit "$rc"
 }
 trap cleanup EXIT
-trap 'exit 1' HUP INT TERM
 attempted=1
 mount_rc=0
 timeout -k 5 15 sudo -n mount -t tmpfs -o size=1m,uid=1000,gid=1000 "$identity" "$ddir" || mount_rc=$?

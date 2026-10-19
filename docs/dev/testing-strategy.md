@@ -815,6 +815,8 @@ tier 3/4:
   automatic backup restoration, and retains the safety archive for operator recovery.
   `selftest-enospc-cleanup.sh` covers underlying mounts, refused and
   ambiguous mounts, foreign mounts, failed cleanup, interrupted faults and failed recovery.
+  Interruption controls signal isolated target process groups and require the signal exit status
+  after ownership-checked cleanup; production uses an EXIT-only trap.
   SIGKILL and host power loss cannot run shell cleanup; they require baseline recovery.
 - **Tor-container-down partial start.** ✅ Now a tier-4 `--fault-injection` case (#563, TOP PRIVACY
   PRIORITY): `docker compose stop tor` and assert BOTH no clearnet egress leak appears (reuses
