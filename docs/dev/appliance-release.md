@@ -412,7 +412,10 @@ perform an operator-initiated rollback from a good version and confirm it return
 
 **M10 — power-loss during normal mining.** Cut power at the wall with the stack running
 and synced, then restore it and **do not touch the machine**. Expected: it powers on by
-itself, the chain is intact, and mining resumes.
+itself, the chain is intact, and mining resumes. The KVM `rig` phase tests the mining
+recovery with reserved remote nodes: after an unclean coordinator power cut, both the
+built-in miner and the attached rig must advance accepted counters on the new boot.
+The `provision` phase separately checks stack and chain persistence after three cuts.
 
 The "by itself" half is the part that gets skipped, and it is the half that matters for an
 unattended miner. It depends on a firmware setting — Restore on AC Power Loss, or whatever

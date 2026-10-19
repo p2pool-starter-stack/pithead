@@ -53,6 +53,53 @@ _rig_share_abort() {
 # accepted-counter checks below, none of which can trust jq to have produced a clean number.
 _gt0() { [ "${1:-0}" -gt 0 ] 2>/dev/null; }
 
+_rig_share_power_cut() (
+    local VM="$coord_vm" DISK="$coord_disk" SERIAL="$coord_serial" ip="$coord_ip"
+    local before deadline st counts rig_count own_count rig_base="" own_base=""
+    before=$(_boot_id) && [ -n "$before" ] || {
+        bad "M10 mining: cannot read the coordinator boot id before cutting power"
+        return 1
+    }
+    virsh destroy "$VM" >/dev/null 2>&1 || {
+        bad "M10 mining: could not cut power to the mining coordinator"
+        return 1
+    }
+    sleep 3
+    virsh start "$VM" >/dev/null 2>&1 || {
+        bad "M10 mining: could not restore power to the mining coordinator"
+        return 1
+    }
+    _wait_new_boot "$before" 300 || {
+        bad "M10 mining: the coordinator did not reach a new boot after the power cut"
+        return 1
+    }
+    ok "M10 mining: the coordinator reached a new boot after an unclean power cut"
+    deadline=$(($(date +%s) + RIG_SHARE_WINDOW_SEC))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        st=$(curl -fsSk -u "$coord_user:$coord_pass" -m 10 "https://$ip/api/state" 2>/dev/null) || st=""
+        counts=$(printf '%s' "$st" | jq -er '
+            [.workers[]? | select(.name == "kvm-rig-share") | .accepted] as $rig |
+            [.workers[]? | select(.name != "kvm-rig-share") | .accepted] as $own |
+            select(($rig | length) == 1 and ($own | length) == 1) |
+            ($rig + $own) as $counts |
+            select(all($counts[]; type == "number" and . >= 0 and . == floor)) |
+            $counts | @tsv' 2>/dev/null) || counts=""
+        if [ -n "$counts" ]; then
+            read -r rig_count own_count <<<"$counts"
+            if [ -z "$rig_base" ] || [ "$rig_count" -lt "$rig_base" ]; then rig_base="$rig_count"; fi
+            if [ -z "$own_base" ] || [ "$own_count" -lt "$own_base" ]; then own_base="$own_count"; fi
+            if [ "$rig_count" -gt "$rig_base" ] && [ "$own_count" -gt "$own_base" ]; then
+                ok "M10 mining: the rig's accepted counter advances after the coordinator power cut ($rig_base -> $rig_count)"
+                ok "M10 mining: the built-in miner's accepted counter advances after the coordinator power cut ($own_base -> $own_count)"
+                return 0
+            fi
+        fi
+        sleep 15
+    done
+    bad "M10 mining: both accepted counters did not advance within ${RIG_SHARE_WINDOW_SEC}s after the coordinator power cut"
+    return 1
+)
+
 # $1 already-built image (the rig's own v1), $2-$8 the remote-node inputs phase_rig read off the
 # env (mh rpc zmq mu mp th grpc), $9 the rig's own ip (so it can be restored — the coordinator boot
 # below overwrites the global $ip).
@@ -131,5 +178,7 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
         bad "share leg: the coordinator's own built-in miner never showed an accepted share within ${RIG_SHARE_WINDOW_SEC}s"
     fi
 
+    _gt0 "$rig_accepted" && _gt0 "$other_accepted" || _rig_share_abort || return 1
+    _rig_share_power_cut || _rig_share_abort || return 1
     _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
 }
