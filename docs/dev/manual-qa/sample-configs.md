@@ -170,7 +170,9 @@ On the second machine, use this complete file:
 ## Broken configs
 
 Step 6.5 works through every row of this table; 10.7 and 13.24 point back at it. The last row
-is the onion-without-login refusal that 10.7 names.
+is the onion-without-login refusal that 10.7 names. Tier 1 reads this table and the four
+samples directly: it validates the samples with fixture credentials and checks each refusal,
+unchanged `.env`, and absence of `compose up`.
 
 **What you do:**
 
@@ -198,7 +200,7 @@ For every row:
 
 | Change | The message contains |
 |---|---|
-| Delete one closing `}` | A refusal saying the configuration is not valid JSON (for example `Invalid configuration: not valid JSON.`) |
+| Delete one closing `}` | `Invalid configuration: not valid JSON.` |
 | Set `monero.wallet_address` to the QA **subaddress** (starts with `8`) | `is a SUBADDRESS (starts with 8)` |
 | Swap two different neighbouring characters in the middle of `monero.wallet_address` | `fails its checksum` |
 | Swap two different neighbouring characters in the middle of `tari.wallet_address` | `tari.wallet_address fails its checksum` |
@@ -210,10 +212,10 @@ For every row:
 | Set `dashboard.auth.password` to `"short"` | `dashboard.auth.password must be 8–128 printable characters` |
 | Set `dashboard.onion.enabled` to `true` and the password to `"fifteen-chars-x"` (15 characters) | `must be at least 16 characters when dashboard.onion.enabled is true` |
 | Set `dashboard.onion.enabled` to `true` and the password to `"changeme-but-longer"` | `contains a well-known weak pattern` |
-| Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | A refusal that names the duplicated key and says where it is, for example `duplicate key "p2pool" at the top level` |
-| Add a second `"wallet_address"` line inside the `monero` block | A refusal that names `monero.wallet_address` as a duplicated key |
-| Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"` | A refusal that names `dashboard.auth.password` as a placeholder and does not print the value |
-| Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case) | A refusal that names `telegram.bot_token` as a placeholder |
+| Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | `duplicate key "p2pool" at the top level (path p2pool)` |
+| Add a second `"wallet_address"` line inside the `monero` block | `duplicate key "wallet_address" at monero (path monero.wallet_address)` |
+| Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"` | `placeholder value at dashboard.auth.password` (without the value) |
+| Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case) | `placeholder value at telegram.bot_token` |
 | Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block | `dashboard.onion.enabled is true but dashboard.auth.password is empty` |
 
 **Record:** under step 6.5 in the results sheet: PASS when every row matches, FAIL with the row

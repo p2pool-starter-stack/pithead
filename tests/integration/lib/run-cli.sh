@@ -39,9 +39,9 @@ MATRIX:
                          box's baseline is full)
   --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
                          baseline is pruned)
-  --lifecycle            also run the lifecycle phase (restart, apply secret-preservation,
-                         and the #255 ensure_owner migration: a root-owned file under a data
-                         dir must be chowned to the container uid by apply)
+  --lifecycle            run restart, apply, ownership migration, live support-bundle, reset
+                         and uninstall checks. Automatically enables --safety-backup before
+                         scenarios so fixture credentials can be restored exactly.
   --safety-backup        take a `pithead backup` BEFORE the destructive scenarios; if anything
                          fails, automatically roll the box back to it (down → restore → up).
                          The archive is removed on success. Recommended for the destructive
@@ -237,7 +237,7 @@ parse_args() {
             shift 2
             ;;
         --lifecycle)
-            RUN_LIFECYCLE=1
+            RUN_LIFECYCLE=1 SAFETY_BACKUP=1
             shift
             ;;
         --fault-injection)

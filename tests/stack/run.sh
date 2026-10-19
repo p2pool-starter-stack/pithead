@@ -37,7 +37,6 @@ stack_verdict() { # <label>: the summary line, and the suite's exit status
     printf '0 failed\n'
     exit 0
 }
-
 if [ "$#" -eq 0 ]; then
     : >"$SANDBOX/block-tally"
     for _b in $(seq 1 "$STACK_BLOCKS"); do
@@ -62,6 +61,10 @@ fi
 STACK_BLOCK="$1"
 in_block() { [ "$1" = "$STACK_BLOCK" ]; }
 if in_block 1; then
+    bash "$HERE/test_clearnet_messages.sh"
+    assert_rc "clearnet operator message contracts" "$?" 0
+    bash "$HERE/test_checklist.sh"
+    assert_rc "manual checklist refusal contracts" "$?" 0
     bash "$HERE/test_control_audit_order.sh"
     assert_rc "control audit precedes result" "$?" "0"
     # shellcheck source=tests/stack/test-harness-tooling.sh disable=SC2015
@@ -94,7 +97,6 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-sync-progress-hold.sh" && domain_ran test-sync-progress-hold.sh "$_d0" "$?" || domain_ran test-sync-progress-hold.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-onion-apply-password.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-onion-apply-password.sh" && domain_ran test-onion-apply-password.sh "$_d0" "$?" || domain_ran test-onion-apply-password.sh "$_d0" "$?"
-
     # Regression (#1330): test-dashboard-onion.sh passes alone; only a separate `bash`, not a subshell, proves it.
     # shellcheck disable=SC1090,SC2015  # STACK/HERE paths are dynamic by design
     bash -c '
@@ -130,7 +132,6 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-config-document.sh" && domain_ran test-config-document.sh "$_d0" "$?" || domain_ran test-config-document.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-render-quadlet.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-render-quadlet.sh" && domain_ran test-render-quadlet.sh "$_d0" "$?" || domain_ran test-render-quadlet.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/doctor/test-doctor-appliance.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-appliance.sh" && domain_ran test-doctor-appliance.sh "$_d0" "$?" || domain_ran test-doctor-appliance.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-setup.sh disable=SC2015
@@ -153,7 +154,6 @@ if in_block 1; then
     # shellcheck source=tests/stack/test-install-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-install-verify.sh" && domain_ran test-install-verify.sh "$_d0" "$?" || domain_ran test-install-verify.sh "$_d0" "$?"
 fi
-
 if in_block 2; then
     # shellcheck source=tests/stack/secrets/test-secrets.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets.sh" && domain_ran test-secrets.sh "$_d0" "$?" || domain_ran test-secrets.sh "$_d0" "$?"

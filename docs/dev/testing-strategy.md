@@ -314,7 +314,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `rotate-dashboard-onion` | covered | DIY `--rotate-onion`: isolated fixture, real Tor reachability, old-address retirement, and identity restoration |
 | `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
 | `config-reset` | covered | KVM (appliance-only verb, `--phase reset` leg 0) |
-| `support-bundle` | missing | #2342 — the verb itself never runs live (`diag-logs`/`diag-doctor` exercise the log redactor, not `support-bundle`); its `.env` redactor was a denylist with real gaps until #1631's survivor-allowlist inversion |
+| `support-bundle` | covered | DIY `lifecycle` applies dashboard, stratum and disabled Telegram credentials, runs the verb against the live stack, checks mode 600, diagnostic members, masked config and live log tails, scans every member for the three credentials, then verifies exact safety restoration (#3081). The `.env` survivor allowlist is tested separately. |
 | `render-quadlet` | missing | #1217 — the podman/quadlet render has no live run anywhere |
 | `test-alert` | by-design | deliberately deferred — real notification sinks; wire-level coverage is #2263 |
 | `logs` | by-design | a passthrough verb; tier 1 is the honest ceiling |

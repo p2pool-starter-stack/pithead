@@ -220,12 +220,12 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
+    run_support_bundle || return 1
     run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
     [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
     [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
     [ "$lifecycle_ok$reset_failed" = 10 ]
 }
-
 # A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
 # every regular file up to 64 MiB, and for a larger one (the chains' LMDB files, hundreds of GiB
 # on a synced box, an hour per hashing pass) its inode, size, mtime and ctime to the nanosecond.
