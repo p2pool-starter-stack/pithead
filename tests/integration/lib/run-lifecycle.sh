@@ -37,7 +37,7 @@ run_lifecycle() {
             lifecycle_gate_sample after-image-up
             assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
             # The failing pull or up names its cause; job 1280 lost it to /dev/null (#2755).
-            [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
+            [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | redact | sed 's/^/        /'
             [ "$up_rc" -eq 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
             rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
             assert_rc "up fetched the missing pinned image (#2654)" "$?" "0"
@@ -334,8 +334,8 @@ run_uninstall_round_trip() {
     out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
     rc=$?
     assert_rc "setup after uninstall succeeded" "$rc" "0"
+    [ "$rc" -eq 0 ] || printf '%s\n' "$out" | redact | sed 's/^/        /'
     rr_web_ports_owned_by_dashboard "setup after uninstall" || return 1
-    [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -n 15 | redact | sed 's/^/        /'
     if wait_status_ok 600; then
         it_pass "status OK after setup-after-uninstall"
     else
