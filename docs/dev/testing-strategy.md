@@ -43,6 +43,13 @@ slow-primary and HTTP-error recovery, checksum rejection on both sources, bounde
 HTTPS downgrade refusal and Dockerfile wiring. It needs curl, OpenSSL and sha256sum, without
 Docker or public-network access. The Dockerfile still requires the current-head tier-4 proof below.
 
+The standalone [Monero LMDB tools](lmdb-tools.md) workflow compiles the pinned
+Monero LMDB copy/stat utilities and verifies ordinary and compact copies against
+a separate reader while a disposable writer advances. It retains source/build
+provenance, digests and the generation observations in the CI archive. Builder
+input and extraction tests run in `make test-tools`; no active chain or service
+is used, and this workflow does not establish real-chain capture acceptance.
+
 The fakes are the enabler. The whole control plane is env-configurable (`MONERO_RPC_URL`,
 `TARI_GRPC_ADDRESS`, `DOCKER_CONTROL_URL`, `NODE_DOWN_AFTER_SEC`, `UPDATE_INTERVAL`, …), so the
 real code points at small controllable servers and drives the entire state machine in seconds, in

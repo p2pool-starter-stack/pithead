@@ -57,6 +57,7 @@ test-integration-selftest: pithead ## Integration harness logic and local transp
 	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
 
 test-tools: ## Build-tool contracts and CI workflow guards (no live services)
+	python3 tests/tools/test_lmdb_build.py
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
