@@ -22,6 +22,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         OUT_DIR="$(mktemp -d)"
         trap 'rm -rf "$OUT_DIR"' EXIT
         TRACE="$OUT_DIR/trace"
+        printf '%s' "${4:-$BASELINE_CONFIG}" >"$OUT_DIR/current-config"
         : >"$TRACE"
         it_log() { :; }
         it_step() { :; }
@@ -29,13 +30,18 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         it_skip_leg() { :; }
         # Treat any unexpected phase failure as a failed driver, not a hidden diagnostic.
         it_fail() { printf 'failure:%s\n' "$1" >>"$TRACE"; }
-        pithead() { :; }
+        pithead() {
+            [ "${POOL_APPLY_FAIL:-}:$1" != 1:apply ] || return 1
+            [ "$1" != apply ] || cp "$OUT_DIR/pending-config" "$OUT_DIR/current-config"
+        }
         wait_status_ok() { :; }
         wait_monero_synced() { :; }
         secret_fingerprint() { printf 'test-fingerprint'; }
         upgrade_secret_fingerprints() { printf 'test-fingerprint'; }
-        env_on_box() { :; }
-        has_compose_profile() { return 1; }
+        env_on_box() {
+            [ "${POOL_APPLY_FAIL:-}" != 1 ] || printf '%s' "$OUT_DIR/owner"
+        }
+        has_compose_profile() { [ "${POOL_APPLY_FAIL:-}" = 1 ]; }
         run_cli_wizard_defaults() { :; }
         lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
@@ -49,15 +55,29 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         restore_firewall_after_clearnet() { :; }
         assert_rc() { :; }
         assert_eq() { :; }
-        wait_for() { :; }
+        wait_for() {
+            shift 3
+            [ "$1" != lifecycle_pool_flags_match ] || "$@"
+        }
         api_state() { printf '{"pool":{"type":"Main"}}'; }
         rx() {
             case "$1" in
+            jq*) jq -er '.p2pool.pool // "mini"' "$OUT_DIR/current-config" ;;
+            "grep -qE "*) return 0 ;;
+            "grep -E '^P2POOL_FLAGS='"*)
+                case "$(jq -r '.p2pool.pool // "mini"' "$OUT_DIR/current-config")" in
+                mini) printf '%s' '--mini' ;;
+                nano) printf '%s' '--nano' ;;
+                main) printf '%s' '--host fixture' ;;
+                esac
+                ;;
             'test -f dashboard/Dockerfile') return 1 ;;
+            "sudo rm -f "*) printf 'owner-probe-cleaned\n' >>"$TRACE" ;;
             ls*) printf 'backups/test.tar.gz' ;;
             esac
         }
         push_config() {
+            printf '%s' "$1" >"$OUT_DIR/pending-config"
             printf 'push:%s\n' "$(jq_get "$1" '.p2pool.pool')" >>"$TRACE"
         }
         wait_pool_ready() { printf 'ready:%s:%s\n' "$1" "$2" >>"$TRACE"; }
@@ -86,6 +106,16 @@ for case_name in omitted empty-section main mini nano; do
         "$(printf 'push:%s\nswitch:pool actually changed:%s\npush:%s\nswitch:restore reverts the pool to the backed-up value:Main' \
             "$alternate" "$(pool_label "$alternate")" "$alternate")"
 done
+
+assert_eq "lifecycle switches from the preceding Main scenario rather than its saved Mini baseline" \
+    "$(drive_pool lifecycle '{"p2pool":{"pool":"mini"}}' '' '{"p2pool":{"pool":"main"}}')" \
+    "$(printf 'push:mini\nswitch:pool actually changed:Mini\npush:mini\nswitch:restore reverts the pool to the backed-up value:Main')"
+assert_eq "lifecycle switches from a sparse Mini scenario rather than its saved Main baseline" \
+    "$(drive_pool lifecycle '{"p2pool":{"pool":"main"}}' '' '{}')" \
+    "$(printf 'push:main\nswitch:pool actually changed:Main\npush:main\nswitch:restore reverts the pool to the backed-up value:Main')"
+assert_eq "a failed pool apply removes the ownership probe before stopping lifecycle" \
+    "$(POOL_APPLY_FAIL=1 drive_pool lifecycle '{"p2pool":{"pool":"mini"}}')" \
+    "$(printf 'push:main\nfailure:pool change apply returned healthy\nowner-probe-cleaned')"
 
 for pool in main mini nano; do
     assert_eq "scenario override selects $pool from a sparse baseline" \

@@ -62,6 +62,12 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
         run_tari_background_sync() { :; } # driven by its own runtime leg and selftest
+        lifecycle_pool_start() { printf main; }
+        lifecycle_pool_apply() {
+            push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$1")"
+            pithead apply -y >/dev/null 2>&1
+            wait_status_ok 180 || true
+        }
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;

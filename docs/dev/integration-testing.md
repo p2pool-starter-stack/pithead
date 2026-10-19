@@ -848,9 +848,12 @@ For one representative config:
   The restore must also return every wallet, proxy, dashboard, RPC, and onion secret category
   exactly, the same per-category comparison a safety rollback makes.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
-  secrets; the dashboard reflects the new pool; then it's reverted. An omitted
-  `p2pool.pool` means mini, so the alternate is main. Explicit main and nano baselines
-  switch to mini; an explicit mini baseline switches to main.
+  secrets; the dashboard reflects the new pool; then it's reverted. The starting pool
+  comes from the deployed config after the preceding scenario and lifecycle probes,
+  checked against its rendered flags. An omitted `p2pool.pool` means mini, so the
+  alternate is main. Active main and nano pools switch to mini; active mini switches
+  to main. The apply must return healthy and render the alternate flags before the
+  transition passes; dashboard classification retains its bounded peer-lag verdict.
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
   stop `monerod` → `status` returns non-zero (node down) and the dashboard rejects workers
   (stops `xmrig-proxy`) → start `monerod` → workers readmitted → `status` → `0`.

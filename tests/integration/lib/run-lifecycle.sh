@@ -4,6 +4,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tari-background-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
+# shellcheck source=tests/integration/lib/lifecycle-pool.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lifecycle-pool.sh" || exit $?
 run_lifecycle() {
     IT_CURRENT_SCENARIO="lifecycle"
     local lifecycle_ok=1 reset_failed=0 # reset_failed: 1 changed state, 2 left the stack intact (#3342)
@@ -58,16 +60,14 @@ run_lifecycle() {
     fi
     run_source_image_reconcile || return 1
     run_tari_background_sync || return 1
-    local cur_pool fp_before other
-    cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
-    cur_pool="${cur_pool:-mini}"
+    local cur_pool fp_before other pool_apply_ok=1
+    cur_pool="$(lifecycle_pool_start)" || {
+        it_fail "pool change starting sidechain established" "config or rendered flags unreadable or inconsistent"
+        return 1
+    }
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
     fp_before="$(secret_fingerprint)"
-    # ensure_owner whole-tree migration (#255): plant a root-owned file UNDER a data dir (the
-    # root-container-era signature — user-owned dir, root-owned contents) and prove this apply chowns
-    # it to the container uid, the exact regression MEMORY flags ("scan contents, not just the dir").
-    # Piggybacks the pool-flip apply below, which always runs ensure_directories -> ensure_owner.
-    # Local mode only (has data dirs); a stub can't create a foreign-uid inode, so this is tier-4.
+    # The pool apply must migrate root-owned contents left by older containers.
     local own_dir own_probe=""
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         own_dir="$(env_on_box DASHBOARD_DATA_DIR)"
@@ -77,10 +77,8 @@ run_lifecycle() {
             rx "sudo touch $(quote_arg "$own_probe") && sudo chown 0:0 $(quote_arg "$own_probe")" >/dev/null 2>&1
         fi
     fi
-    push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")"
     it_step "apply pool $cur_pool -> ${other}…"
-    pithead apply -y >/dev/null 2>&1
-    wait_status_ok 180 || true
+    lifecycle_pool_apply "$other" || pool_apply_ok=0
     assert_eq "secrets preserved across pool change" "$(secret_fingerprint)" "$fp_before"
     # APP_UID is 1000 in pithead; the migrated contents must now be owned by it, not root.
     if [ -n "$own_probe" ]; then
@@ -88,6 +86,8 @@ run_lifecycle() {
             "$(rx "stat -c %u $(quote_arg "$own_probe") 2>/dev/null")" "1000"
         rx "sudo rm -f $(quote_arg "$own_probe")" >/dev/null 2>&1 || true
     fi
+    [ "$pool_apply_ok" = 1 ] || return 1
+    it_pass "effective pool changed ($cur_pool -> $other)"
     # .pool.type lags a sidechain switch until peers on the new chain connect — wait + three-way
     # verdict, don't assert cold on a peer-timing state (#54, #687).
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
