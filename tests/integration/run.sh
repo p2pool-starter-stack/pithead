@@ -54,6 +54,8 @@ CHECK_ONLY=0
 READINESS=0
 RUN_LIFECYCLE=0
 RUN_FAULTS=0
+FAULT_SSH=0
+FAULT_SSH_DEST=""
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
 RUN_ROTATE_ONION=0
@@ -280,7 +282,7 @@ main() {
         # does not run is named in the summary, never dropped silently (#2755).
         # A lifecycle row that failed without disturbing the stack still leaves faults a healthy one.
         if [ "$lifecycle_ok" = 1 ] || [ "$LIFECYCLE_STACK_INTACT" = 1 ]; then
-            run_fault_injection
+            run_fault_injection_maybe
         else
             it_skip_phase "fault-injection" "the lifecycle phase failed, so there is no healthy stack to inject faults into (#2501)"
         fi

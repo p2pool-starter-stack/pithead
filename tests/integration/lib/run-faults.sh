@@ -362,6 +362,16 @@ run_fault_injection() {
     wait_status_ok 240 || true
 }
 
+# Keep the parent rig lock and other phases on their original transport.
+run_fault_injection_maybe() {
+    if [ "$FAULT_SSH" != "1" ]; then
+        run_fault_injection
+        return
+    fi
+    local IT_MODE="ssh" IT_SSH_DEST="$FAULT_SSH_DEST"
+    run_fault_injection
+}
+
 # --- Fail-closed auth phase (--auth-fail-closed) ----------------------------
 # Live counterpart to the tier-1 compose-config assertion (tests/stack/standalone/test_compose.sh): prove the
 # DEPLOY path — not just `docker compose config` — refuses to start an unauthenticated xmrig-proxy

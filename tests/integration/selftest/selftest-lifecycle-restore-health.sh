@@ -234,6 +234,7 @@ drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
             return "$lifecycle_rc"
         }
         run_fault_injection() { fault_ran=yes; }
+        run_fault_injection_maybe() { run_fault_injection; }
         it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
         gate() { eval "$MAIN_SRC"; }
         gate >/dev/null 2>&1 || true
