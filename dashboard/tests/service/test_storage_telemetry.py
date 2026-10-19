@@ -360,6 +360,8 @@ class TestTelemetryTableHealth:
         assert state_manager.get_table_health()["blocks"] == {"healthy": False, "last_write": t0}
 
     def test_a_failed_recovery_reads_unhealthy(self, state_manager, monkeypatch):
+        original_connect = sqlite3.connect
+
         # The production path #1615 reports, rather than close(): _recover_corrupt_db's reconnect
         # raises, `_conn` stays None for good, and every telemetry write is dropped from then on.
         def boom(*_a, **_kw):
@@ -372,6 +374,7 @@ class TestTelemetryTableHealth:
         assert state_manager.is_db_unrecoverable() is True
         state_manager.add_block(time.time(), height=1, difficulty=1.0)
         assert state_manager.get_table_health()["blocks"]["healthy"] is False
+        assert sqlite3.connect is original_connect
 
 
 class TestTelemetryTablesAfterClose:
