@@ -215,16 +215,11 @@ restore_all() {
     # 1. Miner: put its original pool config back and nudge xmrig to reconnect.
     if [ -n "$MINER_CFG_BACKUP" ]; then
         step "restoring $MINER_HOST xmrig config from $MINER_CFG_BACKUP"
-        # cmp, then rm (#1067). Every borrowing run minted a timestamped .e2e-orig.<stamp> and
-        # nothing ever removed it, so the loaner accumulated them and recovery became a guess among
-        # candidates where the newest is not necessarily the true pre-borrow state. The backup is
-        # only safe to delete once the bytes are demonstrably back in place, and the proof runs in
-        # the SAME remote call so a dropped ssh cannot land between proving and deleting.
-        # Deliberately NOT gated on miner_reload: restoring and proving the config bytes is still
-        # required if every reload mechanism fails. The caller keeps the backup until that byte
-        # proof succeeds; miner_reload's status only gates forward test progress.
-        if on_miner "cp -a '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && cmp -s '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && rm -f '$MINER_CFG_BACKUP'"; then
-            miner_reload
+        if restore_miner_config "$MINER_CFG_BACKUP"; then
+            if [ -n "${MINER_ROTATE_CFG_BACKUP:-}" ]; then
+                on_miner "rm -f '$MINER_ROTATE_CFG_BACKUP'" || warn "restored miner config but retained its temporary stratum backup for operator repair."
+                MINER_ROTATE_CFG_BACKUP=""
+            fi
             ok "$MINER_HOST repointed to its original pool(s); backup pruned"
             # Belt-and-braces (#1178): the backup predates the tag, so a straight cp/cmp restore has
             # no way to know whether a rig-id=pithead-e2e pool is in it. Should always be a no-op —
@@ -238,7 +233,8 @@ restore_all() {
                     miner_reload
             fi
         else
-            warn "FAILED to restore $MINER_HOST config — the backup should still be at $MINER_CFG_BACKUP, but check: if the connection dropped after the prune, it is already gone and the live config is the restored one."
+            warn "Miner config or service restoration unverified; retain the reservation and $MINER_CFG_BACKUP for operator recovery."
+            RESTORE_PROOF_FAILED=1
         fi
     fi
     # 2. Stack: converge the LIVE baseline over the branch with no `pithead down` (#2639), so Compose
@@ -327,10 +323,7 @@ wait_bench_healthy() { # <timeout_s>
         sleep 10
     done
 }
-# After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
-# tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
-# measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
-# so its bounded Tari readiness row has a synced chain before it starts.
+# Tari rebuilds its Tor circuits after a deploy (>18min, #2455), so the readiness row waits for a synced chain.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st refusal="destructive phases"
     [ "${2:-}" = restore ] && refusal="baseline proof"
@@ -342,6 +335,7 @@ wait_synced() { # <timeout_s>
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
             warn "sync panels still '$st' after $((${1:-300}))s — $refusal refused"
+            [ -n "${2:-}" ] || case "$st" in */loading | */syncing) e2e_env tari-not-done ;; esac
             return 1
         }
         sleep 8
@@ -417,7 +411,7 @@ preflight() {
         warn "--skip-preflight: not checking the bench chains are synced."
     else
         local sync_line mst mheights tst theights
-        if wait_synced 120; then
+        if wait_synced 120 preflight; then
             ok "bench chains synced (monero done, tari done)"
         else
             sync_line="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '$E2E_SYNC_SUMMARY_JQ' 2>/dev/null" || true)"
@@ -425,6 +419,7 @@ preflight() {
             read -r mst mheights tst theights <<<"$sync_line"
             warn "monero: $mst (current/target $mheights)"
             warn "tari:   $tst (current/target $theights)"
+            e2e_env chains-behind
             die "Bench chains are not at tip — the required-sync assertions would fail on the environment, not the branch (#914). Let the bench catch up, or pass --skip-preflight to run anyway."
         fi
     fi
@@ -435,8 +430,7 @@ preflight() {
         # Loaner-rig lock (#430/rigforge#183): the borrow repoints (and may restart) the rig's
         # xmrig, so claim the rig's EXCLUSIVE flock now — before anything is mutated — and hold it
         # until this process dies. rigforge's gates on the same rig refuse (exit 75, holder named)
-        # instead of colliding mid-borrow, and a busy rig fails us fast, before the bench is
-        # touched. The kernel releases the lock on exit, AFTER the EXIT-trap restore has run.
+        # instead of colliding mid-borrow, and a busy rig fails us fast, before the bench is touched.
         parent_lock_miner_borrow || die "Miner lock is not continuous."
     fi
 }
@@ -638,11 +632,8 @@ run_harness() {
     # Poll the done-marker, printing a heartbeat tail of the log.
     local rc="" waited=0
     while :; do
-        if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test ! -f '$rearm_ack'"; then
-            step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
-            repoint_miner || die "Failed to reapply the borrowed-pool fixture."
-            wait_workers "$WORKERS" 180 || die "Borrowed miner did not reconnect after pool re-arm."
-            printf '%s' "$rearm_id" | on_bench "cat > '$rearm_ack'" || die "Failed to acknowledge the borrowed-pool fixture."
+        if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test \"\$(cat '$rearm_request')\" != \"\$(cat '$rearm_ack' 2>/dev/null)\""; then
+            handle_borrow_rearm "$rearm_request" "$rearm_ack" "$rearm_id" || die "Failed to apply a borrowed-miner handshake request; reservation retained for operator repair."
         fi
         if on_bench "test -f '$E2E_DIR/results/e2e-harness.done'"; then
             rc="$(on_bench "cat '$E2E_DIR/results/e2e-harness.done'")"
@@ -652,7 +643,7 @@ run_harness() {
         sleep 20
         waited=$((waited + 20))
         step "harness running… ${waited}s — latest:"
-        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/      /' || true
+        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed '/e2e-env:/d; s/^/      /' || true
     done
 
     echo ""

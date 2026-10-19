@@ -13,28 +13,38 @@ MM_FIXTURE_STARTUP=""
 MM_FIXTURE_RECENT=""
 MM_FIXTURE_SYNCED=0
 MM_FIXTURE_RECENT_RC=0
-MM_FIXTURE_TRACE=$(mktemp)
-trap 'rm -f "$MM_FIXTURE_TRACE"' EXIT
+MM_READY_TIMEOUT=0 MM_READY_INTERVAL=0
+MM_FIXTURE_DIR=$(mktemp -d)
+MM_FIXTURE_TRACE="$MM_FIXTURE_DIR/trace"
+trap 'rm -rf "$MM_FIXTURE_DIR"' EXIT
+mkdir "$MM_FIXTURE_DIR/bin"
+printf '%s\n' '#!/usr/bin/env bash' 'shift' 'exec "$@"' >"$MM_FIXTURE_DIR/bin/timeout"
 # Fake Docker, not the filters, so the real awk must cut the secret-bearing oldest line to its timestamp.
-docker() {
-    case "$1" in
-    inspect) printf '%s\n' "$MM_FIXTURE_START" ;;
-    logs) printf '%s wallet=fixture-secret\n' "$MM_FIXTURE_OLDEST" >&2 ;;
-    compose)
-        if [[ " $* " == *" --since 60s "* ]]; then
-            printf '%s\n' "$MM_FIXTURE_RECENT"
-            return "$MM_FIXTURE_RECENT_RC"
-        fi
-        printf '%s\n' "$MM_FIXTURE_STARTUP"
-        ;;
-    *) return 1 ;;
+cat >"$MM_FIXTURE_DIR/bin/docker" <<'MM_DOCKER'
+#!/usr/bin/env bash
+case "$1" in
+inspect)
+    case "$*" in
+    *.Id*) printf 'fixture-id|%s\n' "$MM_FIXTURE_START" ;;
+    *) printf '%s\n' "$MM_FIXTURE_START" ;;
     esac
-}
-export -f docker
+    ;;
+logs) printf '%s wallet=fixture-secret\n' "$MM_FIXTURE_OLDEST" >&2 ;;
+compose)
+    if [[ " $* " == *" --since 60s "* ]]; then
+        printf '%s\n' "$MM_FIXTURE_RECENT"
+        exit "$MM_FIXTURE_RECENT_RC"
+    fi
+    printf '%s\n' "$MM_FIXTURE_STARTUP"
+    ;;
+*) exit 1 ;;
+esac
+MM_DOCKER
+chmod +x "$MM_FIXTURE_DIR/bin/timeout" "$MM_FIXTURE_DIR/bin/docker"
 rx() {
     printf '%s\n' "$1" >>"$MM_FIXTURE_TRACE"
     export MM_FIXTURE_START MM_FIXTURE_OLDEST MM_FIXTURE_STARTUP MM_FIXTURE_RECENT MM_FIXTURE_RECENT_RC
-    bash -c "$1"
+    PATH="$MM_FIXTURE_DIR/bin:$PATH" bash -c "$1"
 }
 monero_caught_up() { return "$MM_FIXTURE_SYNCED"; }
 mm_outcome() {

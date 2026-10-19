@@ -46,16 +46,14 @@
 # always reports "absent" looks identical to a working one right up to the moment it matters.
 # Strip the escapes first, then match. The self-test carries the fired negative control.
 #
-# THE SIGNAL IS STARTUP-ONLY. The three lines land within ~17.5s of the container's start — at
-# positions 68/69/71 of a log that had reached 83,070 lines after 30h (ONE sample, live stack,
-# 2026-08-30). `--tail 200` cannot contain them on a container that has been up minutes, so this
-# read is bounded by the container's own StartedAt and a head window, never by a tail.
+# The signal belongs to one startup epoch, and prerequisite retries can delay it past any head cap.
 
-# The startup window, in lines. The observed maximum position is 71 (one sample), so 2000 is
-# ~28x headroom while still being two orders below a day-old log — "startup" stays a real bound
-# rather than a name. It is a CEILING, not a cost: `head` closes the pipe, and only the matching
-# lines ever cross the wire.
-MM_WINDOW_LINES=2000
+MM_READY_TIMEOUT=120
+MM_READY_INTERVAL=2
+MM_CAPTURE_LINES=200
+MM_CAPTURE_LINE_BYTES=2048
+MM_RECENT_LINES=2000
+MM_LOG_READ_TIMEOUT=15
 
 # Strip SGR escape sequences. PURE.
 # The ESC byte is written with bash ANSI-C quoting rather than a `\x1b` inside the sed script,
@@ -101,9 +99,23 @@ mm_roundtrip_verdict() {
 # RFC 3339 with its offset, so the bound names the same instant on both engines.
 mm_started() {
     local started
-    started="$(rx "docker inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')"
+    started="$(rx "timeout ${MM_LOG_READ_TIMEOUT} docker inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null)" || return 1
+    started="$(printf '%s' "$started" | tr -d '\r')"
     [ -n "$started" ] || return 1
     printf '%s\n' "$started" | mm_rfc3339
+}
+
+# The container ID guards against a replacement that reuses StartedAt at the engine's precision.
+mm_epoch() {
+    local raw id started
+    raw="$(rx "timeout ${MM_LOG_READ_TIMEOUT} docker inspect p2pool --format '{{.Id}}|{{.State.StartedAt}}'" 2>/dev/null)" || return 1
+    raw="$(printf '%s' "$raw" | tr -d '\r')"
+    id="${raw%%|*}"
+    started="${raw#*|}"
+    [ "$started" != "$raw" ] || return 1
+    started="$(printf '%s\n' "$started" | mm_rfc3339)"
+    [ -n "$id" ] && [ -n "$started" ] || return 1
+    printf '%s|%s\n' "$id" "$started"
 }
 
 # stdin: a `.State.StartedAt`; stdout: the same instant as RFC 3339 (podman's form rewritten, Docker's
@@ -118,16 +130,59 @@ mm_rfc3339() {
 #                        p2pool in place, and the log then still carries the old startup's
 #                        chain_id line — which would satisfy this assertion while the live client
 #                        never reached Tari. StartedAt moves with the restart; the log does not.
-#   head -n <window>     keeps this a startup read rather than a whole-log scan.
+#   target-side filter  transfers a bounded tail of allowlisted lines plus the newest chain_id.
 #
 # `docker inspect` is used with --format naming ONE field. Unformatted, it prints `.Args`, which
 # on this stack carries both wallet addresses, the RPC credential and the onion address; the same
 # is true of the p2pool log's own argv line. Only lines matching MergeMiningClientTari cross the
 # wire, so none of that is transferred here (#1582/#1585/#1586).
-mm_capture_startup() {
-    local started
-    started="$(mm_started)" || return 1
-    rx "docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | head -n ${MM_WINDOW_LINES} | grep -a MergeMiningClientTari || true" 2>/dev/null
+mm_capture_startup() { # [expected StartedAt]
+    local started raw log_rc command
+    started="${1:-$(mm_started)}"
+    [ -n "$started" ] || return 1
+    # The chain_id line is kept apart so chatter cannot evict it, and `cut` bounds a hostile line's length.
+    command="timeout ${MM_LOG_READ_TIMEOUT} docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | grep -a MergeMiningClientTari | awk -v n=${MM_CAPTURE_LINES} '/uses chain_id/{chain=\$0} {ring[NR%n]=\$0} END {if(chain!=\"\") print chain; first=(NR<n?1:NR-n+1); for(i=first;i<=NR;i++) print ring[i%n]}' | cut -c 1-${MM_CAPTURE_LINE_BYTES}; printf '\\n__PITHEAD_MM_LOG_RC=%s\\n' \"\${PIPESTATUS[0]}\""
+    raw="$(rx "bash -c $(quote_arg "$command")" 2>/dev/null)" || return 2
+    log_rc="$(printf '%s\n' "$raw" | sed -n 's/^__PITHEAD_MM_LOG_RC=//p' | tail -n 1)"
+    [ "$log_rc" = 0 ] || return 2
+    printf '%s\n' "$raw" | sed '/^__PITHEAD_MM_LOG_RC=/d'
+}
+
+# Prints `<verdict>|<epoch>`; returns 0 for a round-trip, 1 at the deadline, 2 on an unreadable epoch or log.
+mm_await_roundtrip() {
+    local deadline epoch after started lines verdict="absent" now
+    epoch="$(mm_epoch)" || {
+        printf 'start-error|\n'
+        return 2
+    }
+    deadline=$(($(now_s) + MM_READY_TIMEOUT))
+    while :; do
+        started="${epoch#*|}"
+        if ! lines="$(mm_capture_startup "$started")"; then
+            printf 'read-error|%s\n' "$epoch"
+            return 2
+        fi
+        after="$(mm_epoch)" || {
+            printf 'start-error|%s\n' "$epoch"
+            return 2
+        }
+        if [ "$after" != "$epoch" ]; then
+            epoch="$after"
+            verdict="epoch-changed"
+        else
+            verdict="$(mm_roundtrip_verdict "$lines")" || true
+            case "$verdict" in roundtrip*)
+                printf '%s|%s\n' "$verdict" "$epoch"
+                return 0
+                ;;
+            esac
+        fi
+        now="$(now_s)"
+        [ "$now" -ge "$deadline" ] && break
+        sleep "$MM_READY_INTERVAL"
+    done
+    printf '%s|%s\n' "$verdict" "$epoch"
+    return 1
 }
 
 # Rotation can drop startup lines, so a first line past a 60 s allowance hints at, never proves, lost evidence.
@@ -161,7 +216,7 @@ MM_TIME
 
 # A local client line cannot prove Tari answered, so lost evidence is judged on a fresh bounded window.
 mm_capture_recent() {
-    rx "docker compose logs --no-color --since 60s p2pool 2>&1 | tail -n ${MM_WINDOW_LINES} | grep -a MergeMiningClientTari || true" 2>/dev/null
+    rx "docker compose logs --no-color --since 60s p2pool 2>&1 | tail -n ${MM_RECENT_LINES} | grep -a MergeMiningClientTari | cut -c 1-${MM_CAPTURE_LINE_BYTES} || true" 2>/dev/null
 }
 
 # Diagnostic lines from the same window, for a FAIL only (#2326). An empty capture cannot say
@@ -178,7 +233,7 @@ mm_startup_excerpt() {
     # shellcheck disable=SC2034  # read by redact_remote_output through dynamic scope
     local REMOTE_NODE_HOSTS=("${REMOTE_MONERO_HOST:-}" "${REMOTE_TARI_HOST:-}")
     started="$(mm_started)" || return 0
-    rx "docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | head -n ${MM_WINDOW_LINES} | grep -aiE '${MM_EXCERPT_KEEP}' | head -n ${MM_EXCERPT_LINES} || true" 2>/dev/null |
+    rx "timeout ${MM_LOG_READ_TIMEOUT} docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | grep -aiE '${MM_EXCERPT_KEEP}' | tail -n ${MM_EXCERPT_LINES} | cut -c 1-${MM_CAPTURE_LINE_BYTES} || true" 2>/dev/null |
         mm_strip_ansi | redact_remote_output | mm_mask_excerpt
 }
 
@@ -228,29 +283,58 @@ mm_mask_excerpt() {
 #
 # Suspected evidence loss without fresh proof is a `missing` skip, never a by-design one.
 assert_mergemine_roundtrip() {
-    local lines verdict excerpt=""
-    if ! lines="$(mm_capture_startup)"; then
-        it_fail "p2pool merge-mining gRPC round-trip (#1397)" "could not read p2pool's container start time"
+    local observed verdict epoch current lines rc=0 excerpt=""
+    observed="$(mm_await_roundtrip)" || rc=$?
+    case "$rc" in
+    2)
+        verdict="${observed%%|*}"
+        it_fail "p2pool merge-mining gRPC round-trip (#1397)" "could not read p2pool's current container epoch or its logs (${verdict})"
         return 0
-    fi
-    if ! mm_roundtrip_verdict "$lines" >/dev/null && mm_startup_lost; then
-        lines="$(mm_capture_recent)" || lines=""
-        if verdict="$(mm_roundtrip_verdict "$lines")"; then
-            it_pass "p2pool reached the Tari node over gRPC — fresh ${verdict} (#1397)"
-        else
+        ;;
+    esac
+    verdict="${observed%%|*}"
+    epoch="${observed#*|}"
+    case "$verdict" in absent | local-only)
+        if mm_startup_lost; then
+            current="$(mm_epoch)" || current=""
+            if [ "$current" = "$epoch" ]; then
+                lines="$(mm_capture_recent)" || lines=""
+                if verdict="$(mm_roundtrip_verdict "$lines")"; then
+                    it_pass "p2pool reached the Tari node over gRPC — fresh ${verdict} (#1397)"
+                else
+                    it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" \
+                        "oldest retained log timestamp is more than 60 seconds after container start; startup evidence may have been lost (conservative heuristic), and no fresh round-trip proof is available" missing
+                fi
+                return 0
+            fi
+        fi
+        ;;
+    esac
+    if [ "$verdict" = absent ] && ! monero_caught_up; then
+        current="$(mm_epoch)" || current=""
+        if [ "$current" = "$epoch" ]; then
             it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" \
-                "oldest retained log timestamp is more than 60 seconds after container start; startup evidence may have been lost (conservative heuristic), and no fresh round-trip proof is available" missing
+                "p2pool built no merge-mining client and monerod could not be confirmed caught up — p2pool constructs the client only after the block-header download succeeds, so the signal cannot exist on this run" by-design
+        else
+            it_fail "p2pool merge-mining gRPC round-trip (#1397)" "p2pool restarted after the absent observation; refusing a stale prerequisite skip from the prior container epoch"
         fi
         return 0
     fi
-    if [ -z "$lines" ] && ! monero_caught_up; then
-        it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" \
-            "p2pool built no merge-mining client and monerod could not be confirmed caught up — p2pool constructs the client only after the block-header download succeeds, so the signal cannot exist on this run" by-design
+    case "$verdict" in roundtrip*)
+        current="$(mm_epoch)" || current=""
+        if [ "$current" != "$epoch" ]; then
+            it_fail "p2pool merge-mining gRPC round-trip (#1397)" "p2pool restarted after the chain_id observation; refusing a stale success from the prior container epoch"
+            return 0
+        fi
+        ;;
+    epoch-changed)
+        it_fail "p2pool merge-mining gRPC round-trip (#1397)" "p2pool restarted at the readiness deadline; the new container epoch was not observed"
         return 0
-    fi
-    verdict="$(mm_roundtrip_verdict "$lines")" || excerpt="
+        ;;
+    *) excerpt="
         diagnostic lines from this run's startup log (allowlisted, at most ${MM_EXCERPT_LINES}, redacted):
-$(mm_startup_excerpt)"
+$(mm_startup_excerpt)" ;;
+    esac
     case "$verdict" in
     roundtrip*) it_pass "p2pool reached the Tari node over gRPC — ${verdict} (#1397)" ;;
     local-only)
@@ -259,7 +343,7 @@ $(mm_startup_excerpt)"
         ;;
     *)
         it_fail "p2pool merge-mining gRPC round-trip (#1397)" \
-            "no MergeMiningClientTari line in the first ${MM_WINDOW_LINES} lines after the container started — p2pool built no merge-mining client, or the log could not be read${excerpt}"
+            "no MergeMiningClientTari line appeared within ${MM_READY_TIMEOUT}s in the current container epoch — p2pool built no merge-mining client${excerpt}"
         ;;
     esac
 }

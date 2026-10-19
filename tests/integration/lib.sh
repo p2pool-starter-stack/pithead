@@ -48,9 +48,9 @@ redact() {
 # Fail CLOSED: resolve the helper from this file's directory; a harness that merely warns would
 # miscount every skip in silence.
 # shellcheck source=tests/integration/lib/skip-accounting.sh
-source "${BASH_SOURCE[0]%/*}/lib/skip-accounting.sh" ||
+source "${BASH_SOURCE[0]%/*}/lib/skip-accounting.sh" && source "${BASH_SOURCE[0]%/*}/lib/e2e-env.sh" ||
     {
-        echo "lib.sh: lib/skip-accounting.sh is required (source lib.sh by a path, not a bare name)" >&2
+        echo "lib.sh: lib/skip-accounting.sh and lib/e2e-env.sh are required (source lib.sh by a path, not a bare name)" >&2
         exit 1
     }
 IT_PASS=0
@@ -610,7 +610,7 @@ wait_status_ok() {
 wait_stratum_hashes() { wait_for "${1:-180}" 10 "workers online + stratum hashes accumulating" _pred_stratum_hashes; }
 wait_monero_synced() { wait_for "${1:-300}" 10 "Monero sync complete" _pred_monero_synced; }
 wait_miner_running() { wait_for "${1:-180}" 5 "miner released" _pred_miner_running; }
-wait_tari_synced() { wait_for "${1:-300}" 10 "Tari sync complete" _pred_tari_synced; }
+wait_tari_synced() { TARI_WAIT_TIMED_OUT=1 && wait_for "${1:-300}" 10 "Tari sync complete" _pred_tari_synced && TARI_WAIT_TIMED_OUT=0; }
 wait_pool_ready() { wait_for "${1:-180}" 5 "pool type determinate (${2})" _pred_pool_ready "$2"; }
 
 # Ground truth for the sidechain axis (#746): the rendered P2POOL_FLAGS in the box's .env carry
@@ -652,12 +652,7 @@ assert_pool_switched() { # <label> <expected-pool-label>
     assert_pool_type "$1" "$(jq_get "$(api_state)" '.pool.type')" "$2"
 }
 
-# Tari sync verdict for tari_required scenarios (#746). Every per-scenario restart sends Tari back
-# through "discovering the target height" ('loading' = no target yet), and over Tor that
-# re-discovery can outlast wait_tari_synced's window — an in-progress state, not a sync failure.
-# But lag tolerance must not mask a Tari that NEVER syncs, so it is earned: "done" passes and
-# records the proof (TARI_SEEN_DONE); loading/syncing AFTER that proof warns; anything else — or an
-# in-progress state on the first look — fails the gate.
+# Restart lag over Tor is tolerated only once Tari proved "done" this run (#746, docs/dev/integration-testing.md).
 assert_tari_synced_required() { # <state>
     if [ "$1" = "done" ]; then
         TARI_SEEN_DONE=1
@@ -666,6 +661,7 @@ assert_tari_synced_required() { # <state>
         it_warn "tari sync reads [$1] after the restart — Tari proved synced earlier this run; post-restart target re-discovery lag over Tor (#746), not a sync failure"
     else
         it_fail "tari synced (required)" "expected [done], got [$1]"
+        case "${TARI_WAIT_TIMED_OUT:-0}/${IT_CURRENT_SCENARIO:-}/$1" in 1/local-pruned-main-secure-tari/loading | 1/local-pruned-main-secure-tari/syncing) e2e_env tari-sync-timeout ;; esac
     fi
 }
 wait_hashes_flowing() { wait_for "${1:-300}" 5 "stratum hashes flowing" _pred_hashes_flowing; }
