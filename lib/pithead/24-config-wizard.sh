@@ -42,7 +42,7 @@ ensure_config_exists() {
 # IN_DASH_USER, IN_DASH_PASS — plus wizard_ask_tari's own.
 wizard_ask_core() {
     while :; do
-        read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || break
+        read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || error "End of input while reading the Monero payout address. Aborting."
         case "$(monero_address_type "$IN_MONERO_WALLET")" in
         primary) break ;;
         subaddress) echo "  ✗ That's a subaddress (8…) — p2pool can't pay it. Use your PRIMARY address (starts with 4)." >&2 ;;
@@ -225,7 +225,7 @@ wizard_ask_tari() {
     fi
 
     while :; do
-        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || break
+        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || error "End of input while reading the Tari payout address. Aborting."
         [ -z "$IN_TARI_WALLET" ] && break # the required-field check below owns this
         case "$(tari_address_type "$IN_TARI_WALLET")" in
         ok | unchecked) break ;;
