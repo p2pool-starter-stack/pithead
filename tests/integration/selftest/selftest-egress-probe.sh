@@ -42,8 +42,7 @@ reset_probe() { # <rc>...: the SOCKS exit status each successive request returns
     rm -rf "$OUT_DIR"
 }
 
-# Runs the pair, keeps its transcript in $TD/pair.log and the failures it added in $pair_failed.
-# The expected failure count is discarded after the caller checks it; a test failure never is.
+# Runs the pair, leaving its transcript in $TD/pair.log and its added failures in $pair_failed.
 run_pair() {
     local before=$IT_FAIL
     assert_egress_dial_pair >"$TD/pair.log" 2>&1

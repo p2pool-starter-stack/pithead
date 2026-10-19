@@ -2,8 +2,7 @@
 # shellcheck source=tests/integration/lib/tor-control-dial.sh
 source "${BASH_SOURCE[0]%/*}/tor-control-dial.sh" || return $?
 
-# One recorded SOCKS request. Attempt 1 is the original request and keeps its record unchanged;
-# a retry is recorded under its own label and sequence, never in place of the failure before it.
+# A retry gets its own record and sequence, never replacing the failure before it.
 _egress_socks_attempt() { # <socks host:port> <attempt>; sets EGRESS_PROBE_CLASS
     local tor_socks="$1" attempt="$2" started=$SECONDS probe_rc=0 elapsed sequence exit_class record label
     EGRESS_PROBE_SEQUENCE=$((${EGRESS_PROBE_SEQUENCE:-0} + 1))
@@ -44,8 +43,7 @@ _egress_socks_attempt() { # <socks host:port> <attempt>; sets EGRESS_PROBE_CLASS
     return "$probe_rc"
 }
 
-# Pass on the first attempt that connects. EGRESS_PROBE_SUMMARY names the attempts that failed first
-# and, on a final failure, every attempt, so a flake and a dead route read differently in the log.
+# Passes on the first attempt that connects, and EGRESS_PROBE_SUMMARY names the failed attempts.
 run_egress_socks_probe() { # <socks host:port>
     local attempt=1 probe_rc=0 failed=""
     # shellcheck disable=SC2034 # read by assert_egress_dial_pair

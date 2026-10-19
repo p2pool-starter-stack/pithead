@@ -360,8 +360,7 @@ _egress_self_test() {
         printf 'a dead Tor path did not name all three attempts: %s\n' "$out" >&2
         f=$((f + 1))
     }
-    # #2619: one bad exit is a flake, not a red. Attempt 1 is the original request, the retries each
-    # carry their own SOCKS user, and the first success stops the loop.
+    # One bad exit is a flake (#2619): retries carry their own SOCKS user and a success stops the loop.
     out=$(_egress_drive 0 tor-flaky)
     grep -q "^ok egress through Tor's SOCKS still works.*passed on attempt 3 of 3; attempt 1 exit=52; attempt 2 exit=52" <<<"$out" &&
         ! grep -q '^bad ' <<<"$out" &&
