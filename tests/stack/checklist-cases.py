@@ -3,14 +3,14 @@ import re
 import sys
 from pathlib import Path
 
-source, dest, monero, tari, subaddress = sys.argv[1:]
+source, dest, monero, tari, subaddress, view_key = sys.argv[1:]
 dest = Path(dest)
 text = Path(source).read_text()
 replacements = {
     "PASTE_QA_MONERO_PRIMARY_ADDRESS": monero,
     "PASTE_QA_TARI_ADDRESS": tari,
-    "PASTE_QA_MONERO_PRIVATE_VIEW_KEY": "a" * 64,
-    "PASTE_QA_TARI_PRIVATE_VIEW_KEY": "b" * 64,
+    "PASTE_QA_MONERO_PRIVATE_VIEW_KEY": view_key,
+    "PASTE_QA_TARI_PRIVATE_VIEW_KEY": view_key,
     "PASTE_QA_DASHBOARD_PASSPHRASE": "Checklist-Dashboard-42",
     "PASTE_QA_DASHBOARD_PASSWORD": "Checklist-Dashboard-42",
     "PASTE_QA_BOT_TOKEN": "123456:ChecklistBotToken",

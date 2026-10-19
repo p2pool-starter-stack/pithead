@@ -4,17 +4,20 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "== checklist samples and refusal contracts =="
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
+# shellcheck source=tests/integration/fixtures/payout-pairs.sh
+source "$ROOT/tests/integration/fixtures/payout-pairs.sh"
 build_val_sandbox
 cp "$ROOT/docker-compose.yml" "$V/docker-compose.yml" || exit 1
 cases="$SANDBOX/checklist"
 mkdir -p "$cases"
-python3 "$HERE/checklist-cases.py" "$ROOT/docs/dev/manual-qa/sample-configs.md" "$cases" "$VALID_PRIMARY" "$VALID_TARI" "$VALID_SUBADDR" || exit 1
+python3 "$HERE/checklist-cases.py" "$ROOT/docs/dev/manual-qa/sample-configs.md" "$cases" "$PAYOUT_MONERO1" "$PAYOUT_TARI1" "$VALID_SUBADDR" "$PAYOUT_VIEW1" || exit 1
 for sample in "$cases"/sample-*.json; do
     seed_env
     cp "$sample" "$V/config.json"
     out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply --dry-run 2>&1)"
     rc=$?
     assert_rc "checklist $(basename "$sample") validates" "$rc" 0
+    [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -n 12
 done
 for candidate in "$cases"/broken-*.json; do
     label="$(basename "$candidate" .json)"
