@@ -26,7 +26,7 @@ rig_lock() { :; }
 preflight() { touch "$PREFLIGHT_RESULT"; }
 assert_current_state() { :; }
 summary() { [ "$IT_FAIL" -eq 0 ]; }
-READINESS=0 CHECK_ONLY=1
+READINESS=0 CHECK_ONLY=1 RUN_UNINSTALL=0
 eval "$MAIN_SRC"
 main
 HARNESS
