@@ -317,6 +317,8 @@ checkout so its harness code is available, then runs those reads against the cur
 directory. It does not take a stack backup, borrow a miner, deploy the branch, or run a restore.
 `--workers` defaults to `1` and accepts `0` in check mode or with `--no-miner`.
 Deploying modes that borrow a miner require a positive integer; other runs accept nonnegative integers.
+`selftest-e2e-boundary.sh` checks these worker-count rules before SSH, including
+zero-worker runs and malformed counts.
 
 Pre-flight, before anything is locked or borrowed: the wrapper waits up to 120 seconds for both
 chains to read `done` on the bench dashboard's sync panels. This allows a brief `loading` state
@@ -1425,8 +1427,6 @@ SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on
 so the harness itself is held to the same lint/test standard as the rest of the stack.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
-`selftest-e2e-boundary.sh` exercises the wrapper's worker-count validation before SSH,
-including zero workers in check mode and deploying runs without a borrowed miner.
 `selftest-check-lan-guard.sh` checks read-only and deploying dispatch with unrelated
 assertions, including onion targets, explicitly stubbed. It retains the LAN probes,
 timer flush and boot recovery assertions and rejects unexpected missing commands,
