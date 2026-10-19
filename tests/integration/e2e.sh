@@ -327,10 +327,7 @@ wait_bench_healthy() { # <timeout_s>
         sleep 10
     done
 }
-# After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
-# tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
-# measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
-# so its bounded Tari readiness row has a synced chain before it starts.
+# Tari rebuilds its Tor circuits after a deploy (>18min, #2455), so the readiness row waits for a synced chain.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st refusal="destructive phases"
     [ "${2:-}" = restore ] && refusal="baseline proof"
@@ -342,6 +339,7 @@ wait_synced() { # <timeout_s>
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
             warn "sync panels still '$st' after $((${1:-300}))s — $refusal refused"
+            [ -n "${2:-}" ] || case "$st" in */loading | */syncing) e2e_env tari-not-done ;; esac
             return 1
         }
         sleep 8
@@ -417,7 +415,7 @@ preflight() {
         warn "--skip-preflight: not checking the bench chains are synced."
     else
         local sync_line mst mheights tst theights
-        if wait_synced 120; then
+        if wait_synced 120 preflight; then
             ok "bench chains synced (monero done, tari done)"
         else
             sync_line="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '$E2E_SYNC_SUMMARY_JQ' 2>/dev/null" || true)"
@@ -425,6 +423,7 @@ preflight() {
             read -r mst mheights tst theights <<<"$sync_line"
             warn "monero: $mst (current/target $mheights)"
             warn "tari:   $tst (current/target $theights)"
+            e2e_env chains-behind
             die "Bench chains are not at tip — the required-sync assertions would fail on the environment, not the branch (#914). Let the bench catch up, or pass --skip-preflight to run anyway."
         fi
     fi
@@ -435,8 +434,7 @@ preflight() {
         # Loaner-rig lock (#430/rigforge#183): the borrow repoints (and may restart) the rig's
         # xmrig, so claim the rig's EXCLUSIVE flock now — before anything is mutated — and hold it
         # until this process dies. rigforge's gates on the same rig refuse (exit 75, holder named)
-        # instead of colliding mid-borrow, and a busy rig fails us fast, before the bench is
-        # touched. The kernel releases the lock on exit, AFTER the EXIT-trap restore has run.
+        # instead of colliding mid-borrow, and a busy rig fails us fast, before the bench is touched.
         parent_lock_miner_borrow || die "Miner lock is not continuous."
     fi
 }
@@ -652,7 +650,7 @@ run_harness() {
         sleep 20
         waited=$((waited + 20))
         step "harness running… ${waited}s — latest:"
-        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/      /' || true
+        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed '/e2e-env:/d; s/^/      /' || true
     done
 
     echo ""
