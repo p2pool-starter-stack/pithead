@@ -5,6 +5,7 @@ echo "== checklist samples and refusal contracts =="
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
 build_val_sandbox
+cp "$ROOT/docker-compose.yml" "$V/docker-compose.yml" || exit 1
 cases="$SANDBOX/checklist"
 mkdir -p "$cases"
 python3 "$HERE/checklist-cases.py" "$ROOT/docs/dev/manual-qa/sample-configs.md" "$cases" "$VALID_PRIMARY" "$VALID_TARI" "$VALID_SUBADDR" || exit 1
@@ -12,7 +13,8 @@ for sample in "$cases"/sample-*.json; do
     seed_env
     cp "$sample" "$V/config.json"
     out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply --dry-run 2>&1)"
-    assert_rc "checklist $(basename "$sample") validates" "$?" 0
+    rc=$?
+    assert_rc "checklist $(basename "$sample") validates" "$rc" 0
 done
 for candidate in "$cases"/broken-*.json; do
     label="$(basename "$candidate" .json)"

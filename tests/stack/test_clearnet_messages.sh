@@ -6,6 +6,17 @@ echo "== clearnet transition operator messages =="
 source "$HERE/lib.sh"
 build_val_sandbox
 seed_env
+mv "$V/bin/docker" "$V/bin/docker-default"
+cat >"$V/bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+case "$*" in
+"compose config --services") printf '%s\n' monerod p2pool xmrig-proxy ;;
+"compose ps -aq "*) printf '%s\n' "${*: -1}" ;;
+"inspect --format "*) printf '%s\n' 'running healthy' ;;
+*) exec "$(dirname "$0")/docker-default" "$@" ;;
+esac
+DOCKER
+chmod +x "$V/bin/docker"
 printf 'MONERO_CLEARNET_SYNC=true\nTARI_CLEARNET_SYNC=false\n' >>"$V/.env"
 printf '#!/usr/bin/env bash\nexit 1\n' >"$V/bin/curl"
 chmod +x "$V/bin/curl"
@@ -49,7 +60,8 @@ PYOWNER
     elif [ "$state" = stale ]; then
         printf '00000000-0000-4000-8000-000000000002\n' >"$V/data/clearnet-state/monero.synced"
     fi
-    status="$(probe status)"
+    status="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead status 2>&1)"
+    assert_rc "$state status completes the service health check" "$?" 0
     doctor="$(probe doctor --json)"
     if [ "$state" = verified ]; then
         assert_not_contains "verified status clears banner" "$status" "CLEARNET INITIAL SYNC OR TOR TRANSITION PENDING"
