@@ -175,6 +175,7 @@ mkdir -p "$RT/build/tari" "$RT/dashboard" "$RT/data/tor" "$RT/data/dashboard"
 cp "$STACK" "$RT/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$RT/build/tari/"
 make_stubs "$RT/bin"
+make_host_tool_stubs "$RT/bin" systemctl
 # make_stubs's sudo is a bare no-op — fine for setup's conditional sudo calls (writable test dirs
 # skip them), but stack_backup shells to `sudo tar`/`sudo du` UNCONDITIONALLY. Same passthrough
 # override the firstboot_consume_restore fixture above uses, for the same reason.
