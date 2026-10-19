@@ -66,6 +66,7 @@ class HostIsolation(unittest.TestCase):
             "PATH": str(host_bin) + os.pathsep + os.environ["PATH"],
             "STACK": str(ROOT / "pithead"),
             "ROOT": str(ROOT),
+            "GNU_SED": shutil.which("gsed") or shutil.which("sed"),
             "PITHEAD_UNIT_DIR": str(self.host),
         }
 
@@ -152,6 +153,10 @@ class HostIsolation(unittest.TestCase):
 
     def test_tari_render_fixture_uses_declared_config_and_cleanup_paths(self):
         result = self.run_guard(
+            'mkdir -p "$SANDBOX/bin"; '
+            'printf "#!/usr/bin/env bash\\necho Linux\\n" >"$SANDBOX/bin/uname"; '
+            'chmod +x "$SANDBOX/bin/uname"; ln -s "$GNU_SED" "$SANDBOX/bin/sed"; '
+            'export PATH="$SANDBOX/bin:$PATH"; '
             'WORK_DIR="$SANDBOX"; source "$ROOT/tests/stack/fixtures/tari-render.sh"; '
             'source "$STACK"; TARI_ONION=abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion; '
             "NETWORK_PREFIX=172.28.0; mkdir -p build/tari; "
