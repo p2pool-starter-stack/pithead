@@ -154,7 +154,7 @@ reset_dashboard_cleanup
 [[ "$cleanup_command" == *"rm -rf -- '/tmp/reset-dashboard-decoy-a' '/tmp/reset-dashboard-decoy-b'"* ]] || exit 1
 [ -z "$RESET_DASHBOARD_DECOY_DASHBOARD" ] && [ -z "$RESET_DASHBOARD_DECOY_P2POOL" ] || exit 1
 
-for invalid_dir in $'/data\nx' $'/data\rx'; do
+for invalid_dir in $'/data\nx' $'/data\rx' $'/data\n'; do
     (
         env_on_box() { printf '%s' "$invalid_dir"; }
         rx() { : >"$OUT_DIR/invalid-path-mutated"; }

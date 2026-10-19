@@ -12,8 +12,13 @@ run_reset_dashboard() {
     it_log "── reset-dashboard phase ───────────────────────────"
 
     local dashboard_dir p2pool_dir
-    dashboard_dir="$(env_on_box DASHBOARD_DATA_DIR)"
-    p2pool_dir="$(env_on_box P2POOL_DATA_DIR)"
+    if ! dashboard_dir="$(env_on_box DASHBOARD_DATA_DIR && printf .)" ||
+        ! p2pool_dir="$(env_on_box P2POOL_DATA_DIR && printf .)"; then
+        it_fail "reset-dashboard phase preconditions" "could not read live data directories"
+        return
+    fi
+    dashboard_dir="${dashboard_dir%.}"
+    p2pool_dir="${p2pool_dir%.}"
     if [ -z "$dashboard_dir" ] || [ -z "$p2pool_dir" ]; then
         it_fail "reset-dashboard phase preconditions" ".env is missing DASHBOARD_DATA_DIR/P2POOL_DATA_DIR"
         return
