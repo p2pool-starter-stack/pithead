@@ -89,4 +89,29 @@ exposure_previews "P2Pool-clearnet preview with the firewall off names this host
     "P2Pool sidechain peers over CLEARNET" "visible to the P2Pool network"
 exposure_previews "public-IP preview names the dashboard login reachable from the internet" '.dashboard.expose_public_ip=true' \
     "Dashboard PUBLISHED" "anyone on the internet can reach the dashboard login"
+out="$(run_sourced "$C" describe_change P2POOL_FLAGS '--mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns' '--mini')"
+assert_not_contains "Tor removal keeps the P2Pool sidechain (#3382)" "$out" "sidechain changing"
+assert_not_contains "Tor removal keeps the PPLNS window (#3382)" "$out" "PPLNS"
+out="$(run_sourced "$C" describe_change P2POOL_FLAGS '--mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns' '--mini --socks5 172.29.0.25:9050 --socks5-proxy-type tor --no-dns')"
+assert_not_contains "subnet-derived proxy change keeps the P2Pool sidechain (#3382)" "$out" "sidechain changing"
+assert_not_contains "subnet-derived proxy change keeps the PPLNS window (#3382)" "$out" "PPLNS"
+
+for old_flags in '' '--mini' '--nano'; do
+    for new_flags in '' '--mini' '--nano'; do
+        out="$(run_sourced "$C" describe_change P2POOL_FLAGS "$old_flags" "$new_flags")"
+        if [ "$old_flags" != "$new_flags" ]; then
+            assert_contains "pool selector $old_flags to $new_flags resets the window (#3382)" "$out" "PPLNS window resets"
+        else
+            assert_not_contains "same selector $old_flags keeps the window (#3382)" "$out" "PPLNS"
+        fi
+    done
+done
+out="$(run_sourced "$C" describe_change P2POOL_FLAGS $'--mini\t--no-dns' $'--mini\n--socks5 192.0.2.25:9050')"
+assert_contains "routing flags separated by whitespace keep mini selected (#3382)" "$out" "mini sidechain stays selected"
+out="$(run_sourced "$C" describe_change P2POOL_FLAGS '--mini' '--mini --socks5 192.0.2.25:9050 --socks5-proxy-type tor --no-dns')"
+assert_contains "adding Tor describes peer routing (#3382)" "$out" "P2Pool peer routing changed"
+assert_not_contains "adding Tor keeps the PPLNS window (#3382)" "$out" "PPLNS"
+out="$(run_sourced "$C" describe_change P2POOL_PORT 37888 37890)"
+assert_contains "pool port change retains the PPLNS reset warning (#3382)" "$out" "PPLNS window resets"
+
 unset -f preview_only previewed_with preview_without exposure_previews
