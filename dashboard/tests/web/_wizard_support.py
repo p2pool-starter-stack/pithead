@@ -20,16 +20,24 @@ from mining_dashboard.wizard import server as wizard
 @pytest.fixture
 def spool(tmp_path, monkeypatch):
     sd = tmp_path / "spool"
+    restore = tmp_path / "restore"
     sd.mkdir()
+    restore.mkdir()
     monkeypatch.setenv("WIZARD_SPOOL", str(sd))
+    monkeypatch.setenv("WIZARD_RESTORE", str(restore))
     monkeypatch.setenv("WIZARD_TOKEN", "pit-X7KM2Q")
     return sd
 
 
 @pytest.fixture
+def restore_spool(spool):
+    return spool.parent / "restore"
+
+
+@pytest.fixture
 async def client(spool):
     exits = []
-    app = wizard.make_app(exit_fn=lambda code: exits.append(code))
+    app = wizard.make_app(exit_fn=lambda code: exits.append(code), restore_enabled=True)
     app["exits"] = exits
     c = TestClient(TestServer(app))
     await c.start_server()

@@ -153,7 +153,7 @@ assert_eq "wizard_install_failed_page gives the window back" \
     "$(fb_window wizard_install_failed_page "$FBSPOOL" "Install")" "released"
 fb_reset
 assert_eq "wizard_install_finish gives the window back" \
-    "$(fb_window wizard_install_finish docker "Installation complete" "closing line")" "released"
+    "$(fb_window wizard_install_finish docker "$FBSPOOL" "Installation complete" "closing line")" "released"
 assert_contains "wizard_install_finish really reaches the switch-off it holds the window across" \
     "$(cat "$FBLOG")" "[systemctl] poweroff"
 

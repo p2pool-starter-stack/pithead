@@ -4,6 +4,9 @@
 # appliance seams.
 # shellcheck source=tests/stack/lifecycle/recovery.sh
 source "$HERE/lifecycle/recovery.sh" || return $?
+# caddy-pending.sh reuses the sandbox recovery.sh leaves converged, so it must source right after it.
+# shellcheck source=tests/stack/lifecycle/caddy-pending.sh
+source "$HERE/lifecycle/caddy-pending.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/pull-policy.sh
 source "$HERE/lifecycle/pull-policy.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/lock-core.sh
@@ -12,6 +15,8 @@ source "$HERE/lifecycle/lock-core.sh" || return $?
 source "$HERE/lifecycle/lock-wiring.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/appliance-lock.sh
 source "$HERE/lifecycle/appliance-lock.sh" || return $?
+# shellcheck source=tests/stack/lifecycle/recreate-names.sh
+source "$HERE/lifecycle/recreate-names.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/keep-running.sh
 source "$HERE/lifecycle/keep-running.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/tari-upgrade-space.sh

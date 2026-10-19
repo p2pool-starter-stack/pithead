@@ -6,8 +6,7 @@
 # refusal when the bridge can't be resolved, #855/#858), apply/remove_tor_egress_firewall end to
 # end (#270), the regression that every command installs the firewall BEFORE compose so no
 # clearnet-capable container ever starts unguarded (#276/#291), the clearnet-initial-sync helpers
-# and render on both chains including the contradiction warning against a firewall that would just
-# drop the clearnet dials anyway (#183 — the map's code-read: this is the Tor<->clearnet transport
+# and render on both chains including the chosen-node firewall exception (#183/#2678 — this is the Tor<->clearnet transport
 # switch, kept together with the egress rules rather than split to the monero/tari file), the node
 # configs' clearnet-DNS-egress guarantees (#161 monerod, #162 tari), tor.auto_heal (#424), the tor
 # container's own entrypoint rendering both the dashboard's opt-in onion vhost and the per-node
@@ -27,7 +26,6 @@
 # No section here reads $C — the control-channel sandbox is untouched by this cut.
 build_val_sandbox
 DOCKER_LOG="$V/docker.log"
-
 echo "== unit: tor_egress_rules — fail-closed Tor-only egress ruleset (#270) =="
 TER=$(run_sourced "$SANDBOX" tor_egress_rules 172.28.0.0/24 172.28.0.25)
 assert_eq "the conntrack ACCEPT comes first and passes REPLIES only (#2672)" "$(printf '%s\n' "$TER" | head -1)" "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT"
@@ -37,7 +35,6 @@ assert_contains "10/8 LAN allowed" "$TER" "-s 172.28.0.0/24 -d 10.0.0.0/8 -j ACC
 assert_contains "192.168/16 LAN allowed" "$TER" "-s 172.28.0.0/24 -d 192.168.0.0/16 -j ACCEPT"
 assert_eq "the clearnet DROP is the FINAL rule (fail-closed)" "$(printf '%s\n' "$TER" | tail -1)" "-s 172.28.0.0/24 -j DROP"
 assert_contains "honours a custom subnet/prefix (#180)" "$(run_sourced "$SANDBOX" tor_egress_rules 172.30.5.0/24 172.30.5.25)" "-s 172.30.5.0/24 -j DROP"
-
 echo "== unit: render_tor_egress_nft — same allow-set as nftables for the netavark path (#855) =="
 # The appliance runs podman+netavark, whose FORWARD hook is served by `table inet netavark`; nothing
 # jumps to the iptables DOCKER-USER chain, so the Docker-path rules install into a chain no packet
@@ -55,7 +52,6 @@ assert_eq "the clearnet DROP is the FINAL rule before the chain closes (fail-clo
 assert_contains "idempotent-replace: add table first" "$NFTR" "add table inet pithead_egress"
 assert_contains "idempotent-replace: delete before recreating" "$NFTR" "delete table inet pithead_egress"
 assert_contains "honours a custom subnet/prefix (#180)" "$(run_sourced "$SANDBOX" render_tor_egress_nft 172.30.5.0/24 172.30.5.25)" "ip saddr 172.30.5.0/24 drop"
-
 echo "== unit: render_tor_egress_nft — IPv6 backstop only when the mining bridge is passed (#858) =="
 # mining_net is IPv4-only by design, so a bare render (no bridge arg) must stay v4-only — no ip6
 # rule can appear, or it would fence traffic that doesn't exist and risk the host's own v6.
@@ -68,7 +64,6 @@ assert_contains "v6 LAN ULA (fc00::/7) allowed off the bridge" "$NFTR6" 'iifname
 assert_contains "v6 link-local (fe80::/10) allowed off the bridge" "$NFTR6" 'iifname "podman1" ip6 daddr fe80::/10 accept'
 assert_eq "the IPv6 drop is the FINAL rule before the chain closes (fail-closed)" "$(printf '%s\n' "$NFTR6" | grep -E 'accept|drop' | tail -1)" '    iifname "podman1" meta nfproto ipv6 drop'
 assert_contains "the v4 allow-set is unchanged when v6 is added" "$NFTR6" "ip saddr 172.28.0.0/24 drop"
-
 echo "== unit: mining_net_ipv6_bridge — resolve bridge only when mining_net has a v6 subnet (#858) =="
 # Both the v6 subnet and the interface name come from the SAME `podman network inspect`, so whenever
 # v6 is present the bridge is too. Stub podman to answer network inspect; jq is real.
@@ -251,6 +246,7 @@ up_order=$(
     announce_dashboard_url() { :; }
     apply_tor_egress_firewall() { echo firewall; }
     compose_up_checked() { echo compose; }
+    printf '{}\n' >config.json
     stack_up
 )
 assert_eq "up applies the firewall before 'compose up' (#276)" "$(fw_then_compose "$up_order")" "firewall,compose,"
@@ -358,6 +354,7 @@ up_sig_order=$(
     log() { :; }
     verify_release_images() { echo verify; }
     compose_up_checked() { echo compose; }
+    printf '{}\n' >config.json
     stack_up
 )
 assert_eq "first-install up verifies release-image signatures before 'compose up' (#452)" \
@@ -491,9 +488,9 @@ assert_contains "tari entrypoint clearnet: DNS seed enabled (#234)" "$(cat "$SAN
     source "$ROOT/build/tari/entrypoint.sh"
     render_tari_runtime_config "$TARISRC" "$SANDBOX/tari-rt2.toml"
 )
-assert_contains "tari entrypoint marker→Tor: transport tor (#234)" "$(cat "$SANDBOX/tari-rt2.toml")" 'type = "tor"'
+assert_contains "tari entrypoint marker→Tor: transport Tor SOCKS (#234)" "$(cat "$SANDBOX/tari-rt2.toml")" 'type = "socks5"'
 assert_contains "tari entrypoint marker→Tor: DNS seeds empty (#234)" "$(cat "$SANDBOX/tari-rt2.toml")" "dns_seeds = []"
-assert_contains "tari entrypoint never mutates the canonical config (#234)" "$(cat "$TARISRC")" 'type = "tor"'
+assert_contains "tari entrypoint never mutates the canonical config (#234)" "$(cat "$TARISRC")" 'type = "socks5"'
 # Compose wires the shared marker dir into all three: dashboard rw, monerod + tari ro, + the tari
 # wrapper entrypoint that runs minotari_node.
 assert_contains "compose mounts clearnet-state into monerod (#234)" "$(cat "$ROOT/docker-compose.yml")" ':/clearnet-state:ro'
@@ -515,10 +512,10 @@ assert_contains "monerod: DNS checkpoints disabled (#161)" "$(cat "$MONC")" "dis
 assert_contains "monerod: update check disabled (#161)" "$(cat "$MONC")" "check-updates=disabled"
 # tari (#162): no DNS seeds; peer_seeds onion-only; the inert check_for_updates gRPC method dropped.
 assert_contains "tari: DNS seeds disabled (#162)" "$(cat "$TARC")" "dns_seeds = []"
-# #271: minotari defaults proxy_bypass_for_outbound_tcp=true → it direct-dials peers advertising a bare
-# /ip4 (clearnet) address, bypassing Tor. false routes every dial through the SOCKS proxy (reach those
-# peers via Tor exits) — so Tari is functional AND never touches clearnet directly.
-assert_contains "tari: outbound TCP dials routed via Tor SOCKS, not direct (#271)" "$(cat "$TARC")" "proxy_bypass_for_outbound_tcp = false"
+# #271/#2653: Tari dials only through the stack Tor SOCKS (no bypass), with the image's in-process Tor off.
+assert_eq "tari: transport is the Tor SOCKS proxy (#2653)" "$(grep -E '^type = ' "$TARC")" 'type = "socks5"'
+assert_eq "tari: SOCKS proxy is the stack tor container (#2653)" "$(grep -E '^proxy_address = ' "$TARC")" 'proxy_address = "/ip4/172.28.0.25/tcp/9050"'
+assert_eq "tari: in-process Tor (libtor) disabled (#2653)" "$(grep -E '^use_libtor = ' "$TARC")" "use_libtor = false"
 case "$(grep -E '::/ip4/|::/ip6/' "$TARC" || true)" in
 "") ok "tari: peer_seeds are onion-only (#162)" ;;
 *) bad "tari: peer_seeds are onion-only (#162)" "clearnet /ip4//ip6/ peer seeds present" ;;
@@ -558,18 +555,18 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "monero clearnet off by default" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_CLEARNET_SYNC)" "false"
 assert_eq "tari clearnet off by default" "$(run_sourced "$V" env_get_file "$V/.env" TARI_CLEARNET_SYNC)" "false"
-assert_contains "tari default: Tor transport" "$(cat "$V/build/tari/config.toml")" 'type = "tor"'
+assert_contains "tari default: Tor SOCKS transport" "$(cat "$V/build/tari/config.toml")" 'type = "socks5"'
 assert_contains "tari default: DNS seeds empty" "$(cat "$V/build/tari/config.toml")" "dns_seeds = []"
 assert_contains "tari default: advertises onion" "$(cat "$V/build/tari/config.toml")" "/onion3/"
 
-# Monero clearnet ON (Tari left off): only the Monero flag flips; Tari stays Tor. The apply preview
-# must spell out the clearnet exposure (a CONFIRM change — disruptive, warned ⚠ on the host CLI).
+# Monero clearnet ON (Tari left off): only the Monero
+# flag flips; Tari stays Tor. The preview must spell out the exposure (CONFIRM, warned ⚠ on the host).
 seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":true}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":true}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "network":{"tor_egress_firewall":false}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "monero clearnet flag propagated true" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_CLEARNET_SYNC)" "true"
 assert_eq "tari clearnet still false" "$(run_sourced "$V" env_get_file "$V/.env" TARI_CLEARNET_SYNC)" "false"
-assert_contains "tari stays Tor when only monero is clearnet" "$(cat "$V/build/tari/config.toml")" 'type = "tor"'
+assert_contains "tari stays Tor when only monero is clearnet" "$(cat "$V/build/tari/config.toml")" 'type = "socks5"'
 assert_contains "apply preview warns clearnet exposure" "$out" "CLEARNET"
 
 # Tari clearnet ON: pithead always renders the CANONICAL Tor config — the clearnet transform is
@@ -577,16 +574,16 @@ assert_contains "apply preview warns clearnet exposure" "$out" "CLEARNET"
 # stays Tor even with the flag on. That's what lets the node return to Tor on its own after sync
 # without pithead re-rendering clearnet over it.
 seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","clearnet_initial_sync":true}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","clearnet_initial_sync":true}, "network":{"tor_egress_firewall":false}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "tari clearnet flag propagated true" "$(run_sourced "$V" env_get_file "$V/.env" TARI_CLEARNET_SYNC)" "true"
-assert_contains "tari host-render stays Tor even with flag on (#234)" "$(cat "$V/build/tari/config.toml")" 'type = "tor"'
+assert_contains "tari host-render stays Tor even with flag on (#234)" "$(cat "$V/build/tari/config.toml")" 'type = "socks5"'
 assert_contains "tari host-render keeps DNS seeds empty (#234)" "$(cat "$V/build/tari/config.toml")" "dns_seeds = []"
 assert_contains "tari host-render still advertises the onion (#234)" "$(cat "$V/build/tari/config.toml")" "/onion3/"
 
 # Truthy parse consistency (#183): a JSON string "yes" reads as enabled, like normalize_bool/MONERO_PRUNE.
 seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":"yes"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":"yes"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "network":{"tor_egress_firewall":false}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "monero clearnet truthy 'yes' => true" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_CLEARNET_SYNC)" "true"
 
@@ -597,31 +594,23 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_contains "doctor: OK when Tor-only (#183)" "$(cd "$V" && PATH="$V/bin:$PATH" ./pithead doctor 2>&1)" "Tor-only"
 
-echo "== black-box: clearnet_initial_sync vs. tor_egress_firewall contradiction warning =="
-# A clearnet_initial_sync flag asks a daemon to sync off-Tor; the egress firewall (default on) DROPs
-# every non-Tor dial, so that combination is self-defeating (the sync just runs over Tor anyway,
-# slower than intended) rather than unsafe (nothing leaks — the firewall still holds). WARN, not
-# FAIL: apply must still succeed, but say so loudly. Covers the contradictory pair and all three
-# non-contradictory combinations so the warning fires only where it's actually true.
-CN_WARN_NEEDLE="the firewall drops the clearnet dials"
+echo "== black-box: selected clearnet sync with firewall on (#2678) =="
+# shellcheck source=tests/stack/fixtures/tor-egress/validation-sandbox.sh
+source "$ROOT/tests/stack/fixtures/tor-egress/validation-sandbox.sh" "$V"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":true}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "monero clearnet + firewall on: apply still succeeds (warn, not fail)" "$?" "0"
-assert_contains "monero clearnet + firewall on: warns" "$out" "$CN_WARN_NEEDLE"
+assert_rc "monero clearnet + firewall on: apply succeeds" "$?" "0"
+assert_eq "monero chosen sync reaches the daemon" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_CLEARNET_SYNC)" "true"
+assert_contains "monero chosen sync reports IP exposure" "$out" "CLEARNET"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","clearnet_initial_sync":true}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "tari clearnet + firewall on: apply still succeeds (warn, not fail)" "$?" "0"
-assert_contains "tari clearnet + firewall on: warns" "$out" "$CN_WARN_NEEDLE"
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":true}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "network":{"tor_egress_firewall":false}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
-out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_not_contains "clearnet sync + firewall OFF: no warning (not contradictory)" "$out" "$CN_WARN_NEEDLE"
+assert_rc "tari clearnet + firewall on: apply succeeds" "$?" "0"
+assert_eq "tari chosen sync reaches the daemon" "$(run_sourced "$V" env_get_file "$V/.env" TARI_CLEARNET_SYNC)" "true"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_not_contains "no clearnet sync + firewall on: no warning (not contradictory)" "$out" "$CN_WARN_NEEDLE"
 
 # p2pool compose↔image coupling fail-safe (#273): clearnet is off, so apply renders P2POOL_FLAGS with
 # the #165 --socks5. doctor reads the RUNNING p2pool argv (/proc/1/cmdline, stubbed via P2POOL_PROC1)
@@ -639,7 +628,7 @@ assert_contains "doctor OK when p2pool IS routed over Tor (#273)" \
 # covered above; this exercises the real container entrypoint's branch + the .1 substitution with a
 # stub `tor` on PATH and the repo torrc.template (via the TORRC_TEMPLATE seam).
 TOR_ENTRY="$ROOT/build/tor/entrypoint.sh"
-tor_torrc() { # <DASHBOARD_ONION_ENABLED> [COMPOSE_PROFILES] -> the torrc the entrypoint would hand to `tor -f`
+tor_torrc() { # <DASHBOARD_ONION_ENABLED> [COMPOSE_PROFILES] [P2POOL_PORT] -> rendered torrc
     local d
     mk_tmpdir d
     # The stub cats the SANDBOX path, not /tmp/torrc (#1104). That is what makes the TORRC_OUT seam
@@ -648,7 +637,7 @@ tor_torrc() { # <DASHBOARD_ONION_ENABLED> [COMPOSE_PROFILES] -> the torrc the en
     # file left by an earlier run — the vacuous version of this check.
     printf '#!/bin/sh\ncat "%s"\n' "$d/torrc" >"$d/tor" # stub tor: ignore -f, print the rendered file
     chmod +x "$d/tor"
-    PATH="$d:$PATH" DASHBOARD_ONION_ENABLED="$1" COMPOSE_PROFILES="${2-local_node,local_tari}" NETWORK_PREFIX=10.9.0 \
+    PATH="$d:$PATH" DASHBOARD_ONION_ENABLED="$1" COMPOSE_PROFILES="${2-local_node,local_tari}" NETWORK_PREFIX=10.9.0 P2POOL_PORT="${3-37888}" \
         TORRC_TEMPLATE="$ROOT/build/tor/torrc.template" TORRC_OUT="$d/torrc" sh "$TOR_ENTRY"
     rm -rf "$d"
 }
@@ -694,6 +683,13 @@ assert_not_contains "tor entrypoint: no Tari HS with no profiles (remote tari, #
     "$tor_both_remote" "/var/lib/tor/tari/"
 assert_contains "tor entrypoint: P2Pool HS is unconditional — p2pool always runs (#103)" \
     "$tor_both_remote" "HiddenServiceDir /var/lib/tor/p2pool/"
+for pool_port in 37889 37888 37890; do
+    assert_contains "tor entrypoint: P2Pool onion follows selected port (#2936)" \
+        "$(tor_torrc false "" "$pool_port")" "HiddenServicePort $pool_port 10.9.0.28:$pool_port"
+done
+assert_contains "Monero anonymous listener accepts Tor on the bridge (#2936)" \
+    "$(cat "$ROOT/build/monero/bitmonero.conf.template")" \
+    'anonymous-inbound=${MONERO_ONION_ADDRESS}:18080,0.0.0.0:18084'
 unset tor_both_local tor_remote_tari tor_both_remote
 
 echo "== unit: onion provisioning follows node mode (#103) =="
@@ -735,8 +731,7 @@ assert_eq "provision_tor skips a remote node's onion and leaves it a placeholder
 assert_eq "provision_tor waits for the local node only in a mixed setup (#103)" \
     "$(prov_probe local remote)" "p2pool,monero,|monero.onion|placeholder|p2pool.onion"
 
-# provision_node_onions: recreate tor and capture a newly local node's onion before it starts.
-node_onion_probe() { # <MONERO_MODE> <MONERO_ONION> <TARI_MODE> <TARI_ONION> -> "<docker calls>|<asked>|<MONERO_ONION>|<TARI_ONION>|<renders>"
+node_onion_probe() { # provision_node_onions recreates tor and captures a newly local node's onion before it starts. <MONERO_MODE> <MONERO_ONION> <TARI_MODE> <TARI_ONION> -> "<docker calls>|<asked>|<MONERO_ONION>|<TARI_ONION>|<renders>"
     (
         cd "$ONP" || exit
         [ "${5:-}" != source ] || { mkdir -p dashboard && : >dashboard/Dockerfile; }
@@ -747,7 +742,12 @@ node_onion_probe() { # <MONERO_MODE> <MONERO_ONION> <TARI_MODE> <TARI_ONION> -> 
         : >dockerlog
         : >renders
         log() { :; }
-        docker() { printf '%s ' "$*" >>dockerlog; }
+        restore_recreate_names() { :; }  # its own test is tests/stack/lifecycle/recreate-names.sh
+        lan_guard_watched_ports() { :; } # LAN guard has its own tests; keep this onion probe scoped
+        docker() {
+            [ "$1" != ps ] || return 0 # no running node in this onion fixture
+            printf '%s ' "$*" >>dockerlog
+        }
         render_env() { printf 'x' >>renders; }
         wait_for_onion() {
             printf '%s,' "$1" >>asked

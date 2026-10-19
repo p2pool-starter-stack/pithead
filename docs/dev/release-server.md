@@ -68,10 +68,15 @@ Target an LTS Ubuntu (22.04 / 24.04). One-time:
 2. Keep the active chain on fast storage (SSD/NVMe). monerod is random-I/O heavy, so the chain
    it runs against must not sit on a spinning HDD; that alone makes every scenario crawl. A
    snapshot/reflink-capable filesystem (btrfs/zfs/xfs reflink) is a bonus for the prune axis: it
-   lets the harness snapshot/restore a chain cheaply. It is, however, a hard REQUIREMENT for
-   `--image-upgrade`, which takes `cp --reflink=always` snapshots of every writable mount while
-   the stack is stopped — on a filesystem without reflink that gate refuses to start. On plain ext4-on-SSD the
-   matrix only edits `config.json` and reuses one chain, with `--safety-backup` isolating
+   lets the harness snapshot/restore a chain cheaply. It is a hard requirement only when this
+   server runs `tests/integration/run.sh --image-upgrade` directly, because that command takes
+   `cp --reflink=always` snapshots of every bind mount (chain, data dirs and the install dir's own
+   `data/`) while the stack is stopped and refuses on a filesystem that cannot clone them, so the
+   install dir and every data dir need one reflink-capable filesystem (only the small named volumes
+   are copied, #2057). The `tier4-kvm` `image-upgrade` phase instead creates and removes a sparse reflink
+   XFS inside its disposable guest; it does not require reflinks on the bench filesystem. On plain
+   ext4-on-SSD
+   the matrix only edits `config.json` and reuses one chain, with `--safety-backup` isolating
    destructive runs. See the recipe below for the prune-axis details.
 3. Disk headroom: enough for the chains plus a snapshot / second DB (budget ≥ ~150 GiB free
    beyond the live chains).
@@ -83,16 +88,22 @@ Check the box is fit at any time, non-destructively:
 tests/integration/run.sh --host you@server --dir pithead --readiness
 ```
 
-It asserts: chains synced (reusable), the prune axis is exercisable (the live chain FS is
-snapshot-capable **or** a pre-built variant chain is supplied), disk headroom, `.env` is
-owner-only, the dashboard is bound to localhost, and the backup/rollback net is usable.
+It asserts: Monero caught up and Tari dashboard sync `done`, each polled every 5 s
+for up to 240 s (chains reusable). Monero expiry distinguishes a node that answered
+“not caught up” from one that could not be asked. It also checks that
+`pithead status` becomes healthy within 240 s (a failure lists each service's last verdict), the prune
+axis is exercisable (the live chain FS is snapshot-capable
+**or** a pre-built variant chain is supplied), disk headroom, `.env` is owner-only, the dashboard
+is bound to localhost, and the backup/rollback net is usable. A Tari-only timeout is reported to
+bench-ci as a retryable environment wait after baseline restore.
 
 ### The lint/release toolchain
 
 `make release`'s blocking test gate runs `make lint`, which shells out to `shellcheck`, `shfmt`,
 `node`/`npx`, and `uv`/`uvx`. A reimaged box loses these, so the release preflight
 ([#426](https://github.com/p2pool-starter-stack/pithead/issues/426)) stops early and names the
-missing tool rather than dying mid-gate. Restore them with the same pinned versions CI uses
+missing tools and their effective PATH rather than dying mid-gate. The check runs in a dry run
+and a real cut whenever the test gate is enabled; each resolved tool path is printed. Restore them with the same pinned versions CI uses
 ([`.github/workflows/shell.yml`](../../.github/workflows/shell.yml)) — apt's `shellcheck`/`shfmt` are older
 and reformat differently, so a version skew would fail `make lint` on the box for diffs the merge
 gate never saw. Both pins live in the `Makefile` — `SHELLCHECK_VERSION` and `SHFMT_VERSION` — and
@@ -121,9 +132,29 @@ sudo install -m 0755 "/tmp/shellcheck-v$SC/shellcheck" /usr/local/bin/shellcheck
 sudo curl -fsSL -o /usr/local/bin/shfmt "https://github.com/mvdan/sh/releases/download/v$SF/shfmt_v${SF}_linux_amd64"
 sudo chmod 0755 /usr/local/bin/shfmt
 
-# uv 0.12.13 (pinned installer; brings uvx, and adds ~/.local/bin to PATH)
+# uv 0.12.13 (pinned installer; brings uvx; updates login-shell PATH)
 curl -LsSf https://astral.sh/uv/0.12.13/install.sh | sh
 ```
+
+The uv installer's bin directory is on a login shell's PATH only. Install the tools to a directory
+and set `RELEASE_TOOL_PATH` in the environment or the release env file so non-interactive runs see
+them too. It is a colon-separated list of absolute, existing directories, prepended to the exported
+PATH inherited by `make test` and every child process. Empty, relative, missing, or group/world-writable
+directories stop preflight. A dry run now fails on the same missing tool as the real cut; it still
+prints `make test` and the integration matrix rather than running them.
+
+Preflight reads `${PITHEAD_RELEASE_ENV:-$RELEASE_KEY_DIR/env}`; `RELEASE_KEY_DIR` defaults to the
+signing-key directory described below. A missing default file is ignored; a missing explicit
+`PITHEAD_RELEASE_ENV` target stops the run. Keep the file owned by the invoking user and not
+writable by group or world (0600 is recommended; 0644 is accepted). Symlinks are refused.
+
+The file accepts only `BENCH_CI_APP_ID`, `BENCH_CI_APP_SLUG`, `RELEASE_INTEGRATION_ARGS`, and
+`RELEASE_TOOL_PATH`, one `NAME=value` per line. Blank lines, comments beginning with `#`, an optional
+`export` prefix followed by a space, and matching single or double quotes are accepted. Values are literal: `$`,
+backticks, and `~` are not expanded, so write absolute paths. Existing environment settings win,
+including empty values. Preflight logs names and counts, never values. Any other name or malformed
+assignment stops the run with the file's basename and line number. Keep secrets in the signing-key
+and passphrase files; registry credentials and smoke commands cannot be put in this env file.
 
 ### The release signing key
 
@@ -255,8 +286,9 @@ export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem      # leaf t
 export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
 ```
 
-`mkimage.sh` bakes the keyring cert into slot A; `mkbundle.sh` signs the bundle with the leaf. Both
-refuse to run for a release with these unset — there is no silent fallback to a dev cert.
+`mkimage.sh` bakes the keyring cert into slot A; `mkbundle.sh` signs the bundle with the leaf. A
+release build refuses an unset leaf cert or key, but an unset `PITHEAD_RAUC_KEYRING` defaults to
+the leaf cert. Export the root keyring explicitly for every release cut.
 
 **Rotation.** The constraint that shapes the whole runbook: **RAUC trusts the keyring baked at
 image build time, so a device only ever trusts what shipped in its running slot.** A new trust
@@ -306,14 +338,17 @@ lsblk -d -o NAME,ROTA,SIZE,MODEL   # ROTA=0 is SSD/NVMe, ROTA=1 is a spinning HD
 Keep the chain monerod runs against on an SSD/NVMe. A spare HDD is fine for cold backups and
 `pithead backup` archives, but not for an active test chain.
 
-A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and a REQUIREMENT for
-the `--image-upgrade` gate, which cannot take its rollback snapshots without `cp --reflink=always`.
-On a CoW volume the
-harness can snapshot/restore a chain cheaply for per-scenario isolation, but only if it's on
-fast storage. A loopback btrfs on a spare HDD gives you CoW semantics at HDD speed, which is the
-wrong trade for an active chain. If your root FS is ext4 on an SSD (the common case) you don't
-need CoW at all: the matrix only edits `config.json` and reuses one chain, and `--safety-backup`
-(a `pithead backup` + auto-rollback) isolates the destructive scenarios.
+A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and a requirement for a
+direct `tests/integration/run.sh --image-upgrade` run, which cannot take its rollback snapshots of
+the data-dir bind mounts without `cp --reflink=always` and refuses rather than fully copying a
+chain (#2057). The `tier4-kvm` `image-upgrade` phase supplies its own guest-local reflink XFS and
+does not depend on the bench filesystem. On a CoW
+volume the harness can snapshot/restore a chain cheaply for per-scenario isolation, but only if
+it's on fast storage. A
+loopback btrfs on a spare HDD gives you CoW semantics at HDD speed, which is the wrong trade for an
+active chain. If your root FS is ext4 on an SSD (the common case) you don't need CoW at all: the
+matrix only edits `config.json` and reuses one chain, and `--safety-backup` (a `pithead backup` +
+auto-rollback) isolates the destructive scenarios.
 
 Covering both prune modes. The box mines one mode (its real config). The harness exercises that
 mode against the live chain and skips the other unless you supply a chain for it
@@ -428,7 +463,8 @@ Treat the box as production-sensitive. It holds keys and it's the thing that sig
   regression-guarded in `tests/stack/standalone/test_compose.sh`).
 - Reproducible, clean baseline. The matrix reuses the synced read/write chains, which may advance
   normally; it does not replace them during config-only cases. The image-upgrade gate takes
-  private reflink snapshots of every writable mount and restores them, restores the
+  private reflink snapshots of every writable bind mount (a plain copy of the small named
+  volumes) and restores them, restores the
   original `config.json` at the end, and `--safety-backup` takes a `pithead backup` first and
   rolls the box back (down → restore → up) if anything fails.
 - Build isolation and integrity. Build images in containers with pinned upstream versions and

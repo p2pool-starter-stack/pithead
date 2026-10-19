@@ -280,13 +280,15 @@ async def test_long_name_token_is_capped(monkeypatch):
 
 
 # --- Per-worker endpoint descriptors (#172) ------------------------------------------------------
-# workers.list[] entries override the fleet defaults per rig. Merge rule: per-worker field >
-# fleet default > inherit. Matched by stratum name first, then by connecting IP against an
-# operator-set host; a per-worker token implies token-auth for that worker only.
+# workers.list[] overrides fleet defaults, matched by name then operator-set host.
 
 
 def _with_overrides(monkeypatch, entries):
     monkeypatch.setattr(xc, "WORKER_ENDPOINTS", entries)
+
+
+def _read_override(host, bearer):
+    return {"name": "rig1", "host": host, "token": {"__secret__": True}, "read_token": bearer}
 
 
 async def test_override_port_beats_fleet_default(monkeypatch):
@@ -313,9 +315,9 @@ async def test_override_host_beats_connecting_ip(monkeypatch):
     assert session.calls[0][0] == "http://worker-lan.local:8080/1/summary"
 
 
-async def test_override_token_implies_token_auth_for_that_worker_only(monkeypatch):
-    # Fleet mode stays "none", yet the listed rig gets its own bearer.
-    _with_overrides(monkeypatch, [{"name": "rig1", "token": "per-rig-secret"}])
+async def test_read_token_implies_token_auth_for_that_worker_only(monkeypatch):
+    # Fleet mode stays "none", yet the listed rig gets its own read-only bearer.
+    _with_overrides(monkeypatch, [_read_override("10.0.0.1", "per-rig-secret")])
     session = FakeSession(response=FakeResponse(200, {"ok": True}))
     client = XMRigWorkerClient(session)
     await client.get_stats("10.0.0.1", "rig1")
@@ -324,9 +326,9 @@ async def test_override_token_implies_token_auth_for_that_worker_only(monkeypatc
     assert "Authorization" not in (session.calls[1][1] or {})
 
 
-async def test_override_token_beats_fleet_name_auth(monkeypatch):
+async def test_read_token_beats_fleet_name_auth(monkeypatch):
     monkeypatch.setattr(xc, "XMRIG_API_AUTH", "name")
-    _with_overrides(monkeypatch, [{"name": "rig1", "token": "per-rig-secret"}])
+    _with_overrides(monkeypatch, [_read_override("10.0.0.1", "per-rig-secret")])
     session = FakeSession(response=FakeResponse(200, {"ok": True}))
     await XMRigWorkerClient(session).get_stats("10.0.0.1", "rig1+cpu")
     assert session.calls[0][1]["Authorization"] == "Bearer per-rig-secret"
@@ -362,14 +364,14 @@ async def test_name_match_wins_over_ip_match(monkeypatch):
 
 
 # --- SSRF guard × overrides (#122/#172) ----------------------------------------------------------
-# A per-worker token must never travel to a host the dashboard did not either validate as the
+# A per-worker read credential must never travel to a host the dashboard did not either validate as the
 # rig's own external address or receive from the OPERATOR's config.json. A miner-advertised
-# name/ip can never redirect a token-bearing probe.
+# name/ip can never redirect a credential-bearing probe. Control tokens are never probe inputs.
 
 
-async def test_token_never_sent_when_ip_fails_the_guard(monkeypatch):
-    # Entry has a token but no pinned host; the claimed ip is our own infrastructure. No probe,
-    # no token on the wire.
+async def test_control_token_never_sent_when_ip_fails_the_guard(monkeypatch):
+    # Entry has a host-only control token but no pinned host; the claimed ip is our own
+    # infrastructure. No probe and no credential on the wire.
     _with_overrides(monkeypatch, [{"name": "rig1", "token": "s3cr3t"}])
     session = FakeSession(response=FakeResponse(200, {"ok": True}))
     assert await XMRigWorkerClient(session).get_stats("172.28.0.30", "rig1") == {}
@@ -379,7 +381,7 @@ async def test_token_never_sent_when_ip_fails_the_guard(monkeypatch):
 async def test_operator_host_is_probed_even_when_ip_is_unusable(monkeypatch):
     # A NAT'd rig can surface with an unusable connecting address; the operator-set host is the
     # probe target regardless — it comes from config.json, never from the miner (#122).
-    _with_overrides(monkeypatch, [{"name": "rig1", "host": "192.168.7.9", "token": "s3cr3t"}])
+    _with_overrides(monkeypatch, [_read_override("192.168.7.9", "s3cr3t")])
     session = FakeSession(response=FakeResponse(200, {"ok": True}))
     result = await XMRigWorkerClient(session).get_stats("", "rig1")
     assert result == {"ok": True, "api_ok": True, "adopted": True}
@@ -388,19 +390,17 @@ async def test_operator_host_is_probed_even_when_ip_is_unusable(monkeypatch):
     assert headers["Authorization"] == "Bearer s3cr3t"
 
 
-async def test_spoofed_name_cannot_redirect_the_token_to_the_miner_ip_when_host_pinned(
+async def test_spoofed_name_cannot_redirect_read_credential_to_miner_ip_when_host_pinned(
     monkeypatch,
 ):
     # An imposter claims a listed rig's name from its own address: with the host pinned, the
-    # probe (and the token) still goes only to the operator's address.
-    _with_overrides(monkeypatch, [{"name": "rig1", "host": "192.168.7.9", "token": "s3cr3t"}])
+    # probe (and its read-only credential) still goes only to the operator's address.
+    _with_overrides(monkeypatch, [_read_override("192.168.7.9", "s3cr3t")])
     session = FakeSession(response=FakeResponse(200, {"ok": True}))
     await XMRigWorkerClient(session).get_stats("8.8.8.8", "rig1")
     assert session.calls[0][0] == "http://192.168.7.9:8080/1/summary"
 
 
-# Kept here, not with the other parse tests: it shares RIGFORGE_BLOCK with the
-# control-status tests below.
 def test_parse_rigforge_full_block():
     rf = parse_rigforge({"hashrate": {"total": [100]}, "rigforge": RIGFORGE_BLOCK, "api_ok": True})
     assert rf["version"] == "1.7.0"

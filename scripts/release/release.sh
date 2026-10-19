@@ -6,7 +6,7 @@
 #
 #   1. Preflight      clean tree, read VERSION, ensure the tag isn't already released, resolve pins
 #   2. Test gate      `make test` (+ the #54 integration matrix, unless skipped) — blocking
-#   3. Build          build the 5 first-party images with OCI labels + the release version baked in
+#   3. Build          build the 5 stack images plus the appliance rootfs
 #   4. Stage          push to a staging tag (:vX.Y.Z-rc.N) on GHCR and capture immutable digests
 #   5. Smoke          pull the STAGED images back and verify they resolve to the right version
 #   6. Promote        re-tag the smoke-tested digests to :vX.Y.Z + :latest (no rebuild) and push
@@ -36,10 +36,20 @@
 # Environment:
 #   PITHEAD_REGISTRY        Registry namespace (default: ghcr.io/p2pool-starter-stack).
 #   PITHEAD_IMAGE_PREFIX    Image-name prefix (default: pithead-) -> ghcr.io/.../pithead-dashboard.
-#   GHCR_USER / GHCR_TOKEN  Registry login. Token falls back to GITHUB_TOKEN, then `gh auth token`.
+#   GHCR_USER / GHCR_TOKEN  ghcr.io login only; falls back to GITHUB_TOKEN, then `gh auth token`.
+#   PITHEAD_REGISTRY_USER / PITHEAD_REGISTRY_TOKEN  Login for other registries (token via stdin).
+#   PITHEAD_REHEARSAL       Set to 1 for a scratch registry; stops after signing, before publish.
+#   PITHEAD_BUILDKITD_CONFIG  Readable buildkitd config; use a separate PITHEAD_BUILDX_BUILDER.
+#   PITHEAD_REGISTRY_READ_RETRIES / PITHEAD_REGISTRY_READ_BACKOFF  Reads: 12 attempts, 10 s delay.
+#   PITHEAD_REGISTRY_WRITE_RETRIES  Total write attempts (1-10, default: 3).
+#   PITHEAD_REGISTRY_WRITE_BACKOFF  First write delay (0-60 s, default: 10); doubles up to 60 s.
 #   BENCH_CI_APP_ID       Numeric id of the installed bench-ci GitHub App (required, no default).
 #   BENCH_CI_APP_SLUG     Slug of that same App: pithead-bench-ci (required, no default).
 #   RELEASE_INTEGRATION_ARGS  Extra args passed to `make test-integration ARGS=...` (the #54 gate).
+#   PITHEAD_RELEASE_ENV    Env file (default: $RELEASE_KEY_DIR/env); explicit missing file is fatal.
+#   RELEASE_TOOL_PATH      Colon-separated absolute tool directories prepended to PATH.
+#   The env file may set BENCH_CI_APP_ID, BENCH_CI_APP_SLUG, RELEASE_INTEGRATION_ARGS,
+#   and RELEASE_TOOL_PATH; values are literal and existing environment settings win.
 #   RELEASE_SMOKE_CMD       Optional command run during the smoke stage for a fuller functional check.
 #   COSIGN_KEY / COSIGN_PASSWORD  Release signing (#376): path to the cosign private key on this box
 #                           and its passphrase. Promoted digests + the bundle get key signatures;
@@ -51,12 +61,14 @@ set -euo pipefail
 
 # --- Configuration -------------------------------------------------------------------------------
 
-REGISTRY="${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}"
+PROD_REGISTRY=ghcr.io/p2pool-starter-stack
+REGISTRY="${PITHEAD_REGISTRY:-$PROD_REGISTRY}"
 IMAGE_PREFIX="${PITHEAD_IMAGE_PREFIX:-pithead-}"
 
-# The 5 first-party images, by build-dir / image-name suffix (build context = "build/<suffix>",
+# The 5 stack images, by build-dir / image-name suffix (build context = "build/<suffix>",
 # published image = "$REGISTRY/${IMAGE_PREFIX}<suffix>"). The compose service for "monero" is "monerod". dashboard is the one exception — build context "dashboard/" at the repo root (#1106) — see build_images() below.
 IMAGES=(tor monero p2pool xmrig-proxy dashboard)
+PUBLISHED_IMAGES=("${IMAGES[@]}" os-rootfs)
 
 # Target platform(s) for the published images. linux/amd64 ONLY: the bundled binaries are x86_64
 # (monero/p2pool/xmrig-proxy ship `linux-x64`, and xmrig-proxy has NO arm64 build at all — so an arm64
@@ -162,17 +174,23 @@ get_digest() { cat "$WORKDIR/digest.$1" 2>/dev/null || true; }
 # to $REGISTRY_READ_RETRIES times, with $REGISTRY_READ_BACKOFF-second backoff, requiring non-empty
 # output. Emits the read's stdout; returns non-zero only after every attempt fails, so a genuinely-
 # missing image still stops the release (the caller's `[ -n "$digest" ] || die` fires as before).
-REGISTRY_READ_RETRIES="${PITHEAD_REGISTRY_READ_RETRIES:-5}"
-REGISTRY_READ_BACKOFF="${PITHEAD_REGISTRY_READ_BACKOFF:-3}"
+REGISTRY_READ_RETRIES="${PITHEAD_REGISTRY_READ_RETRIES:-12}"
+REGISTRY_READ_BACKOFF="${PITHEAD_REGISTRY_READ_BACKOFF:-10}"
 
 # The registry inspect, wrapped in a function so the tests can stub it (fail N times, then succeed).
-buildx_inspect() { docker buildx imagetools inspect "$@"; }
+buildx_inspect() {
+    local args=()
+    [ -z "${PITHEAD_BUILDKITD_CONFIG:-}" ] || args+=(--builder "$BUILDX_BUILDER")
+    docker buildx imagetools inspect ${args[@]+"${args[@]}"} "$@"
+}
+
+imagetools_digest() { awk '/^Digest:/{print $2; exit}'; }
 
 retry_registry_read() {
     local attempt=1 out expected_digest="${REGISTRY_READ_EXPECT_DIGEST:-}"
     while :; do
         if out="$("$@" 2>/dev/null)" && [ -n "$out" ] &&
-            { [ -z "$expected_digest" ] || grep -Fxq "Digest: $expected_digest" <<<"$out"; }; then
+            { [ -z "$expected_digest" ] || [ "$(imagetools_digest <<<"$out")" = "$expected_digest" ]; }; then
             printf '%s' "$out"
             return 0
         fi
@@ -182,10 +200,57 @@ retry_registry_read() {
         attempt=$((attempt + 1))
     done
 }
+REGISTRY_WRITE_RETRIES="${PITHEAD_REGISTRY_WRITE_RETRIES:-3}"
+REGISTRY_WRITE_BACKOFF="${PITHEAD_REGISTRY_WRITE_BACKOFF:-10}"
+
+check_registry_write_tuning() {
+    [[ "$REGISTRY_WRITE_RETRIES" =~ ^([1-9]|10)$ ]] || die "PITHEAD_REGISTRY_WRITE_RETRIES must be an integer from 1 to 10."
+    [[ "$REGISTRY_WRITE_BACKOFF" =~ ^([0-9]|[1-5][0-9]|60)$ ]] || die "PITHEAD_REGISTRY_WRITE_BACKOFF must be an integer from 0 to 60."
+}
+
+retry_registry_write() {
+    check_registry_write_tuning
+    local attempt=1 delay="$REGISTRY_WRITE_BACKOFF" errfile rc tail_text matched
+    local status_context='status.*:[[:space:]]*|status([[:space:]]+code)?[[:space:]]+'
+    errfile="$(mktemp)" || return 1
+    while :; do
+        # Wait for tee to finish before inspecting the last stderr line; preserve stdout separately.
+        if { "$@" 2>&1 1>&3 | tee "$errfile" >&2; } 3>&1; then
+            rm -f "$errfile"
+            return 0
+        else
+            rc="${PIPESTATUS[0]}"
+        fi
+        tail_text="$(tail -n 20 "$errfile")"
+        if grep -Eiq "unauthorized|denied|forbidden|($status_context)(401|403)([[:space:]]|$)|manifest unknown|name unknown|digest[[:space:]_-]+(mismatch|invalid)|(mismatch|invalid)[[:space:]_-]+digest" <<<"$tail_text"; then
+            rm -f "$errfile"
+            return "$rc"
+        fi
+        matched="$(grep -Ei "($status_context)(500|502|503|504)([[:space:]]|$)|connection reset by peer|TLS handshake timeout|i/o timeout|unexpected EOF" <<<"$tail_text" | tail -n 1)" || true
+        if [ -z "$matched" ]; then
+            rm -f "$errfile"
+            return "$rc"
+        fi
+        if [ "$attempt" -ge "$REGISTRY_WRITE_RETRIES" ]; then
+            warn "registry write failed after $attempt attempts: $matched"
+            rm -f "$errfile"
+            return "$rc"
+        fi
+        warn "registry write failed (attempt $attempt/$REGISTRY_WRITE_RETRIES): $matched — retrying in ${delay}s..."
+        if ! sleep "$delay"; then
+            rm -f "$errfile"
+            return "$rc"
+        fi
+        attempt=$((attempt + 1))
+        delay=$((delay * 2))
+        [ "$delay" -le 60 ] || delay=60
+    done
+}
+
 # Parse and validate the manifest-list digest that promotion re-tags.
 manifest_digest() {
     local digest
-    digest="$(retry_registry_read buildx_inspect "$1" | awk '/^Digest:/{print $2; exit}')" || return 1
+    digest="$(retry_registry_read buildx_inspect "$1" | imagetools_digest)" || return 1
     [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
     printf '%s' "$digest"
 }
@@ -209,6 +274,7 @@ pin() {
     tari-wallet) grep -oE 'ghcr.io/tari-project/minotari_console_wallet:[^ ]+' docker-compose.yml | head -1 ;;
     caddy) grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' docker-compose.yml | head -1 ;;
     socket-proxy) grep -oE 'tecnativa/docker-socket-proxy:[^ ]+' docker-compose.yml | head -1 ;;
+    rigforge) grep -oE '^ARG RIGFORGE_REF=.*' os/rootfs/Dockerfile | cut -d= -f2 ;;
     esac
 }
 
@@ -235,6 +301,10 @@ main() {
     smoke_test
     promote
     sign_images # #376 — signs the digests promote re-tagged
+    if [ "${PITHEAD_REHEARSAL:-0}" = 1 ]; then
+        ok "Rehearsal complete: nothing was tagged or published"
+        return 0
+    fi
     publish
 
     printf '\n'

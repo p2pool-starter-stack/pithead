@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from mining_dashboard.config import config
+from mining_dashboard.service.network import egress_status
 from mining_dashboard.web.views import header, views
 
 config.TARI_MODE = "remote"
@@ -32,6 +33,8 @@ NOW = 1735689600
 views.time.time = lambda: NOW  # build_state's last_update + history cutoff
 views.HOST_IP = "Unknown Host"
 header.detect_host_ipv4 = lambda: "100.68.38.126"
+# The host egress-status file (#2599) is absent here; pin the verified resting state.
+egress_status.egress_firewall_state = lambda *a, **k: egress_status.ENFORCED
 # The dashboard onion (#1853) is read from the process environment at call time, so clear it:
 # otherwise this regenerates differently on a box that happens to have an onion provisioned.
 for _var in ("DASHBOARD_ONION_ENABLED", "DASHBOARD_ONION_ADDRESS", "DASHBOARD_ONION_CLIENT_AUTH"):
@@ -56,7 +59,10 @@ WORKERS = [
         "hashrate_1m": 5100,
         "hashrate_15m": 5000,
         "h60": 5100,
-        "rigforge": {"power": {"watts": 142.0, "hs_per_watt": 35.9}},
+        "rigforge": {
+            "generated_at": "2025-01-01T00:00:00Z",
+            "power": {"watts": 142.0, "hs_per_watt": 35.9},
+        },
     },
     {
         "name": "rig-bravo",
@@ -69,7 +75,10 @@ WORKERS = [
         "hashrate_1m": 0,
         "hashrate_15m": 4800,
         "h60": 4800,
-        "rigforge": {"power": {"watts": 143.0, "hs_per_watt": 33.6}},
+        "rigforge": {
+            "generated_at": "2025-01-01T00:00:00Z",
+            "power": {"watts": 143.0, "hs_per_watt": 33.6},
+        },
     },
 ]
 

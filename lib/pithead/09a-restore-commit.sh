@@ -15,15 +15,19 @@
 # rc 2: rolled back only in part; the previous copies that could not be restored are still
 # beside their destinations under the .restore-old name. rc 3: every previous copy is back, but
 # a staged copy or a name the merge added could not be removed.
-restore_setup_item_dest() { # <relative item>
+restore_setup_item_dest() { # <relative item> [<destination root>, default $PWD]
+    local dest_root="${2:-$PWD}"
     case "$1" in
-    "$CONFIG_FILE") restore_setup_config_path ;;
-    *) printf '%s\n' "$PWD/${1%/}" ;;
+    "$CONFIG_FILE")
+        # This box's config path may be overridden; a mounted target's is always the default one.
+        if [ "$dest_root" = "$PWD" ]; then restore_setup_config_path; else printf '%s\n' "$dest_root/$CONFIG_FILE"; fi
+        ;;
+    *) printf '%s\n' "$dest_root/${1%/}" ;;
     esac
 }
 
-restore_commit_items() ( # <staged root> <scratch dir>
-    local stage_root="$1" scratch="$2" rel source dest staged aside added name i=0 failed=0
+restore_commit_items() ( # <staged root> <scratch dir> [<destination root>, default $PWD]
+    local stage_root="$1" scratch="$2" dest_root="${3:-$PWD}" rel source dest staged aside added name i=0 failed=0
     local -a staged_items=() staged_paths=() made_dirs=() done_kind=() done_dest=() done_aside=()
     restore_commit_rollback() {
         local j k path lost=0 left=0
@@ -63,7 +67,7 @@ restore_commit_items() ( # <staged root> <scratch dir>
     while IFS= read -r rel; do
         source="$stage_root/$rel"
         [ -e "$source" ] || continue
-        dest=$(restore_setup_item_dest "$rel")
+        dest=$(restore_setup_item_dest "$rel" "$dest_root")
         case "$rel" in
         data/monero/ | data/tari/ | data/p2pool/) staged="" ;;
         */)
@@ -85,7 +89,7 @@ restore_commit_items() ( # <staged root> <scratch dir>
     for name in "${staged_items[@]}"; do
         [ "$failed" = 0 ] || break
         rel="${name%%$'\t'*}" staged="${name#*$'\t'}"
-        dest=$(restore_setup_item_dest "$rel")
+        dest=$(restore_setup_item_dest "$rel" "$dest_root")
         if [ -z "$staged" ]; then
             # Chain data survives this box's own `keep` policy (#2195): a restore must not force a
             # resync, so the archive's tree is MERGED into whatever already sits here instead of

@@ -46,7 +46,9 @@ setup() {
     inject_service_configs
     optimize_kernel
     generate_caddyfile
-    provision_control_runner  # #33: install/remove the dashboard-control systemd trigger
+    provision_control_runner     # #33: install/remove the dashboard-control systemd trigger
+    provision_egress_check_units # #2599: the dashboard's egress firewall status
+    provision_lan_guard_check_units
     render_local_miner_config # #796: the appliance's built-in RigForge worker reads a derived config
     update_current_symlink    # #455: versioned deploy dir -> maintain the `current ->` pointer
 
@@ -54,6 +56,7 @@ setup() {
     # Provisioning is done. Everything below is either a message or an interactive "start now?",
     # so the hold ends here; the stack_up it may call takes its own.
     mutation_lock_release
+    announce_dashboard_url
     if [ "$REBOOT_REQUIRED" = true ]; then
         echo -e "\n${C_YELLOW}[!] ATTENTION: System optimization requires a reboot.${C_RESET}"
         echo "Please run: 'sudo reboot' now."

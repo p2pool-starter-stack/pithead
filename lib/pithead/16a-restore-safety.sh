@@ -2,6 +2,10 @@
 
 compose_active_ids() {
     local status ids active=""
+    if [ ! -f "$ENV_FILE" ]; then
+        configless_active_ids 2>/dev/null
+        return
+    fi
     for status in running restarting paused; do
         ids=$(docker compose ps --status "$status" -q 2>/dev/null) || return 1
         active+="$ids"
@@ -33,6 +37,7 @@ restore_collect_destinations() {
     case "$cfg" in /*) ;; *) cfg="$PWD/$cfg" ;; esac
     RESTORE_FIXED_PATHS=("$cfg" "$PWD/$ENV_FILE" "$PWD/Caddyfile")
     RESTORE_TRUSTED_DIRS=("$PWD/data/monero" "$PWD/data/tari" "$PWD/data/p2pool" "$PWD/data/tor" "$PWD/data/dashboard")
+    [ -f "$PWD/$ENV_FILE" ] || restore_reset_paths
     for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do
         path=$(env_get_file "$PWD/$ENV_FILE" "$key")
         [ -z "$path" ] || RESTORE_TRUSTED_DIRS+=("$path")
@@ -41,6 +46,9 @@ restore_collect_destinations() {
 
 restore_member_allowed() {
     local name="${1%/}" path rel
+    # The local reset record is destination policy, never recoverable archive data, even when
+    # an operator's configured data directory contains the installation itself.
+    case "$name" in "${PWD#/}/.restore-paths" | "${PWD#/}/.restore-paths/"*) return 1 ;; esac
     for path in "${RESTORE_FIXED_PATHS[@]}"; do
         [ "$name" = "${path#/}" ] && return 0
     done
@@ -140,7 +148,7 @@ DASHBOARD_AUTH_HASH_B64 bcrypt
 DEPLOYMENT_COMPLETED bool
 EOF
     if ! PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \
-        bash -c 'source "$1" && parse_and_validate_config >/dev/null && load_preserved_state && DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) && resolve_dashboard_host && render_env "${ENV_FILE}.dryrun" >/dev/null && mv -f -- "${ENV_FILE}.dryrun" "$ENV_FILE" && generate_caddyfile "$PITHEAD_CADDY_FILE" false >/dev/null' \
+        bash -c 'source "$1" && parse_and_validate_config >/dev/null && load_preserved_state && DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) && resolve_dashboard_host && render_env "$PITHEAD_ENV_DRYRUN" >/dev/null && mv -f -- "$PITHEAD_ENV_DRYRUN" "$ENV_FILE" && generate_caddyfile "$PITHEAD_CADDY_FILE" false >/dev/null' \
         _ "${BASH_SOURCE[0]}"; then
         rm -f -- "$seed" "$staged_caddy"
         return 1
@@ -176,6 +184,11 @@ restore_stage_archive() { # <archive> <encrypted:0|1> <passphrase>
     staged_env="$RESTORE_STAGE_DIR/${RESTORE_FIXED_PATHS[1]#/}"
     staged_caddy="$RESTORE_STAGE_DIR/${RESTORE_FIXED_PATHS[2]#/}"
     paths_file="$RESTORE_STAGE_DIR/.validated-data-paths"
+    err=$(restore_config_version_error "$staged_cfg")
+    if [ -n "$err" ]; then
+        restore_discard_stage
+        error "$err"
+    fi
     # Validate against the archive's own .env: the live one belongs to another render, so a dashboard
     # password that differs from it would force a Caddy rehash that this read-only check must not need.
     if [ ! -f "$staged_cfg" ] || [ ! -f "$staged_env" ] || { [ -e "$staged_caddy" ] && [ ! -f "$staged_caddy" ]; } ||
@@ -271,5 +284,11 @@ restore_commit_stage() {
             error "Restore failed while committing $path; inspect the destination before retrying."
         }
     done
+    # The archive wins ordinary collisions, but Tor's circuit history must never survive a
+    # restore. Its onion keys are separate files and remain untouched.
+    sudo rm -f -- "${RESTORE_ALLOWED_DIRS[3]}/state" || {
+        restore_discard_stage
+        error "Restore committed data but could not discard Tor circuit state; keep the stack stopped and remove the state before starting Tor."
+    }
     restore_discard_stage
 }

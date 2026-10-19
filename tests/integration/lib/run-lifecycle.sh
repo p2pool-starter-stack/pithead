@@ -1,31 +1,44 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034 # LIFECYCLE_STACK_INTACT is read by the phase gate in run.sh
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-background-sync.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 run_lifecycle() {
-    # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"
-    local lifecycle_ok=1
+    local lifecycle_ok=1 reset_failed=0 # reset_failed: 1 changed state, 2 left the stack intact (#3342)
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
-
-    # restart brings the stack back healthy.
+    lifecycle_gate_sample before-wizard-defaults
+    run_cli_wizard_defaults || return 1
+    tor_recovery_healthy_probe
+    prove_wallet_supersession
+    prove_wallet_recovery || return 1
+    lifecycle_gate_sample before-restart
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after restart" "$?" "0"
-
-    # #2654: a source checkout ups with --pull never, so a digest-pinned third-party image that is
-    # gone from the engine (after `uninstall`, or on a new host) left its services down. Remove the
-    # socket-proxy image (docker-proxy and docker-control, both profile-free) and prove `up` fetches it.
+    lifecycle_gate_sample after-restart
+    run_connection_announcements || return 1
+    # Remove the socket-proxy image and prove up fetches a missing pinned image (#2654).
     if rx 'test -f dashboard/Dockerfile'; then
         local proxy_ref proxy_id proxy_fails="$IT_FAIL"
         proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"
         proxy_id="$(rx "docker image inspect --format '{{.Id}}' $(quote_arg "$proxy_ref")" 2>/dev/null)"
+        lifecycle_gate_sample before-image-down
         it_step "removing the pinned socket-proxy image, then pithead up (#2654)…"
         if [ -n "$proxy_ref" ] && [ -n "$proxy_id" ] && pithead down >/dev/null 2>&1 &&
             rx "docker image rm -f $(quote_arg "$proxy_id")" >/dev/null 2>&1; then
-            pithead up >/dev/null 2>&1
-            assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$?" "0"
+            local up_out up_rc
+            up_out="$(pithead up 2>&1)"
+            up_rc=$?
+            lifecycle_gate_sample after-image-up
+            assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
+            # The failing pull or up names its cause; job 1280 lost it to /dev/null (#2755).
+            [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
+            [ "$up_rc" -eq 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
             rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
             assert_rc "up fetched the missing pinned image (#2654)" "$?" "0"
             assert_eq "docker-proxy runs from the fetched image (#2654)" "$(svc_state_of "$(service_state docker-proxy)")" "running"
@@ -33,6 +46,7 @@ run_lifecycle() {
                 it_pass "status OK after up restored a missing pinned image (#2654)"
             else
                 it_fail "status OK after up restored a missing pinned image (#2654)" "pithead status did not recover"
+                [ "$up_rc" -ne 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
             fi
             [ "$IT_FAIL" -le "$proxy_fails" ] || lifecycle_ok=0
         else
@@ -42,13 +56,11 @@ run_lifecycle() {
     else
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
-
-    # apply that changes the sidechain recreates only the affected containers, preserving
-    # secrets. We flip main<->mini and assert the token/onions are untouched, then revert.
-    local cur_pool fp_before
+    run_source_image_reconcile || return 1
+    run_tari_background_sync || return 1
+    local cur_pool fp_before other
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
-    cur_pool="${cur_pool:-main}"
-    local other
+    cur_pool="${cur_pool:-mini}"
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
     fp_before="$(secret_fingerprint)"
     # ensure_owner whole-tree migration (#255): plant a root-owned file UNDER a data dir (the
@@ -79,7 +91,6 @@ run_lifecycle() {
     # .pool.type lags a sidechain switch until peers on the new chain connect — wait + three-way
     # verdict, don't assert cold on a peer-timing state (#54, #687).
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
-
     # Node-down failover (#31): stop monerod -> status non-zero (node down), dashboard rejects
     # workers (xmrig-proxy stopped) -> start monerod -> readmitted -> status 0 again.
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
@@ -96,7 +107,6 @@ run_lifecycle() {
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
-
     # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
     # restore brings them back. We change the pool, restore, and assert the pool reverted and
     # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check
@@ -106,9 +116,12 @@ run_lifecycle() {
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
         if [ -n "$arch" ]; then
-            local fp_b backed_pool fp_after
+            local fp_b backed_pool fp_after gate_marker_before gate_marker_after
             if ! fp_b="$(upgrade_secret_fingerprints)" || [ -z "$fp_b" ]; then
                 it_fail "backup secrets fingerprint readable" "could not fingerprint backed-up secrets"
+                lifecycle_ok=0
+            elif ! gate_marker_before="$(sync_gate_marker_state)"; then
+                it_fail "backed-up sync-gate policy readable" "missing path or invalid marker"
                 lifecycle_ok=0
             elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
                 it_fail "backed-up pool state readable" "dashboard did not report pool.type before restore"
@@ -125,16 +138,11 @@ run_lifecycle() {
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
                     lifecycle_ok=0
                 fi
-                # Operator ruling on #2626: `./pithead restore` is same-box recovery, not the
-                # cross-hardware carry restore_apply() handles, so it must NOT hold the miner behind
-                # the sync gate — this bench's chains never desynced. No marker, and p2pool comes
-                # back up on `up`'s own schedule rather than sitting stopped behind a hold `status`
-                # wouldn't flag (it treats a gate-stopped p2pool as intentional).
-                local ddir
-                ddir="$(env_on_box DASHBOARD_DATA_DIR)"
-                if [ -n "$ddir" ]; then
-                    assert_eq "restore plants no sync-gate marker (#2626, same-box recovery)" \
-                        "$(rx "sudo test -e $(quote_arg "$ddir/sync-gate-reset")" 2>/dev/null && echo present || echo none)" none
+                if ! gate_marker_after="$(sync_gate_marker_state)" || [ "$gate_marker_after" != "$gate_marker_before" ]; then
+                    it_fail "restore preserves sync-gate policy without a new hold (#2626)" "marker changed or unreadable"
+                    lifecycle_ok=0
+                else
+                    it_pass "restore preserves sync-gate policy without a new hold (#2626)"
                 fi
                 if wait_for 60 5 "p2pool running after restore, not held (#2626)" \
                     _pred_p2pool_running; then
@@ -167,7 +175,6 @@ run_lifecycle() {
         it_fail "pithead backup succeeded" "backup returned non-zero"
         lifecycle_ok=0
     fi
-
     # Confirmed dashboard.data_dir carry (#2360): DASHBOARD_DATA_DIR is CONFIRM-class both from
     # the dashboard (typed APPLY) and the host CLI (folded into the disruptive y/N, exercised here
     # with -y) — same apply()-time carry either way. Without it the recreated dashboard would open
@@ -179,15 +186,13 @@ run_lifecycle() {
         if [ -n "$carry_old" ]; then
             carry_epoch="$(rx 'date +%s')"
             carry_new="${carry_old}-carried-$carry_epoch"
-            # kv_store-volatile-shape is left out: the recreated dashboard rewrites those live keys
-            # within seconds, so their shape reflects what the new process has seen, not what was
-            # carried. The kv_store-key lines still require every key to arrive.
-            rows_before="$(dashboard_durable_rows "$carry_epoch" | grep -v '^kv_store-volatile-shape ')"
+            # telemetry_rows_continue leaves the volatile kv_store shapes out (live-state-support.sh).
+            rows_before="$(dashboard_durable_rows "$carry_epoch")"
             it_step "confirmed dashboard.data_dir move: $carry_old -> ${carry_new}…"
             push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
-            if pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
+            if pithead apply -y 2>&1 | redact >"$OUT_DIR/dashboard-carry.apply.log" && wait_status_ok 180; then
                 assert_eq "DASHBOARD_DATA_DIR points at the new path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_new"
-                rows_after="$(dashboard_durable_rows "$carry_epoch" | grep -v '^kv_store-volatile-shape ')"
+                rows_after="$(dashboard_durable_rows "$carry_epoch")"
                 if telemetry_rows_continue "$rows_before" "$rows_after"; then
                     it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
                 else
@@ -195,7 +200,8 @@ run_lifecycle() {
                     lifecycle_ok=0
                 fi
             else
-                it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy"
+                it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy; see $OUT_DIR/dashboard-carry.apply.log"
+                capture_artifacts "lifecycle-carry" "$OUT_DIR"
                 lifecycle_ok=0
             fi
             # The product correctly refuses to overwrite the old, still-complete directory on a
@@ -214,8 +220,10 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
-    run_uninstall_round_trip || lifecycle_ok=0
-    [ "$lifecycle_ok" = 1 ]
+    run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
+    [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
+    [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
+    [ "$lifecycle_ok$reset_failed" = 10 ]
 }
 
 # A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
@@ -244,11 +252,10 @@ kept_chain_files_snippet() { # <path>...
 
 # uninstall -> setup round trip (#2379): uninstall removes the named volumes and every derived
 # path, keeps every *_DATA_DIR, config.json and backups/ byte-identical, and a setup after it
-# re-provisions from what was kept (and the harness's own secrets). The stack is stopped BEFORE the first snapshot: a running
-# monerod writes its LMDB, log and peer state continuously, and its own shutdown flushes them, so
-# a snapshot of a live node can never match anything (job 680). Stopped, the daemons write
-# nothing, and uninstall's own code must then change zero bytes: the allowlist of permitted writes
-# is empty. Always ends by bringing a stack back up, so the phases after this one have one.
+# re-provisions from what was kept (and the harness's own secrets). The stack is stopped before
+# the first snapshot: a running monerod writes its LMDB, log and peer state continuously, and
+# shutdown flushes them, so a live snapshot can never match (job 680). Stopped, the daemons write
+# nothing; uninstall must change zero bytes of kept data. The stack is brought back up afterward.
 run_uninstall_round_trip() {
     local fails_before="$IT_FAIL" key p kept=() derived=() snippet before after out rc onion_before big_before big_after
     it_step "pithead uninstall keeps every byte of data, then setup re-provisions from it…"
@@ -276,6 +283,17 @@ run_uninstall_round_trip() {
         wait_status_ok 240 || true
         return 1
     fi
+    IT_UNRELATED_VOLUME_CREATED="" IT_UNRELATED_VOLUME_NAME="" IT_WALLET_CREATE_ATTEMPTED=""
+    arm_inactive_tari_wallet_volume
+    [ "$IT_FAIL" -gt "$fails_before" ] || arm_unrelated_volume
+    if [ "$IT_FAIL" -gt "$fails_before" ]; then
+        rx 'cp -p .env.itest-round-trip .env' >/dev/null 2>&1 || true
+        cleanup_failed_tari_wallet_fixture
+        rx 'rm -f .env.itest-round-trip'
+        pithead up >/dev/null 2>&1
+        wait_status_ok 240 || true
+        return 1
+    fi
     out="$(pithead uninstall -y 2>&1)"
     rc=$?
     assert_rc "pithead uninstall -y succeeded" "$rc" "0"
@@ -291,16 +309,20 @@ run_uninstall_round_trip() {
     fi
     local vols
     if vols="$(rx "docker volume ls -q")"; then
-        assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
-            "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
+        assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_db volumes" \
+            "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_db|tari_wallet_data)$')" ""
+        assert_eq "uninstall preserves an unrelated Docker volume" \
+            "$(printf '%s\n' "$vols" | grep -Fx "$IT_UNRELATED_VOLUME_NAME")" "$IT_UNRELATED_VOLUME_NAME"
     else
-        it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" "docker volume ls failed"
+        it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_db volumes" "docker volume ls failed"
+    fi
+    if ! rx "docker volume rm $(quote_arg "$IT_UNRELATED_VOLUME_NAME")" >/dev/null 2>&1; then
+        it_fail "uninstall fixture removes its unrelated volume" "volume cleanup failed"
     fi
     local left=""
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
     assert_eq "uninstall removes every derived path and .env" "$left" ""
 
-    # An operator's setup here generates the secrets that lived only in .env anew (docs/operations.md).
     # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
     # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
     # wallet volume created under a new password would not open under the restored old one.
@@ -312,6 +334,7 @@ run_uninstall_round_trip() {
     out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
     rc=$?
     assert_rc "setup after uninstall succeeded" "$rc" "0"
+    rr_web_ports_owned_by_dashboard "setup after uninstall" || return 1
     [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -n 15 | redact | sed 's/^/        /'
     if wait_status_ok 600; then
         it_pass "status OK after setup-after-uninstall"
@@ -338,7 +361,7 @@ run_uninstall_round_trip() {
 # came back empty — an empty snapshot is a probe failure, not a divergence.
 telemetry_rows_diff() { # <before-lines> <after-lines>
     local missing
-    missing="$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort) | awk 'NF {print $1}' | sort | uniq -c | awk '{printf " %s x%s", $2, $1}')"
+    missing="$(comm -23 <(printf '%s\n' "$1" | carried_rows | sort) <(printf '%s\n' "$2" | carried_rows | sort) | awk 'NF {print $1}' | sort | uniq -c | awk '{printf " %s x%s", $2, $1}')"
     printf 'before=%s after=%s missing:%s' "$(printf '%s' "$1" | grep -c .)" "$(printf '%s' "$2" | grep -c .)" "${missing:- none}"
 }
 
@@ -355,9 +378,18 @@ _pred_monerod_unhealthy() { _monerod_is running unhealthy; }
 _pred_monerod_healthy() { _monerod_is running healthy; }
 _pred_proxy_stopped() { [ "$(svc_state_of "$(service_state xmrig-proxy)")" != "running" ]; }
 _pred_failover_armed() {
-    local st
+    # `/api/state` never carried the raw monero_sync/miner_released/workers_rejected fields
+    # (docs/dev/testing-strategy.md §F: this class of internal state is surfaced through
+    # `sync.monero.state` and the badges list, never as its own machine-queryable booleans) —
+    # so read the same contract the dashboard's own client reads, not internal names that were
+    # never part of the response.
+    local st badges
     st="$(api_state)"
-    [ "$(jq_get "$st" '.monero_sync.reachable')" = "true" ] && [ "$(jq_get "$st" '.miner_released')" = "true" ] && [ "$(jq_get "$st" '.workers_rejected')" = "false" ] && [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
+    badges="$(jq_get "$st" '.badges | map(.text) | join("")')"
+    [ "$(jq_get "$st" '.sync.monero.state')" = "done" ] &&
+        [[ "$badges" != *"Miner held"* ]] &&
+        [[ "$badges" != *"Workers rejected"* ]] &&
+        [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
 }
 _pred_p2pool_running() { [ "$(svc_state_of "$(service_state p2pool)")" = "running" ]; }
 _pred_tor_stopped() { [ "$(svc_state_of "$(service_state tor)")" != "running" ]; }

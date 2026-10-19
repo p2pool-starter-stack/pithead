@@ -132,7 +132,7 @@ rm -f "$merged"
 
 echo "== unit: media_validate_config (reuses the pre-seed validation engine) =="
 cat >"$MC/good.json" <<EOF
-{"monero":{"wallet_address":"$VALID_PRIMARY","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"}}
+{"config_version":"$(sed 's/[-+].*//' "$ROOT/VERSION")","monero":{"wallet_address":"$VALID_PRIMARY","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"}}
 EOF
 cat >"$MC/bad.json" <<'EOF'
 {"monero":{"wallet_address":"nope"},"tari":{"wallet_address":"t"}}
@@ -148,9 +148,9 @@ else
     bad "a valid candidate validates and yields a scratch file" "no output"
 fi
 if cmp -s "$MC/good.json" "$validated"; then
-    ok "a candidate that already carries its node credentials validates byte-identical"
+    ok "a candidate with node credentials and an equal stamp validates byte-identical"
 else
-    bad "a candidate that already carries its node credentials validates byte-identical" "$(diff "$MC/good.json" "$validated" 2>&1 | head -3)"
+    bad "a candidate with node credentials and an equal stamp validates byte-identical" "$(diff "$MC/good.json" "$validated" 2>&1 | head -3)"
 fi
 rm -f "$validated"
 
@@ -314,12 +314,12 @@ cp "$MC/changed.json" "$STICK4/pithead-config.json"
     media_confirm_gate() { echo apply; }
     main
 ) >"$MC/apply.out" 2>&1
-# jq-level equality, not cmp: the merge stage reformats, and changed.json names every key
-# good.json has, so the merged result must equal changed.json setting-for-setting.
-if [ "$(jq -S . "$MC/changed.json")" = "$(jq -S . "$RUN_CFG")" ]; then
+# The merged result must contain every candidate setting and the host-owned stamp.
+expected=$(jq -S --arg stamp "$(sed 's/[-+].*//' "$ROOT/VERSION")" '.config_version=$stamp' "$MC/changed.json")
+if [ "$expected" = "$(jq -S . "$RUN_CFG")" ]; then
     ok "a confirmed change is written to the running config.json — the changed setting took effect"
 else
-    bad "a confirmed change is written to the running config.json" "$(diff <(jq -S . "$MC/changed.json") <(jq -S . "$RUN_CFG") 2>&1 | head -3)"
+    bad "a confirmed change is written to the running config.json" "$(diff <(printf '%s\n' "$expected") <(jq -S . "$RUN_CFG") 2>&1 | head -3)"
 fi
 mounted_at=$(tail -1 "$MC/mount.log")
 [ -n "$mounted_at" ] && [ ! -f "$mounted_at/pithead-config.json" ] &&
