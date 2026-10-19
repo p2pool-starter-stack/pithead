@@ -48,6 +48,9 @@ fault_missing() {
     it_step "recover: recreate monerod…"
     rx "docker compose up -d monerod" >/dev/null 2>&1
     wait_for 240 5 "monerod healthy" _pred_monerod_healthy || true
+    wait_for 240 5 "proxy readmitted after monerod recreation" _pred_failover_armed &&
+        it_pass "proxy readmitted after monerod recreation" ||
+        it_fail "proxy readmitted after monerod recreation" "proxy not running and admitted within 240s"
 }
 
 # Live counterpart to the tier-1 #131 flag-logic tests: make the dashboard's data dir read-only on
@@ -157,6 +160,9 @@ fault_firewall_grandfathered_flow() {
 # healthy can print "All checks passed." while the whole privacy backbone is gone. Local mode only
 # (needs a local tor container to break).
 fault_tor_down() {
+    wait_for 240 5 "proxy admitted before Tor outage" _pred_failover_armed &&
+        it_pass "proxy admitted before Tor outage" ||
+        it_fail "proxy admitted before Tor outage" "proxy not running and admitted within 240s"
     it_step "fault: stop the tor container — SOCKS unreachable (#563)…"
     rx "docker compose stop tor" >/dev/null 2>&1
     wait_for 30 3 "tor to be stopped" _pred_tor_stopped || true
@@ -186,6 +192,9 @@ fault_tor_down() {
     wait_status_ok 180 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after tor recovery" "$?" "0"
+    wait_for 240 5 "proxy readmitted after Tor recovery" _pred_failover_armed &&
+        it_pass "proxy readmitted after Tor recovery" ||
+        it_fail "proxy readmitted after Tor recovery" "proxy not running and admitted within 240s"
     # Recovery isn't just "container up" — a flapping SOCKS during reconnect is exactly when a
     # leak would show, so re-run the same egress proof once Tor is back.
     assert_egress_posture
