@@ -1,5 +1,5 @@
 announce_dashboard_url() {
-    local display_host
+    local display_host pool_host bind
     display_host=$(env_get HOST_IP)
     [ -z "$display_host" ] && display_host="$(hostname)"
     if [ "$(env_get DASHBOARD_SECURE)" == "true" ]; then
@@ -7,6 +7,13 @@ announce_dashboard_url() {
     else
         log "Dashboard available at: http://$display_host"
     fi
+    bind=$(env_get STRATUM_BIND)
+    case "$bind" in
+    '' | 0.0.0.0) pool_host="$display_host" ;;
+    *) pool_host="$bind" ;;
+    esac
+    log "Pool URL: $pool_host:$(stratum_port_effective)"
+    [ "$bind" != "127.0.0.1" ] || log "Stratum is bound to loopback: local connections only."
     announce_stratum_auth
     announce_stratum_tls # #261: prints the fingerprint rigs pin; no-op when TLS is off
     announce_local_miner # #593: hand off the pool URL + secret for a co-located RigForge worker
@@ -55,11 +62,14 @@ announce_local_miner() {
 }
 
 # Surface the stratum access-password (#152) so the operator can configure each rig's 'pass'.
-# Only prints when authentication is enabled; the value is the operator's own shared secret (the
-# same secret already lives in .env), shown here so it can be copied to each rig once.
+# The operator's shared secret already lives in .env; show it again so a later rig can connect.
 announce_stratum_auth() {
     local sp
     sp=$(env_get PROXY_STRATUM_PASSWORD 2>/dev/null || true)
-    [ -n "$sp" ] || return 0
+    if [ -z "$sp" ]; then
+        log "Stratum password: none set (any password is accepted)"
+        return 0
+    fi
+    log "Stratum password: $sp"
     log "Stratum authentication is ON: every rig must connect with pass \"$sp\" (set it as the xmrig/RigForge stratum password). See $DOCS_URL/docs/workers.md#authentication."
 }

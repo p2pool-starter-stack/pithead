@@ -45,6 +45,7 @@ TARBALL="os/build/pithead-root.tar"
     exit 2
 }
 verify_tarball_commit "$TARBALL" || exit $?
+[ "$DEV" -eq 1 ] || verify_guarded_rootfs_tar "$TARBALL" || exit $?
 
 # The keyring baked into slot A is the fleet's update trust root. Resolve it before anything heavy
 # so a release build with no key stops immediately, not after minutes of imaging.
@@ -83,7 +84,7 @@ mkfs.ext4 -q -L system-a "${LOOP}p2"
 echo "==> populating slot A from the shared rootfs tarball"
 mkdir -p /mnt/rauc-sys /mnt/rauc-esp
 mount "${LOOP}p2" /mnt/rauc-sys
-tar -xf "$TARBALL" -C /mnt/rauc-sys
+extract_rootfs_tar "$TARBALL" /mnt/rauc-sys
 populate_slot /mnt/rauc-sys
 
 echo "==> bootloader"
@@ -99,9 +100,9 @@ install -m 644 os/rauc/grub.cfg /mnt/rauc-esp/grub/grub.cfg
 # silent no-op — ORDER keeps its built-in "A B" with both _OK=0, nothing is selectable, and every
 # boot falls to the default entry. RAUC writes the file correctly and the machine still ignores it.
 grub-editenv /mnt/rauc-esp/grub/grubenv create
-OS_VERSION=$(tr -d '[:space:]' <VERSION)
+OS_VERSION=$(bash os/overlay/pithead-boot-version menu-version /mnt/rauc-sys/opt/pithead/VERSION)
 grub-editenv /mnt/rauc-esp/grub/grubenv set ORDER="A B" A_OK=1 A_TRY=0 B_OK=0 B_TRY=0 \
-    "A_VERSION=$OS_VERSION" "B_VERSION="
+    "A_VERSION=$OS_VERSION" "B_VERSION=" MEDIA=usb
 
 # The /var overlay directories cannot be seeded here — /data does not exist until systemd-repart
 # creates it on the target machine's real disk. repart makes them itself at format time, via the

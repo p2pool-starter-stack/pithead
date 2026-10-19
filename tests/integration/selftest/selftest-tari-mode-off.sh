@@ -50,6 +50,9 @@ assert_eq "a remote monero still is" \
 #    container either. A list that both expects and forbids `tari` would make the pair vacuous.
 assert_ne "off does not expect the bundled tari" "$(expected_for off)" "$(expected_for local)"
 assert_contains "local DOES expect it (the control for the row above)" " $(expected_for local) " " tari "
+assert_eq "off omits the Tari topology node" "$(expected_topology_nodes "$(cfg off)")" "browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tor,xmrig-proxy"
+assert_contains "remote keeps the Tari topology node" "$(expected_topology_nodes "$(cfg remote)")" "rigs,tari,tor"
+assert_contains "local keeps the Tari topology node" "$(expected_topology_nodes "$(cfg local)")" "rigs,tari,tor"
 
 # 3. The matrix carries an off scenario at all, and it carries no external-node override — the
 #    whole point of this mode is that it needs nothing to point at.

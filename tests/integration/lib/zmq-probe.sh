@@ -308,3 +308,66 @@ zmq_publishes_probe() {
     }
     zmq_publish_verdict "$out" "$host" "$port"
 }
+
+# --- Chain-activity corroboration (#2705) -------------------------------------------------------
+#
+# Tier B reads "the peer said nothing in 90s" as "the publisher is dead". monerod's ZMQ pub fires
+# on a new block, a new mempool tx, or a template update — never on a timer — so a quiet local
+# chain with none of those inside the window has nothing to report even from a fully healthy
+# publisher. This corroborates the verdict with a witness the probe itself cannot see: did
+# monerod's own RPC state move at all while ZMQ was silent?
+
+# monero_chain_fingerprint — prints "<height> <tx_pool_size>" from monerod's own get_info, or
+# empty on any failure to ask. Same URL/creds resolution as monero_caught_up (lib.sh); duplicated
+# rather than shared because lib.sh sits at its file-budget ceiling (docs/dev/file-budget.tsv). A
+# WITNESS, not a health check: an unmoved fingerprint says nothing happened, not that the node is
+# healthy — the caller decides what that means.
+monero_chain_fingerprint() {
+    rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env 2>/dev/null | cut -d= -f2-);
+        p=$(grep -E "^MONERO_NODE_PASSWORD=" .env 2>/dev/null | cut -d= -f2-);
+        url=$(grep -E "^MONERO_RPC_URL=" .env 2>/dev/null | cut -d= -f2-); [ -n "$url" ] || url=$(jq -r "if (.monero.mode // \"local\") == \"remote\" and .monero.remote.host then (.monero.remote.host | if contains(\":\") then \"[\" + . + \"]\" else . end) as \$host | \"http://\" + \$host + \":\" + ((.monero.remote.rpc_port // 18081) | tostring) else \"http://127.0.0.1:18081\" end" config.json 2>/dev/null); [ -n "$url" ] || url="http://127.0.0.1:18081";
+        if [ -n "$u" ]; then body=$(printf "user = %s\n" "$(printf "%s:%s" "$u" "$p" | jq -Rs .)" | curl -fsS --max-time 8 --digest -K - "$url/get_info" 2>/dev/null);
+        else body=$(curl -fsS --max-time 8 "$url/get_info" 2>/dev/null); fi;
+        [ -n "$body" ] || exit 0; printf "%s" "$body" | jq -r "((.height // 0) | tostring) + \" \" + ((.tx_pool_size // 0) | tostring)" 2>/dev/null'
+}
+
+# zmq_corroborate_silence <verdict> <verdict-rc> <before> <after> — PURE, over the verdict text
+# zmq_publishes_probe already produced plus two monero_chain_fingerprint samples bracketing the
+# probe. Only a "silent" verdict with two non-empty, EQUAL fingerprints downgrades: the chain
+# provably did not move during the window either, so "silent" becomes "quiet" (rc 2), for the
+# caller to warn on rather than fail a healthy node. Anything else — an "ok" verdict, an
+# unreadable fingerprint, or a fingerprint MISMATCH (the chain moved and ZMQ still said nothing,
+# the real defect) — passes the original verdict and rc through unchanged.
+zmq_corroborate_silence() {
+    local v="$1" rc="$2" before="$3" after="$4"
+    case "$v" in
+    silent\ *)
+        if [ -n "$before" ] && [ "$before" = "$after" ]; then
+            echo "quiet ${v#silent }; monerod's own RPC (height/mempool) did not change during the probe window (#2705) — nothing happened for ZMQ to report, which is not evidence the publisher is dead"
+            return 2
+        fi
+        ;;
+    esac
+    echo "$v"
+    return "$rc"
+}
+
+# assert_zmq_publishes <host> <port> — the tier-B row (#1497/#2705): brackets the probe with an
+# RPC chain fingerprint and reports pass/warn/fail through it_pass/it_warn/it_fail, so the call
+# site in run-state.sh stays the single line it already was.
+assert_zmq_publishes() {
+    local host="$1" port="$2"
+    local name="monero ZMQ endpoint actually publishes, not merely a live socket (#1497)"
+    local before after zv rc
+    before="$(monero_chain_fingerprint)"
+    zv=$(zmq_publishes_probe "$host" "$port" 8 90)
+    rc=$?
+    after="$(monero_chain_fingerprint)"
+    zv=$(zmq_corroborate_silence "$zv" "$rc" "$before" "$after")
+    rc=$?
+    case "$rc" in
+    0) it_pass "$name" ;;
+    2) it_warn "$name — $zv" ;;
+    *) it_fail "$name" "$zv" ;;
+    esac
+}

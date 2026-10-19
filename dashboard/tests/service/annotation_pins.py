@@ -71,7 +71,7 @@ moved the data, which is the failure the pin comment below records happening twi
 # that kind already standing below, one of them spelled in WORDS, where a digit-keyed sweep misses.
 #
 # The `client/` scoping below applies to `tor_heal.py` too, measured: `decide` holds four
-# unannotated `None` returns and `check` two bare ones, all six OUTSIDE the gate's two doors —
+# unannotated `None` returns outside the gate's two doors; `check` is now annotated —
 # pinned, law 1 honestly green, and NOT "fully annotated".
 #
 # That sentence was true and, until #1604, the ONLY one of its kind here — eight other pinned
@@ -384,7 +384,7 @@ _ANCHORS = {
     "service/storage_schema.py": "service/storage_schema.py:_prune_quarantined",
     "service/notify/telegram_commands.py": "service/notify/telegram_commands.py:_safe_reply_for",
     "service/telemetry_store.py": "service/telemetry_store.py:add_xvb_history",
-    "service/health/tor_heal.py": "service/health/tor_heal.py:_probe_egress",
+    "service/health/tor_heal.py": "service/health/tor_heal.py:check",
     "service/health/update_checker.py": "service/health/update_checker.py:latest_release",
     "service/workers/worker_config_store.py": "service/workers/worker_config_store.py:note_worker_revision",
     "web/views/charts.py": "web/views/charts.py:parse_window",

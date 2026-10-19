@@ -102,7 +102,11 @@ test("savedRoleOrSetup: asking to restore reaches the form past a saved role (#1
 test("Restore from a backup asks for the restore branch and clears a stale error (#1923)", () => {
   // The error being cleared is not decoration: a failed Keep leaves its reason on screen, and
   // carrying it onto the restore form would blame the upload for the previous action's failure.
-  const app = fakeApp({ savedRole: RIG, keepError: "could not keep this configuration" });
+  const app = fakeApp({
+    savedRole: RIG,
+    restoreEnabled: true,
+    keepError: "could not keep this configuration",
+  });
   savedRoleOrSetup(app).props.onRestore();
   assert.equal(app.state.restoreMode, true);
   assert.equal(app.state.error, "");
@@ -134,7 +138,15 @@ test("savedRoleOrSetup: a named role opens the screen instead of the form", () =
 // --- rendered ---------------------------------------------------------------------------------
 
 const screen = (props) =>
-  renderToString(html`<${SavedRoleScreen} summary=${savedRoleSummary(RIG)} ...${props} />`);
+  renderToString(
+    html`<${SavedRoleScreen} summary=${savedRoleSummary(RIG)} onRestore=${() => {}} ...${props} />`,
+  );
+
+test("rendered: plain HTTP replaces the restore action with TLS recovery guidance", () => {
+  const card = screen({ onRestore: null });
+  assert.match(card, /Restore from a backup requires HTTPS/);
+  assert.doesNotMatch(card, /btn-toggle[^>]*>\s*Restore from a backup/);
+});
 
 test("rendered: the screen says what the machine is and offers all three answers", () => {
   const card = screen({});

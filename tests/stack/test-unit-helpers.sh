@@ -1,14 +1,15 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # Unit-helper domain (#1105 Phase 1, appliance lane): the cluster of small helper tests that sat
-# at the head of run.sh. Four of them drive a pithead function through run_sourced and assert its
+# at the head of run.sh. Five of them drive a pithead function through run_sourced and assert its
 # return code or its stdout — docker_boot_enabled (a systemctl stub on PATH decides which unit
 # reports enabled, and docker.service or docker.socket each count on their own), config_bool (a
 # config value written explicitly false must stay false rather than be coerced by jq's // default,
-# the #294 regression that silently re-enabled the firewall opt-out), env_get_file and
+# the #294 regression that silently re-enabled the firewall opt-out), migrate_legacy_workers (a
+# v1.x xmrig_proxy block at its reference defaults never conflicts with xvb.*, #2690), env_get_file and
 # env_changed_keys (a value containing an "=" survives intact, and only the keys that differ are
 # reported), and export_build_provenance (the VERSION file is read and whitespace-trimmed, and an
-# absent VERSION yields an empty version rather than an error). The fifth block is a drift guard
+# absent VERSION yields an empty version rather than an error). The sixth block is a drift guard
 # rather than a unit test: it pins the XvB tier thresholds in the dashboard's config.py against the
 # human forms written in docs/architecture.md, so the user-facing table cannot fall out of sync
 # with TIER_DEFAULTS unnoticed.
@@ -92,6 +93,18 @@ assert_eq "explicit true honoured" "$(run_sourced "$CB" config_bool '.network.to
 printf '{}' >"$CB/config.json"
 assert_eq "absent -> default true" "$(run_sourced "$CB" config_bool '.network.tor_egress_firewall' true)" "true"
 assert_eq "absent -> default false" "$(run_sourced "$CB" config_bool '.xvb.tor' false)" "false"
+
+echo "== unit: migrate_legacy_workers drops v1.x xmrig_proxy defaults beside a customised xvb (#2690) =="
+MX="$SANDBOX/mx"
+mkdir -p "$MX"
+printf '{"xvb":{"enabled":false,"url":"eu.xmrvsbeast.com:4247","donor_id":"mine"},"xmrig_proxy":{"enabled":true,"url":"na.xmrvsbeast.com:4247","donor_id":"auto"}}' >"$MX/config.json"
+run_sourced "$MX" migrate_legacy_workers >/dev/null 2>&1
+assert_rc "an editor-saved v1.x xmrig_proxy at its defaults is no conflict" "$?" "0"
+assert_eq "the default block is dropped, the customised xvb kept" "$(jq -c '[has("xmrig_proxy"), .xvb]' "$MX/config.json")" '[false,{"enabled":false,"url":"eu.xmrvsbeast.com:4247","donor_id":"mine"}]'
+printf '{"xvb":{"url":"eu.xmrvsbeast.com:4247"},"xmrig_proxy":{"url":"us.xmrvsbeast.com:4247"}}' >"$MX/config.json"
+mx_out="$(run_sourced "$MX" migrate_legacy_workers 2>&1)"
+assert_rc "a non-default xmrig_proxy.url that differs from xvb.url is refused" "$?" "1"
+assert_contains "the refusal names the xvb pair" "$mx_out" "(xvb.url and xmrig_proxy.url)"
 
 # The XvB tier thresholds are hard-coded in config.py (TIER_DEFAULTS) and stated explicitly in
 # docs/architecture.md. Drift guard: each config value must match the doc's human form, so the

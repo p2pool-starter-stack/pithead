@@ -105,11 +105,7 @@ assert_contains "the unprefixed docker logs form still reads roundtrip" \
 
 echo "== the capture is bounded to the current container run, and leaks nothing =="
 
-# Stubbing `rx` rather than `mm_capture_startup` is what reaches the two bounds inside it. Both
-# are invisible to a test that stubs the whole function: dropping `--since` or swapping the head
-# window for a tail leaves every other case in this file green, which is exactly how a bound
-# rots. Recording the composed command asserts WHICH command is sent to the target — a claim
-# about the gesture, not about docker's behaviour, and it is named that way below.
+# Recording the command sent through `rx` pins the gesture, not docker's behaviour.
 # The recorder writes to a FILE, not a variable. `mm_capture_startup` is called through `$(...)`,
 # and a command substitution is a subshell: a variable assigned inside it is gone by the time the
 # assertion reads it. That is not hypothetical here — it was the first version of this block, and
@@ -117,11 +113,17 @@ echo "== the capture is bounded to the current container run, and leaks nothing 
 # exactly the kind this file exists to refuse.
 MM_RX_LOG_FILE="$(mktemp)"
 trap 'rm -f "$MM_RX_LOG_FILE"' EXIT
+mm_stub_capture_output() {
+    printf '%s\n' "$MM_RX_LOGS" | grep -a MergeMiningClientTari |
+        awk -v n="$MM_CAPTURE_LINES" '/uses chain_id/{chain=$0} {ring[NR%n]=$0} END {if(chain!="") print chain; first=(NR<n?1:NR-n+1); for(i=first;i<=NR;i++) print ring[i%n]}' |
+        cut -c "1-$MM_CAPTURE_LINE_BYTES"
+    printf '\n__PITHEAD_MM_LOG_RC=0\n'
+}
 rx() {
     printf '%s\n' "$*" >>"$MM_RX_LOG_FILE"
     case "$*" in
     *"docker inspect"*) printf '%s\n' "$MM_RX_STARTED" ;;
-    *) printf '%s\n' "$MM_RX_LOGS" ;;
+    *) mm_stub_capture_output ;;
     esac
 }
 
@@ -137,18 +139,17 @@ assert_rc "a readable start time makes the capture succeed" "$cap_rc" "0"
 # as absences — is satisfiable by an empty recording, so an unarmed recorder would report a clean
 # sweep over nothing.
 assert_num_gt "the command recorder actually captured something" "$(printf '%s' "$MM_RX_LOG" | wc -c)" 0
-assert_contains "the log read is bounded by the container's OWN start time" "$MM_RX_LOG" "--since 2026-08-28T23:52:05.827654553Z"
-assert_contains "the window is a HEAD read — the signal is startup-only" "$MM_RX_LOG" "head -n 2000"
-# The negative sibling. A tail cannot contain a line that lands 17.5s into an hours-old log, and
-# the swap is silent: every fixture case above stays green through it.
+assert_contains "the log read is bounded by the container's OWN start time" "$MM_RX_LOG" '--since\ 2026-08-28T23:52:05.827654553Z\ p2pool'
 case "$MM_RX_LOG" in
-*--tail*) it_fail "the window is never a tail read" "the composed command asked for a tail" ;;
-*) it_pass "the window is never a tail read" ;;
+*--tail* | *head*) it_fail "the log read has no docker tail or first-lines cap" "the composed command capped the log" ;;
+*) it_pass "the log read has no docker tail or first-lines cap" ;;
 esac
+assert_contains "the transferred log is a bounded tail of matching lines" "$MM_RX_LOG" "n=$MM_CAPTURE_LINES"
+assert_contains "each transferred line has a byte bound" "$MM_RX_LOG" "1-$MM_CAPTURE_LINE_BYTES"
 # Leak safety, as a checked claim rather than a comment: the filter runs ON THE TARGET, so the
 # argv line — which carries both wallets, the RPC credential and the onion (#1582/#1585/#1586) —
 # is never transferred. And `docker inspect` names ONE field, so it cannot print .Args.
-assert_contains "only merge-mining lines are asked to cross the wire" "$MM_RX_LOG" "grep -a MergeMiningClientTari"
+assert_contains "only merge-mining lines are asked to cross the wire" "$MM_RX_LOG" 'grep\ -a\ MergeMiningClientTari'
 assert_contains "docker inspect names a single field, never the whole object" "$MM_RX_LOG" "--format '{{.State.StartedAt}}'"
 # End to end through the real capture: canned log bytes in, verdict out.
 assert_contains "a captured startup window reads roundtrip end to end" "$(mm_roundtrip_verdict "$cap")" "roundtrip $MM_CHAIN_ID"
@@ -164,6 +165,67 @@ case "$MM_RX_LOG" in
 *"compose logs"*) it_fail "no log is read when the start time is unknown" "it read the log anyway" ;;
 *) it_pass "no log is read when the start time is unknown" ;;
 esac
+
+# podman's StartedAt (#2326). The appliance answers `docker inspect` through the podman-docker shim,
+# which prints Go's time.String(); docker-compose refuses that as `--since` before sending any
+# request, so the capture was empty on every appliance run. Captured shape, from the guest journal
+# of job 69@90f47ed631 (podman's own event lines carry the same rendering).
+MM_RX_STARTED="2026-09-20 05:54:04.957178532 +0000 UTC"
+: >"$MM_RX_LOG_FILE"
+mm_capture_startup >/dev/null
+assert_contains "podman's StartedAt is rewritten to RFC 3339 before it bounds the read" \
+    "$(cat "$MM_RX_LOG_FILE")" '--since\ 2026-09-20T05:54:04.957178532+00:00\ p2pool'
+MM_RX_STARTED="2026-09-20 01:54:04 -0400 EDT"
+assert_eq "a non-UTC podman offset, with no fraction, keeps its offset" "$(mm_started)" "2026-09-20T01:54:04-04:00"
+MM_RX_STARTED="2026-08-28T23:52:05.827654553Z"
+assert_eq "docker's RFC 3339 StartedAt passes through untouched" "$(mm_started)" "$MM_RX_STARTED"
+
+echo "== a FAIL carries the redacted startup window that explains it (#2326) =="
+
+# The excerpt is the one read here that lets non-merge-mining lines cross the wire, so what it
+# keeps is an allowlist run ON THE TARGET, then redaction here. This stub runs the target half of
+# the composed pipeline — everything after the log read — over the fixture, so the allowlist is
+# exercised as behaviour rather than matched as text. The fixture carries the shapes that must not
+# leave: a bare user:pass credential in prose, a wallet in prose, a private bench address. Each of
+# those is also caught by a mask, so one line no mask rewrites and no allowlist term matches is what
+# proves the allowlist itself drops lines.
+rx() {
+    printf '%s\n' "$*" >>"$MM_RX_LOG_FILE"
+    case "$*" in
+    *"docker inspect"*) printf '%s\n' "$MM_RX_STARTED" ;;
+    *) printf '%s\n' "$MM_RX_LOGS" | bash -c "${1#*p2pool 2>&1 | }" ;;
+    esac
+}
+MM_WALLET=4$(printf 'A%.0s' {1..94})
+MM_RX_LOGS=$(printf '%s\n' \
+    '[p2pool-entrypoint] Tor on (#278): bridging 127.0.0.1 -> node.fixture for monerod RPC(18081)' \
+    $'\033[0;36m2026-09-20 05:54:05.1\033[0m P2Pool wallet '"$MM_WALLET" \
+    '2026-09-20 05:54:05.2 RPC login rpcuser:hunter2 at 192.168.7.9' \
+    'RPC login rpcuser:hunter2 invalid, tari gRPC connection refused from 1234:5678::9' \
+    'auth failed user=admin rpc_password=Sup3rSecret!' \
+    'unknown token aGVsbG9Xb3JsZFNlY3JldFZhbHVlMTIzNA==' \
+    'Tari wallet 12AbCdEfGhJkMnPqRsTuVwXyZ23456789abcdefghijkmnopq set' \
+    '2026-09-20 05:54:06.0 MergeMiningClientTari tari://192.168.7.9:18142 connect failed' \
+    'Error response from daemon: no such container' \
+    'stratum worker sentinel-notallowed connected')
+REMOTE_MONERO_HOST=node.fixture
+: >"$MM_RX_LOG_FILE"
+ex="$(mm_startup_excerpt)"
+REMOTE_MONERO_HOST=""
+assert_contains "the excerpt reads the same run-bounded window" "$(cat "$MM_RX_LOG_FILE")" "--since 2026-08-28T23:52:05.827654553Z p2pool 2>&1 | grep -aiE"
+assert_contains "the excerpt carries the read's own error text" "$ex" "no such container"
+assert_contains "the excerpt carries p2pool's Tari failure line" "$ex" "tari://<ip>:18142 connect failed"
+assert_contains "the excerpt keeps the entrypoint's bridge line, with the remote node masked" "$ex" "bridging <ip> -> <redacted-endpoint>"
+case "$ex" in
+*node.fixture* | *"$MM_WALLET"* | *hunter2* | *192.168.* | *5678::9* | *12AbCdEf* | *Sup3rSecret* | *aGVsbG9X* | *$'\033'*) it_fail "the excerpt leaks no endpoint, wallet, credential, address or escape" "$ex" ;;
+*) it_pass "the excerpt leaks no endpoint, wallet, credential, address or escape" ;;
+esac
+case "$ex" in
+*sentinel-notallowed*) it_fail "the allowlist drops a line no keep term matches" "$ex" ;;
+*) it_pass "the allowlist drops a line no keep term matches" ;;
+esac
+MM_RX_LOGS=$(for i in $(seq 1 200); do printf 'error line %s\n' "$i"; done)
+assert_eq "the excerpt is capped at $MM_EXCERPT_LINES lines" "$(mm_startup_excerpt | wc -l | tr -d ' ')" "$MM_EXCERPT_LINES"
 unset -f rx
 
 echo "== the leg reports PASS, FAIL or a COUNTED skip — never a silent green =="
@@ -191,10 +253,17 @@ mm_leg_outcome() { # <synced-rc> <capture> -> "<pass> <fail> <skipped-legs> <by-
         # MergeMiningClientTari line (its `grep` is `|| true`). A stub keyed only on emptiness
         # collapses them, and the case named for the second silently exercises the first — which
         # is how the `absent` branch survived a mutation to `it_pass` here.
-        mm_capture_startup() {
-            [ "$MM_STUB_CAPTURE" = "@FAIL" ] && return 1
-            printf '%s' "$MM_STUB_CAPTURE"
+        mm_await_roundtrip() {
+            [ "$MM_STUB_CAPTURE" = "@FAIL" ] && {
+                printf 'start-error|\n'
+                return 2
+            }
+            local verdict rc=0
+            verdict="$(mm_roundtrip_verdict "$MM_STUB_CAPTURE")" || rc=$?
+            printf '%s|fixture-epoch\n' "$verdict"
+            return "$rc"
         }
+        mm_epoch() { printf 'fixture-epoch\n'; }
         MM_STUB_SYNCED="$1"
         MM_STUB_CAPTURE="$2"
         IT_PASS=0 IT_FAIL=0 IT_SKIPPED_LEGS=0 IT_SKIPPED_BY_DESIGN=0 IT_SKIPPED_MISSING=0 IT_SKIPPED_NAMES=""
@@ -235,6 +304,25 @@ assert_eq "a client that never read a chain_id FAILS — 0 pass, 1 fail, 0 skips
 out="$(mm_leg_outcome 0 "")"
 assert_eq "no merge-mining client at all FAILS, and is never a skip — 0 pass, 1 fail, 0 skips" \
     "$(printf '%s' "$out" | cut -d' ' -f1-3)" "0 1 0"
+
+# Both failing verdicts print the startup excerpt under the row (#2326): an "absent" that is a
+# collection defect and one that is a p2pool that built no client read identically without it.
+for mm_case in "" "$MM_LOCAL_ONLY"; do
+    out="$(
+        mm_await_roundtrip() {
+            local verdict rc=0
+            verdict="$(mm_roundtrip_verdict "$mm_case")" || rc=$?
+            printf '%s|fixture-epoch\n' "$verdict"
+            return "$rc"
+        }
+        mm_epoch() { printf 'fixture-epoch\n'; }
+        mm_startup_excerpt() { printf 'EXCERPT-SENTINEL\n'; }
+        monero_caught_up() { return 0; }
+        IT_FAIL=0
+        assert_mergemine_roundtrip
+    )"
+    assert_contains "a $(mm_roundtrip_verdict "$mm_case") FAIL prints the startup excerpt under its row" "$out" "EXCERPT-SENTINEL"
+done
 
 # Its sibling, and the reason the two must not share a case: an unreadable container start time
 # is a different failure with a different cause, and it must not be able to stand in for the one

@@ -122,9 +122,17 @@ export class BackupPanel extends Component {
         <p class="text-muted text-xs">Archive: <span class="font-mono">${result.archive}</span>${" "}
         — created ${fmtEpoch(result.ts)}</p>
         <p class="text-muted text-xs">Contains: ${(result.contents || []).join(", ")}.</p>
+        <p>Save the kit first. Keep this page open until both downloads finish, and check the
+        saved files before closing it. Creating the archive does not prove it was saved off
+        this machine.</p>
+        <p class="text-muted text-xs">If the archive is blocked, check your browser's Downloads
+        for the reason. Retry this download with extensions disabled after checking the
+        dashboard certificate. Do not bypass a managed download policy or create another
+        backup just to retry the download.</p>
         <div class="config-actions">
             <a class="btn-toggle active" href=${kitHref} download=${kitFilename(result.archive)}>Download kit (.txt)</a>
-            <a class="btn-toggle" href=${"/api/control/backup-download?id=" + encodeURIComponent(id)}>Download archive</a>
+            <a class="btn-toggle" href=${"/api/control/backup-download?id=" + encodeURIComponent(id)}
+                target="_blank" rel="noopener noreferrer">Download archive</a>
             <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", id: null, result: null })}>I've saved it — close</button>
         </div>
     </div>`;
@@ -168,7 +176,9 @@ export class BackupPanel extends Component {
     if (phase === "kit" && result) return this.renderKit(id, result);
     if (phase === "failed") return this.renderFailed(result);
     let modal = null;
-    if (phase === "confirm") modal = this.renderConfirm();
+    // Hidden but mounted views must not hold a modal open (ConfigView does the same, #3288).
+    if (this.props.active === false) modal = null;
+    else if (phase === "confirm") modal = this.renderConfirm();
     else if (phase === "creating") modal = this.renderCreating();
     return html`<div class="card">
         <h2>Backup</h2>

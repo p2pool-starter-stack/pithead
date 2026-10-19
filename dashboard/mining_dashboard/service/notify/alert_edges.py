@@ -254,8 +254,7 @@ class AlertEdgesMixin:
         ]
 
     def _clearnet_edges(self, clearnet_active):
-        """Alert while a node is doing its initial sync over CLEARNET (#183): the host IP is exposed
-        to that chain's P2P network until it finishes (it reverts to Tor automatically, #234)."""
+        """Warn from chosen clearnet sync until the host attests the Tor daemon and closed rule."""
         prev = self._prev_clearnet_active
         self._prev_clearnet_active = clearnet_active
         if prev is None or clearnet_active == prev:
@@ -266,8 +265,8 @@ class AlertEdgesMixin:
                 (
                     self.EVT_CLEARNET_EXPOSED,
                     self._fmt(
-                        "⚠️ \U0001f310 Clearnet initial sync ACTIVE — this host's IP is exposed to the "
-                        "chain's P2P network until it finishes syncing (reverts to Tor automatically)."
+                        "\U0001f310 Clearnet first sync by your choice — this host's IP is visible to "
+                        "the chain's peers until the host verifies the Tor switch and firewall."
                     ),
                 )
             ]
@@ -275,8 +274,8 @@ class AlertEdgesMixin:
             (
                 self.EVT_CLEARNET_EXPOSED,
                 self._fmt(
-                    "\U0001f7e2 \U0001f9c5 Back on Tor-only — clearnet sync finished, host IP no "
-                    "longer exposed."
+                    "\U0001f7e2 \U0001f9c5 Back on Tor-only — the host verified the running daemon "
+                    "and closed firewall exception."
                 ),
             )
         ]

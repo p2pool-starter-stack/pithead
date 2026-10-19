@@ -272,13 +272,26 @@ that never landed.
 **Fixed — the hugepages reservation now fits the machine's RAM (#977).** The baked 6 GiB
 sysctl imposed a silent ≥ 16 GiB floor the harness's 16 GiB VM could never notice.
 `pithead-hugepages.service` now sizes the pool every boot before either boot owner:
-full 3072 pages on a supported machine, 2560 below 15 GiB (the smallest pool holding
-BOTH RandomX datasets — p2pool's ~2.3 GiB dataset falling out of hugetlbfs lands in its
-1 GiB cgroup cap and OOM-loops, the load-bearing finding from the #78 spike), zero
-below 7 GiB where the stack cannot run regardless. Degrades are announced on every
-console, journaled, and repeated by `doctor` as a WARN — never a FAIL, so the A/B
-commit gate still commits a degraded-but-serving slot. Running before the boot owners
-is not what makes the decision hold: pithead's own later writers grow the pool too, so
+full 3072 pages on a supported machine, 2048 below 15 GiB, zero below 7 GiB where the stack
+cannot run regardless. Under the 1 GiB cgroup cap of the #78 spike, a dataset falling out of
+hugetlbfs OOM-looped p2pool; the 4 GiB cap from #2562 holds the ~2.5 GiB fallback instead, and
+the machine pays in ordinary RAM rather than a restart loop. Only p2pool builds a dataset.
+monerod v0.18.5.1 allocates one only when `MONERO_RANDOMX_FULL_MEM` is set or it mines, and the
+stack does neither (#2681).
+
+The reduced pool's 2048 pages are MEASURED (#2685), not derived: a tier4-e2e run samples each
+daemon's own `/proc/<pid>/smaps_rollup` every 10 s across a synced local-node scenario, lifecycle
+and auth-fail-closed, and takes the peak — job 1115@701013bb1faaea1a9a337cde16dbe79fbca797d1 measured p2pool at 1305 pages and
+monerod at 129 (an upper bound: its per-thread verification scratchpads scale with the measuring
+bench's own thread count, above a reduced-tier appliance's). Combined peak 1434, +256 for the two
+processes' second-seed caches (a seed switch is roughly every 2.8 days, so a normal run does not
+exercise them), +10% margin, rounded up to the next 512-page step: 2048.
+`tests/integration/lib/hugepage-probe.sh` carries the bound `combined peak + 256 <= REDUCED_PAGES`
+as a standing gate row against this same overlay file, on every tier4-e2e run, and #2486 (p2pool
+`--light-mode` on this tier, which would remove the dataset) reruns the measurement when it lands.
+Degrades are announced on every console, journaled, and repeated by `doctor` as a WARN — never a
+FAIL, so the A/B commit gate still commits a degraded-but-serving slot. Running before the boot
+owners is not what makes the decision hold: pithead's own later writers grow the pool too, so
 the `/run` marker records the chosen page count and both of them honour it — setup's
 kernel optimization caps its grow at the recorded pages, and the local-miner render
 hands RigForge the recorded reservation, never the baked 6 GiB, as its headroom.
@@ -341,7 +354,7 @@ machine's own — it carries that machine's `DEPLOYMENT_COMPLETED=true`. `setup(
 `is_deployed` guard (#924) read that literally, could not tell "restored, never provisioned on
 THIS hardware" from "already live", and fatally refused with no tty to ask: `podman ps -a` on
 the live guest showed zero containers, ever. `restore_apply` — the one commit point both restore
-doors share — now clears the carried marker right after landing the archive, before its caller's
+doors share — now clears the carried marker in the staged archive before landing it, and before its caller's
 `setup()` runs. Restore retains validated generated secrets and Tor identity, and derives
 `HOST_IP` and runtime policy from the validated configuration. `setup()` renders `.env` again. The guard itself is
 unchanged and still refuses a headless re-run on a genuinely live box (its own #924 test stays
@@ -382,15 +395,21 @@ not proven.
   The CLI remainder is on the dashboard too now — support bundle, doctor detail, rotations
   (#913). What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
   (#911) and fleet descriptor editing (#912).
-- **The manual hardware battery has not been run (#2044).** The hardware-only remainder is not a KVM gate. Secure
-  Boot, real disks, headless discovery and Restore on AC Power Loss are exactly what a VM
-  cannot show — the hardware-only remainder of M1–M10, M15 and M16 in the release doc must pass on a physical box before an
-  image ships (the KVM battery now proves the write/commit half of M8 and M10's power cuts,
-  #2067, not the firmware setting itself). (M11–M14 are the rig-role steps and stay manual
-  today — see the manual release checklist — because the `rig` KVM phase does not yet prove an
-  accepted share, MSR/hugepages, a dashboard adopt, or a stick-root boot; converting what it can
-  is #1886's first gap.) #394's gate list still does not name this battery — the same omission
-  #976's own title records for the OS-update path.
+- **The manual hardware battery has run once, on a dev image, and is incomplete (#2044).** The
+  operator ran it on one physical box on 2026-09-18 and 2026-09-19 against a debug image built
+  from `develop` at `1b0da07016`; the per-step results are in the manual release checklist's
+  recorded runs. M1, M3, M5, M6, M7, M8, M9 and M10 passed; M2 passed in part; M15 failed at
+  its backup step (#2364, fixed since); M16 is partial (#2367 open); M4 and the RC1 addendum were
+  not run. Still not shown on hardware: the wrong-disk guard with a real second disk, the box
+  powering on by itself after a cut at the wall (Restore on AC Power Loss), the M15 backup and
+  restore after #2364's fix, and the M16 node-endpoint `APPLY`. Open findings from the run: #2351,
+  #2367, #2436, #2447. A dev image is not the shipping image: the final image still
+  needs the soak (#1652) and pre-publication verification (#1653), which #394's gate list names
+  beside this battery. (M11–M14 are the rig-role steps and stay manual today — see the manual
+  release checklist — because the `rig` KVM phase does not yet prove MSR/hugepages, a dashboard
+  adopt, or a stick-root boot (its share leg, #2063, does now prove an accepted share, against a
+  second guest the battery itself boots as a coordinator); converting what it can is #1886's
+  first gap.)
 - **The appliance does not boot with Secure Boot on, and nothing signs the chain (#2187).** The
   KVM battery now measures this rather than leaving it an unread flag: every other guest in
   `tests/os/run.sh` pins `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
