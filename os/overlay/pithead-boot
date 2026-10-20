@@ -35,7 +35,7 @@ BOOT_FAIL_COUNT=.boot-gate-failures
 # Where doctor's verdicts land while this gate is looping: /run leaves the last failing check without
 # wearing /data. A plain variable: the suite points it somewhere writable.
 BOOT_DOCTOR_JSON=/run/pithead-boot-doctor.json
-boot_gate_passed() { rm -f "$BOOT_FAIL_COUNT"; }
+boot_gate_passed() { rm -f "$BOOT_FAIL_COUNT" .config-reset-good-slot; }
 fail_boot() { # <what went wrong>
     echo "pithead-boot: $1 — slot left uncommitted so A/B fallback stays armed" >&2
     local status_problems
@@ -282,6 +282,17 @@ if [ -f machine-role ] && [ "$(tr -d '[:space:]' <machine-role)" = "rig" ]; then
     fail_boot "the rig's miner never came up"
 fi
 
+# Claim a legacy version-only marker before image loading/render can fail. The slot-qualified
+# marker also lets the previous slot's older boot code recognise a same-version fallback.
+hold_chain=0
+migration_rc=0
+bash -c '. ./pithead; os_prepare_migration_hold' || migration_rc=$?
+case "$migration_rc" in
+0) hold_chain=1 ;;
+1) restore_data_floor_after_fallback ;;
+*) fail_boot "the migration marker could not be assigned to the booted slot" ;;
+esac
+
 # OS-update verdict, rollback half — see os_update_rollback_verdict above for the full story.
 # The success half lives at the commit gate below: "updated" is only honest once this slot marks
 # good.
@@ -311,21 +322,6 @@ fi
 
 ./pithead render || fail_boot "the derived config could not be rendered"
 
-# The migration hold (#851): os-update leaves a marker when the installed bundle declares a
-# forward-only /data migration, stamped with that bundle's version. A marker matching THIS slot's
-# version means this is the migrating bundle's pre-commit boot — the chain services (the holders of
-# irreversible lmdb migrations) must not start until the commit decision is made, so automatic A/B
-# fallback always lands on data the old OS can still read. A marker that does not match is a fallback
-# boot: the migration never ran, the floor it raised is put back, and this boot proceeds normally.
-# doctor reads the same marker and judges the held chain containers by the sync-hold rule.
-hold_chain=0
-if [ -f .os-migration-pending ] &&
-    [ "$(tr -d '[:space:]' <.os-migration-pending)" = "$(tr -d '[:space:]' <VERSION 2>/dev/null)" ]; then
-    hold_chain=1
-else
-    restore_data_floor_after_fallback
-fi
-
 if [ "$hold_chain" = 1 ]; then
     PITHEAD_HOLD_CHAIN=1 ./pithead up || boot_up_failed $?
 else
@@ -340,12 +336,12 @@ gate_rs=$(gate_resolve_spec "$gate_host" "$gate_port")
 gate_wait_started=$SECONDS
 for gate_attempt in $(seq 90); do
     gate_doctor_ran=0 gate_pass=0
-    # SNI and the Host header carry the site's real name, so Caddy vhost-matches it; for a name the
-    # --resolve above sends the connection to loopback, which the appliance binds unconditionally.
+    # SNI and the Host header carry the site's real name, so Caddy vhost-matches it;
+    # --connect-to keeps names and IP literals on loopback, which the appliance always binds.
     # `read` clears both when curl prints nothing, so a silent curl cannot leave the previous
     # round's success standing.
-    read -r code size <<<"$(curl -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
-        "${gate_resolve_args[@]}" "$gate_target" 2>/dev/null)"
+    read -r code size <<<"$(gate_probe_header | curl --header @- -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
+        --noproxy '*' --connect-to '::127.0.0.1:' "${gate_resolve_args[@]}" "$gate_target" 2>/dev/null)"
     # Cheapest first, inside gate_ready: the probe is fast and gates entry to the slow doctor run, so
     # an unhealthy or still-booting stack just loops here without paying for a full diagnostic.
     # doctor only has to pass ONCE — a chain node that is still 'starting' fails a pass and the loop

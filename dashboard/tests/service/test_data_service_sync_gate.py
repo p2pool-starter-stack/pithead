@@ -243,3 +243,32 @@ class TestSyncGateDecision:
             await self._iterate(svc, _TARI_SYNCED, get_info=None)
         svc.docker_control.start.assert_not_called()
         assert svc.miner_released is False
+
+
+async def test_migration_reset_with_real_persisted_release(tmp_path, monkeypatch):
+    from mining_dashboard.service.storage_service import StateManager
+
+    database = StateManager(str(tmp_path / "mining_data.db"))
+    database.save_snapshot({"miner_released": True, "sync_gate_monero_only": True})
+    marker = tmp_path / "sync-gate-reset"
+    # The host writer is exercised by the shell suite; this is its container-visible contract.
+    marker.write_bytes(b"")
+    monkeypatch.setattr(ds_mod, "SYNC_GATE_RESET_PATH", str(marker))
+    svc = DataService(database, MagicMock(), MagicMock())
+    svc.docker_control = MagicMock(
+        stop=AsyncMock(return_value=True), start=AsyncMock(return_value=True)
+    )
+    assert svc.miner_released is False
+    assert svc.latest_data["miner_released"] is False
+    assert svc.sync_gate_monero_only is False
+    with patch.object(ds_mod, "SYNC_GATE_CONTAINERS", ["p2pool", "xmrig-proxy"]):
+        await svc._apply_sync_gate(False)
+        assert {c.args[0] for c in svc.docker_control.stop.await_args_list} == {
+            "p2pool",
+            "xmrig-proxy",
+        }
+        svc.docker_control.start.assert_not_called()
+        assert marker.exists()
+        await svc._apply_sync_gate(True)
+    assert svc.miner_released is True
+    assert not marker.exists()

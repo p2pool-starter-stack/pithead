@@ -1,23 +1,18 @@
 """New-install defaults based on disk measurements published by the host."""
 
 
-def tari_disk_default(
-    budget: dict, disks: list[dict], target: str, monero_mode: str, wipe: str = "keep"
-) -> str:
-    """Match the CLI: unknown capacity keeps local; insufficient capacity declines Tari."""
-    available = budget.get("available_bytes")
+def tari_disk_default(budget: dict, disks: list[dict], target: str, wipe: str = "keep") -> str:
+    """Tari merge-mining is an opt-in beta (#3333): Enter means off, unless the disk being kept
+    already holds a Tari chain, so a reinstall that keeps its data does not drop merge-mining.
+
+    On the installation medium the target disk's layout decides: only the data-wipe option keeps
+    the chains. A booted data disk reports its own chain size in the disk budget."""
     if disks:
         disk = next((d for d in disks if d["name"] == target), {})
-        key = (
-            "data_available_bytes"
-            if disk.get("state") == "pithead-with-data" and wipe == "data"
-            else "data_bytes"
-        )
-        available = disk.get(key)
-    need = budget.get("remote_need_bytes" if monero_mode == "remote" else "local_need_bytes")
-    if type(available) is int and type(need) is int:
-        return "local" if available >= need else "off"
-    return "local"
+        held = disk.get("state") == "pithead-with-data" and wipe == "data"
+    else:
+        held = budget.get("tari_chain_held") is True
+    return "local" if held else "off"
 
 
 def fast_sync_warning(cfg: dict) -> str:
@@ -34,9 +29,7 @@ def fast_sync_warning(cfg: dict) -> str:
 def new_machine_answers(budget: dict, disks: list[dict]) -> dict:
     from mining_dashboard.wizard_config import NEW_MACHINE_ANSWERS, deep_merge
 
-    return deep_merge(
-        NEW_MACHINE_ANSWERS, {"tari": {"mode": tari_disk_default(budget, disks, "", "local")}}
-    )
+    return deep_merge(NEW_MACHINE_ANSWERS, {"tari": {"mode": tari_disk_default(budget, disks, "")}})
 
 
 def explicit_wizard_config(cfg: dict, ref: dict) -> dict:
@@ -52,6 +45,14 @@ def explicit_wizard_config(cfg: dict, ref: dict) -> dict:
         for key in keys:
             if isinstance(cfg.get(block), dict) and key in cfg[block]:
                 written.setdefault(block, {})[key] = cfg[block][key]
+    # The new-machine page carries tari_required=false for a Yes (#3333); a No writes nothing,
+    # the same as the CLI wizard, so enabling Tari later starts from the reference default.
+    if isinstance(cfg.get("tari"), dict) and cfg["tari"].get("mode") == "off":
+        dashboard = written.get("dashboard")
+        if isinstance(dashboard, dict):
+            dashboard.pop("tari_required", None)
+            if not dashboard:
+                del written["dashboard"]
     return written
 
 

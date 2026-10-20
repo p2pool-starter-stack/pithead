@@ -86,6 +86,8 @@ class TorEgressHealer(TorHistoryMixin):
         self._ok_streak = 0  # consecutive OK probes (sustained-recovery counter, post-restart)
         self._warned_exhausted = False  # give-up warning is logged once per outage, not every probe
         self._pending_recovery = None
+        self._tor_started = None  # last seen Tor container start (epoch); None until observed
+        self._own_restart = False  # the healer restarted Tor since that reading
         self._recovery_notice = None
         self._pending_refresh = None
         self._pending_since = None
@@ -163,6 +165,27 @@ class TorEgressHealer(TorHistoryMixin):
         self._last_attempt = now
         return "heal"
 
+    async def _observe_tor_start(self) -> None:
+        """Start a fresh outage window when Tor restarted without the healer's doing.
+
+        A restart by the operator, ``./pithead`` or Docker is a recovery the healer did not
+        perform, so the old clock, budget and cooldown no longer describe the Tor that is running.
+        A restart the healer issued itself is adopted into the baseline and keeps counting. A Tor that
+        restarts more often than BROKEN_AFTER_SEC (a crash loop) therefore never reaches an action."""
+        started = (await get_container_health()).get(self.CONTAINER, {}).get("started_at")
+        if started is None:
+            return
+        if self._tor_started is not None and started > self._tor_started and not self._own_restart:
+            logger.info("Tor restarted outside the self-heal; starting a fresh outage window.")
+            self._failing_since = None
+            self._attempts = 0
+            self._last_attempt = None
+            self._ok_streak = 0
+            self._warned_exhausted = False
+            self._newnym_unconfirmed = False
+        self._tor_started = started
+        self._own_restart = False
+
     def refund_attempt(self):
         """Refund an unconfirmed NEWNYM; keep the ongoing outage clock."""
         if self._attempts > 0:
@@ -211,6 +234,7 @@ class TorEgressHealer(TorHistoryMixin):
         try:
             if await self._read_recovery(now):
                 return
+            await self._observe_tor_start()
             await self._read_history()
             if self._clear_history:
                 self._request_history()
@@ -273,6 +297,7 @@ class TorEgressHealer(TorHistoryMixin):
                             "tor-recover", actor="tor-heal"
                         )
                         self._recovery_requested_at = now
+                        self._own_restart = True
                     except OSError:
                         self._recovery_notice = (
                             "Tor state recovery could not be submitted; no restart was attempted."
@@ -285,6 +310,7 @@ class TorEgressHealer(TorHistoryMixin):
                     outage_minutes,
                     evidence,
                 )
+                self._own_restart = True
                 stopped = await self._docker.stop(
                     self.CONTAINER,
                     stop_timeout=TOR_STOP_GRACE_SEC,

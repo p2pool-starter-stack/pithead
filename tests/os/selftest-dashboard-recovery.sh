@@ -19,6 +19,7 @@ dashboard_curl() {
         body=${body//'this.cancel()}>Close</button>'/'this.setState({ phase: "idle", error: "" })}>Close</button>'}
         ;;
     missing-error-pane:system/osupdate.mjs) body=${body//'if (phase === "error")'/'if (phase === "absent")'} ;;
+    old-draft-reset:config/configview.mjs) body=${body/'this.setState({ phase: "form", result: null })'/'this.load()'} ;;
     missing-module:app/connectionrecovery.mjs) return 22 ;;
     redirect:app/connectionrecovery.mjs) code=302 ;;
     server-error:dashboard.js) return 22 ;;
@@ -51,8 +52,8 @@ _ssh() {
 }
 passes=0 failures=0
 phase_provision_dashboard_recovery fixture-user fixture-password
-[ "$passes" = 5 ] && [ "$failures" = 0 ]
-for fixture in old-close missing-error-pane missing-module redirect server-error missing-compare missing-stop \
+[[ $passes = 6 && $failures = 0 ]]
+for fixture in old-close missing-error-pane old-draft-reset missing-module redirect server-error missing-compare missing-stop \
     missing-trigger missing-failure-clock missing-prop missing-draft missing-marker missing-dirty missing-applied-reset missing-pristine-state unsafe-command failed-command malformed-fingerprint; do
     passes=0 failures=0
     if phase_provision_dashboard_recovery fixture-user fixture-password; then
@@ -66,5 +67,5 @@ if phase_provision_dashboard_recovery fixture-user ''; then
     echo 'incorrect PASS without the captured login' >&2
     exit 1
 fi
-[ "$passes" = 0 ] && [ "$failures" = 1 ]
-echo 'selftest-dashboard-recovery: PASS (five deployed assertions; 19 refusal controls)'
+[[ $passes = 0 && $failures = 1 ]]
+echo 'selftest-dashboard-recovery: PASS (six deployed assertions; 20 refusal controls)'

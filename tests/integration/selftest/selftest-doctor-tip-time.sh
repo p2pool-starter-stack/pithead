@@ -22,6 +22,10 @@ if [ "${CASE:-}" = old ]; then
     status=warn
 fi
 if [ "${CASE:-}" = peerless ]; then status=warn; fi
+if [ "${CASE:-}" = isolated ]; then
+    message='monerod peers: 0 out / 0 in — an isolated or stalled node mines on a stale tip.'
+    status=warn
+fi
 if [ "${2:-}" = --json ]; then
     if [ "${CASE:-}" = invalid ]; then echo invalid; exit 0; fi
     jq -nc --arg message "$message" --arg status "$status" '{checks:[{status:$status,message:$message}]}'
@@ -33,15 +37,18 @@ exit 1
 CLI
 chmod +x "$scratch/doctor"
 echo "== doctor zero-tip probe controls =="
-for case_name in valid old skipped invalid peerless; do
+for case_name in valid isolated old skipped invalid peerless; do
     rc=0
     CASE=$case_name bash "$ROOT/tests/integration/tools/doctor-tip-time.sh" "$scratch/doctor" >"$scratch/log" 2>&1 || rc=$?
-    if [ "$case_name" = valid ]; then
+    if [ "$case_name" = valid ] || [ "$case_name" = isolated ]; then
         [ "$rc" = 0 ]
         grep -Fq 'text zero timestamp has no age or stale warning' "$scratch/log"
         grep -Fq 'json zero timestamp has no age or stale warning' "$scratch/log"
     else
         [ "$rc" != 0 ]
+    fi
+    if [ "$case_name" != valid ] && [ "$case_name" != isolated ]; then
+        grep -Fq 'FAILED:' "$scratch/log" || [ "$case_name" = invalid ]
     fi
     printf 'PASS doctor tip probe: %s\n' "$case_name"
 done

@@ -78,7 +78,12 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
             roll_keep 2
             mode 0644
         }
-        format json
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Pithead-Boot-Probe delete
+            }
+        }
     }'
     # Caddy LAN listen port (#740). An empty HOST_PORT — or a value that equals the scheme's own
     # default (443 for HTTPS, 80 for HTTP) — keeps the standard port and renders today's Caddyfile
@@ -154,10 +159,17 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     # dashboard.host — a documented, supported choice — got a single-host site list and NO bind at
     # all, which is the wildcard listener and the whole exposure, back again for exactly the
     # operators who configured the box most deliberately.
-    local bind_addrs="" _bh
+    local bind_addrs="" _bh _bridge_addrs
     if is_appliance && [ "${DASHBOARD_EXPOSE_PUBLIC_IP:-false}" != "true" ]; then
+        # Container-bridge gateways are not bound: they belong to the engine, not the box. A stale
+        # one (wizard bridge, previous boot) is in `hostname -I` now and gone when `up` starts
+        # Caddy, which then crash-loops on "cannot assign requested address" (#3406). The onion
+        # vhost binds mining_net's gateway on its own line, and loopback reaches the host-networked
+        # dashboard.
+        _bridge_addrs=" $(container_bridge_addrs | tr '\n' ' ') "
         for _bh in $(hostname -I 2>/dev/null); do
             is_public_ip "$_bh" && continue
+            case "$_bridge_addrs" in *" $_bh "*) continue ;; esac
             case "$_bh" in
             *:*) ;;                # IPv6 literal
             *[!0-9.]*) continue ;; # not an address literal
@@ -275,32 +287,41 @@ $(_bind_line)
             warn "Could not provide a certificate for the dashboard — falling back to Caddy's own."
         fi
     fi
-    if [ "$DASHBOARD_SECURE" == "true" ]; then
-        log "Generating Caddyfile for automatic HTTPS ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
-        cat <<EOF >>"$target"
-$(_site_addresses https) {
-$tls_line
+    # The boot capability is derived from the private salted auth hash, never the password.
+    # Missing login disables the 401 exemption. A local fronting proxy cannot mint the
+    # capability for its untrusted clients; the header is removed from logs and upstreams.
+    local boot_capability boot_marker=""
+    boot_capability=$(printf 'pithead-boot-health-v1:%s' "${DASHBOARD_AUTH_HASH_B64:-}" | sha256_hex)
+    [ -z "$auth" ] || boot_marker='        log_append @boot_health <pithead_probe boot-health-v1'
+    # Only the host's exact credential-free boot request earns this log field. remote_ip
+    # uses the socket peer, never a client-supplied forwarding header. Onion sites do not
+    # carry the matcher. Keep marking before rewrite/auth, including the locked 401 path.
+    local scheme=http
+    [ "$DASHBOARD_SECURE" != "true" ] || scheme=https
+    log "Generating Caddyfile for $scheme ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
+    cat <<EOF >>"$target"
+$(_site_addresses "$scheme") {
+$([ "$scheme" != https ] || printf '%s' "$tls_line")
 $(_bind_line)
-$auth
 $logblk
-    reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
+    @boot_health {
+        remote_ip 127.0.0.1 ::1
+        method GET
+        expression {http.request.uri} == "/.pithead-boot-health"
+        not header Authorization *
+        header X-Pithead-Boot-Probe "$boot_capability"
+    }
+    route {
+$boot_marker
+        rewrite @boot_health /
+$auth
+        reverse_proxy 127.0.0.1:8000 {
+            header_up X-Auth-User {http.auth.user.id}
+            header_up -X-Pithead-Boot-Probe
+        }
     }
 }
 EOF
-    else
-        log "Generating Caddyfile for HTTP ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
-        cat <<EOF >>"$target"
-$(_site_addresses http) {
-$(_bind_line)
-$auth
-$logblk
-    reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
-    }
-}
-EOF
-    fi
 
     # Onion vhost (#343): a second site reachable ONLY from the tor container, via the bridge gateway
     # (NETWORK_PREFIX.1 — the /24's first host, where host-networked Caddy binds and bridge containers
@@ -320,6 +341,7 @@ $auth
 $logblk
     reverse_proxy 127.0.0.1:8000 {
         header_up X-Auth-User {http.auth.user.id}
+        header_up -X-Pithead-Boot-Probe
     }
 }
 EOF
@@ -342,6 +364,7 @@ $auth
 $logblk
     reverse_proxy 127.0.0.1:8000 {
         header_up X-Auth-User {http.auth.user.id}
+        header_up -X-Pithead-Boot-Probe
     }
 }
 EOF

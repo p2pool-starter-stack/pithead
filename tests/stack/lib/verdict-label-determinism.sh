@@ -104,6 +104,8 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # title rows 1..4; no measured value enters a PASS label.
 # #3278's rcf_status labels range over running/restarting/paused, a fixed status list.
 # #3204's rcm_invalid labels range over four fixed JSON fixtures, never measured input.
+# GRUB labels use only the three literal parameter names and ten literal fixture modes.
+# Reset-slot labels use fixed pending/bad/gate and slot/source/stopped/revoked/rauc cases.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -121,6 +123,7 @@ test-appliance-identity.sh|1
 test-appliance-identity.sh|f
 test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
+test-appliance-reset-slot.sh|rs_case
 test-appliance-rig-config-merge.sh|rcm_invalid
 test-config-document.sh|raw
 test-config-document.sh|verb
@@ -144,6 +147,8 @@ test-control-ssrf-host-local.sh|2
 test-doctor-exposure.sh|_xp_row
 test-doctor-surface.sh|_s
 test-doctor.sh|ip
+test-grub-hugepages.sh|mode
+test-grub-hugepages.sh|param
 test-payout-wallet-pairs.sh|chain
 test-payout-wallet-pairs.sh|field
 test-payout-wallet-pairs.sh|k
@@ -173,6 +178,7 @@ test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
 test-wizard-tari.sh|mono
+test-wizard-tari.sh|size
 test-wizard-tari.sh|tari
 VDEXP
 )"

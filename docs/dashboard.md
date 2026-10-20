@@ -449,6 +449,9 @@ path broke) and appends it to the history.
 > value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
 > report XMRig's live donate level.
 
+> **Remote rig control is beta in 2.0.0.** An appliance rig listens for control at every boot,
+> pinned to the coordinator and gated by its token; dashboard writes need the rig adopted first.
+
 To make a rig editable, give it `host`, `token`, and (unless it's the default `8082`) `control_port`
 in its [`workers.list[]`](configuration.md#configuration-reference) descriptor. A rig with neither
 yet shows an **adopt form** instead of the editor: the control address prefilled from the IP the
@@ -826,6 +829,9 @@ feed (with age) or config.json — so no fiat figure is ever unattributed.
 
 ### Payout confirmation
 
+> **Beta in 2.0.0.** Payout confirmation is optional and off until you set a view key; a defect seen
+> only with it enabled may ship as a known issue.
+
 Everything above is a **model**. The earnings card also shows what actually landed in your wallet,
 when you give the stack a way to check the chain. Set `monero.view_key` (the private **view** key
 for your payout address) and the stack runs a **view-only** `monero-wallet-rpc` against your local
@@ -1147,8 +1153,10 @@ the full proposed configuration — both live views of a single candidate. Editi
 a field rewrites the pane; editing the pane refills the fields. The pane shows the whole
 candidate, developer-only keys aside (named below). Save sends the complete explicit
 configuration because the host stages and commits it as a replacement, but removes every
-`config.reference.json` default that was absent from `config.json` and remains untouched. Existing
-values and masked secrets survive, while a placeholder default can't be committed as if the
+`config.reference.json` default that was absent from `config.json` and remains untouched, default
+arrays such as `workers.list` and `notifications.webhooks` included, so a one-field save adds no
+empty containers. Existing values and masked secrets survive, while a placeholder default can't be
+committed as if the
 operator had typed it
 ([#2365](https://github.com/p2pool-starter-stack/pithead/issues/2365)). (This is the setup
 wizard's pattern — the first page and the config tab now behave identically.) The pieces:
@@ -1196,7 +1204,12 @@ wizard's pattern — the first page and the config tab now behave identically.) 
 Switching between Configuration, Simple, Advanced and Backup keeps your draft in memory,
 including invalid JSON. **Unsaved changes** beside the Configuration button marks unfinished
 edits. Return to Configuration to finish them; the marker clears after a successful apply or
-**Discard edits**. Drafts are not stored across a browser reload or close.
+**Discard edits**. When the stack enters its synchronization screen the editor is hidden, not
+unmounted, so the draft and the marker are still there when the dashboard returns. The page only
+shows the loading screen before its first state response, when no editor exists yet. Drafts are
+not stored across a browser reload or close. The page cannot observe an HTTP authentication change,
+so a re-authenticated tab keeps its draft until it is reloaded
+([#3323](https://github.com/p2pool-starter-stack/pithead/issues/3323) tracks a reset).
 
 The flow mirrors the CLI's `apply`:
 
@@ -1220,6 +1233,10 @@ The flow mirrors the CLI's `apply`:
    claimed request, so a writer holding the original spool file open cannot change it mid-preview.
    Sensitive changes also show complete old and new non-secret
    values; secret values remain masked.
+   A preview belongs to the config it was made against: if another tab or `./pithead apply`
+   changes the config before you confirm, the commit is rejected with "preview again" and nothing
+   is written, so a stale preview never overwrites the newer change
+   ([#3352](https://github.com/p2pool-starter-stack/pithead/issues/3352)).
 3. Confirm. If the preview flags any change disruptive (⚠), you must type `APPLY` first. A payout
    change also requires the final eight characters of the new address. The
    commit runs `pithead apply -y` on the host and recreates only the containers whose config
@@ -1238,6 +1255,12 @@ The flow mirrors the CLI's `apply`:
    [#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076) this step also required a
    tap in Telegram and recorded a `commit-approved` action with an approver; the bot is read-only
    now, that leg is gone, and nothing writes an approver.
+   When the apply fails, **Back to the form** returns to the draft you submitted, unsaved marker
+   included, so you can correct it and retry. **Discard draft and reload from host** replaces the
+   draft with the host's configuration. After a successful apply, **Back to the form** reloads it.
+   The error card shown when the commit request itself fails (an HTTP error, an unreadable response,
+   or a poll timeout; a timeout does not mean the apply failed) offers the same two actions. Only a
+   failed first load, which has no draft, offers a plain **Reload**.
 
 Every reference setting belongs to a policy class. The ordinary allowlist covers routine
 operations; all remaining values confirm unless they are in the physical-presence set. Typed
@@ -1349,7 +1372,12 @@ Below the form, the Configuration view shows two read-only security panels
   more in a day shows a warning to rotate the dashboard password (set a new
   `dashboard.auth.password`, run `./pithead apply`) and, if the onion address may have leaked,
   `./pithead rotate-dashboard-onion`. The log is always on; entries appear once Caddy has handled
-  a request on this version.
+  a request on this version. The exact credential-free appliance boot probe stays visible in
+  the table but is excluded from the failure count and warning. Caddy marks it only on a
+  loopback connection to `/.pithead-boot-health` carrying the private boot capability.
+  The capability is derived from the owner-only salted login hash and removed from logs
+  and upstream requests. Ordinary requests, wrong passwords, and network clients requesting
+  that path, including through a local reverse proxy, still count.
 - **Recent config changes.** The control channel's host-side audit trail: one row per handled
   request — timestamp, dashboard user, operation, outcome, and the *names* of the settings
   that changed. Initial wizard provisioning is named as provisioning instead of a host edit, and a

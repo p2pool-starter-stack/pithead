@@ -298,7 +298,7 @@ Then a handful of choices, all with sensible defaults:
 
 | Question | Default | When to change it |
 |---|---|---|
-| Merge-mine Tari? | by disk | On when the target data disk fits the whole stack (528 GiB with local Monero, 208 GiB with remote Monero); off otherwise. Before formatting an install target, the estimate leaves room for filesystem metadata and reserved blocks; keeping chains uses their filesystem’s current available space. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. You can change the mode and payout address later from the Configuration view behind confirmation. |
+| Merge-mine Tari? (beta) | off | Tari merge-mining is an opt-in beta: Enter means no, because Tari runs on pre-release upstream software and a yes downloads and syncs a Tari chain over Tor, which takes days. The exception is a reinstall that keeps the data disk’s chains, where Enter keeps it on. The bundled node needs the whole stack to fit (528 GiB with local Monero, 208 GiB with remote Monero). A yes also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero mining. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. You can change the mode and payout address later from the Configuration view behind confirmation. |
 | P2Pool sidechain | mini | `nano` for a single low-power rig, `main` only for very large hashrate. Changeable later. |
 | Telegram bot | — | Optional. Alerts and status commands; needs both the token and the chat id. |
 | Monero node | run it here | Point at a node you already run. It has to be on your own network — a private address (10.x, 172.16–31.x, 192.168.x) or one reached over a VPN — because the machine only lets the mining containers dial private ranges; everything else goes through Tor. |
@@ -635,6 +635,9 @@ cd /data/pithead && ./pithead factory-reset
 
 Both ask you to type the reset name before they do anything. The machine reboots itself
 into setup when the reset is done.
+Config reset continues with the configuration wipe and reboot even if Compose fails to
+stop the stack. It prints the Compose error and a warning that containers may still be
+running. Exit status 0 means the reset completed; it does not confirm a clean shutdown.
 
 A machine that comes back to the setup wizard **without** being asked to is a different
 event: the data area would not mount, and the machine repaired it or, failing that,

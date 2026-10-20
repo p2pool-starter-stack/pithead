@@ -43,6 +43,7 @@ export function coerceForPath(reference, path, raw) {
 export function coerceForType(type, raw) {
   if (type === "boolean") return raw === "true" || raw === true;
   if (type === "number") {
+    if (String(raw).trim() === "") return raw; // Number("") is 0: an empty field is not zero
     const n = Number(raw);
     return Number.isNaN(n) ? raw : n;
   }
@@ -92,4 +93,17 @@ export function telegramPairReady(token, chat) {
   if (t && c) return { ready: true, partial: false };
   if (t || c) return { ready: false, partial: true };
   return { ready: false, partial: false };
+}
+
+// Open and focus the Configuration section a shortcut named. `focus` is the {section} object the
+// shortcut made (a fresh one per click); each is honoured once, so a later re-render never pulls
+// focus back from a section the operator has since collapsed or moved away from.
+const focused = new WeakSet();
+export function focusSection(details, name, focus) {
+  if (!focus || focus.section !== name || focused.has(focus)) return;
+  focused.add(focus);
+  details.open = true;
+  const summary = details.querySelector("summary");
+  summary.scrollIntoView?.({ block: "start" });
+  summary.focus();
 }

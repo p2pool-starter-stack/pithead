@@ -146,7 +146,7 @@ check_hugepages_reserved() {
                 short="${short} If monerod's own RandomX pages leave fewer than ${P2POOL_RANDOMX_DATASET_PAGES} free when P2Pool starts, ${fallback}"
             fi
         fi
-        dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool. To keep it across reboots, put '$(randomx_boot_params)' on GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub in place of any other hugepages= value, then run 'sudo update-grub' and reboot; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
+        dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool. For persistence, accept setup's GRUB drop-in and reboot after it verifies the generated kernel entries; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
     fi
 }
 

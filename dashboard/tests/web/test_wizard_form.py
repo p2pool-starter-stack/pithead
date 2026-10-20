@@ -116,14 +116,22 @@ def test_the_mode_key_is_written_for_every_answer_including_the_default():
     # "local", so the ONE thing this form must never do is leave the key out — an operator who
     # answered No would get a merge-mining machine. Every answer, the unanswered one included.
     for form, expected in (
-        ({}, "local"),
-        ({"tari_mode": ""}, "local"),
+        ({}, "off"),
+        ({"tari_mode": ""}, "off"),
         ({"tari_mode": "off"}, "off"),
         ({"tari_mode": "local"}, "local"),
         ({"tari_mode": "remote"}, "remote"),
     ):
         cfg = build_config({**BASE, **form})
         assert cfg["tari"]["mode"] == expected, form
+
+
+def test_a_yes_to_tari_cannot_hold_or_reject_monero_mining():
+    # #3333: an opted-in beta Tari writes dashboard.tari_required = false; a No writes nothing.
+    for answer in ("local", "remote"):
+        cfg = build_config({**BASE, "tari_mode": answer, "tari_remote_host": "h"})
+        assert cfg["dashboard"]["tari_required"] is False, answer
+    assert "tari_required" not in build_config({**BASE, "tari_mode": "off"})["dashboard"]
 
 
 def test_declining_tari_asks_for_no_payout_address():

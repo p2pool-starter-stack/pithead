@@ -44,8 +44,12 @@ pithead() { printf '%s\n' "$*" >>"$WORK/operations"; }
 wait_status_ok() { return 0; }
 lifecycle_gate_sample() { printf '%s\n' "$1" >>"$WORK/gate-stages"; }
 
-for expected in off local; do
-    if [ "$expected" = off ]; then export WIZARD_TEST_FREE_KB=$((100 * 1048576)); else export WIZARD_TEST_FREE_KB=$((600 * 1048576)); fi
+# The leg answers the Tari question explicitly (#3333), so the measured free space no longer
+# decides its answer: a small and a roomy disk both give the same Tari-on config.
+expected=local
+for free_gib in 100 600; do
+    export WIZARD_TEST_FREE_KB=$((free_gib * 1048576))
+    expected="local ${free_gib}G"
     printf 'DEPLOYMENT_COMPLETED=true\n' >"$WORK/.env"
     : >"$WORK/operations"
     : >"$WORK/gate-stages"
@@ -57,10 +61,9 @@ for expected in off local; do
     assert_eq "wizard gate diagnostics cover startup and baseline restore ($expected)" "$(cat "$WORK/gate-stages")" $'after-wizard-up\nbefore-wizard-restore\nafter-wizard-restore-apply'
     generated=$(cat "$WORK/generated.json")
     assert_eq "harness carries the runner's Monero wallet ($expected)" "$(jq -r '.monero.wallet_address' <<<"$generated")" "$monero"
-    assert_eq "harness carries disk-derived Tari mode ($expected)" "$(jq -r '.tari.mode' <<<"$generated")" "$expected"
-    if [ "$expected" = local ]; then
-        assert_eq "harness carries the runner's Tari wallet" "$(jq -r '.tari.wallet_address' <<<"$generated")" "$tari"
-    fi
+    assert_eq "harness answers the Tari question explicitly, whatever the disk ($expected)" "$(jq -r '.tari.mode' <<<"$generated")" "local"
+    assert_eq "harness carries the runner's Tari wallet ($expected)" "$(jq -r '.tari.wallet_address' <<<"$generated")" "$tari"
+    assert_eq "harness writes tari_required false for the Tari yes ($expected)" "$(jq -r '.dashboard.tari_required' <<<"$generated")" "false"
     assert_eq "harness restores the actual runner baseline ($expected)" "$(cat "$WORK/config.json")" "$BASELINE_CONFIG"
     assert_eq "harness preserves prepared chain paths ($expected)" "$(jq -r '[.monero.data_dir,.tari.data_dir,.tor.data_dir] | join("/")' <<<"$generated")" "fixture-monero/fixture-tari/fixture-tor"
     assert_eq "harness deploys defaults then restores ($expected)" "$pushes" 2

@@ -25,14 +25,22 @@ ps)
         [ ! -e "$PS_COUNT" ] || n=$(cat "$PS_COUNT")
         n=$((n + 1)); printf '%s' "$n" >"$PS_COUNT"
     fi
+    # Podman has no restarting state and rejects the filter outright.
+    [ "${ENGINE_NO_RESTARTING:-0}" != 1 ] || [[ "$*" != *status=restarting* ]] ||
+        { echo 'Error: unknown container state: restarting: invalid argument' >&2; exit 125; }
     case "$*" in
     *label=com.docker.compose.project=pithead*)
         case "$*" in
+        *--format*)
+            if [ -z "${ACTIVE_AFTER:-}" ] || [ "$n" -gt "$ACTIVE_AFTER" ]; then
+                [ -z "${STACK_STATUS:-}" ] || printf '%s fixture-id\n' "$STACK_STATUS"
+            fi
+            [ ! -f "${ACTIVE_FILE:-/dev/null}" ] || printf 'running fixture-id\n'
+            printf 'exited stopped-id\n' ;;
         *status=*)
             if [ -z "${ACTIVE_AFTER:-}" ] || [ "$n" -gt "$ACTIVE_AFTER" ]; then
                 [[ "$*" != *"status=${STACK_STATUS:-absent}"* ]] || printf 'fixture-id\n'
             fi ;;
-
         *) [ ! -f "${ACTIVE_FILE:-/dev/null}" ] || printf 'fixture-id\n' ;;
         esac ;;
     esac ;;
@@ -64,6 +72,15 @@ for rcf_status in running restarting paused; do
     assert_not_contains "configless $rcf_status refusal does not blame Docker" "$out" "Fix Docker access"
     assert_eq "refused restore leaves configuration absent" "$(test -e "$BK/config.json" && echo present)" ""
 done
+# Podman rejects status=restarting: the census must neither ask for it nor read the rejection as a failure.
+for rcf_status in running restarting paused; do
+    out=$(cd "$BK" && ENGINE_NO_RESTARTING=1 STACK_STATUS="$rcf_status" PATH="$BK/bin:$PATH" ./pithead restore -y "$RCF_ARCHIVE" 2>&1)
+    assert_rc "Podman-style engine: restore refuses $rcf_status containers without env" "$?" 1
+    assert_contains "Podman-style engine: $rcf_status refusal names the active stack" "$out" "stack services are still active"
+done
+out=$(cd "$BK" && ENGINE_NO_RESTARTING=1 PATH="$BK/bin:$PATH" ./pithead restore -y "$RCF_ARCHIVE" </dev/null 2>&1)
+assert_rc "Podman-style engine: stopped configless restore reaches passphrase request" "$?" 1
+assert_contains "Podman-style engine: stopped restore is not reported unverifiable" "$out" "This archive is encrypted"
 out=$(cd "$BK" && ENGINE_FAIL=1 PATH="$BK/bin:$PATH" ./pithead restore -y "$RCF_ARCHIVE" 2>&1)
 assert_rc "configless Docker census failure refuses restore" "$?" 1
 assert_contains "engine failure still names Docker access" "$out" "Fix Docker access"
@@ -85,7 +102,7 @@ assert_contains "configless down removes selected containers without volumes" "$
 assert_not_contains "configless down never interpolates Compose" "$(grep '^compose ' "$DOCKER_LOG" || true)" 'compose '
 assert_contains "legacy selection requires this working directory" "$(cat "$DOCKER_LOG")" "label=com.docker.compose.project.working_dir=$BK"
 
-out=$(cd "$BK" && PS_COUNT="$RCF/ps-count" ACTIVE_AFTER=6 STACK_STATUS=running PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' PATH="$BK/bin:$PATH" ./pithead restore -y "$RCF_ARCHIVE" 2>&1)
+out=$(cd "$BK" && PS_COUNT="$RCF/ps-count" ACTIVE_AFTER=2 STACK_STATUS=running PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' PATH="$BK/bin:$PATH" ./pithead restore -y "$RCF_ARCHIVE" 2>&1)
 assert_rc "configless restore rechecks active services under the mutation lock" "$?" 1
 assert_contains "late configless startup gives the active-stack refusal" "$out" "stack services are still active"
 assert_eq "late configless startup prevents config promotion" "$(test -e "$BK/config.json" && echo present)" ""

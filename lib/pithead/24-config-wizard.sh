@@ -139,46 +139,42 @@ wizard_port() {
     is_valid_port "$1" && printf '%s' "$1" || printf '%s' "$2"
 }
 
-# The Enter-through answer to "Merge-mine Tari?" (#1916), derived from free disk rather than fixed.
-# The bundled Tari node adds a 200 GiB budget on top of Monero's, so a fixed yes commits
-# an undersized host to a first sync that fills its disk, and a fixed no drops the stack's headline
-# feature on a host with room to spare. Sets WIZ_TARI_DEFAULT to "local" or "off", and PRINTS the
-# one-line reason for it — the operator reads the measurement, not just the verdict it produced.
-# Printing rather than returning the reason is deliberate: a `$(...)` caller would run this in a
-# subshell, where a second global could be set and silently lost.
+# The Enter-through answer to "Merge-mine Tari?" (#1916, #3333). Tari merge-mining is an opt-in
+# beta for new installs: the node and wallet are pre-release upstream builds, the node over Tor is
+# offline for part of each day, and the bundled node adds a 200 GiB budget on top of Monero's. So
+# Enter means "off". The one exception is a data disk that already holds a Tari chain
+# (wizard_tari_chain_held): a reinstall that keeps its data must not silently drop merge-mining.
+# Sets WIZ_TARI_DEFAULT to "local" or "off", and PRINTS the one-line reason for it — the operator
+# reads the measurement, not just the verdict it produced. Printing rather than returning the reason
+# is deliberate: a `$(...)` caller would run this in a subshell, where a second global could be set
+# and silently lost.
 #
 # Budget figures and mount resolution come from disk_component_gib / disk_fs_mount, the same source
-# doctor's Disk check and preflight_resources read, so a host offered "local" here is not a host
-# doctor then warns about. ./data is the location because config.json — the file that could move a
-# data_dir — is what this wizard is being run to write.
-#
-# Best-effort: a mount or a df that will not resolve gives "local", which is what every pre-#1916
-# run did and what an omitted tari.mode still means, and the line says the disk could not be read.
+# doctor's Disk check and preflight_resources read. ./data is the location because config.json —
+# the file that could move a data_dir — is what this wizard is being run to write. The free-space
+# line is information for someone who answers Yes; it no longer decides the default.
 # Args: <monero_mode> — "remote" leaves Monero's chain out of the budget; it lives on another host.
 wizard_tari_disk_default() {
-    local monero_mode="$1" mount avail_kb avail_h need_gib verdict
+    local monero_mode="$1" mount avail_kb avail_h need_gib fit
+    if wizard_tari_chain_held; then
+        WIZ_TARI_DEFAULT="local"
+        echo "Disk: a Tari chain is already on this machine's data disk, so keeping merge-mining on is the default."
+        return 0
+    fi
+    WIZ_TARI_DEFAULT="off"
     need_gib=$(wizard_stack_need_gib "$monero_mode")
-
     mount=$(disk_fs_mount "$PWD/data" 2>/dev/null) || mount=""
     avail_kb=""
     if [ -n "$mount" ]; then
         avail_kb=$(df -P "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_kb=""
     fi
     if [ -z "$avail_kb" ]; then
-        WIZ_TARI_DEFAULT="local"
-        echo "Disk: could not read the free space where $PWD/data will live, so running the bundled node is the default. The whole stack needs ~${need_gib} GiB there."
+        echo "Disk: could not read the free space where $PWD/data will live. The whole stack with the bundled Tari node needs ~${need_gib} GiB there. Tari merge-mining is a beta, so declining is the default."
         return 0
     fi
     avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_h=""
-    # One sentence, one verdict clause: the two outcomes cannot drift apart on a later edit.
-    if [ "$avail_kb" -ge "$((need_gib * 1048576))" ] 2>/dev/null; then
-        WIZ_TARI_DEFAULT="local"
-        verdict="it fits, so running it is the default."
-    else
-        WIZ_TARI_DEFAULT="off"
-        verdict="it does not fit, so declining is the default. Option 3 keeps the chain off this disk."
-    fi
-    echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GiB there — $verdict"
+    if [ "$avail_kb" -ge "$((need_gib * 1048576))" ] 2>/dev/null; then fit="it fits"; else fit="it does not fit"; fi
+    echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GiB there — $fit. Tari merge-mining is a beta, so declining is the default."
 }
 
 # Stage 1b (#1855/#1916): does this machine merge-mine Tari at all, and against whose node?
@@ -202,10 +198,12 @@ wizard_ask_tari() {
     echo ""
     echo "--- Tari merge-mining ---"
     echo "Merge-mining earns Tari from the same work that mines Monero, so it costs no hashrate —"
-    echo "but it needs its own payout address and a Tari base node."
+    echo "but it needs its own payout address and a Tari base node. This is a beta: the Tari"
+    echo "software is a pre-release build, and the bundled node downloads and syncs a Tari chain"
+    echo "over Tor, which takes days."
     echo "  1) No — mine Monero only"
-    echo "  2) Yes — run the bundled Tari node on this machine"
-    echo "  3) Yes — use a Tari node I already run"
+    echo "  2) Yes (beta) — run the bundled Tari node on this machine"
+    echo "  3) Yes (beta) — use a Tari node I already run"
     wizard_tari_disk_default "$MONERO_MODE_WIZ" # prints the Disk: line, sets WIZ_TARI_DEFAULT
     dflt=2
     [ "$WIZ_TARI_DEFAULT" == "off" ] && dflt=1
@@ -325,7 +323,9 @@ wizard_write_config() {
     # so the key is absent rather than written empty. Same two rules as the browser wizard's
     # build_config, for the same two reasons.
     if [ "$TARI_MODE_WIZ" != "off" ]; then
-        cfg=$(jq --arg tw "$IN_TARI_WALLET" '.tari.wallet_address = $tw' <<<"$cfg")
+        # A Yes on a new install must not let an opted-in beta Tari hold or reject Monero mining
+        # (#3333); an operator can raise dashboard.tari_required in the config later.
+        cfg=$(jq --arg tw "$IN_TARI_WALLET" '.tari.wallet_address = $tw | .dashboard.tari_required = false' <<<"$cfg")
     fi
 
     if [ "$TARI_MODE_WIZ" == "remote" ]; then

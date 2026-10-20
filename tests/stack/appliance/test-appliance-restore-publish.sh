@@ -14,12 +14,12 @@ mkdir -p "$RCON/archive"
 jq '.p2pool.stratum_password = "auto" | .p2pool.stratum_tls = false' "$RS/config.json" >"$RCON/archive/config.json"
 printf 'PROXY_STRATUM_PASSWORD=%s\n' "$RCON_SEED" >"$RCON/archive/.env"
 tar -czf "$RCON/backup.tar.gz" -C "$RCON/archive" config.json .env
-run_sourced "$RS" restore_apply "$RCON/backup.tar.gz" '' "$RCON/error" "$RCON/candidate.json"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_apply "$RCON/backup.tar.gz" '' "$RCON/error" "$RCON/candidate.json"
 assert_rc "config-only restore accepts the archived auto identity (#3092)" "$?" 0
 assert_eq "config-only restore publishes the archived seed (#3092)" "$(cat "$RCON/candidate.json.stratum-password")" "$RCON_SEED"
 assert_eq "config-only restore seed remains private (#3092)" "$(file_mode "$RCON/candidate.json.stratum-password")" 600
 cp "$RS/.env" "$RCON/original.env"
-out=$(run_sourced "$RS" wizard_prepare_miner_connection "$RCON/candidate.json" 0)
+out=$(PATH="$RS/bin:$PATH" run_sourced "$RS" wizard_prepare_miner_connection "$RCON/candidate.json" 0)
 assert_rc "restored candidate produces its connection card (#3092)" "$?" 0
 assert_eq "restored hand-off keeps the archived auto password (#3092)" "$(jq -r '.stratum_password' <<<"$out")" "$RCON_SEED"
 assert_eq "restored config still records auto (#3092)" "$(jq -r '.p2pool.stratum_password' "$RCON/candidate.json")" auto
@@ -31,7 +31,7 @@ tar -czf "$RS/hostile-live.tar.gz" -C / "${RS#/}/config.json" "${RS#/}/data/dash
 printf sentinel >"$RS/outside-target"
 rm "$RS/data/dashboard/dashboard.db"
 ln -s "$RS/outside-target" "$RS/data/dashboard/dashboard.db"
-run_sourced "$RS" restore_apply "$RS/hostile-live.tar.gz" '' "$RS/restore-error"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_apply "$RS/hostile-live.tar.gz" '' "$RS/restore-error"
 assert_rc "restore safely replaces a planted destination symlink" "$?" 0
 assert_eq "restore leaves the planted symlink target untouched" "$(cat "$RS/outside-target")" sentinel
 assert_eq "restored database is a regular file" "$([ -f "$RS/data/dashboard/dashboard.db" ] && [ ! -L "$RS/data/dashboard/dashboard.db" ] && echo yes)" yes
@@ -60,19 +60,19 @@ tar -czf "$RS/unexpected.tar.gz" -C / "${RS#/}/config.json" "${RS#/}/.env" "${RS
 printf 'CADDY-ORIG\n' >"$RS/Caddyfile"
 rm -f "$RS/config.json"
 cp "$RS/unexpected.tar.gz" "$RSPOOL/restore-archive"
-out=$(run_sourced "$RS" firstboot_consume_restore "$RSPOOL" 1 || echo "rc$?")
+out=$(PATH="$RS/bin:$PATH" run_sourced "$RS" firstboot_consume_restore "$RSPOOL" 1 || echo "rc$?")
 assert_contains "wizard refuses an unexpected regular backup member" "$out" rc1
 assert_contains "member refusal identifies the backup layout" "$(cat "$RSPOOL/error.txt")" 'outside the appliance backup layout'
 assert_eq "invalid wizard backup does not surface a config" "$([ -e "$RS/config.json" ] || echo gone)" gone
 assert_eq "invalid wizard backup is not staged for installation" "$([ -e "$RCARRY/archive" ] || echo gone)" gone
 cp "$RS/unexpected.tar.gz" "$RPSEED/pithead-restore.enc" && printf '' >"$RPSEED/pithead-restore-pass"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; consume_preseed_restore || echo "rc$?"' 2>&1)
+out=$(PITHEAD_PRESEED_DIR="$RPSEED" PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'mount() { :; }; consume_preseed_restore || echo "rc$?"' 2>&1)
 assert_contains "carried backup refuses an unexpected regular member" "$out" rc1
 assert_contains "carried member refusal identifies the backup layout" "$out" 'outside the appliance backup layout'
 assert_eq "member refusal applies no valid files beside the invalid member" "$(cat "$RS/Caddyfile")" CADDY-ORIG
 assert_eq "rejected carried backup is consumed" "$([ -e "$RPSEED/pithead-restore.enc" ] || echo gone)" gone
 cp "$RS/unexpected.tar.gz" "$RPSEED/pithead-restore.enc" && printf 'failure-cleanup-secret' >"$RPSEED/pithead-restore-pass"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval '
+out=$(PITHEAD_PRESEED_DIR="$RPSEED" PATH="$RS/bin:$PATH" run_sourced "$RS" eval '
     mount() { :; }
     rm() { case "$*" in *pithead-restore*) return 1 ;; *) command rm "$@" ;; esac; }
     consume_preseed_restore || echo "rc$?"; clear_legacy_restore_carry "$RPSEED" || true
@@ -87,7 +87,7 @@ rm -f "$RSPOOL/error.txt"
 # An accepted restore whose private staging or snapshots cannot be cleared is rc 3: its config
 # already landed, but no success state is published and the host stops the boot.
 cp "$rarchive" "$RSPOOL/restore-archive" && printf hunter2 >"$RSPOOL/restore-passphrase" && rm -f "$RS/config.json"
-out=$(run_sourced "$RS" eval 'clear_restore_stage() { warn "Could not clear the private restore staging area."; return 1; }; firstboot_consume_restore "$RSPOOL" || echo "rc$?"' 2>&1)
+out=$(PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'clear_restore_stage() { warn "Could not clear the private restore staging area."; return 1; }; firstboot_consume_restore "$RSPOOL" || echo "rc$?"' 2>&1)
 assert_contains "direct applied-stage cleanup failure is fatal" "$out" rc3
 assert_contains "direct stage cleanup failure follows archive application" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
 assert_contains "direct stage cleanup failure reaches the page" "$(cat "$RSPOOL/error.txt")" 'could not clear private restore staging safely'
@@ -95,7 +95,7 @@ assert_not_contains "direct stage cleanup warning hides the passphrase" "$out" h
 assert_eq "direct stage cleanup publishes no success state" "$(find "$RSPOOL" -maxdepth 1 \( -name applied -o -name restore-inflight \) -print)" ""
 rm -f "$RSPOOL/error.txt" "$RS/config.json"
 cp "$rarchive" "$RSPOOL/restore-archive" && printf hunter2 >"$RSPOOL/restore-passphrase"
-out=$(run_sourced "$RS" eval 'wizard_spool_clean_checked() { return 1; }; firstboot_consume_restore "$RSPOOL" || echo "rc$?"' 2>&1)
+out=$(PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'wizard_spool_clean_checked() { return 1; }; firstboot_consume_restore "$RSPOOL" || echo "rc$?"' 2>&1)
 assert_contains "accepted restore cleanup failure is fatal" "$out" rc3
 assert_contains "cleanup failure follows an accepted restore" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
 assert_contains "accepted restore cleanup failure is visible" "$out" 'Could not clear every private restore snapshot'

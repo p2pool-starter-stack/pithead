@@ -164,7 +164,10 @@ Release notes, where operators actually read it. The branch model itself is in
 Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
 additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
 release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
-and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. The
+and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. They
+may come from the [release env file](release-server.md#the-lintrelease-toolchain). Dry runs enforce
+the lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does
+not run `make test` or the integration matrix: it prints their commands. The
 bench publishes that status only after its full tier-4 suite completes; a missing, failed,
 unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
 verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
@@ -237,6 +240,37 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    upgrade. See [Post-publish smoke test](#post-publish-smoke-test-459). This is the only step gated
    *behind* the publish, because it checks the published artifact, not a branch.
 
+### Rehearsing against a scratch registry
+
+Set `PITHEAD_REHEARSAL=1` and `PITHEAD_REGISTRY` to a non-production registry namespace.
+Rehearsal refuses the production namespace even with `--dry-run`. It runs every normal gate
+(preflight including signing, tier-4 status, the test gate and smoke), promotes and signs the
+scratch images, then stops before `publish`: no git tag, GitHub Release or install bundle is
+published. Release runs, including draft releases, require the owner's sign-off.
+
+For a registry other than `ghcr.io`, set `PITHEAD_REGISTRY_USER` and `PITHEAD_REGISTRY_TOKEN` if
+login is needed. The token goes to Docker on stdin; GitHub credentials and `gh` fallbacks apply
+only to `ghcr.io`. Without both scratch credentials, login is skipped with a warning and Docker's
+existing authentication is used. The rootfs anonymous-read check is skipped with a log message
+outside GHCR; all other smoke checks still run. A custom namespace without the rehearsal marker
+is allowed for a real cut, with a warning that the published bundle will name that registry.
+
+Prepare registry trust on the release host. For a private CA or plain HTTP, set
+`PITHEAD_BUILDKITD_CONFIG` to a readable BuildKit daemon configuration file and choose a separate
+`PITHEAD_BUILDX_BUILDER` name. The configuration is used when creating that builder; an existing
+builder is never reconfigured. Promotion and inspection also select that builder when the
+configuration is set. Configure Docker daemon CA trust and cosign's `SSL_CERT_FILE` on the host
+as needed; the release script does not install certificates or change daemon configuration.
+
+Registry reads allow 12 attempts with a 10-second delay by default; override with
+`PITHEAD_REGISTRY_READ_RETRIES` and `PITHEAD_REGISTRY_READ_BACKOFF`. Verification compares the
+parsed index digest exactly, including when inspect pads its fields. Registry writes allow
+3 total attempts with an initial 10-second delay, doubled per retry up to 60 seconds. Set
+`PITHEAD_REGISTRY_WRITE_RETRIES` (1–10) and `PITHEAD_REGISTRY_WRITE_BACKOFF` (0–60 seconds) to tune
+writes. Only classified transient registry statuses (500, 502, 503, 504) and connection failures
+retry; authentication, missing manifests, invalid or mismatched digests and unclassified failures
+stop immediately. Rootfs retries repeat the push, not the build or export verification.
+
 ### Pre-release gate (#54)
 
 The [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration test matrix is a
@@ -247,7 +281,7 @@ a single, validated bundle.
 Two runs of the matrix are required, and the automated one is the smaller of the two:
 
 1. `release.sh` stage 2 runs the non-destructive `--readiness` assessment against the live
-   stack. Export the harness arguments on the release box before `make release`:
+   stack. Set the harness arguments in the release env file or export them before `make release`:
 
    ```bash
    export RELEASE_INTEGRATION_ARGS="--local --dir <live-stack-dir> --readiness"

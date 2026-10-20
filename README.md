@@ -13,8 +13,8 @@
 
 Docker Compose stack for Monero + Tari merge-mining on [P2Pool](https://github.com/SChernykh/p2pool),
 with a [Monero](https://www.getmonero.org/) full node, [Tari](https://www.tari.com/) base node, and
-a Tor daemon. Both setup wizards enable Tari when the data disk fits the whole stack, leave
-XvB off, and generate a dashboard login. Networking is Tor-first by default; see the
+a Tor daemon. Tari merge-mining is an opt-in beta: both setup wizards leave it off unless you say yes,
+leave XvB off, and generate a dashboard login. Networking is Tor-first by default; see the
 [privacy guide](docs/privacy.md) for its scope and exceptions.
 The `pithead` script renders config, provisions Tor, and drives docker-compose.
 It ships two ways: **Pithead OS**, a bootable appliance image for a machine you dedicate to

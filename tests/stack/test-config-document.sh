@@ -81,3 +81,33 @@ out="$(run_sourced "$C" control_approval_gate "$C/data/control/staged/$id.json" 
 assert_rc "commit gate rejects duplicated staged key" "$?" 1
 assert_contains "commit gate names duplicated staged key" "$out" 'dashboard.auth.password'
 unset raw verb args expected id result
+
+echo "== workers.api_port bounds (#3358) =="
+# The fleet default worker API port renders to XMRIG_API_PORT, so it is bounded like a per-rig port.
+wap_case() { # <api_port-json> <label>
+    seed_env
+    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"api_port":%s} }\n' "$WALLET" "$1" >"$V/config.json"
+    out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+    rc=$?
+    assert_rc "invalid workers.api_port rejected" "$rc" "1"
+    assert_contains "invalid workers.api_port message" "$out" "workers.api_port must be an integer between 1 and 65535"
+}
+wap_case 0 "workers.api_port 0"
+wap_case 65536 "workers.api_port 65536"
+wap_case -1 "negative workers.api_port"
+wap_case true "boolean workers.api_port"
+wap_case false "false workers.api_port"
+wap_case 80.5 "fractional workers.api_port"
+wap_case 8080.0 "float-spelled workers.api_port"
+wap_case 1e3 "exponent-spelled workers.api_port"
+wap_case '"8080"' "string workers.api_port"
+wap_ok() { # <port>: a boundary value applies and renders verbatim
+    seed_env
+    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"api_port":%s} }\n' "$WALLET" "$1" >"$V/config.json"
+    out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+    rc=$?
+    assert_rc "boundary workers.api_port applies" "$rc" "0"
+    assert_eq "boundary workers.api_port renders XMRIG_API_PORT" "$(run_sourced "$V" env_get_file "$V/.env" XMRIG_API_PORT)" "$1"
+}
+wap_ok 1
+wap_ok 65535

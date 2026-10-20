@@ -38,15 +38,15 @@ def _is_secret_sentinel(value):
     return isinstance(value, dict) and value.get("__secret__") is True
 
 
-def leaf_paths(node, prefix=()):
-    """Yield scalar schema paths; arrays use their dedicated/JSON surfaces."""
+def leaf_paths(node, prefix=(), include_arrays=False):
+    """Yield scalar schema paths; arrays use their dedicated/JSON surfaces unless asked for."""
     for key, value in node.items():
         if key.startswith("_") or (not prefix and key == "config_version"):
             continue
         path = (*prefix, key)
         if isinstance(value, dict) and not _is_secret_sentinel(value):
-            yield from leaf_paths(value, path)
-        elif not isinstance(value, list):
+            yield from leaf_paths(value, path, include_arrays)
+        elif include_arrays or not isinstance(value, list):
             yield ".".join(path)
 
 
@@ -91,9 +91,11 @@ def confirmed_paths(reference, free_paths, confirm_paths, approval_paths):
 
 
 def missing_default_paths(reference, host, getter):
-    """Return schema leaves omitted by the sparse host config."""
+    """Return schema leaves, array defaults included, omitted by the sparse host config (#3355)."""
     return [
-        dotted for dotted in leaf_paths(reference) if not getter(host, tuple(dotted.split(".")))[0]
+        dotted
+        for dotted in leaf_paths(reference, include_arrays=True)
+        if not getter(host, tuple(dotted.split(".")))[0]
     ]
 
 

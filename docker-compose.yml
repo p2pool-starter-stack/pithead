@@ -623,6 +623,10 @@ services:
         PITHEAD_GIT_BRANCH: ${PITHEAD_GIT_BRANCH:-}
         PITHEAD_RELEASE: ${PITHEAD_RELEASE:-}
     container_name: dashboard
+    # Room for the drain in main.py (3s) plus background-task cancel and the SQLite close. A stop that
+    # outruns the grace period is SIGKILLed and the engine can answer the stop with a 500, which
+    # fails an apply mid-recreate with the dashboard down (#3300).
+    stop_grace_period: 30s
     # Memory ceiling (#132 — see monerod). A small aiohttp + SQLite app (~0.06 GiB observed); a tight
     # cap is pure upside — a memory regression OOM-restarts the dashboard, not the revenue services.
     mem_limit: 512m
@@ -768,6 +772,7 @@ services:
       # The operator-facing stratum port (#172), display-only here: the "point your rigs at
       # host:PORT" hint and the egress topology label track the real published port.
       - STRATUM_PORT=${STRATUM_PORT:-3333}
+      - STRATUM_BIND=${STRATUM_BIND:-0.0.0.0}
       # Socket proxies are isolated on proxy_net and published only to the host loopback (#345), so
       # the host-networked dashboard reaches them here — mining containers cannot.
       - DOCKER_PROXY_URL=tcp://127.0.0.1:12375
@@ -993,7 +998,7 @@ services:
   # Bridges the local 127.0.0.1 application binding to the LAN
   # Serves HTTPS or HTTP depending on configuration
   caddy:
-    image: caddy:2.11.7@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772
+    image: caddy:2.11.7@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af
     container_name: caddy
     # Memory ceiling (#132 — see monerod). Reverse proxy + local TLS only (~13 MiB observed).
     mem_limit: 128m

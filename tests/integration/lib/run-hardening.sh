@@ -50,27 +50,6 @@ _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
     return 1
 }
 
-# Reach the dashboard onion from an INDEPENDENT external Tor client — its own tor + curl, its own
-# circuits, sharing nothing with the stack (tests/integration/tor-client/). It reaches the onion
-# over the REAL Tor network exactly as a remote user would, so a pass proves the whole inbound path
-# (hidden service published + reachable, client-auth key accepted, Caddy answering) from OUTSIDE the
-# trust boundary — using none of the stack's own SOCKS/plumbing. Returns 0 if Caddy answered (200 or
-# 401 — we deliberately don't hold the login, so its auth challenge counts as reachable). The client
-# key is piped pithead->container stdin entirely on the box: it never crosses to the harness, an ssh
-# argument, or `docker inspect`. Everything runs on the bench (it has docker + the Tor network).
-_onion_reachable_external() {
-    local onion
-    onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
-    [ -n "$onion" ] && [ "$onion" != "placeholder" ] || return 2
-    rx "docker build -q -t pithead-tor-client-test tests/integration/tor-client/ >/dev/null 2>&1" || return 3
-    # onion is [a-z2-7]{56}.onion (safe to embed); the client key stays on the box.
-    local snippet
-    snippet="line=\$(./pithead onion-client-key 2>/dev/null | grep -E 'descriptor:x25519:' | head -1);"
-    snippet="$snippet if [ -n \"\$line\" ]; then printf '%s\n' \"\$line\" | docker run -i --rm -e ONION_ADDR=$onion -e AUTH_STDIN=1 pithead-tor-client-test;"
-    snippet="$snippet else docker run --rm -e ONION_ADDR=$onion pithead-tor-client-test; fi"
-    rx "$snippet" | grep -q "PROBE-OK"
-}
-
 # Reap the root pithead-control systemd units THIS checkout installed, idempotently (#477).
 # The hardening phase installs pithead-control.{path,service} to exercise the #33 spool; the restore
 # apply is supposed to remove them, but that removal runs EARLY in apply (provision_control_runner) —
@@ -388,6 +367,7 @@ run_auth_fail_closed() {
     pithead status >/dev/null 2>&1
     assert_rc "stack healthy again after token restore" "$?" "0"
 
+    rr_web_ports_owned_by_dashboard "auth recovery" || true
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "auth-fail-closed" "$OUT_DIR"
 }
 

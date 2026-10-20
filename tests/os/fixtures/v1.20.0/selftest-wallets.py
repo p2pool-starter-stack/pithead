@@ -25,7 +25,10 @@ assert sodium.sodium_init() >= 0
 source = (ROOT / "lib/pithead/25-address-types.sh").read_text()
 namespace = {}
 exec(
-    source.split("import sys\n", 1)[1].split("\nPYEOF", 1)[0].rsplit("raw = b58_decode", 1)[0],
+    source.split("monero_address_type() {", 1)[1]
+    .split("import sys\n", 1)[1]
+    .split("\nPYEOF", 1)[0]
+    .rsplit("raw = b58_decode", 1)[0],
     namespace,
 )
 monero = namespace["b58_decode"](wallets["monero"])
@@ -35,11 +38,31 @@ for key in (monero[1:33], monero[33:65]):
     assert sodium.crypto_core_ed25519_is_valid_point(key) == 1
 
 tari_namespace = {}
-exec(source.split("import os\n", 1)[1].split("\nPYEOF", 1)[0].split("try:\n", 1)[0], tari_namespace)
+exec(
+    source.split("tari_address_type() {", 1)[1]
+    .split("import sys\n", 1)[1]
+    .split("\nPYEOF", 1)[0]
+    .split("try:\n", 1)[0],
+    tari_namespace,
+)
 tari = wallets["tari"]
 raw = b"".join(tari_namespace["b58_decode"](part) for part in (tari[0], tari[1], tari[2:]))
 assert raw[:2] == bytes([0, 1]) and len(raw) == 67
 assert tari_namespace["dammsum"](raw) == 0
 for key in (raw[2:34], raw[34:66]):
     assert sodium.crypto_core_ristretto255_is_valid_point(key) == 1
-print("fixture wallet determinism, checksums and four public keys: PASS")
+# Exercise the complete CLI validators as well as the extracted checksum helpers.
+verdicts = subprocess.check_output(
+    [
+        BASH,
+        "-c",
+        'source "$1"; monero_address_type "$2"; tari_address_type "$3"',
+        "fixture-wallets",
+        str(ROOT / "lib/pithead/25-address-types.sh"),
+        wallets["monero"],
+        wallets["tari"],
+    ],
+    text=True,
+)
+assert verdicts.splitlines() == ["primary", "ok"]
+print("fixture wallet determinism, checksums, four public keys and CLI verdicts: PASS")

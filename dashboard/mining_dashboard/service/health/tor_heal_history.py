@@ -83,6 +83,7 @@ class TorHistoryMixin:
                     "the host verified its evidence, onion identities and six-hour cooldown."
                 )
             else:
+                self._own_restart = False  # nothing restarted Tor; a later restart is not ours
                 detail = (result or {}).get("error", "host result unconfirmed")
                 self._recovery_step = "Tor state recovery unconfirmed"
                 self._recovery_notice = f"Tor state recovery refused or failed: {detail}. No fallback restart was attempted."

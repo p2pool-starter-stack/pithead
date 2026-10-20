@@ -34,11 +34,12 @@ export const TariSection = ({ answer, v, on }) => html`<h2>Tari merge-mining</h2
     <${RadioField} label="Merge-mine Tari?" name="tari-mode" value=${answer}
         onChange=${on("tariMode")} options=${[
           ["off", "No", "Mine Monero only."],
-          ["local", "Yes, with the bundled node", "Run a Tari node on this machine."],
-          ["remote", "Yes, with my node", "Use a Tari node I already run."],
+          ["local", "Yes (beta), with the bundled node", "Run a Tari node on this machine."],
+          ["remote", "Yes (beta), with my node", "Use a Tari node I already run."],
         ]} />
-    <${Note}>Merge-mining earns Tari from the same work that mines Monero, so it costs no
-    hashrate — but it needs its own payout address and a node of its own, and the bundled node
+    <${Note}>Merge-mining Tari is a beta. It earns Tari from the same work that mines Monero, so it
+    costs no hashrate. Choosing Yes downloads and syncs a Tari chain over Tor, which takes days.
+    It needs its own payout address and a node of its own, and the bundled node
     adds a 200 GiB disk budget on top of Monero's. The Configuration view carries this switch, so
     you can turn it off and back on later behind a typed APPLY; turning it off keeps the chain data
     on disk, so it resumes rather than re-syncing. Answering No stores no payout address, and
@@ -68,14 +69,14 @@ export const TariSection = ({ answer, v, on }) => html`<h2>Tari merge-mining</h2
       </div>`
     }`;
 
-// Measurements come from the host, including the target's future data partition.
-export function tariDiskDefault(budget, disks, target, moneroMode, wipe = "keep") {
-  const disk = disks.find((item) => item.name === target);
-  const key =
-    disk?.state === "pithead-with-data" && wipe === "data" ? "data_available_bytes" : "data_bytes";
-  const available = disks.length ? disk?.[key] : budget.available_bytes;
-  const need = moneroMode === "remote" ? budget.remote_need_bytes : budget.local_need_bytes;
-  return Number.isFinite(available) && Number.isFinite(need) && available < need ? "off" : "local";
+// Tari merge-mining is an opt-in beta (#3333): the default is off, unless the disk being kept
+// already holds a Tari chain. Only the installer's data-wipe option keeps chains; a booted data
+// disk reports its own chain size in the budget. The host does the measuring.
+export function tariDiskDefault(budget, disks, target, wipe = "keep") {
+  const held = disks.length
+    ? disks.find((item) => item.name === target)?.state === "pithead-with-data" && wipe === "data"
+    : budget.tari_chain_held === true;
+  return held ? "local" : "off";
 }
 
 export function syncInitialChains(cfg, fast) {
@@ -100,14 +101,7 @@ export function fastSyncWarning(cfg) {
 export function applyDiskDefault(app, cfg, chosen = app.state.chosen, wipe = app.state.wipe) {
   if (app.state.newMachine && !app.state.tariTouched) {
     cfg.tari ||= {};
-    cfg.monero ||= {};
-    cfg.tari.mode = tariDiskDefault(
-      app.state.diskBudget,
-      app.state.disks,
-      chosen,
-      cfg.monero.mode,
-      wipe,
-    );
+    cfg.tari.mode = tariDiskDefault(app.state.diskBudget, app.state.disks, chosen, wipe);
   }
 }
 

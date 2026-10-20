@@ -153,10 +153,11 @@ async def handle_control_preview(request):
     proposed = body.get("config")
     if not isinstance(proposed, dict):
         raise web.HTTPBadRequest(text="'config' must be a JSON object.")
-    # Click-to-adopt (#893): pre-validate any newly-appended workers.list[] entry before spooling.
-    adopt_err = worker_adopt.validate_new_worker_entries(control_service.read_config(), proposed)
-    if adopt_err:
-        raise web.HTTPBadRequest(text=adopt_err)
+    # Pre-validate the fleet workers.api_port (#3358) and any newly-appended workers.list[] entry (#893).
+    err = worker_adopt.validate_fleet_api_port(proposed)
+    err = err or worker_adopt.validate_new_worker_entries(control_service.read_config(), proposed)
+    if err:
+        raise web.HTTPBadRequest(text=err)
     actor = request.headers.get("X-Auth-User", "")
     try:
         # The proposal ships as-is: an untouched secret rides as the {"__secret__": true}

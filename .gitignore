@@ -3,6 +3,7 @@
 .env.new
 .env.dryrun
 .env.apply-incomplete
+.env.caddy-restart-pending
 config.json
 config.json.bak-control
 /pithead

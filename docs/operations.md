@@ -29,7 +29,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead lan-guard-check` | Check the live LAN-only source rule. If it is missing, remove the node start marker and stop the nodes that publish LAN ports; if a stop cannot be verified, try restoring the rule on all three fixed node ports and keep reporting failure until the stop is verified. Fired every two minutes by `pithead-lan.timer`; `up`, `apply` and `upgrade` install the timer while a LAN port is configured or still published by a node. Run `./pithead up` after fixing the firewall to restore access. |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
-| `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. If Compose shutdown fails, print its error and warn that containers may still be running, then continue the wipe (exit 0 on completion). |
 | `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: removes everything pithead put on this host, including the egress firewall rules with their `pithead-egress.service` boot unit and `pithead-egress.timer` check, the LAN-only source rule and its `pithead-lan.timer` check, and deletes NO data, on any flag. Prints the three-column inventory below, resolved for this box, and the exact command to delete the rest. Refuses in a `pithead-vX.Y.Z` directory that `current` does not point at, because every version directory drives the same live stack: run it in the live directory, and delete an old version directory by hand. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
@@ -212,11 +212,14 @@ later silence is unhealthy. This container grace never hides dashboard wallet re
 It exits non-zero when something needs attention, so you can wire it into a cron/monitoring check.
 A stopped `p2pool`/`xmrig-proxy` is reported as intentional, not an error: the dashboard stops it
 either to fail workers over a node-down outage or while the miner is held until the required chains
-finish their initial sync. When a chain is still syncing, `status` reads the dashboard's own
-`/api/state` and prints its progress inline — a line per chain with the percent and the number of
-blocks left, so you don't have to open the dashboard to see how far off release is. No ETA is
-shown: block rate isn't sampled, so the blocks-remaining count is the honest figure. The lines are
-skipped once both chains are synced, or when the dashboard app isn't answering yet.
+finish their initial sync. While the dashboard's global sync gate (`/api/state.syncing`) is on,
+`status` reads `/api/state` and prints each chain's progress inline — a line per chain with the
+percent and the number of blocks left, so you don't have to open the dashboard to see how far off
+release is. A Tari row is never listed while `TARI_REQUIRED=false`. No ETA is shown: block rate
+isn't sampled, so the blocks-remaining count is the honest figure. The lines are skipped when the
+gate is off, or when the dashboard app isn't answering yet. When the gate is off and a miner is
+stopped anyway, the reason reads "the dashboard reports no chain sync in progress — check the
+dashboard and the container logs" instead of claiming a sync hold.
 
 **Start / stop / restart:**
 
@@ -572,7 +575,7 @@ pin the TLS fingerprint need the new values.
 | item | why it stays | to remove it by hand |
 |---|---|---|
 | apt packages `jq`, `openssl`, `docker.io`, `docker-compose-v2` | other software on the box may use them | `sudo apt-get remove <pkgs>` |
-| GRUB HugePages cmdline | reverting needs `update-grub` and a reboot the verb must not trigger | restore `/etc/default/grub.bak`, `sudo update-grub`, reboot |
+| GRUB HugePages cmdline | reverting needs `update-grub` and a reboot the verb must not trigger | remove `/etc/default/grub.d/zz-pithead-hugepages.cfg`, restore `/etc/default/grub.bak` if an older setup edited the defaults, `sudo update-grub`, reboot |
 | runtime HugePages pool | resets on reboot anyway | `sudo sysctl -w vm.nr_hugepages=0` |
 
 ## The deploy-box layout
@@ -697,6 +700,16 @@ paths in an owner-only `.restore-paths` record. Restore removes that record afte
 On a fresh installation, default data directories need no prior configuration. For custom data
 directories without a reset record, configure the original paths in `config.json` and run
 `./pithead render` before restoring; an archive cannot authorize new destination paths.
+
+On the appliance, `config-reset` reboots into the setup wizard. After a successful provisioned
+boot, the reset records the current good slot and exact image source. When the wizard container
+starts, firstboot restores that same slot's good state on each configless boot, including a
+reboot while setup is still open. The record remains until a provisioned boot passes its health
+gate, so reset, CLI restore and setup followed by a normal reboot keep the intended slot. An
+unverified slot keeps its normal fallback; the next provisioned boot still requires the stack
+health gate. If you restore from the shell instead of the wizard page, the wizard closes its
+page within seconds of `config.json` returning, which frees ports 80 and 443 for Caddy; run
+`./pithead up` after that.
 
 Copy the archive back and run:
 
@@ -834,7 +847,14 @@ failure shows up there rather than as a Tor error. Same private-range requiremen
 
 **HugePages shows as disabled / low.**
 Persistent HugePages require a GRUB change and a **reboot**. Re-run `./pithead setup` (without
-`--skip-optimize`) and reboot when prompted.
+`--skip-optimize`). Setup writes its own `/etc/default/grub.d/zz-pithead-hugepages.cfg`, preserves
+user drop-ins and console arguments, and verifies the generated kernel entries. If verification
+fails, check later GRUB drop-ins and the generated `/boot/grub/grub.cfg`, then re-run setup.
+Reboot only after verification succeeds; confirm `HugePages_Total` in `/proc/meminfo` afterwards.
+An unchanged setup with those flags already in the running kernel does not request another reboot.
+Setup automatically repairs its managed drop-in and recognizable legacy Pithead reservations.
+Other reservations, including differently ordered legacy flags or a plural THP typo, require
+interactive confirmation; setup preserves the main defaults rather than rewriting the typo there.
 
 **Tor egress broken while mining works.**
 Healthchecks reports the host down and Telegram commands go quiet, yet workers keep hashing.
@@ -884,7 +904,9 @@ on later rounds. A saturated
 history (abandoned count and total build times both at 1000, no `CircuitBuildTimeBin`) is logged
 on each such round, sent once per outage to the alert sinks (failed delivery retries on later rounds), and names `./pithead tor-recover`;
 `./pithead doctor` reports it as a FAIL, also shown in the Tor section of Service diagnostics after a health check. The doctor check does not require an outage record or auto-heal: saturated history plus live egress failure is enough for a FAIL. The action budget is three per outage; after that the
-monitor warns until egress recovers. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
+monitor warns until egress recovers. A Tor start the monitor did not cause (an operator, `./pithead` or
+Docker restart) opens a fresh outage window and resets the clock, budget and cooldown, so a Tor that
+restarts more often than every 15 minutes never reaches an action or the warning. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
 state reset sends one alert per outage explaining the saturated history and guard reset.
 
 **Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed

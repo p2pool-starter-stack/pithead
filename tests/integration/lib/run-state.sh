@@ -2,6 +2,8 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 source "${BASH_SOURCE[0]%/*}/egress-probe.sh" || return $?
 source "${BASH_SOURCE[0]%/*}/miner-connection.sh" || return $?
+source "${BASH_SOURCE[0]%/*}/tari-readiness.sh" || return $?
+
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     local name="$1" config="$2"
@@ -185,11 +187,10 @@ assert_running_state() {
         it_step "stratum conns=${conns:-?} (informational)"
     fi
 
-    # 7. Tari sync-gate posture matches tari_required. The sync verdict tolerates post-restart
-    #    target re-discovery ONLY once Tari has proved "done" earlier this run (#746).
+    # 7. Tari sync-gate posture matches tari_required; a cached `st` may predate Tari's re-sync (#3059).
     assert_eq "TARI_REQUIRED env matches config" "$(env_on_box TARI_REQUIRED)" "${tari_req:-true}"
     if [ "$tari_req" = "true" ]; then
-        assert_tari_synced_required "$(jq_get "$st" '.sync.tari.state')"
+        assert_fresh_tari_synced_required
     fi
 
     # 7b. The #170 Stack Topology & Egress panel rides on /api/state, derived live from config.
@@ -233,7 +234,7 @@ assert_running_state() {
         # 'ubuntu' user or an explicit useradd, are uid 1000) and tari pins 1000 via the compose
         # override (the pulled image ships no non-root user of its own). Caddy and the two Docker
         # socket proxies are the audited exception — verified against the upstream images
-        # (caddy:2.11.4, tecnativa/docker-socket-proxy:v0.5.0): neither ships a non-root user, so
+        # (caddy:2.11.7, tecnativa/docker-socket-proxy:v0.5.0): neither ships a non-root user, so
         # they run as root, mitigated by cap_drop: ALL + read_only rootfs and (the proxies) sitting
         # off mining_net on host-loopback-only ports (#345) rather than by uid. Pin ALL 9 so a
         # silent drift either way — a hardened image reverting to root, or an accepted-root service

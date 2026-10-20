@@ -8,6 +8,7 @@ const webRoot = fileURLToPath(new URL("../../mining_dashboard/web/", import.meta
 // Keep the old implementation override for negative-control runs.
 const staticRoot = resolve(process.env.PITHEAD_BROWSER_STATIC || resolve(webRoot, "static"));
 const template = await readFile(resolve(webRoot, "templates/index.html"), "utf8");
+const wizardTemplate = await readFile(resolve(webRoot, "templates/wizard.html"), "utf8");
 const initialState = JSON.parse(
   await readFile(new URL("../frontend/fixtures/state.json", import.meta.url), "utf8"),
 );
@@ -32,15 +33,16 @@ export const test = base.extend({
     page.on("pageerror", (error) => errors.push(error.message));
     const server = createServer(async (req, res) => {
       try {
-        const response = responses.get(req.url);
-        if (response) {
+        const configured = responses.get(req.url);
+        if (configured) {
+          const response = typeof configured === "function" ? await configured(req) : configured;
           res.writeHead(response.status || 200, response.headers);
           return res.end(response.body);
         }
         const path = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-        if (path === "/" || path === "/fixture") {
+        if (path === "/" || path === "/fixture" || path === "/setup") {
           res.writeHead(200, { "Content-Type": "text/html" });
-          return res.end(path === "/" ? template : fixture);
+          return res.end(path === "/" ? template : path === "/setup" ? wizardTemplate : fixture);
         }
         if (path === "/api/state") {
           res.writeHead(200, { "Content-Type": "application/json" });
@@ -90,6 +92,7 @@ export const test = base.extend({
         state,
         responses,
         open: () => page.goto(origin),
+        openWizard: () => page.goto(`${origin}/setup`),
         mount: async (script) => {
           fixture = `<!doctype html><html lang="en"><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">

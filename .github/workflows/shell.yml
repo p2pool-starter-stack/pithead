@@ -37,6 +37,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
       - name: Build the generated CLI
         # run.sh sources the generated root `pithead` (git-ignored). Until #2048 split `lint-sh`
         # off, the build came in free as that target's prerequisite.
@@ -132,6 +133,8 @@ jobs:
       - name: Run appliance hugepages suite
         # #1103 co-location refusal on the reduced tier.
         run: bash tests/stack/standalone/test_appliance_hugepages.sh
+      - name: Run clearnet marker attestation contract
+        run: python3 tests/stack/standalone/test_clearnet_attestation.py
       - name: Test-inventory drift check
         # The inventory generator is grep-based; it exits non-zero when any suite it
         # enumerates counts zero — i.e. a suite moved or changed shape and the inventory

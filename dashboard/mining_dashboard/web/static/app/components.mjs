@@ -60,6 +60,7 @@ class DashboardView extends Component {
       onAvgWindow,
       onDismissHint,
       onInspect,
+      suspended,
     } = this.props;
     const advanced = ui.view === "advanced";
     const configView = ui.view === "config";
@@ -78,8 +79,10 @@ class DashboardView extends Component {
     // column-major reading order, so it stays "mine" first, "the world" last, same as above.
     // Overview is Simple-view-only (display:none in Advanced) and ExpectedVsActualCard shows in
     // both views — neither is constrained by this ordering.
+    // While the chain syncs (`suspended`) App shows SyncView instead; this view stays mounted but
+    // hidden, so a retained configuration draft is not unmounted with it (#3288).
     return html`
-    <div id="dashboard-view" class=${advanced ? "mode-advanced" : ""}>
+    <div id="dashboard-view" class=${advanced ? "mode-advanced" : ""} hidden=${suspended}>
         <nav class="view-controls" aria-label="View">
             <div class="toggle-group" role="group" aria-label="Dashboard view">
                 <button class=${"btn-toggle" + (!advanced && !configView && !backupView ? " active" : "")} aria-pressed=${!advanced && !configView && !backupView}
@@ -95,16 +98,16 @@ class DashboardView extends Component {
         <${AdvancedHint} ui=${ui} onView=${onView} onDismissHint=${onDismissHint} />
         ${
           this.configVisited
-            ? html`<div class="card-stack"><div hidden=${!configView}><${ConfigView} active=${configView} appliance=${!!state.os_update} onDirtyChange=${this.onConfigDirty} /></div>${configView ? html`<${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} />` : null}</div>`
+            ? html`<div class="card-stack"><div hidden=${!configView}><${ConfigView} active=${configView && !suspended} focus=${ui.configFocus} appliance=${!!state.os_update} onDirtyChange=${this.onConfigDirty} /></div>${configView ? html`<${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} />` : null}</div>`
             : null
         }
         ${
           backupView
-            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} /></div>`
+            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} active=${!suspended} /></div>`
             : null
         }
         ${
-          configView || backupView
+          configView || backupView || suspended
             ? null
             : html`
         <div class="grid">
@@ -114,7 +117,7 @@ class DashboardView extends Component {
                           onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow} />
         </div>
         <div class="grid">
-            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.host_ip && state.host_ip !== "Unknown Host" ? state.host_ip : state.host_addr} stratumPort=${state.stratum_port}
+            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.stratum_host} stratumPort=${state.stratum_port} localOnly=${state.stratum_local_only}
                              onInspect=${state.control_enabled ? onInspect : null} />
         </div>
         <div class="grid-section-label">Your Stack</div>
@@ -192,12 +195,13 @@ export function App({
                 : html`<${Fragment}>
                     <${HeroBand} state=${state} />
                     <${MineCartTrain} chart=${state.chart} blocks=${state.blocks} payouts=${state.payouts} />
-                    <${DashboardView} state=${state} ui=${ui} onRange=${onRange} onSort=${onSort}
-                                      onView=${onView} onZoom=${onZoom} onResetZoom=${onResetZoom}
-                                      onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow}
-                                      onDismissHint=${onDismissHint} onInspect=${onInspect} />
                   <//>`
             }
+            <${DashboardView} state=${state} ui=${ui} onRange=${onRange} onSort=${onSort}
+                              onView=${onView} onZoom=${onZoom} onResetZoom=${onResetZoom}
+                              onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow}
+                              onDismissHint=${onDismissHint} onInspect=${onInspect}
+                              suspended=${!!state.syncing} />
         </main>
         ${inspect}
     <//>`;

@@ -169,3 +169,22 @@ def test_malformed_fields_do_not_break_summary_and_boundary_is_inclusive(active)
     assert summary["failures_24h"] == 1
     assert summary["last_failure_ts"] == NOW - 86400
     assert all(e["method"] == "?" for e in summary["entries"])
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_boot_markers_are_excluded_across_retained_generations(active, compressed):
+    # Preserve rotation and future-timestamp rules while applying the boot exemption.
+    active.write_bytes(row(status=200) + row(ts=NOW + 1))
+    generation(
+        active.parent,
+        compressed=compressed,
+        data=53 * row(pithead_probe="boot-health-v1") + 4 * row(),
+    )
+    summary = audit_service.access_summary(now=NOW)
+    assert summary["failures_24h"] == 4
+    assert summary["rotate_hint"] is False
+    with active.open("ab") as stream:
+        stream.write(row())
+    summary = audit_service.access_summary(now=NOW)
+    assert summary["failures_24h"] == 5
+    assert summary["rotate_hint"] is True

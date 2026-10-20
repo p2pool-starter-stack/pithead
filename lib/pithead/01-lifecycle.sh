@@ -220,9 +220,11 @@ compose_up_checked() {
         rm -f "$tmp"
         [ "$rc" -eq 0 ] && return 0
         case "$out" in
-        *"must be in Created or Stopped state to be started"*)
+        # #3300: a stop that outlives its grace period is SIGKILLed and Podman answers 500 on the exit
+        # file; the container is stopped by the second pass.
+        *"must be in Created or Stopped state to be started"* | *"timed out waiting for file /run/libpod/exits/"*)
             [ "$_attempt" -eq 1 ] && {
-                warn "Compose hit a container still starting from a prior recreate — retrying once in 3s."
+                warn "Compose hit a container still changing state after a prior recreate — retrying once in 3s."
                 sleep 3
                 continue
             }
@@ -256,12 +258,12 @@ stack_up() {
     verify_release_images
     # Docker Compose automatically picks up COMPOSE_PROFILES from .env
     #
-    # PITHEAD_HOLD_CHAIN=1 is the migration hold (#851), set only by the appliance boot path on
-    # the first boot of a data_migration bundle: bring up everything EXCEPT the chain services
-    # (monerod/tari and their wallets — the holders of forward-only lmdb migrations, and the
-    # only containers anything depends on together), so the A/B commit decision is made before
-    # any migration touches /data. The chain services start with a plain `up` after the commit.
+    # PITHEAD_HOLD_CHAIN=1 defers chains and LMDB changes until A/B commit (#851); plain `up` starts them afterward.
     if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
+        # Revoke the carried mining latch before dashboard startup; ordinary outages retain it.
+        local dashboard_dir
+        dashboard_dir=$(env_get DASHBOARD_DATA_DIR)
+        [ -n "$dashboard_dir" ] && rearm_sync_gate_marker "$dashboard_dir" 1 || error "Could not reset the mining sync gate for the data migration."
         local services c
         local filter=()
         for c in $REVENUE_CHAIN_CONTAINERS; do filter+=(-e "$c"); done

@@ -37,6 +37,14 @@ phase_provision_dashboard_recovery() { # <captured-dashboard-user> <captured-das
         bad "served OS-update error Close does not use cancel, or retains the old idle reset (#3241)"
         rc=1
     fi
+    module=$(address_watch_dashboard_asset config/configview.mjs) || module=""
+    if [[ "$module" == *'this.setState({ phase: "form", result: null })'* ]] &&
+        [[ "$module" == *'Discard draft and reload from host'* ]]; then
+        ok "served configuration failure card keeps the draft and offers an explicit discard (#3287)"
+    else
+        bad "served configuration failure card resets the draft or lacks the explicit discard (#3287)"
+        rc=1
+    fi
     module=$(address_watch_dashboard_asset app/connectionrecovery.mjs) || module=""
     guidance=$(printf '%s' "$module" | tr '\n' ' ' | tr -s '[:space:]' ' ')
     if [[ "$guidance" == *"compare the certificate's SHA-256 fingerprint with the current fingerprint on the appliance console"* ]] &&

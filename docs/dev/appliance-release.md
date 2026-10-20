@@ -157,10 +157,17 @@ compare service image majors with a previous release. `--dev` retains the defaul
 
 **The migration hold — how a flagged update boots.** Installing a `data_migration` bundle
 also leaves a marker on `/data` (`.os-migration-pending`, stamped with the bundle's
-version). On the next boot, `pithead-boot` sees a marker matching its own version and
-brings the stack up **without** the chain services (monerod, tari, and their wallets — the
-holders of forward-only lmdb migrations): the A/B commit decision is made on everything
-else first. `doctor` reads the same marker and judges the deliberately-held chain
+version). Before loading images or rendering configuration, the candidate boot adds
+its A/B slot to the marker (`VERSION|A` or `VERSION|B`). A fallback into the previous
+slot then restores the data floor even when both builds carry the same version;
+the older version-only comparison also treats the qualified marker as a mismatch.
+`pithead-boot` brings the stack up **without** the chain services (monerod, tari, and their wallets — the
+holders of forward-only lmdb migrations). Before starting the dashboard, it writes a
+full sync-gate reset, revoking any mining release restored from the existing database.
+P2Pool and the proxy stop through the ordinary sync gate while local chains are held;
+after commit they wait for the required chains to sync before mining resumes. Normal
+boots and transient outages preserve the earned release. The A/B commit decision is
+made on everything else first. `doctor` reads the same marker and judges the deliberately-held chain
 containers by the sync-hold rule, so the commit gate gates on what is running instead of
 deadlocking on the hold. Only after `mark-good` does the boot path remove the marker and
 run a plain `up` — the chain services start, and the migration runs on a slot a fallback
@@ -172,7 +179,7 @@ nothing can undo that — and the journal carries one `FAULT` line saying the ch
 did not start and the migration has not run, with the recovery: `./pithead up` from
 `/data/pithead`. If health fails instead, the slot stays uncommitted, the machine
 falls back, and the old OS boots normally — its data was never touched (the old boot path
-ignores a marker for a version it isn't). A non-migrating install clears any stale marker.
+ignores the slot-qualified marker). A non-migrating install clears any stale marker.
 The `db_schema` field the plan also lists stays out until something reads it — an
 unread manifest field is a claim, not a contract.
 
@@ -331,7 +338,7 @@ is the only thing standing between the hand-written boot path and a fleet.
 | `rig` | The removable image installs the RigForge role, which mines from the baked binary with no stack containers and follows the A/B update contract. M13 cuts power while it mines, then requires a new boot, unattended mining, and the committed slot to return. | Printed by the run |
 | `media` | The physical-presence config stick shows the exact diff, applies after its countdown, is consumed, and cancels when removed mid-countdown. | Printed by the run |
 | `fault` | three power cuts mid-write; a deliberately corrupted bundle is refused without crashing and without bricking; a power cut inside the commit window; operator rollback after all of it; Fault D cuts an active first-boot baked-image load and requires the wizard and repaired image store afterwards; the box is still updatable afterwards | 15 |
-| `reset` | leg 0, the real `cd /data/pithead && ./pithead config-reset` off a provisioned machine: it clears the config and re-arms the wizard while preserving the monero chain and Tor onion identity through reconfiguration. Leg 1, the real `cd /data/pithead && ./pithead factory-reset`: it comes back unprovisioned at the wizard, the config is gone, the container store holds no pulled stack images, machine-id and the SSH host key are **fresh** (a handed-over box must not keep the old owner's identity), and the wipe is recorded on the ESP — a wiped machine must be tellable from a brand-new one (#1062). Leg 2, the wedged-`/data` recovery: the ext4 magic corrupted on the real data partition, the box comes back usable with **`/data` repaired, not erased** — a sentinel planted before the corruption must survive (#1087) — and the ESP wipe log must not grow, because a repair recorded as a wipe would cry wolf | 17 |
+| `reset` | leg 0, the real `./pithead config-reset -y` off a provisioned machine, instrumented by `tests/os/reset-config-probe.sh`: captures reset output and the actual Compose shutdown exit status before the wipe; a failed, unrecorded or warning-bearing stop fails even if reset exits 0. After the boot-condition checks, a bounded all-state project census must be empty before re-provisioning. It clears the config and re-arms the wizard while preserving the monero chain and Tor onion identity through reconfiguration. Leg 1, the real `cd /data/pithead && ./pithead factory-reset`: it comes back unprovisioned at the wizard, the config is gone, the container store holds no pulled stack images, machine-id and the SSH host key are **fresh** (a handed-over box must not keep the old owner's identity), and the wipe is recorded on the ESP — a wiped machine must be tellable from a brand-new one (#1062). Leg 2, the wedged-`/data` recovery: the ext4 magic corrupted on the real data partition, the box comes back usable with **`/data` repaired, not erased** — a sentinel planted before the corruption must survive (#1087) — and the ESP wipe log must not grow, because a repair recorded as a wipe would cry wolf | Printed by the run |
 
 A **brick is disqualifying, not deducted** — any run that leaves a machine unable to boot
 fails the release regardless of the rest.

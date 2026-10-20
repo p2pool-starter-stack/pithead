@@ -36,7 +36,7 @@ _SAFE_CHARS = re.compile(r"[^A-Za-z0-9 ._:;/@?&=%+#-]")
 _KNOWN_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 
 # 401s in the last 24 h before the dashboard suggests rotating the password/onion. Low on
-# purpose: the only legitimate 401s are the operator's own typos.
+# purpose: boot health probes are excluded; ordinary 401s still count.
 ROTATE_HINT_401S = 5
 
 _TAIL_BYTES = 256 * 1024
@@ -233,7 +233,7 @@ def filter_log_entries(entries, frm=None, to=None, q=None):
 
 
 def access_summary(limit=50, now=None):
-    """Recent accesses and last-24-hour 401s within bounded retained Caddy records.
+    """Recent accesses and ordinary last-24-hour 401s within bounded retained Caddy records.
 
     Shape: ``{available, entries, failures_24h, last_failure_ts, rotate_hint}``. ``available``
     is False until Caddy has written the log (pre-#349 deployments, or no request yet). Reads the active file and two allowlisted generations, at most 4 MiB each.
@@ -276,7 +276,7 @@ def access_summary(limit=50, now=None):
                 "user": _clean(e.get("user_id"), 64),
             }
         )
-        if status == 401 and 0 <= now - ts <= 86400:
+        if status == 401 and 0 <= now - ts <= 86400 and e.get("pithead_probe") != "boot-health-v1":
             failures += 1
             last_failure = ts if last_failure is None else max(last_failure, ts)
     return {

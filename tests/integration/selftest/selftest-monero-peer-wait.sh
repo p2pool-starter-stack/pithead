@@ -14,12 +14,15 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
 export INTEGRATION_RUN_SUITE=1
+# shellcheck source=tests/integration/lib/fault-rules.sh
+source "$HERE/../lib/fault-rules.sh"
 # shellcheck source=tests/integration/lib/run-monero-stranded.sh
 source "$HERE/../lib/run-monero-stranded.sh"
 
 export BASELINE_CONFIG='{}'
 CALLS="$(mktemp)"
 trap 'rm -f "$CALLS"' EXIT
+fault_rules_clear_all() { echo clear >>"$CALLS"; }
 has_compose_profile() { return 0; }
 env_on_box() { :; }
 push_config() { echo push >>"$CALLS"; }
@@ -88,6 +91,7 @@ assert_contains "and the monerod log tail" "$out" "monerod: monerod line"
 if echo "$out" | grep -qE "hunter2|SECRETVALUE|198.51.100"; then it_fail "captured evidence is redacted" "a secret or address leaked"; else it_pass "captured evidence is redacted"; fi
 assert_contains "the leg still skips, never passes" "$out" "strand a monerod that holds peers"
 assert_eq "no fault was injected" "$(grep -c 'ns-ipt -I' "$CALLS")" "0"
+assert_eq "stale fault rules are cleared before anything else" "$(head -n 1 "$CALLS")" "clear"
 
 echo "== the peer predicates read only the helper =="
 PEERS='{"outgoing":7,"incoming":2,"white":9,"grey":4}'

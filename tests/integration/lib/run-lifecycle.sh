@@ -1,19 +1,19 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034 # LIFECYCLE_STACK_INTACT is read by the phase gate in run.sh
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tari-background-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 run_lifecycle() {
-    # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"
-    local lifecycle_ok=1
+    local lifecycle_ok=1 reset_failed=0 # reset_failed: 1 changed state, 2 left the stack intact (#3342)
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
     run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
+    prove_wallet_recovery || return 1
     lifecycle_gate_sample before-restart
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
@@ -58,10 +58,9 @@ run_lifecycle() {
     fi
     run_source_image_reconcile || return 1
     run_tari_background_sync || return 1
-    local cur_pool fp_before
+    local cur_pool fp_before other
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
-    local other
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
     fp_before="$(secret_fingerprint)"
     # ensure_owner whole-tree migration (#255): plant a root-owned file UNDER a data dir (the
@@ -221,9 +220,10 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
-    run_reset_restore || return 1
-    run_uninstall_round_trip || lifecycle_ok=0
-    [ "$lifecycle_ok" = 1 ]
+    run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
+    [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
+    [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
+    [ "$lifecycle_ok$reset_failed" = 10 ]
 }
 
 # A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
@@ -323,7 +323,6 @@ run_uninstall_round_trip() {
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
     assert_eq "uninstall removes every derived path and .env" "$left" ""
 
-    # An operator's setup here generates the secrets that lived only in .env anew (docs/operations.md).
     # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
     # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
     # wallet volume created under a new password would not open under the restored old one.
@@ -335,6 +334,7 @@ run_uninstall_round_trip() {
     out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
     rc=$?
     assert_rc "setup after uninstall succeeded" "$rc" "0"
+    rr_web_ports_owned_by_dashboard "setup after uninstall" || return 1
     [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -n 15 | redact | sed 's/^/        /'
     if wait_status_ok 600; then
         it_pass "status OK after setup-after-uninstall"

@@ -12,7 +12,8 @@ The endpoint is the `xmrig-proxy` service on port `3333` by default. Every succe
 set. This includes an `apply` with no configuration changes and a host with local mining enabled.
 When stratum TLS is enabled, the output also includes the certificate fingerprint to pin on rigs.
 The pool URL uses the dashboard hostname for an all-interface bind, or the configured stratum
-bind address; a loopback bind permits local connections only.
+bind address; a loopback bind permits local connections only. The dashboard's Connect a miner card
+follows the same rule and says so for a loopback bind.
 
 > Do not put a wallet address in your miner config. The P2Pool service on the stack handles payouts.
 > Miners only need to know where the stack is.
@@ -300,7 +301,9 @@ reports no measured watts — macOS (the RAPL probe is Linux-only), a non-RigFor
 kit — so the fleet power total still counts it (marked *estimated*). A RigForge rig on Linux reports
 its own watts and needs no estimate.
 
-`control_port` (default `8082`) is the rig's writable control API port, used by
+`control_port` (default `8082`) is the rig's writable control API port (remote rig control is beta
+in 2.0.0: an appliance rig listens for control at every boot, pinned to the coordinator and gated
+by its token, and dashboard writes need adoption), used by
 [Worker Inspect](dashboard.md#worker-inspect) to push config changes from the dashboard. Set it
 alongside `host` and `token` to make a rig editable — either by hand in `config.json`, or from
 Worker Inspect's own **adopt form** on a rig that doesn't have an entry yet; leave the whole
