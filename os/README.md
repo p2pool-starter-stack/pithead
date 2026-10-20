@@ -6,10 +6,10 @@ brought up on a Debian 13 VM with both nodes remote. Preserved in `quadlet/` as 
 reference output the phase-1 `pithead render-quadlet` renderer must reproduce.
 
 Secrets, wallets, and the onion address are replaced with `rendered-*` /
-`your_*_wallet_address` placeholders; everything else is exactly what ran, including
-the fixes the spike forced (`TimeoutStartSec=infinity`, tmpfs `mode=` instead of
-`uid=`/`gid=`). The p2pool cap changed from 1g to 4g so it survives a short hugepages
-pool (#2562). The Tor unit now receives the selected P2Pool P2P port; the entrypoint
+`your_*_wallet_address` placeholders. Image pins track Compose and the Quadlet
+renderer. The units retain the fixes the spike forced (`TimeoutStartSec=infinity`,
+tmpfs `mode=` instead of `uid=`/`gid=`). The p2pool cap changed from 1g to 4g so it
+survives a short hugepages pool (#2562). The Tor unit now receives the selected P2Pool P2P port; the entrypoint
 uses it for the onion target (#2936).
 
 These files are fixtures, not deployable configuration. They are consumed only as the
