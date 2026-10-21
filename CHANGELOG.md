@@ -13,6 +13,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- Tor auto-heal now works on **No login** appliances through a host-restricted healing channel. General dashboard control remains disabled, and state recovery retains its evidence, onion-identity, lock and six-hour cooldown checks (#3166).
 - `pithead apply` now finishes a caddy restart that an earlier, interrupted apply never completed, so the dashboard login always matches the rendered config (#3332).
 - `pithead restore` after `pithead config-reset` no longer refuses on the appliance with "could not verify that the stack is stopped": the configless running-container check lists container states once instead of asking Podman for the `restarting` state it does not have (#3346).
 - A fleet `workers.api_port` outside 1-65535 (or not an integer) is now refused at dashboard preview and by `pithead apply`, instead of rendering an invalid `XMRIG_API_PORT` (#3358).
