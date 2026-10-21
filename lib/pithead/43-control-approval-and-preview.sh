@@ -266,7 +266,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         fi
         config_paths=$(control_changed_config_paths "$staged" | grep -xF -e "$CONTROL_DASHBOARD_APPROVAL_PATHS" -e "$CONTROL_DASHBOARD_CONFIRM_PATHS" || true)
         if [ -n "$config_paths" ]; then
-            out=$(control_mark_config_confirm_rows "$config_paths" "$out")
+            out=$(control_mark_config_confirm_rows "$config_paths" "$out" "$staged")
             if printf '%s\n' "$config_paths" | grep -qxF "$CONTROL_DASHBOARD_APPROVAL_PATHS"; then approval_required=true; fi
         fi
         approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
