@@ -374,8 +374,10 @@ via an `EXIT` trap):
 1. Dedicated checkout. Provisions `/srv/code/pithead-e2e` (clone-once, then `git fetch`) and checks
    out `<branch>` there. The checkout is disposable, so provisioning forces a pristine tree
    (`checkout -f` + `reset --hard` + `clean -fdx`) — a leftover untracked file from an earlier run
-   can't abort the checkout. `clean` keeps the harness's `results/` and the seeded `config.json`/
-   `.env`/`data/`/`backups/` (all gitignored). The canonical `/srv/code/pithead` is the baseline and
+   can't abort the checkout. `clean` keeps the harness's `results/`, shared `data/`, rollback
+   `backups/` and protected `.hardening-onion-*` recovery directories. It removes `config.json`
+   and `.env` before reseeding them; it never deletes recovery copies retained after a failed
+   hardening restore. The canonical `/srv/code/pithead` is the baseline and
    is never git-touched. Because the Compose project name is pinned to `pithead`, the two checkouts
    drive the same containers and the same shared chains. They're two code copies of one stack, run one
    at a time, so borrow→test→restore is a fast code/image swap, never a re-sync.

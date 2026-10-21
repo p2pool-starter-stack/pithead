@@ -2,6 +2,7 @@ import importlib.util
 import io
 import json
 import os
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -217,6 +218,29 @@ hardening_onion_restore && exit 98
                     run.stdout.strip(),
                     f"hardening onion restore failed at {stage}; protected recovery copies retained",
                 )
+
+    def test_checkout_clean_preserves_unreadable_recovery_copies(self):
+        command = next(
+            line.strip().split(" && ")[0]
+            for line in SOURCE.parents[1].joinpath("e2e.sh").read_text().splitlines()
+            if line.strip().startswith("git -C '$E2E_DIR' clean ")
+        )
+        args = [str(self.root) if part == "$E2E_DIR" else part for part in shlex.split(command)]
+        RUN(["git", "init", "-q", str(self.root)], check=True, capture_output=True)  # noqa: S603, S607
+        recovery = self.root / ".hardening-onion-synthetic"
+        recovery.mkdir(mode=0o700)
+        (recovery / "env").write_bytes(self.original)
+        (recovery / "env").chmod(0o600)
+        recovery.chmod(0)
+        (self.root / "cruft").write_text("disposable")
+        try:
+            run = RUN(args, capture_output=True, text=True, check=False)  # noqa: S603
+        finally:
+            recovery.chmod(0o700)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual((recovery / "env").read_bytes(), self.original)
+        self.assertEqual((recovery / "env").stat().st_mode & 0o777, 0o600)
+        self.assertFalse((self.root / "cruft").exists())
 
 
 if __name__ == "__main__":

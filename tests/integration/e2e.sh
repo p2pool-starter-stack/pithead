@@ -456,7 +456,7 @@ provision() {
         # that seed thinking clean spares them.
         git -C '$E2E_DIR' checkout -q -f -B '$BRANCH' FETCH_HEAD
         git -C '$E2E_DIR' reset -q --hard FETCH_HEAD
-        git -C '$E2E_DIR' clean -qfdx -e /results -e /backups -e /data && bash '$E2E_DIR/scripts/build-pithead.sh' >/dev/null
+        git -C '$E2E_DIR' clean -qfdx -e /results -e /backups -e /data -e '/.hardening-onion-*/' && bash '$E2E_DIR/scripts/build-pithead.sh' >/dev/null
     " || die "Failed to provision/checkout '$BRANCH' in $E2E_DIR."
     local head
     head="$(on_bench "git -C '$E2E_DIR' rev-parse --short HEAD")"

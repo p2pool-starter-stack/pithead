@@ -173,7 +173,7 @@ class RetentionControls(unittest.TestCase):
         self.assertIn("grep -qx 'access-log-retention: complete'", hardening)
         self.assertLess(
             hardening.index("access_log_retention.py"),
-            hardening.index("# Restore the baseline ourselves"),
+            hardening.index("if hardening_onion_restore; then"),
         )
 
 
