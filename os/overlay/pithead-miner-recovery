@@ -18,31 +18,19 @@ rig_id=$(jq -er '.pools[0]["rig-id"] // "" | select(type == "string")' "$worker_
 reading=$(
     timeout 15 podman exec -i dashboard python - "$worker" "$rig_id" <<'PY'
 import os
-import sys
 from mining_dashboard.helper.http import bounded_get
 try:
     token = os.environ.get("PROXY_AUTH_TOKEN", "")
     headers = {"Authorization": "Bearer " + token} if token else {}
-    url = "http://{}:{}/1/workers".format(
+    url = "http://{}:{}/1/summary".format(
         os.environ.get("PROXY_HOST", "xmrig-proxy"),
         os.environ.get("PROXY_API_PORT", "3344"))
     response = bounded_get(url, headers=headers, timeout=5)
     response.raise_for_status()
     body = response.json()
-    mode = body["mode"]
-    if mode not in ("rig_id", "user"):
-        raise ValueError("unsupported worker grouping")
-    name = (sys.argv[2] or sys.argv[1]) if mode == "rig_id" else sys.argv[1]
-    rows = body["workers"]
-    if type(rows) is not list:
-        raise ValueError("invalid workers")
-    count = 0
-    for row in rows:
-        if (type(row) is not list or len(row) < 3 or type(row[0]) is not str
-                or type(row[2]) is not int or row[2] < 0):
-            raise ValueError("invalid worker")
-        if row[0] == name:
-            count += row[2]
+    count = body["miners"]["now"]
+    if type(count) is not int or count < 0:
+        raise ValueError("invalid aggregate miners")
     print("idle" if count == 0 else "reset")
 except Exception:
     print("reset")
