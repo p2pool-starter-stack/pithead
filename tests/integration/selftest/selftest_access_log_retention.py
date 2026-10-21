@@ -181,11 +181,12 @@ class RetentionControls(unittest.TestCase):
                         client.request("/api/control/preview", payload=body), (200, "{}")
                     )
                 argv, options = run.call_args.args[0], run.call_args.kwargs["input"]
-                self.assertNotIn(client.good, argv)
+                self.assertNotIn(client.good, " ".join(argv))
                 self.assertNotIn("synthetic-new-password", " ".join(argv))
                 self.assertIn("-", argv)
                 self.assertIn("user = " + json.dumps(client.good), options)
                 if body is not None:
+                    self.assertIn('header = "Content-Type: application/json"', options)
                     self.assertIn('header = "X-Pithead-Control: 1"', options)
                     data = next(
                         line[7:] for line in options.splitlines() if line.startswith("data = ")
