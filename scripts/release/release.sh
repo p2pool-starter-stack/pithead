@@ -289,7 +289,6 @@ source "$RELEASE_LIB_DIR/bundle.sh"
 # shellcheck source=scripts/release/appliance.sh
 source "$RELEASE_LIB_DIR/appliance.sh"
 
-
 main() {
     require_appliance_draft
     log "Pithead release pipeline (#44)$([ "$DRY_RUN" -eq 1 ] && echo '  [DRY RUN]')"
