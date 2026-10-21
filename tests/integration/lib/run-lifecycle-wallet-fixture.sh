@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/integration/lib/run-channel.sh
+source "${BASH_SOURCE[0]%/*}/run-channel.sh" || exit $?
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
 # Create the wallet volume through the profile that owns it, then leave the
@@ -117,8 +119,6 @@ cleanup_failed_tari_wallet_fixture() {
     fi
 }
 
-# Separate rendered secrets from the kept identity during the uninstall/setup investigation.
-# Only target-side digests enter artifacts; never copy Tor keys or plaintext secrets.
 record_uninstall_secrets() { # <before|after>
     local stage="$1" tor_dir fp artifact="$OUT_DIR/uninstall-$1.secrets.txt"
     if ! upgrade_secret_fingerprints >"$artifact"; then
@@ -150,4 +150,35 @@ record_uninstall_secrets() { # <before|after>
         it_fail "setup after uninstall preserves every secret category (#2951)" "categorized secrets or kept onion identity changed"
         return 1
     fi
+}
+
+prove_wallet_supersession() {
+    skip_appliance_checkout_probe \
+        "the wallet supersession proof tool is not shipped; strict proof runs on DIY" \
+        "wallet supersession proves live identity, isolated opening and retained evidence (#3133)" && return 0
+    local supersession_out supersession_rc
+    supersession_out="$(rx 'python3 tests/integration/tools/prove-wallet-supersession.py .')"
+    supersession_rc=$?
+    assert_rc "wallet supersession proves live identity, isolated opening and retained evidence (#3133)" "$supersession_rc" "0"
+    [ "$supersession_rc" -eq 0 ] || printf '%s\n' "$supersession_out" | redact
+}
+
+prove_wallet_recovery() {
+    local row="wallet recovery restores a retained private snapshot, starts the baseline and passes the payout gate (#3483)"
+    skip_appliance_checkout_probe \
+        "the wallet recovery proof tool is not shipped; strict proof runs on DIY" "$row" && return 0
+    local recovery_out recovery_rc recovery_log
+    recovery_out="$(rx 'python3 tests/integration/tools/prove-wallet-recovery.py .')"
+    recovery_rc=$?
+    assert_rc "$row" "$recovery_rc" "0"
+    if [ "$recovery_rc" -ne 0 ]; then
+        printf '%s\n' "$recovery_out" | redact
+        recovery_log="$(jq -r '.log // empty' <<<"$recovery_out" 2>/dev/null)"
+        [ -z "$recovery_log" ] || rx "tail -n 40 $(quote_arg "$recovery_log")" 2>/dev/null | redact
+        return 1
+    fi
+    wait_status_ok 240 || true
+    pithead status >/dev/null 2>&1
+    assert_rc "status OK after the recovery started the baseline (#3483)" "$?" "0"
+    assert_payout_wallet_ready confirmed Monero
 }

@@ -34,8 +34,8 @@ feed a remote P2Pool consumes, wallets don't use it. Leave it off; turning it on
 ## Point the wallet at it
 
 - **Node address:** `<stack-host>:18081` (the host's LAN IP or hostname, port `18081`).
-- **Credentials:** the node always requires digest auth (`restricted-rpc=1` is unconditional —
-  the same setting public nodes run), so the wallet needs a username and password, not just the
+- **Credentials:** the node always requires digest auth, and this port is always the restricted
+  listener, the same kind public nodes run, so the wallet needs a username and password, not just the
   address.
 
 Read them from `config.json` on the stack host:

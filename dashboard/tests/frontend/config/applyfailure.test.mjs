@@ -126,9 +126,9 @@ test("a dropped appliance prop degrades to the host wording, not to a blank card
 
 // Proves the failed arm of ConfigView's `done` state actually consults this.props.appliance,
 // which the module-level tests above cannot see.
-function doneCard(props) {
+function doneCard(props, result = RESULT) {
   const view = new ConfigView(props);
-  view.state = { ...view.state, phase: "done", result: RESULT };
+  view.state = { ...view.state, phase: "done", result };
   return renderToString(view.render());
 }
 
@@ -153,6 +153,31 @@ test("an applied result is untouched by #1769 on either branch", () => {
   }
 });
 
+test("a rejected commit is reported as not applied, not saved-but-not-running (#3376)", () => {
+  const stale = {
+    status: "rejected",
+    error: "the configuration changed after this preview was made — preview again",
+  };
+  const gate = {
+    status: "rejected",
+    error: "this change is disruptive (rig adoption) — type APPLY in the dashboard to confirm.",
+  };
+  for (const result of [stale, gate]) {
+    for (const onAppliance of [true, false]) {
+      for (const out of [
+        renderToString(applyFailure(result, onAppliance)),
+        doneCard({ appliance: onAppliance }, result),
+      ]) {
+        assert.ok(out.includes(result.error), "the host's own reason stays visible");
+        assert.match(out, /not applied or saved/);
+        assert.doesNotMatch(out, /Your change was saved but is not running/);
+        assert.doesNotMatch(out, /previous config(uration)? is kept/);
+        assert.doesNotMatch(out, /Below is this machine's own log/);
+      }
+    }
+  }
+});
+
 // #1859: the outcome (applied or failed) lands with no cue for a screen-reader user who isn't
 // looking at the screen when the async apply resolves — a live region announces it either way.
 test("the done-phase outcome is a live region on both the applied and the failed branch", () => {
@@ -162,4 +187,11 @@ test("the done-phase outcome is a live region on both the applied and the failed
 
   const failed = doneCard({ appliance: false });
   assert.match(failed, /role="status" aria-live="polite">/);
+});
+
+test("only the failed card offers the explicit draft discard (#3287)", () => {
+  assert.match(doneCard({ appliance: false }), /Discard draft and reload from host/);
+  const view = new ConfigView({});
+  view.state = { ...view.state, phase: "done", result: { status: "applied" } };
+  assert.ok(!renderToString(view.render()).includes("Discard draft"));
 });

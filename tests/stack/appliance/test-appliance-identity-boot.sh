@@ -278,7 +278,7 @@ rlv() { # <podman-ps-names> <live-wallet> <want-wallet> -> "<rc> <verdict-text>"
 }
 assert_eq "stack up + live wallet matches: passes" \
     "$(rlv "dashboard caddy monerod" "$RLV_WALLET" "$RLV_WALLET")" \
-    "0 the restored machine's LIVE state (p2pool's own running config) carries the restored wallet — not just the unpacked archive file"
+    "0 the restored container's configured wallet matches the archive; daemon startup is checked separately"
 assert_eq "stack never came up: fails — the #1091 case a file-only check missed" \
     "$(rlv "" "" "$RLV_WALLET")" \
     "1 the stack never came up on the restored machine (podman ps: 'none') — config.json on disk is not proof the machine is RUNNING what was restored (#1091)"

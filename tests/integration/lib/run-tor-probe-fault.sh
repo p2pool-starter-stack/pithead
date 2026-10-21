@@ -19,16 +19,27 @@ _tor_probe_mining_sample() {
 
 fault_tor_probe_egress() {
     local prefix epoch tor_before monero_before last now logs i rc=0 rule last_progress=0 mining_failure=
+    if [ "${SKIP_MINING_ASSERTS:-0}" = "1" ]; then
+        it_skip_leg "Tor clearnet probe fault" "no miner attached to this box (--no-mining-asserts)" by-design
+        return
+    fi
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = false ]; then
         it_fail "Tor probe fault requires the egress firewall" "network.tor_egress_firewall=false"
         return
     fi
+    fault_rules_clear_all
     if ! wait_for 180 10 "proxy workers online for Tor fault" _tor_probe_mining_sample >/dev/null; then
         it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
     fi
-    pithead tor-recover check >/dev/null 2>&1 || rc=$?
-    assert_ne "ordinary Tor state refused by read-only recovery check" "$rc" "0"
+    # A saturated history legitimately qualifies for recovery once the heal has recorded a sustained
+    # outage (#3052), so name that precondition instead of misreading the accepted check as a defect.
+    if rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_state_saturated \"\$dir/state\""' >/dev/null 2>&1; then
+        it_fail "Tor circuit history is ordinary before the fault" "saturated signature already present (CircuitBuildAbandonedCount and TotalBuildTimes at 1000, no CircuitBuildTimeBin); earlier faults in this run left it so"
+    else
+        pithead tor-recover check >/dev/null 2>&1 || rc=$?
+        assert_ne "ordinary Tor state refused by read-only recovery check" "$rc" "0"
+    fi
     rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && sudo grep -q . \"\$dir/state\" && tor_recovery_identities \"\$dir\" >/dev/null"' >/dev/null 2>&1
     assert_rc "read-only recovery can inspect the live Tor state and onion identities" "$?" "0"
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
@@ -47,10 +58,12 @@ fault_tor_probe_egress() {
         return
     }
     rule="-d ${prefix}.25 -p tcp --dport 9050 -m comment --comment pithead-e2e-fault-tor-probe -j DROP"
+    fault_rules_trap_arm
     if ! tor_probe_ns_ipt "-I OUTPUT $rule" >/dev/null ||
         ! tor_probe_ns_ipt "-C OUTPUT $rule" >/dev/null; then
         it_fail "Tor probe fault installed the dashboard namespace rule" "iptables rule absent"
         tor_probe_ns_ipt "-D OUTPUT $rule" >/dev/null 2>&1 || true
+        fault_rules_trap_disarm
         return
     fi
     it_pass "Tor probe fault blocks dashboard SOCKS traffic in its OUTPUT chain"
@@ -85,6 +98,7 @@ fault_tor_probe_egress() {
         it_fail "Tor probe fault dropped live dashboard SOCKS packets" "the rule saw no traffic"
     fi
     tor_probe_ns_ipt "-D OUTPUT $rule" >/dev/null 2>&1 || true
+    fault_rules_trap_disarm
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
     assert_rc "Tor-egress firewall remains enforced after fault" "$?" "0"
     if wait_for 900 30 "Tor egress recovered after circuit refresh" \
@@ -103,10 +117,19 @@ _tor_probe_recovered() { # <epoch>
 
 # Lifecycle proves the branch image includes the diagnostic and rejects ordinary healthy Tor.
 tor_recovery_healthy_probe() {
+    local output rc=0
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
     assert_rc "Tor recovery lifecycle proof keeps the egress firewall enforced" "$?" "0"
     rx 'docker exec tor test -x /usr/local/bin/tor-recovery-diagnose.sh' >/dev/null 2>&1
     assert_rc "Tor image carries the authenticated recovery diagnostic" "$?" "0"
     rx 'docker exec tor /usr/local/bin/tor-recovery-diagnose.sh' >/dev/null 2>&1
     assert_rc "healthy Tor refuses bootstrap-stall recovery diagnosis" "$?" "1"
+    output=$(pithead tor-recover check 2>&1) || rc=$?
+    assert_rc "healthy Tor recovery check exits 1 (#3262)" "$rc" "1"
+    assert_contains "healthy Tor recovery check names its guard (#3262)" "$output" "Tor recovery refused: circuit history is not saturated."
+    if [[ "$output" = *"aborted unexpectedly"* || "$output" = *"bash -x"* ]]; then
+        it_fail "healthy Tor recovery refusal omits unexpected-abort advice (#3262)" "$output"
+    else
+        it_pass "healthy Tor recovery refusal omits unexpected-abort advice (#3262)"
+    fi
 }

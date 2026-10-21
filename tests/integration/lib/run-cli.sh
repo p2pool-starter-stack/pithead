@@ -27,9 +27,9 @@ MATRIX:
                          headroom, secrets not world-readable, dashboard localhost-only).
   --scenario <name>      run only one scenario (see --list)
   --workers <n>          miners expected online while mining (default: 2)
-  --no-mining-asserts    SKIP the two mining assertions (workers online, stratum hashes) with a
-                         logged notice — for a box with no miner connected (e2e --no-miner, #905).
-                         Every other assertion stays binding.
+  --no-mining-asserts    SKIP mining assertions (workers online, stratum hashes, cold-cache
+                         mining recovery) and the Tor clearnet probe fault, which requires a
+                         live miner. Each skip is logged; other assertions stay binding (#905).
   --remote-monero-host <h>  external node for the remote-mode scenario — a BARE host or IP, never
                             host:port (pithead appends the port itself, #1491)
   --remote-monero-rpc-port <p>  that node's RPC port, when it is not the default 18081
@@ -93,6 +93,8 @@ MATRIX:
                          automatic restart, then green without a restart once the rule is removed (the
                          dashboard detects and alerts only; remediation is #2827). About an hour; opt-in only.
                          DESTRUCTIVE-then-restored.
+  --monero-stranded      also run the stranded-Monero leg (#2499): a DROP rule in monerod's network
+                         namespace cuts it off from tor; every layer must read red, then green. Opt-in.
   --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's
                          testnet-target build of the pinned release runs LocalNet alone on an
                          internal docker network; a throwaway P2Pool (IT_MM_P2POOL_VERSION) mines on
@@ -103,11 +105,9 @@ MATRIX:
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
                          recover. DESTRUCTIVE-then-restored; works in both ssh and local mode.
-  --hardening            also run the v1.4 hardening phase (#377/#33/#424), local mode only:
-                         read-only rootfs rejects writes live, the systemd control path unit fires
-                         on a spooled request (allowlisted change applies, sensitive change
-                         refused), and the stack recovers from a tor restart. DESTRUCTIVE-then-
-                         restored (enables then disables the control channel).
+  --hardening            local-only: rootfs write refusal, control path-unit apply/refusal, Tor recovery.
+                         DESTRUCTIVE-then-restored; enables then disables control (#377/#33/#424).
+  --rotate-onion         rotate an isolated onion fixture; prove reachability, retirement and restore (#2345).
   --rigforge             also run the RigForge integration phase (#185/#235/#260): assert the
                          dashboard consumed a REAL rigforge rig's enriched feed and Worker Inspect
                          reads it. Non-destructive; self-skips if no rigforge rig is connected.
@@ -118,6 +118,8 @@ MATRIX:
   --rig-name <name>      exact borrowed rig NAME from its protected RigForge config.
   --rigforge-bootstrap-version <tag>  explicitly bootstrap that rig before feed-dependent checks.
   --rig-control-port <p> the rig's writable control API port (default: 8082, #185).
+  --rotate-secrets       verify live new/old credentials and miner reconnection, then restore.
+                         Requires --safety-backup; a reserved rig also needs a runner-owned recovery hold.
   --subnet               also run the moved-subnet phase (#201/#180), local mode only: bring the
                          stack DOWN then UP on a non-default network.subnet (10.84.0.0/24) — the one
                          axis a hot apply can't move — and assert the moved prefix reached .env, the
@@ -136,7 +138,6 @@ Scenarios whose prerequisites are missing (a full/pruned alt data dir, or a remo
 are reported SKIPPED — never silently dropped, never mutating the canonical synced chain.
 EOF
 }
-
 # --- Arg parsing ------------------------------------------------------------
 # shellcheck disable=SC2034  # the data-dir / remote-host globals are consumed by lib.sh:resolve_overrides
 parse_args() {
@@ -287,6 +288,10 @@ parse_args() {
             RUN_TARI_STRANDED=1
             shift
             ;;
+        --monero-stranded)
+            RUN_MONERO_STRANDED=1
+            shift
+            ;;
         --mergemine-localnet)
             RUN_MERGEMINE_LOCALNET=1
             shift
@@ -297,6 +302,10 @@ parse_args() {
             ;;
         --hardening)
             RUN_HARDENING=1
+            shift
+            ;;
+        --rotate-onion)
+            RUN_ROTATE_ONION=1
             shift
             ;;
         --rigforge)
@@ -327,6 +336,10 @@ parse_args() {
             RUN_SUBNET=1
             shift
             ;;
+        --rotate-secrets)
+            RUN_ROTATE_SECRETS=1
+            shift
+            ;;
         --safety-backup)
             SAFETY_BACKUP=1
             shift
@@ -353,7 +366,6 @@ parse_args() {
             ;;
         esac
     done
-
     if [ "$IT_MODE" = "ssh" ] && [ -z "$IT_SSH_DEST" ]; then
         it_err "Provide --host <user@host> or --local. See --help."
         exit 2
@@ -383,6 +395,10 @@ parse_args() {
             it_err "--image-upgrade old and new commits must differ."
             exit 2
         }
+    fi
+    if [ "$RUN_ROTATE_SECRETS" = "1" ] && [ "$SAFETY_BACKUP" != "1" ]; then
+        it_err "--rotate-secrets requires --safety-backup — its archive is this phase's own restore anchor."
+        exit 2
     fi
     validate_live_gate_args
     # Both gates read mining as their success signal, so silencing those assertions would leave

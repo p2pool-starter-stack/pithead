@@ -30,6 +30,26 @@ env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
 # monerod is absent in remote mode.
 running_services() { rx "docker compose ps --services --status running 2>/dev/null | sort"; }
 
+# Two consecutive running samples reject a transient release before a second sync-gate hold.
+_pred_mining_probe_running() {
+    if rx 'running=$(timeout --kill-after=2 10 docker compose ps --services --status running) && grep -Fxq p2pool <<<"$running" && grep -Fxq xmrig-proxy <<<"$running"'; then
+        mining_probe_samples=$((mining_probe_samples + 1))
+    else
+        mining_probe_samples=0
+    fi
+    [ "$mining_probe_samples" -ge 2 ]
+}
+
+assert_mining_probe_ready() {
+    local probe="$1" mining_probe_samples=0
+    if wait_for 1500 5 "mining services running before $probe" _pred_mining_probe_running; then
+        it_pass "mining services running before $probe"
+    else
+        it_fail "mining services running before $probe" "both services did not remain running for two consecutive samples within 1500s"
+    fi
+    # A failed prerequisite never suppresses the caller's fixture assertions.
+}
+
 # Print "<state> <health>" for one service, exactly as stack_status reads it: state is the
 # container State.Status (running/exited/paused/restarting/…) and health is the healthcheck
 # verdict (healthy/unhealthy/starting/none), or "missing none" when absent. The fault-injection
@@ -199,7 +219,7 @@ run_scenario() {
     # until peers on the new chain connect — wait for the dashboard to classify it (issue #54).
     local _pool
     _pool="$(jq_get "$config" '.p2pool.pool')"
-    _pool="${_pool:-main}"
+    _pool="${_pool:-mini}"
     wait_pool_ready 180 "$(pool_label "$_pool")" || true
     if [ "$name" = local-pruned-main-p2pool-clearnet ]; then
         assert_egress_posture p2pool-choice
@@ -224,6 +244,13 @@ run_scenario() {
             assert_egress_posture
         else
             it_fail "turning P2Pool clearnet off removes its live firewall exemption (#2790)" "apply or live readback failed"
+        fi
+    fi
+    if [ "$name" = local-pruned-main-payout-pairs ]; then
+        if rx 'timeout 3600 bash tests/integration/payout-pairs/run.sh' >"$OUT_DIR/payout-pairs.log" 2>&1; then
+            it_pass "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)"
+        else
+            it_fail "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)" "see payout-pairs.log"
         fi
     fi
     # If this scenario turned anything red, grab artifacts for it.

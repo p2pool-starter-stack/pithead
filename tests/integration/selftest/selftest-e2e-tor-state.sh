@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Exercise real fixture provisioning with different live and disposable Tor identities.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"

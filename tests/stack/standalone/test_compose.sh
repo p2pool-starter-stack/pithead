@@ -2,19 +2,15 @@
 # Validate Compose parsing and ${VAR} interpolation against a representative .env.
 # This is client-side (`docker compose config` needs no daemon), so it runs anywhere with docker.
 set -uo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-
 if ! docker compose version >/dev/null 2>&1; then
     echo "SKIP: docker compose not available"
     exit 0
 fi
 bash "$ROOT/tests/stack/standalone/test_dotenv.sh" || exit 1
-
 ENV_FILE="$(mktemp)"
 EMPTY_TOKEN_ENV="$(mktemp)"
 trap 'rm -f "$ENV_FILE" "$EMPTY_TOKEN_ENV"' EXIT
-
 # A representative, fully-populated environment (mirrors what pithead renders).
 cat >"$ENV_FILE" <<'EOF'
 MONERO_DATA_DIR=/srv/data/monero
@@ -151,7 +147,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # leaving the other was green. The two would then run different socket-proxy builds, which is exactly
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
-expect_present "caddy pinned by digest" "caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52"
+expect_present "caddy pinned by digest" "caddy:2.11.7@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772"
 expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.
@@ -280,6 +276,10 @@ jq_assert "control staged/ dir never enters the container (#33)" \
 jq_assert "control channel defaults off in the dashboard env (#33)" \
     '.services.dashboard.environment["DASHBOARD_CONTROL_ENABLED"] == "false"'
 jq_assert "rendered Monero RPC URL reaches the dashboard (#1271)" '.services.dashboard.environment["MONERO_RPC_URL"] == "http://monero.example:28081"'
+jq_assert "Tor receives the same P2Pool port as the daemon (#2936)" \
+    '.services.tor.environment.P2POOL_PORT == "37889" and (.services.p2pool.command | tostring | contains("37889"))'
+jq_assert "anonymous Monero listener is not host-published (#2936)" \
+    '(.services.monerod.ports | all(.target != 18084))'
 # depends_on startup ordering (#565): "wait until healthy" vs "wait until started" is a startup-
 # correctness guarantee, not decoration. Render with the optional payout-confirmation profiles too
 # (payout_confirm/tari_payout_confirm, #381/#462) so the profile-gated wallet-rpc/tari-wallet edges
@@ -439,7 +439,7 @@ jq_assert "default -b bind stays 0.0.0.0:3333 (#172)" \
 PORT_ENV="$(mktemp)"
 {
     cat "$ENV_FILE"
-    printf 'STRATUM_PORT=4444\n'
+    printf 'STRATUM_PORT=4444\nSTRATUM_BIND=127.0.0.1\n'
 } >"$PORT_ENV"
 PORT_JSON="$(docker compose --env-file "$PORT_ENV" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
 rm -f "$PORT_ENV"
@@ -447,8 +447,8 @@ jq_assert "custom stratum port moves the publish and container port (#172)" \
     '.services["xmrig-proxy"].ports | any((.published == "4444") and (.target == 4444))' "$PORT_JSON"
 jq_assert "custom stratum port moves the -b bind (#172)" \
     '.services["xmrig-proxy"].command | any(. == "0.0.0.0:4444")' "$PORT_JSON"
-jq_assert "custom stratum port reaches the dashboard hint env (#172)" \
-    '.services.dashboard.environment["STRATUM_PORT"] == "4444"' "$PORT_JSON"
+jq_assert "custom stratum port and a non-default bind reach the dashboard hint env (#172, #3384)" \
+    '.services.dashboard.environment | (.STRATUM_PORT == "4444") and (.STRATUM_BIND == "127.0.0.1")' "$PORT_JSON"
 jq_assert "internal p2pool stratum stays :3333 under a custom port (#172)" \
     '.services["p2pool"].command | any(. == "0.0.0.0:3333")' "$PORT_JSON"
 jq_assert "proxy upstream (P2POOL_URL) stays the internal :3333 (#172)" \

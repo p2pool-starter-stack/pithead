@@ -378,6 +378,7 @@ stack_restore() {
     ensure_owner "$P2POOL_DIR" "$APP_UID" "$APP_GID"
     ensure_owner "$DASHBOARD_DIR" "$APP_UID" "$APP_GID"
 
+    rm -f -- .restore-paths
     log "Restore complete. Start the stack with '$0 up'."
     mutation_lock_release
 }

@@ -541,7 +541,7 @@ seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"your_tari_wallet_address"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "placeholder tari.wallet_address rejected" "$?" "1"
-assert_contains "placeholder message names the template placeholders" "$out" "template placeholders"
+assert_contains "placeholder message names the Tari path" "$out" "placeholder value at tari.wallet_address"
 # A stray space in the Tari address (not a control char, so the central guard misses it) -> rejected.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"12ab cd34"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
@@ -677,7 +677,6 @@ if [ "$core_checked" -gt 0 ] && [ "$core_missing" -eq 0 ]; then
     ok "every config.core-keys.json path ($core_checked total) exists in config.reference.json"
 fi
 unset REF_PATHS_CORE CORE_KEYS core_checked core_missing
-
 echo "== unit: pithead render rebuilds the whole derived layer in place (#790) =="
 # The defect this guards: pithead-sync delivers a NEW program on every A/B update, but .env and
 # the Caddyfile kept whatever the LAST build rendered. A bench machine served a days-old
@@ -703,3 +702,4 @@ case "$render_out" in
 *) ok "render never touches containers" ;;
 esac
 unset RSUT render_out
+source "$HERE/config/version.sh"

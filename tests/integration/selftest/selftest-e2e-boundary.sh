@@ -69,6 +69,8 @@ rejected_before_ssh_args "a --scenario name with metacharacters never reaches SS
     --harness-arg --scenario --harness-arg 'name;touch'
 rejected_before_ssh_args "--harness-arg is refused outright with --mode check" \
     --harness-arg '--lifecycle' --mode check
+rejected_before_ssh_args "--rotate-onion refuses --keep so the isolated identity cannot survive the run" \
+    --harness-arg '--rotate-onion' --keep
 # #2464: the stranded-Tari leg is selectable by bench-ci's one-phase request, and forwarded as-is.
 harness_phase_args_of() ( # <args...> -> HARNESS_PHASE_ARGS, or the refusal
     # shellcheck source=tests/integration/lib/harness-args.sh
@@ -82,6 +84,8 @@ harness_phase_args_of() ( # <args...> -> HARNESS_PHASE_ARGS, or the refusal
 )
 assert_eq "--tari-stranded is on the allowlist and forwarded unchanged (#2464)" \
     "$(harness_phase_args_of --tari-stranded)" " --tari-stranded|"
+assert_eq "--monero-stranded is on the allowlist and forwarded unchanged (#2499)" \
+    "$(harness_phase_args_of --monero-stranded)" " --monero-stranded|"
 assert_eq "--scenario alone is a modifier, not a hand-picked phase" \
     "$(harness_phase_args_of --scenario custom-name)" "| --scenario custom-name"
 assert_eq "a hand-picked phase and scenario modifier stay separate" \

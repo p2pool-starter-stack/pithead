@@ -128,16 +128,16 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
     # dashboard is still a real failure, so the verdict follows the phase.
     [ "$phase_rc" -eq 0 ] || unexercised=info
 
-    # Retry rather than single-shot: the leg that runs before this one recreates the dashboard
-    # container, so one curl the instant it returns is a race, not a measurement.
     #
     # THE BREAK TESTS THE BODY, NOT JUST THE EXIT CODE. `curl -f` returns 0 with a ZERO-LENGTH body
     # on a 200 — measured, not assumed — so breaking on rc alone would leave the loop after ONE try
     # against a dashboard answering empty while it starts, which is the exact condition the retry
     # exists for. The guard below still catches it, so this was never a false pass; it was a retry
     # that did not retry.
+    caddy_failure_evidence # baseline collection also exercises the probes on a healthy run
     if ! live=$(tari_live_config); then
         "$unexercised" "the dashboard config was unreadable — day-two tari.mode switching was NOT exercised (#1929)"
+        caddy_failure_evidence
         return 0
     fi
     origin=$(printf '%s' "$live" | jq -r '.tari.mode // "local"')

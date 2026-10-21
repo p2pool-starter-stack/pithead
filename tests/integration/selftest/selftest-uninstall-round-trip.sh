@@ -162,6 +162,14 @@ drive() { # <case> -> round-trip-rc|failures
                 return "$rc"
             }
         fi
+        rr_web_ports_owned_by_dashboard() {
+            [ "$1" = "setup after uninstall" ] || return 1
+            touch "$B/web-checked"
+            [ "$FAKE_CASE" != web-fails ] || {
+                it_fail "web ownership" "injected fault"
+                return 1
+            }
+        }
         run_uninstall_round_trip >"$B/run.log"
         result=$?
         if [ "$1" = clean ] || [ "$1" = stale-onion-env ]; then
@@ -210,6 +218,7 @@ drive() { # <case> -> round-trip-rc|failures
     )
 }
 
+assert_eq "setup refuses a failed web ownership check" "$(drive web-fails)" "1|1"
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
 assert_eq "stale rendered onion fails both the category and exact identity assertions" "$(drive stale-onion-env)" "1|2"
 assert_eq "a changed proxy category fails even when the Monero address matches" "$(drive changed-proxy)" "1|1"

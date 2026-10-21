@@ -8,12 +8,14 @@ _XVB_ALIASES = ("enabled", "url", "donor_id")
 # these values beside the operator's xvb.*, so they are schema defaults, never a conflict (#2690).
 _XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
 _WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "watts"}
-# A missing config means a genuinely new machine. Tari is opt-in there, while the reference
-# remains ``local`` so an older config that never carried the switch keeps merge-mining.
+# Wizard-only defaults. The reference and absent-key behavior remain unchanged for upgrades.
 NEW_MACHINE_ANSWERS = {
     "local_miner": {"enabled": True},
-    "tari": {"mode": "off"},
-    "dashboard": {"host": "pithead"},
+    "xvb": {"enabled": False},
+    "monero": {"clearnet_initial_sync": False},
+    # Tari merge-mining is an opt-in beta (#3333). A Yes must not let it hold or reject Monero mining.
+    "tari": {"mode": "off", "clearnet_initial_sync": False},
+    "dashboard": {"host": "pithead", "tari_required": False},
 }
 
 
@@ -157,6 +159,7 @@ def prepare_config(
     credential fields and persists across a failed install without copying their contents.
     """
     prepared = deepcopy(cfg)
+    prepared.pop("config_version", None)
     conflicts = _legacy_conflicts(prepared)
     if reject_legacy_conflicts and conflicts:
         names = "; ".join(conflicts)

@@ -1,18 +1,27 @@
-# Explicit recovery for saturated Tor circuit history. Never called by clearnet probing.
+# Gated recovery for saturated Tor history: explicit CLI or auto-heal host control request.
 TOR_RECOVERY_COOLDOWN_SEC=21600
 
+# monerod's get_info with the REAL outgoing count (#2921). The published RPC is restricted and answers 0
+# for the connection counts, so the count is taken from the in-container helper (which reads the admin
+# listener on the container's loopback, with the login from the container's environment) and replaces
+# the redacted field. When the helper gives no reading the field is null: neither the "0 outgoing" of the
+# signature nor the "> 0" of the verification is then true, so an unavailable count never reads as either.
 tor_recovery_info() {
-    local user pass url
+    local user pass url body peers out
     user=$(env_get MONERO_NODE_USERNAME) || return 1
     pass=$(env_get MONERO_NODE_PASSWORD) || return 1
     url=$(env_get MONERO_RPC_URL) || return 1
     [ -n "$url" ] || url=http://127.0.0.1:18081
     if [ -n "$user" ]; then
-        printf 'user = %s\n' "$(printf '%s:%s' "$user" "$pass" | jq -Rs .)" |
-            curl -fsS --max-time 8 --max-filesize 65536 --digest --config - "$url/get_info"
+        body=$(printf 'user = %s\n' "$(printf '%s:%s' "$user" "$pass" | jq -Rs .)" |
+            curl -fsS --max-time 8 --max-filesize 65536 --digest --config - "$url/get_info") || return 1
     else
-        curl -fsS --max-time 8 --max-filesize 65536 "$url/get_info"
+        body=$(curl -fsS --max-time 8 --max-filesize 65536 "$url/get_info") || return 1
     fi
+    peers=$(docker exec monerod /usr/local/bin/monerod-peers.sh 2>/dev/null) || peers=
+    out=$(printf '%s' "$peers" | jq -c 'if (.outgoing | type) == "number" and .outgoing >= 0 then .outgoing else null end' 2>/dev/null) || out=null
+    [ -n "$out" ] || out=null
+    printf '%s' "$body" | jq -c --argjson out "$out" '.outgoing_connections_count = $out'
 }
 
 tor_recovery_state_saturated() { # <state file>
@@ -23,13 +32,70 @@ tor_recovery_state_saturated() { # <state file>
     ! sudo grep -q '^CircuitBuildTimeBin ' "$state" || return 1
 }
 
+# Read-only saturated-history reading for the dashboard's heal (#3052); it never changes state.
+control_tor_history() ( # <control-dir> <id> <actor> <outage> <observed-at>
+    local cdir="$1" id="$2" actor="$3" dir saturated=false record="$1/results/tor-heal-outage.json" old='{}' next now
+    PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-history || return 1
+    [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || return 1
+    now=$(date +%s)
+    [ ! -L "$record" ] || return 1
+    if [ -f "$record" ]; then old=$(cat "$record") || return 1; fi
+    # Keep a recovery tombstone: a delayed request cannot resurrect a recovered outage.
+    next=$(printf '%s' "$old" | jq -ce --arg outage "$4" --argjson at "$5" --argjson now "$now" '
+        if $at > $now + 60 or $at < $now - 300 then error("stale observation")
+        elif $at < (.observed_at // 0) or ($at == (.observed_at // 0) and $outage != "") then .
+        elif $outage == "" then {outage:"",first:0,last:0,rounds:0,observed_at:$at}
+        elif .outage != $outage then {outage:$outage,first:$now,last:$now,rounds:1,observed_at:$at}
+        elif $now - .last >= 900 then .first=.last | .last=$now | .rounds=2 | .observed_at=$at
+        else .observed_at=$at end') || return 1
+    control_write_result "$cdir/results" tor-heal-outage "$next" || return 1
+    if ! dir=$(tor_recovery_mount 2>/dev/null); then
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"Tor data mount is ambiguous",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" tor-history failed
+        return 0
+    fi
+    tor_recovery_state_saturated "$dir/state" && saturated=true
+    control_write_result "$cdir/results" "$id" "$(jq -n --argjson s "$saturated" '{status:"applied",action:"tor-history",saturated:$s,ts:(now|floor)}')"
+    control_audit "$cdir/audit/control.log" "$id" "$actor" tor-history applied
+)
+
+# Third class: two failed heal rounds from the SAME sustained outage. The host records its own
+# times, independent of the persistent NEWNYM budget, and recovery invalidates the evidence.
+tor_recovery_heal_outage() { # <control dir>; read-only
+    local record="$1/results/tor-heal-outage.json"
+    [ -f "$record" ] && [ ! -L "$record" ] || return 1
+    jq -e --argjson now "$(date +%s)" '
+        (.outage | type == "string" and test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")) and
+        ([.first,.last,.rounds,.observed_at] | all(type == "number" and . == floor and . >= 0)) and
+        .rounds >= 2 and .last - .first >= 900 and .first <= .last and
+        .last <= $now and $now - .first < 86400 and $now - .observed_at <= 3600 and
+        .observed_at <= $now + 60' "$record" >/dev/null 2>&1
+}
+
+# Clearnet egress must still be down now: both independent targets fail through Tor's SOCKS.
+tor_recovery_egress_down() {
+    local prefix url auth
+    command -v curl >/dev/null 2>&1 || return 1
+    prefix=$(env_get NETWORK_PREFIX 2>/dev/null) || prefix=
+    [ -n "$prefix" ] || prefix=172.28.0
+    for url in https://www.google.com/generate_204 https://www.cloudflare.com/cdn-cgi/trace; do
+        auth="tor-recover-$$-$RANDOM-$RANDOM"
+        # Any HTTP response proves egress, including a target's 4xx/5xx; isolate fresh circuits.
+        if curl -sS --max-time 15 --proxy-user "$auth:isolate" --socks5-hostname "${prefix}.25:9050" -o /dev/null "$url" 2>/dev/null; then
+            return 1
+        fi
+    done
+}
+
+# monerod keeps its last `synchronized` value after losing every peer, so the flag is not part of the
+# signature: zero outgoing peers at one height across the window is the stall (#3033).
 tor_recovery_signature() { # <state file> <first Monero get_info> <second get_info>
     local first="$2" second="$3"
     tor_recovery_state_saturated "$1" || return 1
     jq -e --argjson next "$second" '
-        .status == "OK" and .synchronized == false and
+        .status == "OK" and
         (.outgoing_connections_count == 0) and
-        ($next.status == "OK") and ($next.synchronized == false) and
+        ($next.status == "OK") and
         ($next.outgoing_connections_count == 0) and
         (.height == $next.height) and (.height | type == "number")
     ' <<<"$first" >/dev/null
@@ -122,19 +188,30 @@ tor_recovery_restore_start() { # <data dir> <original identity hashes>; recover 
     tor_recovery_redial_monerod
 }
 
+tor_recovery_refusal() {
+    # Exit only the CLI dispatch: explicit refusals bypass ERR without disabling errexit.
+    # Sourced and host-control callers keep the existing nonzero return contract.
+    [ "${_PITHEAD_TOR_RECOVERY_CLI:-0}" != 1 ] || exit 1
+}
+
 tor_recover() { # check | apply; explicit operator action only
-    local mode="$1" dir state first second stamp now last backup healthy=0 info identities started_before started_after i
+    local mode="$1" outage dir state first second stamp now last backup healthy=0 info identities started_before started_after i
     case "$mode" in check | apply) ;; *) error "Usage: ./pithead tor-recover check|apply" ;; esac
     require_deployed
     # An active host operation is a refusal, not a queued mutation against changing state.
-    PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-recover || return 1
+    PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-recover || {
+        tor_recovery_refusal
+        return 1
+    }
     [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || {
         warn "Tor recovery refused: the host mutation lock is unavailable."
+        tor_recovery_refusal
         return 1
     }
     dir=$(tor_recovery_mount) || {
         warn "Tor recovery refused: live container or data mount is ambiguous."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     }
     state="$dir/state"
@@ -142,6 +219,7 @@ tor_recover() { # check | apply; explicit operator action only
     [ ! -L "$stamp" ] || {
         warn "Tor recovery refused: cooldown record is a symlink."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     }
     now=$(date +%s)
@@ -151,33 +229,43 @@ tor_recover() { # check | apply; explicit operator action only
         [[ "$last" =~ ^[0-9]+$ ]] || {
             warn "Tor recovery refused: invalid cooldown record."
             mutation_lock_release
+            tor_recovery_refusal
             return 1
         }
     fi
     if [ "$mode" = apply ] && [ $((now - last)) -lt "$TOR_RECOVERY_COOLDOWN_SEC" ]; then
         warn "Tor recovery refused: the persistent six-hour cooldown is active."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     fi
     if ! tor_recovery_state_saturated "$state"; then
         warn "Tor recovery refused: circuit history is not saturated."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     fi
     first=
-    if [ "$(docker inspect monerod --format '{{.State.Running}}' 2>/dev/null)" = true ]; then
+    outage=0
+    if tor_recovery_heal_outage "$(env_get CONTROL_DIR)" && tor_recovery_egress_down; then
+        outage=1
+    elif [ "$(docker inspect monerod --format '{{.State.Running}}' 2>/dev/null)" = true ]; then
         first=$(tor_recovery_info) || first=
     fi
-    if [ -n "$first" ]; then
+    if [ "$outage" -eq 1 ]; then
+        log "Tor circuit history is saturated; the dashboard heal recorded two failed recovery rounds over a sustained outage and clearnet egress is still down."
+    elif [ -n "$first" ]; then
         sleep 180
         second=$(tor_recovery_info) || {
             warn "Tor recovery refused: second Monero reading unavailable."
             mutation_lock_release
+            tor_recovery_refusal
             return 1
         }
         if ! tor_recovery_signature "$state" "$first" "$second"; then
             warn "Tor recovery refused: saturated circuit history and stalled, peerless Monero are not both established."
             mutation_lock_release
+            tor_recovery_refusal
             return 1
         fi
         log "Tor circuit history is saturated; local Monero stayed peerless and at one height across three minutes."
@@ -185,6 +273,7 @@ tor_recover() { # check | apply; explicit operator action only
         if ! tor_recovery_bootstrap_stalled "$state" "$now"; then
             warn "Tor recovery refused: unavailable Monero RPC is not corroborated by sustained authenticated Tor bootstrap failure."
             mutation_lock_release
+            tor_recovery_refusal
             return 1
         fi
         log "Tor circuit history is saturated; authenticated bootstrap stayed at 95% with no established circuit across three minutes and repeated invalid timing warnings."
@@ -192,6 +281,7 @@ tor_recover() { # check | apply; explicit operator action only
     identities=$(tor_recovery_identities "$dir") || {
         warn "Tor recovery refused: onion identities cannot be verified."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     }
     if [ "$mode" = check ]; then
@@ -203,6 +293,7 @@ tor_recover() { # check | apply; explicit operator action only
     sudo test ! -e "$backup" && sudo test ! -L "$backup" || {
         warn "Tor recovery refused: circuit-state backup target already exists."
         mutation_lock_release
+        tor_recovery_refusal
         return 1
     }
     # Stamp before disruption: a failed attempt must not become an unbounded retry loop.

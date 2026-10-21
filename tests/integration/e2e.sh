@@ -6,16 +6,14 @@
 #   tests/integration/e2e.sh <branch> [options]
 #   tests/integration/e2e.sh claude/my-feature --mode matrix
 #
-#   4. Borrows a miner (set MINER_HOST): backs up its xmrig config and repoints it at the test bench so
-#      the live matrix has a real worker mining through this stack.
-#   5. Deploys the branch (`pithead upgrade` — re-renders configs AND rebuilds the branch's first-party
-#      images from build/, so a Dockerfile/entrypoint change is actually tested #272) and runs the live
-#      harness (tests/integration/run.sh) DETACHED on the box so an SSH drop can't kill a long matrix.
-#   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even on failure or Ctrl-C
-#      (an EXIT trap), with no `pithead down`: chain nodes the branch left unchanged keep running throughout (#2639),
-#      and the synced chains are never touched. The restore then PROVES the live stack matches the on-disk
-#      config (#971): a credential marker baked into a running container must equal the on-disk .env's line, and
-#      monerod must answer a host-side authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
+#   4. Borrows a miner (set MINER_HOST), backs up its xmrig config and repoints it at the test bench.
+#   5. Deploys the branch (`pithead upgrade`, including its first-party images; #272), then runs the
+#      live harness detached on the box so an SSH drop cannot kill a long matrix.
+#   6. ALWAYS restores, even on failure or Ctrl-C (an EXIT trap): the miner's pool config, the prepared
+#      wallet cache, then the canonical stack with no `pithead down`, so unchanged chain nodes keep running
+#      and the synced chains are never touched (#2639). It then PROVES the live stack matches the on-disk
+#      config (#971): a container's baked credential marker must equal the on-disk .env line, and monerod
+#      must answer an authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
 #
 # The Compose project name is pinned to "pithead", so the e2e and canonical checkouts drive the SAME containers and shared chains — two
 # code copies of one stack, run one at a time. That's why borrow→test→restore is a code/image swap, not a re-sync.
@@ -32,9 +30,9 @@ source "$HERE/lib/rig-supply.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
 # restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
 # shellcheck source=tests/integration/lib/restore-proof.sh
-source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" || exit $? # chain-keep: #2639
+source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" && source "$HERE/lib/restore-mining-ready.sh" || exit $? # chain-keep: #2639; mining-ready: #3152
 # shellcheck source=tests/integration/lib/detached-harness.sh
-source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" || exit $?
+source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" && source "$HERE/lib/wallet-fixture.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -50,7 +48,7 @@ KEEP=0
 SCENARIO=""
 REMOTE_NODE_ARGS=()
 REMOTE_NODE_HOSTS=()
-BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" HARNESS_SCENARIO_ARGS="" # raw --harness-arg values -> validate_harness_args's output
+BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" HARNESS_SCENARIO_ARGS="" ROTATE_FIXTURE_ATTESTATION="" ROTATE_FIXTURE_DIR="" ROTATE_FIXTURE_REQUIRED=0 # raw args -> validated output
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -87,7 +85,7 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
-  --harness-arg <f> run this run.sh phase instead of the mode's (repeatable, allowlisted; see lib/harness-args.sh)
+  --harness-arg <f> run this run.sh phase instead of the mode's (repeatable, allowlisted; --sweep = every scenario)
   --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
@@ -195,7 +193,7 @@ CONTROL_VERDICT_BEFORE=""
 RESTORE_DIR="$CANONICAL_DIR"
 # --- Restore: fires ONCE on EXIT, Ctrl-C included. Never add INT/TERM (#1401) ----
 restore_all() {
-    local rc=$?
+    local rc=${1:-$?}
     [ "$RESTORED" = "1" ] && return
     RESTORED=1
     # --check deploys nothing, borrows nothing and takes no backup, so there is nothing to put
@@ -217,16 +215,11 @@ restore_all() {
     # 1. Miner: put its original pool config back and nudge xmrig to reconnect.
     if [ -n "$MINER_CFG_BACKUP" ]; then
         step "restoring $MINER_HOST xmrig config from $MINER_CFG_BACKUP"
-        # cmp, then rm (#1067). Every borrowing run minted a timestamped .e2e-orig.<stamp> and
-        # nothing ever removed it, so the loaner accumulated them and recovery became a guess among
-        # candidates where the newest is not necessarily the true pre-borrow state. The backup is
-        # only safe to delete once the bytes are demonstrably back in place, and the proof runs in
-        # the SAME remote call so a dropped ssh cannot land between proving and deleting.
-        # Deliberately NOT gated on miner_reload: restoring and proving the config bytes is still
-        # required if every reload mechanism fails. The caller keeps the backup until that byte
-        # proof succeeds; miner_reload's status only gates forward test progress.
-        if on_miner "cp -a '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && cmp -s '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && rm -f '$MINER_CFG_BACKUP'"; then
-            miner_reload
+        if restore_miner_config "$MINER_CFG_BACKUP"; then
+            if [ -n "${MINER_ROTATE_CFG_BACKUP:-}" ]; then
+                on_miner "rm -f '$MINER_ROTATE_CFG_BACKUP'" || warn "restored miner config but retained its temporary stratum backup for operator repair."
+                MINER_ROTATE_CFG_BACKUP=""
+            fi
             ok "$MINER_HOST repointed to its original pool(s); backup pruned"
             # Belt-and-braces (#1178): the backup predates the tag, so a straight cp/cmp restore has
             # no way to know whether a rig-id=pithead-e2e pool is in it. Should always be a no-op —
@@ -240,10 +233,10 @@ restore_all() {
                     miner_reload
             fi
         else
-            warn "FAILED to restore $MINER_HOST config — the backup should still be at $MINER_CFG_BACKUP, but check: if the connection dropped after the prune, it is already gone and the live config is the restored one."
+            warn "Miner config or service restoration unverified; retain the reservation and $MINER_CFG_BACKUP for operator recovery."
+            RESTORE_PROOF_FAILED=1
         fi
     fi
-
     # 2. Stack: converge the LIVE baseline over the branch with no `pithead down` (#2639), so Compose
     #    recreates only what differs. Restore from RESTORE_DIR — the dir the live stack ran from (#454),
     #    on a release box a per-version bundle dir, not CANONICAL_DIR. Restoring from the wrong dir
@@ -272,6 +265,7 @@ restore_all() {
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade"
     fi
+    wallet_fixture_restore || exit 1 # an uncertain import must never let the baseline wallet start
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
         # A scenario can recreate a test-checkout container after the branch deploy.
         if ! recreate_test_checkout_containers; then
@@ -279,20 +273,24 @@ restore_all() {
             RESTORE_PROOF_FAILED=1
         fi
         # Job 1677: status passed before the sync gate stopped p2pool. Wait for its release.
-        if wait_synced 1500 restore && wait_bench_healthy 300; then
+        if wait_synced 1500 restore && wait_bench_healthy 300 && wait_restore_mining_ready 1500; then
             ok "baseline stack healthy again"
         else
-            warn "baseline stack did not regain synced chains and running services before restore proof"
+            warn "baseline stack did not regain synced chains and running mining services before restore proof"
             RESTORE_PROOF_FAILED=1
         fi
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
-        verify_restore_proof || RESTORE_PROOF_FAILED=1
+        verify_restore_proof && wallet_fixture_verify || RESTORE_PROOF_FAILED=1
     else
         warn "baseline restore command failed in $RESTORE_DIR — check the command output above."
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
         RESTORE_PROOF_FAILED=1
     fi
+    cleanup_rotate_onion_fixture || {
+        warn "FAILED to remove the isolated onion fixture after baseline convergence."
+        RESTORE_PROOF_FAILED=1
+    }
 
     # 3. Chains sanity: they must be untouched (the whole point).
     local sync
@@ -315,7 +313,7 @@ restore_all() {
     fi
     if [ "$rc" -eq 0 ]; then ok "restore complete."; else warn "restore complete (the run itself failed — see above)."; fi
 }
-trap restore_all EXIT
+trap e2e_exit EXIT
 # --- Small waiters / helpers ------------------------------------------------
 wait_bench_healthy() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300}))
@@ -325,10 +323,7 @@ wait_bench_healthy() { # <timeout_s>
         sleep 10
     done
 }
-# After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
-# tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
-# measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
-# so its bounded Tari readiness row has a synced chain before it starts.
+# Tari rebuilds its Tor circuits after a deploy (>18min, #2455), so the readiness row waits for a synced chain.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st refusal="destructive phases"
     [ "${2:-}" = restore ] && refusal="baseline proof"
@@ -340,6 +335,7 @@ wait_synced() { # <timeout_s>
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
             warn "sync panels still '$st' after $((${1:-300}))s — $refusal refused"
+            [ -n "${2:-}" ] || case "$st" in */loading | */syncing) e2e_env tari-not-done ;; esac
             return 1
         }
         sleep 8
@@ -377,6 +373,7 @@ preflight() {
     parent_lock_checkpoint "the first bench touch" || die "Parent-held bench lock is not continuous."
     on_bench 'echo ok >/dev/null' || die "Cannot SSH to test-bench host '$BENCH_HOST'."
     ok "SSH to $BENCH_HOST"
+    harness_clear_check_evidence || die "Cannot clear prior doctor check evidence."
     on_bench "test -x '$CANONICAL_DIR/pithead'" || die "No pithead at $CANONICAL_DIR on $BENCH_HOST."
     on_bench "cd '$CANONICAL_DIR' && ./pithead status >/dev/null 2>&1" &&
         ok "canonical stack is currently healthy" ||
@@ -414,7 +411,7 @@ preflight() {
         warn "--skip-preflight: not checking the bench chains are synced."
     else
         local sync_line mst mheights tst theights
-        if wait_synced 120; then
+        if wait_synced 120 preflight; then
             ok "bench chains synced (monero done, tari done)"
         else
             sync_line="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '$E2E_SYNC_SUMMARY_JQ' 2>/dev/null" || true)"
@@ -422,6 +419,7 @@ preflight() {
             read -r mst mheights tst theights <<<"$sync_line"
             warn "monero: $mst (current/target $mheights)"
             warn "tari:   $tst (current/target $theights)"
+            e2e_env chains-behind
             die "Bench chains are not at tip — the required-sync assertions would fail on the environment, not the branch (#914). Let the bench catch up, or pass --skip-preflight to run anyway."
         fi
     fi
@@ -432,8 +430,7 @@ preflight() {
         # Loaner-rig lock (#430/rigforge#183): the borrow repoints (and may restart) the rig's
         # xmrig, so claim the rig's EXCLUSIVE flock now — before anything is mutated — and hold it
         # until this process dies. rigforge's gates on the same rig refuse (exit 75, holder named)
-        # instead of colliding mid-borrow, and a busy rig fails us fast, before the bench is
-        # touched. The kernel releases the lock on exit, AFTER the EXIT-trap restore has run.
+        # instead of colliding mid-borrow, and a busy rig fails us fast, before the bench is touched.
         parent_lock_miner_borrow || die "Miner lock is not continuous."
     fi
 }
@@ -449,8 +446,7 @@ provision() {
         fi
         git -C '$E2E_DIR' remote set-url origin '$GIT_REMOTE_URL'
         git -C '$E2E_DIR' fetch --quiet origin '$BRANCH'
-        # Disposable checkout: remove build cruft, retaining data, backups and results (#454).
-        # config.json/.env are wiped and re-seeded below.
+        # Disposable checkouts must retain chains and rollback anchors during cleanup.
         git -C '$E2E_DIR' checkout -q -f -B '$BRANCH' FETCH_HEAD
         git -C '$E2E_DIR' reset -q --hard FETCH_HEAD
         git -C '$E2E_DIR' clean -qfdx -e /results -e /backups -e /data && bash '$E2E_DIR/scripts/build-pithead.sh' >/dev/null
@@ -579,13 +575,10 @@ borrow_miner() {
 # --- Phase 4: deploy the branch ---------------------------------------------
 deploy_branch() {
     parent_lock_checkpoint deploy || die "Parent-held bench lock was lost before deploy."
-    # #272: `pithead apply` runs `compose up --pull` (never --build), so it would test whatever images
-    # were last built on the box, not this branch. `pithead upgrade` re-renders the generated configs
-    # (inject_service_configs) AND rebuilds the first-party images from build/ (--build) before
-    # recreating — so a Dockerfile/entrypoint change is under test. Unchanged chain nodes stay (#2639).
+    prepare_rotate_onion_fixture || die "Failed to prepare the isolated dashboard-onion fixture."
+    # Upgrade, not apply, rebuilds branch images (#272) and keeps unchanged chain nodes (#2639).
     log "Deploying the branch on $BENCH_HOST (pithead upgrade — re-render configs + rebuild first-party images)"
     deploy_keeping_chain || die "pithead upgrade failed in $E2E_DIR — branch did not deploy."
-    # Record what was actually built, so "what did we test" is unambiguous in the run log (#272).
     on_bench "cd '$E2E_DIR' && docker compose images --format '{{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'p2pool|dashboard|monero|tor|xmrig' || true" | while IFS= read -r l; do step "image: $l"; done
     wait_bench_healthy 300 || warn "stack applied but not yet healthy; the harness will wait on real readiness signals"
     wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."
@@ -604,7 +597,7 @@ run_harness() {
     [ "$MODE" = "check" ] && target_dir="$RESTORE_DIR"
     case "$MODE" in
     check) phases="--check" ;;
-    targeted) phases="--scenario local-pruned-main-secure-tari${HARNESS_PHASE_ARGS:- --auth-fail-closed --lifecycle}" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
+    targeted) phases="${TARGETED_SCENARIO_ARGS---scenario local-pruned-main-secure-tari}${HARNESS_PHASE_ARGS:- --auth-fail-closed --lifecycle}" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
     matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO")}${HARNESS_PHASE_ARGS:- --safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet}" ;;
     esac
     [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
@@ -631,17 +624,14 @@ run_harness() {
     fi
     harness_launch_records
     harness_prepare "$rearm_id" || die "Failed to record harness launch intent."
-    HARNESS_PID="$(printf '%s' "$HARNESS_RECORDS" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; IFS= read -r mvk || exit 1; IFS= read -r tvk || exit 1; IFS= read -r tspk || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" IT_MONERO_VIEW_KEY=\"\$mvk\" IT_TARI_VIEW_KEY=\"\$tvk\" IT_TARI_SPEND_PUBLIC_KEY=\"\$tspk\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
+    HARNESS_PID="$(printf '%s' "$HARNESS_RECORDS" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; IFS= read -r mvk || exit 1; IFS= read -r tvk || exit 1; IFS= read -r tspk || exit 1; IFS= read -r of || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" IT_MONERO_VIEW_KEY=\"\$mvk\" IT_TARI_VIEW_KEY=\"\$tvk\" IT_TARI_SPEND_PUBLIC_KEY=\"\$tspk\" IT_ROTATE_ONION_FIXTURE_ATTESTATION=\"\$of\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
     [[ "$HARNESS_PID" =~ ^[0-9]+$ ]] || die "Harness launch returned an invalid PID."
 
     # Poll the done-marker, printing a heartbeat tail of the log.
     local rc="" waited=0
     while :; do
-        if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test ! -f '$rearm_ack'"; then
-            step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
-            repoint_miner || die "Failed to reapply the borrowed-pool fixture."
-            wait_workers "$WORKERS" 180 || die "Borrowed miner did not reconnect after pool re-arm."
-            printf '%s' "$rearm_id" | on_bench "cat > '$rearm_ack'" || die "Failed to acknowledge the borrowed-pool fixture."
+        if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test \"\$(cat '$rearm_request')\" != \"\$(cat '$rearm_ack' 2>/dev/null)\""; then
+            handle_borrow_rearm "$rearm_request" "$rearm_ack" "$rearm_id" || die "Failed to apply a borrowed-miner handshake request; reservation retained for operator repair."
         fi
         if on_bench "test -f '$E2E_DIR/results/e2e-harness.done'"; then
             rc="$(on_bench "cat '$E2E_DIR/results/e2e-harness.done'")"
@@ -651,7 +641,7 @@ run_harness() {
         sleep 20
         waited=$((waited + 20))
         step "harness running… ${waited}s — latest:"
-        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/      /' || true
+        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed '/e2e-env:/d; s/^/      /' || true
     done
 
     echo ""
@@ -659,7 +649,6 @@ run_harness() {
     on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/  /'
     return "${rc:-1}"
 }
-
 # --- Main -------------------------------------------------------------------
 main() {
     log "Pithead e2e — branch '$BRANCH' → $BENCH_HOST (mode=$MODE)$([ "$KEEP" = 1 ] && echo '  [--keep: no restore]')"
@@ -668,6 +657,7 @@ main() {
     # --check is a read-only assessment of the LIVE stack: no backup, no borrowed miner, no deploy.
     if [ "$MODE" != "check" ]; then
         backup_stack
+        wallet_fixture_capture
         borrow_miner
         deploy_branch
     fi

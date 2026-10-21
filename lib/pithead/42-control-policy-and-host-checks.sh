@@ -140,6 +140,7 @@ CONTROL_NODE_PREFLIGHT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT
 # wallet_changed / clearnet_exposed tamper alarms out: the owner ruled no config field is refused
 # from the panel, so they confirm behind typed APPLY and the envelope (describe_change makes the
 # password change and an alarm switched off DEST rows that name the consequence).
+# config_version is the read-only exception to #2367: staging carries the live stamp.
 CONTROL_DASHBOARD_NEVER_PATHS='ssh'
 
 # True if $1 is EXACTLY a canonical dotted-decimal IPv4 literal — four decimal octets 0-255, none

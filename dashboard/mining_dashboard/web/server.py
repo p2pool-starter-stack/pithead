@@ -9,12 +9,13 @@ from aiohttp import web
 
 from mining_dashboard.client.rigforge_freshness import feed_stale
 from mining_dashboard.client.xmrig_client import strip_sentinel_credentials
-from mining_dashboard.config import config
+from mining_dashboard.config import config, documents
 from mining_dashboard.service import audit_service, control_service
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
-from mining_dashboard.web.config_commit import approval_envelope
+from mining_dashboard.web.config_commit import approval_envelope, config_request
+from mining_dashboard.web.miner_connection import handle_miner_connection
 from mining_dashboard.web.views import diagnostics_views, download_views
 from mining_dashboard.web.views.charts import canonical_window, parse_window
 from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
@@ -137,6 +138,8 @@ async def handle_config(request):
     """The live config for form prefill, every set secret masked to the sentinel."""
     try:
         return web.json_response(control_service.read_config())
+    except documents.HostConfigError as exc:
+        return web.json_response({"error": f"Invalid configuration: {exc}"}, status=500)
     except Exception:
         logger.exception("Error reading host config")
         return web.json_response({"error": "Failed to read the stack config."}, status=500)
@@ -146,17 +149,15 @@ async def handle_control_preview(request):
     """Stage a proposed config for a host-side dry-run preview. Returns the runner's result,
     or 202 + the request id if the runner hasn't answered within the wait window."""
     _require_control_header(request)
-    try:
-        body = await request.json()
-    except Exception:
-        raise web.HTTPBadRequest(text="Body must be JSON.") from None
+    body = await config_request(request)
     proposed = body.get("config")
     if not isinstance(proposed, dict):
         raise web.HTTPBadRequest(text="'config' must be a JSON object.")
-    # Click-to-adopt (#893): pre-validate any newly-appended workers.list[] entry before spooling.
-    adopt_err = worker_adopt.validate_new_worker_entries(control_service.read_config(), proposed)
-    if adopt_err:
-        raise web.HTTPBadRequest(text=adopt_err)
+    # Pre-validate the fleet workers.api_port (#3358) and any newly-appended workers.list[] entry (#893).
+    err = worker_adopt.validate_fleet_api_port(proposed)
+    err = err or worker_adopt.validate_new_worker_entries(control_service.read_config(), proposed)
+    if err:
+        raise web.HTTPBadRequest(text=err)
     actor = request.headers.get("X-Auth-User", "")
     try:
         # The proposal ships as-is: an untouched secret rides as the {"__secret__": true}
@@ -176,8 +177,8 @@ async def handle_control_commit(request):
     """Ask the runner to apply a previously previewed intent, by id only — the config it applies
     is the host-side staged copy, so a tampered commit can't swap it."""
     _require_control_header(request)
+    body = await config_request(request)
     try:
-        body = await request.json()
         actor = request.headers.get("X-Auth-User", "")
         approval = approval_envelope(body)
         rid = control_service.submit(
@@ -508,7 +509,7 @@ async def handle_audit_log(request):
 
 
 # How deep the access log is read when the operator is NAVIGATING it (#823) vs the default
-# glance. The tail read is byte-bounded either way (audit_service._TAIL_BYTES) — this only stops
+# glance. Retained reads are byte-bounded (service/access_log.py) — this only stops
 # a filtered view from being quietly truncated to the glance depth before the filter even runs.
 _ACCESS_NAV_LIMIT = 1000
 
@@ -516,7 +517,7 @@ _ACCESS_NAV_LIMIT = 1000
 async def handle_access_log(request):
     """Recent dashboard accesses + failed-login count, from Caddy's JSON access log. Always
     registered (Caddy always writes the log); behind the same Caddy basic_auth as every route.
-    Accepts the #823 navigation params; the failure counters always describe the whole tail,
+    Accepts the #823 navigation params; the failure counters always describe the bounded retained records,
     never the filtered slice."""
     try:
         frm, to, q = _log_filters(request)
@@ -548,7 +549,7 @@ def _apply_security_headers(response):
     # static CSS/JS is baked into the image, so a `pithead upgrade` changes served bytes, and a
     # browser (notably iOS Safari) can otherwise keep serving pre-upgrade dashboard.css a while
     # (Issue #83). 'no-cache' still allows a conditional request, so an unchanged asset costs only a 304.
-    response.headers["Cache-Control"] = "no-cache"
+    response.headers.setdefault("Cache-Control", "no-cache")
     return response
 
 
@@ -586,8 +587,7 @@ def create_app(state_manager, latest_data_ref):
         [
             web.get("/", handle_index),
             web.get("/api/state", handle_state),
-            # Warm-standby state a backup stack pulls on failover (#249). Read-only, same auth as
-            # /api/state; harmless (and unread) on a stack with no backup.
+            web.get("/api/miner-connection", handle_miner_connection),
             web.get("/api/xvb-standby", handle_xvb_standby),
             web.get("/metrics", handle_metrics),
             web.get("/api/access", handle_access_log),

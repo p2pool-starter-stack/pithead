@@ -96,11 +96,13 @@ SCHEMA_PROBE
 assert_eq "every path the fixture populates is still in config.reference.json" "${MISSING:-none}" "none"
 
 # The fixture is DERIVED from the shipped schema, then populated at exactly the leaves the masker
-# claims, with each array given the element type its stanza expects (gotcha 2). Deriving rather
+# claims, with each array given the element type its stanza expects (gotcha 2). Replace template
+# instructions with synthetic values so the raw-source guard accepts this masking fixture. Deriving rather
 # than hand-writing means a schema change cannot leave this fixture describing a document the
 # product no longer produces.
 jq '
-    .monero.node_username = "fixture-node-user"
+    walk(if type == "string" and test("^(PASTE_|YOUR_)"; "i") then "fixture-value" else . end)
+  | .monero.node_username = "fixture-node-user"
   | .monero.node_password = "fixture-node-pass"
   | .monero.view_key      = "fixture-monero-viewkey"
   | .tari.view_key        = "fixture-tari-viewkey"

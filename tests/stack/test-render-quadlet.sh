@@ -32,6 +32,8 @@ echo "== unit: render-quadlet parity vs os/quadlet fixtures (#77 phase 1) =="
 # an updated fixture.
 QOUT="$SANDBOX/quadlet-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/fixture.env" "$QOUT" >/dev/null
+assert_contains "remote Quadlet Tor receives P2Pool onion port (#2936)" \
+    "$(sed -n 's/^Environment=//p' "$QOUT/tor.container")" '"P2POOL_PORT=37888"'
 for f in mining.network proxy.network tor.container p2pool.container xmrig-proxy.container \
     caddy.container docker-proxy.container docker-control.container dashboard.container; do
     assert_eq "quadlet parity: $f" "$(diff -u "$ROOT/os/quadlet/$f" "$QOUT/$f" 2>&1 | head -c 300)" ""
@@ -74,6 +76,8 @@ assert_eq "node RPC login stays one systemd argument (#2333)" \
 assert_eq "remote render emits no node units" "$(find "$QOUT" -name 'monerod.container' -o -name 'tari.container' | wc -l | tr -d ' ')" "0"
 assert_contains "remote render passes TARI_MODE to the dashboard" \
     "$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container")" '"TARI_MODE=remote"'
+assert_contains "quadlet dashboard carries the stratum bind (#3384)" \
+    "$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container")" '"STRATUM_BIND=0.0.0.0"'
 # The two render targets share one dashboard, and a variable added to the compose service can be
 # left off the quadlet unit with nothing red (#1896: the three DASHBOARD_ONION_* values the header
 # reads reached compose in #1880 and the unit not at all). Pin the DASHBOARD_* cluster, the keys
@@ -122,6 +126,8 @@ assert_eq "#2040: literal % is doubled so systemd does not expand %H to the host
 # The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/local/fixture.env" "$QLOCAL" >/dev/null
+assert_contains "local Quadlet Tor receives P2Pool onion port (#2936)" \
+    "$(sed -n 's/^Environment=//p' "$QLOCAL/tor.container")" '"P2POOL_PORT=37888"'
 for f in mining.network proxy.network tor.container monerod.container tari.container \
     p2pool.container xmrig-proxy.container caddy.container docker-proxy.container \
     docker-control.container dashboard.container; do

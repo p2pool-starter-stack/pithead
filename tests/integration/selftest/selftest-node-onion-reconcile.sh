@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Local-node onion provisioning reconciles cached addresses with retained Tor keys before recreate.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

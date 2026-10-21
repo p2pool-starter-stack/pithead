@@ -1,6 +1,6 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
@@ -11,8 +11,15 @@ test-dashboard: pithead ## Dashboard unit/component tests with coverage gate (de
 	cd dashboard && uv run --locked --extra test python -m pytest \
 		--cov=mining_dashboard --cov-report=term-missing --cov-report=xml --cov-fail-under=80
 
+test-clearnet-replay-proof: ## Retained Linux ext4 proof of all 100 marker replay cases
+	bash dashboard/tests/service/network/prove-clearnet-replay.sh
+
 test-frontend: pithead ## Frontend logic tests with Node's built-in runner (#632; same invocation as CI)
 	cd dashboard/tests/frontend && node --test
+
+test-browser: ## Cross-browser GUI regressions (install locked dependencies first; see testing guide)
+	cd dashboard/tests/browser && ./node_modules/.bin/playwright test
+	node --test dashboard/tests/browser/backup-download.test.mjs
 
 test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% on changed lines (run after test-dashboard)
 	bash scripts/lint/patch-coverage.sh
@@ -20,11 +27,14 @@ test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% 
 test-stack: pithead ## pithead shell test suite
 	bash tests/stack/run.sh
 	bash tests/stack/standalone/test_tor_recovery.sh
+	bash tests/stack/standalone/test_tor_recovery_info.sh
 	bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
+	bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
 	bash tests/stack/standalone/test_data_reset.sh
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh
 	bash tests/stack/standalone/test_appliance_hugepages.sh
+	python3 tests/stack/standalone/test_clearnet_attestation.py
 
 test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-tool coverage guard (no bench, no network)
 	@# Tier 1 on purpose. The capture needs a bench; the JUDGEMENT does not, and the judgement is
@@ -46,18 +56,23 @@ test-integration-selftest: pithead ## Integration harness logic and local transp
 	for t in tests/integration/selftest/*.sh; do bash "$$t" || exit 1; done
 	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
 
-test-tools: ## Bounded-log sanitizer and CI workflow guards (no services or dependencies)
+test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
-	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 30( |$$)'
+	python3 tests/stack/standalone/test_tor_saturated_fixture.py
+	python3 tests/stack/standalone/test_monero_download.py
+	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
+	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
+	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'
 	sed -n '/^  pull_request:$$/,/^permissions:$$/p' .github/workflows/integration-mini-stack.yml | grep -Fqx '      - "lib/pithead/**"'
 
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
 	uv run --locked --project dashboard --extra test python -m pytest tests/integration/fakes -q
 
-test-mini-stack: ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
+test-mini-stack: pithead ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
 	bash tests/integration/mini-stack/run-mini-stack.sh
+	bash tests/integration/mini-stack/test-boot-health-proxy.sh
 
 test-tari-config-parse: pithead ## Feed the rendered Tari config to the pinned minotari_node image (needs docker; CI, #2341)
 	bash tests/stack/standalone/test_tari_config_parse.sh

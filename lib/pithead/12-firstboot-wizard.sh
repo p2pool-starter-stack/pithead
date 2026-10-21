@@ -77,7 +77,7 @@ firstboot_wizard() {
         if [ -f "$PWD/config.json" ] && ! setup_again_mode; then
             log "config.json already present (pre-seeded) — skipping the wizard and running setup."
             # A pre-seeded config that names no password still gets a login.
-            ensure_appliance_dashboard_password || true
+            ensure_appliance_dashboard_password || error "Could not prepare the dashboard login — provisioning stopped."
             apply_appliance_defaults || true
             record_machine_role "$(machine_role_from_config "$PWD/config.json")"
             setup
@@ -89,7 +89,7 @@ firstboot_wizard() {
     _console "" "Pithead is starting up — preparing the setup page." \
         "This takes a minute or two on first boot. Nothing to do yet."
 
-    local engine image token
+    local engine image token host_addresses had_config
     engine=$(container_engine)
     # STACK_VERSION is the ONE place the registry tag is derived (a release is v<VERSION>, a
     # source checkout is dev) — deriving it here instead cost a boot: the archive holds
@@ -159,11 +159,18 @@ firstboot_wizard() {
         clear_setup_candidate "$restore_spool/config.json" "$restore_spool/handoff.json" || error "Could not clear private setup credentials."
         # Keep an operator's pre-seeded token; otherwise mint a fresh one every round.
         token=$(preseed_token) || token=$(wizard_mint_token)
+        # Whether a configuration already stood when this round opened: a failed provisioning
+        # keeps its config.json under the reopened page (#1059), so only one that APPEARS while
+        # the page is open came from somewhere else.
+        had_config=0
+        [ ! -f "$PWD/config.json" ] || had_config=1
         "$engine" rm -f pithead-wizard >/dev/null 2>&1 || true
+        host_addresses=$(wizard_host_addresses) || host_addresses=""
         "$engine" run -d --name pithead-wizard --entrypoint python3 \
             -p 80:8000 -p 443:8443 -e WIZARD_TOKEN="$token" \
             -e WIZARD_TLS_CERT="${cert_fp:+/wizard-spool/wizard.crt}" \
             -e WIZARD_TLS_KEY="${cert_fp:+/wizard-spool/wizard.key}" \
+            -e WIZARD_HOST_ADDRESSES="$host_addresses" \
             -e WIZARD_RESTORE=/wizard-restore \
             -e TMPDIR=/wizard-restore \
             -e WIZARD_HANDOFF="$card_mount" \
@@ -178,39 +185,8 @@ firstboot_wizard() {
                 "Diagnose with: journalctl -u pithead-firstboot -b"
             error "Could not start the wizard container ($engine, $image). Pre-seed config.json or run '$0 firstboot-wizard --cli'."
         }
-        local mdns_name scheme
-        mdns_name="$(hostname).local"
-        scheme="http"
-        [ -n "$cert_fp" ] && scheme="https"
-        log "Setup wizard is up. From a browser on this network, open:"
-        log "    $scheme://$mdns_name"
-        for arg in $(hostname -I 2>/dev/null || echo 127.0.0.1); do log "    $scheme://$arg"; done
-        log "One-time token: $token"
-        # Announce on every physical console, not just stdout. /dev/console is whichever the
-        # kernel cmdline named LAST, so an operator watching the other one (a monitor when the
-        # box also has a serial line, or vice versa) would otherwise never see the token.
-        # The mDNS name FIRST: it is what the documentation tells operators to use, it survives a
-        # DHCP lease change, and it is the only address that still works once the monitor is gone.
-        # The IP follows as the fallback for networks where mDNS is filtered.
-        for dev in /dev/tty1 /dev/ttyS0; do
-            [ -w "$dev" ] || continue
-            {
-                echo ""
-                echo "  Pithead setup wizard is ready. From a browser on this network, open:"
-                echo "      $scheme://$mdns_name"
-                echo "      $scheme://$(hostname -I 2>/dev/null | awk '{print $1}')   (if the name above does not resolve)"
-                echo ""
-                echo "  One-time token: $token"
-                echo "  (case does not matter, and the pit- prefix is optional)"
-                if [ -n "$cert_fp" ]; then
-                    echo ""
-                    echo "  Your browser will warn that the certificate is not trusted. That is expected:"
-                    echo "  this machine signed its own. Check it matches before continuing --"
-                    echo "  SHA-256: $cert_fp"
-                fi
-                echo ""
-            } >"$dev" 2>/dev/null || true
-        done
+        [ "$installer" -eq 1 ] || reset_slot_restore_good "$engine" || warn "Could not restore the reset slot's good state; reboot may fall back."
+        wizard_announce_setup "$host_addresses" "$token" "$cert_fp"
         while :; do
             # #1318 "Keep it": the page wrote keep-role — nothing on /data was touched; return.
             wizard_keep_requested "$spool" && return 0
@@ -351,7 +327,7 @@ firstboot_wizard() {
                     continue
                 fi
                 log "Configuration accepted — provisioning now."
-                ensure_appliance_dashboard_password "$spool" "$candidate" || true
+                ensure_appliance_dashboard_password "$spool" "$candidate" || error "Could not prepare the dashboard login — provisioning stopped."
                 apply_appliance_defaults "$candidate" || true
                 # The candidate was validated BEFORE those two ran, so until #1066 the config the
                 # operator was told had been accepted was not the config about to be provisioned.
@@ -374,22 +350,22 @@ firstboot_wizard() {
                 fi
                 # Rename BEFORE the handoff below (#2350): `(setup)` further down applied it too
                 # late — after the operator had already seen and acked the card naming the OLD box.
-                local DASHBOARD_HOST stratum_addr dash_user dash_pass
+                local DASHBOARD_HOST stratum_addr dash_user dash_pass miner_connection
+                miner_connection=$(wizard_prepare_miner_connection "$candidate" "$installer" "$spool") || error "Could not prepare miner connection credentials safely."
                 DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$candidate" 2>/dev/null)" "")
                 reconcile_appliance_hostname
-                stratum_addr="stratum+tcp://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$candidate" 2>/dev/null || echo 3333)"
+                stratum_addr="stratum+$(jq -r 'if .p2pool.stratum_tls == true then "ssl" else "tcp" end' "$candidate")://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$candidate" 2>/dev/null || echo 3333)"
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$candidate")
                 dash_pass=$(jq -r '.dashboard.auth.password // ""' "$candidate")
                 _console "" "Point your miners at this machine:" "    $stratum_addr"
-                # The handoff: credentials and addresses ON THE PAGE, over the same TLS the
-                # operator just typed secrets into — a 32-character random password transcribed
-                # from a console was never realistic. Provisioning holds until they confirm
+                # Publish over the setup TLS session and hold provisioning until they confirm
                 # they saved it (or 10 minutes pass — an unattended pre-seeded run must not
                 # hang forever), because the page goes DARK during provisioning and the
                 # credentials must not vanish with it.
                 jq -n --arg u "$dash_user" --arg p "$dash_pass" \
                     --arg d "https://$(hostname).local" --arg s "$stratum_addr" \
-                    '{username:$u,password:$p,dashboard:$d,stratum:$s}' | write_handoff_card "$card_spool"
+                    --argjson miner "$miner_connection" \
+                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
@@ -517,6 +493,13 @@ firstboot_wizard() {
                 fi
                 rm -f "$setup_log"
                 break # outer loop re-mints a token and restarts the wizard container
+            fi
+            # A config.json the CLI landed while the page is open (`pithead restore` after a config-reset)
+            # provisions the box without this page. Stand down: its published 80/443 are Caddy's ports,
+            # and the stack would come up beside it with Caddy failing "address already in use" (#3369).
+            if [ "$installer" -eq 0 ] && [ "$had_config" -eq 0 ] && [ -f "$PWD/config.json" ]; then
+                log "config.json appeared while the setup page was open — provisioned without it; closing the page."
+                return 0
             fi
             if ! "$engine" inspect -f '{{.State.Running}}' pithead-wizard 2>/dev/null | grep -q true; then
                 warn "Wizard stopped (token lockout or crash) — minting a fresh token and restarting it."

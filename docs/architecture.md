@@ -13,7 +13,7 @@ directly instead.
 
 | # | Service | Role |
 |---|---|---|
-| 1 | **Monerod** | The Monero daemon (full node). Configured for restricted RPC and Tor transaction broadcasting. Runs only with `monero.mode: local` (compose profile `local_node`); in `remote` mode no container starts and P2Pool dials your external node's RPC/ZMQ instead. |
+| 1 | **Monerod** | The Monero daemon (full node). Its published RPC listener is restricted (a second, unrestricted one is bound to the container's own loopback for peer counts), and transactions broadcast over Tor. Runs only with `monero.mode: local` (compose profile `local_node`); in `remote` mode no container starts and P2Pool dials your external node's RPC/ZMQ instead. |
 | 2 | **P2Pool** | The mining sidechain. Supports Main, Mini, and Nano pools. |
 | 3 | **Tari Base Node** | The Minotari node, merge-mined alongside Monero. Runs only with `tari.mode: local` (compose profile `local_tari`); in `remote` mode no container starts, no Tari data dir is used, and P2Pool merge-mines against your external node's gRPC; with `off` no Tari container starts at all and P2Pool's entrypoint drops the `--merge-mine` arguments from its launch, so nothing merge-mines. Switching `off` keeps the Tari data directory; only the container is removed. See [Hardware › Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
 | 4 | **XMRig Proxy** | The single stratum endpoint (`:3333`) all mining hardware connects to; the switching engine reconfigures it at runtime. |
@@ -256,8 +256,9 @@ rounds. It donates the minimum needed to hold the target tier and routes the res
 2. **Dynamic proxy reconfiguration.** A feedback controller watches your measured 1h / 24h donation
    averages and reconfigures the `xmrig-proxy` to send just enough time to XvB to stay in tier:
    ramping donation up when you fall behind and easing off as you catch up, with the remainder going
-   to P2Pool. The controller edits the proxy config only; your workers keep their existing connection
-   to `3333` and need no changes.
+   to P2Pool. With `xvb.enabled: false`, the engine stays on P2Pool for the full cycle;
+   a missing donation average does not end the dwell early. The controller edits the proxy config
+   only; your workers keep their existing connection to `3333` and need no changes.
 
 3. **Round protection.** XvB terminates a won bonus round if your credited 1h average drops below
    the round minimum while the round runs, so the controller guards wins two ways. It holds the 1h

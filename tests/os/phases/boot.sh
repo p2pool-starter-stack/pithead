@@ -57,6 +57,8 @@ phase_boot() {
     }
     ok "wizard serves the token gate ($ip)"
 
+    bash "$SCRIPT_DIR/build-label-boot-leg.sh" "$SERIAL" 0 "$(tr -d '[:space:]' <VERSION)" "" usb A && ok "unlabelled image first menu keeps the plain version" || bad "unlabelled first menu changed"
+
     # SSH is a host service that starts after the wizard's HTTP gate answers, so the first _ssh here
     # must wait it out — a single-shot probe raced ssh.service and misread a healthy boot as dead.
     # 900, not the update phase's 240: this is the run's very FIRST cold boot — 6 GiB of
@@ -72,6 +74,14 @@ phase_boot() {
         bad "host SSH never came up after the wizard gate — cannot read hugepages/machine-id ($(_ssh_unreachable_reason "$ip"))"
         return
     }
+
+    if _ssh 'grub-editenv /boot/efi/grub/grubenv list | grep -qx "MEDIA=internal"'; then
+        ok "boot corrects image media to internal on the virtio disk"
+    else
+        bad "boot did not correct image media to internal on the virtio disk"
+    fi
+
+    phase_wizard_redirect
 
     # Exercise the installed unit under systemd. The guest has a real emulated UART; a temporary
     # runtime drop-in gives the SAME ExecCondition a type-0 fixture, then is removed before reboot.

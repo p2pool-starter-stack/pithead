@@ -1,20 +1,27 @@
 # Hardware Requirements
 
-Hardware sizing for the stack host. For a machine running [the appliance image](appliance.md),
-the appliance guide's "What you need" section is the short version to follow. The stack runs
-on two kinds of machine with different needs:
+Hardware sizing for coordinators and mining workers, on Compose or
+[the appliance image](appliance.md).
 
-1. The stack host: the one machine that runs `./pithead` and the Docker stack (Monero node, P2Pool,
-   Tari, the XMRig proxy, the dashboard, Tor). It does not mine — it runs the nodes and coordinates;
-   the hashing happens elsewhere.
-2. Worker rigs: one or more separate machines running [XMRig](https://github.com/xmrig/xmrig). These
-   do the RandomX hashing and point at the stack host's port `3333`. A worker can be the same machine
-   as the host, but keeping them separate is what scales hashrate.
+## Choose the arrangement
 
-Size the host for nodes, storage, and uptime; size the workers for CPU mining performance.
+| Arrangement | Services and miner connection | Requirements |
+|---|---|---|
+| **Coordinator-only** | P2Pool, XMRig proxy, Tor, dashboard and supporting services; Monero and optional Tari nodes run here unless configured remote. Separate workers connect to its advertised stratum endpoint, port `3333` by default. | The [stack-host budget](#the-stack-host) below follows the local nodes; allow storage for sync, growth and migration, and keep the coordinator reachable by its workers. |
+| **Coordinator plus local worker** | The same coordinator, plus an opt-in XMRig worker on its CPU, connected to its own stratum over loopback. Separate workers can connect too. | The coordinator budget still applies, plus CPU and memory headroom for the miner. Installer support alone does not establish useful co-located performance. Follow [local-worker setup](workers.md#mine-on-the-stack-host-itself) and cap miner threads to leave room for nodes. |
+| **Worker-only** | XMRig through RigForge, connected to an existing coordinator. No chains, P2Pool, coordinator dashboard or stack containers run on the worker. | Use [RigForge's worker hardware requirements](https://github.com/p2pool-starter-stack/rigforge#-hardware-requirements), not the chain-storage budget below. Allow space for the OS and miner, and network access to the coordinator; the appliance requires wired ethernet. |
 
-> This page covers the stack host. Miner (worker-rig) hardware lives with the miner kit, see
-> [RigForge](https://github.com/p2pool-starter-stack/rigforge#-hardware-requirements).
+The appliance's [role chooser](appliance.md#what-is-this-machine) currently displays **Pithead**,
+**Pithead + RigForge** and **RigForge**. The middle choice is the coordinator configuration with
+its local-miner switch enabled, not a third runtime role. Compose installs the coordinator;
+local mining requires a separate host RigForge installation. Worker-only uses RigForge directly
+or the appliance's rig role, not a worker-only Compose stack.
+
+Separate workers are the recommended scale path: size the coordinator for nodes, storage and
+uptime, and workers for CPU mining. Co-location does not promise spare-capacity scheduling or no
+impact on other workloads. The pending [co-location measurement](https://github.com/p2pool-starter-stack/pithead/issues/2045)
+and [shared-host guide](https://github.com/p2pool-starter-stack/rigforge/issues/579) own those results.
+For miner connection instructions, see [Connecting Miners](workers.md).
 
 ---
 
@@ -42,9 +49,9 @@ plus headroom for the OS. Per-component breakdown, from each project's own guida
 
 | Service | RAM it wants | Container ceiling | Disk | Notes |
 |---|---|---|---|---|
-| **[Monero node](https://docs.getmonero.org/running-node/)** (`monerod`) | **4 GB** minimum; more RAM = bigger DB cache and faster sync | 6 GB (`monero.mem_limit`) | **~286 GB measured fresh-sync pruned** · **~267 GB measured full** — and growing | SSD strongly recommended. Not run at all with `monero.mode: remote`. |
+| **[Monero node](https://docs.getmonero.org/running-node/)** (`monerod`) | **4 GB** minimum; more RAM = bigger DB cache and faster sync | 6 GB (`monero.mem_limit`) | **~286 GB fresh-sync pruned, September 2026** · **~267 GB full observed, not a provisioning guarantee** — and growing | SSD strongly recommended. Not run at all with `monero.mode: remote`. |
 | **[P2Pool](https://github.com/SChernykh/p2pool)** | **~2.3 GB** for the RandomX dataset it uses to verify blocks fast | 4 GB | tiny (sidechain state) | Needs a 64-bit CPU with **AVX2** and a synced `monerod`. The dataset lives in the shared HugePages reservation, not in the container, so don't count it twice. When the reservation has too few free pages, P2Pool puts the dataset in ordinary memory instead (about 2.5 GB); the ceiling leaves room for that. |
-| **[Tari base node](https://www.tari.com/integration-guide)** (`minotari_node`) | **4 GB** minimum, **8 GB+** recommended; grows over time | auto (`tari.mem_limit`) | **~150 GB** SSD — and growing | Budget for it whenever it runs here. The stack caps its memory so growth can't take the host down. Not run at all with `tari.mode: remote` or `off`. |
+| **[Tari base node](https://www.tari.com/integration-guide)** (`minotari_node`) | **4 GB** minimum, **8 GB+** recommended; grows over time | auto (`tari.mem_limit`) | **~150 GB estimate** SSD — and growing | Budget for it whenever it runs here. The stack caps its memory so growth can't take the host down. Not run at all with `tari.mode: remote` or `off`. |
 | **XMRig proxy · Tor · dashboard** | a few hundred MB combined | 512 MB each | a few GB (Docker images) | These coordinate and serve the UI. They don't mine, so no special CPU. |
 | **Caddy · Docker socket proxies** | small | 128 MB each | — | Serve the dashboard and mediate its Docker access. |
 | **Payout confirmation** (`wallet-rpc`, `tari-wallet`) | only when enabled | 2 GB · 512 MB | small (view-only wallet state) | Started only when `monero.view_key` / `tari.view_key` are set — and both are refused in that node's `remote` mode, since the scan needs a local node. |
@@ -59,7 +66,8 @@ full chain also does not reclaim LMDB free pages in place; measure the freelist 
 rewrite with `monero-blockchain-prune` can reclaim space. Stop monerod first: the tool moves the new
 DB into place itself, renaming the old chain aside, and it will do that under a running daemon.
 
-Both chains keep growing, ~100+ GB/year combined. That's why the table lists a 600 GB minimum and
+Both chains keep growing; ~100+ GB/year combined is a planning estimate, not a measured forecast.
+That's why the table lists a 600 GB minimum and
 recommends more: for a set-and-forget host, put it on a 2–4 TB SSD. In September 2026, a Monero node
 synced from genesis with pruning enabled consumed 285.8 GB. Its first startup logged the branch that
 Monero 0.18.5.1 enters only when the database has no pruning seed; that branch runs the prune
@@ -85,8 +93,9 @@ dragging the host down with it.
 
 ### CPU
 
-The host CPU runs the nodes, P2Pool's block verification, the proxy, and the dashboard. It is not the
-miner, so it need not be a high-end mining chip. Two things matter:
+The coordinator CPU runs the nodes, P2Pool's block verification, the proxy and the dashboard.
+Without a local worker it need not be a high-end mining chip; with one, leave CPU and memory
+headroom for those services. Two things matter for the coordinator:
 
 - AVX2 is strongly recommended. P2Pool verifies blocks with RandomX, which runs far better with AVX2;
   setup warns *"AVX2 not detected. Mining performance will be poor."* if it's missing. (P2Pool also
@@ -132,17 +141,21 @@ node databases do heavy random I/O that punishes spinning disks. What to provisi
 
 | | Pruned (default) | Full (`monero.prune: false`) |
 |---|---|---|
-| Monero chain | ~286 GB measured fresh-sync | ~267 GB measured |
-| Tari chain | ~150 GB | ~150 GB |
+| Monero chain | ~286 GB fresh-sync, September 2026 | ~267 GB observed; not a provisioning guarantee |
+| Tari chain | ~150 GB estimate | ~150 GB estimate |
 | P2Pool + dashboard + Docker images | a few GB | a few GB |
 | **Plan for** | **600 GB+ SSD** | **600 GB+ SSD** |
 
-Both chains keep growing, ~100+ GB/year combined (Tari, a young chain, grows fastest), so leave
+Both chains keep growing; allow for the estimated ~100+ GB/year combined rather than treating
+these observations as fixed sizes. Leave
 headroom: the *recommended* 1 TB+ (pruned) / 2 TB+ (full) sizes exist for that, and a 2–4 TB SSD is
 the set-and-forget choice. Tari's chain (~150 GB) is the same whether or not you prune Monero.
 Pruning (the default) keeps a
 fully validating Monero node while discarding eligible prunable transaction data. The live
-measurements above are why the disk budget is currently the same in either mode.
+observations above are why the disk budget is currently the same in either mode. Sync and
+database migration need free space too: a migrating Tari upgrade requires room beside the old
+database for a compacted copy, checked as its current size plus 5 GiB. See
+[Updating the stack](operations.md#updating-the-stack) before sizing an existing data volume for an update.
 
 A node running elsewhere is left out of this budget entirely — see
 [Running a node elsewhere](#running-a-node-elsewhere) for the totals in each combination.

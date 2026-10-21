@@ -36,8 +36,7 @@ provision_tor() {
     provision_dashboard_onion # #343: reads the dashboard onion too, but only when it's enabled
 }
 
-# Read a retained local node's Tor hostname without starting Tor. An absent, unreadable or malformed
-# hostname cannot safely replace the cached address.
+# A retained hostname must be valid before it can replace a cached address.
 retained_node_onion() { # <monero|tari>
     local path="${TOR_DATA_DIR:-}/$1/hostname" onion
     [ -n "${TOR_DATA_DIR:-}" ] || return 1
@@ -50,13 +49,7 @@ retained_node_onion() { # <monero|tari>
     printf '%s' "$onion"
 }
 
-# Mint and capture a node's inbound onion when that node has just switched remote → local (#103),
-# or reconcile a stale cached address with the hostname belonging to its retained Tor keys (#2951).
-# Its hidden service exists only while the node is local, so a stack first set up in remote mode
-# has no address for it yet. Recreating tor against the freshly committed .env publishes the
-# service; the address must then be in .env BEFORE the node container starts, because monerod
-# templates `anonymous-inbound` from it and the Tari config takes the onion at render time.
-# No docker call is needed when retained hostnames and cached addresses already agree.
+# Nodes must receive the retained identity before their configs are rendered.
 provision_node_onions() {
     local want_monero=false want_tari=false changed=false retained
     if [ "${MONERO_MODE:-}" == "local" ] && ! onion_missing "${MONERO_ONION:-}"; then

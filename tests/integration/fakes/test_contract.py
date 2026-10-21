@@ -1,12 +1,7 @@
 """
-Contract test: point the REAL dashboard clients at the controllable fakes and assert they
-parse every state we need to drive in the mini-stack (issue #54, tier 3 / tier 2 seam).
-
-This is the proof that the fakes speak the daemons' wire format closely enough for the real
-MoneroClient / TariClient — and it runs anywhere (no docker, no real chain). If a future
-monerod/Tari change breaks the parser, this goes red here instead of only on the live box.
-It also proves capped ``requests`` can traverse SOCKS5.
-
+Contract test: point the real dashboard clients at controllable fakes (#54).
+It checks daemon wire formats without Docker or a real chain and proves capped
+``requests`` can traverse SOCKS5.
 Run: PYTHONPATH=dashboard python3 -m pytest tests/integration/fakes -q
 """
 
@@ -50,7 +45,12 @@ def test_monero_synced_reads_no_sync_and_db_size():
     with FakeMonerod(database_size=85 * 10**9) as m:
         client = MoneroClient(url=m.url, username="")
         st = client.get_sync_status()
-    assert st == {"is_syncing": False, "db_size": 85 * 10**9, "synchronized": True}
+    assert st == {
+        "is_syncing": False,
+        "db_size": 85 * 10**9,
+        "synchronized": True,
+        "height": 3_000_000,
+    }
 
 
 def test_monero_syncing_reports_percent():
@@ -90,7 +90,7 @@ def test_monero_synced_by_height_even_without_flag():
 def test_monero_db_size_unknown_reads_zero():
     with FakeMonerod(database_size=0) as m:
         st = MoneroClient(url=m.url, username="").get_sync_status()
-    assert st == {"is_syncing": False, "db_size": 0, "synchronized": True}
+    assert st == {"is_syncing": False, "db_size": 0, "synchronized": True, "height": 3_000_000}
 
 
 def test_monero_http_control_mutates_state():
