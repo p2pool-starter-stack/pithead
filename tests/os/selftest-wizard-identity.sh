@@ -42,9 +42,10 @@ date() {
     printf '%s' "$ticks"
 }
 curl() {
-    local args="$*" count
+    local args="$*" count token
     [[ "$args" == *"--pinnedpubkey sha256//"* ]] || return 2
     [ "$scenario" != changed-key ] || return 90
+    [[ "$args" != *pit-AAAAA2* && "$args" != *pit-AAAAA3* ]] || return 2
     case "$args" in
     *token=wrong-token*)
         count=$(cat "$scratch/attempts")
@@ -62,11 +63,17 @@ curl() {
             printf 403
         fi
         ;;
-    *token=pit-AAAAA2*)
-        if [ "$scenario" = old-accepted ]; then printf 302; else printf 403; fi
-        ;;
-    *token=pit-AAAAA3*)
-        if [ "$scenario" = new-refused ]; then printf 403; else printf 302; fi
+    *token@-*)
+        token=$(cat)
+        case "$token" in
+        pit-AAAAA2)
+            if [ "$scenario" = old-accepted ]; then printf 302; else printf 403; fi
+            ;;
+        pit-AAAAA3)
+            if [ "$scenario" = new-refused ]; then printf 403; else printf 302; fi
+            ;;
+        *) return 2 ;;
+        esac
         ;;
     *api/wizard-state*)
         if [ "$scenario" = no-session ]; then printf 401; else printf 200; fi

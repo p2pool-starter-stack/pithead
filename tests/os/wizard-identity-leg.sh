@@ -82,7 +82,7 @@ phase_wizard_identity() {
         return
     fi
     ok "lockout prints a fresh console token and reopens the setup page"
-    code=$(wizard_identity_request --data-urlencode "token=$old_token") || code=""
+    code=$(printf '%s' "$old_token" | wizard_identity_request --data-urlencode token@-) || code=""
     if [ "$code" != 403 ]; then
         bad "the previous console token was not refused after lockout"
         return
@@ -91,7 +91,7 @@ phase_wizard_identity() {
         bad "could not create a private setup session cookie jar"
         return
     }
-    code=$(wizard_identity_request -c "$jar" --data-urlencode "token=$new_token") || code=""
+    code=$(printf '%s' "$new_token" | wizard_identity_request -c "$jar" --data-urlencode token@-) || code=""
     if [ "$code" != 302 ]; then
         rm -f "$jar"
         bad "the fresh console token did not authenticate"
