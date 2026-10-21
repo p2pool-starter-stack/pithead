@@ -27,7 +27,7 @@ dashboard, no Linux to set up.
 | Operating system | Ubuntu Server 24.04 LTS is the supported platform. Other Linux distributions may work but aren't supported. macOS is deprecated as of 2026-09-10 and is not tested; the installer refuses it. |
 | CPU | A processor with AVX2 support for RandomX performance. |
 | RAM | 16 GB minimum with HugePages enabled (~6 GB is reserved for RandomX); 32 GB for a full node or long uptimes. |
-| Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
+| Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari off (the wizard default) or remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
 | Software | Docker Engine, Docker Compose V2, `jq`, `openssl`, and `python3`. |
 
 > 📐 Sizing guidance for the stack host — minimum vs. recommended specs, plus ways to run leaner —
@@ -161,14 +161,15 @@ Setup walks through five stages. It's interactive on the first run and safe to r
 
 ## 4. First boot: the node syncs
 
-This section assumes both nodes run here, the default. A chain served from another machine
-(`monero.mode` / `tari.mode: remote`) never syncs on this host — its container isn't started at all.
+A fresh Enter-through setup runs a local Monero node with Tari off. The Monero node downloads
+and verifies its blockchain before mining starts. While Monero syncs, the dashboard shows Sync
+Mode with its progress and a held-miner notice. The first start prints a note about waiting for
+the required chains; it appears once, not on every restart.
 
-The first time the stack starts, your Monero and Tari nodes download and verify the blockchain
-from the network. Until both are fully synced, the dashboard shows a dedicated Sync Mode screen
-with live progress for each chain, and no hashrate is routed yet. When the stack first comes up,
-`pithead` prints a short "what happens next" note saying the miner is held until both chains sync,
-then starts automatically — it shows once, not on every restart.
+If you explicitly enable the Tari beta in the wizard, its node also syncs here, but the wizard
+writes `dashboard.tari_required: false`: Monero mining starts when Monero is ready, while Tari
+continues syncing. Existing configs that require Tari also wait for Tari's initial sync. A chain
+served from another machine (`monero.mode` / `tari.mode: remote`) never syncs on this host.
 
 This can take anywhere from a few hours to a day or more depending on your hardware, disk, and
 network. Watch progress on the dashboard, with `./pithead status` (it prints each chain's percent
@@ -179,11 +180,12 @@ and blocks remaining while syncing), or in the logs:
 ./pithead logs tari
 ```
 
-Each line applies only to a node this host actually runs — in remote mode that service isn't in the
-stack, so `logs` has nothing to follow.
+Run `logs tari` only if you enabled a local Tari node. A node in remote or off mode has no
+container here, so `logs` has nothing to follow.
 
-Once both chains report fully synced, the dashboard switches from Sync Mode to the full
-operational view and the stack begins mining. See [The Dashboard](dashboard.md) for a tour of
+Once the required chains report fully synced, the dashboard switches from Sync Mode to the full
+operational view and the stack begins mining. For the wizard default and beta opt-in, only Monero
+is required. See [The Dashboard](dashboard.md) for a tour of
 both states.
 
 > Already have a synced Monero node? You can skip most of the initial sync by pointing the stack
