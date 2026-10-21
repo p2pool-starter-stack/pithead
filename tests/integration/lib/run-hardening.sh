@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/integration/lib/run-browser-bundle.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-browser-bundle.sh" || exit $?
 _set_env_token() { # _set_env_token <value>
     rx "(
         umask 077
@@ -182,6 +184,7 @@ run_hardening() {
         "$(rx "grep -m1 '^ExecStart=' /etc/systemd/system/pithead-control.service 2>/dev/null" || true)" \
         "ExecStart=$(rx 'pwd -P')/pithead control-run-pending"
 
+    run_browser_bundle "$ctrl_config" || return 1
     local cdir
     cdir="$(env_on_box CONTROL_DIR)"
     if [ -z "$cdir" ]; then
