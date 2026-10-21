@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import os
 import sqlite3
@@ -6,6 +7,7 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -91,8 +93,34 @@ class RestoreStateProbeTests(unittest.TestCase):
         with sqlite3.connect(self.db) as conn:
             conn.execute('DELETE FROM "odd table"')
         self.assertNotEqual(expected, PROBE.database_counts(self.db))
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "table counts"):
             self.verify()
+
+    def test_file_failure_diagnostics_expose_only_fixed_categories(self):
+        for name, category in (
+            ("config.json", "config.json"),
+            (".env", ".env"),
+            ("Caddyfile", "Caddyfile"),
+            ("tor/key", "Tor"),
+        ):
+            target = self.root / name
+            original = target.read_bytes()
+            with self.subTest(name=name):
+                target.write_bytes(b"private fixture value")
+                output = io.StringIO()
+                with patch.object(PROBE, "main", self.verify), redirect_stderr(output):
+                    self.assertEqual(PROBE.run(), 1)
+                self.assertIn(f"restored file differs from archive: {category}", output.getvalue())
+                self.assertNotIn(str(self.root), output.getvalue())
+                self.assertNotIn("private fixture value", output.getvalue())
+                target.write_bytes(original)
+
+    def test_unexpected_failure_reports_type_without_exception_values(self):
+        output = io.StringIO()
+        error = OSError(f"private fixture value at {self.root}")
+        with patch.object(PROBE, "main", side_effect=error), redirect_stderr(output):
+            self.assertEqual(PROBE.run(), 1)
+        self.assertEqual(output.getvalue(), "restore state probe failed: OSError\n")
 
     def test_missing_table_fails(self):
         with sqlite3.connect(self.db) as conn:
