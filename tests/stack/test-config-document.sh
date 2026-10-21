@@ -126,3 +126,5 @@ wap_null() {
 }
 wap_null
 assert_contains "workers.api_port documentation states null semantics" "$(grep '^| `workers.api_port`' "$ROOT/docs/configuration.md")" null
+assert_contains "worker probe documentation states null semantics" "$(grep '^`workers.api_port` ' "$ROOT/docs/workers.md")" 'omitted or set to `null`'
+assert_contains "worker probe documentation states the default port" "$(grep '^`workers.api_port` ' "$ROOT/docs/workers.md")" 8080
