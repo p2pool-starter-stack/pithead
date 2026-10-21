@@ -105,6 +105,7 @@ rm -f "$CR/sudo.log"
 jq '.dashboard.energy.cost_per_kwh = 0.123' "$ROOTS/${BK#/}/config.json" >"$CR/archived-config"
 cp "$CR/archived-config" "$ROOTS/${BK#/}/config.json"
 cp "$CR/archived-config" "$BK/config.json"
+cp "$ROOTS/${BK#/}/data/tor/hs_ed25519_secret_key" "$BK/data/tor/hs_ed25519_secret_key"
 out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead backup -y --no-encrypt 2>&1)"
 assert_rc "dashboard restore regression creates a real CLI backup" "$?" 0
 CR_DASH_ARCHIVE=$(printf '%s\n' "$out" | sed -n 's/^\[pithead\] Backup written to: //p')
