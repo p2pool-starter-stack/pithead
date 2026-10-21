@@ -52,6 +52,14 @@ install_baseline() {
     ln -s pithead-v2.0.0-baseline "$MOUNT/current"
 }
 
+setup_baseline() {
+    (
+        cd "$MOUNT/current" || exit $?
+        printf '\n' | env -u PITHEAD_REGISTRY -u PITHEAD_REGISTRY_CA PITHEAD_APPLIANCE=0 \
+            ./pithead setup --skip-deps --skip-optimize
+    )
+}
+
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     SERIAL_CONSOLE=/dev/null
@@ -85,6 +93,16 @@ if [ "$NEW_SHA" = --self-test ]; then
     [ "$(readlink "$MOUNT/current")" = pithead-v2.0.0-baseline ]
     [ ! -e "$MOUNT/pithead-v2.0.0" ]
     cmp "$INPUT/fixture/pithead/docker-compose.yml" "$MOUNT/current/docker-compose.yml"
+    printf '%s\n' '#!/usr/bin/env bash' \
+        '[ "$*" = "setup --skip-deps --skip-optimize" ] || exit 2' \
+        '[ "$PITHEAD_APPLIANCE" = 0 ] || exit 3' \
+        '[ -z "${PITHEAD_REGISTRY+x}${PITHEAD_REGISTRY_CA+x}" ] || exit 4' \
+        'exit "${SETUP_EXIT:-0}"' >"$MOUNT/current/pithead"
+    chmod +x "$MOUNT/current/pithead"
+    PITHEAD_APPLIANCE=1 PITHEAD_REGISTRY=registry.example PITHEAD_REGISTRY_CA=unused setup_baseline
+    setup_rc=0
+    SETUP_EXIT=17 setup_baseline || setup_rc=$?
+    [ "$setup_rc" -eq 17 ]
     rm -rf "$MOUNT"
     mkdir "$MOUNT"
     printf '1.20.0\n' >"$INPUT/fixture/pithead/VERSION"
@@ -166,11 +184,7 @@ mkdir "$MOUNT/harness"
 tar -xzf "$INPUT/harness.tar.gz" -C "$MOUNT/harness"
 
 stage baseline-setup
-(
-    cd "$MOUNT/current"
-    printf '\n' | env -u PITHEAD_REGISTRY -u PITHEAD_REGISTRY_CA PITHEAD_APPLIANCE=1 \
-        ./pithead setup --skip-deps --skip-optimize
-)
+setup_baseline
 
 stage local-miner-tree
 [ -x /data/rigforge/rigforge.sh ] && [ -d /data/rigforge ]

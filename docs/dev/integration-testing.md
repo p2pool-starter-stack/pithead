@@ -265,7 +265,9 @@ KVM guest, verifies the unchanged signed v2.0.0 bundle, and uses the tier-4 remo
 endpoints. The gate's success signal is real mining, so it reserves no rig: the guest mines against
 its own stack with the appliance's built-in miner, started through `pithead local-miner` — the same
 invocation a provisioned coordinator uses, pointed at `127.0.0.1`'s stratum port. The appliance's
-own CLI runs it against the baseline stack directory.
+own CLI runs it against the baseline stack directory. Baseline setup, candidate upgrade and
+rollback use the same DIY test override inside the Podman guest; mixing appliance setup with
+DIY rollback changes derived control units and Caddy configuration.
 Both the forward worker-set wait and the rollback worker-set/proxy-count wait use
 `BOUND_RECONNECT` (default 480 seconds). Rollback re-reads the dashboard state every five seconds
 and compares both worker readings from the same response; a persistent wrong worker set or

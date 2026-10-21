@@ -326,8 +326,10 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   on a shared root beside the version dirs on the same reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
   the tier's debug-registry public key, so submitted images are verified against the key that
   signed them. When `PITHEAD_REGISTRY_CA` is set, the signed candidate also carries that CA as
-  `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. It runs the release-shaped stack under the CLI's existing test override inside the
-  otherwise appliance-shaped guest. Its private volatile script is invoked through `bash`, so a
+  `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. Baseline setup,
+  candidate upgrade and baseline rollback all use the CLI's existing DIY test override inside the
+  appliance-shaped Podman guest, so derived host files use one render mode. Its private volatile
+  script is invoked through `bash`, so a
   noexec mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
   and resumed hashes. The baseline uses `pithead-v2.0.0-baseline` so a candidate whose `VERSION`
