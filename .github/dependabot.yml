@@ -112,6 +112,7 @@ updates:
     directories:
       - "/tests/netwatch"
       - "/tests/integration/tor-client"
+      - "/dashboard/tests/browser"
     schedule:
       interval: "weekly"
     groups:

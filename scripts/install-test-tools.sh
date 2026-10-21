@@ -42,7 +42,8 @@ esac
 test_tool_images() {
     printf '%s\t%s\t%s\n' \
         'pithead-netwatch:test' 'tests/netwatch' 'conntrack --version && tcpdump --version' \
-        'pithead-tor-client:test' 'tests/integration/tor-client' 'tor --version && curl --version'
+        'pithead-tor-client:test' 'tests/integration/tor-client' 'tor --version && curl --version' \
+        'pithead-dashboard-ca:test' 'dashboard/tests/browser' 'node /probe/dashboard-ca-probe.mjs --smoke'
 }
 
 PASS=0 FAIL=0

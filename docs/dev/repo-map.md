@@ -49,6 +49,11 @@ Both reject duplicate members before normalization and placeholders before stagi
 Release-note extraction is covered by `tests/stack/release/test-release-notes.sh`;
 it selects the changelog section matching the release tag, including known issues.
 
+DIY dashboard CA export is documented in `docs/configuration.md` and checked by
+`tests/integration/selftest/selftest-dashboard-ca-trust.sh`. The hardening phase runs
+`tests/integration/lib/dashboard_ca_trust.py` against live Caddy; its isolated Chromium/NSS
+probe and container image are in `dashboard/tests/browser/`.
+
 The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering

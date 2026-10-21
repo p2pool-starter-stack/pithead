@@ -473,8 +473,8 @@ How it works and what to keep in mind:
   the password, so the Caddyfile doesn't churn.
 - Keep `dashboard.secure: true`. Basic-auth sends the credentials with every request; over plain HTTP
   (`secure: false`) they'd travel in cleartext. pithead warns if you set a password without HTTPS, but
-  won't stop you. With the default `tls internal`, Caddy serves a locally-trusted certificate; your
-  browser will warn the first time unless you trust Caddy's local CA.
+  won't stop you. DIY installs use Caddy's `tls internal`; browsers warn until you
+  [trust this installation's root CA](#trust-the-diy-dashboard-ca).
 - A login is access control for the dashboard, not the miner. It gates the web UI only. The stratum
   port miners connect to is a separate surface; gate that with
   [`p2pool.stratum_password`](#configuration-reference) and `p2pool.stratum_bind`.
@@ -484,6 +484,51 @@ How it works and what to keep in mind:
 
 To remove the login again, clear the password (`"password": ""`) and `apply`. pithead drops the
 `basic_auth` block and the dashboard is open on the LAN as before.
+
+### Trust the DIY dashboard CA
+
+Caddy's internal CA signs short-lived dashboard certificates (12 hours by default) and renews
+them automatically. Accepting the browser warning trusts the current leaf certificate, so the
+warning can return after renewal. Trust the installation's root CA once instead: newly issued
+leaves chain back to that same CA. Certificate lifetimes do not need changing.
+
+On the DIY host, through a console or SSH session you already trust, run this from the stack
+directory while Caddy is running:
+
+```bash
+docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > pithead-dashboard-ca.crt
+```
+
+Check that the export succeeded before importing it, and record its SHA-256 fingerprint on
+that host:
+
+```bash
+openssl x509 -in pithead-dashboard-ca.crt -noout -sha256 -fingerprint
+```
+
+Transfer only `pithead-dashboard-ca.crt` to your browsing device over an authenticated channel,
+then run the same fingerprint command there and compare it with the host's recorded fingerprint.
+Do not import a certificate offered by an unverified warning page. Never copy `root.key`, the
+whole CA directory, or the Caddy data volume: those contain private signing keys.
+
+Import the verified certificate as a **certificate authority**, rather than accepting another
+leaf warning:
+
+- **Firefox:** Settings → Privacy & Security → Certificates → View Certificates → Authorities →
+  Import. Select the exported certificate and enable trust for identifying websites.
+- **Chrome or Edge:** use the browser's certificate manager to manage local trusted authorities.
+  Where it opens the operating system's manager, import into the current user's trusted root
+  authorities; on macOS use Keychain Access and enable SSL trust for this certificate.
+
+Restart the browser if needed and reopen the dashboard at its configured hostname or address.
+The browser's certificate viewer should show a valid chain to the CA you imported, without a
+TLS warning. A name-mismatch warning still needs the correct dashboard hostname or address.
+Trusting a CA lets it authenticate other sites too; import only the verified CA on devices you
+control, and remove that trust when you retire the installation.
+
+The root CA persists in `caddy_data`; ordinary leaf renewals keep it. Uninstalling deletes that
+volume, so a fresh installation requires a new export, fingerprint check and trust decision.
+The appliance uses its own certificate; this procedure is for DIY installs.
 
 ### Co-hosting on a shared server
 

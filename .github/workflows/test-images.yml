@@ -25,6 +25,7 @@ on:
     paths:
       - "tests/netwatch/**"
       - "tests/integration/tor-client/**"
+      - "dashboard/tests/browser/**"
       - "tests/runner/**"
       - ".github/workflows/test-images.yml"
       - ".config/trivyignore"
@@ -55,6 +56,9 @@ jobs:
             build_args: ""
           - service: tor-client
             context: tests/integration/tor-client
+            build_args: ""
+          - service: dashboard-ca
+            context: dashboard/tests/browser
             build_args: ""
           # The local test-runner image (#2078). It reaches no user and no bench, but it is where a
           # contributor's verdict comes from, so it rots the same way and gets the same gate.
