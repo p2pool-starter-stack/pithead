@@ -173,6 +173,13 @@ candidates has lost its `fetch-depth: 0`, which is a misconfigured job rather th
 fails there instead of printing a note into a log nobody reads (issue #1739). A local checkout without those
 refs still gets the note and still passes.
 
+Release validation uses the frozen release commit as `FILE_BUDGET_BASE_REF` for
+`make test`, so later ceiling reductions on `develop` cannot reject that commit.
+An explicit override must resolve to a commit or the gate fails. Without it, PR
+validation still compares against `origin/develop`, then local `develop`.
+The per-file ceilings, 800-line hard ceiling and first-appearance checks run in
+both modes. `make lint-file-budget` exercises both with isolated Git fixtures.
+
 Generated code, vendored files, data/config, and prose docs are exempt by glob — see `is_exempt()` in the
 script. The generated, git-ignored `pithead` is outside the tracked-file budget; the gate governs its
 `lib/pithead/*.sh` sources.
