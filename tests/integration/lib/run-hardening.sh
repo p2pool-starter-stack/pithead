@@ -1,7 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# shellcheck source=tests/integration/lib/hardening-onion-state.sh
-source "${BASH_SOURCE[0]%/*}/hardening-onion-state.sh" || return $?
 _set_env_token() { # _set_env_token <value>
     rx "(
         umask 077
@@ -182,7 +180,7 @@ run_hardening() {
             if _onion_reachable_external "" "" required; then
                 assert_rc "dashboard onion refuses an independent client without a key (#2603)" "$onion_rc" 1
             else
-                it_fail "dashboard onion refuses an independent client without a key (#2603)" "authorized control could not reach the onion after the keyless probe"
+                it_fail "dashboard onion refuses an independent client without a key (#2603)" "authorized control failed after the keyless probe (exit $?; keyless exit $onion_rc)"
             fi
         else
             it_skip_leg "dashboard onion post-restart recovery (#424)" "onion not reachable from outside before the restart (live Tor network) — can't prove recovery"

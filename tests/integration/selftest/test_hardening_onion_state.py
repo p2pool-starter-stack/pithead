@@ -172,7 +172,7 @@ class OnionStateTests(unittest.TestCase):
                     self.env.rmdir()
 
     def test_shell_restore_reports_first_failed_stage_and_retains_snapshot(self):
-        stages = ["restore", "config", "apply", "health", "verify", "units", "cleanup"]
+        stages = ["restore", "apply", "health", "verify", "units", "cleanup"]
         script = r"""
 INTEGRATION_RUN_SUITE=1
 source "$1"

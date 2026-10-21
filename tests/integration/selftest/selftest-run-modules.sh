@@ -61,6 +61,8 @@ source "$ROOT/lib/run-pool-sync-fault.sh" || exit $?
 source "$ROOT/lib/run-tor-probe-fault.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-egress-status.sh
 source "$ROOT/lib/run-egress-status.sh" || exit $?
+# shellcheck source=tests/integration/lib/hardening-onion-state.sh
+source "$ROOT/lib/hardening-onion-state.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$ROOT/lib/run-hardening.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh

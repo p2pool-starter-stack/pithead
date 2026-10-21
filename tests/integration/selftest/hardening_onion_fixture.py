@@ -111,7 +111,7 @@ while IFS= read -r lib; do
 done < <(sed -n 's|^source "\$HERE/\([^"]*\)".*|\1|p' "$HERE/run.sh")
 declare -F run_hardening >/dev/null || { echo "DRIVER-ERROR: run_hardening is not defined"; exit 91; }
 IT_MODE=local IT_REMOTE_DIR="$STUB/box" IT_PITHEAD=./pithead IT_CURRENT_SCENARIO=hardening OUT_DIR="$STUB/out"
-BASELINE_CONFIG="$(cat "$STUB/box/config.json")"
+BASELINE_CONFIG="${RUN_BASELINE_CONFIG:-$(cat "$STUB/box/config.json")}"
 _SAFETY_RESTORE_ARMED=0 _SAFETY_FOREIGN_TRAP="" SAFETY_ARCHIVE="" SAFETY_RESTORE_FAILED=0
 export PATH="$STUB:$PATH"
 wait_status_ok() { return 0; }

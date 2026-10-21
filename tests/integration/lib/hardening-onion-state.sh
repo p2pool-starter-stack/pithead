@@ -17,7 +17,6 @@ hardening_onion_restore() {
     local helper="sudo -n python3 tests/integration/lib/hardening_onion_state.py" snapshot step=restore
     snapshot="$(quote_arg "$HARDENING_ONION_SNAPSHOT")"
     if rx "$helper restore $snapshot" >/dev/null 2>&1 &&
-        step=config && push_config "$BASELINE_CONFIG" &&
         step=apply && pithead apply -y >/dev/null 2>&1 &&
         step=health && wait_status_ok 240 &&
         step=verify && rx "$helper verify $snapshot" >/dev/null &&

@@ -51,13 +51,20 @@ def drive(
     apply_fail="0",
     interrupt="0",
     restore_fail="0",
+    entry_auth=True,
 ):
     with tempfile.TemporaryDirectory() as stub:
         s = Path(stub).resolve()
         box = s / "box"
         box.mkdir()
-        (box / "config.json").write_text(json.dumps(BASELINE) + "\n")
-        (box / ".env").write_text(BASE_ENV + f"TOR_DATA_DIR={box / 'tor'}\n")
+        entry = json.loads(json.dumps(BASELINE))
+        entry["dashboard"]["onion"]["client_auth"] = entry_auth
+        (box / "config.json").write_text(json.dumps(entry) + "\n")
+        entry_env = BASE_ENV.replace(
+            "DASHBOARD_ONION_CLIENT_AUTH=true",
+            f"DASHBOARD_ONION_CLIENT_AUTH={str(entry_auth).lower()}",
+        )
+        (box / ".env").write_text(entry_env + f"TOR_DATA_DIR={box / 'tor'}\n")
         (box / ".env").chmod(0o600)
         (box / "tor").mkdir()
         helper = box / "tests/integration/lib/hardening_onion_state.py"
@@ -82,6 +89,7 @@ def drive(
             "APPLY_FAIL": apply_fail,
             "INTERRUPT_PROBE": interrupt,
             "RESTORE_FAIL_ONCE": restore_fail,
+            "RUN_BASELINE_CONFIG": json.dumps(BASELINE),
         }
         r = subprocess.run(  # noqa: S603
             ["bash", "-c", DRIVER],  # noqa: S607
@@ -127,13 +135,15 @@ parser.add_argument("--results", type=Path)
 parser.add_argument("--selftest", action="store_true")
 args = parser.parse_args()
 
-base = git("merge-base", "origin/develop", "HEAD").strip()
-head = git("rev-parse", "HEAD").strip()
-changed = set(git("diff", "--name-only", base).split())
-outside = sorted(
-    f for f in changed if not f.startswith(("tests/integration/", "docs/")) and f != "CHANGELOG.md"
-)
 if not args.selftest:
+    base = git("merge-base", "origin/develop", "HEAD").strip()
+    head = git("rev-parse", "HEAD").strip()
+    changed = set(git("diff", "--name-only", base).split())
+    outside = sorted(
+        f
+        for f in changed
+        if not f.startswith(("tests/integration/", "docs/")) and f != "CHANGELOG.md"
+    )
     report(
         "C1 changes touch tests/integration/ and stay in it and docs/ (CHANGELOG.md allowed)",
         not outside and any(f.startswith("tests/integration/") for f in changed),
@@ -251,7 +261,14 @@ for label, kwargs, row in (
     run = drive(**kwargs)
     report(
         f"C10 {label} fails its row and restores baseline",
-        verdicts(run, row) == ["fail"] and run["final"] == BASELINE and run["restored_state"],
+        verdicts(run, row) == ["fail"]
+        and run["final"] == BASELINE
+        and run["restored_state"]
+        and (
+            kwargs.get("fail_on") != "3"
+            or "authorized control failed after the keyless probe (exit 1; keyless exit 1)"
+            in run["out"]
+        ),
     )
 
 run = drive(apply_fail="1")
@@ -273,6 +290,14 @@ run = drive(restore_fail="1")
 report(
     "C13 failed normal restore is reported and EXIT safely completes restoration",
     verdicts(run, RESTORED) == ["fail"] and run["restored_state"] and run["final"] == BASELINE,
+)
+
+run = drive(entry_auth=False)
+report(
+    "C14 restoration uses the captured phase-entry configuration when the run baseline differs",
+    verdicts(run, RESTORED) == ["pass"]
+    and run["restored_state"]
+    and run["final"]["dashboard"]["onion"]["client_auth"] is False,
 )
 
 if args.selftest:
