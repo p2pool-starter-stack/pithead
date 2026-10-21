@@ -40,13 +40,13 @@ async function launch(home) {
 async function certificate(origin) {
   const url = new URL(origin);
   const host = url.hostname.replace(/^\[|\]$/g, "");
+  const ca = await readFile("/root.crt");
   return new Promise((resolve, reject) => {
-    // This observes identity only; Chromium below supplies the trust verdict.
     const socket = tls.connect({
       host,
       port: Number(url.port || 443),
       servername: isIP(host) ? undefined : host,
-      rejectUnauthorized: false,
+      ca,
     });
     socket.setTimeout(10000, () => socket.destroy(new Error("TLS probe timed out")));
     socket.once("error", reject);
