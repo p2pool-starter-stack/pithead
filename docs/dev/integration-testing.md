@@ -309,7 +309,7 @@ deploy, borrow a real miner, run the matrix, and put everything back.
 tests/integration/e2e.sh <branch> [--mode targeted|check|matrix] [--workers N] [--miner HOST]
 tests/integration/e2e.sh claude/my-feature                 # default: LEAN — dashboard + sync logic
 tests/integration/e2e.sh claude/my-feature --mode check    # non-destructive smoke (pure reads)
-tests/integration/e2e.sh claude/my-feature --mode matrix   # full config sweep (opt-in, pre-release)
+tests/integration/e2e.sh claude/my-feature --mode matrix   # sweep + destructive phases; split on bench-ci
 ```
 
 `--mode check` is the exception to that mutation workflow: it provisions only the disposable branch
@@ -577,7 +577,9 @@ first, which can take upward of 20 minutes ([#2455](https://github.com/p2pool-st
 `deploy_branch` waits on that before running the harness, since the harness reads the Tari panel
 once. `check` is pure reads only. `matrix` is the opt-in full destructive
 config sweep (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
-two rig phases, all under `--safety-backup` auto-rollback) for a pre-release tier-4 gate.
+two rig phases, all under `--safety-backup` auto-rollback). This unbounded preset is not a
+single-job bench-ci proof: the scenario sweep runs first and can consume the job cap before
+the destructive phases start. Use the [split jobs](#split-matrix-proof-on-bench-ci) below.
 The rig phases are gated on a borrowed miner rather than on the mode: the release runbook mandates
 `targeted`, so keeping the write paths matrix-only left them out of the gate that decides whether a
 release ships ([#1364](https://github.com/p2pool-starter-stack/pithead/issues/1364)). `--keep` leaves it deployed for
@@ -603,11 +605,36 @@ destructive phases: it drops the mode's single scenario, adds `--safety-backup`,
 other phase unless you hand-pick one (the sweep runs first). It is the only allowlisted token
 `run.sh` never sees, because the sweep is what `run.sh` does when no scenario is pinned. A single
 scenario contradicts it and is refused. `--mode matrix` is unchanged: the sweep plus the
-destructive phases. The sweep alone takes a little over 3 hours: the develop nightly ran its
-scenarios first to last in about 3 h 10 min, and a sweep-only run capped at 180 minutes stopped inside
-its last scenario, so a sweep-only run needs a cap of at least 240 minutes. bench-ci lists a commit's selectable
-phases from the allowlist arm in `tests/integration/lib/harness-args.sh`, so `sweep` is a `phases` value at any
-commit that carries it.
+destructive phases. bench-ci lists a commit's selectable phases from the allowlist arm in
+`tests/integration/lib/harness-args.sh`, so `sweep` is a `phases` value at any commit that carries it.
+
+### Split matrix proof on bench-ci
+
+Run the sweep and destructive phases as separate `tier4-e2e` jobs on the same full commit SHA
+([#3495](https://github.com/p2pool-starter-stack/pithead/issues/3495)). The unbounded
+`mode: matrix` preset is not a supported single-job proof within the 240-minute cap.
+Do not combine `mode` with `phases` or `scenario`; bench-ci refuses that combination.
+
+1. Submit the sweep with `timeout_minutes: 240` and `options: {"phases": ["sweep"]}`.
+   It runs every scenario with a safety backup and no destructive phases. A 180-minute cap
+   stopped a sweep inside its last scenario; allow the full 240 minutes. This is a timeout
+   budget, not a guarantee that a stalled scenario will finish.
+2. Submit the destructive phases separately, also with `timeout_minutes: 240`:
+
+   ```json
+   {"phases": ["safety-backup", "lifecycle", "fault-injection", "auth-fail-closed", "hardening", "subnet", "rigforge", "rigforge-control"]}
+   ```
+
+   This is the second job's `options` object. With no mode or scenario override, the wrapper
+   retains its targeted `local-pruned-main-secure-tari` scenario instead of repeating the sweep.
+   Explicit phases replace the preset and automatic rig phases, so select both RigForge phases
+   when covering a borrowed miner. Without a miner, omit those two phases and record that gap.
+   Narrow further to the phases a PR changes when full matrix coverage is not required.
+
+Quote each job's unedited `bench-ci evidence <id>@<sha>` block in the PR. Together the jobs cover
+the sweep and selected phases; neither job alone proves the full matrix. Check the actual rows,
+phase headers, skips and restoration before claiming coverage. A timeout or skipped required
+phase leaves a proof gap; split further by named scenario or phase rather than increasing the cap.
 
 ---
 
@@ -1586,8 +1613,9 @@ the same red whether that file had been renamed or the whole spelling had draine
 
 ## Release gate (#44)
 
-The live matrix is the required, blocking pre-release gate: a release is not promoted or
-published unless it's green against the real Monero + Tari nodes. It's surfaced as `make
+The live tier-4 proof is a required, blocking pre-release gate against the real Monero + Tari
+nodes. The release recipe selects its phases; full config-matrix coverage uses the
+[split jobs](#split-matrix-proof-on-bench-ci), not one unbounded `mode: matrix` job. It's surfaced as `make
 test-integration` and wired into the `make release` pipeline's test gate. See
 [Releasing › Pre-release gate](releasing.md#pre-release-gate-54). The version tagged/published
 is the exact bundle this run validated.
