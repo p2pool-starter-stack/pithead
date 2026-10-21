@@ -826,6 +826,14 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 For one representative config:
 
 - Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels.
+  With configuration absent and project containers removed, the real CLI must refuse a wrong
+  passphrase, a 1,024-byte truncated encrypted archive and a repacked archive with a newer
+  `config_version`. Each refusal must exit 1 naming its cause, leave `config.json`, `.env` and
+  Caddyfile absent, preserve every Tor file and the dashboard database bytes, and create no
+  project container. Before `up`, the successful restore must match every archived file and
+  every SQLite table count, with passing `integrity_check` and `foreign_key_check`.
+  `selftest-restore-state.sh` checks the refusal oracles and runs the archive/database fixtures,
+  including accepted bad archives, changed files, corrupt databases and lost table rows.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
   container StartedAt and RestartCount), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).
   On the appliance, reset recovery first waits up to 300 seconds for a running wizard and

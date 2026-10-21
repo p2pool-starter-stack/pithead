@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/../lib.sh"
+# shellcheck disable=SC2034
+INTEGRATION_RUN_SUITE=1
+source "$HERE/../lib/run-reset-restore.sh"
+python3 "$HERE/test_restore_state_probe.py" || exit 1
+
+drive_refusals() (
+    local fault="$1"
+    # shellcheck disable=SC2034
+    IT_FAIL=0 IT_PASS=0 IT_PITHEAD=./pithead
+    OUT_DIR=$(mktemp -d) || exit 1
+    trap 'rm -rf "$OUT_DIR"' EXIT
+    reset_restore_nochange_snapshot() {
+        local count
+        count=$(cat "$OUT_DIR/count" 2>/dev/null || printf 0)
+        echo $((count + 1)) >"$OUT_DIR/count"
+        [ "$fault" != snapshot-error ] || return 1
+        if [ "$fault" = changed ] && [ "$count" -gt 0 ]; then printf changed; else printf original; fi
+    }
+    rx() {
+        local kind
+        if [ "$fault" = wrong-cause ]; then
+            printf "unrelated refusal"
+            return 1
+        fi
+        case "$1" in
+        *wrong\ reset\ recovery*)
+            kind=wrong-passphrase
+            printf 'Wrong passphrase or corrupt archive'
+            ;;
+        *head\ -c\ 1024*)
+            kind=truncated
+            printf 'Archive fails integrity verification'
+            ;;
+        *future.tar.gz.enc*)
+            kind=newer-config
+            printf "This backup's configuration was written by pithead"
+            ;;
+        *) return 127 ;;
+        esac
+        [ "$fault" != "$kind-accepted" ] || return 0
+        [ "$fault" != "$kind-exit" ] || return 2
+        return 1
+    }
+    reset_restore_refusals fixture.enc >/dev/null 2>&1
+    printf '%s|%s|%s' "$?" "$IT_FAIL" "$IT_PASS"
+)
+assert_eq "all three real restore refusal rows are counted" "$(drive_refusals none)" '0|0|3'
+for fault in wrong-passphrase-accepted truncated-accepted newer-config-accepted wrong-passphrase-exit truncated-exit newer-config-exit changed snapshot-error wrong-cause; do
+    verdict=$(drive_refusals "$fault")
+    if [[ "$verdict" == 1\|1\|* ]]; then
+        it_pass "restore refusal oracle rejects $fault"
+    else
+        it_fail "restore refusal oracle rejects $fault" "$verdict"
+    fi
+done
+for fault in none containers census probe empty; do
+    verdict=$(
+        reset_restore_state_probe() {
+            [ "$fault" != probe ] || return 1
+            [ "$fault" = empty ] || printf fingerprint
+        }
+        rx() {
+            [ "$fault" != census ] || return 1
+            [ "$fault" != containers ] || printf container
+        }
+        reset_restore_nochange_snapshot fixture.enc >/dev/null
+        printf %s "$?"
+    )
+    expected=1
+    [ "$fault" != none ] || expected=0
+    assert_eq "unchanged snapshot rejects $fault failures" "$verdict" "$expected"
+done
+[ "$IT_FAIL" -eq 0 ]

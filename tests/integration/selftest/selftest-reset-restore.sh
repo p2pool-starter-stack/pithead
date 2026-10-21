@@ -31,7 +31,12 @@ drive_reset_restore() (
         return 0
     }
     curl() { [ "$fault" != page ] && printf 'Pithead setup'; }
-    reset_restore_wait_reboot() { :; } # reboot transport has its own controls below
+    reset_restore_wait_reboot() { :; }
+    reset_restore_state_probe() {
+        [ "$fault" != verification ] || return 1
+        [ "$1" = verify ] && [ -e "$OUT_DIR/restored" ] && [ ! -e "$OUT_DIR/up" ]
+    }
+    reset_restore_refusals() { [ "$fault" != refusals ]; }
 
     rx() {
         case "$1" in
@@ -128,7 +133,10 @@ drive_reset_restore() (
             ;;
         esac
     }
-    pithead() { [ "$fault:$1" != down:down ] && [ "$fault:$1" != up:up ]; }
+    pithead() {
+        [ "$1" != up ] || touch "$OUT_DIR/up"
+        [ "$fault:$1" != down:down ] && [ "$fault:$1" != up:up ]
+    }
     upgrade_secret_fingerprints() {
         if [ "$fault" = secrets ] && [ -e "$OUT_DIR/restored" ]; then printf changed; else printf original; fi
     }
@@ -145,11 +153,11 @@ drive_reset_restore() (
 )
 PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
 trap 'rm -f "$PROBE_COPY"' EXIT
-assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|13'
-assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|14'
-assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|13'
-assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|13'
-assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|13'
+assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|14'
+assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|15'
+assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|14'
+assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|14'
+assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|14'
 for fault in page wizard restart started id starting body zero curl code noauth wizard-start channel env-HOST_PORT env-DASHBOARD_SECURE env-DASHBOARD_AUTH_HASH_B64; do
     verdict=$(drive_reset_restore "$fault" appliance)
     if [[ "$verdict" == 1\|1\|* ]]; then
@@ -173,7 +181,7 @@ run_probe() { # <restore-exit> <restore-writes-config:0|1> <running-before> <run
     local d
     d=$(mktemp -d -t reset-restore-probe-run.XXXXXX) || return 1
     mkdir "$d/bin" "$d/work"
-    printf '%s\n' '#!/bin/bash' 'n=$(cat "$PROBE_DIR/n")' 'for _ in $(seq "$n"); do echo c; done' 'echo 1 >"$PROBE_DIR/seen"' >"$d/bin/docker"
+    printf '%s\n' '#!/bin/bash' 'n=$(cat "$PROBE_DIR/n")' 'for ((i=0; i<n; i++)); do echo c; done' 'echo 1 >"$PROBE_DIR/seen"' >"$d/bin/docker"
     printf '%s\n' '#!/bin/bash' 'echo "[ERROR] Restore could not verify that the stack is stopped"' '[ "$WRITES" != 1 ] || echo x >config.json' 'echo "$AFTER" >"$PROBE_DIR/n"' 'exit "$RESTORE_RC"' >"$d/work/pithead"
     chmod +x "$d/bin/docker" "$d/work/pithead"
     echo "$3" >"$d/n"
@@ -223,7 +231,7 @@ fi
     rx() { printf boot-a; }
     reset_restore_wait_reboot boot-a 60
 ) && it_fail "reboot wait gives up when the boot id never changes" "returned success" || it_pass "reboot wait gives up when the boot id never changes"
-for fault in snapshot backup archive active reset absent down prompt restore up health config secrets cleanup warning old-warning residue census; do
+for fault in snapshot backup archive active reset absent down prompt restore up health config secrets cleanup warning old-warning residue census verification; do
     verdict=$(drive_reset_restore "$fault")
     if [[ "$verdict" == 1\|1\|* ]]; then
         it_pass "reset recovery refuses $fault failure"
