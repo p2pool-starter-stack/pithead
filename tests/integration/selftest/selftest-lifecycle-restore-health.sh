@@ -224,7 +224,7 @@ fi
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1 _gated$/,/^    fi # fault-injection gate$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"
 
-drive_gate() { # <lifecycle-rc> [rig-control-ok] [preview-rc] -> fault-ran
+drive_gate() {
     (
         # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
         RUN_LIFECYCLE=1 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
