@@ -1,7 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# shellcheck source=tests/integration/lib/run-browser-bundle.sh
-source "$(dirname "${BASH_SOURCE[0]}")/run-browser-bundle.sh" || exit $?
 _set_env_token() { # _set_env_token <value>
     rx "(
         umask 077

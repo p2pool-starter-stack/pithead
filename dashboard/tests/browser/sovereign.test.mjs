@@ -99,7 +99,16 @@ for (const theme of ["light", "dark", "auto"]) {
         path: info.outputPath(`shell-${theme}-${width}.png`),
         fullPage: true,
       });
+      await page.getByRole("button", { name: "Advanced", exact: true }).click();
+      await drawer.getByRole("link", { name: "Appearance", exact: true }).click();
+      await page.screenshot({
+        path: info.outputPath(`drawer-${theme}-${width}.png`),
+        fullPage: true,
+      });
+      await page.keyboard.press("Escape");
     }
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await drawer.getByRole("link", { name: "Appearance", exact: true }).click();
     const failures = await page.evaluate(() => {
       const rgb = (text) =>
         text
@@ -112,9 +121,16 @@ for (const theme of ["light", "dark", "auto"]) {
           .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
           .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
       const bad = [];
-      for (const element of document.querySelectorAll("a, button, span, p, small, h1, h2, h3")) {
-        if (!element.getClientRects().length || !element.textContent.trim()) continue;
-        const style = getComputedStyle(element);
+      for (const element of document.querySelectorAll(
+        "a, button, input, select, textarea, label, summary, span, p, small, h1, h2, h3",
+      )) {
+        if (
+          !element.getClientRects().length ||
+          !(element.textContent.trim() || element.getAttribute("placeholder"))
+        )
+          continue;
+        const placeholder = element.matches("input[placeholder]") && !element.value;
+        const style = getComputedStyle(element, placeholder ? "::placeholder" : null);
         let parent = element;
         while (
           parent.parentElement &&
