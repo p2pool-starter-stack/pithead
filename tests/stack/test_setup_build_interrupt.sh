@@ -62,7 +62,7 @@ assert_contains "Tor build retry records deployment completion" "$(cat "$V/.env"
 assert_eq "Tor build retry retains configuration bytes" "$(cmp -s "$V/config.before" "$V/config.json" && echo yes)" yes
 assert_eq "Tor build retry retains owner-only configuration" "$(file_mode "$V/config.json")" 600
 if grep -Eq ' (restart|prune|rm)( |$)' "$DOCKER_LOG" ||
-    grep -Eq '(systemctl (restart|stop)|service docker (restart|stop))' "$SUDO_LOG"; then
+    grep -Eq '(systemctl (.* )?(restart|stop) (.* )?(docker|containerd)(\.service)?( |$)|service (docker|containerd) (restart|stop))' "$SUDO_LOG"; then
     bad "Tor build recovery never restarts Docker or deletes containers/cache" 'destructive Docker call'
 else
     ok "Tor build recovery never restarts Docker or deletes containers/cache"
