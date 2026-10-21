@@ -188,7 +188,7 @@ reset_restore_state_command() {
     [ "$1" != future ] || privilege=""
     payload=$(base64 <"${BASH_SOURCE[0]%/*}/restore-state-probe.py" | tr -d '\n') || return 1
     for argument in "$@"; do args+=" $(quote_arg "$argument")"; done
-    printf 'printf %%s %s | base64 -d | %s env TMPDIR="${TMPDIR:-$HOME}" python3 -%s' "$(quote_arg "$payload")" "$privilege" "$args"
+    printf 'printf %%s %s | base64 -d | %s env TMPDIR="${TMPDIR:-$PWD}" python3 -%s' "$(quote_arg "$payload")" "$privilege" "$args"
 }
 
 reset_restore_state_probe() {
@@ -218,14 +218,14 @@ reset_restore_refusals() {
             expected="Wrong passphrase or corrupt archive"
             ;;
         truncated)
-            command="scratch=\$(mktemp -d \"\${TMPDIR:-\$HOME}/restore-refusal.XXXXXX\") || exit 1; trap 'rm -rf -- \"\$scratch\"' EXIT;
+            command="scratch=\$(mktemp -d \"\${TMPDIR:-\$PWD}/restore-refusal.XXXXXX\") || exit 1; trap 'rm -rf -- \"\$scratch\"' EXIT;
                 head -c 1024 $(quote_arg "$archive") >\"\$scratch/truncated.tar.gz.enc\" &&
                 PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y \"\$scratch/truncated.tar.gz.enc\""
             expected="Archive fails integrity verification"
             ;;
         newer-config)
             future=$(reset_restore_state_command future "$archive") || return 1
-            command="scratch=\$(mktemp -d \"\${TMPDIR:-\$HOME}/restore-refusal.XXXXXX\") || exit 1; trap 'rm -rf -- \"\$scratch\"' EXIT;
+            command="scratch=\$(mktemp -d \"\${TMPDIR:-\$PWD}/restore-refusal.XXXXXX\") || exit 1; trap 'rm -rf -- \"\$scratch\"' EXIT;
                 $future \"\$scratch/future.tar.gz.enc\" &&
                 PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y \"\$scratch/future.tar.gz.enc\""
             expected="This backup's configuration was written by pithead"
