@@ -36,3 +36,10 @@ test("Advanced keeps a direct accessible name across section changes", () => {
   assert.match(out, /<dialog class="advanced" aria-label="Advanced"/);
   assert.doesNotMatch(out, /aria-labelledby=/);
 });
+
+test("Appearance has an exact Theme label independent of option text", () => {
+  const out = renderToString(html`<${AdvancedDrawer} section="appearance" theme="auto" />`);
+  assert.match(out, /<label for="sovereign-theme">Theme<\/label>/);
+  assert.match(out, /<select id="sovereign-theme" value="auto"/);
+  assert.match(out, /Follow operating system/);
+});

@@ -84,6 +84,7 @@ for (const theme of ["light", "dark", "auto"]) {
     await expect(drawer).toBeVisible();
     await drawer.getByRole("link", { name: "Appearance", exact: true }).click();
     await expect(drawer.getByRole("heading", { name: "Appearance", exact: true })).toBeFocused();
+    await expect(drawer.getByRole("combobox", { name: "Theme", exact: true })).toBeVisible();
     await drawer.getByLabel("Theme", { exact: true }).selectOption(theme);
     await page.keyboard.press("Escape");
     await expect(drawer).not.toBeVisible();

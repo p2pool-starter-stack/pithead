@@ -55,9 +55,9 @@ export class AdvancedDrawer extends Component {
         <h3 tabindex="-1">${SECTIONS[section] || "Advanced"}</h3>
         ${
           section === "appearance"
-            ? html`<label>Theme <select value=${theme} onChange=${(event) => onTheme(event.target.value)}>
+            ? html`<label for="sovereign-theme">Theme</label><select id="sovereign-theme" value=${theme} onChange=${(event) => onTheme(event.target.value)}>
               <option value="auto">Follow operating system</option><option value="light">Light</option><option value="dark">Dark</option>
-            </select></label>`
+            </select>`
             : null
         }
         ${[...this.visited]
