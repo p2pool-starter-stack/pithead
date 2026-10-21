@@ -118,6 +118,10 @@ run_egress_socks_probe 192.0.2.25:9050 >"$TD/unavailable.log" 2>&1 || probe_rc=$
 assert_eq "diagnostic write failure preserves target/transport exit" "$probe_rc" 255
 assert_contains "transport ambiguity is explicit" "$(cat "$TD/unavailable.log")" 'class=target-or-ssh-failed'
 assert_contains "unavailable artifact is reported" "$(cat "$TD/unavailable.log")" 'artifact unavailable'
+assert_contains "original artifact failure keeps its label" "$(cat "$TD/unavailable.log")" \
+    'original-socks-probe sequence=1 artifact unavailable; original status retained in transcript'
+assert_contains "retry artifact failure keeps its label" "$(cat "$TD/unavailable.log")" \
+    'retry-socks-probe sequence=2 artifact unavailable; original status retained in transcript'
 if grep -qF "$TD" "$TD/unavailable.log"; then
     it_fail "artifact errors do not expose filesystem paths" "raw path in transcript"
 else

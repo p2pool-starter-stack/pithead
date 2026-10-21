@@ -1,35 +1,10 @@
 #!/usr/bin/env bash
-# Tor-only egress ENFORCEMENT backstop for the provisioned appliance (#855/#2059). Sourced by
-# tests/os/run.sh; --self-test drives the leg against a stubbed guest.
-#
-# Why this lives in its own file rather than inline at the tail of the provision phase (#2059):
-# it is the only tier-4 assertion in the repo that proves the KERNEL enforces Tor-only egress, and
-# it used to sit ~55 lines from the end of `_phase_provision_initial`, downstream of a dozen
-# `return 1` aborts on unrelated liveness legs (the image build, SSH, the wizard token, the
-# credentials handoff, caddy answering on :443). Any red in any of those retired the product's
-# stated security property SILENTLY while the battery still reported on everything it did reach —
-# which is how a fail-open appliance shipped green through every battery to date. The caller now
-# runs this on every path and it says out loud when it could not be exercised.
-#
-# Tier 1 (tests/stack/test-tor-network.sh) proves the RENDERED ruleset; tier 4 is the only tier
-# that can show the kernel acting on it. There are two backends behind one allow-set
-# (lib/pithead/02-tor-egress.sh): iptables/DOCKER-USER on the DIY Docker channel and an
-# independent `inet pithead_egress` nftables table on the appliance's podman/netavark channel.
-# The e2e channel runs Docker, so this leg is the netavark backend's only live coverage anywhere.
+# Runs after unrelated provision failures so Tor-only egress enforcement is never silently skipped.
 
 # shellcheck source=tests/integration/lib/tor-control-dial.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../integration/lib" && pwd)/tor-control-dial.sh"
 
-# Diagnostic probes run when an enforcement assertion FAILS. Pure (no I/O) so it self-tests, and
-# single-sourced so the capture set cannot drift from what #2059 asked for.
-#
-# The leading question on a red is whether the nft table is ABSENT (the apply silently failed, or
-# resolved no bridge) or PRESENT but INEFFECTIVE (wrong interface, or netavark's priority-0 accept
-# winning anyway). Those need opposite fixes and the dial alone cannot tell them apart, so every
-# future red would otherwise cost another KVM cycle to diagnose — the same gap #2054 closed for the
-# restore leg. `engine` is the first row on purpose: apply_tor_egress_firewall branches on
-# container_engine, and a `docker` verdict on the appliance sends the rules into the orphaned
-# DOCKER-USER chain, which is failure mode #1 for this defect.
+# Distinguishes absent rules from ineffective rules, starting with the engine that selects the backend.
 egress_diag_probes() { # -> "<label>\t<remote command>" per line
     printf '%s\t%s\n' \
         'engine' 'grep -h "^PITHEAD_ENGINE=" /etc/environment 2>/dev/null; cd /data/pithead 2>/dev/null && bash -c "source ./pithead && container_engine" 2>/dev/null' \
@@ -46,19 +21,11 @@ egress_has_global_v6() { # <if_inet6 contents>
     awk '$4 == "00" { found = 1 } END { exit !found }' <<<"$1"
 }
 
-# Run every probe and print a bounded one-line excerpt each. Bounded on purpose: the harness
-# contract (CLAUDE.md) is that raw dumps never reach model context — this is a signpost telling the
-# next run which half of the fork it is on, not the evidence itself. The full guest is still there
-# under `--keep` for anyone who needs the untruncated ruleset.
+# Bounds excerpts because the harness forbids raw dumps in model context.
 _egress_capture_diagnostics() {
     local label cmd out ran=0
     info "  egress diagnostics (#2059) — is the table ABSENT, or PRESENT but ineffective?"
-    # `</dev/null` on the _ssh call is load-bearing, not tidiness. `_ssh` runs ssh without -n, and
-    # ssh reads stdin — inside a `while read` loop that stdin is the PROBE LIST, so the first probe
-    # swallowed every remaining row and the loop ended after one line. MEASURED on the 2026-09-11
-    # battery: the row printed `engine:` and nothing else, so the nft-table dump that distinguishes
-    # "table absent" from "table present but ineffective" never ran — the exact question the
-    # diagnostics exist to answer, on the exact run they were built for.
+    # Redirects stdin so SSH cannot consume the remaining probe list.
     while IFS=$'\t' read -r label cmd; do
         [ -n "$label" ] || continue
         out=$(_ssh "$cmd" </dev/null 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
@@ -73,14 +40,7 @@ _egress_capture_diagnostics() {
         info "    (INCOMPLETE: $ran of $want probes ran — treat the above as partial evidence)"
 }
 
-# The enforcement leg. Never returns non-zero in a way the caller acts on — it reports through
-# ok/bad like every other assertion.
-#
-# <phase-rc> is the provision body's result so far. It decides only how an UNEXERCISED backstop is
-# reported: on an already-red phase a "could not run" line is an `info` (the battery verdict is
-# already FAIL, nothing is being hidden), but on a GREEN phase it is a `bad` — a passing battery
-# must never quietly omit the product's stated security property. That asymmetry is the whole point
-# of #2059.
+# An unexercised backstop fails an otherwise-green phase so missing enforcement cannot pass.
 phase_provision_egress_backstop() { # <phase-rc>
     local phase_rc="${1:-0}"
     local unexercised=bad

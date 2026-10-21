@@ -38,7 +38,7 @@ _egress_socks_attempt() { # <socks host:port> <attempt>; sets EGRESS_PROBE_CLASS
         printf '%s\n' "$record" >"$OUT_DIR/tor-egress-probes/probe-$sequence.txt"; } 2>/dev/null; then
         :
     else
-        it_step "original-socks-probe sequence=$sequence artifact unavailable; original status retained in transcript"
+        it_step "$label sequence=$sequence artifact unavailable; original status retained in transcript"
     fi
     return "$probe_rc"
 }
