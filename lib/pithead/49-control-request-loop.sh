@@ -87,7 +87,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # writes the file, so re-validate it against the basic_auth username charset.
     printf '%s' "$actor" | grep -qE '^[A-Za-z0-9._@-]{0,64}$' || actor="untrusted"
     action=$(jq -r '.action // ""' "$file")
-    if [ "$(env_get DASHBOARD_CONTROL_ENABLED)" != true ]; then
+    if [ "${CONTROL_HEAL_ONLY:-false}" = true ]; then
         if [ "$(env_get TOR_AUTO_HEAL)" != true ] || [ "$actor" != tor-heal ] ||
             ! [[ "$action" = tor-newnym || "$action" = tor-history || "$action" = tor-recover ]]; then
             control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"only Tor healing is enabled",ts:(now|floor)}')"
@@ -278,7 +278,7 @@ control_run_pending() {
     [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||
         [ "$(env_get TOR_AUTO_HEAL)" == "true" ] ||
         error "Neither dashboard control nor Tor auto-heal is enabled."
-    local cdir
+    local cdir CONTROL_HEAL_ONLY
     cdir=$(env_get CONTROL_DIR)
     [ -n "$cdir" ] || cdir="$PWD/data/control"
     mkdir -p "$cdir/staged" "$cdir/results" "$cdir/audit"
@@ -355,6 +355,8 @@ control_run_pending() {
             rm -f "$snapshot" "$claim"
             continue
         fi
+        CONTROL_HEAL_ONLY=true
+        [ "$(env_get DASHBOARD_CONTROL_ENABLED)" != true ] || CONTROL_HEAL_ONLY=false
         control_process_request "$snapshot" "$cdir"
         rm -f "$snapshot"
         rm -f "$claim"
