@@ -200,6 +200,8 @@ jq '.notifications.webhooks=[]' "$C/config.json" >"$C/config.json.tmp" &&
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_eq "empty webhook trigger baseline is applied" \
     "$(jq -c '.notifications.webhooks' "$C/config.json")" '[]'
+mixed_env_before=$(sha256sum "$C/.env" | awk '{print $1}')
+mixed_docker_before=$(grep -Ec " (up|down|restart|stop|start|rm)( |$)" "$CTRL_LOG" || true)
 ENERGY_UUID="38383838-3388-4388-8388-383838383838"
 MIXED_UUID="48484848-3388-4488-8488-484848484848"
 jq -n --slurpfile live "$C/config.json" --arg id "$ENERGY_UUID" \
@@ -239,6 +241,25 @@ previewed)
 esac
 assert_eq "mixed preview leaves config untouched before commit" \
     "$(sha256sum "$C/config.json" | awk '{print $1}')" "$mixed_before"
+assert_eq "mixed null webhook preview is rejected (#3388)" "$mixed_status" "rejected"
+assert_contains "null webhook refusal names its index" "$mixed_result" "notifications.webhooks[0]"
+jq -n --arg id "$MIXED_UUID" \
+    '{id:$id,action:"commit",actor:"admin",confirm:"APPLY"}' >"$REQS/$MIXED_UUID.json"
+run_pending >/dev/null
+assert_eq "a rejected mixed preview cannot be committed" \
+    "$(jq -r '.status' "$RESULTS/$MIXED_UUID.json")" "rejected"
+for HOOKS in 'false' '{}' '0' '[null]' '[false]' '[1]' '[{}]' '[[]]' '["https://example.com/private-token",null]'; do
+    assert_contains "non-string webhook members are refused ($HOOKS)" \
+        "$(webhook_preview "$HOOKS")" "rejected: "
+done
+assert_not_contains "webhook type errors withhold URL credentials" \
+    "$(cat "$RESULTS/$GUARD_UUID.json")" "private-token"
+assert_eq "rejected webhook edits leave config unchanged" \
+    "$(sha256sum "$C/config.json" | awk '{print $1}')" "$mixed_before"
+assert_eq "rejected webhook edits leave rendered env unchanged" \
+    "$(sha256sum "$C/.env" | awk '{print $1}')" "$mixed_env_before"
+assert_eq "webhook previews and refusals never mutate containers" \
+    "$(grep -Ec " (up|down|restart|stop|start|rm)( |$)" "$CTRL_LOG" || true)" "$mixed_docker_before"
 rm -f "$C/bin/getent" "$C/bin/ip"
 
 # A DNS name can change after the safety check. Resolve safely for both host checks, then return

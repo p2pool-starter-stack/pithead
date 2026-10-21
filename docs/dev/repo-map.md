@@ -46,6 +46,11 @@ Raw config checks live in `lib/pithead/22a-config-document.sh` and
 in `dashboard/mining_dashboard/web/static/config/jsondocument.mjs`.
 Both reject duplicate members before normalization and placeholders before staging or masking.
 
+Webhook member validation is shared by CLI apply and control previews in
+`lib/pithead/27-defaults-and-config-validation.sh`. Its RC trigger is in
+`tests/stack/control/test-control-secret-and-dial-guards.sh`;
+`tests/integration/lib/run-webhook-validation.sh` exercises the real control spool in hardening.
+
 Release-note extraction is covered by `tests/stack/release/test-release-notes.sh`;
 it selects the changelog section matching the release tag, including known issues.
 

@@ -1,6 +1,7 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
     validate_config_document
+    validate_webhook_config
 
     # Central .env line-injection guard (#33 hardening). No config string value may carry a
     # control character (newline, CR, tab, …). A raw newline in a value that renders into .env
