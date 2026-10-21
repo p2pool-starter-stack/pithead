@@ -76,7 +76,7 @@ for fault in none reboot-1 reboot-2 commit-1 commit-2; do
         bad() { failures=$((failures + 1)); }
         if [ "$fault" = none ]; then
             _slot_invariant_reboot fixture
-            [ "$reboots:$commits:$passes:$failures" = 2:2:1:0 ]
+            [ "$reboots,$commits,$passes,$failures" = 2,2,1,0 ]
         else
             ! _slot_invariant_reboot fixture
             [ "$passes:$failures" = 0:1 ]

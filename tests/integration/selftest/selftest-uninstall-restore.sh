@@ -6,6 +6,7 @@ source "$HERE/../lib.sh"
 INTEGRATION_RUN_SUITE=1
 source "$HERE/../lib/run-reset-restore.sh"
 source "$HERE/../lib/run-uninstall-restore.sh"
+echo "== DIY uninstall and encrypted recovery failure controls =="
 
 for fault in none backup uninstall restore residue config secrets old-container census cleanup health; do
     (
