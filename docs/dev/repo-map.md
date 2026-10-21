@@ -269,6 +269,8 @@ through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
 to prove saturated-history recovery and the disabled control with production timers.
+The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
+run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
 run by the Tor image build job. It verifies either startup repair of all 1000 abandoned
 observations and an empty persisted history, or the legacy warning and shutdown-write

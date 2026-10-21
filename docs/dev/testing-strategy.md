@@ -30,6 +30,16 @@ that reads it depends on the `pithead` build target, while the live E2E provisio
 cleaning its source checkout. A clean clone therefore exercises the same generated CLI as a local
 developer; release bundles and appliance images receive a pre-generated copy.
 
+The image CI matrix runs `tests/stack/standalone/test_image_permissions.sh` for Tor, Monero,
+P2Pool, XMRig Proxy and the dashboard. It creates a checkout under `umask 077`, builds the image,
+then checks runtime script and template access as the image's non-root user with networking
+disabled. The dashboard probe also checks package file readability, directory traversal and
+the installed Python environment. The lifecycle phase repeats these builds in isolated image
+tags without replacing the deployed services. It first requires Tor at the reported
+`c59e5ad6fc7c1fe82eb7558a2f962c18c1266299` revision to fail on its unreadable template.
+Its per-service logs retain the source SHA and permission verdict; the deploying tier-4 job
+separately proves normal service startup.
+
 Monero's image build uses `build/monero/download.sh` to fetch the versioned CLI archive from
 `downloads.getmonero.org`, then `dlsrc.getmonero.org` after a transport failure. Each source gets
 one attempt with a 20-second connection limit inside a 300-second total transfer deadline:

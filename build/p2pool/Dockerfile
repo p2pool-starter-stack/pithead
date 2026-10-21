@@ -21,11 +21,11 @@ RUN wget -O p2pool.tar.gz https://github.com/SChernykh/p2pool/releases/download/
 
 # Copy the wrapper script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
 
 # Stratum-port liveness healthcheck (#90)
 COPY healthcheck.sh /usr/local/bin/p2pool-healthcheck.sh
-RUN chmod +x /usr/local/bin/p2pool-healthcheck.sh
+RUN chmod 755 /usr/local/bin/p2pool-healthcheck.sh
 
 # Run non-root (#255). Reuse ubuntu:24.04's built-in 'ubuntu' user (uid 1000) and keep p2pool's data
 # under that user's home; pithead chowns the ${P2POOL_DATA_DIR} bind-mount (mapped to /home/ubuntu)
