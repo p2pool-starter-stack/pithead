@@ -44,7 +44,20 @@ _wait_new_boot() {
     touch "$scratch/new-boot"
 }
 curl() {
-    local call rig_count own_count
+    local call rig_count own_count config="" args="$*"
+    printf '%s\n' "$@" >>"$scratch/curl-argv"
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = --config ]; then
+            shift
+            [ "$1" = - ] || fail "curl config did not use stdin"
+            config=$(cat)
+        fi
+        shift
+    done
+    if [ -n "$config" ]; then
+        [ "$(printf '%s\n' "$config" | sed 's/^user = //' | jq -r .)" = "$coord_user:$coord_pass" ] || fail "curl received the wrong credential"
+        printf '%s\n' "$config" >>"$scratch/curl-config"
+    fi
     call=$(cat "$scratch/polls")
     echo "$((call + 1))" >"$scratch/polls"
     if [ ! -f "$scratch/cut" ]; then
@@ -56,7 +69,7 @@ curl() {
         return
     fi
     [ -f "$scratch/new-boot" ] || fail "share polling preceded the new boot"
-    printf '%s\n' "$*" >>"$scratch/requests"
+    printf '%s\n' "$args" >>"$scratch/requests"
     case "$scenario" in
     malformed)
         echo '{broken'
@@ -122,7 +135,7 @@ curl() {
 kvm_preflight() { return 0; }
 _provision_remote_node_coordinator() {
     [ "$VM" = rig-coord ] || fail "wrong coordinator"
-    ip=192.0.2.2 dash_user=test dash_pass=fixture
+    ip=192.0.2.2 dash_user=test dash_pass='fixturesecret42\"'
 }
 _setup_again_boot() { return 0; }
 _setup_again_session() {
@@ -137,11 +150,13 @@ run_case() {
     local scenario="$1" expected="$2" result=0
     local PASS=0 FAIL=0 expected_pass=9 expected_fail=0
     local VM=rig DISK="$scratch/rig.img" SERIAL="$scratch/rig.log" ip=192.0.2.1
-    for file in virsh teardown requests; do : >"$scratch/$file"; done
+    for file in virsh teardown requests curl-argv curl-config; do : >"$scratch/$file"; done
     rm -f "$scratch/cut" "$scratch/new-boot"
     echo 0 >"$scratch/tick"
     echo 0 >"$scratch/polls"
     rig_share_leg image node 18081 18083 '' '' '' '' "$ip" >"$scratch/verdicts" || result=$?
+    ! grep -Fq fixturesecret42 "$scratch/curl-argv" || fail "$scenario credential entered curl argv"
+    [ -s "$scratch/curl-config" ] || fail "$scenario did not authenticate through curl config"
     [ "$result" -eq "$expected" ] || fail "$scenario returned $result, expected $expected"
     [ "$VM" = rig ] && [ "$ip" = 192.0.2.1 ] &&
         [ "$DISK" = "$scratch/rig.img" ] && [ "$SERIAL" = "$scratch/rig.log" ] || fail "$scenario leaked coordinator globals"
@@ -176,4 +191,11 @@ run_case delayed 0
 for scenario in no-initial-shares boot-id-missing destroy-fails start-fails boot-fails rig-only builtin-only malformed missing-workers invalid-count negative-count fractional-count unavailable duplicate-worker; do
     run_case "$scenario" 1
 done
-printf 'selftest-rig-share-power-cut: 18 cases passed\n'
+for suffix in $'\nuser = injected' $'\ruser = injected'; do
+    : >"$scratch/curl-argv"
+    if coord_user=test coord_pass="fixturesecret42${suffix}" coord_ip=192.0.2.2 _rig_share_state >"$scratch/invalid-auth" 2>&1; then
+        fail "credential line break was accepted"
+    fi
+    [ ! -s "$scratch/curl-argv" ] || fail "credential line break reached curl"
+done
+printf 'selftest-rig-share-power-cut: 20 cases passed\n'

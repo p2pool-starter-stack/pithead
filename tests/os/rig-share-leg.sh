@@ -53,6 +53,16 @@ _rig_share_abort() {
 # accepted-counter checks below, none of which can trust jq to have produced a clean number.
 _gt0() { [ "${1:-0}" -gt 0 ] 2>/dev/null; }
 
+_rig_share_state() {
+    local auth="${coord_user}:${coord_pass}"
+    case "$auth" in *$'\n'* | *$'\r'*) return 1 ;; esac
+    auth=${auth//\\/\\\\}
+    auth=${auth//\"/\\\"}
+    curl --config - -fsSk -m 10 "https://$coord_ip/api/state" <<EOF
+user = "$auth"
+EOF
+}
+
 _rig_share_power_cut() {
     local VM="$coord_vm" DISK="$coord_disk" SERIAL="$coord_serial" ip="$coord_ip"
     local before deadline st counts rig_count own_count rig_base="" own_base=""
@@ -76,7 +86,7 @@ _rig_share_power_cut() {
     ok "M10 mining: the coordinator reached a new boot after an unclean power cut"
     deadline=$(($(date +%s) + RIG_SHARE_WINDOW_SEC))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        st=$(curl -fsSk -u "$coord_user:$coord_pass" -m 10 "https://$ip/api/state" 2>/dev/null) || st=""
+        st=$(_rig_share_state 2>/dev/null) || st=""
         counts=$(printf '%s' "$st" | jq -er '
             [.workers[]? | select(.name == "kvm-rig-share") | .accepted] as $rig |
             [.workers[]? | select(.name != "kvm-rig-share") | .accepted] as $own |
@@ -161,7 +171,7 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
     # the appliance channel has never had a built-in miner clear the sync gate before either).
     local deadline=$(($(date +%s) + RIG_SHARE_WINDOW_SEC)) st="" rig_accepted=0 other_accepted=0
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        st=$(curl -sSk -u "$coord_user:$coord_pass" -m 10 "https://$coord_ip/api/state" 2>/dev/null)
+        st=$(_rig_share_state 2>/dev/null) || st=""
         rig_accepted=$(printf '%s' "$st" | jq -r '[.workers[]? | select(.name == "kvm-rig-share") | .accepted // 0] | add // 0' 2>/dev/null)
         other_accepted=$(printf '%s' "$st" | jq -r '[.workers[]? | select(.name != "kvm-rig-share") | .accepted // 0] | add // 0' 2>/dev/null)
         _gt0 "$rig_accepted" && _gt0 "$other_accepted" && break
