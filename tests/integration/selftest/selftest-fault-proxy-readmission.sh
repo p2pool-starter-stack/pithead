@@ -72,7 +72,7 @@ drive_fault() (
     printf '%s|%s|%s|%s|%s' "$rc" "$IT_FAIL" "$(now_s)" "$stopped_ready" "$egress"
 )
 
-echo '== fault recovery waits for the proxy rather than status alone (#2590) =='
+echo "== fault recovery waits for the proxy rather than status alone (#2590) =="
 assert_eq 'recreated healthy monerod does not finish recovery while the proxy is held' \
     "$(drive_fault fault_missing delayed)" '0|0|10||'
 assert_eq 'a proxy that never returns records a binding recovery failure' \
