@@ -28,11 +28,13 @@ from mining_dashboard.helper.utils import (
 )
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics
-from mining_dashboard.service.network.egress import egress_posture_from_config, topology_from_config
+from mining_dashboard.service.network.egress import egress_posture_from_config
+from mining_dashboard.service.network.topology import topology_from_config
 from mining_dashboard.version import resolve_version
 
 # The chart/window hub lives in web/views/charts.py (#1105). views.py stays the facade: the last two
 # are re-exported unused so `server.py`'s existing `from ...web.views import` keeps resolving.
+from mining_dashboard.web.miner_connection import stratum_state
 from mining_dashboard.web.views.charts import (
     _filter_events,  # noqa: F401 — re-export for worker_detail.py
     build_chart,
@@ -304,9 +306,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     earnings["xvb_day"] = xvb_tempered_day(earnings["xvb_day"], xvb_realized)
 
     egress = egress_posture_from_config()  # per-component egress route + privacy roll-up (#170)
-    topology = (
-        topology_from_config()
-    )  # full stack wiring for the topology panel (#170); shares summary
+    topology = topology_from_config()  # full stack wiring for the panel (#170); shares summary
     badges = build_badges(
         data, metrics, mode_tok, db_healthy, wallet_change=recent_wallet_change(state_mgr)
     )
@@ -323,8 +323,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         # line. None whenever the onion is off or not yet provisioned, so the header renders
         # nothing rather than an empty row. Never carries client-auth key material.
         "dashboard_onion": dashboard_onion(),
-        # The operator-facing stratum port (#172) — feeds the "point your rigs at host:PORT" hint.
-        "stratum_port": config.STRATUM_PORT,
+        **stratum_state(),
         "version": resolve_version(),
         # {available, latest, url} | None — new-release badge (#224), self-consistency-guarded:
         # never advertise the version already running (#664).

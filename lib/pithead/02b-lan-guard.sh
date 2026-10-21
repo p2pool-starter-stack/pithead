@@ -35,7 +35,7 @@ lan_guard_mark() {
     local -a writer=()
     boot_id=$(cat "$BOOT_ID_FILE") || return 1
     mkdir -p "$dir" 2>/dev/null || sudo -n mkdir -p "$dir" || return 1
-    # Boot and privileged startup can leave a root-owned 0755 directory. Keep its metadata.
+    # Preserve directory metadata left by boot or privileged startup.
     [ -w "$dir" ] || writer=(sudo -n)
     tmp=$("${writer[@]}" mktemp "${LAN_GUARD_MARKER}.XXXXXX") || return 1
     if ! printf '%s\n' "$boot_id" | "${writer[@]}" tee "$tmp" >/dev/null ||

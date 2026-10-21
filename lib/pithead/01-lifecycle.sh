@@ -185,8 +185,7 @@ scope_keep_running() { # <compose up flags and services...>
     KEEP_SCOPED_ARGS=("${opts[@]}" --no-deps "${KEEP_SCOPED_ARGS[@]}")
 }
 
-# Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if
-# that's what Docker rejected. A successful loopback fallback returns 1; Compose failures keep their code.
+# Preserve Compose failures and report unavailable requested LAN access.
 compose_up_checked() {
     local tmp out rc _attempt
     if [ -n "${PITHEAD_KEEP_RUNNING:-}" ]; then

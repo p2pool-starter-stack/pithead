@@ -141,6 +141,8 @@ deploy_keeping_chain() {
         warn "chain: cannot read the pre-deploy snapshot; refusing upgrade"
         return 1
     }
+    # Mint isolated identities after the baseline snapshot, before any consumer starts.
+    if [ "${ROTATE_FIXTURE_REQUIRED:-0}" = 1 ]; then bootstrap_rotate_onion_fixture || return 1; fi
     for svc in $CHAIN_SERVICES; do [ -z "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 2)" ] || held="$held $svc"; done
     held="${held# }"
     [ -n "$held" ] || {

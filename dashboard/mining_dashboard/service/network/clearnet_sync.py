@@ -27,7 +27,12 @@ def tor_attested(state_dir, name) -> bool | None:
         )
         try:
             marker_stat = os.fstat(fd)
-            if not stat.S_ISREG(marker_stat.st_mode):
+            # Text, inode and ctime survive a dashboard-writable replay, so only the host claim counts.
+            if (
+                not stat.S_ISREG(marker_stat.st_mode)
+                or marker_stat.st_uid != 0
+                or marker_stat.st_mode & 0o022
+            ):
                 return None
             marker = os.read(fd, 38).decode().strip()
         finally:
