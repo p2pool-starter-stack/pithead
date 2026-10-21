@@ -70,7 +70,7 @@ assert_egress_posture() { # [tor-down|node-sync|p2pool-choice]
     case "$(egress_verdict "$out")" in
     ok) it_pass "$row" ;;
     leak) it_fail "$row" "$out" ;;
-    *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s\n' "$out" | grep -E '^ *!|\[verify-egress\]' || printf '%s' "$out" | tail -4)" ;;
+    *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s\n' "$out" | grep -E '^ *!|^\[verify-egress\] INCONCLUSIVE' || printf '%s' "$out" | tail -4)" ;;
     esac
 }
 

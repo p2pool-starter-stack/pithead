@@ -804,7 +804,9 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   SUCCEED and no `pithead-tor-egress`-tagged rule may be installed. Every other firewall leg here
   checks state, not effect: `assert_egress_posture` samples the public connections the apps *chose*
   to make, excluding the firewall's four accepted non-public ranges. A failure retains each remote
-  address and its poll count in the harness output; a clean sample still reads clean on a fail-open
+  address and its poll count in the harness output. An inconclusive sample retains every `!` app
+  diagnostic and the verifier's inconclusive verdict; unexpected verifier failures retain their last
+  four lines. A clean sample still reads clean on a fail-open
   box whose apps are all correctly Tor-configured. `verify_tor_egress_firewall` compares the
   installed ruleset to the applier's own render. Rules can
   be installed, canonical, and in a chain no forwarded packet traverses — which is exactly how the

@@ -75,29 +75,72 @@ else
     it_fail "a failed push is reported as an inconclusive (not leaked) verdict"
 fi
 
-echo "== assert_egress_posture: an INCONCLUSIVE row names the app it could not sample (#2769) =="
+echo "== assert_egress_posture: INCONCLUSIVE detail retains every unreadable app (#2754) =="
+
+for mode in local ssh; do
+    for arm in tor tor-down; do
+        if (
+            IT_MODE="$mode"
+            IT_REMOTE_DIR="/remote/pithead"
+            rx() {
+                case "$1" in
+                "cat > "*) cat >/dev/null ;;
+                "bash "*)
+                    printf '%s\n' \
+                        "[verify-egress] arm=tor stack=HEADER_SENTINEL" \
+                        "  ! wallet-rpc: could not read live IPv4 TCP sockets (poll 1/3)" \
+                        "  ✓ p2pool: 0 direct" "  ✓ monerod: 0 direct" \
+                        "  ! dashboard: not running (poll 3/3)" \
+                        "  ✓ tari: 0 direct" "  ✓ xmrig-proxy: 0 direct" \
+                        "  · tor: 2 external relay connections" \
+                        "[verify-egress] INCONCLUSIVE — a required sample was unreadable."
+                    return 2
+                    ;;
+                esac
+            }
+            IT_FAIL=0
+            out_file="$(mktemp)"
+            trap 'rm -f "$out_file"' EXIT
+            assert_egress_posture "$arm" >"$out_file" 2>&1
+            [ "$IT_FAIL" -eq 1 ] &&
+                grep -Fq "✗ egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$out_file" &&
+                grep -Fq "! wallet-rpc: could not read live IPv4 TCP sockets (poll 1/3)" "$out_file" &&
+                grep -Fq "! dashboard: not running (poll 3/3)" "$out_file" &&
+                grep -Fq "[verify-egress] INCONCLUSIVE — a required sample was unreadable." "$out_file" &&
+                ! grep -Fq HEADER_SENTINEL "$out_file"
+        ); then
+            it_pass "$mode/$arm: inconclusive detail keeps every app diagnostic and verdict without the header"
+        else
+            it_fail "$mode/$arm: inconclusive detail keeps every app diagnostic and verdict without the header"
+        fi
+    done
+done
+
+echo "== assert_egress_posture: an unexpected verifier failure retains its diagnostic tail =="
 
 if (
-    IT_MODE="local"
+    IT_MODE=local
     IT_REMOTE_DIR="/remote/pithead"
     rx() {
         case "$1" in
         "bash "*)
-            printf '%s\n' "  ! wallet-rpc: could not read live IPv4 TCP sockets (poll 1/3)" \
-                "  ✓ p2pool: 0 direct" "  ✓ monerod: 0 direct" "  ✓ tari: 0 direct" "  ✓ dashboard: 0 direct" \
-                "[verify-egress] INCONCLUSIVE — no app was observed, Tor has no relay connection, or a required sample was unreadable."
+            printf '%s\n' ignored-first ignored-second failure-third failure-fourth failure-fifth failure-last
+            return 127
             ;;
         esac
     }
     IT_FAIL=0
     out_file="$(mktemp)"
     trap 'rm -f "$out_file"' EXIT
-    assert_egress_posture tor-down >"$out_file" 2>&1
-    [ "$IT_FAIL" -eq 1 ] && grep -q "! wallet-rpc: could not read" "$out_file"
+    assert_egress_posture >"$out_file" 2>&1
+    [ "$IT_FAIL" -eq 1 ] &&
+        grep -Fq "✗ egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$out_file" &&
+        grep -Fq failure-third "$out_file" && grep -Fq failure-last "$out_file" &&
+        ! grep -Fq ignored-first "$out_file" && ! grep -Fq ignored-second "$out_file"
 ); then
-    it_pass "the INCONCLUSIVE detail keeps the verifier's ! lines"
+    it_pass "an unexpected verifier failure remains inconclusive with its last four diagnostic lines"
 else
-    it_fail "the INCONCLUSIVE detail keeps the verifier's ! lines"
+    it_fail "an unexpected verifier failure remains inconclusive with its last four diagnostic lines"
 fi
 
 [ "$IT_FAIL" -eq 0 ]
