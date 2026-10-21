@@ -6,7 +6,7 @@ ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 source "$ROOT/tests/integration/lib.sh"
 # shellcheck source=tests/integration/lib/run-source-image.sh
 source "$ROOT/tests/integration/lib/run-source-image.sh"
-OUT_DIR=$(mktemp -d "${TMPDIR:?}/image-permissions-selftest.XXXXXX")
+OUT_DIR=$(mktemp -d)
 trap 'rm -rf -- "$OUT_DIR"' EXIT
 fixture_case=healthy
 rx() {
