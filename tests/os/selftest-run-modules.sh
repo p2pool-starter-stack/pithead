@@ -156,8 +156,7 @@ candidate_diagnostic="$(
     echo "image-upgrade candidate bundle preparation lost safe failure attribution" >&2
     exit 1
 }
-signing_rc=0
-signing_diagnostic="$(
+signing_rc=0 signing_diagnostic="$(
     stage="$(mktemp -d)" && trap 'rm -rf "$stage"' EXIT
     tar() {
         case "$1" in
