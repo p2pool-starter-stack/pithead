@@ -116,7 +116,7 @@ c="$(
 assert_eq "answering 2 on a small host still runs the bundled node" "$(jq -r '.tari.mode' <<<"$c")" "local"
 assert_eq "and stores the address it was given" "$(jq -r '.tari.wallet_address' <<<"$c")" "$VALID_TARI"
 assert_eq "a Yes on a new install writes dashboard.tari_required false (#3333)" "$(jq -r '.dashboard.tari_required' <<<"$c")" "false"
-assert_eq "a No writes no dashboard.tari_required" "$(jq -r '.dashboard | has("tari_required")' <<<"$(wt_cfg roomy-declined)")" "false"
+assert_eq "a No explicitly writes dashboard.tari_required false" "$(jq -r '.dashboard.tari_required' <<<"$(wt_cfg roomy-declined)")" "false"
 
 echo "== unit: an unrecognised answer falls back to the default rather than guessing (#1916) =="
 out="$(wt_run garbage "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\nbanana\n\n\n\n\n\n\n\n")"

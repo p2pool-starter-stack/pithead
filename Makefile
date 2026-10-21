@@ -52,10 +52,8 @@ test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness logic and local transport fixtures (no live host needed)
-	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
-	# any self-test added later, and a check that never runs reads exactly like one that passed.
-	for t in tests/integration/selftest/*.sh; do bash "$$t" || exit 1; done
-	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
+	for t in tests/integration/selftest/*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
+	for t in tests/os/selftest*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
 
 test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	bash scripts/lint/test-sanitize-test-log.sh

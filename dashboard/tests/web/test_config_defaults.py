@@ -99,7 +99,7 @@ def test_no_javascript_role_is_an_explicit_miner_choice(role, enabled):
 
 
 @pytest.mark.parametrize("platform", ["diy", "appliance"])
-@pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("explicit", [False, True, "legacy"])
 async def test_sparse_browser_submit_materializes_defaults_without_replacing_answers(
     tmp_path, monkeypatch, platform, explicit
 ):
@@ -114,7 +114,9 @@ async def test_sparse_browser_submit_materializes_defaults_without_replacing_ans
     )
     tmp_path.joinpath("platform.txt").write_text(platform)
     payload = {"monero": {"wallet_address": "fixture-wallet"}}
-    if explicit:
+    if explicit == "legacy":
+        payload["xmrig_proxy"] = {"enabled": True}
+    elif explicit:
         payload.update({"local_miner": {"enabled": False}, "dashboard": {"host": "chosen"}})
     async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
         await client.post("/auth", data={"token": "fixture-token"}, allow_redirects=False)
@@ -126,4 +128,6 @@ async def test_sparse_browser_submit_materializes_defaults_without_replacing_ans
         expected = default_of(path, platform)
         if explicit and key in payload.get(block, {}):
             expected = payload[block][key]
+        if explicit == "legacy" and path == "xvb.enabled":
+            expected = True
         assert written[block][key] == expected
