@@ -264,9 +264,6 @@ stack) _run_phase stack phase_stack ;;
 tor-heal) _run_phase tor-heal phase_tor_heal ;;
 recovery) _run_phase recovery phase_recovery ;;
 all)
-    # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
-    # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
-    # refusal, the factory reset, the wedged-/data recovery and the media channel omitted (#1064).
     _run_phase boot phase_boot
     _run_phase update phase_update
     _run_phase install phase_install

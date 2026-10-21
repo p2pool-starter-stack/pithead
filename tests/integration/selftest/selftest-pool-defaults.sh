@@ -39,9 +39,9 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         run_cli_wizard_defaults() { :; }
         lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
-        run_tari_background_sync() { :; }           # Its worker evidence has a separate selftest.
-        sync_gate_marker_state() { printf absent; } # Marker reads and restoration are checked separately.
-        run_connection_announcements() { :; }       # Box-output proof is covered by its own selftest.
+        run_tari_background_sync() { :; } # Its worker evidence has a separate selftest.
+        sync_gate_marker_state() { printf absent; }
+        run_connection_announcements() { :; }
         tor_recovery_healthy_probe() { :; }
         run_reset_restore() { :; }
         run_uninstall_round_trip() { :; }
