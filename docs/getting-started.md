@@ -82,6 +82,13 @@ cd pithead && make
 Release archives already include the generated `pithead` executable. Git clones keep only its
 numbered sources, so `make` builds the executable before the first `./pithead` command.
 
+If setup is interrupted while building Tor, it returns a nonzero status and retains `config.json`.
+The next `./pithead setup` uses that configuration. A build or startup failure names the Tor phase
+and preserves Docker's error output. If Docker reports `failed to stat active key`, inspect its
+build state and daemon logs before retrying. Pithead does not restart Docker or prune its cache.
+A daemon restart affects other containers on the host; any operator recovery is separate from a
+successful unattended retry. Keep destructive recovery experiments on a disposable host.
+
 > Changed your mind later? You can convert a clone to the published images in place. See
 > [Switching a source checkout to release images](operations.md#switching-a-source-checkout-to-release-images).
 

@@ -34,6 +34,7 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh
 	bash tests/stack/standalone/test_appliance_hugepages.sh
+	bash tests/stack/standalone/test_grub_hugepages_real.sh
 	python3 tests/stack/standalone/test_clearnet_attestation.py
 
 test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-tool coverage guard (no bench, no network)
