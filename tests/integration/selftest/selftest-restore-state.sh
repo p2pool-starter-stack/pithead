@@ -5,6 +5,7 @@ source "$HERE/../lib.sh"
 # shellcheck disable=SC2034
 INTEGRATION_RUN_SUITE=1
 source "$HERE/../lib/run-reset-restore.sh"
+echo "== restore state refusal and snapshot oracles =="
 python3 "$HERE/test_restore_state_probe.py" || exit 1
 
 drive_refusals() (
