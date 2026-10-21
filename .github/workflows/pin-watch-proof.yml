@@ -32,7 +32,7 @@ jobs:
 
           config = yaml.safe_load(Path('.github/dependabot.yml').read_text())
           policy = next(item for item in config['updates'] if item['package-ecosystem'] == 'docker-compose')
-          tari = ['ghcr.io/tari-project/minotari_node', 'ghcr.io/tari-project/minotari_console_wallet']
+          tari = ['tari-project/minotari_node', 'tari-project/minotari_console_wallet']
           assert policy['groups']['tari']['patterns'] == tari
           assert set(policy['groups']['compose']['exclude-patterns']) == set(tari)
           ignored = {item['dependency-name']: set(item['update-types']) for item in policy['ignore']}
@@ -57,20 +57,39 @@ jobs:
           "$(go env GOPATH)/bin/dependabot" update -f "$RUNNER_TEMP/dependabot-job.json" \
             --local "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/dependabot-output.yml"
       - name: Require a paired Tari update
+        env:
+          PROOF_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           uv run --no-project --with pyyaml==6.0.3 python - <<'PY'
           import os
+          import re
           from pathlib import Path
           import yaml
 
+          def version(tag):
+              match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?-mainnet', tag)
+              assert match, f'Unrecognized Tari version: {tag}'
+              major, minor, patch, label, number = match.groups()
+              return (int(major), int(minor), int(patch), label is None, label or '', int(number or 0))
+
           result = yaml.safe_load(Path(os.environ['RUNNER_TEMP'], 'dependabot-output.yml').read_text())
-          tari = {'ghcr.io/tari-project/minotari_node', 'ghcr.io/tari-project/minotari_console_wallet'}
-          updates = [row['expect']['data']['dependencies'] for row in result['output']
+          tari = {'tari-project/minotari_node', 'tari-project/minotari_console_wallet'}
+          updates = [row['expect']['data'] for row in result['output']
                      if row['type'] == 'create_pull_request']
-          assert any(tari <= {dep['name'] for dep in deps} for deps in updates), 'No paired Tari update produced'
-          for deps in updates:
-              for dep in deps:
-                  if dep['name'] in tari:
-                      assert dep['version'] != dep['previous-version']
-                      print(f"{dep['name']}: {dep['previous-version']} -> {dep['version']}")
+          paired = [update for update in updates if update.get('dependency-group', {}).get('name') == 'tari'
+                    and {dep['name'] for dep in update['dependencies']} == tari]
+          assert len(paired) == 1, 'No dedicated paired Tari update produced'
+          assert paired[0]['base-commit-sha'] == os.environ['PROOF_SHA']
+          assert len({dep['version'] for dep in paired[0]['dependencies']}) == 1
+          for dep in paired[0]['dependencies']:
+              assert version(dep['version']) > version(dep['previous-version']), 'Tari update must advance the pin'
+              assert dep['requirements'] and dep['previous-requirements']
+              previous = {req['file']: req['source'] for req in dep['previous-requirements']}
+              for req in dep['requirements']:
+                  source = req['source']
+                  assert source['registry'] == 'ghcr.io'
+                  assert source['tag'] == dep['version']
+                  assert source['digest'] != previous[req['file']]['digest']
+                  assert len(source['digest']) == 64
+              print(f"{dep['name']}: {dep['previous-version']} -> {dep['version']} (tag and digest updated)")
           PY

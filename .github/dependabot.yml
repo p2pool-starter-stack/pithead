@@ -87,10 +87,10 @@ updates:
       interval: "weekly"
     groups:
       tari:
-        patterns: ["ghcr.io/tari-project/minotari_node", "ghcr.io/tari-project/minotari_console_wallet"]
+        patterns: ["tari-project/minotari_node", "tari-project/minotari_console_wallet"]
       compose:
         patterns: ["*"]
-        exclude-patterns: ["ghcr.io/tari-project/minotari_node", "ghcr.io/tari-project/minotari_console_wallet"]
+        exclude-patterns: ["tari-project/minotari_node", "tari-project/minotari_console_wallet"]
     ignore:
       - dependency-name: "caddy"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]

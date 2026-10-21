@@ -69,7 +69,9 @@ prereleases stay in the report for a separate usability decision. Commit-pinned 
 require upstream ancestry to prove that the target advances the pin.
 
 Dependabot groups Tari's node and console-wallet images together, allowing major and minor
-updates for both. Caddy and docker-socket-proxy remain limited to patch and digest updates.
+updates for both. Its dependency names are `tari-project/minotari_node` and
+`tari-project/minotari_console_wallet`; the registry is separate metadata, so group patterns omit it.
+Caddy and docker-socket-proxy remain limited to patch and digest updates.
 The dependency automation proof workflow runs the Dependabot CLI against the PR head without
 publishing PRs and requires a paired Tari update. Runtime bump PRs still need the tier-4 proof
 for the paths they change; Tari requires the gRPC contract check and merge-mining leg.
