@@ -197,14 +197,24 @@ def restore(snapshot, state, target):
 
 def verify(snapshot, state, target):
     env = Path.cwd() / ".env"
-    info = env.lstat()
-    if (
-        env.is_symlink()
-        or digest(env) != state["env"]
-        or [info.st_uid, info.st_gid] != state["owner"]
-        or stat.S_IMODE(info.st_mode) != state["mode"]
-        or identity(target) != state["identity"]
-    ):
+    try:
+        info = env.lstat()
+    except FileNotFoundError:
+        info = None
+    regular = info is not None and stat.S_ISREG(info.st_mode)
+    differences = [
+        name
+        for name, differs in (
+            ("environment-type", not regular),
+            ("environment-content", regular and digest(env) != state["env"]),
+            ("environment-owner", regular and [info.st_uid, info.st_gid] != state["owner"]),
+            ("environment-mode", regular and stat.S_IMODE(info.st_mode) != state["mode"]),
+            ("onion-identity", identity(target) != state["identity"]),
+        )
+        if differs
+    ]
+    if differences:
+        print("hardening onion baseline differs: " + ", ".join(differences), file=sys.stderr)
         raise ValueError("baseline state differs")
     state["phase"] = "verified"
     write_state(snapshot, state)

@@ -5,12 +5,13 @@ import os
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 SOURCE = Path(__file__).resolve().parents[1] / "lib/hardening_onion_state.py"
+RUN = subprocess.run
 spec = importlib.util.spec_from_file_location("onion_state", SOURCE)
 state = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(state)
@@ -136,12 +137,86 @@ class OnionStateTests(unittest.TestCase):
         metadata, target = state.load(snapshot)
         state.restore(snapshot, metadata, target)
         self.env.write_bytes(self.original + b"EXTRA=corruption\n")
-        with self.assertRaisesRegex(ValueError, "differs"):
-            state.verify(snapshot, metadata, target)
+        with redirect_stderr(io.StringIO()) as output:
+            with self.assertRaisesRegex(ValueError, "differs"):
+                state.verify(snapshot, metadata, target)
+        self.assertEqual(
+            output.getvalue(), "hardening onion baseline differs: environment-content\n"
+        )
         with patch.object(state.sys, "argv", ["state", "cleanup", str(snapshot)]):
             with self.assertRaisesRegex(ValueError, "invalid"):
                 state.main()
         self.assertTrue(snapshot.exists())
+
+    def test_missing_or_nonregular_environment_reports_type_without_reading(self):
+        snapshot = self.save()
+        metadata, target = state.load(snapshot)
+        self.env.unlink()
+        for kind in ("missing", "symlink", "directory"):
+            with self.subTest(kind=kind):
+                if kind == "symlink":
+                    self.env.symlink_to(self.root / "absent")
+                elif kind == "directory":
+                    self.env.mkdir()
+                with redirect_stderr(io.StringIO()) as output:
+                    with self.assertRaisesRegex(ValueError, "differs"):
+                        state.verify(snapshot, metadata, target)
+                self.assertEqual(
+                    output.getvalue(), "hardening onion baseline differs: environment-type\n"
+                )
+                self.assertTrue(snapshot.is_dir())
+                if self.env.is_symlink():
+                    self.env.unlink()
+                elif self.env.is_dir():
+                    self.env.rmdir()
+
+    def test_shell_restore_reports_first_failed_stage_and_retains_snapshot(self):
+        stages = ["restore", "config", "apply", "health", "verify", "units", "cleanup"]
+        script = r"""
+INTEGRATION_RUN_SUITE=1
+source "$1"
+HARDENING_ONION_SNAPSHOT=protected-copy BASELINE_CONFIG=synthetic
+quote_arg() { printf '%s' "$1"; }
+invoke() { echo "$1" >>"$EVENTS"; [ "$1" != "$FAIL" ]; }
+rx() {
+    case "$*" in
+        *' restore '*) invoke restore ;;
+        *' verify '*) invoke verify ;;
+        *' cleanup '*) invoke cleanup ;;
+        *) return 99 ;;
+    esac
+}
+push_config() { invoke config; }
+pithead() { invoke apply; }
+wait_status_ok() { invoke health; }
+_remove_control_units() { invoke units; }
+it_step() { printf '%s\n' "$*"; }
+hardening_onion_restore && exit 98
+[ "$HARDENING_ONION_SNAPSHOT" = protected-copy ] && [ "$HARDENING_ONION_RESTORING" = 0 ]
+"""
+        for index, stage in enumerate(stages):
+            with self.subTest(stage=stage):
+                events = self.root / "events"
+                events.unlink(missing_ok=True)
+                run = RUN(  # noqa: S603
+                    [
+                        "bash",
+                        "-c",
+                        script,
+                        "test",
+                        str(SOURCE.with_name("hardening-onion-state.sh")),
+                    ],  # noqa: S607
+                    env={**os.environ, "FAIL": stage, "EVENTS": str(events)},
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual(events.read_text().splitlines(), stages[: index + 1])
+                self.assertEqual(
+                    run.stdout.strip(),
+                    f"hardening onion restore failed at {stage}; protected recovery copies retained",
+                )
 
 
 if __name__ == "__main__":
