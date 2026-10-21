@@ -33,6 +33,8 @@ capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globa
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         MODE=matrix BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e SCENARIO="" RIG_LOCK_WAIT="${3:-}"
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
+        HARNESS_PHASE_ARGS=" --rotate-onion" ROTATE_FIXTURE_ATTESTATION=/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3
+        # shellcheck disable=SC2034 # read by the eval'd real run_harness
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         IT_RIG_TOKEN=tok IT_RIG_ROLLBACK_CHANGES="$1" IT_RIG_POOLS_PROBE="$2"
@@ -69,10 +71,12 @@ execute_launch() { # <stdin-file> <capture-file>
     # env -u: the launched runner must see only what the stream carried, never this shell's exports.
     CAPTURE_FILE="$2" LIB="$HERE/../lib.sh" env -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY bash -c '
         rm() { :; }; cd() { :; }
-        grep() { test -s "$CAPTURE_FILE"; }
+        grep() {
+            [ "${!#}" != /test/state ] && command grep "$@" || test -s "$CAPTURE_FILE"
+        }
         nohup() {
-            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nMONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s\nARGV[%s]\n" \
-                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$IT_MONERO_VIEW_KEY" "$IT_TARI_VIEW_KEY" "$IT_TARI_SPEND_PUBLIC_KEY" "$*" >"$CAPTURE_FILE"
+            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nMONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s\nATTEST[%s]\nARGV[%s]\n" \
+                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$IT_MONERO_VIEW_KEY" "$IT_TARI_VIEW_KEY" "$IT_TARI_SPEND_PUBLIC_KEY" "$IT_ROTATE_ONION_FIXTURE_ATTESTATION" "$*" >"$CAPTURE_FILE"
             # The harness-side consumer, fed the environment the runner received.
             # shellcheck source=tests/integration/lib.sh
             source "$LIB"
@@ -86,17 +90,19 @@ execute_launch() { # <stdin-file> <capture-file>
     ' _ "$(cat "$LAUNCH_FILE")" <"$1" >/dev/null
 }
 
-echo "== exact eight-record transport, multiline decode, environment, and argv hygiene =="
+echo "== exact nine-record transport, multiline decode, environment, and argv hygiene =="
 ROLLBACK=$'{"pools":[\n{"url":"127.0.0.1:1"}]}' POOLS='[{"url":"probe:1"}]'
 capture_launch "$ROLLBACK" "$POOLS"
-assert_eq "the producer emits exactly eight records" "$(awk 'END {print NR}' "$STDIN_FILE")" 8
-EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\n\n\n' \
-    'eyJwb29scyI6Wwp7InVybCI6IjEyNy4wLjAuMToxIn1dfQ==' 'W3sidXJsIjoicHJvYmU6MSJ9XQ==')"
+assert_eq "the producer emits exactly nine records" "$(awk 'END {print NR}' "$STDIN_FILE")" 9
+EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\n\n\n\n%s' \
+    'eyJwb29scyI6Wwp7InVybCI6IjEyNy4wLjAuMToxIn1dfQ==' 'W3sidXJsIjoicHJvYmU6MSJ9XQ==' \
+    '/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3')"
 assert_eq "record values and order are exact" "$(cat "$STDIN_FILE")" "$EXPECTED"
 execute_launch "$STDIN_FILE" "$WORK/captured"
 CAPTURED="$(cat "$WORK/captured")" ARGV="$(sed -n 's/^ARGV\[\(.*\)\]$/\1/p' "$WORK/captured")"
 assert_contains "multiline rollback input reaches the runner environment intact" "$CAPTURED" "$(printf 'ROLLBACK_BEGIN\n%s\nROLLBACK_END' "$ROLLBACK")"
 assert_contains "pools input reaches the runner environment intact" "$CAPTURED" "$(printf 'POOLS_BEGIN\n%s\nPOOLS_END' "$POOLS")"
+assert_contains "launcher-provisioned fixture path reaches the harness" "$CAPTURED" "ATTEST[/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3]"
 assert_eq "rollback input stays out of runner argv" "$(contains "$ARGV" "$ROLLBACK")" no
 assert_eq "pools input stays out of runner argv" "$(contains "$ARGV" "$POOLS")" no
 assert_contains "the default lock setting reaches the detached runner" "$CAPTURED" "RIG_LOCK_WAIT=0"
@@ -114,7 +120,8 @@ assert_contains "the log names unset view keys" "$(cat "$STEP_FILE")" \
 assert_contains "unset view keys leave the payout-confirm row skipped" "$CAPTURED" "PAYOUT_CONFIRM=skip [needs IT_MONERO_VIEW_KEY"
 MVK=mvk-0123456789abcdef TVK=tvk-fedcba9876543210 TSPK=tspk-00112233445566778899
 IT_MONERO_VIEW_KEY="$MVK" IT_TARI_VIEW_KEY="$TVK" IT_TARI_SPEND_PUBLIC_KEY="$TSPK" capture_launch "$ROLLBACK" "$POOLS"
-assert_eq "the keys are the last three records, in order" "$(tail -n 3 "$STDIN_FILE")" "$(printf '%s\n%s\n%s' "$MVK" "$TVK" "$TSPK")"
+assert_eq "the keys are records six through eight, in order" "$(sed -n '6,8p' "$STDIN_FILE")" "$(printf '%s\n%s\n%s' "$MVK" "$TVK" "$TSPK")"
+assert_eq "the fixture attestation remains the final record" "$(tail -n 1 "$STDIN_FILE")" "/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3"
 execute_launch "$STDIN_FILE" "$WORK/keys"
 KEYS="$(cat "$WORK/keys")"
 assert_contains "the wrapper's view keys reach the runner environment" "$KEYS" \
@@ -136,7 +143,7 @@ capture_launch "" ""
 execute_launch "$STDIN_FILE" "$WORK/empty"
 assert_contains "empty rollback survives as an environment entry" "$(cat "$WORK/empty")" $'ROLLBACK_BEGIN\n\nROLLBACK_END'
 assert_contains "empty pools survives as an environment entry" "$(cat "$WORK/empty")" $'POOLS_BEGIN\n\nPOOLS_END'
-printf 'tok\nactor\n0123456789abcdef0123456789abcdef\nrb\npb\nmvk\ntvk\n' >"$WORK/truncated"
+printf 'tok\nactor\n0123456789abcdef0123456789abcdef\nrb\npb\nmvk\ntvk\ntspk\n' >"$WORK/truncated"
 execute_launch "$WORK/truncated" "$WORK/missing" 2>/dev/null
 assert_eq "a truncated stream refuses to launch" "$?" 1
 base64() { return 9; }
