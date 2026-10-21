@@ -53,7 +53,7 @@ assert len(command) == 6
 for name in ("mining_dashboard", "mining_dashboard.client", "mining_dashboard.helper",
              "mining_dashboard.client.xmrig_proxy_client", "mining_dashboard.helper.http", "requests"):
     sys.modules[name] = types.ModuleType(name)
-os.environ.update(PROXY_HOST="fixture", PROXY_API_PORT="3344", PROXY_AUTH_TOKEN="fixture-token")
+os.environ.update({"PROXY_HOST": "fixture", "PROXY_API_PORT": "3344", "PROXY_AUTH_TOKEN": "fixture-token"})
 session = object()
 calls = []
 content = json.dumps({"workers": [{"name": "worker-one"}, {"name": "worker-two"}],
