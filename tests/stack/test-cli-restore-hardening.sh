@@ -101,6 +101,7 @@ assert_contains "release restore names retired SSH" "$out" "ssh.enabled is unava
 cp "$BK/config.json" "$ROOTS/${BK#/}/config.json"
 chmod 644 "$ROOTS/${BK#/}/config.json"
 cr_archive "$CR_ARCHIVE"
+chmod 664 "$BK/Caddyfile"
 rm -f "$CR/sudo.log"
 out="$(cd "$BK" && SUDO_LOG="$CR/sudo.log" PATH="$BK/bin:$PATH" ./pithead restore -y "$CR_ARCHIVE" 2>&1)"
 assert_rc "validated administrative restore succeeds" "$?" 0
@@ -112,7 +113,7 @@ assert_eq "restored env is owner-only" "$(file_mode "$BK/.env")" 600
 # so a 600 restore leaves caddy permission-denied on its bind-mounted Caddyfile for the rest of
 # the appliance's life.
 assert_contains "Caddyfile install does not carry the secret-file mode" "$(cat "$CR/sudo.log")" "install -o $(id -u) -g $(id -g) -m 644"
-assert_eq "restored Caddyfile is world-readable" "$(file_mode "$BK/Caddyfile")" 644
+assert_eq "restore replaces a group-writable Caddyfile with 0644" "$(file_mode "$BK/Caddyfile")" 644
 assert_eq "restored config belongs to the invoking operator" "$(file_uid "$BK/config.json")" "$(id -u)"
 assert_eq "restored onion key is owner-only" "$(file_mode "$BK/data/tor/hs_ed25519_secret_key")" 600
 assert_eq "restored database is owner-only" "$(file_mode "$BK/data/dashboard/dashboard.db")" 600

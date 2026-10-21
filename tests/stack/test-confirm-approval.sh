@@ -210,6 +210,7 @@ assert_rc "control_validate_approval refuses a wrong one" \
     )" "1"
 
 echo "== black-box: the dashboard password commits behind typed APPLY and the approval envelope (#2367) =="
+chmod 664 "$C/Caddyfile"
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0] | .dashboard.auth.password="replacement-password")}' >"$C/pw-preview.json"
 cp "$C/pw-preview.json" "$REQS/$UUID3.json" && run_pending >/dev/null
@@ -218,6 +219,7 @@ assert_eq "dashboard password repoint with APPLY alone is refused" "$(jq -r '.st
 cp "$C/pw-preview.json" "$REQS/$UUID3.json" && run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json" && run_pending >/dev/null
 assert_eq "dashboard password repoint with typed APPLY and the envelope commits" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "GUI credential rotation removes Caddyfile group-write" "$(file_mode "$C/Caddyfile")" 644
 assert_eq "config.json carries the new password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "replacement-password"
 jq '.dashboard.auth.password="a control passphrase"' "$C/config.json" >"$C/config.restore" && mv "$C/config.restore" "$C/config.json"
 

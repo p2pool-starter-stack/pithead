@@ -18,10 +18,6 @@
 #   copy, .env/config.json writes via `seed_env`, $V/bin stubs), so this file needs its own copy.
 #   build_val_sandbox() is idempotent (a fixed $SANDBOX/val path, mkdir -p, template copies), so
 #   calling it again here is a safe no-op re-affirm, the same re-derivation test-lifecycle.sh uses.
-# - Everything else below sources the real $STACK fresh per subshell against a throwaway dir under
-#   $SANDBOX and needs no re-derivation: none of it reads or writes the shared $C control sandbox
-#   ($REQS/$RESULTS/$STAGED/$AUDIT/$MASKED) — that is not built until the "dashboard control
-#   channel" section in test-control-core.sh, sourced after this file and test-dashboard-onion.sh.
 build_val_sandbox
 
 echo "== unit: dashboard auth (#8) =="
@@ -533,6 +529,8 @@ rm -rf "$SP"
 
 echo "== black-box: dashboard auth lifecycle (#8) =="
 # Hashing uses the pinned Caddy image and stubbed `caddy hash-password` for the offline lifecycle.
+: >"$V/Caddyfile"
+chmod 664 "$V/Caddyfile"
 cp "$ROOT/docker-compose.yml" "$V/docker-compose.yml"
 AUTH_LOG="$V/auth-docker.log"
 
@@ -543,6 +541,7 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
 assert_rc "auth enable applies cleanly" "$rc" "0"
+assert_eq "apply removes Caddyfile group-write" "$(file_mode "$V/Caddyfile")" 644
 assert_eq "auth username persisted" "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_USER)" "admin"
 hash1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_HASH_B64)"
 fp1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)"

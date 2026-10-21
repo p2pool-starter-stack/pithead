@@ -138,9 +138,10 @@ cp "$ROOT/build/tari/config.toml.template" "$SU/build/tari/"
 make_stubs "$SU/bin"
 printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$SU" run_wizard >/dev/null 2>&1
 if [ -f "$SU/config.json" ]; then ok "setup e2e: wizard stage produces config.json"; else bad "setup e2e: wizard stage produces config.json" "no file at $SU/config.json"; fi
-su_out="$(cd "$SU" && printf '\nn\n' | DOCKER_LOG=/dev/null PATH="$SU/bin:$PATH" ./pithead setup --skip-deps --skip-optimize 2>&1)"
+su_out="$(cd "$SU" && umask 0002 && printf '\nn\n' | DOCKER_LOG=/dev/null PATH="$SU/bin:$PATH" ./pithead setup --skip-deps --skip-optimize 2>&1)"
 su_rc=$?
 assert_rc "'pithead setup' exits 0 given an existing config.json" "$su_rc" "0"
+assert_eq "setup renders Caddyfile 0644 under a group-writable umask" "$(file_mode "$SU/Caddyfile")" 644
 assert_contains "'pithead setup' reports completion" "$su_out" "Deployment preparation complete"
 assert_eq "'pithead setup' writes a completed .env" \
     "$(run_sourced "$SU" env_get_file "$SU/.env" DEPLOYMENT_COMPLETED)" "true"
