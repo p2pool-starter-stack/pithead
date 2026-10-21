@@ -1,5 +1,5 @@
 firstboot_wizard() {
-    local arg setup_rc preseed_restore_rc=0 spool="$PWD/data/firstboot" restore_spool
+    local arg setup_rc preseed_restore_rc=0 had_config=0 round=0 spool="$PWD/data/firstboot" restore_spool
     restore_spool=$(restore_submission_dir)
     clear_legacy_wizard_snapshots "$spool" || error "Could not clear legacy private wizard snapshots."
     clear_legacy_wizard_snapshots "$restore_spool" || error "Could not clear temporary restore snapshots safely."
@@ -74,7 +74,8 @@ firstboot_wizard() {
                     warn "Could not remove the consumed pre-seed from $PRESEED_DIR — it holds credentials; delete it."
             fi
         fi
-        if [ -f "$PWD/config.json" ] && ! setup_again_mode; then
+        [ ! -f "$PWD/config.json" ] || had_config=1
+        if [ "$had_config" -eq 1 ] && ! setup_again_mode; then
             log "config.json already present (pre-seeded) — skipping the wizard and running setup."
             # A pre-seeded config that names no password still gets a login.
             ensure_appliance_dashboard_password || error "Could not prepare the dashboard login — provisioning stopped."
@@ -89,7 +90,7 @@ firstboot_wizard() {
     _console "" "Pithead is starting up — preparing the setup page." \
         "This takes a minute or two on first boot. Nothing to do yet."
 
-    local engine image token had_config
+    local engine image token
     engine=$(container_engine)
     # STACK_VERSION is the ONE place the registry tag is derived (a release is v<VERSION>, a
     # source checkout is dev) — deriving it here instead cost a boot: the archive holds
@@ -159,11 +160,12 @@ firstboot_wizard() {
         clear_setup_candidate "$restore_spool/config.json" "$restore_spool/handoff.json" || error "Could not clear private setup credentials."
         # Keep an operator's pre-seeded token; otherwise mint a fresh one every round.
         token=$(preseed_token) || token=$(wizard_mint_token)
-        # Whether a configuration already stood when this round opened: a failed provisioning
-        # keeps its config.json under the reopened page (#1059), so only one that APPEARS while
-        # the page is open came from somewhere else.
-        had_config=0
-        [ ! -f "$PWD/config.json" ] || had_config=1
+        # Retry rounds retain their own configuration baseline.
+        if [ "$round" -gt 0 ]; then
+            had_config=0
+            [ ! -f "$PWD/config.json" ] || had_config=1
+        fi
+        round=$((round + 1))
         wizard_start_page "$engine" "$image" "$spool" "$restore_spool" "$card_mount" "$installer" "$token" "$cert_fp"
         while :; do
             # #1318 "Keep it": the page wrote keep-role — nothing on /data was touched; return.
