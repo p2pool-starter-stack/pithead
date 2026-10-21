@@ -36,6 +36,67 @@ proxy_payload_verdict() {
 [ "$(proxy_payload_verdict '234 1 1048576 True trailing' 1)" = FAIL ]
 [ "$(proxy_payload_verdict '234 1 1048576 True' 1 255)" = FAIL ]
 grep -qx '        assert_proxy_workers_payload' "${BASH_SOURCE[0]%/*}/../lib/run-state.sh"
+(
+    rx() {
+        python3 - "$1" <<'PY'
+import contextlib
+import io
+import json
+import os
+import shlex
+import sys
+import types
+
+command = shlex.split(sys.argv[1])
+assert command[:5] == ["docker", "exec", "dashboard", "python3", "-c"]
+assert len(command) == 6
+for name in ("mining_dashboard", "mining_dashboard.client", "mining_dashboard.helper",
+             "mining_dashboard.client.xmrig_proxy_client", "mining_dashboard.helper.http", "requests"):
+    sys.modules[name] = types.ModuleType(name)
+os.environ.update(PROXY_HOST="fixture", PROXY_API_PORT="3344", PROXY_AUTH_TOKEN="fixture-token")
+session = object()
+calls = []
+content = json.dumps({"workers": [{"name": "worker-one"}, {"name": "worker-two"}],
+                      "padding": "é" * 90}, ensure_ascii=False).encode()
+
+class Client:
+    def __init__(self, host, port, token):
+        assert (host, port, token) == ("fixture", 3344, "fixture-token")
+        self.base_url = "http://fixture:3344"
+        self.session = session
+
+class Response:
+    def __init__(self):
+        self.content = content
+
+    def raise_for_status(self):
+        calls.append("status")
+
+    def json(self):
+        return json.loads(self.content)
+
+def bounded_request(method, url, **kwargs):
+    assert (method, url) == ("GET", "http://fixture:3344/1/workers")
+    assert kwargs == {"timeout": 5, "session": session}
+    calls.append("bounded")
+    return Response()
+
+sys.modules["mining_dashboard.client.xmrig_proxy_client"].XMRigProxyClient = Client
+helper = sys.modules["mining_dashboard.helper.http"]
+helper.MAX_RESPONSE_BYTES = 1048576
+helper.bounded_request = bounded_request
+output = io.StringIO()
+with contextlib.redirect_stdout(output):
+    exec(command[5], {})
+assert calls == ["bounded", "status"]
+assert output.getvalue() == f"{len(content)} 2 1048576 True\n"
+print(output.getvalue(), end="")
+PY
+    }
+    it_pass() { printf PASS; }
+    it_fail() { printf FAIL; }
+    [ "$(EXPECTED_WORKERS=2 assert_proxy_workers_payload)" = PASS ]
+)
 printf 'PASS: miner connection identity and bounded real-worker payload verdicts\n'
 
 # Real entrypoint execution is covered by test-xmrig-proxy-entrypoint.sh. Here the
