@@ -78,15 +78,6 @@ validate_config_document() {
 }
 
 validate_config_control_characters() {
-    # Central .env line-injection guard (#33 hardening). No config string value may carry a
-    # control character (newline, CR, tab, …). A raw newline in a value that renders into .env
-    # unquoted — e.g. monero.node_password, telegram.bot_token, workers.api_token — would inject
-    # a SECOND KEY=value line such as PITHEAD_REGISTRY=evil.tld/attacker; every compose image: is
-    # ${PITHEAD_REGISTRY:-…}, so the root `apply -y` would then pull attacker images for the whole
-    # stack (RCE). Now that the dashboard control channel lets a full config cross the trust
-    # boundary, these fields are attacker-influenceable. Check EVERY string leaf here — the shared
-    # chokepoint both `apply --dry-run` (preview) and `apply -y` (commit) run — so no current or
-    # future field is missed. No legitimate config value contains a control character.
     if jq -e 'any(.. | strings; test("[[:cntrl:]]"))' "$CONFIG_FILE" >/dev/null 2>&1; then
         error "$CONFIG_FILE has a config value containing a control character or newline. That is not allowed — it could inject an extra line into the stack's .env. Remove the newline/control character (check secrets like node_password, bot_token, api_token)."
     fi

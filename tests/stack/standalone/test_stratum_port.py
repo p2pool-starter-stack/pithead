@@ -10,14 +10,19 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class StratumPortTest(unittest.TestCase):
-    def probe(self, port, active=3333, bind="0.0.0.0", action="validate_stratum_port_change"):
+    def probe(
+        self, port, active=3333, bind="0.0.0.0", action="validate_stratum_port_change", config=None
+    ):
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"
             env_file.write_text(f"STRATUM_PORT={active}\n")
             config_file = Path(directory) / "config.json"
-            config_file.write_text(
-                json.dumps({"p2pool": {"stratum_port": port, "stratum_bind": bind}})
+            document = (
+                config
+                if config is not None
+                else {"p2pool": {"stratum_port": port, "stratum_bind": bind}}
             )
+            config_file.write_text(json.dumps(document))
             result = subprocess.run(
                 [
                     "/bin/bash",
@@ -32,7 +37,6 @@ source "$ROOT/lib/pithead/40-apply-and-render.sh"
 error() { echo "$*" >&2; exit 1; }
 require_env() { :; }
 ensure_onion_password() { echo "reached mutation boundary"; exit 77; }
-validate_config_document() { :; }
 parse_and_validate_config() { :; }
 load_preserved_state() { echo "reached mutation boundary"; exit 77; }
 PITHEAD_ENV_DRYRUN="$ENV_FILE.dryrun"
@@ -56,10 +60,7 @@ esac
                 text=True,
                 timeout=10,
             )
-            self.assertEqual(
-                json.loads(config_file.read_text()),
-                {"p2pool": {"stratum_port": port, "stratum_bind": bind}},
-            )
+            self.assertEqual(json.loads(config_file.read_text()), document)
             self.assertEqual(env_file.read_text(), f"STRATUM_PORT={active}\n")
             return result
 
@@ -119,6 +120,10 @@ esac
                     self.assertEqual(result.returncode, 1, result.stderr)
                     self.assertIn("control character", result.stderr)
                     self.assertNotIn("untrusted-marker", result.stderr)
+
+    def test_omitted_endpoint_uses_unchanged_default(self):
+        result = self.probe(3333, config={})
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_unavailable_address_fails_closed(self):
         result = self.probe(45678, bind="192.0.2.1")

@@ -138,10 +138,6 @@ jobs:
       - name: Run stratum port preflight contract
         run: python3 tests/stack/standalone/test_stratum_port.py
       - name: Test-inventory drift check
-        # The inventory generator is grep-based; it exits non-zero when any suite it
-        # enumerates counts zero — i.e. a suite moved or changed shape and the inventory
-        # would silently under-count (#981). Output discarded: the generated file is
-        # git-ignored and read on demand via `make test-inventory`.
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test
         # Pure logic and bounded local transport fixtures for the tests/integration/

@@ -288,10 +288,6 @@ run_hardening() {
             echo $?
         )" 0
 
-        # 3b. A wallet swap previews behind typed confirmation (#2305). Give the commit a valid
-        #     payout suffix but omit APPLY: refusal must come from the host confirmation gate,
-        #     not from an incomplete approval envelope or address validation. Clear the old
-        #     wallet's view key only in this refused candidate; it cannot match the new address.
         local uuid_bad bad_cfg wallet_before preview suffix
         uuid_bad="$(_uuid4)"
         wallet_before="$(env_on_box MONERO_WALLET_ADDRESS)"
