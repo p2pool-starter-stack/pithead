@@ -13,7 +13,8 @@ wallets=$(
     python3 - "$repo/lib/pithead/25-address-types.sh" <<'PY'
 import ctypes, ctypes.util, hashlib, json, pathlib, sys
 source = pathlib.Path(sys.argv[1]).read_text()
-code = source.split("import sys\n", 1)[1].split("\nPYEOF", 1)[0].rsplit("raw = b58_decode", 1)[0]
+# Scope each Python fragment to its validator; both validators import os and sys.
+code = source.split("monero_address_type() {", 1)[1].split("import sys\n", 1)[1].split("\nPYEOF", 1)[0].rsplit("raw = b58_decode", 1)[0]
 exec(code)
 alpha = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 width = {1: 2, 2: 3, 3: 5, 4: 6, 5: 7, 6: 9, 7: 10, 8: 11}
@@ -47,7 +48,7 @@ monero = "".join(encode(raw[i : i + 8]) for i in range(0, len(raw), 8))
 # Tari dual mainnet one-sided address: network, features, view + spend Ristretto keys, DammSum.
 raw = bytes([0, 1]) + public_key("ristretto255", "view") + public_key("ristretto255", "spend")
 tari_helpers = {}
-exec(source.split("import os\n", 1)[1].split("\nPYEOF", 1)[0].split("try:\n", 1)[0], tari_helpers)
+exec(source.split("tari_address_type() {", 1)[1].split("import sys\n", 1)[1].split("\nPYEOF", 1)[0].split("try:\n", 1)[0], tari_helpers)
 body = raw[2:] + bytes([tari_helpers["dammsum"](raw)])
 n, encoded = int.from_bytes(body, "big"), ""
 while n:

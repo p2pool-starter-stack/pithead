@@ -13,7 +13,6 @@
 # no-argument run keeps the same process boundaries. stack_blocks_audit refuses missing or duplicate
 # stanzas, missing domain accounting, and a workflow matrix that does not list every block.
 set -uo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_BLOCKS=5
 # shellcheck source=tests/stack/lib.sh
@@ -28,7 +27,6 @@ fi
 # that starts run.sh itself cannot append to it.
 _tally="${STACK_TALLY:-}"
 unset STACK_TALLY
-
 stack_verdict() { # <label>: the summary line, and the suite's exit status
     echo ""
     printf '%s: \033[1;32m%d passed\033[0m, ' "$1" "$PASS"
@@ -63,7 +61,6 @@ if [ "$#" -gt 1 ] || ! [[ "$1" =~ ^[1-9][0-9]*$ ]] || [ "${#1}" -gt "${#STACK_BL
 fi
 STACK_BLOCK="$1"
 in_block() { [ "$1" = "$STACK_BLOCK" ]; }
-
 if in_block 1; then
     bash "$HERE/test_control_audit_order.sh"
     assert_rc "control audit precedes result" "$?" "0"
@@ -79,23 +76,20 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-onions.sh" && domain_ran test-doctor-onions.sh "$_d0" "$?" || domain_ran test-doctor-onions.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-upgrade.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-upgrade-lock.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade-lock.sh" && domain_ran test-control-upgrade-lock.sh "$_d0" "$?" || domain_ran test-control-upgrade-lock.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/release/test-release-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-verify.sh" && domain_ran test-release-verify.sh "$_d0" "$?" || domain_ran test-release-verify.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-signing.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-signing.sh" && domain_ran test-release-signing.sh "$_d0" "$?" || domain_ran test-release-signing.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/dashboard/test-dashboard.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard.sh" && domain_ran test-dashboard.sh "$_d0" "$?" || domain_ran test-dashboard.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/dashboard/test-dashboard-bridge-bind.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-bridge-bind.sh" && domain_ran test-dashboard-bridge-bind.sh "$_d0" "$?" || domain_ran test-dashboard-bridge-bind.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-dashboard-exposure-live.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-exposure-live.sh" && domain_ran test-dashboard-exposure-live.sh "$_d0" "$?" || domain_ran test-dashboard-exposure-live.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-onion.sh" && domain_ran test-dashboard-onion.sh "$_d0" "$?" || domain_ran test-dashboard-onion.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/dashboard/test-sync-progress-hold.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-sync-progress-hold.sh" && domain_ran test-sync-progress-hold.sh "$_d0" "$?" || domain_ran test-sync-progress-hold.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-onion-apply-password.sh disable=SC2015
@@ -114,8 +108,12 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release.sh" && domain_ran test-release.sh "$_d0" "$?" || domain_ran test-release.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-notes.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-notes.sh" && domain_ran test-release-notes.sh "$_d0" "$?" || domain_ran test-release-notes.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/release/test-release-toolchain.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-toolchain.sh" && domain_ran test-release-toolchain.sh "$_d0" "$?" || domain_ran test-release-toolchain.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-publish.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-publish.sh" && domain_ran test-release-publish.sh "$_d0" "$?" || domain_ran test-release-publish.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-registry.sh" && domain_ran test-release-registry.sh "$_d0" "$?" || domain_ran test-release-registry.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-rehearsal.sh" && domain_ran test-release-rehearsal.sh "$_d0" "$?" || domain_ran test-release-rehearsal.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-rootfs-publish.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-rootfs-publish.sh" && domain_ran test-release-rootfs-publish.sh "$_d0" "$?" || domain_ran test-release-rootfs-publish.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-unit-helpers.sh disable=SC2015
@@ -354,12 +352,14 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-serial-getty.sh" && domain_ran test-appliance-serial-getty.sh "$_d0" "$?" || domain_ran test-appliance-serial-getty.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rootfs-apt.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rootfs-apt.sh" && domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?" || domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-reset.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-reset.sh" && domain_ran test-appliance-reset.sh "$_d0" "$?" || domain_ran test-appliance-reset.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-reset-slot.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-reset-slot.sh" && domain_ran test-appliance-reset-slot.sh "$_d0" "$?" || domain_ran test-appliance-reset-slot.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-reset-slot-boot.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-reset-slot-boot.sh" && domain_ran test-appliance-reset-slot-boot.sh "$_d0" "$?" || domain_ran test-appliance-reset-slot-boot.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-reset-lock.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-reset-lock.sh" && domain_ran test-appliance-reset-lock.sh "$_d0" "$?" || domain_ran test-appliance-reset-lock.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-caddyfile-optional-env.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-caddyfile-optional-env.sh" && domain_ran test-appliance-caddyfile-optional-env.sh "$_d0" "$?" || domain_ran test-appliance-caddyfile-optional-env.sh "$_d0" "$?"
 

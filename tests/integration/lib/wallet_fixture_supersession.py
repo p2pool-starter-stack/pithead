@@ -220,8 +220,8 @@ def validate_record(fixture, record, binding, state):
         raise ValueError("inconsistent retained identity proof")
 
 
-def prove_live(fixture, state, directory, baseline):
-    item = fixture.wallet_container({baseline}, timeout=30)
+def prove_live(fixture, state, directory, baseline, branch=None):
+    item = fixture.wallet_container({baseline, branch or baseline}, timeout=30)
     if item is None or fixture.identity_values(item["Config"]["Env"]) != state["identity"]:
         raise ValueError("live wallet fixture identity differs from the baseline")
     fixture.local_volume(timeout=30)

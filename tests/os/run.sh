@@ -42,6 +42,7 @@
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #           Closes with a cut mid first-boot image load on a fresh guest (the #1029 class, #2067).
 #   reset   config-reset clears config but preserves the chain and onion through reconfiguration;
+#           a real A/B update then proves wizard, CLI restore and open-setup reboot recovery;
 #           factory-reset's ESP marker then wipes /data and returns a FRESH machine to the wizard;
 #           a corrupt /data superblock drives wedged-/data recovery.
 #   image-upgrade  signed v1.20.0 -> candidate -> exact rollback on guest-local reflink XFS
@@ -192,6 +193,8 @@ source "$SCRIPT_DIR/lib/core.sh" || exit $?
 source "$SCRIPT_DIR/wizard-redirect-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/boot.sh
 source "$SCRIPT_DIR/phases/boot.sh" || exit $?
+# shellcheck source=tests/os/phases/update-spare-slot.sh
+source "$SCRIPT_DIR/phases/update-spare-slot.sh" || exit $?
 # shellcheck source=tests/os/phases/update.sh
 source "$SCRIPT_DIR/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh

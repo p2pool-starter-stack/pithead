@@ -190,7 +190,7 @@ echo "== the classifier reads one trap line correctly, and stays FAIL-LOUD doing
 # `EXIT` and passes. It is not a hole in what this guard is for: #1401's hazard is a handler that
 # CATCHES INT/TERM and returns, and a line installing no handler catches nothing. `trap - INT` and
 # `trap - EXIT INT` both red correctly, and the two existence assertions at the end of this file
-# match the real handler text (`trap restore_all`, `trap 'kill `), so a reset cannot stand in for
+# match the real handler text (`trap e2e_exit`, `trap 'kill `), so a reset cannot stand in for
 # either of the sites that matter. The row is here so that whoever next widens this classifier
 # trips over the limit instead of rediscovering it and assuming it was missed.
 while IFS='|' read -r want line; do
@@ -299,8 +299,8 @@ assert_eq "exactly one line in this tree is declared data — a new one is a new
 # rather than re-derived by a second mechanism that could drift from it.
 assert_num_ge "the walk found trap statements at all — a 0 here is a broken scan, not a clean tree" \
     "$(printf '%s\n' "$trap_scan" | grep -c .)" "2"
-assert_contains "e2e.sh's restore_all trap is still installed — the borrowed rig's only unwind" \
-    "$trap_scan" "trap restore_all"
+assert_contains "e2e.sh's restore and child-release trap is still installed" \
+    "$trap_scan" "trap e2e_exit"
 assert_contains "probe.sh's tor-kill trap is still installed (#1401's second site)" \
     "$trap_scan" "trap 'kill "
 

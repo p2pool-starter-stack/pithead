@@ -14,6 +14,7 @@ _run_lifecycle() {
     lifecycle_mining_step run_cli_wizard_defaults run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
+    prove_wallet_recovery || return 1
     lifecycle_gate_sample before-restart
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
@@ -58,10 +59,9 @@ _run_lifecycle() {
     fi
     lifecycle_mining_step run_source_image_reconcile run_source_image_reconcile || return 1
     lifecycle_mining_step run_tari_background_sync run_tari_background_sync || return 1
-    local cur_pool fp_before
+    local cur_pool fp_before other
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
-    local other
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
     fp_before="$(secret_fingerprint)"
     # ensure_owner whole-tree migration (#255): plant a root-owned file UNDER a data dir (the
@@ -322,7 +322,6 @@ run_uninstall_round_trip() {
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
     assert_eq "uninstall removes every derived path and .env" "$left" ""
 
-    # An operator's setup here generates the secrets that lived only in .env anew (docs/operations.md).
     # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
     # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
     # wallet volume created under a new password would not open under the restored old one.
@@ -334,6 +333,7 @@ run_uninstall_round_trip() {
     out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
     rc=$?
     assert_rc "setup after uninstall succeeded" "$rc" "0"
+    rr_web_ports_owned_by_dashboard "setup after uninstall" || return 1
     [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -n 15 | redact | sed 's/^/        /'
     if wait_status_ok 600; then
         it_pass "status OK after setup-after-uninstall"

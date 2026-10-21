@@ -139,7 +139,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   requires its running stack to carry the prior-release wallet, Tor identity and secrets while
   both the fixture's and the target's chain-data sentinels survive. The fixture's removed 1.x
   `xmrig_proxy` settings must move to `xvb` unchanged without leaving a `config.json.bak-1x`,
-  and `telegram.control` must be dropped.
+  and `telegram.control` must be dropped. The `N-1 backup fixture` workflow runs
+  `fixtures/v1.20.0/selftest-wallets.py` before generating the encrypted backup, including
+  on changes to `lib/pithead/25-address-types.sh`. The
+  generator extracts checksum helpers from each named CLI validator, then derives
+  deterministic public keys from a public throwaway seed. The Docker-free selftest
+  requires Python 3 and libsodium; it checks repeated output, both checksums, all four
+  curve points and the complete CLI address verdicts. Never fund these addresses.
 - **setup-defaults** — a fresh 40 GiB guest accepts the wizard defaults without a Tari override; proves Tor sync, XvB off, persisted choices, a generated working dashboard login, and firstboot/system journals free of bcrypt credentials.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
@@ -297,7 +303,17 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
   and requiring the monero chain directory to survive, monerod's height to resume at or past its
   pre-reset value (no resync), and the Tor onion address, read from the hidden-service hostname
-  file rather than `.env`, to come back byte-for-byte unchanged. Leg 1 is the deep tier: the real
+  file rather than `.env`, to come back byte-for-byte unchanged. The following reset-slot leg
+  reboots through the real health gate on A, installs a v2 bundle with `pithead os-update`,
+  and requires committed primary B with A still good. It takes an encrypted backup and tests
+  three config-reset rounds: wizard setup, CLI `restore -y` plus `up`, and a reboot with setup
+  still open before finishing setup. Before each normal reboot, provisioning must settle
+  successfully, the rendered environment must exist, and status and doctor must pass;
+  old containers answering during wizard handoff do not establish readiness. Every reset boot
+  and final normal reboot must remain B|v2 with A good and ORDER="B A". Fallback stays red and is re-armed before the next round.
+  The leg adds about 60 minutes to RC gate job 3b (reset,stack); a missing precondition is a
+  counted missing leg, never proof. Update leg 1 separately requires the fresh spare B to
+  remain uncommitted while its setup page serves. Leg 1 is the deep tier: the real
   `pithead factory-reset -y`, which arms the `pithead-reset` marker on the ESP and reboots; assert
   it comes back to the wizard with the provisioned config and old container images gone, the
   seeded dirs back, and a FRESH host identity (SSH host-key fingerprint, machine-id) — the deep

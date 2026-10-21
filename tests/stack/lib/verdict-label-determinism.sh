@@ -105,6 +105,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # #3278's rcf_status labels range over running/restarting/paused, a fixed status list.
 # #3204's rcm_invalid labels range over four fixed JSON fixtures, never measured input.
 # GRUB labels use only the three literal parameter names and ten literal fixture modes.
+# Reset-slot labels use fixed pending/bad/gate and slot/source/stopped/revoked/rauc cases.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -122,6 +123,7 @@ test-appliance-identity.sh|1
 test-appliance-identity.sh|f
 test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
+test-appliance-reset-slot.sh|rs_case
 test-appliance-rig-config-merge.sh|rcm_invalid
 test-config-document.sh|raw
 test-config-document.sh|verb

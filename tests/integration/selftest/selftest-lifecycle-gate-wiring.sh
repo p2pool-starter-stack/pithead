@@ -14,6 +14,8 @@ trap 'rm -rf -- "$fixture"' EXIT
 OUT_DIR=$fixture
 IT_FAIL=0
 wallet_proof_calls=0
+recovery_proof_calls=0
+recovery_proof_rc=0
 # Execute the original lifecycle prefix through the real source-image runner; later pool/wallet
 # legs do not concern these diagnostics and have their own complete lifecycle selftests.
 eval "$(sed -n '/^_run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d;1s/^_run_lifecycle/run_lifecycle/')
@@ -52,6 +54,13 @@ prove_wallet_supersession() {
     [ "$(tail -n 1 "$fixture/lifecycle-gate.log" | awk '{print $2}')" = before-wizard-defaults ]
     wallet_proof_calls=$((wallet_proof_calls + 1))
 }
+prove_wallet_recovery() {
+    # The caller runs this in a || list, which suspends errexit here, so failures are counted.
+    [ "$wallet_proof_calls" = 1 ] || it_fail # after the supersession proof, before the first restart
+    [ "$(tail -n 1 "$fixture/lifecycle-gate.log" | awk '{print $2}')" = before-wizard-defaults ] || it_fail
+    recovery_proof_calls=$((recovery_proof_calls + 1))
+    return "$recovery_proof_rc"
+}
 run_connection_announcements() { :; }
 run_cli_wizard_defaults() { :; }
 run_tari_background_sync() { :; } # its own runtime leg and selftest cover it
@@ -61,5 +70,17 @@ svc_state_of() { printf '%s' "${1%% *}"; }
 run_lifecycle
 [ "$IT_FAIL" = 0 ]
 [ "$wallet_proof_calls" = 1 ]
+[ "$recovery_proof_calls" = 1 ]
 [ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = $'before-wizard-defaults\nbefore-restart\nafter-restart\nbefore-image-down\nafter-image-up\nbefore-source-image' ]
 echo 'selftest-lifecycle-gate-wiring: all six lifecycle/image boundaries passed'
+wallet_proof_calls=0
+recovery_proof_calls=0
+recovery_proof_rc=1
+: >"$fixture/lifecycle-gate.log"
+lifecycle_rc=0
+run_lifecycle || lifecycle_rc=$?
+[ "$lifecycle_rc" != 0 ]
+[ "$IT_FAIL" = 0 ]
+[ "$recovery_proof_calls" = 1 ]
+[ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = before-wizard-defaults ]
+echo 'selftest-lifecycle-gate-wiring: a failed wallet recovery proof ends the phase before the first restart'

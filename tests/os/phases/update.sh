@@ -116,6 +116,7 @@ phase_update() {
         bad "expected v2 in the spare slot, got '$marker'"
         return
     }
+    _update_spare_slot_uncommitted
     _reboot_wait reboot 300 || { # uncommitted -> the bootloader must fall back on its own
         bad "guest never returned after the no-commit reboot"
         return
