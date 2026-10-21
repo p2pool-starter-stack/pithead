@@ -527,31 +527,41 @@ channels share the final cut commit, one version and one GitHub Release.
    The compose file the image ships comes from that tag whenever it already exists and from the tree only while it does not;
    at this step it does not, so the release build bakes the tree's copy, and the tag `release.sh`
    then creates on this commit names those same bytes.
-3. Run the release pipeline with `--draft` first. It builds and publishes `pithead-os-rootfs:vX.Y.Z` by
-   digest, refuses a rootfs carrying the debug SSH key or `BUILD_LABEL`, and leaves the exact exported bytes in
-   `os/build/pithead-root.tar` with its `.sha256` handoff. The production image and bundle builders
-   require that digest and refuse a changed or debug-keyed tar. Do not run `os/build-image.sh`
-   again: rebuilding would re-resolve apt and make the published rootfs differ from the appliance.
-   Then build the image and bundle from that tar with the **release root and signing leaf**, never the throwaway
-   `--dev` chain. Point `PITHEAD_RAUC_KEYRING` at the root baked into the image and
-   `PITHEAD_RAUC_CERT` / `PITHEAD_RAUC_KEY` at the leaf that signs the bundle. Without the
-   keyring export, `populate-slot.sh` defaults to baking the leaf as the trust anchor:
+3. Configure the **release root and signing leaf**, never the throwaway `--dev` chain. Both
+   migration fields must be declared, including an explicitly empty floor for a non-migrating
+   release. Run the pipeline with `--draft`; it refuses immediate publication and unsigned cuts:
 
    ```bash
    export PITHEAD_RAUC_KEYRING=~/.config/pithead-release/rauc-root.pem
    export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem
    export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
-   # declare the data-migration contract above, migrating or not (2.0.0: true and 2.0.0)
-   export PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0
-   sudo -E os/rauc/mkimage.sh && sudo -E os/rauc/mkbundle.sh
+   export PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION=
+   make release ARGS="--draft"
    ```
+
+   The pipeline builds and publishes the rootfs by digest, preserves its guarded export, then
+   builds the production image and signed RAUC bundle from those exact bytes. It never reruns
+   `os/build-image.sh` at the appliance stage: rebuilding would re-resolve apt and make the
+   published rootfs differ from the appliance. It runs `verify-image.sh` in release mode with
+   the exact commit, compares the complete baked keyring with the declared release root, verifies
+   the bundle against that keyring, and checks version, variant, compatibility and migration
+   declarations. The ingredients manifest records the baked RigForge ref and version.
+
+   All seven assets are verified locally before draft creation, then uploaded to that draft.
+   Their remote names, sizes and SHA-256 digests must match before the pipeline reports success.
+   A failed upload or remote check removes only the newly created draft; the tag stays spent. Missing signing
+   inputs, stale image identity, a signature failure, a misnamed or damaged asset, or a checksum
+   mismatch stops draft creation. The final output names the retained artifact directory:
+   `appliance-system.img`, `appliance-update.raucb`, and `appliance/` with the four packaged
+   appliance files. Keep this directory; use these bytes for every remaining check.
 
    Key generation, storage, the trust model and the rotation runbook are in
    [`release-server.md`](release-server.md#the-rauc-update-signing-key), mirroring the cosign
-   section beside it. Then verify the artifact, pinning the commit you meant to build:
+   section beside it. For an independent image-verification pass, pin the intended commit:
 
    ```bash
-   PITHEAD_EXPECT_COMMIT=$(git rev-parse HEAD) sudo tests/os/verify-image.sh <image>
+   read -r -p "Retained artifact directory: " artifact_dir
+   sudo env PITHEAD_EXPECT_COMMIT="$(git rev-parse HEAD)" tests/os/verify-image.sh "$artifact_dir/appliance-system.img"
    ```
 
    Run `verify-image.sh` **from the repo checkout you built**, because it compares the artifact
@@ -566,16 +576,18 @@ channels share the final cut commit, one version and one GitHub Release.
    Check the keyring's complete contents too: the root fingerprint alone would miss an extra
    certificate after the root. Verify both the release bundle and a throwaway bundle signed by
    the release leaf against that **baked** keyring. The commands below inspect slot A of the
-   image just built and fail if any check fails:
+   retained image and fail if any check fails:
 
    ```bash
    (
      set -e
+     sudo mkdir -p os/rauc/build
+     sudo cp "$artifact_dir/appliance-update.raucb" os/rauc/build/update.raucb
      TMPDIR=${TMPDIR:-/var/tmp}
      work_dir=$(mktemp -d "${TMPDIR:?}/pithead-keyring.XXXXXX")
      mkdir "$work_dir/mnt" "$work_dir/probe"
      trap 'sudo umount "$work_dir/mnt" 2>/dev/null || true; if [ -n "${loop:-}" ]; then sudo losetup -d "$loop"; fi; rm -r "$work_dir"' EXIT
-     loop=$(sudo losetup -Pf --show os/rauc/build/system.img)
+     loop=$(sudo losetup -Pf --show "$artifact_dir/appliance-system.img")
      source os/rauc/loop-wait.sh
      wait_loop_partitions "$loop"
      sudo mount -o ro "${loop}p2" "$work_dir/mnt"
@@ -608,15 +620,14 @@ channels share the final cut commit, one version and one GitHub Release.
    pithead-boot is enabled (and podman-restart is NOT — it started the stack into its own
    oneshot cgroup and systemd SIGKILLed the containers it had just spawned). Every check exists because its absence shipped, or nearly
    shipped, once.
-4. Package the verified image and bundle. The command refuses an asset at or above GitHub's
-   2 GiB limit, prints both published sizes in bytes, and writes a checksum for each published
-   file. Check the compressed image round trip against the raw image before flashing:
+4. Stop at the draft for **manual image verification**. Packaging already ran in the pipeline,
+   including the 2 GiB limit, byte counts, checksums and compression round trip. Do not rebuild
+   or repackage. Independently check the retained files before flashing:
 
    ```bash
-   scripts/release/package-appliance.sh os/rauc/build/system.img os/rauc/build/update.raucb os/rauc/build/release
    tag=v$(tr -d '[:space:]' <VERSION)
-   cmp os/rauc/build/system.img <(xz -dc "os/rauc/build/release/pithead-os-${tag}.img.xz")
-   (cd os/rauc/build/release && sha256sum -c "pithead-os-${tag}.img.xz.sha256" "pithead-os-${tag}.raucb.sha256")
+   cmp "$artifact_dir/appliance-system.img" <(xz -dc "$artifact_dir/appliance/pithead-os-${tag}.img.xz")
+   (cd "$artifact_dir/appliance" && sha256sum -c "pithead-os-${tag}.img.xz.sha256" "pithead-os-${tag}.raucb.sha256")
    ```
 
    Record both sizes and checksums in the release issue. Stop if either asset reaches 2 GiB.
@@ -627,14 +638,13 @@ channels share the final cut commit, one version and one GitHub Release.
    release — every check no harness can make, and the traps that have actually bitten — is
    collected in [the manual QA guides](manual-qa/README.md); walk them alongside
    this list.
-5. Attach the `.img.xz`, `.raucb`, and their two `.sha256` files from `os/rauc/build/release/`
-   to the version's GitHub Release **while it is still a draft** (the DIY cut opens it with
-   `release.sh --draft`), then publish once everything is
-   attached. Published release assets are immutable — v1.18.0 burned its tag this way — so
-   the release publishes exactly once, with both channels' artifacts aboard. The bundle's
-   signature is what devices verify.
-6. `main` fast-forwards to the tag automatically when `release.sh` publishes; if the push was
-   refused, run the command it prints (see
+5. The pipeline has already attached the `.img.xz`, `.raucb`, their two `.sha256` files,
+   the signed DIY bundle and the ingredients manifest to the draft. Confirm all seven assets
+   and the manual results. **Only the owner publishes the draft**, once. There is no automatic
+   final publication or separate publication-resume command. Published assets are immutable;
+   a failed manual check spends the tag and needs a new version, never replacement assets.
+6. `main` fast-forwards to the tag automatically when `release.sh` creates the draft; if the push was
+   refused, reconcile `main` with the release tag as the owner (see
    [After publishing](manual-qa/release/cutting-and-after.md#after-publishing)).
 
 ## Shipping a bad release

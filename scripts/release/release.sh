@@ -26,10 +26,9 @@
 #   --skip-tests         Skip `make test` (NOT recommended; the gate is what makes a release trustworthy).
 #   --skip-integration   Skip the #54 live integration matrix (still runs `make test`).
 #   --skip-smoke         Skip the staged-image smoke verification.
-#   --draft              Create the GitHub Release as a DRAFT (held for review; publish it by hand).
+#   --draft              Required: create a complete draft; only the owner publishes after image checks.
 #   --allow-dirty        Permit a dirty tree for --dry-run only.
-#   --unsigned           Publish WITHOUT cosign signatures. One-click upgrades refuse an unsigned
-#                        release once cosign.pub is committed — deliberate, loud, and rarely right.
+#   --unsigned           Rejected for appliance releases: signatures are mandatory.
 #   -y, --yes            Don't prompt before the irreversible steps (push, tag, publish).
 #   -h, --help           Show this help.
 #
@@ -287,10 +286,12 @@ source "$RELEASE_LIB_DIR/preflight.sh"
 source "$RELEASE_LIB_DIR/images.sh"
 # shellcheck source=scripts/release/bundle.sh
 source "$RELEASE_LIB_DIR/bundle.sh"
+# shellcheck source=scripts/release/appliance.sh
+source "$RELEASE_LIB_DIR/appliance.sh"
 
-# --- Main -----------------------------------------------------------------------------------------
 
 main() {
+    require_appliance_draft
     log "Pithead release pipeline (#44)$([ "$DRY_RUN" -eq 1 ] && echo '  [DRY RUN]')"
     preflight
     require_bench_tier4
@@ -300,11 +301,12 @@ main() {
     stage_push
     smoke_test
     promote
-    sign_images # #376 — signs the digests promote re-tagged
+    sign_images
     if [ "${PITHEAD_REHEARSAL:-0}" = 1 ]; then
         ok "Rehearsal complete: nothing was tagged or published"
         return 0
     fi
+    prepare_appliance
     publish
 
     printf '\n'
