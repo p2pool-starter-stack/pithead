@@ -48,8 +48,10 @@ headless_install_prefill_valid() {
 
 headless_install_blank_valid() {
     jq -e '.mode == "installer" and .stage == "installer" and .new_machine == true and
-        .install_attempt == {} and .config.monero.wallet_address == "" and
-        .config.tari.wallet_address == ""' <<<"$1" >/dev/null
+        .install_attempt == {} and (.reference.monero.wallet_address | type) == "string" and
+        (.reference.tari.wallet_address | type) == "string" and
+        .config.monero.wallet_address == .reference.monero.wallet_address and
+        .config.tari.wallet_address == .reference.tari.wallet_address' <<<"$1" >/dev/null
 }
 
 headless_install_rejection() {

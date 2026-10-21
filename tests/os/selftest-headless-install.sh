@@ -34,10 +34,16 @@ headless_install_prefill_valid "$prefill" "$staged"
 for change in '.new_machine=true' '.install_attempt={disk:"vda",wipe:"all"}' '.config.monero.wallet_address="wrong"' '.stage="setup"'; do
     ! headless_install_prefill_valid "$(jq "$change" <<<"$prefill")" "$staged"
 done
-blank=$(jq '.new_machine=true | .config.monero.wallet_address="" | .config.tari.wallet_address=""' <<<"$prefill")
+blank=$(jq --slurpfile reference "$HERE/../../config.reference.json" \
+    '.new_machine=true | .reference=$reference[0] |
+     .config.monero.wallet_address=.reference.monero.wallet_address |
+     .config.tari.wallet_address=.reference.tari.wallet_address' <<<"$prefill")
 headless_install_blank_valid "$blank"
 ! headless_install_blank_valid "$prefill"
 ! headless_install_blank_valid "$(jq '.install_attempt={disk:"vda",wipe:"keep"}' <<<"$blank")"
+! headless_install_blank_valid "$(jq '.config.monero.wallet_address="stale"' <<<"$blank")"
+! headless_install_blank_valid "$(jq '.config.tari.wallet_address="stale"' <<<"$blank")"
+! headless_install_blank_valid "$(jq 'del(.reference)' <<<"$blank")"
 ! headless_install_blank_valid '{}'
 
 curl() {

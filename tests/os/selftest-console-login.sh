@@ -48,3 +48,70 @@ with patch("builtins.open", side_effect=OSError):
     assert probe.main() == 1
 print("PASS: console hash parity, password status, volatile upperdir and fail-closed reads")
 PY
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+# shellcheck source=lib/pithead/26-appliance-tls-provisioning.sh
+source "$HERE/../../lib/pithead/26-appliance-tls-provisioning.sh"
+# shellcheck source=lib/pithead/38-setup-command.sh
+source "$HERE/../../lib/pithead/38-setup-command.sh"
+CONFIG_FILE="$work/config.json" REBOOT_REQUIRED=false appliance=true
+mkdir "$work/bin"
+printf '#!/usr/bin/env bash\nexit 99\n' >"$work/bin/chpasswd"
+chmod +x "$work/bin/chpasswd"
+PATH="$work/bin:$PATH"
+is_deployed() { return 1; }
+is_appliance() { [ "$appliance" = true ]; }
+mutation_lock_acquire() { :; }
+mutation_lock_release() { printf 'unlock\n' >>"$work/trace"; }
+check_prerequisites() { :; }
+ensure_config_exists() { :; }
+ensure_onion_password() { :; }
+parse_and_validate_config() { :; }
+preflight_resources() { :; }
+check_stratum_exposure() { :; }
+load_preserved_state() { :; }
+resolve_dashboard_host() { :; }
+reconcile_appliance_hostname() { :; }
+prepare_directories() { :; }
+render_env() { :; }
+provision_tor() { :; }
+inject_service_configs() { :; }
+optimize_kernel() { :; }
+generate_caddyfile() { printf 'caddy\n' >>"$work/trace"; }
+provision_control_runner() { :; }
+provision_egress_check_units() { :; }
+provision_lan_guard_check_units() { :; }
+render_local_miner_config() { :; }
+update_current_symlink() { :; }
+announce_dashboard_url() { :; }
+prompt_start_stack() { :; }
+provision_local_miner() { :; }
+ensure_etc_overlay() { printf 'etc\n' >>"$work/trace"; }
+log() { :; }
+sudo() {
+    case "$1" in
+    chpasswd)
+        cat >"$work/password-input"
+        printf 'password\n' >>"$work/trace"
+        ;;
+    passwd) [ "$2:$3" = '-l:root' ] && printf 'locked\n' >>"$work/trace" ;;
+    *) return 1 ;;
+    esac
+}
+printf '{"dashboard":{"auth":{"password":"setup-fixture"}}}' >"$CONFIG_FILE"
+setup
+if [ "$(cat "$work/trace")" != $'caddy\netc\npassword\nunlock' ]; then
+    printf 'FAIL: fresh setup did not provision the console login before releasing its lock\n' >&2
+    exit 1
+fi
+test "$(cat "$work/password-input")" = 'root:setup-fixture'
+printf '{"dashboard":{"auth":{"password":""}}}' >"$CONFIG_FILE"
+: >"$work/trace"
+setup
+test "$(cat "$work/trace")" = $'caddy\netc\nlocked\nunlock'
+appliance=false
+: >"$work/trace"
+setup
+test "$(cat "$work/trace")" = $'caddy\nunlock'
+printf 'PASS: real setup provisions the appliance console before unlock, locks an empty password and leaves DIY alone\n'

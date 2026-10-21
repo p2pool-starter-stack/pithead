@@ -129,8 +129,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   swap.
 - **install** — stage a chosen token and valid config on the ESP before the first removable-media
   boot, authenticate case and prefix variants, and check prefilled answers with no disk selected.
-  Reboot with malformed JSON and require serial rejection with a blank form, then install and
-  require the target ESP to consume the staged config. Boot the image as removable media beside a
+  Reboot with malformed JSON and require serial rejection with a blank form carrying the reference
+  wallet placeholders, then install and require the target ESP to consume the staged config.
+  Boot the image as removable media beside a
   blank disk, run the disk installer, then boot the target and prove the copied system is COMPLETE —
   the `/var` overlay made an incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:
   `/data` must survive a second install over the same disk, and the three-way wipe choice
@@ -206,6 +207,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   The same password change checks root-password status and, through a guest-only probe, that its
   hash equals the dashboard password; `/etc`'s upperdir must be under `/run` on tmpfs. It repeats
   those checks after the password change, an unaided reboot while changed, and restoration.
+  The console-login selftest also runs the real `setup` orchestration and setter with host I/O
+  stubbed: fresh appliance setup must set the password before unlocking, an empty password must
+  lock root, and DIY setup must leave the console unchanged.
   The shared dashboard control poller records POST and poll metadata on stderr: timestamp, route,
   curl exit code, HTTP status, response size, JSON/error presence, UUID and allowlisted result
   status. A refused or untrackable POST and an exhausted deadline also capture the guest control
