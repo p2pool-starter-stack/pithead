@@ -9,11 +9,32 @@ _recovery_prepare() {
         bad "recovery requires an attested previous-release image and full source SHA"
         return 1
     }
-    _vm_boot_disk "$old" && _wait_ssh 900 && _wizard_provision_capture 0 && _reset_slot_good_stack || return 1
+    _vm_boot_disk "$old" || {
+        bad "recovery fixture: previous-release boot failed"
+        return 1
+    }
+    _wait_ssh 900 || {
+        bad "recovery fixture: previous-release SSH failed"
+        return 1
+    }
+    _wizard_provision_capture 0 || {
+        bad "recovery fixture: previous-release provisioning failed"
+        return 1
+    }
+    _reset_slot_good_stack || {
+        bad "recovery fixture: previous-release health failed"
+        return 1
+    }
     RECOVERY_OLD_SOURCE=$(_ssh cat /opt/pithead/BUILD_COMMIT) || return 1
-    old_marker=$(_ssh cat /etc/pithead-test-marker) || return 1
+    old_marker=$(_ssh 'if test -e /etc/pithead-test-marker; then cat /etc/pithead-test-marker; fi') || {
+        bad "recovery fixture: previous-release marker read failed"
+        return 1
+    }
     [ "$RECOVERY_OLD_SOURCE" = "$PITHEAD_OLD_IMAGE_COMMIT" ] &&
-        [ "$RECOVERY_OLD_SOURCE" != "$RECOVERY_HEAD" ] || return 1
+        [ "$RECOVERY_OLD_SOURCE" != "$RECOVERY_HEAD" ] || {
+        bad "recovery fixture: previous-release source identity failed"
+        return 1
+    }
     _reboot_wait reboot 300 && _recovery_wait_slot A "$old_marker" "$RECOVERY_OLD_SOURCE" initial || return 1
     bundle=$(_build_bundle recovery) || {
         bundle_build_evidence

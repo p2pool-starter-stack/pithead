@@ -6,7 +6,9 @@ Run it as a separate `tier4-kvm` job with `phases: ["recovery"]` and
 `old_image_commit` set to the full source SHA of the previous release. The runner must supply
 an attested image for that exact source; the phase fails if it is missing. It boots and provisions
 that image, waits for its health commit, installs the candidate with `pithead os-update`, and
-waits for the candidate to commit without marking either slot good itself.
+waits for the candidate to commit without marking either slot good itself. The previous image
+may lack a test marker; its exact source SHA remains mandatory. Fixture preparation reports the
+failed boot, SSH, provisioning, health or identity stage without printing wizard credentials.
 
 ## Applicable cells
 

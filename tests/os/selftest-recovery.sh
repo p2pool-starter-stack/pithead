@@ -26,6 +26,9 @@ for change in 'B|recovery|/B|previous|' 'A_OK=1/A_OK=0' 'A_TRY=0/A_TRY=1' 'B_OK=
 done
 ! recovery_slot_matches "$snapshot" B recovery "$(printf '%040d' 2)"
 ! recovery_slot_matches '' B recovery "$head_sha"
+unmarked=${snapshot/B|recovery|/B||}
+recovery_slot_matches "$unmarked" B '' "$head_sha"
+! recovery_slot_matches "$unmarked" B '' "$(printf '%040d' 2)"
 ! recovery_slot_matches "${snapshot%%\{*}{invalid}" B recovery "$head_sha"
 a=$(printf '%064d' 1) b=$(printf '%064d' 2) c=$(printf '%064d' 3)
 recovery_ids_disjoint "$a" "$b"

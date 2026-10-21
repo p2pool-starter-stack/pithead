@@ -9,6 +9,67 @@ trap 'rm -rf "$scratch"' EXIT
 SERIAL="$scratch/serial"
 : >"$SERIAL"
 
+for marker in absent present; do
+    for fault in none boot ssh provision health source; do
+        (
+            PITHEAD_OLD_IMAGE="$scratch/old-image"
+            PITHEAD_OLD_IMAGE_COMMIT=$(printf '%040d' 2)
+            RECOVERY_HEAD=$(printf '%040d' 1)
+            : >"$PITHEAD_OLD_IMAGE"
+            marker_file="$scratch/marker-$marker"
+            [ "$marker" != present ] || printf previous >"$marker_file"
+            ok() { :; }
+            bad() { printf '%s\n' "$*"; }
+            _vm_boot_disk() { [ "$fault" != boot ]; }
+            _wait_ssh() { [ "$fault" != ssh ]; }
+            _wizard_provision_capture() { [ "$fault" != provision ]; }
+            _reset_slot_good_stack() { [ "$fault" != health ]; }
+            _ssh() {
+                case "$*" in
+                *BUILD_COMMIT*)
+                    if [ "$fault" = source ]; then printf '%s' "$RECOVERY_HEAD"; else printf '%s' "$PITHEAD_OLD_IMAGE_COMMIT"; fi
+                    ;;
+                *pithead-test-marker*)
+                    local command="$*"
+                    command="${command//\/etc\/pithead-test-marker/$marker_file}"
+                    bash -c "$command"
+                    ;;
+                *os-update*) return 0 ;;
+                *) return 127 ;;
+                esac
+            }
+            _reboot_wait() { :; }
+            _recovery_wait_slot() {
+                if [ "$1" = A ]; then
+                    [ "$3" = "$PITHEAD_OLD_IMAGE_COMMIT" ] || return 1
+                    if [ "$marker" = absent ]; then [ -z "$2" ]; else [ "$2" = previous ]; fi
+                else
+                    [ "$2" = recovery ] && [ "$3" = "$RECOVERY_HEAD" ]
+                fi
+            }
+            _build_bundle() { printf bundle; }
+            _stage_bundle() { :; }
+            _recovery_fallback_intact() { :; }
+            if [ "$fault" = none ]; then
+                _recovery_prepare
+            else
+                if output=$(_recovery_prepare); then
+                    printf 'FAIL: fixture accepted %s\n' "$fault" >&2
+                    exit 1
+                fi
+                case "$fault" in
+                boot) expected='previous-release boot' ;;
+                ssh) expected='previous-release SSH' ;;
+                provision) expected='previous-release provisioning' ;;
+                health) expected='previous-release health' ;;
+                source) expected='previous-release source identity' ;;
+                esac
+                [[ "$output" == *"$expected failed"* ]]
+            fi
+        )
+    done
+done
+
 for operation in config-reset factory-reset; do
     for route in wizard-setup wizard-restore cli-restore; do
         for fault in none reset page sentinel-monero sentinel-tari old-container setup health reboot fallback identity; do
