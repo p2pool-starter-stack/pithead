@@ -761,6 +761,9 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   absence of one and points at a firewall, a partition or the wrong address.
 - End-to-end mining. Workers are online (`proxy_workers >= --workers`), stratum has connections,
   and total hashes are accumulating ([#28](https://github.com/p2pool-starter-stack/pithead/issues/28)).
+  With mining assertions enabled, the same check reads xmrig-proxy's `/1/workers` through the
+  production bounded helper, records the response body bytes and worker count, and requires at
+  least `--workers` entries within the 1 MiB cap ([#1360](https://github.com/p2pool-starter-stack/pithead/issues/1360)).
 - Posture propagated. `MONERO_RPC_BIND`, `DASHBOARD_SECURE`, `XVB_ENABLED`, and `TARI_REQUIRED`
   in `.env` match the config; the Caddyfile uses the right scheme.
 - Deploying scenarios exercise LAN guard recovery; `--check` does not run this battery.

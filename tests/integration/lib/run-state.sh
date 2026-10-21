@@ -184,6 +184,7 @@ assert_running_state() {
         conns="$(jq_get "$st" '.stratum.conns')"
         hashes="$(jq_get "$st" '.stratum.total_hashes')"
         assert_mining_state "0" "$workers" "$hashes" "$EXPECTED_WORKERS"
+        assert_proxy_workers_payload
         it_step "stratum conns=${conns:-?} (informational)"
     fi
 

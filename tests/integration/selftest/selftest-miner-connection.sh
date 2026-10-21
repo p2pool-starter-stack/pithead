@@ -14,7 +14,29 @@ for mutation in '.password="wrong"' '.password_set=false' '.tls=false' '.fingerp
 done
 body='{"url":"stratum+tcp://fixture:3333","password":"","password_set":false,"tls":false,"fingerprint":""}'
 miner_connection_matches "$body" "" false "" 3333 >/dev/null
-printf 'PASS: miner connection verdict rejects absent or mismatched credentials and TLS identity\n'
+proxy_payload_verdict() {
+    (
+        TEST_SAMPLE="$1" TEST_RC="${3:-0}"
+        rx() {
+            printf '%s' "$TEST_SAMPLE"
+            return "$TEST_RC"
+        }
+        it_pass() { printf PASS; }
+        it_fail() { printf FAIL; }
+        EXPECTED_WORKERS="$2" assert_proxy_workers_payload
+    )
+}
+[ "$(proxy_payload_verdict '234 1 1048576 True' 1)" = PASS ]
+[ "$(proxy_payload_verdict '1048576 2 1048576 True' 2)" = PASS ]
+[ "$(proxy_payload_verdict '1048577 1 1048576 True' 1)" = FAIL ]
+[ "$(proxy_payload_verdict '234 0 1048576 True' 1)" = FAIL ]
+[ "$(proxy_payload_verdict '234 1 1048576 True' 2)" = FAIL ]
+[ "$(proxy_payload_verdict '234 1 1048576 False' 1)" = FAIL ]
+[ "$(proxy_payload_verdict 'not-a-sample' 1)" = FAIL ]
+[ "$(proxy_payload_verdict '234 1 1048576 True trailing' 1)" = FAIL ]
+[ "$(proxy_payload_verdict '234 1 1048576 True' 1 255)" = FAIL ]
+grep -qx '        assert_proxy_workers_payload' "${BASH_SOURCE[0]%/*}/../lib/run-state.sh"
+printf 'PASS: miner connection identity and bounded real-worker payload verdicts\n'
 
 # Real entrypoint execution is covered by test-xmrig-proxy-entrypoint.sh. Here the
 # live verdict must reject Docker .Args (without the appended flag), not bless it.

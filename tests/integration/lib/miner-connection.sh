@@ -1,4 +1,17 @@
 # shellcheck shell=bash
+assert_proxy_workers_payload() {
+    local sample bytes workers cap
+    if sample="$(rx "docker exec dashboard python3 -c 'import os;from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient;from mining_dashboard.helper.http import MAX_RESPONSE_BYTES,bounded_request;c=XMRigProxyClient(os.environ[\"PROXY_HOST\"],int(os.environ[\"PROXY_API_PORT\"]),os.environ[\"PROXY_AUTH_TOKEN\"]);r=bounded_request(\"GET\",c.base_url+\"/1/workers\",timeout=5,session=c.session);r.raise_for_status();w=r.json().get(\"workers\");print(len(r.content),len(w) if isinstance(w,list) else 0,MAX_RESPONSE_BYTES,isinstance(w,list))'" 2>/dev/null)" &&
+        [[ "$sample" =~ ^([0-9]+)\ ([0-9]+)\ ([0-9]+)\ True$ ]]; then
+        bytes="${BASH_REMATCH[1]}" workers="${BASH_REMATCH[2]}" cap="${BASH_REMATCH[3]}"
+    fi
+    if [ -n "${bytes:-}" ] && [ "$workers" -ge "$EXPECTED_WORKERS" ] && [ "$bytes" -le "$cap" ]; then
+        it_pass "xmrig-proxy /1/workers is bounded under real miner load ($bytes/$cap bytes, $workers workers; #1360)"
+    else
+        it_fail "xmrig-proxy /1/workers is bounded under real miner load (#1360)" "probe failed, evidence malformed, workers below $EXPECTED_WORKERS, or response above cap"
+    fi
+}
+
 # Shared verdict for the live Compose and appliance connection endpoint. Never echo secrets.
 miner_connection_matches() { # <body> <password> <tls> <certificate-digest> <port>
     printf '%s' "$1" | jq -e --arg password "$2" --argjson tls "$3" --arg fp "$4" --arg port "$5" '
