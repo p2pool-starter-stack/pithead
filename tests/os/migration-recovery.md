@@ -37,6 +37,8 @@ an enabled Tari mode must carry a nonempty address. The migration recovery selft
 loads the identity helper and requires snapshots before install and after commit.
 The tier-1 identity selftest changes an
 `.env` line and a Tor key separately and requires both comparisons to fail.
+A mismatch names only the changed categories; an unreadable snapshot has a
+separate failure. Neither diagnostic prints hashes, file contents or credentials.
 
 The candidate's migration boot must record its BUILD_COMMIT, durable marker
 claim with the booted A/B slot, P2Pool and proxy stopped at the ordinary health

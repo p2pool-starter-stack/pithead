@@ -6,11 +6,24 @@ _identity_snapshot() {
     printf '%s\n' "$snapshot"
 }
 _identity_unchanged() {
-    local label="$1" before="$2" after
-    if [ -n "$before" ] && after=$(_identity_snapshot) && [ "$before" = "$after" ]; then
-        ok "$label: config, env, wallets, Tor keys, machine-id and SSH identity are unchanged"
-    else
-        bad "$label: identity changed or a required snapshot could not be read"
+    local label="$1" before="$2" after field changed=""
+    if [ -z "$before" ]; then
+        bad "$label: identity baseline is missing"
         return 1
     fi
+    if ! after=$(_identity_snapshot); then
+        bad "$label: identity snapshot could not be read"
+        return 1
+    fi
+    if [ "$before" = "$after" ]; then
+        ok "$label: config, env, wallets, Tor keys, machine-id and SSH identity are unchanged"
+        return
+    fi
+    for field in config env machine ssh wallet tor; do
+        if [ "$(printf '%s\n' "$before" | grep "^$field=")" != "$(printf '%s\n' "$after" | grep "^$field=")" ]; then
+            changed="${changed:+$changed, }$field"
+        fi
+    done
+    bad "$label: identity changed (${changed:-snapshot format})"
+    return 1
 }
