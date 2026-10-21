@@ -849,8 +849,12 @@ For one representative config:
   exactly, the same per-category comparison a safety rollback makes. The existing-install
   restore fixture backs up energy cost 0.123, applies 0.789, then runs `down`, `restore`,
   and `up`. Both `/api/config` and `/api/state` must return 0.123 within 120 seconds,
-  without a post-restore `apply` or restart. The fixture restores its original configuration
-  on exit and also runs in the KVM reset phase.
+  without a post-restore `apply` or restart. The fixture runs before the Tari enable trial,
+  restores its original configuration on exit, and also runs in the KVM reset phase.
+  Before Tari can run, the lifecycle wrapper checks the original config hash, secret
+  fingerprints and Tari mode, then requires the stack to become healthy within 240 seconds.
+  A failed probe or restoration stops lifecycle; Tari retains its own fail-fast return.
+  The later config-reset recovery sequence runs unchanged after a successful Tari trial.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
   secrets; the dashboard reflects the new pool; then it's reverted. An omitted
   `p2pool.pool` means mini, so the alternate is main. Explicit main and nano baselines

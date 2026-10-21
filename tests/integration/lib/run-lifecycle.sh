@@ -57,6 +57,7 @@ run_lifecycle() {
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
     run_source_image_reconcile || return 1
+    run_restore_dashboard_probe || return 1
     run_tari_background_sync || return 1
     local cur_pool fp_before other
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
@@ -225,7 +226,6 @@ run_lifecycle() {
     [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
     [ "$lifecycle_ok$reset_failed" = 10 ]
 }
-
 # A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
 # every regular file up to 64 MiB, and for a larger one (the chains' LMDB files, hundreds of GiB
 # on a synced box, an hour per hashing pass) its inode, size, mtime and ctime to the nanosecond.
