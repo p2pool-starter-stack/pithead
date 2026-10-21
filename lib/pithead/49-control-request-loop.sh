@@ -277,7 +277,7 @@ control_run_pending() {
     export PITHEAD_CONTROL_RUNNER_PID=$$
     [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||
         [ "$(env_get TOR_AUTO_HEAL)" == "true" ] ||
-        error "Neither dashboard control nor Tor auto-heal is enabled."
+        error "Dashboard control and Tor auto-heal are not enabled."
     local cdir CONTROL_HEAL_ONLY
     cdir=$(env_get CONTROL_DIR)
     [ -n "$cdir" ] || cdir="$PWD/data/control"
