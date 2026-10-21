@@ -111,7 +111,15 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
      non-Python tools run via `npx`/`uvx`/`docker`, so a contributor needs **Node, uv, and Docker**
      on PATH (plus `shfmt`); `pre-commit` runs the same checks on changed files. Link-checking
      (`lychee`) runs on a weekly schedule, not per-PR.
-   - **test-dashboard** — the dashboard `pytest` suite (must stay ≥ the **80% total coverage gate**).
+   - **test-dashboard** — the dashboard `pytest` suite, using pytest-xdist with `-n auto`
+     (must stay ≥ the **80% total coverage gate**). The Docker test stage keeps its serial coverage
+     gate. To run the suite serially on the host with the same gate:
+
+     ```bash
+     cd dashboard && uv run --locked --extra test python -m pytest -n 0 \
+       --cov=mining_dashboard --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+     ```
+
      CI also runs **`make test-patch-coverage`** (`diff-cover`): new/changed lines must be **≥ 90%**
      covered against the PR's own base branch, the ratchet that stops coverage rotting at the margin. The gate
      says so explicitly when a diff has nothing it measures (shell/docs-only PRs pass loudly), and

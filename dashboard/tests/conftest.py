@@ -37,3 +37,8 @@ def state_manager():
     sm = StateManager(db_path=":memory:")
     yield sm
     sm.close()
+
+
+@pytest.fixture(autouse=True)
+def _fast_control_result_poll(monkeypatch):
+    monkeypatch.setattr("mining_dashboard.service.control_service._RESULT_POLL_S", 0.001)
