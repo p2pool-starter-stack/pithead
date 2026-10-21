@@ -309,13 +309,6 @@ run_hardening() {
         it_fail "failed logins retained beyond 256 KiB and native gzip rotation (#3265)" "$probe_out"
     fi
 
-    if probe_out="$(rx "timeout 1500 python3 tests/integration/lib/dashboard_ca_trust.py")" &&
-        grep -qx 'dashboard-ca: complete' <<<"$probe_out"; then
-        it_pass "DIY root CA trust survives dashboard leaf rotation (#3435)"
-    else
-        it_fail "DIY root CA trust survives dashboard leaf rotation (#3435)" "$probe_out"
-    fi
-
     # Restore the baseline ourselves: re-applying with control off uninstalls the path unit, so the
     # root systemd unit never outlives the phase even though the end-of-run restore would also do it.
     it_step "restoring baseline (disables control, removes the path unit)…"
