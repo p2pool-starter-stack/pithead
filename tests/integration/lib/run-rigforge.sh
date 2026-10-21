@@ -1,7 +1,6 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 source "${BASH_SOURCE[0]%/*}/worker-detail-diagnostics.sh" || return $?
-source "${BASH_SOURCE[0]%/*}/run-worker-auth.sh" || return $?
 run_rigforge_integration() {
     # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
     IT_CURRENT_SCENARIO="rigforge-integration"
