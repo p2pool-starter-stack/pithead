@@ -101,6 +101,7 @@ run_hardening() {
     IT_CURRENT_SCENARIO="hardening"
     echo ""
     it_log "── v1.4 hardening phase (#377/#33/#424) ────────────"
+    run_tari_off_preview
 
     if ! has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         it_skip_phase "hardening" "remote mode: no local containers/systemd to exercise" "by-design"

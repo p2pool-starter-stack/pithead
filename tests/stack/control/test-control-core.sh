@@ -389,6 +389,10 @@ assert_contains "combined preview retains chain data (#3383)" "$out" "chain data
 for inactive_guidance in 'CLEARNET initial sync' 'tari is recreated' 'node endpoint' 'trusts the chain data'; do
     assert_not_contains "combined preview omits inactive $inactive_guidance (#3383)" "$out" "$inactive_guidance"
 done
+jq '.tari.mode="local" | .tari.clearnet_initial_sync=true' "$C/config.json" >"$C/config.candidate"
+out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" PITHEAD_CONFIG_FILE="$C/config.candidate" ./pithead apply --dry-run --porcelain 2>/dev/null)"
+assert_contains "active local preview keeps clearnet confirmation (#3383)" "$out" "$(printf 'CONFIRM\tTARI_CLEARNET_SYNC\t')"
+assert_contains "active local preview keeps clearnet warning (#3383)" "$out" "Tari CLEARNET initial sync ENABLED"
 assert_eq "active remote endpoint preview retains trust guidance (#3383)" \
     "$(jq -r '[.changes[] | select(.key == "TARI_GRPC_ADDRESS")] | any(.flag == "CONFIRM" and (.msg | contains("trusts the chain data")))' "$RESULTS/$UUID3.json" 2>/dev/null)" "true"
 jq '.tari.mode="off" | .tari.clearnet_initial_sync=false' "$C/config.json" >"$C/config.off" && mv "$C/config.off" "$C/config.json"
@@ -402,6 +406,12 @@ run_pending >/dev/null
 assert_eq "Tari-off preview status (#3383)" "$(jq -r '.status' "$RESULTS/$UUID4.json")" "previewed"
 assert_eq "Tari-off preview gives no active guidance for inactive settings (#3383)" \
     "$(jq -r '[.changes[] | select(.key == "TARI_GRPC_ADDRESS" or .key == "TARI_CLEARNET_SYNC" or .key == "tari.remote.host" or .key == "tari.remote.grpc_port")] | all(.msg | test("inactive|stored|no effect|will not run"; "i"))' "$RESULTS/$UUID4.json")" "true"
+jq '.tari.clearnet_initial_sync=true' "$C/config.json" >"$C/config.off" && mv "$C/config.off" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+assert_rc "inactive clearnet setting applies (#3383)" "$?" "0"
+jq '.tari.mode="local"' "$C/config.json" >"$C/config.candidate"
+out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" PITHEAD_CONFIG_FILE="$C/config.candidate" ./pithead apply --dry-run --porcelain 2>/dev/null)"
+assert_contains "enabling stored clearnet sync warns about exposure (#3383)" "$out" "Tari CLEARNET initial sync ENABLED"
 rm -f "$RESULTS/$UUID4.json" "$STAGED/$UUID4.json" "$C/config.candidate"
 rm -f "$RESULTS/$UUID3.json" "$STAGED/$UUID3.json"
 # shellcheck source=tests/stack/control/config-concurrency.sh
