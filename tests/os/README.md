@@ -321,19 +321,19 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   asserts the wedged-`/data` recovery reformats it rather than bricking.
 - **image-upgrade** — boot the submitted appliance image, create a sparse loop-mounted XFS with
   reflinks under the disposable guest's writable data partition, verify and install the published
-  v1.20.0 bundle without modifying it, then invoke the existing image-upgrade harness against the
-  submitted images. The baseline uses remote Monero and remote Tari because v1.20.0 predates
-  Tari-off mode, and keeps its five data dirs on a shared root beside the version dirs on the same
-  reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
+  v2.0.0 bundle without modifying it, then invoke the existing image-upgrade harness against the
+  submitted images. The baseline uses remote Monero and remote Tari, and keeps its five data dirs
+  on a shared root beside the version dirs on the same reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
   the tier's debug-registry public key, so submitted images are verified against the key that
   signed them. When `PITHEAD_REGISTRY_CA` is set, the signed candidate also carries that CA as
   `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. It runs the release-shaped stack under the CLI's existing test override inside the
   otherwise appliance-shaped guest. Its private volatile script is invoked through `bash`, so a
   noexec mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
-  and resumed hashes. The v1.20.0 rollback starts without the strict Tor-egress check, because that
-  release cannot install the podman ruleset; the run records it as a counted by-design row that
-  [#2696](https://github.com/p2pool-starter-stack/pithead/issues/2696) removes. Release-input preparation failures name only the failed sub-step, a redacted
+  and resumed hashes. The baseline uses `pithead-v2.0.0-baseline` so a candidate whose `VERSION`
+  is still `2.0.0` gets a fresh version directory. The candidate upgrade and baseline restoration
+  both enforce the strict Tor-egress check. Release-input preparation failures name only the
+  failed sub-step, a redacted
   command, and its exit status. Downstream guest failures name only a fixed stage (including the
   mountpoint or loop-mount half of reflink setup) and integer exit status; command output, tokens,
   keys, signature material, and topology stay hidden. Its EXIT trap stops the stack, unmounts the

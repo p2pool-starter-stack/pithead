@@ -131,13 +131,14 @@ baseline_diagnostic="$(
     }
     chmod() { :; }
     curl() {
+        [ "$*" = "-fsSL --retry 3 -o $stage/v2.0.0.tar.gz https://github.com/p2pool-starter-stack/pithead/releases/download/v2.0.0/pithead.tar.gz" ] || return 24
         printf 'must-not-leak\n' >&2
         return 23
     }
     _image_upgrade_prepare_inputs "$stage" 2>&1
 )" || baseline_rc=$?
 [ "$baseline_rc" -eq 23 ] &&
-    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=signing command="curl <published-v1.20.0-bundle>" exit=23' ] || {
+    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=signing command="curl <published-v2.0.0-bundle>" exit=23' ] || {
     echo "image-upgrade baseline trust preparation lost safe failure attribution" >&2
     exit 1
 }
@@ -168,7 +169,7 @@ signing_diagnostic="$(
     _image_upgrade_prepare_inputs "$stage" 2>&1
 )" || signing_rc=$?
 [ "$signing_rc" -eq 29 ] &&
-    [ "$signing_diagnostic" = 'image-upgrade input failure: sub-step=signing command="cosign verify-blob <published-v1.20.0-bundle>" exit=29' ] || {
+    [ "$signing_diagnostic" = 'image-upgrade input failure: sub-step=signing command="cosign verify-blob <published-v2.0.0-bundle>" exit=29' ] || {
     echo "image-upgrade signing preparation lost safe failure attribution" >&2
     exit 1
 }
@@ -187,7 +188,7 @@ grep -Fx -- '--use-signing-config=false' "$wrong_stage/cosign.args" >/dev/null &
 }
 bash "$HERE/image-upgrade-guest.sh" --self-test || exit $?
 if (
-    for stage in remote-node-reachable reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner-tree local-miner-role local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
+    for stage in remote-node-reachable reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify local-miner-tree local-miner-role local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
         _ssh() { printf 'stage=%s exit=17\n' "$stage"; }
         [ "$(_image_upgrade_read_guest_failure)" = "stage=$stage exit=17" ] || exit 1
     done

@@ -45,7 +45,6 @@
 #           a real A/B update then proves wizard, CLI restore and open-setup reboot recovery;
 #           factory-reset's ESP marker then wipes /data and returns a FRESH machine to the wizard;
 #           a corrupt /data superblock drives wedged-/data recovery.
-#   image-upgrade  signed v1.20.0 -> candidate -> exact rollback on guest-local reflink XFS
 #   crossupdate  a provisioned guest booted from a REAL prior build ($PITHEAD_OLD_IMAGE, bench-ci's
 #           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
