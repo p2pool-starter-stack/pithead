@@ -221,7 +221,7 @@ run_lifecycle() {
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
     run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
-    [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
+    [ "$reset_failed" = 1 ] || { run_uninstall_round_trip && run_uninstall_restore; } || lifecycle_ok=0
     [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
     [ "$lifecycle_ok$reset_failed" = 10 ]
 }

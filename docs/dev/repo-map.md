@@ -69,6 +69,12 @@ The fresh-spare negative control is in `tests/os/phases/update-spare-slot.sh`.
 The real A/B reset leg is `tests/os/phases/reset-slot.sh`; it checks wizard setup, CLI restore
 and reboot with setup still open before the final provisioned reboot.
 
+The destructive recovery matrix is `tests/os/phases/recovery.sh`; its slot and container
+invariants are in `tests/os/lib/recovery-invariants.sh`, and HTTP recovery is in
+`tests/os/recovery-wizard.sh`. `tests/os/recovery.md` defines applicable cells and
+by-design exclusions. DIY uninstall/restore is `tests/integration/lib/run-uninstall-restore.sh`;
+`tests/integration/lib/recovery-census.sh` also checks config-reset recovery.
+
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the

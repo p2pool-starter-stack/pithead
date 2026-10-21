@@ -373,9 +373,21 @@ KVM_RIG_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_RIG_KEY" \
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media","fault","reset","image-upgrade","stack"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig group",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
 printf 'KVM jobs: %s@%s %s@%s\n' "$KVM_BOOT_ID" "$SHA" "$KVM_RIG_ID" "$SHA"
+OLD_SOURCE=$(git rev-parse 'v2.0.0^{commit}')
+KVM_RECOVERY_KEY=$(uuidgen)
+printf 'KVM recovery idempotency key: %s\n' "$KVM_RECOVERY_KEY"
+KVM_RECOVERY_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg old "$OLD_SOURCE" --arg key "$KVM_RECOVERY_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["recovery"],old_image_commit:$old},timeout_minutes:240,submitted_by:"release/devops",note:"release destructive recovery matrix",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+printf 'KVM recovery job: %s@%s\n' "$KVM_RECOVERY_ID" "$SHA"
 ```
 
-Read both completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
+The recovery matrix gets its own 240-minute job, with an attested image built from the exact
+previous-release source. For the 2.1.0 lane, that baseline is v2.0.0. Do not add it to the
+reset/stack group: its two-slot preparation and per-cell reboots have a separate budget.
+See the [matrix contract](../../tests/os/recovery.md).
+
+Read all three completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
 rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
 battery proof. A failed KVM group prevents the final e2e gate from running.
 
@@ -394,15 +406,15 @@ Use `targeted` until the frozen SHA includes the harness fix from
 [#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026); then set `E2E_MODE=matrix`.
 Keep the real rig in the run. Only the owner may authorize `no_rig` after reviewing failures
 confined to rigforge-control harness rows. The final e2e job alone requests the aggregate status,
-with both successful KVM jobs in `after`; bench-ci retains the dependency across benches:
+with all three successful KVM jobs in `after`; bench-ci retains the dependency across benches:
 
 ```bash
 E2E_MODE=targeted
 E2E_KEY=$(uuidgen)
 printf 'e2e idempotency key: %s\n' "$E2E_KEY"
 jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MODE" \
-  --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" \
-  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
+  --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" --argjson recovery "$KVM_RECOVERY_ID" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig,$recovery],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
 ```
 

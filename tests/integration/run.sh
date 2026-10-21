@@ -120,6 +120,7 @@ source "$HERE/lib/run-wizard-defaults.sh" || exit $?
 source "$HERE/lib/run-connection-announcements.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-reset-restore.sh
 source "$HERE/lib/run-reset-restore.sh" || exit $?
+source "$HERE/lib/run-uninstall-restore.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-secrets.sh
