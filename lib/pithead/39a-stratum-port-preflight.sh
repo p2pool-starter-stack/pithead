@@ -1,6 +1,7 @@
 validate_stratum_port_change() {
     local active_port detail STRATUM_BIND STRATUM_PORT
     validate_config_document
+    validate_config_control_characters
     parse_stratum_endpoint
     active_port=$(env_get_file "$ENV_FILE" STRATUM_PORT)
     [ "$STRATUM_PORT" != "${active_port:-3333}" ] || return 0

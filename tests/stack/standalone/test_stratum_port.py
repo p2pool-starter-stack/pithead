@@ -25,6 +25,7 @@ class StratumPortTest(unittest.TestCase):
                     """
 set -euo pipefail
 source "$ROOT/lib/pithead/19-small-utilities.sh"
+source "$ROOT/lib/pithead/22a-config-document.sh"
 source "$ROOT/lib/pithead/27b-stratum-endpoint.sh"
 source "$ROOT/lib/pithead/39a-stratum-port-preflight.sh"
 source "$ROOT/lib/pithead/40-apply-and-render.sh"
@@ -106,6 +107,18 @@ esac
             result = self.probe(port, action="commit")
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIn("already in use", result.stderr)
+
+    def test_control_characters_refused_before_endpoint_diagnostics(self):
+        for action in ("preview", "commit"):
+            for port, bind in (
+                ("443\nuntrusted-marker", "0.0.0.0"),
+                (45678, "\x1b[31muntrusted-marker"),
+            ):
+                with self.subTest(action=action, port=port, bind=bind):
+                    result = self.probe(port, bind=bind, action=action)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn("control character", result.stderr)
+                    self.assertNotIn("untrusted-marker", result.stderr)
 
     def test_unavailable_address_fails_closed(self):
         result = self.probe(45678, bind="192.0.2.1")
