@@ -27,6 +27,8 @@ box for the irreducibly-real. Each situation is tested once, at the lowest tier 
 
 The appliance boot phase compares the console's SHA-256 fingerprint with the setup certificate
 served on port 443, submits five wrong tokens, and requires a new console token within 120 seconds.
+Requests pin the verified certificate's public key; the restarted certificate is compared with
+the latest console fingerprint before either real token is sent.
 It checks that the previous token is refused and the new token opens authenticated wizard state.
 `tests/os/selftest-wizard-identity.sh` checks the probe's failure paths without a guest;
 `tests/os/selftest-wizard-lockout-loop.sh` drives the host's first-boot loop through a stopped

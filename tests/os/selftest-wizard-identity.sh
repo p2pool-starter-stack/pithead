@@ -6,23 +6,25 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 SERIAL="$scratch/serial"
 export ip=192.0.2.10
-fingerprint=$(printf 'AB:%.0s' {1..31})AB
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=wizard-test \
+    -keyout "$scratch/key" -out "$scratch/cert" >/dev/null 2>&1
+expected=$(openssl x509 -in "$scratch/cert" -noout -fingerprint -sha256)
+fingerprint=${expected#*=}
+mismatch_fingerprint="00${fingerprint:2}"
+[ "$mismatch_fingerprint" != "$fingerprint" ] || mismatch_fingerprint="FF${fingerprint:2}"
 printf '  One-time token: pit-AAAAA2\r\n  SHA-256: %s\r\n' "$fingerprint" >"$SERIAL"
 [ "$(wizard_console_token "$SERIAL")" = pit-AAAAA2 ]
 [ "$(wizard_console_fingerprint "$SERIAL")" = "$fingerprint" ]
 printf 'SHA-256: AB:CD\n' >"$scratch/malformed"
 if wizard_console_fingerprint "$scratch/malformed"; then exit 1; fi
 if [ -n "$(wizard_console_token "$scratch/malformed")" ]; then exit 1; fi
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=wizard-test \
-    -keyout "$scratch/key" -out "$scratch/cert" >/dev/null 2>&1
 timeout() { cat "$scratch/cert"; }
-expected=$(openssl x509 -in "$scratch/cert" -noout -fingerprint -sha256)
-[ "$(wizard_served_fingerprint)" = "${expected#*=}" ]
-printf invalid >"$scratch/cert"
-if wizard_served_fingerprint; then exit 1; fi
-wizard_served_fingerprint() {
+[ "$(wizard_served_certificate | wizard_certificate_fingerprint)" = "$fingerprint" ]
+if printf invalid | wizard_certificate_fingerprint; then exit 1; fi
+if printf invalid | wizard_certificate_pin; then exit 1; fi
+wizard_served_certificate() {
     [ "$scenario" != missing-certificate ] || return 1
-    if [ "$scenario" = mismatch ]; then printf 'CD'; else printf '%s' "$fingerprint"; fi
+    cat "$scratch/cert"
 }
 ok() {
     passes=$((passes + 1))
@@ -41,6 +43,8 @@ date() {
 }
 curl() {
     local args="$*" count
+    [[ "$args" == *"--pinnedpubkey sha256//"* ]] || return 2
+    [ "$scenario" != changed-key ] || return 90
     case "$args" in
     *token=wrong-token*)
         count=$(cat "$scratch/attempts")
@@ -50,6 +54,9 @@ curl() {
             printf 429
         elif [ "$count" -eq 5 ]; then
             [ "$scenario" = no-rotation ] || printf 'One-time token: pit-AAAAA3\n' >>"$SERIAL"
+            if [ "$scenario" = restarted-mismatch ]; then
+                printf 'SHA-256: %s\n' "$mismatch_fingerprint" >>"$SERIAL"
+            fi
             if [ "$scenario" = no-lockout ]; then printf 403; else printf 429; fi
         else
             printf 403
@@ -72,8 +79,11 @@ curl() {
         ;;
     esac
 }
-for scenario in healthy mismatch missing-certificate early-lockout no-lockout no-rotation unavailable old-accepted new-refused no-session; do
+for scenario in healthy mismatch missing-certificate early-lockout no-lockout no-rotation unavailable old-accepted new-refused no-session changed-key restarted-mismatch; do
     printf 'One-time token: pit-AAAAA2\nSHA-256: %s\n' "$fingerprint" >"$SERIAL"
+    if [ "$scenario" = mismatch ]; then
+        printf 'SHA-256: %s\n' "$mismatch_fingerprint" >>"$SERIAL"
+    fi
     printf 0 >"$scratch/attempts"
     printf 0 >"$scratch/ticks"
     : >"$scratch/rows"
