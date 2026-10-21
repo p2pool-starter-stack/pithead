@@ -126,8 +126,7 @@ config_reset() {
     reset_slot_record_good || error "Could not preserve the boot slot before reset — configuration was not cleared."
     restore_save_reset_paths
     detect_os 2>/dev/null || true
-    docker compose down --remove-orphans ||
-        warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running; fix the Compose error shown above."
+    configless_stack_down || error "Stack containers did not shut down cleanly — configuration was not cleared. Fix the engine and retry '$0 config-reset'."
     remove_tor_egress_firewall 2>/dev/null || true
     lan_guard_teardown config-reset # only once the engine shows both nodes stopped (#2749)
     # machine-role rides along with config.json: pithead-boot's condition is the two paths OR'd,
