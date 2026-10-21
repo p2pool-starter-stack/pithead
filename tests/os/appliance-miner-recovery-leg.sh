@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Guest subcommands for the real backup/stranded-loopback regression (#3375).
 set -euo pipefail
 umask 077
 T3375=/run/pithead-t3375
 BOUND_RECONNECT=${BOUND_RECONNECT:-480}
+BOUND_STRAND=${BOUND_STRAND:-480}
+BOUND_SHARE=${BOUND_SHARE:-600}
 miner_local() { jq -er '.pools[0].user | select(type == "string" and length > 0)' /data/rigforge/data/worker/xmrig/build/config.json; }
 miner_workers() {
     timeout 15 podman exec -i dashboard python - <<'PY'
@@ -33,7 +34,6 @@ miner_stranded() {
     local port pid
     port=$(cat "$T3375/port") pid=$(systemctl show xmrig -p MainPID --value)
     [ "$pid" -gt 0 ] || return 1
-    # Require this miner's ESTAB socket AND a queued, unaccepted connection on the host listener.
     miner_tuples "$port" "$pid" | grep -Fvx -f "$T3375/before-tuples" >/dev/null || return 1
     ss -Hntl "sport = :$port" | awk '$2 >= 1 {found=1} END {exit !found}'
 }
@@ -70,7 +70,15 @@ miner_diagnostics() {
 miner_guest_exit() {
     local rc=$?
     if [ "$rc" != 0 ]; then miner_diagnostics || true; fi
-    if ! miner_cleanup; then rc=1; fi
+    local cleanup=verified recovery=no
+    if ! miner_cleanup; then
+        cleanup=failed
+        rc=1
+    fi
+    if [ "$cleanup" = verified ] && [ "${MINER_BACKUP_APPLIED:-no}" = yes ]; then
+        case "${MINER_FAILURE:-}" in reconnect-timeout | share-timeout) recovery=yes ;; esac
+    fi
+    printf 'pithead-t3375: verdict=%s cleanup=%s recovery_failure=%s\n' "${MINER_FAILURE:-passed}" "$cleanup" "$recovery"
     trap - EXIT
     exit "$rc"
 }
@@ -90,8 +98,6 @@ miner_watch() {
         if [ -e "$T3375/armed" ] && [ ! -e "$T3375/strand" ] && miner_stranded; then
             ss -Hntp state established >"$T3375/strand-sockets"
             if [ -n "${2:-}" ]; then
-                # Backup restarts the proxy: wait for the rig too, without accepting an
-                # absent rig or ending the independent watcher on a transient API read.
                 if ! { miner_workers | jq -e --arg rig "$2" 'any(.[]; .[0] == $rig and .[2] >= 1)' >/dev/null &&
                     timeout 15 podman exec dashboard python -c 'from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; import os; c=XMRigProxyClient(os.environ["PROXY_HOST"], int(os.environ["PROXY_API_PORT"]), os.environ["PROXY_AUTH_TOKEN"]); assert c.get_summary()["miners"]["now"] >= 1'; }; then
                     sleep 1
@@ -127,7 +133,6 @@ miner_arm() {
     } >"$T3375/leg.sh"
     chmod 700 "$T3375/leg.sh"
     miner_tuples "$port" "$(systemctl show xmrig -p MainPID --value)" >"$T3375/before-tuples" || true
-    # Start independent restoration BEFORE mutation; it survives a lost SSH/harness process.
     touch "$T3375/watcher"
     systemd-run --quiet --collect --unit=pithead-t3375-watcher --property=RuntimeMaxSec=1200 \
         --property="ExecStopPost=/bin/bash $T3375/leg.sh restore" \
@@ -137,7 +142,6 @@ miner_arm() {
         [ "$SECONDS" -lt "$end" ] || return 1
         sleep 1
     done
-    # Identity DNAT wins conntrack before Podman's output NAT, targeting the host listener.
     nft -f - <<NFT || return 1
 add table ip pithead_t3375
 add chain ip pithead_t3375 output { type nat hook output priority -150; policy accept; }
@@ -149,12 +153,12 @@ NFT
 }
 miner_precondition() {
     local before now end=$((SECONDS + 1200))
-    jq -e '.local_miner.enabled == true' /data/pithead/config.json >/dev/null
+    jq -e '.local_miner.enabled == true' /data/pithead/config.json >/dev/null || return 1
     while ! systemctl is-active --quiet xmrig; do
         [ "$SECONDS" -lt "$end" ] || return 1
         sleep 5
     done
-    before=$(miner_counts | jq -er '.[1]')
+    before=$(miner_counts | jq -er '.[1]') || return 1
     end=$((SECONDS + 600))
     while [ "$SECONDS" -lt "$end" ]; do
         now=$(miner_counts) || now='[0,0]'
@@ -191,46 +195,131 @@ miner_fidelity() {
     printf '%s\n' 'PASS: fidelity strand persisted for 180 seconds with recovery paused'
     miner_cleanup
     trap - EXIT
-    # Only A restores its starting state. B never intervenes before its verdict.
     systemctl restart xmrig
     miner_precondition
 }
+miner_failure() {
+    MINER_FAILURE=$1
+    printf 'pithead-t3375: failure_reason=%s\n' "$MINER_FAILURE"
+    return 1
+}
+miner_watchdog_receipt() {
+    local unit load active enabled digest=absent
+    if [ -e /usr/local/sbin/pithead-miner-recovery ]; then
+        digest=$(sha256sum /usr/local/sbin/pithead-miner-recovery) || return 1
+        digest=${digest%% *}
+        [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || return 1
+    fi
+    printf 'pithead-t3375: watchdog_sha256=%s\n' "$digest"
+    for unit in pithead-miner-recovery.service pithead-miner-recovery.timer; do
+        load=$(systemctl show "$unit" -p LoadState --value) || return 1
+        active=$(systemctl show "$unit" -p ActiveState --value) || return 1
+        enabled=$(systemctl is-enabled "$unit" 2>/dev/null) || true
+        case "$load" in loaded | not-found | masked) ;; *) return 1 ;; esac
+        case "$active" in active | inactive | activating | deactivating | failed) ;; *) return 1 ;; esac
+        case "$enabled" in enabled | disabled | static | masked | not-found) ;; *) return 1 ;; esac
+        printf 'pithead-t3375: watchdog_unit=%s load=%s active=%s enabled=%s\n' "$unit" "$load" "$active" "$enabled"
+        if [ "$digest" = absent ]; then
+            [ "$load:$active:$enabled" = not-found:inactive:not-found ] || return 1
+        else
+            [ "$load" = loaded ] || return 1
+            if [ "$unit" = pithead-miner-recovery.timer ]; then
+                [ "$active:$enabled" = active:enabled ] || return 1
+            fi
+        fi
+    done
+    if [ "$digest" = absent ]; then
+        printf '%s\n' 'pithead-t3375: watchdog_absence=verified'
+    fi
+}
 miner_verdict() {
-    local before=$1 end=$((SECONDS + BOUND_RECONNECT)) counts connected=0
+    local before=$1 end=$((SECONDS + BOUND_STRAND)) counts='' connected=0
+    MINER_FAILURE=incomplete
+    MINER_BACKUP_APPLIED=no
     trap miner_guest_exit EXIT
+    [ -e "$T3375/backup-applied" ] || {
+        miner_failure backup-not-applied
+        return 1
+    }
+    MINER_BACKUP_APPLIED=yes
+    printf '%s\n' 'pithead-t3375: backup=applied'
+    miner_watchdog_receipt || {
+        miner_failure watchdog-state-unreadable
+        return 1
+    }
     until [ -e "$T3375/strand" ]; do
-        [ "$SECONDS" -lt "$end" ] || return 1
+        [ "$SECONDS" -lt "$end" ] || {
+            miner_failure strand-timeout
+            return 1
+        }
         sleep 1
     done
-    [ "$(podman inspect --format '{{.Id}}' xmrig-proxy)" = "$(cat "$T3375/proxy-id")" ]
-    [ "$(podman inspect --format '{{.State.StartedAt}}' xmrig-proxy)" != "$before" ]
+    printf '%s\n' 'pithead-t3375: strand=observed'
+    [ "$(podman inspect --format '{{.Id}}' xmrig-proxy)" = "$(cat "$T3375/proxy-id")" ] || {
+        miner_failure proxy-identity-changed
+        return 1
+    }
+    [ "$(podman inspect --format '{{.State.StartedAt}}' xmrig-proxy)" != "$before" ] || {
+        miner_failure proxy-not-restarted
+        return 1
+    }
+    printf '%s\n' 'pithead-t3375: proxy_identity=same proxy_start=changed'
+    end=$((SECONDS + BOUND_RECONNECT))
     while [ "$SECONDS" -lt "$end" ]; do
-        counts=$(miner_counts) || counts='[0,0]'
+        counts=$(miner_counts) || counts=''
         if [ -n "${2:-}" ]; then
-            miner_workers | jq -e --arg rig "$2" 'any(.[]; .[0] == $rig and .[2] >= 1)' >/dev/null
+            miner_workers | jq -e --arg rig "$2" 'any(.[]; .[0] == $rig and .[2] >= 1)' >/dev/null || {
+                miner_failure rig-disconnected
+                return 1
+            }
         fi
-        if [ "$(jq -r '.[0]' <<<"$counts")" -ge 1 ]; then
+        if [ -n "$counts" ] && [ "$(jq -r '.[0]' <<<"$counts")" -ge 1 ]; then
             connected=1
             break
         fi
         sleep 5
     done
-    [ "$connected" = 1 ]
-    end=$((SECONDS + 600))
+    [ -n "$counts" ] || {
+        miner_failure workers-unreadable
+        return 1
+    }
+    [ "$connected" = 1 ] || {
+        miner_failure reconnect-timeout
+        return 1
+    }
+    printf '%s\n' 'pithead-t3375: local_reconnection=observed'
+    end=$((SECONDS + BOUND_SHARE))
     while [ "$SECONDS" -lt "$end" ]; do
-        counts=$(miner_counts) || counts='[0,0]'
+        counts=$(miner_counts) || counts=''
         if [ -n "${2:-}" ]; then
-            miner_workers | jq -e --arg rig "$2" 'any(.[]; .[0] == $rig and .[2] >= 1)' >/dev/null
+            miner_workers | jq -e --arg rig "$2" 'any(.[]; .[0] == $rig and .[2] >= 1)' >/dev/null || {
+                miner_failure rig-disconnected
+                return 1
+            }
         fi
-        if jq -e '.[0] >= 1 and .[1] >= 1' <<<"$counts" >/dev/null; then return; fi
+        if jq -e '.[0] >= 1 and .[1] >= 1' <<<"$counts" >/dev/null; then
+            MINER_FAILURE=passed
+            printf '%s\n' 'pithead-t3375: accepted_share=observed'
+            return 0
+        fi
         sleep 5
     done
-    return 1
+    [ -n "$counts" ] || {
+        miner_failure workers-unreadable
+        return 1
+    }
+    miner_failure share-timeout
 }
 miner_guest_dispatch() {
     MINER_PHASE=${1:-unknown}
     case "${1:-}" in
-    precondition) miner_precondition ;;
+    precondition)
+        if miner_precondition; then
+            printf '%s\n' 'pithead-t3375: precondition=verified'
+        else
+            miner_failure precondition-failed
+        fi
+        ;;
     arm)
         trap 'miner_delete_table' ERR
         miner_arm "${2:-}"
@@ -241,6 +330,7 @@ miner_guest_dispatch() {
     backup-ready)
         podman inspect --format '{{.Id}}' xmrig-proxy >"$T3375/proxy-id"
         ;;
+    backup-applied) touch "$T3375/backup-applied" ;;
     verdict) miner_verdict "$2" "${3:-}" ;;
     cleanup) miner_cleanup ;;
     *) exit 64 ;;

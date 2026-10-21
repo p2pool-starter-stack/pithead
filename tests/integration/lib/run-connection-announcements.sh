@@ -13,7 +13,6 @@ source tests/integration/lib/run-lifecycle-miners.sh
     rx() { bash -c "$1"; }
     it_pass() { :; }
     it_fail() { printf '%s\n' 'connections: mining post-step failed' >&2; }
-# A fixed skip marker bypasses each CLI output capture; the outer harness counts it.
 exec 3>&1
     it_skip_leg() { printf 'connections: mining skipped: %s\n' "${1%% *}" >&3; }
 stage=initialization

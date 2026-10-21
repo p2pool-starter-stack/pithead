@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# The real watcher retries restart-time readings but never records without a live rig.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 work=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/miner-watcher.XXXXXX")
@@ -31,7 +30,6 @@ sleep() {
 mkdir "$T3375"
 touch "$T3375/armed" "$T3375/table"
 attempt=0 SECONDS=0
-# No conditional around this call: exercise the transient failures under real errexit.
 miner_watch watch fixture-rig
 [ "$(cat "$T3375/strand")" = recorded ] && [ ! -e "$T3375/table" ]
 rm "$T3375/strand"

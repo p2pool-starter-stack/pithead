@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Pure host recovery controls; fake systemd/Podman, real API decoder and clock window.
 set -euo pipefail
 export TMPDIR="${TMPDIR:-/tmp}"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -62,8 +61,7 @@ tick 401
 tick 700
 no_restart
 rm -f "$work/state"
-# Every unavailable/healthy/intentional-stop reading discards accumulated evidence.
-for condition in active disabled rig busy api http missing malformed string boolean negative connected; do
+for condition in active disabled rig busy custom-busy api http missing malformed string boolean negative connected; do
     tick 1000
     case "$condition" in
     active) export MINER_ACTIVE=false ;;
@@ -71,6 +69,11 @@ for condition in active disabled rig busy api http missing malformed string bool
     rig) echo rig >"$work/stack/machine-role" ;;
     busy)
         exec 8>"$work/stack/.pithead.lock"
+        flock 8
+        ;;
+    custom-busy)
+        export PITHEAD_LOCK_FILE="$work/custom.lock"
+        exec 8>"$PITHEAD_LOCK_FILE"
         flock 8
         ;;
     api) export API_FAIL=1 ;;
@@ -89,15 +92,15 @@ for condition in active disabled rig busy api http missing malformed string bool
     unset API_FAIL HTTP_FAIL
     rm -f "$work/stack/machine-role"
     printf '{"local_miner":{"enabled":true}}\n' >"$work/stack/config.json"
-    if [ "$condition" = busy ]; then
+    if [ "$condition" = busy ] || [ "$condition" = custom-busy ]; then
         flock -u 8
         exec 8>&-
     fi
     tick 1500
     no_restart
     rm -f "$work/state"
+    unset PITHEAD_LOCK_FILE
 done
-# A live rig must not mask the disconnected local miner, including a stale zero row.
 for workers in '[["fixture-rig","fixture",1]]' '[["fixture-local","fixture",0],["fixture-rig","fixture",1]]'; do
     export PROXY_WORKERS="{\"mode\":\"rig_id\",\"workers\":$workers}"
     tick 1600
@@ -107,7 +110,6 @@ for workers in '[["fixture-rig","fixture",1]]' '[["fixture-local","fixture",0],[
     [ "$(cat "$work/calls")" = restart ]
     rm "$work/calls"
 done
-# Rig IDs and user grouping both follow the real emitted pool identity.
 printf '{"pools":[{"user":"fixture-local","rig-id":"fixture-id"}]}\n' >"$work/worker.json"
 export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-id","fixture",1]]}'
 tick 1600
@@ -123,7 +125,6 @@ tick 1900
 no_restart
 printf '{"pools":[{"user":"fixture-local"}]}\n' >"$work/worker.json"
 export PROXY_WORKERS='{"mode":"rig_id","workers":[]}'
-# A future/corrupt timestamp cannot request immediate recovery; a failed restart is visible.
 echo 9999 >"$work/state"
 tick 2000
 no_restart
@@ -137,7 +138,6 @@ if tick 2301; then
     exit 1
 fi
 [ -e "$work/state" ]
-# The image must ship, execute and enable the guard, not merely carry a source file.
 for name in pithead-miner-recovery.service pithead-miner-recovery.timer; do
     grep -Fq "$name" "$ROOT/os/rootfs/Dockerfile"
 done
@@ -146,7 +146,6 @@ grep -Fq 'ExecStart=/usr/local/sbin/pithead-miner-recovery' "$ROOT/os/overlay/pi
 grep -Fq 'OnUnitInactiveSec=30s' "$ROOT/os/overlay/pithead-miner-recovery.timer"
 printf '%s\n' 'PASS: miner recovery debounce, refusals, decoder, failure and image wiring'
 
-# Exercise the guest's cleanup and by-design skip decisions with fake kernel/systemd commands.
 # shellcheck source=tests/os/appliance-miner-recovery-leg.sh
 source "$ROOT/tests/os/appliance-miner-recovery-leg.sh"
 T3375="$work/strand"
@@ -169,7 +168,6 @@ miner_arm >"$work/skip" || rc=$?
 [ "$rc" = 77 ] && grep -Fq 'SKIP: by-design' "$work/skip"
 [ ! -e "$T3375" ] && [ "$TABLE" = false ]
 
-# Execute real arming/verdict dispatch failures; kernel/systemd calls are the seams.
 journalctl() { printf '%s\n' 'fixture guest journal'; }
 timeout() {
     if [ "$1" = 10 ]; then
@@ -220,7 +218,6 @@ if (miner_guest_dispatch verdict old); then
 fi
 [ -e "$work/deleted" ] && [ ! -e "$work/table" ] && [ ! -e "$T3375" ]
 printf '%s\n' 'PASS: real arming/verdict failures delete the table; unavailable injection is a skip'
-# Failed restoration retains the independent watchdog's recipe and recorded intent.
 mkdir "$T3375"
 touch "$T3375/watcher" "$T3375/leg.sh" "$work/table"
 echo pithead-miner-recovery.timer >"$T3375/paused"

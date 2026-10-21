@@ -1,13 +1,12 @@
-# shellcheck shell=bash disable=SC2154 # sourced appliance harness globals
-# Host orchestration: the dashboard backup is the only intervention in trial B.
-miner_guest() { # <subcommand> [args]
+# shellcheck shell=bash disable=SC2154
+miner_guest() {
     local command='bash -s --' arg
     for arg in "$@"; do command+=" $(printf '%q' "$arg")"; done
     _ssh "$command" <"$SCRIPT_DIR/appliance-miner-recovery-leg.sh"
 }
-miner_backup_trial() { # [connected rig worker]
+miner_backup_trial() {
     local rig=${1:-} identity result name state deadline output rc=0
-    # shellcheck disable=SC2034 # dynamically scoped inputs to dashboard_curl
+    # shellcheck disable=SC2034
     local DASH_USER=$dash_user DASH_PASS=$dash_pass
     miner_guest precondition || return 1
     output=$(miner_guest arm "$rig") || rc=$?
@@ -40,7 +39,6 @@ miner_backup_trial() { # [connected rig worker]
         miner_guest cleanup
         return 1
     }
-    # The same authenticated route and request/result polling the dashboard uses.
     result=$(dashboard_control_request backup '{}' 420) || {
         miner_guest cleanup
         return 1
@@ -49,7 +47,10 @@ miner_backup_trial() { # [connected rig worker]
         miner_guest cleanup
         return 1
     fi
-    # Poll only: no service restart, conntrack flush or recovery request after the real verb.
+    miner_guest backup-applied || {
+        miner_guest cleanup
+        return 1
+    }
     if ! miner_guest verdict "${identity#* }" "$rig"; then
         miner_guest cleanup
         return 1

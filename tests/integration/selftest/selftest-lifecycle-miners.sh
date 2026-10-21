@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Pure convergence/timeout/reset-counter controls for the lifecycle mining post-step.
 set -euo pipefail
 echo "== lifecycle mining convergence and reset-counter controls =="
 INTEGRATION_RUN_SUITE=1
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/integration/lib/run-lifecycle-miners.sh
 source "$ROOT/tests/integration/lib/run-lifecycle-miners.sh"
-# Use the harness's real skip ledger: an inapplicable comparison must be counted.
 # shellcheck source=tests/integration/lib/skip-accounting.sh
 source "$ROOT/tests/integration/lib/skip-accounting.sh"
 it_warn() { :; }
@@ -50,38 +48,31 @@ for CASE in missing shares malformed; do
         exit 1
     fi
 done
-# A missing required precondition cannot become an empty-set pass.
 unset LIFECYCLE_MINER_NAMES
 started=new CASE=malformed
 if lifecycle_mining_step backup mutation; then exit 1; fi
-# Cached names cannot make malformed live preconditions pass.
 LIFECYCLE_MINER_NAMES='["local","rig"]'
 if lifecycle_mining_step backup mutation; then exit 1; fi
-# A successful command with an unreadable post-step proxy cannot pass.
 started=old CASE=good INSPECT_FAIL=1
 if lifecycle_mining_step backup mutation; then exit 1; fi
 unset INSPECT_FAIL
-# The shared CLI hook checks intermediate applies individually, not only final state.
 LIFECYCLE_MINING_ACTIVE=1 IT_PITHEAD=fixture
 rx() { mutation; }
 started=old CASE=missing
 if pithead apply -y; then exit 1; fi
 started=old CASE=good
 pithead apply -y
-# Cached dashboard counts cannot mask a disconnected local worker on the new proxy.
 started=old CASE=good LIVE_ZERO=1
 if pithead backup; then
     echo 'FAIL: cached state masked a live proxy zero'
     exit 1
 fi
 unset LIVE_ZERO
-# An explicit down/up span retains its live worker names.
 started=old
 pithead down
 [ "$LIFECYCLE_MINER_STOPPED" = 1 ]
 pithead up
 [ "$LIFECYCLE_MINER_STOPPED" = 0 ]
-# Real reset/restore downs run in pipelines: retained state must survive the subshell.
 work=$(mktemp -d "${TMPDIR:-/tmp}/lifecycle-miners.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 LIFECYCLE_MINER_STATE="$work/state.json"
@@ -91,7 +82,6 @@ lifecycle_mining_step restore mutation | cat >/dev/null
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 1 ]
 pithead up
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
-# Config-reset removes the proxy: retain the pre-reset names through absent down/restore/up.
 PROXY_ABSENT_FILE="$work/proxy-absent"
 proxy_shutdown() { touch "$PROXY_ABSENT_FILE"; }
 proxy_start() {
@@ -109,7 +99,6 @@ lifecycle_mining_step up proxy_start
 [ ! -e "$PROXY_ABSENT_FILE" ]
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
 unset PROXY_ABSENT_FILE
-# Empty pre-step sets skip the comparison, not the lifecycle mutation or its exit status.
 NO_WORKERS=1 started=old
 skips=$IT_SKIPPED_LEGS
 lifecycle_mining_step apply mutation
@@ -122,7 +111,6 @@ mutation_fails() {
 }
 if lifecycle_mining_step backup mutation_fails; then exit 1; else rc=$?; fi
 [ "$rc" = 7 ] && [ "$IT_SKIPPED_LEGS" = "$((skips + 2))" ]
-# Empty down/restore/up spans must not inspect a proxy that the harness intentionally stopped.
 lifecycle_mining_step down mutation
 lifecycle_mining_step restore mutation
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 1 ]
@@ -136,7 +124,6 @@ lifecycle_mining_step backup mutation
 if lifecycle_mining_step apply mutation_fails; then exit 1; else rc=$?; fi
 [ "$rc" = 7 ] && [ "$IT_SKIPPED_LEGS" = "$((skips + 7))" ]
 unset SKIP_MINING_ASSERTS
-# Phase-local state stays private outside results and is cleaned on success and failure.
 OUT_DIR="$work/results"
 mkdir -p "$OUT_DIR"
 _run_lifecycle() {
@@ -161,8 +148,6 @@ done
 export TMPDIR="$RUNNER_TEMP"
 printf '%s\n' 'PASS: lifecycle worker return, reset counters, refusal and mining opt-out'
 
-# Exercise the real rx shell parsing and Python probe in both target modes.
-# Only SSH delivery and container/API access are fake; the failing shell boundary is real.
 (
     source "$ROOT/tests/integration/lib.sh"
     source "$ROOT/tests/integration/lib/run-lifecycle-miners.sh"

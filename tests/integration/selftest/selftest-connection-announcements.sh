@@ -18,7 +18,7 @@ printf 'PROXY_TLS_DIR=%s\n' "$fixture" >"$fixture/.env"
 printf '{"dashboard":{"host":"fixture-box"}}\n' >"$fixture/config.json"
 mkdir -p "$fixture/tests/integration/tools" "$fixture/tests/integration/lib"
 cp "$ROOT/tests/integration/lib/run-lifecycle-miners.sh" "$fixture/tests/integration/lib/"
-SKIP_MINING_ASSERTS=1 # This fixture tests credential announcements; mining has dedicated controls.
+SKIP_MINING_ASSERTS=1
 cp "$ROOT/tests/integration/tools/connection-setup-pty.py" "$fixture/tests/integration/tools/"
 cat >"$fixture/pithead" <<'FAKE'
 #!/usr/bin/env bash

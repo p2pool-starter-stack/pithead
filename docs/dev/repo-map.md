@@ -251,9 +251,13 @@ The appliance-only `os/overlay/pithead-miner-recovery` timer recovers a disconne
 local miner; `tests/os/selftest-miner-recovery.sh` covers its decision window and refusals.
 `tests/os/appliance-miner-recovery{,-leg}.sh` proves per-worker accepted-share progress after
 dashboard backup on the stack phase’s synced guest, using a reversible loopback strand.
-Failed guest verdicts print the strand marker, local worker counts and bounded watcher,
-recovery and miner journals before cleanup; the rig coordinator is then torn down.
-`tests/os/selftest-miner-recovery-diagnostics.sh` checks that order and journal-read failures.
+Trial receipts distinguish backup completion, strand detection, unchanged proxy identity with
+changed start time, local reconnection and accepted shares. They record the installed watchdog
+checksum and unit states; an absent-watchdog control requires both units to be absent and inactive.
+Failed guest verdicts print local worker counts and bounded watcher, recovery and miner journals
+before cleanup. A recovery-failure receipt requires an observed strand, valid proxy checks,
+readable workers and verified cleanup; injection, precondition and cleanup failures do not qualify.
+`tests/os/selftest-miner-recovery-diagnostics.sh` exercises these distinctions and diagnostic order.
 The watcher polls for the rig to reconnect before recording the strand; separate journal
 budgets retain its early failures alongside mining activity. `selftest-miner-recovery-watcher.sh`
 requires both a connected rig and a nonzero aggregate before the injection is removed.

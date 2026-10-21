@@ -148,10 +148,6 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 # depends on concatenation order. Listing them separately duplicates a large analysis
 # and reports false unused-global warnings. shfmt checks every slice independently.
 	shellcheck --severity=warning tests/stack/run.sh
-	@# Four non-.sh files are named outright below, so a dead enumeration still hands shfmt
-	@# four real arguments and exits 0 — 4 files checked of 100, reported as a pass. Guard the
-	@# enumeration itself, the way lint-toml already does. (lint-yaml needs no guard: yamllint
-	@# with no arguments is rc=2.)
 	@test -n "$$(git ls-files '*.sh' | grep -v '^docs/research/')" || { echo "lint-sh: zero tracked *.sh files — refusing a vacuous pass"; exit 1; }
 	shfmt -i 4 -d pithead pithead-completion.bash os/installer/pithead-install os/overlay/pithead-miner-recovery $(shell git ls-files '*.sh' | grep -v '^docs/research/')
 

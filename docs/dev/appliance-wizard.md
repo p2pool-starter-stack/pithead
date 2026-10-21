@@ -507,7 +507,8 @@ Five steps, each answering a hardware-validated failure:
    Five minutes of successful proxy worker-list readings with no connection for the local
    miner’s rendered identity queue an XMRig restart, logged by `pithead-miner-recovery.service`.
    Other connected rigs do not reset that window. Missing readings, a connected local miner, a stopped
-   miner, or a busy stack operation reset that window. This guard runs only on coordinators;
+   miner, or a busy stack operation reset that window. The guard honors `PITHEAD_LOCK_FILE`
+   when supplied to its service, matching the CLI mutation lock. This guard runs only on coordinators;
    it does not start a disabled miner or change slot-commit policy. When enabled, this runs RigForge's setup in appliance mode from the
    tree `pithead-sync` keeps on `/data/rigforge`: its unit renders into `/run` with
    `--runtime` enablement (gone every boot, recreated here, like the control-runner units),
