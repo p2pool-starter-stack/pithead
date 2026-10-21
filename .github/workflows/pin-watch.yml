@@ -1,26 +1,15 @@
 name: Upstream pin watch
 
-# Weekly upstream-currency report (#1128). It REPORTS and never bumps: a Tari or monerod minor is
-# a data migration to schedule, not a bump to merge (#1129 carries three one-time migrations and a
-# one-way wallet-DB change). RigForge's xmrig-bump.yml opens a build-verified PR instead — same
-# shape, different output, because XMRig is a drop-in binary and its build gate proves the
-# candidate.
-#
-# ONE tracking issue per lane, edited in place. An issue persists, is assignable and milestonable,
-# and lets a human write "held until the bench is free, here's why" in a comment — which a report
-# artifact nobody opens cannot do, and which is the failure mode #1128 was filed about. One issue,
-# one table: since the appliance tree joined `develop`, a single run reads every pin.
-#
-# This file lives on the DEFAULT branch on purpose: a `schedule:` fires from the default branch only,
-# and a watcher that lives elsewhere runs exactly zero times while looking fine (#1048, #1064, #1146).
-# One run reads every pin; the report carries the appliance block whenever the tree has `os/rootfs/Dockerfile`.
-#
 on:
   schedule:
     - cron: "30 6 * * 1" # Mondays 06:30 UTC, after the image sweeps
   workflow_dispatch:
 
 # Least privilege (#282): issues.write is the job's one output — it never pushes or publishes.
+concurrency:
+  group: pin-watch
+  cancel-in-progress: false
+
 permissions:
   contents: read
   issues: write
@@ -65,7 +54,33 @@ jobs:
           RC: ${{ steps.report.outputs.rc }}
         run: |
           set -Eeuo pipefail
-          body=$(cat report.md)
+          body=$(cat <<'BODY'
+          ## What's the problem
+
+          Weekly upstream currency and unchecked dependency pins.
+
+          ## what it impacts
+
+          The product stack and appliance dependencies need tested upgrades when upstream versions advance.
+
+          ## How I found it
+          BODY
+          cat report.md
+          cat <<'BODY'
+
+          ## how important is it
+
+          Version drift alone does not establish a security impact. Stale runtime pins get separate upgrade issues.
+
+          ## acceptance criteria
+
+          All watched pins are checked; upgrade issues carry the required runtime proof.
+
+          ## possible solutions
+
+          Review the component upgrade issues and newer Tari prereleases before changing pins.
+          BODY
+          )
           # Exact title match over the open list, NOT `--search`: the search index lags behind
           # issue creation by minutes, so a search-based dedup files a second issue on the very
           # next run and then keeps both stale.
@@ -87,15 +102,15 @@ jobs:
             fi
           fi
           if [ -n "$n" ]; then
-            gh issue edit "$n" --body "$body"
+            printf '%s\n' "$body" | gh issue edit "$n" --body-file -
             echo "updated #$n"
           else
-            gh issue create --title "$TITLE" --label infra --body "$body"
+            printf '%s\n' "$body" | gh issue create --title "$TITLE" --label infra --label tracker --body-file -
           fi
       - name: Fail the run if any lookup could not be made
         if: steps.report.outputs.rc != '0'
         run: |
-          echo "::error::one or more upstream lookups could not run — those pins are UNCHECKED, not current"
+          echo "::error::one or more upstream checks or upgrade issue actions failed; see the report and run log"
           exit 1
       # Digest-level check (#1137): does this lane's own docker-compose.yml pins still match what
       # each tag resolves to right now. Separate from the report above on purpose — a version can

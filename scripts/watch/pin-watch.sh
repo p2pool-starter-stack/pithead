@@ -2,9 +2,6 @@
 #
 # Weekly upstream-currency watch (#1128).
 #
-# REPORTS ONLY. It never bumps a pin or opens a PR: Tari and monerod minors are scheduled data migrations (#1129).
-# RigForge's xmrig-bump.yml opens a build-verified PR; the watchers share shape, not output.
-#
 # The pins come from scripts/release/release.sh's pin(), the release-notes source of truth.
 #
 # Two questions for Tari: is the pinned VERSION behind upstream, and would its gRPC schema break the vendored client?
@@ -23,16 +20,17 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$ROOT/scripts/watch/pin-watch-issues.sh"
+dry_run=false
+case "${1:-}" in
+--dry-run) dry_run=true ;;
+--self-test | "") ;;
+*)
+    printf 'Usage: %s [--dry-run|--self-test]\n' "$0" >&2
+    exit 2
+    ;;
+esac
 
-# Upstream release feed per component. Everything here is compared against
-# `repos/<owner>/<repo>/releases/latest`, which also excludes prereleases — load-bearing, since
-# tari's newest tags are v5.6.0-pre.* and proposing those onto the merge-mining leg would be worse
-# than saying nothing.
-#
-# NOT WATCHED, on purpose, because they have no GitHub release feed: the alpine base in
-# build/tor/Dockerfile, ubuntu:24.04 and python:3.11-slim. Dependabot's docker ecosystem does see
-# those (it reads FROM lines), so they are covered — just not here. They are named in the report so
-# their absence is a statement rather than a silence.
 upstream_for() {
     case "$1" in
     monero) echo monero-project/monero ;;
@@ -264,6 +262,7 @@ finish_report() {
 if [ "${1:-}" = "--self-test" ]; then
     # shellcheck source=tests/watch/test-pin-watch.sh
     source "$ROOT/tests/watch/test-pin-watch.sh"
+    exit $?
 fi
 
 # --- the report ----------------------------------------------------------------------------------
@@ -306,6 +305,12 @@ tree_pin() {
 
 failed=0
 stale=0
+issues_ready=true
+if ! init_upgrade_issues; then
+    issues_ready=false
+    failed=$((failed + 1))
+    printf 'Upgrade issue lookup failed; no upgrade issues will be changed.\n' >&2
+fi
 rows=""
 tari_prereleases=""
 
@@ -332,14 +337,8 @@ for component in $components; do
         failed=$((failed + 1))
         continue
     fi
-    if [ "$component" = rigforge ]; then
-        if [ "$(norm "$raw")" = "$(norm "$cmp_to")" ]; then
-            verdict=current
-        else
-            verdict="**stale** → \`$latest\`"
-            stale=$((stale + 1))
-        fi
-    elif ! status=$(version_status "$raw" "$cmp_to"); then
+    status=""
+    if ! status=$(component_status "$component" "$raw" "$cmp_to"); then
         verdict="**version could not be compared — NOT checked**"
         failed=$((failed + 1))
     elif [ "$status" = current ]; then
@@ -349,6 +348,12 @@ for component in $components; do
         stale=$((stale + 1))
     else
         verdict="pinned version is newer than latest stable"
+    fi
+    if "$issues_ready" && [ -n "${status:-}" ]; then
+        if ! sync_upgrade_issue "$component" "$raw" "$latest" "$status" "$repo"; then
+            failed=$((failed + 1))
+            printf 'Upgrade issue reconciliation failed for %s.\n' "$component" >&2
+        fi
     fi
     row "$component" "\`$(norm "$raw")\`" "\`$(norm "$latest")\`" "$verdict"
     if [ "$component" = tari ]; then
@@ -380,7 +385,7 @@ else
 fi
 printf '%s\n' "Also NOT checked: whether each image pin's digest still corresponds to its tag. The digest is what actually runs, so a half-done bump is invisible to the table above."
 if [ "$failed" -gt 0 ]; then
-    printf '\n%s\n' "**$failed lookup(s) could not run — those rows are unchecked, not current.**"
+    printf '\n%s\n' "**$failed lookup(s) or issue action(s) could not run — failed checks are not current.**"
 fi
 printf '\n%s\n' "<!-- pin-watch: stale=$stale failed=$failed -->"
 

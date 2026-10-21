@@ -1,0 +1,76 @@
+name: Dependency automation proof
+
+on:
+  pull_request:
+    paths:
+      - .github/dependabot.yml
+      - .github/workflows/pin-watch-proof.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+      - name: Translate the Compose update policy
+        env:
+          PROOF_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          uv run --no-project --with pyyaml==6.0.3 python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import yaml
+
+          config = yaml.safe_load(Path('.github/dependabot.yml').read_text())
+          policy = next(item for item in config['updates'] if item['package-ecosystem'] == 'docker-compose')
+          tari = ['ghcr.io/tari-project/minotari_node', 'ghcr.io/tari-project/minotari_console_wallet']
+          assert policy['groups']['tari']['patterns'] == tari
+          assert set(policy['groups']['compose']['exclude-patterns']) == set(tari)
+          ignored = {item['dependency-name']: set(item['update-types']) for item in policy['ignore']}
+          assert ignored == {name: {'version-update:semver-major', 'version-update:semver-minor'}
+                             for name in ['caddy', 'tecnativa/docker-socket-proxy']}
+          job = {'job': {
+              'package-manager': 'docker_compose',
+              'allowed-updates': [{'update-type': 'all'}],
+              'dependency-groups': [{'name': name, 'rules': rules} for name, rules in policy['groups'].items()],
+              'ignore-conditions': policy['ignore'],
+              'source': {'provider': 'github', 'repo': os.environ['GITHUB_REPOSITORY'],
+                         'directory': policy['directory'], 'commit': os.environ['PROOF_SHA']},
+          }}
+          Path(os.environ['RUNNER_TEMP'], 'dependabot-job.json').write_text(json.dumps(job))
+          PY
+      - name: Run Dependabot without publishing pull requests
+        env:
+          LOCAL_GITHUB_ACCESS_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          go install github.com/dependabot/cli/cmd/dependabot@v1.96.0
+          "$(go env GOPATH)/bin/dependabot" update -f "$RUNNER_TEMP/dependabot-job.json" \
+            --local "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/dependabot-output.yml"
+      - name: Require a paired Tari update
+        run: |
+          uv run --no-project --with pyyaml==6.0.3 python - <<'PY'
+          import os
+          from pathlib import Path
+          import yaml
+
+          result = yaml.safe_load(Path(os.environ['RUNNER_TEMP'], 'dependabot-output.yml').read_text())
+          tari = {'ghcr.io/tari-project/minotari_node', 'ghcr.io/tari-project/minotari_console_wallet'}
+          updates = [row['expect']['data']['dependencies'] for row in result['output']
+                     if row['type'] == 'create_pull_request']
+          assert any(tari <= {dep['name'] for dep in deps} for deps in updates), 'No paired Tari update produced'
+          for deps in updates:
+              for dep in deps:
+                  if dep['name'] in tari:
+                      assert dep['version'] != dep['previous-version']
+                      print(f"{dep['name']}: {dep['previous-version']} -> {dep['version']}")
+          PY
