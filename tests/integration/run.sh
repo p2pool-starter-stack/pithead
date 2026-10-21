@@ -255,10 +255,11 @@ main() {
 
     local rig_control_ok=1
     if [ "$RUN_RIGFORGE_CONTROL" = "1" ]; then
-        run_rigforge_control || rig_control_ok=0
+        run_worker_auth_modes "${RIG_NAME:-}" || rig_control_ok=0
+        [ "$rig_control_ok" = 1 ] && run_rigforge_control || rig_control_ok=0
         [ "$rig_control_ok" = 1 ] && wait_borrow_rearm || rig_control_ok=0
     elif [ "$RUN_RIGFORGE" = "1" ]; then
-        run_rigforge_integration
+        run_worker_auth_modes "${RIG_NAME:-}" && run_rigforge_integration || rig_control_ok=0
     fi
     local lifecycle_ok=1 _gated
     LIFECYCLE_STACK_INTACT=0

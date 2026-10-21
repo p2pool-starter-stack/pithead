@@ -95,3 +95,29 @@ render(html\`<\${Harness} />\`, document.getElementById('fixture'));
   await expect(dialog).toBeVisible();
   expect(reads).toBe(2);
 });
+
+for (const theme of ["dark", "light"]) {
+  test(`worker API warning appears and clears after a successful poll (${theme})`, async ({
+    page,
+    ui,
+  }) => {
+    await page.clock.install();
+    Object.assign(ui.state.workers[0], { api_ok: true, adopted: true });
+    await ui.open();
+    await page
+      .getByRole("group", { name: "Theme", exact: true })
+      .getByRole("button", { name: theme === "dark" ? "Dark" : "Light", exact: true })
+      .click();
+    const row = page.getByRole("row").filter({ hasText: ui.state.workers[0].name });
+    const badge = row.getByText("api ⚠", { exact: true });
+    await expect(row).toBeVisible();
+    await expect(badge).toHaveCount(0);
+    ui.state.workers[0].api_ok = false;
+    await page.clock.fastForward(30000);
+    await expect(badge).toBeVisible();
+    ui.state.workers[0].api_ok = true;
+    await page.clock.fastForward(30000);
+    await expect(badge).toHaveCount(0);
+    await expect(row).toBeVisible();
+  });
+}

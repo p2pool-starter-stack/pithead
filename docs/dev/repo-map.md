@@ -329,3 +329,7 @@ Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugep
 `lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
+
+Worker API auth tests use `tests/integration/lib/run-worker-auth.sh` in the RigForge
+phase, `tests/integration/fakes/test_worker_auth.py` for the socket matrix, and
+`dashboard/tests/browser/workers.test.mjs` for badge recovery.

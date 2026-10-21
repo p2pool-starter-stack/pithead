@@ -27,7 +27,7 @@ cd dashboard/tests/browser
 | Earnings and energy | Full dashboard tab selection, shared calculator input, reload persistence, visible energy table and unavailable-tab fallback | Live prices, measured fleet power and profitability; arithmetic remains in frontend tests |
 | Backup | Cancel with no mutation, in-flight duplicate/Escape blocking, transient polling failure, terminal failure/retry, actual synthetic kit/archive downloads, one-time secret removal | Caddy headers and authentication, real encryption/decryption/restore, browser download policy (#3271) |
 | Setup restore | Production wizard page, required archive and size cap, passphrase visibility/reset, exact multipart bytes, host refusal and lost-connection retry, target-disk confirmation | Real decryption, active-stack refusal, restore safety and retention (#3278); overlapping uploads tracked in #3327 |
-| Workers | Dirty Escape gate, exact editable diff, refused noneditable key, native close/reopen, adoption preview/confirmation and unexpected-change refusal, upgrade cancellation/payload/polling/refusal/retry | Worker enrolment, live process restart and restored hashrate |
+| Workers | Dirty Escape gate, exact editable diff, refused noneditable key, native close/reopen, worker API warning appearance and recovery after state polling in both themes, adoption preview/confirmation and unexpected-change refusal, upgrade cancellation/payload/polling/refusal/retry | Worker enrolment, live process restart and restored hashrate |
 | Tor access | Explicit client-key request and CSRF, busy/readonly gates, refusal/retry, secret dismissal/reload, clipboard success/denial feedback | Actual Tor client authorization, server secret expiry and browser clipboard permissions (#3074) |
 | Topology | Expandable details, mesh visibility/persistence and refreshed warning state | Actual routing, firewall enforcement and network reachability |
 | Diagnostics | Doctor and log requests, CSRF headers, transient polling failure, refusal/retry | Live doctor/repair meaning and redaction (#3262, #3277) |
@@ -35,6 +35,8 @@ cd dashboard/tests/browser
 | DIY update | Exact typed confirmation and version payload, cancel, busy Escape refusal, restart polling, completion/reload and appliance/readonly gates | Signed release validation, container recreation and actual rollback/data preservation |
 
 The Playwright journeys run in Chromium, Firefox, WebKit and a mobile Chromium viewport.
+CI also runs `check-worker-auth-negative.mjs` against a copied badge that stays visible
+after recovery; both theme journeys must fail at the badge-removal assertion.
 `make test-browser` also runs the separate Node HTTPS backup fixture in Chromium; CI repeats
 that fixture with pinned Google Chrome for Testing. It retains certificate interstitial acceptance,
 22 MiB encrypted download integrity, decryption/member checks and transfer-failure retries.
