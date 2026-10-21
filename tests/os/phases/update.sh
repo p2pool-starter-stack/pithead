@@ -211,14 +211,9 @@ phase_update() {
         "legs 1-3 never provision, so no floor is ever raised or put back here — phase_provision_floor_fallback_leg proves it under --phase provision or --phase all" missing
 
     phase_update_dashboard "$bundle" "${serial_mark:-0}"
-    phase_update_healthgate_leg # leg 5, split out (file budget): phases/update-healthgate-leg.sh
+    phase_update_healthgate_leg
+    phase_update_rollback_leg
 
-    # Recorded AFTER leg 4, and classed on what leg 4 actually did. Claiming "covered by leg 4"
-    # before leg 4 runs would let a red run assert its own proof: leg 4 returns early at any of a
-    # dozen gates (no provisioning, no stack, a failed install), and on every one of those paths
-    # pithead-boot's properties are exactly as unproven as they were in legs 1-3. A skip that says
-    # "covered" on a run where nothing covered it is worse than no skip at all — it is the #1083
-    # failure mode wearing this issue's own fix as a disguise.
     if [ "${LEG4_PITHEAD_BOOT_PROVED:-0}" = "1" ]; then
         it_skip_leg "pithead-boot's boot gate, commit-decision health check and update verdict (#2055 G1)" \
             "legs 1-3 deliberately drive rauc alone and never provision, so pithead-boot never starts there — leg 4 provisioned this same guest and asserted the 'updated' verdict end to end" covered
