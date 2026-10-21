@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SOURCE = Path(__file__).resolve().parents[1] / "lib/access_log_retention.py"
 spec = importlib.util.spec_from_file_location("retention", SOURCE)
@@ -164,6 +164,35 @@ class RetentionControls(unittest.TestCase):
         ticks = iter([0, 541])
         with self.assertRaisesRegex(RuntimeError, "deadline exceeded"):
             self.run_proof(clock=lambda: next(ticks))
+
+    def test_curl_keeps_rotation_credentials_and_payload_on_stdin(self):
+        client = retention.Caddy.__new__(retention.Caddy)
+        client.good = "fixture:synthetic-old-password"
+        client.bad = "fixture:synthetic-wrong-password"
+        client.host, client.port = "example.invalid", "443"
+        client.origin, client.curl = "https://example.invalid:443", "/usr/bin/curl"
+        payload = {"config": {"password": 'synthetic-new-password"\\value'}}
+        for body in (None, payload):
+            with self.subTest(payload=body):
+                with patch.object(
+                    retention.subprocess, "run", return_value=Mock(returncode=0, stdout="{}\n200")
+                ) as run:
+                    self.assertEqual(
+                        client.request("/api/control/preview", payload=body), (200, "{}")
+                    )
+                argv, options = run.call_args.args[0], run.call_args.kwargs["input"]
+                self.assertNotIn(client.good, argv)
+                self.assertNotIn("synthetic-new-password", " ".join(argv))
+                self.assertIn("-", argv)
+                self.assertIn("user = " + json.dumps(client.good), options)
+                if body is not None:
+                    self.assertIn('header = "X-Pithead-Control: 1"', options)
+                    data = next(
+                        line[7:] for line in options.splitlines() if line.startswith("data = ")
+                    )
+                    self.assertEqual(json.loads(json.loads(data)), payload)
+                else:
+                    self.assertNotIn("data = ", options)
 
     def test_wrapper_is_in_hardening_and_requires_exit_and_completion(self):
         hardening = SOURCE.with_name("run-hardening.sh").read_text()

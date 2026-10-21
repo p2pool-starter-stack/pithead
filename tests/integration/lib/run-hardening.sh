@@ -309,6 +309,13 @@ run_hardening() {
         it_fail "failed logins retained beyond 256 KiB and native gzip rotation (#3265)" "$probe_out"
     fi
 
+    if probe_out="$(rx "timeout 420 python3 tests/integration/lib/caddyfile_permissions.py")" &&
+        grep -qx 'caddyfile-permissions: complete' <<<"$probe_out"; then
+        it_pass "GUI credential rotation renders Caddyfile 0644 (#3418)"
+    else
+        it_fail "GUI credential rotation renders Caddyfile 0644 (#3418)" "$probe_out"
+    fi
+
     # Restore the baseline ourselves: re-applying with control off uninstalls the path unit, so the
     # root systemd unit never outlives the phase even though the end-of-run restore would also do it.
     it_step "restoring baseline (disables control, removes the path unit)…"

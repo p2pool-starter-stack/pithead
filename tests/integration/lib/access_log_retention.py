@@ -49,7 +49,12 @@ class Caddy:
         self.curl = shutil.which("curl")
         require(bool(self.curl), "curl is required for the live proxy test")
 
-    def request(self, uri, wrong=False):
+    def request(self, uri, wrong=False, payload=None):
+        options = "user = " + json.dumps(self.bad if wrong else self.good) + "\n"
+        if payload is not None:
+            options += 'header = "Content-Type: application/json"\n'
+            options += 'header = "X-Pithead-Control: 1"\n'
+            options += "data = " + json.dumps(json.dumps(payload)) + "\n"
         result = subprocess.run(  # noqa: S603 - fixed curl flags, no shell; login stays on stdin.
             [
                 self.curl,
@@ -66,7 +71,7 @@ class Caddy:
                 "\\n%{http_code}",
                 self.origin + uri,
             ],
-            input="user = " + json.dumps(self.bad if wrong else self.good) + "\n",
+            input=options,
             capture_output=True,
             text=True,
             timeout=20,
