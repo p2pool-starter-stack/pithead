@@ -191,9 +191,13 @@ it works from any checkout or bundle directory.
 
 `status` prints the usual compose table, then a per-service health check: a green ✓ for each
 running (and healthy) service, and a ⚠/✗ for anything unhealthy, restarting, stopped, or missing.
+It compares two container-engine snapshots three seconds apart, so a service that repeatedly
+exits between point-in-time Podman or Docker reads is still reported as restarting. An old,
+unchanged restart count is history and does not fail the check.
 A miner deliberately created/exited/stopped by the sync gate or node failover is the sole stopped
 exception during normal operation. A pending appliance data migration also withholds its chain
-services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero.
+services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero;
+`doctor` applies the same observed-restart check to every Compose service, including Caddy.
 Every container carries its own healthcheck — including the dashboard, Caddy, xmrig-proxy and the
 two Docker-socket proxies — so a ✓ usually means the service answered its probe, not merely that a
 process exists. xmrig-proxy is the one exception: its healthcheck script ships in the same image

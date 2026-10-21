@@ -140,7 +140,12 @@ stack_status() {
         return 1
     fi
 
-    local problems=0 proxy_state="" p2pool_state="" node_down=0 chain_hold=0
+    local problems=0 proxy_state="" p2pool_state="" node_down=0 chain_hold=0 restarting_names restart_read_ok=1
+    restarting_names=$(container_restarting_names) || restart_read_ok=0
+    if [ "$restart_read_ok" -eq 0 ]; then
+        printf '  %b✗%b %-13s restart observation failed\n' "$C_RED" "$C_RESET" containers
+        problems=$((problems + 1))
+    fi
     os_migration_hold_active && chain_hold=1
     local s cid info state health
     while IFS= read -r s; do
@@ -164,6 +169,12 @@ stack_status() {
             info=$(docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || echo "unknown none")
             state=${info%% *}
             health=${info##* }
+        fi
+
+        if grep -Fqx -- "$s" <<<"$restarting_names"; then
+            printf '  %b✗%b %-13s restarting (possible crash loop — check logs)\n' "$C_RED" "$C_RESET" "$s"
+            problems=$((problems + 1))
+            continue
         fi
 
         # A migration marker authorizes only the explicit pre-commit stop of chain services.
