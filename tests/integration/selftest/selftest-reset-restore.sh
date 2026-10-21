@@ -76,6 +76,10 @@ drive_reset_restore() (
             ;;
         'ss -ltnp; docker logs --tail 40 caddy') : ;;
 
+        'bash -s')
+            cat >/dev/null
+            [ "$fault" != dashboard ]
+            ;;
         ls*) [ "$fault" != archive ] && printf 'backups/fixture.tar.gz.enc' ;;
         'set -e; stage=census;'*)
             printf '%s' "$1" >"$OUT_DIR/probe"
@@ -145,12 +149,12 @@ drive_reset_restore() (
 )
 PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
 trap 'rm -f "$PROBE_COPY"' EXIT
-assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|13'
-assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|14'
-assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|13'
-assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|13'
-assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|13'
-for fault in page wizard restart started id starting body zero curl code noauth wizard-start channel env-HOST_PORT env-DASHBOARD_SECURE env-DASHBOARD_AUTH_HASH_B64; do
+assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|14'
+assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|15'
+assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|14'
+assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|14'
+assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|14'
+for fault in dashboard page wizard restart started id starting body zero curl code noauth wizard-start channel env-HOST_PORT env-DASHBOARD_SECURE env-DASHBOARD_AUTH_HASH_B64; do
     verdict=$(drive_reset_restore "$fault" appliance)
     if [[ "$verdict" == 1\|1\|* ]]; then
         it_pass "appliance recovery refuses $fault web failure"
@@ -160,13 +164,13 @@ for fault in page wizard restart started id starting body zero curl code noauth 
 done
 # Restore refused and wrote nothing: the failure names #3346 and lets later phases run; a write does not.
 assert_eq "a refusal that wrote nothing fails the row, names #3346 and flags the stack intact" \
-    "$(drive_reset_restore refused)" "1|1|1|intact=1|1"
+    "$(drive_reset_restore refused)" "1|1|2|intact=1|1"
 assert_eq "a restore that wrote a file fails the row and does not flag the stack intact" \
-    "$(drive_reset_restore written)" "1|1|1|intact=0|0"
+    "$(drive_reset_restore written)" "1|1|2|intact=0|0"
 assert_eq "a different refusal is not labelled as #3346 but still flags the stack intact" \
-    "$(drive_reset_restore other)" "1|1|1|intact=1|0"
+    "$(drive_reset_restore other)" "1|1|2|intact=1|0"
 assert_eq "a restore that left no container running does not flag the stack intact" \
-    "$(drive_reset_restore stopped)" "1|1|1|intact=0|0"
+    "$(drive_reset_restore stopped)" "1|1|2|intact=0|0"
 # Run the real probe text against a fake docker and pithead: the stage report, the intact marker and
 # the restoring trap are probe behaviour that the stubbed fixtures above cannot see.
 run_probe() { # <restore-exit> <restore-writes-config:0|1> <running-before> <running-after>

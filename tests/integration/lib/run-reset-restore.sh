@@ -5,6 +5,13 @@
 # go on and the phases after it still run (#3342).
 run_reset_restore() {
     RESET_RESTORE_STACK_INTACT=0
+    if rx 'bash -s' --stdin <"$(dirname "${BASH_SOURCE[0]}")/restore-dashboard-guest.sh" 2>&1 |
+        redact >"$OUT_DIR/restore-dashboard.log"; then
+        it_pass "CLI restore refreshes dashboard configuration and running energy cost (#3432)"
+    else
+        it_fail "CLI restore refreshes dashboard configuration and running energy cost (#3432)" "see restore-dashboard.log"
+        return 1
+    fi
     local before_config before_secrets archive out rc after_config after_secrets
     local failures_before="$IT_FAIL"
     it_step "encrypted backup → config-reset → restore without rendered configuration…"

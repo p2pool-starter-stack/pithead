@@ -846,7 +846,11 @@ For one representative config:
   including failures before the cleanup trap can be armed. The real image mutation, guarded
   recreation, immutable image/Compose-owner assertions and cleanup remain binding.
   The restore must also return every wallet, proxy, dashboard, RPC, and onion secret category
-  exactly, the same per-category comparison a safety rollback makes.
+  exactly, the same per-category comparison a safety rollback makes. The existing-install
+  restore fixture backs up energy cost 0.123, applies 0.789, then runs `down`, `restore`,
+  and `up`. Both `/api/config` and `/api/state` must return 0.123 within 120 seconds,
+  without a post-restore `apply` or restart. The fixture restores its original configuration
+  on exit and also runs in the KVM reset phase.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
   secrets; the dashboard reflects the new pool; then it's reverted. An omitted
   `p2pool.pool` means mini, so the alternate is main. Explicit main and nano baselines
@@ -1329,7 +1333,7 @@ the traps and `main`. One classification, one place to change it. The masked doc
 through the redactor as before, so the shape, position and IP rules keep their reach over
 everything the path list does not name — the pass is additive and cannot narrow coverage. It
 renders from the LIVE config at capture time rather than copying the box's pre-rendered
-`$CONTROL_DIR/masked/config.json`, which is refreshed only on setup/apply/upgrade and is documented
+`$CONTROL_DIR/masked/config.json`, which is refreshed on setup/apply/upgrade/CLI restore and is documented
 as degrading to a stale copy on a render hiccup: an artifact presenting stale state as the state
 under test is the failure this harness exists to catch. If the program cannot be sourced the
 capture writes no config rather than falling back to the raw file, and says so in the artifact.
