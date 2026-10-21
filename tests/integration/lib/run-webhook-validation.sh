@@ -3,12 +3,12 @@
 
 run_webhook_validation() {
     local cdir="$1" baseline="$2" before containers_before id candidate st result kind
-    before="$(rx 'sha256sum config.json .env')"
-    containers_before="$(rx 'docker compose ps -aq | sort | xargs -r docker inspect --format "{{.Id}} {{.State.StartedAt}} {{.RestartCount}}"')"
-    [ -n "$before" ] && [ -n "$containers_before" ] || {
+    if ! before="$(rx 'sha256sum config.json .env')" ||
+        ! containers_before="$(rx 'docker compose ps -aq | sort | xargs -r docker inspect --format "{{.Id}} {{.State.StartedAt}} {{.RestartCount}}"')" ||
+        [ -z "$before" ] || [ -z "$containers_before" ]; then
         it_fail "webhook validation baseline captured (#3388)" "missing config/env or container snapshot"
         return 1
-    }
+    fi
     assert_eq "webhook trigger baseline is empty (#3388)" \
         "$(printf '%s' "$baseline" | jq -c '.notifications.webhooks')" '[]'
     for kind in energy null mixed; do
@@ -28,7 +28,10 @@ run_webhook_validation() {
             assert_eq "$kind null webhook preview is rejected (#3388)" "$st" rejected
             assert_contains "$kind webhook refusal names its index (#3388)" \
                 "$(printf '%s' "$result" | jq -r '.error // ""')" "notifications.webhooks[0]"
-            rx "rm -f $(quote_arg "$cdir/results/$id.json")" || return 1
+            if ! rx "rm -f $(quote_arg "$cdir/results/$id.json")"; then
+                it_fail "$kind webhook commit result reset (#3388)" "could not remove the prior preview result"
+                return 1
+            fi
             _spool_write "$cdir/requests/$id.json" \
                 "$(jq -nc --arg id "$id" '{id:$id,action:"commit",actor:"itest",confirm:"APPLY"}')"
             st="$(_wait_control_status "$cdir" "$id" "" 90 || echo timeout)"
