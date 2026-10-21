@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT=$(mktemp -d "${TMPDIR:?}/media-fixture.XXXXXX")
+ROOT=$(mktemp -d) || exit $?
 export OS_RUN_SUITE=1
 # shellcheck source=tests/os/phases/media.sh
 source "${1:-$HERE/phases/media.sh}" || exit $?
