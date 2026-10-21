@@ -80,24 +80,48 @@ seed_cr
 rm -f "$rebooted"
 out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PITHEAD_REBOOT_CMD="touch $rebooted" PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1)
 assert_eq "config-reset on the appliance reboots into firstboot" "$([ -f "$rebooted" ] && echo yes)" "yes"
-# A failed shutdown remains best-effort, but its real stderr and continuation must be visible.
+# A failed stack shutdown fails hard — config is NOT cleared, no reboot.
+# configless_stack_down uses docker ps/stop/rm (not compose), so the mock must answer docker ps
+# with a container ID and make docker stop fail to exercise the error path.
 seed_cr
 rm -f "$rebooted"
 cat >"$CR/bin/docker" <<'EOF'
 #!/usr/bin/env bash
-if [ "$*" = "compose down --remove-orphans" ]; then
-    echo "compose: synthetic shutdown failure" >&2
-    exit 125
-fi
-exit 0
+case "$*" in
+  *"--quiet"*)
+    # configless_project_ids: return a fake container ID so stack_down finds containers
+    echo "abc123def456"
+    ;;
+  *"--filter"*)
+    # configless_project_ids with filter: return a fake container ID
+    echo "abc123def456"
+    ;;
+  *"--all"*"--filter"*)
+    # configless_project_ps --all: return a full ps row
+    echo "running abc123def456"
+    ;;
+  *"stop"*)
+    # docker stop fails: trigger the error path in configless_stack_down
+    echo "docker: synthetic stop failure" >&2
+    exit 1
+    ;;
+  *"rm"*)
+    # docker rm should not be reached if stop fails
+    echo "docker: synthetic rm failure" >&2
+    exit 1
+    ;;
+  *)
+    exit 0
+    ;;
+esac
 EOF
 out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PITHEAD_REBOOT_CMD="touch $rebooted" PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1)
-assert_rc "config-reset continues after a failed shutdown" "$?" "0"
-assert_contains "config-reset exposes the Compose stderr" "$out" "compose: synthetic shutdown failure"
-assert_contains "config-reset identifies the failed shutdown and intentional wipe" "$out" "Stack shutdown failed — continuing with the config wipe."
-assert_contains "config-reset warns that containers may still run" "$out" "Containers may still be running"
-assert_eq "failed shutdown still clears configuration and reboots" \
-    "$([ ! -f "$CR/config.json" ] && [ ! -f "$CR/.env" ] && [ ! -f "$CR/Caddyfile" ] && [ ! -f "$CR/machine-role" ] && [ -f "$rebooted" ] && echo cleared-and-rebooting)" "cleared-and-rebooting"
+rc=$?
+assert_rc "config-reset fails when stack shutdown fails" "$rc" "1"
+assert_contains "config-reset reports containers not shutting down cleanly" "$out" "did not shut down cleanly"
+assert_eq "failed shutdown keeps config.json" "$([ -f "$CR/config.json" ] && echo kept)" "kept"
+assert_eq "failed shutdown keeps machine-role" "$([ -f "$CR/machine-role" ] && echo kept)" "kept"
+assert_eq "failed shutdown does not reboot" "$([ -f "$rebooted" ] && echo rebooted || echo no)" "no"
 assert_eq "failed shutdown keeps the chain and Tor identity" \
     "$([ -f "$CR/data/monero/blockchain" ] && [ -f "$CR/data/tor/hostname" ] && echo kept)" "kept"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$CR/bin/docker"

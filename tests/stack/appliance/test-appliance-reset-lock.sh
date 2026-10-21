@@ -131,7 +131,7 @@ rsl_out=$(rsl_run "$RSLFREE" PITHEAD_APPLIANCE=0 -- config-reset -y)
 rsl_rc=$?
 assert_rc "uncontended config-reset succeeds" "$rsl_rc" "0"
 assert_eq "uncontended config-reset really removes config.json" "$([ -f "$RSL/config.json" ] || echo gone)" "gone"
-assert_contains "uncontended config-reset really stops the stack" "$(cat "$RSLDOCKER")" "compose down"
+assert_contains "uncontended config-reset really stops the stack" "$(cat "$RSLDOCKER")" "stop"
 
 echo "== black-box: a held machine refuses all three reset verbs and changes nothing (#1482) =="
 rsl_hold "$RSLHELD"
