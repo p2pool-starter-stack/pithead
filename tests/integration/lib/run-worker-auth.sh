@@ -18,6 +18,10 @@ _worker_auth_shares() {
         | tostring | gsub(","; "") | tonumber | select(. >= 0)'
 }
 
+_worker_auth_shares_ready() {
+    _WORKER_AUTH_SHARES=$(_worker_auth_shares)
+}
+
 _worker_auth_progress() {
     local now
     now=$(_worker_auth_shares) || return 1
@@ -54,10 +58,11 @@ _worker_auth_arm() {
     missing) code=401 ;;
     wrong) code=403 ;;
     esac
-    shares=$(_worker_auth_shares) || {
-        it_fail "worker auth $label has a live accepted-share counter" "proxy sample unavailable"
+    if ! wait_for 300 3 "worker auth $label mining readiness" _worker_auth_shares_ready; then
+        it_fail "worker auth $label has a live accepted-share counter" "proxy sample unavailable for 300s"
         return 1
-    }
+    fi
+    shares=$_WORKER_AUTH_SHARES
     _WORKER_AUTH_CONTAINER=1
     if ! rx "docker run -d --name itest-worker-auth --network mining_net --entrypoint python3 -v $(quote_arg "$IT_REMOTE_DIR/tests/integration/fakes"):/fakes:ro $(quote_arg "$image") /fakes/fake_worker_api.py --auth $fake_mode --name $(quote_arg "${rig%%+*}") --token itest-worker-api >/dev/null"; then
         it_fail "worker auth $label starts its fake API" "fixture container failed"

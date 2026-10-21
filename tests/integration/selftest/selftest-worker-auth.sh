@@ -36,6 +36,52 @@ _worker_auth_state rig1 false 403
 assert_rc "a missing-credential response cannot prove the wrong-credential arm" "$?" 1
 OUT_DIR="$(mktemp -d)"
 trap 'rmdir "$OUT_DIR" 2>/dev/null || true' EXIT
+original_now_s=$(declare -f now_s)
+original_rx=$(declare -f rx)
+FAKE_NOW=0
+now_s() { printf '%s' "$FAKE_NOW"; }
+sleep() { FAKE_NOW=$((FAKE_NOW + $1)); }
+export IT_REMOTE_DIR=fixture-stack
+printf '0' >"$OUT_DIR/samples"
+api_state() {
+    local n
+    n=$(cat "$OUT_DIR/samples")
+    printf '%s' "$((n + 1))" >"$OUT_DIR/samples"
+    if [ "$n" -eq 0 ]; then
+        printf '%s' '{"proxy_workers":0,"proxy_summary":{"accepted":0}}'
+    else
+        printf '%s' '{"proxy_workers":1,"proxy_summary":{"accepted":1234}}'
+    fi
+}
+rx() {
+    FIXTURE_ATTEMPTED=1
+    return 1
+}
+FIXTURE_ATTEMPTED=0
+before_failures=$IT_FAIL
+_worker_auth_arm none none unused true open test-image rig1 '{}'
+arm_rc=$?
+IT_FAIL=$before_failures
+assert_rc "warmup reaches the fixture launch instead of failing the cold snapshot" "$arm_rc" 1
+assert_eq "cold proxy state is polled until a live counter appears" "$(cat "$OUT_DIR/samples")" 2
+assert_eq "the auth arm starts only after a usable mining sample" "$FIXTURE_ATTEMPTED" 1
+assert_num_ge "a cold proxy waits before the next sample" "$FAKE_NOW" 3
+api_state() { printf '%s' '{"proxy_workers":0,"proxy_summary":{"accepted":0}}'; }
+FIXTURE_ATTEMPTED=0
+FAKE_NOW=0
+before_failures=$IT_FAIL
+_worker_auth_arm none none unused true open test-image rig1 '{}'
+arm_rc=$?
+IT_FAIL=$before_failures
+assert_rc "a proxy that never recovers fails the bounded prerequisite" "$arm_rc" 1
+assert_eq "an unavailable miner never launches the fake" "$FIXTURE_ATTEMPTED" 0
+assert_eq "mining readiness has a finite 300-second deadline" "$FAKE_NOW" 300
+_WORKER_AUTH_CONTAINER=0
+unset -f sleep
+eval "$original_now_s"
+eval "$original_rx"
+api_state() { printf '%s' "$SAMPLE"; }
+rm "$OUT_DIR/samples"
 push_config() { RESTORED="$1"; }
 pithead() { return "$APPLY_RC"; }
 wait_status_ok() { return 0; }
