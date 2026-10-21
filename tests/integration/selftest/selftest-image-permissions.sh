@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== image permission regression verdict controls =="
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 # shellcheck source=tests/integration/lib.sh
 source "$ROOT/tests/integration/lib.sh"

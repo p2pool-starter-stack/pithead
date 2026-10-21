@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== non-root image access from a restrictive checkout =="
 service=${1:?service required}
 image=${2:?isolated image tag required}
 case "$service" in
