@@ -125,9 +125,9 @@ run_reset_restore() {
         return 1
     fi
     if reset_restore_state_probe verify "$archive" >"$OUT_DIR/reset-restore.verify.log" 2>&1; then
-        it_pass "reset recovery restores every archived file and every database table before up"
+        it_pass "reset recovery preserves archived data and every database table before up"
     else
-        it_fail "reset recovery restores every archived file and every database table before up" "archive bytes, database integrity, foreign keys or exact table counts differ; see reset-restore.verify.log"
+        it_fail "reset recovery preserves archived data and every database table before up" "archive bytes, database integrity, foreign keys or exact table counts differ; see reset-restore.verify.log"
         return 1
     fi
     if ! pithead up 2>&1 | redact >"$OUT_DIR/reset-restore.up.log"; then

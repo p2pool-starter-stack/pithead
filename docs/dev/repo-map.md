@@ -75,7 +75,7 @@ Configless shutdown and the local reset destination record are in
 lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure controls in
 `tests/integration/selftest/selftest-reset-restore.sh`. Shared web ownership checks are in
 `tests/integration/lib/reset-restore-web.sh`; consecutive status censuses are in
-`tests/integration/lib/readiness-churn.sh`. The archive, Tor-file and exact SQLite table-count
+`tests/integration/lib/readiness-churn.sh`. The archive, Tor preservation/circuit-state reset and exact SQLite table-count
 oracles are in `tests/integration/lib/restore-state-probe.py`, exercised by
 `tests/integration/selftest/selftest-restore-state.sh` and its Python fixtures.
 

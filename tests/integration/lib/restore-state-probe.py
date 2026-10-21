@@ -130,10 +130,15 @@ def verify(archive, scratch):
     if archived_counts != restored_counts:
         raise RestoreProbeError("restored dashboard table counts differ from archive")
     print("restore check: archived files", file=sys.stderr)
+    circuit_state = tor / "state"
+    if circuit_state.exists() or circuit_state.is_symlink():
+        raise RestoreProbeError("restored Tor circuit state was not discarded")
     for member in archive:
         if not member.isfile():
             continue
         destination = Path("/") / member.name
+        if destination == circuit_state:
+            continue
         if file_digest(destination) != digest(archive.extractfile(member)):
             category = "archived data"
             if destination in (root / "config.json", root / ".env", root / "Caddyfile"):

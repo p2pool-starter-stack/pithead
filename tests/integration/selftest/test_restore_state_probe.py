@@ -29,6 +29,7 @@ class RestoreStateProbeTests(unittest.TestCase):
         (self.root / "tor").mkdir()
         (self.root / "dashboard").mkdir()
         (self.root / "tor/key").write_bytes(os.urandom(8192))
+        (self.root / "tor/state").write_bytes(b"fixture circuit history")
         (self.root / "config.json").write_text('{"config_version":"2.0.0"}')
         (self.root / "VERSION").write_text("2.1.0-rc1\n")
         (self.root / ".env").write_text(
@@ -48,6 +49,7 @@ class RestoreStateProbeTests(unittest.TestCase):
         with tarfile.open(self.archive, "w:gz") as archive:
             for name in ("config.json", ".env", "Caddyfile", "tor", "dashboard"):
                 archive.add(self.root / name, arcname=str(self.root / name).lstrip("/"))
+        (self.root / "tor/state").unlink()
 
     def verify(self):
         with tarfile.open(self.archive) as archive:
@@ -60,6 +62,27 @@ class RestoreStateProbeTests(unittest.TestCase):
     def test_complete_restore_passes(self):
         self.verify()
         self.assertEqual(PROBE.database_counts(self.db), {"parent": 1, "child": 1, "odd table": 1})
+
+    def test_restored_tor_circuit_state_is_rejected(self):
+        state = self.root / "tor/state"
+        for symlink in (False, True):
+            with self.subTest(symlink=symlink):
+                if symlink:
+                    state.symlink_to("missing-circuit-history")
+                else:
+                    state.write_bytes(b"fixture circuit history")
+                with self.assertRaisesRegex(ValueError, "Tor circuit state"):
+                    self.verify()
+                state.unlink()
+
+    def test_refusal_snapshot_preserves_tor_circuit_state(self):
+        state = self.root / "tor/state"
+        state.write_bytes(b"fixture circuit history")
+        before = self.snapshot()
+        state.write_bytes(b"changed circuit history")
+        self.assertNotEqual(before, self.snapshot())
+        state.unlink()
+        self.assertNotEqual(before, self.snapshot())
 
     def test_configless_snapshot_covers_absence_and_every_file(self):
         for name in ("config.json", ".env", "Caddyfile"):

@@ -830,8 +830,10 @@ For one representative config:
   passphrase, a 1,024-byte truncated encrypted archive and a repacked archive with a newer
   `config_version`. Each refusal must exit 1 naming its cause, leave `config.json`, `.env` and
   Caddyfile absent, preserve every Tor file and the dashboard database bytes, and create no
-  project container. Before `up`, the successful restore must match every archived file and
-  every SQLite table count, with passing `integrity_check` and `foreign_key_check`.
+  project container. Before `up`, the successful restore must match every retained archived file and
+  every SQLite table count, with passing `integrity_check` and `foreign_key_check`. Tor circuit
+  history (`state`) must be absent, matching both restore paths; every other archived Tor file
+  must match exactly. Refusal snapshots still include circuit history and all other Tor files.
   `selftest-restore-state.sh` checks the refusal oracles and runs the archive/database fixtures,
   including accepted bad archives, changed files, corrupt databases and lost table rows.
   `reset-restore.verify.log` reports the database-check stage or a fixed file category on failure,
