@@ -208,7 +208,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   hash equals the dashboard password; `/etc`'s upperdir must be under `/run` on tmpfs. It repeats
   those checks after the password change, an unaided reboot while changed, and restoration.
   The console-login selftest also runs the real `setup` orchestration and setter with host I/O
-  stubbed: fresh appliance setup must set the password before unlocking, an empty password must
+  stubbed: fresh appliance setup must set the password before releasing its lock, an empty password must
   lock root, and DIY setup must leave the console unchanged.
   The shared dashboard control poller records POST and poll metadata on stderr: timestamp, route,
   curl exit code, HTTP status, response size, JSON/error presence, UUID and allowlisted result
