@@ -124,7 +124,7 @@ jobs:
           historical=$(mktemp -d "$TMPDIR/interrupt-rc3.XXXXXX")
           git archive 723b1d7200543c09ac8ad1201b213a4625ba66ec | tar -x -C "$historical"
           (cd "$historical" && bash scripts/build-pithead.sh)
-          if bash tests/stack/test-setup-build-interrupt.sh "$historical/pithead" >"$historical/red.log" 2>&1; then
+          if bash tests/stack/test_setup_build_interrupt.sh "$historical/pithead" >"$historical/red.log" 2>&1; then
             cat "$historical/red.log"
             echo 'RC3 unexpectedly passed the interrupted-build diagnostic regression'
             exit 1
