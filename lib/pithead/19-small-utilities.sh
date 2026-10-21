@@ -54,8 +54,8 @@ env_get_file() {
     local file="$1" key="$2" line
     [ -f "$file" ] || return 0
     line=$(grep -E "^$key=" "$file" 2>/dev/null) || true
-    line=${line%%$'\n'*}                    # first matching line
-    dotenv_decode_value "${line#*=}" "$key" # value after the first '='
+    line=${line%%$'\n'*}
+    dotenv_decode_value "${line#*=}" "$key"
 }
 
 env_get() { env_get_file "$ENV_FILE" "$1"; }
@@ -175,14 +175,11 @@ _data_dir_is_broad_root() {
     return 1
 }
 
-# Refuse data directories that would be catastrophic to chown -R / rm -rf.
 assert_safe_dir() {
     local d="$1"
     case "$d" in
     *$'\r'* | *$'\n'*) error "Data directories must not contain CR or LF." ;;
     esac
-    # 1) System + top-level roots, user homes, and the bare mount/parent dirs people most often
-    #    fat-finger a data_dir to. A dedicated SUBfolder (e.g. /srv/pithead) remains allowed (#91).
     if _data_dir_is_broad_root "$d"; then
         error "Refusing to use '$d' as a data directory — it's a system, home, or bare mount root. Choose a dedicated subfolder in $CONFIG_FILE (e.g. .../pithead-data)."
     fi
