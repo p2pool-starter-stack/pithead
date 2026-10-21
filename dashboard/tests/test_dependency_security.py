@@ -1,5 +1,3 @@
-"""Keep the locked and loaded HTTP transport above the known vulnerable releases."""
-
 import ssl
 import tomllib
 from pathlib import Path
