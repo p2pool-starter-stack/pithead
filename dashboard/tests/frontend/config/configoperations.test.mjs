@@ -65,3 +65,23 @@ test("default and failed-apply labels distinguish desired configuration from run
   assert.match(out, /A few developer settings are not shown here/);
   assert.doesNotMatch(out, /host's gate|authority on what commits/);
 });
+
+for (const [oldValue, newValue] of [[8080, null], [null, 8081]]) {
+  test(`worker API preview names the default for null (${oldValue} → ${newValue})`, () => {
+    const out = renderToString(PreviewModal({
+      preview: { preview_values: [{ key: "workers.api_port", label: "workers.api_port", old: oldValue, new: newValue }] },
+      busy: false,
+    }));
+    assert.match(out, /8080 \(default\)/);
+    assert.ok(out.includes(`<code>${oldValue ?? "8080 (default)"}</code> →<code>${newValue ?? "8080 (default)"}</code>`));
+    assert.doesNotMatch(out, /unset/);
+  });
+}
+
+test("other null preview values still read unset", () => {
+  const out = renderToString(PreviewModal({
+    preview: { preview_values: [{ key: "dashboard.energy.xmr_price", label: "Price", old: 1, new: null }] },
+    busy: false,
+  }));
+  assert.match(out, /unset/);
+});
