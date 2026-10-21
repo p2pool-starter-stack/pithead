@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
+echo "== cancellation finishes deploy before restoring once =="
 python3 - <<'PY'
 import os
 from pathlib import Path
