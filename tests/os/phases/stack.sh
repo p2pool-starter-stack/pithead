@@ -262,7 +262,9 @@ phase_stack() {
     miner_backup_trial || miner_rc=$?
     if [ "$miner_rc" != 0 ] && [ "$miner_rc" != 77 ]; then
         bad "local miner fails dashboard backup strand recovery (#3375)"
+        return 1
     fi
+    return 0
 
     # The DIY gate itself: a non-destructive read, then the destructive phases the appliance
     # channel has never run — its first live coverage of each (#2062). The two parity rows this
