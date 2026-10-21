@@ -628,8 +628,8 @@ Do not combine `mode` with `phases` or `scenario`; bench-ci refuses that combina
    This is the second job's `options` object. With no mode or scenario override, the wrapper
    retains its targeted `local-pruned-main-secure-tari` scenario instead of repeating the sweep.
    Explicit phases replace the preset and automatic rig phases, so select both RigForge phases
-   when covering a borrowed miner. Without a miner, omit those two phases and record that gap.
-   Narrow further to the phases a PR changes when full matrix coverage is not required.
+   when covering a borrowed miner. Keep a real miner for this full phase set: `lifecycle` also
+   requires one. Narrow further to the phases a PR changes when full matrix coverage is not required.
 
 Quote each job's unedited `bench-ci evidence <id>@<sha>` block in the PR. Together the jobs cover
 the sweep and selected phases; neither job alone proves the full matrix. Check the actual rows,
