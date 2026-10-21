@@ -80,33 +80,25 @@ seed_cr
 rm -f "$rebooted"
 out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PITHEAD_REBOOT_CMD="touch $rebooted" PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1)
 assert_eq "config-reset on the appliance reboots into firstboot" "$([ -f "$rebooted" ] && echo yes)" "yes"
-# A failed stack shutdown fails hard — config is NOT cleared, no reboot.
-# configless_stack_down uses docker ps/stop/rm (not compose), so the mock must answer docker ps
-# with a container ID and make docker stop fail to exercise the error path.
 seed_cr
 rm -f "$rebooted"
 cat >"$CR/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
   *"--quiet"*)
-    # configless_project_ids: return a fake container ID so stack_down finds containers
     echo "abc123def456"
     ;;
   *"--filter"*)
-    # configless_project_ids with filter: return a fake container ID
     echo "abc123def456"
     ;;
   *"--all"*"--filter"*)
-    # configless_project_ps --all: return a full ps row
     echo "running abc123def456"
     ;;
   *"stop"*)
-    # docker stop fails: trigger the error path in configless_stack_down
     echo "docker: synthetic stop failure" >&2
     exit 1
     ;;
   *"rm"*)
-    # docker rm should not be reached if stop fails
     echo "docker: synthetic rm failure" >&2
     exit 1
     ;;
