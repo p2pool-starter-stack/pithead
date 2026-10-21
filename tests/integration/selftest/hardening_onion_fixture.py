@@ -66,6 +66,13 @@ exit 0
 # The fake client follows the probe exit-code and stdin authorization contracts.
 DOCKER = r"""#!/usr/bin/env bash
 case "$1" in
+compose)
+    if [ "${2:-}" = stop ] && [ "${3:-}" = tor ]; then
+        touch "$STUB/tor-stopped"
+    elif [ "${2:-}" = up ] && [ "${3:-}" = -d ] && [ "${4:-}" = tor ]; then
+        [ "${TOR_START_FAIL:-0}" = 0 ] || exit 1
+        rm -f "$STUB/tor-stopped"
+    fi ;;
 ps) echo synthetic ;;
 inspect) echo '[{"Mounts":[]}]' ;;
 exec) echo "touch: cannot touch '/.rootfs-write-probe': Read-only file system"; exit 1 ;;
@@ -114,7 +121,7 @@ IT_MODE=local IT_REMOTE_DIR="$STUB/box" IT_PITHEAD=./pithead IT_CURRENT_SCENARIO
 BASELINE_CONFIG="${RUN_BASELINE_CONFIG:-$(cat "$STUB/box/config.json")}"
 _SAFETY_RESTORE_ARMED=0 _SAFETY_FOREIGN_TRAP="" SAFETY_ARCHIVE="" SAFETY_RESTORE_FAILED=0
 export PATH="$STUB:$PATH"
-wait_status_ok() { return 0; }
+wait_status_ok() { [ ! -e "$STUB/tor-stopped" ]; }
 wait_for() { return 0; }
 sleep() { :; }
 capture_artifacts() { :; }

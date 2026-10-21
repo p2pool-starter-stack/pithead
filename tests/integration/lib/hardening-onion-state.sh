@@ -18,6 +18,7 @@ hardening_onion_restore() {
     snapshot="$(quote_arg "$HARDENING_ONION_SNAPSHOT")"
     if rx "$helper restore $snapshot" >/dev/null 2>&1 &&
         step=apply && pithead apply -y >/dev/null 2>&1 &&
+        step=tor-start && rx "docker compose up -d tor" >/dev/null 2>&1 &&
         step=health && wait_status_ok 240 &&
         step=verify && rx "$helper verify $snapshot" >/dev/null &&
         step=units && _remove_control_units &&

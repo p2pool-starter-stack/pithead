@@ -52,6 +52,7 @@ def drive(
     interrupt="0",
     restore_fail="0",
     entry_auth=True,
+    tor_start_fail="0",
 ):
     with tempfile.TemporaryDirectory() as stub:
         s = Path(stub).resolve()
@@ -90,6 +91,7 @@ def drive(
             "INTERRUPT_PROBE": interrupt,
             "RESTORE_FAIL_ONCE": restore_fail,
             "RUN_BASELINE_CONFIG": json.dumps(BASELINE),
+            "TOR_START_FAIL": tor_start_fail,
         }
         r = subprocess.run(  # noqa: S603
             ["bash", "-c", DRIVER],  # noqa: S607
@@ -298,6 +300,14 @@ report(
     verdicts(run, RESTORED) == ["pass"]
     and run["restored_state"]
     and run["final"]["dashboard"]["onion"]["client_auth"] is False,
+)
+
+run = drive(tor_start_fail="1")
+report(
+    "C15 a failed Tor restore start fails the row and retains protected recovery copies",
+    verdicts(run, RESTORED) == ["fail"]
+    and not run["restored_state"]
+    and "hardening onion restore failed at tor-start" in run["out"],
 )
 
 if args.selftest:

@@ -172,7 +172,7 @@ class OnionStateTests(unittest.TestCase):
                     self.env.rmdir()
 
     def test_shell_restore_reports_first_failed_stage_and_retains_snapshot(self):
-        stages = ["restore", "apply", "health", "verify", "units", "cleanup"]
+        stages = ["restore", "apply", "tor-start", "health", "verify", "units", "cleanup"]
         script = r"""
 INTEGRATION_RUN_SUITE=1
 source "$1"
@@ -184,6 +184,7 @@ rx() {
         *' restore '*) invoke restore ;;
         *' verify '*) invoke verify ;;
         *' cleanup '*) invoke cleanup ;;
+        'docker compose up -d tor') invoke tor-start ;;
         *) return 99 ;;
     esac
 }
