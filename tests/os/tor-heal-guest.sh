@@ -80,7 +80,8 @@ saturated() {
 }
 configure() {
     jq --argjson enabled "$1" --arg webhook "http://$gateway:18918/" \
-        '.tor.auto_heal=$enabled | .notifications.tor=false | .notifications.webhooks=[$webhook]' config.json >"$work/next-config"
+        '.tor.auto_heal=$enabled | .dashboard.auth.password="" | .dashboard.control.enabled=false
+        | .notifications.tor=false | .notifications.webhooks=[$webhook]' config.json >"$work/next-config"
     cp "$work/next-config" config.json
     ./pithead apply -y >"$work/apply.log" 2>&1
 }
@@ -121,6 +122,7 @@ backup_count() {
 }
 stage=configure-disabled
 configure false
+if ./pithead control-run-pending >"$work/disabled-runner.log" 2>&1; then exit 1; fi
 before=$(backup_count)
 stage=inject-disabled
 poison
@@ -137,6 +139,19 @@ stage=reset-tor
 reset_tor
 stage=configure-enabled
 configure true
+stage=verify-heal-only
+grep -qx 'DASHBOARD_CONTROL_ENABLED=false' .env
+systemctl is-active --quiet pithead-control.path
+id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+jq -n --arg id "$id" '{id:$id,action:"restart",actor:"tor-heal"}' >"$work/request.json"
+cp "$work/request.json" "$control/requests/.$id.tmp"
+mv "$control/requests/.$id.tmp" "$control/requests/$id.json"
+for ((attempt = 0; attempt < 60; attempt++)); do
+    [ ! -f "$control/results/$id.json" ] || break
+    sleep 1
+done
+jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$control/results/$id.json" >/dev/null
+echo 'PASS: No login keeps general control disabled and rejects unrelated requests (#3166)'
 before=$(backup_count)
 stage=inject-enabled
 poison
@@ -187,4 +202,4 @@ jq -s -e '
     [.[] | select(.text | contains("circuit-build-time history is saturated"))] | length == 1' "$work/alerts.jsonl" >/dev/null
 jq -s -e '
     [.[] | select(.text | contains("reset saturated circuit history and guards"))] | length == 1' "$work/alerts.jsonl" >/dev/null
-echo 'PASS: guest host-gated recovery backs up saturation, clears state, preserves identities and restores Tor health (#3118)'
+echo 'PASS: No login host-gated recovery backs up saturation, clears state, preserves identities and restores Tor health (#3118, #3166)'

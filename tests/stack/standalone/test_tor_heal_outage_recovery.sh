@@ -36,6 +36,7 @@ control_write_result() {
 tor_recovery_mount() { printf '%s\n' "$WORK/tor"; }
 env_get() {
     case "$1" in
+    DASHBOARD_CONTROL_ENABLED) printf 'false\n' ;;
     CONTROL_DIR) printf '%s\n' "$WORK/control" ;;
     TOR_AUTO_HEAL) printf 'true\n' ;;
     NETWORK_PREFIX) printf '172.28.0\n' ;;
@@ -132,6 +133,7 @@ control_process_request "$WORK/request.json" "$WORK/control"
 AUTO_HEAL_OFF=1
 env_get() {
     case "$1" in
+    DASHBOARD_CONTROL_ENABLED) printf 'false\n' ;;
     CONTROL_DIR) printf '%s\n' "$WORK/control" ;;
     TOR_AUTO_HEAL) if [ "${AUTO_HEAL_OFF:-0}" = 1 ]; then printf 'false\n'; else printf 'true\n'; fi ;;
     NETWORK_PREFIX) printf '172.28.0\n' ;;
@@ -140,6 +142,20 @@ env_get() {
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 AUTO_HEAL_OFF=0
+echo "== No login rejects every unrelated action and non-healer actor =="
+for action in preview commit upgrade worker-apply worker-upgrade restart apply backup os-check os-download os-verify os-install os-reboot diag-doctor diag-logs onion-client-key egress-sync unknown; do
+    jq -n --arg id "$id" --arg action "$action" '{id:$id,action:$action,actor:"tor-heal"}' >"$WORK/unrelated.json"
+    control_process_request "$WORK/unrelated.json" "$WORK/control"
+    jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/result" >/dev/null
+done
+for action in tor-history tor-newnym tor-recover; do
+    jq --arg action "$action" '.action=$action | .actor="operator"' "$WORK/request.json" >"$WORK/unrelated.json"
+    control_process_request "$WORK/unrelated.json" "$WORK/control"
+    jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/result" >/dev/null
+    jq -n --arg id "$id" --arg action "$action" '{id:$id,action:$action,actor:"tor-heal"}' >"$WORK/off.json"
+    AUTO_HEAL_OFF=1 control_process_request "$WORK/off.json" "$WORK/control"
+    [ "$(jq -r .status "$WORK/result")" = rejected ]
+done
 jq '.extra="x"' "$WORK/request.json" >"$WORK/extra.json"
 control_process_request "$WORK/extra.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]

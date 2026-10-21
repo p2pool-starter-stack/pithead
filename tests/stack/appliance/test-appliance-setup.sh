@@ -211,7 +211,7 @@ assert_eq "inactive Compose model excludes the wallet volume" \
 # With -y: the three columns print, all named volumes go, every derived path is removed,
 # and every kept path survives byte-identical.
 : >"$DOCKER_LOG"
-out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+out=$(cd "$V" && TOR_AUTO_HEAL=true DOCKER_LOG="$DOCKER_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
 assert_contains "uninstall states the removed column" "$out" "Removed:"
 assert_contains "uninstall states the kept column" "$out" "Kept (yours):"
 assert_contains "uninstall states the left-behind column" "$out" "Left behind"

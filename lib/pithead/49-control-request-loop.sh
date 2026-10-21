@@ -87,6 +87,14 @@ control_process_request() { # <claimed-file> <control-dir>
     # writes the file, so re-validate it against the basic_auth username charset.
     printf '%s' "$actor" | grep -qE '^[A-Za-z0-9._@-]{0,64}$' || actor="untrusted"
     action=$(jq -r '.action // ""' "$file")
+    if [ "$(env_get DASHBOARD_CONTROL_ENABLED)" != true ]; then
+        if [ "$(env_get TOR_AUTO_HEAL)" != true ] || [ "$actor" != tor-heal ] ||
+            ! [[ "$action" = tor-newnym || "$action" = tor-history || "$action" = tor-recover ]]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"only Tor healing is enabled",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+            return 0
+        fi
+    fi
     case "$action" in
     egress-sync)
         chain=$(jq -r 'if ((keys | sort) == ["action","actor","chain","id"])
@@ -268,7 +276,8 @@ control_run_pending() {
     # drain (control_runner_wait_idle) does not wait on its own parent's claim (#2363).
     export PITHEAD_CONTROL_RUNNER_PID=$$
     [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||
-        error "The dashboard control channel is not enabled (dashboard.control.enabled)."
+        [ "$(env_get TOR_AUTO_HEAL)" == "true" ] ||
+        error "Neither dashboard control nor Tor auto-heal is enabled."
     local cdir
     cdir=$(env_get CONTROL_DIR)
     [ -n "$cdir" ] || cdir="$PWD/data/control"

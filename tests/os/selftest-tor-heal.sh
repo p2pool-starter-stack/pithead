@@ -65,9 +65,9 @@ STUB
     gateway=192.0.2.1
     eval "$(sed -n '/^configure() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
     configure false
-    jq -e '.tor.auto_heal == false and .notifications.tor == false' config.json >/dev/null
+    jq -e '.tor.auto_heal == false and .notifications.tor == false and .dashboard.auth.password == "" and .dashboard.control.enabled == false' config.json >/dev/null
     configure true
-    jq -e '.tor.auto_heal == true and (.notifications.webhooks | length == 1)' config.json >/dev/null
+    jq -e '.tor.auto_heal == true and (.notifications.webhooks | length == 1) and .dashboard.auth.password == "" and .dashboard.control.enabled == false' config.json >/dev/null
 )
 
 restore_case() (

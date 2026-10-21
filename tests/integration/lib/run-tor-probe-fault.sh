@@ -44,11 +44,12 @@ fault_tor_probe_egress() {
     assert_rc "read-only recovery can inspect the live Tor state and onion identities" "$?" "0"
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
     assert_rc "Tor-egress firewall remains enforced before fault" "$?" "0"
-    if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq '.tor.auto_heal=true')" ||
+    if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq '.tor.auto_heal=true | .dashboard.auth.password="" | .dashboard.control.enabled=false')" ||
         ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then
         it_fail "Tor probe fault enabled opt-in recovery" "apply or health failed"
         return
     fi
+    assert_eq "No login leaves general dashboard control disabled" "$(env_on_box DASHBOARD_CONTROL_ENABLED)" false
     prefix=$(env_on_box NETWORK_PREFIX)
     tor_before=$(rx "docker inspect tor --format '{{.State.StartedAt}}'")
     monero_before=$(rx "docker inspect monerod --format '{{.State.StartedAt}}'")
