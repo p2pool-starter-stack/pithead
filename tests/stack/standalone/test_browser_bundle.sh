@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== browser-safe support bundle =="
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 TMPDIR="${TMPDIR:-${RUNNER_TEMP:?set TMPDIR for standalone checks}}"
 work=$(mktemp -d "$TMPDIR/pithead-browser-bundle.XXXXXX")

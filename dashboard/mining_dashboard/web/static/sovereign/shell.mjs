@@ -27,7 +27,7 @@ export class AdvancedDrawer extends Component {
     const matches = Object.entries(SECTIONS).filter(([key, label]) =>
       `${key} ${label}`.toLowerCase().includes(query),
     );
-    return html`<dialog class="advanced" aria-labelledby="advanced-title"
+    return html`<dialog class="advanced" aria-label="Advanced"
       ref=${(node) => {
         this.dialog = node;
       }}

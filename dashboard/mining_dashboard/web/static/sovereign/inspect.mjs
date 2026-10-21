@@ -24,7 +24,8 @@ export class Inspect extends Component {
   render({ state }, { internal, selected }) {
     const topology = state?.topology;
     const nodes = (topology?.nodes || []).filter(
-      (node) => (internal || !node.internal) && (state?.tari?.active || node.id !== "tari"),
+      ({ internal: meshNode, id }) =>
+        (internal || !meshNode) && (state?.tari?.active || id !== "tari"),
     );
     const ids = new Set(nodes.map((node) => node.id));
     const edges = (topology?.edges || []).filter(
@@ -64,9 +65,9 @@ export class Inspect extends Component {
       ${
         topology
           ? html`<ul class="topology-map">${nodes.map(
-              (entry) => html`<li>
-        <button type="button" aria-pressed=${entry.id === selected} onClick=${() => this.setState({ selected: entry.id })}>${entry.label || entry.id}</button>
-        <span>${entry.remote ? "Remote" : entry.internal ? "Internal" : "Placement not reported"}</span>
+              ({ id, label, remote, internal: meshNode }) => html`<li>
+        <button type="button" aria-pressed=${id === selected} onClick=${() => this.setState({ selected: id })}>${label || id}</button>
+        <span>${remote ? "Remote" : meshNode ? "Internal" : "Placement not reported"}</span>
       </li>`,
             )}</ul>
       <ul>${edges.map((edge) => html`<li>${edge.from} → ${edge.to}: ${ROUTES[edge.route] || "Unverified"} · ${edge.label}</li>`)}</ul>`

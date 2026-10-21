@@ -15,6 +15,7 @@ export function initSovereign({
   renderSection,
 } = {}) {
   const root = doc.getElementById("app");
+  root.replaceChildren();
   const read = (key) => {
     try {
       return storage.getItem(key);

@@ -59,6 +59,8 @@ for (const theme of ["light", "dark", "auto"]) {
     ui.state.profile = { name: "Balance" };
     await ui.openPreview("?range=week&tab=kept");
     await expect(page.getByText("Balance: Everything goes through Tor")).toBeVisible();
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.getByText("Connecting to Pithead…", { exact: true })).toHaveCount(0);
     for (const name of ["Machines", "Earnings", "Settings", "Overview"]) {
       await page
         .getByRole("navigation", { name: "Main navigation" })

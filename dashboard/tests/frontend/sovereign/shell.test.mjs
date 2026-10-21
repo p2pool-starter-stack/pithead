@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { html } from "../../../mining_dashboard/web/static/app/preact.mjs";
-import { Shell } from "../../../mining_dashboard/web/static/sovereign/shell.mjs";
+import { AdvancedDrawer, Shell } from "../../../mining_dashboard/web/static/sovereign/shell.mjs";
 import { PAGES } from "../../../mining_dashboard/web/static/sovereign/navigation.mjs";
 import { profileBadge, stackStatus } from "../../../mining_dashboard/web/static/sovereign/status.mjs";
 import { renderToString } from "../helpers/render.mjs";
@@ -29,4 +29,10 @@ test("unknown, zero, sync and disconnected snapshots have different status", () 
   assert.equal(stackStatus({}, false).text, "Disconnected");
   assert.equal(profileBadge(null), "Profile not reported");
   assert.match(profileBadge({ name: "Privacy", customized: true }), /Privacy \(customized\): Tor only, rigs locked/);
+});
+
+test("Advanced keeps a direct accessible name across section changes", () => {
+  const out = renderToString(html`<${AdvancedDrawer} section="appearance" theme="auto" />`);
+  assert.match(out, /<dialog class="advanced" aria-label="Advanced"/);
+  assert.doesNotMatch(out, /aria-labelledby=/);
 });
