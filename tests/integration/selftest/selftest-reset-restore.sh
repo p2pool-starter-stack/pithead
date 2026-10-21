@@ -31,6 +31,7 @@ drive_reset_restore() (
         return 0
     }
     curl() { [ "$fault" != page ] && printf 'Pithead setup'; }
+    rr_restore_during_wizard_startup() { :; }
     reset_restore_wait_reboot() { :; } # reboot transport has its own controls below
 
     rx() {

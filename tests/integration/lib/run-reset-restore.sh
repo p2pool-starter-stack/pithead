@@ -3,6 +3,8 @@
 # The ordinary CLI recovery door, using real Compose containers and a real encrypted backup.
 # RESET_RESTORE_STACK_INTACT=1 on return marks a failure that changed nothing, so run_lifecycle can
 # go on and the phases after it still run (#3342).
+source "${BASH_SOURCE[0]%/*}/reset-restore-startup.sh"
+
 run_reset_restore() {
     RESET_RESTORE_STACK_INTACT=0
     local before_config before_secrets archive out rc after_config after_secrets
@@ -133,6 +135,9 @@ run_reset_restore() {
     else
         it_fail "stack healthy after encrypted restore following config-reset" "status did not recover"
         return 1
+    fi
+    if grep -q 'Rebooting into first-boot' "$OUT_DIR/reset-restore.reset.log"; then
+        rr_restore_during_wizard_startup "$archive" || return 1
     fi
     after_config=$(rx 'sha256sum config.json') && after_secrets=$(upgrade_secret_fingerprints) || {
         it_fail "reset recovery reads restored configuration and secrets" "snapshot unreadable"

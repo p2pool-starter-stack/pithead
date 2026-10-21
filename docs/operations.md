@@ -707,9 +707,11 @@ starts, firstboot restores that same slot's good state on each configless boot, 
 reboot while setup is still open. The record remains until a provisioned boot passes its health
 gate, so reset, CLI restore and setup followed by a normal reboot keep the intended slot. An
 unverified slot keeps its normal fallback; the next provisioned boot still requires the stack
-health gate. If you restore from the shell instead of the wizard page, the wizard closes its
-page within seconds of `config.json` returning, which frees ports 80 and 443 for Caddy; run
-`./pithead up` after that.
+health gate. If you restore from the shell instead of the wizard page, firstboot detects a
+configuration that appears after its entry check, including while it prepares the page.
+It closes the page and frees ports 80 and 443 for Caddy; run `./pithead up` after that.
+A retry round that opened with a retained configuration does not automatically detect its
+replacement by a CLI restore.
 
 Copy the archive back and run:
 
