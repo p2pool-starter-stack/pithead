@@ -33,7 +33,9 @@ that snapshot before recovery reconfiguration. Only hashes leave the guest.
 The crossupdate phase uses the same snapshot around its slot swap. Generated
 Caddyfile and wizard TLS files are outside the snapshot. Missing or unreadable
 required identity files fail the row. A disabled Tari mode may omit its wallet;
-an enabled Tari mode must carry a nonempty address. The tier-1 identity selftest changes an
+an enabled Tari mode must carry a nonempty address. The migration recovery selftest
+loads the identity helper and requires snapshots before install and after commit.
+The tier-1 identity selftest changes an
 `.env` line and a Tor key separately and requires both comparisons to fail.
 
 The candidate's migration boot must record its BUILD_COMMIT, durable marker
