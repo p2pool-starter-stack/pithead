@@ -135,6 +135,8 @@ jobs:
         run: bash tests/stack/standalone/test_appliance_hugepages.sh
       - name: Run clearnet marker attestation contract
         run: python3 tests/stack/standalone/test_clearnet_attestation.py
+      - name: Run stratum port preflight contract
+        run: python3 tests/stack/standalone/test_stratum_port.py
       - name: Test-inventory drift check
         # The inventory generator is grep-based; it exits non-zero when any suite it
         # enumerates counts zero — i.e. a suite moved or changed shape and the inventory

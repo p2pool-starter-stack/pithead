@@ -11,6 +11,7 @@ apply_dry_run() {
     {
         # NOTE: no ensure_onion_password here — it would write an auto-generated password into
         # the candidate config. A dry run must only read; an invalid candidate fails validation.
+        validate_stratum_port_change
         PITHEAD_CONFIG_SET=1 parse_and_validate_config
         load_preserved_state
         # P2Pool's onion is the provisioning marker (see apply) — a node's may be a placeholder.
@@ -21,7 +22,6 @@ apply_dry_run() {
         DEPLOYMENT_COMPLETED=true
         render_env "$newenv"
     } >&2
-
     local changed=() key old new line flag msg
     while IFS= read -r key; do
         [ -n "$key" ] && changed+=("$key")
@@ -50,7 +50,6 @@ apply_dry_run() {
     done
     rm -f "$newenv"
 }
-
 # Regenerate every DERIVED file — .env, Caddyfile, service configs, host units — from
 # config.json plus THIS program, touching no containers. The appliance's boot path runs this
 # every boot (#790): derived files must never outlive the program that rendered them, and an
@@ -149,6 +148,7 @@ apply() {
         apply_dry_run "$porcelain"
         return 0
     fi
+    validate_stratum_port_change
     ensure_onion_password # #343: auto-generate a dashboard password if the onion is on without one
     PITHEAD_CONFIG_SET=1 parse_and_validate_config
     load_preserved_state

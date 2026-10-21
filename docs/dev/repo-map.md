@@ -82,6 +82,11 @@ Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 configuration removal, including suppressed RC4 diagnostics. `tests/os/selftest-reset-config-probe.sh`
 checks that failed or unrecorded stops cannot pass from reset's final exit 0.
 
+The stratum port preflight is `lib/pithead/39a-stratum-port-preflight.sh`; preview and apply
+probe changed ports before committing. `tests/stack/standalone/test_stratum_port.py` checks live
+listener conflicts, and the hardening phase runs `tests/integration/lib/occupied-stratum.py`
+through the dashboard control API against Caddy’s occupied port.
+
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
