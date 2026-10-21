@@ -51,7 +51,8 @@ configuration hash. All three cells run the same commit and extra-reboot checks.
 The DIY lifecycle cells require healthy web ownership, original configuration and secret
 fingerprints after restore, and no surviving pre-operation project containers.
 
-`selftest-recovery.sh` checks slot/source/TRY/fallback parsing, census rejection and both reboot
-boundaries. The integration selftests drive restore failures and census failures without Docker.
+`selftest-recovery.sh` checks slot/source/TRY/fallback parsing and both reboot boundaries.
+Its explicit rejection controls fail if a wrong source, an overlapping container ID or a changed
+identity fingerprint is accepted. The integration selftests drive restore failures and census failures without Docker.
 They are tier-1 helper checks, not appliance or DIY runtime proof. The RC gate runs this phase
 separately from the reset/stack group; the full matrix must not share that group's timeout.
