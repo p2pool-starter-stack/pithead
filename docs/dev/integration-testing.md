@@ -334,7 +334,8 @@ conclude the job `error: environment` instead of `failure`
 ([bench-ci#613](https://github.com/p2pool-starter-stack/bench-ci/issues/613)). The line may be
 indented but carries nothing else: no `[ITEST]`, `!` or colour codes. Any other shape or key excuses
 nothing. The heartbeat tail of the detached harness drops the line, so the full-log replay is its
-only copy. The five keys:
+only copy. Completed replay section headers (`[ITEST]`) start at column zero; heartbeat previews
+remain indented, so artifact checks identify each completed scenario once (#2885). The five keys:
 
 | Key | Printed when |
 |---|---|
