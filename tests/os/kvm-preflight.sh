@@ -63,9 +63,9 @@ _vm_destroy_hang_self_test() {
         grep -qE "virsh $call took [0-9]+s \(rc [0-9]+\)" <<<"$log" || return 1
     done
     case "$1" in
-        both-hung) call='destroy undefine' ;;
-        term-ignoring) call=destroy ;;
-        list-hung) call=list ;;
+    both-hung) call='destroy undefine' ;;
+    term-ignoring) call=destroy ;;
+    list-hung) call=list ;;
     esac
     for call in $call; do
         grep -qE "virsh $call took [0-9]+s \(rc $expected\)" <<<"$log" || return 1
