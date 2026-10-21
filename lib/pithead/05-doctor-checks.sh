@@ -150,14 +150,9 @@ check_hugepages_reserved() {
     fi
 }
 
-# #1103: on the REDUCED tier, render_local_miner_config and provision_local_miner both refuse to
-# co-locate the built-in miner even though local_miner.enabled is on (see the comment above
-# local_miner_hugepages_blocked for why no headroom value could make that safe). Say so here too,
-# the same way the reduced reservation itself is announced above — an operator staring at an empty
-# Workers view otherwise has nothing telling them the opt-in was refused rather than just slow.
 check_local_miner_hugepages_blocked() {
     is_appliance || return 0
-    [ "$(config_bool '.local_miner.enabled' false 2>/dev/null || echo false)" = "true" ] || return 0
+    [ "$(config_get .local_miner.enabled 2>/dev/null || echo false)" = "true" ] || return 0
     local_miner_hugepages_blocked || return 0
     dr_warn "Local mining opt-in is ON, but this machine's reduced HugePages reservation cannot also fit a co-located miner — the built-in RigForge worker is not started. Use a 16 GB machine for the built-in miner."
 }

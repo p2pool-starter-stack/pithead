@@ -349,10 +349,9 @@ firstboot_wizard() {
                     continue
                 fi
                 # Rename BEFORE the handoff below (#2350): `(setup)` further down applied it too
-                # late — after the operator had already seen and acked the card naming the OLD box.
                 local DASHBOARD_HOST stratum_addr dash_user dash_pass miner_connection
                 miner_connection=$(wizard_prepare_miner_connection "$candidate" "$installer" "$spool") || error "Could not prepare miner connection credentials safely."
-                DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$candidate" 2>/dev/null)" "")
+                DASHBOARD_HOST=$(resolve_default "$(config_get .dashboard.host "$candidate" 2>/dev/null)" "")
                 reconcile_appliance_hostname
                 stratum_addr="stratum+$(jq -r 'if .p2pool.stratum_tls == true then "ssl" else "tcp" end' "$candidate")://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$candidate" 2>/dev/null || echo 3333)"
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$candidate")

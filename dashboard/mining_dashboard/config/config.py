@@ -2,6 +2,7 @@ import json
 import logging
 import os
 
+from mining_dashboard.config.defaults import default_of
 from mining_dashboard.config.worker_endpoints import load_energy_config, load_worker_endpoints
 
 logger = logging.getLogger("Config")
@@ -44,13 +45,14 @@ LOW_RAM_LOCAL_MINER_GB = 3
 
 
 def local_miner_enabled(path=None) -> bool:
-    """Whether this box runs the built-in RigForge miner (config.json: local_miner.enabled),
-    read live off the same read-only masked-config mount as the worker descriptors below — no
-    env plumb, and a dashboard toggle moves the floor without a container restart. A missing or
-    unreadable file reads False (DIY stacks without the mount never run the built-in miner)."""
     try:
         with open(path or HOST_CONFIG_PATH) as f:
-            return json.load(f).get("local_miner", {}).get("enabled") is True
+            return (
+                json.load(f)
+                .get("local_miner", {})
+                .get("enabled", default_of("local_miner.enabled", legacy=True))
+                is True
+            )
     except (OSError, ValueError, AttributeError):
         return False
 
@@ -161,11 +163,10 @@ WALLET_RPC_PASSWORD = os.environ.get("WALLET_RPC_PASSWORD", "")
 # Unique Donor ID for the XMRvsBeast pool
 XVB_DONOR_ID = os.environ.get("XVB_DONOR_ID", "")
 
-# Feature Flag: Toggles the XvB algorithmic switching logic
-ENABLE_XVB = os.environ.get("XVB_ENABLED", "true").lower() == "true"
+ENABLE_XVB = (
+    os.environ.get("XVB_ENABLED", str(default_of("xvb.enabled", legacy=True))).lower() == "true"
+)
 
-# The bridge container's Tor SOCKS proxy, shared by every dashboard call that must reach clearnet
-# without leaking the host IP: the XvB stats fetch + raffle registration (#163), the update check
 # (#224), and the Healthchecks.io ping (#79). socks5h resolves the target host via Tor too (no local
 # DNS leak). The host-networked dashboard reaches it at 172.28.0.25:9050 (tracks the subnet, #180).
 TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "socks5h://172.28.0.25:9050")
@@ -313,31 +314,16 @@ DOCKER_CONTROL_URL = os.environ.get("DOCKER_CONTROL_URL", "tcp://127.0.0.1:12376
 LOG_TAIL_LINES = int(os.environ.get("LOG_TAIL_LINES", 100))
 DOCKER_TIMEOUT = int(os.environ.get("DOCKER_TIMEOUT", 5))
 
-# --- Monero is required; Tari is optional (Issues #31, #35, #51) ---
-# monerod is the chain the stack actually mines: if it's unreachable or still syncing, the
-# workers can't mine no matter what, so those behaviours aren't configurable.
-#   - A monerod outage ALWAYS rejects workers (stops xmrig-proxy → closes :3333) so miners
-#     fail over to the backup pools they've configured instead of idling on us (Issue #31).
-#   - The miner (p2pool + xmrig-proxy) is ALWAYS held until monerod has fully synced — it
-#     can't mine against an unsynced node, and p2pool's merge-mining chatter would just flood
-#     the logs during the hours-long initial sync (Issue #35).
-#
-# `tari_required` (default true) requires Tari for the initial-sync hold, the full-screen
-# Sync Mode and runtime worker failover. A sustained Tari outage stops xmrig-proxy until
-# both required nodes recover. Tari uses a 15-minute RPC outage debounce; live startup,
-# migration and syncing alert but never reject. This costs Monero revenue during an outage even
-# though p2pool could keep mining Monero. Set false to keep mining Monero through Tari
-# outages and syncs, with Tari's progress and alerts in the operational dashboard.
-TARI_MODE = os.environ.get("TARI_MODE", "local").strip().lower()
-TARI_REQUIRED = os.environ.get("TARI_REQUIRED", "true").strip().lower() == "true"
+TARI_MODE = os.environ.get("TARI_MODE", default_of("tari.mode", legacy=True)).strip().lower()
+TARI_REQUIRED = (
+    os.environ.get("TARI_REQUIRED", str(default_of("dashboard.tari_required", legacy=True)))
+    .strip()
+    .lower()
+    == "true"
+)
 
-# Container stopped/started to reject/readmit workers on a required-node outage.
 REJECT_WORKERS_CONTAINER = os.environ.get("REJECT_WORKERS_CONTAINER", "xmrig-proxy")
 
-# Containers held stopped until the required chain(s) finish syncing, then started together
-# (p2pool first so the proxy has something to connect to). Comma-separated; order preserved.
-# The hold is a one-way latch: after the first release we never re-hold (a later node blip is
-# #31's job — it stops only xmrig-proxy so p2pool keeps its sidechain position), and the latch
 # is persisted across dashboard restarts so a restart mid-sync doesn't prematurely release.
 SYNC_GATE_CONTAINERS = [
     c.strip()

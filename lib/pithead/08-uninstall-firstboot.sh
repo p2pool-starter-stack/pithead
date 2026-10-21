@@ -325,8 +325,8 @@ machine_role() { # echoes pithead|both|rig
     case "$r" in rig | both | pithead) printf '%s' "$r" ;; *) printf 'pithead' ;; esac
 }
 
-machine_role_from_config() { # <config-file>
-    if [ "$(jq -r '.local_miner.enabled // false' "$1" 2>/dev/null)" = "true" ]; then
+machine_role_from_config() {
+    if [ "$(config_get .local_miner.enabled "$1" 2>/dev/null)" = "true" ]; then
         printf 'both'
     else
         printf 'pithead'

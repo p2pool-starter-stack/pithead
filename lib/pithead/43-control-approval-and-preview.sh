@@ -326,10 +326,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             result=$(printf '%s' "$result" | jq --arg rigs "$(printf '%s' "$worker_new" | paste -sd, - | sed 's/,/, /g')" '.changes += [{flag:"CONFIRM",key:"workers.list",msg:"Adopting a rig: \($rigs). The dashboard will send this rig'"'"'s control token to that address and can change its pools and its thermal limits from then on, so check the address is the rig itself. Changing or removing an adopted rig is not possible from the dashboard."}] | .destructive = true')
         fi
         # local_miner.enabled (2026-09-13 perimeter audit round 2): also config.json-only, no
-        # porcelain row. Ordinary like dashboard.energy — a documented dashboard toggle
-        # (docs/workers.md), not a security control — but named explicitly rather than left
-        # unaccounted for, which is the exact gap that let it bypass classification entirely.
-        if ! jq -e --slurpfile live "$CONFIG_FILE" '(.local_miner.enabled // false) == ($live[0].local_miner.enabled // false)' "$staged" >/dev/null 2>&1; then
+        if ! jq -e --argjson fallback "$(default_of local_miner.enabled legacy)" --slurpfile live "$CONFIG_FILE" '
+            (if .local_miner.enabled == null then $fallback else .local_miner.enabled end)
+            == (if $live[0].local_miner.enabled == null then $fallback else $live[0].local_miner.enabled end)' "$staged" >/dev/null 2>&1; then
             result=$(printf '%s' "$result" | jq '.changes += [{flag:"INFO",key:"local_miner.enabled",msg:"The co-located local miner toggle changed."}]')
         fi
         control_write_result "$cdir/results" "$id" "$result"
