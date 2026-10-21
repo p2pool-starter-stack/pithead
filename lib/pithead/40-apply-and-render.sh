@@ -11,7 +11,6 @@ apply_dry_run() {
     {
         # NOTE: no ensure_onion_password here — it would write an auto-generated password into
         # the candidate config. A dry run must only read; an invalid candidate fails validation.
-        validate_stratum_port_change
         PITHEAD_CONFIG_SET=1 parse_and_validate_config
         load_preserved_state
         # P2Pool's onion is the provisioning marker (see apply) — a node's may be a placeholder.
@@ -148,7 +147,6 @@ apply() {
         apply_dry_run "$porcelain"
         return 0
     fi
-    validate_stratum_port_change
     ensure_onion_password # #343: auto-generate a dashboard password if the onion is on without one
     PITHEAD_CONFIG_SET=1 parse_and_validate_config
     load_preserved_state
