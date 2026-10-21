@@ -111,7 +111,10 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd
   banner reaches the serial console, the first-boot wizard announces its URL + one-time token,
-  and the token gate answers. Assert serial getty is active on the guest's UART; give its installed
+  the console SHA-256 fingerprint matches the certificate served over TLS, and five wrong tokens
+  restart the wizard with a fresh console token. The old token is refused and the new token opens
+  authenticated wizard state. These checks run before the boot phase reboots the guest.
+  Assert serial getty is active on the guest's UART; give its installed
   condition a type-0 port for five minutes and require an inactive unit with no restarts or terminal
   errors, then restore the UART, require the unit active again and check a clean hangup respawns
   the login prompt. Also assert

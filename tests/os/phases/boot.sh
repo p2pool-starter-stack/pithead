@@ -82,6 +82,7 @@ phase_boot() {
     fi
 
     phase_wizard_redirect
+    phase_wizard_identity
 
     # Exercise the installed unit under systemd. The guest has a real emulated UART; a temporary
     # runtime drop-in gives the SAME ExecCondition a type-0 fixture, then is removed before reboot.
