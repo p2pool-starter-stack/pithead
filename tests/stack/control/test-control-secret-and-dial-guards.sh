@@ -193,6 +193,52 @@ for HOOKS in "[\"https://example.com/new\",$S0,$S1]" "[$S0]" "[$S1,$S0]" '[{"__s
 done
 assert_eq "refused webhook edits leave the live list as it was" \
     "$(jq -c '.notifications.webhooks' "$C/config.json")" '["https://example.com/hook","https://example.com/two"]'
+
+# Exercise the GUI trigger with distinct previews against the same empty-webhook baseline.
+jq '.notifications.webhooks=[]' "$C/config.json" >"$C/config.json.tmp" &&
+    mv "$C/config.json.tmp" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+assert_eq "empty webhook trigger baseline is applied" \
+    "$(jq -c '.notifications.webhooks' "$C/config.json")" '[]'
+ENERGY_UUID="38383838-3388-4388-8388-383838383838"
+MIXED_UUID="48484848-3388-4488-8488-484848484848"
+jq -n --slurpfile live "$C/config.json" --arg id "$ENERGY_UUID" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .dashboard.energy.cost_per_kwh=0.18)}' >"$REQS/$ENERGY_UUID.json"
+run_pending >/dev/null
+assert_eq "energy-only control preview remains a positive control" \
+    "$(jq -r '.status' "$RESULTS/$ENERGY_UUID.json")" "previewed"
+mixed_before=$(sha256sum "$C/config.json" | awk '{print $1}')
+jq -n --slurpfile live "$C/config.json" --arg id "$MIXED_UUID" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .dashboard.energy.cost_per_kwh=0.18
+      | .notifications.webhooks=[null])}' >"$REQS/$MIXED_UUID.json"
+run_pending >/dev/null
+mixed_result=$(cat "$RESULTS/$MIXED_UUID.json")
+mixed_status=$(jq -r '.status' "$RESULTS/$MIXED_UUID.json")
+case "$mixed_status" in
+rejected)
+    assert_contains "mixed null webhook rejection names the field" \
+        "$(jq -r '.error // ""' "$RESULTS/$MIXED_UUID.json")" "notifications.webhooks"
+    ;;
+previewed)
+    # A preview that accepts null must disclose its field-specific outcome.
+    assert_eq "accepted mixed preview has one field-specific webhook outcome" \
+        "$(printf '%s' "$mixed_result" | jq -r '[.. | objects
+          | select((.key? == "notifications.webhooks" or .field? == "notifications.webhooks" or .path? == "notifications.webhooks")
+              and (((.msg? // .message? // .outcome? // .normalization? // "")
+                    | tostring | test("(?i)(normal|preserv|reject|invalid|omit|ignore|outcome)"))
+                   or (has("old") and has("new"))
+                   or (has("before") and has("after"))))]
+          | length > 0')" "true"
+    ;;
+*)
+    assert_eq "mixed Energy plus null webhook returns a handled preview result (#3388)" \
+        "$mixed_status" "rejected"
+    ;;
+esac
+assert_eq "mixed preview leaves config untouched before commit" \
+    "$(sha256sum "$C/config.json" | awk '{print $1}')" "$mixed_before"
 rm -f "$C/bin/getent" "$C/bin/ip"
 
 # A DNS name can change after the safety check. Resolve safely for both host checks, then return
