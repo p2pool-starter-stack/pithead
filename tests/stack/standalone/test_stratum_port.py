@@ -181,6 +181,22 @@ class OccupiedStratumProofTest(unittest.TestCase):
         self.assertEqual(previews, [3])
         self.assertIn("mining continues", output)
 
+    def test_prior_apply_counter_reset_requires_new_progress(self):
+        error, previews, output = self.exercise([(1, 100), (1, 2), (1, 4), (1, 6)])
+        self.assertIsNone(error)
+        self.assertEqual(previews, [3])
+        self.assertIn("hashes=2->4", output)
+
+    def test_counter_reset_without_progress_never_previews(self):
+        error, previews, _ = self.exercise([(1, 100), (1, 2)])
+        self.assertEqual(previews, [])
+        self.assertIn("before occupied-port preview", error)
+
+    def test_post_refusal_counter_reset_does_not_pass_as_progress(self):
+        error, previews, _ = self.exercise([(1, 100), (1, 102), (1, 2), (1, 4)])
+        self.assertEqual(previews, [2])
+        self.assertIn("after occupied-port refusal", error)
+
     def test_missing_mining_baseline_refuses_to_test_preview(self):
         error, previews, _ = self.exercise([(0, 100)])
         self.assertEqual(previews, [])

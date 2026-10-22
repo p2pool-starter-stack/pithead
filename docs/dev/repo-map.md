@@ -87,6 +87,8 @@ probe changed ports before committing. `tests/stack/standalone/test_stratum_port
 listener conflicts, and the hardening phase runs `tests/integration/lib/occupied-stratum.py`
 through the dashboard control API against Caddy’s occupied port. It waits for workers and hash
 progress before preview and after refusal, reporting bounded counters when either wait fails.
+The pre-preview wait re-baselines a counter reset from the preceding apply, then requires growth;
+the post-refusal check still requires growth beyond the established baseline.
 
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.

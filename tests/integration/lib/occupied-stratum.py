@@ -33,7 +33,7 @@ def settled(route, body, exclude):
     return result
 
 
-def wait_mining(start, timeout, phase):
+def wait_mining(start, timeout, phase, allow_reset=False):
     initial = start.get("stratum", {}).get("total_hashes", 0)
     deadline = time.monotonic() + timeout
     state = start
@@ -41,6 +41,9 @@ def wait_mining(start, timeout, phase):
         state = request("state")
         hashes = state.get("stratum", {}).get("total_hashes", 0)
         workers = state.get("proxy_workers", 0)
+        if allow_reset and hashes < initial:
+            print(f"{phase}: counter reset {initial}->{hashes}", flush=True)
+            initial = hashes
         if workers > 0 and hashes > initial:
             print(f"{phase}: workers={workers}, hashes={initial}->{hashes}", flush=True)
             return state
@@ -63,7 +66,7 @@ config = {key: value for key, value in config.items() if not key.startswith("_")
 if config.get("p2pool", {}).get("stratum_port", 3333) == port:
     raise AssertionError("occupied test port must differ from the current stratum port")
 config.setdefault("p2pool", {}).update(stratum_port=port, stratum_bind="0.0.0.0")
-start = wait_mining(request("state"), 180, "before occupied-port preview")
+start = wait_mining(request("state"), 180, "before occupied-port preview", allow_reset=True)
 preview = settled("preview", {"config": config}, None)
 if preview.get("status") != "rejected":
     raise AssertionError("occupied stratum port preview was not rejected")
