@@ -48,8 +48,6 @@ Both reject duplicate members before normalization and placeholders before stagi
 
 Release-note extraction is covered by `tests/stack/release/test-release-notes.sh`;
 it selects the changelog section matching the release tag, including known issues.
-The release-command and shipped-note guards in
-`tests/stack/standalone/test_appliance_release_docs.py` run through `make test-tools`.
 
 The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
