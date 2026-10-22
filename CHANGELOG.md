@@ -13,6 +13,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- XvB sync regression tests now check real stored stats, reward estimates and raffle wins. Failed fetches and unparseable round aggregates must retain the last good readings and freshness timestamps; a local failure-count update remains allowed (#3056).
 - A Configuration change rejected before anything was written (a stale preview, a missing confirmation) is now reported as not applied or saved, not as "saved but is not running" (#3376).
 
 ## [2.0.0] - 2026-10-03
