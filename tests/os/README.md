@@ -302,9 +302,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   require the original dashboard login, unchanged configuration and host identity, both chain
   sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
   the served config; require the credentials card's login and the same chains and identity.
-  Both returns poll for successful setup completion, authenticated dashboard state and resumed
-  height. `coordinator-setup-again-leg.sh` implements this leg;
-  `selftest-coordinator-setup-again.sh` drives its failure controls without a guest.
+  Both returns poll for successful setup completion, HTTP 200 with the dashboard's
+  `sync.monero` state object, and resumed height. A timeout reports the stage, height verdict,
+  HTTP status, curl exit and setup verdict without response bodies or credentials.
+  `coordinator-setup-again-leg.sh` implements this leg; `selftest-coordinator-setup-again.sh`
+  uses the generated dashboard response fixture and drives failure controls without a guest.
   Leg 0 then runs the cheap reset tier on the same provisioned guest: `pithead config-reset -y` must clear
   `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
   while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every

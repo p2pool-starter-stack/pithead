@@ -6,6 +6,7 @@ source "$here/coordinator-setup-again-leg.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 fixture_answers='{"monero":{"wallet_address":"fixture-monero","mode":"local","out_peers":12},"tari":{"wallet_address":"fixture-tari","mode":"local"},"p2pool":{"pool":"nano"}}'
+dashboard_state=$(cat "$here/../../dashboard/tests/frontend/fixtures/state.json")
 state='{"stage":"setup","saved_role":{"role":"pithead"},"new_machine":false,"config":{"monero":{"wallet_address":"fixture-monero","mode":"local","out_peers":12,"node_password":""},"tari":{"wallet_address":"fixture-tari","mode":"local"},"p2pool":{"pool":"nano","stratum_password":""},"dashboard":{"auth":{"password":""}}}}'
 coordinator_saved_state_valid "$state" "$fixture_answers"
 for mutation in '.saved_role.role="rig"' '.saved_role.token="secret"' '.stage="handoff"' \
@@ -64,6 +65,7 @@ echo 'coordinator transport: session token stays private and wizard state has a 
 
 ok() { printf 'ok:%s\n' "$*" >>"$work/trace"; }
 bad() { printf 'bad:%s\n' "$*" >>"$work/trace"; }
+info() { printf 'info:%s\n' "$*" >>"$work/trace"; }
 sleep() { SECONDS=$((SECONDS + 601)); }
 provisioning_settled() { [ "$scenario" != unsettled ]; }
 provisioning_setup_failed() { return 1; }
@@ -92,8 +94,10 @@ dashboard_curl() {
     printf 'login:%s:%s:%s\n' "$stage" "$DASH_USER" "$DASH_PASS" >>"$work/auth"
     case "$scenario:$stage" in
     login-changed:keep | resubmit-login-failed:resubmit) return 1 ;;
-    malformed-state:keep) printf '{}' ;;
-    *) printf '{"services":{"tor":{}}}' ;;
+    malformed-state:keep) printf '{}\n200' ;;
+    services-only:*) printf '{"services":{"tor":{}}}\n200' ;;
+    auth-refused:*) printf '%s\n401' "$dashboard_state" ;;
+    *) printf '%s\n200' "$dashboard_state" ;;
     esac
 }
 _ssh() {
@@ -160,7 +164,7 @@ ip=fixture
 for scenario in success boot-failed session-failed prefill-failed keep-refused login-changed \
     config-changed identity-changed chain-lost height-regressed malformed-state \
     submit-refused missing-handoff ack-refused resubmit-login-failed onion-changed unsettled \
-    secret-baseline-missing setup-not-settled keep-marker-left cleanup-failed; do
+    secret-baseline-missing setup-not-settled keep-marker-left cleanup-failed services-only auth-refused; do
     printf baseline >"$work/stage"
     : >"$work/trace"
     : >"$work/auth"
@@ -179,6 +183,10 @@ for scenario in success boot-failed session-failed prefill-failed keep-refused l
         [ "$rc" -ne 0 ]
         grep -q '^bad:' "$work/trace"
     fi
+    case "$scenario" in
+    services-only) grep -q 'dashboard_http=200 curl_exit=0 state_ready=no' "$work/trace" ;;
+    auth-refused) grep -q 'dashboard_http=401 curl_exit=0 state_ready=no' "$work/trace" ;;
+    esac
     [ "$(tail -1 "$work/trace")" = cleanup ] || grep -q '^cleanup$' "$work/trace"
     [ -z "$(find "$work" -name 'jar.*' -print -quit)" ]
     ! grep -q '^unexpected-ssh$' "$work/trace"
