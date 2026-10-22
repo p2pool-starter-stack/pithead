@@ -92,6 +92,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/aged-version.sh"
 # shellcheck source=tests/os/provision-browser-submit.sh
 . "$SCRIPT_DIR/provision-browser-submit.sh"
+. "$SCRIPT_DIR/image-upgrade-certificate-leg.sh"
 # shellcheck source=tests/os/appliance-hostname-leg.sh
 . "$SCRIPT_DIR/appliance-hostname-leg.sh"
 # shellcheck source=tests/os/appliance-diagnostics-leg.sh
