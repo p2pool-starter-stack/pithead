@@ -126,6 +126,7 @@ test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
 test-appliance-reset-slot.sh|rs_case
 test-appliance-rig-config-merge.sh|rcm_invalid
+test-cli.sh|first_run_case
 test-config-document.sh|raw
 test-config-document.sh|verb
 test-config.sh|2
