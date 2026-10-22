@@ -13,10 +13,6 @@ wizard_start_page() {
         -e WIZARD_HANDOFF="$card_mount" \
         -v "$spool":/wizard-spool -v "$restore_spool":/wizard-restore \
         "$image" -m mining_dashboard.wizard >/dev/null || {
-        # `error` writes to stderr = /dev/console, ONE device (whichever the cmdline named
-        # LAST); on a box whose monitor is the other one the failure is invisible and a STOPPED
-        # box reads as a slow one — a three-minute failure was once taken for an hour of
-        # progress. _console reaches every physical console, which is the whole point here.
         _console "" "Setup has STOPPED — this box is no longer preparing a page." \
             "The container engine could not start the setup page." \
             "Diagnose with: journalctl -u pithead-firstboot -b"

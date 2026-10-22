@@ -28,10 +28,9 @@ rr_startup_ports_free() {
     [ -z "$listeners" ]
 }
 
-rr_startup_restore_body() { # <archive>
+rr_startup_restore_body() {
     local boot_before
     boot_before=$(rx 'cat /proc/sys/kernel/random/boot_id') || return 1
-    # The appliance may close SSH before config-reset returns.
     rx "printf 'config-reset\n' | $IT_PITHEAD config-reset" 2>&1 |
         redact >"$OUT_DIR/startup-restore.reset.log" || true
     if ! reset_restore_wait_reboot "$boot_before" 300; then

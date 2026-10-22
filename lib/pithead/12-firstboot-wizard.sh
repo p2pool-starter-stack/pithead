@@ -158,9 +158,7 @@ firstboot_wizard() {
         wizard_clear_submission_transaction "$spool" || error "Could not clear the previous setup transaction."
         clear_restore_submission "$spool" "$restore_spool" || error "Could not clear the previous restore submission."
         clear_setup_candidate "$restore_spool/config.json" "$restore_spool/handoff.json" || error "Could not clear private setup credentials."
-        # Keep an operator's pre-seeded token; otherwise mint a fresh one every round.
         token=$(preseed_token) || token=$(wizard_mint_token)
-        # Retry rounds retain their own configuration baseline.
         if [ "$round" -gt 0 ]; then
             had_config=0
             [ ! -f "$PWD/config.json" ] || had_config=1
