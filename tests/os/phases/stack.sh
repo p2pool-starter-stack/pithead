@@ -275,23 +275,8 @@ phase_stack() {
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
     _stack_container_restart_leg || return 1
 
-    # The DIY gate itself: a non-destructive read, then the destructive phases the appliance
-    # channel has never run — its first live coverage of each (#2062). The two parity rows this
-    # guest cannot satisfy are named, with their own issues, after the invocations below.
-    #
-    # Every invocation below names --scenario (or, for --check, returns before the matrix is
-    # even reached). Without one, tests/integration/run.sh's own default is to iterate its FULL
-    # 15-scenario matrix first — almost all of it monero.mode=local, which this remote-node-only
-    # guest can only run by starting a local monerod from scratch each time. That cost over two
-    # hours and starved xvb-routing-smoke of its own budget the first time this ran for real
-    # (#2062); the local matrix is the DIY gate's own job on its own bench, not this phase's.
     local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
-    # --check needs the remote endpoints too, not just the scenario runs: run-state.sh reads
-    # $REMOTE_MONERO_HOST with no fallback for the ZMQ probe, so without them it dials an empty
-    # host and reports connect-refused against a node that is in fact publishing. Job 397 proved
-    # it both ways in one run — the same two ZMQ rows passed in the scenario leg, which carries
-    # these flags, and failed in this one, which did not.
     _stack_run_integration "check (non-destructive live-state assertion)" --check "${remote_extra[@]}"
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \

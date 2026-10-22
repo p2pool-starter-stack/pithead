@@ -177,8 +177,6 @@ stack_status() {
             continue
         fi
 
-        # A migration marker authorizes only the explicit pre-commit stop of chain services.
-        # Missing/stopped is expected; restarting or running-unhealthy still takes the normal fault path.
         if [ "$chain_hold" = 1 ]; then
             case " $REVENUE_CHAIN_CONTAINERS " in
             *" $s "*)

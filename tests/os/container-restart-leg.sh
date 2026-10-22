@@ -71,7 +71,7 @@ fi
 
 doctor_rc=0
 timeout 30 ./pithead doctor >"$work/doctor" 2>&1 || doctor_rc=$?
-if [ "$doctor_rc" -ne 1 ] || ! grep -Fq 'caddy restarted during the health check' "$work/doctor"; then
+if [ "$doctor_rc" -ne 1 ] || ! grep -Fq 'caddy is restarting or restarted during the health check' "$work/doctor"; then
     echo 'restart detection leg: doctor did not fail and name restarting caddy' >&2
     exit 1
 fi

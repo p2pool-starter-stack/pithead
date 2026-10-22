@@ -191,9 +191,11 @@ it works from any checkout or bundle directory.
 
 `status` prints the usual compose table, then a per-service health check: a green ✓ for each
 running (and healthy) service, and a ⚠/✗ for anything unhealthy, restarting, stopped, or missing.
-It compares two container-engine snapshots three seconds apart, so a service that repeatedly
-exits between point-in-time Podman or Docker reads is still reported as restarting. An old,
-unchanged restart count is history and does not fail the check.
+It compares two container-engine snapshots three seconds apart. An explicit `restarting` state
+fails without requiring a metadata change, including while Docker is backing off with an unchanged
+restart count and start time; an increased restart count or changed start time catches loops between
+point-in-time Podman or Docker reads. An old, unchanged restart count on a running service is history
+and does not fail the check.
 A miner deliberately created/exited/stopped by the sync gate or node failover is the sole stopped
 exception during normal operation. A pending appliance data migration also withholds its chain
 services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero;

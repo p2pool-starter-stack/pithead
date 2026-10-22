@@ -14,7 +14,7 @@ container_restart_snapshot() {
 
 container_restarting_names() {
     local before after id name state count started
-    local -A before_count before_started before_name
+    local -A before_count before_started before_name reported
     before=$(container_restart_snapshot) || return 1
     [ -n "$before" ] || return 0
     sleep 3
@@ -27,13 +27,29 @@ container_restarting_names() {
         before_name["$id"]="$name"
         before_count["$id"]="$count"
         before_started["$id"]="$started"
+        if [ "$state" = restarting ]; then
+            printf '%s\n' "$name"
+            reported["$name"]=1
+        fi
     done <<<"$before"
     while IFS=$'\t' read -r id name state count started; do
         name=${name#/}
+        [[ "$name" =~ ^[0-9a-f]{12}_(.+)$ ]] && name=${BASH_REMATCH[1]}
+        if [ "$state" = restarting ]; then
+            if [ -z "${reported[$name]+set}" ]; then
+                printf '%s\n' "$name"
+                reported["$name"]=1
+            fi
+            continue
+        fi
         [ -n "${before_count[$id]+set}" ] || continue
         if [ "$count" -gt "${before_count[$id]}" ] ||
             { [[ "${before_started[$id]}" != 0001-01-01* ]] && [ "$started" != "${before_started[$id]}" ]; }; then
-            printf '%s\n' "${before_name[$id]}"
+            name=${before_name[$id]}
+            if [ -z "${reported[$name]+set}" ]; then
+                printf '%s\n' "$name"
+                reported["$name"]=1
+            fi
         fi
     done <<<"$after"
 }
@@ -46,9 +62,9 @@ check_container_restarts() {
     fi
     while IFS= read -r name; do
         [ -n "$name" ] || continue
-        dr_fail "$name restarted during the health check — it may be crash-looping."
+        dr_fail "$name is restarting or restarted during the health check — it may be crash-looping."
         failed=1
     done <<<"$names"
-    [ "$failed" -eq 0 ] && dr_ok "No containers restarted during the health check."
+    [ "$failed" -eq 0 ] && dr_ok "No containers were observed restarting during the health check."
     return 0
 }

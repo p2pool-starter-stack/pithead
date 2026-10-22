@@ -31,6 +31,15 @@ inspect)
     case "${RESTART_SCENARIO:?}" in
     advancing) printf '%064d\t/caddy\trunning\t%s\t2026-10-20T00:00:0%sZ\n' 1 "$n" "$n" ;;
     stable) printf '%064d\t/caddy\trunning\t7\t2026-10-20T00:00:01Z\n' 1 ;;
+    backoff) printf '%064d\t/caddy\trestarting\t7\t2026-10-20T00:00:01Z\n' 1 ;;
+    backoff_after)
+        [ "$n" -eq 1 ] && state=running || state=restarting
+        printf '%064d\t/caddy\t%s\t7\t2026-10-20T00:00:01Z\n' 1 "$state"
+        ;;
+    backoff_replacement)
+        [ "$n" -eq 1 ] && state=running || state=restarting
+        printf '%064d\t/caddy\t%s\t7\t2026-10-20T00:00:01Z\n' "$n" "$state"
+        ;;
     started) printf '%064d\t/caddy\trunning\t0\t2026-10-20T00:00:0%sZ\n' 1 "$n" ;;
     replacement) printf '%064d\t/caddy\trunning\t%s\t2026-10-20T00:00:0%sZ\n' "$n" "$n" "$n" ;;
     firststart)
@@ -72,6 +81,9 @@ for ENGINE in docker podman; do
     check_scenario advancing caddy
     check_scenario started caddy
     check_scenario stable ''
+    check_scenario backoff caddy
+    check_scenario backoff_after caddy
+    check_scenario backoff_replacement caddy
     check_scenario replacement ''
     check_scenario firststart ''
 done
@@ -121,6 +133,17 @@ grep -Fq 'caddy         restarting' "$td/status.out" || {
     exit 1
 }
 
+export RESTART_SCENARIO=backoff
+rm -f "$RESTART_STATE"
+if stack_status >"$td/backoff-status.out" 2>&1; then
+    printf 'FAIL: status passed caddy in restart backoff\n' >&2
+    exit 1
+fi
+grep -Fq 'caddy         restarting' "$td/backoff-status.out" || {
+    printf 'FAIL: status did not name caddy in restart backoff\n' >&2
+    exit 1
+}
+
 export RESTART_SCENARIO=stable
 rm -f "$RESTART_STATE"
 stack_status >"$td/stable-status.out" 2>&1 || {
@@ -163,12 +186,14 @@ grep -Fq 'fail:Container restart observation failed' <<<"$DR_ROWS" || {
     printf 'FAIL: malformed restart observation passed doctor\n' >&2
     exit 1
 }
-DR_ROWS=
-export RESTART_SCENARIO=advancing
-rm -f "$RESTART_STATE"
-check_container_restarts
-grep -Fq 'fail:caddy restarted during the health check' <<<"$DR_ROWS" || {
-    printf 'FAIL: doctor did not name restarting caddy\n' >&2
-    exit 1
-}
+for RESTART_SCENARIO in advancing backoff; do
+    export RESTART_SCENARIO
+    DR_ROWS=
+    rm -f "$RESTART_STATE"
+    check_container_restarts
+    grep -Fq 'fail:caddy is restarting or restarted during the health check' <<<"$DR_ROWS" || {
+        printf 'FAIL: doctor did not name caddy in %s\n' "$RESTART_SCENARIO" >&2
+        exit 1
+    }
+done
 printf 'container restart self-test: PASS\n'
