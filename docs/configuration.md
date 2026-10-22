@@ -60,6 +60,9 @@ only the keys you want to override.
 `apply` is safe to run anytime:
 
 - It previews what will change, diffing your edited `config.json` against the running configuration.
+  A P2Pool pool switch warns that the sidechain re-syncs and the PPLNS window resets. A routing-only
+  edit describes proxy routing, DNS and peer visibility; it keeps the selected sidechain. The
+  clearnet exposure and subnet-topology warnings still apply to their respective settings.
 - It prompts to confirm before anything disruptive: switching the Monero node local↔remote, switching
   `tari.mode` between `local`, `remote` and `off`, toggling pruning, changing a payout address,
   exposing the RPC to your LAN, or moving a data directory. For a Monero or Tari payout-address
@@ -473,14 +476,29 @@ How it works and what to keep in mind:
   the password, so the Caddyfile doesn't churn.
 - Keep `dashboard.secure: true`. Basic-auth sends the credentials with every request; over plain HTTP
   (`secure: false`) they'd travel in cleartext. pithead warns if you set a password without HTTPS, but
-  won't stop you. With the default `tls internal`, Caddy serves a locally-trusted certificate; your
-  browser will warn the first time unless you trust Caddy's local CA.
+  won't stop you.
 - A login is access control for the dashboard, not the miner. It gates the web UI only. The stratum
   port miners connect to is a separate surface; gate that with
   [`p2pool.stratum_password`](#configuration-reference) and `p2pool.stratum_bind`.
 - Exposing to the public internet is still discouraged. A password plus HTTPS is the right baseline,
   but for reaching the dashboard from outside the LAN, publish it as a Tor onion service (below)
   rather than forwarding a port. Basic-auth has no rate-limiting or lockout on its own.
+
+On DIY installs, accepting Caddy's current leaf certificate in the browser can warn again after
+an internal renewal (leaves last 12 hours by default). Trust this installation's root CA once
+instead: from the stack directory on a host reached through a trusted console or SSH session, run
+`docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > pithead-dashboard-ca.crt`
+and record its fingerprint with `openssl x509 -in pithead-dashboard-ca.crt -noout -sha256 -fingerprint`. Transfer only
+that public `.crt` over an authenticated channel and compare its fingerprint on your browsing
+device before importing it as a trusted authority. On Windows, use the current user's **Trusted
+Root Certification Authorities** store; on macOS, import through **Keychain Access** and allow
+SSL trust; on Linux, use the browser's local-authority manager. Firefox has its own **Settings →
+Privacy & Security → Certificates → View Certificates → Authorities → Import** dialog: enable
+trust for identifying websites. Restart the browser if needed, reopen the dashboard at its
+configured hostname or address, and verify its valid certificate chain. Never export `root.key`
+or the whole CA directory. Normal leaf renewals retain the root in `caddy_data`; uninstalling
+deletes that volume and requires a new export and trust decision. The appliance uses its own
+certificate; this procedure is for DIY installs.
 
 To remove the login again, clear the password (`"password": ""`) and `apply`. pithead drops the
 `basic_auth` block and the dashboard is open on the LAN as before.

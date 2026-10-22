@@ -135,11 +135,11 @@ test-confirm-approval.sh|secret_key
 test-connection-announce.sh|ca_enabled
 test-control-add-only-ssrf.sh|2
 test-control-add-only-ssrf.sh|3
-test-control-core.sh|inactive_guidance
 test-control-core.sh|reowned
 test-control-diagnostics.sh|_c
 test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
+test-control-editable-allowlist.sh|inactive_guidance
 test-control-editable-allowlist.sh|k
 test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT
