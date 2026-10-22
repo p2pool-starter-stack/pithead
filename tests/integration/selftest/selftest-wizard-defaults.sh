@@ -23,7 +23,7 @@ export WIZARD_TEST_CLI="$ROOT/pithead"
 IT_PITHEAD="$WORK/pithead"
 cat >"$IT_PITHEAD" <<'CLI'
 #!/usr/bin/env bash
-source "$WIZARD_TEST_CLI"
+source "${WIZARD_TEST_CLI:?}"
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     printf '%s\n' "$*" >>operations
     case "$1" in
