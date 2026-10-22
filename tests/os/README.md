@@ -1,6 +1,6 @@
 # Appliance image harness
 
-The `--phase` declaration in `run.sh` is machine-readable metadata used by bench-ci for phase discovery and remote-node admission. Keep it when editing the harness.
+The `--help` usage text in `run.sh` declares the supported phases. Bench-ci reads its `--phase` list for phase discovery and remote-node admission. Keep that list when editing the harness.
 
 Tier-4 tests for the `pithead-os` appliance image (#77 phase 2): the properties only real
 firmware and a real A/B updater can prove. The compose/CLI stack is covered by the other

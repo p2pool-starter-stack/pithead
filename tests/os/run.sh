@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# --phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=tests/os/hugepages-boot-verdict.sh
@@ -111,7 +110,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
+        printf '%s\n' 'Usage: tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]'
         exit 0
         ;;
     *)
