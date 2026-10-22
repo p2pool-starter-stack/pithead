@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# --phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=tests/os/hugepages-boot-verdict.sh
