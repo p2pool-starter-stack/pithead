@@ -1105,6 +1105,10 @@ loaner SSH child. This also runs after post-deploy readiness refusal, restore fa
 command before closing the lease pipe prevents inherited writers from keeping the child alive;
 cleanup neither removes a remote holder nor signals another borrower's process. Parent-owned
 reservations remain the parent's responsibility. The original run or restore failure stays nonzero.
+The local `selftest-loaner-exit.sh` fixture waits for each unrelated borrower to acknowledge
+its kernel reservation before exercising the wrapper exit. Each trial uses separate lock files
+and reaps its borrower after the assertions. A retained previous reservation makes accidental
+reuse fail deterministically instead of depending on cleanup scheduling.
 
 `rig-key-ledger.sh` closes that window. A key goes on a ledger when its write is sent — before, not
 after, so the apply itself is covered — and comes off only when its revert is **confirmed applied**
