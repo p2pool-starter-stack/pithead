@@ -103,9 +103,7 @@ _stack_run_integration() { # <label> <extra args...>
             sed 's/\x1b\[[0-9;]*m//g' "$f" | head -n 60
         done
     fi
-    # The merge-mining round-trip's row rides along on a pass too: it is the one row whose verdict
-    # (a chain_id read from the Tari node, #1397/#2326) is this channel's evidence on its own.
-    grep -a -e 'of which:' -e '(#1397)' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
+    grep -a -e 'of which:' -e '(#1397)' -e '(#3078)' -e 'stratum control' -e 'stratum fixture' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         info "  [$label] ${line#*ITEST] }"
     done
     rm -f "$out"
@@ -279,6 +277,8 @@ phase_stack() {
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \
         --lifecycle --fault-injection --hardening --auth-fail-closed
+    _stack_run_integration "stratum password and TLS clients" \
+        --scenario remote-main-stratum-tls "${remote_extra[@]}"
     # Two more parity rows from #2062's table are deliberately NOT driven here, because this guest
     # cannot satisfy their inputs and a row that cannot pass proves nothing where it sits:
     #   * remote-tari-main-secure sets monero.mode=local (tests/integration/scenarios.sh), so it

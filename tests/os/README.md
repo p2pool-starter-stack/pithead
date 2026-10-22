@@ -345,11 +345,20 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   the DIY gate that `release-gate.yml` runs and that has never once driven the appliance runtime
   (podman through the docker shim, read-only root, `/data/pithead`, the control runner as a systemd
   unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
-  --auth-fail-closed` against the `remote-main-secure-tari` scenario. The first live remote-node
+  --auth-fail-closed` against the `remote-main-secure-tari` scenario, then
+  `remote-main-stratum-tls`. The latter runs the shipped XMRig against the guest proxy: wrong
+  and unconfigured passwords and a changed TLS pin must be refused with no job, active
+  connection or accepted share for 120 seconds each. A separate raw probe omits the wire
+  password. Fixture setup authenticates without submissions and disconnects to retain a
+  numeric zero accepted counter; refused clients create no worker row. Correct-pin TLS and
+  same-port cleartext must each produce a new proxy-owned accepted share within 600 seconds.
+  `selftest-stratum-controls.sh` checks miner lifecycle, counters, pinning and suite dispatch.
+  The first live remote-node
   coverage on either channel (#1446). Reuses the same reserved-node env vars as the `provision`
   phase's remote-node consumer row below; without them the phase records a counted `missing`
   skip (#2356) rather than a bare line, so a bench that cannot run it says so in the tally. Measured cost: about
-  fifteen minutes to a mining guest, then about ten for the two DIY-gate invocations. The scenario
+  fifteen minutes to a mining guest, then the existing lifecycle checks; authentication controls
+  add eight minutes of negative observation and up to twenty minutes for accepted shares. The scenario
   invocation names `--scenario` on purpose — the harness's default is its whole 15-scenario matrix,
   nearly all `monero.mode=local`, which this guest has no chain for. Two parity rows are out of
   scope here for want of inputs this guest cannot give them: the `monero.mode=local` scenario
