@@ -97,12 +97,13 @@ assert_eq "image_for honours a set PITHEAD_REGISTRY" \
         image_for dashboard
     )" \
     "reg.invalid:5000/ops/pithead-dashboard"
-# --draft (#44): documented in --help, and --help stops at the comment header (a too-wide sed range
-# used to leak the script body, e.g. `set -euo pipefail`, into the help output).
 assert_contains "release --help documents --draft" "$(bash "$REL" --help 2>&1)" "--draft"
+assert_contains "release --help requires complete drafts" "$(bash "$REL" --help 2>&1)" "Required: create a complete draft"
+assert_contains "release --help rejects unsigned releases" "$(bash "$REL" --help 2>&1)" "Rejected for appliance releases: signatures are mandatory."
+assert_eq "release help aliases match" "$(bash "$REL" -h 2>&1)" "$(bash "$REL" --help 2>&1)"
 case "$(bash "$REL" --help 2>&1)" in
-*"set -euo pipefail"*) bad "release --help stops at the comment header" "leaked the script body into --help" ;;
-*) ok "release --help stops at the comment header" ;;
+*"set -euo pipefail"*) bad "release --help excludes the script body" "leaked the script body into --help" ;;
+*) ok "release --help excludes the script body" ;;
 esac
 CUT_DOC="$(
     sed -n '/^## Cutting a release/,/^## Shipping a bad release/p' "$ROOT/docs/dev/appliance-release.md" |
