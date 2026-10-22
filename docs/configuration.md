@@ -497,6 +497,7 @@ export COMPOSE_PROJECT_NAME=pithead-gate
 ```
 
 The CLI uses that project for container-label queries and wallet-volume cleanup.
+Support bundles redact the project name.
 A single literal `COMPOSE_PROJECT_NAME` assignment in the generated `.env` also
 works, and `apply` preserves it. The CLI refuses duplicate assignments, interpolation,
 and non-literal dotenv syntax for this key. An exported value takes precedence; an explicitly empty value selects
