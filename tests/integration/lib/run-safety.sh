@@ -114,12 +114,12 @@ safety_rollback_if_failed() {
     }
 }
 
-# EXIT trap for the destructive phases: an interrupted run (Ctrl-C, a cancelled Actions job, a
-# SIGTERM from the supervisor) must still put the box back. Chains any EXIT trap already installed
-# — e.g. the rig-key ledger's (#1379) — because `trap … EXIT` replaces rather than appends.
 safety_abort_restore() {
     local original_rc=$? restore_failed=0
-    # config.json/.env backups do not include the onion identity directory.
+    if [ -n "${UNINSTALL_RECOVERY_DIR:-}" ] && ! uninstall_recovery_cleanup; then
+        restore_failed=1
+        it_warn "interrupted uninstall recovery could not remove its private fixture"
+    fi
     if [ "${ROTATE_ONION_RESTORE_ARMED:-0}" = "1" ] && ! rotate_onion_restore; then
         restore_failed=1
         it_warn "interrupted onion rotation could not restore its original identity"

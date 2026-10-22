@@ -35,6 +35,9 @@ drive_reset_restore() (
 
     rx() {
         case "$1" in
+        *"ps --all --no-trunc"*)
+            if [ -e "$OUT_DIR/restored" ]; then printf '%064d' 2; else printf '%064d' 1; fi
+            ;;
         'sha256sum config.json')
             [ "$fault" != snapshot ] || return 1
             if [ "$fault" = config ] && [ -e "$OUT_DIR/restored" ]; then printf changed; else printf original; fi
@@ -145,11 +148,11 @@ drive_reset_restore() (
 )
 PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
 trap 'rm -f "$PROBE_COPY"' EXIT
-assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|13'
-assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|14'
-assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|13'
-assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|13'
-assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|13'
+assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|14'
+assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|15'
+assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|14'
+assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|14'
+assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|14'
 for fault in page wizard restart started id starting body zero curl code noauth wizard-start channel env-HOST_PORT env-DASHBOARD_SECURE env-DASHBOARD_AUTH_HASH_B64; do
     verdict=$(drive_reset_restore "$fault" appliance)
     if [[ "$verdict" == 1\|1\|* ]]; then

@@ -3,7 +3,6 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -150,6 +149,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
 # shellcheck source=tests/os/m10-height-verdict.sh
 . "$SCRIPT_DIR/m10-height-verdict.sh"
+OS_KVM_USAGE="tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|recovery|all]"
 IMAGE=""
 KEEP=0
 PHASE="all"
@@ -172,6 +172,7 @@ while [ $# -gt 0 ]; do
         ;;
     -h | --help)
         sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
+        printf '%s\n' "$OS_KVM_USAGE"
         exit 0
         ;;
     *)
@@ -223,6 +224,7 @@ source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 source "$SCRIPT_DIR/phases/stack.sh" || exit $?
 # shellcheck source=tests/os/phases/tor-heal.sh
 source "$SCRIPT_DIR/phases/tor-heal.sh" || exit $?
+source "$SCRIPT_DIR/phases/recovery.sh" || exit $?
 require_host
 require_clean_bench
 if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
@@ -260,10 +262,8 @@ image-upgrade) _run_phase image-upgrade phase_image_upgrade ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
 stack) _run_phase stack phase_stack ;;
 tor-heal) _run_phase tor-heal phase_tor_heal ;;
+recovery) _run_phase recovery phase_recovery ;;
 all)
-    # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
-    # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
-    # refusal, the factory reset, the wedged-/data recovery and the media channel omitted (#1064).
     _run_phase boot phase_boot
     _run_phase update phase_update
     _run_phase install phase_install

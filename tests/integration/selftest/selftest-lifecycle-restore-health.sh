@@ -83,7 +83,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             reset-failed-late) return 1 ;;
             esac
         }
-        run_uninstall_round_trip() { touch "$OUT_DIR/uninstall"; } # own selftest: selftest-uninstall-round-trip.sh
+        run_uninstall_round_trip() { touch "$OUT_DIR/uninstall"; }
+        run_uninstall_restore() { :; }
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
         secret_fingerprint() { printf fingerprint; }

@@ -1,12 +1,10 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# The ordinary CLI recovery door, using real Compose containers and a real encrypted backup.
-# RESET_RESTORE_STACK_INTACT=1 on return marks a failure that changed nothing, so run_lifecycle can
-# go on and the phases after it still run (#3342).
+source "${BASH_SOURCE[0]%/*}/recovery-census.sh" || return $?
 run_reset_restore() {
     RESET_RESTORE_STACK_INTACT=0
     local before_config before_secrets archive out rc after_config after_secrets
-    local failures_before="$IT_FAIL"
+    local failures_before="$IT_FAIL" recovery_ids
     it_step "encrypted backup → config-reset → restore without rendered configuration…"
     before_config=$(rx 'sha256sum config.json') && before_secrets=$(upgrade_secret_fingerprints) || {
         it_fail "reset recovery captures configuration and secrets" "snapshot unreadable"
@@ -62,6 +60,7 @@ run_reset_restore() {
         return 1
     fi
 
+    recovery_ids=$(recovery_project_census) && [ -n "$recovery_ids" ] || return 1
     local boot_before
     boot_before=$(rx 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
     if [ -z "$boot_before" ]; then
@@ -127,7 +126,7 @@ run_reset_restore() {
         it_fail "encrypted restore after config-reset starts the stack" "restore or up failed; see reset-restore logs"
         return 1
     fi
-    rr_web_ports_owned_by_dashboard "reset recovery" || return 1
+    recovery_post_op_invariants "reset recovery" "$recovery_ids" || return 1
     if wait_status_ok 600; then
         it_pass "stack healthy after encrypted restore following config-reset"
     else
@@ -144,6 +143,9 @@ run_reset_restore() {
         it_fail "reset recovery removes its encrypted fixture archive" "cleanup failed"
         return 1
     }
+    if [ "$(rx 'source ./pithead || exit; if is_appliance; then printf appliance; else printf diy; fi')" = diy ]; then
+        it_skip_leg "DIY config-reset -> wizard setup/restore or Set up again" "appliance-only routes; docs/appliance.md#set-up-again" by-design
+    fi
     [ "$IT_FAIL" -le "$failures_before" ]
 }
 

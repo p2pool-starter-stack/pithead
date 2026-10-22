@@ -7,11 +7,14 @@ recipe_doc="${1:-$ROOT/docs/dev/releasing.md}"
 RECIPE_TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$RECIPE_TEST_DIR"' EXIT
 RECIPE_TEST_SHA=0123456789abcdef0123456789abcdef01234567
-export RECIPE_TEST_DIR RECIPE_TEST_SHA
+RECIPE_TEST_OLD_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+export RECIPE_TEST_DIR RECIPE_TEST_SHA RECIPE_TEST_OLD_SHA
 
 git() {
     if [ "$*" = 'rev-parse HEAD' ]; then
         printf '%s\n' "$RECIPE_TEST_SHA"
+    elif [ "$*" = 'rev-parse v2.0.0^{commit}' ]; then
+        printf '%s\n' "$RECIPE_TEST_OLD_SHA"
     elif [ "$*" = "push origin ${RECIPE_TEST_SHA}:refs/heads/release/${RECIPE_TEST_SHA}" ]; then
         touch "$RECIPE_TEST_DIR/ref-pushed"
     else
@@ -45,16 +48,17 @@ awk '
 ' "$recipe_doc" >"$RECIPE_TEST_DIR/recipe.sh"
 BENCH_CI_URL=https://bench.invalid/bench-ci bash "$RECIPE_TEST_DIR/recipe.sh"
 
-jq -es --arg sha "$RECIPE_TEST_SHA" '
-    length == 3 and
+jq -es --arg sha "$RECIPE_TEST_SHA" --arg old "$RECIPE_TEST_OLD_SHA" '
+    length == 4 and
     all(.[]; .repo == "pithead" and .commit == $sha and .ref == "release/" + $sha) and
-    (map(.idempotency_key) | unique | length == 3) and
-    (.[0].tier == "tier4-kvm" and .[1].tier == "tier4-kvm") and
+    (map(.idempotency_key) | unique | length == 4) and
+    all(.[0:3][]; .tier == "tier4-kvm") and
     (.[0].options.phases == ["boot","update","install","provision"]) and
     (.[1].options.phases == ["rig","rigmedia","media","fault","reset","image-upgrade","stack"]) and
-    all(.[0:2][]; .timeout_minutes == 240 and (.after // []) == [] and (.status_gate // false) == false) and
-    (.[2].tier == "tier4-e2e" and .[2].status_gate == true and .[2].after == [1,2]) and
-    (.[2].options.mode == "targeted" and (.[2].options | has("no_rig") | not))
+    (.[2].options.phases == ["recovery"] and .[2].options.old_image_commit == $old) and
+    all(.[0:3][]; .timeout_minutes == 240 and (.after // []) == [] and (.status_gate // false) == false) and
+    (.[3].tier == "tier4-e2e" and .[3].status_gate == true and .[3].after == [1,2,3]) and
+    (.[3].options.mode == "targeted" and (.[3].options | has("no_rig") | not))
 ' "$RECIPE_TEST_DIR/jobs.jsonl" >/dev/null
 
 cut_doc=$(sed -n '/^## Cutting a release/,/^## Shipping a bad release/p' "$ROOT/docs/dev/appliance-release.md")
