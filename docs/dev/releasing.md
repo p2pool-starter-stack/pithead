@@ -179,7 +179,13 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 2. Test gate (blocking): run the existing tests (`make test`: lint + dashboard pytest ≥ 80% +
    the `pithead` shell suite + compose validation) and the
    [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration matrix against
-   the real nodes. Abort the release on any failure. See [Pre-release gate](#pre-release-gate-54).
+   the real nodes. The test command sets `FILE_BUDGET_BASE_REF` to the frozen release
+   commit: file-budget ceilings are checked against that commit rather than a later
+   `develop`. Per-file limits remain enforced. A clean release tree has no budget
+   changes against itself, so ceiling raises and first appearances are PR checks;
+   PR validation keeps its normal base. A dry run prints this command without
+   executing the tests and does not prove the test gate passes.
+   Abort the release on any failure. See [Pre-release gate](#pre-release-gate-54).
 3. Build: build the five stack images with the pinned upstream versions baked in and OCI labels
    stamped (`org.opencontainers.image.version` = the `VERSION` value, source revision, etc.). The
    dashboard already reads `PITHEAD_VERSION` / git build-args for its header badge
