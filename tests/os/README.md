@@ -130,6 +130,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 - **install** — first submit RigForge with a blank internal disk, acknowledge its card and boot
   from that disk alone. Poll for the same token in the installed rig and miner configurations,
   an active XMRig process, no coordinator configuration or containers, and a scrubbed seed on the target’s mounted FAT ESP.
+  Keep the console capture mode 0600 and send the setup token to authentication through stdin.
   This checks miner startup against the guest’s SSH listener, not an accepted share. Then
   boot the image as removable media beside a blank disk, run the disk installer,
   then boot the target and prove the copied system is COMPLETE — the `/var` overlay made an

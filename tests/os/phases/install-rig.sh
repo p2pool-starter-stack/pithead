@@ -26,7 +26,10 @@ _phase_install_rig() {
         bad "could not prepare the rig installer and internal disk"
         return 1
     fi
-    : >"$SERIAL"
+    if ! { (umask 077 && : >"$SERIAL") && chmod 600 "$SERIAL"; }; then
+        bad "could not protect the rig installer console capture"
+        return 1
+    fi
     kvm_preflight || return 1
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \
@@ -53,7 +56,7 @@ _phase_install_rig() {
         return 1
     }
     jar=$(mktemp)
-    if ! curl -fsSk -m 20 -c "$jar" --data-urlencode "token=$token" "https://$ip/auth" -o /dev/null 2>/dev/null ||
+    if ! printf '%s' "$token" | curl -fsSk -m 20 -c "$jar" --data-urlencode token@- "https://$ip/auth" -o /dev/null 2>/dev/null ||
         ! grep -q wizard_session "$jar"; then
         rm -f "$jar"
         bad "rig installer authentication failed"
@@ -96,7 +99,10 @@ _phase_install_rig() {
     }
     ok "rig installer accepted role and internal disk together, published its card and powered off (#3076)"
     vm_destroy_or_refuse || return 1
-    : >"$SERIAL"
+    if ! { (umask 077 && : >"$SERIAL") && chmod 600 "$SERIAL"; }; then
+        bad "could not protect the rig installer console capture"
+        return 1
+    fi
     kvm_preflight || return 1
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \

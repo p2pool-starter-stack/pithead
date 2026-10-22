@@ -61,6 +61,7 @@ qemu-img() {
 }
 virsh() { printf 'shut off\n'; }
 virt-install() {
+    python3 -c 'import os,sys; assert os.stat(sys.argv[1]).st_mode & 0o777 == 0o600' "$SERIAL" || return 1
     printf '%s\n' "$*" >>"$TASK_DIR/boots"
     printf 'pit-ABC123\n' >"$SERIAL"
 }
@@ -71,7 +72,10 @@ curl() {
         previous="$value"
     done
     case "$args" in
-    */auth*) return 0 ;;
+    */auth*)
+        [[ "$args" == *'token@-'* ]] && [[ "$args" != *'pit-ABC123'* ]] || return 1
+        [ "$(cat)" = pit-ABC123 ] || return 1
+        ;;
     */submit*)
         case "$args" in
         *'role=rig&rig_pool=127.0.0.1:22&rig_worker=kvm-installed-rig&disk=vda&confirm=vda&wipe=keep'*) printf 200 ;;
@@ -100,7 +104,8 @@ for flow_case in success ack-failure ssh-failure token-mismatch dhcp-failure; do
     rm -f "$TASK_DIR/boots" "$TASK_DIR/passes" "$TASK_DIR/failures" "$TASK_DIR/acked"
     export VM=selftest DISK="$TASK_DIR/stick" SERIAL="$TASK_DIR/serial" target_disk="$TASK_DIR/target"
     export img="" ip=""
-    touch "$target_disk"
+    touch "$target_disk" "$SERIAL"
+    chmod 644 "$SERIAL"
     result=0
     _phase_install_rig || result=$?
     if [ "$flow_case" = success ]; then
