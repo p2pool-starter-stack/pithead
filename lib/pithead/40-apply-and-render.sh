@@ -151,8 +151,6 @@ apply() {
     ensure_onion_password
     PITHEAD_CONFIG_SET=1 parse_and_validate_config
     load_preserved_state
-    # P2Pool's onion is the provisioning marker, not Monero's: p2pool always runs, while a node's
-    # onion is legitimately a placeholder in remote mode (#103).
     if onion_missing "$P2POOL_ONION" || ! is_deployed; then
         error "Stack is not fully provisioned. Run '$0 setup' first."
     fi
