@@ -163,8 +163,12 @@ Setup walks through five stages. It's interactive on the first run and safe to r
 
 A fresh Enter-through setup runs a local Monero node with Tari off. The Monero node downloads
 and verifies its blockchain before mining starts. While Monero syncs, the dashboard shows Sync
-Mode with its progress and a held-miner notice. The first start prints a note about waiting for
-the required chains; it appears once, not on every restart.
+Mode with its progress and a held-miner notice.
+
+The first start prints `The miner is held until Monero and Tari finish their first sync, then starts automatically.`
+This shipped message incorrectly names Tari when it is off or non-required
+([#3598](https://github.com/p2pool-starter-stack/pithead/issues/3598)); both fresh wizard paths
+wait only for Monero. The note appears once, not on every restart.
 
 If you explicitly enable the Tari beta in the wizard, its node also syncs here, but the wizard
 writes `dashboard.tari_required: false`: Monero mining starts when Monero is ready, while Tari

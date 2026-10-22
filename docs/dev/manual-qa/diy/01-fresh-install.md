@@ -241,7 +241,7 @@ Per #3333, #3099 and #3092:
 **What you should see:**
 
 - The stack starts.
-- This first start prints a short note about initial chain sync. In the default run only Monero is required; the beta opt-in also writes `dashboard.tari_required: false`.
+- The first start prints `The miner is held until Monero and Tari finish their first sync, then starts automatically.` This shipped message incorrectly names Tari in both fresh runs ([#3598](https://github.com/p2pool-starter-stack/pithead/issues/3598)): only Monero is required, including after the beta opt-in. Check the status and dashboard below for the actual hold.
 - A later `./pithead restart` does not print the note again.
 - Per #3090, `up` also prints the LAN pool URL and `none set` for the stratum password, every time.
 
@@ -261,7 +261,8 @@ Per #3333, #3099 and #3092:
 
 - Each node and support service shows a `✓` line ending in `running`.
 - `p2pool` and `xmrig-proxy` show `⚠` with `held until the required chains finish syncing`.
-- Under `Chain sync in progress — the miner is held until it completes:` Monero shows its percent and blocks remaining. Tari appears only in the opt-in run.
+- Under `Chain sync in progress — the miner is held until it completes:`, Monero shows its percent and blocks remaining.
+- Sync-hold rows: `monero` in both fresh runs (default and beta opt-in). Tari is not listed there in either run: it is off by default and non-required after the opt-in.
 - No `✗` line.
 
 **Record**: PASS, FAIL or N/A in the results sheet.
