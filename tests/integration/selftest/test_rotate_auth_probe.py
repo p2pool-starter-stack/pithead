@@ -2,6 +2,7 @@ import importlib.util
 import io
 import itertools
 import json
+import os
 import socket
 import sys
 import threading
@@ -12,7 +13,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 SPEC = importlib.util.spec_from_file_location(
-    "rotate_probe", Path(__file__).resolve().parents[1] / "rotate-auth-probe.py"
+    "rotate_probe",
+    os.environ.get(
+        "STRATUM_PROBE_SOURCE", Path(__file__).resolve().parents[1] / "rotate-auth-probe.py"
+    ),
 )
 PROBE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PROBE)
@@ -257,8 +261,11 @@ class StratumMinerTest(unittest.TestCase):
             self.config_path = Path(argv[2])
             self.config = json.loads(self.config_path.read_text())
             self.assertEqual(self.config_path.stat().st_mode & 0o777, 0o600)
-            stdout.write(text)
-            stdout.flush()
+            if "log-file" in self.config:
+                logfile = Path(self.config["log-file"])
+                self.assertNotEqual(logfile, Path(stdout.name))
+                self.assertEqual(logfile.stat().st_mode & 0o777, 0o600)
+                logfile.write_text(text)
             return process
 
         with (

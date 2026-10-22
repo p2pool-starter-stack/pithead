@@ -160,10 +160,12 @@ def xmrig_control(binary, password, port, name, pin, expected, seconds):
     baseline = worker_sample(name)[1]
     with tempfile.TemporaryDirectory(prefix="pithead-stratum-") as directory:
         config_file = Path(directory) / "config.json"
+        log_file = Path(directory) / "miner.log"
+        log_file.touch(mode=0o600)
+        config["log-file"] = str(log_file)
         config_file.write_text(json.dumps(config))
         config_file.chmod(0o600)
-        log_file = Path(directory) / "miner.log"
-        with log_file.open("w") as log:
+        with (Path(directory) / "console.log").open("w") as log:
             process = subprocess.Popen(  # noqa: S603
                 [binary, "--config", str(config_file)], stdout=log, stderr=log
             )

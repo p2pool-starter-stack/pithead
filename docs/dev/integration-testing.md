@@ -800,7 +800,8 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   proves explicit password and fingerprint errors and a new accepted share in each positive
   arm. An unconfigured XMRig password defaults to `x`; the raw probe separately omits the
   password member. Test credentials and miner logs stay in a private temporary directory,
-  and the test terminates and reaps its miner before removing that directory.
+  using XMRig's `log-file` setting: its console logger emits nothing when stdout is a regular
+  file. The test terminates and reaps its miner before removing that directory.
 - The Tor-egress firewall is enforced, both directions
   ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)/[#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
   Each row dials a real clearnet IP directly from a `mining_net` container, bypassing the app's own

@@ -353,6 +353,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   numeric zero accepted counter; refused clients create no worker row. Correct-pin TLS and
   same-port cleartext must each produce a new proxy-owned accepted share within 600 seconds.
   `selftest-stratum-controls.sh` checks miner lifecycle, counters, pinning and suite dispatch.
+  The probe reads XMRig's private `log-file`, separate from stdout: the pinned binary disables
+  console output when stdout is a regular file. The fixture reproduces that behavior.
   The first live remote-node
   coverage on either channel (#1446). Reuses the same reserved-node env vars as the `provision`
   phase's remote-node consumer row below; without them the phase records a counted `missing`
