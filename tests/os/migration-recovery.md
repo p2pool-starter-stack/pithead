@@ -26,6 +26,20 @@ mount, without network access. An independent SQLite connection must confirm
 persistence; the database's owner, mode and inode must stay unchanged. The old
 dashboard stays stopped until upgrade.
 
+Immediately before `os-update`, the battery hashes `config.json`, `.env`, both
+wallet address values, every Tor hidden-service secret key and its public key and
+hostname, machine-id and the SSH host key. The committed candidate must match
+that snapshot before recovery reconfiguration. Only hashes leave the guest.
+The crossupdate phase uses the same snapshot around its slot swap. Generated
+Caddyfile and wizard TLS files are outside the snapshot. Missing or unreadable
+required identity files fail the row. A disabled Tari mode may omit its wallet;
+an enabled Tari mode must carry a nonempty address. The migration recovery selftest
+loads the identity helper and requires snapshots before install and after commit.
+The tier-1 identity selftest changes an
+`.env` line and a Tor key separately and requires both comparisons to fail.
+A mismatch names only the changed categories; an unreadable snapshot has a
+separate failure. Neither diagnostic prints hashes, file contents or credentials.
+
 The candidate's migration boot must record its BUILD_COMMIT, durable marker
 claim with the booted A/B slot, P2Pool and proxy stopped at the ordinary health
 gate, an unattended bootloader commit, and local-chain startup after commit.

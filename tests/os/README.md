@@ -128,7 +128,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   stick across a reboot, and `rauc status mark-bad booted` still rolls off a committed version.
   Also asserts `/data` grew to fill the disk, and that host identity (SSH host-key fingerprint,
   machine-id) survives the A/B swap (#894/#895) — both live on `/data`, untouched by the slot
-  swap.
+  swap. After the provisioned dashboard update and unhealthy-container fallback, leg 6
+  installs a fresh marked good bundle through `os-update`, waits for the product to commit it,
+  runs the operator rollback and requires the earlier slot to pass `doctor --json` and serve
+  authenticated `/api/state` with HTTP 200. Config, `.env`, wallet addresses, Tor identities,
+  machine-id and the SSH host key must match their pre-update hashes.
 - **install** — boot the image as removable media beside a blank disk, run the disk installer,
   then boot the target and prove the copied system is COMPLETE — the `/var` overlay made an
   incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:

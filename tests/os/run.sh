@@ -126,6 +126,8 @@ FAIL=0
 OS_RUN_SUITE=1
 # shellcheck source=tests/os/lib/core.sh
 source "$SCRIPT_DIR/lib/core.sh" || exit $?
+# shellcheck source=tests/os/lib/identity.sh
+source "$SCRIPT_DIR/lib/identity.sh" || exit $?
 # shellcheck source=tests/os/wizard-redirect-leg.sh
 source "$SCRIPT_DIR/wizard-redirect-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/boot.sh
@@ -138,6 +140,8 @@ source "$SCRIPT_DIR/phases/update.sh" || exit $?
 source "$SCRIPT_DIR/phases/update-dashboard.sh" || exit $?
 # shellcheck source=tests/os/phases/update-healthgate-leg.sh
 source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
+# shellcheck source=tests/os/phases/update-rollback-leg.sh
+source "$SCRIPT_DIR/phases/update-rollback-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$SCRIPT_DIR/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh

@@ -107,10 +107,11 @@ _phase_provision_migration() {
         bad "the existing old dashboard snapshot could not be seeded and independently verified"
         return 1
     }
-    # os-update is the path that writes the pending marker (a bare rauc install does not) — and
-    # this is also the first tier-4 exercise of os-update against a REAL bundle: it needs
-    # unsquashfs on the appliance to read the manifest back, which CI's stubbed rauc never shows.
-    local ou_out ou_rc
+    local ou_out ou_rc identity_before
+    identity_before=$(_identity_snapshot) || {
+        bad "migration: could not snapshot the provisioned identities"
+        return 1
+    }
     ou_out=$(_ssh "cd /data/pithead && ./pithead os-update /data/update.bundle --yes 2>&1")
     ou_rc=$?
     if [ "$ou_rc" -ne 0 ]; then
@@ -158,7 +159,8 @@ _phase_provision_migration() {
             bad "the released migrating slot is not marked good in the bootloader"
             recovery_allowed=0
         fi
-        # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
+        _identity_unchanged "migration update" "$identity_before"
+        # shellcheck disable=SC2154
         assert_appliance_hostname_identity fixture-next "A/B update" "$pv_user" "$pv_pass"
     else
         bad "the migrating slot never reached the post-commit release — the hold deadlocked the gate it was built not to"

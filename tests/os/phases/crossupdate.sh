@@ -63,7 +63,11 @@ phase_crossupdate() {
         return
     fi
 
-    local id_old hostkey_fp_old
+    local id_old hostkey_fp_old identity_before
+    identity_before=$(_identity_snapshot) || {
+        bad "cross-version update: could not snapshot the provisioned identities"
+        return
+    }
     id_old=$(_ssh cat /etc/machine-id)
     hostkey_fp_old=$(_ssh ssh-keygen -lf /data/ssh/ssh_host_ed25519_key 2>/dev/null | awk '{print $2}')
     if _ssh "grep -q \"$HARNESS_WALLET\" /data/pithead/config.json"; then
@@ -86,7 +90,7 @@ phase_crossupdate() {
         return
     }
     local out rc
-    out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1")
+    out=$(_ssh "cd /data/pithead && ./pithead os-update /data/update.bundle --yes 2>&1")
     rc=$?
     [ -n "$out" ] && printf '     install output: %s\n' "$(printf '%s' "$out" | tail -5)"
     [ "$rc" -eq 0 ] || {
@@ -142,6 +146,7 @@ phase_crossupdate() {
     [ "$marker" = "candidate" ] && ok "the candidate slot is booted (marker: candidate)" ||
         bad "expected the candidate marker after the update, got '${marker:-none}'"
 
+    _identity_unchanged "cross-version update" "$identity_before"
     local id_new hostkey_fp_new
     id_new=$(_ssh cat /etc/machine-id)
     hostkey_fp_new=$(_ssh ssh-keygen -lf /data/ssh/ssh_host_ed25519_key 2>/dev/null | awk '{print $2}')
