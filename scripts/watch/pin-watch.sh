@@ -1,21 +1,4 @@
 #!/usr/bin/env bash
-#
-# Weekly upstream-currency watch (#1128).
-#
-# The pins come from scripts/release/release.sh's pin(), the release-notes source of truth.
-#
-# Two questions for Tari: is the pinned VERSION behind upstream, and would its gRPC schema break the vendored client?
-#
-# NOT asked here: whether an image `tag@sha256:...` still matches its tag. The digest is authoritative,
-# but checking it needs a registry client with separate quay.io and Docker Hub token flows.
-# It is its own source type and change.
-#
-# UNREACHABLE IS NOT CURRENT. Failures increment a counter, return non-zero, and name what was not checked.
-# Otherwise a stopped watcher looks current; one scheduled workflow here once ran zero times unnoticed.
-#
-# Usage:
-#   scripts/watch/pin-watch.sh              Print the markdown report on stdout; rc 1 if anything failed.
-#   scripts/watch/pin-watch.sh --self-test  Drive the comparison logic against fixtures. No network.
 
 set -Eeuo pipefail
 
@@ -265,11 +248,8 @@ if [ "${1:-}" = "--self-test" ]; then
     exit $?
 fi
 
-# --- the report ----------------------------------------------------------------------------------
-
-# Sourcing only defines the functions; release.sh guards its main() behind a BASH_SOURCE check.
 # shellcheck source=/dev/null
-set -- # release.sh's arg parser must not see ours
+set --
 # shellcheck disable=SC1091
 source "$ROOT/scripts/release/release.sh"
 
