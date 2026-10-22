@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== lifecycle TLS certificate continuity =="
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$ROOT/tests/integration/lib/run-lifecycle-tls.sh"
@@ -11,7 +12,7 @@ fail() {
 }
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout "$work/key" -out "$work/cert" \
     -subj /CN=fixture.invalid -addext 'subjectAltName=DNS:fixture.invalid,IP:192.0.2.20' >/dev/null 2>&1
-env_on_box() { case "$1" in HOST_IP) printf fixture.invalid ;; HOST_PORT) printf 443 ;; esac }
+env_on_box() { case "$1" in HOST_IP) printf fixture.invalid ;; HOST_PORT) printf 443 ;; DASHBOARD_SECURE) printf '%s' "${fixture_secure:-true}" ;; esac }
 quote_arg() { printf "'%s'" "$1"; }
 rx() {
     case "$1" in
@@ -48,4 +49,10 @@ run_password_tls_continuity || fail 'password apply round-trip failed'
 fixture_apply_fails=1
 if run_password_tls_continuity; then fail 'failed apply passed'; fi
 [ "$(wc -l <"$work/configs" | tr -d ' ')" = 4 ] || fail 'failed password apply omitted cleanup attempt'
+fixture_secure=false
+IT_SKIP=0
+it_skip_leg() { IT_SKIP=$((IT_SKIP + 1)); }
+assert_dashboard_tls_continuity restore http-only
+run_password_tls_continuity
+[ "$IT_SKIP" = 2 ] || fail 'HTTP-only configuration was not explicitly counted'
 printf 'Lifecycle TLS self-test: PASS\n'

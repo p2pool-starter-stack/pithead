@@ -2,6 +2,10 @@
 
 dashboard_tls_identity() {
     local host port leaf fingerprint public_key sans key_digest
+    if [ "$(env_on_box DASHBOARD_SECURE)" = false ]; then
+        printf http-only
+        return 0
+    fi
     host=$(env_on_box HOST_IP)
     port=$(env_on_box HOST_PORT)
     port=${port:-443}
@@ -20,6 +24,10 @@ dashboard_tls_identity() {
 
 assert_dashboard_tls_continuity() {
     local label="$1" before="$2" after="" deadline=$(($(date +%s) + 90))
+    if [ "$before" = http-only ] && [ "$(env_on_box DASHBOARD_SECURE)" = false ]; then
+        it_skip_leg "$label preserves the served TLS certificate and key" "dashboard.secure=false: no served TLS leaf" by-design
+        return 0
+    fi
     while [ "$(date +%s)" -lt "$deadline" ]; do
         after=$(dashboard_tls_identity) && break
         sleep 3
@@ -37,6 +45,10 @@ assert_dashboard_tls_continuity() {
 
 run_password_tls_continuity() {
     local saved before changed password failures="$IT_FAIL"
+    if [ "$(env_on_box DASHBOARD_SECURE)" = false ]; then
+        it_skip_leg "dashboard password apply preserves the served TLS certificate and key" "dashboard.secure=false: no served TLS leaf" by-design
+        return 0
+    fi
     saved=$(rx 'cat config.json') || {
         it_fail "password apply TLS fixture reads its starting config" "config unavailable"
         return 1
