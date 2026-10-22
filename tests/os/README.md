@@ -296,8 +296,16 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
-- **reset** — the shell-less box's last resort, never before run against a real disk. Leg 0 runs
-  the cheap tier first, on the same provisioned guest: `pithead config-reset -y` must clear
+- **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
+  with local chains and the non-default nano pool. The authenticated wizard must name the saved
+  `pithead` role and prefill its answers with secrets blank. POST **Keep it** through the wizard;
+  require the original dashboard login, unchanged configuration and host identity, both chain
+  sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
+  the served config; require the credentials card's login and the same chains and identity.
+  Both returns poll for successful setup completion, authenticated dashboard state and resumed
+  height. `coordinator-setup-again-leg.sh` implements this leg;
+  `selftest-coordinator-setup-again.sh` drives its failure controls without a guest.
+  Leg 0 then runs the cheap reset tier on the same provisioned guest: `pithead config-reset -y` must clear
   `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
   while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every
   data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
