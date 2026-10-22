@@ -449,20 +449,9 @@ firstboot_wizard() {
                 sleep 2
                 "$engine" rm -f pithead-wizard >/dev/null 2>&1 || true
                 rm -rf "$spool"
-                # Subshell on purpose: error() exits. Without this, config.json exists, the wizard's condition
-                # never re-arms, and a box with no shell has no recovery path at all. Output is
-                # teed: the console keeps its live narration, and the tail becomes the reopened
-                # page's error — a refusal that lives only in console scrollback cost a bench
-                # session an hour of believing the machine had crashed.
                 local setup_log setup_rc=0
                 setup_log=$(mktemp)
-                # The STATUS is captured, not just its truthiness: `if (setup) | tee` collapses
-                # every failure to one, and a lock timeout (PITHEAD_EX_LOCK_TIMEOUT) has to be
-                # told apart from a bad configuration — see wizard_setup_failed. PIPESTATUS is not
-                # needed here because `pipefail` is set, so the pipeline carries setup's own
-                # non-zero status; `|| setup_rc=$?` is what keeps `set -e` from taking the branch
-                # away before it can be read.
-                { (setup) 2>&1 | tee "$setup_log"; } || setup_rc=$?
+                { (setup_confirmed) 2>&1 | tee "$setup_log"; } || setup_rc=$?
                 if [ "$setup_rc" -eq 0 ]; then
                     if control_audit_provisioned "$PWD/data/control"; then
                         rm -f "$setup_log"

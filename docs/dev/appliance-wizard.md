@@ -232,7 +232,10 @@ its Keep it / Set up again screen exactly when `saved-role.json` exists (`saved_
 | `saved-role.json` | host | present only on a set-up-again boot: `{role, pool, worker}` for a rig, `{role}` for a coordinator, never a secret |
 | `keep-role` | page | Keep it: the host ends the session with nothing on `/data` touched, the unit exits, pithead-boot runs the normal boot |
 
-Set up again is the ordinary submit. A rig accepted with the same worker name keeps its
+Set up again is the ordinary submit. On an installed coordinator, an accepted browser
+submission calls the confirmed setup worker after the credential handoff. It can re-provision
+the saved deployment without a terminal prompt; direct headless `pithead setup` still refuses
+an existing deployment, even with `PITHEAD_SETUP_AGAIN=1`. A rig accepted with the same worker name keeps its
 `access_token` (`firstboot_consume_rig` carries it over); any other change mints a new one on the
 next render. `record_machine_role` removes `rig.json` when the accepted role is not `rig`, so a
 role's data goes with the role. A coordinator's `config.json` is NOT removed by a change to `rig`:

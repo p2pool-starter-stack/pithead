@@ -84,6 +84,7 @@ checks that failed or unrecorded stops cannot pass from reset's final exit 0.
 
 Coordinator setup-again runs before those resets in `tests/os/coordinator-setup-again-leg.sh`;
 `tests/os/selftest-coordinator-setup-again.sh` drives safe-prefill and preservation failure controls.
+`tests/os/selftest-confirmed-setup.sh` exercises installed browser resubmission and the direct setup guard.
 
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
