@@ -122,7 +122,7 @@ curl() {
     fi
     jq -n --argjson accepted "$accepted" --argjson rejected "$rejected" --argjson invalid "$invalid" \
         --argjson rate "$rate" --arg online "$online" --argjson other "$other" --arg coordinator "$coordinator" \
-        '{workers:[{name:"kvm-rig-share",accepted:$accepted,rejected:$rejected,invalid:$invalid,h10:$rate,status:$online},
+        '{workers:[{name:"kvm-rig-share",accepted:$accepted,rejected:$rejected,invalid:$invalid,h60:$rate,status:$online},
         {name:$coordinator,accepted:$other}] | map(select(.name != "absent"))}'
     if [ "$scenario" = failed-state ] && [ "$reads" -gt 0 ]; then return 1; fi
     return 0
@@ -158,11 +158,11 @@ run_case() {
         esac
     fi
 }
-coord_worker=coordinator
-projection=$(printf '%s' '{"workers":[{"name":"kvm-rig-share","ip":"192.0.2.45","accepted":"sensitive","rejected":0,"invalid":0,"h10":4,"status":"online"},{"name":"coordinator","accepted":1},{"name":"private-host.invalid","accepted":77}],"password":"sensitive"}' | _rig_share_observation)
-[ "$projection" = '{"worker_rows":3,"rig":[{"accepted":null,"rejected":0,"invalid":0,"h10":4,"online":true}],"coordinator":[{"accepted":1}],"rig_rows":1,"coordinator_rows":1}' ] || fail 'unsafe or incomplete observation'
 run_case healthy 0
 for scenario in stale stale-return failed-state rejected invalid transient-rejected zero-rate offline no-coordinator wrong-coordinator missing-coordinator string-coordinator unreadable missing-rate missing-worker wrong-pool extra-pool bad-hostname wrong-address hosts-copy-failure hosts-append-failure hosts-remount-failure; do
     run_case "$scenario" 1
 done
+coord_worker=coordinator
+projection=$(printf '%s' '{"workers":[{"name":"kvm-rig-share","ip":"192.0.2.45","accepted":"sensitive","rejected":0,"invalid":0,"h60":4,"status":"online"},{"name":"coordinator","accepted":1},{"name":"private-host.invalid","accepted":77}],"password":"sensitive"}' | _rig_share_observation)
+[ "$projection" = '{"worker_rows":3,"rig":[{"accepted":null,"rejected":0,"invalid":0,"h60":4,"online":true}],"coordinator":[{"accepted":1}],"rig_rows":1,"coordinator_rows":1}' ] || fail 'unsafe or incomplete observation'
 printf 'selftest-rig-share: 23 scenarios and safe observation projection passed\n'

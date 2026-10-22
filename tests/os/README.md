@@ -281,7 +281,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   With the rig stopped at setup, the leg records its accepted-share baseline, then polls
   the coordinator's `/api/state` every 15 seconds for up to 600 seconds per arm
   (`PITHEAD_OS_RIG_SHARE_WINDOW_SEC` overrides that bound). Two consecutive observations
-  must show accepted above that arm's baseline and positive `h10` on an online rig worker.
+  must show accepted above that arm's baseline and positive one-minute `h60` on an online rig worker. The fixture uses the serialized
+  `/api/state` worker fields; the internal `h10` field is not part of that response.
   Every observed rig counter must have zero rejected and invalid shares; either becoming
   positive fails immediately. The coordinator's built-in miner must also have accepted
   shares on the exact worker named by its guest hostname, with an integer accepted counter.

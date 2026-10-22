@@ -61,10 +61,10 @@ _rig_share_counters() {
         select(all($coord[]; .accepted | type == "number" and . >= 0 and floor == .)) |
         select(all($rig[]; all(.accepted, .rejected, .invalid;
             type == "number" and . >= 0 and floor == .) and
-            (.h10 | type == "number" and . >= 0))) |
+            (.h60 | type == "number" and . >= 0))) |
         [($rig | map(.accepted) | add), ($rig | map(.rejected) | add),
          ($rig | map(.invalid) | add),
-         ([$rig[] | select(.status == "online") | .h10] | max // 0),
+         ([$rig[] | select(.status == "online") | .h60] | max // 0),
          ($coord | map(.accepted) | add)] |
         @tsv'
 }
@@ -78,7 +78,7 @@ _rig_share_observation() {
         .rig_rows = (.rig | length) | .coordinator_rows = (.coordinator | length) |
         .rig |= (.[0:2] | map({accepted: (.accepted | numbers? // null),
             rejected: (.rejected | numbers? // null), invalid: (.invalid | numbers? // null),
-            h10: (.h10 | numbers? // null), online: (.status == "online")})) |
+            h60: (.h60 | numbers? // null), online: (.status == "online")})) |
         .coordinator |= (.[0:2] | map({accepted: (.accepted | numbers? // null)}))'
 }
 
