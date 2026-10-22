@@ -256,8 +256,6 @@ stack_up() {
     # proceeds (#461 — an install predating the first signed release has no key to verify against),
     # a present key that fails aborts before anything starts.
     verify_release_images
-    # Docker Compose automatically picks up COMPOSE_PROFILES from .env
-    #
     # PITHEAD_HOLD_CHAIN=1 defers chains and LMDB changes until A/B commit (#851); plain `up` starts them afterward.
     if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
         # Revoke the carried mining latch before dashboard startup; ordinary outages retain it.
@@ -278,8 +276,10 @@ stack_up() {
     elif ! compose_up_checked -d; then
         error "Stack failed to start — see the error above."
     fi
+    if is_appliance; then
+        reconcile_compose_images || error "Stack failed to converge containers to their declared images."
+    fi
     log "Stack started successfully!"
-    # Remind the operator at start-time if a node is coming up on clearnet (#183).
     print_clearnet_banner
     announce_dashboard_url
     print_first_run_epilogue

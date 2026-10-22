@@ -69,6 +69,11 @@ mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
 `selftest-migration-snapshot.sh` check ancestry refusal, persistence and recovery contracts.
 The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
 
+Appliance startup and source upgrades share `reconcile_compose_images` in
+`lib/pithead/03-release-verify.sh`. `tests/os/selftest-image-convergence.sh` checks same-tag
+archive replacement, recreation failures and migration holds through the real startup functions.
+The crossupdate phase compares the running dashboard ID with the candidate slot archive.
+
 Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture controls live in
 `tests/stack/appliance/test-appliance-reset-slot.sh` and
 `tests/stack/appliance/test-appliance-reset-slot-boot.sh`.

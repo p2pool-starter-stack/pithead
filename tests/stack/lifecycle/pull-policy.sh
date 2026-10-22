@@ -72,7 +72,7 @@ upgrade_reconcile_probe() { # <starting image ID> <recreate result> -> outcome a
             printf 'recreate %s\n' "$*"
             UR_RUNNING="$replacement"
         }
-        reconcile_source_upgrade_images
+        reconcile_compose_images
         printf 'result=%s\n' "$?"
     )
 }
@@ -87,5 +87,5 @@ assert_eq "already-matching images need no recreation" "$(printf '%s\n' "$out" |
 assert_contains "matching images pass identity verification" "$out" "result=0"
 assert_contains "source upgrade invokes image reconciliation" \
     "$(sed -n '/^stack_upgrade() {$/,/^}$/p' "$ROOT/lib/pithead/03-release-verify.sh")" \
-    "reconcile_source_upgrade_images || error"
+    "reconcile_compose_images || error"
 unset -f upgrade_reconcile_probe
