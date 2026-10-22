@@ -52,6 +52,7 @@ SECRET_SENTINEL = {"__secret__": True}
 WEBHOOKS_PATH = ("notifications", "webhooks")
 
 _RESULT_POLL_S = 0.5
+_result_poll_sleep = asyncio.sleep
 
 
 def _load_host_config():
@@ -399,9 +400,6 @@ def result(rid) -> dict | None:
 
 
 async def wait_result(rid, done=None, timeout_s=None):
-    """Poll for the result until ``done(result)`` (default: any result exists) or timeout;
-    returns the result dict or None. Commit passes a predicate that skips the still-present
-    preview result (same id) until the runner overwrites it with the commit outcome."""
     if timeout_s is None:
         timeout_s = config.CONTROL_WAIT_S
     deadline = time.monotonic() + timeout_s
@@ -411,4 +409,4 @@ async def wait_result(rid, done=None, timeout_s=None):
             return res
         if time.monotonic() >= deadline:
             return None
-        await asyncio.sleep(_RESULT_POLL_S)
+        await _result_poll_sleep(_RESULT_POLL_S)

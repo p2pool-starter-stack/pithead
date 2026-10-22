@@ -1,7 +1,4 @@
-"""Shared pytest fixtures for the mining_dashboard test suite.
-
-Everything here keeps tests hermetic: no real database on disk, no network, no containers.
-"""
+import asyncio
 
 import pytest
 
@@ -41,4 +38,9 @@ def state_manager():
 
 @pytest.fixture(autouse=True)
 def _fast_control_result_poll(monkeypatch):
-    monkeypatch.setattr("mining_dashboard.service.control_service._RESULT_POLL_S", 0.001)
+    async def yield_poll(_delay):
+        event = asyncio.Event()
+        asyncio.get_running_loop().call_soon(event.set)
+        await event.wait()
+
+    monkeypatch.setattr("mining_dashboard.service.control_service._result_poll_sleep", yield_poll)
