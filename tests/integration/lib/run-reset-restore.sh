@@ -108,9 +108,6 @@ run_reset_restore() {
         fi
     fi
 
-    # A PTY makes Bash's read -p prompt observable. Empty input must reach the actual passphrase
-    # request and refuse, rather than write anything. The successful leg then supplies a fixture
-    # passphrase; no operator secret crosses the test transport or log.
     out=$(rx "printf '\\n' | env -u PITHEAD_BACKUP_PASSPHRASE script -q -e -c $(quote_arg "$IT_PITHEAD restore -y $(quote_arg "$archive")") /dev/null" 2>&1)
     rc=$?
     if [ "$rc" -ne 0 ] && [[ "$out" == *"Backup passphrase:"* ]] && [[ "$out" == *"This archive is encrypted"* ]] &&
@@ -121,10 +118,20 @@ run_reset_restore() {
         printf '%s\n' "$out" | redact >"$OUT_DIR/reset-restore.prompt.log"
         return 1
     fi
+    reset_restore_refusals "$archive" || return 1
     if ! rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y $(quote_arg "$archive")" 2>&1 |
-        redact >"$OUT_DIR/reset-restore.restore.log" || ! pithead up 2>&1 |
-        redact >"$OUT_DIR/reset-restore.up.log"; then
-        it_fail "encrypted restore after config-reset starts the stack" "restore or up failed; see reset-restore logs"
+        redact >"$OUT_DIR/reset-restore.restore.log"; then
+        it_fail "encrypted restore after config-reset restores the archive" "restore failed; see reset-restore.restore.log"
+        return 1
+    fi
+    if reset_restore_state_probe verify "$archive" >"$OUT_DIR/reset-restore.verify.log" 2>&1; then
+        it_pass "reset recovery preserves archived data and every database table before up"
+    else
+        it_fail "reset recovery preserves archived data and every database table before up" "archive bytes, database integrity, foreign keys or exact table counts differ; see reset-restore.verify.log"
+        return 1
+    fi
+    if ! pithead up 2>&1 | redact >"$OUT_DIR/reset-restore.up.log"; then
+        it_fail "encrypted restore after config-reset starts the stack" "up failed; see reset-restore.up.log"
         return 1
     fi
     rr_web_ports_owned_by_dashboard "reset recovery" || return 1
@@ -174,4 +181,65 @@ reset_restore_wait_empty() { # <timeout seconds>; Docker also invokes Podman on 
         sleep 2
     done
     return 1
+}
+
+reset_restore_state_command() {
+    local payload args="" argument privilege="sudo -n"
+    [ "$1" != future ] || privilege=""
+    payload=$(base64 <"${BASH_SOURCE[0]%/*}/restore-state-probe.py" | tr -d '\n') || return 1
+    for argument in "$@"; do args+=" $(quote_arg "$argument")"; done
+    printf 'printf %%s %s | base64 -d | %s env TMPDIR="${TMPDIR:-$PWD}" python3 -%s' "$(quote_arg "$payload")" "$privilege" "$args"
+}
+
+reset_restore_state_probe() {
+    local command
+    command=$(reset_restore_state_command "$@") || return 1
+    rx "$command"
+}
+
+reset_restore_nochange_snapshot() {
+    local files containers
+    files=$(reset_restore_state_probe snapshot "$1") && [ -n "$files" ] || return 1
+    containers=$(rx 'docker ps --all --quiet --filter label=com.docker.compose.project=pithead') || return 1
+    [ -z "$containers" ] || return 1
+    printf '%s\n' "$files"
+}
+
+reset_restore_refusals() {
+    local archive="$1" before after kind out rc expected command future
+    before=$(reset_restore_nochange_snapshot "$archive") || {
+        it_fail "restore refusals capture unchanged configless state" "Tor, database or project census unreadable"
+        return 1
+    }
+    for kind in wrong-passphrase truncated newer-config; do
+        case "$kind" in
+        wrong-passphrase)
+            command="PITHEAD_BACKUP_PASSPHRASE='wrong reset recovery fixture' $IT_PITHEAD restore -y $(quote_arg "$archive")"
+            expected="Wrong passphrase or corrupt archive"
+            ;;
+        truncated)
+            command="scratch=\$(mktemp -d \"\${TMPDIR:-\$PWD}/restore-refusal.XXXXXX\") || exit 1; trap 'rm -rf -- \"\$scratch\"' EXIT;
+                head -c 1024 $(quote_arg "$archive") >\"\$scratch/truncated.tar.gz.enc\" &&
+                PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y \"\$scratch/truncated.tar.gz.enc\""
+            expected="Archive fails integrity verification"
+            ;;
+        newer-config)
+            future=$(reset_restore_state_command future "$archive") || return 1
+            command="scratch=\$(mktemp -d \"\${TMPDIR:-\$PWD}/restore-refusal.XXXXXX\") || exit 1; trap 'rm -rf -- \"\$scratch\"' EXIT;
+                $future \"\$scratch/future.tar.gz.enc\" &&
+                PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y \"\$scratch/future.tar.gz.enc\""
+            expected="This backup's configuration was written by pithead"
+            ;;
+        esac
+        out=$(rx "$command" 2>&1)
+        rc=$?
+        printf '%s\n' "$out" | redact >"$OUT_DIR/reset-restore.$kind.log"
+        after=$(reset_restore_nochange_snapshot "$archive") || after=""
+        if [ "$rc" -eq 1 ] && [[ "$out" == *"$expected"* ]] && [ "$after" = "$before" ]; then
+            it_pass "restore refuses $kind without changing files or containers"
+        else
+            it_fail "restore refuses $kind without changing files or containers" "exit, cause or unchanged-state assertion failed; see reset-restore.$kind.log"
+            return 1
+        fi
+    done
 }
