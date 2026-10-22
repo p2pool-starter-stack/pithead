@@ -194,7 +194,6 @@ done
 assert_eq "refused webhook edits leave the live list as it was" \
     "$(jq -c '.notifications.webhooks' "$C/config.json")" '["https://example.com/hook","https://example.com/two"]'
 
-# Exercise the GUI trigger with distinct previews against the same empty-webhook baseline.
 jq '.notifications.webhooks=[]' "$C/config.json" >"$C/config.json.tmp" &&
     mv "$C/config.json.tmp" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
@@ -224,7 +223,6 @@ rejected)
         "$(jq -r '.error // ""' "$RESULTS/$MIXED_UUID.json")" "notifications.webhooks"
     ;;
 previewed)
-    # A preview that accepts null must disclose its field-specific outcome.
     assert_eq "accepted mixed preview has one field-specific webhook outcome" \
         "$(printf '%s' "$mixed_result" | jq -r '[.. | objects
           | select((.key? == "notifications.webhooks" or .field? == "notifications.webhooks" or .path? == "notifications.webhooks")
