@@ -60,6 +60,9 @@ only the keys you want to override.
 `apply` is safe to run anytime:
 
 - It previews what will change, diffing your edited `config.json` against the running configuration.
+  A P2Pool pool switch warns that the sidechain re-syncs and the PPLNS window resets. A routing-only
+  edit describes proxy routing, DNS and peer visibility; it keeps the selected sidechain. The
+  clearnet exposure and subnet-topology warnings still apply to their respective settings.
 - It prompts to confirm before anything disruptive: switching the Monero node local↔remote, switching
   `tari.mode` between `local`, `remote` and `off`, toggling pruning, changing a payout address,
   exposing the RPC to your LAN, or moving a data directory. For a Monero or Tari payout-address

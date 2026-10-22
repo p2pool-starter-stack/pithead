@@ -551,7 +551,7 @@ channels share the final cut commit, one version and one GitHub Release.
    section beside it. Then verify the artifact, pinning the commit you meant to build:
 
    ```bash
-   PITHEAD_EXPECT_COMMIT=$(git rev-parse HEAD) sudo tests/os/verify-image.sh <image>
+   sudo env PITHEAD_EXPECT_COMMIT="$(git rev-parse HEAD)" tests/os/verify-image.sh <image>
    ```
 
    Run `verify-image.sh` **from the repo checkout you built**, because it compares the artifact
@@ -574,7 +574,7 @@ channels share the final cut commit, one version and one GitHub Release.
      TMPDIR=${TMPDIR:-/var/tmp}
      work_dir=$(mktemp -d "${TMPDIR:?}/pithead-keyring.XXXXXX")
      mkdir "$work_dir/mnt" "$work_dir/probe"
-     trap 'sudo umount "$work_dir/mnt" 2>/dev/null || true; if [ -n "${loop:-}" ]; then sudo losetup -d "$loop"; fi; rm -r "$work_dir"' EXIT
+     trap 'sudo umount "$work_dir/mnt" 2>/dev/null || true; if [ -n "${loop:-}" ]; then sudo losetup -d "$loop"; fi; rm -rf "$work_dir"' EXIT
      loop=$(sudo losetup -Pf --show os/rauc/build/system.img)
      source os/rauc/loop-wait.sh
      wait_loop_partitions "$loop"
@@ -613,7 +613,7 @@ channels share the final cut commit, one version and one GitHub Release.
    file. Check the compressed image round trip against the raw image before flashing:
 
    ```bash
-   scripts/release/package-appliance.sh os/rauc/build/system.img os/rauc/build/update.raucb os/rauc/build/release
+   sudo scripts/release/package-appliance.sh os/rauc/build/system.img os/rauc/build/update.raucb os/rauc/build/release
    tag=v$(tr -d '[:space:]' <VERSION)
    cmp os/rauc/build/system.img <(xz -dc "os/rauc/build/release/pithead-os-${tag}.img.xz")
    (cd os/rauc/build/release && sha256sum -c "pithead-os-${tag}.img.xz.sha256" "pithead-os-${tag}.raucb.sha256")

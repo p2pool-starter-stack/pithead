@@ -132,6 +132,14 @@ assert_contains "PITHEAD_CONFIG_FILE override is honoured" "$out" "37890" # nano
 out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>/dev/null)"
 assert_eq "without the override, config.json shows no changes" "$out" ""
 
+jq '.p2pool.clearnet=true' "$C/config.json" >"$C/config.route" && mv "$C/config.route" "$C/config.json"
+out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>/dev/null)"
+assert_contains "route-only preview names the P2Pool clearnet change (#3382)" "$out" "P2Pool sidechain peers over CLEARNET"
+assert_not_contains "route-only preview does not claim a PPLNS reset (#3382)" "$out" "PPLNS window resets"
+control_config main
+out="$(run_sourced "$C" describe_change P2POOL_FLAGS '--mini' '--nano')"
+assert_contains "mini to nano previews a sidechain switch (#3382)" "$out" "sidechain changing"
+assert_contains "mini to nano previews a PPLNS reset (#3382)" "$out" "PPLNS window resets"
 null_id="33773377-3377-4377-8377-337733773377"
 jq --arg id "$null_id" '{id:$id,action:"preview",actor:"admin",config:(.dashboard.energy.cost_per_kwh=0.18 | .workers.api_port=null)}' "$C/config.json" >"$C/data/control/requests/$null_id.json"
 out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead control-run-pending 2>&1)"
