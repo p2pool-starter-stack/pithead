@@ -4,7 +4,7 @@ echo "== lifecycle TLS certificate continuity =="
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$ROOT/tests/integration/lib/run-lifecycle-tls.sh"
-work=$(mktemp -d "${TMPDIR:?}/pithead-lifecycle-tls.XXXXXX")
+work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 fail() {
     printf 'FAIL: %s\n' "$1" >&2

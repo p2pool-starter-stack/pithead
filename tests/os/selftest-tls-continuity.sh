@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=lib/pithead/26-appliance-tls-provisioning.sh
 source "${PITHEAD_TLS_SOURCE:-$ROOT/lib/pithead/26-appliance-tls-provisioning.sh}"
-work=$(mktemp -d "${TMPDIR:?}/pithead-tls-continuity.XXXXXX")
+work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 appliance_tls_dir() { printf '%s' "$work/tls"; }
 appliance_site_names() { printf '%s' "$fixture_names"; }
