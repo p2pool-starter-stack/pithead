@@ -587,7 +587,7 @@ daemon. A tier that needs something the container cannot supply says so.
 
 | Tier | Needs on the host | Runs in the container? |
 |---|---|---|
-| 1 — dashboard pytest | `uv` only; it fetches the CPython pinned by `dashboard/.python-version`. No Docker, any OS. | Yes |
+| 1 — dashboard pytest | `uv` only; it fetches the CPython pinned by `dashboard/.python-version`. `make test-dashboard` uses pytest-xdist (`-n auto`) with the 80% coverage gate; the Docker test stage retains the serial gate. Test fixtures replace only the control-service module’s asyncio reference to yield result polls through scheduled events, disable upgrade refresh attempts in history tests, and shorten probe-mismatch timeouts; production retains a 0.5-second result-poll interval and refreshes up to six times at ten-second intervals. No Docker, any OS. | Yes |
 | 1 — frontend `node --test` | Node 20. No Docker, any OS. | Yes |
 | 1 — shell suite (`tests/stack/`) | **Linux, GNU coreutils, non-root**, and a longer tool list than it looks: `bash`, `jq` **1.7 or newer**, `e2fsprogs`, a system `python3` on PATH, `xxd`, `sudo`, and a **UTF-8 locale**. Refuses on Darwin (#2041); root bypasses the permission-denied fixtures. Missing system Python, xxd, or a UTF-8 locale fails *quietly* — see the note below. | Yes — the container is how a non-Linux host runs this at all |
 | 1 — netwatch selftest | Docker: it builds the pinned harness images and asks each tool for its version. | Yes (host daemon via the socket) |
