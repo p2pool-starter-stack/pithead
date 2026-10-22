@@ -8,7 +8,7 @@ pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the gene
 test: lint test-dashboard test-frontend test-stack test-netwatch test-compose test-integration-selftest test-tools test-fakes ## Local checks (Docker required; no live test host)
 
 test-dashboard: pithead ## Dashboard unit/component tests with coverage gate (deps from uv.lock); emits coverage.xml
-	cd dashboard && uv run --locked --extra test python -m pytest \
+	cd dashboard && uv run --locked --extra test python -m pytest -n auto \
 		--cov=mining_dashboard --cov-report=term-missing --cov-report=xml --cov-fail-under=80
 
 test-clearnet-replay-proof: ## Retained Linux ext4 proof of all 100 marker replay cases
