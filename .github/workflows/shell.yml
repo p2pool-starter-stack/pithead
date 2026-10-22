@@ -118,6 +118,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: |
           bash tests/stack/standalone/test_tor_recovery.sh
+          bash tests/stack/standalone/test_tor_recovery_info.sh
           bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
           bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
       - name: Run real-image data-reset suite
@@ -138,18 +139,11 @@ jobs:
       - name: Run clearnet marker attestation contract
         run: python3 tests/stack/standalone/test_clearnet_attestation.py
       - name: Test-inventory drift check
-        # The inventory generator is grep-based; it exits non-zero when any suite it
-        # enumerates counts zero — i.e. a suite moved or changed shape and the inventory
-        # would silently under-count (#981). Output discarded: the generated file is
-        # git-ignored and read on demand via `make test-inventory`.
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test
-        # Pure logic and bounded local transport fixtures for the tests/integration/
-        # harness (config rendering, matrix coverage, redaction, Digest connection reuse). The LIVE matrix (tests/integration/run.sh) needs a real test
-        # server and runs as a gated/manual release gate (#54), not on every PR.
         run: make test-integration-selftest
       - name: Run repository tooling checks
-        run: make test-tools
+        run: make test-tools test-netwatch
 
   soak-macos:
     name: Soak self-test (macOS, ${{ matrix.bash }})

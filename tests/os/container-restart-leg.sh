@@ -52,6 +52,8 @@ done
     exit 1
 }
 
+churn_started=$SECONDS
+read -r independent_start independent_count < <(podman inspect -f '{{.State.StartedAt}} {{.RestartCount}}' caddy)
 running_deadline=$((SECONDS + 10))
 while [ "$SECONDS" -lt "$running_deadline" ] && [ "$(podman inspect -f '{{.State.Status}}' caddy)" != running ]; do
     sleep 0.1
@@ -76,6 +78,22 @@ if [ "$doctor_rc" -ne 1 ] || ! grep -Fq 'caddy is restarting or restarted during
     exit 1
 fi
 
+if [ -n "${ENGINE_CONTRACT_WORK:-}" ]; then
+    predicate_rc=0
+    timeout 30 bash "$ENGINE_CONTRACT_WORK/engine-contract-predicate.sh" >"$work/predicate" 2>&1 || predicate_rc=$?
+    [ "$predicate_rc" -eq 1 ] || {
+        echo 'restart detection leg: harness predicate did not reject churn within 30 seconds' >&2
+        exit 1
+    }
+    remaining=$((30 - (SECONDS - churn_started)))
+    [ "$remaining" -le 0 ] || sleep "$remaining"
+    read -r independent_after independent_current < <(podman inspect -f '{{.State.StartedAt}} {{.RestartCount}}' caddy)
+    [ "$independent_current" -gt "$independent_count" ] && [ "$independent_after" != "$independent_start" ] || {
+        echo 'restart detection leg: independent 30-second observation did not establish churn' >&2
+        exit 1
+    }
+fi
+
 if ! restore_caddy >"$work/restore" 2>&1; then
     echo 'restart detection leg: restoring caddy failed' >&2
     exit 1
@@ -93,6 +111,13 @@ done
     echo 'restart detection leg: status did not recover after restoring caddy' >&2
     exit 1
 }
+
+if [ -n "${ENGINE_CONTRACT_WORK:-}" ]; then
+    timeout 30 bash "$ENGINE_CONTRACT_WORK/engine-contract-predicate.sh" || {
+        echo 'restart detection leg: harness predicate did not recover' >&2
+        exit 1
+    }
+fi
 
 trap - EXIT
 rm -f .pithead-baseline

@@ -212,7 +212,7 @@ assert_eq "a phase that records nothing is counted as a missing PHASE skip" \
 assert_eq "a phase that records a pass needs no wrapper skip" "$(run_phase_result ok_phase)" "0 0 1"
 
 echo "== #2356: a run where nothing passed or failed exits non-zero and says so =="
-EXIT_GATE_SRC="$(sed -n '/^# #2356: 0 passed and 0 failed/,/^\[ "\$FAIL" -eq 0 \]$/p' "$HERE/run.sh")"
+EXIT_GATE_SRC="$(sed -n '/^if \[ "\$PASS" -eq 0 \]/,$p' "$HERE/run.sh")"
 assert_contains "the extraction really is the all-skipped exit gate" "$EXIT_GATE_SRC" "no requested phase ran"
 exit_gate() { (
     # Read by the eval'd exit-gate source below, which shellcheck cannot see into.

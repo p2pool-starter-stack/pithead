@@ -10,8 +10,8 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
+python3 tests/registration-audit.py || exit $?
 
-# Test functions (def test_… / async def test_…) in a python file, in source order.
 py_tests() {
     grep -E '^[[:space:]]*(async[[:space:]]+)?def test_' "$1" 2>/dev/null |
         sed -E 's/^[[:space:]]*(async[[:space:]]+)?def (test_[A-Za-z0-9_]+).*/\2/'

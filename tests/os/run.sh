@@ -89,6 +89,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
 # shellcheck source=tests/os/m10-height-verdict.sh
 . "$SCRIPT_DIR/m10-height-verdict.sh"
+source "$SCRIPT_DIR/appliance-engine-contract-leg.sh" || exit $?
 IMAGE=""
 KEEP=0
 PHASE="all"
@@ -105,12 +106,16 @@ while [ $# -gt 0 ]; do
         KEEP=1
         shift
         ;;
+    --require-complete)
+        export PITHEAD_REQUIRE_COMPLETE=1
+        shift
+        ;;
     --phase)
         PHASE="$2"
         shift 2
         ;;
     -h | --help)
-        printf '%s\n' 'Usage: tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]'
+        printf '%s\n' 'Usage: tests/os/run.sh --image PATH [--keep] [--require-complete] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]'
         exit 0
         ;;
     *)
@@ -244,4 +249,4 @@ if [ "$PASS" -eq 0 ] && [ "$FAIL" -eq 0 ]; then
     echo "no requested phase ran (--phase $PHASE): every row was skipped" >&2
     exit 1
 fi
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] && it_required_coverage_ok

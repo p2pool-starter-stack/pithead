@@ -13,7 +13,7 @@ situation honestly.
 
 | Tier | What it is | Simulates | Where it runs |
 |---|---|---|---|
-| **1 — Unit** | `dashboard/tests/` (pytest, mocked clients) and `tests/stack/` (shell, `docker`/`sudo` stubbed) | Decision logic & field mapping: sync-gate, failover, node-health debounce, XvB engine, `/api/state` shapes, `pithead` config/status logic | Every PR (`make test`) |
+| **1 — Unit** | `dashboard/tests/` (pytest, mocked clients) and `tests/stack/` (shell, `docker`/`sudo` stubbed) | Decision logic & field mapping: sync-gate, failover, node-health debounce, XvB engine, `/api/state` shapes, `pithead` config/status logic | Every PR (dedicated CI jobs) |
 | **2 — Contract** | `tests/integration/fakes/test_contract.py` | The real Monero/Tari clients parsing real daemon wire formats, and `requests` completing a capped HTTP request through a fake SOCKS5 CONNECT proxy | Every PR (docker-free) |
 | **3 — Mini-stack** | `tests/integration/mini-stack/` (real dashboard + docker-control vs fake daemons) | The control plane **end-to-end with real containers**: dashboard requests cross the host-runner spool, and hold/release plus reject/readmit actually stop/start `p2pool`/`xmrig-proxy`, driven deterministically | CI with Docker (`make test-mini-stack`) |
 | **4 — Live matrix** | `tests/integration/run.sh` against a real, synced box — and, for the appliance channel, `tests/os/run.sh`, the KVM battery for the flashed image | What only reality proves: real merge-mining, prune/full DB size, Caddy TLS, Tor onions, HugePages, fault injection for real container health verdicts — and, for the image, built-artifact invariants before EFI boot, A/B commit/rollback, install-to-disk | Every PR that changes what runs on a box, as a bench-ci job on the PR's head (see [What a PR must prove](#what-a-pr-must-prove)); and the release gate — two independent `tier4-kvm` phase groups followed by a `tier4-e2e` aggregate on the exact release commit, required by `release.sh`'s `bench-ci/tier4` preflight (see the [release recipe](releasing.md#which-gates-are-automated-and-which-are-not)) |
@@ -131,6 +131,31 @@ the split gives both expensive control groups separate budgets. Before any block
 `run.sh` checks that every suite file sits in exactly one block, that sourced fragments have domain
 accounting, and that the workflow matrix lists every block. Audit parser failures stop execution;
 tally producer failures and counts that are not nonnegative integers stop the full-run verdict.
+
+`tests/inventory.sh` also runs `tests/registration-audit.py`. It follows workflow
+commands, reachable Make targets, shell selftest globs and the audited stack blocks.
+A local Make target alone is not CI registration. New standalone tests must be
+executed by a reachable runner; sourcing them does not register them. The reviewed
+existing indirect callers are in `tests/registration-allowlist.tsv`; missing callers,
+removed files and unnecessary exceptions fail the audit. The Tor recovery-info and
+netwatch selftests run in the standalone Shell job.
+
+The appliance install and stack phases run `appliance-engine-contract-leg.sh`.
+`engine-contract.py` extracts the CLI's ps filters, inspect templates and Compose ps
+forms, expands status loops and the configless wrapper callers, and refuses unknown
+variable arguments or output contracts. The guest exercises running and stopped
+isolated Compose fixtures, requires RC3's restarting census to fail with Podman's
+exit 125, then requires status and the actual integration predicate to reject a
+Caddy crash loop. An independent 30-second restart/start-time observation establishes
+churn; Caddy restoration and predicate recovery must pass. The extraction selftest
+runs through the OS selftest glob in CI.
+
+Strict coverage is opt-in: `PITHEAD_REQUIRE_COMPLETE=1` makes both the integration
+summary and appliance exit gate fail on every missing skip. The appliance runner
+also accepts `--require-complete`. By-design and covered skips retain their meaning;
+an invalid mode fails. `selftest-required-coverage.sh` drives the actual verdicts and
+stack/rig missing-input branches. Managed forwarding is tracked by
+[bench-ci#2180](https://github.com/p2pool-starter-stack/bench-ci/issues/2180).
 
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the
