@@ -15,7 +15,6 @@ exit "$STOP_RC"
 STUB
 cat >"$work/pithead" <<'STUB'
 #!/usr/bin/env bash
-# Models an old CLI that hides Compose stderr and exits 0 after cleanup.
 docker compose down --remove-orphans 2>/dev/null || true
 rm -f config.json
 printf 'reset completed\n'
@@ -39,6 +38,34 @@ for stop_rc in 0 125; do
     if [ "$stop_rc" = 0 ]; then
         _reset_config_shutdown_passed "$result" "$output"
     else
+        if _reset_config_shutdown_passed "$result" "$output"; then exit 1; fi
+    fi
+done
+cat >"$work/pithead" <<'STUB'
+#!/usr/bin/env bash
+set -e
+docker ps --all --quiet --filter label=com.docker.compose.project=pithead
+docker stop tor caddy
+docker rm tor caddy
+rm -f config.json
+STUB
+cat >"$work/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+printf '%s diagnostic\n' "$1" >&2
+[ "$1" != "$FAIL_STEP" ]
+STUB
+for fail_step in none ps stop rm; do
+    touch "$work/config.json"
+    rc=0
+    FAIL_STEP="$fail_step" PITHEAD_RESET_PROBE_DIR="$work" PATH="$work/bin:$PATH" \
+        bash "$SCRIPT_DIR/reset-config-probe.sh" >"$work/reset-output" 2>&1 || rc=$?
+    result=$(cat "$work/.reset-compose.result")
+    output=$(cat "$work/.reset-compose.log" "$work/reset-output")
+    if [ "$fail_step" = none ]; then
+        [ "$rc" = 0 ] && [ ! -f "$work/config.json" ]
+        _reset_config_shutdown_passed "$result" "$output"
+    else
+        [ "$rc" = 1 ] && [ -f "$work/config.json" ]
         if _reset_config_shutdown_passed "$result" "$output"; then exit 1; fi
     fi
 done
@@ -95,10 +122,10 @@ for stop_rc in 0 125; do
     grep -Fq "$fixture_result" "$work/phase-diagnostics"
     grep -Fq "$fixture_output" "$work/phase-diagnostics"
     if [ "$stop_rc" = 0 ]; then
-        grep -Fq 'ok: config-reset Compose shutdown succeeded before the configuration wipe (exit 0)' "$work/phase-rows"
+        grep -Fq 'ok: config-reset stack shutdown succeeded before the configuration wipe (exit 0)' "$work/phase-rows"
     else
-        grep -Fq 'bad: config-reset Compose shutdown failed or was not recorded before the configuration wipe' "$work/phase-rows"
-        if grep -Fq 'ok: config-reset Compose shutdown succeeded' "$work/phase-rows"; then exit 1; fi
+        grep -Fq 'bad: config-reset stack shutdown failed or was not recorded before the configuration wipe' "$work/phase-rows"
+        if grep -Fq 'ok: config-reset stack shutdown succeeded' "$work/phase-rows"; then exit 1; fi
     fi
 done
 fixture_result=$'compose_exit=0\nconfig_present=yes'
@@ -112,9 +139,8 @@ for capture_case in missing oversize read-error; do
     esac
     if _phase_reset_config >"$work/phase-rows" 2>"$work/phase-diagnostics"; then exit 1; fi
     grep -Fq 'bad: config-reset shutdown diagnostics are missing, unreadable or exceed the capture bound' "$work/phase-rows"
-    if grep -Fq 'ok: config-reset Compose shutdown succeeded' "$work/phase-rows"; then exit 1; fi
+    if grep -Fq 'ok: config-reset stack shutdown succeeded' "$work/phase-rows"; then exit 1; fi
 done
-# Poll the actual residue helper; include exited containers and unreadable engines.
 (
     echo 0 >"$work/clock"
     date() { cat "$work/clock"; }

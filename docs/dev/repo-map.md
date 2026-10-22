@@ -69,6 +69,13 @@ The fresh-spare negative control is in `tests/os/phases/update-spare-slot.sh`.
 The real A/B reset leg is `tests/os/phases/reset-slot.sh`; it checks wizard setup, CLI restore
 and reboot with setup still open before the final provisioned reboot.
 
+The focused two-slot config-reset regression is `tests/os/phases/recovery.sh`, selected
+with `tests/os/run.sh --phase recovery`. Its census, identity and slot checks are in
+`tests/os/lib/recovery-invariants.sh`; `tests/os/recovery-wizard.sh` checks stable dashboard
+ownership after wizard setup. The corresponding `tests/os/selftest-recovery*.sh` controls
+run through `make test-integration-selftest`.
+
+
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the

@@ -75,30 +75,40 @@ assert_eq "config-reset KEEPS the monero chain" "$([ -f "$CR/data/monero/blockch
 assert_eq "config-reset KEEPS the Tor onion key" "$([ -f "$CR/data/tor/hostname" ] && echo kept)" "kept"
 assert_eq "config-reset off the appliance does not reboot" "$([ -f "$rebooted" ] || echo no)" "no"
 assert_contains "config-reset hints how to reconfigure" "$out" "firstboot-wizard"
-# On the appliance: same wipe, but it reboots into first-boot setup.
 seed_cr
 rm -f "$rebooted"
 out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PITHEAD_REBOOT_CMD="touch $rebooted" PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1)
 assert_eq "config-reset on the appliance reboots into firstboot" "$([ -f "$rebooted" ] && echo yes)" "yes"
 seed_cr
+rm -f "$rebooted" "$CR/.removed"
+cat >"$CR/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+ps)
+    [ -f .removed ] && exit 0
+    [[ "$*" == *status=paused* ]] || printf 'tor-id\ncaddy-id\n'
+    ;;
+stop) printf '%s\n' "$*" > .stopped ;;
+rm) touch .removed ;;
+esac
+EOF
+out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PITHEAD_REBOOT_CMD="touch $rebooted" PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1)
+assert_rc "config-reset removes retained Tor and Caddy instances before wiping" "$?" "0"
+assert_eq "config-reset stops every inventoried instance" "$(cat "$CR/.stopped" 2>/dev/null)" "stop tor-id caddy-id"
+assert_eq "config-reset removes every instance before rebooting" "$([ -f "$CR/.removed" ] && [ -f "$rebooted" ] && [ ! -f "$CR/config.json" ] && echo removed)" "removed"
+seed_cr
 rm -f "$rebooted"
 cat >"$CR/bin/docker" <<'EOF'
 #!/usr/bin/env bash
-case "$*" in
-  *"--quiet"*)
-    echo "abc123def456"
+case "$1" in
+  ps)
+    [[ "$*" == *status=paused* ]] || echo "abc123def456"
     ;;
-  *"--filter"*)
-    echo "abc123def456"
-    ;;
-  *"--all"*"--filter"*)
-    echo "running abc123def456"
-    ;;
-  *"stop"*)
+  stop)
     echo "docker: synthetic stop failure" >&2
     exit 1
     ;;
-  *"rm"*)
+  rm)
     echo "docker: synthetic rm failure" >&2
     exit 1
     ;;
@@ -110,14 +120,14 @@ EOF
 out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PITHEAD_REBOOT_CMD="touch $rebooted" PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1)
 rc=$?
 assert_rc "config-reset fails when stack shutdown fails" "$rc" "1"
-assert_contains "config-reset reports containers not shutting down cleanly" "$out" "did not shut down cleanly"
+assert_contains "config-reset reports containers not shutting down cleanly" "$out" "Stack containers could not be stopped and removed"
 assert_eq "failed shutdown keeps config.json" "$([ -f "$CR/config.json" ] && echo kept)" "kept"
 assert_eq "failed shutdown keeps machine-role" "$([ -f "$CR/machine-role" ] && echo kept)" "kept"
 assert_eq "failed shutdown does not reboot" "$([ -f "$rebooted" ] && echo rebooted || echo no)" "no"
 assert_eq "failed shutdown keeps the chain and Tor identity" \
     "$([ -f "$CR/data/monero/blockchain" ] && [ -f "$CR/data/tor/hostname" ] && echo kept)" "kept"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$CR/bin/docker"
-# Already unprovisioned: nothing to reset.
+rm -f "$CR/config.json"
 out=$(cd "$CR" && PITHEAD_APPLIANCE=1 PATH="$CR/bin:$PATH" ./pithead config-reset -y 2>&1) || true
 assert_contains "config-reset refuses when config.json is absent" "$out" "already unprovisioned"
 out=$(cd "$CR" && PATH="$CR/bin:$PATH" ./pithead config-reset --bogus 2>&1) || true

@@ -549,3 +549,18 @@ including clock-advanced missing-day recovery, failed SSH recovery, refusal to s
 a sync exemption and retention of mismatch evidence. Linux CI runs it through the
 shell suite; the Shell workflow also runs it on `macos-latest` with system Bash 3.2
 and Homebrew Bash, keeping GNU utilities off PATH.
+
+## Focused two-slot config-reset recovery
+
+Run `--phase recovery` with bench-ci `old_image_commit` set to the exact previous-release
+source. This phase provisions that release in A, installs and health-commits the candidate
+in B, then runs `config-reset -y` and wizard setup. It inventories every project container,
+including stopped instances, and polls for the absence of every pre-reset ID before
+provisioning, after setup and after the extra reboots. An unreadable census fails.
+
+Monero and Tari chain sentinels, machine identity and Tor hidden-service key fingerprints
+must survive. The dashboard must own the web ports, candidate B must remain committed,
+and the good A fallback must retain its previous-release source. The phase excludes
+factory reset, archive restore and Set up again; their broader matrix belongs to the
+separate recovery-matrix work. The tier-1 controls are `selftest-recovery.sh` and
+`selftest-recovery-flows.sh`, discovered by `make test-integration-selftest`.

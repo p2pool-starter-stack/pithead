@@ -69,9 +69,9 @@ _phase_reset_config() {
     if cr_stop_output=$(_ssh "cd /data/pithead && test -f .reset-compose.log && test -f .reset-config-output.log && test \$(wc -c < .reset-compose.log) -le 65536 && test \$(wc -c < .reset-config-output.log) -le 65536 && cat .reset-compose.log .reset-config-output.log" 2>&1); then
         printf 'config-reset shutdown receipt:\n%s\nconfig-reset diagnostics:\n%s\n' "$cr_stop_result" "$cr_stop_output" >&2
         if _reset_config_shutdown_passed "$cr_stop_result" "$cr_stop_output"; then
-            ok "config-reset Compose shutdown succeeded before the configuration wipe (exit 0)"
+            ok "config-reset stack shutdown succeeded before the configuration wipe (exit 0)"
         else
-            bad "config-reset Compose shutdown failed or was not recorded before the configuration wipe"
+            bad "config-reset stack shutdown failed or was not recorded before the configuration wipe"
         fi
     else
         bad "config-reset shutdown diagnostics are missing, unreadable or exceed the capture bound"
