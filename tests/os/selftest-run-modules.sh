@@ -24,10 +24,9 @@ if bash -c 'source "$1"' _ "$HERE/phases/boot.sh" >/dev/null 2>&1; then
     exit 1
 fi
 # shellcheck disable=SC2034 # sourced phase functions read these runner globals dynamically.
-OS_RUN_SUITE=1 SCRIPT_DIR="$HERE" SERIAL="$(mktemp)" PASS=0 FAIL=0 KEEP=1
-# shellcheck disable=SC2034 # sourced phase functions read these runner globals dynamically.
-VM=selftest DISK="$SERIAL.disk" SSH_ERR="$SERIAL.ssh-error"
+OS_RUN_SUITE=1 SCRIPT_DIR="$HERE" SERIAL="$(mktemp)" PASS=0 FAIL=0 KEEP=1 VM=selftest DISK="$SERIAL.disk" SSH_ERR="$SERIAL.ssh-error"
 # shellcheck source=tests/os/lib/core.sh
+source "$HERE/appliance-engine-contract-leg.sh" || exit $?
 source "$HERE/lib/core.sh" || exit $?
 SSH_ERR="$SERIAL.ssh-error"
 bash "$HERE/selftest-control-drain.sh" || exit $?
