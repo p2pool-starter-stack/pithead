@@ -16,7 +16,9 @@ compares Caddy's served leaf SHA-256 fingerprint, public key, SANs and local pri
 before and after stopped-stack restore and dashboard password apply. HTTP-only configurations count explicit by-design skips. Read failures and any
 identity change on a TLS configuration fail the leg; private keys and their digests are not printed as evidence.
 `tests/integration/selftest/selftest-lifecycle-tls.sh` covers identity divergence and password
-fixture cleanup, and the restore health selftest requires a TLS failure to fail lifecycle.
+fixture cleanup, and the restore health selftest requires a TLS failure to fail lifecycle. The
+pool-default lifecycle fixture models an HTTP-only box because it exercises pool rendering; the
+dedicated TLS selftests and live lifecycle phase own certificate and password behavior.
 
 The KVM `image-upgrade` certificate leg provisions the actual appliance, adds a genuine
 nonpersistent SAN on its network interface, then drives Check, Download, Install and the
