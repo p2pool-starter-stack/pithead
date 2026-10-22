@@ -188,28 +188,9 @@ setup_baseline
 
 stage local-miner-tree
 [ -x /data/rigforge/rigforge.sh ] && [ -d /data/rigforge ]
-# `render_local_miner_config` returns 0 WITHOUT writing its config on exactly two branches: a
-# missing RigForge tree (ruled out above) and a machine_role of `rig`. Job 553/632 (jobs 553 and
-# 632, before this fix) reported local-miner-render even with both ruled out: 00-prelude.sh's
-# `cd "$SCRIPT_DIR"` runs on EVERY invocation of /opt/pithead/pithead, unconditionally — so `cd
-# "$MOUNT/current"` below never put the CLI's $PWD there, and machine_role() (which reads
-# $PWD/machine-role, with no override before #2057) actually read /opt/pithead/machine-role, the
-# appliance's OWN marker, not the baseline's. Assert the baseline's role directly so the stage
-# name still distinguishes it from a genuine render failure.
 stage local-miner-role
 [ "$(cat "$MOUNT/current/machine-role" 2>/dev/null || echo pithead)" != rig ]
 
-# `pithead local-miner` renders RigForge's own config.json (a side effect that always happens
-# first, win or lose) THEN runs `rigforge.sh setup`. Job 547 got past the tmpfs fix cleanly —
-# every container including xmrig-proxy started and stayed healthy — but this call still failed,
-# with nothing in the guest journal to say where inside it. Whether config.json exists afterward
-# tells render from rigforge.sh apart without capturing any command output: the appliance's own
-# CLI is pithead's to fix, RigForge's own `setup` is a companion repo's.
-#
-# PITHEAD_CONFIG_FILE/PITHEAD_ENV_FILE/PITHEAD_MACHINE_ROLE_FILE, not `cd`: the CLI's own prelude
-# `cd`s to its SCRIPT_DIR (/opt/pithead) before reading anything, on every invocation, so pointing
-# it at the baseline directory needs the explicit overrides — the same ones the control runner's
-# staged-config preview already relies on for the same reason.
 local_miner_rc=0
 (
     cd "$MOUNT/current"
