@@ -25,6 +25,7 @@ date() {
 }
 sleep() { :; }
 _setup_again_boot() {
+    printf 'original hosts\n' >"$scratch/hosts"
     printf '%s\n' "$(($(cat "$scratch/arm") + 1))" >"$scratch/arm"
     printf '0\n' >"$scratch/reads"
 }
@@ -60,20 +61,19 @@ _ssh() {
         esac
         printf '192.0.2.2\n'
         ;;
-    *mount*)
+    *rig-share-hosts.original*)
         local guest_cmd="${1//\/data\/rig-share-hosts.original/$scratch/hosts.original}"
         guest_cmd="${guest_cmd//\/etc\/hosts/$scratch/hosts}"
         bash -c '
             fixture_root="$2" fixture_case="$3"
-            mount() {
-                if [ "$2" = remount,ro ] && [ "$fixture_case" = hosts-remount-failure ] &&
-                    [ ! -f "$fixture_root/ro-failed" ]; then
-                    touch "$fixture_root/ro-failed"
-                    return 1
+            mount() { return 1; }
+            findmnt() {
+                if [ "$fixture_case" = hosts-readonly-failure ]; then
+                    printf "rw\n"
+                else
+                    cat "$fixture_root/root-mode"
                 fi
-                printf "%s\n" "${2#remount,}" >"$fixture_root/root-mode"
             }
-            findmnt() { cat "$fixture_root/root-mode"; }
             cp() {
                 [ "$fixture_case" != hosts-copy-failure ] || return 1
                 command cp "$@"
@@ -131,13 +131,13 @@ run_case() {
     local scenario="$1" expected="$2" result=0
     local VM=fixture DISK="$scratch/rig.img" SERIAL="$scratch/rig.log" ip=192.0.2.1
     local RIG_SHARE_WINDOW_SEC=7
-    rm -f "$scratch/hosts.original" "$scratch/ro-failed" "$scratch"/cookie.*
+    rm -f "$scratch/hosts.original" "$scratch"/cookie.*
     printf "original hosts\n" >"$scratch/hosts"
     printf "ro\n" >"$scratch/root-mode"
     for file in pass fail teardown pools info; do : >"$scratch/$file"; done
     for file in time arm reads; do printf '0\n' >"$scratch/$file"; done
     rig_share_leg image node 1 2 user pass tari 3 "$ip" 2>"$scratch/stderr" || result=$?
-    [ "$result" = "$expected" ] || fail "$scenario returned $result, expected $expected"
+    [ "$result" = "$expected" ] || fail "$scenario returned $result, expected $expected: $(tail -1 "$scratch/fail")"
     [ "$(wc -l <"$scratch/teardown")" -eq 2 ] || fail "$scenario leaked coordinator"
     [ "$(cat "$scratch/hosts")" = "original hosts" ] || fail "$scenario leaked hosts fixture"
     [ "$(cat "$scratch/root-mode")" = ro ] || fail "$scenario left root writable"
@@ -159,7 +159,7 @@ run_case() {
     fi
 }
 run_case healthy 0
-for scenario in stale stale-return failed-state rejected invalid transient-rejected zero-rate offline no-coordinator wrong-coordinator missing-coordinator string-coordinator unreadable missing-rate missing-worker wrong-pool extra-pool bad-hostname wrong-address hosts-copy-failure hosts-append-failure hosts-remount-failure; do
+for scenario in stale stale-return failed-state rejected invalid transient-rejected zero-rate offline no-coordinator wrong-coordinator missing-coordinator string-coordinator unreadable missing-rate missing-worker wrong-pool extra-pool bad-hostname wrong-address hosts-copy-failure hosts-append-failure hosts-readonly-failure; do
     run_case "$scenario" 1
 done
 coord_worker=coordinator

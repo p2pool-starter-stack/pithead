@@ -20,27 +20,20 @@ _rig_share_hosts_restore() {
     _ssh '
         rc=0
         if [ -f /data/rig-share-hosts.original ]; then
-            if mount -o remount,rw /; then
-                cat /data/rig-share-hosts.original > /etc/hosts && rm -f /data/rig-share-hosts.original || rc=1
-            else
-                rc=1
-            fi
+            cat /data/rig-share-hosts.original > /etc/hosts && rm -f /data/rig-share-hosts.original || rc=1
         fi
-        mount -o remount,ro / || rc=1
         findmnt -rn -o OPTIONS / | tr , "\n" | grep -Fxq ro || rc=1
         exit "$rc"'
 }
 
 _rig_share_hosts_install() {
     _ssh "
-        test ! -e /data/rig-share-hosts.original || exit 1
-        mount -o remount,rw / || exit 1
-        rc=0
-        cp -p /etc/hosts /data/rig-share-hosts.original &&
-            printf '%s %s\\n' '$coord_ip' '$coord_name' >> /etc/hosts || rc=1
-        mount -o remount,ro / || rc=1
-        findmnt -rn -o OPTIONS / | tr , '\\n' | grep -Fxq ro || rc=1
-        exit \"\$rc\""
+        if [ ! -f /data/rig-share-hosts.original ]; then
+            cp -p /etc/hosts /data/rig-share-hosts.original || exit 1
+        fi
+        grep -Fxq '$coord_ip $coord_name' /etc/hosts ||
+            printf '%s %s\\n' '$coord_ip' '$coord_name' >> /etc/hosts || exit 1
+        findmnt -rn -o OPTIONS / | tr , '\\n' | grep -Fxq ro"
 }
 
 _rig_share_resolves() {
@@ -130,6 +123,14 @@ _rig_share_arm() {
     local arm="$1" pool="$2" jar="" token="" new_card="" baseline st
     _rig_share_resolves "${pool%:*}" "$coord_ip" || return 2
     _setup_again_boot 300 || return 1
+    _rig_share_hosts_install || {
+        bad "share leg $arm: could not reapply the volatile hosts fixture (#3425)"
+        return 1
+    }
+    _rig_share_resolves "${pool%:*}" "$coord_ip" || {
+        bad "share leg $arm: pool resolution failed after the setup boot (#3425)"
+        return 1
+    }
     _setup_again_session || return 1
     st=$(_rig_share_state) || {
         rm -f "$jar"
