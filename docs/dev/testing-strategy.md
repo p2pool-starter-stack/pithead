@@ -20,7 +20,8 @@ fixture cleanup, and the restore health selftest requires a TLS failure to fail 
 
 The KVM `image-upgrade` certificate leg provisions the actual appliance, adds a genuine
 nonpersistent SAN on its network interface, then drives Check, Download, Install and the
-confirmed reboot from one Chromium tab. Host-side SSH confirms a new boot, the temporarily
+confirmed reboot from one Chromium tab. A standard-library Python host coordinator drives SSH; Node and Playwright stay inside
+the digest-pinned browser container. Host-side SSH confirms a new boot, the temporarily
 absent address and Caddy running before restoring the address through the real address watcher.
 The test requires equal final canonical SANs, served leaf SHA-256 and key identity, a successful
 post-reboot state response and the updated verdict in that same tab, without another trust
