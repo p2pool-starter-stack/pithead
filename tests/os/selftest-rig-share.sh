@@ -45,11 +45,12 @@ _setup_again_rig_submit() {
 _rig_mining_up() { return 0; }
 _ssh() {
     case "$*" in
+    hostname) printf "coordinator\n" ;;
     *getent*)
         case "$*" in
         *kvm-share-unresolved.invalid*) return 0 ;;
         *kvm-share-coordinator.invalid*)
-            [ -f "$scratch/hosts" ] || return 0
+            grep -q kvm-share-coordinator.invalid "$scratch/hosts" || return 0
             [ "$scenario" != bad-hostname ] || return 0
             [ "$scenario" != wrong-address ] || {
                 printf '192.0.2.9\n'
@@ -59,13 +60,37 @@ _ssh() {
         esac
         printf '192.0.2.2\n'
         ;;
-    *mount*) touch "$scratch/hosts" ;;
+    *mount*)
+        local guest_cmd="${1//\/data\/rig-share-hosts.original/$scratch/hosts.original}"
+        guest_cmd="${guest_cmd//\/etc\/hosts/$scratch/hosts}"
+        bash -c '
+            fixture_root="$2" fixture_case="$3"
+            mount() {
+                if [ "$2" = remount,ro ] && [ "$fixture_case" = hosts-remount-failure ] &&
+                    [ ! -f "$fixture_root/ro-failed" ]; then
+                    touch "$fixture_root/ro-failed"
+                    return 1
+                fi
+                printf "%s\n" "${2#remount,}" >"$fixture_root/root-mode"
+            }
+            findmnt() { cat "$fixture_root/root-mode"; }
+            cp() {
+                [ "$fixture_case" != hosts-copy-failure ] || return 1
+                command cp "$@"
+            }
+            printf() {
+                if [ "$fixture_case" = hosts-append-failure ] && [ "$1" = "%s %s\n" ]; then return 1; fi
+                command printf "$@"
+            }
+            eval "$1"
+        ' _ "$guest_cmd" "$scratch" "$scenario"
+        ;;
     *jq*) bash -c "${1//\/data\/rigforge\/config.json/$scratch/config.json}" ;;
     *) fail "unexpected guest command" ;;
     esac
 }
 curl() {
-    local arm reads accepted rejected=0 invalid=0 rate=250 online=online other=1
+    local arm reads accepted rejected=0 invalid=0 rate=250 online=online other=1 coordinator=coordinator
     arm=$(cat "$scratch/arm")
     reads=$(cat "$scratch/reads")
     printf '%s\n' "$((reads + 1))" >"$scratch/reads"
@@ -80,6 +105,9 @@ curl() {
         zero-rate) rate=0 ;;
         offline) online=offline ;;
         no-coordinator) other=0 ;;
+        wrong-coordinator) coordinator=foreign ;;
+        missing-coordinator) coordinator=absent ;;
+        string-coordinator) other='"1"' ;;
         unreadable)
             printf '{'
             return 0
@@ -93,20 +121,24 @@ curl() {
         esac
     fi
     jq -n --argjson accepted "$accepted" --argjson rejected "$rejected" --argjson invalid "$invalid" \
-        --argjson rate "$rate" --arg online "$online" --argjson other "$other" \
+        --argjson rate "$rate" --arg online "$online" --argjson other "$other" --arg coordinator "$coordinator" \
         '{workers:[{name:"kvm-rig-share",accepted:$accepted,rejected:$rejected,invalid:$invalid,h10:$rate,status:$online},
-        {name:"coordinator",accepted:$other}]}'
+        {name:$coordinator,accepted:$other}] | map(select(.name != "absent"))}'
 }
 run_case() {
     local scenario="$1" expected="$2" result=0
     local VM=fixture DISK="$scratch/rig.img" SERIAL="$scratch/rig.log" ip=192.0.2.1
     local RIG_SHARE_WINDOW_SEC=7
-    rm -f "$scratch/hosts" "$scratch"/cookie.*
+    rm -f "$scratch/hosts.original" "$scratch/ro-failed" "$scratch"/cookie.*
+    printf "original hosts\n" >"$scratch/hosts"
+    printf "ro\n" >"$scratch/root-mode"
     for file in pass fail teardown pools; do : >"$scratch/$file"; done
     for file in time arm reads; do printf '0\n' >"$scratch/$file"; done
     rig_share_leg image node 1 2 user pass tari 3 "$ip" 2>"$scratch/stderr" || result=$?
     [ "$result" = "$expected" ] || fail "$scenario returned $result, expected $expected"
     [ "$(wc -l <"$scratch/teardown")" -eq 2 ] || fail "$scenario leaked coordinator"
+    [ "$(cat "$scratch/hosts")" = "original hosts" ] || fail "$scenario leaked hosts fixture"
+    [ "$(cat "$scratch/root-mode")" = ro ] || fail "$scenario left root writable"
     [ "$VM" = fixture ] && [ "$ip" = 192.0.2.1 ] || fail "$scenario lost rig globals"
     [ -z "$(find "$scratch" -name 'cookie.*' -print)" ] || fail "$scenario leaked a session"
     if [ "$expected" = 0 ]; then
@@ -119,7 +151,7 @@ run_case() {
     fi
 }
 run_case healthy 0
-for scenario in stale stale-return rejected invalid transient-rejected zero-rate offline no-coordinator unreadable missing-rate missing-worker wrong-pool extra-pool bad-hostname wrong-address; do
+for scenario in stale stale-return rejected invalid transient-rejected zero-rate offline no-coordinator wrong-coordinator missing-coordinator string-coordinator unreadable missing-rate missing-worker wrong-pool extra-pool bad-hostname wrong-address hosts-copy-failure hosts-append-failure hosts-remount-failure; do
     run_case "$scenario" 1
 done
-printf 'selftest-rig-share: 16 scenarios passed\n'
+printf 'selftest-rig-share: 22 scenarios passed\n'

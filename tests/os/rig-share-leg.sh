@@ -11,8 +11,36 @@ _rig_share_coord_teardown() {
 
 _rig_share_abort() {
     [ -z "${1:-}" ] || bad "$1"
+    _rig_share_hosts_restore || bad "share leg: could not restore the rig hosts fixture and read-only root (#3425)"
     _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
     return 1
+}
+
+_rig_share_hosts_restore() {
+    _ssh '
+        rc=0
+        if [ -f /data/rig-share-hosts.original ]; then
+            if mount -o remount,rw /; then
+                cat /data/rig-share-hosts.original > /etc/hosts && rm -f /data/rig-share-hosts.original || rc=1
+            else
+                rc=1
+            fi
+        fi
+        mount -o remount,ro / || rc=1
+        findmnt -rn -o OPTIONS / | tr , "\n" | grep -Fxq ro || rc=1
+        exit "$rc"'
+}
+
+_rig_share_hosts_install() {
+    _ssh "
+        test ! -e /data/rig-share-hosts.original || exit 1
+        mount -o remount,rw / || exit 1
+        rc=0
+        cp -p /etc/hosts /data/rig-share-hosts.original &&
+            printf '%s %s\\n' '$coord_ip' '$coord_name' >> /etc/hosts || rc=1
+        mount -o remount,ro / || rc=1
+        findmnt -rn -o OPTIONS / | tr , '\\n' | grep -Fxq ro || rc=1
+        exit \"\$rc\""
 }
 
 _rig_share_resolves() {
@@ -26,16 +54,18 @@ _rig_share_state() {
 }
 
 _rig_share_counters() {
-    jq -er '
+    jq -er --arg coordinator "$coord_worker" '
         [.workers[] | select(.name == "kvm-rig-share")] as $rig |
-        select(($rig | length) > 0) |
+        [.workers[] | select(.name == $coordinator)] as $coord |
+        select(($rig | length) > 0 and ($coord | length) > 0) |
+        select(all($coord[]; .accepted | type == "number" and . >= 0 and floor == .)) |
         select(all($rig[]; all(.accepted, .rejected, .invalid;
             type == "number" and . >= 0 and floor == .) and
             (.h10 | type == "number" and . >= 0))) |
         [($rig | map(.accepted) | add), ($rig | map(.rejected) | add),
          ($rig | map(.invalid) | add),
          ([$rig[] | select(.status == "online") | .h10] | max // 0),
-         ([.workers[] | select(.name != "kvm-rig-share") | .accepted // 0] | add // 0)] |
+         ($coord | map(.accepted) | add)] |
         @tsv'
 }
 
@@ -118,12 +148,13 @@ rig_share_leg() {
     kvm_preflight || return 1
 
     VM="$coord_vm" DISK="$coord_disk" SERIAL="$coord_serial" ip=""
-    local coord_ok=0 coord_ip="" coord_user="" coord_pass=""
+    local coord_ok=0 coord_ip="" coord_user="" coord_pass="" coord_worker=""
     if _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc"; then
-        coord_ok=1
         coord_ip="$ip"
         coord_user="$dash_user"
         coord_pass="$dash_pass"
+        coord_worker=$(_ssh hostname | tr -d '\r\n')
+        [ -z "$coord_worker" ] || [ "$coord_worker" = kvm-rig-share ] || coord_ok=1
     fi
     VM="$rig_vm" DISK="$rig_disk" SERIAL="$rig_serial" ip="$rig_ip"
     [ "$coord_ok" = 1 ] || _rig_share_abort "share leg: the coordinator guest never released — cannot prove a share against it" || return 1
@@ -137,10 +168,12 @@ rig_share_leg() {
     else
         ok "share leg: unresolved hostname fails the hostname arm (#3425)"
     fi
-    _ssh "mount -o remount,rw / && printf '%s %s\\n' '$coord_ip' '$coord_name' >> /etc/hosts && mount -o remount,ro /" ||
+    _rig_share_hosts_install ||
         _rig_share_abort "share leg: could not install the coordinator hostname fixture" || return 1
     _rig_share_arm address "$coord_ip:3333" || _rig_share_abort "share leg: address arm failed (#3425)" || return 1
     _rig_share_arm hostname "$coord_name:3333" || _rig_share_abort "share leg: hostname arm failed (#3425)" || return 1
     _rig_share_arm return "$coord_ip:3333" || _rig_share_abort "share leg: return arm failed (#3425)" || return 1
+    _rig_share_hosts_restore || _rig_share_abort "share leg: hosts fixture restoration failed (#3425)" || return 1
+    ok "share leg: rig hosts restored and root verified read-only (#3425)"
     _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
 }

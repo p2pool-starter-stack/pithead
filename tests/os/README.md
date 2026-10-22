@@ -284,10 +284,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   must show accepted above that arm's baseline and positive `h10` on an online rig worker.
   Every observed rig counter must have zero rejected and invalid shares; either becoming
   positive fails immediately. The coordinator's built-in miner must also have accepted
-  shares. Missing or malformed worker fields cannot pass. The coordinator guest is torn
-  down on success and failure. `selftest-rig-share.sh` exercises the complete leg with
+  shares on the exact worker named by its guest hostname, with an integer accepted counter.
+  Missing or malformed worker fields cannot pass. The hosts fixture is restored and the
+  rig root verified read-only on every exit; the coordinator guest is torn down. `selftest-rig-share.sh` exercises the complete leg with
   fake transport, clocks and worker snapshots, including stale return-arm shares,
-  rejected/invalid counters, missing fields, hostname failures and extra pools.
+  rejected/invalid counters, missing fields, hostname failures, extra pools, coordinator identity/counter types and hosts-file write failures.
   A bench with no reserved remote Monero node counts it a `missing` leg skip, using
   the same inputs as the `stack` phase.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
