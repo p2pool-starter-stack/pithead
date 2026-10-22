@@ -118,25 +118,16 @@ config_reset() {
         }
     fi
 
-    # After the typed confirmation, so the hold never spans a human wait (#1391), and before the
-    # first mutation below — this verb REMOVES config.json, so a window taken any later would let a
-    # timeout abandon a box whose configuration was already half gone.
     mutation_lock_acquire config-reset
 
     reset_slot_record_good || error "Could not preserve the boot slot before reset — configuration was not cleared."
     restore_save_reset_paths
     detect_os 2>/dev/null || true
-    docker compose down --remove-orphans ||
-        warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running; fix the Compose error shown above."
+    configless_stack_down
     remove_tor_egress_firewall 2>/dev/null || true
-    lan_guard_teardown config-reset # only once the engine shows both nodes stopped (#2749)
-    # machine-role rides along with config.json: pithead-boot's condition is the two paths OR'd,
-    # so leaving the role marker behind would keep it armed and the wizard would never re-open.
+    lan_guard_teardown config-reset
     rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role
     log "Configuration cleared — the first-boot wizard owns the next boot."
-    # The reboot stays INSIDE the window on purpose. Releasing after the wipe but before the reboot
-    # would leave a gap in which another verb could start against a box that has no config.json yet
-    # still has its old containers' state — the half-reset window this lock exists to prevent.
     reset_reboot_or_hint
     mutation_lock_release
 }

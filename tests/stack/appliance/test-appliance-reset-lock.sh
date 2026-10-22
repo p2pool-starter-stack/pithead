@@ -131,7 +131,7 @@ rsl_out=$(rsl_run "$RSLFREE" PITHEAD_APPLIANCE=0 -- config-reset -y)
 rsl_rc=$?
 assert_rc "uncontended config-reset succeeds" "$rsl_rc" "0"
 assert_eq "uncontended config-reset really removes config.json" "$([ -f "$RSL/config.json" ] || echo gone)" "gone"
-assert_contains "uncontended config-reset really stops the stack" "$(cat "$RSLDOCKER")" "compose down"
+assert_contains "uncontended config-reset checks every project container" "$(cat "$RSLDOCKER")" "ps --all --quiet --filter label=com.docker.compose.project=pithead"
 
 echo "== black-box: a held machine refuses all three reset verbs and changes nothing (#1482) =="
 rsl_hold "$RSLHELD"
@@ -160,13 +160,9 @@ assert_contains "contended config-reset tells the operator which verb to re-run"
 assert_eq "contended config-reset KEEPS config.json" "$([ -f "$RSL/config.json" ] && echo kept)" "kept"
 assert_eq "contended config-reset KEEPS the rendered .env" "$([ -f "$RSL/.env" ] && echo kept)" "kept"
 assert_eq "contended config-reset KEEPS the rendered Caddyfile" "$([ -f "$RSL/Caddyfile" ] && echo kept)" "kept"
-assert_eq "contended config-reset never stops the stack" "$(grep -c 'compose down' "$RSLDOCKER" || true)" "0"
+assert_eq "contended config-reset never touches project containers" "$(grep -Ec 'ps --all| stop | rm ' "$RSLDOCKER" || true)" "0"
 
 echo "== black-box: the reset window opens AFTER the confirmation, so no hold spans a human wait (#1482) =="
-# The other side of the placement. Each verb is given the wrong confirmation word while the machine
-# is held: it must come back on the WORD, having never entered the lock wait. If the acquire were
-# moved above the prompt these three would time out instead — and an operator answering "no" would
-# have been made to wait for a window the verb was about to decline to use.
 rsl_seed
 rsl_out=$(printf 'n\n' | rsl_run "$RSLHELD" PITHEAD_APPLIANCE=0 PITHEAD_LOCK_TIMEOUT=1 -- reset-dashboard)
 assert_contains "reset-dashboard declined on a held machine reports the decline" "$rsl_out" "Reset cancelled"
