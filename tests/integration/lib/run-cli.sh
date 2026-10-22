@@ -108,10 +108,10 @@ MATRIX:
   --hardening            local-only: rootfs write refusal, control path-unit apply/refusal, Tor recovery.
                          DESTRUCTIVE-then-restored; enables then disables control (#377/#33/#424).
   --rotate-onion         rotate an isolated onion fixture; prove reachability, retirement and restore (#2345).
-  --rigforge             also run the RigForge integration phase (#185/#235/#260): assert the
-                         dashboard consumed a REAL rigforge rig's enriched feed and Worker Inspect
-                         reads it. Non-destructive; self-skips if no rigforge rig is connected.
-  --rigforge-control     run the real RigForge control, reversible-write, and upgrade legs.
+  --rigforge             apply worker API auth modes against a fake beside the mining stack, restore
+                         config, then read the real RigForge feed and Worker Inspect.
+                         Auth changes require local mode and a mining worker.
+  --rigforge-control     run the same auth phase, then real RigForge control, write, and upgrade legs.
                          DESTRUCTIVE-then-restored; local mode and an opted-in real rig required.
   --rig-host <h>         the borrowed rig's LAN host/IP for control dials — needed to inject a
                          workers.list[] descriptor when the box's baseline lacks one (#513/#514/#506).

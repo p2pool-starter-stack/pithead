@@ -138,6 +138,7 @@ source "$HERE/lib/run-hardening.sh" || exit $?
 source "$HERE/lib/run-rotate-onion.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh" || exit $?
+source "$HERE/lib/run-worker-auth.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rigforge.sh
 source "$HERE/lib/run-rigforge.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rig-control.sh
@@ -255,10 +256,11 @@ main() {
 
     local rig_control_ok=1
     if [ "$RUN_RIGFORGE_CONTROL" = "1" ]; then
-        run_rigforge_control || rig_control_ok=0
+        run_worker_auth_modes "${RIG_NAME:-}" || rig_control_ok=0
+        [ "$rig_control_ok" = 1 ] && run_rigforge_control || rig_control_ok=0
         [ "$rig_control_ok" = 1 ] && wait_borrow_rearm || rig_control_ok=0
     elif [ "$RUN_RIGFORGE" = "1" ]; then
-        run_rigforge_integration
+        run_worker_auth_modes "${RIG_NAME:-}" && run_rigforge_integration || rig_control_ok=0
     fi
     local lifecycle_ok=1 _gated
     LIFECYCLE_STACK_INTACT=0
