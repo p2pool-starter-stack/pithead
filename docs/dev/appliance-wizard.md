@@ -457,8 +457,10 @@ Five steps, each answering a hardware-validated failure:
    bench machine once served a days-old Caddyfile whose site list predated the code around it.
    On the read-only root, host units render into `/run/systemd/system` (`--runtime`
    enablement) and are recreated here each boot.
-3. **`pithead up`** — compose owns the containers' lifecycle, and recreates containers when
-   an image behind a constant tag changed identity. After each compose pass it renames a
+3. **`pithead up`** — start the selected services, compare each container's immutable image
+   ID with its Compose image declaration, and force recreation of mismatches. Verify the
+   replacement ID before reporting success; a failed comparison or recreation fails boot
+   before slot commit. Services held for data migration stay deferred until commit. After each compose pass it renames a
    container that an interrupted recreate left under its temporary `<id>_<service>` name,
    once the old container no longer holds the name. Its predecessor, `podman-restart`,
    started the stack into its own oneshot cgroup, and systemd SIGKILLed the containers it
