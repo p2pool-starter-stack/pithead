@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call
 
 from mining_dashboard.service import control_service
@@ -5,7 +6,7 @@ from mining_dashboard.service import control_service
 
 async def test_result_poll_uses_injected_sleeper_and_production_interval(monkeypatch):
     sleep = AsyncMock()
-    monkeypatch.setattr(control_service, "_result_poll_sleep", sleep, raising=False)
+    monkeypatch.setattr(control_service, "asyncio", SimpleNamespace(sleep=sleep))
     monkeypatch.setattr(
         control_service,
         "result",

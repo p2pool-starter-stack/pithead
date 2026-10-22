@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,4 +44,6 @@ def _fast_control_result_poll(monkeypatch):
         asyncio.get_running_loop().call_soon(event.set)
         await event.wait()
 
-    monkeypatch.setattr("mining_dashboard.service.control_service._result_poll_sleep", yield_poll)
+    monkeypatch.setattr(
+        "mining_dashboard.service.control_service.asyncio", SimpleNamespace(sleep=yield_poll)
+    )
