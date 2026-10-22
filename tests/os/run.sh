@@ -22,12 +22,6 @@
 #           actually run the product (it happened: pithead speaks docker, the image had only
 #           podman, and every other phase was green). Closes with a power-cut leg (M10, #2067):
 #           three cuts against the LIVE provisioned stack, not a bare guest or a clean reboot.
-#   rig     answer "RigForge" on the same page and prove the OTHER machine this image installs:
-#           mines from the baked binary with no compile and no stack at all, and takes an A/B
-#           update — install, uncommitted rollback, self-commit — exactly like a coordinator.
-#           A power-cut leg (M13's rig half, #2067) proves the same "returns mining unaided" fact
-#           off a real virsh destroy, not just the reboot leg's clean return.
-#           Remote nodes let the share leg observe accepted shares after coordinator power loss.
 #   rigmedia (M14, #1829/#2069) boot the image as removable media, same as install's first leg,
 #           beside a blank internal disk that must stay untouched; answer "RigForge" and never
 #           install. Mines from the stick, no containers, volatile journald, an unaided reboot
