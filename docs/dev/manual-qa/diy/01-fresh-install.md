@@ -203,7 +203,9 @@ Per #3099 and #3092:
 **What you should see:**
 
 - The stack starts.
-- This first start prints a short note that the miner is held until both chains sync.
+- This first start prints `The miner is held until the initial sync finishes for Monero, then starts automatically.`
+  The wizard leaves Tari off by default and makes it non-required when opted in. A config with
+  Tari enabled and `dashboard.tari_required` true names `Monero and Tari` instead.
 - A later `./pithead restart` does not print the note again.
 - Per #3090, `up` also prints the LAN pool URL and `none set` for the stratum password, every time.
 
