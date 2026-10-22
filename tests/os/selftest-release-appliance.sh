@@ -30,6 +30,9 @@ if [ "${1:-}" = --case ]; then
     scripts/release/package-appliance.sh "$WORKDIR/image" "$WORKDIR/bundle" "$WORKDIR/appliance"
     export PITHEAD_RAUC_KEYRING="$WORKDIR/keyring" PITHEAD_RAUC_CERT="$WORKDIR/keyring" PITHEAD_RAUC_KEY="$WORKDIR/keyring"
     export PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION=
+    case "$scenario" in
+    floor-match | floor-missing | floor-mismatch) PITHEAD_MIN_OS_VERSION=2.0.0 ;;
+    esac
     die() {
         printf '%s\n' "$*" >&2
         exit 1
@@ -51,6 +54,10 @@ if [ "${1:-}" = --case ]; then
         printf "RAUC_MF_COMPATIBLE='pithead-amd64'\nRAUC_MF_VERSION='%s'\n" "$STACK_VERSION"
         printf "RAUC_META_PITHEAD_VERSION='%s'\nRAUC_META_PITHEAD_VARIANT='release'\n" "$STACK_VERSION"
         printf "RAUC_META_PITHEAD_DATA_MIGRATION='%s'\n" "$([ "$scenario" = migration ] && echo true || echo false)"
+        case "$scenario" in
+        floor-match) printf "RAUC_META_PITHEAD_MINIMUM_OS_VERSION='2.0.0'\n" ;;
+        floor-mismatch) printf "RAUC_META_PITHEAD_MINIMUM_OS_VERSION='1.9.0'\n" ;;
+        esac
     }
     case "$scenario" in
     no-draft)
@@ -100,7 +107,7 @@ if [ "${1:-}" = --case ]; then
     rigforge) printf 'ref=stale version=1.2.3\n' >"$WORKDIR/root/opt/rigforge/RIGFORGE_REF" ;;
     esac
     appliance_identity "$WORKDIR/image" "$WORKDIR/bundle" "$WORKDIR/keyring" "$STACK_VERSION" "$GIT_COMMIT" release >"$WORKDIR/appliance-rigforge.md"
-    if [ "$scenario" = identity ]; then exit 0; fi
+    case "$scenario" in identity | floor-match) exit 0 ;; esac
     make_bundle() { printf 'install bundle\n' >"$1"; }
     sign_bundle() {
         [ "$scenario" != no-install-signature ] || return 0
@@ -154,12 +161,12 @@ fi
 
 stage=$(mktemp -d "${TMPDIR:?}/pithead-release-appliance-test.XXXXXX")
 trap 'rm -r "$stage"' EXIT
-for scenario in identity publish upload-failure remote-mismatch bad-create-id create-error no-draft unsigned no-key no-migration no-floor bad-floor missing renamed checksum checksum-name keyring commit version rigforge signature migration no-install-signature bad-install-signature publish-missing; do
+for scenario in identity floor-match floor-missing floor-mismatch publish upload-failure remote-mismatch bad-create-id create-error no-draft unsigned no-key no-migration no-floor bad-floor missing renamed checksum checksum-name keyring commit version rigforge signature migration no-install-signature bad-install-signature publish-missing; do
     mkdir "$stage/$scenario"
     rc=0
     bash "$test_script" --case "$scenario" "$stage/$scenario" >"$stage/$scenario/output" 2>&1 || rc=$?
     case "$scenario" in
-    identity | publish) [ "$rc" -eq 0 ] || {
+    identity | floor-match | publish) [ "$rc" -eq 0 ] || {
         cat "$stage/$scenario/output"
         exit 1
     } ;;
