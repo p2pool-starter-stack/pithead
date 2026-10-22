@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?set TMPDIR or RUNNER_TEMP}}"
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d "${TMPDIR:?}/image-convergence.XXXXXX")
 trap 'rm -rf "$T"' EXIT
