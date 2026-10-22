@@ -1422,6 +1422,9 @@ SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on
 so the harness itself is held to the same lint/test standard as the rest of the stack.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
+`selftest-inventory-scenarios.sh` requires the real inventory to exit zero with empty stderr,
+then checks that its scenario count and list include literal-tab rows and exclude plain `t`
+and backslash-`t` decoys. The fixture retains the inventory's other suites and drift gates.
 `selftest-check-lan-guard.sh` checks read-only and deploying dispatch with unrelated
 assertions, including onion targets, explicitly stubbed. It retains the LAN probes,
 timer flush and boot recovery assertions and rejects unexpected missing commands,
