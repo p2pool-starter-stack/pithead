@@ -153,7 +153,6 @@ run_hardening() {
         "$(rx "grep -m1 '^ExecStart=' /etc/systemd/system/pithead-control.service 2>/dev/null" || true)" \
         "ExecStart=$(rx 'pwd -P')/pithead control-run-pending"
 
-    # Recovery needs a reachable baseline so live Tor outages cannot masquerade as a regression.
     local pre_onion=0 onion_rc
     if [ "$ctrl_apply_rc" -ne 0 ]; then
         it_fail "dashboard onion provisioned for hardening (#2603)" "onion and control apply failed"

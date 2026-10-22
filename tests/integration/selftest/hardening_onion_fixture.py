@@ -7,7 +7,6 @@ BASE_ENV = (
     "DASHBOARD_ONION_ADDRESS=placeholder\nDASHBOARD_ONION_CLIENT_PRIVKEY=placeholder\n"
 )
 
-# Fresh synthetic credentials reveal reuse between authorized probes.
 PITHEAD = r"""#!/usr/bin/env bash
 umask 077
 envset() { if grep -q "^$1=" .env; then sed "s|^$1=.*|$1=$2|" .env >.env.t && mv .env.t .env; else echo "$1=$2" >>.env; fi; }
@@ -63,7 +62,6 @@ restart) echo "restart $2" >>"$STUB/events.log" ;;
 esac
 exit 0
 """
-# The fake client follows the probe exit-code and stdin authorization contracts.
 DOCKER = r"""#!/usr/bin/env bash
 case "$1" in
 compose)
