@@ -179,8 +179,11 @@ Release validation uses the frozen release commit as `FILE_BUDGET_BASE_REF` for
 `make test`, so later ceiling reductions on `develop` cannot reject that commit.
 An explicit override must resolve to a commit or the gate fails. Without it, PR
 validation still compares against `origin/develop`, then local `develop`.
-The per-file ceilings, 800-line hard ceiling and first-appearance checks run in
-both modes. `make lint-file-budget` exercises both with isolated Git fixtures.
+Per-file ceilings and the 800-line hard ceiling remain enforced. On a clean
+release tree, comparing the budget with that same commit makes ceiling raises
+and first appearances inapplicable; PR validation still rejects them.
+`make lint-file-budget` exercises both modes with isolated Git fixtures and
+runs the self-tests with an inherited override to verify their isolation.
 
 Generated code, vendored files, data/config, and prose docs are exempt by glob — see `is_exempt()` in the
 script. The generated, git-ignored `pithead` is outside the tracked-file budget; the gate governs its

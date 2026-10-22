@@ -8,7 +8,7 @@ trap 'rm -rf "$scratch"' EXIT
 export GATE_SCRIPT="$ROOT/scripts/lint/lint-file-budget.sh"
 export RELEASE_SCRIPT="$ROOT/scripts/release/release.sh"
 export FIXTURE_MAKEFILE="$scratch/Makefile"
-printf 'test:\n\tbash "$(GATE_SCRIPT)"\n' >"$FIXTURE_MAKEFILE"
+printf 'test:\n\tbash "$(GATE_SCRIPT)" --self-test\n\tbash "$(GATE_SCRIPT)"\n' >"$FIXTURE_MAKEFILE"
 mkdir -p "$scratch/repo/docs/dev"
 cd "$scratch/repo"
 git init -q -b develop
