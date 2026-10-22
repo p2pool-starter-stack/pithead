@@ -9,6 +9,15 @@ rejected → recovered → readmitted; XvB tiers; container health. A healthy, a
 shows one corner of it, so the rest is simulated at the cheapest tier that can prove each
 situation honestly.
 
+Appliance TLS continuity is exercised by `tests/os/selftest-tls-continuity.sh`: a transiently
+smaller canonical SAN set retains a readable matching keypair that still covers every current
+name; a genuinely new SAN or an unusable pair requires replacement. The lifecycle phase
+compares Caddy's served leaf SHA-256 fingerprint, public key, SANs and local private-key digest
+before and after stopped-stack restore and dashboard password apply. Read failures and any
+identity change fail the leg; private keys and their digests are not printed as evidence.
+`tests/integration/selftest/selftest-lifecycle-tls.sh` covers identity divergence and password
+fixture cleanup, and the restore health selftest requires a TLS failure to fail lifecycle.
+
 ## The four tiers
 
 | Tier | What it is | Simulates | Where it runs |

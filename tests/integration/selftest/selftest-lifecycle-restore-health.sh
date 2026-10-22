@@ -61,6 +61,12 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }; }
         lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
         run_source_image_reconcile() { :; }
+        dashboard_tls_identity() { printf identity; }
+        assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {
+            it_fail
+            return 1
+        }; }
+        run_password_tls_continuity() { :; }
         run_tari_background_sync() { :; } # driven by its own runtime leg and selftest
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
@@ -130,6 +136,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
     )
 }
 
+assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
 assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"
 assert_eq "restore rejects a newly introduced marker" "$(drive_restore yes marker-introduced)" "1|1"
 assert_eq "restore rejects a changed marker" "$(drive_restore yes marker-changed)" "1|1"

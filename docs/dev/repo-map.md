@@ -285,6 +285,13 @@ floor-fallback leg stages separately from `os-update` (`selftest-floor-staging.s
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
 
+The lifecycle phase uses `tests/integration/lib/run-lifecycle-tls.sh` to compare Caddy's
+served leaf, canonical SANs, public key and a local digest of its stored private keys
+across stopped-stack restore and dashboard password apply. Its pure failure controls
+are in `tests/integration/selftest/selftest-lifecycle-tls.sh`;
+`tests/os/selftest-tls-continuity.sh` exercises appliance minting with transient address
+loss, canonical reordering, genuinely new SANs and unusable pairs.
+
 The e2e hardening phase runs `tests/integration/lib/access_log_retention.py`
 against real Caddy requests and the deployed access API. It verifies wrong-password
 failures past the old tail limit and native gzip rotation;

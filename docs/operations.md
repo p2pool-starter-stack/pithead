@@ -755,8 +755,10 @@ files that only the archive has. The wizard replaces its Tor and dashboard direc
 > is refused rather than redirected into the old directory tree. Recreate the original
 > installation path and configure any custom data paths before restoring.
 
-> NOTE: After a restore, Caddy regenerates the dashboard's HTTPS certificate, so the browser shows
-> its "not trusted" warning once. Accept it as on first setup.
+> NOTE: A same-machine restore preserves the dashboard TLS certificate and key when the settled
+> names are unchanged. On the appliance, a certificate covering the current names also survives
+> temporary address loss and dashboard password changes. A genuinely new, uncovered name requires
+> a new certificate; verify its fingerprint before trusting it.
 
 ---
 
