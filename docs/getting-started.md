@@ -176,8 +176,8 @@ continues syncing. Existing configs that require Tari also wait for Tari's initi
 served from another machine (`monero.mode` / `tari.mode: remote`) never syncs on this host.
 
 This can take anywhere from a few hours to a day or more depending on your hardware, disk, and
-network. Watch progress on the dashboard, with `./pithead status` (it prints each chain's percent
-and blocks remaining while syncing), or in the logs:
+network. Watch progress on the dashboard or in the logs. `./pithead status` prints required-chain
+progress while mining is held; passive Tari sync is visible on the dashboard and in its node log:
 
 ```bash
 ./pithead logs monerod

@@ -370,7 +370,7 @@ Per #3333, #3099 and #3092:
 **What you do:**
 
 1. Note the time.
-2. Check back every few hours. `./pithead status` shows how far each chain has got, as in 1.6.
+2. Check back every few hours. `./pithead status` shows required Monero progress while mining is held, as in 1.6. In the opt-in run, follow passive Tari progress on the dashboard or with `./pithead logs tari`.
 3. In the opt-in run only, do 1.12 when Monero has finished and Tari has not.
 4. Do 1.13 when Monero is synced; in the opt-in run, also check the later Tari sync completion.
 
