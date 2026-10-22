@@ -98,14 +98,15 @@ image_upgrade_certificate_continuity_leg() {
     chmod 0600 "$credentials"
     cp "$SCRIPT_DIR/../../dashboard/tests/browser/package.json" \
         "$SCRIPT_DIR/../../dashboard/tests/browser/package-lock.json" \
-        "$SCRIPT_DIR/image-upgrade-browser.mjs" "$SCRIPT_DIR/image-upgrade-browser-host.mjs" \
+        "$SCRIPT_DIR/image-upgrade-browser.mjs" \
         "$browser_work/"
     printf '%s\n%s' "$DASH_USER" "$DASH_PASS" |
         jq -Rs 'split("\n") | {username: .[0], password: .[1]}' >"$credentials"
-    if verdict=$(node "$SCRIPT_DIR/image-upgrade-browser-host.mjs" \
+    if verdict=$(python3 "$SCRIPT_DIR/image-upgrade-browser-host.py" \
         "https://$ip" "$KEY" "$browser_work" "$iface" <"$credentials" 2>&1); then
         ok "$verdict"
     else
+        printf '     %s\n' "$verdict"
         bad "original browser tab did not retain certificate trust through the real update (${verdict:0:300})"
     fi
     rm -f "$credentials"
