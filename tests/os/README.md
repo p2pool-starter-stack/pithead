@@ -31,7 +31,11 @@ After initial provisioning has settled, `provision` runs `tor-recover check` in 
 with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and
 no unexpected-abort message or debug advice. `selftest-tor-recovery-refusal.sh` exercises
 this guest script against the generated CLI and a pre-fix dispatch negative control,
-without a container or guest. The live result requires a KVM job on the PR head.
+without a container or guest. Failures retain an allowlisted reason and numeric exits
+before later SSH calls replace stderr; `tor-recovery-refusal-diagnostic.sh` reads at
+most 8193 bytes and never forwards raw stderr. Its controls cover the preconditions,
+command exit/warning/abort checks, transport/deadline errors, clipping, unavailable
+capture and later-call overwrite. The live result requires a KVM job on the PR head.
 
 The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
 It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes

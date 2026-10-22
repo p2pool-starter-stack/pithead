@@ -179,21 +179,14 @@ _phase_provision_initial_body() {
         info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
         return 1
     fi
-    # Healthy read-only refusal, before unrelated day-two legs can abort this guest (#3262).
-    _tor_recovery_err=$(mktemp)
-    if SSH_ERR="$_tor_recovery_err" SSH_TIMEOUT=45 _ssh 'timeout 40 bash -s' <"$SCRIPT_DIR/tor-recovery-refusal-guest.sh"; then
+    if SSH_TIMEOUT=45 _ssh 'timeout 40 bash -s' <"$SCRIPT_DIR/tor-recovery-refusal-guest.sh"; then
         ok "guest healthy Tor recovery refusal exits 1 without unexpected-abort advice (#3262)"
-        rm -f "${_tor_recovery_err}"
     else
-        local _detail=""
-        if [ -s "${_tor_recovery_err}" ]; then
-            _detail=": $(head -c 512 "${_tor_recovery_err}")"
-        fi
-        bad "guest healthy Tor recovery refusal proof failed (#3262)${_detail}"
-        rm -f "${_tor_recovery_err}"
+        local refusal_rc=$? refusal_reason
+        refusal_reason=$(bash "$SCRIPT_DIR/tor-recovery-refusal-diagnostic.sh" "$refusal_rc" "$SSH_ERR" 2>/dev/null) ||
+            refusal_reason="ssh_exit=$refusal_rc reason=diagnostic_unavailable"
+        bad "guest healthy Tor recovery refusal proof failed (#3262): $refusal_reason"
     fi
-    # The fresh-chain sync gate may hold P2Pool, but the bundled Monero listener must already
-    # accept Tor's bridge dial. A torrc entry alone does not prove this across containers (#2936).
     local onion_prefix onion_port onion_tries=0
     onion_prefix=$(_ssh "sed -n 's/^NETWORK_PREFIX=//p' /data/pithead/.env" | tr -d '\r')
     onion_port=$(_ssh "sed -n 's/^P2POOL_PORT=//p' /data/pithead/.env" | tr -d '\r')

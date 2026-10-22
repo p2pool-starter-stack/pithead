@@ -684,7 +684,14 @@ selftest rejects a false success, wrong guard and generic-abort output. The KVM 
 phase runs the same CLI command in its guest immediately after initial provisioning settles,
 first verifying unsaturated state, then requiring exit 1 and the warning on stderr without
 unexpected-abort advice. Its pure selftest fails against a generated CLI with the pre-fix
-dispatch behavior.
+dispatch behavior. Failures retain an allowlisted reason and numeric SSH/command exit status
+in the provision row before another guest call can overwrite transport diagnostics. The
+host classifier reads at most 8193 stderr bytes, classifies only complete fixed messages
+within 8192 bytes, reports clipping, and never copies arbitrary stderr into the row.
+Unknown or unreadable diagnostics stay explicitly unavailable. Command, guest and SSH
+bounds remain 30, 40 and 45 seconds; transport/deadline failures remain red. Pure controls
+cover each guard, numeric command exits, transport/deadline failures, oversized and
+secret-bearing stderr, later-call overwrites, and unchanged success accounting.
 
 ### Engineering standards
 

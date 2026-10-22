@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Read-only Tor recovery refusal proof inside this job's provisioned guest.
 set -euo pipefail
 cd /data/pithead
 # shellcheck disable=SC1091 # Generated CLI exists only in the provisioned guest.
@@ -8,7 +7,11 @@ umask 077
 export TMPDIR="${TMPDIR:-/run}"
 work=$(mktemp -d "${TMPDIR:?}/tor-recovery-refusal.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-state="$(tor_recovery_mount)/state"
+if ! state=$(tor_recovery_mount) || [ -z "$state" ]; then
+    echo 'FAIL: live Tor data mount could not be verified (#3262)' >&2
+    exit 1
+fi
+state="$state/state"
 if ! sudo test -f "$state" || sudo test -L "$state" || ! sudo test -r "$state"; then
     echo 'FAIL: live Tor state is missing, linked or unreadable (#3262)' >&2
     exit 1
