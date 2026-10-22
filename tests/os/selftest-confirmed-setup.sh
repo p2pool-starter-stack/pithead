@@ -69,13 +69,22 @@ wizard_spool_has() {
     [ "$2" = handoff-ack ] && jq -e 'has("username") and has("password") and has("dashboard") and has("stratum")' "$1/handoff.json" >/dev/null
 }
 firstboot_consume_rig() { return 2; }
-firstboot_consume_restore() { return 2; }
+firstboot_consume_restore() {
+    [ "$mode" = restored ] || return 2
+    printf '{}\n' >"$PWD/config.json"
+}
 firstboot_consume_spool() {
     [ "$mode" != absent ] || return 1
     printf '{}\n' >"$2"
 }
 remote_node_addresses_allowed() { :; }
-preflight_remote_nodes() { [ "$mode" != rejected ]; }
+preflight_remote_nodes() {
+    [ "$mode" != restored ] || {
+        trace forbidden-preflight
+        return 1
+    }
+    [ "$mode" != rejected ]
+}
 bash() { [ "$mode" != invalid ]; }
 wizard_prepare_miner_connection() { echo '{}'; }
 resolve_default() { printf '%s' "$1"; }
@@ -107,7 +116,7 @@ for stub in clear_legacy_wizard_snapshots clear_restore_stages wizard_clear_rest
     apply_appliance_defaults wizard_publish_retry_config; do
     eval "$stub() { :; }"
 done
-for mode in keep absent rejected invalid accepted failed; do
+for mode in keep absent rejected invalid accepted restored failed; do
     mkdir -p "$work/$mode/preseed"
     printf '{}' >"$work/$mode/config.json"
     rm -f "$work/trace"
@@ -127,7 +136,7 @@ for mode in keep absent rejected invalid accepted failed; do
     absent | rejected | invalid)
         [ "$rc" -eq 7 ] && [ ! -e "$work/trace" ]
         ;;
-    accepted)
+    accepted | restored)
         [ "$rc" -eq 0 ] || {
             echo "accepted coordinator resubmit failed: exit $rc" >&2
             exit 1

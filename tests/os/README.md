@@ -309,7 +309,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   uses the generated dashboard response fixture and drives failure controls without a guest.
   `selftest-confirmed-setup.sh` drives the real installed wizard and setup functions with host
   effects stubbed: accepted forms re-provision, Keep it and rejected forms do not, provisioning
-  errors reach the retry path, and direct headless setup still refuses a deployed machine.
+  errors reach the retry path, restored browser submissions skip the new-node preflight,
+  and direct headless setup still refuses a deployed machine.
   Saved-answer comparisons exclude the read-only `config_version` host stamp, which the wizard
   omits. The selftest runs the sanitizing query against a stamped config with populated secrets;
   a prefill failure reports only fixed shape verdicts and a changed-answer count.
