@@ -107,7 +107,6 @@ firstboot_wizard() {
         card_spool="$restore_spool"
         card_mount=/wizard-restore
         log "Running from the installation medium — install and configure on one page."
-        # The stick's persistent spool must not reuse another machine's answers.
         rm -f "$spool/last-attempt.json" "$spool/install-attempt.json" \
             "$spool/auth-mode" "$spool/config-changes.json" "$spool/setup-failed"
         wizard_clear_submission_transaction "$spool" || error "Could not clear the previous setup transaction."
