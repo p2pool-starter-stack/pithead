@@ -194,6 +194,10 @@ chain; a remote node syncs where it runs. Mining waits for Monero, and also for 
 opt into Tari, so Tari can catch up in the background while Monero mining starts. Manual configs
 inherit different reference defaults; check [the sync gate](configuration.md#configuration-reference).
 
+The first start prints `The miner is held until the initial sync finishes for Monero, then starts
+automatically.` When Tari is required, the note names `Monero and Tari` instead. Later restarts
+do not repeat the note.
+
 Watch the dashboard's Sync Mode and node cards, or run:
 
 ```bash
