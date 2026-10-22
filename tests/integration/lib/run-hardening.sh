@@ -182,6 +182,7 @@ run_hardening() {
         "$(rx "grep -m1 '^ExecStart=' /etc/systemd/system/pithead-control.service 2>/dev/null" || true)" \
         "ExecStart=$(rx 'pwd -P')/pithead control-run-pending"
 
+    run_browser_bundle "$ctrl_config" || return 1
     local cdir
     cdir="$(env_on_box CONTROL_DIR)"
     if [ -z "$cdir" ]; then

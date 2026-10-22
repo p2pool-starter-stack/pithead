@@ -134,6 +134,8 @@ source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
 source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-browser-bundle.sh
+source "$HERE/lib/run-browser-bundle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
 source "$HERE/lib/run-rotate-onion.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh

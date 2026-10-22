@@ -7,6 +7,24 @@ starts); with `dashboard.secure: false` it serves plain HTTP.
 The dashboard has two states. While the nodes catch up to the network it shows Sync Mode. Once both
 chains are synced it switches to the operational view.
 
+## Current dashboard and lean preview
+
+The dashboard at the stack URL remains the legacy default UI. The lean development preview is
+available at `/ui-preview` only when the dashboard process has `DASHBOARD_UI_PREVIEW=1`; without
+that environment setting the path is not served. The preview has four shell links — **Overview**,
+**Machines**, **Earnings**, and **Settings** — and turns them into a bottom navigation bar on a
+phone-sized viewport.
+
+The preview follows the operating system theme by default. **Advanced › Appearance** can set Light,
+Dark, or Auto, using the existing persisted `dashboardTheme` preference. Existing dashboard view
+preferences and chart-range query parameters remain readable when moving between the preview's
+pages. A profile reads **Profile not reported** until the profile is emitted by [#3557](https://github.com/p2pool-starter-stack/pithead/issues/3557).
+
+The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
+and asks the operator to sign in again when the session expires. Its page bodies and most Settings
+controls are still being built; the preview does not announce a cutover from the legacy UI. The
+implemented preview surfaces are **Advanced › Maintenance** and **Advanced › Inspect**.
+
 ---
 
 ## Connect a miner
@@ -93,7 +111,7 @@ the node logs directly:
 
 ---
 
-## The operational view
+## The legacy operational view
 
 Once both nodes are synced, the dashboard shows the operational view. P2Pool then syncs its
 own sidechain. While its reported difficulty is at the default minimum (100,000) and its
@@ -108,8 +126,8 @@ percentage; this detects its initial minimum-difficulty view, not later stalls o
   <img alt="Operational dashboard — Simple view" src="./images/launch/simple-light.png">
 </picture>
 
-The page updates every 30 seconds, refreshing each panel in place rather than reloading. Scroll
-position, the worker-table sort column, and the chart stay put between updates. View preferences —
+The legacy page updates every 30 seconds, refreshing each panel in place rather than reloading. Scroll
+position, the worker-table sort column, and the chart stay put between updates. Legacy view preferences —
 theme, Simple/Advanced view, the chart's averaging window and series toggles, the worker-table
 sort, the earnings tab, and the topology mesh toggle — are also
 remembered across reloads. A poll that fails —
@@ -1456,6 +1474,12 @@ Two read-only questions you can ask the host, in the same card stack as the conf
 under the same `dashboard.control.enabled` flag. Neither changes anything: they run a check and
 report, which is why neither asks you to confirm.
 
+In the lean preview these checks live in **Advanced › Maintenance**, whose health report stays in
+place when you move to another drawer section and return. Its Server health panel reports optional
+sensors as unknown when the host does not provide them. **Advanced › Inspect** labels configured
+paths and placement separately from observed traffic; its diagram does not measure reachability.
+The preview provides no generic service start or restart control.
+
 **Run health check** runs the host's own `pithead doctor` and shows what it found — the same
 checks the CLI prints, failures first, with the host's summary counts above them. This is the one
 that matters on a [Pithead OS appliance](appliance.md), where there is no shell to run `doctor`
@@ -1523,6 +1547,14 @@ daemon, use the support bundle or the console.
 
 If you pick a service the host will not read logs for, the host refuses and the panel shows its
 reason as-is rather than guessing at one.
+
+The preview's **Prepare support bundle** submits an authenticated `POST /api/control/diag-bundle`
+with `X-Pithead-Control: 1` and polls the existing control result. The host binds the result to the
+signed-in actor, runs the redacted doctor report, and collects only the nine existing service logs,
+limited to 200 lines and 65,536 bytes per log. It does not include wallet-service logs, CLI archive
+contents, wallet logs, configuration, or environment files. Review the identifiers in the returned
+reports before the explicit `POST /api/control/bundle-download` with `{id, reviewed:true}`; the
+download is a private, no-store `tar.gz`. The existing full CLI archive remains unchanged.
 
 ## Backup view
 
