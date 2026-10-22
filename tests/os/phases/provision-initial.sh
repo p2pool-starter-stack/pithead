@@ -183,6 +183,7 @@ _phase_provision_initial_body() {
     _tor_recovery_err=$(mktemp)
     if SSH_TIMEOUT=45 _ssh 'timeout 40 bash -s' <"$SCRIPT_DIR/tor-recovery-refusal-guest.sh" 2>"${_tor_recovery_err}"; then
         ok "guest healthy Tor recovery refusal exits 1 without unexpected-abort advice (#3262)"
+        rm -f "${_tor_recovery_err}"
     else
         local _detail=""
         if [ -s "${_tor_recovery_err}" ]; then
