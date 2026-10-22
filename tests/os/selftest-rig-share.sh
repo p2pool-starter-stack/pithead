@@ -11,7 +11,7 @@ fail() {
 }
 ok() { printf '%s\n' "$*" >>"$scratch/pass"; }
 bad() { printf '%s\n' "$*" >>"$scratch/fail"; }
-info() { :; }
+info() { printf "%s\n" "$*" >>"$scratch/info"; }
 kvm_preflight() { return 0; }
 _provision_remote_node_coordinator() {
     ip=192.0.2.2 dash_user=fixture dash_pass=fixture
@@ -124,6 +124,8 @@ curl() {
         --argjson rate "$rate" --arg online "$online" --argjson other "$other" --arg coordinator "$coordinator" \
         '{workers:[{name:"kvm-rig-share",accepted:$accepted,rejected:$rejected,invalid:$invalid,h10:$rate,status:$online},
         {name:$coordinator,accepted:$other}] | map(select(.name != "absent"))}'
+    if [ "$scenario" = failed-state ] && [ "$reads" -gt 0 ]; then return 1; fi
+    return 0
 }
 run_case() {
     local scenario="$1" expected="$2" result=0
@@ -132,7 +134,7 @@ run_case() {
     rm -f "$scratch/hosts.original" "$scratch/ro-failed" "$scratch"/cookie.*
     printf "original hosts\n" >"$scratch/hosts"
     printf "ro\n" >"$scratch/root-mode"
-    for file in pass fail teardown pools; do : >"$scratch/$file"; done
+    for file in pass fail teardown pools info; do : >"$scratch/$file"; done
     for file in time arm reads; do printf '0\n' >"$scratch/$file"; done
     rig_share_leg image node 1 2 user pass tari 3 "$ip" 2>"$scratch/stderr" || result=$?
     [ "$result" = "$expected" ] || fail "$scenario returned $result, expected $expected"
@@ -146,12 +148,21 @@ run_case() {
         [ "$(cat "$scratch/pools")" = $'192.0.2.2:3333\nkvm-share-coordinator.invalid:3333\n192.0.2.2:3333' ] || fail 'retarget order changed'
         [ "$(grep -c 'fresh accepted shares' "$scratch/pass")" -eq 3 ] || fail 'missing strict share windows'
         grep -q 'unresolved hostname fails' "$scratch/pass" || fail 'missing hostname negative control'
+        [ "$(grep -c 'baseline=.*final=' "$scratch/info")" -eq 3 ] || fail 'missing final diagnostics'
     else
         [ -s "$scratch/fail" ] || fail "$scenario did not report failure"
+        case "$scenario" in
+        stale | stale-return | failed-state | zero-rate | no-coordinator | wrong-coordinator | missing-coordinator | string-coordinator | unreadable | missing-rate | missing-worker)
+            grep -q 'baseline=.*final=' "$scratch/info" || fail "$scenario lost timeout diagnostics"
+            ;;
+        esac
     fi
 }
+coord_worker=coordinator
+projection=$(printf '%s' '{"workers":[{"name":"kvm-rig-share","ip":"192.0.2.45","accepted":"sensitive","rejected":0,"invalid":0,"h10":4,"status":"online"},{"name":"coordinator","accepted":1},{"name":"private-host.invalid","accepted":77}],"password":"sensitive"}' | _rig_share_observation)
+[ "$projection" = '{"worker_rows":3,"rig":[{"accepted":null,"rejected":0,"invalid":0,"h10":4,"online":true}],"coordinator":[{"accepted":1}],"rig_rows":1,"coordinator_rows":1}' ] || fail 'unsafe or incomplete observation'
 run_case healthy 0
-for scenario in stale stale-return rejected invalid transient-rejected zero-rate offline no-coordinator wrong-coordinator missing-coordinator string-coordinator unreadable missing-rate missing-worker wrong-pool extra-pool bad-hostname wrong-address hosts-copy-failure hosts-append-failure hosts-remount-failure; do
+for scenario in stale stale-return failed-state rejected invalid transient-rejected zero-rate offline no-coordinator wrong-coordinator missing-coordinator string-coordinator unreadable missing-rate missing-worker wrong-pool extra-pool bad-hostname wrong-address hosts-copy-failure hosts-append-failure hosts-remount-failure; do
     run_case "$scenario" 1
 done
-printf 'selftest-rig-share: 22 scenarios passed\n'
+printf 'selftest-rig-share: 23 scenarios and safe observation projection passed\n'

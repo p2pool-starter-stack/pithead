@@ -69,13 +69,39 @@ _rig_share_counters() {
         @tsv'
 }
 
+_rig_share_observation() {
+    jq -ec --arg coordinator "$coord_worker" '
+        select(.workers | type == "array") |
+        {worker_rows: (.workers | length),
+         rig: [.workers[] | select(.name == "kvm-rig-share")],
+         coordinator: [.workers[] | select(.name == $coordinator)]} |
+        .rig_rows = (.rig | length) | .coordinator_rows = (.coordinator | length) |
+        .rig |= (.[0:2] | map({accepted: (.accepted | numbers? // null),
+            rejected: (.rejected | numbers? // null), invalid: (.invalid | numbers? // null),
+            h10: (.h10 | numbers? // null), online: (.status == "online")})) |
+        .coordinator |= (.[0:2] | map({accepted: (.accepted | numbers? // null)}))'
+}
+
 _rig_share_window() {
     local arm="$1" baseline="$2" deadline counters accepted rejected invalid rate other good_reads=0
+    local st observation="state-unavailable" first=1 state_ok=0
     deadline=$(($(date +%s) + RIG_SHARE_WINDOW_SEC))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        if counters=$(_rig_share_state | _rig_share_counters); then
+        observation="state-unavailable"
+        st=""
+        state_ok=0
+        if st=$(_rig_share_state); then
+            state_ok=1
+            observation=$(printf '%s' "$st" | _rig_share_observation) || observation="state-malformed"
+        fi
+        if [ "$first" = 1 ]; then
+            info "share leg $arm: baseline=$baseline initial=$observation (#3425)"
+            first=0
+        fi
+        if [ "$state_ok" = 1 ] && counters=$(printf '%s' "$st" | _rig_share_counters); then
             IFS=$'\t' read -r accepted rejected invalid rate other <<<"$counters"
             if [ "$rejected" != 0 ] || [ "$invalid" != 0 ]; then
+                info "share leg $arm: baseline=$baseline final=$observation (#3425)"
                 bad "share leg $arm: rejected or invalid shares on the rig worker (#3425)"
                 return 1
             fi
@@ -83,6 +109,7 @@ _rig_share_window() {
                 jq -en --argjson rate "$rate" --argjson other "$other" '$rate > 0 and $other > 0' >/dev/null; then
                 good_reads=$((good_reads + 1))
                 if [ "$good_reads" -ge 2 ]; then
+                    info "share leg $arm: baseline=$baseline final=$observation (#3425)"
                     ok "share leg $arm: fresh accepted shares, positive live hashrate, zero rejected and invalid (#3425)"
                     return 0
                 fi
@@ -94,6 +121,7 @@ _rig_share_window() {
         fi
         sleep 15
     done
+    info "share leg $arm: baseline=$baseline final=$observation (#3425)"
     bad "share leg $arm: no fresh accepted shares with positive live hashrate and coordinator shares within ${RIG_SHARE_WINDOW_SEC}s (#3425)"
     return 1
 }

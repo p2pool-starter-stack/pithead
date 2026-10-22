@@ -285,7 +285,10 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Every observed rig counter must have zero rejected and invalid shares; either becoming
   positive fails immediately. The coordinator's built-in miner must also have accepted
   shares on the exact worker named by its guest hostname, with an integer accepted counter.
-  Missing or malformed worker fields cannot pass. The hosts fixture is restored and the
+  Missing or malformed worker fields cannot pass. Each arm logs its accepted baseline
+  and bounded initial/final observations: row counts, numeric share counters, hashrate and
+  online flags only. Worker names, addresses and unrelated state fields are excluded.
+  A failed state request cannot contribute a passing observation, even with a parseable body. The hosts fixture is restored and the
   rig root verified read-only on every exit; the coordinator guest is torn down. `selftest-rig-share.sh` exercises the complete leg with
   fake transport, clocks and worker snapshots, including stale return-arm shares,
   rejected/invalid counters, missing fields, hostname failures, extra pools, coordinator identity/counter types and hosts-file write failures.
