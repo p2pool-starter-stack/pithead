@@ -56,6 +56,11 @@ executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
 
+Container restart observation is shared by status and doctor in
+`lib/pithead/04a-container-restarts.sh`; its Docker and Podman fixtures are in
+`tests/os/selftest-container-restarts.sh`, and the appliance Caddy crash-loop proof runs in the
+KVM `stack` phase through `tests/os/container-restart-leg.sh`.
+
 The migration startup regression is `tests/stack/lifecycle/migration-hold.sh`;
 `tests/os/selftest-migration-hold.sh` checks slot ownership and same-version fallback.
 The provision migration fixture is `tests/os/migration-recovery.sh`: it seeds the release through
