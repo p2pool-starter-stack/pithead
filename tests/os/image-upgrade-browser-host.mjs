@@ -143,7 +143,7 @@ try {
       try {
         return (
           (await ssh(
-            `test "$(cat /proc/sys/kernel/random/boot_id)" != "${previousBoot}" && ! ip -6 address show dev ${iface} | grep -qi 'fd00:2463::1' && test "$(systemctl show -p Result --value pithead-boot.service)" = success && podman ps --format '{{.Names}}' | grep -qx caddy && echo ready`,
+            `test "$(cat /proc/sys/kernel/random/boot_id)" != "${previousBoot}" && ! ip -6 address show dev ${iface} | grep -qi 'fd00:2463::1' && systemctl is-active --quiet pithead-boot.service && test "$(systemctl show -p Result --value pithead-boot.service)" = success && podman ps --format '{{.Names}}' | grep -qx caddy && echo ready`,
           )) === "ready"
         );
       } catch {
