@@ -307,6 +307,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   HTTP status, curl exit and setup verdict without response bodies or credentials.
   `coordinator-setup-again-leg.sh` implements this leg; `selftest-coordinator-setup-again.sh`
   uses the generated dashboard response fixture and drives failure controls without a guest.
+  Saved-answer comparisons exclude the read-only `config_version` host stamp, which the wizard
+  omits. The selftest runs the sanitizing query against a stamped config with populated secrets;
+  a prefill failure reports only fixed shape verdicts and a changed-answer count.
   Leg 0 then runs the cheap reset tier on the same provisioned guest: `pithead config-reset -y` must clear
   `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
   while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every

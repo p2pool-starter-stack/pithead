@@ -6,6 +6,10 @@ source "$here/coordinator-setup-again-leg.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 fixture_answers='{"monero":{"wallet_address":"fixture-monero","mode":"local","out_peers":12},"tari":{"wallet_address":"fixture-tari","mode":"local"},"p2pool":{"pool":"nano"}}'
+jq -n --argjson answers "$fixture_answers" '$answers + {
+    config_version: "2.0.0", dashboard: {auth: {password: "fixture-private"}},
+    p2pool: ($answers.p2pool + {stratum_password: "fixture-private"})
+}' >"$work/live-config.json"
 dashboard_state=$(cat "$here/../../dashboard/tests/frontend/fixtures/state.json")
 state='{"stage":"setup","saved_role":{"role":"pithead"},"new_machine":false,"config":{"monero":{"wallet_address":"fixture-monero","mode":"local","out_peers":12,"node_password":""},"tari":{"wallet_address":"fixture-tari","mode":"local"},"p2pool":{"pool":"nano","stratum_password":""},"dashboard":{"auth":{"password":""}}}}'
 coordinator_saved_state_valid "$state" "$fixture_answers"
@@ -101,10 +105,14 @@ dashboard_curl() {
     esac
 }
 _ssh() {
-    local stage
+    local stage request="$*" filter
     stage=$(cat "$work/stage")
     case "$*" in
-    *'jq -Sc'*) printf '%s\n' "$fixture_answers" ;;
+    *'jq -Sc'*)
+        filter=${request#*jq -Sc \"}
+        filter=${filter%\" config.json}
+        jq -Sc "$filter" "$work/live-config.json"
+        ;;
     *'jq -e'*)
         printf 'secret-baseline\n' >>"$work/trace"
         [ "$scenario" != secret-baseline-missing ]
@@ -184,12 +192,17 @@ for scenario in success boot-failed session-failed prefill-failed keep-refused l
         grep -q '^bad:' "$work/trace"
     fi
     case "$scenario" in
+    prefill-failed)
+        grep -q '"coordinator":false' "$work/trace"
+        grep -q '"changed_answers":6' "$work/trace"
+        ;;
     services-only) grep -q 'dashboard_http=200 curl_exit=0 state_ready=no' "$work/trace" ;;
     auth-refused) grep -q 'dashboard_http=401 curl_exit=0 state_ready=no' "$work/trace" ;;
     esac
     [ "$(tail -1 "$work/trace")" = cleanup ] || grep -q '^cleanup$' "$work/trace"
     [ -z "$(find "$work" -name 'jar.*' -print -quit)" ]
     ! grep -q '^unexpected-ssh$' "$work/trace"
+    ! grep -q fixture-private "$work/trace"
     printf 'coordinator setup-again flow: %s PASS\n' "$scenario"
 done
 grep -Fq 'source "$SCRIPT_DIR/coordinator-setup-again-leg.sh"' "$here/phases/reset.sh"

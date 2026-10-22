@@ -16,7 +16,7 @@ coordinator_saved_state_valid() {
 }
 
 _coordinator_setup_answers() {
-    _ssh 'cd /data/pithead && jq -Sc "del(.dashboard.auth,.dashboard.workers,.workers,.telegram,.healthchecks,.notifications,.ssh,.tari.spend_public_key,.dashboard.control.enabled,.dashboard.onion.enabled,.monero.node_username,.monero.node_password,.monero.view_key,.tari.view_key,.p2pool.stratum_password,.xvb.standby.source)" config.json' 2>/dev/null
+    _ssh 'cd /data/pithead && jq -Sc "del(.config_version,.dashboard.auth,.dashboard.workers,.workers,.telegram,.healthchecks,.notifications,.ssh,.tari.spend_public_key,.dashboard.control.enabled,.dashboard.onion.enabled,.monero.node_username,.monero.node_password,.monero.view_key,.tari.view_key,.p2pool.stratum_password,.xvb.standby.source)" config.json' 2>/dev/null
 }
 
 _coordinator_setup_snapshot() {
@@ -62,8 +62,18 @@ _coordinator_setup_ready() {
 }
 
 _coordinator_setup_prefill() {
+    local report
     wizard_state_poll "$ip" "$jar" '.' &&
         coordinator_saved_state_valid "$WIZ_STATE" "$coord_answers" || {
+        report=$(printf '%s' "$WIZ_STATE" | jq -c --argjson expected "$coord_answers" '
+            .config as $config | {
+              setup: (.stage == "setup"),
+              coordinator: (.saved_role == {role: "pithead"}),
+              saved: (.new_machine == false),
+              changed_answers: ([$expected | paths(scalars) | . as $p |
+                select(($config | getpath($p)) != ($expected | getpath($p)))] | length)
+            }' 2>/dev/null) || report=unreadable
+        info "coordinator setup-again prefill checks: $report"
         bad "coordinator setup-again: saved pithead role and safe prefill did not match the saved answers"
         return 1
     }
