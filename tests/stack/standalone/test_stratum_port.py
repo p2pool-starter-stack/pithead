@@ -1,10 +1,14 @@
+import contextlib
+import io
 import json
 import os
+import runpy
 import socket
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -129,6 +133,67 @@ esac
         result = self.probe(45678, bind="192.0.2.1")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("could not be checked", result.stderr)
+
+
+class OccupiedStratumProofTest(unittest.TestCase):
+    def exercise(self, samples):
+        clock = [0]
+        state_reads = [0]
+        previews = []
+        output = io.StringIO()
+
+        def respond(req, **kwargs):
+            route = req.full_url.split("/api/")[1]
+            if route == "state":
+                index = min(state_reads[0], len(samples) - 1)
+                workers, hashes = samples[index]
+                state_reads[0] += 1
+                value = {"proxy_workers": workers, "stratum": {"total_hashes": hashes}}
+            elif route == "config":
+                value = {"p2pool": {"stratum_port": 3333}}
+            elif route == "control/preview":
+                previews.append(state_reads[0])
+                value = {"id": "test", "status": "rejected", "log": "already in use"}
+            else:
+                raise AssertionError(route)
+            return io.StringIO(json.dumps(value))
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        error = None
+        with (
+            patch("sys.argv", ["occupied-stratum.py", "443"]),
+            patch("urllib.request.urlopen", side_effect=respond),
+            patch("time.monotonic", side_effect=lambda: clock[0]),
+            patch("time.sleep", side_effect=sleep),
+            contextlib.redirect_stdout(output),
+        ):
+            try:
+                runpy.run_path(str(ROOT / "tests/integration/lib/occupied-stratum.py"))
+            except AssertionError as exc:
+                error = str(exc)
+        return error, previews, output.getvalue()
+
+    def test_preview_waits_for_active_mining_after_prior_apply(self):
+        error, previews, output = self.exercise([(0, 100), (1, 100), (1, 102), (1, 104)])
+        self.assertIsNone(error)
+        self.assertEqual(previews, [3])
+        self.assertIn("mining continues", output)
+
+    def test_missing_mining_baseline_refuses_to_test_preview(self):
+        error, previews, _ = self.exercise([(0, 100)])
+        self.assertEqual(previews, [])
+        self.assertIn("before occupied-port preview", error)
+        self.assertIn("workers=0", error)
+        self.assertIn("hashes=100", error)
+
+    def test_post_preview_stall_fails_with_observed_counters(self):
+        error, previews, _ = self.exercise([(1, 100), (1, 102), (1, 102)])
+        self.assertEqual(previews, [2])
+        self.assertIn("after occupied-port refusal", error)
+        self.assertIn("workers=1", error)
+        self.assertIn("hashes=102", error)
 
 
 if __name__ == "__main__":

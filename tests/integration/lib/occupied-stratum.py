@@ -33,6 +33,25 @@ def settled(route, body, exclude):
     return result
 
 
+def wait_mining(start, timeout, phase):
+    initial = start.get("stratum", {}).get("total_hashes", 0)
+    deadline = time.monotonic() + timeout
+    state = start
+    while time.monotonic() < deadline:
+        state = request("state")
+        hashes = state.get("stratum", {}).get("total_hashes", 0)
+        workers = state.get("proxy_workers", 0)
+        if workers > 0 and hashes > initial:
+            print(f"{phase}: workers={workers}, hashes={initial}->{hashes}", flush=True)
+            return state
+        time.sleep(3)
+    raise AssertionError(
+        f"mining did not progress {phase}: initial_hashes={initial}, "
+        f"workers={state.get('proxy_workers', 0)}, "
+        f"hashes={state.get('stratum', {}).get('total_hashes', 0)}"
+    )
+
+
 config = request("config")
 for dotted in config.get("_default_keys", []):
     parts = dotted.split(".")
@@ -44,20 +63,11 @@ config = {key: value for key, value in config.items() if not key.startswith("_")
 if config.get("p2pool", {}).get("stratum_port", 3333) == port:
     raise AssertionError("occupied test port must differ from the current stratum port")
 config.setdefault("p2pool", {}).update(stratum_port=port, stratum_bind="0.0.0.0")
-start = request("state")
+start = wait_mining(request("state"), 180, "before occupied-port preview")
 preview = settled("preview", {"config": config}, None)
 if preview.get("status") != "rejected":
     raise AssertionError("occupied stratum port preview was not rejected")
 if "already in use" not in preview.get("log", ""):
     raise AssertionError("refusal did not identify occupied port")
-deadline = time.monotonic() + 90
-while time.monotonic() < deadline:
-    state = request("state")
-    if state.get("proxy_workers", 0) > 0 and state.get("stratum", {}).get(
-        "total_hashes", 0
-    ) > start.get("stratum", {}).get("total_hashes", 0):
-        print("occupied stratum preview refused; mining continues")
-        break
-    time.sleep(3)
-else:
-    raise AssertionError("mining did not continue after occupied-port refusal")
+wait_mining(start, 90, "after occupied-port refusal")
+print("occupied stratum preview refused; mining continues")
