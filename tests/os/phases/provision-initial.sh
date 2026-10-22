@@ -180,10 +180,16 @@ _phase_provision_initial_body() {
         return 1
     fi
     # Healthy read-only refusal, before unrelated day-two legs can abort this guest (#3262).
-    if SSH_TIMEOUT=45 _ssh 'timeout 40 bash -s' <"$SCRIPT_DIR/tor-recovery-refusal-guest.sh"; then
+    _tor_recovery_err=$(mktemp)
+    if SSH_TIMEOUT=45 _ssh 'timeout 40 bash -s' <"$SCRIPT_DIR/tor-recovery-refusal-guest.sh" 2>"${_tor_recovery_err}"; then
         ok "guest healthy Tor recovery refusal exits 1 without unexpected-abort advice (#3262)"
     else
-        bad "guest healthy Tor recovery refusal proof failed (#3262)"
+        local _detail=""
+        if [ -s "${_tor_recovery_err}" ]; then
+            _detail=": $(head -c 512 "${_tor_recovery_err}")"
+        fi
+        bad "guest healthy Tor recovery refusal proof failed (#3262)${_detail}"
+        rm -f "${_tor_recovery_err}"
     fi
     # The fresh-chain sync gate may hold P2Pool, but the bundled Monero listener must already
     # accept Tor's bridge dial. A torrc entry alone does not prove this across containers (#2936).
