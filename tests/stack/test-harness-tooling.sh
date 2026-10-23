@@ -132,6 +132,10 @@ bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
 bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null
 assert_rc "the OS runner module and control lifecycle guard self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-install-rig.sh" >/dev/null
+assert_rc "internal-disk rig lifecycle and verdict self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-install-rig-dispatch.sh" >/dev/null
+assert_rc "rig install dispatch preserves card-before-erase and bare keep" "$?" "0"
 bash "$ROOT/tests/os/selftest-restore-p2pool-startup.sh" >/dev/null 2>&1
 assert_rc "restore startup rejects P2Pool crashes across its bounded window" "$?" "0"
 bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null

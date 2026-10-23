@@ -188,20 +188,13 @@ firstboot_wizard() {
         [ "$installer" -eq 1 ] || reset_slot_restore_good "$engine" || warn "Could not restore the reset slot's good state; reboot may fall back."
         wizard_announce_setup "$host_addresses" "$token" "$cert_fp"
         while :; do
-            # #1318 "Keep it": the page wrote keep-role — nothing on /data was touched; return.
             wizard_keep_requested "$spool" && return 0
-            # A keep-everything reinstall arrives as a bare install-request with no config
-            # candidate: the preserved /data keeps config, login and chains, so there is
-            # nothing to validate and no credentials to hand off — install and switch off.
-            # BARE means bare: a staged restore archive (#909) rides the same install-request
-            # with keep as its erase policy (restore the config, keep the synced chains), and
-            # this shortcut once swallowed it — the machine "keep"-installed a blank disk and
-            # the operator's backup never reached it. The archive must be consumed first, and
-            # the checks cover the volatile restore spool as well as the persistent one.
             if [ "$installer" -eq 1 ] && wizard_submission_ready "$spool" &&
                 wizard_spool_has "$spool" install-request &&
                 [ "$(wizard_spool_read "$spool" install-request 2>/dev/null | cut -f2)" = "keep" ] &&
                 [ ! -e "$spool/config.json" ] && [ ! -L "$spool/config.json" ] &&
+                [ ! -e "$spool/role" ] && [ ! -L "$spool/role" ] &&
+                [ ! -e "$spool/rig-request.json" ] && [ ! -L "$spool/rig-request.json" ] &&
                 [ ! -e "$restore_spool/restore-passphrase" ] && [ ! -L "$restore_spool/restore-passphrase" ] &&
                 [ ! -e "$restore_spool/restore-archive" ] && [ ! -L "$restore_spool/restore-archive" ] &&
                 [ ! -e "$spool/restore-archive" ] && [ ! -L "$spool/restore-archive" ]; then

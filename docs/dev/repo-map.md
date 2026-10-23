@@ -213,6 +213,10 @@ creation and disk installation. `tests/os/selftest-build-label.sh` checks all th
 writers and the release refusal. `tests/os/build-label-fixture.sh` stamps only debug test
 rootfs, and `tests/os/build-label-boot-leg.sh` checks first-menu serial titles.
 
+`tests/os/phases/install-rig.sh` covers the RigForge installer-to-internal-disk path.
+`tests/os/selftest-install-rig.sh` checks its lifecycle and verdict.
+`tests/os/selftest-install-rig-dispatch.sh` exercises the host loop’s rig/keep dispatch and card-before-erase order.
+
 The mini-stack's `test-boot-health-proxy.sh` renders Caddy against the real dashboard;
 `boot-health-proxy.py` verifies boot-probe accounting and network forgery controls,
 including the loopback upstream supplied by `boot-health-front-proxy.py`.
