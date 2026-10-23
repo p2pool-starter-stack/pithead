@@ -321,15 +321,8 @@ run_uninstall_round_trip() {
         _uninstall_after_remove "$out" || return $?
     fi
 
-    # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
-    # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
-    # wallet volume created under a new password would not open under the restored old one.
-    rx "grep -v '^DEPLOYMENT_COMPLETED=' .env.itest-round-trip >.env && rm -f .env.itest-round-trip"
-    # A source checkout (every bench box) runs `compose up --pull never`, which cannot bring back
-    # the pinned third-party images uninstall just removed; `missing` is what a release install,
-    # the channel uninstall serves, runs anyway (01-lifecycle.sh resolve_pull_policy; #2654).
     it_step "pithead setup re-provisions from the kept config…"
-    out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
+    out="$(_uninstall_setup 2>&1)"
     rc=$?
     assert_rc "setup after uninstall succeeded" "$rc" "0"
     rr_web_ports_owned_by_dashboard "setup after uninstall" || return 1

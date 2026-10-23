@@ -36,6 +36,26 @@ _uninstall_quiesce() {
         rx 'docker compose stop' >/dev/null 2>&1
 }
 
+_uninstall_setup() {
+    rx "install -m 600 .env.itest-round-trip .env && sed -i '/^DEPLOYMENT_COMPLETED=/d' .env" &&
+        rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" &&
+        rx 'rm -f .env.itest-round-trip && test ! -e .env.itest-round-trip'
+}
+
+_uninstall_prepare_restore() {
+    local state out rc=0
+    state=$(rx 'if test -f .env.itest-round-trip; then echo removed; elif test -e .env; then echo configured; else echo empty; fi') || return 1
+    case "$state" in
+    configured) return 0 ;;
+    removed)
+        out="$(_uninstall_setup 2>&1)" || rc=$?
+        _uninstall_retain_diagnostic uninstall-reprovision.log "$out" || it_warn "Could not retain the uninstall re-provisioning diagnostic."
+        return "$rc"
+        ;;
+    *) return 1 ;;
+    esac
+}
+
 _uninstall_capture_baseline() {
     local dir
     local -a kept=()
@@ -49,8 +69,8 @@ _uninstall_capture_baseline() {
 
 _uninstall_phase_recover() {
     local cleanup_ok=1 restore_ok=1
-    rx 'rm -f .env.itest-round-trip && test ! -e .env.itest-round-trip' || cleanup_ok=0
     safety_restore_exact || restore_ok=0
+    rx 'rm -f .env.itest-round-trip && test ! -e .env.itest-round-trip' || cleanup_ok=0
     if [ "$cleanup_ok$restore_ok" = 11 ]; then
         it_pass "uninstall phase restored the exact healthy baseline without outer rollback"
         return 0

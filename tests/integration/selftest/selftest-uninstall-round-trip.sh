@@ -14,6 +14,7 @@ eval "$(extract kept_data_snapshot_snippet)"
 eval "$(extract kept_chain_files_snippet)"
 eval "$(extract run_uninstall_round_trip)"
 eval "$(sed -n '/^_uninstall_quiesce() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
+eval "$(sed -n '/^_uninstall_setup() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
 _lan_timer_pause() { return 0; }
 systemctl() { [ "$*" = 'is-active pithead-lan.timer' ] && printf 'inactive\n'; }
 export -f systemctl

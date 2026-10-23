@@ -20,6 +20,7 @@ drive() (
     printf 'fixture token\n' >"$box/.env"
     printf 'fixture proxy\n' >"$box/Caddyfile"
     printf 'installed\n' >"$box/resources"
+    touch "$box/runtime-ready"
     cp "$box/.env" "$box/env-baseline"
     printf fixture >"$box/fixture"
     printf 'chain bytes\n' >"$box/monero/chain"
@@ -30,14 +31,16 @@ drive() (
     local _SAFETY_RESTORE_ARMED=1 _XVB_RESTORE_ARMED=1
     [ "$test_case" != keep ] || KEEP_STATE=1
     [ "$test_case" != missing-config ] || rm "$box/config.json"
-    [ "$test_case" != diagnostic-blocked ] || mkdir "$box/uninstall-restore.log"
+    [ "$test_case" != diagnostic-blocked ] || mkdir "$box/uninstall-restore.log" "$box/uninstall-reprovision.log"
     if [ "$test_case" = diagnostic-stale ]; then
         printf stale >"$box/uninstall-restore.log"
-        chmod 644 "$box/uninstall-restore.log"
+        printf stale >"$box/uninstall-reprovision.log"
+        chmod 644 "$box/uninstall-restore.log" "$box/uninstall-reprovision.log"
     fi
     if [ "$test_case" = diagnostic-symlink ]; then
         printf untouched >"$box/other-output"
         ln -s "$box/other-output" "$box/uninstall-restore.log"
+        ln -s "$box/other-output" "$box/uninstall-reprovision.log"
     fi
     it_log() { :; }
     it_step() { :; }
@@ -58,18 +61,31 @@ drive() (
     pithead() {
         printf '%s\n' "$1" >>"$box/commands"
         case "$1" in
+        setup)
+            if [ "$test_case" = reprovision-fails ]; then
+                printf 'PROXY_AUTH_TOKEN=changeme\nsetup startup refused\n' >&2
+                return 1
+            fi
+            [ -f "$box/.env" ] && ! grep -q '^DEPLOYMENT_COMPLETED=' "$box/.env" || return 1
+            [ "$(stat -c '%a' "$box/.env")" = 600 ] || return 1
+            touch "$box/runtime-ready"
+            ;;
         restore)
             if [ "$test_case" = restore-fails ]; then
                 printf 'PROXY_AUTH_TOKEN=changeme\nrestore destination refused\n' >&2
                 return 1
             fi
+            [ -f "$box/.env" ] || [ "$test_case" = missing-default-seed ] || {
+                printf 'custom restore destinations are not configured\n' >&2
+                return 1
+            }
             printf '{}' >"$box/config.json"
             cp "$box/env-baseline" "$box/.env"
             printf 'fixture proxy\n' >"$box/Caddyfile"
             printf 'chain bytes\n' >"$box/monero/chain"
             printf 'installed\n' >"$box/resources"
             ;;
-        up) [ "$test_case" != up-fails ] || return 1 ;;
+        up) [ "$test_case" != up-fails ] && { [ -f "$box/runtime-ready" ] || [ "$test_case" = missing-default-seed ]; } || return 1 ;;
         esac
     }
     baseline_up() { pithead up; }
@@ -78,6 +94,18 @@ drive() (
         'docker compose stop') return 0 ;;
         *'systemctl is-active pithead-lan.timer'*) return 0 ;;
         'docker compose ps -aq') printf 'container-id\n' ;;
+        'PITHEAD_PULL=missing ./pithead setup --skip-deps --skip-optimize') pithead setup ;;
+        'if test -f .env.itest-round-trip; then echo removed;'*)
+            case "$test_case" in
+            state-fails) return 1 ;;
+            state-unexpected) printf 'unexpected\n' ;;
+            *) (cd "$box" && bash -c "$1") ;;
+            esac
+            ;;
+        'install -m 600 .env.itest-round-trip .env'*)
+            [ "$test_case" != seed-fails ] || return 1
+            (cd "$box" && bash -c "$1")
+            ;;
         'rm -f .env.itest-round-trip'*)
             [ "$test_case" != cleanup-fails ] || return 1
             (cd "$box" && bash -c "$1")
@@ -110,8 +138,9 @@ drive() (
     run_uninstall_round_trip() {
         printf 'roundtrip\n' >>"$box/commands"
         printf 'removed\n' >"$box/resources"
-        rm -f "$box/.env" "$box/Caddyfile"
+        rm -f "$box/.env" "$box/Caddyfile" "$box/runtime-ready"
         cp "$box/env-baseline" "$box/.env.itest-round-trip"
+        case "$test_case" in missing-seed | missing-default-seed) rm "$box/.env.itest-round-trip" ;; esac
         [ "$test_case" != kept-write ] || printf changed >>"$box/monero/chain"
         _uninstall_after_remove "Kept: config.json $data_dirs" || return $?
         if [ "$test_case" = setup-fails ]; then
@@ -123,7 +152,21 @@ drive() (
         printf 'rebuilt\n' >"$box/resources"
         rm -f "$box/.env.itest-round-trip"
     }
-    run_uninstall_phase >"$box/run.log" 2>&1
+    if [ "$test_case" = interrupted ] || [ "$test_case" = interrupted-seeded ]; then
+        rm -f "$box/.env" "$box/runtime-ready"
+        cp "$box/env-baseline" "$box/.env.itest-round-trip"
+        if [ "$test_case" = interrupted-seeded ]; then
+            cp "$box/env-baseline" "$box/.env"
+            printf 'DEPLOYMENT_COMPLETED=true\n' >>"$box/.env"
+        fi
+        (
+            _SAFETY_FOREIGN_TRAP=""
+            trap safety_abort_restore EXIT
+            exit 17
+        ) >"$box/run.log" 2>&1
+    else
+        run_uninstall_phase >"$box/run.log" 2>&1
+    fi
     result=$?
     if [ -e "$box/.env.itest-round-trip" ]; then
         it_fail 'phase recovery removes its temporary secret copy' 'the duplicate .env remains' >>"$box/run.log"
@@ -142,6 +185,21 @@ drive() (
 echo "== uninstall preservation and phase-owned recovery =="
 assert_eq 'the live-removal fault recovers exactly before a successful second round trip' "$(drive clean)" '0|0|1|2'
 assert_eq '--keep still proves injected recovery and leaves the successful rebuilt state' "$(drive keep)" '0|0|1|2'
+assert_eq 'interruption after removal re-provisions before exact restore and preserves its error' "$(drive interrupted)" '17|0|1|0'
+assert_eq 're-provisioning precedes the exact archive restore' "$(grep -E '^(setup|restore)$' "$T/interrupted/commands" | paste -sd, -)" 'setup,restore'
+assert_eq 'the recovery secret seed is owner-only' "$(stat -c '%a' "$T/interrupted/.env")" '600'
+assert_eq 'interruption with a seeded env and incomplete runtime retries setup before exact restore' "$(drive interrupted-seeded)" '17|0|1|0'
+assert_eq 'a seeded env never hides the unfinished re-provision step' "$(grep -E '^(setup|restore)$' "$T/interrupted-seeded/commands" | paste -sd, -)" 'setup,restore'
+assert_eq 'failed secret seeding prevents successful recovery' "$(drive seed-fails)" '1|1|1|1'
+assert_eq 'failed re-provisioning prevents successful recovery' "$(drive reprovision-fails)" '1|1|1|1'
+assert_contains 'failed setup retains its diagnostic' "$(cat "$T/reprovision-fails/uninstall-reprovision.log")" 'setup startup refused'
+assert_contains 'retained setup output redacts credentials' "$(cat "$T/reprovision-fails/uninstall-reprovision.log")" 'PROXY_AUTH_TOKEN=<redacted>'
+assert_eq 'retained setup output never includes the credential value' "$(grep -c changeme "$T/reprovision-fails/uninstall-reprovision.log")" '0'
+assert_eq 'retained setup output is owner-only' "$(stat -c '%a' "$T/reprovision-fails/uninstall-reprovision.log")" '600'
+assert_eq 'missing pre-uninstall secrets cannot authorize custom restore paths' "$(drive missing-seed)" '1|1|1|1'
+assert_eq 'missing secrets fail recovery even when default-path archive restore and up succeed' "$(drive missing-default-seed)" '1|1|1|1'
+assert_eq 'a failed recovery-state read cannot pass recovery' "$(drive state-fails)" '1|1|1|1'
+assert_eq 'an unexpected recovery-state reply cannot pass recovery' "$(drive state-unexpected)" '1|1|1|1'
 assert_eq 'a missing config snapshot refuses uninstall and restores before returning' "$(drive missing-config)" '1|1|1|0'
 assert_eq 'abort-time file mutation fails the comparison and recovers before returning' "$(drive abort-file)" '1|1|1|0'
 assert_eq 'abort-time host mutation fails the comparison and recovers before returning' "$(drive abort-resource)" '1|1|1|0'
@@ -157,11 +215,14 @@ assert_eq 'retained restore output never includes the credential value' "$(grep 
 assert_eq 'retained restore output is owner-only' "$(stat -c '%a' "$T/restore-fails/uninstall-restore.log")" '600'
 assert_eq 'failed diagnostic redaction does not change exact recovery' "$(drive redact-fails)" '0|0|1|2'
 assert_eq 'failed redaction discards its partial restore diagnostic' "$([ -e "$T/redact-fails/uninstall-restore.log" ] && echo present || echo absent)" 'absent'
+assert_eq 'failed redaction discards its partial setup diagnostic' "$([ -e "$T/redact-fails/uninstall-reprovision.log" ] && echo present || echo absent)" 'absent'
 assert_eq 'an unwritable diagnostic destination cannot prevent exact recovery' "$(drive diagnostic-blocked)" '0|0|1|2'
 assert_eq 'a stale diagnostic destination does not change exact recovery' "$(drive diagnostic-stale)" '0|0|1|2'
 assert_eq 'a replaced diagnostic is owner-only even when the old file was not' "$(stat -c '%a' "$T/diagnostic-stale/uninstall-restore.log")" '600'
+assert_eq 'a replaced setup diagnostic is owner-only even when the old file was not' "$(stat -c '%a' "$T/diagnostic-stale/uninstall-reprovision.log")" '600'
 assert_eq 'a symlinked diagnostic destination does not change exact recovery' "$(drive diagnostic-symlink)" '0|0|1|2'
 assert_eq 'a diagnostic destination symlink is replaced rather than followed' "$(cat "$T/diagnostic-symlink/other-output")" 'untouched'
+assert_eq 'the setup diagnostic replaces its destination symlink' "$([ -L "$T/diagnostic-symlink/uninstall-reprovision.log" ] && echo symlink || echo regular)" 'regular'
 assert_eq 'no private diagnostic temporaries remain' "$(find "$T" -name '.uninstall-diagnostic.*' | wc -l | tr -d ' ')" '0'
 assert_eq 'remaining unit records still fail cleanup and recovery injection' "$(drive units-remain)" '1|2|1|1'
 assert_contains 'remaining unit identities are retained for diagnosis' "$(cat "$T/units-remain/uninstall-systemd-units.log")" 'pithead-lan-hold.service not-found active exited'
