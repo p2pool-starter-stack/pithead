@@ -14,7 +14,6 @@ prepare_control_dirs() {
     if is_appliance && [ ! -f "$CONTROL_DIR/results/os-update-state.json" ]; then
         os_state_write "$CONTROL_DIR" '{"step":"idle"}'
     fi
-    # Refresh prefill on setup/apply/upgrade; CLI restore calls the renderer directly.
     render_masked_config "$CONTROL_DIR"
     # Caddy access-log dir (#349): root-owned so the capability-stripped caddy container (uid 0,
     # no CAP_DAC_OVERRIDE) can write it; the dashboard (uid 1000) reads it via a ro mount — the
