@@ -77,7 +77,6 @@ firstboot_wizard() {
         [ ! -f "$PWD/config.json" ] || had_config=1
         if [ "$had_config" -eq 1 ] && ! setup_again_mode; then
             log "config.json already present (pre-seeded) — skipping the wizard and running setup."
-            # A pre-seeded config that names no password still gets a login.
             ensure_appliance_dashboard_password || error "Could not prepare the dashboard login — provisioning stopped."
             apply_appliance_defaults || true
             record_machine_role "$(machine_role_from_config "$PWD/config.json")"
@@ -92,9 +91,6 @@ firstboot_wizard() {
 
     local engine image token
     engine=$(container_engine)
-    # STACK_VERSION is the ONE place the registry tag is derived (a release is v<VERSION>, a
-    # source checkout is dev) — deriving it here instead cost a boot: the archive holds
-    # :vX.Y.Z while a hand-rolled ":$VERSION" looks for a tag that was never published.
     export_build_provenance
     image="${PITHEAD_REGISTRY}/pithead-dashboard:${STACK_VERSION}"
     stage_wizard_spool "$spool" >/dev/null || error "Could not prepare the setup page files."
@@ -166,16 +162,7 @@ firstboot_wizard() {
         round=$((round + 1))
         wizard_start_page "$engine" "$image" "$spool" "$restore_spool" "$card_mount" "$installer" "$token" "$cert_fp"
         while :; do
-            # #1318 "Keep it": the page wrote keep-role — nothing on /data was touched; return.
             wizard_keep_requested "$spool" && return 0
-            # A keep-everything reinstall arrives as a bare install-request with no config
-            # candidate: the preserved /data keeps config, login and chains, so there is
-            # nothing to validate and no credentials to hand off — install and switch off.
-            # BARE means bare: a staged restore archive (#909) rides the same install-request
-            # with keep as its erase policy (restore the config, keep the synced chains), and
-            # this shortcut once swallowed it — the machine "keep"-installed a blank disk and
-            # the operator's backup never reached it. The archive must be consumed first, and
-            # the checks cover the volatile restore spool as well as the persistent one.
             if [ "$installer" -eq 1 ] && wizard_submission_ready "$spool" &&
                 wizard_spool_has "$spool" install-request &&
                 [ "$(wizard_spool_read "$spool" install-request 2>/dev/null | cut -f2)" = "keep" ] &&
