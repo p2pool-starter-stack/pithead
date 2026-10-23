@@ -236,6 +236,7 @@ harness_of() { # -> the lines run_harness printed around a detached --check run 
         log() { :; }
         step() { :; }
         sleep() { :; }
+        load_worker_wait_tick() { POLLS=$((POLLS + 1)); }
         harness_install_runner() { :; }
         harness_prepare() { :; }
         harness_finished() { :; }
@@ -243,8 +244,7 @@ harness_of() { # -> the lines run_harness printed around a detached --check run 
             case "$1" in
             *nohup*) echo 4242 ;;
             "test -f "*e2e-harness.done*)
-                POLLS=$((POLLS + 1))
-                [ "$POLLS" -gt 2 ]
+                if [ "$POLLS" -ge 2 ]; then echo "done"; else echo running; fi
                 ;;
             "cat "*e2e-harness.done*) echo 1 ;;
             "tail -n 2 "*) printf '%s\n' "$LOG" | tail -n 2 ;;
