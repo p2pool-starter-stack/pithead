@@ -60,5 +60,5 @@ test "$(cat "$PRESEED_DIR/pithead-config.json")" = '{malformed'
 rm "$PRESEED_DIR/pithead-config.json"
 boot
 jq -e '.previous == true' data/firstboot/last-attempt.json >/dev/null
-! grep -q rejected "$work/console"
+! grep -q rejected "$work/console" || exit 1
 printf 'PASS: installer prefill, malformed rejection, stale-answer clearing and previous-install fallback\n'

@@ -130,7 +130,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 - **install** — stage a chosen token and valid config on the ESP before the first removable-media
   boot, authenticate case and prefix variants, and check prefilled answers with no disk selected.
   Reboot with malformed JSON and require serial rejection with a blank form carrying the reference
-  wallet placeholders, then install and require the target ESP to consume the staged config.
+  wallet placeholders. A rejected operator file skips previous-install prefilling; an absent file
+  still permits it. Then install and require the target ESP to consume the staged config.
+  ESP staging stops before mounting or writing if the partition is absent after 50 polls.
   Boot the image as removable media beside a
   blank disk, run the disk installer, then boot the target and prove the copied system is COMPLETE —
   the `/var` overlay made an incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:

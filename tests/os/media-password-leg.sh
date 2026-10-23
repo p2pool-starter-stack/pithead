@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034,SC2154 # dashboard_curl reads the phase credentials through dynamic scope.
+# shellcheck disable=SC2034,SC2154
 media_password_recovery() {
     local stick="${DISK%.img}-media-password.img" new_pass=os3073-recovered-password
     local DASH_USER="$1" DASH_PASS="$2" old_pass="$2" deadline old_code=000 new_code=000 stick_rc=0

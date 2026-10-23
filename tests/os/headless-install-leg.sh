@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2154 # jar, ip and disk paths belong to the calling phase.
+# shellcheck disable=SC2154
 headless_install_stage() {
     local loop mnt tries=0 rc=0
     loop=$(losetup -Pf --show "$DISK") || return 1
@@ -7,6 +7,10 @@ headless_install_stage() {
         sleep 0.1
         tries=$((tries + 1))
     done
+    if [ ! -e "${loop}p1" ]; then
+        losetup -d "$loop"
+        return 1
+    fi
     mnt=$(mktemp -d) || {
         losetup -d "$loop"
         return 1

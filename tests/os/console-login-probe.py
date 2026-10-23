@@ -38,7 +38,7 @@ def console_login_valid(config, shadow, status, mount, backing, matches=password
 
 
 def read_command(*args):
-    return subprocess.check_output(  # noqa: S603 -- callers supply fixed executables without a shell.
+    return subprocess.check_output(  # noqa: S603
         args, text=True, stderr=subprocess.DEVNULL, timeout=10
     ).strip()
 
