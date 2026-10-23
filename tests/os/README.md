@@ -127,7 +127,14 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Also asserts `/data` grew to fill the disk, and that host identity (SSH host-key fingerprint,
   machine-id) survives the A/B swap (#894/#895) — both live on `/data`, untouched by the slot
   swap.
-- **install** — boot the image as removable media beside a blank disk, run the disk installer,
+- **install** — first submit RigForge with a blank internal disk, acknowledge its card and boot
+  from that disk alone. Poll for the same token in the installed rig and miner configurations,
+  an active XMRig process, no coordinator configuration or containers, and a scrubbed seed on the target’s mounted FAT ESP.
+  The host must consume a pending rig submission before considering a bare keep reinstall;
+  `selftest-install-rig-dispatch.sh` checks card-before-erase, acknowledgement and bare-keep controls.
+  Keep the console capture mode 0600 and send the setup token to authentication through stdin.
+  This checks miner startup against the guest’s SSH listener, not an accepted share. Then
+  boot the image as removable media beside a blank disk, run the disk installer,
   then boot the target and prove the copied system is COMPLETE — the `/var` overlay made an
   incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:
   `/data` must survive a second install over the same disk, and the three-way wipe choice
@@ -289,7 +296,15 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
-  the stick mid-countdown cancels the change instead.
+  the stick mid-countdown cancels the change instead. Each removable-stick fixture must finish
+  partitioning, formatting, mounting, configuration writing and cleanup before guest attachment.
+  Partition readiness is limited to 50 polls at 0.1 seconds; partitioning, loop attachment,
+  formatting, mounting and cleanup probes use a 10-second timeout with a 5-second kill grace.
+  Construction or attachment failure ends the phase before reboot or product assertions for that
+  leg. Cleanup verifies the loop backing path and mount source, uses ordinary unmount and removes
+  only the empty temporary directory; unknown ownership or failed unmount retains resources.
+  `selftest-media-fixture.sh` exercises delayed and missing partitions, construction failures,
+  cleanup refusal and both callers without a guest or root privileges.
 - **fault** — power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is
   disqualifying. A closing leg (the #1029 class, #2067) boots a FRESH guest and destroys it while
   its very first boot is loading the baked container images from the archive — the interrupted

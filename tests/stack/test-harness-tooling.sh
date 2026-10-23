@@ -43,7 +43,7 @@ dockerfile="$ROOT/os/rootfs/Dockerfile"
 assert_eq "Compose release pin" "$(sed -n 's/^ARG COMPOSE_VERSION=//p' "$dockerfile")" "v5.5.1"
 assert_eq "Compose commit pin" "$(sed -n 's/^ARG COMPOSE_COMMIT=//p' "$dockerfile")" "5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de"
 assert_eq "Compose keeps only the x/mod, x/net and grpc floors" "$(sed -n 's/^ARG COMPOSE_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"'
-assert_eq "Cosign keeps the x/mod, x/net and grpc floors" "$(sed -n 's/^ARG COSIGN_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"'
+assert_eq "Cosign keeps the x/mod, x/net, grpc and compress floors" "$(sed -n 's/^ARG COSIGN_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7"'
 assert_eq "only the two live Trivy exceptions remain" \
     "$(grep -E '^CVE-' "$ROOT/.config/trivyignore")" \
     $'CVE-2026-23949\nCVE-2026-24049'
@@ -132,6 +132,10 @@ bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
 bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null
 assert_rc "the OS runner module and control lifecycle guard self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-install-rig.sh" >/dev/null
+assert_rc "internal-disk rig lifecycle and verdict self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-install-rig-dispatch.sh" >/dev/null
+assert_rc "rig install dispatch preserves card-before-erase and bare keep" "$?" "0"
 bash "$ROOT/tests/os/selftest-restore-p2pool-startup.sh" >/dev/null 2>&1
 assert_rc "restore startup rejects P2Pool crashes across its bounded window" "$?" "0"
 bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null

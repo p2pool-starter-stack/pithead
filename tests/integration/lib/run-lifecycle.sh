@@ -4,9 +4,11 @@
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tari-background-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
 run_lifecycle() {
     IT_CURRENT_SCENARIO="lifecycle"
-    local lifecycle_ok=1 reset_failed=0 # reset_failed: 1 changed state, 2 left the stack intact (#3342)
+    local lifecycle_ok=1 reset_failed=0
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
@@ -58,17 +60,12 @@ run_lifecycle() {
     fi
     run_source_image_reconcile || return 1
     run_tari_background_sync || return 1
-    local cur_pool fp_before other
+    local cur_pool fp_before other restore_tls_before
     run_image_permissions || return 1
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
     fp_before="$(secret_fingerprint)"
-    # ensure_owner whole-tree migration (#255): plant a root-owned file UNDER a data dir (the
-    # root-container-era signature — user-owned dir, root-owned contents) and prove this apply chowns
-    # it to the container uid, the exact regression MEMORY flags ("scan contents, not just the dir").
-    # Piggybacks the pool-flip apply below, which always runs ensure_directories -> ensure_owner.
-    # Local mode only (has data dirs); a stub can't create a foreign-uid inode, so this is tier-4.
     local own_dir own_probe=""
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         own_dir="$(env_on_box DASHBOARD_DATA_DIR)"
@@ -108,10 +105,7 @@ run_lifecycle() {
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
-    # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
-    # restore brings them back. We change the pool, restore, and assert the pool reverted and
-    # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check
-    # the rollback net makes (#2579), exercised here on a run that does not fail.
+    restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_step "backup → restore round-trip…"
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then
         local arch
@@ -139,6 +133,7 @@ run_lifecycle() {
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
                     lifecycle_ok=0
                 fi
+                assert_dashboard_tls_continuity "stopped-stack restore" "$restore_tls_before" || lifecycle_ok=0
                 if ! gate_marker_after="$(sync_gate_marker_state)" || [ "$gate_marker_after" != "$gate_marker_before" ]; then
                     it_fail "restore preserves sync-gate policy without a new hold (#2626)" "marker changed or unreadable"
                     lifecycle_ok=0
@@ -221,6 +216,7 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
+    run_password_tls_continuity || lifecycle_ok=0
     run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
     [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
     [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1

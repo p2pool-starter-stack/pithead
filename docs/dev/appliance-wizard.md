@@ -114,9 +114,12 @@ reshapes to the answer the same way the disk choice already reshapes the form:
 | Pithead + RigForge | the default. Pithead's form, opening with the mine-on-this-machine switch already on. The role IS `local_miner.enabled` — the select and the switch are two views of ONE value, so moving either moves the other, and choosing Pithead submits today's config unchanged | `config.json` with `local_miner.enabled: true`; the boot contract's step 5 starts the miner |
 | RigForge | collapses to a pool address, a worker name and an optional stratum password. The pool field opens pre-filled when the host found a Pithead answering `pithead.local:3333` — dialed HOST-side and published to the spool as `rig-defaults.json`, the way the disk inventory travels, failing open to an empty field. The disk section gains **Run from this USB stick** as a first-class target: a rig holds almost no state, so the stick can BE the system — no erase, no commitment on machines whose disks belong to something else. The card shows the worker name and where it points; a rig has no dashboard and no login | `machine-role` + `rig.json` (below) |
 
-Validation-before-erase, the keep semantics, the card-then-ack gate, self-power-off and the
-headless first boot are identical in every role — one flow, three shapes. And keep means KEEP
-whatever the role says: the survivor config wins, and no role change crosses.
+Validation-before-erase, the card-then-ack gate, self-power-off and the headless first boot
+apply to every fresh install. On a disk holding an existing installation, keep preserves the
+survivor configuration and role. On a blank disk, keep is a fresh install: a pending rig
+submission must reach pool validation and its token-bearing card before installation. The
+bare keep-reinstall shortcut accepts neither a role marker nor a rig request, including
+an unusable request entry.
 
 The rig submission travels on its own spool channel (`rig-request.json`; the server never
 writes a `config.json` candidate for it), and the host dials the pool BEFORE anything
