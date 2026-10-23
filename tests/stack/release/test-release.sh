@@ -190,6 +190,9 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
 ) >"$SANDBOX/bundle.list" 2>/dev/null
 grep -q '^pithead/config.minimal.json$' "$SANDBOX/bundle.list" && ok "bundle ships config.minimal.json (basic quick-start config)" || bad "bundle ships config.minimal.json" "absent from the bundle"
 grep -q '^pithead/config.minimal.appliance.json$' "$SANDBOX/bundle.list" && ok "bundle ships appliance starter defaults" || bad "bundle ships appliance starter defaults" "absent from the bundle"
+assert_contains "bundle quick start describes Tari as opt-in" \
+    "$(cat "$SANDBOX/bundle/pithead/README.txt")" \
+    "Set your Monero payout address; Tari is off unless you enable merge-mining."
 grep -q '^pithead/PITHEAD_COMMIT$' "$SANDBOX/bundle.list" && ok "bundle ships PITHEAD_COMMIT (the --image-upgrade provenance anchor)" || bad "bundle ships PITHEAD_COMMIT" "absent from the bundle"
 assert_eq "PITHEAD_COMMIT holds the full 40-hex commit, not a short one" \
     "$(cat "$SANDBOX/bundle/pithead/PITHEAD_COMMIT" 2>/dev/null)" "0123456789abcdef0123456789abcdef01234567"

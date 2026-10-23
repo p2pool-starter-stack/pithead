@@ -93,5 +93,25 @@ for defaults_platform in diy appliance; do
     done
 done
 
+defaults_preview() {
+    local table
+    table=$(config_defaults_json | jq --arg mode "$1" '
+        (.LEGACY_ABSENT[] | select(.path == "tari.mode")).value = $mode')
+    config_defaults_json() { printf '%s' "$table"; }
+    control_mark_config_confirm_rows tari.remote.host '' "$2"
+}
+for defaults_legacy_mode in local off; do
+    for defaults_explicit_mode in null local off; do
+        defaults_staged="$SANDBOX/preview.json"
+        jq -n --arg mode "$defaults_explicit_mode" '{tari: {mode: (if $mode == "null" then null else $mode end)}}' >"$defaults_staged"
+        defaults_expected="$defaults_explicit_mode"
+        [ "$defaults_explicit_mode" != null ] || defaults_expected="$defaults_legacy_mode"
+        defaults_message='Remote node endpoint settings are changing.'
+        [ "$defaults_expected" != off ] || defaults_message='Tari remote settings are stored but inactive while merge-mining is off.'
+        assert_contains "control preview uses $defaults_legacy_mode fallback and $defaults_explicit_mode explicit mode" \
+            "$(run_sourced "$SANDBOX" defaults_preview "$defaults_legacy_mode" "$defaults_staged")" "$defaults_message"
+    done
+done
+
 printf 'shared defaults: %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
