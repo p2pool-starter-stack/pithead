@@ -52,21 +52,51 @@ awk '/^  dashboard:/{d=1} d&&/network_mode:/{print; exit}' "$ROOT/docker-compose
 grep -qx 'gateway=127.0.0.1' "$ROOT/tests/os/tor-heal-guest.sh"
 # Exercise guest helpers without executing the guest's main body.
 (
-    data="$work/history"
-    mkdir -p "$data"
-    eval "$(sed -n '/^saturated() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
-    eval "$(sed -n '/^require_saturated() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
-    printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$data/state"
-    require_saturated valid >"$data/output" 2>&1
-    [ ! -s "$data/output" ]
-    printf 'CircuitBuildTimeBin 100 1\nCookie fixture-secret\nCircuitBuildTimeBin 100 fixture-secret\n' >>"$data/state"
-    if require_saturated after-disable-network >"$data/output" 2>&1; then exit 1; fi
-    grep -q 'after-disable-network' "$data/output"
-    grep -qx 'CircuitBuildTimeBin 100 1' "$data/output"
-    ! grep -q 'fixture-secret' "$data/output"
-    for ((i = 0; i < 40; i++)); do printf 'CircuitBuildTimeBin 200 1\n'; done >>"$data/state"
-    if require_saturated bounded >"$data/output" 2>&1; then exit 1; fi
-    [ "$(wc -l <"$data/output")" -le 17 ]
+    work="$work/egress"
+    mkdir -p "$work"
+    docker() {
+        if [ "$1 $2" = 'exec tor' ]; then
+            printf '250 OK\n250 OK\n250 DisableNetwork=%s\n' "$network_disabled"
+        else
+            [ "$1 $2 $3" = 'exec dashboard python3' ] || return 23
+            printf 'EGRESS_%s\n' "$probe_state"
+            return "$probe_rc"
+        fi
+    }
+    sleep() { :; }
+    eval "$(sed -n '/^egress() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    eval "$(sed -n '/^require_egress_down() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    eval "$(sed -n '/^disable_network() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    network_disabled=1 probe_rc=0 probe_state=DOWN
+    disable_network
+    probe_state=UP
+    if disable_network; then exit 1; fi
+    probe_state=DOWN probe_rc=17
+    if disable_network; then exit 1; fi
+    network_disabled=0 probe_rc=0
+    if disable_network; then exit 1; fi
+)
+(
+    control="$work/actions"
+    mkdir -p "$control/audit" "$control/results"
+    # shellcheck disable=SC2034 # extracted audit helper reads this guest global.
+    since=2026-01-01T00:00:00Z
+    eval "$(sed -n '/^applied_heals() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    eval "$(sed -n '/^confirmed_newnyms() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    printf '%s\n' '{"ts":"2025-12-31T23:59:59Z","id":"old","actor":"tor-heal","action":"tor-newnym","status":"applied"}' >"$control/audit/control.log"
+    if confirmed_newnyms; then exit 1; fi
+    for id in first second; do
+        jq -nc --arg id "$id" '{ts:"2026-01-01T00:01:00Z",id:$id,actor:"operator",action:"tor-newnym",status:"applied"}' >>"$control/audit/control.log"
+    done
+    if confirmed_newnyms; then exit 1; fi
+    sed 's/"operator"/"tor-heal"/g' "$control/audit/control.log" >"$control/audit/next"
+    mv "$control/audit/next" "$control/audit/control.log"
+    if confirmed_newnyms 2>/dev/null; then exit 1; fi
+    printf '{"status":"applied","action":"tor-newnym"}\n' >"$control/results/first.json"
+    printf '{"status":"rejected","action":"tor-newnym"}\n' >"$control/results/second.json"
+    if confirmed_newnyms; then exit 1; fi
+    cp "$control/results/first.json" "$control/results/second.json"
+    confirmed_newnyms
 )
 (
     work="$work/configure"
@@ -94,7 +124,6 @@ restore_case() (
     cd "$work/stack"
     printf 'original config\n' >"$work/config.json"
     printf 'changed config\n' >config.json
-    printf 'original state\n' >"$work/original-state"
     printf 'changed state\n' >"$data/state"
     cat >pithead <<'STUB'
 #!/usr/bin/env bash
@@ -122,7 +151,7 @@ STUB
 )
 restore_case 0 0 1 >"$work/restore-success"
 grep -q 'Guest restoration exit: 0; original exit: 0' "$work/restore-success"
-cmp "$work/restore-0-0/original-state" "$work/restore-0-0/data/state"
+grep -qx 'changed state' "$work/restore-0-0/data/state"
 if restore_case 17 0 0 >"$work/restore-original-failure"; then exit 1; else [ "$?" = 17 ]; fi
 grep -q 'Guest restoration exit: 0; original exit: 17' "$work/restore-original-failure"
 grep -q 'Guest command log: restore.log' "$work/restore-original-failure"

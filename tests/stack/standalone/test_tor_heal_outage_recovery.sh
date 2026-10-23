@@ -143,6 +143,32 @@ env_get() {
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 AUTO_HEAL_OFF=0
+echo "== the actual No login drain derives restricted policy from host settings =="
+mkdir -p "$WORK/control/requests" "$WORK/control/staged"
+render_masked_config() { :; }
+control_redact_stale_kits() { :; }
+error() {
+    printf '%s\n' "$*" >&2
+    exit 1
+}
+drain_id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+reject_id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+jq --arg id "$drain_id" '.id=$id' "$WORK/request.json" >"$WORK/control/requests/1.json"
+jq -n --arg id "$reject_id" '{id:$id,action:"backup",actor:"tor-heal"}' >"$WORK/control/requests/2.json"
+CONTROL_HEAL_ONLY=false control_run_pending
+[ "$(jq -r .status "$WORK/control/results/$drain_id.json")" = applied ]
+jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/control/results/$reject_id.json" >/dev/null
+if (AUTO_HEAL_OFF=1 control_run_pending); then exit 1; fi
+echo "== disabling general control during a drain restricts the next request =="
+control_commit() {
+    GENERAL_CONTROL=false
+    control_write_result "$3/results" "$1" '{"status":"applied"}'
+}
+jq -n --arg id "$drain_id" '{id:$id,action:"commit",actor:"admin"}' >"$WORK/control/requests/1.json"
+jq -n --arg id "$reject_id" '{id:$id,action:"backup",actor:"tor-heal"}' >"$WORK/control/requests/2.json"
+GENERAL_CONTROL=true CONTROL_HEAL_ONLY=true control_run_pending
+[ "$(jq -r .status "$WORK/control/results/$drain_id.json")" = applied ]
+jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/control/results/$reject_id.json" >/dev/null
 echo "== No login rejects every unrelated action and non-healer actor =="
 for action in preview commit upgrade worker-apply worker-upgrade restart apply backup os-check os-download os-verify os-install os-reboot diag-doctor diag-logs onion-client-key egress-sync unknown; do
     jq -n --arg id "$id" --arg action "$action" '{id:$id,action:$action,actor:"tor-heal"}' >"$WORK/unrelated.json"
@@ -201,32 +227,6 @@ control_process_request "$WORK/stale.json" "$WORK/control"
 jq '.outage=42' "$WORK/request.json" >"$WORK/bad.json"
 control_process_request "$WORK/bad.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
-echo "== the actual No login drain derives restricted policy from host settings =="
-mkdir -p "$WORK/control/requests" "$WORK/control/staged"
-render_masked_config() { :; }
-control_redact_stale_kits() { :; }
-error() {
-    printf '%s\n' "$*" >&2
-    exit 1
-}
-drain_id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
-reject_id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
-jq --arg id "$drain_id" '.id=$id' "$WORK/request.json" >"$WORK/control/requests/1.json"
-jq -n --arg id "$reject_id" '{id:$id,action:"backup",actor:"tor-heal"}' >"$WORK/control/requests/2.json"
-CONTROL_HEAL_ONLY=false control_run_pending
-[ "$(jq -r .status "$WORK/control/results/$drain_id.json")" = applied ]
-jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/control/results/$reject_id.json" >/dev/null
-if (AUTO_HEAL_OFF=1 control_run_pending); then exit 1; fi
-echo "== disabling general control during a drain restricts the next request =="
-control_commit() {
-    GENERAL_CONTROL=false
-    control_write_result "$3/results" "$1" '{"status":"applied"}'
-}
-jq -n --arg id "$drain_id" '{id:$id,action:"commit",actor:"admin"}' >"$WORK/control/requests/1.json"
-jq -n --arg id "$reject_id" '{id:$id,action:"backup",actor:"tor-heal"}' >"$WORK/control/requests/2.json"
-GENERAL_CONTROL=true CONTROL_HEAL_ONLY=true control_run_pending
-[ "$(jq -r .status "$WORK/control/results/$drain_id.json")" = applied ]
-jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/control/results/$reject_id.json" >/dev/null
 echo "== doctor FAILs saturated history without an outage record or auto-heal =="
 rm "$record"
 [ ! -e "$WORK/control/tor-recovery-at" ]
