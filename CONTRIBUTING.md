@@ -31,7 +31,8 @@ For a transitive security fix, update only the affected package with
 `uv lock --project dashboard --upgrade-package certifi==2026.10.19` (substitute the package and
 verified fixed version). Review the lockfile diff, run the dashboard tests, and require the
 built dashboard image's Trivy scan to pass without adding an ignore entry.
-`dashboard/tests/test_dependency_security.py` checks the locked and loaded security floors
+`dashboard/tests/test_dependency_security.py` checks the locked and loaded runtime security
+floors, requires locked virtualenv 21.14.9 or newer for pre-commit's dev-only environments,
 and verifies that Requests' CA bundle excludes the compromised emSign ECC Root CA - G3.
 
 The root `pithead` executable is generated and git-ignored. Plain `make` builds it from the
