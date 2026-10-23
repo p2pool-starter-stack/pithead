@@ -56,6 +56,11 @@ It checks that the previous token is refused and the new token opens authenticat
 wizard container and verifies that the replacement receives and announces a fresh token.
 Both selftests run through `make test-integration-selftest` in CI.
 
+The lifecycle uninstall round trip starts with an active-exited egress boot service and a
+failed LAN-check service. It independently polls the manager inventory after uninstall
+and rejects retained records or an unreadable inventory. The systemd removal unit suite
+covers scoped cleanup, command failures and foreign-checkout ownership.
+
 The root `pithead` tested at tiers 1–4 is generated and git-ignored. Each Make test entry point
 that reads it depends on the `pithead` build target, while the live E2E provisioner builds it after
 cleaning its source checkout. A clean clone therefore exercises the same generated CLI as a local
