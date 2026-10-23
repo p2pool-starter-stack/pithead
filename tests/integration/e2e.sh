@@ -188,10 +188,7 @@ CONTROL_PROOF_FAILED=0
 # says whether THIS run stranded the box. The post-restore verdict cannot answer that: it runs after
 # the apply that repairs it.
 CONTROL_VERDICT_BEFORE=""
-# Where the LIVE stack actually runs from — resolved in preflight (#454). Defaults to CANONICAL_DIR
-# so the EXIT trap always has a target even if it fires before preflight refines it.
 RESTORE_DIR="$CANONICAL_DIR"
-# --- Restore: fires ONCE on EXIT, Ctrl-C included. Never add INT/TERM (#1401) ----
 restore_all() {
     local rc=${1:-$?}
     [ "$RESTORED" = "1" ] && return
@@ -314,8 +311,8 @@ restore_all() {
     if [ "$rc" -eq 0 ]; then ok "restore complete."; else warn "restore complete (the run itself failed — see above)."; fi
 }
 trap e2e_exit EXIT
-# --- Small waiters / helpers ------------------------------------------------
-wait_bench_healthy() { # <timeout_s>
+trap 'exit 143' TERM
+wait_bench_healthy() {
     local deadline=$(($(date +%s) + ${1:-300}))
     while :; do
         on_bench "cd '$RESTORE_DIR' && ./pithead status >/dev/null 2>&1" && return 0
