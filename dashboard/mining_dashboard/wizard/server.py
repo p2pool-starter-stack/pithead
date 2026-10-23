@@ -390,8 +390,6 @@ async def _submit_locked(request: web.Request) -> web.Response:
             _publish_install_request({"disk": disk, "wipe": "keep"})
             _spool_write_text("submission-active", "1")
             return web.json_response({"status": "accepted"})
-        # A blank disk with wipe=keep (the client's default) is just a fresh install — fall
-        # through unconditionally. The no-JS path submits individual form FIELDS, not a config
     if str(form.get("role", "")).strip() == "rig":
         return _submit_rig(dict(form))
     try:

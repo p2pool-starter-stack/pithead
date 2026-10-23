@@ -188,7 +188,6 @@ stage_wizard_spool() { # <spool-dir> -> fingerprint on stdout
     publish_rig_defaults "$spool" || return 1
     publish_saved_role "$spool" || return 1
     publish_data_wipe_note "$spool" || return 1
-    # in a different shape.
     if installer_mode_available; then publish_disk_inventory "$spool" || return 1; fi
     # Copies the canonical pair off /data — minting only happens the first time, so the
     # fingerprint the console prints stays the machine's one certificate across retries.

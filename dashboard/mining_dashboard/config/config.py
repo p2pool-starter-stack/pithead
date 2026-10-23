@@ -167,8 +167,6 @@ ENABLE_XVB = (
     os.environ.get("XVB_ENABLED", str(default_of("xvb.enabled", legacy=True))).lower() == "true"
 )
 
-# (#224), and the Healthchecks.io ping (#79). socks5h resolves the target host via Tor too (no local
-# DNS leak). The host-networked dashboard reaches it at 172.28.0.25:9050 (tracks the subnet, #180).
 TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "socks5h://172.28.0.25:9050")
 
 # Route XvB DONATION MINING through Tor by default too (#166), not just the stats fetch (#163): while
@@ -324,7 +322,6 @@ TARI_REQUIRED = (
 
 REJECT_WORKERS_CONTAINER = os.environ.get("REJECT_WORKERS_CONTAINER", "xmrig-proxy")
 
-# is persisted across dashboard restarts so a restart mid-sync doesn't prematurely release.
 SYNC_GATE_CONTAINERS = [
     c.strip()
     for c in os.environ.get("SYNC_GATE_CONTAINERS", "p2pool,xmrig-proxy").split(",")
