@@ -7,8 +7,8 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 fixture_answers='{"monero":{"wallet_address":"fixture-monero","mode":"local","out_peers":12},"tari":{"wallet_address":"fixture-tari","mode":"local"},"p2pool":{"pool":"nano"}}'
 jq -n --argjson answers "$fixture_answers" '$answers + {
-    config_version: "2.0.0", dashboard: {auth: {password: "fixture-private"}},
-    p2pool: ($answers.p2pool + {stratum_password: "fixture-private"})
+    config_version: "2.0.0", dashboard: {auth: {password: "placeholder-secret"}},
+    p2pool: ($answers.p2pool + {stratum_password: "placeholder-secret"})
 }' >"$work/live-config.json"
 dashboard_state=$(cat "$here/../../dashboard/tests/frontend/fixtures/state.json")
 state='{"stage":"setup","saved_role":{"role":"pithead"},"new_machine":false,"config":{"monero":{"wallet_address":"fixture-monero","mode":"local","out_peers":12,"node_password":""},"tari":{"wallet_address":"fixture-tari","mode":"local"},"p2pool":{"pool":"nano","stratum_password":""},"dashboard":{"auth":{"password":""}}}}'
@@ -202,7 +202,7 @@ for scenario in success boot-failed session-failed prefill-failed keep-refused l
     [ "$(tail -1 "$work/trace")" = cleanup ] || grep -q '^cleanup$' "$work/trace"
     [ -z "$(find "$work" -name 'jar.*' -print -quit)" ]
     ! grep -q '^unexpected-ssh$' "$work/trace"
-    ! grep -q fixture-private "$work/trace"
+    ! grep -q placeholder-secret "$work/trace"
     printf 'coordinator setup-again flow: %s PASS\n' "$scenario"
 done
 grep -Fq 'source "$SCRIPT_DIR/coordinator-setup-again-leg.sh"' "$here/phases/reset.sh"

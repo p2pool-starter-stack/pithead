@@ -48,11 +48,18 @@ Both reject duplicate members before normalization and placeholders before stagi
 
 Release-note extraction is covered by `tests/stack/release/test-release-notes.sh`;
 it selects the changelog section matching the release tag, including known issues.
+The release-command and shipped-note guards in
+`tests/stack/standalone/test_appliance_release_docs.py` run through `make test-tools`.
 
 The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
+
+Container restart observation is shared by status and doctor in
+`lib/pithead/04a-container-restarts.sh`; its Docker and Podman fixtures are in
+`tests/os/selftest-container-restarts.sh`, and the appliance Caddy crash-loop proof runs in the
+KVM `stack` phase through `tests/os/container-restart-leg.sh`.
 
 The migration startup regression is `tests/stack/lifecycle/migration-hold.sh`;
 `tests/os/selftest-migration-hold.sh` checks slot ownership and same-version fallback.
@@ -191,7 +198,7 @@ Keep local code out of `vendor/`.
 | `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The installer restore uses `restore-live-state-verdict.sh` for the configured-wallet comparison and bounded P2Pool startup window, with controller restoration and crash cases checked by `selftest-restore-p2pool-startup.sh`. The post-commit fault leg uses `chain-fault-timing.sh` to read the live dashboard debounce and prove the before/after window; `selftest-chain-fault-timing.sh` covers its deadlines and negative controls. The XvB stubbed polling fixtures share `tests/os/xvb-selftest-clock.sh`; `tests/os/selftest-xvb-poll-clock.sh` checks independence from host scheduling. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
 | `tests/runner/` | The pinned Linux image `make test-container` runs the other tiers inside, so a macOS or Windows host reaches CI's verdict. Built and CVE-scanned by `test-images.yml`; reaches no user. |
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
-| `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. `pin-watch.sh` compares pins; `pin-watch-issues.sh` reconciles actionable upgrade issues. Its offline cases live in `tests/watch/`, invoked through the watcher’s `--self-test`. |
+| `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
 
 `tests/os/install-keep-plant.sh` stages the reinstall dashboard image in the guest,
 with sub-step failure diagnostics and cleanup; `tests/os/selftest-install-keep-plant.sh`

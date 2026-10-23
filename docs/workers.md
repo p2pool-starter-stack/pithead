@@ -227,8 +227,6 @@ by config; there's no trial-and-error. Defaults match a stock
 `http.restricted` with no `access-token`) on port `8080`, so the standard stack needs no
 configuration.
 
-`workers.api_port` uses port `8080` when omitted or set to `null`; a per-worker `workers.list[].port` overrides it for that rig.
-
 To point it at a differently-configured fleet, set
 [`workers.api_auth`](configuration.md#configuration-reference) (and `workers.api_port` /
 `workers.api_token`):
