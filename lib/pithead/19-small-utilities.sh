@@ -60,11 +60,30 @@ env_get_file() {
 
 env_get() { env_get_file "$ENV_FILE" "$1"; }
 
-# Normalize a config truthy value to the literal "true"/"false". Accepts 1/true/yes/on
-# (case-insensitive) as true; everything else (incl. empty/absent) is false. Matches the
-# dashboard's MONERO_PRUNE parsing so config booleans read the same on both sides (#183).
-# ponytail: deliberately distinct from config_bool below — this normalizes an already-extracted
-# STRING; config_bool does the null-aware JSON READ. Merging them risks the #294 `// false` bug.
+compose_project_name() {
+    local project="" assignment rc=0
+    if [ "${COMPOSE_PROJECT_NAME+x}" = x ]; then
+        project=$COMPOSE_PROJECT_NAME
+    elif [ -e "${ENV_FILE:-.env}" ]; then
+        assignment=$(grep -E '^[[:space:]]*(export[[:space:]]+)?COMPOSE_PROJECT_NAME([^a-zA-Z0-9_]|$)' "${ENV_FILE:-.env}") || rc=$?
+        [ "$rc" -le 1 ] || return 1
+        if [ -n "$assignment" ]; then
+            if [[ "$assignment" != COMPOSE_PROJECT_NAME=* || "$assignment" == *$'\n'* ]]; then
+                warn "Use one literal COMPOSE_PROJECT_NAME assignment in the environment file."
+                return 1
+            fi
+            project=${assignment#COMPOSE_PROJECT_NAME=}
+            case "$project" in \'*\' | \"*\") project=${project:1:${#project}-2} ;; esac
+        fi
+    fi
+    project=${project:-pithead}
+    if ! [[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+        warn "COMPOSE_PROJECT_NAME must be a literal lowercase Compose project name."
+        return 1
+    fi
+    printf '%s' "$project"
+}
+
 normalize_bool() {
     case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
     true | 1 | yes | on) printf 'true' ;;

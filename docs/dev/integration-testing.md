@@ -369,7 +369,7 @@ via an `EXIT` trap):
    (`checkout -f` + `reset --hard` + `clean -fdx`) — a leftover untracked file from an earlier run
    can't abort the checkout. `clean` keeps the harness's `results/` and the seeded `config.json`/
    `.env`/`data/`/`backups/` (all gitignored). The canonical `/srv/code/pithead` is the baseline and
-   is never git-touched. Because the Compose project name is pinned to `pithead`, the two checkouts
+   is never git-touched. With the same Compose project name (`pithead` by default), the two checkouts
    drive the same containers and the same shared chains. They're two code copies of one stack, run one
    at a time, so borrow→test→restore is a fast code/image swap, never a re-sync.
 2. Seeds the e2e checkout's `config.json`/`.env` from the live release bundle when one exists —
