@@ -149,7 +149,14 @@ describe_change() {
         msg="$key: $old → $new — the service will use the new (empty) directory and re-sync; old data is left in place."
         ;;
     P2POOL_FLAGS | P2POOL_PORT)
-        msg="P2Pool sidechain changing ($key: '$old' → '$new') — p2pool re-syncs the new sidechain and your PPLNS window resets."
+        local selector='(^|[[:space:]])--(mini|nano)([[:space:]]|$)' old_pool=main new_pool=main
+        [[ "$old" =~ $selector ]] && old_pool="${BASH_REMATCH[2]}"
+        [[ "$new" =~ $selector ]] && new_pool="${BASH_REMATCH[2]}"
+        if [ "$key" = P2POOL_PORT ] || [ "$old_pool" != "$new_pool" ]; then
+            msg="P2Pool sidechain changing ($key: '$old' → '$new') — p2pool re-syncs the new sidechain and your PPLNS window resets."
+        else
+            msg="P2Pool peer routing changed — proxy routing, DNS lookups and IP visibility to peers follow the new settings; the $new_pool sidechain stays selected."
+        fi
         ;;
     MONERO_NODE_HOST | MONERO_RPC_PORT | MONERO_ZMQ_PORT | TARI_GRPC_ADDRESS)
         flag=CONFIRM msg="${key%%_*} node endpoint ($key): ${old:-unset} → $new — the stack points its RPC client THERE and trusts the chain data, block templates and share heights that address returns. Confirm-gated, not free-commit, because it moves TRUST rather than disk; the host probes the new endpoint before accepting it, and putting the old address back reverses it."

@@ -194,6 +194,10 @@ chain; a remote node syncs where it runs. Mining waits for Monero, and also for 
 opt into Tari, so Tari can catch up in the background while Monero mining starts. Manual configs
 inherit different reference defaults; check [the sync gate](configuration.md#configuration-reference).
 
+The first start prints `The miner is held until the initial sync finishes for Monero, then starts
+automatically.` When Tari is required, the note names `Monero and Tari` instead. Later restarts
+do not repeat the note.
+
 Watch the dashboard's Sync Mode and node cards, or run:
 
 ```bash
@@ -234,10 +238,10 @@ https://<your-hostname>
 ```
 
 `<your-hostname>` is the host you set during setup (the script prints the exact URL when it
-starts the stack). Caddy uses a self-signed certificate (`tls internal`), so the first time you
-visit, your browser shows a one-time "your connection is not private" / untrusted-certificate
-warning. Accept it to continue. Prefer plain HTTP on your LAN? Set `dashboard.secure: false` in
-`config.json` and run `./pithead apply`.
+starts the stack). Caddy uses a local certificate authority (`tls internal`).
+[Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
+browser warnings after certificate renewal. Prefer plain HTTP on your LAN? Set
+`dashboard.secure: false` in `config.json` and run `./pithead apply`.
 
 ---
 

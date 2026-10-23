@@ -31,10 +31,12 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
 	bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
 	bash tests/stack/standalone/test_data_reset.sh
+	bash tests/stack/standalone/test_directory_linebreaks.sh
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh
 	bash tests/stack/standalone/test_appliance_hugepages.sh
 	python3 tests/stack/standalone/test_clearnet_attestation.py
+	python3 tests/stack/standalone/test_stratum_port.py
 
 test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-tool coverage guard (no bench, no network)
 	@# Tier 1 on purpose. The capture needs a bench; the JUDGEMENT does not, and the judgement is
@@ -62,6 +64,7 @@ test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	python3 scripts/lint/test-ci-uv-install.py
 	python3 tests/stack/standalone/test_tor_saturated_fixture.py
 	python3 tests/stack/standalone/test_monero_download.py
+	python3 tests/stack/standalone/test_appliance_release_docs.py
 	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'
