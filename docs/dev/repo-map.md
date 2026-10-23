@@ -184,6 +184,10 @@ The separate HTTPS backup fixture verifies complete encrypted downloads in Chrom
 `wizard/`. `vendor/` contains third-party browser libraries and their provenance.
 Keep local code out of `vendor/`.
 
+The Tari-off preview regression is `tests/stack/control/test-control-editable-allowlist.sh`;
+`tests/integration/lib/run-tari-off-preview.sh` exercises the combined candidate through
+the deployed CLI during the hardening phase.
+
 ## Shell suites and tools
 
 | Directory | How it runs |
@@ -248,6 +252,12 @@ Coordinator connection announcements and unchanged-apply miner calls are covered
 `tests/integration/lib/run-connection-announcements.sh` against the deployed DIY CLI.
 Its `tests/integration/tools/connection-setup-pty.py` driver answers the real setup prompts
 and bounds the child process and captured output.
+The stratum authentication and TLS client controls are in
+`tests/integration/rotate-auth-probe.py`, with wire, counter and miner fixtures in
+`tests/integration/selftest/test_rotate_auth_probe.py`. Both TLS scenarios run the controls;
+the KVM stack phase selects `remote-main-stratum-tls` for the appliance's shipped XMRig.
+`tests/os/selftest-stratum-controls.sh` registers its appliance fixture checks.
+
 `tests/integration/lib/run-channel.sh` identifies appliances through the shipped CLI
 and records counted `by-design` skips for the connection, wallet supersession and wallet
 recovery checkout probes; failed identification leaves those probes binding.
