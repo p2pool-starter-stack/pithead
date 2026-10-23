@@ -60,18 +60,18 @@ _image_upgrade_prepare_inputs() {
         return "$rc"
     }
     _image_upgrade_input_run signing 'chmod <cosign>' chmod 0700 "$stage/cosign" || return $?
-    _image_upgrade_input_run signing 'curl <published-v1.20.0-bundle>' \
-        curl -fsSL --retry 3 -o "$stage/v1.20.0.tar.gz" \
-        https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz || return $?
-    _image_upgrade_input_run signing 'curl <published-v1.20.0-signature>' \
-        curl -fsSL --retry 3 -o "$stage/v1.20.0.sig" \
-        https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz.sig || return $?
+    _image_upgrade_input_run signing 'curl <published-v2.0.0-bundle>' \
+        curl -fsSL --retry 3 -o "$stage/v2.0.0.tar.gz" \
+        https://github.com/p2pool-starter-stack/pithead/releases/download/v2.0.0/pithead.tar.gz || return $?
+    _image_upgrade_input_run signing 'curl <published-v2.0.0-signature>' \
+        curl -fsSL --retry 3 -o "$stage/v2.0.0.sig" \
+        https://github.com/p2pool-starter-stack/pithead/releases/download/v2.0.0/pithead.tar.gz.sig || return $?
     _image_upgrade_input_run signing 'cp <project-public-key> <private-stage>' \
         cp cosign.pub "$stage/project.pub" || return $?
-    _image_upgrade_input_run signing 'cosign verify-blob <published-v1.20.0-bundle>' \
-        "$stage/cosign" verify-blob --key "$stage/project.pub" --signature "$stage/v1.20.0.sig" \
-        --insecure-ignore-tlog=true "$stage/v1.20.0.tar.gz" || return $?
-    ok "published v1.20.0 bundle verifies with the project public key"
+    _image_upgrade_input_run signing 'cosign verify-blob <published-v2.0.0-bundle>' \
+        "$stage/cosign" verify-blob --key "$stage/project.pub" --signature "$stage/v2.0.0.sig" \
+        --insecure-ignore-tlog=true "$stage/v2.0.0.tar.gz" || return $?
+    ok "published v2.0.0 bundle verifies with the project public key"
     [ -f "${PITHEAD_REGISTRY_COSIGN_PUB:-}" ] && [ ! -L "$PITHEAD_REGISTRY_COSIGN_PUB" ] || {
         _image_upgrade_input_failure signing 'cp <image-public-key> <private-stage>' 1
         return 1
@@ -118,7 +118,7 @@ _image_upgrade_prepare_inputs() {
         _image_upgrade_input_failure generated-config 'printf <node-password> > <private-file>' "$rc"
         return "$rc"
     fi
-    if tar -xOf "$stage/v1.20.0.tar.gz" pithead/config.reference.json 2>/dev/null | jq \
+    if tar -xOf "$stage/v2.0.0.tar.gz" pithead/config.reference.json 2>/dev/null | jq \
         --arg monero_wallet "$HARNESS_WALLET" --arg tari_wallet "$HARNESS_TARI" \
         --arg monero_host "$monero_v4" --argjson monero_rpc "$PITHEAD_OS_MONERO_RPC_PORT" \
         --argjson monero_zmq "$PITHEAD_OS_MONERO_ZMQ_PORT" --arg tari_host "$tari_v4" \
@@ -160,7 +160,7 @@ _image_upgrade_sign_wrong_key() { # <private stage>
 _image_upgrade_stage_guest() {
     _ssh 'rm -rf /run/pithead-image-upgrade && install -d -m 0700 /run/pithead-image-upgrade' || return 1
     scp -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q \
-        "$IMAGE_UPGRADE_HOST_STAGE"/{bundle.pub,candidate.tar.gz,candidate.tar.gz.sig,config.json,harness.tar.gz,image.pub,project.pub,v1.20.0.sig,v1.20.0.tar.gz,wrong.sig} \
+        "$IMAGE_UPGRADE_HOST_STAGE"/{bundle.pub,candidate.tar.gz,candidate.tar.gz.sig,config.json,harness.tar.gz,image.pub,project.pub,v2.0.0.sig,v2.0.0.tar.gz,wrong.sig} \
         tests/os/image-upgrade-guest.sh "root@$ip:/run/pithead-image-upgrade/" || return 1
     _ssh 'chmod 0700 /run/pithead-image-upgrade/image-upgrade-guest.sh' || return 1
 }
@@ -176,7 +176,7 @@ _image_upgrade_read_guest_failure() {
     guest_stage="${guest_stage%% exit=*}"
     exit_status="${marker##* exit=}"
     case "$guest_stage" in
-    guest-preflight | remote-node-reachable | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner-tree | local-miner-role | local-miner-render | local-miner-rigforge | local-miner-unit | miner-share | upgrade-gate | unattributed) ;;
+    guest-preflight | remote-node-reachable | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-setup | local-miner-tree | local-miner-role | local-miner-render | local-miner-rigforge | local-miner-unit | miner-share | upgrade-gate | unattributed) ;;
     *) return 1 ;;
     esac
     [[ "$exit_status" =~ ^[0-9]+$ ]] && [ "$marker" = "stage=$guest_stage exit=$exit_status" ] || return 1
@@ -199,7 +199,7 @@ _image_upgrade_read_miner_readiness() {
 }
 
 phase_image_upgrade() {
-    info "phase: image-upgrade (signed v1.20.0 -> candidate on guest-local reflink XFS)"
+    info "phase: image-upgrade (signed v2.0.0 -> candidate on guest-local reflink XFS)"
     local ip="" rc=0 cleanup_rc=0 head guest_failure="" miner_readiness=""
     _image_upgrade_inputs_valid || {
         bad "image-upgrade requires PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT, PITHEAD_OS_MONERO_ZMQ_PORT, PITHEAD_OS_TARI_NODE_HOST, and PITHEAD_REGISTRY"

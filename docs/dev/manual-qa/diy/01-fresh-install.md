@@ -203,7 +203,9 @@ Per #3099 and #3092:
 **What you should see:**
 
 - The stack starts.
-- This first start prints a short note that the miner is held until both chains sync.
+- This first start prints `The miner is held until the initial sync finishes for Monero, then starts automatically.`
+  The wizard leaves Tari off by default and makes it non-required when opted in. A config with
+  Tari enabled and `dashboard.tari_required` true names `Monero and Tari` instead.
 - A later `./pithead restart` does not print the note again.
 - Per #3090, `up` also prints the LAN pool URL and `none set` for the stratum password, every time.
 
@@ -258,12 +260,12 @@ Per #3099 and #3092:
 **What you do:**
 
 1. On the laptop, open the URL that setup printed, of the form `https://<hostname>`. `<hostname>` stands for the box's name.
-2. Accept the one-time certificate warning.
+2. [Verify and trust the installation's root CA](../../../configuration.md#exposing-the-dashboard-safely), then reload the dashboard.
 3. Log in with the dashboard login you saved in 1.4.
 
 **What you should see:**
 
-- A one-time certificate warning, then the login.
+- A valid HTTPS connection, then the login.
 - Then the **Sync Mode** screen, with a progress line per chain and a held-miner notice.
 - The top bar shows CPU, RAM, HugePages and disk.
 

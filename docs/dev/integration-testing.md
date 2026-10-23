@@ -261,11 +261,13 @@ The runner exits non-zero if any assertion failed.
 
 The appliance-owned `tests/os/run.sh --phase image-upgrade` supplies the release-shaped machine
 that this gate needs. It creates its reflink XFS as a sparse loop-mounted file inside the disposable
-KVM guest, verifies the unchanged signed v1.20.0 bundle, and uses the tier-4 remote Monero and Tari
+KVM guest, verifies the unchanged signed v2.0.0 bundle, and uses the tier-4 remote Monero and Tari
 endpoints. The gate's success signal is real mining, so it reserves no rig: the guest mines against
 its own stack with the appliance's built-in miner, started through `pithead local-miner` — the same
-invocation a provisioned coordinator uses, pointed at `127.0.0.1`'s stratum port. The baseline
-predates that subcommand, so the appliance's own CLI runs it against the baseline stack directory.
+invocation a provisioned coordinator uses, pointed at `127.0.0.1`'s stratum port. The appliance's
+own CLI runs it against the baseline stack directory. Baseline setup, candidate upgrade and
+rollback use the same DIY test override inside the Podman guest; mixing appliance setup with
+DIY rollback changes derived control units and Caddy configuration.
 Both the forward worker-set wait and the rollback worker-set/proxy-count wait use
 `BOUND_RECONNECT` (default 480 seconds). Rollback re-reads the dashboard state every five seconds
 and compares both worker readings from the same response; a persistent wrong worker set or
@@ -275,12 +277,10 @@ during rollback; unavailable observations do not establish recovery. The pure
 `selftest-restore-baseline-workers.sh` covers delayed convergence, timeout, wrong names and an
 earlier healthy reading followed by disconnection, and runs in the tier-1 selftest glob.
 The phase reports the seconds the miner took to reach the four states the gate reads, and bounds
-that wait so a miner that never mines fails the gate instead of hanging it. The candidate's
-`pithead upgrade` and every restored baseline whose CLI defines `container_engine` start under the
-strict Tor-egress check. v1.20.0 predates that function and the podman nft ruleset, so on the
-appliance its restore starts with a plain `pithead up` and records the counted by-design row
-`baseline Tor-egress ruleset (#2696)`; [#2696](https://github.com/p2pool-starter-stack/pithead/issues/2696)
-removes it once 2.0.0 is the baseline. It does not prove that a local chain directory survives without a resync; that larger
+that wait so a miner that never mines fails the gate instead of hanging it. The baseline uses `pithead-v2.0.0-baseline` so a candidate whose `VERSION` is still `2.0.0`
+gets a fresh version directory. The candidate's
+`pithead upgrade` and every baseline restoration start under the strict Tor-egress check.
+It does not prove that a local chain directory survives without a resync; that larger
 copy-on-write gate is tracked by [#2176](https://github.com/p2pool-starter-stack/pithead/issues/2176).
 
 Upgrade provenance is written to `image-upgrade-provenance.txt`, including candidate version,
@@ -578,6 +578,8 @@ first, which can take upward of 20 minutes ([#2455](https://github.com/p2pool-st
 once. `check` is pure reads only. `matrix` is the opt-in full destructive
 config sweep (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
 two rig phases, all under `--safety-backup` auto-rollback) for a pre-release tier-4 gate.
+The harness runs `--subnet` before lifecycle: lifecycle's uninstall removes `wallet_data` by design, so a later
+subnet phase would assert the Monero payout wallet mid-rescan ([#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026)).
 The rig phases are gated on a borrowed miner rather than on the mode: the release runbook mandates
 `targeted`, so keeping the write paths matrix-only left them out of the gate that decides whether a
 release ships ([#1364](https://github.com/p2pool-starter-stack/pithead/issues/1364)). `--keep` leaves it deployed for
@@ -1422,6 +1424,9 @@ SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on
 so the harness itself is held to the same lint/test standard as the rest of the stack.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
+`selftest-inventory-scenarios.sh` requires the real inventory to exit zero with empty stderr,
+then checks that its scenario count and list include literal-tab rows and exclude plain `t`
+and backslash-`t` decoys. The fixture retains the inventory's other suites and drift gates.
 `selftest-check-lan-guard.sh` checks read-only and deploying dispatch with unrelated
 assertions, including onion targets, explicitly stubbed. It retains the LAN probes,
 timer flush and boot recovery assertions and rejects unexpected missing commands,
