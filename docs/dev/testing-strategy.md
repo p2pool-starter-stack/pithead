@@ -166,7 +166,10 @@ output contracts. The guest exercises running and stopped
 isolated Compose fixtures, requires RC3's restarting census to fail with Podman's
 exit 125, then requires status and the actual integration predicate to reject a
 Caddy crash loop. An independent 30-second restart/start-time observation establishes
-churn; Caddy restoration and predicate recovery must pass. The guest passes the
+churn; its timestamp and count come from one tab-delimited inspect response, so
+spaces in Podman timestamps remain part of the identity. Both samples must be
+readable, and the second is taken at least 30 seconds after the first. Caddy
+restoration and predicate recovery must pass. The guest passes the
 staged helper directory as `ENGINE_CONTRACT_WORK`; the predicate sources its copied
 churn helper and extracted status predicate from that directory. The extraction selftest
 runs through the OS selftest glob in CI. Failed engine legs print bounded guest

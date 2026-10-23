@@ -3,6 +3,13 @@ set -euo pipefail
 
 cd /data/pithead
 work=$(mktemp -d)
+read_restart_observation() {
+    local snapshot
+    snapshot=$(podman inspect -f $'{{.State.StartedAt}}\t{{.RestartCount}}' caddy) || return 1
+    [[ "$snapshot" != *$'\n'* ]] || return 1
+    IFS=$'\t' read -r observation_start observation_count <<<"$snapshot"
+    [[ -n "$observation_start" && "$observation_count" =~ ^[0-9]+$ ]]
+}
 restore_caddy() {
     local rc=0
     podman rm -f caddy >/dev/null 2>&1 || rc=1
@@ -52,8 +59,12 @@ done
     exit 1
 }
 
+if ! read_restart_observation; then
+    echo 'restart detection leg: initial independent observation unavailable or malformed' >&2
+    exit 1
+fi
+independent_start=$observation_start independent_count=$observation_count
 churn_started=$SECONDS
-read -r independent_start independent_count < <(podman inspect -f '{{.State.StartedAt}} {{.RestartCount}}' caddy)
 running_deadline=$((SECONDS + 10))
 while [ "$SECONDS" -lt "$running_deadline" ] && [ "$(podman inspect -f '{{.State.Status}}' caddy)" != running ]; do
     sleep 0.1
@@ -87,7 +98,11 @@ if [ -n "${ENGINE_CONTRACT_WORK:-}" ]; then
     }
     remaining=$((30 - (SECONDS - churn_started)))
     [ "$remaining" -le 0 ] || sleep "$remaining"
-    read -r independent_after independent_current < <(podman inspect -f '{{.State.StartedAt}} {{.RestartCount}}' caddy)
+    if ! read_restart_observation; then
+        echo 'restart detection leg: final independent observation unavailable or malformed' >&2
+        exit 1
+    fi
+    independent_after=$observation_start independent_current=$observation_count
     [ "$independent_current" -gt "$independent_count" ] && [ "$independent_after" != "$independent_start" ] || {
         echo 'restart detection leg: independent 30-second observation did not establish churn' >&2
         exit 1
