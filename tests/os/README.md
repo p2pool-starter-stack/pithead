@@ -39,7 +39,8 @@ The opt-in `tor-heal` phase provisions a local-node guest and disables Tor netwo
 through an unsaved control setting. It retains the production timers: 90 minutes with
 auto-heal disabled, then up to 95 minutes with it enabled. Both legs use **No login**,
 with general dashboard control disabled. The disabled leg requires broken real egress,
-unchanged Tor and Monero start times, and no applied healing actions. The enabled leg
+unchanged Tor and Monero start times read directly as Podman epoch seconds, and no
+applied healing actions. The enabled leg
 requires rejection of unrelated requests, two audited host-runner NEWNYM results, and
 the healer's final Tor and Monero restart. Only that restart lifts the enabled fault;
 the test requires restored SOCKS egress, healthy Monero with outgoing peers, a confirmed

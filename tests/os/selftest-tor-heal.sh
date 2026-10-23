@@ -52,6 +52,22 @@ awk '/^  dashboard:/{d=1} d&&/network_mode:/{print; exit}' "$ROOT/docker-compose
 grep -qx 'gateway=127.0.0.1' "$ROOT/tests/os/tor-heal-guest.sh"
 # Exercise guest helpers without executing the guest's main body.
 (
+    docker() {
+        [ "$1" = inspect ] && [ "$2" = --format ] && [ "$4" = tor ] || return 23
+        if [ "$3" = '{{.State.StartedAt.Unix}}' ]; then
+            printf '%s\n' "$epoch"
+        else
+            printf '2026-10-23 04:51:18.540016744 +0000 UTC\n'
+        fi
+    }
+    eval "$(sed -n '/^container_start() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    epoch=1792731078
+    [ "$(container_start tor)" = "$epoch" ]
+    for epoch in '' 0 invalid; do
+        if container_start tor; then exit 1; fi
+    done
+)
+(
     work="$work/egress"
     mkdir -p "$work"
     docker() {

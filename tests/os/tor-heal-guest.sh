@@ -91,9 +91,8 @@ require_egress_down() {
 }
 container_start() {
     local stamp
-    stamp=$(docker inspect --format '{{.State.StartedAt}}' "$1") || return 1
-    [ -n "$stamp" ] || return 1
-    date -d "$stamp" +%s >/dev/null || return 1
+    stamp=$(docker inspect --format '{{.State.StartedAt.Unix}}' "$1") || return 1
+    [[ "$stamp" =~ ^[0-9]+$ ]] && [ "$stamp" -gt 0 ] || return 1
     printf '%s\n' "$stamp"
 }
 disable_network() {
