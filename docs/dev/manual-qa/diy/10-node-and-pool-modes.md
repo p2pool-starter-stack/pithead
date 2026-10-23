@@ -5,7 +5,7 @@ This part checks switching Tari off and on, sharing one Monero node between two 
 ## Before you start
 
 - Machines: the **fresh box** and the **upgrade box**, each in a terminal in its install directory, and a miner.
-- Earlier steps: the fresh box has finished its first [sync](../README.md#glossary) ([section 1](01-fresh-install.md), 1.13). The Telegram test chat from [section 8](08-alerts-telegram.md) is set up on the upgrade box, for 10.3a and 10.5.
+- Earlier steps: use the separate Tari opt-in fixture from [section 1](01-fresh-install.md), 1.4b, after observing both nodes finish syncing in 1.13. Steps 10.1–10.2 need Tari enabled with retained chain data; keep the default Monero-only run separate. The Telegram test chat from [section 8](08-alerts-telegram.md) is set up on the upgrade box, for 10.3a and 10.5.
 - Have ready: [Config C and Config D](../sample-configs.md) from the sample configs, filled in with your QA values, and the dashboard password used so far.
 - In 10.3 to 10.6 the upgrade box is the **node machine** and the fresh box is the **second machine**, which uses the node machine's Monero node.
 - Each change goes through [apply](../README.md#glossary), which prints a [preview](../README.md#glossary) first. A `⚠` line asks `(y/N)` before it changes anything.
@@ -49,7 +49,7 @@ This part checks switching Tari off and on, sharing one Monero node between two 
 - No `Workers rejected` badge shows.
 - The Tari card reads syncing until Tari is at the tip.
 
-Only a first install waits for both chains.
+Initial mining release waits for the required chains. The fresh wizard opt-in writes `dashboard.tari_required: false`, so Monero mining does not wait for Tari.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 

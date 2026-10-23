@@ -31,6 +31,7 @@ Contents:
 
 - Read [What you need](what-you-need.md) and gather everything on it. Reserve the shared
   machines first: see [Reserve the hardware](release/before-the-cut.md#reserve-the-hardware).
+- Record the guide source separately from the candidate being tested. An RC kit containing `manual-qa/` records its guide snapshot in `manual-qa/DEVELOP_COMMIT`; a source checkout uses `git rev-parse HEAD`. A kit with only the legacy single checklist has no marker: obtain the current guide snapshot and its SHA from the release owner. Compare that guide SHA and step 1.4a with the corrected source before testing. If the kit guide is stale, have the release owner refresh the copied guide tree and its SHA together, keeping the tested candidate SHA unchanged. Do not edit only the copy or its provenance marker.
 - Fill in the [Sample configs](sample-configs.md) with your QA values.
 - Rough time: about six working days of hands-on time, then the 7-day [soak](#glossary). A first
   chain [sync](#glossary) takes hours to days, so start session 2 of the [Run sheet](#run-sheet)
@@ -90,7 +91,7 @@ broken (health-gate fault) test bundle.
 | 6 | Alerts and Tor | 4 h | [8.1–8.7](diy/08-alerts-telegram.md), [9.1–9.8](diy/09-privacy-tor.md), and [9.6a](diy/09-privacy-tor.md)'s DIY half | Upgrade box, test bot, Tor Browser |
 | 7 | Soak appliance: install | 4 h and 30 min of provisioning | [13.1–13.9](appliance/13a-install-and-first-boot.md) (not 13.6a), 13.7a, 13.8a, [13.20](appliance/13b-updates-restore-and-media.md) | The RC image, 16 GB stick, soak appliance, a second disk, laptop |
 | 8 | Soak appliance: updates and power | 4 h | [13.10–13.12, 13.19](appliance/13b-updates-restore-and-media.md) | The good higher-version test bundle (the RC update bundle if you have none), the broken test bundle, the debug SSH key |
-| 9 | DIY node modes and backups | 4 h, once the fresh box has synced (1.12 runs earlier, in the window when Monero has synced and Tari has not) | [1.12, 1.13](diy/01-fresh-install.md), [10.1–10.7](diy/10-node-and-pool-modes.md), [11.1–11.5](diy/11-backup-restore-resets.md) | Fresh box, upgrade box, a miner |
+| 9 | DIY node modes and backups | 4 h, once the fresh box has synced (1.12 runs earlier on the separate Tari opt-in fixture, while Monero has synced and Tari has not; N/A on the default run) | [1.12, 1.13](diy/01-fresh-install.md), [10.1–10.7](diy/10-node-and-pool-modes.md), [11.1–11.5](diy/11-backup-restore-resets.md) | Fresh box, upgrade box, a miner |
 | 10 | Second appliance | 7 h | [13.1–13.8](appliance/13a-install-and-first-boot.md) with 13.6a, then [9.6a](diy/09-privacy-tor.md), [13.15–13.18, 13.21–13.25](appliance/13b-updates-restore-and-media.md), [15.1, 15.2](appliance/15-rename-and-resets.md) | The RC image, restore PC, second stick, laptop |
 | 11 | Backup and restore (M15) | 4 h | [13.13, 13.14](appliance/13b-updates-restore-and-media.md), [15.3](appliance/15-rename-and-resets.md) on the restore PC, then [13.14a](appliance/13b-updates-restore-and-media.md) | Soak appliance, restore PC, upgrade box (down for 13.14a), the plain 1.x backup |
 | 12 | Rigs | 2 h | [14.1–14.4](appliance/14-rigforge-rig.md) | The RC image, the RC update bundle, two loaner rigs |

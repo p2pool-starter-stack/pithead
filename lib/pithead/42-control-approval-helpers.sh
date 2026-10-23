@@ -72,10 +72,8 @@ control_masked_binding_error() { # <request-file>
           ] | .[0] // empty' "$1" 2>/dev/null
 }
 
-# Add synthetic rows for confirmed source paths that are inert in the current mode and therefore
-# absent from apply's env-var porcelain.
-control_mark_config_confirm_rows() { # <newline paths> <porcelain>
-    local changed="$1" out="$2" path endpoint_key
+control_mark_config_confirm_rows() {
+    local changed="$1" out="$2" staged="$3" path endpoint_key
     if printf '%s\n' "$changed" | grep -qxF 'p2pool.clearnet'; then
         out=$(printf '%s\n' "$out" | awk -F'\t' 'BEGIN {OFS=FS} $2 == "P2POOL_FLAGS" {$1="CONFIRM"} {print}')
     fi
@@ -88,7 +86,11 @@ control_mark_config_confirm_rows() { # <newline paths> <porcelain>
         *) continue ;;
         esac
         printf '%s\n' "$out" | awk -F'\t' -v k="$endpoint_key" '$2 == k {found=1} END {exit !found}' && continue
-        out+="${out:+$'\n'}CONFIRM"$'\t'"$path"$'\tRemote node endpoint settings are changing.'
+        if [ "$endpoint_key" = TARI_GRPC_ADDRESS ] && [ "$(jq -r '.tari.mode // "local"' "$staged")" = off ]; then
+            out+="${out:+$'\n'}CONFIRM"$'\t'"$path"$'\tTari remote settings are stored but inactive while merge-mining is off.'
+        else
+            out+="${out:+$'\n'}CONFIRM"$'\t'"$path"$'\tRemote node endpoint settings are changing.'
+        fi
     done <<<"$changed"
     printf '%s' "$out"
 }

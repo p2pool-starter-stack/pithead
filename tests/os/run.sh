@@ -32,6 +32,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/aged-version.sh"
 # shellcheck source=tests/os/provision-browser-submit.sh
 . "$SCRIPT_DIR/provision-browser-submit.sh"
+. "$SCRIPT_DIR/image-upgrade-certificate-leg.sh"
 # shellcheck source=tests/os/appliance-hostname-leg.sh
 . "$SCRIPT_DIR/appliance-hostname-leg.sh"
 # shellcheck source=tests/os/appliance-diagnostics-leg.sh
@@ -128,6 +129,7 @@ OS_RUN_SUITE=1
 source "$SCRIPT_DIR/lib/core.sh" || exit $?
 # shellcheck source=tests/os/wizard-redirect-leg.sh
 source "$SCRIPT_DIR/wizard-redirect-leg.sh" || exit $?
+source "$SCRIPT_DIR/wizard-identity-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/boot.sh
 source "$SCRIPT_DIR/phases/boot.sh" || exit $?
 # shellcheck source=tests/os/phases/update-spare-slot.sh
