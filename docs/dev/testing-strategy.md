@@ -9,6 +9,27 @@ rejected → recovered → readmitted; XvB tiers; container health. A healthy, a
 shows one corner of it, so the rest is simulated at the cheapest tier that can prove each
 situation honestly.
 
+Appliance TLS continuity is exercised by `tests/os/selftest-tls-continuity.sh`: a transiently
+smaller canonical SAN set retains a readable matching keypair that still covers every current
+name; a genuinely new SAN or an unusable pair requires replacement. The lifecycle phase
+compares Caddy's served leaf SHA-256 fingerprint, public key, SANs and local private-key digest
+before and after stopped-stack restore and dashboard password apply. HTTP-only configurations count explicit by-design skips. Read failures and any
+identity change on a TLS configuration fail the leg; private keys and their digests are not printed as evidence.
+`tests/integration/selftest/selftest-lifecycle-tls.sh` covers identity divergence and password
+fixture cleanup, and the restore health selftest requires a TLS failure to fail lifecycle. The
+pool-default lifecycle fixture models an HTTP-only box because it exercises pool rendering; the
+dedicated TLS selftests and live lifecycle phase own certificate and password behavior.
+
+The KVM `image-upgrade` certificate leg provisions the actual appliance, adds a genuine
+nonpersistent SAN on its network interface, then drives Check, Download, Install and the
+confirmed reboot from one Chromium tab. A standard-library Python host coordinator drives SSH; Node and Playwright stay inside
+the digest-pinned browser container. Host-side SSH confirms a new boot, the temporarily
+absent address and Caddy running before restoring the address through the real address watcher.
+The test requires equal final canonical SANs, served leaf SHA-256 and key identity, a successful
+post-reboot state response and the updated verdict in that same tab, without another trust
+interaction. Its executable selftests cover certificate replacements and bounded waits;
+only the KVM job establishes boot and browser behavior.
+
 ## The four tiers
 
 | Tier | What it is | Simulates | Where it runs |
