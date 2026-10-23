@@ -107,14 +107,13 @@ firstboot_wizard() {
         card_spool="$restore_spool"
         card_mount=/wizard-restore
         log "Running from the installation medium — install and configure on one page."
-        # The pre-fill is derived fresh every boot, never inherited: the stick's spool
-        # survives between machines, and machine 2 must not open on machine 1's answers —
-        # the same staleness rule the per-session flow-marker clear below enforces.
         rm -f "$spool/last-attempt.json" "$spool/install-attempt.json" \
             "$spool/auth-mode" "$spool/config-changes.json" "$spool/setup-failed"
         wizard_clear_submission_transaction "$spool" || error "Could not clear the previous setup transaction."
         if [ "$operator_preseed" -eq 1 ] && wizard_spool_publish "$spool" last-attempt.json jq -c . "$PRESEED_DIR/pithead-config.json" 2>/dev/null; then
             log "Pre-seeded configuration found — the page opens with it filled in."
+        elif [ "$operator_preseed" -eq 1 ]; then
+            warn "The pre-seeded configuration was rejected — falling back to the setup page."
         elif prefill_from_previous_install "$spool"; then
             log "Found the previous installation's settings on the target disk — the page opens with them filled in (secrets left out)."
         fi
