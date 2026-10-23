@@ -11,6 +11,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- XvB sync regression tests now check real stored stats, reward estimates and raffle wins. Failed fetches and unparseable round aggregates must retain the last good readings and freshness timestamps; a local failure-count update remains allowed (#3056).
+
 ## [2.0.1] - 2026-10-25
 
 Pithead 2.0.1 is the first patch release after 2.0.0. It keeps the dashboard certificate you
