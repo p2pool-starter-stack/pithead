@@ -272,13 +272,33 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   revision/change ID after reboot. Feed reads retry up to 12 times, five seconds apart; missing
   provenance fails the leg. A power-cut leg (M13's rig half, #2067) then destroys the guest
   mid-mining and asserts the same "mining unaided" fact off a real
-  `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063) closes
-  with the one thing every other row here cannot show: an ACCEPTED share. It boots a second,
-  concurrent guest as a remote-node coordinator (`stack`'s own #2062 helper, from the SAME image —
-  no second build), re-points the already-proven rig at that guest's stratum through the "Set up
-  again" menu entry, and reads the coordinator's own `/api/state` until BOTH the rig's worker and
-  the coordinator's built-in miner show `accepted > 0`. A bench with no reserved remote Monero node
-  counts it a `missing` leg skip, the same env vars the `stack` phase needs.
+  `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063, #3425) boots a second,
+  concurrent guest as a remote-node coordinator (`stack`'s helper, from the same image).
+  Through the "Set up again" entry it points the rig at the coordinator by IPv4 address,
+  then by `kvm-share-coordinator.invalid`, then back by address. The hostname is a fixture
+  in the rig guest's volatile `/etc/hosts` overlay. Save the original contents once,
+  then reapply the entry after every setup boot, before authenticating or submitting;
+  guest IPv4 resolution must name exactly the coordinator before and after each switch.
+  An unmapped `.invalid` name must fail the same hostname arm before provisioning.
+  Each arm requires exactly one pool in the miner config, naming the requested endpoint.
+  With the rig stopped at setup, the leg records its accepted-share baseline, then polls
+  the coordinator's `/api/state` every 15 seconds for up to 600 seconds per arm
+  (`PITHEAD_OS_RIG_SHARE_WINDOW_SEC` overrides that bound). Two consecutive observations
+  must show accepted above that arm's baseline and positive one-minute `h60` on an online rig worker. The fixture uses the serialized
+  `/api/state` worker fields; the internal `h10` field is not part of that response.
+  Every observed rig counter must have zero rejected and invalid shares; either becoming
+  positive fails immediately. The coordinator's built-in miner must also have accepted
+  shares on the exact worker named by its guest hostname, with an integer accepted counter.
+  Missing or malformed worker fields cannot pass. Each arm logs its accepted baseline
+  and bounded initial/final observations: row counts, numeric share counters, hashrate and
+  online flags only. Worker names, addresses and unrelated state fields are excluded.
+  A failed state request cannot contribute a passing observation, even with a parseable body. The hosts fixture is restored and the
+  rig root verified read-only without remounting it; the coordinator guest is torn down. `selftest-rig-share.sh` exercises the complete leg with
+  fake transport, clocks and worker snapshots, including stale return-arm shares,
+  rejected/invalid counters, missing fields, hostname failures, extra pools, coordinator identity/counter types, hosts-file write failures and read-only-root verification. Each fake setup boot
+  discards the hosts overlay, matching the appliance boot contract.
+  A bench with no reserved remote Monero node counts it a `missing` leg skip, using
+  the same inputs as the `stack` phase.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
