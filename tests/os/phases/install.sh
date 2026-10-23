@@ -2,6 +2,7 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/os/phases/install-initial.sh
 source "$SCRIPT_DIR/phases/install-initial.sh" || return $?
+# shellcheck source=tests/os/phases/install-rig.sh
 source "$SCRIPT_DIR/phases/install-rig.sh" || return $?
 # shellcheck source=tests/os/phases/install-commit.sh
 source "$SCRIPT_DIR/phases/install-commit.sh" || return $?
