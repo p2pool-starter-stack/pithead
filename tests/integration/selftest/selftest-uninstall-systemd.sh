@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== uninstall systemd state =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib/run-uninstall-systemd.sh
 source "$HERE/../lib/run-uninstall-systemd.sh"
