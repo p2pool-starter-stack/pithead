@@ -56,9 +56,8 @@ jq --slurpfile original "$scratch/original.json" '
     def candidate($saved):
         with_entries(select(.key != "_docs" and .key != "config_version") |
             .key as $key |
-            if ($saved | type) == "object" and ($saved | has($key)) then
-                .value |= if type == "object" then candidate($saved[$key]) else $saved[$key] end
-            else . end);
+            select(($saved | type) == "object" and ($saved | has($key))) |
+            .value |= if type == "object" then candidate($saved[$key]) else $saved[$key] end);
     candidate($original[0])
 ' config.reference.json >"$scratch/fixture.json"
 jq -e --slurpfile original "$scratch/original.json" '

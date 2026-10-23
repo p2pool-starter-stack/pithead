@@ -26,6 +26,11 @@ run_case() {
         jq '.monero.future_wallet = {address: "preserve"}' "$dir/original.json" >"$dir/new.json"
         mv "$dir/new.json" "$dir/original.json"
     fi
+    if [ "$fault" = off-no-wallet ]; then
+        jq 'del(.tari.wallet_address, .tari.view_key, .tari.spend_public_key, .tari.payout_scan_birthday,
+            .monero.out_peers) | .tari.mode = "off"' "$dir/original.json" >"$dir/new.json"
+        mv "$dir/new.json" "$dir/original.json"
+    fi
     cp "$dir/original.json" "$dir/config.json"
     cat >"$dir/pithead" <<'CLI'
 #!/usr/bin/env bash
@@ -119,6 +124,11 @@ assert_eq "both APIs are checked after restore/up before cleanup applies anythin
     $'apply\nbackup\napply\ncurl-config\ndown\nrestore\nup\ncurl-config\ncurl-state\ndown\napply\nup\nstatus\nstatus'
 assert_eq "a verified cleanup removes only its fixture and new archive" \
     "$(find "$work/success/data" -type f | wc -l | tr -d ' ')|$([ ! -e "$work/success/backups/pithead-backup-fixture.tar.gz" ] && cat "$work/success/backups/existing.tar.gz")" '0|untouched'
+assert_eq "Tari off without a wallet remains a supported fixture" "$(run_case off-no-wallet)" 0
+assert_eq "absent fields never become reference placeholders or explicit defaults" \
+    "$(jq '(.tari | has("wallet_address") | not) and (.monero | has("out_peers") | not)' "$work/off-no-wallet/synthetic-at-backup.json")" true
+assert_eq "the partial original remains byte-identical after cleanup" \
+    "$(cmp -s "$work/off-no-wallet/original.json" "$work/off-no-wallet/config.json" && echo yes)" yes
 for fault in stale state-stale restore-refuse fixture-copy; do
     rc=$(run_case "$fault")
     assert_eq "$fault fails the probe" "$([ "$rc" -ne 0 ] && echo yes)" yes

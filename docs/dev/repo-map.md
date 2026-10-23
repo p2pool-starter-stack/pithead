@@ -74,8 +74,9 @@ Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture contr
 `tests/stack/appliance/test-appliance-reset-slot-boot.sh`.
 The fresh-spare negative control is in `tests/os/phases/update-spare-slot.sh`.
 The shared existing-install restore regression is `tests/integration/lib/restore-dashboard-guest.sh`.
-It builds a separate candidate-schema fixture with the original wallet and payout fields, leaving the
-original configuration and its version stamp unchanged for cleanup. Lifecycle and KVM reset require
+It builds a separate candidate-schema fixture from supported keys present in the baseline, preserving
+wallet and payout fields without inserting reference placeholders or defaults. The original
+configuration and its version stamp stay unchanged for cleanup. Lifecycle and KVM reset require
 both dashboard APIs to return the archived energy cost after restore/up, before cleanup applies anything.
 The retained probe output includes guest stderr and fixed failure-stage labels. Cleanup verifies exact
 configuration and bounded health, retaining its private recovery copy if unverified.
