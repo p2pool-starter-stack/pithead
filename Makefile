@@ -39,12 +39,7 @@ test-stack: pithead ## pithead shell test suite
 	python3 tests/stack/standalone/test_stratum_port.py
 
 test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-tool coverage guard (no bench, no network)
-	@# Tier 1 on purpose. The capture needs a bench; the JUDGEMENT does not, and the judgement is
-	@# where a network audit goes wrong — a classifier that silently admits what it does not
-	@# recognise reports a clean run on a leaking box. Driven against seeded flows instead.
-	bash tests/netwatch/netwatch-selftest.sh
-	@# And that the test-harness images stay tracked by dependabot + the CI CVE scan. Without this
-	@# the images are "covered" only until someone edits a yaml, and nothing says otherwise.
+	bash tests/netwatch/netwatch.sh --self-test
 	bash scripts/install-test-tools.sh --self-test
 
 test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
@@ -59,6 +54,9 @@ test-integration-selftest: pithead ## Integration harness logic and local transp
 	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
 
 test-tools: ## Build-tool contracts and CI workflow guards (no live services)
+	bash scripts/test-container.sh --self-test
+	python3 tests/selftest-registration-audit.py
+	python3 tests/selftest-rc-regression-proof.py
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py

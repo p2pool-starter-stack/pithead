@@ -240,19 +240,7 @@ _provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user
 }
 
 _stack_container_restart_leg() {
-    local payload out rc=0
-    payload=$(base64 <"$SCRIPT_DIR/container-restart-leg.sh" | tr -d '\n')
-    out=$(mktemp)
-    SSH_TIMEOUT=480 _ssh "printf %s '$payload' | base64 -d | bash" >"$out" 2>&1 || rc=$?
-    if [ "$rc" -eq 0 ] && grep -Fq 'restart detection leg: PASS' "$out"; then
-        ok "status and doctor detect an observed Caddy crash loop and recover after restoration (#3391)"
-    else
-        [ "$rc" -ne 0 ] || rc=1
-        bad "status and doctor did not prove Caddy crash-loop detection and recovery (#3391, exit $rc)"
-        sed 's/\x1b\[[0-9;]*m//g' "$out" | tail -n 20
-    fi
-    rm -f "$out"
-    return "$rc"
+    appliance_engine_contract_leg
 }
 
 phase_stack() {

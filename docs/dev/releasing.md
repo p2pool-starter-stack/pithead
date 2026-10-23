@@ -398,6 +398,14 @@ KVM_RIG_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_RIG_KEY" \
 printf 'KVM jobs: %s@%s %s@%s\n' "$KVM_BOOT_ID" "$SHA" "$KVM_RIG_ID" "$SHA"
 ```
 
+RC submissions must enable strict missing-skip coverage on every KVM phase and the
+integration harness. Its Pithead contract is `PITHEAD_REQUIRE_COMPLETE=1`; the
+appliance runner also accepts `--require-complete`. Missing skips fail, while
+by-design and covered skips do not. The submission forwarding contract is tracked
+by [bench-ci#2180](https://github.com/p2pool-starter-stack/bench-ci/issues/2180).
+Until it is deployed, the submissions above cannot establish strict coverage; do
+not treat a successful job with missing legs as a complete RC gate.
+
 Read both completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
 rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
 battery proof. A failed KVM group prevents the final e2e gate from running.
@@ -437,9 +445,23 @@ three job IDs and the SHA in the release issue. Remove a rehearsal branch after 
 status with `git push origin --delete "$REF"`. If a submission is refused, stop and report it to
 bench-ci; retain its printed idempotency key for a retry.
 
+A PR closing an issue labelled `rc-found` must include these lines in its body,
+using real job or run references:
+
+```text
+RC regression RED: job <id>@<40-hex-found-sha>
+RC regression GREEN: job <different-id>@<40-hex-head-sha>
+```
+
+Use `run` for a GitHub Actions run. The `RC-found regression proof` job rejects
+missing references, repeated IDs, equal SHAs, an unresolved RED SHA, a RED SHA that
+is not a strict ancestor of the head, and a GREEN SHA that differs from the head.
+The reviewer still verifies verdicts and the reproducing trigger; the format check
+does not establish a runtime pass.
+
 | Gate | When | Run by | Blocking |
 | --- | --- | --- | --- |
-| `make test` (tiers 1–3) + `make lint` | every PR | CI | yes |
+| Dedicated lint, shell, dashboard, frontend and mini-stack jobs (tiers 1–3) | every PR | GitHub Actions | yes |
 | Bench full tier-4 suite (`bench-ci/tier4`) | before `release.sh` stage 1 | bench-ci | yes |
 | `make test` again, on the release box | `release.sh` stage 2 | the cut | yes |
 | #54 live matrix, `--readiness` | `release.sh` stage 2 | the cut | yes |

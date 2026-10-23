@@ -39,25 +39,22 @@ IT_SKIPPED_BY_DESIGN=0
 IT_SKIPPED_COVERED=0
 IT_SKIPPED_MISSING=0
 
-# --- Counted skips ----------------------------------------------------------
-# Each takes WHAT did not run and WHY. Both halves are load-bearing: a bare count tells the
-# reader how much is missing but not what, and a run that ends "skipped legs: 6 (pools,
-# auto-rollback, upgrade, #516-reflection, #516-prefill, node-down-failover)" says what it did
-# not prove.
-#
-# A scenario skip drops one matrix row; a phase skip drops every leg under it with one line; a
-# leg skip drops one assertion group. They are separate buckets rather than one total because
-# they are not the same event and must not average out — losing the whole rigforge-control phase
-# is not the same size of hole as losing its pools leg.
-#
-# The class is the OPTIONAL third argument and it defaults to "missing". The default is deliberate
-# and it is the pessimistic one: an unclassified skip is an unexplained absence, so it lands in the
-# bucket that counts as a gap. Getting the default wrong in the other direction would let a real
-# hole disappear by omission — which is the #1083 failure mode itself, one level up.
-#
-# An unrecognised class is a hard error rather than a silently-created fourth bucket. A typo that
-# invents its own bucket would drop that skip out of every total while still printing a plausible
-# line, and a miscount that reads as a count is worse than a crash.
+it_required_coverage_ok() {
+    case "${PITHEAD_REQUIRE_COMPLETE:-0}" in
+    0) return 0 ;;
+    1)
+        if [ "$IT_SKIPPED_MISSING" -gt 0 ]; then
+            it_err "required coverage incomplete: $IT_SKIPPED_MISSING missing skips"
+            return 1
+        fi
+        ;;
+    *)
+        it_err "PITHEAD_REQUIRE_COMPLETE must be 0 or 1"
+        return 1
+        ;;
+    esac
+}
+
 _it_skip_record() {
     case "$4" in
     by-design) IT_SKIPPED_BY_DESIGN=$((IT_SKIPPED_BY_DESIGN + 1)) ;;

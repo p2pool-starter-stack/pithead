@@ -1,0 +1,22 @@
+name: RC regression proof
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+  issues: read
+jobs:
+  proof:
+    name: RC-found regression proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Check red and green proof references
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/lint/rc-regression-proof.py

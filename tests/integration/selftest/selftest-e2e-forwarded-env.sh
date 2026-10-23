@@ -16,9 +16,8 @@ assert_eq "the extraction is the whole run_harness function" \
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-LAUNCH_FILE="$WORK/launch" STDIN_FILE="$WORK/stdin" PREPARE_FILE="$WORK/prepare" STEP_FILE="$WORK/steps"
-# The payout-confirm keys come from the caller's environment; start from none, whatever CI exports.
-unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
+RUNNER_FILE="$WORK/runner" LAUNCH_FILE="$WORK/launch" STDIN_FILE="$WORK/stdin" PREPARE_FILE="$WORK/prepare" STEP_FILE="$WORK/steps"
+unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY PITHEAD_REQUIRE_COMPLETE
 
 capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globals pass through
     : >"$LAUNCH_FILE"
@@ -53,6 +52,7 @@ capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globa
         harness_finished() { :; }
         on_bench() {
             case "$1" in
+            *"cat > "*) cat >"$RUNNER_FILE" ;;
             *nohup*)
                 printf '%s' "$1" >"$LAUNCH_FILE"
                 cat >"$STDIN_FILE"
@@ -67,17 +67,15 @@ capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globa
     )
 }
 
-execute_launch() { # <stdin-file> <capture-file>
-    # env -u: the launched runner must see only what the stream carried, never this shell's exports.
-    CAPTURE_FILE="$2" LIB="$HERE/../lib.sh" env -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY bash -c '
+execute_launch() {
+    CAPTURE_FILE="$2" LIB="$HERE/../lib.sh" env -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY PITHEAD_REQUIRE_COMPLETE="${REMOTE_REQUIRE_COMPLETE:-opposite}" bash -c '
         rm() { :; }; cd() { :; }
         grep() {
             [ "${!#}" != /test/state ] && command grep "$@" || test -s "$CAPTURE_FILE"
         }
         nohup() {
-            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nMONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s\nATTEST[%s]\nARGV[%s]\n" \
-                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$IT_MONERO_VIEW_KEY" "$IT_TARI_VIEW_KEY" "$IT_TARI_SPEND_PUBLIC_KEY" "$IT_ROTATE_ONION_FIXTURE_ATTESTATION" "$*" >"$CAPTURE_FILE"
-            # The harness-side consumer, fed the environment the runner received.
+            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nREQUIRE_COMPLETE=%s\nMONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s\nATTEST[%s]\nARGV[%s]\n" \
+                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "${PITHEAD_REQUIRE_COMPLETE:-unset}" "$IT_MONERO_VIEW_KEY" "$IT_TARI_VIEW_KEY" "$IT_TARI_SPEND_PUBLIC_KEY" "$IT_ROTATE_ONION_FIXTURE_ATTESTATION" "$*" >"$CAPTURE_FILE"
             # shellcheck source=tests/integration/lib.sh
             source "$LIB"
             if resolve_overrides "payout_confirm=env"; then
@@ -86,7 +84,8 @@ execute_launch() { # <stdin-file> <capture-file>
                 printf "PAYOUT_CONFIRM=skip [%s]\n" "$SKIP_REASON" >>"$CAPTURE_FILE"
             fi
         }
-        eval "$1"
+        eval "$1" || exit $?
+        wait
     ' _ "$(cat "$LAUNCH_FILE")" <"$1" >/dev/null
 }
 
@@ -153,6 +152,58 @@ unset -f base64
 assert_eq "an encoder failure refuses to launch" "$ENCODE_RC" 1
 assert_eq "an encoder failure never reaches the remote launch" "$(if [ -s "$LAUNCH_FILE" ]; then echo 1; else echo 0; fi)" 0
 assert_eq "an encoder failure records no durable launch intent" "$(if [ -e "$PREPARE_FILE" ]; then echo 1; else echo 0; fi)" 0
+
+echo "== required coverage survives SSH and the installed detached runner =="
+mkdir -p "$WORK/target/tests/integration" "$WORK/tools"
+printf '#!/usr/bin/env bash\necho 42\n' >"$WORK/tools/awk"
+chmod +x "$WORK/tools/awk"
+cat >"$WORK/target/tests/integration/run.sh" <<'HARNESS'
+#!/usr/bin/env bash
+source "$SKIP_LIB"
+it_err() { printf '%s\n' "$*" >&2; }
+printf 'REQUIRE_COMPLETE=%s\n' "${PITHEAD_REQUIRE_COMPLETE:-unset}"
+IT_SKIPPED_MISSING=${STRICT_MISSING:-1}
+it_required_coverage_ok
+HARNESS
+export SKIP_LIB="$HERE/../lib/skip-accounting.sh"
+for strict in default 0 1; do
+    if [ "$strict" = default ]; then unset PITHEAD_REQUIRE_COMPLETE; else export PITHEAD_REQUIRE_COMPLETE="$strict"; fi
+    expected=${PITHEAD_REQUIRE_COMPLETE:-0}
+    capture_launch "" ""
+    assert_rc "$strict installs and launches" "$?" 0
+    execute_launch "$STDIN_FILE" "$WORK/strict"
+    assert_contains "$strict overrides a contrary remote environment" "$(cat "$WORK/strict")" "REQUIRE_COMPLETE=$expected"
+    env PATH="$WORK/tools:$PATH" PITHEAD_REQUIRE_COMPLETE=opposite bash "$RUNNER_FILE" \
+        "$WORK/state" "$WORK/target" "$WORK/target" 1 request ack token
+    assert_eq "$strict reaches the actual detached harness" "$(head -n 1 "$WORK/target/results/e2e-harness.log")" "REQUIRE_COMPLETE=$expected"
+    assert_eq "$strict enforces the real missing-skip verdict" "$(cat "$WORK/target/results/e2e-harness.done")" "$expected"
+    pregates=$(
+        E2E_DIR="$WORK/target"
+        export STRICT_MISSING=0
+        on_bench() { env PITHEAD_REQUIRE_COMPLETE=opposite bash -c "$1"; }
+        harness_pregate 1 ""
+    )
+    assert_rc "$strict inline pregates execute" "$?" 0
+    assert_eq "$strict reaches both inline pregates" "$pregates" "$(printf 'REQUIRE_COMPLETE=%s\nREQUIRE_COMPLETE=%s' "$expected" "$expected")"
+done
+cp "$LAUNCH_FILE" "$WORK/launch-saved"
+sed 's/PITHEAD_REQUIRE_COMPLETE=[^ ]* //g' "$WORK/launch-saved" >"$LAUNCH_FILE"
+execute_launch "$STDIN_FILE" "$WORK/lost-launch"
+assert_eq "negative control detects lost SSH forwarding" "$(contains "$(cat "$WORK/lost-launch")" 'REQUIRE_COMPLETE=1')" no
+sed '/^export PITHEAD_REQUIRE_COMPLETE=/d' "$RUNNER_FILE" >"$WORK/lost-runner"
+env PATH="$WORK/tools:$PATH" PITHEAD_REQUIRE_COMPLETE=0 bash "$WORK/lost-runner" \
+    "$WORK/state" "$WORK/target" "$WORK/target" 1 request ack token
+assert_eq "negative control loses strict missing-skip rejection" "$(cat "$WORK/target/results/e2e-harness.done")" 0
+PITHEAD_REQUIRE_COMPLETE=invalid capture_launch "" ""
+assert_rc "malformed strict mode refuses installation and launch" "$?" 1
+assert_eq "malformed strict mode creates no durable launch intent" "$(test -e "$PREPARE_FILE" && echo yes || echo no)" no
+unset PITHEAD_REQUIRE_COMPLETE
+for strict in 0 1 invalid; do
+    PITHEAD_REQUIRE_COMPLETE="$strict" bash "$HERE/../e2e.sh" --help >"$WORK/help" 2>&1
+    rc=$?
+    if [ "$strict" = invalid ]; then expected=1; else expected=0; fi
+    assert_rc "wrapper validates $strict before any remote work" "$rc" "$expected"
+done
 
 echo "selftest-e2e-forwarded-env: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

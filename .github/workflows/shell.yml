@@ -118,6 +118,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: |
           bash tests/stack/standalone/test_tor_recovery.sh
+          bash tests/stack/standalone/test_tor_recovery_info.sh
           bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
           bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
       - name: Run real-image data-reset suite
@@ -144,7 +145,7 @@ jobs:
       - name: Run integration harness self-test
         run: make test-integration-selftest
       - name: Run repository tooling checks
-        run: make test-tools
+        run: make test-tools test-netwatch
 
   soak-macos:
     name: Soak self-test (macOS, ${{ matrix.bash }})
