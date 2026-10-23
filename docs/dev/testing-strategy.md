@@ -147,7 +147,9 @@ variable arguments or output contracts. The guest exercises running and stopped
 isolated Compose fixtures, requires RC3's restarting census to fail with Podman's
 exit 125, then requires status and the actual integration predicate to reject a
 Caddy crash loop. An independent 30-second restart/start-time observation establishes
-churn; Caddy restoration and predicate recovery must pass. The extraction selftest
+churn; Caddy restoration and predicate recovery must pass. The guest passes the
+staged helper directory as `ENGINE_CONTRACT_WORK`; the predicate sources its copied
+churn helper and extracted status predicate from that directory. The extraction selftest
 runs through the OS selftest glob in CI.
 
 Strict coverage is opt-in: `PITHEAD_REQUIRE_COMPLETE=1` makes both the integration

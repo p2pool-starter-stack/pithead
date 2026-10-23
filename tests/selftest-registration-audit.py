@@ -22,32 +22,32 @@ class RegistrationAudit(unittest.TestCase):
 
             write(
                 "Makefile",
-                "local-only:\n\tbash tests/test-local.sh\nci:\n\tbash tests/selftest*.sh\n",
+                "local-only:\n\tbash tests/os/selftest-engine-contract.sh\nci:\n\tbash tests/integration/selftest/*.sh\n",
             )
             write(".github/workflows/test.yml", "run: make ci\n")
             for name in (
-                "tests/test-local.sh",
-                "tests/test-shell.sh",
-                "tests/test_python.py",
+                "tests/os/selftest-engine-contract.sh",
+                "tests/os/selftest-required-coverage.sh",
+                "tests/selftest-registration-audit.py",
                 "dashboard/tests/frontend/new.test.mjs",
-                "tests/selftest-fixture.sh",
+                "tests/integration/selftest/selftest-harness-pregate.sh",
             ):
                 write(name, "exit 0\n")
             expected = {
-                "tests/test-local.sh",
-                "tests/test-shell.sh",
-                "tests/test_python.py",
+                "tests/os/selftest-engine-contract.sh",
+                "tests/os/selftest-required-coverage.sh",
+                "tests/selftest-registration-audit.py",
                 "dashboard/tests/frontend/new.test.mjs",
             }
             self.assertEqual(set(AUDIT.audit(root)), expected)
             write(
                 ".github/workflows/test.yml",
-                "run: make ci\nrun: source tests/test-shell.sh\nrun: echo bash tests/test_python.py\n# run: bash tests/test-local.sh\n",
+                "run: make ci\nrun: source tests/os/selftest-required-coverage.sh\nrun: echo bash tests/selftest-registration-audit.py\n# run: bash tests/os/selftest-engine-contract.sh\n",
             )
             self.assertEqual(set(AUDIT.audit(root)), expected)
             write(
                 ".github/workflows/test.yml",
-                "run: make ci local-only\nrun: bash tests/test-shell.sh\nrun: python3 tests/test_python.py\nrun: node --test dashboard/tests/frontend/new.test.mjs\n",
+                "run: make ci local-only\nrun: bash tests/os/selftest-required-coverage.sh\nrun: python3 tests/selftest-registration-audit.py\nrun: node --test dashboard/tests/frontend/new.test.mjs\n",
             )
             self.assertEqual(AUDIT.audit(root), [])
             write("tests/registration-allowlist.tsv", "absent.sh\tcaller.sh\treason\n")
