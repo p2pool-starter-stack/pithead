@@ -59,7 +59,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
-        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
+        lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
         dashboard_tls_identity() { printf identity; }
         assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {
@@ -67,7 +67,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             return 1
         }; }
         run_password_tls_continuity() { :; }
-        run_tari_background_sync() { :; } # driven by its own runtime leg and selftest
+        run_tari_background_sync() { :; }
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;
