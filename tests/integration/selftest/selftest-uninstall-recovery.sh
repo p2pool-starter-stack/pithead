@@ -33,6 +33,7 @@ drive() (
     it_log() { :; }
     it_step() { :; }
     it_warn() { :; }
+    _lan_timer_pause() { return 0; }
     _uninstall_data_dirs() { printf '%s\n' "$box/monero" "$box/tari" "$box/p2pool" "$box/dashboard" "$box/tor"; }
     wait_status_ok() { [ "$test_case" != health-fails ]; }
     upgrade_secret_fingerprints() {
@@ -57,6 +58,7 @@ drive() (
     rx() {
         case "$1" in
         'docker compose stop') return 0 ;;
+        *'systemctl is-active pithead-lan.timer'*) return 0 ;;
         'docker compose ps -aq') printf 'container-id\n' ;;
         'rm -f .env.itest-round-trip'*)
             [ "$test_case" != cleanup-fails ] || return 1
@@ -65,7 +67,9 @@ drive() (
         *'docker image ls'*) cat "$box/resources" ;;
         *"printf 'nope"*)
             [ "$test_case" != abort-file ] || printf changed >>"$box/config.json"
+            [ "$test_case" != abort-checkout ] || printf changed >>"$box/Caddyfile"
             [ "$test_case" != abort-resource ] || printf changed >>"$box/resources"
+            [ "$test_case" != abort-kept ] || printf changed >>"$box/monero/chain"
             printf 'Aborted\n'
             return 1
             ;;
@@ -118,6 +122,11 @@ assert_eq '--keep still proves injected recovery and leaves the successful rebui
 assert_eq 'a missing config snapshot refuses uninstall and restores before returning' "$(drive missing-config)" '1|1|1|0'
 assert_eq 'abort-time file mutation fails the comparison and recovers before returning' "$(drive abort-file)" '1|1|1|0'
 assert_eq 'abort-time host mutation fails the comparison and recovers before returning' "$(drive abort-resource)" '1|1|1|0'
+assert_eq 'abort-time kept-data mutation fails and recovers before returning' "$(drive abort-kept)" '1|1|1|0'
+assert_eq 'abort-time generated-file mutation fails and recovers before returning' "$(drive abort-checkout)" '1|1|1|0'
+assert_contains 'file drift identifies the checkout component' "$(cat "$T/abort-checkout/run.log")" 'changed: checkout files;'
+assert_contains 'resource drift identifies the host component' "$(cat "$T/abort-resource/run.log")" 'changed: host resources;'
+assert_contains 'kept-data drift retains per-file evidence' "$(cat "$T/abort-kept/run.log")" 'monero/chain'
 assert_eq 'a failed archive restore cannot pass because up becomes healthy' "$(drive restore-fails)" '1|1|1|1'
 assert_eq 'a failed startup stops the phase before the success trial' "$(drive up-fails)" '1|1|1|1'
 assert_eq 'a failed health wait stops the phase before the success trial' "$(drive health-fails)" '1|1|1|1'

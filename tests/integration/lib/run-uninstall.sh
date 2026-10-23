@@ -6,7 +6,21 @@ _uninstall_data_dirs() {
 }
 
 _uninstall_host_inventory() {
-    rx 'set -e; docker container ls -aq --no-trunc; docker image ls -q --no-trunc; docker volume ls -q; units=$(systemctl list-unit-files --no-legend && systemctl list-units --all --no-legend); printf "%s\n" "$units" | awk "/pithead-(control|egress|lan)[-.]/"; sudo -n iptables-save; if command -v nft >/dev/null; then sudo -n nft list tables; fi'
+    rx 'set -eo pipefail
+        docker container ls -aq --no-trunc | LC_ALL=C sort
+        docker image ls -q --no-trunc | LC_ALL=C sort
+        docker volume ls -q | LC_ALL=C sort
+        units=$(systemctl list-unit-files --no-legend && systemctl list-units --all --no-legend)
+        printf "%s\n" "$units" | awk "/pithead-(control|egress|lan)[-.]/ { \$1=\$1; print }" | LC_ALL=C sort
+        sudo -n iptables-save | sed -E "/^#/d; s/^(:[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+)\\[[0-9]+:[0-9]+\\]$/\\1[0:0]/"
+        if command -v nft >/dev/null; then sudo -n nft list tables | LC_ALL=C sort; fi'
+}
+
+_uninstall_quiesce() {
+    # The LAN recovery timer otherwise restarts stopped nodes.
+    _lan_timer_pause &&
+        rx 'case "$(systemctl is-active pithead-lan.timer)" in inactive|failed) ;; *) exit 1 ;; esac' &&
+        rx 'docker compose stop' >/dev/null 2>&1
 }
 
 _uninstall_capture_baseline() {
@@ -15,7 +29,7 @@ _uninstall_capture_baseline() {
     data_dirs="$(_uninstall_data_dirs)" && [ "$(printf '%s\n' "$data_dirs" | wc -l)" -eq 5 ] || return 1
     while IFS= read -r dir; do kept+=("$dir"); done <<<"$data_dirs"
     kept_snapshot="$(kept_data_snapshot_snippet "${kept[@]}" config.json backups)"
-    rx 'docker compose stop' >/dev/null 2>&1 &&
+    _uninstall_quiesce &&
         kept_before="$(rx "$kept_snapshot")" && [ -n "$kept_before" ] &&
         compose_ids_before="$(rx 'docker compose ps -aq')" && [ -n "$compose_ids_before" ]
 }
@@ -75,7 +89,7 @@ _uninstall_after_remove() {
 }
 
 run_uninstall_phase() {
-    local phase_fails_before="$IT_FAIL" data_dirs compose_ids_before kept_snapshot kept_before before after snapshot abort_out abort_rc rc before_host after_host after_kept
+    local phase_fails_before="$IT_FAIL" data_dirs compose_ids_before kept_snapshot kept_before before after snapshot abort_out abort_rc rc before_host after_host after_kept drift=""
     # shellcheck disable=SC2034
     IT_CURRENT_SCENARIO="uninstall"
     it_log "── uninstall phase ─────────────────────────"
@@ -97,7 +111,14 @@ run_uninstall_phase() {
         if [ "$after" = "$before" ] && [ "$after_host" = "$before_host" ] && [ "$after_kept" = "$kept_before" ]; then
             it_pass "aborted uninstall preserves every file and host resource"
         else
-            it_fail "aborted uninstall preserves every file and host resource" "the stopped checkout changed"
+            [ "$after" = "$before" ] || drift="$drift checkout files;"
+            [ "$after_host" = "$before_host" ] || drift="$drift host resources;"
+            [ "$after_kept" = "$kept_before" ] || drift="$drift kept paths;"
+            it_fail "aborted uninstall preserves every file and host resource" "changed:$drift"
+            if [ "$after_kept" != "$kept_before" ]; then
+                it_warn "Kept-path hash/metadata differences (first 80 lines):"
+                diff -u <(printf '%s\n' "$kept_before") <(printf '%s\n' "$after_kept") | sed -n '1,80p' || true
+            fi
         fi
     else
         it_fail "aborted uninstall preserves every file and host resource" "post-abort snapshot failed"

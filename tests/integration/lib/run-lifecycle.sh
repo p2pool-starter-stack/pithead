@@ -269,10 +269,10 @@ run_uninstall_round_trip() {
     local local_node=""
     has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node && local_node=1
     snippet="$(kept_data_snapshot_snippet "${kept[@]}")"
-    if ! rx 'docker compose stop' >/dev/null 2>&1 || ! rx 'cp -p .env .env.itest-round-trip' ||
+    if ! _uninstall_quiesce || ! rx 'cp -p .env .env.itest-round-trip' ||
         ! before="$(rx "$snippet")" || [ -z "$before" ] ||
         ! big_before="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"; then
-        it_fail "stopped stack snapshot readable before uninstall" "docker compose stop or the kept-data snapshot failed"
+        it_fail "stopped stack snapshot readable before uninstall" "quiescing, secret copy, or the kept-data snapshot failed"
         rx 'rm -f .env.itest-round-trip'
         pithead up >/dev/null 2>&1
         wait_status_ok 240 || true
