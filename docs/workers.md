@@ -494,8 +494,10 @@ appliance mode after the stack is up, and repeats that on every boot — the min
 in `/run` and is re-created each time, like every other
 derived thing on the appliance. The worker appears in the dashboard's Workers Alive table; toggle
 `local_miner.enabled` from the dashboard's configuration view to turn it off or on again. Apply
-starts or stops the built-in miner without rebooting, even when this is the only setting changed. The
-rest of this section is the DIY flow.
+starts or stops the built-in miner without rebooting, even when this is the only setting changed.
+`up` also converges the built-in miner after starting the stack, including after a shell restore
+following config-reset and reboot. An A/B migration hold defers this step until the slot commits.
+Miner setup failures warn without failing stack startup. The rest of this section is the DIY flow.
 
 Opt in during `./pithead setup` (the prompt "Also mine on this machine with its spare CPU?", off by
 default), or set it in `config.json`:

@@ -278,8 +278,8 @@ stack_up() {
     elif ! compose_up_checked -d; then
         error "Stack failed to start — see the error above."
     fi
+    [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ] || provision_local_miner || true
     log "Stack started successfully!"
-    # Remind the operator at start-time if a node is coming up on clearnet (#183).
     print_clearnet_banner
     announce_dashboard_url
     print_first_run_epilogue

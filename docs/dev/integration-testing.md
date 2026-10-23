@@ -826,6 +826,12 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
+- On an appliance with local mining enabled, reset recovery binds the nonempty online worker set
+  before backup, including the host miner identity read from its deployed configuration. After
+  encrypted restore and `up`, it requires that set to reconnect within 480 seconds and each worker
+  to advance its accepted-share counter within another 600 seconds after reconnection. Bounded unit-state snapshots before reset,
+  before `up` and after recovery are retained before any later cleanup. Disabled local mining,
+  DIY and explicit mining opt-outs retain counted by-design skips for this appliance assertion.
 - Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
   container StartedAt and RestartCount), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).
