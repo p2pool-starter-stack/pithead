@@ -397,3 +397,4 @@ assert_eq "an ordinary allowlisted change still commits" "$(jq -r '.status' "$RE
 assert_contains "the settable spend key has a describe_change message" "$(run_sourced "$C" describe_change TARI_SPEND_PUBLIC_KEY "" "$SILENT_SPEND")" "spend key"
 assert_eq "its fixed-internal siblings stay silent" "$(run_sourced "$C" describe_change TARI_WALLET_GRPC_ADDRESS a b | tr -d '\t')" "INFO"
 assert_eq "the derived Monero RPC URL stays behind its source endpoint rows" "$(run_sourced "$C" describe_change MONERO_RPC_URL a b | tr -d '\t')" "INFO"
+assert_not_contains "profile is never a direct commit" "$(run_sourced "$SANDBOX" eval 'printf %s "$CONTROL_DASHBOARD_EDITABLE_KEYS"')" "PITHEAD_PROFILE"

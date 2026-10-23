@@ -125,7 +125,7 @@ if in_block 1; then
     # shellcheck source=tests/stack/test-deps-python.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-deps-python.sh" && domain_ran test-deps-python.sh "$_d0" "$?" || domain_ran test-deps-python.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-config.sh disable=SC2015
-    _d0=$((PASS + FAIL)) && source "$HERE/test-config.sh" && domain_ran test-config.sh "$_d0" "$?" || domain_ran test-config.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && bash "$HERE/config/profile.sh" && source "$HERE/test-config.sh" && domain_ran test-config.sh "$_d0" "$?" || domain_ran test-config.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-config-document.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-config-document.sh" && domain_ran test-config-document.sh "$_d0" "$?" || domain_ran test-config-document.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-render-quadlet.sh disable=SC2015

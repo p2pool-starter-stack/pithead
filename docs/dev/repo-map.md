@@ -379,3 +379,8 @@ Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugep
 `lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
+
+Privacy profiles are resolved from `dashboard/mining_dashboard/config/defaults.json` by
+`lib/pithead/19b-config-profile.sh` and `dashboard/mining_dashboard/config/defaults.py`.
+`tests/stack/config/profile.sh` checks rendering and overrides; `tests/integration/profile-peering.py`
+checks the Privacy relay and real onion peers in the `profile-privacy` matrix scenario.

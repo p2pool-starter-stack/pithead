@@ -66,13 +66,7 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
     TELEGRAM_EVENT_PAYOUT_FOUND TELEGRAM_EVENT_PAYOUT_CONFIRMED TELEGRAM_EVENT_CONTAINER_UNHEALTHY
     TELEGRAM_EVENT_RAFFLE_WIN'
 
-# Explicit confirm keys (#719) tell the form which existing operational fields need APPLY and retain
-# their direction-specific preview copy. Unlisted schema-backed values receive the same treatment
-# dynamically at preview and commit. Node endpoints and the node RPC login (#2368) also run the
-# host-side reachability/authentication preflight; data
-# directories keep the tighter destination allowlist. COMPOSE_PROFILES and its Tor node subset
-# ride with tari.mode; test-control-editable-allowlist.sh pins the rendered token set.
-CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR
+CONTROL_DASHBOARD_CONFIRM_KEYS='PITHEAD_PROFILE MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
     MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES TOR_COMPOSE_PROFILES
     MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS
@@ -106,17 +100,11 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TO
 # The env row is not generally committable: control_worker_append (42-control-approval-helpers.sh)
 # allows only a typed, SSRF-checked append and 43- admits that row only for such an append.
 # dashboard.energy.price_feed and local_miner.enabled render no env row; 43- checks them by path.
-# Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
-# lists above; a key added here without its path there is invisible in the editor, and a path added
-# there without its key here is offered to the operator and then refused host-side.
-# Space-separated exact env-key names.
 CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED HOST_IP'
 
-# Config-path distinctions hidden inside a direct env row. P2POOL_FLAGS also carries p2pool.pool,
-# which remains ordinary, so the host checks p2pool.clearnet separately. Inactive remote-node
-# fields produce no env row, but keep the same CONFIRM-only contract as active node endpoints.
 CONTROL_DASHBOARD_APPROVAL_PATHS='p2pool.clearnet'
-CONTROL_DASHBOARD_CONFIRM_PATHS='monero.remote.host
+CONTROL_DASHBOARD_CONFIRM_PATHS='profile
+monero.remote.host
 monero.remote.rpc_port
 monero.remote.zmq_port
 tari.remote.host

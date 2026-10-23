@@ -69,6 +69,7 @@ local-pruned-main-p2pool-clearnet	monero.mode=local monero.prune=true p2pool.poo
 remote-main-secure-tari	monero.mode=remote monero.view_key= p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-subnet	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.subnet=10.84.0.0/24
 remote-tari-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true tari.mode=remote
+profile-privacy	profile=privacy monero.mode=local monero.prune=true p2pool.pool=mini tari.mode=off xvb.enabled=false dashboard.secure=true
 new-install-defaults	monero.mode=local monero.prune=true p2pool.pool=mini xvb.enabled=false dashboard.secure=true dashboard.tari_required=false dashboard.host=auto local_miner.enabled=false tari.mode=off
 tari-off-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true tari.mode=off
 local-pruned-main-stratum-tls	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true p2pool.stratum_tls=true p2pool.stratum_password=auto

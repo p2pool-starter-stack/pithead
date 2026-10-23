@@ -156,10 +156,13 @@ run_scenario() {
         return 0
     fi
 
-    # Render + push config, then apply non-interactively.
+    local scenario_base="$BASELINE_CONFIG"
+    if [ "$name" = profile-privacy ]; then
+        scenario_base=$(printf '%s' "$BASELINE_CONFIG" | jq 'del(.monero.clearnet_initial_sync,.tari.clearnet_initial_sync,.p2pool.clearnet,.network.tor_egress_firewall,.xvb.tor,.notifications.tor,.tor.auto_heal,.p2pool.stratum_password,.p2pool.stratum_tls,.workers.api_auth,.workers.api_token)')
+    fi
     local config
     # shellcheck disable=SC2086  # RESOLVED is a space-separated list of override tokens, on purpose
-    config="$(render_scenario_config "$BASELINE_CONFIG" $RESOLVED)"
+    config="$(render_scenario_config "$scenario_base" $RESOLVED)"
     if ! printf '%s' "$config" | jq empty 2>/dev/null; then
         it_fail "rendered config is valid JSON" "jq rejected the rendered config"
         return 0
@@ -234,7 +237,11 @@ run_scenario() {
     fi
 
     local fails_before="$IT_FAIL"
-    assert_scenario "$name" "$config"
+    local expected_config="$config"
+    if [ "$name" = profile-privacy ]; then
+        expected_config=$(printf '%s' "$config" | jq '.p2pool.stratum_tls=true | .p2pool.stratum_password="auto"')
+    fi
+    assert_scenario "$name" "$expected_config"
     if [ "$name" = local-pruned-main-p2pool-clearnet ]; then
         push_config "$(printf '%s' "$config" | jq '.p2pool.clearnet = false')"
         if pithead apply -y >"$OUT_DIR/${name}.tor.apply.log" 2>&1 &&
@@ -253,7 +260,13 @@ run_scenario() {
             it_fail "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)" "see payout-pairs.log"
         fi
     fi
-    # If this scenario turned anything red, grab artifacts for it.
+    if [ "$name" = profile-privacy ]; then
+        if rx 'timeout 1000 python3 tests/integration/profile-peering.py' >"$OUT_DIR/profile-peering.log" 2>&1; then
+            it_pass "Privacy inbound/outbound onion peering and direct/non-Tor bridge refusal"
+        else
+            it_fail "Privacy inbound/outbound onion peering and direct/non-Tor bridge refusal" "see profile-peering.log"
+        fi
+    fi
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "$name" "$OUT_DIR"
     restore_firewall_after_clearnet "$name" "$config"
     return 0

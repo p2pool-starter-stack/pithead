@@ -361,3 +361,18 @@ async def test_matching_host_proof_requires_a_claimed_marker(tmp_path, monkeypat
     )
     assert not tor_attested(str(tmp_path), "monero")
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
+
+
+async def test_performance_never_marks_synced_nodes_for_tor(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from mining_dashboard.config import config
+    from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor
+
+    monkeypatch.setattr(config, "PITHEAD_PROFILE", "performance")
+    control = Mock()
+    supervisor = ClearnetSyncSupervisor(str(tmp_path), control)
+    for chain in ("monero", "tari"):
+        assert await supervisor.maybe_transition(chain, chain, True, True) is True
+        assert not (tmp_path / f"{chain}.synced").exists()
+    assert control.mock_calls == []
