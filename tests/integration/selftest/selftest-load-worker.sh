@@ -46,6 +46,34 @@ grep -Fqx '    verify_load_worker || hrc=1' <<<"$main_src" || exit 1
 grep -Fqx '[ "$BORROW_MINER" = 1 ] || [ "$WORKERS" -ne 3 ] 2>/dev/null || die "--workers 3 requires a borrowed miner."' "$SRC" || exit 1
 case "$borrow_src" in *'baseline_workers=1'*) ;; *) exit 1 ;; esac
 
+for requested in 1 2 3 4; do
+    observed="$(
+        # shellcheck disable=SC2034
+        WORKERS="$requested" BORROW_MINER=1 MINER_HOST=miner BENCH_HOST=bench MINER_XMRIG_CONFIG=/tmp/config.json
+        log() { :; }
+        step() { :; }
+        warn() { :; }
+        die() { exit 1; }
+        repoint_miner() { :; }
+        on_miner() {
+            case "$1" in
+            *'then "yes"'*) printf no ;;
+            *length*) printf 0 ;;
+            *date*) printf stamp ;;
+            esac
+        }
+        wait_workers() { printf '%s' "$1"; }
+        eval "$borrow_src"
+        borrow_miner
+    )"
+    expected="$requested"
+    [ "$requested" != 3 ] || expected=1
+    [ "$observed" = "$expected" ] || {
+        echo "FAIL: --workers $requested waited for $observed instead of $expected"
+        exit 1
+    }
+done
+
 echo "== worker_set_ready: the observed baseline plus clone, never fixed capacity (#1999) =="
 # shellcheck source=tests/integration/lib/load-worker.sh
 source "$LOAD_SRC"

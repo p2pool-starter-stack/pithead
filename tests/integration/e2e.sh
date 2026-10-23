@@ -569,8 +569,8 @@ borrow_miner() {
     on_miner "cp -a '$MINER_XMRIG_CONFIG' '$MINER_CFG_BACKUP'" || die "Failed to back up the miner config."
     step "miner config backed up → $MINER_CFG_BACKUP"
     repoint_miner || die "Failed to repoint the miner config."
-    local baseline_workers=1
-    [ "$WORKERS" -lt 3 ] 2>/dev/null && baseline_workers="$WORKERS"
+    local baseline_workers="$WORKERS"
+    [ "$WORKERS" -ne 3 ] 2>/dev/null || baseline_workers=1
     wait_workers "$baseline_workers" 180 || warn "proceeding, but the matrix's mining assertions may not pass with too few workers"
 }
 # --- Phase 4: deploy the branch ---------------------------------------------
