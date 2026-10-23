@@ -241,7 +241,9 @@ Per #3333, #3099 and #3092:
 **What you should see:**
 
 - The stack starts.
-- The first start prints `The miner is held until Monero and Tari finish their first sync, then starts automatically.` This shipped message incorrectly names Tari in both fresh runs ([#3598](https://github.com/p2pool-starter-stack/pithead/issues/3598)): only Monero is required, including after the beta opt-in. Check the status and dashboard below for the actual hold.
+- This first start prints `The miner is held until the initial sync finishes for Monero, then starts automatically.`
+  The wizard leaves Tari off by default and makes it non-required when opted in. A config with
+  Tari enabled and `dashboard.tari_required` true names `Monero and Tari` instead.
 - A later `./pithead restart` does not print the note again.
 - Per #3090, `up` also prints the LAN pool URL and `none set` for the stratum password, every time.
 
@@ -297,12 +299,12 @@ Per #3333, #3099 and #3092:
 **What you do:**
 
 1. On the laptop, open the URL that setup printed, of the form `https://<hostname>`. `<hostname>` stands for the box's name.
-2. Accept the one-time certificate warning.
+2. [Verify and trust the installation's root CA](../../../configuration.md#exposing-the-dashboard-safely), then reload the dashboard.
 3. Log in with the dashboard login you saved in 1.4.
 
 **What you should see:**
 
-- A one-time certificate warning, then the login.
+- A valid HTTPS connection, then the login.
 - Then the **Sync Mode** screen, with Monero progress and a held-miner notice. Tari is absent in the default run; in the opt-in run, it does not delay Monero mining.
 - The top bar shows CPU, RAM, HugePages and disk.
 
