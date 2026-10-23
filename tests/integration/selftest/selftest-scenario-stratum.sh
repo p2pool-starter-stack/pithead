@@ -8,7 +8,7 @@ INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-matrix.sh
 source "$HERE/../lib/run-matrix.sh"
 
-echo '== Authenticated scenarios hand off and restore borrowed miner credentials (#3491) =='
+echo "== Authenticated scenarios hand off and restore borrowed miner credentials (#3491) =="
 d="$(mktemp -d)"
 trap 'rm -rf "$d"' EXIT
 
