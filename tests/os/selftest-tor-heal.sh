@@ -52,6 +52,23 @@ awk '/^  dashboard:/{d=1} d&&/network_mode:/{print; exit}' "$ROOT/docker-compose
 grep -qx 'gateway=127.0.0.1' "$ROOT/tests/os/tor-heal-guest.sh"
 # Exercise guest helpers without executing the guest's main body.
 (
+    data="$work/history"
+    mkdir -p "$data"
+    eval "$(sed -n '/^saturated() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    eval "$(sed -n '/^require_saturated() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$data/state"
+    require_saturated valid >"$data/output" 2>&1
+    [ ! -s "$data/output" ]
+    printf 'CircuitBuildTimeBin 100 1\nCookie fixture-secret\nCircuitBuildTimeBin 100 fixture-secret\n' >>"$data/state"
+    if require_saturated after-disable-network >"$data/output" 2>&1; then exit 1; fi
+    grep -q 'after-disable-network' "$data/output"
+    grep -qx 'CircuitBuildTimeBin 100 1' "$data/output"
+    ! grep -q 'fixture-secret' "$data/output"
+    for ((i = 0; i < 40; i++)); do printf 'CircuitBuildTimeBin 200 1\n'; done >>"$data/state"
+    if require_saturated bounded >"$data/output" 2>&1; then exit 1; fi
+    [ "$(wc -l <"$data/output")" -le 17 ]
+)
+(
     work="$work/configure"
     mkdir -p "$work/stack"
     cd "$work/stack"

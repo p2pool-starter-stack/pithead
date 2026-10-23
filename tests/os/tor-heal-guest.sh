@@ -78,6 +78,21 @@ saturated() {
         grep -qx 'TotalBuildTimes 1000' "$1" &&
         ! grep -q '^CircuitBuildTimeBin ' "$1"
 }
+require_saturated() {
+    local fields
+    saturated "$data/state" && return 0
+    printf 'Tor fault fixture is not saturated: %s\n' "$1" >&2
+    fields=$(awk '
+        (($1 == "CircuitBuildAbandonedCount" || $1 == "TotalBuildTimes") && NF == 2 && $2 ~ /^[0-9]+$/) ||
+        ($1 == "CircuitBuildTimeBin" && NF == 3 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/) {
+            print substr($0, 1, 160)
+            if (++count == 16) exit
+        }
+        END { if (!count) print "No numeric circuit-history fields" }
+    ' "$data/state" 2>/dev/null) || fields='Tor circuit history unavailable'
+    printf '%s\n' "$fields" >&2
+    return 1
+}
 configure() {
     jq --argjson enabled "$1" --arg webhook "http://$gateway:18918/" \
         '.tor.auto_heal=$enabled | .dashboard.auth.password="" | .dashboard.control.enabled=false
@@ -89,6 +104,7 @@ poison() {
     docker compose stop tor >"$work/stop.log" 2>&1
     awk '!/^CircuitBuild/ && !/^TotalBuildTimes /' "$work/original-state" >"$data/state"
     printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >>"$data/state"
+    require_saturated before-start
     docker compose start tor >"$work/start.log" 2>&1
     # SETCONF is in-memory only: a recovery stop/start lifts DisableNetwork.
     local reply
@@ -98,7 +114,7 @@ poison() {
             printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\nQUIT\r\n" "$cookie" |
                 nc -w 3 127.0.0.1 9051' 2>/dev/null | tr -d '\r') || reply=""
         if [ "$(printf '%s\n' "$reply" | grep -c '^250 OK$')" = 2 ]; then
-            saturated "$data/state"
+            require_saturated after-disable-network
             return
         fi
         sleep 1
