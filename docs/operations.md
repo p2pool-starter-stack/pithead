@@ -761,8 +761,9 @@ files that only the archive has. The wizard replaces its Tor and dashboard direc
 > is refused rather than redirected into the old directory tree. Recreate the original
 > installation path and configure any custom data paths before restoring.
 
-> NOTE: After a restore, Caddy regenerates the dashboard's HTTPS certificate, so the browser shows
-> its "not trusted" warning once. Accept it as on first setup.
+> NOTE: If your browser warns after a DIY restore,
+> [verify and trust the installation's root CA](configuration.md#exposing-the-dashboard-safely).
+> Accepting only the current certificate can produce another warning after renewal.
 
 ---
 
@@ -826,8 +827,10 @@ This covers the bundled node only: with `tari.mode: remote` no Tari container ru
 is never applied, and that node's memory is the business of the host running it.
 
 **Browser warns "your connection is not private."**
-Expected with `dashboard.secure: true`: Caddy uses a self-signed certificate. Accept the warning
-once. To use plain HTTP, set `dashboard.secure: false` and run `./pithead apply`.
+With `dashboard.secure: true`, DIY installs use Caddy's local certificate authority.
+[Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
+warnings after certificate renewal. To use plain HTTP, set `dashboard.secure: false` and run
+`./pithead apply`.
 
 **Workers don't show up in the dashboard.**
 Check that each rig points at `YOUR_STACK_IP:3333` and that port `3333` is reachable from the
