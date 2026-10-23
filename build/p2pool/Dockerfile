@@ -4,11 +4,6 @@ FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884
 ARG P2POOL_VERSION=v4.18.1
 ARG P2POOL_HASH=eeab5aca0edf4756cb295c5fda5b2d5344208aecbbdcb2ffd8471dfe14e6c2c5
 
-# Install runtime dependencies. socat (#278): the entrypoint bridges 127.0.0.1 -> the real monerod
-# (node RPC/ZMQ) and the Tari base node (merge-mine gRPC) so those intra-stack legs stay DIRECT while
-# --socks5 routes only the sidechain/merge-mine P2P over Tor (p2pool proxies everything but loopback
-# when --socks5 is set, so a private Docker IP would otherwise be dialled through Tor and rejected).
-# Retry mirror-sync failures with 5s then 10s backoff (#1802).
 RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
     wget ca-certificates libgomp1 socat \
     && rm -rf /var/lib/apt/lists/*

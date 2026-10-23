@@ -1,9 +1,6 @@
 # Pinned by digest (#135) so the ubuntu:24.04 tag can't be silently re-pointed.
 FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 
-# Install system dependencies required for downloading, verifying, and configuring the node
-# 'gettext-base' provides 'envsubst' for template processing in entrypoint.sh
-# Retry mirror-sync failures with 5s then 10s backoff (#1802).
 RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
     bzip2 ca-certificates curl gettext-base jq \
     && rm -rf /var/lib/apt/lists/*
