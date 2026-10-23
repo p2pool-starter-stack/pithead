@@ -4,7 +4,7 @@ LOAD_WORKER_NAME="" LOAD_BORROWED_NAME="" LOAD_BASELINE_NAMES="" LOAD_EXPECTED_W
 LOAD_INITIAL_BASELINE_NAMES=""
 LOAD_PEAK_CPU=0 LOAD_PEAK_RSS=0 LOAD_METRICS_SAMPLED=0 LOAD_SAW_READY=0 LOAD_SAW_FAILOVER=0 LOAD_SAW_RECOVERY=0
 LOAD_MAX_HASHES=0 LOAD_MAX_SHARES=0 LOAD_MAX_CLONE_SHARES=0
-LOAD_WORKER_CONFIG_FILTER='.pools[0].user = $name | .http = {"enabled": false} | .autosave = false | .background = false | del(."log-file")'
+LOAD_WORKER_CONFIG_FILTER='.pools[0]["rig-id"] = $name | .http = {"enabled": false} | .autosave = false | .background = false | del(."log-file")'
 
 worker_names() {
     on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.workers[]? | select(.status == \"online\") | .name // empty | select(test(\"^[^[:cntrl:]]+$\"))' | sort -u"
@@ -13,7 +13,7 @@ worker_names() {
 refresh_load_borrowed_name() {
     [ -n "$LOAD_WORKER_NAME" ] || return 0
     local old="$LOAD_BORROWED_NAME" new
-    new="$(on_miner "jq -er '.pools[0].user | strings | select(test(\"^[^[:cntrl:]]+$\"))' $(quote_arg "$MINER_XMRIG_CONFIG")")" || return 1
+    new="$(on_miner "jq -er '.pools[0] | if (.\"rig-id\" // \"\") != \"\" then .\"rig-id\" else .user end | strings | select(test(\"^[^[:cntrl:]]+$\"))' $(quote_arg "$MINER_XMRIG_CONFIG")")" || return 1
     if [ -n "$LOAD_BASELINE_NAMES" ] && [ -n "$old" ] && [ "$old" != "$new" ]; then
         LOAD_BASELINE_NAMES="$({
             grep -Fvx -- "$old" <<<"$LOAD_BASELINE_NAMES" || true
@@ -80,6 +80,7 @@ start_load_worker() {
         return 1
     }
     grep -Fxq -- "$LOAD_BORROWED_NAME" <<<"$LOAD_BASELINE_NAMES" || {
+        warn "load worker startup refused: the borrowed worker label is not online in the baseline"
         stop_load_worker
         return 1
     }

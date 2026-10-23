@@ -20,7 +20,7 @@ main_src="$(sed -n '/^main() {$/,/^}$/p' "$SRC")"
 
 echo "== selftest: load worker stays opt-in, capped, capacity-relative, and cleanup-safe =="
 case "$worker_src" in *'select(.status == \"online\")'*'[^[:cntrl:]]+'*) ;; *) exit 1 ;; esac
-case "$borrowed_src" in *'.pools[0].user'*'[^[:cntrl:]]+'*) ;; *) exit 1 ;; esac
+case "$borrowed_src" in *'.pools[0]'*'.user'*'[^[:cntrl:]]+'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'[ "$WORKERS" -eq 3 ]'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'--threads=1'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'umask 077'*'mktemp -d'*) ;; *) exit 1 ;; esac
@@ -77,8 +77,39 @@ done
 echo "== worker_set_ready: the observed baseline plus clone, never fixed capacity (#1999) =="
 # shellcheck source=tests/integration/lib/load-worker.sh
 source "$LOAD_SRC"
-rendered_config="$(jq --arg name clone "$LOAD_WORKER_CONFIG_FILTER" <<<'{"pools":[{"user":"real"}],"http":{"enabled":true,"host":"0.0.0.0","port":8080,"access-token":null},"autosave":true,"background":true,"log-file":"operator.log"}')"
-jq -e '.pools[0].user == "clone" and .http == {"enabled":false} and .autosave == false and .background == false and (has("log-file") | not)' <<<"$rendered_config" >/dev/null || {
+(
+    identity_fixture="$(mktemp -d)"
+    trap 'rm -rf "$identity_fixture"' EXIT
+    MINER_XMRIG_CONFIG="$identity_fixture/config.json"
+    on_miner() { eval "$1"; }
+    quote_arg() { printf '%q' "$1"; }
+    LOAD_WORKER_NAME=clone
+    for rig_id in '"rig-label"' null '""'; do
+        jq -n --argjson id "$rig_id" '{pools:[{user:"login-label", "rig-id":$id}]}' >"$MINER_XMRIG_CONFIG"
+        LOAD_BASELINE_NAMES="" LOAD_BORROWED_NAME=""
+        refresh_load_borrowed_name || exit 1
+        expected=login-label
+        [ "$rig_id" != '"rig-label"' ] || expected=rig-label
+        [ "$LOAD_BORROWED_NAME" = "$expected" ] || {
+            echo "FAIL: borrowed worker identity did not follow the proxy rig-id fallback"
+            exit 1
+        }
+    done
+) || exit 1
+startup_refusal="$(
+    WORKERS=3
+    cleanup_stale_load_workers() { :; }
+    on_miner() { printf /tmp/pithead-e2e-load.fixture; }
+    refresh_load_borrowed_name() { LOAD_BORROWED_NAME=missing; }
+    worker_names() { printf online; }
+    stop_load_worker() { :; }
+    warn() { printf '%s\n' "$*"; }
+    start_load_worker
+    printf 'rc=%s' "$?"
+)"
+[ "$startup_refusal" = $'load worker startup refused: the borrowed worker label is not online in the baseline\nrc=1' ] || exit 1
+rendered_config="$(jq --arg name clone "$LOAD_WORKER_CONFIG_FILTER" <<<'{"pools":[{"user":"real","rig-id":"borrowed-rig"}],"http":{"enabled":true,"host":"0.0.0.0","port":8080,"access-token":null},"autosave":true,"background":true,"log-file":"operator.log"}')"
+jq -e '.pools[0].user == "real" and .pools[0]["rig-id"] == "clone" and .http == {"enabled":false} and .autosave == false and .background == false and (has("log-file") | not)' <<<"$rendered_config" >/dev/null || {
     echo "FAIL: clone config retained a listener, autosave/background mode, or operator log path"
     exit 1
 }
