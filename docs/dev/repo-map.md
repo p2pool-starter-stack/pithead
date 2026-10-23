@@ -81,7 +81,10 @@ Configless shutdown and the local reset destination record are in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the
 lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure controls in
 `tests/integration/selftest/selftest-reset-restore.sh`. Shared web ownership checks are in
-`tests/integration/lib/reset-restore-web.sh`; consecutive status censuses are in
+`tests/integration/lib/reset-restore-web.sh`. The startup-window restore fixture is
+`tests/integration/lib/reset-restore-startup.sh`, with the guest-only pause in
+`tests/os/wizard-startup-guest.sh` and pure controls in `tests/os/selftest-wizard-startup.sh`.
+Consecutive status censuses are in
 `tests/integration/lib/readiness-churn.sh`.
 
 Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
@@ -151,6 +154,8 @@ password and certificate. Both have mutation self-tests beside their harnesses.
 
 `lib/pithead/12a-wizard-addresses.sh` supplies non-bridge host addresses for the
 setup container and prints the journal and physical-console connection announcements.
+`lib/pithead/12a-wizard-page.sh` starts each page container with those addresses,
+its per-round token and certificate, then restores the reset slot and announces the page.
 `tests/os/wizard-redirect-leg.sh` checks the plain-port
 redirect from outside the guest during boot and provision, and Caddy after setup;
 its fake-transport cases run through `selftest-wizard-redirect.sh`.
