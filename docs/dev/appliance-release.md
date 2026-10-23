@@ -28,6 +28,30 @@ The image also carries no installer payload. `pithead-install` rebuilds the layo
 target and copies the running slot, so the artifact never contains a compressed copy of
 itself.
 
+### Rootfs Go binaries
+
+The rootfs Dockerfile builds Docker Compose and Cosign from exact upstream
+commits, checks each commit against its release tag, and asserts the binaries'
+reported versions. The Go builder is pinned by digest at [1.26.10](https://go.dev/doc/devel/release#go1.26.0) to clear
+[CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
+in both binaries' standard library.
+
+`COMPOSE_GO_RAISES` and `COSIGN_GO_RAISES` raise x/mod to v0.41.0, x/net to
+v0.60.0 and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
+for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585).
+Compose already selects compress v1.19.2 from its pinned upstream source.
+The build asserts the compiled Go version of both binaries and Cosign's
+compiled compress version before copying them into the rootfs.
+
+Module raises modify upstream's module graph, including transitive dependencies
+selected by Go's minimum-version selection. Upstream `go.sum` authenticates its
+existing entries; raised modules use Go's module checksum verification.
+Cosign reports a dirty tree because those raises modify its sources.
+Remove a raise when a pinned upstream release makes it redundant. Require the
+rootfs CVE scan to pass without a new ignore or a weaker severity gate, and run
+the KVM `image-upgrade` phase to check signature verification with the built
+Cosign binary, including rejection with the wrong key.
+
 ### Host tuning baked in
 
 An unattended headless box has to heal itself, and two of the guards live below the container

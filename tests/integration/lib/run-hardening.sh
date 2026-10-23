@@ -124,49 +124,20 @@ run_hardening() {
                 "expected 'Read-only file system', got: ${probe_out:-<write SUCCEEDED — rootfs is writable>}"
         fi
     done
-    # 2. The onion is reachable from OUTSIDE (privacy surface, #343/#360) and SURVIVES the #424 heal
-    #    action. An independent external Tor client (its own image/tor/circuits) fetches the dashboard
-    #    onion over the real Tor network — no stack SOCKS or plumbing involved. First a baseline; then
-    #    we restart tor (the heal's action — the stuck-guard TRIGGER is guard-selection luck and not
-    #    reproducible) and assert the onion comes back, proving tor rebuilt circuits + republished its
-    #    descriptor. Gated on the baseline so a genuinely-bad live Tor network can't false-fail the
-    #    gate: recovery is only asserted when the onion was reachable to begin with.
-    #    (Reachability is INBOUND; the clearnet-EXIT half of #424 is not externally observable and
-    #    stays with the doctor egress check, which is the stack self-checking its own egress.)
-    local pre_onion=0
-    if [ "$(env_on_box DASHBOARD_ONION_ADDRESS)" = "placeholder" ] || [ -z "$(env_on_box DASHBOARD_ONION_ADDRESS)" ]; then
-        it_skip_leg "dashboard onion external reachability (#424/#343)" "onion not provisioned on this box"
-    else
-        it_step "external Tor client: reach the dashboard onion before the restart (baseline)…"
-        _onion_reachable_external && pre_onion=1
-        if [ "$pre_onion" = "1" ]; then
-            it_pass "dashboard onion reachable from an independent external Tor client (#343/#360)"
-        else
-            it_skip_leg "dashboard onion post-restart recovery (#424)" "onion not reachable from outside before the restart (live Tor network) — can't prove recovery"
-        fi
-        it_step "restart tor (the #424 heal action)…"
-        pithead restart tor >/dev/null 2>&1
-        wait_status_ok 240 || true
-        pithead status >/dev/null 2>&1
-        assert_rc "stack healthy after a tor restart (#424 heal action)" "$?" "0"
-        if [ "$pre_onion" = "1" ]; then
-            it_step "external Tor client: dashboard onion must come back after the restart…"
-            if _onion_reachable_external; then
-                it_pass "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)"
-            else
-                it_fail "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)" "external client could not reach the onion within the probe window"
-            fi
-        fi
-    fi
     # 3. The #33 control channel end-to-end THROUGH THE REAL SYSTEMD PATH UNIT. Tier-1 runs
     #    control-run-pending by hand; only here does pithead-control.path actually fire on a spooled
     #    file. Needs a dashboard password (control refuses to enable without one). Enable control,
     #    let apply install + enable the unit, then drop requests and let systemd act.
-    local ctrl_config
-    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.secure=true | .dashboard.auth={username:"admin",password:"a tier4 control passphrase"} | .dashboard.control={enabled:true}')"
+    if ! hardening_onion_snapshot; then
+        it_fail "dashboard onion baseline snapshot created (#2603)" "refusing to provision without protected recovery copies"
+        return 1
+    fi
+    local ctrl_config ctrl_apply_rc
+    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.secure=true | .dashboard.auth={username:"admin",password:"a tier4 control passphrase"} | .dashboard.control={enabled:true} | .dashboard.onion={enabled:true,client_auth:true}')"
     push_config "$ctrl_config"
     it_step "apply with dashboard.control enabled (installs the systemd path unit)…"
     pithead apply -y >/dev/null 2>&1
+    ctrl_apply_rc=$?
     wait_status_ok 180 || true
     if rx "systemctl is-enabled pithead-control.path >/dev/null 2>&1"; then
         it_pass "pithead-control.path installed + enabled by apply (#33)"
@@ -182,6 +153,52 @@ run_hardening() {
     assert_contains "the enabled control units name THIS checkout, not another install (#1085)" \
         "$(rx "grep -m1 '^ExecStart=' /etc/systemd/system/pithead-control.service 2>/dev/null" || true)" \
         "ExecStart=$(rx 'pwd -P')/pithead control-run-pending"
+
+    local pre_onion=0 onion_rc
+    if [ "$ctrl_apply_rc" -ne 0 ]; then
+        it_fail "dashboard onion provisioned for hardening (#2603)" "onion and control apply failed"
+    elif [ "$(env_on_box DASHBOARD_ONION_ADDRESS)" = "placeholder" ] || [ -z "$(env_on_box DASHBOARD_ONION_ADDRESS)" ]; then
+        it_fail "dashboard onion provisioned for hardening (#2603)" "apply left no dashboard onion address"
+    else
+        it_step "external Tor client: reach the dashboard onion before the restart (baseline)…"
+        if _onion_reachable_external "" "" required; then
+            pre_onion=1
+        else
+            onion_rc=$?
+            case "$onion_rc" in
+            1 | 2) : ;;
+            *) it_fail "dashboard onion authorized probe obtains CLI credentials (#2603)" "credential acquisition or probe failed before reachability could be checked" ;;
+            esac
+        fi
+        if [ "$pre_onion" = "1" ]; then
+            it_pass "dashboard onion reachable from an independent external Tor client (#343/#360)"
+            if _onion_reachable_external "" "" none; then
+                onion_rc=0
+            else
+                onion_rc=$?
+            fi
+            if _onion_reachable_external "" "" required; then
+                assert_rc "dashboard onion refuses an independent client without a key (#2603)" "$onion_rc" 1
+            else
+                it_fail "dashboard onion refuses an independent client without a key (#2603)" "authorized control failed after the keyless probe (exit $?; keyless exit $onion_rc)"
+            fi
+        else
+            it_skip_leg "dashboard onion post-restart recovery (#424)" "onion not reachable from outside before the restart (live Tor network) — can't prove recovery"
+        fi
+        it_step "restart tor (the #424 heal action)…"
+        pithead restart tor >/dev/null 2>&1
+        wait_status_ok 240 || true
+        pithead status >/dev/null 2>&1
+        assert_rc "stack healthy after a tor restart (#424 heal action)" "$?" "0"
+        if [ "$pre_onion" = "1" ]; then
+            it_step "external Tor client: dashboard onion must come back after the restart…"
+            if _onion_reachable_external "" "" required; then
+                it_pass "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)"
+            else
+                it_fail "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)" "external client could not reach the onion within the probe window"
+            fi
+        fi
+    fi
 
     local cdir
     cdir="$(env_on_box CONTROL_DIR)"
@@ -321,22 +338,11 @@ run_hardening() {
         it_fail "failed logins retained beyond 256 KiB and native gzip rotation (#3265)" "$probe_out"
     fi
 
-    # Restore the baseline ourselves: re-applying with control off uninstalls the path unit, so the
-    # root systemd unit never outlives the phase even though the end-of-run restore would also do it.
-    it_step "restoring baseline (disables control, removes the path unit)…"
-    push_config "$BASELINE_CONFIG"
-    pithead apply -y >/dev/null 2>&1
-    # 240s: this apply follows the control enable/disable + a tor restart, so the stack has more to
-    # re-settle than a plain apply (180s timed out here on a real run).
-    wait_status_ok 240 || true
-    # #477: reap the control units unconditionally — the restore apply above is supposed to remove them,
-    # but if it died before provision_control_runner ran, the ROOT path unit would linger past the phase.
-    # (develop's #424 added a fire-and-forget inline version here; this supersedes it — it verifies the
-    # units are actually gone and warns loudly if not, rather than swallowing the outcome with `|| true`.)
-    if _remove_control_units; then
+    if hardening_onion_restore; then
+        it_pass "dashboard onion identity and environment restored exactly (#2603)"
         it_pass "control systemd units removed after the hardening phase (#477)"
     else
-        it_warn "pithead-control units survived teardown — remove them by hand on the box (sudo unavailable?)"
+        it_fail "dashboard onion identity and environment restored exactly (#2603)" "restore failed; protected recovery copies retained"
     fi
 }
 

@@ -63,6 +63,8 @@ source "$ROOT/lib/run-pool-sync-fault.sh" || exit $?
 source "$ROOT/lib/run-tor-probe-fault.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-egress-status.sh
 source "$ROOT/lib/run-egress-status.sh" || exit $?
+# shellcheck source=tests/integration/lib/hardening-onion-state.sh
+source "$ROOT/lib/hardening-onion-state.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$ROOT/lib/run-hardening.sh" || exit $?
 source "$ROOT/lib/run-tari-off-preview.sh" || exit $?
@@ -86,7 +88,7 @@ source "$ROOT/lib/run-tari-stranded.sh" || exit $?
 source "$ROOT/lib/run-monero-stranded.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
 source "$ROOT/lib/run-mergemine-localnet.sh" || exit $?
-for fn in $expected_functions assert_xvb_off_no_dwell_churn tari_enable_snapshot run_tari_background_sync; do type "$fn" >/dev/null 2>&1 || exit 1; done
+for fn in $expected_functions hardening_onion_snapshot hardening_onion_restore assert_xvb_off_no_dwell_churn tari_enable_snapshot run_tari_background_sync; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
 # Execute the wizard harness initialization with the generated CLI: CONFIG_FILE is readonly.
 (
