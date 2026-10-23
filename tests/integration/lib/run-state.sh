@@ -293,17 +293,7 @@ assert_running_state() {
 
     if [ "$(jq_get "$config" '.p2pool.stratum_tls')" = "true" ] &&
         [ "$(jq_get "$config" '.p2pool.stratum_password')" = "auto" ]; then
-        local probe_miner="" probe_env="" probe_result
-        if rx 'source ./pithead && is_appliance' >/dev/null 2>&1; then
-            probe_miner=" /opt/rigforge/prebuilt/xmrig/build/xmrig"
-            probe_env="TMPDIR=/data/pithead/data "
-        fi
-        if probe_result=$(rx "${probe_env}timeout 2100 python3 -c $(quote_arg "$(cat "$HERE/rotate-auth-probe.py")") controls$probe_miner" 2>/dev/null); then
-            it_pass "stratum password and TLS client controls (#3078)"
-        else
-            it_fail "stratum password and TLS client controls (#3078)" "client refusal, zero-counter or positive mining assertion failed"
-        fi
-        printf '%s\n' "$probe_result"
+        assert_stratum_client_controls
     fi
 
     # 8d. The Tor-egress firewall, BOTH directions (#270/#2059). Every other firewall leg here

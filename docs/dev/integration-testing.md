@@ -798,7 +798,9 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   A fingerprint with one nibble changed must fail before login; the correct pin and cleartext
   must both receive jobs on the same port. On the appliance, the shipped XMRig additionally
   proves explicit password and fingerprint errors and a new accepted share in each positive
-  arm. An unconfigured XMRig password defaults to `x`; the raw probe separately omits the
+  arm. Channel selection requires a successful, explicit appliance or DIY result; CLI source,
+  transport and unknown-result failures fail the control before either probe runs.
+  An unconfigured XMRig password defaults to `x`; the raw probe separately omits the
   password member. Test credentials and miner logs stay in a private temporary directory,
   using XMRig's `log-file` setting: its console logger emits nothing when stdout is a regular
   file. The test terminates and reaps its miner before removing that directory.
