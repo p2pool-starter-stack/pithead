@@ -154,8 +154,11 @@ Strict coverage is opt-in: `PITHEAD_REQUIRE_COMPLETE=1` makes both the integrati
 summary and appliance exit gate fail on every missing skip. The appliance runner
 also accepts `--require-complete`. By-design and covered skips retain their meaning;
 an invalid mode fails. `selftest-required-coverage.sh` drives the actual verdicts and
-stack/rig missing-input branches. Managed forwarding is tracked by
-[bench-ci#2180](https://github.com/p2pool-starter-stack/bench-ci/issues/2180).
+stack/rig missing-input branches. Managed jobs use the boolean
+`options.require_complete` for KVM and e2e. The e2e wrapper validates the environment
+flag before remote work and pins it in the SSH launch, inline pregates and generated
+detached runner. Its forwarding selftest executes the installed runner against the
+real missing-skip verdict, including controls that remove SSH or runner forwarding.
 
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the

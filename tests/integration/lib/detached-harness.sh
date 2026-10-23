@@ -96,9 +96,8 @@ harness_pregate() { # <workers> <no_mining flags>
     for phase in readiness check; do
         out_arg=""
         [ "$phase" != check ] || out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-check")"
-        # Both streams go through checked tees, so a lost capture cannot excuse an unhealthy stack.
         (
-            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
+            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") PITHEAD_REQUIRE_COMPLETE=$(quote_arg "${PITHEAD_REQUIRE_COMPLETE:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
             printf '%s %s\n' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}" >"$stf"
         ) 3>&1 | tee "$said"
         st=("${PIPESTATUS[@]}")
@@ -152,16 +151,19 @@ harness_launch_records() {
     step "payout-confirm keys forwarded to the harness:$supplied"
 }
 
-# Install the on-bench runner: it records `running <pid> <starttime>` BEFORE exec'ing the harness,
-# which is what lets drain_harness/harness_finished prove the identity of the process they act on
-# (a bare pid is not enough — pids get reused). `dir` owns the harness source, `target` is the
-# stack it drives; --check points those at different checkouts.
 harness_install_runner() {
     local runner
+    case "${PITHEAD_REQUIRE_COMPLETE:-0}" in
+    0 | 1) ;;
+    *)
+        warn "PITHEAD_REQUIRE_COMPLETE must be 0 or 1"
+        return 1
+        ;;
+    esac
     runner="$(mktemp)" || return 1
-    # Pin the runner-owned target scratch even when SSH drops ambient variables.
     printf '#!/usr/bin/env bash\n' >"$runner"
     printf 'export CI_RIG_RECOVERY_HOLD=%s\n' "$(quote_arg "${CI_RIG_RECOVERY_HOLD:-0}")" >>"$runner"
+    printf 'export PITHEAD_REQUIRE_COMPLETE=%s\n' "$(quote_arg "${PITHEAD_REQUIRE_COMPLETE:-0}")" >>"$runner"
     if [ -n "${IT_SCRATCH_DIR:-}" ]; then
         printf 'export IT_SCRATCH_DIR=%s\n' "$(quote_arg "$IT_SCRATCH_DIR")" >>"$runner"
     fi

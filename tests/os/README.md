@@ -37,8 +37,8 @@ loop and unresolved extraction cases in tier 1.
 Pass `--require-complete` or set `PITHEAD_REQUIRE_COMPLETE=1` to fail the final
 verdict whenever a skip is classified missing. By-design and covered skips remain
 accepted. The same environment flag applies to the integration summary. Managed
-submission forwarding is pending bench-ci#2180; a job without it does not prove
-strict coverage.
+KVM and e2e jobs accept the boolean `options.require_complete`; set it to true to
+request strict coverage through the managed launch.
 
 After initial provisioning has settled, `provision` runs `tor-recover check` in the guest
 with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and
