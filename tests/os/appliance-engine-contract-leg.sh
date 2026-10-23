@@ -23,13 +23,14 @@ appliance_engine_contract_leg() {
         return 1
     fi
     out="$stage/result"
-    SSH_TIMEOUT=600 _ssh "set -e; export TMPDIR=\${TMPDIR:-/data/tmp}; mkdir -p \"\$TMPDIR\"; d=\$(mktemp -d); trap 'rm -rf \"\$d\"' EXIT; printf %s '$payload' | base64 -d | tar -xzf - -C \"\$d\"; bash \"\$d/engine-contract-guest.sh\"" >"$out" 2>&1 || rc=$?
+    SSH_TIMEOUT=600 _ssh "exec 2>&1; set -e; export TMPDIR=\${TMPDIR:-/data/tmp}; mkdir -p \"\$TMPDIR\"; d=\$(mktemp -d); trap 'rm -rf \"\$d\"' EXIT; printf %s '$payload' | base64 -d | tar -xzf - -C \"\$d\"; bash \"\$d/engine-contract-guest.sh\"" >"$out" 2>&1 || rc=$?
     if [ "$rc" -eq 0 ] && grep -Fq 'appliance engine contract: PASS' "$out"; then
         ok "all CLI engine forms pass on running/stopped appliance containers; original census RED and churn detected (#3403)"
     else
         [ "$rc" -ne 0 ] || rc=1
         bad "appliance engine contract failed (#3403, exit $rc)"
         tail -20 "$out"
+        [ ! -s "${SSH_ERR:-}" ] || tail -20 "$SSH_ERR"
     fi
     rm -rf "$stage"
     return "$rc"

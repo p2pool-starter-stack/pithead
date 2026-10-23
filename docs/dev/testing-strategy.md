@@ -152,7 +152,9 @@ Caddy crash loop. An independent 30-second restart/start-time observation establ
 churn; Caddy restoration and predicate recovery must pass. The guest passes the
 staged helper directory as `ENGINE_CONTRACT_WORK`; the predicate sources its copied
 churn helper and extracted status predicate from that directory. The extraction selftest
-runs through the OS selftest glob in CI.
+runs through the OS selftest glob in CI. Failed engine legs print bounded guest
+stderr and SSH transport diagnostics; the transport selftest checks both channels
+and rejects a pass marker from a command that failed.
 
 Strict coverage is opt-in: `PITHEAD_REQUIRE_COMPLETE=1` makes both the integration
 summary and appliance exit gate fail on every missing skip. The appliance runner
