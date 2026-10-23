@@ -12,10 +12,7 @@
 //      phone). The hint is prose, so it broke mid-word ("monero.view_k" / "ey") at 390px; the
 //      `.eva-hint` cell has to resolve back to wrapping at spaces only.
 //
-// This is the 390px evidence at the tier this repo has: the wrap and the contrast are decided by
-// the cascade these assertions read, and nothing in the frontend suite renders CSS (render.mjs is
-// a vnode-to-string walker with no layout engine). A painted screenshot would need a browser
-// harness this repo does not have — see #2402.
+// See docs/dev/browser-testing.md for real-browser viewport captures.
 // Run with: node --test dashboard/tests/frontend/
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
