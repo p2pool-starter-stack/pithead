@@ -54,7 +54,6 @@
 #           a non-destructive --check, then --lifecycle --fault-injection --hardening
 #           --auth-fail-closed on remote-main-secure-tari. A bench with no reserved node is a
 #           counted `missing` phase skip; #2443 and #2444 run from neither invocation.
-#   all     the standalone battery in order, except crossupdate and tor-heal
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
