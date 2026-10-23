@@ -138,7 +138,9 @@ A local Make target alone is not CI registration. New standalone tests must be
 executed by a reachable runner; sourcing them does not register them. The reviewed
 existing indirect callers are in `tests/registration-allowlist.tsv`; missing callers,
 removed files and unnecessary exceptions fail the audit. The Tor recovery-info and
-netwatch selftests run in the standalone Shell job.
+netwatch selftests run in the standalone Shell job. The scenario inventory selftest
+retains the complete registration-audit inputs in its sandbox and changes only the
+scenario table, so its enumeration checks also run the real registration guard.
 
 The appliance install and stack phases run `appliance-engine-contract-leg.sh`.
 `engine-contract.py` extracts the CLI's ps filters, inspect templates and Compose ps
