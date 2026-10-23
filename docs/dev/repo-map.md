@@ -184,6 +184,10 @@ The separate HTTPS backup fixture verifies complete encrypted downloads in Chrom
 `wizard/`. `vendor/` contains third-party browser libraries and their provenance.
 Keep local code out of `vendor/`.
 
+The Tari-off preview regression is `tests/stack/control/test-control-editable-allowlist.sh`;
+`tests/integration/lib/run-tari-off-preview.sh` exercises the combined candidate through
+the deployed CLI during the hardening phase.
+
 ## Shell suites and tools
 
 | Directory | How it runs |
