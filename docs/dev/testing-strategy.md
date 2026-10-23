@@ -65,6 +65,12 @@ gate for anything that changes what runs on a box. The rows mirror bench-ci's "W
 | the RigForge worker to stack contract | rigforge `tier4-e2e` |
 | dashboard logic and its tests, docs, workflows, scripts that never run on a box | tiers 1 to 3 are the proof; the PR body names this row as the reason no bench job ran |
 
+Compose project identity checks run in `tests/stack/standalone/test_compose.sh` through
+GitHub's Compose job. They use the representative environment with every profile enabled,
+check the default and custom project identities, and retain both rendered configurations
+in the job log with checkout paths redacted. Split acceptance combines these CI assertions
+with exact-head targeted bench evidence and the remaining source/evidence assertions.
+
 A tier-1 assertion on a rendered file is required for a config change and never sufficient: it
 proves the render, not that the daemon accepts the file. #2327 added `network = "mainnet"` under
 `[common]` in `build/tari/config.toml.template` with a tier-1 test that the rendered file carried

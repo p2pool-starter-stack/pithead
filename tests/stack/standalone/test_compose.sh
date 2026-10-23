@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Validate Compose parsing and ${VAR} interpolation against a representative .env.
-# This is client-side (`docker compose config` needs no daemon), so it runs anywhere with docker.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+python3 "$ROOT/tests/stack/standalone/test_compose_project_render.py" || exit 1
 if ! docker compose version >/dev/null 2>&1; then
-    echo "SKIP: docker compose not available"
-    exit 0
+    echo "FAIL: docker compose is required"
+    exit 1
 fi
 bash "$ROOT/tests/stack/standalone/test_dotenv.sh" || exit 1
 ENV_FILE="$(mktemp)"
@@ -181,16 +180,13 @@ jq_assert "mining services are not on proxy_net" \
 jq_assert "p2pool disables its persistent file log (#1989)" '.services.p2pool.command | index("--no-log-file") != null'
 jq_assert "tari healthcheck uses the [m]inotari self-match guard" '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
 jq_assert "tari runs under an init that reaps and forwards signals (#2627)" '.services.tari.init == true'
-jq_assert "default project identity remains pithead" '.name == "pithead"'
-custom_project=$(COMPOSE_PROJECT_NAME=pithead-gate docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" --profile '*' config --format json) || exit 1
-jq -e '.name == "pithead-gate" and (.volumes | to_entries | all(.value.name == ("pithead-gate_" + .key)))' <<<"$custom_project" >/dev/null || exit 1
-echo "  ✓ custom project owns its named volumes"
+project_renders=$(bash "$ROOT/tests/stack/standalone/compose-project-render.sh" "$ENV_FILE") || exit 1
+printf '::group::C2/C3 rendered configurations (checkout paths redacted)\n%s\n::endgroup::\n' "$project_renders"
+jq_assert "C2 default project, containers, networks and volumes preserve their identities" \
+    '.[0] | .name == "pithead" and ([.services[].container_name] | unique) == (["tor", "monerod", "wallet-rpc", "tari", "tari-wallet", "p2pool", "xmrig-proxy", "dashboard", "docker-proxy", "docker-control", "caddy"] | unique) and ([.networks[].name] | unique) == ["mining_net", "proxy_net"] and ([.volumes[].name] | unique) == ["pithead_caddy_data", "pithead_tari_wallet_db", "pithead_wallet_data"]' "$project_renders"
+jq_assert "C3 custom project owns exactly its expected volumes" \
+    '.[1] | .name == "pithead-gate" and ([.volumes[].name] | unique) == ["pithead-gate_caddy_data", "pithead-gate_tari_wallet_db", "pithead-gate_wallet_data"]' "$project_renders"
 jq_assert "memory ceiling on every service (#132); p2pool's >= 3 GiB, no swap (#2562)" '([.services[] | select(.mem_limit != null)] | length >= 9) and (.services.p2pool | ((.mem_limit | tonumber) >= 3221225472) and (.memswap_limit == .mem_limit))'
-# Immutable root filesystems (#377): every service runs read_only with exactly its expected tmpfs
-# scratch set, INCLUDING the mount options. An edit that grows a size cap or slips in `exec` —
-# re-creating the executable staging area read_only exists to remove — must fail CI, not evolve
-# silently. Each spec's entries are space-separated (the options carry commas). Removing read_only
-# from any service, or changing any tmpfs entry, fails CI.
 for spec in \
     "tor=/tmp:size=64m,mode=1777" \
     "monerod=/tmp:size=64m,mode=1777" \
