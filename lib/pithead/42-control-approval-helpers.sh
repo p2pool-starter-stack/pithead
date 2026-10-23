@@ -86,7 +86,7 @@ control_mark_config_confirm_rows() {
         *) continue ;;
         esac
         printf '%s\n' "$out" | awk -F'\t' -v k="$endpoint_key" '$2 == k {found=1} END {exit !found}' && continue
-        if [ "$endpoint_key" = TARI_GRPC_ADDRESS ] && [ "$(jq -r '.tari.mode // "local"' "$staged")" = off ]; then
+        if [ "$endpoint_key" = TARI_GRPC_ADDRESS ] && [ "$(config_get .tari.mode "$staged")" = off ]; then
             out+="${out:+$'\n'}CONFIRM"$'\t'"$path"$'\tTari remote settings are stored but inactive while merge-mining is off.'
         else
             out+="${out:+$'\n'}CONFIRM"$'\t'"$path"$'\tRemote node endpoint settings are changing.'

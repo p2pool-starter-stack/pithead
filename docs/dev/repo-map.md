@@ -28,6 +28,12 @@ pithead/
 └── .github/              CI, templates, and ownership
 ```
 
+Configuration defaults live in `dashboard/mining_dashboard/config/defaults.json`.
+`scripts/build-config-defaults.py` exports the embedded CLI table in
+`lib/pithead/19a-config-defaults.sh`, the legacy-compatible `config.reference.json`, and
+DIY/appliance starter configs (`config.minimal.json`, `config.minimal.appliance.json`).
+`dashboard/mining_dashboard/config/defaults.py` reads the same table for the dashboard and wizards.
+
 ## Product entry points
 
 | Area | Start here | Change and verify |
