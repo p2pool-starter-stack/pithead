@@ -22,6 +22,7 @@ OPERANDS = {
     "name",
     "1",
     "legacy",
+    "project",
     "PWD",
 }
 OPTIONS = {"--filter", "--format", "-f", "--status", "--type"}
@@ -226,7 +227,7 @@ def run_manifest(manifest, project, compose, target):
                 operand = match[1]
                 return (
                     project
-                    if operand == "legacy"
+                    if operand in ("legacy", "project")
                     else str(Path(compose).parent)
                     if operand == "PWD"
                     else target

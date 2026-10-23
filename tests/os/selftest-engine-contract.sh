@@ -5,9 +5,12 @@ export ENGINE_CONTRACT_SCRIPT="$ROOT/tests/os/engine-contract.py"
 echo '== engine contract literal, loop and unresolved-wrapper controls =='
 python3 - <<'PY'
 import importlib.util
+import json
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("engine", os.environ["ENGINE_CONTRACT_SCRIPT"])
 engine = importlib.util.module_from_spec(spec)
@@ -32,6 +35,17 @@ with tempfile.TemporaryDirectory() as directory:
         pass
     else:
         raise AssertionError("unknown filter variable passed")
+with tempfile.TemporaryDirectory() as directory:
+    file = Path(directory) / "fixture.sh"
+    file.write_text('docker ps --filter "label=com.docker.compose.project=$project" --format "{{.Names}}"\n')
+    rows = engine.extract(directory)
+    manifest = file.with_suffix(".json")
+    manifest.write_text(json.dumps(rows))
+    def run(argv, **kwargs):
+        assert argv == ["docker", "ps", "--filter", "label=com.docker.compose.project=fixture-project", "--format", "{{.Names}}"], argv
+        return SimpleNamespace(returncode=0, stdout="fixture-container\n")
+    with patch.object(engine.subprocess, "run", side_effect=run):
+        engine.run_manifest(manifest, "fixture-project", "fixture-compose", "fixture-container")
 for value in ("running healthy", "exited none"):
     engine.check_shape(["inspect", "--format", "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"], value)
 try:

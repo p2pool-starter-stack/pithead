@@ -8,6 +8,13 @@ trap 'rm -rf "$work"' EXIT
 SSH_ERR="$work/ssh.err"
 ok() { printf 'PASS: %s\n' "$1"; }
 bad() { printf 'FAIL: %s\n' "$1"; }
+git() {
+    if [ "${3:-}/${4:-}" = 'rev-parse/723b1d7^{commit}' ]; then
+        command git -C "$2" rev-parse HEAD
+    else
+        command git "$@"
+    fi
+}
 _ssh() (
     exec 2>"$SSH_ERR"
     if [ "$mode" = transport ]; then

@@ -160,8 +160,9 @@ scenario table, so its enumeration checks also run the real registration guard.
 
 The appliance install and stack phases run `appliance-engine-contract-leg.sh`.
 `engine-contract.py` extracts the CLI's ps filters, inspect templates and Compose ps
-forms, expands status loops and the configless wrapper callers, and refuses unknown
-variable arguments or output contracts. The guest exercises running and stopped
+forms, expands status loops and the configless wrapper callers, maps configured
+project filters to the isolated fixture, and refuses unknown variable arguments or
+output contracts. The guest exercises running and stopped
 isolated Compose fixtures, requires RC3's restarting census to fail with Podman's
 exit 125, then requires status and the actual integration predicate to reject a
 Caddy crash loop. An independent 30-second restart/start-time observation establishes
@@ -170,7 +171,9 @@ staged helper directory as `ENGINE_CONTRACT_WORK`; the predicate sources its cop
 churn helper and extracted status predicate from that directory. The extraction selftest
 runs through the OS selftest glob in CI. Failed engine legs print bounded guest
 stderr and SSH transport diagnostics; the transport selftest checks both channels
-and rejects a pass marker from a command that failed.
+and rejects a pass marker from a command that failed. That transport unit uses the
+checked-out commit as its Git staging fixture so shallow CI needs no historical
+objects; the appliance run still requires the real RC3 baseline.
 
 Strict coverage is opt-in: `PITHEAD_REQUIRE_COMPLETE=1` makes both the integration
 summary and appliance exit gate fail on every missing skip. The appliance runner
