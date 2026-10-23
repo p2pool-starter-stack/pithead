@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== Privacy peering fixture guards =="
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 python3 - "$ROOT/tests/integration/profile-peering.py" <<'PY'
 import importlib.util

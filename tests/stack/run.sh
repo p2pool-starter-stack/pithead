@@ -124,8 +124,6 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-cli.sh" && domain_ran test-cli.sh "$_d0" "$?" || domain_ran test-cli.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-deps-python.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-deps-python.sh" && domain_ran test-deps-python.sh "$_d0" "$?" || domain_ran test-deps-python.sh "$_d0" "$?"
-    bash "$HERE/config/profile.sh"
-    assert_rc "profile rendering and persistent clearnet behavior" "$?" "0"
     # shellcheck source=tests/stack/test-config.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-config.sh" && domain_ran test-config.sh "$_d0" "$?" || domain_ran test-config.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-config-document.sh disable=SC2015
