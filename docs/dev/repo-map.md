@@ -73,10 +73,14 @@ Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture contr
 `tests/stack/appliance/test-appliance-reset-slot.sh` and
 `tests/stack/appliance/test-appliance-reset-slot-boot.sh`.
 The fresh-spare negative control is in `tests/os/phases/update-spare-slot.sh`.
-The shared existing-install restore regression is `tests/integration/lib/restore-dashboard-guest.sh`;
-the lifecycle and KVM reset phases require restored configuration and energy cost through both dashboard APIs.
-Lifecycle checks the restored baseline before its Tari trial; `selftest-lifecycle-restore-health.sh`
-and `selftest-reset-restore.sh` cover ordering and state refusal.
+The shared existing-install restore regression is `tests/integration/lib/restore-dashboard-guest.sh`.
+It builds a separate candidate-schema fixture with the original wallet and payout fields, leaving the
+original configuration and its version stamp unchanged for cleanup. Lifecycle and KVM reset require
+both dashboard APIs to return the archived energy cost after restore/up, before cleanup applies anything.
+Cleanup verifies exact configuration and bounded health, retaining its private recovery copy if unverified.
+Lifecycle also checks original secret fingerprints and Tari mode before its Tari trial, including after
+a failed probe. `selftest-restore-dashboard-guest.sh` covers the synthetic fixture and cleanup;
+`selftest-lifecycle-restore-health.sh` and `selftest-reset-restore.sh` cover ordering and state refusal.
 The real A/B reset leg is `tests/os/phases/reset-slot.sh`; it checks wizard setup, CLI restore
 and reboot with setup still open before the final provisioned reboot.
 

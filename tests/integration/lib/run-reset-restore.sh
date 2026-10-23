@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 run_restore_dashboard_probe() {
-    local before_config before_secrets before_tari after_config after_secrets after_tari
+    local before_config before_secrets before_tari after_config after_secrets after_tari probe_rc=0
     if ! before_config=$(rx 'sha256sum config.json') || [ -z "$before_config" ] ||
         ! before_secrets=$(upgrade_secret_fingerprints) || [ -z "$before_secrets" ] ||
         ! before_tari=$(env_on_box TARI_MODE) || [ -z "$before_tari" ]; then
@@ -13,7 +13,7 @@ run_restore_dashboard_probe() {
         it_pass "CLI restore refreshes dashboard configuration and running energy cost (#3432)"
     else
         it_fail "CLI restore refreshes dashboard configuration and running energy cost (#3432)" "see restore-dashboard.log"
-        return 1
+        probe_rc=1
     fi
     if ! after_config=$(rx 'sha256sum config.json') || [ "$after_config" != "$before_config" ] ||
         ! after_secrets=$(upgrade_secret_fingerprints) || [ "$after_secrets" != "$before_secrets" ] ||
@@ -23,6 +23,7 @@ run_restore_dashboard_probe() {
         return 1
     fi
     it_pass "restore probe returns the original healthy Tari baseline (#3432)"
+    return "$probe_rc"
 }
 
 # The ordinary CLI recovery door, using real Compose containers and a real encrypted backup.

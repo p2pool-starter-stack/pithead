@@ -3,21 +3,60 @@ set -euo pipefail
 umask 077
 scratch=$(mktemp -d "${TMPDIR:-$PWD/data}/restore-dashboard.XXXXXXXX")
 archive=""
+mutated=0
 cp config.json "$scratch/original.json"
+wait_cleanup_health() {
+    local deadline=$((SECONDS + 240)) stable=0
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if timeout 30 ./pithead status >/dev/null 2>&1; then stable=$((stable + 1)); else stable=0; fi
+        [ "$stable" -lt 2 ] || return 0
+        sleep 3
+    done
+    printf 'restore dashboard cleanup: health did not recover\n' >&2
+    return 1
+}
 cleanup() {
-    local result=$?
+    local result=$? verified=1
     trap - EXIT
-    ./pithead down || result=1
-    if ! { cp "$scratch/original.json" config.json && ./pithead apply -y && ./pithead up; }; then
+    if [ "$mutated" -eq 1 ]; then
+        ./pithead down || verified=0
+        if cp "$scratch/original.json" config.json && ./pithead apply -y && ./pithead up; then
+            wait_cleanup_health || verified=0
+        else
+            verified=0
+        fi
+    fi
+    cmp -s "$scratch/original.json" config.json || verified=0
+    if [ "$verified" -eq 1 ]; then
+        [ -z "$archive" ] || rm -f -- "$archive" || result=1
+        rm -f -- "$scratch/original.json" "$scratch/fixture.json" "$scratch/config.json" "$scratch/password" "$scratch/backup.log" "$scratch/before" || result=1
+        rmdir "$scratch" || result=1
+    else
+        printf 'restore dashboard cleanup unverified; private recovery fixture retained\n' >&2
         result=1
     fi
-    [ "$result" -eq 0 ] || printf 'restore dashboard fixture failed or cleanup did not complete\n' >&2
-    [ -z "$archive" ] || rm -f -- "$archive"
-    rm -f -- "$scratch/original.json" "$scratch/config.json" "$scratch/password" "$scratch/backup.log" "$scratch/before"
-    rmdir "$scratch"
     exit "$result"
 }
 trap cleanup EXIT
+jq --slurpfile original "$scratch/original.json" '
+    def candidate($saved):
+        with_entries(select(.key != "_docs" and .key != "config_version") |
+            .key as $key |
+            if ($saved | type) == "object" and ($saved | has($key)) then
+                .value |= if type == "object" then candidate($saved[$key]) else $saved[$key] end
+            else . end);
+    candidate($original[0])
+' config.reference.json >"$scratch/fixture.json"
+jq -e --slurpfile original "$scratch/original.json" '
+    . as $fixture |
+    all($original[0] | paths(scalars) | select(any(.[]; type == "string" and test("wallet|payout|view_key|spend_public_key|donor_id")));
+        . as $path | $fixture | getpath($path) == ($original[0] | getpath($path)))
+' "$scratch/fixture.json" >/dev/null || {
+    printf 'restore dashboard fixture cannot preserve every wallet and payout field\n' >&2
+    exit 1
+}
+mutated=1
+cp "$scratch/fixture.json" config.json
 openssl rand -hex 24 >"$scratch/password"
 set_cost() {
     jq --argjson cost "$1" --rawfile password "$scratch/password" '.dashboard.energy.cost_per_kwh = $cost | .dashboard.control.enabled = true | if (.dashboard.auth.password // "") == "" then .dashboard.auth.password = ($password | rtrimstr("\n")) else . end | .dashboard.onion.client_auth = true' config.json >"$scratch/config.json"

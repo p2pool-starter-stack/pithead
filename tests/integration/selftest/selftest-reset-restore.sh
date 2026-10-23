@@ -17,13 +17,13 @@ drive_dashboard_probe() (
         case "$1" in
         'sha256sum config.json')
             [ "$fault" != read-config ] || return 1
-            if [ "$fault" = config ] && [ -e "$OUT_DIR/probe-ran" ]; then printf changed; else printf original; fi
+            if [[ "$fault" = config || "$fault" = probe-and-config ]] && [ -e "$OUT_DIR/probe-ran" ]; then printf changed; else printf original; fi
             ;;
         'bash -s')
             [ "${2:-}" = --stdin ] || return 1
             cat >/dev/null
-            [ "$fault" != probe ] || return 1
             : >"$OUT_DIR/probe-ran"
+            case "$fault" in probe | probe-and-config) return 1 ;; esac
             ;;
         *) return 127 ;;
         esac
@@ -42,9 +42,11 @@ drive_dashboard_probe() (
     printf '%s|%s|%s' "$rc" "$IT_FAIL" "$IT_PASS"
 )
 assert_eq "dashboard restore probe verifies the original healthy Tari baseline" "$(drive_dashboard_probe none)" '0|0|2'
-for fault in read-config read-secrets read-tari probe; do
+for fault in read-config read-secrets read-tari; do
     assert_eq "dashboard restore probe refuses $fault before the Tari trial" "$(drive_dashboard_probe "$fault")" '1|1|0'
 done
+assert_eq "a failed dashboard probe still verifies the original baseline" "$(drive_dashboard_probe probe)" '1|1|1'
+assert_eq "a failed dashboard probe also rejects failed cleanup" "$(drive_dashboard_probe probe-and-config)" '1|2|0'
 for fault in config secrets tari health; do
     assert_eq "dashboard restore probe refuses changed or unhealthy $fault state" "$(drive_dashboard_probe "$fault")" '1|1|1'
 done
