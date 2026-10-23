@@ -1,5 +1,7 @@
 # Appliance image harness
 
+The `--help` usage text in `run.sh` declares the supported phases. Bench-ci reads its `--phase` list for phase discovery and remote-node admission. Keep that list when editing the harness.
+
 Tier-4 tests for the `pithead-os` appliance image (#77 phase 2): the properties only real
 firmware and a real A/B updater can prove. The compose/CLI stack is covered by the other
 tiers ([`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md)); this harness
@@ -289,7 +291,15 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
-  the stick mid-countdown cancels the change instead.
+  the stick mid-countdown cancels the change instead. Each removable-stick fixture must finish
+  partitioning, formatting, mounting, configuration writing and cleanup before guest attachment.
+  Partition readiness is limited to 50 polls at 0.1 seconds; partitioning, loop attachment,
+  formatting, mounting and cleanup probes use a 10-second timeout with a 5-second kill grace.
+  Construction or attachment failure ends the phase before reboot or product assertions for that
+  leg. Cleanup verifies the loop backing path and mount source, uses ordinary unmount and removes
+  only the empty temporary directory; unknown ownership or failed unmount retains resources.
+  `selftest-media-fixture.sh` exercises delayed and missing partitions, construction failures,
+  cleanup refusal and both callers without a guest or root privileges.
 - **fault** — power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is
   disqualifying. A closing leg (the #1029 class, #2067) boots a FRESH guest and destroys it while
   its very first boot is loading the baked container images from the archive — the interrupted
@@ -321,19 +331,21 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   asserts the wedged-`/data` recovery reformats it rather than bricking.
 - **image-upgrade** — boot the submitted appliance image, create a sparse loop-mounted XFS with
   reflinks under the disposable guest's writable data partition, verify and install the published
-  v1.20.0 bundle without modifying it, then invoke the existing image-upgrade harness against the
-  submitted images. The baseline uses remote Monero and remote Tari because v1.20.0 predates
-  Tari-off mode, and keeps its five data dirs on a shared root beside the version dirs on the same
-  reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
+  v2.0.0 bundle without modifying it, then invoke the existing image-upgrade harness against the
+  submitted images. The baseline uses remote Monero and remote Tari, and keeps its five data dirs
+  on a shared root beside the version dirs on the same reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
   the tier's debug-registry public key, so submitted images are verified against the key that
   signed them. When `PITHEAD_REGISTRY_CA` is set, the signed candidate also carries that CA as
-  `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. It runs the release-shaped stack under the CLI's existing test override inside the
-  otherwise appliance-shaped guest. Its private volatile script is invoked through `bash`, so a
+  `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. Baseline setup,
+  candidate upgrade and baseline rollback all use the CLI's existing DIY test override inside the
+  appliance-shaped Podman guest, so derived host files use one render mode. Its private volatile
+  script is invoked through `bash`, so a
   noexec mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
-  and resumed hashes. The v1.20.0 rollback starts without the strict Tor-egress check, because that
-  release cannot install the podman ruleset; the run records it as a counted by-design row that
-  [#2696](https://github.com/p2pool-starter-stack/pithead/issues/2696) removes. Release-input preparation failures name only the failed sub-step, a redacted
+  and resumed hashes. The baseline uses `pithead-v2.0.0-baseline` so a candidate whose `VERSION`
+  is still `2.0.0` gets a fresh version directory. The candidate upgrade and baseline restoration
+  both enforce the strict Tor-egress check. Release-input preparation failures name only the
+  failed sub-step, a redacted
   command, and its exit status. Downstream guest failures name only a fixed stage (including the
   mountpoint or loop-mount half of reflink setup) and integer exit status; command output, tokens,
   keys, signature material, and topology stay hidden. Its EXIT trap stops the stack, unmounts the
@@ -356,10 +368,10 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
   diagnostics, so the red is unreadable).
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means every phase except
-crossupdate, including image-upgrade, fault, reset and stack, and the full run is required once for
+crossupdate and tor-heal, including image-upgrade, fault, reset and stack, and the full run is required once for
 every RC candidate.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a

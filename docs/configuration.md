@@ -101,6 +101,9 @@ absent-key behavior.
 `apply` is safe to run anytime:
 
 - It previews what will change, diffing your edited `config.json` against the running configuration.
+  A P2Pool pool switch warns that the sidechain re-syncs and the PPLNS window resets. A routing-only
+  edit describes proxy routing, DNS and peer visibility; it keeps the selected sidechain. The
+  clearnet exposure and subnet-topology warnings still apply to their respective settings.
 - It prompts to confirm before anything disruptive: switching the Monero node local↔remote, switching
   `tari.mode` between `local`, `remote` and `off`, toggling pruning, changing a payout address,
   exposing the RPC to your LAN, or moving a data directory. For a Monero or Tari payout-address
@@ -281,7 +284,7 @@ the desired value is not presented as proof of what the still-running services u
 | **Workers** |  | _Control how rigs authenticate and connect to Pithead._ |
 | `workers.api_auth` | `none` | How the dashboard reads each worker's xmrig API. Beyond what the proxy reports, the dashboard probes every connected miner's own xmrig HTTP API (`/1/summary`) for uptime and per-miner hashrate, one configured way, no auto-detection. `none` (default) expects an open, read-only API (xmrig `http.restricted` with no `access-token`), which is what a stock RigForge worker exposes. `name` sends the worker's stratum name as the Bearer token (for miners whose `access-token` equals their name). `token` sends a single shared `workers.api_token` for every worker. A worker whose probe fails isn't dropped: it keeps its proxy-reported hashrate and is badged on the dashboard, with one log line explaining why (so a misconfigured API is distinct from an offline miner). An _adopted_ rig — one whose `workers.list` entry carries a control token — is badged `api ⚠`, the case this key is about; a rig with no token is badged `not adopted` instead — the setup wizard's rig, whose fix is adopting it; a hand-configured miner in that state still wants this key (#1857). Upgrading from a build whose miners set an `access-token`? Set this to `name` (or reprovision the miners to drop the token), otherwise the default no-auth probe `401`s and every worker is badged — `api ⚠` if adopted, `not adopted` if not. |
 | `workers.api_token` | `""` | The single shared Bearer token used when `workers.api_auth` is `token`. Ignored otherwise. |
-| `workers.api_port` | `8080` | TCP port the worker xmrig API listens on. Change only if your miners expose the API on a non-standard port. Must be an integer from 1 to 65535: the dashboard refuses anything else at preview and `pithead apply` refuses it before rendering `XMRIG_API_PORT`. |
+| `workers.api_port` | `8080` | TCP port the worker xmrig API listens on. Omission or explicit `null` uses port `8080`, including endpoint-bound API authentication; the preview labels `null` as `8080 (default)`. Change only if your miners expose the API on a non-standard port. An explicit non-null value must be an integer from 1 to 65535: the dashboard refuses anything else at preview and `pithead apply` refuses it before rendering `XMRIG_API_PORT`. |
 | `workers.list` | `[]` | Per-worker overrides: `{name, host?, port?, api_token?, token?, watts?, control_port?}`. Only `name` (the stratum worker name) is required. A per-worker field beats the fleet default, which beats the built-in default; unlisted rigs keep fleet defaults. `api_token` is an explicitly read-only worker-API Bearer for this rig, overriding fleet `api_auth`; it requires an operator-set `host` and is bound to that host and API port in `WORKER_API_TOKENS`. `token` is instead the write-capable RigForge control token: it remains host-only and is never sent by the dashboard probe. RigForge can derive a separate read-only Bearer from it when `host` is set and the token meets the 32-character minimum. `control_port` (default `8082`) is the writable control API port; set it with `host` + `token` for [Worker Inspect](dashboard.md#worker-inspect). `watts` is a manual estimate used by the [energy calculator](dashboard.md#energy--profit) only when the enriched feed has no measured watts. Descriptors match by `name`, then by connecting IP against an operator-set `host`; duplicate names → first-declared wins. The dashboard never sends a configured credential to a miner-controlled host ([SSRF guard](workers.md#per-worker-overrides)). The dashboard can append a rig behind typed `APPLY`, but cannot repoint, reorder or remove entries. See [Connecting Miners › Per-worker overrides](workers.md#per-worker-overrides). `dashboard.workers` was a deprecated alias removed in 2.0.0 (#1832): the first command reading an old config migrates it into `workers.list`, deletes the alias, and keeps `config.json.bak-1x`. A restored 1.x backup is migrated while staged and leaves no `.bak-1x`, because the backup archive is the pre-migration copy. Different values in both locations are refused; equal values remove the alias. An empty array never refuses. |
 | **Dashboard & access** |  | _Control dashboard access, login, address, and remote configuration._ |
 | `dashboard.secure` | `true` | `true` serves the dashboard over HTTPS (Caddy `tls internal`); `false` uses plain HTTP. |
@@ -514,14 +517,29 @@ How it works and what to keep in mind:
   the password, so the Caddyfile doesn't churn.
 - Keep `dashboard.secure: true`. Basic-auth sends the credentials with every request; over plain HTTP
   (`secure: false`) they'd travel in cleartext. pithead warns if you set a password without HTTPS, but
-  won't stop you. With the default `tls internal`, Caddy serves a locally-trusted certificate; your
-  browser will warn the first time unless you trust Caddy's local CA.
+  won't stop you.
 - A login is access control for the dashboard, not the miner. It gates the web UI only. The stratum
   port miners connect to is a separate surface; gate that with
   [`p2pool.stratum_password`](#configuration-reference) and `p2pool.stratum_bind`.
 - Exposing to the public internet is still discouraged. A password plus HTTPS is the right baseline,
   but for reaching the dashboard from outside the LAN, publish it as a Tor onion service (below)
   rather than forwarding a port. Basic-auth has no rate-limiting or lockout on its own.
+
+On DIY installs, accepting Caddy's current leaf certificate in the browser can warn again after
+an internal renewal (leaves last 12 hours by default). Trust this installation's root CA once
+instead: from the stack directory on a host reached through a trusted console or SSH session, run
+`docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > pithead-dashboard-ca.crt`
+and record its fingerprint with `openssl x509 -in pithead-dashboard-ca.crt -noout -sha256 -fingerprint`. Transfer only
+that public `.crt` over an authenticated channel and compare its fingerprint on your browsing
+device before importing it as a trusted authority. On Windows, use the current user's **Trusted
+Root Certification Authorities** store; on macOS, import through **Keychain Access** and allow
+SSL trust; on Linux, use the browser's local-authority manager. Firefox has its own **Settings →
+Privacy & Security → Certificates → View Certificates → Authorities → Import** dialog: enable
+trust for identifying websites. Restart the browser if needed, reopen the dashboard at its
+configured hostname or address, and verify its valid certificate chain. Never export `root.key`
+or the whole CA directory. Normal leaf renewals retain the root in `caddy_data`; uninstalling
+deletes that volume and requires a new export and trust decision. The appliance uses its own
+certificate; this procedure is for DIY installs.
 
 To remove the login again, clear the password (`"password": ""`) and `apply`. pithead drops the
 `basic_auth` block and the dashboard is open on the LAN as before.
