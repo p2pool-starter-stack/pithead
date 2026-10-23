@@ -120,6 +120,8 @@ source "$HERE/lib/run-wizard-defaults.sh" || exit $?
 source "$HERE/lib/run-connection-announcements.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-reset-restore.sh
 source "$HERE/lib/run-reset-restore.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-pool-preview.sh
+source "$HERE/lib/run-pool-preview.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-secrets.sh
@@ -272,7 +274,9 @@ main() {
             [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
         done
     fi
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
+        run_p2pool_preview || lifecycle_ok=0
         run_lifecycle || lifecycle_ok=0
     fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
@@ -295,9 +299,6 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_TARI_STRANDED" = "1" ] && run_tari_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MONERO_STRANDED" = "1" ] && run_monero_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
-    # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
-    # baseline stack cleanly before the end-of-run restore.
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
 
     # An image gate always returns the exact old release and its quiesced writable state. Other runs
     # roll back only on failure, then put config.json back where it started. Drop the archive only
