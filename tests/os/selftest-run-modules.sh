@@ -2,7 +2,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 modules=(lib/core.sh wizard-redirect-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
-function_files=(lib/core.sh wizard-redirect-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-fresh-start.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset-slot.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
+function_files=(lib/core.sh wizard-redirect-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-rig.sh phases/install-reinstall.sh phases/install-fresh-start.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset-slot.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
 expected_modules="${modules[*]}"
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_modules" = "$expected_modules" ] || {
@@ -57,8 +57,8 @@ source "$HERE/phases/rigmedia.sh" || exit $?
 source "$HERE/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$HERE/phases/reset.sh" || exit $?
-# shellcheck source=tests/os/phases/image-upgrade.sh
 source "$HERE/phases/image-upgrade.sh" || exit $?
+image_upgrade_certificate_continuity_leg() { :; }
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$HERE/phases/crossupdate.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
