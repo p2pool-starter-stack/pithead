@@ -10,6 +10,11 @@ worker_names() {
     on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.workers[]? | select(.status == \"online\") | .name // empty | select(test(\"^[^[:cntrl:]]+$\"))' | sort -u"
 }
 
+capture_load_baseline() {
+    LOAD_BASELINE_NAMES="$(worker_names)" || return 1
+    grep -Fxq -- "$LOAD_BORROWED_NAME" <<<"$LOAD_BASELINE_NAMES"
+}
+
 refresh_load_borrowed_name() {
     [ -n "$LOAD_WORKER_NAME" ] || return 0
     local old="$LOAD_BORROWED_NAME" new
@@ -75,15 +80,11 @@ start_load_worker() {
         stop_load_worker
         return 1
     }
-    LOAD_BASELINE_NAMES="$(worker_names)" || {
-        stop_load_worker
-        return 1
-    }
-    grep -Fxq -- "$LOAD_BORROWED_NAME" <<<"$LOAD_BASELINE_NAMES" || {
+    if ! wait_for 180 8 "the borrowed worker before capturing the load baseline" capture_load_baseline; then
         warn "load worker startup refused: the borrowed worker label is not online in the baseline"
         stop_load_worker
         return 1
-    }
+    fi
     LOAD_EXPECTED_WORKERS=$(($(grep -c . <<<"$LOAD_BASELINE_NAMES") + 1))
     LOAD_INITIAL_BASELINE_NAMES="$LOAD_BASELINE_NAMES"
     bin="$(on_miner "for b in $(quote_arg "${MINER_XMRIG_CONFIG%/*}/xmrig") \$(command -v xmrig 2>/dev/null); do [ -x \"\$b\" ] && { printf '%s\\n' \"\$b\"; break; }; done")"

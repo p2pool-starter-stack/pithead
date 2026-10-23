@@ -29,7 +29,7 @@ case "$load_src" in *'owned()'*'cleanup-failed'*'kill -KILL'*'trap fail EXIT'*) 
 case "$load_src" in *'test -z'*'wait'*'rm -rf --'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'jq -er'*'LOAD_SHARES_BEFORE" =~ ^[0-9]+$'*'stop_load_worker'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'LOAD_SHARES_BEFORE='*'identity="$(on_miner'*) ;; *) exit 1 ;; esac
-case "$load_src" in *'LOAD_BASELINE_NAMES="$(worker_names)"'*'LOAD_EXPECTED_WORKERS='*'wait_load_workers 180'*) ;; *) exit 1 ;; esac
+case "$load_src" in *'wait_for 180 8'*'capture_load_baseline'*'LOAD_EXPECTED_WORKERS='*'wait_load_workers 180'*) ;; *) exit 1 ;; esac
 case "$wait_src" in *'wait_workers "${LOAD_EXPECTED_WORKERS:-$WORKERS}"'*'worker_set_ready "$names"'*'sleep 8'*) ;; *) exit 1 ;; esac
 case "$cleanup_src" in *'find /tmp'*'-uid \$(id -u)'*'stop_load_worker'*) ;; *) exit 1 ;; esac
 case "$sample_src" in *'LOAD_MAX_HASHES='*'LOAD_MAX_SHARES='*'timeout 8s docker compose ps --services --status running'*'worker_set_ready "$names"'*'LOAD_SAW_RECOVERY=1'*'LOAD_SAW_FAILOVER=1'*'LOAD_METRICS_SAMPLED=1'*) ;; *) exit 1 ;; esac
@@ -102,12 +102,33 @@ startup_refusal="$(
     on_miner() { printf /tmp/pithead-e2e-load.fixture; }
     refresh_load_borrowed_name() { LOAD_BORROWED_NAME=missing; }
     worker_names() { printf online; }
+    wait_for() {
+        shift 3
+        "$@"
+    }
     stop_load_worker() { :; }
     warn() { printf '%s\n' "$*"; }
     start_load_worker
     printf 'rc=%s' "$?"
 )"
 [ "$startup_refusal" = $'load worker startup refused: the borrowed worker label is not online in the baseline\nrc=1' ] || exit 1
+(
+    source "$HERE/../lib.sh"
+    tick=0
+    now_s() { printf '%s' "$tick"; }
+    sleep() { tick=$((tick + 1)); }
+    LOAD_BORROWED_NAME=borrowed
+    worker_names() {
+        printf 'other-worker\n'
+        [ "$tick" -eq 0 ] || printf 'borrowed\n'
+    }
+    wait_for 2 1 "the borrowed worker" capture_load_baseline >/dev/null || exit 1
+    [ "$tick" = 1 ] && [ "$LOAD_BASELINE_NAMES" = $'other-worker\nborrowed' ] || exit 1
+    tick=0
+    worker_names() { printf other-worker; }
+    ! wait_for 2 1 "the borrowed worker" capture_load_baseline >/dev/null 2>&1 || exit 1
+    [ "$tick" = 2 ] || exit 1
+) || exit 1
 rendered_config="$(jq --arg name clone "$LOAD_WORKER_CONFIG_FILTER" <<<'{"pools":[{"user":"real","rig-id":"borrowed-rig"}],"http":{"enabled":true,"host":"0.0.0.0","port":8080,"access-token":null},"autosave":true,"background":true,"log-file":"operator.log"}')"
 jq -e '.pools[0].user == "real" and .pools[0]["rig-id"] == "clone" and .http == {"enabled":false} and .autosave == false and .background == false and (has("log-file") | not)' <<<"$rendered_config" >/dev/null || {
     echo "FAIL: clone config retained a listener, autosave/background mode, or operator log path"
