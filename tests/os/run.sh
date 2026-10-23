@@ -128,6 +128,7 @@ OS_RUN_SUITE=1
 source "$SCRIPT_DIR/lib/core.sh" || exit $?
 # shellcheck source=tests/os/wizard-redirect-leg.sh
 source "$SCRIPT_DIR/wizard-redirect-leg.sh" || exit $?
+source "$SCRIPT_DIR/wizard-identity-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/boot.sh
 source "$SCRIPT_DIR/phases/boot.sh" || exit $?
 # shellcheck source=tests/os/phases/update-spare-slot.sh

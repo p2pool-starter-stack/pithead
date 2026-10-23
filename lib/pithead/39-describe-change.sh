@@ -1,6 +1,13 @@
-# Describe a changed env key for the apply preview. Prints "FLAG\tmessage"; always returns 0.
 describe_change() {
     local key="$1" old="$2" new="$3" flag="INFO" msg
+    if [ "${TARI_MODE:-}" = off ]; then
+        case "$key" in
+        TARI_GRPC_ADDRESS | TARI_CLEARNET_SYNC)
+            printf 'INFO\t%s' "Tari setting $key is inactive while merge-mining is off; Tari will not run."
+            return
+            ;;
+        esac
+    fi
     if describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
         printf '%s\t%s' "$flag" "$msg"
         return
@@ -37,12 +44,17 @@ describe_change() {
         fi
         ;;
     TARI_MODE)
-        # The Tari half of the row above, where the MODE is legible (#1929). CONFIRM not DEST on
-        # #1888's reasoning: the container stops, its chain data is KEPT, the same route reverses it.
         flag=CONFIRM
         case "$new" in
         off) msg="Tari merge-mining OFF ($old → off) — p2pool stops merge-mining and any local tari container is stopped and removed. Its chain data on disk is KEPT, so turning Tari back on resumes instead of re-syncing." ;;
-        local) msg="Tari merge-mining ON, local node ($old → local) — the tari container starts and SYNCs the chain (large download / disk use) unless its data dir already holds one." ;;
+        local)
+            msg="Tari merge-mining ON, local node ($old → local) — the tari container starts and SYNCs the chain (large download / disk use) unless its data dir already holds one."
+            if [ "$(config_bool '.tari.clearnet_initial_sync' false 2>/dev/null)" = true ]; then
+                local sync_line
+                sync_line=$(describe_change TARI_CLEARNET_SYNC false true)
+                msg+=" ${sync_line#*$'\t'}"
+            fi
+            ;;
         *) msg="Tari merge-mining ON, external node ($old → remote) — p2pool merge-mines against the node at tari.remote; no tari container runs on this host." ;;
         esac
         [ "$new" == off ] || msg+=" Monero mining continues; merge-mining starts when Tari has synced (on an already-mining machine)."

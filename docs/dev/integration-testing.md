@@ -369,7 +369,7 @@ via an `EXIT` trap):
    (`checkout -f` + `reset --hard` + `clean -fdx`) — a leftover untracked file from an earlier run
    can't abort the checkout. `clean` keeps the harness's `results/` and the seeded `config.json`/
    `.env`/`data/`/`backups/` (all gitignored). The canonical `/srv/code/pithead` is the baseline and
-   is never git-touched. Because the Compose project name is pinned to `pithead`, the two checkouts
+   is never git-touched. With the same Compose project name (`pithead` by default), the two checkouts
    drive the same containers and the same shared chains. They're two code copies of one stack, run one
    at a time, so borrow→test→restore is a fast code/image swap, never a re-sync.
 2. Seeds the e2e checkout's `config.json`/`.env` from the live release bundle when one exists —
@@ -799,9 +799,20 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
-- Stratum TLS is live (`p2pool.stratum_tls=true` row only). A TLS handshake against the published
-  stratum port succeeds, and the served certificate's fingerprint matches the one
-  `announce_stratum_tls` tells rigs to pin ([#261](https://github.com/p2pool-starter-stack/pithead/issues/261)).
+- Stratum password and TLS client controls run in the two `*-stratum-tls` scenarios (#3078).
+  The Connect-a-miner card supplies the password, port and fingerprint. Fixture setup logs in
+  without submitting shares and disconnects, retaining a proxy-owned worker row with numeric
+  zero connections and accepted shares. Wrong and omitted passwords must receive explicit
+  refusals for 120 seconds with no job or active connection and no accepted-counter change.
+  A fingerprint with one nibble changed must fail before login; the correct pin and cleartext
+  must both receive jobs on the same port. On the appliance, the shipped XMRig additionally
+  proves explicit password and fingerprint errors and a new accepted share in each positive
+  arm. Channel selection requires a successful, explicit appliance or DIY result; CLI source,
+  transport and unknown-result failures fail the control before either probe runs.
+  An unconfigured XMRig password defaults to `x`; the raw probe separately omits the
+  password member. Test credentials and miner logs stay in a private temporary directory,
+  using XMRig's `log-file` setting: its console logger emits nothing when stdout is a regular
+  file. The test terminates and reaps its miner before removing that directory.
 - The Tor-egress firewall is enforced, both directions
   ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)/[#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
   Each row dials a real clearnet IP directly from a `mining_net` container, bypassing the app's own
