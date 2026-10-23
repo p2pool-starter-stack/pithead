@@ -586,7 +586,7 @@ channels share the final cut commit, one version and one GitHub Release.
      TMPDIR=${TMPDIR:-/var/tmp}
      work_dir=$(mktemp -d "${TMPDIR:?}/pithead-keyring.XXXXXX")
      mkdir "$work_dir/mnt" "$work_dir/probe"
-     trap 'sudo umount "$work_dir/mnt" 2>/dev/null || true; if [ -n "${loop:-}" ]; then sudo losetup -d "$loop"; fi; rm -r "$work_dir"' EXIT
+     trap 'sudo umount "$work_dir/mnt" 2>/dev/null || true; if [ -n "${loop:-}" ]; then sudo losetup -d "$loop"; fi; rm -rf "$work_dir"' EXIT
      loop=$(sudo losetup -Pf --show "$artifact_dir/appliance-system.img")
      source os/rauc/loop-wait.sh
      wait_loop_partitions "$loop"
