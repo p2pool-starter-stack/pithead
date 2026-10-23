@@ -92,8 +92,9 @@ cd pithead
 Leave `config.json` absent to use the setup wizard. Have a Monero payout address ready, and a
 Tari payout address if you enable merge-mining (Tari wallets are sometimes labeled Minotari).
 For a manual configuration, copy `config.minimal.json` or `config.reference.json` to `config.json`
-and edit it before setup; these files inherit the reference defaults rather than the wizard's
-new-install choices.
+and edit it before setup. The minimal file uses the shared wizard defaults for a new install,
+including Tari off; the reference file retains legacy absent-key values to preserve existing
+configs.
 
 ### Alternative: build from source
 

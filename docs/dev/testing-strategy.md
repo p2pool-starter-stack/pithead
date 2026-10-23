@@ -444,6 +444,13 @@ image ([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.s
 it: static assertions against the built rootfs (variant stamp, baked units, watchdog config),
 no VM needed, run on every image build.
 
+The `install` phase stages headless files before boot and checks token normalization, prefilled
+answers without a disk choice, malformed-JSON rejection and installed ESP consumption. `provision`
+checks the console root password against the dashboard password in the guest, with `/etc` backed
+by tmpfs under `/run`, including a password change and unaided reboot. `media` proves a USB settings
+stick replaces the dashboard login, conceals the new password on serial and consumes the file.
+Their verdict and failure controls run through the tier-1 appliance selftest glob.
+
 Measured at develop tip `5e98594f` (#2062): the live matrix has ~90 assertion sites across its
 15-scenario config matrix plus `--lifecycle`, `--fault-injection`, `--hardening`,
 `--auth-fail-closed`, `--subnet`, `--rigforge-control`, `--xvb-routing-smoke` and
