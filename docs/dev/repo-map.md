@@ -48,11 +48,18 @@ Both reject duplicate members before normalization and placeholders before stagi
 
 Release-note extraction is covered by `tests/stack/release/test-release-notes.sh`;
 it selects the changelog section matching the release tag, including known issues.
+The release-command and shipped-note guards in
+`tests/stack/standalone/test_appliance_release_docs.py` run through `make test-tools`.
 
 The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
 executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
+
+Container restart observation is shared by status and doctor in
+`lib/pithead/04a-container-restarts.sh`; its Docker and Podman fixtures are in
+`tests/os/selftest-container-restarts.sh`, and the appliance Caddy crash-loop proof runs in the
+KVM `stack` phase through `tests/os/container-restart-leg.sh`.
 
 The migration startup regression is `tests/stack/lifecycle/migration-hold.sh`;
 `tests/os/selftest-migration-hold.sh` checks slot ownership and same-version fallback.
@@ -271,6 +278,17 @@ fingerprint instruction over SSH. Its refusal controls are in `tests/os/selftest
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata, failure snapshots and bounded preview transport recovery; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.
+The image-upgrade phase also runs `tests/os/image-upgrade-certificate-leg.sh`: a real
+GUI update and reboot with a nonpersistent guest address present before and after boot.
+`image-upgrade-browser-host.py` uses the host Python runtime to restore that address
+only after observing a new boot,
+its absence and Caddy running. `image-upgrade-browser.mjs` keeps the original browser
+tab, accepts the initial certificate once, and checks the served fingerprint, key and
+canonical SANs plus automatic recovery. The browser runs in a digest-pinned container;
+SSH credentials stay on the host; Node runs only inside the browser container.
+`selftest-image-upgrade-browser.sh` exercises the
+certificate comparison and bounded orchestration controls without Docker or a guest.
+
 The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to prove
 continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
 The provision and setup-defaults phases check firstboot and system journals for bcrypt credentials with
@@ -297,6 +315,13 @@ Bundle staging into the guest is bounded and reports through `staging-failure-ev
 floor-fallback leg stages separately from `os-update` (`selftest-floor-staging.sh`, #3049).
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
+
+The lifecycle phase uses `tests/integration/lib/run-lifecycle-tls.sh` to compare Caddy's
+served leaf, canonical SANs, public key and a local digest of its stored private keys
+across stopped-stack restore and dashboard password apply. Its pure failure controls
+are in `tests/integration/selftest/selftest-lifecycle-tls.sh`;
+`tests/os/selftest-tls-continuity.sh` exercises appliance minting with transient address
+loss, canonical reordering, genuinely new SANs and unusable pairs.
 
 The e2e hardening phase runs `tests/integration/lib/access_log_retention.py`
 against real Caddy requests and the deployed access API. It verifies wrong-password
