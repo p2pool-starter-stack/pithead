@@ -828,9 +828,12 @@ tier 3/4:
   somewhere to fail.
 - **A real xmrig client over stratum TLS.** The `p2pool.stratum_tls=true` row proves the server side
   live (a real TLS handshake on the published port, served cert matches the pinned fingerprint);
-  a real rig actually mining with `pools[].tls:true` set is deferred, the same class of gap as the
-  stratum-password headless-probe row above (a rig-configuration step outside this harness's
-  control, needing a real xmrig binary).
+  the borrowed rig receives the generated stratum password before mining waits and its exact
+  borrowed configuration is restored afterwards. `selftest-scenario-stratum.sh` exercises this
+  ordering, no-rig behavior and failed handoff/restore termination; `selftest-borrow-rearm.sh`
+  checks the actual credential mutation and exact restoration. The rig uses cleartext on the
+  dual-mode port. A real client mining with `pools[].tls:true` and pinned-TLS negative controls
+  remain separate coverage under #3078.
 - **`verify_release_images()` against a real signed bundle.** ✅ Now exercised directly (not
   reimplemented) by `scripts/release/release-smoke.sh`: the real function runs in the extracted, published
   bundle dir against the real pinned digests + committed `cosign.pub` (positive, needs a signed
