@@ -83,14 +83,14 @@ fault_tor_probe_egress() {
         sleep 60
         now=$(_tor_probe_mining_sample "$((i + 1))") || now=
         if [ -z "$now" ]; then
-            mining_failure=${mining_failure:-"sample $i had no live proxy worker or accepted-share counter"}
+            mining_failure=${mining_failure:-"sample $((i + 1)) had no live proxy worker or accepted-share counter"}
         elif [ "$now" -lt "$last" ]; then
-            mining_failure=${mining_failure:-"sample $i reset the proxy accepted-share counter"}
+            mining_failure=${mining_failure:-"sample $((i + 1)) reset the proxy accepted-share counter"}
         elif [ "$now" -gt "$last" ]; then
             last=$now
             last_progress=$((i + 1))
         elif [ "$((i + 1 - last_progress))" -ge 5 ]; then
-            mining_failure=${mining_failure:-"no accepted share in five minutes by sample $i"}
+            mining_failure=${mining_failure:-"no accepted share in five minutes by sample $((i + 1))"}
         fi
     done
     if [ -n "$mining_failure" ]; then

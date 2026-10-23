@@ -40,6 +40,46 @@ echo "== Mining witness samples retain bounded numeric context without identifie
     test "$FAIL" -eq 0
 )
 
+echo "== A stalled witness names the same one-based sample as its diagnostics =="
+(
+    SKIP_MINING_ASSERTS=0 EXPECTED_WORKERS=1 BASELINE_CONFIG='{}'
+    api_state() { printf '%s\n' '{"proxy_summary":{"accepted":"1201"},"proxy_workers":1}'; }
+    env_on_box() {
+        case "$1" in
+        TOR_EGRESS_FIREWALL) echo true ;;
+        DASHBOARD_CONTROL_ENABLED) echo false ;;
+        NETWORK_PREFIX) echo 192.0.2 ;;
+        esac
+    }
+    fault_rules_clear_all() { :; }
+    fault_rules_trap_arm() { :; }
+    fault_rules_trap_disarm() { :; }
+    push_config() { :; }
+    wait_status_ok() { :; }
+    wait_for() {
+        shift 3
+        "$@"
+    }
+    sleep() { :; }
+    pithead() { [ "$*" != 'tor-recover check' ]; }
+    tor_probe_ns_ipt() {
+        if [[ "$*" = '-L '* ]]; then echo '1 pithead-e2e-fault-tor-probe'; fi
+    }
+    rx() {
+        case "$*" in
+        *tor_recovery_state_saturated*) return 1 ;;
+        *'docker inspect tor'* | *'docker inspect monerod'*) echo unchanged ;;
+        'date +%s') echo 100 ;;
+        *'docker logs --since'*) echo 'Requesting NEWNYM cloudflare.com Tor clearnet egress recovered following NEWNYM:' ;;
+        esac
+    }
+    fault_tor_probe_egress >"$SCRATCH/stalled-run" 2>"$SCRATCH/stalled-samples"
+    check test "$IT_FAIL" -eq 1
+    check grep -q 'no accepted share in five minutes by sample 5' "$SCRATCH/stalled-run"
+    check grep -q '^Tor mining sample 5: ' "$SCRATCH/stalled-samples"
+    test "$FAIL" -eq 0
+)
+
 echo "== Tor probe fault skips before any live work when mining assertions are disabled =="
 (
     SKIP_MINING_ASSERTS=1
