@@ -654,7 +654,7 @@ unset DRIFT_FOUND REF_PATHS DRIFT_BAD CONFIG_ONLY_NAMED
 if bash "$ROOT/tests/stack/standalone/test_config_defaults.sh"; then
     ok "shared defaults and v2.0.0 compatibility contracts"
 else
-    bad "shared defaults and v2.0.0 compatibility contracts"
+    bad "shared defaults and v2.0.0 compatibility contracts" "See the failed standalone assertions above."
 fi
 echo "== unit: config.core-keys.json — valid JSON, stays inside config.reference.json (#502/#529) =="
 CORE_KEYS="$(jq -r '.[]' "$ROOT/config.core-keys.json" 2>/dev/null)"
