@@ -54,5 +54,34 @@ except ValueError:
     pass
 else:
     raise AssertionError("invalid inspect output passed")
+for timestamp in (
+    "2026-09-24T22:06:05.123456789Z",
+    "2026-09-24T22:06:05+00:00",
+    "2026-09-24 22:06:05.123456789 +0000 UTC",
+):
+    engine.check_shape(["inspect", "--format", "{{.State.StartedAt}}"], timestamp)
+    for running in ("true", "false"):
+        engine.check_shape(["inspect", "--format", "{{.Id}} {{.State.StartedAt}} {{.State.Running}}"], f"012abc {timestamp} {running}")
+for template, output in (
+    ("{{.State.StartedAt}}", "not-a-timestamp"),
+    ("{{.State.StartedAt}}", "2026-09-24"),
+    ("{{.State.StartedAt}}", "2026-09-24 22:06:05 UTC"),
+    ("{{.Id}} {{.State.StartedAt}} {{.State.Running}}", "wrong 2026-09-24T22:06:05Z true"),
+    ("{{.Id}} {{.State.StartedAt}} {{.State.Running}}", "012abc 2026-09-24T22:06:05Z maybe"),
+    ("{{.Id}} {{.State.StartedAt}} {{.State.Running}}", "012abc 2026-09-24T22:06:05Z true extra"),
+):
+    try:
+        engine.check_shape(["inspect", "--format", template], output)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(f"invalid timestamp identity passed: {template}")
+try:
+    engine.check_shape(["inspect", "--format", "{{.State.Running}}"], "fixture-private-token")
+except ValueError as error:
+    assert "fields=1" in str(error), error
+    assert "fixture-private-token" not in str(error), error
+else:
+    raise AssertionError("invalid running state passed")
 print("engine contract selftest: PASS")
 PY

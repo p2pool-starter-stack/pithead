@@ -160,13 +160,19 @@ def extract(directory):
 
 def check_shape(args, output):
     template = next((args[i + 1] for i, item in enumerate(args) if item in ("--format", "-f")), "")
+    date = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    clock = r"[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?"
+    timestamp = (
+        rf"{date}T{clock}(?:Z|[+-][0-9]{{2}}:[0-9]{{2}})"
+        rf"|{date} {clock} [+-][0-9]{{4}} [A-Za-z0-9+-]+"
+    )
     scalar = {
         "{{.State.Running}}": r"true|false",
         "{{.State.ExitCode}}": r"[0-9]+",
         "{{.State.Status}}": r"[a-z]+",
         "{{.State.Health.Status}}": r"healthy|unhealthy|starting",
-        "{{.State.StartedAt}}": r"[0-9]{4}-[^ ]+",
-        "{{.Id}} {{.State.StartedAt}} {{.State.Running}}": r"[0-9a-f]+ [0-9]{4}-[^ ]+ (?:true|false)",
+        "{{.State.StartedAt}}": timestamp,
+        "{{.Id}} {{.State.StartedAt}} {{.State.Running}}": rf"[0-9a-f]+ (?:{timestamp}) (?:true|false)",
         "{{.Image}}": r"(?:sha256:)?[0-9a-f]+",
         "{{.Config.Image}}": r"[^ ]+",
         "{{.HostConfig.RestartPolicy.Name}}": r"no|always|unless-stopped|on-failure|",
@@ -210,7 +216,10 @@ def check_shape(args, output):
         else:
             valid = bool(line.strip())
         if not valid:
-            raise ValueError(f"engine output shape does not match {template or 'ps output'}")
+            raise ValueError(
+                f"engine output shape does not match {template or 'ps output'}: "
+                f"characters={len(line)} fields={len(line.split())}"
+            )
 
 
 def run_manifest(manifest, project, compose, target):

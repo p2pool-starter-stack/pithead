@@ -173,7 +173,10 @@ runs through the OS selftest glob in CI. Failed engine legs print bounded guest
 stderr and SSH transport diagnostics; the transport selftest checks both channels
 and rejects a pass marker from a command that failed. That transport unit uses the
 checked-out commit as its Git staging fixture so shallow CI needs no historical
-objects; the appliance run still requires the real RC3 baseline.
+objects; the appliance run still requires the real RC3 baseline. StartedAt output
+contracts accept Docker RFC3339 and Podman's spaced timestamp with numeric offset
+and zone, both alone and inside the container identity. Malformed identities still
+fail; diagnostics report character and field counts without exposing output values.
 
 Strict coverage is opt-in: `PITHEAD_REQUIRE_COMPLETE=1` makes both the integration
 summary and appliance exit gate fail on every missing skip. The appliance runner
