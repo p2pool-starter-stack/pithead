@@ -38,7 +38,7 @@ for mode in ready old-accepted new-refused retained read-error secret-leak no-pa
     printf 0 >"$work/time"
     if [ "$mode" = ready ]; then
         media_password_recovery user old
-    else ! media_password_recovery user old; fi
+    else ! media_password_recovery user old || exit 1; fi
 done
 
 (
