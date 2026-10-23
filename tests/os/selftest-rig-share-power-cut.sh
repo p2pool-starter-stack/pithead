@@ -29,6 +29,7 @@ virsh() {
         [ "$VM" = rig-coord ] && [ "$ip" = 192.0.2.2 ] || fail "cut targeted the rig"
         [ "$scenario" != destroy-fails ] || return 1
         touch "$scratch/cut"
+        echo 0 >"$scratch/polls"
         ;;
     'start rig-coord') [ "$scenario" != start-fails ] || return 1 ;;
     esac
@@ -44,7 +45,7 @@ _wait_new_boot() {
     touch "$scratch/new-boot"
 }
 curl() {
-    local call rig_count own_count config="" args="$*"
+    local call rig_count own_count worker=builtin config="" args="$*"
     printf '%s\n' "$@" >>"$scratch/curl-argv"
     while [ "$#" -gt 0 ]; do
         if [ "$1" = --config ]; then
@@ -64,7 +65,7 @@ curl() {
         if [ "$scenario" = no-initial-shares ]; then
             echo '{"workers":[]}'
         else
-            echo '{"workers":[{"name":"kvm-rig-share","accepted":4},{"name":"builtin","accepted":7}]}'
+            printf '{"workers":[{"name":"kvm-rig-share","accepted":%s,"rejected":0,"invalid":0,"h60":250,"status":"online"},{"name":"builtin","accepted":7}]}\n' "$((call + 4))"
         fi
         return
     fi
@@ -95,6 +96,11 @@ curl() {
     duplicate-worker)
         echo '{"workers":[{"name":"kvm-rig-share","accepted":9},{"name":"builtin","accepted":9},{"name":"unknown","accepted":9}]}'
         return
+        ;;
+    wrong-builtin)
+        worker=foreign
+        rig_count="$call"
+        own_count="$call"
         ;;
     stale)
         rig_count=4
@@ -130,7 +136,7 @@ curl() {
         own_count="$call"
         ;;
     esac
-    printf '{"workers":[{"name":"kvm-rig-share","accepted":%s},{"name":"builtin","accepted":%s}]}\n' "$rig_count" "$own_count"
+    printf '{"workers":[{"name":"kvm-rig-share","accepted":%s},{"name":"%s","accepted":%s}]}\n' "$rig_count" "$worker" "$own_count"
 }
 kvm_preflight() { return 0; }
 _provision_remote_node_coordinator() {
@@ -144,11 +150,18 @@ _setup_again_session() {
 }
 _setup_again_rig_submit() { echo 'fixture card'; }
 _rig_mining_up() { return 0; }
-_ssh() { return 0; }
+_ssh() {
+    case "$*" in
+    hostname) echo builtin ;;
+    *kvm-share-unresolved.invalid*) return 0 ;;
+    *getent*) echo 192.0.2.2 ;;
+    *) return 0 ;;
+    esac
+}
 _rig_share_coord_teardown() { printf '%s\n' "$*" >>"$scratch/teardown"; }
 run_case() {
     local scenario="$1" expected="$2" result=0
-    local PASS=0 FAIL=0 expected_pass=9 expected_fail=0
+    local PASS=0 FAIL=0 expected_pass=12 expected_fail=0
     local VM=rig DISK="$scratch/rig.img" SERIAL="$scratch/rig.log" ip=192.0.2.1
     for file in virsh teardown requests curl-argv curl-config; do : >"$scratch/$file"; done
     rm -f "$scratch/cut" "$scratch/new-boot"
@@ -169,10 +182,10 @@ run_case() {
         grep -Fxq 'start rig-coord' "$scratch/virsh" || fail "$scenario did not restore power"
         [ "$(wc -l <"$scratch/requests")" -ge 2 ] || fail "$scenario accepted a single snapshot"
     else
-        expected_pass=7 expected_fail=1
+        expected_pass=10 expected_fail=1
         case "$scenario" in
-        no-initial-shares) expected_pass=4 expected_fail=2 ;;
-        boot-id-missing | destroy-fails | start-fails | boot-fails) expected_pass=6 ;;
+        no-initial-shares) expected_pass=3 expected_fail=2 ;;
+        boot-id-missing | destroy-fails | start-fails | boot-fails) expected_pass=9 ;;
         esac
         ! grep -q 'accepted counter advances after' "$scratch/verdicts" || fail "$scenario claimed post-cut mining"
     fi
@@ -188,7 +201,7 @@ run_case stale 1
 run_case advancing 0
 run_case reset 0
 run_case delayed 0
-for scenario in no-initial-shares boot-id-missing destroy-fails start-fails boot-fails rig-only builtin-only malformed missing-workers invalid-count negative-count fractional-count unavailable duplicate-worker; do
+for scenario in no-initial-shares boot-id-missing destroy-fails start-fails boot-fails rig-only builtin-only malformed missing-workers invalid-count negative-count fractional-count unavailable duplicate-worker wrong-builtin; do
     run_case "$scenario" 1
 done
 for suffix in $'\nuser = injected' $'\ruser = injected'; do
@@ -198,4 +211,4 @@ for suffix in $'\nuser = injected' $'\ruser = injected'; do
     fi
     [ ! -s "$scratch/curl-argv" ] || fail "credential line break reached curl"
 done
-printf 'selftest-rig-share-power-cut: 20 cases passed\n'
+printf 'selftest-rig-share-power-cut: 21 cases passed\n'

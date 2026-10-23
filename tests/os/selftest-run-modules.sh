@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-modules=(lib/core.sh wizard-redirect-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
-function_files=(lib/core.sh wizard-redirect-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-fresh-start.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset-slot.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
-expected_modules="${modules[*]}"
+modules=(lib/core.sh wizard-redirect-leg.sh wizard-identity-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
+function_files=(lib/core.sh wizard-redirect-leg.sh wizard-identity-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-fresh-start.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset-slot.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
-[ "$actual_modules" = "$expected_modules" ] || {
+[ "$actual_modules" = "${modules[*]}" ] || {
     echo "os module order mismatch: $actual_modules" >&2
     exit 1
 }
-expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup serial_has wait_serial redirect_location_matches wizard_redirect_probe phase_wizard_redirect phase_dashboard_redirect phase_boot _secure_boot_guest_leg _vm_boot_disk _update_spare_slot_uncommitted phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg _restore_target_preboot_verdict _restore_installer_preboot_verdict phase_install _provision_reboot_gate_committed phase_provision phase_setup_defaults _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _reset_config_shutdown_passed _reset_config_wait_empty _phase_reset_config _reset_slot_snapshot _reset_slot_wait _reset_slot_good_stack _reset_slot_observe _reset_slot_rearm _phase_reset_slot phase_reset _image_upgrade_input_failure _image_upgrade_input_run _image_upgrade_inputs_valid _image_upgrade_node_v4 _image_upgrade_prepare_inputs _image_upgrade_sign_wrong_key _image_upgrade_stage_guest _image_upgrade_clear_guest_inputs _image_upgrade_read_guest_failure _image_upgrade_read_miner_readiness phase_image_upgrade phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack phase_tor_heal'
+expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup serial_has wait_serial redirect_location_matches wizard_redirect_probe phase_wizard_redirect phase_dashboard_redirect wizard_console_token wizard_console_fingerprint wizard_served_certificate wizard_certificate_fingerprint wizard_certificate_pin wizard_identity_request phase_wizard_identity phase_boot _secure_boot_guest_leg _vm_boot_disk _update_spare_slot_uncommitted phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg _restore_target_preboot_verdict _restore_installer_preboot_verdict phase_install _provision_reboot_gate_committed phase_provision phase_setup_defaults _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _reset_config_shutdown_passed _reset_config_wait_empty _phase_reset_config _reset_slot_snapshot _reset_slot_wait _reset_slot_good_stack _reset_slot_observe _reset_slot_rearm _phase_reset_slot phase_reset _image_upgrade_input_failure _image_upgrade_input_run _image_upgrade_inputs_valid _image_upgrade_node_v4 _image_upgrade_prepare_inputs _image_upgrade_sign_wrong_key _image_upgrade_stage_guest _image_upgrade_clear_guest_inputs _image_upgrade_read_guest_failure _image_upgrade_read_miner_readiness phase_image_upgrade phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator _stack_container_restart_leg phase_stack phase_tor_heal'
 actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_(height|evidence)$' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
@@ -33,6 +32,7 @@ SSH_ERR="$SERIAL.ssh-error"
 bash "$HERE/selftest-control-drain.sh" || exit $?
 # shellcheck source=tests/os/wizard-redirect-leg.sh
 source "$HERE/wizard-redirect-leg.sh" || exit $?
+source "$HERE/wizard-identity-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/boot.sh
 source "$HERE/phases/boot.sh" || exit $?
 # shellcheck source=tests/os/phases/update-spare-slot.sh
@@ -131,13 +131,14 @@ baseline_diagnostic="$(
     }
     chmod() { :; }
     curl() {
+        [ "$*" = "-fsSL --retry 3 -o $stage/v2.0.0.tar.gz https://github.com/p2pool-starter-stack/pithead/releases/download/v2.0.0/pithead.tar.gz" ] || return 24
         printf 'must-not-leak\n' >&2
         return 23
     }
     _image_upgrade_prepare_inputs "$stage" 2>&1
 )" || baseline_rc=$?
 [ "$baseline_rc" -eq 23 ] &&
-    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=signing command="curl <published-v1.20.0-bundle>" exit=23' ] || {
+    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=signing command="curl <published-v2.0.0-bundle>" exit=23' ] || {
     echo "image-upgrade baseline trust preparation lost safe failure attribution" >&2
     exit 1
 }
@@ -155,8 +156,7 @@ candidate_diagnostic="$(
     echo "image-upgrade candidate bundle preparation lost safe failure attribution" >&2
     exit 1
 }
-signing_rc=0
-signing_diagnostic="$(
+signing_rc=0 signing_diagnostic="$(
     stage="$(mktemp -d)" && trap 'rm -rf "$stage"' EXIT
     tar() {
         case "$1" in
@@ -168,7 +168,7 @@ signing_diagnostic="$(
     _image_upgrade_prepare_inputs "$stage" 2>&1
 )" || signing_rc=$?
 [ "$signing_rc" -eq 29 ] &&
-    [ "$signing_diagnostic" = 'image-upgrade input failure: sub-step=signing command="cosign verify-blob <published-v1.20.0-bundle>" exit=29' ] || {
+    [ "$signing_diagnostic" = 'image-upgrade input failure: sub-step=signing command="cosign verify-blob <published-v2.0.0-bundle>" exit=29' ] || {
     echo "image-upgrade signing preparation lost safe failure attribution" >&2
     exit 1
 }
@@ -187,7 +187,7 @@ grep -Fx -- '--use-signing-config=false' "$wrong_stage/cosign.args" >/dev/null &
 }
 bash "$HERE/image-upgrade-guest.sh" --self-test || exit $?
 if (
-    for stage in remote-node-reachable reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner-tree local-miner-role local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
+    for stage in remote-node-reachable reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify local-miner-tree local-miner-role local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
         _ssh() { printf 'stage=%s exit=17\n' "$stage"; }
         [ "$(_image_upgrade_read_guest_failure)" = "stage=$stage exit=17" ] || exit 1
     done
@@ -285,8 +285,8 @@ for evidence in 'could not hash the blank internal target disk' 'could not list 
     grep -Fq "$evidence" "$HERE/phases/rigmedia.sh" || exit 1
 done
 expected_all='phase_boot phase_update phase_install phase_provision phase_setup_defaults phase_rig phase_rigmedia phase_media phase_fault phase_reset phase_image_upgrade phase_stack'
-# #2356: _run_phase counts an empty phase as a missing skip; the phase function is the
-# second word on each line in the `all` arm.
+help_output="$(bash "$HERE/run.sh" --help)" || exit $?
+[[ "$help_output" == "Usage: tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]" ]] || exit 1
 actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    _run_phase [a-z-]* \(phase_[a-z_]*\)$/\1/p' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_all" = "$expected_all" ] || exit 1
 (
