@@ -191,9 +191,15 @@ it works from any checkout or bundle directory.
 
 `status` prints the usual compose table, then a per-service health check: a green ✓ for each
 running (and healthy) service, and a ⚠/✗ for anything unhealthy, restarting, stopped, or missing.
+It compares two container-engine snapshots three seconds apart. An explicit `restarting` state
+fails without requiring a metadata change, including while Docker is backing off with an unchanged
+restart count and start time; an increased restart count or changed start time catches loops between
+point-in-time Podman or Docker reads. An old, unchanged restart count on a running service is history
+and does not fail the check.
 A miner deliberately created/exited/stopped by the sync gate or node failover is the sole stopped
 exception during normal operation. A pending appliance data migration also withholds its chain
-services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero.
+services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero;
+`doctor` applies the same observed-restart check to every Compose service, including Caddy.
 Every container carries its own healthcheck — including the dashboard, Caddy, xmrig-proxy and the
 two Docker-socket proxies — so a ✓ usually means the service answered its probe, not merely that a
 process exists. xmrig-proxy is the one exception: its healthcheck script ships in the same image
@@ -757,8 +763,9 @@ files that only the archive has. The wizard replaces its Tor and dashboard direc
 > is refused rather than redirected into the old directory tree. Recreate the original
 > installation path and configure any custom data paths before restoring.
 
-> NOTE: After a restore, Caddy regenerates the dashboard's HTTPS certificate, so the browser shows
-> its "not trusted" warning once. Accept it as on first setup.
+> NOTE: If your browser warns after a DIY restore,
+> [verify and trust the installation's root CA](configuration.md#exposing-the-dashboard-safely).
+> Accepting only the current certificate can produce another warning after renewal.
 
 ---
 
@@ -822,8 +829,10 @@ This covers the bundled node only: with `tari.mode: remote` no Tari container ru
 is never applied, and that node's memory is the business of the host running it.
 
 **Browser warns "your connection is not private."**
-Expected with `dashboard.secure: true`: Caddy uses a self-signed certificate. Accept the warning
-once. To use plain HTTP, set `dashboard.secure: false` and run `./pithead apply`.
+With `dashboard.secure: true`, DIY installs use Caddy's local certificate authority.
+[Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
+warnings after certificate renewal. To use plain HTTP, set `dashboard.secure: false` and run
+`./pithead apply`.
 
 **Workers don't show up in the dashboard.**
 Check that each rig points at `YOUR_STACK_IP:3333` and that port `3333` is reachable from the
@@ -1044,7 +1053,10 @@ you recover the node. Monero mining is not affected. Recover in this order:
 **The dashboard data looks broken and you want a clean slate.**
 `./pithead reset-dashboard` wipes and recreates the dashboard and P2Pool data. This is
 **destructive**: it drops P2Pool sidechain state and dashboard history (blockchains and wallets are
-unaffected). Pass `-y` / `--yes` to skip the confirmation prompt.
+unaffected). Targets come from `DASHBOARD_DATA_DIR` and `P2POOL_DATA_DIR` in the live
+`.env`, including absolute paths with spaces. Directory values containing CR or LF are refused
+before containers stop or data is removed, including encoded line breaks in quoted `.env` values.
+Pass `-y` / `--yes` to skip the confirmation prompt.
 
 ---
 

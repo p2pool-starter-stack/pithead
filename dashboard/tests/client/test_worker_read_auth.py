@@ -90,13 +90,17 @@ async def test_worker_api_token_never_targets_an_unpinned_host(tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_explicit_read_only_probe_token_authenticates_without_adoption(tmp_path, monkeypatch):
+@pytest.mark.parametrize("fleet", [{}, {"api_port": None}, {"api_port": 8080}])
+async def test_explicit_read_only_probe_token_authenticates_without_adoption(
+    tmp_path, monkeypatch, fleet
+):
     config_path, read_path = tmp_path / "config.json", tmp_path / "worker-read-tokens.json"
     _write(
         config_path,
         {
             "workers": {
-                "list": [{"name": "rig1", "host": "10.0.0.5", "api_token": {"__secret__": True}}]
+                **fleet,
+                "list": [{"name": "rig1", "host": "10.0.0.5", "api_token": {"__secret__": True}}],
             }
         },
     )
