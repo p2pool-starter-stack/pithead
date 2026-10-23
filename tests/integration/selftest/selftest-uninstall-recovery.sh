@@ -24,15 +24,30 @@ drive() (
     printf fixture >"$box/fixture"
     printf 'chain bytes\n' >"$box/monero/chain"
     # shellcheck disable=SC2034
-    local IT_FAIL=0 IT_PASS=0 KEEP_STATE=0 KEPT_SNAPSHOT_SUDO="" IT_PITHEAD=./pithead
+    local IT_FAIL=0 IT_PASS=0 KEEP_STATE=0 KEPT_SNAPSHOT_SUDO="" IT_PITHEAD=./pithead RUN_UNINSTALL=1 OUT_DIR="$box"
     local BASELINE_CONFIG='{}' BASELINE_EXACT_SECRET_FP='proxy=fixture'
     local SAFETY_ARCHIVE=fixture SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
     local _SAFETY_RESTORE_ARMED=1 _XVB_RESTORE_ARMED=1
     [ "$test_case" != keep ] || KEEP_STATE=1
     [ "$test_case" != missing-config ] || rm "$box/config.json"
+    [ "$test_case" != diagnostic-blocked ] || mkdir "$box/uninstall-restore.log"
+    if [ "$test_case" = diagnostic-stale ]; then
+        printf stale >"$box/uninstall-restore.log"
+        chmod 644 "$box/uninstall-restore.log"
+    fi
+    if [ "$test_case" = diagnostic-symlink ]; then
+        printf untouched >"$box/other-output"
+        ln -s "$box/other-output" "$box/uninstall-restore.log"
+    fi
     it_log() { :; }
     it_step() { :; }
     it_warn() { :; }
+    case "$test_case" in
+    redact-fails | unit-redact-fails) redact() {
+        printf 'partial diagnostic\n'
+        return 1
+    } ;;
+    esac
     _lan_timer_pause() { return 0; }
     _uninstall_data_dirs() { printf '%s\n' "$box/monero" "$box/tari" "$box/p2pool" "$box/dashboard" "$box/tor"; }
     wait_status_ok() { [ "$test_case" != health-fails ]; }
@@ -44,7 +59,10 @@ drive() (
         printf '%s\n' "$1" >>"$box/commands"
         case "$1" in
         restore)
-            [ "$test_case" != restore-fails ] || return 1
+            if [ "$test_case" = restore-fails ]; then
+                printf 'PROXY_AUTH_TOKEN=changeme\nrestore destination refused\n' >&2
+                return 1
+            fi
             printf '{}' >"$box/config.json"
             cp "$box/env-baseline" "$box/.env"
             printf 'fixture proxy\n' >"$box/Caddyfile"
@@ -78,6 +96,11 @@ drive() (
             ;;
         *'systemctl list-unit-files'*)
             [ "$test_case" != systemd-fails ] || return 1
+            case "$test_case" in
+            units-remain | unit-redact-fails)
+                [ "$(cat "$box/resources")" = installed ] || printf 'pithead-lan-hold.service not-found active exited fixture\n'
+                ;;
+            esac
             [ "$(cat "$box/resources")" != installed ] || printf 'pithead-control.service\n'
             ;;
         *'iptables-save'*) return 0 ;;
@@ -128,6 +151,23 @@ assert_contains 'file drift identifies the checkout component' "$(cat "$T/abort-
 assert_contains 'resource drift identifies the host component' "$(cat "$T/abort-resource/run.log")" 'changed: host resources;'
 assert_contains 'kept-data drift retains per-file evidence' "$(cat "$T/abort-kept/run.log")" 'monero/chain'
 assert_eq 'a failed archive restore cannot pass because up becomes healthy' "$(drive restore-fails)" '1|1|1|1'
+assert_contains 'failed restore retains its command diagnostic' "$(cat "$T/restore-fails/uninstall-restore.log")" 'restore destination refused'
+assert_contains 'retained restore output redacts credentials' "$(cat "$T/restore-fails/uninstall-restore.log")" 'PROXY_AUTH_TOKEN=<redacted>'
+assert_eq 'retained restore output never includes the credential value' "$(grep -c changeme "$T/restore-fails/uninstall-restore.log")" '0'
+assert_eq 'retained restore output is owner-only' "$(stat -c '%a' "$T/restore-fails/uninstall-restore.log")" '600'
+assert_eq 'failed diagnostic redaction does not change exact recovery' "$(drive redact-fails)" '0|0|1|2'
+assert_eq 'failed redaction discards its partial restore diagnostic' "$([ -e "$T/redact-fails/uninstall-restore.log" ] && echo present || echo absent)" 'absent'
+assert_eq 'an unwritable diagnostic destination cannot prevent exact recovery' "$(drive diagnostic-blocked)" '0|0|1|2'
+assert_eq 'a stale diagnostic destination does not change exact recovery' "$(drive diagnostic-stale)" '0|0|1|2'
+assert_eq 'a replaced diagnostic is owner-only even when the old file was not' "$(stat -c '%a' "$T/diagnostic-stale/uninstall-restore.log")" '600'
+assert_eq 'a symlinked diagnostic destination does not change exact recovery' "$(drive diagnostic-symlink)" '0|0|1|2'
+assert_eq 'a diagnostic destination symlink is replaced rather than followed' "$(cat "$T/diagnostic-symlink/other-output")" 'untouched'
+assert_eq 'no private diagnostic temporaries remain' "$(find "$T" -name '.uninstall-diagnostic.*' | wc -l | tr -d ' ')" '0'
+assert_eq 'remaining unit records still fail cleanup and recovery injection' "$(drive units-remain)" '1|2|1|1'
+assert_contains 'remaining unit identities are retained for diagnosis' "$(cat "$T/units-remain/uninstall-systemd-units.log")" 'pithead-lan-hold.service not-found active exited'
+assert_contains 'remaining unit identities appear in the bounded harness output' "$(cat "$T/units-remain/run.log")" 'pithead-lan-hold.service not-found active exited'
+assert_eq 'failed unit-diagnostic redaction leaves cleanup binding and recovery intact' "$(drive unit-redact-fails)" '1|2|1|1'
+assert_eq 'failed redaction discards its partial unit diagnostic' "$([ -e "$T/unit-redact-fails/uninstall-systemd-units.log" ] && echo present || echo absent)" 'absent'
 assert_eq 'a failed startup stops the phase before the success trial' "$(drive up-fails)" '1|1|1|1'
 assert_eq 'a failed health wait stops the phase before the success trial' "$(drive health-fails)" '1|1|1|1'
 assert_eq 'unreadable restored secrets fail phase recovery' "$(drive unreadable-secrets)" '1|1|1|1'

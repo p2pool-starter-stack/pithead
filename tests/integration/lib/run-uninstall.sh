@@ -1,6 +1,19 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
+_uninstall_retain_diagnostic() {
+    local tmp
+    tmp=$(mktemp "$OUT_DIR/.uninstall-diagnostic.XXXXXX") || return 1
+    if (
+        set -o pipefail
+        printf '%s\n' "$2" | redact >"$tmp"
+    ) && mv -fT -- "$tmp" "$OUT_DIR/$1"; then
+        return 0
+    fi
+    rm -f -- "$tmp"
+    return 1
+}
+
 _uninstall_data_dirs() {
     rx 'set -e; source ./pithead </dev/null; for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do value=$(env_get_file .env "$key"); test -n "$value"; printf "%s\n" "$value"; done'
 }
@@ -70,6 +83,14 @@ _uninstall_after_remove() {
     if units="$(rx 'systemctl list-unit-files --no-legend && systemctl list-units --all --no-legend')"; then
         assert_eq "every pithead systemd unit removed (control runner, egress, LAN guard)" \
             "$(grep -Ec 'pithead-(control|egress|lan)[-.]' <<<"$units" || true)" "0"
+        if grep -Eq 'pithead-(control|egress|lan)[-.]' <<<"$units"; then
+            if _uninstall_retain_diagnostic uninstall-systemd-units.log "$(grep -E 'pithead-(control|egress|lan)[-.]' <<<"$units")"; then
+                it_warn "Remaining systemd unit records (first 80 lines):"
+                sed -n '1,80p' "$OUT_DIR/uninstall-systemd-units.log"
+            else
+                it_warn "Could not retain the remaining systemd unit diagnostic."
+            fi
+        fi
     else
         it_fail "every pithead systemd unit removed (control runner, egress, LAN guard)" "systemd inventory failed"
     fi

@@ -71,10 +71,14 @@ safety_secret_drift_categories() { # <baseline category=hash lines> <actual cate
 }
 
 safety_restore_exact() {
-    local restored_secrets
+    local restored_secrets restore_out restore_rc=0
     pithead down >/dev/null 2>&1 || true
     SAFETY_RESTORE_FAIL_REASON=""
-    if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
+    restore_out="$(pithead restore -y "$SAFETY_ARCHIVE" 2>&1)" || restore_rc=$?
+    if [ "${RUN_UNINSTALL:-0}" = 1 ] && ! _uninstall_retain_diagnostic uninstall-restore.log "$restore_out"; then
+        it_warn "Could not retain the uninstall restore diagnostic."
+    fi
+    if [ "$restore_rc" -ne 0 ]; then
         SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
     elif ! baseline_up >/dev/null 2>&1; then
         SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
