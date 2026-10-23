@@ -60,7 +60,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
-        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
+        lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
         run_restore_dashboard_probe() {
             trace_restore_order dashboard-probe
@@ -76,6 +76,12 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
                 return 1
             }
         }
+        dashboard_tls_identity() { printf identity; }
+        assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {
+            it_fail
+            return 1
+        }; }
+        run_password_tls_continuity() { :; }
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;
@@ -159,6 +165,7 @@ assert_eq "healthy dashboard and Tari probes still reach reset recovery" \
 assert_eq "healthy probes keep the full recovery order" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari\nreset-restore'
 rm -f "$ORDER_TRACE"
 
+assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
 assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"
 assert_eq "restore rejects a newly introduced marker" "$(drive_restore yes marker-introduced)" "1|1"
 assert_eq "restore rejects a changed marker" "$(drive_restore yes marker-changed)" "1|1"
