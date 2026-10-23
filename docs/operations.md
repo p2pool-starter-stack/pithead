@@ -715,7 +715,8 @@ gate, so reset, CLI restore and setup followed by a normal reboot keep the inten
 unverified slot keeps its normal fallback; the next provisioned boot still requires the stack
 health gate. If you restore from the shell instead of the wizard page, the wizard closes its
 page within seconds of `config.json` returning, which frees ports 80 and 443 for Caddy; run
-`./pithead up` after that.
+`./pithead up` after that. On the appliance, `up` reinstates the enabled built-in miner
+from the restored configuration; disabled local mining stays stopped.
 
 Copy the archive back and run:
 
