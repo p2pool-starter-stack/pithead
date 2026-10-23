@@ -1,11 +1,8 @@
-# Single writer for the env file. Derives every value from the parsed config plus the preserved
-# secrets/onions/host, so it is safe to call repeatedly (bootstrap, finalize, or apply).
-# $1 = target file (defaults to $ENV_FILE); apply renders to a temp file first to diff it.
 render_env() {
-    local target="${1:-$ENV_FILE}"
+    local target="${1:-$ENV_FILE}" project
+    project=$(compose_project_name) || return 1
     log "Rendering environment configuration ($target)..."
 
-    # Mode → host / ports / compose profile
     local mono_host rpc_port zmq_port mono_rpc_url profiles
     if [ "$MONERO_MODE" == "local" ]; then
         mono_host="${NETWORK_PREFIX}.26" rpc_port="18081" zmq_port="18083" profiles="local_node"
@@ -443,6 +440,7 @@ MONERO_ZMQ_PORT=$(dotenv_render_value "$zmq_port")
 TARI_MODE=$(dotenv_render_value "$TARI_MODE")
 TARI_GRPC_ADDRESS=$(dotenv_render_value "$tari_grpc_addr")
 TARI_GRPC_BIND=$(dotenv_render_value "$tari_grpc_bind")
+COMPOSE_PROJECT_NAME=$(dotenv_render_value "$project")
 COMPOSE_PROFILES=$(dotenv_render_value "$profiles")
 TOR_COMPOSE_PROFILES=$(dotenv_render_value "$tor_profiles")
 DASHBOARD_SECURE=$(dotenv_render_value "$DASHBOARD_SECURE")

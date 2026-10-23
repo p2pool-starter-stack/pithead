@@ -544,6 +544,31 @@ certificate; this procedure is for DIY installs.
 To remove the login again, clear the password (`"password": ""`) and `apply`. pithead drops the
 `basic_auth` block and the dashboard is open on the LAN as before.
 
+### Compose project identity
+
+The default Compose project is `pithead`, including the `pithead_*` named volumes.
+To select a different project, export `COMPOSE_PROJECT_NAME` before running Docker
+Compose or any `pithead` command:
+
+```bash
+export COMPOSE_PROJECT_NAME=pithead-gate
+./pithead up
+```
+
+The CLI uses that project for container-label queries and wallet-volume cleanup.
+Support bundles redact the project name.
+A single literal `COMPOSE_PROJECT_NAME` assignment in the generated `.env` also
+works, and `apply` preserves it. The CLI refuses duplicate assignments, interpolation,
+and non-literal dotenv syntax for this key. An exported value takes precedence; an explicitly empty value selects
+`pithead`. Names use lowercase letters, digits, underscores and hyphens, starting
+with a letter or digit. Keep the same export for recovery after `config-reset`,
+which removes `.env`. Selecting another project does not migrate the default
+project's containers or data.
+
+Container names, the `mining_net` and `proxy_net` network names, and host ports
+remain fixed. Changing the project name alone does not allow two stacks to run
+side by side on one Docker host.
+
 ### Co-hosting on a shared server
 
 By default Caddy binds the host's ports 80 and 443. On a machine that already runs another reverse
