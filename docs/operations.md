@@ -556,7 +556,7 @@ want it gone.
 
 | item | what |
 |---|---|
-| containers + networks | the `pithead` compose project, `mining_net`, `proxy_net` |
+| containers + networks | the selected Compose project (`pithead` by default), `mining_net`, `proxy_net` |
 | images | every ref from `docker compose config --images` |
 | named volumes | `caddy_data`, `wallet_data`, `tari_wallet_db` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues. On startup, `tari-wallet` repairs a root-owned volume before running as uid 1000. Uninstall removes the Tari wallet volume even when its payout profile is disabled, after checking its Compose ownership labels. If Docker cannot list, inspect, or remove that volume, uninstall stops before deleting `.env` so the operator can retry. |
 | systemd units | `pithead-control.path` / `.service`, this checkout's only |
@@ -761,7 +761,12 @@ files that only the archive has. The wizard replaces its Tor and dashboard direc
 > is refused rather than redirected into the old directory tree. Recreate the original
 > installation path and configure any custom data paths before restoring.
 
-> NOTE: If your browser warns after a DIY restore,
+> NOTE: A same-machine restore preserves the dashboard TLS certificate and key when the settled
+> names are unchanged. On the appliance, a certificate covering the current canonical names also
+> survives temporary address loss and dashboard password changes. A genuinely new, uncovered name
+> requires a new certificate; verify its fingerprint before trusting it.
+>
+> If your browser warns after a DIY restore,
 > [verify and trust the installation's root CA](configuration.md#exposing-the-dashboard-safely).
 > Accepting only the current certificate can produce another warning after renewal.
 
@@ -1050,7 +1055,10 @@ you recover the node. Monero mining is not affected. Recover in this order:
 **The dashboard data looks broken and you want a clean slate.**
 `./pithead reset-dashboard` wipes and recreates the dashboard and P2Pool data. This is
 **destructive**: it drops P2Pool sidechain state and dashboard history (blockchains and wallets are
-unaffected). Pass `-y` / `--yes` to skip the confirmation prompt.
+unaffected). Targets come from `DASHBOARD_DATA_DIR` and `P2POOL_DATA_DIR` in the live
+`.env`, including absolute paths with spaces. Directory values containing CR or LF are refused
+before containers stop or data is removed, including encoded line breaks in quoted `.env` values.
+Pass `-y` / `--yes` to skip the confirmation prompt.
 
 ---
 
