@@ -37,7 +37,9 @@ without a container or guest. The live result requires a KVM job on the PR head.
 
 The opt-in `tor-heal` phase provisions a local-node guest and disables Tor networking
 through an unsaved control setting. It retains the production timers: 90 minutes with
-auto-heal disabled, then up to 95 minutes with it enabled. Both legs use **No login**,
+auto-heal disabled, then up to 95 minutes with it enabled. Submit this phase with the supported bench-ci
+`--timeout-minutes 240` budget so provisioning and both observation windows fit.
+Both legs use **No login**,
 with general dashboard control disabled. The disabled leg requires broken real egress,
 unchanged Tor and Monero start times read directly as Podman epoch seconds, and no
 applied healing actions. The enabled leg

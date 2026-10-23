@@ -23,6 +23,23 @@ check() {
     fi
 }
 
+echo "== Mining witness samples retain bounded numeric context without identifiers =="
+(
+    api_state() {
+        printf '%s\n' '{"proxy_summary":{"accepted":"1,201"},"proxy_workers":1,"workers":[{"h60":22000,"uptime":600,"name":"fixture-private-identifier"}]}'
+    }
+    check test "$(_tor_probe_mining_sample 7 2>"$SCRATCH/sample")" = 1201
+    check grep -q '^Tor mining sample 7: ' "$SCRATCH/sample"
+    check jq -e '.accepted == 1201 and .workers == 1 and .worker_h60 == 22000 and .worker_uptime_min == 600' < <(sed 's/^Tor mining sample 7: //' "$SCRATCH/sample")
+    check test "$(wc -l <"$SCRATCH/sample" | tr -d ' ')" = 1
+    if grep -q 'fixture-private-identifier' "$SCRATCH/sample"; then exit 1; fi
+    api_state() { return 1; }
+    if _tor_probe_mining_sample 8 >"$SCRATCH/count" 2>"$SCRATCH/sample-error"; then exit 1; fi
+    check grep -qx 'Tor mining sample 8: API unavailable' "$SCRATCH/sample-error"
+    check test ! -s "$SCRATCH/count"
+    test "$FAIL" -eq 0
+)
+
 echo "== Tor probe fault skips before any live work when mining assertions are disabled =="
 (
     SKIP_MINING_ASSERTS=1

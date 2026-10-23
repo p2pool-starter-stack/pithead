@@ -9,8 +9,18 @@ tor_probe_ns_ipt() { # <iptables args...>
 }
 
 _tor_probe_mining_sample() {
-    local state accepted workers
-    state=$(api_state) || return 1
+    local state accepted workers diagnostic sample="${1:-baseline}"
+    state=$(api_state) || {
+        printf 'Tor mining sample %s: API unavailable\n' "$sample" >&2
+        return 1
+    }
+    diagnostic=$(printf '%s' "$state" | jq -c '{
+        accepted:(.proxy_summary.accepted | gsub(","; "") | tonumber? // null),
+        workers:(.proxy_workers | numbers // null),
+        worker_h60:([.workers[]?.h60 | numbers] | if length > 0 then add else null end),
+        worker_uptime_min:([.workers[]?.uptime | numbers] | min // null)
+    }' 2>/dev/null) || diagnostic='{"unavailable":true}'
+    printf 'Tor mining sample %s: %s\n' "$sample" "$diagnostic" >&2
     accepted=$(jq_get "$state" '.proxy_summary.accepted | gsub(","; "") | tonumber')
     workers=$(jq_get "$state" '.proxy_workers')
     [ -n "$accepted" ] && [ "${workers:-0}" -ge "${EXPECTED_WORKERS:-1}" ] 2>/dev/null || return 1
@@ -71,7 +81,7 @@ fault_tor_probe_egress() {
     it_step "fault: dashboard Tor SOCKS requests fail while mining onions stay connected…"
     for ((i = 0; i < 25; i++)); do
         sleep 60
-        now=$(_tor_probe_mining_sample) || now=
+        now=$(_tor_probe_mining_sample "$((i + 1))") || now=
         if [ -z "$now" ]; then
             mining_failure=${mining_failure:-"sample $i had no live proxy worker or accepted-share counter"}
         elif [ "$now" -lt "$last" ]; then
