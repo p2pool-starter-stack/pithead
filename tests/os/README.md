@@ -486,6 +486,15 @@ runtime predicate as a bounded reason, and allowlisted Monero/Tari RPC and sync 
 guest's existing authenticated dashboard clients. Those readiness fields are diagnostic only: the
 current-process `uses chain_id` handshake remains the pass assertion.
 
+The `stack` phase's lifecycle reset-restore leg also restores while firstboot is starting.
+After the ordinary open-page restore, it resets again and restarts the guest's firstboot
+service with a temporary test wrapper. The wrapper pauses console announcement after the
+entry check and before round opening; the real encrypted CLI restore lands configuration
+before startup resumes. The leg requires successful firstboot exit, removal of the wizard,
+free HTTP/HTTPS ports before `up`, a stable Caddy and a dashboard response. It removes the
+runtime service override afterwards. `selftest-wizard-startup.sh` covers startup, round
+preparation, retained retry configuration and installer behavior without a guest.
+
 ## Static verification
 
 `tests/os/verify-image.sh` is the cheapest gate and runs without KVM — it mounts a built image

@@ -69,6 +69,12 @@ The fakes are the enabler. The whole control plane is env-configurable (`MONERO_
 real code points at small controllable servers and drives the entire state machine in seconds, in
 CI, with no chain and no test box.
 
+The appliance `stack` lifecycle leg repeats encrypted reset/restore with firstboot paused
+between its entry check and round opening. It checks firstboot exit, released web ports,
+Caddy stability and the dashboard response after the real CLI restore and `up`.
+`tests/os/selftest-wizard-startup.sh` drives the generated wizard through that window and
+round preparation, with retained-config retry and installer controls.
+
 ## What a PR must prove
 
 The tier a change needs follows from the paths its diff touches, never from the size of the diff or
