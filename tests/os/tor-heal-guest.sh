@@ -74,7 +74,7 @@ configure() {
     ./pithead apply -y >"$work/apply.log" 2>&1
 }
 egress() {
-    docker exec dashboard python3 -c '
+    timeout 60 docker exec dashboard python3 -c '
 from mining_dashboard.service.health.tor_heal import TorEgressHealer
 ok, evidence = TorEgressHealer._probe_egress()
 print("EGRESS_UP" if ok else "EGRESS_DOWN")
@@ -91,7 +91,7 @@ require_egress_down() {
 }
 container_start() {
     local stamp
-    stamp=$(docker inspect --format '{{.State.StartedAt.Unix}}' "$1") || return 1
+    stamp=$(timeout 20 docker inspect --format '{{.State.StartedAt.Unix}}' "$1") || return 1
     [[ "$stamp" =~ ^[0-9]+$ ]] && [ "$stamp" -gt 0 ] || return 1
     printf '%s\n' "$stamp"
 }
@@ -133,6 +133,35 @@ confirmed_newnyms() {
     while read -r id; do
         jq -e '.status == "applied" and .action == "tor-newnym"' "$control/results/$id.json" >/dev/null || return 1
     done <<<"$ids"
+}
+recovery_diagnostics() {
+    local newnyms=0 tor_after monero_after probe_rc=0 health outgoing notices
+    confirmed_newnyms && newnyms=1
+    tor_after=$(container_start tor 2>/dev/null) || tor_after=unavailable
+    monero_after=$(container_start monerod 2>/dev/null) || monero_after=unavailable
+    egress || probe_rc=$?
+    health=$(timeout 20 docker inspect --format '{{.State.Health.Status}}' monerod 2>/dev/null) || health=unavailable
+    case "$health" in healthy | unhealthy | starting) ;; *) health=unavailable ;; esac
+    outgoing=$(timeout 20 docker exec monerod /usr/local/bin/monerod-peers.sh 2>/dev/null |
+        jq -ce '.outgoing | numbers' 2>/dev/null) || outgoing=unavailable
+    notices=$(jq -s -e '[.[] | select(.text | contains("egress recovered following Tor restart;"))] | length' \
+        "$work/alerts.jsonl" 2>/dev/null) || notices=unavailable
+    printf 'Tor recovery evidence: confirmed_newnyms=%s probe_rc=%s recovery_notices=%s\n' "$newnyms" "$probe_rc" "$notices"
+    printf 'Tor recovery starts: tor=%s->%s monerod=%s->%s\n' "$tor_started" "$tor_after" "$monero_started" "$monero_after"
+    printf 'Monero recovery evidence: health=%s outgoing=%s\n' "$health" "$outgoing"
+    jq -c --arg since "$since" '
+        select((.ts | type) == "string") |
+        select(.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) |
+        select(.ts >= $since and .actor == "tor-heal") |
+        select(.action == "tor-history" or .action == "tor-newnym" or .action == "tor-recover") |
+        select(.status == "applied" or .status == "rejected" or .status == "failed") |
+        {ts,action,status}' "$control/audit/control.log" >"$work/recovery-audit.log" 2>/dev/null ||
+        printf 'Tor action audit unavailable\n' >"$work/recovery-audit.log"
+    if ! timeout 20 docker logs --since "$since" --tail 1000 dashboard 2>/dev/null |
+        grep -E '^[0-9-]+ [0-9:,.]+ \[(INFO|WARNING|DEBUG)\] (Tor (egress self-heal|clearnet egress|NEWNYM|recovery control|heal cycle)|Restarting monerod alongside tor)' |
+        tail -50 >"$work/healer.log"; then
+        printf 'Tor healer log unavailable\n' >"$work/healer.log"
+    fi
 }
 backup_count() {
     find "$data" -maxdepth 1 -name 'state.backup.*' -type f | wc -l
@@ -189,8 +218,8 @@ deadline=$((started + 95 * 60))
 stage=host-recovery
 recovered=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
-    if confirmed_newnyms && [ "$(container_start tor)" != "$tor_started" ] &&
-        [ "$(container_start monerod)" != "$monero_started" ] && egress &&
+    if confirmed_newnyms && tor_after=$(container_start tor) && monero_after=$(container_start monerod) &&
+        [ "$tor_after" != "$tor_started" ] && [ "$monero_after" != "$monero_started" ] && egress &&
         [ "$(docker inspect --format '{{.State.Health.Status}}' monerod)" = healthy ] &&
         docker exec monerod /usr/local/bin/monerod-peers.sh | jq -e '(.outgoing | numbers) > 0' >/dev/null &&
         jq -e 'select(.text | contains("egress recovered following Tor restart;"))' "$work/alerts.jsonl" >/dev/null; then
@@ -199,6 +228,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     fi
     sleep 30
 done
+if [ "$recovered" != 1 ]; then recovery_diagnostics; fi
 [ "$recovered" = 1 ]
 stage=verify-recovery
 confirmed_newnyms

@@ -52,6 +52,12 @@ awk '/^  dashboard:/{d=1} d&&/network_mode:/{print; exit}' "$ROOT/docker-compose
 grep -qx 'gateway=127.0.0.1' "$ROOT/tests/os/tor-heal-guest.sh"
 # Exercise guest helpers without executing the guest's main body.
 (
+    timeout() {
+        [ "$1" = 20 ] || return 23
+        shift
+        [ "${inspect_timeout_rc:-0}" = 0 ] || return "$inspect_timeout_rc"
+        "$@"
+    }
     docker() {
         [ "$1" = inspect ] && [ "$2" = --format ] && [ "$4" = tor ] || return 23
         if [ "$3" = '{{.State.StartedAt.Unix}}' ]; then
@@ -66,10 +72,18 @@ grep -qx 'gateway=127.0.0.1' "$ROOT/tests/os/tor-heal-guest.sh"
     for epoch in '' 0 invalid; do
         if container_start tor; then exit 1; fi
     done
+    epoch=1792731078 inspect_timeout_rc=124
+    if container_start tor; then exit 1; fi
 )
 (
     work="$work/egress"
     mkdir -p "$work"
+    timeout() {
+        [ "$1" = 60 ] || return 23
+        shift
+        [ "${probe_timeout_rc:-0}" = 0 ] || return "$probe_timeout_rc"
+        "$@"
+    }
     docker() {
         if [ "$1 $2" = 'exec tor' ]; then
             printf '250 OK\n250 OK\n250 DisableNetwork=%s\n' "$network_disabled"
@@ -90,6 +104,8 @@ grep -qx 'gateway=127.0.0.1' "$ROOT/tests/os/tor-heal-guest.sh"
     probe_state=DOWN probe_rc=17
     if disable_network; then exit 1; fi
     network_disabled=0 probe_rc=0
+    if disable_network; then exit 1; fi
+    network_disabled=1 probe_timeout_rc=124
     if disable_network; then exit 1; fi
 )
 (
@@ -131,6 +147,76 @@ STUB
     jq -e '.tor.auto_heal == false and .notifications.tor == false and .dashboard.auth.password == "" and .dashboard.control.enabled == false' config.json >/dev/null
     configure true
     jq -e '.tor.auto_heal == true and (.notifications.webhooks | length == 1) and .dashboard.auth.password == "" and .dashboard.control.enabled == false' config.json >/dev/null
+)
+
+(
+    work="$work/recovery-diagnostics"
+    control="$work/control-diagnostics"
+    mkdir -p "$work" "$control/audit"
+    printf '{"text":"unrelated fixture-private-identifier"}\n' >"$work/alerts.jsonl"
+    printf '%s\n' '{"ts":"2026-01-01T00:01:00Z","actor":"tor-heal","action":"tor-newnym","status":"rejected","keys":"fixture-private-identifier"}' >"$control/audit/control.log"
+    # shellcheck disable=SC2034 # extracted recovery diagnostics read these guest globals.
+    since=2026-01-01T00:00:00Z tor_started=100 monero_started=200
+    confirmed_newnyms() { return 1; }
+    container_start() { if [ "$1" = tor ]; then echo 300; else echo 400; fi; }
+    egress() { return 2; }
+    timeout() {
+        [ "$1" = 20 ]
+        shift
+        "$@"
+    }
+    docker() {
+        case "$1" in
+        inspect) echo unhealthy ;;
+        exec) echo '{"outgoing":0,"private":"fixture-private-identifier"}' ;;
+        logs)
+            echo 'unrelated fixture-private-identifier'
+            for ((n = 0; n < 60; n++)); do
+                echo '2026-01-01 00:01:00,000 [WARNING] Tor NEWNYM was not confirmed by the host control runner'
+            done
+            ;;
+        esac
+    }
+    eval "$(sed -n '/^recovery_diagnostics() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    recovery_diagnostics >"$work/predicates"
+    grep -q 'confirmed_newnyms=0 probe_rc=2 recovery_notices=0' "$work/predicates"
+    grep -q 'tor=100->300 monerod=200->400' "$work/predicates"
+    grep -q 'health=unhealthy outgoing=0' "$work/predicates"
+    jq -e '(keys | sort) == ["action","status","ts"] and .status == "rejected"' "$work/recovery-audit.log" >/dev/null
+    [ "$(wc -l <"$work/healer.log" | tr -d ' ')" = 50 ]
+    if grep -q 'fixture-private-identifier' "$work/predicates" "$work/recovery-audit.log" "$work/healer.log"; then exit 1; fi
+)
+(
+    work="$work/recovery-verdict"
+    mkdir -p "$work"
+    printf '{"text":"egress recovered following Tor restart;"}\n' >"$work/alerts.jsonl"
+    recovery_diagnostics() { echo captured >"$work/recovery-captured"; }
+    confirmed_newnyms() { return 0; }
+    container_start() {
+        [ "$1" != "$inspect_fail" ] || return 124
+        if [ "$1" = tor ]; then echo 300; else echo 400; fi
+    }
+    egress() { return 0; }
+    docker() {
+        if [ "$1" = inspect ]; then echo healthy; else echo '{"outgoing":1}'; fi
+    }
+    date() { cat "$work/clock"; }
+    sleep() { echo 3 >"$work/clock"; }
+    export -f recovery_diagnostics confirmed_newnyms container_start egress docker date sleep
+    export work deadline=2 tor_started=100 monero_started=200
+    sed -n '/^stage=host-recovery/,/^stage=verify-recovery/p' "$ROOT/tests/os/tor-heal-guest.sh" >"$work/recovery-verdict.sh"
+    for inspect_fail in tor monerod none; do
+        export inspect_fail
+        rm -f "$work/recovery-captured"
+        echo 1 >"$work/clock"
+        if bash -e "$work/recovery-verdict.sh"; then
+            [ "$inspect_fail" = none ]
+            [ ! -e "$work/recovery-captured" ]
+        else
+            [ "$inspect_fail" != none ]
+            grep -qx captured "$work/recovery-captured"
+        fi
+    done
 )
 
 restore_case() (

@@ -54,8 +54,9 @@ the synthetic all-abandoned history before healing observations in the failed KV
 tracked by bench-ci#2148. Saturation, sustained evidence, locking, onion-key verification
 and the persistent six-hour recovery cooldown remain covered by the host fixtures.
 The guest restores its original config and restarts Tor on exit without rewriting its
-history. Failures report the current stage, bounded command logs and the restoration
-result separately from the test result. No shared Tor is faulted.
+history. A recovery failure captures individual predicate readings, the host Tor-action
+audit and filtered healer logs before cleanup. Failures report the current stage,
+bounded command logs and the restoration result separately from the test result. No shared Tor is faulted.
 
 It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 
