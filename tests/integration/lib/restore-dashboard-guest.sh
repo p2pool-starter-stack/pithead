@@ -1,10 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-scratch=$(mktemp -d "${TMPDIR:-$PWD/data}/restore-dashboard.XXXXXXXX")
+exec 2>&1
+stage=scratch
+probe_failure() { printf 'restore dashboard probe failed at %s (exit %s)\n' "$stage" "$1"; }
+scratch=$(mktemp -d "${TMPDIR:-$PWD/data}/restore-dashboard.XXXXXXXX") || {
+    probe_failure "$?"
+    exit 1
+}
 archive=""
 mutated=0
-cp config.json "$scratch/original.json"
+stage=baseline-snapshot
+if ! cp config.json "$scratch/original.json"; then
+    probe_failure 1
+    rm -f -- "$scratch/original.json"
+    rmdir "$scratch"
+    exit 1
+fi
 wait_cleanup_health() {
     local deadline=$((SECONDS + 240)) stable=0
     while [ "$SECONDS" -lt "$deadline" ]; do
@@ -18,6 +30,7 @@ wait_cleanup_health() {
 cleanup() {
     local result=$? verified=1
     trap - EXIT
+    [ "$result" -eq 0 ] || probe_failure "$result"
     if [ "$mutated" -eq 1 ]; then
         ./pithead down || verified=0
         if cp "$scratch/original.json" config.json && ./pithead apply -y && ./pithead up; then
@@ -38,6 +51,7 @@ cleanup() {
     exit "$result"
 }
 trap cleanup EXIT
+stage=fixture-projection
 jq --slurpfile original "$scratch/original.json" '
     def candidate($saved):
         with_entries(select(.key != "_docs" and .key != "config_version") |
@@ -56,7 +70,9 @@ jq -e --slurpfile original "$scratch/original.json" '
     exit 1
 }
 mutated=1
+stage=fixture-install
 cp "$scratch/fixture.json" config.json
+stage=fixture-password
 openssl rand -hex 24 >"$scratch/password"
 set_cost() {
     jq --argjson cost "$1" --rawfile password "$scratch/password" '.dashboard.energy.cost_per_kwh = $cost | .dashboard.control.enabled = true | if (.dashboard.auth.password // "") == "" then .dashboard.auth.password = ($password | rtrimstr("\n")) else . end | .dashboard.onion.client_auth = true' config.json >"$scratch/config.json"
@@ -75,7 +91,9 @@ wait_cost() {
     printf 'restore dashboard: /api/%s did not report expected cost\n' "$endpoint" >&2
     return 1
 }
+stage=fixture-apply
 set_cost 0.123
+stage=backup
 mkdir -p backups
 find "$PWD/backups" -maxdepth 1 -type f -print >"$scratch/before"
 if ! NO_COLOR=1 ./pithead backup -y --no-encrypt >"$scratch/backup.log" 2>&1; then
@@ -91,11 +109,17 @@ if grep -Fxq -- "${created[0]}" "$scratch/before"; then
 fi
 test -f "${created[0]}"
 archive="${created[0]}"
+stage=changed-apply
 set_cost 0.789
+stage=changed-config-api
 wait_cost config .dashboard.energy.cost_per_kwh 0.789
+stage=down
 ./pithead down
+stage=restore
 ./pithead restore -y "$archive"
+stage=up
 ./pithead up
+stage=archived-api-assertions
 config_rc=0 state_rc=0
 wait_cost config .dashboard.energy.cost_per_kwh 0.123 || config_rc=$?
 wait_cost state .energy.cost_per_kwh 0.123 || state_rc=$?

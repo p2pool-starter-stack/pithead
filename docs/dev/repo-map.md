@@ -77,7 +77,8 @@ The shared existing-install restore regression is `tests/integration/lib/restore
 It builds a separate candidate-schema fixture with the original wallet and payout fields, leaving the
 original configuration and its version stamp unchanged for cleanup. Lifecycle and KVM reset require
 both dashboard APIs to return the archived energy cost after restore/up, before cleanup applies anything.
-Cleanup verifies exact configuration and bounded health, retaining its private recovery copy if unverified.
+The retained probe output includes guest stderr and fixed failure-stage labels. Cleanup verifies exact
+configuration and bounded health, retaining its private recovery copy if unverified.
 Lifecycle also checks original secret fingerprints and Tari mode before its Tari trial, including after
 a failed probe. `selftest-restore-dashboard-guest.sh` covers the synthetic fixture and cleanup;
 `selftest-lifecycle-restore-health.sh` and `selftest-reset-restore.sh` cover ordering and state refusal.

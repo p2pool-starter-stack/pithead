@@ -53,7 +53,10 @@ backup)
     printf '[pithead] Backup written to: %s/backups/pithead-backup-fixture.tar.gz\n' "$PWD"
     ;;
 restore)
-    [ "$FIXTURE_FAULT" != restore-refuse ] || exit 1
+    if [ "$FIXTURE_FAULT" = restore-refuse ]; then
+        printf 'fixture restore refusal diagnostic\n' >&2
+        exit 1
+    fi
     jq -e '.config_version == "2.0.0"' "$3" >/dev/null
     cp "$3" config.json
     [ "$FIXTURE_FAULT" = stale ] || cp config.json api.json
@@ -86,10 +89,16 @@ if [ "$FIXTURE_FAULT" = fixture-copy ] && [[ "$1" = */fixture.json ]] && [ "$2" 
     : >config.json
     exit 1
 fi
+if [ "$FIXTURE_FAULT" = baseline-copy ] && [[ "$2" = */original.json ]]; then
+    : >"$2"
+    exit 1
+fi
 exec /bin/cp "$@"
 COPY
     chmod +x "$dir/pithead" "$dir/bin/curl" "$dir/bin/cp"
-    (cd "$dir" && FIXTURE_FAULT="$fault" TMPDIR="$dir/data" PATH="$dir/bin:$PATH" bash "$HERE/../lib/restore-dashboard-guest.sh") >"$dir/output" 2>&1 || rc=$?
+    local scratch_root="$dir/data"
+    [ "$fault" != scratch ] || scratch_root="$dir/absent"
+    (cd "$dir" && FIXTURE_FAULT="$fault" TMPDIR="$scratch_root" PATH="$dir/bin:$PATH" bash "$HERE/../lib/restore-dashboard-guest.sh") >"$dir/output" 2>"$dir/stderr" || rc=$?
     printf '%s' "$rc"
 }
 assert_eq "a newer baseline can supply a separate candidate fixture" "$(run_case success)" 0
@@ -118,6 +127,10 @@ for fault in stale state-stale restore-refuse fixture-copy; do
     assert_eq "$fault still verifies cleanup health twice" \
         "$(grep -c '^status$' "$work/$fault/trace")" 2
 done
+assert_contains "the originating guest stderr is retained on stdout" "$(cat "$work/restore-refuse/output")" 'fixture restore refusal diagnostic'
+assert_contains "restore refusal names its stage" "$(cat "$work/restore-refuse/output")" 'probe failed at restore'
+assert_contains "partial fixture copy failure names its stage" "$(cat "$work/fixture-copy/output")" 'probe failed at fixture-install'
+assert_eq "guest stderr needs no separate capture to preserve diagnostics" "$([ ! -s "$work/restore-refuse/stderr" ] && echo yes)" yes
 assert_eq "a stale config response cannot suppress the state assertion" \
     "$(grep -c '^curl-state$' "$work/stale/trace")" 2
 for fault in cleanup-apply cleanup-mutation cleanup-unhealthy; do
@@ -133,4 +146,12 @@ assert_eq "cleanup health failure is bounded" "$(grep -c '^status$' "$work/clean
 assert_eq "an unsupported wallet field is refused" "$([ "$(run_case unknown-wallet)" -ne 0 ] && echo yes)" yes
 assert_eq "unsupported wallet refusal happens before any CLI mutation" \
     "$([ ! -e "$work/unknown-wallet/trace" ] && cmp -s "$work/unknown-wallet/original.json" "$work/unknown-wallet/config.json" && echo yes)" yes
+for fault in scratch baseline-copy; do
+    assert_eq "$fault failure is refused" "$([ "$(run_case "$fault")" -ne 0 ] && echo yes)" yes
+    label="$fault"
+    [ "$fault" != baseline-copy ] || label=baseline-snapshot
+    assert_contains "$fault failure names its stage" "$(cat "$work/$fault/output")" "probe failed at $label"
+    assert_eq "$fault failure leaves the original untouched" \
+        "$([ ! -e "$work/$fault/trace" ] && cmp -s "$work/$fault/original.json" "$work/$fault/config.json" && echo yes)" yes
+done
 [ "$IT_FAIL" -eq 0 ]
