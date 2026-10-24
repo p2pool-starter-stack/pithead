@@ -52,6 +52,7 @@ phases_of() { # <mode> <borrow-miner> <wrapper-scenario> <harness-arg...>
                 cat >/dev/null
                 echo 4242
                 ;;
+            *"&& echo done"*) echo "done" ;;
             *e2e-harness.done*)
                 echo 0
                 return 0

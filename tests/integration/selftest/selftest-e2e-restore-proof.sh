@@ -61,6 +61,7 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         step() { :; }
         warn() { :; }
         ok() { :; }
+        stop_load_worker() { :; }
         drain_harness_or_refuse() { :; }
         parent_lock_checkpoint() { :; }
         parent_lock_miner_restore() { :; }

@@ -85,13 +85,14 @@ assert_eq "the extraction is the whole function" \
 # shellcheck disable=SC2016 # expands inside the child shell
 MINING_STUB_SRC='wait_restore_mining_ready() { echo mining >>"$log"; return "$MINING_RC"; }'
 drive_restore_rc() {
-    RESTORE_SRC="${RESTORE_SRC}" MINING_RC="$1" bash -c '
+    RESTORE_SRC="${RESTORE_SRC}" MINING_RC="$1" LOAD_STOP_RC="${2:-0}" bash -c '
         log="$(mktemp)"; export log
         exec </dev/null
         MODE=targeted RESTORED=0 KEEP=0 MINER_CFG_BACKUP="" RESTORE_DIR=/srv/code/baseline
         E2E_DIR=/srv/code/pithead-e2e BENCH_HOST=bench SAFETY_ARCHIVE=""
         RESTORE_PROOF_FAILED=0 CONTROL_PROOF_FAILED=0 CONTROL_VERDICT_BEFORE="" BASELINE_IMAGES=""
         log() { :; }; step() { :; }; warn() { :; }; ok() { :; }
+        stop_load_worker() { echo load-worker >>"$log"; return "$LOAD_STOP_RC"; }
         drain_harness_or_refuse() { :; }; parent_lock_checkpoint() { :; }; parent_lock_miner_restore() { :; }
         control_units_verdict() { echo on-target; }
         wallet_fixture_restore() { :; }; wallet_fixture_verify() { :; }; chain_restore_prepare() { :; }
@@ -110,9 +111,11 @@ drive_restore_rc() {
     ' 2>/dev/null
 }
 assert_eq "the wait runs after health and before the proof" \
-    "$(drive_restore_rc 0)" "synced healthy mining proof cleanup "
+    "$(drive_restore_rc 0)" "load-worker synced healthy mining proof cleanup "
 assert_eq "a failed wait fails the restore but still runs the proof" \
-    "$(drive_restore_rc 1)" "synced healthy mining proof cleanup exit:1 "
+    "$(drive_restore_rc 1)" "load-worker synced healthy mining proof cleanup exit:1 "
+assert_eq "failed load-worker cleanup fails restoration after the remaining proof runs" \
+    "$(drive_restore_rc 0 1)" "load-worker synced healthy mining proof cleanup exit:1 "
 
 echo ""
 printf 'restore-mining-ready self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
