@@ -51,6 +51,7 @@ assert_lan_guard_timer_flush() { echo "timer $*" >>"$TRACE"; }
 assert_lan_guard_crash_restart() { echo "crash $*" >>"$TRACE"; }
 assert_lan_guard_boot_restore() { echo "boot-restore $*" >>"$TRACE"; }
 assert_lan_guard_boot_failure() { echo "boot-failure $*" >>"$TRACE"; }
+assert_lan_guard_marker_startup() { echo marker-startup >>"$TRACE"; }
 capture_artifacts() { echo artifacts >>"$TRACE"; }
 
 SKIP_MINING_ASSERTS=1 EXPECTED_WORKERS=0 BASELINE_SECRET_FP=fixture IT_FAIL=0
@@ -87,6 +88,7 @@ timer 18081 18083 18142
 crash 18081 18083 18142
 boot-restore 18081 18083 18142
 boot-failure 18081 18083 18142
+marker-startup
 pithead apply -y" ] || {
     echo 'deploying scenario lost LAN guard coverage or changed exercise order' >&2
     cat "$TRACE" >&2
@@ -97,6 +99,7 @@ pithead apply -y" ] || {
 assert_scenario no-lan '{}'
 [ "$(cat "$TRACE")" = "pithead status
 state-complete
+marker-startup
 pithead apply -y" ] || {
     echo 'scenario without LAN ports ran LAN guard exercises' >&2
     exit 1
