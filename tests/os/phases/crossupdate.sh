@@ -202,7 +202,7 @@ phase_crossupdate() {
     # whose revenue containers are down while caddy keeps serving (#852). Sync-held miners (#35) are
     # not failures to it, so this stays honest on a freshly converged guest rather than demanding a
     # synced chain the leg cannot reach.
-    if _ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; then
+    if _ssh "cd /data/pithead && PITHEAD_BOOT_GATE=1 PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; then
         ok "the converged candidate passes the product's own doctor contract (the complete stack, not just a boot)"
     else
         bad "doctor refuses the converged candidate stack: $(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json 2>/dev/null | jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")'" 2>/dev/null | tr -d '\r' | cut -c1-300)"

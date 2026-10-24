@@ -191,7 +191,7 @@ _phase_provision_reboot() {
     # show it here — RAUC's commit is sticky, so the already-committed slot won't re-arm — so we drive the
     # gate command the boot path runs and check its exit code. This is the assertion whose absence let the
     # curl-only gate ship green.
-    _gate() { _ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; }
+    _gate() { _ssh "cd /data/pithead && PITHEAD_BOOT_GATE=1 PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; }
     # Healthy, mid initial sync with mining held (#35): the gate must COMMIT. A gate that rejected
     # this would never commit a fresh box — the over-tightening the sync-tolerant rule guards.
     if _gate; then
