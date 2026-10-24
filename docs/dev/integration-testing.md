@@ -844,7 +844,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
-- Before mutations, a bounded remote control emits distinct stdout/stderr and exits 73, then a harmless cleanup control exits 74. The lifecycle row requires both operations and their original statuses in `results/restore-diagnostic-control/restore-operations.log`; the controls change no stack state.
+- Before mutations, a bounded remote control emits distinct stdout/stderr and exits 73, then a harmless cleanup control exits 74. The lifecycle row requires both operations, their original statuses and redaction markers in `results/restore-diagnostic-control/restore-operations.log`, with neither injected password value retained; the controls change no stack state.
 - Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
   container StartedAt and RestartCount), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).

@@ -182,6 +182,13 @@ run_restore_diagnostic_control
 [ "$IT_FAIL" = 0 ]
 grep -q 'operation=control.restore exit=73' "$OUT_DIR/restore-diagnostic-control/restore-operations.log"
 grep -q 'operation=control.cleanup exit=74' "$OUT_DIR/restore-diagnostic-control/restore-operations.log"
+grep -q 'Stratum password: <redacted>' "$OUT_DIR/restore-diagnostic-control/restore-operations.log"
+grep -q 'PASSWORD=<redacted>' "$OUT_DIR/restore-diagnostic-control/restore-operations.log"
+! grep -Eq 'injected-(restore|cleanup)-password' "$OUT_DIR/restore-diagnostic-control/restore-operations.log"
+(
+    redact_restore_output() { cat; }
+    if run_restore_diagnostic_control; then exit 1; fi
+)
 (
     restore_operation() { return 0; }
     if run_restore_diagnostic_control; then exit 1; fi

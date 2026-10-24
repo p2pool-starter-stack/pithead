@@ -33,18 +33,22 @@ run_restore_diagnostic_control() {
         it_fail "restore diagnostic control initialized (#3641)" "control artifact unavailable"
         return 1
     fi
-    OUT_DIR="$control_dir" restore_operation control.restore rx "printf '%s\n' 'injected restore stdout'; printf '%s\n' 'injected restore stderr' >&2; (exit 73)" || operation_rc=$?
-    OUT_DIR="$control_dir" restore_operation control.cleanup rx "printf '%s\n' 'injected cleanup stderr' >&2; (exit 74)" || cleanup_rc=$?
+    OUT_DIR="$control_dir" restore_operation control.restore rx "printf '%s\n' 'injected restore stdout' 'Stratum password: injected-restore-password'; printf '%s\n' 'injected restore stderr' >&2; (exit 73)" || operation_rc=$?
+    OUT_DIR="$control_dir" restore_operation control.cleanup rx "printf '%s\n' 'injected cleanup stderr' 'PASSWORD=injected-cleanup-password' >&2; (exit 74)" || cleanup_rc=$?
     diagnostic="$(cat "$control_dir/restore-operations.log" 2>/dev/null)"
     if [ "$operation_rc:$cleanup_rc" = 73:74 ] &&
         [[ "$diagnostic" == *'operation=control.restore exit=73'* ]] &&
         [[ "$diagnostic" == *'injected restore stdout'* ]] &&
         [[ "$diagnostic" == *'injected restore stderr'* ]] &&
+        [[ "$diagnostic" == *'Stratum password: <redacted>'* ]] &&
         [[ "$diagnostic" == *'operation=control.cleanup exit=74'* ]] &&
-        [[ "$diagnostic" == *'injected cleanup stderr'* ]]; then
+        [[ "$diagnostic" == *'injected cleanup stderr'* ]] &&
+        [[ "$diagnostic" == *'PASSWORD=<redacted>'* ]] &&
+        [[ "$diagnostic" != *'injected-restore-password'* ]] &&
+        [[ "$diagnostic" != *'injected-cleanup-password'* ]]; then
         it_pass "restore diagnostics retain the originating failure after cleanup failure (#3641)"
     else
-        it_fail "restore diagnostics retain the originating failure after cleanup failure (#3641)" "bounded remote control did not retain both operations and exit statuses"
+        it_fail "restore diagnostics retain the originating failure after cleanup failure (#3641)" "bounded remote control did not retain both operations, exit statuses and sanitized output"
         return 1
     fi
 }
