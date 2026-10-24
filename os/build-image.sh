@@ -99,13 +99,13 @@ pin_first_party_images() {
 
 select_marker_dashboard() {
     local manifest="$1" marker="$2" registry="$3" commit image
-    [ -s "$manifest" ] || {
+    [ -n "$manifest" ] || {
         echo "build-image: signed marker image manifest is required" >&2
         return 1
     }
     commit="${PITHEAD_TEST_IMAGE_COMMIT:-}"
     [ -n "$commit" ] || commit=$(git rev-parse HEAD) || return 1
-    image=$(jq -er --arg commit "$commit" --arg marker "$marker" 'select(.version == 1 and .source_commit == $commit) | .images[$marker] | select(type == "string")' "$manifest") || {
+    image=$(jq -er --arg commit "$commit" --arg marker "$marker" 'select(.version == 1 and .source_commit == $commit) | .images[$marker] | select(type == "string")' <<<"$manifest") || {
         echo "build-image: signed marker image is missing or belongs to another commit" >&2
         return 1
     }

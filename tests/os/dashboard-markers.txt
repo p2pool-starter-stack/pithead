@@ -1,9 +1,0 @@
-v1
-v2
-v3fault
-vmig
-stack-v1
-candidate
-certificate-continuity
-vmigfault
-vfail

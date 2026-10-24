@@ -24,9 +24,9 @@ fail() {
     echo "FAIL: $*" >&2
     exit 1
 }
-[ "$(select_marker_dashboard "$manifest" v2 "$registry")" = "$marker_ref" ] || fail 'wrong marker selected'
-[ "$(PITHEAD_TEST_IMAGE_COMMIT="$commit" select_marker_dashboard "$manifest" v2 "$registry")" = "$marker_ref" ] || fail 'archive source commit refused'
-if PITHEAD_TEST_IMAGE_COMMIT=other select_marker_dashboard "$manifest" v2 "$registry" >"$T/refusal.log" 2>&1; then fail 'wrong archive source commit accepted'; fi
+[ "$(select_marker_dashboard "$(cat "$manifest")" v2 "$registry")" = "$marker_ref" ] || fail 'wrong marker selected'
+[ "$(PITHEAD_TEST_IMAGE_COMMIT="$commit" select_marker_dashboard "$(cat "$manifest")" v2 "$registry")" = "$marker_ref" ] || fail 'archive source commit refused'
+if PITHEAD_TEST_IMAGE_COMMIT=other select_marker_dashboard "$(cat "$manifest")" v2 "$registry" >"$T/refusal.log" 2>&1; then fail 'wrong archive source commit accepted'; fi
 for mutation in \
     '.version = 2' \
     '.source_commit = "other"' \
@@ -34,10 +34,13 @@ for mutation in \
     '.images.v2 = "registry.example/fixture/pithead-dashboard:mutable"' \
     '.images.v2 |= sub("fixture"; "other")'; do
     jq "$mutation" "$manifest" >"$T/invalid.json"
-    if select_marker_dashboard "$T/invalid.json" v2 "$registry" >"$T/refusal.log" 2>&1; then fail "accepted $mutation"; fi
+    if select_marker_dashboard "$(cat "$T/invalid.json")" v2 "$registry" >"$T/refusal.log" 2>&1; then fail "accepted $mutation"; fi
 done
-if select_marker_dashboard "$manifest" unknown "$registry" >"$T/refusal.log" 2>&1; then fail 'unknown marker accepted'; fi
-if select_marker_dashboard "$T/absent" v2 "$registry" >"$T/refusal.log" 2>&1; then fail 'missing mapping accepted'; fi
+if select_marker_dashboard "$(cat "$manifest")" unknown "$registry" >"$T/refusal.log" 2>&1; then fail 'unknown marker accepted'; fi
+if select_marker_dashboard "" v2 "$registry" >"$T/refusal.log" 2>&1; then fail 'missing mapping accepted'; fi
+for invalid_mapping in '{' '[]' 'null' '"not an object"' "$manifest"; do
+    if select_marker_dashboard "$invalid_mapping" v2 "$registry" >"$T/refusal.log" 2>&1; then fail 'invalid JSON mapping accepted'; fi
+done
 mkdir -p os/build/stage images
 for service in tor monero p2pool xmrig-proxy dashboard; do
     printf '  %s:\n    image: registry.example/fixture/pithead-%s:v2\n' "$service" "$service"
@@ -67,7 +70,7 @@ awk '/^if \[ "\$\{PITHEAD_OS_SYNTHETIC_COMPOSE:-\}" != 1 \]; then$/ { copying=1 
     source "$T/default-pin.sh"
 )
 grep -qF "pithead-dashboard:v2@$base_digest" os/build/stage/docker-compose.yml || fail 'default dashboard pin changed'
-export PITHEAD_TEST_MARKER=v2 PITHEAD_TEST_MARKER_IMAGES="$manifest" PITHEAD_TEST_SSH_PUBKEY=fixture
+export PITHEAD_TEST_MARKER=v2 PITHEAD_TEST_MARKER_IMAGES="$(cat "$manifest")" PITHEAD_TEST_SSH_PUBKEY=fixture
 export PITHEAD_REGISTRY="$registry"
 STACK_VERSION=v2
 WIZARD_IMAGE="$registry/pithead-dashboard:v2"
@@ -88,11 +91,12 @@ archive_config=$(tar -xzOf os/rootfs/images/dashboard.tar.gz manifest.json | jq 
 if grep -q '^build ' "$T/docker.calls"; then fail 'builder added an unsigned image layer'; fi
 python3 - "$ROOT" <<'PYTHON'
 from pathlib import Path
+import json
 import re
 import sys
 
 root = Path(sys.argv[1])
-declared = set((root / "tests/os/dashboard-markers.txt").read_text().splitlines())
+declared = set(json.loads((root / "tests/os/dashboard-markers.json").read_text()))
 for script in (root / "tests/os").rglob("*.sh"):
     if script.name.startswith("selftest"):
         continue
