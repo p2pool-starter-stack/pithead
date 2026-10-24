@@ -70,7 +70,8 @@ awk '/^if \[ "\$\{PITHEAD_OS_SYNTHETIC_COMPOSE:-\}" != 1 \]; then$/ { copying=1 
     source "$T/default-pin.sh"
 )
 grep -qF "pithead-dashboard:v2@$base_digest" os/build/stage/docker-compose.yml || fail 'default dashboard pin changed'
-export PITHEAD_TEST_MARKER=v2 PITHEAD_TEST_MARKER_IMAGES="$(cat "$manifest")" PITHEAD_TEST_SSH_PUBKEY=fixture
+PITHEAD_TEST_MARKER_IMAGES=$(cat "$manifest")
+export PITHEAD_TEST_MARKER=v2 PITHEAD_TEST_MARKER_IMAGES PITHEAD_TEST_SSH_PUBKEY=fixture
 export PITHEAD_REGISTRY="$registry"
 STACK_VERSION=v2
 WIZARD_IMAGE="$registry/pithead-dashboard:v2"
