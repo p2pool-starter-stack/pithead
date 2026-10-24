@@ -359,7 +359,9 @@ Before the cut, seed the provision baseline. The provision phase's migration leg
 same `VERSION` as the candidate: an earlier `develop` build of this release, never the previous
 release. Pick the first `develop` commit that carries the new `VERSION`. On one KVM bench, add it
 to `[retention] image_cache_pins` and restart that runner while idle. Then submit a `local_only`
-`tier4-kvm` job with `phases=["boot"]` on that commit to that bench's endpoint. A pin protects the
+`tier4-kvm` job with `phases=["boot"]` on that commit to that bench's endpoint. That job only has to
+publish the image: its verdict does not matter, and no job may wait on it with `after`, because a
+failed predecessor cancels its dependents. A pin protects the
 cached build only once bench-ci's retention sweep reports it held: the sweep refuses new holds
 while the bench is short of disk headroom, which includes any running KVM job, and the cache
 budget can then evict the unprotected baseline. Keep other KVM jobs off that bench until the sweep
