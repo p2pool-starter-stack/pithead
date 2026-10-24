@@ -311,7 +311,9 @@ The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
-to prove saturated-history recovery and the disabled control with production timers.
+to prove No login egress recovery through host NEWNYM and the final healer restart,
+plus auto-heal off and unrelated-request rejection with production timers.
+Saturated recovery guards remain covered by the host recovery fixtures.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
 run by the Tor image build job. It verifies either startup repair of all 1000 abandoned
 observations and an empty persisted history, or the legacy warning and shutdown-write

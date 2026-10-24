@@ -1248,7 +1248,11 @@ On a scenario failure, the harness captures fresh diagnostic snapshots (redacted
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
 probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the first
 failed missing-image `up` or dashboard data-dir carry, before cleanup can replace
-Tor's failing state. A failed Worker Inspect read or enriched-telemetry assertion saves
+Tor's failing state. The Tor-probe fault saves redacted dashboard logs since fault injection
+(up to 2000 lines, with a 30-second read deadline) to
+`results/tor-probe-fault/dashboard.log` before baseline re-apply can replace the dashboard.
+A failed read leaves an explicit marker and preserves the original test verdict.
+A failed Worker Inspect read or enriched-telemetry assertion saves
 `results/worker-detail.failure.json` before the write guards or restoration. It projects the
 selected worker from the judged `/api/state` read and the judged `/api/worker` response:
 presence, typed `found`, online/offline status, API availability and RigForge presence,
