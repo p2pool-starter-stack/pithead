@@ -621,7 +621,6 @@ assert_contains "doctor FAILs when p2pool isn't on Tor — stale image (#273)" \
     "$(dr273 'p2pool --host 172.28.0.26 --rpc-port 18081 --mini')" "STALE p2pool image"
 assert_contains "doctor OK when p2pool IS routed over Tor (#273)" \
     "$(dr273 'p2pool --host 172.28.0.26 --mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor')" "routes outbound sidechain P2P via Tor"
-
 # tor wrapper entrypoint: opt-in dashboard hidden service (#343). The HiddenService block is appended
 # to the rendered torrc ONLY when DASHBOARD_ONION_ENABLED=true, targeting the bridge gateway
 # (NETWORK_PREFIX.1) where Caddy binds the auth-gated onion vhost. pithead's caddy/client-auth side is
@@ -658,7 +657,6 @@ assert_contains "tor entrypoint: onion also exposes :443 for the Tor-Browser htt
     "$tor_onion_on" "HiddenServicePort 443 10.9.0.1:443"
 assert_not_contains "tor entrypoint: no dashboard onion when disabled (default off) (#343)" \
     "$(tor_torrc false)" "Dashboard Hidden Service"
-
 # Node inbound onions (#103): each is published only while its node is local, so a remote node
 # leaves no onion pointing at a container that never starts. The gate is the compose profile list,
 # passed through from the rendered .env — same tokens that decide whether the node runs at all.
@@ -691,14 +689,12 @@ assert_contains "Monero anonymous listener accepts Tor on the bridge (#2936)" \
     "$(cat "$ROOT/build/monero/bitmonero.conf.template")" \
     'anonymous-inbound=${MONERO_ONION_ADDRESS}:18080,0.0.0.0:18084'
 unset tor_both_local tor_remote_tari tor_both_remote
-
 echo "== unit: onion provisioning follows node mode (#103) =="
-# pithead's half of the same gate: a hidden service that is never published has no hostname to wait
-# for, so provision_tor must not block on a remote node's onion (a 60s timeout, then a fatal error),
-# and the address stays a placeholder. wait_for_onion is stubbed — the polling itself is the docker
-# layer, and it runs in a command substitution, so the probe records asks in a file.
+# Remote nodes have no published hostname, so provisioning must not wait for one.
 ONP="$SANDBOX/onion-prov"
 mkdir -p "$ONP"
+MONERO_V3="$(printf '%*s.onion' 56 '' | tr ' ' a)"
+TARI_V3="$(printf '%*s.onion' 56 '' | tr ' ' b)"
 prov_probe() { # <MONERO_MODE> <TARI_MODE> -> "<onions asked for>|<MONERO_ONION>|<TARI_ONION>|<P2POOL_ONION>"
     (
         cd "$ONP" || exit
@@ -730,7 +726,6 @@ assert_eq "provision_tor skips a remote node's onion and leaves it a placeholder
     "$(prov_probe remote remote)" "p2pool,|placeholder|placeholder|p2pool.onion"
 assert_eq "provision_tor waits for the local node only in a mixed setup (#103)" \
     "$(prov_probe local remote)" "p2pool,monero,|monero.onion|placeholder|p2pool.onion"
-
 node_onion_probe() { # provision_node_onions recreates tor and captures a newly local node's onion before it starts. <MONERO_MODE> <MONERO_ONION> <TARI_MODE> <TARI_ONION> -> "<docker calls>|<asked>|<MONERO_ONION>|<TARI_ONION>|<renders>"
     (
         cd "$ONP" || exit
@@ -759,12 +754,17 @@ node_onion_probe() { # provision_node_onions recreates tor and captures a newly 
         # shellcheck disable=SC2034  # read by the sourced provision_node_onions, unseen here
         TARI_MODE="$3"
         TARI_ONION="$4"
+        TOR_DATA_DIR="$ONP/tor-data"
+        rm -rf "$TOR_DATA_DIR"
+        mkdir -p "$TOR_DATA_DIR/monero" "$TOR_DATA_DIR/tari"
+        [ "$MONERO_MODE" != local ] || onion_missing "$MONERO_ONION" || printf '%s\n' "$MONERO_ONION" >"$TOR_DATA_DIR/monero/hostname"
+        [ "$TARI_MODE" != local ] || onion_missing "$TARI_ONION" || printf '%s\n' "$TARI_ONION" >"$TOR_DATA_DIR/tari/hostname"
         provision_node_onions
         printf '%s|%s|%s|%s|%s' "$(cat dockerlog)" "$(cat asked)" "$MONERO_ONION" "$TARI_ONION" "$(cat renders)"
     )
 }
 assert_eq "provision_node_onions is a free no-op once every local node has its onion (#103)" \
-    "$(node_onion_probe local mona.onion local taria.onion)" "||mona.onion|taria.onion|"
+    "$(node_onion_probe local "$MONERO_V3" local "$TARI_V3")" "||$MONERO_V3|$TARI_V3|"
 assert_eq "provision_node_onions ignores a remote node with no onion (#103)" \
     "$(node_onion_probe remote placeholder remote placeholder)" "||placeholder|placeholder|"
 assert_eq "provision_node_onions mints + captures the onion of a node that just went local (#103)" \
