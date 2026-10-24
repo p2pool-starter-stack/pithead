@@ -31,6 +31,10 @@ profile_select() {
 }
 
 profile_status() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        log "Profile: unavailable (configuration missing)."
+        return 0
+    fi
     local name
     name=$(profile_name)
     if profile_customized; then

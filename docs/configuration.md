@@ -31,7 +31,8 @@ An absent `profile` means `balance`. Explicit values for governed keys always wi
 profile. Selecting a profile in setup or the Configuration view clears its governed overrides so
 the preview shows the effective profile values; unrelated Advanced settings remain unchanged.
 The profile does not change dashboard onion access, remote-node access, dashboard security, or
-whether the dashboard is enabled.
+whether the dashboard is enabled. Status reports the profile or Custom when governed overrides
+differ; if configuration is missing, it reports the profile as unavailable.
 
 All profiles keep `--no-upnp` enabled. The privacy profile also sets P2Pool's
 `--no-clearnet-p2p`; an explicit `p2pool.clearnet: true` override wins and restores clearnet

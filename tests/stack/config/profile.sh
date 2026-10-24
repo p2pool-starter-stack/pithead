@@ -123,3 +123,7 @@ printf 'PASS: source-restricted peer-port bridge and persistent clearnet operati
     [ ! -e "$(tor_egress_choice_marker)/monero" ] && [ ! -e "$(tor_egress_choice_marker)/tari" ]
 )
 printf 'PASS: explicit firewall override keeps Performance nodes admitted across sync and boot; stale Tor transitions rejected\n'
+
+rm -f "$CONFIG_FILE"
+[ "$(profile_status)" = "Profile: unavailable (configuration missing)." ]
+printf 'PASS: profile display tolerates a missing configuration without changing health status\n'
