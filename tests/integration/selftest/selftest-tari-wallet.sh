@@ -13,25 +13,36 @@ export INTEGRATION_RUN_SUITE=1
 source "$HERE/../lib/run-tari-wallet.sh"
 
 echo "== selftest: Tari payout-scan leg (#2731) =="
-# The payout row's gate: the Tari pair alone enables it, with a past birthday; one var does not.
+# Every incomplete fixture set must remain a missing-fixture verdict (#2885).
+for mask in 0 1 2 3 4 5 6 7; do
+    unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
+    keys=(IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY)
+    for i in 0 1 2; do
+        if ((mask & (1 << i))); then
+            printf -v "${keys[$i]}" '%064d' "$((i + 1))"
+        fi
+    done
+    resolve_overrides "payout_confirm=env"
+    rc=$?
+    if [ "$mask" -eq 7 ]; then
+        assert_rc "all payout fixtures enable the row (#2885)" "$rc" 0
+        for key in "${keys[@]}"; do
+            assert_contains "$key reaches overrides" "$RESOLVED" "${!key}"
+        done
+        assert_contains "Tari birthday remains configured (#2731)" "$RESOLVED" "tari.payout_scan_birthday=1425"
+    else
+        assert_rc "fixture set $mask cannot enable the row (#2885)" "$rc" 1
+        assert_eq "fixture set $mask has missing verdict" "$SKIP_CLASS" missing
+        for key in "${keys[@]}"; do
+            if [ -z "${!key:-}" ]; then
+                assert_contains "fixture set $mask names absent $key" "$SKIP_REASON" "$key"
+            else
+                assert_eq "fixture set $mask never logs $key" "${SKIP_REASON//${!key}/}" "$SKIP_REASON"
+            fi
+        done
+    fi
+done
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
-# shellcheck disable=SC2034  # consumed by resolve_overrides from lib.sh
-IT_MONERO_VIEW_KEY="deadbeef"
-# shellcheck disable=SC2034  # consumed by resolve_overrides from lib.sh
-IT_TARI_VIEW_KEY="tvk"
-resolve_overrides "payout_confirm=env"
-assert_rc "payout confirm still ok with the monero key and one tari var" "$?" "0"
-unset IT_MONERO_VIEW_KEY
-resolve_overrides "payout_confirm=env"
-assert_rc "one tari env var alone does not enable the row (#2731)" "$?" "1"
-# shellcheck disable=SC2034  # consumed by resolve_overrides from lib.sh
-IT_TARI_SPEND_PUBLIC_KEY="tspk"
-resolve_overrides "payout_confirm=env"
-assert_rc "the tari pair alone enables the row (#2731)" "$?" "0"
-assert_eq "no monero key without IT_MONERO_VIEW_KEY" "${RESOLVED/monero.view_key/}" "$RESOLVED"
-assert_contains "augments tari.view_key" "$RESOLVED" "tari.view_key=tvk"
-assert_contains "augments tari.spend_public_key and a past birthday (#2731)" "$RESOLVED" "tari.spend_public_key=tspk tari.payout_scan_birthday=1425"
-unset IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 
 # /proc/net/tcp remotes: loopback and bridge peers are local, a public address is not.
 PT='  sl  local_address rem_address   st
