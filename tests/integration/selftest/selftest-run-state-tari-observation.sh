@@ -21,7 +21,7 @@ TARI_BLOCK="$(sed -n '/^    # 7\. Tari sync-gate posture/,/^    # 7b\./p' "$RUN_
 assert_contains "required-Tari block extraction retains its env binding" \
     "$TARI_BLOCK" 'assert_eq "TARI_REQUIRED env matches config"'
 
-fixture="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/run-state-tari.XXXXXX")" || exit 1
+fixture="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/run-state-tari.XXXXXX")" || exit 1
 trap 'rm -rf "$fixture"' EXIT
 
 set_states() {

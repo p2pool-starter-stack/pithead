@@ -137,7 +137,7 @@ pcr791_run() { # <PITHEAD_APPLIANCE value> — run the install branch, echo reco
     )
 }
 : >"$PCR791/calls"
-pcr791_run 1 >/dev/null 2>&1
+PITHEAD_UNIT_DIR='' pcr791_run 1 >/dev/null 2>&1
 appl_out=$(cat "$PCR791/calls")
 assert_contains "appliance -> units written under /run/systemd/system" "$appl_out" "sudo:tee /run/systemd/system/pithead-control.service"
 assert_contains "appliance -> enablement is --runtime" "$appl_out" "systemctl enable --runtime --now"
@@ -185,7 +185,7 @@ nl_render() { # sets $NL/Caddyfile and mints $NL/tls/wizard.crt for the given id
         source "$STACK" 2>/dev/null
         set +e
         is_appliance() { return 0; }
-        hostname() { if [ "${1:-}" = "-I" ]; then printf '%s' "$NL_IPS"; else printf '%s' "$NL_HOSTNAME"; fi; }
+        stub_host_addrs "$NL_IPS" "$NL_HOSTNAME"
         # Real (persistent) assignments, not command-prefix ones — appliance_site_names below
         # must see the SAME HOST_IP/DASHBOARD_HOST generate_caddyfile just rendered with, and a
         # prefix assignment scopes to one command only.
@@ -260,7 +260,7 @@ ast_names() {
         source "$STACK" 2>/dev/null
         set +e
         is_appliance() { return 0; }
-        hostname() { if [ "${1:-}" = "-I" ]; then printf '192.168.1.50 172.28.0.1 172.19.0.1'; else printf 'coordinator'; fi; }
+        stub_host_addrs '192.168.1.50 172.28.0.1 172.19.0.1' coordinator
         # shellcheck disable=SC2034
         HOST_IP=""
         # shellcheck disable=SC2034
@@ -325,7 +325,7 @@ cab_run() { # <hostname -I answer> <mint|doctor>
         }
         HOST_IP="rig1.local"
         CAB_IPS="$1"
-        hostname() { if [ "${1:-}" = "-I" ]; then printf '%s' "$CAB_IPS"; else printf 'rig1'; fi; }
+        stub_host_addrs "$CAB_IPS" rig1
         if [ "$2" = mint ]; then appliance_mint_cert >/dev/null; else check_appliance_cert 2>&1; fi
     )
 }
@@ -394,7 +394,7 @@ cab_run_pinned() {
             esac
         }
         HOST_IP="rig1.local"
-        hostname() { if [ "${1:-}" = "-I" ]; then printf '192.168.1.20 172.28.0.1 172.19.0.1'; else printf 'rig1'; fi; }
+        stub_host_addrs '192.168.1.20 172.28.0.1 172.19.0.1' rig1
         check_appliance_cert 2>&1
     )
 }
@@ -423,7 +423,7 @@ rm_run() {
         source "$STACK" 2>/dev/null
         set +e
         is_appliance() { return 0; }
-        hostname() { if [ "${1:-}" = "-I" ]; then printf '%s' "$RM_IPS"; else printf 'rig1'; fi; }
+        stub_host_addrs "$RM_IPS" rig1
         appliance_mint_cert
     )
 }
