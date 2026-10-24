@@ -53,6 +53,7 @@ ONLY_SCENARIO=""
 CHECK_ONLY=0
 READINESS=0
 RUN_LIFECYCLE=0
+RUN_UNINSTALL=0
 RUN_FAULTS=0
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
@@ -138,6 +139,7 @@ source "$HERE/lib/run-hardening.sh" || exit $?
 source "$HERE/lib/run-rotate-onion.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh" || exit $?
+source "$HERE/lib/run-uninstall.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rigforge.sh
 source "$HERE/lib/run-rigforge.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rig-control.sh
@@ -160,6 +162,10 @@ source "$HERE/lib/run-mergemine-localnet.sh" || exit $?
 
 main() {
     parse_args "$@"
+    if [ "$RUN_UNINSTALL" = 1 ] && [ "$SAFETY_BACKUP" != 1 ]; then
+        it_err "--uninstall requires --safety-backup."
+        return 2
+    fi
 
     # Bench coordination (#430): take the shared-rig flock ON THE TARGET before the first
     # service/API-touching action (preflight already reads the box), and hold it for the whole
@@ -267,7 +273,7 @@ main() {
     if [ "$rig_control_ok" != 1 ]; then
         for _gated in LIFECYCLE:lifecycle ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
             XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
-            MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
+            MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet UNINSTALL:uninstall; do
             local _flag="RUN_${_gated%%:*}"
             [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
         done
@@ -298,6 +304,13 @@ main() {
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
+
+    if [ "$rig_control_ok" = 1 ] && [ "$RUN_UNINSTALL" = "1" ] && ! run_uninstall_phase; then
+        safety_cleanup
+        hugepages_finish
+        summary
+        return 1
+    fi
 
     # An image gate always returns the exact old release and its quiesced writable state. Other runs
     # roll back only on failure, then put config.json back where it started. Drop the archive only

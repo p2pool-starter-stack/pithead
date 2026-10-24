@@ -13,6 +13,11 @@ extract() { sed -n "/^$1() {/,/^}$/p" "$HERE/../lib/run-lifecycle.sh"; }
 eval "$(extract kept_data_snapshot_snippet)"
 eval "$(extract kept_chain_files_snippet)"
 eval "$(extract run_uninstall_round_trip)"
+eval "$(sed -n '/^_uninstall_quiesce() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
+eval "$(sed -n '/^_uninstall_setup() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
+_lan_timer_pause() { return 0; }
+systemctl() { [ "$*" = 'is-active pithead-lan.timer' ] && printf 'inactive\n'; }
+export -f systemctl
 # shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
 INTEGRATION_RUN_SUITE=1 source "$HERE/../lib/run-lifecycle-wallet-fixture.sh" || exit $?
 # shellcheck disable=SC2034 # read by the extracted functions and rx
@@ -24,6 +29,7 @@ mkdir -p "$T/bin"
 cat >"$T/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
+"compose stop") : >.stopped ;;
 "compose up --no-deps --no-start tari-wallet")
     case "$FAKE_CASE" in
     no-wallet-seed)
@@ -123,6 +129,14 @@ drive() { # <case> -> round-trip-rc|failures
         # shellcheck disable=SC2034 # read by rx and the extracted functions
         IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0
         export FAKE_CASE="$1"
+        if [ "$1" = hook-failure ]; then
+            # shellcheck disable=SC2034
+            RUN_UNINSTALL=1
+            _uninstall_after_remove() {
+                [ ! -e "$B/.env" ] && [ -e "$B/.uninstalled" ] || return 1
+                return 99
+            }
+        fi
         it_step() { :; }
         it_skip_leg() { printf '%s|%s|%s' "$1" "$2" "$3" >"$B/skip"; }
         wait_status_ok() { :; }
@@ -174,6 +188,7 @@ drive() { # <case> -> round-trip-rc|failures
 
 assert_eq "setup refuses a failed web ownership check" "$(drive web-fails)" "1|1"
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
+assert_eq "the dedicated phase's injected fault occurs after removal and before setup" "$(drive hook-failure)" "99|0"
 assert_eq "remote Tari mode skips wallet creation and still completes uninstall" "$(drive remote-tari)" "0|0"
 assert_eq "a preexisting owned wallet volume is reset, then Compose creates it" "$(drive owned-preexisting)" "0|0"
 assert_eq "failure to seed a wallet volume fails the pre-uninstall row" "$(drive no-wallet-seed)" "1|1"

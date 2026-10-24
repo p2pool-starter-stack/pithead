@@ -42,6 +42,7 @@ MATRIX:
   --lifecycle            also run the lifecycle phase (restart, apply secret-preservation,
                          and the #255 ensure_owner migration: a root-owned file under a data
                          dir must be chowned to the container uid by apply)
+  --uninstall            run the final uninstall/setup and injected-recovery phase; requires --safety-backup
   --safety-backup        take a `pithead backup` BEFORE the destructive scenarios; if anything
                          fails, automatically roll the box back to it (down → restore → up).
                          The archive is removed on success. Recommended for the destructive
@@ -138,7 +139,6 @@ Scenarios whose prerequisites are missing (a full/pruned alt data dir, or a remo
 are reported SKIPPED — never silently dropped, never mutating the canonical synced chain.
 EOF
 }
-# --- Arg parsing ------------------------------------------------------------
 # shellcheck disable=SC2034  # the data-dir / remote-host globals are consumed by lib.sh:resolve_overrides
 parse_args() {
     while [ $# -gt 0 ]; do
@@ -236,8 +236,8 @@ parse_args() {
             FULL_DATA_DIR="$2"
             shift 2
             ;;
-        --lifecycle)
-            RUN_LIFECYCLE=1
+        --lifecycle | --uninstall)
+            [ "$1" = --uninstall ] && RUN_UNINSTALL=1 || RUN_LIFECYCLE=1
             shift
             ;;
         --fault-injection)

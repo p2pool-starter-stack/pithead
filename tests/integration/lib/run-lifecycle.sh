@@ -217,7 +217,7 @@ run_lifecycle() {
     fi
     run_password_tls_continuity || lifecycle_ok=0
     run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
-    [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
+    [ "$reset_failed" = 1 ] || [ "${RUN_UNINSTALL:-0}" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
     [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
     [ "$lifecycle_ok$reset_failed" = 10 ]
 }
@@ -246,12 +246,7 @@ kept_chain_files_snippet() { # <path>...
     printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths -type f -name '*.mdb' -exec stat -c '%i %.9W %n' {} + | LC_ALL=C sort"
 }
 
-# uninstall -> setup round trip (#2379): uninstall removes the named volumes and every derived
-# path, keeps every *_DATA_DIR, config.json and backups/ byte-identical, and a setup after it
-# re-provisions from what was kept (and the harness's own secrets). The stack is stopped before
-# the first snapshot: a running monerod writes its LMDB, log and peer state continuously, and
-# shutdown flushes them, so a live snapshot can never match (job 680). Stopped, the daemons write
-# nothing; uninstall must change zero bytes of kept data. The stack is brought back up afterward.
+# Quiesce writers before measuring preservation, leaving uninstall its own containers and firewall.
 run_uninstall_round_trip() {
     local fails_before="$IT_FAIL" key p kept=() derived=() snippet before after out rc onion_before big_before big_after
     it_step "pithead uninstall keeps every byte of data, then setup re-provisions from it…"
@@ -270,10 +265,10 @@ run_uninstall_round_trip() {
     local local_node=""
     has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node && local_node=1
     snippet="$(kept_data_snapshot_snippet "${kept[@]}")"
-    if ! pithead down >/dev/null 2>&1 || ! rx 'cp -p .env .env.itest-round-trip' ||
+    if ! _uninstall_quiesce || ! rx 'cp -p .env .env.itest-round-trip' ||
         ! before="$(rx "$snippet")" || [ -z "$before" ] ||
         ! big_before="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"; then
-        it_fail "stopped stack snapshot readable before uninstall" "pithead down or the kept-data snapshot failed"
+        it_fail "stopped stack snapshot readable before uninstall" "quiescing, secret copy, or the kept-data snapshot failed"
         rx 'rm -f .env.itest-round-trip'
         pithead up >/dev/null 2>&1
         wait_status_ok 240 || true
@@ -318,16 +313,12 @@ run_uninstall_round_trip() {
     local left=""
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
     assert_eq "uninstall removes every derived path and .env" "$left" ""
+    if [ "${RUN_UNINSTALL:-0}" = 1 ]; then
+        _uninstall_after_remove "$out" || return $?
+    fi
 
-    # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
-    # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
-    # wallet volume created under a new password would not open under the restored old one.
-    rx "grep -v '^DEPLOYMENT_COMPLETED=' .env.itest-round-trip >.env && rm -f .env.itest-round-trip"
-    # A source checkout (every bench box) runs `compose up --pull never`, which cannot bring back
-    # the pinned third-party images uninstall just removed; `missing` is what a release install,
-    # the channel uninstall serves, runs anyway (01-lifecycle.sh resolve_pull_policy; #2654).
     it_step "pithead setup re-provisions from the kept config…"
-    out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
+    out="$(_uninstall_setup 2>&1)"
     rc=$?
     assert_rc "setup after uninstall succeeded" "$rc" "0"
     rr_web_ports_owned_by_dashboard "setup after uninstall" || return 1

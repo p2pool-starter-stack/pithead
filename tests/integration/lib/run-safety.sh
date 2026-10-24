@@ -71,10 +71,17 @@ safety_secret_drift_categories() { # <baseline category=hash lines> <actual cate
 }
 
 safety_restore_exact() {
-    local restored_secrets
+    local restored_secrets restore_out restore_rc=0 prepare_rc=0
+    if [ "${RUN_UNINSTALL:-0}" = 1 ]; then
+        _uninstall_prepare_restore || prepare_rc=1
+    fi
     pithead down >/dev/null 2>&1 || true
     SAFETY_RESTORE_FAIL_REASON=""
-    if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
+    restore_out="$(pithead restore -y "$SAFETY_ARCHIVE" 2>&1)" || restore_rc=$?
+    if [ "${RUN_UNINSTALL:-0}" = 1 ] && ! _uninstall_retain_diagnostic uninstall-restore.log "$restore_out"; then
+        it_warn "Could not retain the uninstall restore diagnostic."
+    fi
+    if [ "$restore_rc" -ne 0 ]; then
         SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
     elif ! baseline_up >/dev/null 2>&1; then
         SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
@@ -87,9 +94,12 @@ safety_restore_exact() {
     elif [ "$restored_secrets" != "$BASELINE_EXACT_SECRET_FP" ]; then
         SAFETY_RESTORE_FAIL_REASON="restored secret categories do not match the baseline: $(safety_secret_drift_categories "$BASELINE_EXACT_SECRET_FP" "$restored_secrets")"
     fi
+    if [ "$prepare_rc" -ne 0 ]; then
+        SAFETY_RESTORE_FAIL_REASON="uninstall re-provisioning failed${SAFETY_RESTORE_FAIL_REASON:+; $SAFETY_RESTORE_FAIL_REASON}"
+    fi
     if [ -n "$SAFETY_RESTORE_FAIL_REASON" ]; then
         SAFETY_RESTORE_FAILED=1
-        # This function's FIRST act is `pithead down`. A rollback that then fails has stopped the
+        # The archive restore starts with `pithead down`. A rollback that then fails has stopped the
         # stack and, without this, returns leaving it stopped — strictly worse than never having
         # tried, because the box mines nothing until a human notices. Put the containers back with
         # a plain `up`: the run is already marked unverified and the archive already retained, so
@@ -136,6 +146,9 @@ safety_abort_restore() {
         # in-run restore had put it back. One attempt, then hand the box to a human with the
         # archive still on it.
         it_warn "a rollback already failed this run — not retrying at exit; archive retained at ${SAFETY_ARCHIVE:-<none>}"
+    fi
+    if [ "${RUN_UNINSTALL:-0}" = 1 ] && ! rx 'rm -f .env.itest-round-trip && test ! -e .env.itest-round-trip'; then
+        restore_failed=1
     fi
     [ -z "$_SAFETY_FOREIGN_TRAP" ] || eval "$_SAFETY_FOREIGN_TRAP"
     [ "$restore_failed" = 0 ] || exit 1
