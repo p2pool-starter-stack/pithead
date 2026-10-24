@@ -115,16 +115,9 @@ make_bundle() (
         die "make_bundle: generated pithead differs from the artifact to ship."
     mkdir -p "$d" || die "make_bundle: could not create the bundle directory."
     cp "$generated" "$d/pithead" || die "make_bundle: failed to copy required runtime files."
-    cp pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
+    cp pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.minimal.appliance.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
     [ -e cosign.pub ] || [ "${COSIGN_ENABLED:-0}" -eq 0 ] || die "make_bundle: signing is enabled but cosign.pub is missing."
     [ ! -e cosign.pub ] || cp cosign.pub "$d/" 2>/dev/null || die "make_bundle: failed to copy cosign.pub."
-    # The bundle's own provenance anchor: the exact commit these bytes were cut from. The tier-4
-    # --image-upgrade gate reads it to tie a candidate archive to a commit, and the promoted images
-    # carry the same value in org.opencontainers.image.revision — so the two must agree or the
-    # upgrade is not the one we think it is. Refuse a short or absent sha HERE rather than ship a
-    # bundle that only fails much later, at the gate, on a box someone reserved to run it.
-    # Ordered AFTER the signing checks on purpose: those decide whether a cut may happen at all, and
-    # their messages are what the signing tests assert. This one is about what the bundle records.
     [[ "${GIT_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]] || die "make_bundle: GIT_COMMIT must be a full 40-hex commit, got '${GIT_COMMIT:-<unset>}'."
     printf '%s\n' "$GIT_COMMIT" >"$d/PITHEAD_COMMIT" || die "make_bundle: failed to write PITHEAD_COMMIT."
     mkdir -p "$d/docs"
@@ -141,7 +134,7 @@ make_bundle() (
         mkdir -p "$d/$(dirname "$m")"
         cp -R "$m" "$d/$(dirname "$m")/"
     done < <(compose_build_mounts docker-compose.yml)
-    printf 'Pithead %s — pinned install bundle (images pulled from %s, no local build).\n\nQuick start:\n  1. cp config.minimal.json config.json   # then set your Monero + Tari payout addresses\n     (more options: config.reference.json)\n  2. ./pithead setup\n\nOffline operator guides are in docs/; start with docs/getting-started.md.\nThere are no build contexts here, so pithead pulls the published %s images instead of building.\n' \
+    printf 'Pithead %s — pinned install bundle (images pulled from %s, no local build).\n\nQuick start:\n  1. cp config.minimal.json config.json\n     Set your Monero payout address; Tari is off unless you enable merge-mining.\n     (more options: config.reference.json)\n  2. ./pithead setup\n\nOffline operator guides are in docs/; start with docs/getting-started.md.\nThere are no build contexts here, so pithead pulls the published %s images instead of building.\n' \
         "$TAG" "$REGISTRY" "$TAG" >"$d/README.txt"
     if [ "$DRY_RUN" -eq 1 ]; then
         printf '   %s[dry-run]%s would tar -> %s\n' "$C_YELLOW" "$C_RESET" "$out"

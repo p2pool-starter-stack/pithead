@@ -434,6 +434,13 @@ image ([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.s
 it: static assertions against the built rootfs (variant stamp, baked units, watchdog config),
 no VM needed, run on every image build.
 
+The `install` phase stages headless files before boot and checks token normalization, prefilled
+answers without a disk choice, malformed-JSON rejection and installed ESP consumption. `provision`
+checks the console root password against the dashboard password in the guest, with `/etc` backed
+by tmpfs under `/run`, including a password change and unaided reboot. `media` proves a USB settings
+stick replaces the dashboard login, conceals the new password on serial and consumes the file.
+Their verdict and failure controls run through the tier-1 appliance selftest glob.
+
 Measured at develop tip `5e98594f` (#2062): the live matrix has ~90 assertion sites across its
 15-scenario config matrix plus `--lifecycle`, `--fault-injection`, `--hardening`,
 `--auth-fail-closed`, `--subnet`, `--rigforge-control`, `--xvb-routing-smoke` and
@@ -863,6 +870,12 @@ tier 3/4:
 - **Insecure + main matrix row.** ✅ Now a dedicated `local-pruned-main-insecure` row: the two axes
   decouple, so a regression specific to insecure+main (vs. the pre-existing insecure+nano row) has
   somewhere to fail.
+- **Borrowed rig credentials (#3491).** Password-enabled scenarios hand the rendered credential
+  to the borrowed rig before mining waits and restore its exact borrowed configuration before the
+  next scenario. `selftest-scenario-stratum.sh` checks ordering, no-rig behavior and termination on
+  failed handoff or restoration; `selftest-borrow-rearm.sh` checks credential mutation and exact
+  restoration. The borrowed rig uses cleartext on the dual-mode port; the controls below exercise
+  authenticated and pinned-TLS clients separately.
 - **Stratum authentication and pinned TLS (#3078).** The DIY TLS scenario uses the raw login
   probe in `tests/integration/rotate-auth-probe.py`. The KVM stack phase adds
   `remote-main-stratum-tls` and uses the appliance's prebuilt XMRig for wrong-password,
