@@ -156,6 +156,10 @@ password and certificate. Both have mutation self-tests beside their harnesses.
 setup container and prints the journal and physical-console connection announcements.
 `lib/pithead/12a-wizard-page.sh` starts each page container with those addresses,
 its per-round token and certificate, then restores the reset slot and announces the page.
+`lib/pithead/12c-wizard-rig-preseed.sh` lands staged rig settings on the installed
+host, validates the carried token and scrubs consumed or refused ESP copies.
+`tests/os/selftest-wizard-rig-preseed.sh` checks adoption, refusal and the installer
+and existing-settings guards; the standalone shell CI discovers it with the OS selftests.
 `tests/os/wizard-redirect-leg.sh` checks the plain-port
 redirect from outside the guest during boot and provision, and Caddy after setup;
 its fake-transport cases run through `selftest-wizard-redirect.sh`.
