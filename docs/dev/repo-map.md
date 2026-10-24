@@ -80,7 +80,9 @@ Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the
 lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure controls in
-`tests/integration/selftest/selftest-reset-restore.sh`. Shared web ownership checks are in
+`tests/integration/selftest/selftest-reset-restore.sh`. Candidate-compatible fixture projection,
+original-byte cleanup and private recovery retention are exercised by
+`tests/integration/selftest/selftest-reset-recovery-fixture.sh`. Shared web ownership checks are in
 `tests/integration/lib/reset-restore-web.sh`; consecutive status censuses are in
 `tests/integration/lib/readiness-churn.sh`.
 
