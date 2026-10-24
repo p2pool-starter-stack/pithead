@@ -42,7 +42,7 @@ echo "== Mining witness samples retain bounded numeric context without identifie
 
 echo "== A stalled witness names the same one-based sample as its diagnostics =="
 (
-    SKIP_MINING_ASSERTS=0 EXPECTED_WORKERS=1 BASELINE_CONFIG='{}'
+    SKIP_MINING_ASSERTS=0 EXPECTED_WORKERS=1 BASELINE_CONFIG='{}' OUT_DIR="$SCRATCH/evidence"
     api_state() { printf '%s\n' '{"proxy_summary":{"accepted":"1201"},"proxy_workers":1}'; }
     env_on_box() {
         case "$1" in
@@ -54,13 +54,17 @@ echo "== A stalled witness names the same one-based sample as its diagnostics ==
     fault_rules_clear_all() { :; }
     fault_rules_trap_arm() { :; }
     fault_rules_trap_disarm() { :; }
-    push_config() { :; }
+    push_config() {
+        if [ -e "$SCRATCH/tor-fault-started" ]; then
+            grep -q 'Tor clearnet egress recovered following NEWNYM:' "$OUT_DIR/tor-probe-fault/dashboard.log"
+        fi
+    }
     wait_status_ok() { :; }
     wait_for() {
         shift 3
         "$@"
     }
-    sleep() { :; }
+    sleep() { touch "$SCRATCH/tor-fault-started"; }
     pithead() { [ "$*" != 'tor-recover check' ]; }
     tor_probe_ns_ipt() {
         if [[ "$*" = '-L '* ]]; then echo '1 pithead-e2e-fault-tor-probe'; fi
@@ -74,9 +78,26 @@ echo "== A stalled witness names the same one-based sample as its diagnostics ==
         esac
     }
     fault_tor_probe_egress >"$SCRATCH/stalled-run" 2>"$SCRATCH/stalled-samples"
+    check test -s "$OUT_DIR/tor-probe-fault/dashboard.log"
     check test "$IT_FAIL" -eq 1
     check grep -q 'no accepted share in five minutes by sample 5' "$SCRATCH/stalled-run"
     check grep -q '^Tor mining sample 5: ' "$SCRATCH/stalled-samples"
+    test "$FAIL" -eq 0
+)
+
+echo "== A failed healer log read remains explicit evidence =="
+(
+    OUT_DIR="$SCRATCH/failed-read"
+    rx() {
+        [ "$*" = 'timeout 30 docker logs --since 100 --tail 2000 dashboard 2>&1' ] || exit 17
+        return 124
+    }
+    _tor_probe_capture 100
+    check grep -qx 'Tor healer log read failed' "$OUT_DIR/tor-probe-fault/dashboard.log"
+    test "$FAIL" -eq 0
+    mkdir() { return 1; }
+    _tor_probe_capture 100 >"$SCRATCH/directory-failure" 2>&1
+    check grep -q 'Tor healer evidence directory unavailable' "$SCRATCH/directory-failure"
     test "$FAIL" -eq 0
 )
 

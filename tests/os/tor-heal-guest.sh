@@ -157,7 +157,7 @@ recovery_diagnostics() {
         select(.status == "applied" or .status == "rejected" or .status == "failed") |
         {ts,action,status}' "$control/audit/control.log" >"$work/recovery-audit.log" 2>/dev/null ||
         printf 'Tor action audit unavailable\n' >"$work/recovery-audit.log"
-    if ! timeout 20 docker logs --since "$since" --tail 1000 dashboard 2>/dev/null |
+    if ! timeout 20 docker logs --since "$since" --tail 1000 dashboard 2>&1 |
         grep -E '^[0-9-]+ [0-9:,.]+ \[(INFO|WARNING|DEBUG)\] (Tor (egress self-heal|clearnet egress|NEWNYM|recovery control|heal cycle)|Restarting monerod alongside tor)' |
         tail -50 >"$work/healer.log"; then
         printf 'Tor healer log unavailable\n' >"$work/healer.log"
@@ -214,7 +214,7 @@ since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 stage=inject-enabled
 disable_network
 started=$(date +%s)
-deadline=$((started + 95 * 60))
+deadline=$((started + 110 * 60))
 stage=host-recovery
 recovered=0
 while [ "$(date +%s)" -lt "$deadline" ]; do

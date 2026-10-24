@@ -172,7 +172,7 @@ STUB
         logs)
             echo 'unrelated fixture-private-identifier'
             for ((n = 0; n < 60; n++)); do
-                echo '2026-01-01 00:01:00,000 [WARNING] Tor NEWNYM was not confirmed by the host control runner'
+                echo '2026-01-01 00:01:00,000 [WARNING] Tor NEWNYM was not confirmed by the host control runner' >&2
             done
             ;;
         esac
@@ -217,6 +217,20 @@ STUB
             grep -qx captured "$work/recovery-captured"
         fi
     done
+    inspect_fail=none
+    echo 0 >"$work/clock"
+    : >"$work/alerts.jsonl"
+    sleep() { echo "$(($(cat "$work/clock") + 30))" >"$work/clock"; }
+    egress() {
+        if [ "$(cat "$work/clock")" -ge 6000 ]; then
+            printf '{"text":"egress recovered following Tor restart;"}\n' >"$work/alerts.jsonl"
+        fi
+    }
+    export -f sleep egress
+    sed -n '/^started=$(date/,/^stage=host-recovery/{ /^stage=host-recovery/!p; }' "$ROOT/tests/os/tor-heal-guest.sh" >"$work/confirmation-window.sh"
+    cat "$work/recovery-verdict.sh" >>"$work/confirmation-window.sh"
+    bash -e "$work/confirmation-window.sh"
+    [ "$(cat "$work/clock")" -eq 6000 ]
 )
 
 restore_case() (

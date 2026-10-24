@@ -118,9 +118,23 @@ fault_tor_probe_egress() {
     else
         it_fail "Tor egress recovery names the preceding step" "no corroborated recovery log"
     fi
+    _tor_probe_capture "$epoch"
     push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 ||
         it_fail "Tor probe fault restored baseline config" "baseline apply failed"
 }
+
+_tor_probe_capture() (
+    local dir="$OUT_DIR/tor-probe-fault"
+    if ! mkdir -p "$dir"; then
+        it_warn "Tor healer evidence directory unavailable"
+        return 0
+    fi
+    set -o pipefail
+    if ! rx "timeout 30 docker logs --since $1 --tail 2000 dashboard 2>&1" |
+        redact >"$dir/dashboard.log"; then
+        printf 'Tor healer log read failed\n' >>"$dir/dashboard.log" || true
+    fi
+)
 
 _tor_probe_recovered() { # <epoch>
     rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following NEWNYM:'
