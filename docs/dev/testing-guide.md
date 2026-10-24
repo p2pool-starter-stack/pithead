@@ -215,6 +215,8 @@ make test-browser
 
 On Linux, add `--with-deps` to the install command. The separate `browser.yml` workflow
 installs these dependencies and runs Chromium, Firefox, WebKit and mobile Chromium.
+The job allows 45 minutes for cold browser/system-library downloads and the full suite;
+individual Playwright tests retain their 30-second deadline and run without retries.
 Missing dependencies fail the suite. Pure frontend tests remain dependency-free.
 See [browser testing](browser-testing.md) for focused runs, failure artifacts and coverage limits.
 The backup regression serves the production backup component over
