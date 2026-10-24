@@ -66,10 +66,11 @@ phase_setup_defaults() {
         return 1
         ;;
     esac
-    if _ssh "jq -e '.tari.mode == \"off\" and .xvb.enabled == false and
+    if _ssh "jq -e '.profile == \"balance\" and .tari.mode == \"off\" and .xvb.enabled == false and
         .dashboard.tari_required == false and .dashboard.host == \"pithead\" and
         .local_miner.enabled == true and
-        .monero.clearnet_initial_sync == false and .tari.clearnet_initial_sync == false and
+        (.monero | has(\"clearnet_initial_sync\") | not) and
+        (.tari | has(\"clearnet_initial_sync\") | not) and
         (.dashboard.auth.password | length) == 32' /data/pithead/config.json" >/dev/null; then
         ok "fresh appliance setup persists all explicit new-install choices"
     else
