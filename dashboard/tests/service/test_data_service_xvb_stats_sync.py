@@ -3,34 +3,38 @@ from tests.service._data_service_support import *  # noqa: F403
 
 
 class TestXvbStatsSync:
-    """XvB stats fetch → persist (#163), and the #311 precondition: a FAILED fetch must write
-    nothing, so the last reading and ``last_update`` stay frozen and the staleness guard can fire.
-    This is the integration seam the algo-level unit tests assume but can't see."""
-
-    def _svc(self):
-        sm = MagicMock()
-        sm.load_snapshot.return_value = None
-        xvb = MagicMock()
-        return DataService(sm, MagicMock(), xvb), sm, xvb
-
-    async def test_successful_fetch_persists_stats(self):
-        svc, sm, xvb = self._svc()
-        xvb.get_stats.return_value = {"avg_1h": 12_000.0, "avg_24h": 11_000.0, "fail_count": 0}
+    async def test_successful_fetch_persists_stats(self, xvb_service):
+        svc, sm = xvb_service
+        svc.xvb_client.get_stats.return_value = {
+            "avg_1h": 12_000.0,
+            "avg_24h": 11_000.0,
+            "fail_count": 2,
+        }
         await svc._sync_xvb_stats()
-        sm.update_xvb_stats.assert_called_once_with(avg_1h=12_000.0, avg_24h=11_000.0, fail_count=0)
+        stats = sm.get_xvb_stats()
+        assert stats["avg_1h"] == 12_000.0
+        assert stats["avg_24h"] == 11_000.0
+        assert stats["fail_count"] == 2
+        assert stats["last_update"] > 0
 
-    async def test_failed_fetch_writes_nothing(self):
-        # #311 linchpin: get_stats() returns None on a Tor timeout / 5xx. Persisting nothing is what
-        # keeps last_update frozen so the controller can detect the feed is stale. If this regresses
-        # to stamping on failure, the staleness guard silently never triggers.
-        svc, sm, xvb = self._svc()
-        xvb.get_stats.return_value = None
+    async def test_failed_fetch_writes_nothing(self, xvb_service, monkeypatch):
+        svc, sm = xvb_service
+        monkeypatch.setattr(time, "time", lambda: 10_000.0)
+        svc.xvb_client.get_stats.return_value = {
+            "avg_1h": 12_000.0,
+            "avg_24h": 11_000.0,
+            "fail_count": 0,
+        }
         await svc._sync_xvb_stats()
-        sm.update_xvb_stats.assert_not_called()
+        before = sm.get_xvb_stats()
+        monkeypatch.setattr(time, "time", lambda: 20_000.0)
+        svc.xvb_client.get_stats.return_value = None
+        await svc._sync_xvb_stats()
+        after = sm.get_xvb_stats()
+        for key in ("avg_1h", "avg_24h", "last_update"):
+            assert after[key] == before[key]
 
     def _svc_with_real_storage(self):
-        # v1.7 telemetry backbone (#196 Wave-0): a real in-memory StateManager so a captured
-        # xvb_history row is provable, not just "the mock was called".
         from mining_dashboard.service.storage_service import StateManager
 
         sm = StateManager(db_path=":memory:")
