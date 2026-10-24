@@ -153,8 +153,7 @@ assert_eq "boot ran and is active: go" "$(psf inactive active no yes)" "go"
 unset -f psf
 
 echo "== unit: secure_boot_boot_verdict — Secure Boot ON is measured, not left an unread flag (#2055 G2) =="
-# The verdict is text over observed signals, so it is tested here without KVM or OVMF.
-sbv() { # <virt-install-defined> <userspace-banner-seen> <image-version> -> "<rc> <verdict-text>"
+sbv() {
     local out rc
     out=$(
         # shellcheck disable=SC1091

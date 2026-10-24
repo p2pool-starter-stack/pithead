@@ -1,5 +1,4 @@
 # shellcheck shell=bash
-# Exact versions only, so a non-boot after 2.0.1 fails instead of riding the #2187 deferral.
 secure_boot_deferred() {
     [ "$1" = 2.0.0 ] || [ "$1" = 2.0.1 ]
 }
