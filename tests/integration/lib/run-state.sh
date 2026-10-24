@@ -280,7 +280,16 @@ assert_running_state() {
         assert_proxy_password_live "$config"
     fi
 
-    if [ "$(jq_get "$config" '.p2pool.stratum_tls')" = "true" ]; then
+    # 8c. Stratum-over-TLS (#261/#942): tier 1 proves the render (PROXY_STRATUM_TLS -> the
+    # wrapper's cert flags); nothing before this dialed it. A LIVE TLS handshake against the
+    # published stratum port proves xmrig-proxy actually terminates TLS there, and that the
+    # served certificate is the SAME one the operator was told to pin (announce_stratum_tls's
+    # fingerprint) — not just that a keypair exists on disk. Same-port cleartext/TLS
+    # autodetection means already-connected cleartext rigs are unaffected (the mining assertions
+    # above already prove they keep hashing); a real xmrig client dialing with pools[].tls:true is
+    # a rig-configuration step outside this harness's control, deferred like the stratum-password
+    # headless-probe gap (docs/dev/testing-strategy.md).
+    if [ "$mode" = "local" ] && [ "$(jq_get "$config" '.p2pool.stratum_tls')" = "true" ]; then
         local tls_port tls_dir served_fp announced_fp
         tls_port="$(env_on_box STRATUM_PORT)"
         [ -n "$tls_port" ] || tls_port=3333
@@ -289,11 +298,6 @@ assert_running_state() {
         assert_ne "stratum TLS handshake succeeds on the published port (#261/#942)" "$served_fp" ""
         announced_fp="$(rx "openssl x509 -in $(quote_arg "$tls_dir/cert.pem") -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]'")"
         assert_eq "live-served cert fingerprint matches the one rigs are told to pin (#261/#942)" "$served_fp" "$announced_fp"
-    fi
-
-    if [ "$(jq_get "$config" '.p2pool.stratum_tls')" = "true" ] &&
-        [ "$(jq_get "$config" '.p2pool.stratum_password')" = "auto" ]; then
-        assert_stratum_client_controls
     fi
 
     # 8d. The Tor-egress firewall, BOTH directions (#270/#2059). Every other firewall leg here

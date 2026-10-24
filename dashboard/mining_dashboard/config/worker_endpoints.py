@@ -149,12 +149,10 @@ def load_worker_endpoints(path, read_tokens_path=None, tokens_env="") -> list[di
         if "watts" in item:
             watts = _valid_watts(item["watts"])
             if watts is None:
-                continue
+                continue  # fail-closed like every other field: a bad watts drops the whole entry
             entry["watts"] = watts
         if "host" in entry:
             port = entry.get("port", workers_block.get("api_port", 8080))
-            if port is None:
-                port = 8080
             read_token = read_tokens.get(name) if "token" in entry else None
             probe_token = worker_tokens.get(name) if "api_token" in entry else None
             if read_token and read_token[:2] == (entry["host"], port):

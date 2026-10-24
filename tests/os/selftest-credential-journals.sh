@@ -62,7 +62,7 @@ echo 'selftest-credential-journals: PASS (clean, six leaks, two errors, two empt
     curl() {
         case "$*" in
         *'/api/wizard-state'*)
-            printf '%s\n' '{"new_machine":true,"disk_budget":{"available_bytes":1,"local_need_bytes":2},"config":{"tari":{"mode":"off","clearnet_initial_sync":false},"xvb":{"enabled":false},"dashboard":{"tari_required":false,"host":"pithead"},"local_miner":{"enabled":true},"monero":{"clearnet_initial_sync":false}},"auth_mode":"auto"}'
+            printf '%s\n' '{"new_machine":true,"disk_budget":{"available_bytes":1,"local_need_bytes":2},"config":{"tari":{"mode":"off","clearnet_initial_sync":false},"xvb":{"enabled":false},"monero":{"clearnet_initial_sync":false}},"auth_mode":"auto"}'
             ;;
         *'/api/handoff') printf '{"password":"%032d"}\n' 0 ;;
         *'/submit'* | *'/handoff-ack'*) echo 200 ;;

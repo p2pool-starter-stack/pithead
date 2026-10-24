@@ -101,7 +101,6 @@ run_hardening() {
     IT_CURRENT_SCENARIO="hardening"
     echo ""
     it_log "── v1.4 hardening phase (#377/#33/#424) ────────────"
-    run_tari_off_preview
 
     if ! has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         it_skip_phase "hardening" "remote mode: no local containers/systemd to exercise" "by-design"
@@ -274,21 +273,10 @@ run_hardening() {
         assert_contains "control mutation audited (#33)" \
             "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"action":"commit"'
 
-        local port_before port_after occupied_port port_rc=0 snapshot_rc=0
-        occupied_port="$(env_on_box HOST_PORT)"
-        occupied_port="${occupied_port:-443}"
-        port_before="$(rx 'sha256sum config.json .env && docker inspect xmrig-proxy --format "{{.Id}} {{.State.StartedAt}} {{.State.Running}}" && test ! -e .env.apply-incomplete')"
-        assert_contains "occupied port trial starts with a running proxy (#3417)" "$port_before" "true"
-        rx "docker exec -i dashboard python3 - $(quote_arg "$occupied_port")" --stdin <"$HERE/lib/occupied-stratum.py" || port_rc=$?
-        assert_rc "occupied stratum port refused through control API; mining continues (#3417)" "$port_rc" 0
-        port_after="$(rx 'sha256sum config.json .env && docker inspect xmrig-proxy --format "{{.Id}} {{.State.StartedAt}} {{.State.Running}}" && test ! -e .env.apply-incomplete')" || snapshot_rc=$?
-        assert_rc "occupied stratum port captures final config and proxy (#3417)" "$snapshot_rc" 0
-        assert_eq "occupied stratum port leaves config and proxy untouched (#3417)" "$port_after" "$port_before"
-        assert_rc "occupied stratum port leaves no incomplete apply (#3417)" "$(
-            rx 'test ! -e .env.apply-incomplete'
-            echo $?
-        )" 0
-
+        # 3b. A wallet swap previews behind typed confirmation (#2305). Give the commit a valid
+        #     payout suffix but omit APPLY: refusal must come from the host confirmation gate,
+        #     not from an incomplete approval envelope or address validation. Clear the old
+        #     wallet's view key only in this refused candidate; it cannot match the new address.
         local uuid_bad bad_cfg wallet_before preview suffix
         uuid_bad="$(_uuid4)"
         wallet_before="$(env_on_box MONERO_WALLET_ADDRESS)"

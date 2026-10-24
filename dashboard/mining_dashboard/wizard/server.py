@@ -36,7 +36,6 @@ import sys
 from aiohttp import web
 
 from mining_dashboard.config import documents
-from mining_dashboard.config.defaults import new_install_defaults
 from mining_dashboard.wizard.defaults import (
     disk_inventory,
     explicit_wizard_config,
@@ -122,6 +121,7 @@ def _spool_json(name: str) -> dict:
 
 
 def _reference() -> dict:
+    """Every key with its documented default, published into the spool by the host."""
     return {
         k: v
         for k, v in _spool_json("config.reference.json").items()
@@ -247,6 +247,10 @@ async def auth(request: web.Request) -> web.Response:
 
 
 async def wizard_state(request: web.Request) -> web.Response:
+    """Everything the SPA needs to render: which flow, the effective config (the defaults with a
+    previous configuration merged over them — a pre-seed, a reinstall pre-fill or a rejected
+    submission, each of which WINS WHOLE; a machine that has never been configured gets this
+    page's own default instead), the reference, the host's error, and the disk inventory."""
     if not _authed(request):
         return web.json_response({"error": "unauthenticated"}, status=401)
     ref = _reference()
@@ -260,14 +264,9 @@ async def wizard_state(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "stage": stage,
+            # Kept for the field's original meaning; `stage` is what the client renders from.
             "mode": "installer" if installer_mode() else "setup",
-            "config": deep_merge(
-                ref,
-                attempt
-                or new_machine_answers(
-                    budget, _disks(), (_spool_read("platform.txt") or "appliance").strip()
-                ),
-            ),
+            "config": deep_merge(ref, attempt or new_machine_answers(budget, _disks())),
             "reference": ref,
             "new_machine": not bool(attempt),
             "disk_budget": budget,
@@ -276,7 +275,9 @@ async def wizard_state(request: web.Request) -> web.Response:
             "rig_defaults": _rig_defaults(),
             "data_wiped": _data_wiped(),
             "handoff": json.loads(raw_handoff) if raw_handoff else None,
+            # Always present, null when this is not a set-up-again boot (#1318).
             "saved_role": _saved_role(),
+            # Always present, null when no probe ran at all (#1889).
             "node_probe": saved_probe(_spool_json),
             "config_changes": list(dict.fromkeys([*changes, *remembered])),
             "install_attempt": install_attempt,
@@ -334,6 +335,7 @@ def _submit_rig(form: dict) -> web.Response:
     _spool_clear_host_verdict()
     clear_submission_sidecars()
     _spool_write_text("submission-staging", "1")
+    # The role rides beside the request so /status can narrate honestly after it is consumed.
     _spool_write_text("role", "rig")
     _spool_write_text("rig-request.json", json.dumps(rig))
     if install:
@@ -390,8 +392,15 @@ async def _submit_locked(request: web.Request) -> web.Response:
             _publish_install_request({"disk": disk, "wipe": "keep"})
             _spool_write_text("submission-active", "1")
             return web.json_response({"status": "accepted"})
+        # A blank disk with wipe=keep (the client's default) is just a fresh install — fall
+        # through unconditionally. The no-JS path submits individual form FIELDS, not a config
+        # blob, so "no config present" cannot distinguish a bare keep from a form submit; the
+        # host's validation names what is missing either way.
+    # The rig role, AFTER the keep gate on purpose: keep means KEEP in every role — a rig
+    # submission against a preserved install must not smuggle a role change past the survivor.
     if str(form.get("role", "")).strip() == "rig":
         return _submit_rig(dict(form))
+    # Check the raw JSON pane before normalization; build_config is the no-JS fallback.
     try:
         if raw:
             cfg = documents.loads(raw)
@@ -399,7 +408,6 @@ async def _submit_locked(request: web.Request) -> web.Response:
         else:
             cfg = build_config(
                 dict(form),
-                platform=(_spool_read("platform.txt") or "appliance").strip(),
                 tari_default=tari_disk_default(
                     _spool_json("disk-budget.json") or {},
                     _disks(),
@@ -415,15 +423,12 @@ async def _submit_locked(request: web.Request) -> web.Response:
         return web.json_response({"error": "Not valid JSON: enter a JSON object."}, status=400)
     try:
         cfg, changes = prepare_config(cfg, ref, reject_legacy_conflicts=True)
-        if not _last_attempt():
-            defaults, _ = prepare_config(
-                new_install_defaults((_spool_read("platform.txt") or "appliance").strip()), ref
-            )
-            cfg = deep_merge(defaults, cfg)
         validate_machine_name(cfg, _last_attempt())
     except ValueError as exc:
         return web.json_response({"error": f"Invalid configuration: {exc}"}, status=400)
     clear_submission_sidecars()
+    # The host needs a separate login choice: an empty password means either no login
+    # or no choice yet, so config alone cannot tell it whether to generate one.
     mode = str(form.get("auth_mode", "")).strip()
     if mode in ("auto", "set", "none"):
         _spool_write_text("auth-mode", mode)

@@ -299,9 +299,13 @@ case "$upg_regen_off" in
 esac
 
 echo "== black-box: apply captures + renders the HTTPS onion vhost in the SAME run (#546) =="
+# Before the fix, apply's post-up capture block (provision_dashboard_onion && render_env) never
+# re-ran generate_caddyfile, so the https://<onion> vhost (#360) only appeared on some LATER,
+# unrelated apply — a re-apply that changed nothing hit the "No configuration changes detected"
+# early return before ever reaching generate_caddyfile. Drive the real apply() with the heavy
+# machinery stubbed away but generate_caddyfile left REAL, so the Caddyfile is the actual proof.
 AOC="$SANDBOX/apply-onion-capture"
 mkdir -p "$AOC"
-printf '{}\n' >"$AOC/config.json"
 printf 'DEPLOYMENT_COMPLETED=true\n' >"$AOC/.env"
 caddy_apply_capture=$(
     cd "$AOC" || exit

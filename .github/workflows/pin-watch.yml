@@ -1,14 +1,26 @@
 name: Upstream pin watch
 
+# Weekly upstream-currency report (#1128). It REPORTS and never bumps: a Tari or monerod minor is
+# a data migration to schedule, not a bump to merge (#1129 carries three one-time migrations and a
+# one-way wallet-DB change). RigForge's xmrig-bump.yml opens a build-verified PR instead — same
+# shape, different output, because XMRig is a drop-in binary and its build gate proves the
+# candidate.
+#
+# ONE tracking issue per lane, edited in place. An issue persists, is assignable and milestonable,
+# and lets a human write "held until the bench is free, here's why" in a comment — which a report
+# artifact nobody opens cannot do, and which is the failure mode #1128 was filed about. One issue,
+# one table: since the appliance tree joined `develop`, a single run reads every pin.
+#
+# This file lives on the DEFAULT branch on purpose: a `schedule:` fires from the default branch only,
+# and a watcher that lives elsewhere runs exactly zero times while looking fine (#1048, #1064, #1146).
+# One run reads every pin; the report carries the appliance block whenever the tree has `os/rootfs/Dockerfile`.
+#
 on:
   schedule:
-    - cron: "30 6 * * 1"
+    - cron: "30 6 * * 1" # Mondays 06:30 UTC, after the image sweeps
   workflow_dispatch:
 
-concurrency:
-  group: pin-watch
-  cancel-in-progress: false
-
+# Least privilege (#282): issues.write is the job's one output — it never pushes or publishes.
 permissions:
   contents: read
   issues: write
@@ -53,51 +65,41 @@ jobs:
           RC: ${{ steps.report.outputs.rc }}
         run: |
           set -Eeuo pipefail
-          body=$(cat <<'BODY'
-          ## What's the problem
-
-          Weekly upstream currency and unchecked dependency pins.
-
-          ## what it impacts
-
-          The product stack and appliance dependencies need tested upgrades when upstream versions advance.
-
-          ## How I found it
-          BODY
-          cat report.md
-          cat <<'BODY'
-
-          ## how important is it
-
-          Version drift alone does not establish a security impact. Stale runtime pins get separate upgrade issues.
-
-          ## acceptance criteria
-
-          All watched pins are checked; upgrade issues carry the required runtime proof.
-
-          ## possible solutions
-
-          Review the component upgrade issues and newer Tari prereleases before changing pins.
-          BODY
-          )
+          body=$(cat report.md)
+          # Exact title match over the open list, NOT `--search`: the search index lags behind
+          # issue creation by minutes, so a search-based dedup files a second issue on the very
+          # next run and then keeps both stale.
           n=$(gh issue list --state open --limit 200 --json number,title \
             --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
+          # A run that could not do its job replaces the report with a failure notice, which would
+          # otherwise DELETE the "last fully successful check" date — and that date is the only
+          # thing separating "failed once this morning" from "has been dead for six weeks". Carry
+          # the previous one forward. A watcher whose own silence is invisible is the exact defect
+          # this watcher exists to catch, so it must not have it.
           if [ "$RC" != "0" ] && [ -n "$n" ]; then
             prev=$(gh issue view "$n" --json body --jq .body | grep -a "^_Last fully successful check:" || true)
+            # A real `if`, not `[ -n "$prev" ] && body=...`. The && form is safe HERE (set -e is
+            # ignored for a non-final command in an AND-OR list, checked rather than assumed), but
+            # it evaluates to 1 when $prev is empty — so it only stays safe while something else
+            # follows it. That is a reordering hazard for one saved line.
             if [ -n "$prev" ]; then
               body="$body"$'\n\n'"$prev (this run could not complete)"
             fi
           fi
           if [ -n "$n" ]; then
-            printf '%s\n' "$body" | gh issue edit "$n" --body-file -
+            gh issue edit "$n" --body "$body"
             echo "updated #$n"
           else
-            printf '%s\n' "$body" | gh issue create --title "$TITLE" --label infra --label tracker --body-file -
+            gh issue create --title "$TITLE" --label infra --body "$body"
           fi
       - name: Fail the run if any lookup could not be made
         if: steps.report.outputs.rc != '0'
         run: |
-          echo "::error::one or more upstream checks or upgrade issue actions failed; see the report and run log"
+          echo "::error::one or more upstream lookups could not run — those pins are UNCHECKED, not current"
           exit 1
+      # Digest-level check (#1137): does this lane's own docker-compose.yml pins still match what
+      # each tag resolves to right now. Separate from the report above on purpose — a version can
+      # be current while its digest has drifted, and that half-done-bump case is this step's job,
+      # not the report's. A mismatch or failed lookup fails this step, which fails the run.
       - name: Check third-party image pins against their registries
         run: bash scripts/release/resolve-pins.sh

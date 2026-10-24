@@ -205,8 +205,10 @@ check_appliance_cert() {
     HOST_IP=$(env_get HOST_IP)
     NETWORK_PREFIX=$(env_get NETWORK_PREFIX)
     DASHBOARD_EXPOSE_PUBLIC_IP=$(env_get DASHBOARD_EXPOSE_PUBLIC_IP)
-    DASHBOARD_HOST=$(resolve_default "$(config_get .dashboard.host 2>/dev/null)" "")
+    DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$CONFIG_FILE" 2>/dev/null)" "")
 
+    # -enddate is the readability gate for BOTH checks below: an unreadable/truncated/corrupt cert
+    # prints nothing and exits non-zero, and that must WARN, never FAIL (see function header).
     local enddate
     enddate=$(openssl x509 -in "$crt" -noout -enddate 2>/dev/null | sed 's/^notAfter=//') || true
     if [ -z "$enddate" ]; then

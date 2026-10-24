@@ -19,20 +19,8 @@ printf 'fixture 999999999 0 %s 1%% %s\n' "$WIZARD_TEST_FREE_KB" "$PWD"
 DF
 chmod +x "$WORK/bin/df"
 echo "== wizard defaults proof uses runner inputs and production shell options =="
-export WIZARD_TEST_CLI="$ROOT/pithead"
-IT_PITHEAD="$WORK/pithead"
-cat >"$IT_PITHEAD" <<'CLI'
-#!/usr/bin/env bash
-source "${WIZARD_TEST_CLI:?}"
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-    printf '%s\n' "$*" >>operations
-    case "$1" in
-    up | restart) print_first_run_epilogue ;;
-    *) exit 97 ;;
-    esac
-fi
-CLI
-chmod +x "$IT_PITHEAD"
+IT_PITHEAD="$ROOT/pithead"
+# Existing public checksum-valid test fixtures; no live wallet or credentials are read.
 monero='48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD'
 tari='126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ'
 BASELINE_CONFIG=$(jq -n --arg m "$monero" --arg t "$tari" '{monero:{wallet_address:$m,data_dir:"fixture-monero"},tari:{wallet_address:$t,data_dir:"fixture-tari"},tor:{data_dir:"fixture-tor"}}')
@@ -41,10 +29,7 @@ unset BASELINE_JSON
 quote_arg() { printf '%q' "$1"; }
 rx() {
     case "$1" in
-    *' setup --skip-deps --skip-optimize')
-        printf 'TARI_REQUIRED=false\n' >>"$WORK/.env"
-        printf 'Deployment preparation complete\n'
-        ;;
+    *' setup --skip-deps --skip-optimize') printf 'Deployment preparation complete\n' ;;
     *) (cd "$WORK" && PATH="$WORK/bin:$PATH" bash -c "$1" | tee "$WORK/rx.log") ;;
     esac
 }
@@ -69,7 +54,6 @@ for free_gib in 100 600; do
     : >"$WORK/operations"
     : >"$WORK/gate-stages"
     pushes=0
-    if [ "$free_gib" = 600 ]; then printf 'original marker\n' >"$WORK/.pithead-first-run-done"; fi
     run_cli_wizard_defaults || {
         sed -E 's/(Generated dashboard password: ).*/\1<redacted>/' "$WORK/rx.log" >&2
         it_fail "wizard defaults harness completed for $expected"
@@ -83,21 +67,7 @@ for free_gib in 100 600; do
     assert_eq "harness restores the actual runner baseline ($expected)" "$(cat "$WORK/config.json")" "$BASELINE_CONFIG"
     assert_eq "harness preserves prepared chain paths ($expected)" "$(jq -r '[.monero.data_dir,.tari.data_dir,.tor.data_dir] | join("/")' <<<"$generated")" "fixture-monero/fixture-tari/fixture-tor"
     assert_eq "harness deploys defaults then restores ($expected)" "$pushes" 2
-    assert_eq "harness runs service startup and baseline apply ($expected)" "$(cat "$WORK/operations")" $'up\nrestart\napply -y'
-    if [ "$free_gib" = 600 ]; then
-        assert_eq "first-start probe preserves the original marker" "$(cat "$WORK/.pithead-first-run-done")" "original marker"
-    else
-        if [ -e "$WORK/.pithead-first-run-done" ]; then
-            it_fail "first-start probe restores an absent marker"
-        else
-            it_pass "first-start probe restores an absent marker"
-        fi
-    fi
-    if [ -e "$WORK/.itest-first-run-done" ]; then
-        it_fail "first-start probe removes its saved-marker fixture ($expected)"
-    else
-        it_pass "first-start probe removes its saved-marker fixture ($expected)"
-    fi
+    assert_eq "harness runs service startup and baseline apply ($expected)" "$(cat "$WORK/operations")" $'up\napply -y'
 done
 
 # A remote-node baseline (the appliance) keeps its node sections: the wizard's local default would

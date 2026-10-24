@@ -6,11 +6,8 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 # shellcheck source=lib/pithead/31a-miner-connection.sh
 source "$root/lib/pithead/31a-miner-connection.sh"
-# shellcheck source=lib/pithead/19a-config-defaults.sh
-source "$root/lib/pithead/19a-config-defaults.sh"
 # shellcheck source=lib/pithead/24-config-wizard.sh
 source "$root/lib/pithead/24-config-wizard.sh"
-is_appliance() { return 1; }
 export TEST_CARRY="$scratch/carry" TEST_TLS_DIR="$scratch/tls"
 ENV_FILE="$scratch/.env" APP_UID=$(id -u) APP_GID=$(id -g)
 restore_carry_dir() { printf '%s' "$TEST_CARRY"; }

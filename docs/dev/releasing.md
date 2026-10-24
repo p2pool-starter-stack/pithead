@@ -53,28 +53,11 @@ Noticing that a bump is available is a separate job from making one, and nothing
 against the component's latest stable upstream release by numeric version and prerelease precedence,
 lists newer Tari prereleases separately for review without treating them as approved upgrades, checks
 whether each exact Go module raise still changes its pinned upstream graph, compares the vendored
-Tari gRPC schema with the pinned node's upstream tag, and keeps one tracking issue up to date. Stale component rows also create an
-`Upgrade <component> to <version>` issue with `dependencies` and component labels, an upstream
-release-notes link, and the required runtime proof. An existing open issue with the same title is
-left intact; incorporated targets are closed. Lookup failures never close an issue or imply currency.
-New issues use the oldest open milestone whose title is exactly `vX.Y.Z`, discovered on each run.
-If none exists, the issue stays unmilestoned and says so. Maintenance and backlog milestones are
-never substitutes for a release milestone.
-
-The watcher never changes a pin or opens a PR. Run `bash scripts/watch/pin-watch.sh --dry-run`
-to print proposed GitHub writes without applying them; upstream and issue lookups still run.
-Run `bash scripts/watch/pin-watch.sh --self-test` for the offline comparison and issue-action cases.
-A pinned prerelease ahead of the latest stable is never a downgrade candidate. Newer Tari
-prereleases stay in the report for a separate usability decision. Commit-pinned RigForge upgrades
-require upstream ancestry to prove that the target advances the pin.
-
-Dependabot groups Tari's node and console-wallet images together, allowing major and minor
-updates for both. Its dependency names are `tari-project/minotari_node` and
-`tari-project/minotari_console_wallet`; the registry is separate metadata, so group patterns omit it.
-Caddy and docker-socket-proxy remain limited to patch and digest updates.
-The dependency automation proof workflow runs the Dependabot CLI against the PR head without
-publishing PRs and requires a paired Tari update. Runtime bump PRs still need the tier-4 proof
-for the paths they change; Tari requires the gRPC contract check and merge-mining leg.
+Tari gRPC schema with the pinned node's upstream tag, and keeps one tracking issue up to date. It
+reports and never bumps: a Tari or
+`monerod` minor can carry a one-time data migration, which is work to schedule rather than a pull
+request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
+bumps on the component pins for the same reason.
 
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
@@ -196,13 +179,7 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 2. Test gate (blocking): run the existing tests (`make test`: lint + dashboard pytest ≥ 80% +
    the `pithead` shell suite + compose validation) and the
    [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration matrix against
-   the real nodes. The test command sets `FILE_BUDGET_BASE_REF` to the frozen release
-   commit: file-budget ceilings are checked against that commit rather than a later
-   `develop`. Per-file limits remain enforced. A clean release tree has no budget
-   changes against itself, so ceiling raises and first appearances are PR checks;
-   PR validation keeps its normal base. A dry run prints this command without
-   executing the tests and does not prove the test gate passes.
-   Abort the release on any failure. See [Pre-release gate](#pre-release-gate-54).
+   the real nodes. Abort the release on any failure. See [Pre-release gate](#pre-release-gate-54).
 3. Build: build the five stack images with the pinned upstream versions baked in and OCI labels
    stamped (`org.opencontainers.image.version` = the `VERSION` value, source revision, etc.). The
    dashboard already reads `PITHEAD_VERSION` / git build-args for its header badge

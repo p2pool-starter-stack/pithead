@@ -64,16 +64,16 @@ lan_guard_published() {
     done
 }
 
+# Include ports still published by running containers after .env changed but Compose did not
+# converge. If the engine cannot be read, watch all fixed ports rather than dropping the timer.
 lan_guard_watched_ports() {
-    local project
-    project=$(compose_project_name) || return 1
     local kp p c containers name bind
     for kp in $LAN_GUARD_BINDS; do
         p=${kp#*:}
         c=$(lan_guard_container "$p")
         case "$(env_get "${kp%%:*}" 2>/dev/null)" in
         '' | 127.0.0.1)
-            containers=$(docker ps -a --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$c" --format '{{.Names}}' 2>/dev/null) || {
+            containers=$(docker ps -a --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" --format '{{.Names}}' 2>/dev/null) || {
                 printf '%s\n' "$p"
                 continue
             }
@@ -91,13 +91,14 @@ lan_guard_watched_ports() {
     done
 }
 
+# A bind moving from LAN to loopback still belongs to the old container until Compose recreates
+# it. Stop that container before replacing the firewall rules; a failed Compose must not leave
+# the old all-interface listener running after its jump has been removed.
 lan_guard_stop_rebound_nodes() {
-    local project
-    project=$(compose_project_name) || return 1
     local names service name kp bind published stop_node
     LAN_GUARD_REBOUND_SERVICES=()
     for service in monerod tari; do
-        names=$(docker ps --filter "label=com.docker.compose.project=$project" \
+        names=$(docker ps --filter label=com.docker.compose.project=pithead \
             --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
         while IFS= read -r name; do
             [ -n "$name" ] || continue
@@ -123,7 +124,7 @@ lan_guard_stop_rebound_nodes() {
             [ "$stop_node" = 1 ] || continue
             docker stop "$name" >/dev/null || return 1
             [[ " ${LAN_GUARD_REBOUND_SERVICES[*]} " == *" $service "* ]] || LAN_GUARD_REBOUND_SERVICES+=("$service")
-            names=$(docker ps --filter "label=com.docker.compose.project=$project" \
+            names=$(docker ps --filter label=com.docker.compose.project=pithead \
                 --filter "label=com.docker.compose.service=$service" --format '{{.Names}}' 2>/dev/null) || return 1
             grep -qxF "$name" <<<"$names" && return 1
         done <<<"$names"

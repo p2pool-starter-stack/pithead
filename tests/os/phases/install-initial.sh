@@ -1,8 +1,6 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
 source "$SCRIPT_DIR/miner-connection-leg.sh" || return $?
-# shellcheck source=tests/os/headless-install-leg.sh
-source "$SCRIPT_DIR/headless-install-leg.sh" || return $?
 _phase_install_initial() {
     info "phase: disk install (USB-style boot -> pithead-install -> boot from the target)"
 
@@ -16,13 +14,6 @@ _phase_install_initial() {
     # shellcheck disable=SC2154  # shared through the assembled runner scope
     rm -f "$target_disk"
     cp "$img" "$DISK"
-    local install_config install_handoff=""
-    install_config=$(jq -nc --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" \
-        '{monero:{wallet_address:$m},tari:{wallet_address:$t},p2pool:{pool:"mini",stratum_password:"auto",stratum_tls:true}}')
-    headless_install_stage "$install_config" || {
-        bad "could not stage headless setup files before the first installer boot (#3071)"
-        return 1
-    }
     # 16G, the smallest real stick the docs allow: ESP + two 4 GiB slots + data's 4 GiB minimum
     # must fit or repart creates nothing and the guest lands in an emergency shell — which is
     # exactly what this sizing proves cannot happen on supported media.
@@ -150,12 +141,28 @@ _phase_install_initial() {
     # ONE page: config + disk + typed confirmation in one submission; the host validates
     # everything, publishes the credentials, and only the ack releases the erase. The machine
     # then installs, stages the accepted config for the target, and powers itself off.
-    _wait_setup_page 180 || {
+    token=""
+    tries2=0
+    while [ -z "$token" ] && [ "$tries2" -lt 40 ]; do
+        token=$(tr -d '\r' <"$SERIAL" | grep -oE 'pit-[A-Z0-9]{6}' | tail -1)
+        [ -n "$token" ] || sleep 3
+        tries2=$((tries2 + 1))
+    done
+    [ -n "$token" ] || {
+        bad "no one-time token on the installer console"
+        return 1
+    }
+    ok "one-time token read from the installer console ($token)"
+    # The token prints before the container finishes coming up — wait for the gate to SERVE
+    # before authing, exactly as the provision phase does (and as a human's browser would).
+    _wait_setup_page 120 || {
         bad "installer wizard never served its gate page"
         return 1
     }
     jar=$(mktemp)
-    headless_install_auth || {
+    curl -fsSk -c "$jar" -d "token=$token" "https://$ip/auth" -o /dev/null 2>/dev/null &&
+        grep -q "wizard_session" "$jar" || {
+        bad "installer wizard auth failed"
         rm -f "$jar"
         return 1
     }
@@ -172,17 +179,9 @@ _phase_install_initial() {
         return 1
     fi
 
-    if headless_install_prefill_valid "$state_json" "$install_config"; then
-        ok "first installer boot carries staged answers with no disk selected (#3071)"
-    else
-        bad "first installer boot carries staged answers with no disk selected (#3071)"
-        rm -f "$jar"
-        return 1
-    fi
-    headless_install_rejection || {
-        rm -f "$jar"
-        return 1
-    }
+    local install_config install_handoff=""
+    install_config=$(jq -nc --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" \
+        '{monero:{wallet_address:$m},tari:{wallet_address:$t},p2pool:{pool:"mini",stratum_password:"auto",stratum_tls:true}}')
     scode=$(curl -sSk -b "$jar" --data-urlencode "config=$install_config" --data 'disk=vda&confirm=vda&wipe=keep' \
         "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
@@ -224,10 +223,6 @@ _phase_install_initial() {
         bad "machine never powered off after the ack"
         return 1
     fi
-    headless_install_stage || {
-        bad "could not clear the installer preseed fixture before the reinstall legs (#3071)"
-        return 1
-    }
     vm_destroy_or_refuse || return
     # Boot from the TARGET alone — the stick is gone, exactly as the instructions tell the user.
     # The foreign disk travels with it: M4's whole point is what it looks like AFTER the install,

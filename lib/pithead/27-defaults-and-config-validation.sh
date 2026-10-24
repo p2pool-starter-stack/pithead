@@ -11,10 +11,22 @@ apply_appliance_defaults() { # [config, default $CONFIG_FILE]
     local config="${1:-$CONFIG_FILE}" tmp
     [ -f "$config" ] || return 0
     tmp=$(mktemp) || return 1
-    if jq --argjson defaults "$(config_defaults new appliance)" '
-        if .tor.auto_heal == null then (.tor //= {}) | .tor.auto_heal = $defaults.tor.auto_heal else . end
+    # dashboard.control.enabled: on DIY the operator has a shell, so the config editor is a
+    # convenience and stays off. An appliance has NO other way in — no shell, ssh disabled — so
+    # without this the machine is unconfigurable after first boot and the only route to a changed
+    # payout address is a reflash. Production runs with it on. It sits behind the generated
+    # login, which is why the password above is not optional.
+    # ...but only behind a password. `strip_defaults` drops any wizard answer equal to the
+    # reference default, and the reference has control.enabled false, so the key is absent from
+    # EVERY submission — including "No login", which leaves the password empty. Injecting
+    # unconditionally therefore built the exact pair parse_and_validate_config refuses, and the
+    # machine dead-ended on first boot after the operator had been told provisioning started
+    # (#1066). An unauthenticated config editor is what that rule exists to prevent, so the
+    # honest resolution is to leave the channel off rather than to weaken the rule.
+    if jq '
+        if .tor.auto_heal == null then (.tor //= {}) | .tor.auto_heal = true else . end
         | if .dashboard.control.enabled == null and ((.dashboard.auth.password // "") != "")
-          then (.dashboard //= {}) | (.dashboard.control //= {}) | .dashboard.control.enabled = $defaults.dashboard.control.enabled
+          then (.dashboard //= {}) | (.dashboard.control //= {}) | .dashboard.control.enabled = true
           else . end' \
         "$config" >"$tmp" && mv "$tmp" "$config"; then
         return 0

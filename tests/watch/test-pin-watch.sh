@@ -10,7 +10,7 @@ st() { # <label> <got> <want>
         st_fail=1
     fi
 }
-source "$ROOT/tests/watch/test-pin-watch-issues.sh"
+# The three spellings that would otherwise be reported stale every week for ever.
 st "a bare image tag normalises to the upstream version" "$(norm 'caddy:2.11.4')" "2.11.4"
 st "a leading v is not a version difference" "$(norm 'v6.26.0')" "6.26.0"
 st "tari's network suffix is not a version difference" \

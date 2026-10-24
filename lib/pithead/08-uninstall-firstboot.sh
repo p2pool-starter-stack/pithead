@@ -107,26 +107,26 @@ stack_uninstall() {
             return 1
         }
     fi
-    local project
-    project=$(compose_project_name) || return 1
     mutation_lock_acquire uninstall
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
     for unit in remove_egress_check_units remove_lan_guard_check_units; do "$unit" || units_left=1; done
     docker compose down --remove-orphans -v 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm ${project}_caddy_data ${project}_wallet_data ${project}_tari_wallet_db"
-    lan_guard_teardown uninstall && { remove_lan_guard_boot_unit || error "uninstall stopped: $LAN_GUARD_BOOT_UNIT or $LAN_GUARD_HOLD_UNIT could not be removed; retry."; }
+        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
+    lan_guard_teardown uninstall && { remove_lan_guard_boot_unit || error "uninstall stopped: $LAN_GUARD_BOOT_UNIT or $LAN_GUARD_HOLD_UNIT could not be removed; retry."; } # (#2749)
+    # down -v skips an inactive profile's volume, and no longer declares tari_wallet_data (#2731).
     local volumes labels vol
     volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."
     for vol in tari_wallet_db tari_wallet_data; do
-        printf '%s\n' "$volumes" | grep -Fx "${project}_$vol" >/dev/null || continue
-        labels=$(docker volume inspect "${project}_$vol" --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
-            error "Could not inspect ${project}_$vol; uninstall stopped before removing .env. Retry when the engine is available."
-        if [ "$labels" = "$project/$vol" ]; then
-            docker volume rm "${project}_$vol" >/dev/null ||
-                error "Could not remove ${project}_$vol; uninstall stopped before removing .env. Retry when the volume is available."
+        printf '%s\n' "$volumes" | grep -Fx "pithead_$vol" >/dev/null || continue
+        labels=$(docker volume inspect "pithead_$vol" --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
+            error "Could not inspect pithead_$vol; uninstall stopped before removing .env. Retry when the engine is available."
+        if [ "$labels" = "pithead/$vol" ]; then
+            docker volume rm "pithead_$vol" >/dev/null ||
+                error "Could not remove pithead_$vol; uninstall stopped before removing .env. Retry when the volume is available."
         fi
     done
+    # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
@@ -325,8 +325,8 @@ machine_role() { # echoes pithead|both|rig
     case "$r" in rig | both | pithead) printf '%s' "$r" ;; *) printf 'pithead' ;; esac
 }
 
-machine_role_from_config() {
-    if [ "$(config_get .local_miner.enabled "$1" 2>/dev/null)" = "true" ]; then
+machine_role_from_config() { # <config-file>
+    if [ "$(jq -r '.local_miner.enabled // false' "$1" 2>/dev/null)" = "true" ]; then
         printf 'both'
     else
         printf 'pithead'

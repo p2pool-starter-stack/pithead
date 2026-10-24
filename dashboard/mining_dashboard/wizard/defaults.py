@@ -1,4 +1,4 @@
-from mining_dashboard.config.defaults import default_of, merge, new_install_defaults
+"""New-install defaults based on disk measurements published by the host."""
 
 
 def tari_disk_default(budget: dict, disks: list[dict], target: str, wipe: str = "keep") -> str:
@@ -12,7 +12,7 @@ def tari_disk_default(budget: dict, disks: list[dict], target: str, wipe: str = 
         held = disk.get("state") == "pithead-with-data" and wipe == "data"
     else:
         held = budget.get("tari_chain_held") is True
-    return "local" if held else default_of("tari.mode")
+    return "local" if held else "off"
 
 
 def fast_sync_warning(cfg: dict) -> str:
@@ -26,24 +26,33 @@ def fast_sync_warning(cfg: dict) -> str:
     return f"Fast sync exposes your IP address to {' and '.join(networks)} until the initial sync finishes."
 
 
-def new_machine_answers(budget: dict, disks: list[dict], platform: str = "appliance") -> dict:
-    return merge(
-        new_install_defaults(platform), {"tari": {"mode": tari_disk_default(budget, disks, "")}}
-    )
+def new_machine_answers(budget: dict, disks: list[dict]) -> dict:
+    from mining_dashboard.wizard_config import NEW_MACHINE_ANSWERS, deep_merge
+
+    return deep_merge(NEW_MACHINE_ANSWERS, {"tari": {"mode": tari_disk_default(budget, disks, "")}})
 
 
 def explicit_wizard_config(cfg: dict, ref: dict) -> dict:
-    from mining_dashboard.config.defaults import TABLE
     from mining_dashboard.wizard_config import strip_defaults
 
     written = strip_defaults(cfg, ref) if ref else cfg
-    for path in TABLE["materialize"] + [
-        "monero.clearnet_initial_sync",
-        "tari.clearnet_initial_sync",
-    ]:
-        block, key = path.split(".")
-        if isinstance(cfg.get(block), dict) and key in cfg[block]:
-            written.setdefault(block, {})[key] = cfg[block][key]
+    # Wizard choices remain explicit even when they equal today's reference.
+    for block, keys in (
+        ("tari", ("mode", "clearnet_initial_sync")),
+        ("monero", ("clearnet_initial_sync",)),
+        ("xvb", ("enabled",)),
+    ):
+        for key in keys:
+            if isinstance(cfg.get(block), dict) and key in cfg[block]:
+                written.setdefault(block, {})[key] = cfg[block][key]
+    # The new-machine page carries tari_required=false for a Yes (#3333); a No writes nothing,
+    # the same as the CLI wizard, so enabling Tari later starts from the reference default.
+    if isinstance(cfg.get("tari"), dict) and cfg["tari"].get("mode") == "off":
+        dashboard = written.get("dashboard")
+        if isinstance(dashboard, dict):
+            dashboard.pop("tari_required", None)
+            if not dashboard:
+                del written["dashboard"]
     return written
 
 

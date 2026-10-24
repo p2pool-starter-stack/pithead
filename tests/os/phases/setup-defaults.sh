@@ -20,11 +20,9 @@ phase_setup_defaults() {
     state=$(curl -fsSk -b "$jar" "https://$guest_ip/api/wizard-state") || return 1
     if jq -e '.new_machine and .disk_budget.available_bytes < .disk_budget.local_need_bytes and
         .config.tari.mode == "off" and .config.xvb.enabled == false and
-        .config.dashboard.tari_required == false and .config.dashboard.host == "pithead" and
-        .config.local_miner.enabled == true and
         .config.monero.clearnet_initial_sync == false and .config.tari.clearnet_initial_sync == false and
         .auth_mode == "auto"' <<<"$state" >/dev/null; then
-        ok "fresh appliance defaults pin Tari off, XvB off, optional Tari, pithead host and local mining"
+        ok "fresh appliance defaults use the data disk, no Tari, no XvB, Tor and generated login"
     else
         bad "fresh appliance defaults differ from the small-disk contract"
         return 1
@@ -67,8 +65,6 @@ phase_setup_defaults() {
         ;;
     esac
     if _ssh "jq -e '.tari.mode == \"off\" and .xvb.enabled == false and
-        .dashboard.tari_required == false and .dashboard.host == \"pithead\" and
-        .local_miner.enabled == true and
         .monero.clearnet_initial_sync == false and .tari.clearnet_initial_sync == false and
         (.dashboard.auth.password | length) == 32' /data/pithead/config.json" >/dev/null; then
         ok "fresh appliance setup persists all explicit new-install choices"

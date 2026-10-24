@@ -183,11 +183,16 @@ stage_wizard_spool() { # <spool-dir> -> fingerprint on stdout
     local ref=/opt/pithead/config.reference.json
     [ -f "$ref" ] || ref="$PWD/config.reference.json"
     wizard_spool_publish "$spool" config.reference.json cat "$ref" || return 1
-    wizard_spool_publish "$spool" platform.txt config_platform || return 1
     wizard_spool_publish "$spool" disk-budget.json wizard_disk_budget || return 1
+    # The rig pre-fill and (#1318) the saved role ride beside the reference — derived fresh each
+    # boot, like the disk inventory, so machine 2 on a fleet stick never opens on machine 1's.
     publish_rig_defaults "$spool" || return 1
     publish_saved_role "$spool" || return 1
+    # The data-wipe note (#1121): same "derived fresh every boot" rule, for the same fleet-stick
+    # reason — see publish_data_wipe_note.
     publish_data_wipe_note "$spool" || return 1
+    # Installer mode reads the disk list from here too; a retry with no list is the same dead end
+    # in a different shape.
     if installer_mode_available; then publish_disk_inventory "$spool" || return 1; fi
     # Copies the canonical pair off /data — minting only happens the first time, so the
     # fingerprint the console prints stays the machine's one certificate across retries.

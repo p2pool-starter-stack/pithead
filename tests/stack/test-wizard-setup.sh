@@ -29,14 +29,14 @@ assert_eq "defaults path: p2pool.pool Enter-through is mini (the global default)
 assert_eq "defaults path: local node RPC creds auto-generated (non-empty)" \
     "$([ -n "$(jq -r '.monero.node_username' <<<"$w1_cfg")" ] && [ -n "$(jq -r '.monero.node_password' <<<"$w1_cfg")" ] && echo yes)" "yes"
 assert_eq "defaults path: top-level keys are exactly monero/tari/p2pool/dashboard, nothing else" \
-    "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","local_miner","monero","p2pool","tari","xvb"]'
+    "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","monero","p2pool","tari","xvb"]'
 assert_eq "defaults path: dashboard has secure, a generated login and — the Tari yes of this fixture — tari_required false (#3333)" \
-    "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["auth","host","secure","tari_required"]'
+    "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["auth","secure","tari_required"]'
 assert_eq "defaults path: no telegram block written" "$(jq -r 'has("telegram")' <<<"$w1_cfg")" "false"
 assert_eq "defaults path: private sync written explicitly" \
     "$(jq -r '.monero.clearnet_initial_sync' <<<"$w1_cfg")" "false"
-assert_eq "defaults path: DIY local miner is explicitly off" \
-    "$(jq -r '.local_miner.enabled' <<<"$w1_cfg")" "false"
+assert_eq "defaults path: no local_miner block written (opt-in off, #593)" \
+    "$(jq -r 'has("local_miner")' <<<"$w1_cfg")" "false"
 
 assert_eq "defaults path: XvB explicitly off" "$(jq -r '.xvb.enabled' <<<"$w1_cfg")" "false"
 w1_pass=$(jq -r '.dashboard.auth.password' <<<"$w1_cfg")

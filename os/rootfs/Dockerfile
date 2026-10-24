@@ -77,10 +77,19 @@ RUN set -e; \
         git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
         linux-cpupower msr-tools $updater_packages; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
+# All appliance packages are installed and apt's temporary files removed in one layer. Marker
+# changes reuse this layer; a cold or evicted cache does not retain the apt lists in its snapshot.
 
+# The stack, at the image's exact release state: pithead + schemas + the build/ mount sources
+# services bind-mount. Context = repo root. BUILD_COMMIT: the commit built from — the artifact's own
+# answer to "did my change ship?". os/build/stage/: the compose file + its COMPOSE_SOURCE stamp — the
+# STACK_VERSION tag's copy when that tag exists, else the tree's (#1215, staged by build-image.sh).
 COPY os/rootfs/BUILD_COMMIT os/build/stage/docker-compose.yml os/build/stage/COMPOSE_SOURCE /opt/pithead/
-COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json cosign.pub /opt/pithead/
-COPY config.minimal.appliance.json /opt/pithead/config.minimal.json
+COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json config.minimal.json cosign.pub /opt/pithead/
+# ONLY the build/ paths services bind-mount at runtime (config templates and wrapper entrypoints).
+# dashboard/Dockerfile isn't among them (moved out of build/, #1106; see
+# KNOWN-ISSUES.md) — is_source_checkout() keys off its presence here, so shipping one by accident
+# would make the appliance think it's a dev checkout, tag :dev, never pull, and SKIP cosign.
 COPY build/monero/bitmonero.conf.template /opt/pithead/build/monero/bitmonero.conf.template
 COPY build/tari/ /opt/pithead/build/tari/
 COPY build/tari-wallet/ /opt/pithead/build/tari-wallet/
