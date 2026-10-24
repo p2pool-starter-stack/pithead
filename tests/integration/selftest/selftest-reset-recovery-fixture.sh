@@ -3,7 +3,7 @@ set -euo pipefail
 echo "== candidate-compatible reset recovery fixture =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 helper="$HERE/../tools/reset-recovery-fixture.sh"
-d=$(mktemp -d "${TMPDIR:?}/reset-recovery-selftest.XXXXXXXX")
+d=$(mktemp -d -t reset-recovery-selftest.XXXXXXXX)
 trap 'rm -rf "$d"' EXIT
 cd "$d"
 mkdir scratch
