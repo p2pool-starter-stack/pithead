@@ -32,7 +32,16 @@ itself.
 
 The rootfs Dockerfile builds Docker Compose and Cosign from exact upstream
 commits, checks each commit against its release tag, and asserts the binaries'
-reported versions. The Go builder is pinned by digest at [1.26.10](https://go.dev/doc/devel/release#go1.26.0) to clear
+reported versions. Both source fetches use HTTP/1.1 with three attempts. Each
+clone and detached checkout shares a 180-second deadline, with a 5-second kill
+grace and 5/10-second delays between attempts: at most 570 seconds for fetch
+recovery per repository. Every retry starts in a clean temporary directory.
+Git diagnostics and attempt/exit markers remain in the image-build log.
+A tag mismatch fails immediately; exhausted transfers or unavailable commits
+fail the image build before any appliance assertion can execute. These limits
+do not bound module downloads or compilation.
+
+The Go builder is pinned by digest at [1.26.10](https://go.dev/doc/devel/release#go1.26.0) to clear
 [CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
 in both binaries' standard library.
 
