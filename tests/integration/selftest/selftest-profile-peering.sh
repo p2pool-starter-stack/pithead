@@ -33,5 +33,25 @@ with patch.object(module.subprocess, "run", side_effect=subprocess.TimeoutExpire
         assert "secret" not in str(exc)
     else:
         raise AssertionError("timed-out fixture accepted")
-print("PASS: onion peer direction, bridge probe, peering port and bounded failure controls")
+secret = "credential-value-and-private-endpoint"
+with patch.object(module, "inspect", return_value={"State": {"Running": False, "ExitCode": 78}}), patch.object(
+    module, "command", side_effect=[RuntimeError(secret), "RPC connection failed " + secret]
+):
+    result = module.diagnostics("fixture", "/stats")
+    assert result["running"] is False and result["exit_code"] == 78
+    assert result["stats_available"] is False and result["rpc_error"] is True
+    assert secret not in str(result)
+with patch.object(module, "inspect", side_effect=RuntimeError(secret)), patch.object(
+    module, "command", side_effect=[module.json.dumps({"peers": ["I,secret", "O," + onion]}), RuntimeError(secret)]
+):
+    result = module.diagnostics("fixture", "/stats")
+    assert result["state_unavailable"] and result["logs_unavailable"]
+    assert result["inbound"] == 1 and result["outbound_onion"]
+    assert secret not in str(result) and onion not in str(result)
+with patch.object(module, "inspect", return_value={"State": {"Running": False, "ExitCode": None}}), patch.object(
+    module, "command", side_effect=['{"peers": null}', ""]
+):
+    result = module.diagnostics("fixture", "/stats")
+    assert result["state_unavailable"] and result["stats_available"] is False
+print("PASS: onion direction, bridge probes, bounded failures and credential-free diagnostics")
 PY

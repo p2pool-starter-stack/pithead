@@ -385,3 +385,6 @@ Privacy profiles are resolved from `dashboard/mining_dashboard/config/defaults.j
 `lib/pithead/19b-config-profile.sh` and `dashboard/mining_dashboard/config/defaults.py`.
 `tests/stack/config/profile.sh` checks rendering and overrides; `tests/integration/profile-peering.py`
 checks the Privacy relay and real onion peers in the `profile-privacy` matrix scenario.
+On a handshake deadline it retains container exit state, peer counts and fixed error categories
+without addresses or credentials. Safety rollback retains the final 64 KiB of redacted restore
+output in `safety-restore.log`, preserving the command verdict independently of diagnostic I/O.

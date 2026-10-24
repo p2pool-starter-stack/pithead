@@ -57,6 +57,36 @@ def probe(container, address, port):
     return count == "1"
 
 
+def diagnostics(name, stats_path):
+    result = {}
+    try:
+        state = inspect(name)["State"]
+        result.update(running=bool(state["Running"]), exit_code=int(state["ExitCode"]))
+    except (RuntimeError, ValueError, KeyError, TypeError):
+        result["state_unavailable"] = True
+    try:
+        peers = json.loads(command("docker", "exec", name, "cat", stats_path))["peers"]
+        result.update(
+            stats_available=True,
+            inbound=sum(isinstance(p, str) and p.startswith("I,") for p in peers),
+            outbound_onion=outgoing_onion(peers),
+        )
+    except (RuntimeError, ValueError, KeyError, TypeError):
+        result["stats_available"] = False
+    try:
+        logs = command("docker", "logs", "--tail", "100", name).lower()
+        for category, pattern in (
+            ("rpc_error", r"(?:rpc|zmq).*?(?:fail|error|refus|denied)"),
+            ("data_api_error", r"(?:data.api|directory|file).*?(?:fail|error|denied|exist)"),
+            ("option_error", r"(?:unknown|invalid|unrecognized).*?(?:option|argument)"),
+            ("connect_error", r"(?:connect|handshake).*?(?:fail|error|refus|timed out)"),
+        ):
+            result[category] = bool(re.search(pattern, logs))
+    except RuntimeError:
+        result["logs_unavailable"] = True
+    return result
+
+
 def main():
     env = dict(line.split("=", 1) for line in open(".env") if "=" in line)
     env = {key: value.strip() for key, value in env.items()}
@@ -188,6 +218,16 @@ def main():
                 )
                 return
             time.sleep(10)
+        print(
+            json.dumps(
+                {
+                    "candidate": diagnostics("p2pool", "/stats/local/p2p"),
+                    "fixture": diagnostics(peer, "/home/ubuntu/profile-stats/local/p2p"),
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
         raise RuntimeError("Privacy peer handshake deadline")
     finally:
         for name in (peer, client):
