@@ -137,6 +137,7 @@ safety_abort_restore() {
         # archive still on it.
         it_warn "a rollback already failed this run — not retrying at exit; archive retained at ${SAFETY_ARCHIVE:-<none>}"
     fi
+    reset_dashboard_cleanup || restore_failed=1
     [ -z "$_SAFETY_FOREIGN_TRAP" ] || eval "$_SAFETY_FOREIGN_TRAP"
     [ "$restore_failed" = 0 ] || exit 1
     return "$original_rc"
@@ -154,8 +155,19 @@ arm_safety_abort_restore() {
     trap safety_abort_restore EXIT
 }
 
+reset_dashboard_cleanup() {
+    [ -n "${RESET_DASHBOARD_DECOY_DASHBOARD:-}" ] || return 0
+    if ! rx "rm -rf -- $(quote_arg "$RESET_DASHBOARD_DECOY_DASHBOARD") $(quote_arg "$RESET_DASHBOARD_DECOY_P2POOL")" >/dev/null 2>&1; then
+        it_fail "reset-dashboard decoys removed" "cleanup failed; decoy paths and safety archive retained"
+        return 1
+    fi
+    RESET_DASHBOARD_DECOY_DASHBOARD=""
+    RESET_DASHBOARD_DECOY_P2POOL=""
+}
+
 # Remove the generated safety archive once we're done (kept on --keep, or if restore failed).
 safety_cleanup() {
+    reset_dashboard_cleanup || return 1
     [ -n "$SAFETY_ARCHIVE" ] || return 0
     if [ "$SAFETY_RESTORE_FAILED" != "0" ]; then
         it_warn "retaining the safety backup after a failed rollback: $SAFETY_ARCHIVE"

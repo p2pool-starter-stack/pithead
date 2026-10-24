@@ -236,6 +236,10 @@ The checks retain assertion errors and bounded counts in the battery output; raw
 header and user values are omitted. Bounded current/rolled-log counts expose discarded
 records; effective Caddy configuration is reported only as matcher/log-destination flags.
 
+The reset-dashboard phase is `tests/integration/lib/run-reset-dashboard.sh`; its rollback-protected
+live path checks directory targets, ownership, chain continuity, service health and resumed mining.
+Harness help lives in `tests/integration/lib/run-usage.sh`; argument parsing stays in `run-cli.sh`.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 `tests/integration/lib/tari-readiness.sh` supplies the running-state battery's fresh
