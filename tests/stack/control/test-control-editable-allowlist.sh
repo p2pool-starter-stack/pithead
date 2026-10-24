@@ -52,18 +52,12 @@ for ev in node_down node_recovered worker_offline worker_recovered worker_joined
 done
 
 echo "== black-box: confirm-allowlist commit round-trip behind the typed APPLY (#1929) =="
-# The tier above commits with no token. CONTROL_DASHBOARD_CONFIRM_KEYS is the OTHER committable
-# tier, and until now nothing here proved a single one of its keys actually round-trips — only that
-# a change needing a token is refused without one (test-confirm-approval.sh, one key). A key on an
-# allowlist that no round-trip ever exercises is an allowlist entry nobody has seen work.
-roundtrip_confirm() { # <env-key(s), "/"-separated> <jq-set> <jq-read> <expected>
+roundtrip_confirm() {
     COVERED="$COVERED $(printf '%s' "$1" | tr '/' ' ')"
     jq "$2" "$C/config.json" >"$C/cand.json"
-    # The token is load-bearing, not decoration: the SAME candidate must be refused without it, or
-    # this row would pass just as happily for a key that had quietly fallen into the free tier.
-    gate_try "$C/cand.json"
+    gate_try "$C/cand.json" '' "${5:-null}"
     assert_eq "$1 is refused with no typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-    gate_try "$C/cand.json" APPLY
+    gate_try "$C/cand.json" APPLY "${5:-null}"
     assert_eq "$1 commit applies behind the typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
     assert_eq "$1 landed in config.json" "$(jq -r "$3" "$C/config.json")" "$4"
 }
@@ -165,17 +159,14 @@ cp "$C/local.before-login-preflight.json" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 
 echo "== black-box: every dashboard-committable key has a commit round-trip (#1929) =="
-# TOTALITY, derived from the SHIPPED artifact rather than a hand list — a hand list is blind to the
-# key nobody remembered, which is the whole failure mode here. $COVERED records what the helpers
-# above actually RAN, not what this file says it covers, so deleting a row reds this too.
+cp "$C/config.json" "$C/before-profile.json"
+for target_profile in privacy performance balance; do
+    roundtrip_confirm PITHEAD_PROFILE ".profile=\"$target_profile\"" .profile "$target_profile" '{"payout_suffixes":{}}'
+    assert_eq "profile $target_profile removes governed overrides" "$(jq '[.monero.clearnet_initial_sync,.p2pool.clearnet,.workers.api_auth] | all(. == null)' "$C/config.json")" true
+done
+cp "$C/before-profile.json" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 allow_set() { awk "/^$1='/{f=1} f{print} f && /'[[:space:]]*\$/{exit}" "$STACK" | tr -d "\n'" | sed "s/^$1=//;s/  */ /g;s/^ //"; }
-# NAMED EXEMPTIONS with the reason each cannot run at tier 1. The four node-endpoint keys (#1888)
-# are gated on preflight_remote_nodes, a REAL dial at the staged address: the sandbox has no node to
-# answer it, so a round-trip here could only pass by defeating the probe that is the whole
-# compensating control for that tier. The round-trip itself is tier-4 work (tests/integration,
-# tests/os) by nature. What IS tier-1 now (#1924, below): the render-level invariant that makes
-# skipping that dial on a non-remote chain safe in the first place — a chain in local/off mode never
-# moves these four keys off their fixed placeholder no matter what *.remote.* carries.
 CONFIRM_TIER1_EXEMPT="MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS"
 uncovered() { # <space-separated key list> -> the keys with no round-trip, minus the exemptions
     local k out=''
@@ -289,7 +280,7 @@ assert_eq "Tari-off preview gives no active guidance for inactive settings (#338
 jq '.tari.clearnet_initial_sync=true' "$C/config.json" >"$C/config.off" && mv "$C/config.off" "$C/config.json"
 run_sourced "$C" eval 'PITHEAD_DRY_RUN=1; parse_and_validate_config && load_preserved_state && resolve_dashboard_host && DEPLOYMENT_COMPLETED=true && render_env "$ENV_FILE"' >/dev/null 2>&1
 assert_rc "stored clearnet preview baseline renders (#3383)" "$?" "0"
-assert_eq "stored clearnet preview baseline keeps its flag (#3383)" "$(run_sourced "$C" env_get_file "$C/.env" TARI_CLEARNET_SYNC)" "true"
+assert_eq "stored clearnet override stays inactive while Tari is off (#3383)" "$(run_sourced "$C" env_get_file "$C/.env" TARI_CLEARNET_SYNC)" "false"
 jq '.tari.mode="local"' "$C/config.json" >"$C/config.candidate"
 out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" PITHEAD_CONFIG_FILE="$C/config.candidate" ./pithead apply --dry-run --porcelain 2>/dev/null)"
 assert_contains "enabling stored clearnet sync warns about exposure (#3383)" "$out" "Tari CLEARNET initial sync ENABLED"

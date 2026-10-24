@@ -1,7 +1,6 @@
 render_env() {
-    local target="${1:-$ENV_FILE}" project profile customized=false
+    local target="${1:-$ENV_FILE}" project profile
     profile=$(profile_name)
-    profile_customized && customized=true
     project=$(compose_project_name) || return 1
     log "Rendering environment configuration ($target)..."
 
@@ -339,7 +338,6 @@ DASHBOARD_ONION_ADDRESS=$(dotenv_render_value "$DASHBOARD_ONION")
 DASHBOARD_ONION_CLIENT_PUBKEY=$(dotenv_render_value "$DASHBOARD_ONION_CLIENT_PUBKEY")
 DASHBOARD_ONION_CLIENT_PRIVKEY=$(dotenv_render_value "$DASHBOARD_ONION_CLIENT_PRIVKEY")
 PITHEAD_PROFILE=$(dotenv_render_value "$profile")
-PITHEAD_PROFILE_CUSTOM=$(dotenv_render_value "$customized")
 P2POOL_FLAGS=$(dotenv_render_value "$p2pool_flags")
 P2POOL_PORT=$(dotenv_render_value "$p2pool_port")
 STRATUM_BIND=$(dotenv_render_value "$STRATUM_BIND")

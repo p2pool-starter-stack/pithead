@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-bash "$HERE/config/profile.sh"
+TMPDIR="$SANDBOX" bash "$HERE/config/profile.sh"
 assert_rc "profile rendering and persistent clearnet behavior" "$?" "0"
 
 echo "== unit: describe_change =="

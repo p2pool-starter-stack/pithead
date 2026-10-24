@@ -5,7 +5,7 @@ profile_default() {
 }
 
 profile_name() {
-    jq -r '.profile // "balance"' "${1:-$CONFIG_FILE}"
+    config_get .profile "${1:-$CONFIG_FILE}"
 }
 
 profile_customized() {

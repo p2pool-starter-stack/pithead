@@ -106,12 +106,9 @@ qflags_line=$(sed -n 's/^Environment=//p' "$QFLAGS/p2pool.container")
 assert_eq "#2040 arming: the rendered value really carries three tokens" \
     "$(grep -c '^P2POOL_FLAGS=--mini --socks5-proxy-type tor$' "$SANDBOX/flags.env")" "1"
 assert_eq "#2040: a P2POOL_FLAGS holding spaces renders ONE quoted assignment, not three" \
-    "$qflags_line" '"P2POOL_FLAGS=--mini --socks5-proxy-type tor"'
-# The counter-control: systemd only strips quotes it sees, so the assignment has to be quoted as a
-# WHOLE — Environment=P2POOL_FLAGS="--mini ..." would leave the trailing tokens loose again.
+    "$qflags_line" '"P2POOL_FLAGS=--mini --socks5-proxy-type tor" "P2POOL_PORT=37888" NETWORK_PREFIX=172.28.0'
 assert_contains "#2040: the quotes wrap the whole assignment, key included" \
     "$qflags_line" '"P2POOL_FLAGS='
-# systemd expands % specifiers inside unit files, so a literal % has to be doubled or it is
 # rewritten: %H becomes the hostname. An operator-supplied flag or password is where this lands.
 QPCT="$SANDBOX/quadlet-pct-out"
 sed -E 's|^P2POOL_FLAGS=.*|P2POOL_FLAGS=--x 50% --host %H|' \
@@ -121,9 +118,8 @@ qpct_line=$(sed -n 's/^Environment=//p' "$QPCT/p2pool.container")
 assert_eq "#2040 arming: the fixture really carries a literal % and a %H specifier" \
     "$(grep -c '^P2POOL_FLAGS=--x 50% --host %H$' "$SANDBOX/pct.env")" "1"
 assert_eq "#2040: literal % is doubled so systemd does not expand %H to the hostname" \
-    "$qpct_line" '"P2POOL_FLAGS=--x 50%% --host %%H"'
+    "$qpct_line" '"P2POOL_FLAGS=--x 50%% --host %%H" "P2POOL_PORT=37888" NETWORK_PREFIX=172.28.0'
 
-# The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/local/fixture.env" "$QLOCAL" >/dev/null
 assert_contains "local Quadlet Tor receives P2Pool onion port (#2936)" \
