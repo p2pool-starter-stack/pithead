@@ -200,6 +200,9 @@ A miner deliberately created/exited/stopped by the sync gate or node failover is
 exception during normal operation. A pending appliance data migration also withholds its chain
 services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero;
 `doctor` applies the same observed-restart check to every Compose service, including Caddy.
+The appliance boot health gate runs both commands with `PITHEAD_BOOT_GATE=1`, which skips the
+three-second window so its 10-second poll stays fast; a service already in the `restarting` state
+still fails the gate.
 Every container carries its own healthcheck — including the dashboard, Caddy, xmrig-proxy and the
 two Docker-socket proxies — so a ✓ usually means the service answered its probe, not merely that a
 process exists. xmrig-proxy is the one exception: its healthcheck script ships in the same image
