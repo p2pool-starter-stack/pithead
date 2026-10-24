@@ -284,7 +284,7 @@ if [ -n "${PITHEAD_TEST_MARKER:-}" ]; then
     PITHEAD_WIZARD_IMAGE="$MARKER_DASHBOARD_IMAGE"
 fi
 if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then
-    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "${PITHEAD_PIN_TAG:-$STACK_VERSION}" "$MARKER_DASHBOARD_IMAGE" || exit 1
+    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "${PITHEAD_PIN_TAG:-$STACK_VERSION}" "${MARKER_DASHBOARD_IMAGE:-}" || exit 1
 fi
 if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
     [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {

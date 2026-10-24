@@ -58,6 +58,15 @@ docker() {
     *) return 1 ;;
     esac
 }
+STACK_VERSION=v2
+awk '/^if \[ "\$\{PITHEAD_OS_SYNTHETIC_COMPOSE:-\}" != 1 \]; then$/ { copying=1 }
+    copying { print }
+    copying && /^fi$/ { exit }' "$ROOT/os/build-image.sh" >"$T/default-pin.sh"
+(
+    unset MARKER_DASHBOARD_IMAGE
+    source "$T/default-pin.sh"
+)
+grep -qF "pithead-dashboard:v2@$base_digest" os/build/stage/docker-compose.yml || fail 'default dashboard pin changed'
 export PITHEAD_TEST_MARKER=v2 PITHEAD_TEST_MARKER_IMAGES="$manifest" PITHEAD_TEST_SSH_PUBKEY=fixture
 export PITHEAD_REGISTRY="$registry"
 STACK_VERSION=v2
