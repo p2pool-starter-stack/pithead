@@ -844,6 +844,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
+- Reset recovery saves the original configuration in a private recovery directory, projects only candidate-supported baseline fields into a separate synthetic configuration, and lets candidate `apply` stamp that fixture before encrypted backup. Missing optional fields stay absent; losing any wallet or payout field fails before mutation. The original backup is never relabelled, and the newer-backup refusal guard remains unchanged. After success or failure, cleanup restores the original bytes, checks secret fingerprints and requires consecutive healthy status reads within 240 seconds. An unverified cleanup retains its private recovery copy.
 - Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
   container StartedAt and RestartCount), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).

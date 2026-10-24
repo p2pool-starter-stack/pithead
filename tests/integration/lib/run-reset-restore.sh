@@ -1,9 +1,38 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# The ordinary CLI recovery door, using real Compose containers and a real encrypted backup.
-# RESET_RESTORE_STACK_INTACT=1 on return marks a failure that changed nothing, so run_lifecycle can
-# go on and the phases after it still run (#3342).
 run_reset_restore() {
+    RESET_RESTORE_STACK_INTACT=0
+    local original_config original_secrets scratch after_config after_secrets result=0
+    local helper
+    helper="$(dirname "${BASH_SOURCE[0]}")/../tools/reset-recovery-fixture.sh"
+    if ! original_config=$(rx 'sha256sum config.json') || [ -z "$original_config" ] ||
+        ! original_secrets=$(upgrade_secret_fingerprints) || [ -z "$original_secrets" ]; then
+        it_fail "reset recovery captures original baseline" "configuration or secrets unreadable"
+        return 1
+    fi
+    scratch=$(rx 'umask 077; mktemp -d "${TMPDIR:-$PWD/data}/reset-recovery.XXXXXXXX"') || return 1
+    if rx "bash -s -- $(quote_arg "$scratch") $(quote_arg "$IT_PITHEAD") prepare" --stdin <"$helper" 2>&1 |
+        redact >"$OUT_DIR/reset-restore.fixture.log" && wait_status_ok 240; then
+        run_reset_restore_fixture || result=1
+    else
+        it_fail "reset recovery prepares candidate-compatible fixture" "see reset-restore.fixture.log"
+        result=1
+    fi
+    if ! rx "bash -s -- $(quote_arg "$scratch") $(quote_arg "$IT_PITHEAD") restore" --stdin <"$helper" 2>&1 |
+        redact >"$OUT_DIR/reset-restore.cleanup.log" ||
+        ! after_config=$(rx 'sha256sum config.json') || [ "$after_config" != "$original_config" ] ||
+        ! after_secrets=$(upgrade_secret_fingerprints) || [ "$after_secrets" != "$original_secrets" ] ||
+        ! wait_status_ok 240; then
+        RESET_RESTORE_STACK_INTACT=0
+        it_fail "reset recovery restores original baseline" "cleanup unverified; private recovery copy retained; see reset-restore.cleanup.log"
+        return 1
+    fi
+    it_pass "reset recovery restores original baseline"
+    rx "bash -s -- $(quote_arg "$scratch") $(quote_arg "$IT_PITHEAD") remove" --stdin <"$helper" || return 1
+    return "$result"
+}
+
+run_reset_restore_fixture() {
     RESET_RESTORE_STACK_INTACT=0
     local before_config before_secrets archive out rc after_config after_secrets
     local failures_before="$IT_FAIL"

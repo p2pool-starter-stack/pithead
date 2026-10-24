@@ -9,7 +9,7 @@ source "$HERE/../lib/run-reset-restore.sh"
 echo "== encrypted config-reset recovery failure controls =="
 
 drive_reset_restore() (
-    local fault="$1" channel="${2:-diy}"
+    local fault="$1" channel="${2:-diy}" wrapper="${3:-0}"
     # shellcheck disable=SC2034 # read by the shared web helper
     IT_SSH_DEST=root@guest.invalid
     # shellcheck disable=SC2034 # consumed by the sourced leg
@@ -35,8 +35,28 @@ drive_reset_restore() (
 
     rx() {
         case "$1" in
+        'umask 077; mktemp -d '*) printf 'data/reset-recovery.fixture' ;;
+        'bash -s -- '*)
+            cat >/dev/null
+            case "$1" in
+            *prepare)
+                [ "$fault" != fixture-prepare ] || return 1
+                touch "$OUT_DIR/fixture"
+                ;;
+            *restore)
+                [ "$fault" != fixture-cleanup ] || return 1
+                rm -f "$OUT_DIR/fixture" "$OUT_DIR/restored"
+                ;;
+            *remove) touch "$OUT_DIR/removed" ;;
+            *) return 127 ;;
+            esac
+            ;;
         'sha256sum config.json')
             [ "$fault" != snapshot ] || return 1
+            if [ -e "$OUT_DIR/fixture" ]; then
+                printf fixture
+                return
+            fi
             if [ "$fault" = config ] && [ -e "$OUT_DIR/restored" ]; then printf changed; else printf original; fi
             ;;
         *' backup -y') [ "$fault" != backup ] ;;
@@ -133,9 +153,10 @@ drive_reset_restore() (
         if [ "$fault" = secrets ] && [ -e "$OUT_DIR/restored" ]; then printf changed; else printf original; fi
     }
     wait_status_ok() { [ "$fault" != health ]; }
-    run_reset_restore >"$OUT_DIR/output" 2>&1
+    if [ "$wrapper" = 1 ]; then run_reset_restore; else run_reset_restore_fixture; fi >"$OUT_DIR/output" 2>&1
     local rc=$?
     [ ! -e "$OUT_DIR/unhandled" ] || rc=127
+    if [ "$wrapper" = 1 ] && [ "$fault" = fixture-cleanup ] && [ -e "$OUT_DIR/removed" ]; then rc=127; fi
     if [ "$fault" = none ]; then cp "$OUT_DIR/probe" "$PROBE_COPY"; fi
     printf '%s|%s|%s' "$rc" "$IT_FAIL" "$IT_PASS"
     case "$fault" in refused | written | stopped | other)
@@ -145,6 +166,10 @@ drive_reset_restore() (
 )
 PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
 trap 'rm -f "$PROBE_COPY"' EXIT
+assert_eq "wrapper restores baseline after successful recovery" "$(drive_reset_restore none diy 1)" '0|0|14'
+assert_eq "wrapper restores baseline after recovery failure" "$(drive_reset_restore restore diy 1)" '1|1|8'
+assert_eq "wrapper reports projection failure after checking baseline cleanup" "$(drive_reset_restore fixture-prepare diy 1)" '1|1|1'
+assert_eq "wrapper retains recovery copy when cleanup fails" "$(drive_reset_restore fixture-cleanup diy 1)" '1|1|13'
 assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)" '0|0|13'
 assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|14'
 assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|13'
