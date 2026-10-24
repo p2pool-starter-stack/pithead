@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# The real transition leg retains evidence and restores after a failed assertion.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
@@ -11,12 +10,13 @@ echo "== Tari enable evidence distinguishes stopped and recreated proxies =="
 fixture="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/tari-enable-selftest.XXXXXX")" || exit 1
 trap 'rm -rf "$fixture"' EXIT
 bad=0
-for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hashes decreasing-hashes no-workers late-stall probe-error missing-hashes; do
+for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hashes decreasing-hashes no-workers late-stall probe-error missing-hashes sync-timeout disconnected stale-template missing-template; do
     OUT_DIR="$fixture/$CASE"
     mkdir -p "$OUT_DIR"
     PHASE=0
     FAILURE_COUNT=0
     CONTINUITY_PASSES=0
+    TEMPLATE_FAILURE=""
     printf '0\n' >"$OUT_DIR/polls"
     env_on_box() { printf local; }
     push_config() { PHASE=$((PHASE + 1)); }
@@ -25,7 +25,10 @@ for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hash
     wait_status_ok() { return 0; }
     now_s() { printf '%s' "$((1 + $(cat "$OUT_DIR/polls") * 30))"; }
     sleep() { :; }
-    it_fail() { FAILURE_COUNT=$((FAILURE_COUNT + 1)); }
+    it_fail() {
+        FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        if [ "${1:-}" = "merge-mining templates arrive after Tari sync (#3094)" ]; then TEMPLATE_FAILURE="${2:-}"; fi
+    }
     it_pass() {
         [ "$1" != "xmrig-proxy stays up during Tari enable/sync (#3094)" ] || CONTINUITY_PASSES=$((CONTINUITY_PASSES + 1))
         return 0
@@ -62,7 +65,7 @@ for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hash
         esac
     }
     api_state() {
-        local poll=0 sync_state="done" height=42
+        local poll=0 sync_state="done" height=42 connected=true
         if [ "$PHASE" = 2 ]; then
             poll=$(($(cat "$OUT_DIR/polls") + 1))
             printf '%s\n' "$poll" >"$OUT_DIR/polls"
@@ -72,13 +75,32 @@ for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hash
             if [ "$CASE" = loading-to-done ] && [ "$poll" -lt 4 ]; then sync_state="loading"; fi
             if [ "$CASE" = late-stall ] && [ "$poll" -lt 10 ]; then sync_state="loading"; fi
         fi
+        if [ "$PHASE" = 2 ]; then
+            case "$CASE" in
+            sync-timeout) sync_state=syncing ;;
+            disconnected) connected=false ;;
+            stale-template) height=42 ;;
+            missing-template) height=null ;;
+            esac
+        fi
         local hashes=$((poll * 100))
         [ "$CASE" != stale-hashes ] || hashes=100
-        printf '{"timestamp":1,"proxy_workers":1,"stratum":{"total_hashes":%s},"sync":{"monero":{"state":"done"},"tari":{"state":"%s","secret":"must-not-be-retained"}},"tari":{"active":true,"connected":true,"height":"%s"},"badges":[],"secret":"must-not-be-retained"}' \
-            "$hashes" "$sync_state" "$height"
+        printf '{"timestamp":1,"proxy_workers":1,"stratum":{"total_hashes":%s},"sync":{"monero":{"state":"done"},"tari":{"state":"%s","secret":"must-not-be-retained"}},"tari":{"active":true,"connected":%s,"height":"%s"},"badges":[],"secret":"must-not-be-retained"}' \
+            "$hashes" "$sync_state" "$connected" "$height"
     }
     rc=0
     run_tari_background_sync || rc=$?
+    case "$CASE" in
+    sync-timeout) expected='last_state=syncing (need done); last_connected=true (need true); last_template_height=43 (need > 42)' ;;
+    disconnected) expected='last_state=done (need done); last_connected=false (need true); last_template_height=43 (need > 42)' ;;
+    stale-template) expected='last_state=done (need done); last_connected=true (need true); last_template_height=42 (need > 42)' ;;
+    missing-template) expected='last_state=done (need done); last_connected=true (need true); last_template_height=unreadable (need > 42)' ;;
+    *) expected='' ;;
+    esac
+    if [ -n "$expected" ] && [ "$TEMPLATE_FAILURE" != "$expected" ]; then
+        printf '%s: unexpected template failure: %s\n' "$CASE" "$TEMPLATE_FAILURE"
+        bad=$((bad + 1))
+    fi
     [ "$PHASE" = 3 ] || bad=$((bad + 1))
     [ -s "$OUT_DIR/tari-enable/off.apply.log" ] && [ -s "$OUT_DIR/tari-enable/on.apply.log" ] || bad=$((bad + 1))
     grep -q 'phase=after-restore' "$OUT_DIR/tari-enable/snapshots.log" || bad=$((bad + 1))

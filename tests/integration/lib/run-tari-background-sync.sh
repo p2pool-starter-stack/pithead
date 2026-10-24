@@ -30,6 +30,7 @@ run_tari_background_sync() {
         it_skip_leg "Tari-only apply keeps Monero mining (#3094)" "requires a local Tari baseline" "missing"
         return 0
     fi
+    local last_state=unobserved last_connected=unobserved last_height=unobserved
     local saved_config proxy_start deadline state window_hashes=0 synced=0 failed=0 previous_hashes="" hashes height_before mining_sample observed window_start last_advance
     height_before="$(jq_get "$(api_state)" '.tari.height | tonumber')"
     [[ "$height_before" =~ ^[0-9]+$ ]] || {
@@ -78,6 +79,9 @@ run_tari_background_sync() {
                     fi
                     state="$(api_state)"
                     observed="$(now_s)"
+                    last_state="$(jq_get "$state" '.sync.tari.state')"
+                    last_connected="$(jq_get "$state" '.tari.connected')"
+                    last_height="$(jq_get "$state" '.tari.height | tonumber')"
                     mining_sample="$(tari_enable_mining_sample)" || mining_sample='{}'
                     printf '%s\n' "$state" | jq -c --argjson observed "$observed" --argjson mining "$mining_sample" \
                         '{observed: $observed, workers: $mining.workers, hashes: $mining.hashes, stratum_hashes: .stratum.total_hashes, tari_sync: (.sync.tari | {state, current, target, percent}), template: (.tari | {connected, height})}' | redact >>"$evidence/samples.jsonl"
@@ -101,17 +105,20 @@ run_tari_background_sync() {
                         window_hashes=0
                         break
                     fi
-                    if [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] &&
-                        [ "$(jq_get "$state" '.tari.connected')" = true ] &&
-                        [ "$(jq_get "$state" '.tari.height | tonumber')" -gt "$height_before" ] 2>/dev/null; then
+                    if [ "$last_state" = "done" ] &&
+                        [ "$last_connected" = true ] &&
+                        [ "$last_height" -gt "$height_before" ] 2>/dev/null; then
                         synced=1
                     fi
-                    # Cover startup and completion even when the warm chain catches up quickly.
                     if [ "$synced" = 1 ] && [ "$window_hashes" = 1 ] && [ "$((observed - window_start))" -ge 120 ]; then break; fi
                     sleep 2
                 done
                 assert_eq "workers keep hashing across the Tari enable window (#3094)" "$window_hashes" 1
-                assert_eq "merge-mining templates arrive after Tari sync (#3094)" "$synced" 1
+                if [ "$synced" = 1 ]; then
+                    it_pass "merge-mining templates arrive after Tari sync (#3094)"
+                else
+                    it_fail "merge-mining templates arrive after Tari sync (#3094)" "last_state=${last_state:-unreadable} (need done); last_connected=${last_connected:-unreadable} (need true); last_template_height=${last_height:-unreadable} (need > $height_before)"
+                fi
                 [ "$window_hashes" = 1 ] && [ "$synced" = 1 ] || failed=1
                 if [ "$continuity_failed" = 0 ]; then
                     if [ "$continuity_checks" -gt 0 ]; then
