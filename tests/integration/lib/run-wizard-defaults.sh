@@ -22,9 +22,10 @@ run_cli_wizard_defaults() {
             printf '%s\\n\\n2\\n%s\\n' $(quote_arg "$monero") $(quote_arg "$tari")
             printf '\\n\\n\\n\\n\\n\\n\\n'
         } | { wizard_ask_core; wizard_ask_shape; wizard_write_config; }
-        jq -e '.xvb.enabled == false and .monero.clearnet_initial_sync == false and
+        jq -e '.profile == \"balance\" and .xvb.enabled == false and
+            (.monero | has(\"clearnet_initial_sync\") | not) and
             .tari.mode == \"local\" and .dashboard.tari_required == false and
-            .tari.clearnet_initial_sync == false and (.dashboard.auth.password | length) == 32' .itest-wizard-defaults.json >/dev/null")
+            (.tari | has(\"clearnet_initial_sync\") | not) and (.dashboard.auth.password | length) == 32' .itest-wizard-defaults.json >/dev/null")
     rc=$?
     assert_rc "fresh CLI wizard writes the explicit Tari yes, no XvB, Tor sync and a generated dashboard password" "$rc" 0
     [ "$rc" = 0 ] || return 1

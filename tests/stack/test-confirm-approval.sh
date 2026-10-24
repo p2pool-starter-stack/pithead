@@ -342,3 +342,9 @@ assert_contains "direct wizard audit failure re-enters the retry path" \
     "$(sed -n '/if control_audit_provisioned/,/setup_rc=1/p' "$ROOT/lib/pithead/12-firstboot-wizard.sh")" "setup_rc=1"
 rm -rf "$PROV"
 unset PROV
+
+for target in performance balance privacy; do
+    row=$(run_sourced "$C" describe_change PITHEAD_PROFILE balance "$target")
+    assert_contains "profile $target requires typed APPLY" "$row" "CONFIRM"
+    assert_contains "profile $target names cleared overrides" "$row" "Advanced overrides"
+done

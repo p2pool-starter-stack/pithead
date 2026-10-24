@@ -14,10 +14,12 @@ from mining_dashboard.config.config import (
     HASHRATE_DROP_THRESHOLD_PCT,
     NODE_STALE_AFTER_SEC,
     TARI_MODE,
-    TOR_SOCKS_PROXY,
     UPDATE_CHECK_INTERVAL,
     WORKER_FALLOFF_SEC,
     monero_is_local,
+)
+from mining_dashboard.config.config import (
+    OUTBOUND_TOR_PROXY as TOR_SOCKS_PROXY,
 )
 from mining_dashboard.service.data_helpers import (
     WorkerLifecycle,

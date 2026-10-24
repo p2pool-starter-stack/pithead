@@ -373,9 +373,18 @@ The setup wizards share host disk budgets through `lib/pithead/11b-wizard-disk-b
 the appliance publishes them beside the disk inventory for both submission paths.
 
 `tests/os/phases/setup-defaults.sh` proves a fresh appliance with the wizard defaults,
-without the explicit Tari opt-in used by the general provision phase.
+without the explicit Tari opt-in used by the general provision phase. It requires an explicit
+Balance profile and omitted governed sync overrides in the saved configuration.
 
 Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugepages.sh`;
 `lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
+
+Privacy profiles are resolved from `dashboard/mining_dashboard/config/defaults.json` by
+`lib/pithead/19b-config-profile.sh` and `dashboard/mining_dashboard/config/defaults.py`.
+`tests/stack/config/profile.sh` checks rendering and overrides; `tests/integration/profile-peering.py`
+checks the Privacy relay and real onion peers in the `profile-privacy` matrix scenario.
+On a handshake deadline it retains container exit state, peer counts and fixed error categories
+without addresses or credentials. Safety rollback retains the final 64 KiB of redacted restore
+output in `safety-restore.log`, preserving the command verdict independently of diagnostic I/O.

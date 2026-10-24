@@ -223,6 +223,14 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                 then .api_token = (if (.name | type) == "string" then ($livetok[.name].api_token // "") else "" end)
                 else . end)
           else . end' "$file" >"$staged")
+    case "$(profile_name "$staged")" in
+    performance | balance | privacy)
+        if [ "$(profile_name "$staged")" != "$(profile_name)" ] && ! profile_select "$staged" "$(profile_name "$staged")"; then
+            control_write_result "$cdir/results" "$id" '{"status":"rejected","error":"could not resolve the selected profile"}'
+            return 0
+        fi
+        ;;
+    esac
     chmod 600 "$staged" 2>/dev/null || true
     (umask 077 && printf '%s\n' "$base_sum" >"$basef")
     local policy_error

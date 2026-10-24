@@ -251,7 +251,7 @@ echo "== unit: appliance defaults (tor.auto_heal) =="
 mk_tmpdir ADSB
 printf '{"monero":{"wallet_address":"x"}}' >"$ADSB/config.json"
 PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" apply_appliance_defaults >/dev/null 2>&1
-assert_eq "absent auto_heal -> enabled" "$(jq -r '.tor.auto_heal' "$ADSB/config.json")" "true"
+assert_eq "absent auto_heal -> enabled" "$(run_sourced "$ADSB" config_bool .tor.auto_heal false "$ADSB/config.json")" "true"
 printf '{"tor":{"auto_heal":false}}' >"$ADSB/config.json"
 PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" apply_appliance_defaults >/dev/null 2>&1
 assert_eq "explicit false is respected" "$(jq -r '.tor.auto_heal' "$ADSB/config.json")" "false"

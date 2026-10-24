@@ -92,7 +92,7 @@ printf '{"network":{"tor_egress_firewall":true}}' >"$CB/config.json"
 assert_eq "explicit true honoured" "$(run_sourced "$CB" config_bool '.network.tor_egress_firewall' true)" "true"
 printf '{}' >"$CB/config.json"
 assert_eq "absent -> default true" "$(run_sourced "$CB" config_bool '.network.tor_egress_firewall' true)" "true"
-assert_eq "absent -> default false" "$(run_sourced "$CB" config_bool '.xvb.tor' false)" "false"
+assert_eq "ungoverned absent -> supplied default false" "$(run_sourced "$CB" config_bool '.dashboard.control.enabled' false)" "false"
 
 echo "== unit: migrate_legacy_workers drops v1.x xmrig_proxy defaults beside a customised xvb (#2690) =="
 MX="$SANDBOX/mx"

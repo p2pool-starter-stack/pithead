@@ -20,6 +20,7 @@ run_fixture() {
         SKIP_MINING_ASSERTS=0
         [ "$mode" != no-rig ] || SKIP_MINING_ASSERTS=1
         [ "$mode" != open ] || BASELINE_CONFIG='{"p2pool":{"pool":"mini"},"dashboard":{"tari_required":false}}'
+        [ "$mode" != privacy ] || BASELINE_CONFIG='{"profile":"privacy","p2pool":{"pool":"mini"},"dashboard":{"tari_required":false}}'
         CI_RIG_RECOVERY_HOLD=1
         IT_BORROW_REARM_REQUEST="$d/request" IT_BORROW_REARM_ACK="$d/ack" IT_BORROW_REARM_TOKEN=run-3491
         [ "$mode" != no-controller ] || IT_BORROW_REARM_REQUEST=""
@@ -27,7 +28,12 @@ run_fixture() {
         active_password=baseline
         resolve_overrides() { RESOLVED=""; }
         render_scenario_config() { printf '%s' "$1"; }
-        push_config() { :; }
+        push_config() {
+            if [ "$mode" = privacy ]; then
+                [ "$(jq '.p2pool | has("stratum_password")' <<<"$1")" = false ] && printf 'sparse-profile\n' >>"$d/events"
+            fi
+        }
+        rx() { return 0; }
         pithead() { printf 'apply\n' >>"$d/events"; }
         wait_borrow_rearm() {
             printf '%s\n' "$1" >>"$d/events"
@@ -65,7 +71,11 @@ run_fixture() {
         restore_firewall_after_clearnet() { :; }
         capture_artifacts() { printf 'capture\n' >>"$d/events"; }
         IT_FAIL=0
-        run_scenario fixture '' >/dev/null
+        if [ "$mode" = privacy ]; then
+            run_scenario profile-privacy '' >/dev/null
+        else
+            run_scenario fixture '' >/dev/null
+        fi
         printf 'next:%s\n' "$active_password" >>"$d/events"
         [ "$IT_FAIL" = 0 ]
     )
@@ -81,6 +91,7 @@ check_fixture() {
 check_fixture no-controller 1 'next:baseline'
 check_fixture no-hold 1 'next:baseline'
 check_fixture authenticated 0 $'apply\nscenario-stratum\nminer-wait:scenario\nassert:0:scenario\nrestore-stratum\nnext:baseline'
+check_fixture privacy 0 $'sparse-profile\napply\nscenario-stratum\nminer-wait:scenario\nassert:0:scenario\nrestore-stratum\nnext:baseline'
 check_fixture no-rig 0 $'apply\nassert:1:baseline\nnext:baseline'
 check_fixture open 0 $'apply\nminer-wait:baseline\nassert:0:baseline\nnext:baseline'
 check_fixture transfer-fails 1 $'apply\nscenario-stratum'

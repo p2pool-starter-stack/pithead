@@ -1,6 +1,10 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
     validate_config_document
+    case "$(profile_name)" in
+    performance | balance | privacy) ;;
+    *) error 'profile must be "performance", "balance" or "privacy".' ;;
+    esac
 
     validate_config_control_characters
 
@@ -188,16 +192,7 @@ parse_and_validate_config() {
     validate_worker_endpoints
     validate_energy_config
 
-    # Optional miner authentication on the stratum port (#152). xmrig-proxy's --access-password
-    # rejects rigs whose stratum 'pass' doesn't match, so only devices that know the secret can
-    # mine through the proxy (this also shrinks the #122 SSRF surface). Three modes:
-    #   ""/absent → disabled (default): any rig that can reach :3333 may mine; 'pass' is ignored.
-    #   "auto"    → generate a secret once and PERSIST it in .env (reused across apply, exactly like
-    #               PROXY_AUTH_TOKEN); set the same value as every rig's stratum 'pass'.
-    #   <literal> → use exactly this password.
-    # Rendered to PROXY_STRATUM_PASSWORD. The password travels CLEARTEXT over stratum, so this is
-    # access control ("who may mine"), not encryption — pair it with a LAN-only bind / firewall.
-    STRATUM_PASSWORD=$(jq -r '.p2pool.stratum_password // ""' "$CONFIG_FILE")
+    STRATUM_PASSWORD=$(config_get .p2pool.stratum_password)
     if [ "$STRATUM_PASSWORD" = "auto" ]; then
         STRATUM_PASSWORD=$(env_get PROXY_STRATUM_PASSWORD) # reuse a previously generated one
         [ -n "$STRATUM_PASSWORD" ] || STRATUM_PASSWORD=$(openssl rand -hex 12)

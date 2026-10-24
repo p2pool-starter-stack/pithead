@@ -26,15 +26,29 @@ INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh"
 
-_restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <secrets: match|drift>
+_restore_reason() {
     (
-        SAFETY_ARCHIVE=/tmp/a.tar.gz SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
+        OUT_DIR="$(mktemp -d)" && trap 'rm -rf "$OUT_DIR"' EXIT
+        SAFETY_ARCHIVE="$OUT_DIR/a.tar.gz" SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
+        _diagnostic_mode="${6:-normal}"
+        redact() {
+            [ "$_diagnostic_mode" != redactor-fail ] || return 1
+            sed 's/secret/<redacted>/g'
+        }
         BASELINE_CONFIG='baseline' BASELINE_EXACT_SECRET_FP=$'wallet=wallet-before\nproxy=proxy-before'
         _restore_rc="$1" _up_rc="$2" _health_rc="$3" _config_state="${4:-match}" _secret_state="${5:-match}"
         pithead() {
             case "$1" in
             down) return 0 ;;
-            restore) return "$_restore_rc" ;;
+            restore)
+                if [ "$_diagnostic_mode" = long ]; then
+                    printf 'discarded-head-marker'
+                    printf '%70000s' ''
+                fi
+                printf 'Restoring from %s\n' "$SAFETY_ARCHIVE"
+                printf 'restore detail secret\n'
+                return "$_restore_rc"
+                ;;
             up) return 0 ;;
             esac
         }
@@ -50,6 +64,20 @@ _restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <se
         }
         it_log() { :; }
         safety_restore_exact >/dev/null 2>&1
+        if [ "$_diagnostic_mode" = redactor-fail ]; then
+            [ ! -s "$OUT_DIR/safety-restore.log" ] || exit 1
+        elif [ "$_diagnostic_mode" = long ]; then
+            [ "$(wc -c <"$OUT_DIR/safety-restore.log")" -eq 65536 ] || exit 1
+            [ "$(tail -n 1 "$OUT_DIR/safety-restore.log" | tail -c 26)" = 'restore detail <redacted>' ] || exit 1
+            ! grep -q discarded-head-marker "$OUT_DIR/safety-restore.log" || exit 1
+        else
+            grep -q 'restore detail <redacted>' "$OUT_DIR/safety-restore.log" || exit 1
+            ! grep -q secret "$OUT_DIR/safety-restore.log" || exit 1
+        fi
+        ! grep -Fq "$SAFETY_ARCHIVE" "$OUT_DIR/safety-restore.log" || exit 1
+        if [ "$_diagnostic_mode" != redactor-fail ]; then
+            grep -q '<safety-archive>' "$OUT_DIR/safety-restore.log" || exit 1
+        fi
         printf '%s' "$SAFETY_RESTORE_FAIL_REASON"
     )
 }
@@ -57,6 +85,9 @@ _restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <se
 echo "== safety_restore_exact names which check failed, not a generic verdict (#2062, #2362) =="
 
 assert_eq "restore failure is named" "$(_restore_reason 1 0 0 match match)" "pithead restore failed"
+assert_eq "redactor failure preserves the restore failure" "$(_restore_reason 1 0 0 match match redactor-fail)" "pithead restore failed"
+assert_eq "redactor failure cannot fail a successful restore" "$(_restore_reason 0 0 0 match match redactor-fail)" ""
+assert_eq "restore output retains only its final 64 KiB" "$(_restore_reason 1 0 0 match match long)" "pithead restore failed"
 assert_eq "startup failure is named" "$(_restore_reason 0 1 0 match match)" "stack did not come back up"
 assert_eq "health failure is named" "$(_restore_reason 0 0 1 match match)" "pithead status did not become healthy within 240s"
 assert_eq "a healthy restore leaves no reason" "$(_restore_reason 0 0 0 match match)" ""
