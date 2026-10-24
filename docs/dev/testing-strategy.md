@@ -881,6 +881,12 @@ tier 3/4:
 - **Insecure + main matrix row.** ✅ Now a dedicated `local-pruned-main-insecure` row: the two axes
   decouple, so a regression specific to insecure+main (vs. the pre-existing insecure+nano row) has
   somewhere to fail.
+- **Borrowed rig credentials (#3491).** Password-enabled scenarios hand the rendered credential
+  to the borrowed rig before mining waits and restore its exact borrowed configuration before the
+  next scenario. `selftest-scenario-stratum.sh` checks ordering, no-rig behavior and termination on
+  failed handoff or restoration; `selftest-borrow-rearm.sh` checks credential mutation and exact
+  restoration. The borrowed rig uses cleartext on the dual-mode port; the controls below exercise
+  authenticated and pinned-TLS clients separately.
 - **Stratum authentication and pinned TLS (#3078).** The DIY TLS scenario uses the raw login
   probe in `tests/integration/rotate-auth-probe.py`. The KVM stack phase adds
   `remote-main-stratum-tls` and uses the appliance's prebuilt XMRig for wrong-password,

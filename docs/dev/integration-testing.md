@@ -384,6 +384,13 @@ via an `EXIT` trap):
 3. Safety backup (`pithead backup`) as the rollback anchor.
 4. Borrows a miner (default the configured miner): backs up its xmrig config and repoints it at the
    bench so the matrix has a real worker mining through this stack (1 worker → run with `--workers 1`).
+   Scenarios with a stratum password hand the rendered credential to the borrowed test pool
+   before mining waits. The controller uses its runner-owned recovery hold and exact config backup,
+   then restores the borrowed config before the next scenario. Without that controller transport
+   or recovery hold, the authenticated scenario fails before changing configuration.
+   A failed handoff or restore stops
+   the harness and leaves final recovery to the controller. The rig continues using cleartext on
+   the dual-mode stratum port; the TLS handshake and fingerprint are checked separately.
    With `--no-miner` nothing is borrowed, and the harness runs with `--no-mining-asserts`: the
    workers-online and stratum-hashes assertions skip with a logged notice while every other
    assertion stays binding ([#905](https://github.com/p2pool-starter-stack/pithead/issues/905)).
