@@ -140,7 +140,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 	printf '%s\0' pithead pithead-completion.bash install.sh scripts/*.sh scripts/*/*.sh build/*/*.sh dashboard/*.sh \
 		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/*/*.sh \
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
-		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
+		os/installer/pithead-install os/build-image.sh os/rootfs/*.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-serial-port-present \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version \
