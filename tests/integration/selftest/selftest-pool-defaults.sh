@@ -36,6 +36,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         upgrade_secret_fingerprints() { printf 'test-fingerprint'; }
         env_on_box() { [ "$1" != DASHBOARD_SECURE ] || printf false; }
         has_compose_profile() { return 1; }
+        run_restore_diagnostic_control() { :; }
         run_cli_wizard_defaults() { :; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }

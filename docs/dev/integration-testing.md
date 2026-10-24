@@ -844,6 +844,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
+- Before mutations, a bounded remote control emits distinct stdout/stderr and exits 73, then a harmless cleanup control exits 74. The lifecycle row requires both operations and their original statuses in `results/restore-diagnostic-control/restore-operations.log`; the controls change no stack state.
 - Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
   container StartedAt and RestartCount), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).
@@ -1242,6 +1243,19 @@ hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it
 
 Each run writes a manifest (`results/manifest.txt`) recording exactly what was under test: the
 stack `VERSION`, git revision, and `docker compose images`. A run is reproducible.
+
+The backup/restore round-trip, original-config write/apply/health sequence, safety rollback
+and its recovery up/health calls append operation names, original exit statuses and sanitized
+combined stdout/stderr to `results/restore-operations.log` before evaluating each status.
+Each operation retains the last 64 KiB after the shared redactor runs; command arguments and
+config values are not echoed. Output streams through a waited-for sanitizer; no raw diagnostic file is written.
+The sanitizer also removes the CLI’s `Stratum password:` and `connect with pass` announcements.
+After a sanitizer or artifact-write failure, the capture process drains the remaining output
+and reports an unavailable marker while preserving the command status, so diagnostic I/O
+cannot interrupt recovery with a broken pipe. Later cleanup appends to the log instead of replacing
+the initiating failure. Short-circuit ordering, health verification, secret comparisons and
+safety archive retention remain binding. The existing generic redactor's limits below still
+apply; bench-ci additionally redacts configured credentials and topology during collection.
 
 On a scenario failure, the harness captures fresh diagnostic snapshots (redacted) to `results/<scenario>/`:
 `compose-ps.txt`, `status.txt`, `doctor.txt`, `config.json`, `env.redacted.txt`,

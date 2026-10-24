@@ -42,11 +42,8 @@ redact() {
         -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|EXPLORER_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
         -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|explorer_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
 }
-# --- Assertions -------------------------------------------------------------
-# Counters are global so the runner can total them across scenarios. The skip buckets and the
-# three helpers that move them live next door; sourced here so anything that has lib.sh has them.
-# Fail CLOSED: resolve the helper from this file's directory; a harness that merely warns would
-# miscount every skip in silence.
+# shellcheck source=tests/integration/lib/restore-diagnostics.sh
+source "${BASH_SOURCE[0]%/*}/lib/restore-diagnostics.sh" || return $?
 # shellcheck source=tests/integration/lib/skip-accounting.sh
 source "${BASH_SOURCE[0]%/*}/lib/skip-accounting.sh" && source "${BASH_SOURCE[0]%/*}/lib/e2e-env.sh" ||
     {
