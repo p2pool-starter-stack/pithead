@@ -792,7 +792,18 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   dial is refused, and doctor names the hold. Then `docker compose start`, `docker compose up
   --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
   is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the nodes
-  running, `remove_lan_guard` refuses and the rule stays live. The restore proof records
+  running, `remove_lan_guard` refuses and the rule stays live.
+  A failed open-port probe saves a snapshot immediately, before the next recovery action,
+  under `results/lan-guard/probe-<port>.*` and in the transcript with the
+  `lan-guard diagnostic:` prefix. It records the node's running state, exit code and restart
+  count, listener presence inside its network namespace, live guard verdict, and the LAN check
+  unit's load state, last result, exit code and monotonic start/exit timestamps. Each command
+  has a three-second bound and the complete capture has a 25-second bound and an 8192-byte cap.
+  Only fixed labels, booleans, numbers and unit-state values are retained; raw socket output,
+  logs, identities and command errors are omitted. Unavailable reads and failed artifact
+  writes are explicit. The original single dial, row names and verdicts are unchanged.
+  `selftest-lan-guard-evidence.sh` exercises capture, read/write failures and the closed-port
+  verdict without a stack. The restore proof records
   `pithead-lan-guard.service` and `pithead-lan-hold.service` before the run and restores each one
   plus `pithead-lan.timer` and its check service
   as it does the egress units: a unit the run added is removed and checked absent, including from
