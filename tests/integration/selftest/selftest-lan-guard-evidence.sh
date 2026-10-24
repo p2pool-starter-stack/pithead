@@ -51,6 +51,7 @@ _lan_probe() {
     echo "${PROBE_RESULT:-closed}"
 }
 
+echo "== LAN guard failure evidence =="
 _lan_assert_open 'closed probe remains failed' 10.254.254 18142 >"$TMP/transcript"
 [ "$IT_FAIL" -eq 1 ] || exit 1
 files=("$OUT_DIR/lan-guard/"*)
