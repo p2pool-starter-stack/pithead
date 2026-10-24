@@ -230,30 +230,10 @@ unset -f rx
 
 echo "== the leg reports PASS, FAIL or a COUNTED skip — never a silent green =="
 
-# Run the leg in a SUBSHELL with its two collaborators stubbed and the harness counters zeroed,
-# and report the counters as a line. Three of the four cases below provoke a leg FAILURE on
-# purpose; left in this file's own totals they would make a working self-test report red, which
-# is how a suite learns to be read past.
-#
-# The stubs live INSIDE the subshell, not at the top level of this file. The capture section
-# above calls the REAL `mm_capture_startup`, so a top-level stub of the same name has to come
-# after those calls — and shellcheck 0.9.0 reads a call that precedes a same-file definition as
-# use-before-definition (SC2218), which is what stopped the #1653 release rehearsal (#1679).
-# Scoping the stubs to the subshell is the same behaviour: nothing outside it ever called them.
-mm_leg_outcome() { # <synced-rc> <capture> -> "<pass> <fail> <skipped-legs> <by-design> <names>"
+mm_leg_outcome() {
     (
-        # The leg is driven with its two collaborators stubbed, so all three outcomes are
-        # reachable without a stack. Stubbing is what makes the skip path testable at all: on the
-        # boxes this harness runs on monerod IS synced, so that branch would otherwise never be
-        # exercised here.
         monero_caught_up() { return "$MM_STUB_SYNCED"; }
         mm_startup_lost() { return 1; }
-        # The sentinel matters. `mm_capture_startup` has TWO distinct empty outcomes in production
-        # and the leg treats them differently: it returns non-zero when the container's start time
-        # cannot be read at all, and returns ZERO with empty output when the log simply held no
-        # MergeMiningClientTari line (its `grep` is `|| true`). A stub keyed only on emptiness
-        # collapses them, and the case named for the second silently exercises the first — which
-        # is how the `absent` branch survived a mutation to `it_pass` here.
         mm_await_roundtrip() {
             [ "$MM_STUB_CAPTURE" = "@FAIL" ] && {
                 printf 'start-error|\n'

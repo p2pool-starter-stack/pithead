@@ -55,9 +55,6 @@ MM_CAPTURE_LINE_BYTES=2048
 MM_RECENT_LINES=2000
 MM_LOG_READ_TIMEOUT=15
 
-# Strip SGR escape sequences. PURE.
-# The ESC byte is written with bash ANSI-C quoting rather than a `\x1b` inside the sed script,
-# because that spelling depends on the sed implementation and this box's text tools are shims.
 mm_strip_ansi() { sed $'s/\033\\[[0-9;]*m//g'; }
 
 # mm_roundtrip_verdict <log text> — prints exactly one of:
@@ -185,7 +182,6 @@ mm_await_roundtrip() {
     return 1
 }
 
-# Rotation can drop startup lines, so a first line past a 60 s allowance hints at, never proves, lost evidence.
 mm_startup_lost() {
     local started oldest
     started="$(mm_started)" || return 1
@@ -214,18 +210,10 @@ sys.exit(0 if lost else 1)
 MM_TIME
 }
 
-# A local client line cannot prove Tari answered, so lost evidence is judged on a fresh bounded window.
 mm_capture_recent() {
     rx "timeout ${MM_LOG_READ_TIMEOUT} docker compose logs --no-color --since 60s p2pool 2>&1 | tail -n ${MM_RECENT_LINES} | grep -a MergeMiningClientTari | cut -c 1-${MM_CAPTURE_LINE_BYTES} || true" 2>/dev/null
 }
 
-# Diagnostic lines from the same window, for a FAIL only (#2326). An empty capture cannot say
-# whether p2pool built no client, the client could not reach Tari, or the log was never read; these
-# lines can: a `compose logs` error, the entrypoint's launch and bridge lines, p2pool's Tari and error
-# lines. The log itself carries both wallets, the RPC credential and the onion, and p2pool's own
-# startup format is not captured anywhere in this repo, so the filter is an ALLOWLIST applied on the
-# target: only matching lines cross the wire. What crosses is then passed through redact(), with this
-# run's remote endpoints and every IPv4 address masked, private ranges included.
 MM_EXCERPT_LINES=80
 MM_EXCERPT_KEEP='error|fail|refus|invalid|unknown|cannot|denied|timed out|timeout|no such|tari|p2pool-entrypoint'
 mm_startup_excerpt() {
@@ -253,35 +241,6 @@ mm_mask_excerpt() {
         s/^/          /'
 }
 
-# The release-gate leg: PASS, FAIL, or an honest counted SKIP — never a silent green.
-#
-# THE CAPTURE IS READ BEFORE THE PREDICATE, AND THAT ORDER IS ITSELF AN ASSERTION (#1597).
-# `monero_caught_up` REDUCED several independent conditions to one bit: its `curl -fsS` discards
-# stderr and leaves the body EMPTY on an unreachable RPC, a refused connection or a 401, and
-# `jq -e` over an empty body answered exactly as it does for a node that is genuinely behind.
-# #1605 has since split that bit three ways — 0 caught up, 1 answered-and-behind, any other rc
-# could-not-ask — but THIS SITE DELIBERATELY TAKES BOTH NONZERO DOORS: `! monero_caught_up` below
-# is true for each, and the skip's own text says "could not be confirmed caught up", which is a
-# true statement about both. The capture-first order, not the predicate's precision, is what keeps
-# this skip honest; narrowing the test to `= 1` here would make the leg red on an unreachable RPC
-# in the one case p2pool has already proved the signal cannot exist.
-# Asked first, that one bit decided the whole leg — so a stack whose monerod was synced and whose
-# merge-mining client was up and reading chain_ids would have been booked as an ACCEPTED HOLE for
-# as long as the RPC stayed unanswerable. That state is not hypothetical here — `lib.sh`'s
-# env_bake_verdict comment records a day of it; read the incident there, not a second copy of it.
-# The capture answers the question the predicate was standing in for, and answers it from p2pool
-# rather than from the RPC we could not reach: p2pool constructs a MergeMiningClientTari only
-# after its block-header download succeeds, so ANY such line is proof that monerod caught up.
-#
-# The skip stays classed `by-design` rather than `missing` on the skip-accounting test, and
-# reading the capture first is what makes that class honest rather than merely conventional. It
-# is now reached only when the startup window WAS read and held no merge-mining line at all — so
-# p2pool built no client, so the header download did not complete, so no input, flag or env var
-# to THIS harness would make the signal exist (cycle 40 measured zero Tari gRPC calls across five
-# legs against absent, synced-fake and partial-fake monerods). Covering it means running against
-# a synced chain, not supplying something.
-#
-# Suspected evidence loss without fresh proof is a `missing` skip, never a by-design one.
 assert_mergemine_roundtrip() {
     local observed verdict epoch current lines rc=0 excerpt=""
     observed="$(mm_await_roundtrip)" || rc=$?

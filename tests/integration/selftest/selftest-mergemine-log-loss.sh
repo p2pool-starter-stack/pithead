@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# The log-loss path needs proof without a live daemon to rotate.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
@@ -20,7 +19,6 @@ MM_FIXTURE_TRACE="$MM_FIXTURE_DIR/trace"
 trap 'rm -rf "$MM_FIXTURE_DIR"' EXIT
 mkdir "$MM_FIXTURE_DIR/bin"
 printf '%s\n' '#!/usr/bin/env bash' 'shift' 'exec "$@"' >"$MM_FIXTURE_DIR/bin/timeout"
-# Fake Docker, not the filters, so the real awk must cut the secret-bearing oldest line to its timestamp.
 cat >"$MM_FIXTURE_DIR/bin/docker" <<'MM_DOCKER'
 #!/usr/bin/env bash
 case "$1" in
