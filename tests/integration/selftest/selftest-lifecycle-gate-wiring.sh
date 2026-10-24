@@ -14,8 +14,6 @@ recovery_proof_calls=0
 recovery_proof_rc=0
 diagnostic_calls=0
 diagnostic_rc=0
-# Execute the original lifecycle prefix through the real source-image runner; later pool/wallet
-# legs do not concern these diagnostics and have their own complete lifecycle selftests.
 eval "$(sed -n '/^run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d')
 }"
 rx() {
