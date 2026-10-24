@@ -41,6 +41,7 @@ WORKDIR /app
 # Lock + metadata first (better layer caching), then the source.
 COPY pyproject.toml uv.lock ./
 COPY mining_dashboard/ ./mining_dashboard/
+RUN chmod -R a+rX mining_dashboard
 
 # ==========================================================================
 # Build stage: uv resolves the locked runtime deps into /app/.venv. uv is COPYed in
@@ -68,7 +69,7 @@ COPY --from=build /app/.venv /app/.venv
 # entrypoint runs the app; healthcheck.sh (#904) HEADs /api/state with the venv's own python3
 # (the slim image ships no curl/wget).
 COPY entrypoint.sh healthcheck.sh ./
-RUN chmod +x entrypoint.sh healthcheck.sh
+RUN chmod 755 entrypoint.sh healthcheck.sh
 
 # Stack version, baked at build so the running container is self-describing (Issue #58).
 # PITHEAD_VERSION comes from the top-level VERSION file (the source of truth); the git args

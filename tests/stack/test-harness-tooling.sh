@@ -74,6 +74,8 @@ echo "== unit: verify-healthcheck-scripts against the real tree (#1098) =="
 bash "$ROOT/scripts/lint/verify-healthcheck-scripts.sh" >/dev/null 2>&1
 assert_rc "every real healthcheck script exists where its own Dockerfile promises (#1098)" "$?" "0"
 
+echo "== unit: image builds retry apt update (#1802) =="
+for image in monero p2pool xmrig-proxy; do assert_contains "image build retries apt update with delayed, bounded backoff (#1802)" "$(cat "$ROOT/build/$image/Dockerfile")" 'for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done'; done
 echo "== unit: patch-coverage overlap self-test (#1000) =="
 # diff-cover exits 0 on "No lines with coverage information" — a vacuous pass. The wrapper's
 # overlap check is what turns that into a loud not-applicable pass or a real failure; its
@@ -132,6 +134,10 @@ bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
 bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null
 assert_rc "the OS runner module and control lifecycle guard self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-install-rig.sh" >/dev/null
+assert_rc "internal-disk rig lifecycle and verdict self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-install-rig-dispatch.sh" >/dev/null
+assert_rc "rig install dispatch preserves card-before-erase and bare keep" "$?" "0"
 bash "$ROOT/tests/os/selftest-restore-p2pool-startup.sh" >/dev/null 2>&1
 assert_rc "restore startup rejects P2Pool crashes across its bounded window" "$?" "0"
 bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null

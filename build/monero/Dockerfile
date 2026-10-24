@@ -1,9 +1,7 @@
 # Pinned by digest (#135) so the ubuntu:24.04 tag can't be silently re-pointed.
 FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 
-# Install system dependencies required for downloading, verifying, and configuring the node
-# 'gettext-base' provides 'envsubst' for template processing in entrypoint.sh
-RUN apt-get update && apt-get install -y \
+RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
     bzip2 ca-certificates curl gettext-base jq \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,22 +25,22 @@ RUN sh /usr/local/bin/download-monero "${MONERO_HASH}" 300 monero.tar.bz2 \
 
 # Configure the entrypoint script for runtime initialization
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
 
 # Payout-confirmation wallet-rpc entrypoint + healthcheck (#381). Same image, distinct entrypoint;
 # the view key is read from a file the entrypoint writes to tmpfs, never from the command line (#90).
 COPY wallet-entrypoint.sh /usr/local/bin/wallet-entrypoint.sh
 COPY wallet-healthcheck.sh /usr/local/bin/wallet-healthcheck.sh
-RUN chmod +x /usr/local/bin/wallet-entrypoint.sh /usr/local/bin/wallet-healthcheck.sh
+RUN chmod 755 /usr/local/bin/wallet-entrypoint.sh /usr/local/bin/wallet-healthcheck.sh
 
 # RPC, peer and height-progress healthcheck — reads creds from env, never from compose argv (#90, #2499)
 COPY healthcheck.sh /usr/local/bin/monerod-healthcheck.sh
-RUN chmod +x /usr/local/bin/monerod-healthcheck.sh
+RUN chmod 755 /usr/local/bin/monerod-healthcheck.sh
 
 # The peer counts (#2921): the published RPC is restricted and hides them, so this fixed helper reads the
 # admin RPC on the container's own loopback. The healthcheck and host tools (docker exec) call it.
 COPY peers.sh /usr/local/bin/monerod-peers.sh
-RUN chmod +x /usr/local/bin/monerod-peers.sh
+RUN chmod 755 /usr/local/bin/monerod-peers.sh
 
 # Run non-root (#255). Reuse ubuntu:24.04's built-in 'ubuntu' user (uid 1000) and keep monerod's
 # data under that user's home — /home/ubuntu/.bitmonero, which is also monerod's native

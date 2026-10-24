@@ -39,6 +39,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         run_cli_wizard_defaults() { :; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
+        run_image_permissions() { :; }
         run_tari_background_sync() { :; }
         sync_gate_marker_state() { printf absent; }
         run_connection_announcements() { :; }

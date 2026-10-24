@@ -15,16 +15,16 @@ RUN apk add --no-cache --upgrade libcrypto3 libssl3 tor netcat-openbsd
 # user can't write /etc/tor).
 COPY torrc.template /etc/tor/torrc.template
 COPY entrypoint.sh /usr/local/bin/tor-entrypoint.sh
-RUN chmod +x /usr/local/bin/tor-entrypoint.sh
+RUN chmod 644 /etc/tor/torrc.template && chmod 755 /usr/local/bin/tor-entrypoint.sh
 
 # Control-port bootstrap healthcheck (see docker-compose.yml healthcheck)
 COPY healthcheck.sh /usr/local/bin/tor-healthcheck.sh
-RUN chmod +x /usr/local/bin/tor-healthcheck.sh
+RUN chmod 755 /usr/local/bin/tor-healthcheck.sh
 COPY control-signal.sh /usr/local/bin/tor-control-signal.sh
-RUN chmod +x /usr/local/bin/tor-control-signal.sh
+RUN chmod 755 /usr/local/bin/tor-control-signal.sh
 
 COPY recovery-diagnose.sh /usr/local/bin/tor-recovery-diagnose.sh
-RUN chmod +x /usr/local/bin/tor-recovery-diagnose.sh
+RUN chmod 755 /usr/local/bin/tor-recovery-diagnose.sh
 
 # Create the data directory and ensure the 'tor' user has ownership
 # This is critical because we switch to a non-root user below

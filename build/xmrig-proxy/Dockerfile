@@ -6,8 +6,7 @@ FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884
 ARG XMRIG_PROXY_VERSION=6.26.0
 ARG XMRIG_PROXY_HASH=73cceb10be474ba8ce20faddb9d2c6af0cb50bce84e72f7d36a326f7147c01c4
 
-# Install system dependencies required for downloading and verifying the binary
-RUN apt-get update && apt-get install -y \
+RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
     wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -22,12 +21,12 @@ RUN wget -O xmrig-proxy.tar.gz https://github.com/xmrig/xmrig-proxy/releases/dow
 # Wrapper entrypoint: appends the optional stratum-auth flag (#152) from an env var so an unset
 # password emits NO arg (a compose `${VAR:+..}` command item would leave a stray '' — see script).
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
 
 # Control-API liveness healthcheck (#904) — reads the port from env so nothing rides the compose
 # command line (#90).
 COPY healthcheck.sh /usr/local/bin/xmrig-proxy-healthcheck.sh
-RUN chmod +x /usr/local/bin/xmrig-proxy-healthcheck.sh
+RUN chmod 755 /usr/local/bin/xmrig-proxy-healthcheck.sh
 
 # Run non-root (#255) — the easy win: pure network proxy, no bind-mounts, already cap_drop:[ALL]
 # + no-new-privileges in compose. Reuse ubuntu:24.04's 'ubuntu' user (uid 1000) and give it a
