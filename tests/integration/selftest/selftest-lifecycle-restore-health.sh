@@ -24,6 +24,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             printf 'restore fixture: command not found: %s\n' "$1" >&2
             return 127
         }
+        run_restore_diagnostic_control() { :; }
         it_log() { :; }
         it_step() { :; }
         it_pass() { :; }
@@ -41,7 +42,11 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
                 echo 'carry apply failed before health wait'
                 return 1
             } ;; # the third push is the carry
-            backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
+            backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore)
+                printf "origin stdout %s\n" "$1"
+                printf "origin stderr %s %s\n" "$1" 'PASSWORD=changeme' >&2
+                return 71
+                ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
@@ -103,7 +108,10 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         render_scenario_config() { printf '{}'; }
         push_config() {
             PUSH_COUNT=$((PUSH_COUNT + 1))
-            [ "$RESTORE_CASE" != push-config-fails ] || [ "$PUSH_COUNT" -ne 2 ]
+            if [ "$RESTORE_CASE:$PUSH_COUNT" = push-config-fails:2 ]; then
+                printf "origin config-write\n" >&2
+                return 72
+            fi
         }
         assert_pool_switched() {
             [ "$RESTORE_CASE:$1" != "verify-fails:restore reverts the pool to the backed-up value" ] || it_fail
@@ -126,6 +134,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         eval "$LIFECYCLE_SRC"
         run_lifecycle >"${LIFECYCLE_OUT:-/dev/null}"
         local lifecycle_rc=$?
+        [ -z "${LIFECYCLE_DIAG_OUT:-}" ] || cp "$OUT_DIR/restore-operations.log" "$LIFECYCLE_DIAG_OUT"
         if [ -s "$OUT_DIR/missing-command" ]; then
             printf '127|%s' "$((IT_FAIL + 1))"
             exit 127
@@ -135,6 +144,27 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
     )
 }
+
+diagnostic_out="$(mktemp)"
+for operation in backup apply down restore; do
+    LIFECYCLE_DIAG_OUT="$diagnostic_out" drive_restore yes "$operation-fails" >/dev/null 2>&1
+    diagnostic="$(cat "$diagnostic_out")"
+    assert_contains "round-trip retains the $operation exit status" "$diagnostic" "operation=round-trip.$operation exit=71"
+    assert_contains "round-trip retains $operation stdout" "$diagnostic" "origin stdout $operation"
+    assert_contains "round-trip retains sanitized $operation stderr" "$diagnostic" "origin stderr $operation PASSWORD=<redacted>"
+    assert_eq "round-trip hides planted secrets" "$(grep -c changeme "$diagnostic_out")" 0
+    if [ "$operation" != backup ]; then
+        assert_contains "cleanup preserves the originating $operation failure" "$diagnostic" "operation=round-trip.archive-cleanup exit=0"
+    fi
+done
+LIFECYCLE_DIAG_OUT="$diagnostic_out" drive_restore yes push-config-fails >/dev/null 2>&1
+assert_contains "round-trip retains config-write exit status" "$(cat "$diagnostic_out")" 'operation=round-trip.config-write exit=72'
+assert_eq "a config-write failure prevents apply" "$(grep -c 'operation=round-trip.apply' "$diagnostic_out")" 0
+LIFECYCLE_DIAG_OUT="$diagnostic_out" drive_restore yes up-fails >/dev/null 2>&1
+assert_contains "round-trip retains up stderr" "$(cat "$diagnostic_out")" 'pull access denied'
+LIFECYCLE_DIAG_OUT="$diagnostic_out" drive_restore no >/dev/null 2>&1
+assert_contains "round-trip retains failed health exit status" "$(cat "$diagnostic_out")" 'operation=round-trip.health exit=1'
+rm -f "$diagnostic_out"
 
 assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
 assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"

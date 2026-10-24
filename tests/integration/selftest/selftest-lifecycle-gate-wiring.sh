@@ -57,6 +57,7 @@ prove_wallet_recovery() {
     recovery_proof_calls=$((recovery_proof_calls + 1))
     return "$recovery_proof_rc"
 }
+run_restore_diagnostic_control() { :; }
 run_connection_announcements() { :; }
 run_cli_wizard_defaults() { :; }
 run_tari_background_sync() { :; } # its own runtime leg and selftest cover it
