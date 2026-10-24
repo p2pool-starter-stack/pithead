@@ -456,7 +456,8 @@ Five steps, each answering a hardware-validated failure:
    exactly that on hardware: new slot, RC-old dashboard, every shipped fix absent). Keyed on
    the archive's digest, recorded beside the store it describes; a normal boot pays one
    sha256 per archive. The first-boot wizard runs the same loader before it serves, so both
-   boot owners converge the same way.
+   boot owners converge the same way. Harness marker variants are signed before Compose
+   digest pinning; the archive and runtime declaration select that same final image.
 2. **`pithead render`** — regenerate every *derived* file (`.env`, Caddyfile, service configs,
    host units) from `config.json` plus the program that is actually running. Derived files are
    never inspected or repaired, only rebuilt: an A/B update swaps the whole program, and a

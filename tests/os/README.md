@@ -107,6 +107,15 @@ The harness builds its own update bundles from the same tarball (`os/rauc/mkbund
 signed with a throwaway development key. A release build names its key instead — see the custody
 runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 
+Harness builds declare dashboard markers in `tests/os/dashboard-markers.txt`. The runner publishes
+and signs each final marker image before invoking the appliance builder, then forwards
+`PITHEAD_TEST_MARKER_IMAGES`, a version-1 JSON mapping bound to the candidate commit.
+`PITHEAD_TEST_IMAGE_COMMIT` carries that source identity into exported fixture trees without Git metadata.
+The builder uses the selected immutable reference for both Compose pinning and the baked archive;
+it adds no image layer after signing. Missing markers, another commit or a reference outside
+the configured test registry fail before the image build. Release builds do not use this mapping.
+`selftest-marker-images.sh` checks selection, rejection and the pinned/archive source contract.
+
 ## Phases
 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd

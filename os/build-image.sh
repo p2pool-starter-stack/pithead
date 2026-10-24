@@ -77,19 +77,15 @@ fi
 
 is_immutable_image_ref() { [[ "$1" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; }
 
-# Resolve each first-party image to the digest the RELEASE SIGNED, and pin the compose to it.
-# The resolution is scripts/release/release.sh's manifest_digest, on purpose and to the letter: the
-# `Digest:` line of `docker buildx imagetools inspect`, which is the manifest-LIST (index) digest,
-# and the index digest is what sign_images hands to `cosign sign`. A multi-arch tag's per-platform
-# children are NOT signed: `docker manifest inspect --verbose` returns those children, so pinning
-# one (`.[0]`) pins bytes no signature covers and verify_release_images then fails closed on every
-# boot — the exact brick #1891 exists to avoid. `^Digest:` is anchored and `exit` takes the first
-# line because the child entries this output also lists are indented beneath `Manifests:`.
-pin_first_party_images() { # <compose-file> <registry> <stack-version>
-    local compose="$1" registry="$2" version="$3" svc digest
+pin_first_party_images() {
+    local compose="$1" registry="$2" version="$3" dashboard="${4:-}" svc digest
     for svc in tor monero p2pool xmrig-proxy dashboard; do
-        digest="$(docker buildx imagetools inspect "${registry}/pithead-${svc}:${version}" 2>/dev/null |
-            awk '/^Digest:/{print $2; exit}')"
+        if [ "$svc" = dashboard ] && [ -n "$dashboard" ]; then
+            digest="${dashboard##*@}"
+        else
+            digest="$(docker buildx imagetools inspect "${registry}/pithead-${svc}:${version}" 2>/dev/null |
+                awk '/^Digest:/{print $2; exit}')"
+        fi
         [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
             echo "build-image: could not resolve an immutable digest for pithead-${svc}:${version}" >&2
             return 1
@@ -99,6 +95,25 @@ pin_first_party_images() { # <compose-file> <registry> <stack-version>
             { print }
         ' "$compose" >"$compose.new" && mv "$compose.new" "$compose" || return 1
     done
+}
+
+select_marker_dashboard() {
+    local manifest="$1" marker="$2" registry="$3" commit image
+    [ -s "$manifest" ] || {
+        echo "build-image: signed marker image manifest is required" >&2
+        return 1
+    }
+    commit="${PITHEAD_TEST_IMAGE_COMMIT:-}"
+    [ -n "$commit" ] || commit=$(git rev-parse HEAD) || return 1
+    image=$(jq -er --arg commit "$commit" --arg marker "$marker" 'select(.version == 1 and .source_commit == $commit) | .images[$marker] | select(type == "string")' "$manifest") || {
+        echo "build-image: signed marker image is missing or belongs to another commit" >&2
+        return 1
+    }
+    is_immutable_image_ref "$image" && [ "${image%@*}" = "$registry/pithead-dashboard" ] || {
+        echo "build-image: marker image must be an immutable dashboard reference in the test registry" >&2
+        return 1
+    }
+    printf '%s\n' "$image"
 }
 
 # Harness builds only, fault injection (#2383): force the dashboard's OWN healthcheck to fail,
@@ -259,8 +274,17 @@ fi
 # five images exist only under the staging tag (vX.Y.Z-rc.N) and vX.Y.Z is created at promotion, by
 # digest, so it passes the staging tag: the same digests, which stage 6b then signs. Every other build
 # reads the version tag, as before.
+MARKER_DASHBOARD_IMAGE=""
+if [ -n "${PITHEAD_TEST_MARKER:-}" ]; then
+    [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
+        echo "marker images require a debug harness build" >&2
+        exit 1
+    }
+    MARKER_DASHBOARD_IMAGE=$(select_marker_dashboard "${PITHEAD_TEST_MARKER_IMAGES:-}" "$PITHEAD_TEST_MARKER" "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}") || exit 1
+    PITHEAD_WIZARD_IMAGE="$MARKER_DASHBOARD_IMAGE"
+fi
 if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then
-    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "${PITHEAD_PIN_TAG:-$STACK_VERSION}" || exit 1
+    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "${PITHEAD_PIN_TAG:-$STACK_VERSION}" "$MARKER_DASHBOARD_IMAGE" || exit 1
 fi
 if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
     [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
@@ -292,16 +316,6 @@ else
     # only exists in this working tree, so a pulled image would start and immediately exit with
     # "No module named mining_dashboard.wizard". Build the image the appliance will actually run.
     docker build -q -t "$WIZARD_IMAGE" dashboard >/dev/null
-fi
-# Harness builds only: stamp the marker INTO the dashboard image, at a path the wizard serves
-# (/static/os-test-marker.txt). The tag is identical across builds, so this is the only way a
-# battery can tell which dashboard actually answers after an update or reinstall — the #798
-# regression was precisely "new OS, old dashboard, every check green". Release builds set no
-# marker and get no extra layer.
-if [ -n "${PITHEAD_TEST_MARKER:-}" ]; then
-    # USER root/pithead mirrors dashboard/Dockerfile: the runtime user cannot write /app.
-    printf 'FROM %s\nUSER root\nRUN printf %%s "%s" >/app/mining_dashboard/web/static/os-test-marker.txt\nUSER pithead\n' \
-        "$WIZARD_SOURCE" "$PITHEAD_TEST_MARKER" | docker build -q -t "$WIZARD_IMAGE" - >/dev/null
 fi
 docker save "$WIZARD_IMAGE" | gzip -1 >os/rootfs/images/dashboard.tar.gz
 
