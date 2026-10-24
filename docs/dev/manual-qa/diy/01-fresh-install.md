@@ -1,11 +1,11 @@
 # 1. Fresh DIY install
 
-This part tests the path a new user takes, from an empty machine to a stack that is [syncing](../README.md#glossary) its chains.
+This part tests the path a new user takes, from an empty machine to a stack that is [syncing](../README.md#glossary) its Monero chain.
 
 ## Before you start
 
 - **Machine:** the **fresh box**, Ubuntu Server 24.04 with nothing of Pithead on it (full spec in [What you need](../what-you-need.md)). It may be a virtual machine: see [sandbox-vm.md](sandbox-vm.md), and start from its *clean* snapshot.
-- **Earlier steps:** none. 1.1–1.11 are session 2 of the [Run sheet](../README.md#run-sheet). 1.12 runs partway through the sync, in the window when Monero has finished its first sync and Tari has not: check the dashboard a few times a day so you catch it. 1.13 waits for session 9, once both chains have synced.
+- **Earlier steps:** none. 1.1–1.11 are session 2 of the [Run sheet](../README.md#run-sheet). 1.12 applies only to the separate Tari opt-in run from 1.4b, while Monero has synced and Tari has not. 1.13 waits for session 9, once Monero has synced; also check Tari there if opted in.
 - **Have ready:** the candidate's full commit SHA; the QA Monero wallet's **primary** address and one **subaddress** of it; the Tari QA address; the laptop on the same network, with a browser.
 - **Why from source:** build the candidate from source, so a failure here does not spend the version tag.
 - **Time:** about 2 hours hands-on for 1.1–1.11, then hours to days of chain sync: 1.12 runs partway through it, 1.13 after it.
@@ -122,7 +122,7 @@ This part tests the path a new user takes, from an empty machine to a stack that
 6. Answer the remaining questions like this:
    - Monero node: local.
    - Pool: `mini`.
-   - Tari: the default (No). Run it once more answering Yes and give the Tari address.
+   - Tari: press Enter for the default (No). Keep this Monero-only run separate from 1.4b and 1.4c.
    - The [stratum](../README.md#glossary) password question, `Enable stratum password?`: the default (off).
    - The faster first sync: decline.
    - [Tor](../README.md#glossary) dashboard access: decline.
@@ -173,16 +173,54 @@ This part tests the path a new user takes, from an empty machine to a stack that
 
 **What you should see:**
 
-Per #3099 and #3092:
+Per #3333, #3099 and #3092:
 
 - `"xvb": { "enabled": false }`.
-- `tari_mode` is `local` on a fitting disk and `off` otherwise.
+- Fresh Enter-through expectation: `tari_mode=off`, regardless of free disk.
+- No Tari payout address is needed, and no Tari node starts.
 - `stratum_set` is `false`.
 - `dashboard_login` is `true`.
 - Both `fast_sync` entries are `false` or `null`.
 - `jq -r .config_version config.json` prints the candidate's release number (2.3 explains the stamp).
 
 **Record**: PASS, FAIL or N/A in the results sheet.
+
+### 1.4b Explicit Tari beta opt-in
+
+**What you do:**
+
+1. Use a separate fresh box or VM cloned from the clean snapshot, with no `config.json` or retained chain data. Keep the default run from 1.4–1.4a intact.
+2. Repeat 1.1–1.4, but explicitly choose Yes (beta) for Tari and provide the QA Tari address. Decline faster first sync.
+3. Run the mode query from 1.4a, then print the mining requirement:
+
+   ```bash
+   jq '.dashboard.tari_required' config.json
+   ```
+
+4. Continue 1.5–1.13 on this separate run, recording it as the opt-in case.
+
+**What you should see:**
+
+- `tari_mode` is `local`, and `dashboard.tari_required` is `false`.
+- The local Tari node downloads and syncs its chain over Tor.
+- Monero mining starts once Monero is synced, without waiting for Tari.
+
+**Record**: PASS, FAIL or N/A separately from the default run.
+
+### 1.4c Reinstall with a retained Tari chain
+
+**What you do:**
+
+1. On a disposable reinstall fixture, keep an existing `data/tari` chain occupying at least half the Tari disk budget (100 GiB). Keep this separate from the fresh-box runs.
+2. With the old stack stopped and its config backed up outside the install directory, remove `config.json` and repeat 1.4. Press Enter at the Tari question and provide the QA Tari address when asked.
+3. Run the mode query from 1.4a.
+
+**What you should see:**
+
+- The wizard says keeping merge-mining on is the default, and `tari_mode` is `local`.
+- This exception follows retained chain data, not free disk. An existing config or an upgrade keeps its configured mode; it is not a new wizard run.
+
+**Record**: PASS, FAIL or N/A separately from the fresh-box runs. Record N/A if no retained-chain fixture is available.
 
 ### 1.5 HugePages reboot
 
@@ -203,7 +241,9 @@ Per #3099 and #3092:
 **What you should see:**
 
 - The stack starts.
-- This first start prints a short note that the miner is held until both chains sync.
+- This first start prints `The miner is held until the initial sync finishes for Monero, then starts automatically.`
+  The wizard leaves Tari off by default and makes it non-required when opted in. A config with
+  Tari enabled and `dashboard.tari_required` true names `Monero and Tari` instead.
 - A later `./pithead restart` does not print the note again.
 - Per #3090, `up` also prints the LAN pool URL and `none set` for the stratum password, every time.
 
@@ -223,7 +263,8 @@ Per #3099 and #3092:
 
 - Each node and support service shows a `✓` line ending in `running`.
 - `p2pool` and `xmrig-proxy` show `⚠` with `held until the required chains finish syncing`.
-- Under `Chain sync in progress — the miner is held until it completes:` each chain shows its percent and blocks remaining.
+- Under `Chain sync in progress — the miner is held until it completes:`, Monero shows its percent and blocks remaining.
+- Sync-hold rows: `monero` in both fresh runs (default and beta opt-in). Tari is not listed there in either run: it is off by default and non-required after the opt-in.
 - No `✗` line.
 
 **Record**: PASS, FAIL or N/A in the results sheet.
@@ -264,7 +305,7 @@ Per #3099 and #3092:
 **What you should see:**
 
 - A valid HTTPS connection, then the login.
-- Then the **Sync Mode** screen, with a progress line per chain and a held-miner notice.
+- Then the **Sync Mode** screen, with Monero progress and a held-miner notice. Tari is absent in the default run; in the opt-in run, it does not delay Monero mining.
 - The top bar shows CPU, RAM, HugePages and disk.
 
 **Record**: PASS, FAIL or N/A in the results sheet.
@@ -279,7 +320,7 @@ Per #3099 and #3092:
    ./pithead logs monerod
    ```
 
-2. Do the same for the Tari node:
+2. Only in the opt-in run from 1.4b, do the same for the Tari node:
 
    ```bash
    ./pithead logs tari
@@ -331,9 +372,9 @@ Per #3099 and #3092:
 **What you do:**
 
 1. Note the time.
-2. Check back every few hours. `./pithead status` shows how far each chain has got, as in 1.6.
-3. Do 1.12 if you catch the moment Monero has finished and Tari has not.
-4. Do 1.13 when both are synced.
+2. Check back every few hours. `./pithead status` shows required Monero progress while mining is held, as in 1.6. In the opt-in run, follow passive Tari progress on the dashboard or with `./pithead logs tari`.
+3. In the opt-in run only, do 1.12 when Monero has finished and Tari has not.
+4. Do 1.13 when Monero is synced; in the opt-in run, also check the later Tari sync completion.
 
 **What you should see:**
 
@@ -345,13 +386,9 @@ Per #3099 and #3092:
 
 **What you do:**
 
-1. Run this step only while Monero has finished its first sync and Tari has not.
-2. Add `"tari_required": false` inside the `dashboard` block of `config.json`.
-3. Apply the change:
-
-   ```bash
-   ./pithead apply
-   ```
+1. On the default Monero-only run, record N/A: Tari is off.
+2. On the separate opt-in run from 1.4b, run this step while Monero has finished its first sync and Tari has not.
+3. Confirm `dashboard.tari_required` is already `false`, then check the dashboard and `./pithead status`. No config edit or apply is needed.
 
 **What you should see:**
 
@@ -362,13 +399,13 @@ Per #3099 and #3092:
 - If the test chat is set up on this box, one message that starts `Tari node is syncing` arrives, once.
 - For reference: only an unreachable Tari node (10.5) can reject workers, and then only with `tari_required` true.
 
-**Record**: PASS, FAIL or N/A in the results sheet. Record SKIP only if Tari finished its first sync before Monero did, so the window never happened, and say so. A window you missed is not a SKIP: 1.12 is not covered yet. Note it as missed and repeat the step: on a VM, revert to the *clean* snapshot as [Two boxes at once](sandbox-vm.md#two-boxes-at-once) describes; on a real machine, reinstall from an empty disk. Then run 1.1–1.11 again and check the dashboard more often during the sync.
+**Record**: PASS, FAIL or N/A in the results sheet. Record SKIP only if Tari finished its first sync before Monero did, so the window never happened, and say so. A window you missed is not a SKIP: 1.12 is not covered yet. Note it as missed and repeat the step: on a VM, revert to the *clean* snapshot as [Two boxes at once](sandbox-vm.md#two-boxes-at-once) describes; on a real machine, reinstall from an empty disk. Then repeat the opt-in case from 1.4b through 1.11 and check the dashboard more often during the sync.
 
 ### 1.13 Sync finishes
 
 **What you do:**
 
-1. Wait until both chains are synced, without touching the stack.
+1. Wait until Monero is synced, without touching the stack. For the separate opt-in run, also observe Tari finishing its sync later.
 2. Look at the dashboard on the laptop.
 3. Show the status:
 
@@ -384,7 +421,7 @@ Per #3099 and #3092:
 
 **What you should see:**
 
-- Once both chains are synced, the dashboard shows the full operational view by itself (from Sync Mode, or from the `Tari syncing` indicator after 1.12).
+- Once Monero is synced, the dashboard shows the full operational view by itself and mining begins. In the opt-in run, the `Tari syncing` indicator from 1.12 clears once Tari also syncs.
 - The miner runs without anyone touching it.
 - Monero returns to Tor by itself: the status banner is gone.
 - `./pithead doctor` reports `all node P2P is Tor-only`.
