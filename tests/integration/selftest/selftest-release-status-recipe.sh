@@ -98,8 +98,8 @@ fi
 unset RECIPE_TEST_FAILED_LEG
 
 cut_doc=$(sed -n '/^## Cutting a release/,/^## Shipping a bad release/p' "$ROOT/docs/dev/appliance-release.md")
-if [[ "$cut_doc" == *'phases: ["all"]'* ]]; then
-    echo 'appliance cut still prescribes one all-phase KVM job' >&2
+if [[ "$cut_doc" == *'phases: ["all"]'* || "$cut_doc" == *'boot,update,install,provision'* ]]; then
+    echo 'appliance cut still prescribes the old KVM gate jobs' >&2
     exit 1
 fi
 echo 'release status recipe: KVM groups, pinned provision and crossupdate, and rig-backed e2e aggregate passed'
