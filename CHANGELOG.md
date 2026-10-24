@@ -13,12 +13,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [2.0.1] - 2026-10-25
 
-Pithead 2.0.1 is the first patch release after 2.0.0. It keeps the dashboard certificate you
-already trust across an appliance update, makes `pithead status` and `pithead doctor` report a
-container that keeps restarting, fixes appliance setup and restore paths that could leave the setup
-page up or skip a rig's settings, and clears the image-scan findings raised since 2.0.0. It
-changes no configuration keys and no component version, and runs no data migration. Entries below
-apply to both channels unless they say otherwise.
+Pithead 2.0.1 is the first patch release after 2.0.0. It keeps the dashboard certificate you already
+trust across an appliance update, makes `pithead status` and `pithead doctor` report a container
+that keeps restarting, fixes appliance setup, restore and Set up again paths that could leave the
+setup page up, skip a rig's settings or keep a coordinator from returning to service, and clears the
+image-scan findings raised since 2.0.0. It changes no configuration keys and no component version,
+and runs no data migration. Entries below apply to both channels unless they say otherwise.
 
 ### Changed
 
@@ -60,6 +60,11 @@ apply to both channels unless they say otherwise.
   (#3076).** With the default keep policy, the install could take the plain reinstall path and
   finish without applying the submitted rig settings or publishing the rig card the coordinator
   uses to add it.
+- **Finishing "Set up again" on an appliance coordinator returns it to service (#3075).**
+  Submitting the setup form after choosing Set up again in the boot menu ran the headless setup
+  path, which refused the existing deployment, so the coordinator did not come back. Submitting
+  the form now applies the answers and starts the stack again, keeping the chains, the onion
+  address and the machine identity. Keep it still restores the machine unchanged.
 
 ### Security
 
@@ -78,7 +83,7 @@ apply to both channels unless they say otherwise.
 
 ### Known issues in 2.0.1
 
-These two ship in 2.0.1 and are planned for 2.0.2. The known issues listed for 2.0.0 still apply,
+These three ship in 2.0.1 and are planned for 2.0.2. The known issues listed for 2.0.0 still apply,
 except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
@@ -88,6 +93,9 @@ except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
   from Configuration can then re-propose the old values and undo part of the restore. Run
   `./pithead apply` once, then `./pithead restart`. A restore from the setup wizard is not affected
   (#3432).
+- The appliance does not boot with Secure Boot on: the firmware refuses its unsigned bootloader.
+  Turn Secure Boot off in the firmware before you boot the stick, as the install guide says. 2.0.0
+  has the same limitation (#2187).
 
 ## [2.0.0] - 2026-10-13
 
