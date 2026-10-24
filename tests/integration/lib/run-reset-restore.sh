@@ -1,9 +1,87 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# The ordinary CLI recovery door, using real Compose containers and a real encrypted backup.
-# RESET_RESTORE_STACK_INTACT=1 on return marks a failure that changed nothing, so run_lifecycle can
-# go on and the phases after it still run (#3342).
 run_reset_restore() {
+    RESET_RESTORE_STACK_INTACT=0
+    local scratch original_config original_secrets after_config after_secrets saved_umask rc=0 mutated=0 verified=1
+    saved_umask=$(umask)
+    umask 077
+    scratch=$(mktemp -d "${TMPDIR:-${XDG_RUNTIME_DIR:-/var/tmp}}/reset-recovery.XXXXXXXX") || {
+        it_fail "reset recovery reserves private scratch" "could not create a private baseline snapshot directory"
+        umask "$saved_umask"
+        return 1
+    }
+    if ! rx 'cat config.json' >"$scratch/original.json" || [ ! -s "$scratch/original.json" ] ||
+        ! original_config=$(rx 'sha256sum config.json') || [ -z "$original_config" ] ||
+        ! original_secrets=$(upgrade_secret_fingerprints) || [ -z "$original_secrets" ]; then
+        it_fail "reset recovery saves the original baseline" "configuration or secret snapshot unreadable"
+        rm -f -- "$scratch/original.json"
+        rmdir "$scratch"
+        umask "$saved_umask"
+        return 1
+    fi
+    if ! rx 'cat config.reference.json' >"$scratch/reference.json" ||
+        ! jq --slurpfile original "$scratch/original.json" '
+            def candidate($saved):
+                with_entries(select(.key != "_docs" and .key != "config_version") |
+                    .key as $key |
+                    select(($saved | type) == "object" and ($saved | has($key))) |
+                    .value |= if type == "object" then candidate($saved[$key]) else $saved[$key] end);
+            candidate($original[0])
+        ' "$scratch/reference.json" >"$scratch/fixture.json" ||
+        ! jq -e --slurpfile original "$scratch/original.json" '
+            . as $fixture |
+            all($original[0] | paths(scalars) | select(any(.[]; type == "string" and test("wallet|payout|view_key|spend_public_key|donor_id")));
+                . as $path | $fixture | getpath($path) == ($original[0] | getpath($path)))
+        ' "$scratch/fixture.json" >/dev/null; then
+        it_fail "reset recovery projects a candidate-compatible fixture" "reference unreadable or a wallet/payout field would be lost"
+        rc=1
+    else
+        mutated=1
+        if rx 'umask 077; cat >config.json' --stdin <"$scratch/fixture.json" &&
+            pithead apply -y 2>&1 | redact >"$OUT_DIR/reset-restore.fixture-apply.log" &&
+            rx 'cat config.json' >"$scratch/applied.json" &&
+            jq -en --slurpfile original "$scratch/original.json" --slurpfile reference "$scratch/reference.json" --slurpfile applied "$scratch/applied.json" '
+                def stamp: if type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$") then . else null end;
+                ($reference[0].config_version | stamp) as $candidate |
+                select($candidate != null and $applied[0].config_version == $candidate) |
+                {baseline_version: ($original[0].config_version | stamp), candidate_version: $candidate, fixture_version: $applied[0].config_version}
+            ' >"$scratch/receipt.json" && mv -- "$scratch/receipt.json" "$OUT_DIR/reset-restore.fixture.json"; then
+            run_reset_restore_fixture || rc=1
+        else
+            it_fail "reset recovery applies its synthetic fixture" "see reset-restore.fixture-apply.log"
+            rc=1
+        fi
+    fi
+    if [ "$mutated" -eq 1 ]; then
+        pithead down 2>&1 | redact >"$OUT_DIR/reset-restore.cleanup.log" || verified=0
+        if rx 'umask 077; cat >config.json' --stdin <"$scratch/original.json" &&
+            pithead apply -y 2>&1 | redact >>"$OUT_DIR/reset-restore.cleanup.log" &&
+            rx 'umask 077; cat >config.json' --stdin <"$scratch/original.json" &&
+            pithead up 2>&1 | redact >>"$OUT_DIR/reset-restore.cleanup.log"; then
+            wait_status_ok 240 || verified=0
+        else
+            verified=0
+        fi
+    fi
+    if ! rx 'cat config.json' >"$scratch/restored.json" || ! cmp -s "$scratch/original.json" "$scratch/restored.json" ||
+        ! after_config=$(rx 'sha256sum config.json') || [ "$after_config" != "$original_config" ] ||
+        ! after_secrets=$(upgrade_secret_fingerprints) || [ "$after_secrets" != "$original_secrets" ]; then
+        verified=0
+    fi
+    if [ "$verified" -eq 1 ]; then
+        it_pass "reset recovery returns the original baseline bytes, secrets and healthy stack"
+        rm -f -- "$scratch/original.json" "$scratch/reference.json" "$scratch/fixture.json" "$scratch/applied.json" "$scratch/receipt.json" "$scratch/restored.json"
+        rmdir "$scratch" || rc=1
+    else
+        RESET_RESTORE_STACK_INTACT=0
+        it_fail "reset recovery returns the original baseline bytes, secrets and healthy stack" "cleanup unverified; private recovery copy retained"
+        rc=1
+    fi
+    umask "$saved_umask"
+    return "$rc"
+}
+
+run_reset_restore_fixture() {
     RESET_RESTORE_STACK_INTACT=0
     local before_config before_secrets archive out rc after_config after_secrets
     local failures_before="$IT_FAIL"
