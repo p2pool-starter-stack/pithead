@@ -72,6 +72,34 @@ assert result.returncode in (-15, 143), result.returncode
 assert (root / "interruption-recovery").read_text() == "recovered"
 assert not list(scratch.iterdir())
 assert "interrupted-secret" not in (Path(sys.argv[2]) / "restore-operations.log").read_text()
+script = r'''source "$1"
+redact() { return 1; }
+OUT_DIR="$2"
+noisy() {
+    local chunk i
+    chunk=$(printf '%4096s' '')
+    for ((i=0; i<512; i++)); do printf '%s\n' "$chunk"; done
+    return 73
+}
+operation_rc=0
+if [ "$3" = external ]; then
+    restore_operation fixture.verbose bash -c "$(declare -f noisy); noisy" || operation_rc=$?
+else
+    restore_operation fixture.verbose noisy || operation_rc=$?
+fi
+[ "$operation_rc" = 73 ] || exit 1
+printf continued
+'''
+for kind in ("function", "external"):
+    result = subprocess.run(
+        ["bash", "-c", script, "bash", *sys.argv[1:3], kind],
+        capture_output=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, (kind, result.returncode)
+    assert result.stdout == b"continued", kind
+    assert b"artifact unavailable (exit 73)" in result.stderr, kind
+    assert "operation=fixture.verbose exit=73" in (Path(sys.argv[2]) / "restore-operations.log").read_text()
 PYTHON
 
 for failing_stage in config-write apply health; do

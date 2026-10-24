@@ -1249,8 +1249,10 @@ and its recovery up/health calls append operation names, original exit statuses 
 combined stdout/stderr to `results/restore-operations.log` before evaluating each status.
 Each operation retains the last 64 KiB after the shared redactor runs; command arguments and
 config values are not echoed. Output streams through a waited-for sanitizer; no raw diagnostic file is written.
-The sanitizer also removes the CLI’s `Stratum password:` and `connect with pass` announcements. Capture errors print an explicit unavailable marker and preserve the command status,
-so diagnostic I/O cannot prevent recovery. Later cleanup appends to the log instead of replacing
+The sanitizer also removes the CLI’s `Stratum password:` and `connect with pass` announcements.
+After a sanitizer or artifact-write failure, the capture process drains the remaining output
+and reports an unavailable marker while preserving the command status, so diagnostic I/O
+cannot interrupt recovery with a broken pipe. Later cleanup appends to the log instead of replacing
 the initiating failure. Short-circuit ordering, health verification, secret comparisons and
 safety archive retention remain binding. The existing generic redactor's limits below still
 apply; bench-ci additionally redacts configured credentials and topology during collection.

@@ -12,7 +12,9 @@ restore_operation() {
             "$@" || operation_rc=$?
         } > >(
             set -o pipefail
-            redact_restore_output | tail -c 65536 >>"$OUT_DIR/restore-operations.log"
+            redact_restore_output | tail -c 65536 >>"$OUT_DIR/restore-operations.log" || capture_rc=$?
+            cat >/dev/null
+            exit "$capture_rc"
         ) 2>&1
         wait "$writer" || capture_rc=$?
         printf '\noperation=%s exit=%s\n' "$stage" "$operation_rc" >>"$OUT_DIR/restore-operations.log" || capture_rc=1

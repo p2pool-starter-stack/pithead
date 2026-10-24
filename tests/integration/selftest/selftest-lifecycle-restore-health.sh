@@ -41,7 +41,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
                 echo 'carry apply failed before health wait'
                 return 1
-            } ;; # the third push is the carry
+            } ;;
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore)
                 printf "origin stdout %s\n" "$1"
                 printf "origin stderr %s %s\n" "$1" 'PASSWORD=changeme' >&2
