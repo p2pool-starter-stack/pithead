@@ -1,27 +1,6 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Tor-egress ENFORCEMENT domain (#2059): does the product's stated security property hold at the one
-# place a shell can check it — the rules the kernel is actually holding?
-#
-# Split out of test-tor-network.sh (which owns the RENDERER and the transport switch) because these
-# assert a different thing about the same subsystem: not "is the right ruleset produced" but "did
-# anything confirm it landed, and does the machine say so when it did not". A fail-open appliance
-# shipped green through every battery to date precisely because nothing asked the second question —
-# apply logged "Tor-only egress enforced" off a zero exit from the install command, and doctor's
-# can't-check paths all degraded to info, so a box with no firewall exited 0 into the A/B commit
-# gate that os/overlay/pithead-boot uses to decide whether a slot is healthy enough to keep.
-#
-# Both halves now read the live state through one tor_egress_enforced(), so they belong in one
-# domain rather than on either side of an apply/doctor line they no longer sit across. Self-
-# contained stubs on purpose: a fragment that borrowed the neighbouring domain's $NFW/$DRBIN would
-# pass or fail on the order run.sh happens to source files in.
-# Sourced by tests/stack/run.sh.
 
-# A PATH with every *sbin* directory and every host-fence stub directory (#3442) removed, so a test can
-# drive the "privileged tool is not installed" branch without uninstalling anything. nft and iptables
-# both live in /usr/sbin; grep, tr and printf — which sourcing pithead needs — do not, so what remains
-# is still a working shell environment. Callers pair this with an assertion that the tool really did
-# disappear: a helper that silently stopped working would otherwise turn a branch test into a tautology.
 path_without_sbin() {
     local d out="" IFS=:
     for d in $PATH; do

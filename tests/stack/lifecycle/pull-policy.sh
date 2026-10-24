@@ -22,8 +22,7 @@ pp_up() {
             [ "$PP_FAIL" != fail ] || [ "$2" != pull ]
         }
         remove_deactivated_profile_containers() { :; }
-        lan_guard_watched_ports() { :; } # the image-pull probe has no published node ports
-        # The host's systemd and firewall are not under test (#3442).
+        lan_guard_watched_ports() { :; }
         remove_lan_guard_boot_unit() { :; }
         apply_tor_egress_firewall() { :; }
         mutation_lock_path() { echo /dev/null; }

@@ -137,7 +137,6 @@ report() {
 }
 
 if [ "${1:-}" = "--self-test" ]; then
-    # The floor matches GO_MIN_MINOR in scripts/release/preflight.sh and the fixture's `go 1.21` line.
     go_version=$(go version 2>&1) || go_version=none
     [[ $go_version =~ go1\.([0-9]+) ]] && [ "${BASH_REMATCH[1]}" -ge 21 ] || {
         echo "go-raise-watch self-test FAIL: needs go 1.21 or newer on PATH (it runs real 'go get' and 'go list' on a fixture module graph); found: $go_version" >&2

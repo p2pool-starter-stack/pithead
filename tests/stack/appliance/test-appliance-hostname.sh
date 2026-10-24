@@ -18,7 +18,7 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
         printf 'HOST_IP=old-name.local\n' >.env
         local kind="$1" mode="${4:-changed}" f
         DASHBOARD_HOST="$2" PITHEAD_DRY_RUN=0
-        PITHEAD_AVAHI_CONF="$PWD/absent-avahi.conf" # the host's Avahi config must not reach the fixture (#3442)
+        PITHEAD_AVAHI_CONF="$PWD/absent-avahi.conf"
         is_appliance() { [ "$kind" = appliance ]; }
         hostname() {
             case "${1:-}" in

@@ -43,11 +43,9 @@ require_release_toolchain
 SH
         )"
         rt_rc=$?
-        # MUTATION PROOF: unconditionally check tools and skip=1 fails; skip dry runs and dry=1 passes incorrectly.
         assert_rc "toolchain guard honors skip in real and dry runs" "$rt_rc" "$((1 - skip))"
         if [ "$skip" -eq 0 ]; then
             for t in shellcheck shfmt node npx uv uvx go; do
-                # MUTATION PROOF: stop after the first missing tool and later names disappear.
                 assert_contains "every missing tool is named" "$rt_out" "$t"
             done
             # MUTATION PROOF: remove the effective PATH diagnostic.
@@ -67,10 +65,8 @@ printf 'FIRST=%s\n' "\${PATH%%:*}"
 /bin/sh -c 'command -v shfmt'
 SH
     )"
-    # MUTATION PROOF: keep the tools off PATH or skip the dry-run check.
     assert_rc "full toolchain present -> preflight passes" "$?" "0"
     for t in shellcheck shfmt node npx uv uvx go; do
-        # MUTATION PROOF: suppress the resolved-tool log.
         assert_contains "every resolved tool path is logged" "$rt_out" "$RT_TOOLS/$t"
     done
     # MUTATION PROOF: append RELEASE_TOOL_PATH rather than prepend it.
@@ -107,7 +103,6 @@ assert_rc "real preflight rejects missing shfmt in dry run" "$?" "1"
 assert_contains "missing tool -> preflight fails fast (#426)" "$rt_out" "Missing lint/test tool(s)"
 # MUTATION PROOF: omit shfmt from LINT_TOOLCHAIN.
 assert_contains "the missing tool is named (#426)" "$rt_out" "shfmt"
-# MUTATION PROOF: remove the provisioning doc from the error.
 assert_contains "error points at the provisioning doc (#426)" "$rt_out" "release-server.md"
 for t in shellcheck shfmt node npx uv uvx go; do rm -f "$RTB/$t"; done
 
@@ -125,7 +120,6 @@ SKIP_TESTS=0
 check_release_toolchain
 SH
     )"
-    # MUTATION PROOF: check only that go exists, or let an empty `go version` pass.
     assert_rc "go below 1.21 or with no version -> preflight fails" "$?" "1"
     assert_contains "the old go is diagnosed with its version output" "$rt_out" "go 1.21 or newer is required"
     assert_contains "the found go version is reported" "$rt_out" "found: $rt_go"

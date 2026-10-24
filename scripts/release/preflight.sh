@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
-# Sourced by release.sh; shares its configuration and stage state.
 
-# Tools the blocking test gate shells out to; checked here so a missing one fails preflight, not mid-gate.
 LINT_TOOLCHAIN=(shellcheck shfmt node npx uv uvx go)
 GO_MIN_MINOR=21
 BENCH_TIER4_CONTEXT="bench-ci/tier4"
 
-# Dies on a real cut; on --dry-run prints the verdict and lets the rehearsal continue. A preview that
-# can only ever abort is not a preview — the same call #1108 made for the signing check.
 bench_tier4_reject() {
     [ "$DRY_RUN" -eq 1 ] || die "$@"
     warn "$* [--dry-run: continuing]"

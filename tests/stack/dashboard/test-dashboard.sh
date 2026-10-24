@@ -205,7 +205,7 @@ caddy_noaddr="$(
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    stub_host_addrs '2001:db8::1' # ONLY a public address
+    stub_host_addrs '2001:db8::1'
     DASHBOARD_SECURE=true HOST_IP=pithead.local DASHBOARD_AUTH_HASH_B64="" \
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile

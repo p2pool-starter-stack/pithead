@@ -34,11 +34,9 @@ echo "== unit: pin-watch self-test (#1128) =="
 # Drives the real pin spellings and failed lookups: unreachable must never read as current.
 bash "$ROOT/scripts/watch/pin-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "pin-watch self-test passes" "$?" "0"
-# Drives active, transitive no-op and downgrade raises through a synthetic Go module graph.
 go_watch_out=$(bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
 assert_rc "Go module raise watch self-test passes" "$?" "0"
 assert_contains "Go module raise watch self-test prints its OK verdict" "$go_watch_out" "go-raise-watch self-test OK"
-# It needs a real Go 1.21 or newer, so a box without one must fail by naming the tool and its version (#3442).
 mkdir -p "$SANDBOX/no-go-bin" "$SANDBOX/old-go-bin"
 ln -sf "$(command -v dirname)" "$SANDBOX/no-go-bin/dirname"
 ln -sf "$(command -v dirname)" "$SANDBOX/old-go-bin/dirname"
@@ -47,7 +45,6 @@ chmod +x "$SANDBOX/old-go-bin/go"
 go_watch_out=$(PATH="$SANDBOX/no-go-bin" "$BASH" "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
 assert_rc "Go module raise watch self-test fails without go" "$?" "1"
 assert_contains "Go module raise watch self-test names the missing go tool" "$go_watch_out" "needs go 1.21 or newer"
-# MUTATION PROOF: guard on `command -v go` alone and an installed old Go exits 1 with no output.
 go_watch_out=$(PATH="$SANDBOX/old-go-bin" "$BASH" "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
 assert_rc "Go module raise watch self-test fails on a Go older than 1.21" "$?" "1"
 assert_contains "Go module raise watch self-test reports the old Go version" "$go_watch_out" "found: go version go1.19.8"
@@ -66,12 +63,10 @@ for fence_cmd in "iptables -N DOCKER-USER" "iptables-save -t filter" "ip6tables 
     # shellcheck disable=SC2086
     "$FENCE/bin/sudo" -n $fence_cmd </dev/null || fence_rc=$?
 done
-# MUTATION PROOF: drop one verb from the fence and it reaches the recorded real sudo.
 assert_rc "firewall and systemctl verbs succeed through the fence" "$fence_rc" "0"
 assert_eq "none of them reaches the real sudo" "$(cat "$FENCE_LOG")" ""
 "$FENCE/bin/sudo" -n tee /etc/pithead-fixture </dev/null
 "$FENCE/bin/sudo" rm -f /etc/pithead-fixture
-# MUTATION PROOF: swallow every command in the fence and the host's other sudo calls vanish.
 assert_eq "any other command reaches the real sudo with its arguments" "$(cat "$FENCE_LOG")" $'-n tee /etc/pithead-fixture\nrm -f /etc/pithead-fixture'
 unset FENCE_LOG
 
@@ -85,25 +80,21 @@ mkdir -p "$STUBS-shim"
 printf '#!/usr/bin/env bash\nexec "$@"\n' >"$STUBS-shim/sudo"
 chmod +x "$STUBS-shim/sudo"
 for stub_tool in $HOST_FENCED_TOOLS; do
-    # A subshell per route: bash must not answer from a hashed host path.
     (
         PATH="$STUBS:$PATH"
         hash -r
         "$stub_tool" --route-bare </dev/null
     )
-    # The shape of the fixtures' own `exec "$@"` sudo, which sits ahead of the fence sudo.
     (
         PATH="$STUBS-shim:$STUBS:$PATH"
         hash -r
         sudo "$stub_tool" --route-shim </dev/null
     )
-    # The cross-surface backup fixture's shape: the real sudo, then env with the fixture's PATH.
     if sudo -n true 2>/dev/null; then
         sudo -n env PATH="$STUBS-shim:$STUBS:$PATH" "$stub_tool" --route-real-sudo </dev/null
     fi
 done
 stub_count=$(printf '%s\n' $HOST_FENCED_TOOLS | wc -l | tr -d ' ')
-# MUTATION PROOF: put the stub directory behind the system directories and the bare route reaches the host.
 assert_eq "every tool answers a bare PATH lookup from its stub" "$(grep -c -e '--route-bare' "$STUBS.log")" "$stub_count"
 assert_eq "every tool answers a fixture's pass-through sudo from its stub" "$(grep -c -e '--route-shim' "$STUBS.log")" "$stub_count"
 if sudo -n true 2>/dev/null; then
@@ -113,7 +104,6 @@ else
 fi
 printf '#!/bin/sh\nexit 0\n' >"$STUBS-shim/iptables"
 chmod +x "$STUBS-shim/iptables"
-# MUTATION PROOF: test only that the stub exists and a host binary ahead of it goes unreported.
 assert_eq "a stub ahead of the host's tools leaks nothing" \
     "$(HOST_FENCE_DIR="$STUBS" PATH="$STUBS:$STUBS-shim:$PATH" host_fence_leaks)" ""
 assert_eq "a host tool ahead of its stub is named" \
@@ -121,7 +111,6 @@ assert_eq "a host tool ahead of its stub is named" \
 unset STUBS stub_tool stub_count
 
 echo "== unit: no test or script requires a GitHub-only variable (#3442) =="
-# A required runner variable fails every host that is not a GitHub runner, the release box included.
 assert_eq "no test or script needs RUNNER_* or GITHUB_* to be set" \
     "$(grep -rnE 'RUNNER_[A-Z_]+:[?]|GITHUB_[A-Z_]+:[?]' --include='*.sh' --include='*.py' "$ROOT/tests" "$ROOT/scripts")" ""
 
@@ -225,7 +214,6 @@ bash "$ROOT/tests/os/selftest-install-rig-dispatch.sh" >/dev/null
 assert_rc "rig install dispatch preserves card-before-erase and bare keep" "$?" "0"
 bash "$ROOT/tests/os/selftest-restore-p2pool-startup.sh" >/dev/null 2>&1
 assert_rc "restore startup rejects P2Pool crashes across its bounded window" "$?" "0"
-# Run without either scratch variable: a box that is not a GitHub runner has neither (#3442).
 env -u TMPDIR -u RUNNER_TEMP bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null
 assert_rc "Tor heal guest and offline-image harness controls pass" "$?" "0"
 bash "$ROOT/tests/os/appliance-hostname-leg.sh" --self-test >/dev/null 2>&1

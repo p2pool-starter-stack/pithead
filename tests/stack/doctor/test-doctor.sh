@@ -346,7 +346,6 @@ esac
 exit 0
 EOF
     chmod +x "$bin/docker"
-    # A live dashboard on the host's 127.0.0.1:8000 must never answer the sync probe (#3442).
     cat >"$bin/curl" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >>"${0%/*}/curl.log"
@@ -373,7 +372,6 @@ rc=$?
 assert_rc "status: node down exits 1" "$rc" "1"
 assert_contains "status: proxy stop is intentional" "$out" "likely intentional"
 
-# A genuinely stopped miner is the intentional #35 sync hold, so status exits 0.
 PROXY_ONLY="${ALL_UP/xmrig-proxy=running:none/xmrig-proxy=exited:none}"
 : >"$ST/bin/curl.log"
 out="$(cd "$ST" && FAKE_STATES="$PROXY_ONLY" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
