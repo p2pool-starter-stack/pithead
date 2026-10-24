@@ -7,6 +7,8 @@ source "$ROOT/lib/pithead/08-uninstall-firstboot.sh"
 source "$ROOT/lib/pithead/11a-wizard-spool.sh"
 # shellcheck source=lib/pithead/12-firstboot-wizard.sh
 source "$ROOT/lib/pithead/12-firstboot-wizard.sh"
+# shellcheck source=lib/pithead/12a-wizard-page.sh
+source "$ROOT/lib/pithead/12a-wizard-page.sh"
 TASK_DIR=$(mktemp -d)
 trap 'rm -rf "$TASK_DIR"' EXIT
 restore_submission_dir() { printf '%s/restore' "$PWD"; }
