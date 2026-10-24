@@ -28,7 +28,7 @@ try:
         os.close(fd)
     with open(sys.argv[2]) as fh:
         result = json.load(fh)
-    valid = stat.S_ISREG(st.st_mode) and result == {
+    valid = stat.S_ISREG(st.st_mode) and st.st_uid == 0 and not st.st_mode & 0o022 and result == {
         "status": "verified", "marker": marker, "inode": st.st_ino, "ctime_ns": st.st_ctime_ns
     }
 except (OSError, UnicodeError, ValueError):
@@ -140,7 +140,12 @@ stack_status() {
         return 1
     fi
 
-    local problems=0 proxy_state="" p2pool_state="" node_down=0 chain_hold=0
+    local problems=0 proxy_state="" p2pool_state="" node_down=0 chain_hold=0 restarting_names restart_read_ok=1
+    restarting_names=$(container_restarting_names) || restart_read_ok=0
+    if [ "$restart_read_ok" -eq 0 ]; then
+        printf '  %b✗%b %-13s restart observation failed\n' "$C_RED" "$C_RESET" containers
+        problems=$((problems + 1))
+    fi
     os_migration_hold_active && chain_hold=1
     local s cid info state health
     while IFS= read -r s; do
@@ -166,8 +171,12 @@ stack_status() {
             health=${info##* }
         fi
 
-        # A migration marker authorizes only the explicit pre-commit stop of chain services.
-        # Missing/stopped is expected; restarting or running-unhealthy still takes the normal fault path.
+        if grep -Fqx -- "$s" <<<"$restarting_names"; then
+            printf '  %b✗%b %-13s restarting (possible crash loop — check logs)\n' "$C_RED" "$C_RESET" "$s"
+            problems=$((problems + 1))
+            continue
+        fi
+
         if [ "$chain_hold" = 1 ]; then
             case " $REVENUE_CHAIN_CONTAINERS " in
             *" $s "*)

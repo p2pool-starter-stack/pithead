@@ -6,7 +6,7 @@ machine's own.
 """
 
 from mining_dashboard.config import config
-from mining_dashboard.service.network import egress
+from mining_dashboard.service.network import topology
 from mining_dashboard.service.network.topology_graph import (
     CLEARNET,
     LAN,
@@ -78,14 +78,14 @@ def test_the_served_graph_carries_each_node_s_real_location(monkeypatch):
     # Tari must come out REMOTE here. tari_route defaults to LOCAL, so asserting a local Tari
     # would pass whether or not the value was ever passed — the assertion has to differ from the
     # default to mean anything. Monero is given the opposite answer so a swapped wiring fails too.
-    monkeypatch.setattr(egress.config, "monero_is_local", lambda: True)
-    monkeypatch.setattr(egress.config, "tari_is_local", lambda: False)
-    monkeypatch.setattr(egress.config, "TARI_GRPC_ADDRESS", "10.0.0.7:18142")
-    nodes = {n["id"]: n for n in egress.topology_from_config()["nodes"]}
+    monkeypatch.setattr(topology.config, "monero_is_local", lambda: True)
+    monkeypatch.setattr(topology.config, "tari_is_local", lambda: False)
+    monkeypatch.setattr(topology.config, "TARI_GRPC_ADDRESS", "10.0.0.7:18142")
+    nodes = {n["id"]: n for n in topology.topology_from_config()["nodes"]}
     assert nodes["monerod"]["remote"] is False
     assert nodes["tari"]["remote"] is True
 
 
 def test_the_served_graph_omits_tari_when_merge_mining_is_off(monkeypatch):
-    monkeypatch.setattr(egress.config, "TARI_MODE", "off")
-    assert "tari" not in {n["id"] for n in egress.topology_from_config()["nodes"]}
+    monkeypatch.setattr(topology.config, "TARI_MODE", "off")
+    assert "tari" not in {n["id"] for n in topology.topology_from_config()["nodes"]}

@@ -147,7 +147,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # leaving the other was green. The two would then run different socket-proxy builds, which is exactly
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
-expect_present "caddy pinned by digest" "caddy:2.11.7@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772"
+expect_present "caddy pinned by digest" "caddy:2.11.7@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f999b489"
 expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.
@@ -439,7 +439,7 @@ jq_assert "default -b bind stays 0.0.0.0:3333 (#172)" \
 PORT_ENV="$(mktemp)"
 {
     cat "$ENV_FILE"
-    printf 'STRATUM_PORT=4444\n'
+    printf 'STRATUM_PORT=4444\nSTRATUM_BIND=127.0.0.1\n'
 } >"$PORT_ENV"
 PORT_JSON="$(docker compose --env-file "$PORT_ENV" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
 rm -f "$PORT_ENV"
@@ -447,8 +447,8 @@ jq_assert "custom stratum port moves the publish and container port (#172)" \
     '.services["xmrig-proxy"].ports | any((.published == "4444") and (.target == 4444))' "$PORT_JSON"
 jq_assert "custom stratum port moves the -b bind (#172)" \
     '.services["xmrig-proxy"].command | any(. == "0.0.0.0:4444")' "$PORT_JSON"
-jq_assert "custom stratum port reaches the dashboard hint env (#172)" \
-    '.services.dashboard.environment["STRATUM_PORT"] == "4444"' "$PORT_JSON"
+jq_assert "custom stratum port and a non-default bind reach the dashboard hint env (#172, #3384)" \
+    '.services.dashboard.environment | (.STRATUM_PORT == "4444") and (.STRATUM_BIND == "127.0.0.1")' "$PORT_JSON"
 jq_assert "internal p2pool stratum stays :3333 under a custom port (#172)" \
     '.services["p2pool"].command | any(. == "0.0.0.0:3333")' "$PORT_JSON"
 jq_assert "proxy upstream (P2POOL_URL) stays the internal :3333 (#172)" \

@@ -1,15 +1,11 @@
 # shellcheck shell=bash
-#
-# Browser-shaped wizard submission: read the served config, set the page's answer paths,
-# then POST the whole JSON beside auth_mode=auto. Tier 1 drives --self-test without a guest.
-# Poll six times, 5 s apart; WIZ_STATE holds the selected value, WIZ_STATE_WHY the last failure.
 # shellcheck source=tests/os/control-request-evidence.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/control-request-evidence.sh"
-wizard_state_poll() { # <ip> <jar> <jq-filter>
+wizard_state_poll() {
     local raw="" http="" crc=0 tries=0
     WIZ_STATE="" WIZ_STATE_WHY=""
     while [ "$tries" -lt 6 ]; do
-        raw=$(curl -sSk -b "$2" -m 5 -w '\n%{http_code}' "https://$1/api/wizard-state" 2>/dev/null)
+        raw=$(curl -sSk -b "$2" -m 5 --max-filesize 1048576 -w '\n%{http_code}' "https://$1/api/wizard-state" 2>/dev/null)
         crc=$?
         http=${raw##*$'\n'}
         raw=${raw%$'\n'*}

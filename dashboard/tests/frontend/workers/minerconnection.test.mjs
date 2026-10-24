@@ -15,6 +15,10 @@ test("credentials carry the pool URL, mask/reveal, copy and TLS pin", () => {
   assert.match(fields(connection, true), /type="text"/);
   assert.match(fields(connection, true), /Hide/);
 });
+test("a loopback-only listener says local connections only", () => {
+  assert.doesNotMatch(fields(connection), /local connections only/);
+  assert.match(fields({ ...connection, local_only: true }), /local connections only/);
+});
 test("no password is explicit, and a LAN dashboard always offers a configured password", () => {
   assert.match(fields({ ...connection, password_set: false, password: "" }), /No stratum password/);
   assert.match(fields(connection), /Copy password/);

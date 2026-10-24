@@ -28,9 +28,12 @@ uv run --project dashboard pre-commit install
 runs `ruff` (plus a few hygiene hooks) on your changed files. If you change dependencies in
 `dashboard/pyproject.toml`, run `uv lock --project dashboard` and commit the updated `uv.lock`.
 For a transitive security fix, update only the affected package with
-`uv lock --project dashboard --upgrade-package urllib3==2.8.0` (substitute the package and
+`uv lock --project dashboard --upgrade-package certifi==2026.10.19` (substitute the package and
 verified fixed version). Review the lockfile diff, run the dashboard tests, and require the
 built dashboard image's Trivy scan to pass without adding an ignore entry.
+`dashboard/tests/test_dependency_security.py` checks the locked and loaded runtime security
+floors, requires locked virtualenv 21.14.9 or newer for pre-commit's dev-only environments,
+and verifies that Requests' CA bundle excludes the compromised emSign ECC Root CA - G3.
 
 The root `pithead` executable is generated and git-ignored. Plain `make` builds it from the
 numbered `lib/pithead/*.sh` sources; the test targets also build it when needed. Edit the slices,
@@ -123,9 +126,9 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
    - **test-stack** — the `pithead` shell test suite.
    - **test-compose** — `docker-compose.yml` interpolation validation.
    - **test-integration-selftest** — the integration harness's logic and bounded local transport fixtures.
-   - **test-tools** — bounded build-log sanitization, the shell suite's block and aggregation timeout guards,
-     and a check that all four CI uv installs pin the same action, uv version, and archive checksum,
-     without running a build.
+   - **test-tools** — bounded build-log sanitization, shell-suite timeout guards, pinned CI uv installs,
+     and Monero archive download recovery, integrity and deadline checks against a local HTTPS fixture.
+     The download tests need curl, OpenSSL and sha256sum; they run without Docker or public-network access.
    - **test-fakes** — the tier-2 contract test (real dashboard clients vs controllable fakes).
 
    Bigger, infra-dependent suites run separately: `make test-mini-stack` (tier-3 docker) and

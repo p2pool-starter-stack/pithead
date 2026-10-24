@@ -127,7 +127,14 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Also asserts `/data` grew to fill the disk, and that host identity (SSH host-key fingerprint,
   machine-id) survives the A/B swap (#894/#895) — both live on `/data`, untouched by the slot
   swap.
-- **install** — boot the image as removable media beside a blank disk, run the disk installer,
+- **install** — first submit RigForge with a blank internal disk, acknowledge its card and boot
+  from that disk alone. Poll for the same token in the installed rig and miner configurations,
+  an active XMRig process, no coordinator configuration or containers, and a scrubbed seed on the target’s mounted FAT ESP.
+  The host must consume a pending rig submission before considering a bare keep reinstall;
+  `selftest-install-rig-dispatch.sh` checks card-before-erase, acknowledgement and bare-keep controls.
+  Keep the console capture mode 0600 and send the setup token to authentication through stdin.
+  This checks miner startup against the guest’s SSH listener, not an accepted share. Then
+  boot the image as removable media beside a blank disk, run the disk installer,
   then boot the target and prove the copied system is COMPLETE — the `/var` overlay made an
   incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:
   `/data` must survive a second install over the same disk, and the three-way wipe choice
@@ -139,7 +146,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   requires its running stack to carry the prior-release wallet, Tor identity and secrets while
   both the fixture's and the target's chain-data sentinels survive. The fixture's removed 1.x
   `xmrig_proxy` settings must move to `xvb` unchanged without leaving a `config.json.bak-1x`,
-  and `telegram.control` must be dropped.
+  and `telegram.control` must be dropped. The `N-1 backup fixture` workflow runs
+  `fixtures/v1.20.0/selftest-wallets.py` before generating the encrypted backup, including
+  on changes to `lib/pithead/25-address-types.sh`. The
+  generator extracts checksum helpers from each named CLI validator, then derives
+  deterministic public keys from a public throwaway seed. The Docker-free selftest
+  requires Python 3 and libsodium; it checks repeated output, both checksums, all four
+  curve points and the complete CLI address verdicts. Never fund these addresses.
 - **setup-defaults** — a fresh 40 GiB guest accepts the wizard defaults without a Tari override; proves Tor sync, XvB off, persisted choices, a generated working dashboard login, and firstboot/system journals free of bcrypt credentials.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
@@ -283,15 +296,40 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
-  the stick mid-countdown cancels the change instead.
+  the stick mid-countdown cancels the change instead. Each removable-stick fixture must finish
+  partitioning, formatting, mounting, configuration writing and cleanup before guest attachment.
+  Partition readiness is limited to 50 polls at 0.1 seconds; partitioning, loop attachment,
+  formatting, mounting and cleanup probes use a 10-second timeout with a 5-second kill grace.
+  Construction or attachment failure ends the phase before reboot or product assertions for that
+  leg. Cleanup verifies the loop backing path and mount source, uses ordinary unmount and removes
+  only the empty temporary directory; unknown ownership or failed unmount retains resources.
+  `selftest-media-fixture.sh` exercises delayed and missing partitions, construction failures,
+  cleanup refusal and both callers without a guest or root privileges.
 - **fault** — power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is
   disqualifying. A closing leg (the #1029 class, #2067) boots a FRESH guest and destroys it while
   its very first boot is loading the baked container images from the archive — the interrupted
   write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
-- **reset** — the shell-less box's last resort, never before run against a real disk. Leg 0 runs
-  the cheap tier first, on the same provisioned guest: `pithead config-reset -y` must clear
+- **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
+  with local chains and the non-default nano pool. The authenticated wizard must name the saved
+  `pithead` role and prefill its answers with secrets blank. POST **Keep it** through the wizard;
+  require the original dashboard login, unchanged configuration and host identity, both chain
+  sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
+  the served config; require the credentials card's login and the same chains and identity.
+  Both returns poll for successful setup completion, HTTP 200 with the dashboard's
+  `sync.monero` state object, and resumed height. A timeout reports the stage, height verdict,
+  HTTP status, curl exit and setup verdict without response bodies or credentials.
+  `coordinator-setup-again-leg.sh` implements this leg; `selftest-coordinator-setup-again.sh`
+  uses the generated dashboard response fixture and drives failure controls without a guest.
+  `selftest-confirmed-setup.sh` drives the real installed wizard and setup functions with host
+  effects stubbed: accepted forms re-provision, Keep it and rejected forms do not, provisioning
+  errors reach the retry path, restored browser submissions skip the new-node preflight,
+  and direct headless setup still refuses a deployed machine.
+  Saved-answer comparisons exclude the read-only `config_version` host stamp, which the wizard
+  omits. The selftest runs the sanitizing query against a stamped config with populated secrets;
+  a prefill failure reports only fixed shape verdicts and a changed-answer count.
+  Leg 0 then runs the cheap reset tier on the same provisioned guest: `pithead config-reset -y` must clear
   `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
   while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every
   data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
@@ -447,6 +485,15 @@ On a failed current-startup Tari round trip, the row first searches the full cur
 runtime predicate as a bounded reason, and allowlisted Monero/Tari RPC and sync fields from the
 guest's existing authenticated dashboard clients. Those readiness fields are diagnostic only: the
 current-process `uses chain_id` handshake remains the pass assertion.
+
+The `stack` phase's lifecycle reset-restore leg also restores while firstboot is starting.
+After the ordinary open-page restore, it resets again and restarts the guest's firstboot
+service with a temporary test wrapper. The wrapper pauses console announcement after the
+entry check and before round opening; the real encrypted CLI restore lands configuration
+before startup resumes. The leg requires successful firstboot exit, removal of the wizard,
+free HTTP/HTTPS ports before `up`, a stable Caddy and a dashboard response. It removes the
+runtime service override afterwards. `selftest-wizard-startup.sh` covers startup, round
+preparation, retained retry configuration and installer behavior without a guest.
 
 ## Static verification
 

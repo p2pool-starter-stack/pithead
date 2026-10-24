@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from mining_dashboard.service.network import egress, egress_status
-from mining_dashboard.service.network.egress import compute_egress_posture, compute_topology
+from mining_dashboard.service.network import egress, egress_status, topology
+from mining_dashboard.service.network.egress import compute_egress_posture
 from mining_dashboard.service.network.egress_status import (
     ENFORCED,
     MISSING,
@@ -13,6 +13,7 @@ from mining_dashboard.service.network.egress_status import (
     egress_firewall_state,
     with_firewall_state,
 )
+from mining_dashboard.service.network.topology import compute_topology
 from mining_dashboard.web.views.views import _egress_badge
 from tests.service.conftest import _SAFE
 
@@ -154,7 +155,7 @@ def test_the_live_builders_read_the_host_file(tmp_path, monkeypatch):
     monkeypatch.setattr(egress_status, "STATUS_PATH", _write(tmp_path, {"rc": 1, "checked_at": 0}))
     monkeypatch.setattr(egress_status.time, "time", lambda: 60)
     assert egress.egress_posture_from_config()["summary"]["firewall_state"] == MISSING
-    assert egress.topology_from_config()["summary"]["firewall_state"] == MISSING
+    assert topology.topology_from_config()["summary"]["firewall_state"] == MISSING
     assert egress_status.live_firewall_state() == MISSING
     monkeypatch.setattr(egress.config, "TOR_EGRESS_FIREWALL", False)
     assert egress_status.live_firewall_state() is None

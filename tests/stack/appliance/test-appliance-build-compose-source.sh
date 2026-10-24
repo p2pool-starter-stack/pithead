@@ -292,6 +292,7 @@ mismatch_out="$({
     set --
     source "$REL" 2>/dev/null
     DRY_RUN=0 ASSUME_YES=1 TAG=v2.0.0 REGISTRY=ghcr.io/test IMAGES=(tor) PUBLISHED_IMAGES=(tor)
+    REGISTRY_READ_BACKOFF=0
     WORKDIR="$CHAIN-mismatch"
     mkdir -p "$WORKDIR"
     set_digest tor "ghcr.io/test/pithead-tor@$CHAIN_DIGEST"

@@ -114,6 +114,7 @@ test-appliance-boot-labels.sh|fixture
 test-appliance-boot-labels.sh|medium
 test-appliance-boot-labels.sh|row
 test-appliance-boot-labels.sh|tran
+test-appliance-boot-verdicts.sh|v
 test-appliance-boot.sh|ph
 test-appliance-hostname.sh|mode
 test-appliance-hostname.sh|op

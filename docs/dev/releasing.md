@@ -164,7 +164,10 @@ Release notes, where operators actually read it. The branch model itself is in
 Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
 additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
 release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
-and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. The
+and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. They
+may come from the [release env file](release-server.md#the-lintrelease-toolchain). Dry runs enforce
+the lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does
+not run `make test` or the integration matrix: it prints their commands. The
 bench publishes that status only after its full tier-4 suite completes; a missing, failed,
 unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
 verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
@@ -237,6 +240,37 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    upgrade. See [Post-publish smoke test](#post-publish-smoke-test-459). This is the only step gated
    *behind* the publish, because it checks the published artifact, not a branch.
 
+### Rehearsing against a scratch registry
+
+Set `PITHEAD_REHEARSAL=1` and `PITHEAD_REGISTRY` to a non-production registry namespace.
+Rehearsal refuses the production namespace even with `--dry-run`. It runs every normal gate
+(preflight including signing, tier-4 status, the test gate and smoke), promotes and signs the
+scratch images, then stops before `publish`: no git tag, GitHub Release or install bundle is
+published. Release runs, including draft releases, require the owner's sign-off.
+
+For a registry other than `ghcr.io`, set `PITHEAD_REGISTRY_USER` and `PITHEAD_REGISTRY_TOKEN` if
+login is needed. The token goes to Docker on stdin; GitHub credentials and `gh` fallbacks apply
+only to `ghcr.io`. Without both scratch credentials, login is skipped with a warning and Docker's
+existing authentication is used. The rootfs anonymous-read check is skipped with a log message
+outside GHCR; all other smoke checks still run. A custom namespace without the rehearsal marker
+is allowed for a real cut, with a warning that the published bundle will name that registry.
+
+Prepare registry trust on the release host. For a private CA or plain HTTP, set
+`PITHEAD_BUILDKITD_CONFIG` to a readable BuildKit daemon configuration file and choose a separate
+`PITHEAD_BUILDX_BUILDER` name. The configuration is used when creating that builder; an existing
+builder is never reconfigured. Promotion and inspection also select that builder when the
+configuration is set. Configure Docker daemon CA trust and cosign's `SSL_CERT_FILE` on the host
+as needed; the release script does not install certificates or change daemon configuration.
+
+Registry reads allow 12 attempts with a 10-second delay by default; override with
+`PITHEAD_REGISTRY_READ_RETRIES` and `PITHEAD_REGISTRY_READ_BACKOFF`. Verification compares the
+parsed index digest exactly, including when inspect pads its fields. Registry writes allow
+3 total attempts with an initial 10-second delay, doubled per retry up to 60 seconds. Set
+`PITHEAD_REGISTRY_WRITE_RETRIES` (1–10) and `PITHEAD_REGISTRY_WRITE_BACKOFF` (0–60 seconds) to tune
+writes. Only classified transient registry statuses (500, 502, 503, 504) and connection failures
+retry; authentication, missing manifests, invalid or mismatched digests and unclassified failures
+stop immediately. Rootfs retries repeat the push, not the build or export verification.
+
 ### Pre-release gate (#54)
 
 The [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration test matrix is a
@@ -247,7 +281,7 @@ a single, validated bundle.
 Two runs of the matrix are required, and the automated one is the smaller of the two:
 
 1. `release.sh` stage 2 runs the non-destructive `--readiness` assessment against the live
-   stack. Export the harness arguments on the release box before `make release`:
+   stack. Set the harness arguments in the release env file or export them before `make release`:
 
    ```bash
    export RELEASE_INTEGRATION_ARGS="--local --dir <live-stack-dir> --readiness"
@@ -319,29 +353,68 @@ commit. The bench-ci publisher accepts `main`, `release/*`, or a tag as the job 
 Push `release/<full-sha>` at that same commit. Load the bench-ci environment and run the following
 commands in Bash from that checkout. Tiers 1–3 remain GitHub checks.
 
-Submit the two KVM groups from [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651)
-independently, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that cap.
-Keep the SHA, ref and returned job IDs for the final e2e submission:
+Before the cut, seed the provision baseline. The provision phase's migration legs
+([#3260](https://github.com/p2pool-starter-stack/pithead/issues/3260),
+[#3267](https://github.com/p2pool-starter-stack/pithead/issues/3267)) need an old image with the
+same `VERSION` as the candidate: an earlier `develop` build of this release, never the previous
+release. Pick the first `develop` commit that carries the new `VERSION`. On one KVM bench, add it
+to `[retention] image_cache_pins` and restart that runner while idle. Then submit a `local_only`
+`tier4-kvm` job with `phases=["boot"]` on that commit to that bench's endpoint. That job only has to
+publish the image: its verdict does not matter, and no job may wait on it with `after`, because a
+failed predecessor cancels its dependents. A pin protects the
+cached build only once bench-ci's retention sweep reports it held: the sweep refuses new holds
+while the bench is short of disk headroom, which includes any running KVM job, and the cache
+budget can then evict the unprotected baseline. Keep other KVM jobs off that bench until the sweep
+reports the pin held, and confirm the image cache still lists the commit right before submitting
+provision. The cut cannot seed itself: `old_image` needs a strictly older build.
+
+Submit four KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
+cap, and so does the boot group with provision.
+
+- Boot group: boot, update, install.
+- Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases.
+- Provision: provision and setup-defaults against the seeded baseline, pinned to the seeded bench.
+- Crossupdate: the update from the previous release, which is the path existing installs take,
+  pinned to a bench that keeps that release's image.
+
+Set four inputs first: `BASELINE_SHA`, the seeded baseline; `PROVISION_BENCH_URL`, the API base of
+the bench that pins it; `PREVIOUS_RELEASE_SHA`, from `git rev-parse "vX.Y.Z^{commit}"` for the
+previous release; and `CROSSUPDATE_BENCH_URL`, the API base of a bench that keeps that release's
+image. Keep the SHA, ref and returned job IDs for the final e2e submission:
 
 ```bash
 set -euo pipefail
+: "${BASELINE_SHA:?full SHA of the seeded baseline}"
+: "${PROVISION_BENCH_URL:?API base of the bench that pins BASELINE_SHA}"
+: "${PREVIOUS_RELEASE_SHA:?full SHA of the previous release}"
+: "${CROSSUPDATE_BENCH_URL:?API base of a bench that keeps the previous release image}"
 SHA=$(git rev-parse HEAD) # run from the final develop commit
 REF=release/${SHA}
 git push origin "${SHA}:refs/heads/$REF"
 KVM_BOOT_KEY=$(uuidgen)
 printf 'KVM boot group idempotency key: %s\n' "$KVM_BOOT_KEY"
 KVM_BOOT_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_BOOT_KEY" \
-  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["boot","update","install","provision"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM boot group",idempotency_key:$key}' \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["boot","update","install"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM boot group",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
 KVM_RIG_KEY=$(uuidgen)
 printf 'KVM rig group idempotency key: %s\n' "$KVM_RIG_KEY"
 KVM_RIG_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_RIG_KEY" \
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media","fault","reset","image-upgrade","stack"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig group",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
-printf 'KVM jobs: %s@%s %s@%s\n' "$KVM_BOOT_ID" "$SHA" "$KVM_RIG_ID" "$SHA"
+KVM_PROV_KEY=$(uuidgen)
+printf 'KVM provision idempotency key: %s\n' "$KVM_PROV_KEY"
+KVM_PROV_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_PROV_KEY" --arg base "$BASELINE_SHA" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["provision","setup-defaults"],old_image_commit:$base},local_only:true,timeout_minutes:240,submitted_by:"release/devops",note:"release KVM provision",idempotency_key:$key}' \
+  | curl -fsS -X POST "$PROVISION_BENCH_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_CROSS_KEY=$(uuidgen)
+printf 'KVM crossupdate idempotency key: %s\n' "$KVM_CROSS_KEY"
+KVM_CROSS_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_CROSS_KEY" --arg prev "$PREVIOUS_RELEASE_SHA" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["crossupdate"],old_image_commit:$prev},local_only:true,timeout_minutes:240,submitted_by:"release/devops",note:"release KVM crossupdate",idempotency_key:$key}' \
+  | curl -fsS -X POST "$CROSSUPDATE_BENCH_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+printf 'KVM jobs: %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$SHA"
 ```
 
-Read both completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
+Read all four completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
 rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
 battery proof. A failed KVM group prevents the final e2e gate from running.
 
@@ -360,9 +433,14 @@ Use `targeted` until the frozen SHA includes the harness fix from
 [#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026); then set `E2E_MODE=matrix`.
 Keep the real rig in the run. Only the owner may authorize `no_rig` after reviewing failures
 confined to rigforge-control harness rows. The final e2e job alone requests the aggregate status,
-with both successful KVM jobs in `after`; bench-ci retains the dependency across benches:
+with the two group jobs in `after`. A bench resolves `after` only against its own jobs, and the
+provision and crossupdate jobs belong to their pinned benches, so the block first refuses to
+submit unless both of those completed with `success`:
 
 ```bash
+for leg in "$PROVISION_BENCH_URL/jobs/$KVM_PROV_ID" "$CROSSUPDATE_BENCH_URL/jobs/$KVM_CROSS_ID"; do
+  curl -fsS "$leg" | jq -e '.job.status == "completed" and .job.conclusion == "success"' >/dev/null
+done
 E2E_MODE=targeted
 E2E_KEY=$(uuidgen)
 printf 'e2e idempotency key: %s\n' "$E2E_KEY"
@@ -372,11 +450,11 @@ jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MO
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
 ```
 
-Read the completed e2e job's full status, log, artifacts and evidence. All three jobs must carry the same
+Read the completed e2e job's full status, log, artifacts and evidence. All five jobs must carry the same
 SHA and ref. A failed or cancelled leg cannot yield a
 successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
 `success` and its creator is the configured bench-ci App before running `release.sh`; record all
-three job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
+five job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
 status with `git push origin --delete "$REF"`. If a submission is refused, stop and report it to
 bench-ci; retain its printed idempotency key for a retry.
 

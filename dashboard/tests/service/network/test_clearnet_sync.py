@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -34,8 +35,25 @@ def host_result(tmp_path, chain, status="applied"):
     request.unlink()
 
 
-def host_attest(tmp_path, chain, marker=None):
+def mock_marker_owner(monkeypatch, path, uid):
+    """Model the host claim without requiring root in the unit runner."""
+    identity = path.stat()
+    fstat = os.fstat
+
+    def claimed_stat(fd):
+        st = fstat(fd)
+        if (st.st_dev, st.st_ino) == (identity.st_dev, identity.st_ino):
+            fields = {key: getattr(st, key) for key in dir(st) if key.startswith("st_")}
+            return SimpleNamespace(**(fields | {"st_uid": uid}))
+        return st
+
+    monkeypatch.setattr(os, "fstat", claimed_stat)
+
+
+def host_attest(tmp_path, chain, monkeypatch, marker=None):
     path = tmp_path / f"{chain}.synced"
+    path.chmod(0o644)
+    mock_marker_owner(monkeypatch, path, 0)
     marker = marker or path.read_text().strip()
     st = path.stat()
     (tmp_path / "results" / f"clearnet-{chain}-tor.json").write_text(
@@ -67,7 +85,7 @@ async def test_marker_then_host_proof_then_tor_restart(tmp_path, monkeypatch):
     assert dc.stop.await_args.kwargs["request_timeout"] > dc.stop.await_args.kwargs["stop_timeout"]
     assert events == []
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
-    host_attest(tmp_path, "monero")
+    host_attest(tmp_path, "monero", monkeypatch)
     host_result(tmp_path, "monero")
     assert await sup.maybe_transition("monero", "monerod", True, True) is False
     assert events == [("monero", True)]
@@ -89,7 +107,7 @@ async def test_failed_refresh_retries_without_restart_or_rearm(tmp_path, monkeyp
     host_result(tmp_path, "monero")
     assert await sup.maybe_transition("monero", "monerod", True, False) is True
     dc.start.assert_awaited_once()
-    host_attest(tmp_path, "monero")
+    host_attest(tmp_path, "monero", monkeypatch)
     assert await sup.maybe_transition("monero", "monerod", True, False) is False
 
 
@@ -102,7 +120,7 @@ async def test_pending_marker_recovers_after_dashboard_restart(tmp_path, monkeyp
     assert await sup.maybe_transition("tari", "tari", True, False) is True
     restarted, _ = make_supervisor(tmp_path, monkeypatch)
     assert await restarted.maybe_transition("tari", "tari", True, False) is True
-    host_attest(tmp_path, "tari")
+    host_attest(tmp_path, "tari", monkeypatch)
     assert await restarted.maybe_transition("tari", "tari", True, False) is False
 
 
@@ -116,7 +134,7 @@ async def test_restart_failure_reverifies_before_retry(tmp_path, monkeypatch):
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
     host_result(tmp_path, "monero")
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
-    host_attest(tmp_path, "monero")
+    host_attest(tmp_path, "monero", monkeypatch)
     assert await sup.maybe_transition("monero", "monerod", True, True) is False
 
 
@@ -138,7 +156,7 @@ async def test_chains_independent(tmp_path, monkeypatch):
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
     assert not (tmp_path / "tari.synced").exists()
     dc.stop.assert_awaited_once()
-    host_attest(tmp_path, "monero")
+    host_attest(tmp_path, "monero", monkeypatch)
     assert await sup.maybe_transition("monero", "monerod", True, True) is False
     assert await sup.maybe_transition("tari", "tari", True, False) is True
 
@@ -161,7 +179,7 @@ async def test_control_enabled_uses_existing_host_request_channel(tmp_path, monk
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
     dc.start.assert_awaited_once()
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
-    host_attest(tmp_path, "monero")
+    host_attest(tmp_path, "monero", monkeypatch)
     assert await sup.maybe_transition("monero", "monerod", True, True) is False
 
 
@@ -202,7 +220,7 @@ async def test_verified_host_result_after_supervisor_restart_needs_no_second_res
 ):
     sup, dc = make_supervisor(tmp_path, monkeypatch)
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
-    host_attest(tmp_path, "monero")
+    host_attest(tmp_path, "monero", monkeypatch)
     host_result(tmp_path, "monero")
     assert await sup.maybe_transition("monero", "monerod", True, True) is False
     dc.stop.assert_not_called()
@@ -228,7 +246,7 @@ async def test_transition_callback_errors_do_not_hide_host_outcomes(tmp_path, mo
     host_result(tmp_path, "monero", "failed")
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
     dc.stop.assert_not_called()
-    host_attest(tmp_path, "monero")
+    host_attest(tmp_path, "monero", monkeypatch)
     assert await sup.maybe_transition("monero", "monerod", True, True) is False
 
 
@@ -292,7 +310,7 @@ async def test_stale_host_attestation_cannot_complete_changed_transition(tmp_pat
     host_result(tmp_path, "monero")
     await sup.maybe_transition("monero", "monerod", True, True)
     old_marker = (tmp_path / "monero.synced").read_text().strip()
-    host_attest(tmp_path, "monero")
+    host_attest(tmp_path, "monero", monkeypatch)
     (tmp_path / "monero.synced").write_text("new-transition\n")
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
     assert (tmp_path / "results" / "clearnet-monero-tor.json").exists()
@@ -302,13 +320,44 @@ async def test_stale_host_attestation_cannot_complete_changed_transition(tmp_pat
     assert dc.start.await_count == 1
 
 
-async def test_replayed_marker_text_does_not_reuse_host_proof(tmp_path, monkeypatch):
+@pytest.mark.parametrize("attempt", range(100))
+async def test_replayed_marker_text_does_not_reuse_host_proof(tmp_path, monkeypatch, attempt):
     sup, _ = make_supervisor(tmp_path, monkeypatch)
     await sup.maybe_transition("monero", "monerod", True, True)
-    host_attest(tmp_path, "monero")
+    host_attest(tmp_path, "monero", monkeypatch)
     assert tor_attested(str(tmp_path), "monero")
     marker = tmp_path / "monero.synced"
     value = marker.read_text()
-    marker.unlink()
+    fd = os.open(marker, os.O_RDONLY)
+    try:
+        original = os.fstat(fd)
+    finally:
+        os.close(fd)
+    # A privileged writer replays in place because the dashboard cannot edit a claimed marker.
     marker.write_text(value)
+    assert marker.stat().st_ino == original.st_ino
+    fields = {key: getattr(original, key) for key in dir(original) if key.startswith("st_")}
+    monkeypatch.setattr(os, "fstat", lambda _fd: SimpleNamespace(**(fields | {"st_uid": 1000})))
     assert not tor_attested(str(tmp_path), "monero")
+
+
+@pytest.mark.parametrize("uid,mode", [(1000, 0o644), (0, 0o664), (0, 0o646)])
+async def test_matching_host_proof_requires_a_claimed_marker(tmp_path, monkeypatch, uid, mode):
+    sup, _ = make_supervisor(tmp_path, monkeypatch)
+    await sup.maybe_transition("monero", "monerod", True, True)
+    marker = tmp_path / "monero.synced"
+    marker.chmod(mode)
+    mock_marker_owner(monkeypatch, marker, uid)
+    st = marker.stat()
+    (tmp_path / "results" / "clearnet-monero-tor.json").write_text(
+        json.dumps(
+            {
+                "status": "verified",
+                "marker": marker.read_text().strip(),
+                "inode": st.st_ino,
+                "ctime_ns": st.st_ctime_ns,
+            }
+        )
+    )
+    assert not tor_attested(str(tmp_path), "monero")
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True

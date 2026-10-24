@@ -48,7 +48,14 @@ TRIAL_DIR="$(mktemp -d)"
 TRIAL_FIRED=0
 TRIAL_CONTINUED=0
 TRIAL_RC=0
-trap 'rm -rf "$TRIAL_DIR"' EXIT # bare EXIT, for the reason this whole file is about
+TRIAL_PID=''
+reap_trial() {
+    [ -n "$TRIAL_PID" ] || return 0
+    kill -KILL -- "-$TRIAL_PID" 2>/dev/null
+    wait "$TRIAL_PID" 2>/dev/null
+    TRIAL_PID=''
+}
+trap 'reap_trial; rm -rf "$TRIAL_DIR"' EXIT
 
 # Run one trial: a victim script with trap spec $1, signalled with $2 delivered to its process
 # GROUP, as a terminal does. Sets TRIAL_FIRED / TRIAL_CONTINUED / TRIAL_RC.
@@ -66,25 +73,36 @@ abort_trial() { # <trap-spec, "" for none> <signal>
     src="$TRIAL_DIR/${tag:-none}.sh"
     printf 'h() { echo FIRED >>"%s"; }\n' "$out" >"$src"
     [ -n "$spec" ] && printf 'trap h %s\n' "$spec" >>"$src"
-    printf 'echo READY >>"%s"\n' "$out" >>"$src"
-    printf 'for _ in $(seq 150); do sleep 0.02; done\n' >>"$src"
+    printf 'bash -c %q bash %q\n' \
+        'echo READY >>"$1"; exec tail -f /dev/null' "$out" >>"$src"
     printf 'echo CONTINUED >>"%s"\n' "$out" >>"$src"
     : >"$out"
     bash "$src" &
     pid=$!
+    TRIAL_PID=$pid
     spun=0
     while ! grep -q READY "$out" 2>/dev/null; do
         sleep 0.01
         spun=$((spun + 1))
-        [ "$spun" -gt 1000 ] && break # never hang the suite on a victim that failed to start
+        if [ "$spun" -gt 1000 ]; then
+            reap_trial
+            it_fail "trial SIG$sig reached READY" "victim did not become ready within 1001 polls"
+            return 1
+        fi
     done
     # The victim is a process-group leader (`set -m`, top of file) so this reaches it and nothing
     # else. Job-control notices for the reap are noise; the caller drops them.
-    kill -"$sig" -- "-$pid" 2>/dev/null
+    if ! kill -"$sig" -- "-$pid" 2>/dev/null; then
+        reap_trial
+        it_fail "trial SIG$sig was delivered" "could not signal the ready victim"
+        return 1
+    fi
     wait "$pid" 2>/dev/null
     TRIAL_RC=$?
+    TRIAL_PID=''
     TRIAL_FIRED="$(grep -c FIRED "$out")"
     TRIAL_CONTINUED="$(grep -c CONTINUED "$out")"
+    return 0
 }
 
 # THE HANDLER IS ONE SHELL WORD, AND A SHELL WORD IS A RUN OF CONCATENATED PIECES (#1567). Reading
@@ -147,10 +165,60 @@ trap_hit_is_data() { # <file> <line number of the trap line>
     [ "$(printf '%s' "$above" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')" = "$TRAP_DATA_MARKER" ]
 }
 
+echo "== trial readiness and parent scheduling =="
+grep() {
+    if [ "$1" = "-q" ] && [ "$2" = "READY" ]; then
+        sleep 8
+    fi
+    command grep "$@"
+}
+abort_trial "EXIT INT TERM" INT >"$TRIAL_DIR/delayed-parent.log" 2>&1
+trial_status=$?
+unset -f grep
+assert_eq "a delayed parent still delivers SIGINT" "$trial_status" "0"
+assert_eq "the delayed SIGINT handler fires twice" "$TRIAL_FIRED" "2"
+assert_eq "the delayed SIGINT trial continues" "$TRIAL_CONTINUED" "1"
+assert_eq "the delayed SIGINT trial exits successfully" "$TRIAL_RC" "0"
+
+grep() {
+    if [ "$1" = "-q" ] && [ "$2" = "READY" ]; then
+        return 1
+    fi
+    command grep "$@"
+}
+sleep() { [ "$1" = "0.01" ] || command sleep "$@"; }
+kill() {
+    [ "$1" = "-KILL" ] || : >"$TRIAL_DIR/premature-signal"
+    builtin kill "$@"
+}
+saved_fail=$IT_FAIL
+abort_trial "EXIT INT TERM" INT >"$TRIAL_DIR/not-ready.log" 2>&1
+trial_status=$?
+trial_fail=$IT_FAIL
+IT_FAIL=$saved_fail
+unset -f grep sleep kill
+assert_eq "a trial without READY returns failure" "$trial_status" "1"
+assert_eq "a trial without READY records a failed assertion" "$trial_fail" "$((saved_fail + 1))"
+assert_eq "a trial without READY sends no test signal" "$([ ! -e "$TRIAL_DIR/premature-signal" ] && echo yes)" "yes"
+assert_eq "a trial without READY reaps its victim" "$(jobs -pr)" ""
+
+kill() {
+    [ "$1" = "-KILL" ] && builtin kill "$@"
+}
+saved_fail=$IT_FAIL
+abort_trial "EXIT INT TERM" INT >"$TRIAL_DIR/signal-failure.log" 2>&1
+trial_status=$?
+trial_fail=$IT_FAIL
+IT_FAIL=$saved_fail
+unset -f kill
+assert_eq "a refused signal returns failure" "$trial_status" "1"
+assert_eq "a refused signal records a failed assertion" "$trial_fail" "$((saved_fail + 1))"
+assert_eq "a refused signal reaps its victim" "$(jobs -pr)" ""
+
 echo "== CONTROLS: with no trap at all, the signal MUST kill the victim (#1401) =="
 # Without these two rows a "survived" reading cannot be told from a signal that never landed.
 for sig in INT TERM; do
-    abort_trial "" "$sig" 2>/dev/null
+    abort_trial "" "$sig" 2>/dev/null || continue
     if [ "$TRIAL_CONTINUED" = "0" ] && [ "$TRIAL_FIRED" = "0" ]; then
         it_pass "control: SIG$sig kills an untrapped script, so the signal really lands"
     else
@@ -161,7 +229,7 @@ done
 
 echo "== a bare EXIT trap: fires ONCE and the script still dies (#1401) =="
 for sig in INT TERM; do
-    abort_trial "EXIT" "$sig" 2>/dev/null
+    abort_trial "EXIT" "$sig" 2>/dev/null || continue
     assert_eq "bare EXIT still runs the handler on SIG$sig — naming the signal adds no coverage" \
         "$TRIAL_FIRED" "1"
     assert_eq "and the script does NOT survive SIG$sig" "$TRIAL_CONTINUED" "0"
@@ -169,7 +237,7 @@ done
 
 echo "== EXIT INT TERM: the handler returns, so the script RESUMES — the #1401 defect =="
 for sig in INT TERM; do
-    abort_trial "EXIT INT TERM" "$sig" 2>/dev/null
+    abort_trial "EXIT INT TERM" "$sig" 2>/dev/null || continue
     assert_eq "EXIT INT TERM lets the script carry on past SIG$sig" "$TRIAL_CONTINUED" "1"
     assert_eq "  ...and exit 0, so an aborted run reports SUCCESS" "$TRIAL_RC" "0"
     assert_eq "  ...having fired the handler twice, the second a no-op behind any guard" \
@@ -190,7 +258,7 @@ echo "== the classifier reads one trap line correctly, and stays FAIL-LOUD doing
 # `EXIT` and passes. It is not a hole in what this guard is for: #1401's hazard is a handler that
 # CATCHES INT/TERM and returns, and a line installing no handler catches nothing. `trap - INT` and
 # `trap - EXIT INT` both red correctly, and the two existence assertions at the end of this file
-# match the real handler text (`trap restore_all`, `trap 'kill `), so a reset cannot stand in for
+# match the real handler text (`trap e2e_exit`, `trap 'kill `), so a reset cannot stand in for
 # either of the sites that matter. The row is here so that whoever next widens this classifier
 # trips over the limit instead of rediscovering it and assuming it was missed.
 while IFS='|' read -r want line; do
@@ -299,8 +367,8 @@ assert_eq "exactly one line in this tree is declared data — a new one is a new
 # rather than re-derived by a second mechanism that could drift from it.
 assert_num_ge "the walk found trap statements at all — a 0 here is a broken scan, not a clean tree" \
     "$(printf '%s\n' "$trap_scan" | grep -c .)" "2"
-assert_contains "e2e.sh's restore_all trap is still installed — the borrowed rig's only unwind" \
-    "$trap_scan" "trap restore_all"
+assert_contains "e2e.sh's restore and child-release trap is still installed" \
+    "$trap_scan" "trap e2e_exit"
 assert_contains "probe.sh's tor-kill trap is still installed (#1401's second site)" \
     "$trap_scan" "trap 'kill "
 

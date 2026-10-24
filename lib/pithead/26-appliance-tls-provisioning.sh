@@ -289,33 +289,25 @@ EOF
     log "SSH is ON (key-only): root@$(hostname).local"
 }
 
-# Mint (or keep) the machine's ONE certificate in appliance_tls_dir. Idempotent: an existing
-# certificate that still covers the machine's names is reused, because the operator has already
-# trusted it and replacing it is indistinguishable from an attack. Re-mints ONLY when the name
-# list it was minted for no longer matches (#1132) — compared, not date-guessed: the minted SAN
-# list is derived from the certificate itself with openssl (cert_san_string) and set-compared
-# against appliance_site_names' current answer, sorted on both sides so a re-ordered (but
-# unchanged) `hostname -I` never trips a needless re-mint. An operator who has pinned this
-# fingerprint loses that trust on every unnecessary replacement, so the comparison stays as
-# conservative as it can — and a real re-mint says so on the console, since the operator's browser
-# will need to trust the new certificate.
-appliance_mint_cert() { # -> prints the SHA-256 fingerprint
-    local d alt need_mint=1 names primary
+appliance_mint_cert() {
+    local d alt need_mint=1 names primary existing required cert_key private_key uncovered
     d=$(appliance_tls_dir)
     mkdir -p "$d"
     alt=$(appliance_cert_alt_string)
-    if [ -s "$d/wizard.crt" ] && [ -s "$d/wizard.key" ] &&
-        [ "$(cert_san_string "$d/wizard.crt" | tr ',' '\n' | sort | tr '\n' ',')" = \
-            "$(san_canonical_string "$alt" | tr ',' '\n' | sort | tr '\n' ',')" ]; then
-        need_mint=0
+    existing=$(cert_san_string "$d/wizard.crt" | tr ',' '\n' | LC_ALL=C sort -u)
+    required=$(san_canonical_string "$alt" | tr ',' '\n' | LC_ALL=C sort -u)
+    uncovered=$(LC_ALL=C comm -23 <(printf '%s\n' "$required") <(printf '%s\n' "$existing")) || return 1
+    if [ -n "$existing" ] && [ -n "$required" ] && [ -s "$d/wizard.key" ] &&
+        [ -z "$uncovered" ]; then
+        cert_key=$(openssl x509 -in "$d/wizard.crt" -pubkey -noout 2>/dev/null)
+        private_key=$(openssl pkey -in "$d/wizard.key" -passin pass: -pubout 2>/dev/null)
+        if [ -n "$cert_key" ] && [ "$cert_key" = "$private_key" ]; then need_mint=0; fi
     fi
     if [ "$need_mint" = 1 ]; then
         [ -s "$d/wizard.crt" ] &&
-            log "Re-minting the dashboard certificate — the machine now answers to a different set of names than the one it was minted for. Your browser will need to trust the new certificate."
+            log "Re-minting the dashboard certificate — the existing pair is unusable or does not cover a current name. Your browser will need to trust the new certificate."
         names=$(appliance_site_names)
         primary="${names%% *}"
-        # X.509's legacy display CN is limited to 64 characters. SAN retains the full DNS name,
-        # including .local when a valid 63-character machine label exceeds that display limit.
         primary="${primary:0:64}"
         openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
             -keyout "$d/wizard.key" -out "$d/wizard.crt" \
