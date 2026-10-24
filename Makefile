@@ -187,6 +187,7 @@ lint-topology: ## Fail if a real-looking IPv6/IPv4/hostname/path/user@host liter
 
 lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, or an existing offender grows past its docs/dev/file-budget.tsv ceiling (#1105 Phase 0)
 	bash scripts/lint/lint-file-budget.sh --self-test
+	bash scripts/lint/selftest-file-budget-release.sh
 	bash scripts/lint/lint-file-budget.sh
 
 lint-pithead-build: ## Test the generated CLI build and its ordering/refusal guards
