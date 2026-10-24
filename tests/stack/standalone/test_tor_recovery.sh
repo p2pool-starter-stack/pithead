@@ -2,7 +2,7 @@
 # Pure CLI recovery contract: no engine or bench access.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-WORK=$(mktemp -d "${TMPDIR:?}/pithead-tor-recovery.XXXXXX")
+WORK=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-tor-recovery.XXXXXX")
 WORK=$(cd "$WORK" && pwd -P)
 trap 'chmod 700 "$WORK/tor" 2>/dev/null || true; chmod 700 "$WORK/tor/p2pool" 2>/dev/null || true; rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh

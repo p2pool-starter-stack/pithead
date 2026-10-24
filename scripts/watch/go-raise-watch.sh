@@ -137,6 +137,10 @@ report() {
 }
 
 if [ "${1:-}" = "--self-test" ]; then
+    command -v go >/dev/null 2>&1 || {
+        echo "go-raise-watch self-test FAIL: missing tool 'go' (the self-test runs real 'go get' and 'go list' on a fixture module graph)" >&2
+        exit 1
+    }
     st_fail=0
     st() { [ "$2" = "$3" ] || {
         echo "self-test FAIL: $1 (got [$2], want [$3])"

@@ -35,8 +35,20 @@ echo "== unit: pin-watch self-test (#1128) =="
 bash "$ROOT/scripts/watch/pin-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "pin-watch self-test passes" "$?" "0"
 # Drives active, transitive no-op and downgrade raises through a synthetic Go module graph.
-bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test >/dev/null 2>&1
+go_watch_out=$(bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
 assert_rc "Go module raise watch self-test passes" "$?" "0"
+assert_contains "Go module raise watch self-test prints its OK verdict" "$go_watch_out" "go-raise-watch self-test OK"
+# It needs a real Go toolchain, so a box without one must fail by naming the tool (#3442).
+mkdir -p "$SANDBOX/no-go-bin"
+ln -sf "$(command -v dirname)" "$SANDBOX/no-go-bin/dirname"
+go_watch_out=$(PATH="$SANDBOX/no-go-bin" "$BASH" "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
+assert_rc "Go module raise watch self-test fails without go" "$?" "1"
+assert_contains "Go module raise watch self-test names the missing go tool" "$go_watch_out" "missing tool 'go'"
+
+echo "== unit: no test or script requires a GitHub-only variable (#3442) =="
+# A required runner variable fails every host that is not a GitHub runner, the release box included.
+assert_eq "no test or script needs RUNNER_* or GITHUB_* to be set" \
+    "$(grep -rnE 'RUNNER_[A-Z_]+:[?]|GITHUB_[A-Z_]+:[?]' --include='*.sh' --include='*.py' "$ROOT/tests" "$ROOT/scripts")" ""
 
 echo "== unit: #2879 rootfs dependency refresh =="
 dockerfile="$ROOT/os/rootfs/Dockerfile"
@@ -138,7 +150,8 @@ bash "$ROOT/tests/os/selftest-install-rig-dispatch.sh" >/dev/null
 assert_rc "rig install dispatch preserves card-before-erase and bare keep" "$?" "0"
 bash "$ROOT/tests/os/selftest-restore-p2pool-startup.sh" >/dev/null 2>&1
 assert_rc "restore startup rejects P2Pool crashes across its bounded window" "$?" "0"
-bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null
+# Run without either scratch variable: a box that is not a GitHub runner has neither (#3442).
+env -u TMPDIR -u RUNNER_TEMP bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null
 assert_rc "Tor heal guest and offline-image harness controls pass" "$?" "0"
 bash "$ROOT/tests/os/appliance-hostname-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#1966 appliance hostname verdict self-test passes" "$?" "0"

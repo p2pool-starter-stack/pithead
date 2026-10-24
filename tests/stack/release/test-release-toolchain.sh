@@ -26,7 +26,7 @@ rt_drive() {
     ' 2>&1
 }
 
-for t in shellcheck shfmt node npx uv uvx; do
+for t in shellcheck shfmt node npx uv uvx go; do
     printf '#!/bin/sh\nexit 0\n' >"$RT_TOOLS/$t"
     chmod +x "$RT_TOOLS/$t"
 done
@@ -45,7 +45,7 @@ SH
         # MUTATION PROOF: unconditionally check tools and skip=1 fails; skip dry runs and dry=1 passes incorrectly.
         assert_rc "toolchain guard honors skip in real and dry runs" "$rt_rc" "$((1 - skip))"
         if [ "$skip" -eq 0 ]; then
-            for t in shellcheck shfmt node npx uv uvx; do
+            for t in shellcheck shfmt node npx uv uvx go; do
                 # MUTATION PROOF: stop after the first missing tool and later names disappear.
                 assert_contains "every missing tool is named" "$rt_out" "$t"
             done
@@ -68,7 +68,7 @@ SH
     )"
     # MUTATION PROOF: keep the tools off PATH or skip the dry-run check.
     assert_rc "full toolchain present -> preflight passes" "$?" "0"
-    for t in shellcheck shfmt node npx uv uvx; do
+    for t in shellcheck shfmt node npx uv uvx go; do
         # MUTATION PROOF: suppress the resolved-tool log.
         assert_contains "every resolved tool path is logged" "$rt_out" "$RT_TOOLS/$t"
     done
@@ -108,7 +108,7 @@ assert_contains "missing tool -> preflight fails fast (#426)" "$rt_out" "Missing
 assert_contains "the missing tool is named (#426)" "$rt_out" "shfmt"
 # MUTATION PROOF: remove the provisioning doc from the error.
 assert_contains "error points at the provisioning doc (#426)" "$rt_out" "release-server.md"
-for t in shellcheck shfmt node npx uv uvx; do rm -f "$RTB/$t"; done
+for t in shellcheck shfmt node npx uv uvx go; do rm -f "$RTB/$t"; done
 
 mkdir -p "$RT_KEYS/writable"
 chmod 0777 "$RT_KEYS/writable"

@@ -156,6 +156,13 @@ structurally cannot.
 - Shell: pure logic goes in `lib.sh`/`scenarios.sh` and is tested by `selftest.sh`. I/O (ssh,
   docker, RPC) is thin wrappers that aren't unit-tested. Everything stays
   `shellcheck --severity=warning` clean.
+- Hermetic against the host. The release gate runs `make test` on a box that has a live stack, no
+  `TMPDIR`/`RUNNER_TEMP` and no GitHub runner image, so a shell test reads its fixture and never the
+  host: scratch under `${TMPDIR:-${RUNNER_TEMP:-/tmp}}`, addresses and bridges through
+  `stub_host_addrs`, systemd units through the sandboxed `PITHEAD_UNIT_DIR`, the dashboard on
+  `127.0.0.1:8000` and the Avahi config through a stub or `PITHEAD_AVAHI_CONF`. A test that
+  genuinely needs a tool (Go for the raise-watch self-test) fails by naming it, and the release
+  preflight requires it; it never skips.
 - `make test-inventory` writes a generated (git-ignored) coverage list you can read locally — handy
   for seeing what already exists before you add a test.
 - Secrets: never print tokens, creds, or onions. The harness redacts artifacts and hashes secrets

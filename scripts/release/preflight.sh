@@ -2,11 +2,11 @@
 # Sourced by release.sh; shares its configuration and stage state.
 
 # The CLI tools the blocking test gate (`make test` → `make lint`) shells out to: shellcheck + shfmt
-# (lint-sh), node/npx (lint-js/md/toml), uv/uvx (lint-py/lint-yaml). A reimaged release box loses these
-# (#426 — the v1.3.0 cut died ~1 min in with a bare `shellcheck: not found`). docker/jq are checked
-# elsewhere. Verify them here so a missing tool fails preflight with an actionable message, before any
-# build, instead of mid-gate.
-LINT_TOOLCHAIN=(shellcheck shfmt node npx uv uvx)
+# (lint-sh), node/npx (lint-js/md/toml), uv/uvx (lint-py/lint-yaml), go (test-stack's go-raise-watch
+# self-test, #3442). A reimaged release box loses these (#426 — the v1.3.0 cut died ~1 min in with a
+# bare `shellcheck: not found`). docker/jq are checked elsewhere. Verify them here so a missing tool
+# fails preflight with an actionable message, before any build, instead of mid-gate.
+LINT_TOOLCHAIN=(shellcheck shfmt node npx uv uvx go)
 BENCH_TIER4_CONTEXT="bench-ci/tier4"
 
 # Dies on a real cut; on --dry-run prints the verdict and lets the rehearsal continue. A preview that

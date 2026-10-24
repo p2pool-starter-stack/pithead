@@ -346,6 +346,13 @@ esac
 exit 0
 EOF
     chmod +x "$bin/docker"
+    # A live dashboard on the host's 127.0.0.1:8000 must never answer the sync probe (#3442).
+    cat >"$bin/curl" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >>"${0%/*}/curl.log"
+exit 7
+EOF
+    chmod +x "$bin/curl"
 }
 ST="$SANDBOX/status"
 mkdir -p "$ST/bin"
@@ -372,6 +379,7 @@ out="$(cd "$ST" && FAKE_STATES="$PROXY_ONLY" PATH="$ST/bin:$PATH" ./pithead stat
 rc=$?
 assert_rc "status: proxy stop under sync hold exits 0" "$rc" "0"
 assert_contains "status: proxy stop notes sync hold" "$out" "finish syncing"
+assert_contains "status: the sync probe reached the stub, not a live dashboard" "$(cat "$ST/bin/curl.log" 2>/dev/null)" "http://127.0.0.1:8000/api/state"
 
 P2POOL_ONLY="${ALL_UP/p2pool=running:none/p2pool=exited:none}"
 out="$(cd "$ST" && FAKE_STATES="$P2POOL_ONLY" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
