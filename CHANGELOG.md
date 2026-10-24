@@ -13,11 +13,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [2.0.1] - 2026-10-25
 
-Pithead 2.0.1 is the first patch release after 2.0.0. It keeps the dashboard certificate you
-already trust across an appliance update, makes `pithead status` and `pithead doctor` report a
-container that keeps restarting, and clears the image-scan findings raised since 2.0.0. It
-changes no configuration keys and no component version, and runs no data migration. Entries below
-apply to both channels unless they say otherwise.
+Pithead 2.0.1 is the first patch release after 2.0.0. It keeps the dashboard certificate you already
+trust across an appliance update, makes `pithead status` and `pithead doctor` report a container
+that keeps restarting, fixes appliance setup, restore and Set up again paths that could leave the
+setup page up, skip a rig's settings or keep a coordinator from returning to service, and clears the
+image-scan findings raised since 2.0.0. It changes no configuration keys and no component version,
+and runs no data migration. Entries below apply to both channels unless they say otherwise.
 
 ### Changed
 
@@ -51,6 +52,19 @@ apply to both channels unless they say otherwise.
 - DIY: the guides explain how to verify and trust Caddy's local root CA once, instead of accepting
   the dashboard certificate, whose warning returns after each renewal of Caddy's 12-hour
   certificates (#3435).
+- **A command-line restore that lands while the appliance setup page is starting now brings the
+  dashboard back (#3390).** First boot could read the restored `config.json` as configuration it
+  had kept, hold on to the setup page's web ports and stay on the setup page. The setup page now
+  closes when a restore lands during startup.
+- **Installing a RigForge rig to an internal disk from the installer applies the rig's settings
+  (#3076).** With the default keep policy, the install could take the plain reinstall path and
+  finish without applying the submitted rig settings or publishing the rig card the coordinator
+  uses to add it.
+- **Finishing "Set up again" on an appliance coordinator returns it to service (#3075).**
+  Submitting the setup form after choosing Set up again in the boot menu ran the headless setup
+  path, which refused the existing deployment, so the coordinator did not come back. Submitting
+  the form now applies the answers and starts the stack again, keeping the chains, the onion
+  address and the machine identity. Keep it still restores the machine unchanged.
 
 ### Security
 
@@ -59,6 +73,9 @@ apply to both channels unless they say otherwise.
 - The appliance rootfs builds Cosign and Docker Compose with Go 1.26.10 and raises Cosign's
   klauspost/compress to 1.18.7. This clears CVE-2026-63209 in Cosign and CVE-2026-111943 in the Go
   standard library of both binaries (#3585).
+- The dashboard's development lock raises virtualenv, which pre-commit pulls in, to 21.14.9 and
+  clears its Dependabot alerts. virtualenv is development tooling only and is not in the dashboard
+  image (#3014).
 - The dashboard and CLI warning for a clearnet sync that has not yet moved back to Tor clears only
   when the transition marker is also a regular file owned by root with no group or other write
   permission. A process that could write to the dashboard's state could previously replay the
@@ -66,8 +83,8 @@ apply to both channels unless they say otherwise.
 
 ### Known issues in 2.0.1
 
-These two ship in 2.0.1 and are planned for 2.0.2. The known issues listed for 2.0.0 still apply,
-except #3414, #3376, #3384 and #3435, which are fixed above.
+These three ship in 2.0.1 and are planned for 2.0.2. The known issues listed for 2.0.0 still apply,
+except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
   boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot (#3375).
@@ -76,6 +93,9 @@ except #3414, #3376, #3384 and #3435, which are fixed above.
   from Configuration can then re-propose the old values and undo part of the restore. Run
   `./pithead apply` once, then `./pithead restart`. A restore from the setup wizard is not affected
   (#3432).
+- The appliance does not boot with Secure Boot on: the firmware refuses its unsigned bootloader.
+  Turn Secure Boot off in the firmware before you boot the stick, as the install guide says. 2.0.0
+  has the same limitation (#2187).
 
 ## [2.0.0] - 2026-10-13
 
@@ -196,8 +216,8 @@ changelog and the wizard text only.
   addresses, so the browser asks you to trust it again. Fixed in 2.0.1
   ([#3414](https://github.com/p2pool-starter-stack/pithead/issues/3414)).
 - On the appliance, a restore started from the command line while the setup page is still
-  starting can leave the setup page up instead of the dashboard. Mining is unaffected. Planned for
-  2.0.2 ([#3390](https://github.com/p2pool-starter-stack/pithead/issues/3390)).
+  starting can leave the setup page up instead of the dashboard. Mining is unaffected. Fixed in
+  2.0.1 ([#3390](https://github.com/p2pool-starter-stack/pithead/issues/3390)).
 - Setting the stratum port in Configuration to a port another service already uses is not caught
   by the preview. Apply then fails part-way with the proxy stopped; Configuration's recovery
   restores it. Planned for 2.1.0
