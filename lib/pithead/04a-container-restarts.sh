@@ -15,7 +15,7 @@ container_restart_snapshot() {
 container_restarting_names() {
     local before after id name state count started
     local -A before_count before_started before_name reported
-    [ "${PITHEAD_BOOT_GATE:-0}" = 1 ] && return 0 # the boot gate polls every 10 s and cannot afford the 3 s window
+    [ "${PITHEAD_BOOT_GATE:-0}" = 1 ] && return 0
     before=$(container_restart_snapshot) || return 1
     [ -n "$before" ] || return 0
     sleep 3
