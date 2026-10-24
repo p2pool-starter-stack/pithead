@@ -187,8 +187,9 @@ What the boot path reads, written by the host at the moment a role is accepted:
 
 A rig install to a disk stages the accepted answers as `pithead-rig.json` on the ESP —
 carried to the target by `pithead-install` beside the config and token pre-seeds — and the
-installed machine's first boot lands them as the two files above, scrubbing the ESP copy the
-way the config pre-seed is scrubbed. The stick keeps neither copy after a disk install: a
+installed machine's first boot calls `wizard_consume_rig_preseed` in
+`lib/pithead/12c-wizard-rig-preseed.sh` to land the two files above and scrub the ESP
+copy the way the config pre-seed is scrubbed. The stick keeps neither copy after a disk install: a
 stick whose own `/data` carries the rig marker IS a rig (run-from-USB), and that marker
 outranks installer mode on every later boot — except one chosen from the boot menu's **Set up
 again** entry, which opens the wizard beside the role (below).
