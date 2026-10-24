@@ -375,11 +375,16 @@ assert_contains "status: proxy stop is intentional" "$out" "likely intentional"
 
 # A genuinely stopped miner is the intentional #35 sync hold, so status exits 0.
 PROXY_ONLY="${ALL_UP/xmrig-proxy=running:none/xmrig-proxy=exited:none}"
+: >"$ST/bin/curl.log"
 out="$(cd "$ST" && FAKE_STATES="$PROXY_ONLY" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
 rc=$?
 assert_rc "status: proxy stop under sync hold exits 0" "$rc" "0"
 assert_contains "status: proxy stop notes sync hold" "$out" "finish syncing"
-assert_contains "status: the sync probe reached the stub, not a live dashboard" "$(cat "$ST/bin/curl.log" 2>/dev/null)" "http://127.0.0.1:8000/api/state"
+if command -v jq >/dev/null 2>&1; then
+    assert_contains "status: the sync probe reached the stub, not a live dashboard" "$(cat "$ST/bin/curl.log" 2>/dev/null)" "http://127.0.0.1:8000/api/state"
+else
+    bad "status: the sync probe reached the stub, not a live dashboard" "jq is not on PATH, so status never probes /api/state; install jq"
+fi
 
 P2POOL_ONLY="${ALL_UP/p2pool=running:none/p2pool=exited:none}"
 out="$(cd "$ST" && FAKE_STATES="$P2POOL_ONLY" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
