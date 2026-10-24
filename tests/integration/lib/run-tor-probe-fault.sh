@@ -126,7 +126,7 @@ fault_tor_probe_egress() {
 _tor_probe_capture() (
     local dir="$OUT_DIR/tor-probe-fault"
     if ! mkdir -p "$dir"; then
-        it_warn "Tor healer evidence directory unavailable"
+        printf 'Tor healer evidence directory unavailable\n' >&2
         return 0
     fi
     set -o pipefail
