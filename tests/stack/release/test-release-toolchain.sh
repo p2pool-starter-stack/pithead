@@ -30,6 +30,7 @@ for t in shellcheck shfmt node npx uv uvx go; do
     printf '#!/bin/sh\nexit 0\n' >"$RT_TOOLS/$t"
     chmod +x "$RT_TOOLS/$t"
 done
+printf '#!/bin/sh\necho "go version go1.22.2 linux/amd64"\n' >"$RT_TOOLS/go"
 
 echo "== unit: release.sh checks the run toolchain in real and dry runs (#426, #3446) =="
 for dry in 0 1; do
@@ -108,6 +109,27 @@ assert_contains "missing tool -> preflight fails fast (#426)" "$rt_out" "Missing
 assert_contains "the missing tool is named (#426)" "$rt_out" "shfmt"
 # MUTATION PROOF: remove the provisioning doc from the error.
 assert_contains "error points at the provisioning doc (#426)" "$rt_out" "release-server.md"
+for t in shellcheck shfmt node npx uv uvx go; do rm -f "$RTB/$t"; done
+
+echo "== unit: release.sh rejects a Go older than the raise-watch self-test needs (#3442) =="
+cp "$RT_TOOLS/"* "$RTB/"
+for rt_go in "go version go1.19.8 linux/amd64" "no output"; do
+    case "$rt_go" in
+    "no output") printf '#!/bin/sh\nexit 0\n' >"$RTB/go" ;;
+    *) printf '#!/bin/sh\necho "%s"\n' "$rt_go" >"$RTB/go" ;;
+    esac
+    rt_out="$(
+        rt_drive <<'SH'
+DRY_RUN=0
+SKIP_TESTS=0
+check_release_toolchain
+SH
+    )"
+    # MUTATION PROOF: check only that go exists, or let an empty `go version` pass.
+    assert_rc "go below 1.21 or with no version -> preflight fails" "$?" "1"
+    assert_contains "the old go is diagnosed with its version output" "$rt_out" "go 1.21 or newer is required"
+    assert_contains "the found go version is reported" "$rt_out" "found: $rt_go"
+done
 for t in shellcheck shfmt node npx uv uvx go; do rm -f "$RTB/$t"; done
 
 mkdir -p "$RT_KEYS/writable"

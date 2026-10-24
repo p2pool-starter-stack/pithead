@@ -38,12 +38,42 @@ assert_rc "pin-watch self-test passes" "$?" "0"
 go_watch_out=$(bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
 assert_rc "Go module raise watch self-test passes" "$?" "0"
 assert_contains "Go module raise watch self-test prints its OK verdict" "$go_watch_out" "go-raise-watch self-test OK"
-# It needs a real Go toolchain, so a box without one must fail by naming the tool (#3442).
-mkdir -p "$SANDBOX/no-go-bin"
+# It needs a real Go 1.21 or newer, so a box without one must fail by naming the tool and its version (#3442).
+mkdir -p "$SANDBOX/no-go-bin" "$SANDBOX/old-go-bin"
 ln -sf "$(command -v dirname)" "$SANDBOX/no-go-bin/dirname"
+ln -sf "$(command -v dirname)" "$SANDBOX/old-go-bin/dirname"
+printf '#!/bin/sh\necho "go version go1.19.8 linux/amd64"\n' >"$SANDBOX/old-go-bin/go"
+chmod +x "$SANDBOX/old-go-bin/go"
 go_watch_out=$(PATH="$SANDBOX/no-go-bin" "$BASH" "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
 assert_rc "Go module raise watch self-test fails without go" "$?" "1"
-assert_contains "Go module raise watch self-test names the missing go tool" "$go_watch_out" "missing tool 'go'"
+assert_contains "Go module raise watch self-test names the missing go tool" "$go_watch_out" "needs go 1.21 or newer"
+# MUTATION PROOF: guard on `command -v go` alone and an installed old Go exits 1 with no output.
+go_watch_out=$(PATH="$SANDBOX/old-go-bin" "$BASH" "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
+assert_rc "Go module raise watch self-test fails on a Go older than 1.21" "$?" "1"
+assert_contains "Go module raise watch self-test reports the old Go version" "$go_watch_out" "found: go version go1.19.8"
+
+echo "== unit: the sudo fence no-ops host firewall and systemd verbs (#3442) =="
+FENCE="$SANDBOX/sudo-fence"
+mkdir -p "$FENCE"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$FENCE_LOG"\n' >"$FENCE/real-sudo"
+chmod +x "$FENCE/real-sudo"
+make_host_sudo_fence "$FENCE/bin" "$FENCE/real-sudo"
+export FENCE_LOG="$FENCE/log"
+: >"$FENCE_LOG"
+fence_rc=0
+printf 'a\n' | "$FENCE/bin/sudo" -n iptables-restore -w --noflush || fence_rc=$?
+for fence_cmd in "iptables -N DOCKER-USER" "iptables-save -t filter" "ip6tables -S" "nft delete table inet pithead_egress" "systemctl enable pithead-tor-egress.service"; do
+    # shellcheck disable=SC2086
+    "$FENCE/bin/sudo" -n $fence_cmd </dev/null || fence_rc=$?
+done
+# MUTATION PROOF: drop one verb from the fence and it reaches the recorded real sudo.
+assert_rc "firewall and systemctl verbs succeed through the fence" "$fence_rc" "0"
+assert_eq "none of them reaches the real sudo" "$(cat "$FENCE_LOG")" ""
+"$FENCE/bin/sudo" -n tee /etc/pithead-fixture </dev/null
+"$FENCE/bin/sudo" rm -f /etc/pithead-fixture
+# MUTATION PROOF: swallow every command in the fence and the host's other sudo calls vanish.
+assert_eq "any other command reaches the real sudo with its arguments" "$(cat "$FENCE_LOG")" $'-n tee /etc/pithead-fixture\nrm -f /etc/pithead-fixture'
+unset FENCE_LOG
 
 echo "== unit: no test or script requires a GitHub-only variable (#3442) =="
 # A required runner variable fails every host that is not a GitHub runner, the release box included.

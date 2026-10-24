@@ -137,8 +137,10 @@ report() {
 }
 
 if [ "${1:-}" = "--self-test" ]; then
-    command -v go >/dev/null 2>&1 || {
-        echo "go-raise-watch self-test FAIL: missing tool 'go' (the self-test runs real 'go get' and 'go list' on a fixture module graph)" >&2
+    # The floor matches GO_MIN_MINOR in scripts/release/preflight.sh and the fixture's `go 1.21` line.
+    go_version=$(go version 2>&1) || go_version=none
+    [[ $go_version =~ go1\.([0-9]+) ]] && [ "${BASH_REMATCH[1]}" -ge 21 ] || {
+        echo "go-raise-watch self-test FAIL: needs go 1.21 or newer on PATH (it runs real 'go get' and 'go list' on a fixture module graph); found: $go_version" >&2
         exit 1
     }
     st_fail=0
@@ -182,7 +184,10 @@ EOF
     git -C "$graph" add .
     git -C "$graph" -c user.name=test -c user.email=test@example.invalid commit -qm fixture
     measured=$(measure_checkout "$graph" \
-        example.test/active@v1.2.0 example.test/noop@v1.2.0 example.test/down@v1.0.0)
+        example.test/active@v1.2.0 example.test/noop@v1.2.0 example.test/down@v1.0.0) || {
+        echo "go-raise-watch self-test FAIL: measuring the fixture module graph failed with $go_version" >&2
+        exit 1
+    }
     measure_project() {
         case "$1" in
         docker/compose) printf '%s\n' "$measured" | sed -n '1,2p' ;;

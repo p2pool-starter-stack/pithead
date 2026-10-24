@@ -101,7 +101,7 @@ bench-ci as a retryable environment wait after baseline restore.
 
 `make release`'s blocking test gate runs `make lint`, which shells out to `shellcheck`, `shfmt`,
 `node`/`npx`, and `uv`/`uvx`; its `test-stack` leg also runs the Go module raise watch self-test, which
-needs Go 1.21 or newer on PATH (offline, against a fixture module graph; Ubuntu 24.04's `golang-go` is 1.22).
+needs Go 1.21 or newer on PATH (offline, against a fixture module graph; the preflight checks the version; Ubuntu 24.04's `golang-go` is 1.22, Debian 12's is 1.19 and fails the check).
 A reimaged box loses these, so the release preflight
 ([#426](https://github.com/p2pool-starter-stack/pithead/issues/426)) stops early and names the
 missing tools and their effective PATH rather than dying mid-gate. The check runs in a dry run

@@ -27,6 +27,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/doctor-stubs.sh" || ex
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/backup-fixtures.sh" || exit 1
 # shellcheck source=tests/stack/lib/control-fixtures.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/control-fixtures.sh" || exit 1
+# shellcheck source=tests/stack/lib/host-fence.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/host-fence.sh" || exit 1
 # shellcheck source=tests/stack/lib/config-read-sites.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config-read-sites.sh"
 
@@ -183,6 +185,7 @@ export PITHEAD_RESTORE_SUBMISSION_DIR="$SANDBOX/.run/restore-submit" PITHEAD_RES
 # The host's own systemd units must not reach an apply (#3442).
 export PITHEAD_UNIT_DIR="$SANDBOX/.run/units"
 mkdir -p "$PITHEAD_UNIT_DIR"
+install_host_sudo_fence
 
 # A fake docker that records calls and answers the few queries setup/apply make.
 make_stubs() {
