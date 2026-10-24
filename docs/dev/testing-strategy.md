@@ -46,6 +46,13 @@ real containers (tier 3), and that real daemons sync/merge-mine and real contain
 (tier 4). So: stubs for logic, controllable fake daemons for the control-plane wiring, the real
 box for the irreducibly-real. Each situation is tested once, at the lowest tier that is honest.
 
+The Shell workflow runs `make test-bridge-awk` in `pithead-test-runner:local`, built
+from the pinned Debian 12 image. It requires mawk 1.3.4-20200120, gawk and BusyBox awk,
+checks exact engine-interface names and near misses, and runs the existing Caddy bind
+and site-list assertions with each implementation. Docker bridge detection uses a
+hexadecimal suffix and an exact length check, without awk interval expressions;
+LAN bridges such as `br0` and `br-lan` remain eligible addresses.
+
 The root `pithead` tested at tiers 1–4 is generated and git-ignored. Each Make test entry point
 that reads it depends on the `pithead` build target, while the live E2E provisioner builds it after
 cleaning its source checkout. A clean clone therefore exercises the same generated CLI as a local
