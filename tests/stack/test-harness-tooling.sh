@@ -206,6 +206,8 @@ echo "== unit: #1936 wizard-state-poll self-test =="
 # proves it and it needs no KVM.
 bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-control-admission.sh" >/dev/null 2>&1
+assert_rc "control POST admission distinguishes connection refusal from a lost reply" "$?" "0"
 bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null
 assert_rc "the OS runner module and control lifecycle guard self-test passes" "$?" "0"
 bash "$ROOT/tests/os/selftest-install-rig.sh" >/dev/null

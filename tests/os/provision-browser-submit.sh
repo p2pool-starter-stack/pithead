@@ -95,6 +95,10 @@ control_result_stamp_id() { # <result-json> <id>
 dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code crc=0
     out=$(control_request_post "$route" "$body" "$deadline") || crc=$?
+    if [ "$crc" -eq 7 ]; then
+        control_request_guest_evidence
+        return 1
+    fi
     if [ "$crc" -eq 0 ]; then
         response_code=${out##*$'\n'}
         if [[ $response_code =~ ^[0-9]{3}$ ]]; then
@@ -113,15 +117,10 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
         else
             rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
         fi
-        # A restarted dashboard can close the POST after accepting it, leaving curl with an empty
-        # or malformed successful response. Only an explicit JSON error is a real refusal; the
-        # caller's id still names a request the host may complete, so poll it.
         if [ -z "$rid" ] && ! printf '%s' "$out" | jq -e 'type == "object" and has("error")' >/dev/null 2>&1; then
             out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
         fi
     else
-        # A dashboard restart can lose the POST response in flight. The caller-supplied id is still
-        # pollable whether curl reports that loss or returns an empty successful response.
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
     # An explicit server refusal has no id and must stay fast rather than polling a deadline out.

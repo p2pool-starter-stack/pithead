@@ -274,8 +274,9 @@ The address-watch provision leg in `tests/os/appliance-address-watch-leg.sh` che
 SAN coverage and the deployed dashboard recovery assets through TLS, then executes the served
 fingerprint instruction over SSH. Its refusal controls are in `tests/os/selftest-dashboard-recovery.sh`.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
-transport metadata, failure snapshots and bounded preview transport recovery; its selftest runs through
-`tests/os/provision-browser-submit.sh --self-test`.
+transport metadata, failure snapshots and bounded control transport recovery; its selftest runs through
+`tests/os/provision-browser-submit.sh --self-test`. `tests/os/selftest-control-admission.sh` covers
+connection refusal before delivery, stale previews and single delivery after an ambiguous response.
 The image-upgrade phase also runs `tests/os/image-upgrade-certificate-leg.sh`: a real
 GUI update and reboot with a nonpersistent guest address present before and after boot.
 `image-upgrade-browser-host.py` uses the host Python runtime to restore that address
