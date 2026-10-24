@@ -3,12 +3,7 @@ from tests.service._data_service_support import *  # noqa: F403
 
 
 class TestXvbWinnersSync:
-    """XvB raffle-winners mirror: the public winners file → raffle_wins table, on a 30-min
-    wall-clock gate, with the same "a failed fetch writes nothing" contract as the stats sync
-    — and additionally does NOT stamp the gate, so a failure retries on the next eligible poll."""
-
     _WIN = {"ts": 1000.0, "hashrate": 4.2e6, "height": 100, "block_id": "aa11", "tier": "donor"}
-    # get_recent_wins' one-fetch-two-parses shape (#866): wins + the all-rounds aggregate.
     _STATS = {"types": {"donor": {"rounds": 4, "players_avg": 70.0}}, "span_days": 4.0}
 
     def _fetch(self, wins, stats=None):
@@ -24,25 +19,33 @@ class TestXvbWinnersSync:
         xvb = MagicMock()
         return DataService(sm, MagicMock(), xvb), sm, xvb
 
-    async def test_successful_fetch_persists_wins(self):
-        svc, sm, xvb = self._svc()
-        xvb.get_recent_wins.return_value = self._fetch([self._WIN])
+    async def test_successful_fetch_persists_wins(self, xvb_service):
+        svc, sm = xvb_service
+        svc.xvb_client.get_recent_wins.return_value = self._fetch([self._WIN])
         await svc._sync_xvb_winners()
-        sm.add_raffle_wins.assert_called_once_with([self._WIN])
-        # The same fetched body also refreshes the all-rounds aggregate (#866).
-        sm.set_xvb_round_stats.assert_called_once_with(self._STATS)
-        assert svc._last_xvb_winners_sync > 0  # gate stamped on success
+        assert sm.get_raffle_wins(0) == [self._WIN]
+        cached = sm.get_xvb_round_stats()
+        assert cached["stats"] == self._STATS
+        assert cached["last_update"] > 0
+        assert svc._last_xvb_winners_sync > 0
 
-    async def test_unparseable_round_stats_do_not_overwrite_the_cached_aggregate(self):
-        # A file that yields wins but no round aggregate (format drift) must not blank the
-        # cache — the stale-by-last_update rule owns degradation, never an empty-implied-fresh.
-        svc, sm, xvb = self._svc()
-        xvb.get_recent_wins.return_value = self._fetch(
-            [self._WIN], stats={"types": {}, "span_days": 0.0}
+    async def test_unparseable_round_stats_do_not_overwrite_the_cached_aggregate(
+        self, xvb_service, monkeypatch
+    ):
+        svc, sm = xvb_service
+        monkeypatch.setattr(time, "time", lambda: 10_000.0)
+        svc.xvb_client.get_recent_wins.return_value = self._fetch([self._WIN])
+        await svc._sync_xvb_winners()
+        before = sm.get_xvb_round_stats()
+        svc._last_xvb_winners_sync = 0.0
+        monkeypatch.setattr(time, "time", lambda: 20_000.0)
+        new_win = {**self._WIN, "block_id": "bb22", "height": 101, "ts": 2000.0}
+        svc.xvb_client.get_recent_wins.return_value = self._fetch(
+            [new_win], stats={"types": {}, "span_days": 0.0}
         )
         await svc._sync_xvb_winners()
-        sm.set_xvb_round_stats.assert_not_called()
-        sm.add_raffle_wins.assert_called_once_with([self._WIN])
+        assert sm.get_xvb_round_stats() == before
+        assert sm.get_raffle_wins(0) == [self._WIN, new_win]
 
     async def test_failed_fetch_writes_nothing_and_leaves_the_gate_open(self):
         svc, sm, xvb = self._svc()
