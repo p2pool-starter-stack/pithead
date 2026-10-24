@@ -75,6 +75,51 @@ assert_eq "none of them reaches the real sudo" "$(cat "$FENCE_LOG")" ""
 assert_eq "any other command reaches the real sudo with its arguments" "$(cat "$FENCE_LOG")" $'-n tee /etc/pithead-fixture\nrm -f /etc/pithead-fixture'
 unset FENCE_LOG
 
+echo "== unit: the PATH stubs hold on every route a fixture takes to a firewall or systemd tool (#3442) =="
+STUBS="$SANDBOX/tool-stubs"
+assert_eq "the fence covers the iptables family, nft and systemctl" "$HOST_FENCED_TOOLS" \
+    "iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore nft systemctl"
+# shellcheck disable=SC2086
+make_host_tool_stubs "$STUBS" "$STUBS.log" $HOST_FENCED_TOOLS
+mkdir -p "$STUBS-shim"
+printf '#!/usr/bin/env bash\nexec "$@"\n' >"$STUBS-shim/sudo"
+chmod +x "$STUBS-shim/sudo"
+for stub_tool in $HOST_FENCED_TOOLS; do
+    # A subshell per route: bash must not answer from a hashed host path.
+    (
+        PATH="$STUBS:$PATH"
+        hash -r
+        "$stub_tool" --route-bare </dev/null
+    )
+    # The shape of the fixtures' own `exec "$@"` sudo, which sits ahead of the fence sudo.
+    (
+        PATH="$STUBS-shim:$STUBS:$PATH"
+        hash -r
+        sudo "$stub_tool" --route-shim </dev/null
+    )
+    # The cross-surface backup fixture's shape: the real sudo, then env with the fixture's PATH.
+    if sudo -n true 2>/dev/null; then
+        sudo -n env PATH="$STUBS-shim:$STUBS:$PATH" "$stub_tool" --route-real-sudo </dev/null
+    fi
+done
+stub_count=$(printf '%s\n' $HOST_FENCED_TOOLS | wc -l | tr -d ' ')
+# MUTATION PROOF: put the stub directory behind the system directories and the bare route reaches the host.
+assert_eq "every tool answers a bare PATH lookup from its stub" "$(grep -c -e '--route-bare' "$STUBS.log")" "$stub_count"
+assert_eq "every tool answers a fixture's pass-through sudo from its stub" "$(grep -c -e '--route-shim' "$STUBS.log")" "$stub_count"
+if sudo -n true 2>/dev/null; then
+    assert_eq "every tool answers the real sudo's env PATH from its stub" "$(grep -c -e '--route-real-sudo' "$STUBS.log")" "$stub_count"
+else
+    echo "  SKIP: passwordless sudo is unavailable, so the real-sudo route did not run"
+fi
+printf '#!/bin/sh\nexit 0\n' >"$STUBS-shim/iptables"
+chmod +x "$STUBS-shim/iptables"
+# MUTATION PROOF: test only that the stub exists and a host binary ahead of it goes unreported.
+assert_eq "a stub ahead of the host's tools leaks nothing" \
+    "$(HOST_FENCE_DIR="$STUBS" PATH="$STUBS:$STUBS-shim:$PATH" host_fence_leaks)" ""
+assert_eq "a host tool ahead of its stub is named" \
+    "$(HOST_FENCE_DIR="$STUBS" PATH="$STUBS-shim:$STUBS:$PATH" host_fence_leaks)" "iptables"
+unset STUBS stub_tool stub_count
+
 echo "== unit: no test or script requires a GitHub-only variable (#3442) =="
 # A required runner variable fails every host that is not a GitHub runner, the release box included.
 assert_eq "no test or script needs RUNNER_* or GITHUB_* to be set" \

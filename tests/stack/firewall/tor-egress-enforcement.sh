@@ -17,15 +17,15 @@
 # pass or fail on the order run.sh happens to source files in.
 # Sourced by tests/stack/run.sh.
 
-# A PATH with every *sbin* directory removed, so a test can drive the "privileged tool is not
-# installed" branch without uninstalling anything. nft and iptables both live in /usr/sbin; grep,
-# tr and printf — which sourcing pithead needs — do not, so what remains is still a working shell
-# environment. Callers pair this with an assertion that the tool really did disappear: a helper
-# that silently stopped working would otherwise turn a branch test into a tautology.
+# A PATH with every *sbin* directory and every host-fence stub directory (#3442) removed, so a test can
+# drive the "privileged tool is not installed" branch without uninstalling anything. nft and iptables
+# both live in /usr/sbin; grep, tr and printf — which sourcing pithead needs — do not, so what remains
+# is still a working shell environment. Callers pair this with an assertion that the tool really did
+# disappear: a helper that silently stopped working would otherwise turn a branch test into a tautology.
 path_without_sbin() {
     local d out="" IFS=:
     for d in $PATH; do
-        case "$d" in *sbin*) ;; *) out="${out:+$out:}$d" ;; esac
+        case "$d" in *sbin* | */.run/hostbin) ;; *) out="${out:+$out:}$d" ;; esac
     done
     printf '%s' "$out"
 }

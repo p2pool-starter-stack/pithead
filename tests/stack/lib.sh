@@ -185,7 +185,7 @@ export PITHEAD_RESTORE_SUBMISSION_DIR="$SANDBOX/.run/restore-submit" PITHEAD_RES
 # The host's own systemd units must not reach an apply (#3442).
 export PITHEAD_UNIT_DIR="$SANDBOX/.run/units"
 mkdir -p "$PITHEAD_UNIT_DIR"
-install_host_sudo_fence
+install_host_fence
 
 # A fake docker that records calls and answers the few queries setup/apply make.
 make_stubs() {

@@ -161,9 +161,14 @@ structurally cannot.
   fixture, not the host. The harness covers scratch under `${TMPDIR:-${RUNNER_TEMP:-/tmp}}`,
   addresses and bridges through `stub_host_addrs`, systemd units through the sandboxed
   `PITHEAD_UNIT_DIR`, and the iptables, nft and systemctl verbs: `tests/stack/lib/host-fence.sh` puts a
-  `sudo` first on PATH that no-ops them, so a fixture that stubs only docker cannot rewrite the host's
-  Tor-only egress fence. A fixture stubs everything else it reaches: other `sudo` commands, read-only
-  `systemctl` queries, the dashboard on `127.0.0.1:8000`, the Avahi config (`PITHEAD_AVAHI_CONF`).
+  `sudo` and a recording no-op for each of those tools first on PATH, so a fixture that stubs only docker
+  cannot rewrite the host's Tor-only egress fence, and neither can a fixture's own pass-through `sudo`
+  or a `sudo env PATH=...` that keeps the inherited PATH. Run no such tool by absolute path, and never
+  build a PATH that drops the inherited one. `test-harness-tooling.sh` runs a canary down each route and
+  every block ends by checking the stubs still lead PATH. A fixture stubs everything else it reaches:
+  other `sudo` commands, read-only `systemctl` queries, the dashboard on `127.0.0.1:8000`, the Avahi
+  config (`PITHEAD_AVAHI_CONF`). A fixture whose path reaches `apply_tor_egress_firewall` stubs it too:
+  the fenced `iptables -S` reads as an absent rule and warns.
   A test that genuinely needs a tool (Go 1.21 or newer for the raise-watch self-test) fails by
   naming it and its version, and the release preflight requires it; it never skips.
 - `make test-inventory` writes a generated (git-ignored) coverage list you can read locally — handy
