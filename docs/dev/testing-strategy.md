@@ -516,7 +516,7 @@ than inventing an appliance-side vocabulary next to it.
 | Behaviour | DIY gate (`tests/integration`) | Appliance gate (`tests/os`) |
 |---|---|---|
 | Containers up, `pithead status` verdicts | ✓ | ✓ |
-| Dashboard through Caddy, basic_auth | ✓ (`/metrics` leg still missing, #2058) | ✓ |
+| Dashboard through Caddy, basic_auth | ✓ (`/metrics` leg still missing, #2058) | ✓ (`stack` forwards its wizard handoff password to the authenticated `/metrics` probe) |
 | Tor-only egress enforced (steady-state observation) | ✓ | one row, red on first execution (#2059) |
 | Egress-firewall opt-out actually opens clearnet | ✓ (matrix scenario) | ✗ by-design (a scratch guest has no clearnet exposure surface to observe safely) |
 | XvB over Tor, XvB routing | ✓ | ✗ — the `stack` phase drove `--xvb-routing-smoke` once (job 510): the baseline rows and the P2Pool route passed, then the Tor-isolation probe failed and reported only its own static guess, because the probe discards every byte of its output. Not run from the phase until that is readable: #2444 |
