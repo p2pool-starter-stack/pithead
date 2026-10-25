@@ -9,6 +9,27 @@ rejected → recovered → readmitted; XvB tiers; container health. A healthy, a
 shows one corner of it, so the rest is simulated at the cheapest tier that can prove each
 situation honestly.
 
+Appliance TLS continuity is exercised by `tests/os/selftest-tls-continuity.sh`: a transiently
+smaller canonical SAN set retains a readable matching keypair that still covers every current
+name; a genuinely new SAN or an unusable pair requires replacement. The lifecycle phase
+compares Caddy's served leaf SHA-256 fingerprint, public key, SANs and local private-key digest
+before and after stopped-stack restore and dashboard password apply. HTTP-only configurations count explicit by-design skips. Read failures and any
+identity change on a TLS configuration fail the leg; private keys and their digests are not printed as evidence.
+`tests/integration/selftest/selftest-lifecycle-tls.sh` covers identity divergence and password
+fixture cleanup, and the restore health selftest requires a TLS failure to fail lifecycle. The
+pool-default lifecycle fixture models an HTTP-only box because it exercises pool rendering; the
+dedicated TLS selftests and live lifecycle phase own certificate and password behavior.
+
+The KVM `image-upgrade` certificate leg provisions the actual appliance, adds a genuine
+nonpersistent SAN on its network interface, then drives Check, Download, Install and the
+confirmed reboot from one Chromium tab. A standard-library Python host coordinator drives SSH; Node and Playwright stay inside
+the digest-pinned browser container. Host-side SSH confirms a new boot, the temporarily
+absent address and Caddy running before restoring the address through the real address watcher.
+The test requires equal final canonical SANs, served leaf SHA-256 and key identity, a successful
+post-reboot state response and the updated verdict in that same tab, without another trust
+interaction. Its executable selftests cover certificate replacements and bounded waits;
+only the KVM job establishes boot and browser behavior.
+
 ## The four tiers
 
 | Tier | What it is | Simulates | Where it runs |
@@ -412,6 +433,13 @@ The battery needs KVM + libvirt + root — the bench, not CI — and is the rele
 image ([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.sh` sits below
 it: static assertions against the built rootfs (variant stamp, baked units, watchdog config),
 no VM needed, run on every image build.
+
+The `install` phase stages headless files before boot and checks token normalization, prefilled
+answers without a disk choice, malformed-JSON rejection and installed ESP consumption. `provision`
+checks the console root password against the dashboard password in the guest, with `/etc` backed
+by tmpfs under `/run`, including a password change and unaided reboot. `media` proves a USB settings
+stick replaces the dashboard login, conceals the new password on serial and consumes the file.
+Their verdict and failure controls run through the tier-1 appliance selftest glob.
 
 Measured at develop tip `5e98594f` (#2062): the live matrix has ~90 assertion sites across its
 15-scenario config matrix plus `--lifecycle`, `--fault-injection`, `--hardening`,
@@ -842,6 +870,12 @@ tier 3/4:
 - **Insecure + main matrix row.** ✅ Now a dedicated `local-pruned-main-insecure` row: the two axes
   decouple, so a regression specific to insecure+main (vs. the pre-existing insecure+nano row) has
   somewhere to fail.
+- **Borrowed rig credentials (#3491).** Password-enabled scenarios hand the rendered credential
+  to the borrowed rig before mining waits and restore its exact borrowed configuration before the
+  next scenario. `selftest-scenario-stratum.sh` checks ordering, no-rig behavior and termination on
+  failed handoff or restoration; `selftest-borrow-rearm.sh` checks credential mutation and exact
+  restoration. The borrowed rig uses cleartext on the dual-mode port; the controls below exercise
+  authenticated and pinned-TLS clients separately.
 - **Stratum authentication and pinned TLS (#3078).** The DIY TLS scenario uses the raw login
   probe in `tests/integration/rotate-auth-probe.py`. The KVM stack phase adds
   `remote-main-stratum-tls` and uses the appliance's prebuilt XMRig for wrong-password,

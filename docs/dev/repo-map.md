@@ -28,6 +28,12 @@ pithead/
 └── .github/              CI, templates, and ownership
 ```
 
+Configuration defaults live in `dashboard/mining_dashboard/config/defaults.json`.
+`scripts/build-config-defaults.py` exports the embedded CLI table in
+`lib/pithead/19a-config-defaults.sh`, the legacy-compatible `config.reference.json`, and
+DIY/appliance starter configs (`config.minimal.json`, `config.minimal.appliance.json`).
+`dashboard/mining_dashboard/config/defaults.py` reads the same table for the dashboard and wizards.
+
 ## Product entry points
 
 | Area | Start here | Change and verify |
@@ -205,6 +211,7 @@ the deployed CLI during the hardening phase.
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. `rig-config-meta-wait.sh` waits for refreshed provenance before the rig reboot comparison; `selftest-rig-config-meta-wait.sh` covers stale, absent and invalid feeds without a guest. `rig-share-leg.sh` and `selftest-rig-share.sh` cover address/hostname/return share windows and their failure controls. |
 | `tests/os/rig-share-leg.sh` | Coordinator power-cut recovery after the address/hostname/return share windows; `selftest-rig-share-power-cut.sh` checks counter resets, worker identity, stale/error responses, real PASS/FAIL accounting, credential transport, cleanup and guest isolation without KVM. |
 | `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The installer restore uses `restore-live-state-verdict.sh` for the configured-wallet comparison and bounded P2Pool startup window, with controller restoration and crash cases checked by `selftest-restore-p2pool-startup.sh`. The post-commit fault leg uses `chain-fault-timing.sh` to read the live dashboard debounce and prove the before/after window; `selftest-chain-fault-timing.sh` covers its deadlines and negative controls. The XvB stubbed polling fixtures share `tests/os/xvb-selftest-clock.sh`; `tests/os/selftest-xvb-poll-clock.sh` checks independence from host scheduling. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
+| `tests/os/console-login-probe.py`, `tests/os/headless-install-leg.sh`, `tests/os/media-password-leg.sh` | Guest-only console hash/volatile-overlay checks, installer preseed assertions and USB password recovery. Tier-1 controls are `selftest-console-login.sh`, `selftest-headless-install.sh`, `selftest-installer-preseed.sh` and `selftest-media-password.sh` under `tests/os/`. |
 | `tests/runner/` | The pinned Linux image `make test-container` runs the other tiers inside, so a macOS or Windows host reaches CI's verdict. Built and CVE-scanned by `test-images.yml`; reaches no user. |
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. `pin-watch.sh` compares pins; `pin-watch-issues.sh` reconciles actionable upgrade issues. Its offline cases live in `tests/watch/`, invoked through the watcher’s `--self-test`. |
@@ -282,6 +289,17 @@ fingerprint instruction over SSH. Its refusal controls are in `tests/os/selftest
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata, failure snapshots and bounded preview transport recovery; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.
+The image-upgrade phase also runs `tests/os/image-upgrade-certificate-leg.sh`: a real
+GUI update and reboot with a nonpersistent guest address present before and after boot.
+`image-upgrade-browser-host.py` uses the host Python runtime to restore that address
+only after observing a new boot,
+its absence and Caddy running. `image-upgrade-browser.mjs` keeps the original browser
+tab, accepts the initial certificate once, and checks the served fingerprint, key and
+canonical SANs plus automatic recovery. The browser runs in a digest-pinned container;
+SSH credentials stay on the host; Node runs only inside the browser container.
+`selftest-image-upgrade-browser.sh` exercises the
+certificate comparison and bounded orchestration controls without Docker or a guest.
+
 The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to prove
 continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
 The provision and setup-defaults phases check firstboot and system journals for bcrypt credentials with
@@ -308,6 +326,13 @@ Bundle staging into the guest is bounded and reports through `staging-failure-ev
 floor-fallback leg stages separately from `os-update` (`selftest-floor-staging.sh`, #3049).
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
+
+The lifecycle phase uses `tests/integration/lib/run-lifecycle-tls.sh` to compare Caddy's
+served leaf, canonical SANs, public key and a local digest of its stored private keys
+across stopped-stack restore and dashboard password apply. Its pure failure controls
+are in `tests/integration/selftest/selftest-lifecycle-tls.sh`;
+`tests/os/selftest-tls-continuity.sh` exercises appliance minting with transient address
+loss, canonical reordering, genuinely new SANs and unusable pairs.
 
 The e2e hardening phase runs `tests/integration/lib/access_log_retention.py`
 against real Caddy requests and the deployed access API. It verifies wrong-password

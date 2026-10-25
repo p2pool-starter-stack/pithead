@@ -761,7 +761,12 @@ files that only the archive has. The wizard replaces its Tor and dashboard direc
 > is refused rather than redirected into the old directory tree. Recreate the original
 > installation path and configure any custom data paths before restoring.
 
-> NOTE: If your browser warns after a DIY restore,
+> NOTE: A same-machine restore preserves the dashboard TLS certificate and key when the settled
+> names are unchanged. On the appliance, a certificate covering the current canonical names also
+> survives temporary address loss and dashboard password changes. A genuinely new, uncovered name
+> requires a new certificate; verify its fingerprint before trusting it.
+>
+> If your browser warns after a DIY restore,
 > [verify and trust the installation's root CA](configuration.md#exposing-the-dashboard-safely).
 > Accepting only the current certificate can produce another warning after renewal.
 

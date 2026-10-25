@@ -145,7 +145,7 @@ record_manifest() {
 # globals RESOLVED / SKIP_REASON.
 
 run_scenario() {
-    local name="$1" overrides="$2" sync_dir=""
+    local name="$1" overrides="$2" sync_dir="" stratum_rearmed=0
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="$name"
     echo ""
@@ -163,6 +163,14 @@ run_scenario() {
     if ! printf '%s' "$config" | jq empty 2>/dev/null; then
         it_fail "rendered config is valid JSON" "jq rejected the rendered config"
         return 0
+    fi
+    if [ "$SKIP_MINING_ASSERTS" != 1 ] && [ -n "$(jq_get "$config" '.p2pool.stratum_password // empty')" ]; then
+        if [ "${CI_RIG_RECOVERY_HOLD:-0}" != 1 ] || [ -z "${IT_BORROW_REARM_REQUEST:-}" ] ||
+            [ -z "${IT_BORROW_REARM_ACK:-}" ] || [ -z "${IT_BORROW_REARM_TOKEN:-}" ]; then
+            it_fail "authenticated scenario has a reserved miner credential transport" "use the e2e controller with its runner-owned recovery hold; no configuration was changed"
+            return 0
+        fi
+        stratum_rearmed=1
     fi
     push_config "$config"
 
@@ -210,8 +218,10 @@ run_scenario() {
         fi
     fi
 
-    # Wait for the stack to settle on real readiness signals before asserting. The miner/hash
-    # waits are pointless with --no-mining-asserts (nothing will ever connect) — skip the stall.
+    if [ "$stratum_rearmed" = 1 ]; then
+        wait_borrow_rearm scenario-stratum || exit 1
+    fi
+
     wait_status_ok 240 || true
     wait_monero_synced 120 || true
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || true
@@ -253,7 +263,9 @@ run_scenario() {
             it_fail "isolated payout pair apply, near-tip scan, card recovery and retained-wallet revert (#3096)" "see payout-pairs.log"
         fi
     fi
-    # If this scenario turned anything red, grab artifacts for it.
+    if [ "$stratum_rearmed" = 1 ]; then
+        wait_borrow_rearm restore-stratum || exit 1
+    fi
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "$name" "$OUT_DIR"
     restore_firewall_after_clearnet "$name" "$config"
     return 0
