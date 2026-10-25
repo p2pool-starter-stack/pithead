@@ -72,13 +72,13 @@ safety_secret_drift_categories() { # <baseline category=hash lines> <actual cate
 
 safety_restore_exact() {
     local restored_secrets
-    pithead down >/dev/null 2>&1 || true
+    restore_operation safety-restore.down pithead down || true
     SAFETY_RESTORE_FAIL_REASON=""
-    if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
+    if ! restore_operation safety-restore.restore pithead restore -y "$SAFETY_ARCHIVE"; then
         SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
-    elif ! baseline_up >/dev/null 2>&1; then
+    elif ! restore_operation safety-restore.up baseline_up; then
         SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
-    elif ! wait_status_ok 240; then
+    elif ! restore_operation safety-restore.health wait_status_ok 240; then
         SAFETY_RESTORE_FAIL_REASON="pithead status did not become healthy within 240s"
     elif [ "$(rx 'cat config.json' 2>/dev/null)" != "$BASELINE_CONFIG" ]; then
         SAFETY_RESTORE_FAIL_REASON="restored config.json does not match the baseline byte-for-byte"
@@ -89,13 +89,8 @@ safety_restore_exact() {
     fi
     if [ -n "$SAFETY_RESTORE_FAIL_REASON" ]; then
         SAFETY_RESTORE_FAILED=1
-        # This function's FIRST act is `pithead down`. A rollback that then fails has stopped the
-        # stack and, without this, returns leaving it stopped — strictly worse than never having
-        # tried, because the box mines nothing until a human notices. Put the containers back with
-        # a plain `up`: the run is already marked unverified and the archive already retained, so
-        # this is about not abandoning the box, not about claiming the restore worked.
-        pithead up >/dev/null 2>&1 || true
-        wait_status_ok 240 || true
+        restore_operation safety-recovery.up pithead up || true
+        restore_operation safety-recovery.health wait_status_ok 240 || true
         return 1
     fi
     it_log "rollback complete — exact config and wallet/proxy/dashboard/RPC/onion baseline verified."
@@ -175,11 +170,11 @@ restore_baseline() {
     }
     [ -z "$BASELINE_CONFIG" ] && return
     it_log "Restoring original config.json and re-applying…"
-    # A restore that reports a warning and moves on leaves the next run on an unknown baseline.
-    # Every step is binding, and the config/secret state is re-read and compared afterwards.
-    if ! push_config "$BASELINE_CONFIG" || ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then
+    if ! restore_operation baseline.config-write push_config "$BASELINE_CONFIG" ||
+        ! restore_operation baseline.apply pithead apply -y ||
+        ! restore_operation baseline.health wait_status_ok 240; then
         SAFETY_RESTORE_FAILED=1
-        it_fail "restore original config and healthy stack" "config write, apply, or health wait failed; safety archive retained"
+        it_fail "restore original config and healthy stack" "see restore-operations.log for the originating operation and exit status; safety archive retained"
         return 1
     fi
     if [ "$(rx 'cat config.json')" != "$BASELINE_CONFIG" ] ||

@@ -11,6 +11,7 @@ run_lifecycle() {
     local lifecycle_ok=1 reset_failed=0
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
+    run_restore_diagnostic_control || return 1
     lifecycle_gate_sample before-wizard-defaults
     run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
@@ -106,7 +107,7 @@ run_lifecycle() {
     fi
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_step "backup → restore round-trip…"
-    if pithead backup -y --no-encrypt >/dev/null 2>&1; then
+    if restore_operation round-trip.backup pithead backup -y --no-encrypt; then
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
         if [ -n "$arch" ]; then
@@ -120,13 +121,12 @@ run_lifecycle() {
             elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
                 it_fail "backed-up pool state readable" "dashboard did not report pool.type before restore"
                 lifecycle_ok=0
-            # Diverge from the backed-up state, then restore it back.
-            elif push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
-                pithead apply -y >/dev/null 2>&1 &&
-                pithead down >/dev/null 2>&1 &&
-                pithead restore -y "$arch" >/dev/null 2>&1 &&
-                pithead up >/dev/null 2>&1; then
-                if wait_status_ok 240; then
+            elif restore_operation round-trip.config-write push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
+                restore_operation round-trip.apply pithead apply -y &&
+                restore_operation round-trip.down pithead down &&
+                restore_operation round-trip.restore pithead restore -y "$arch" &&
+                restore_operation round-trip.up pithead up; then
+                if restore_operation round-trip.health wait_status_ok 240; then
                     it_pass "status OK after restore"
                 else
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
@@ -158,10 +158,10 @@ run_lifecycle() {
                 fi
                 [ "$IT_FAIL" -le "$failures_before" ] || lifecycle_ok=0
             else
-                it_fail "backup restore round-trip succeeded" "apply, down, restore, or up returned non-zero"
+                it_fail "backup restore round-trip succeeded" "see restore-operations.log for the originating operation and exit status"
                 lifecycle_ok=0
             fi
-            rx "rm -f $(quote_arg "$arch")" >/dev/null 2>&1 || true
+            restore_operation round-trip.archive-cleanup rx "rm -f $(quote_arg "$arch")" || true
         else
             it_fail "backup produced an archive" "no backups/pithead-backup-*.tar.gz"
             lifecycle_ok=0

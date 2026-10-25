@@ -12,8 +12,8 @@ IT_FAIL=0
 wallet_proof_calls=0
 recovery_proof_calls=0
 recovery_proof_rc=0
-# Execute the original lifecycle prefix through the real source-image runner; later pool/wallet
-# legs do not concern these diagnostics and have their own complete lifecycle selftests.
+diagnostic_calls=0
+diagnostic_rc=0
 eval "$(sed -n '/^run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d')
 }"
 rx() {
@@ -57,14 +57,21 @@ prove_wallet_recovery() {
     recovery_proof_calls=$((recovery_proof_calls + 1))
     return "$recovery_proof_rc"
 }
+run_restore_diagnostic_control() {
+    [ ! -s "$fixture/lifecycle-gate.log" ] || it_fail
+    [ "$wallet_proof_calls:$recovery_proof_calls" = 0:0 ] || it_fail
+    diagnostic_calls=$((diagnostic_calls + 1))
+    return "$diagnostic_rc"
+}
 run_connection_announcements() { :; }
 run_cli_wizard_defaults() { :; }
-run_tari_background_sync() { :; } # its own runtime leg and selftest cover it
+run_tari_background_sync() { :; }
 assert_mining_probe_ready() { [ "$1" = "source image fixture (bench-ci#1276)" ]; }
 service_state() { echo 'running none'; }
 svc_state_of() { printf '%s' "${1%% *}"; }
 run_lifecycle
 [ "$IT_FAIL" = 0 ]
+[ "$diagnostic_calls" = 1 ]
 [ "$wallet_proof_calls" = 1 ]
 [ "$recovery_proof_calls" = 1 ]
 [ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = $'before-wizard-defaults\nbefore-restart\nafter-restart\nbefore-image-down\nafter-image-up\nbefore-source-image' ]
@@ -80,3 +87,15 @@ run_lifecycle || lifecycle_rc=$?
 [ "$recovery_proof_calls" = 1 ]
 [ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = before-wizard-defaults ]
 echo 'selftest-lifecycle-gate-wiring: a failed wallet recovery proof ends the phase before the first restart'
+wallet_proof_calls=0
+recovery_proof_calls=0
+diagnostic_calls=0
+diagnostic_rc=1
+: >"$fixture/lifecycle-gate.log"
+lifecycle_rc=0
+run_lifecycle || lifecycle_rc=$?
+[ "$lifecycle_rc" != 0 ]
+[ "$IT_FAIL" = 0 ]
+[ "$diagnostic_calls:$wallet_proof_calls:$recovery_proof_calls" = 1:0:0 ]
+[ ! -s "$fixture/lifecycle-gate.log" ]
+echo 'selftest-lifecycle-gate-wiring: a failed diagnostic control stops lifecycle before mutations'
