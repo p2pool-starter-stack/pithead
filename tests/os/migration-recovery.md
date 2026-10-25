@@ -29,7 +29,8 @@ dashboard stays stopped until upgrade.
 Immediately before `os-update`, the battery hashes `config.json`, `.env`, both
 wallet address values, every Tor hidden-service secret key and its public key and
 hostname, machine-id and the SSH host key. The committed candidate must match
-that snapshot before recovery reconfiguration. Only hashes leave the guest.
+that snapshot before recovery reconfiguration. Only source commits, fixed metadata
+and target-side hashes leave the guest.
 The crossupdate phase uses the same snapshot around its slot swap. Generated
 Caddyfile and wizard TLS files are outside the snapshot. Missing or unreadable
 required identity files fail the row. A disabled Tari mode may omit its wallet;
@@ -39,10 +40,19 @@ The tier-1 identity selftest changes an
 `.env` line and a Tor key separately and requires both comparisons to fail.
 A mismatch names the changed categories. For `.env`, it also reports whether the
 project-identity assignment was added, removed, changed or equal, and whether the
-remaining bytes are equal. These fixed diagnostics distinguish the rendered
-`COMPOSE_PROJECT_NAME` addition from other drift. They do not exclude that field:
-the complete `.env` must still match byte for byte, including order and final
-newlines. Duplicate project assignments and malformed snapshot packets fail.
+remaining bytes are equal. The owner authorized one exception on 2026-10-25:
+`COMPOSE_PROJECT_NAME` may be added only when the baseline commit is an ancestor
+of the parent of #3605's merge commit
+`eb30eff24d6d542d23c6c103a586c8f3b6f01124`, and the candidate contains that commit.
+The assignment must match the selected project captured independently from the
+old dashboard container's Compose label, and the candidate's selected project
+must remain the same. Every remaining `.env` byte, including ordering and final
+newlines, and every other identity category must match exactly. Existing project
+fields cannot change or disappear. Later, divergent, missing and unknown source
+history cannot receive the exception. Duplicate project assignments, including
+whitespace/export forms, and malformed snapshot packets fail. The selftest uses
+a real isolated Git ancestry graph and maps the fixed introduction marker to its
+fixture commit; it does not require a full-history CI checkout.
 An unreadable snapshot has a separate failure. No diagnostic prints hashes, file
 contents or credentials.
 

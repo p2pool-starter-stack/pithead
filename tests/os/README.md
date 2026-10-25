@@ -137,7 +137,10 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   authenticated `/api/state` with HTTP 200. Config, `.env`, wallet addresses, Tor identities,
   machine-id and the SSH host key must match their pre-update hashes.
   An `.env` mismatch reports project-identity presence/equality and equality of the remaining
-  bytes, without printing values or hashes; the full-file assertion remains strict.
+  bytes, without printing values or hashes. The sole exception is the selected-project field
+  added by #3605 when the baseline predates it; candidate ancestry, independent project-label
+  validation and exact equality of all remaining identity bytes are required. The version gate
+  and negative controls are documented in [migration-recovery.md](migration-recovery.md).
 - **install** — stage a chosen token and valid config on the ESP before the first removable-media
   boot, authenticate case and prefix variants, and check prefilled answers with no disk selected.
   Reboot with malformed JSON and require serial rejection with a blank form carrying the reference

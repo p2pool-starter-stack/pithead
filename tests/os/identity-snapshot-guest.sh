@@ -7,17 +7,25 @@ cd "$stack"
 for file in config.json .env "$root/etc/machine-id" "$root/data/ssh/ssh_host_ed25519_key"; do
     test -s "$file"
 done
+source_commit=$(cat "$root/opt/pithead/BUILD_COMMIT")
+[[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
+selected_project=$(podman inspect dashboard --format '{{index .Config.Labels "com.docker.compose.project"}}')
+[[ "$selected_project" =~ ^[a-z0-9][a-z0-9_-]*$ ]]
+printf 'source_commit=%s\n' "$source_commit"
+printf 'COMPOSE_PROJECT_NAME=%s\n' "$selected_project" | sha256sum | awk '{print "selected_project=" $1}'
 sha256sum config.json .env "$root/etc/machine-id" "$root/data/ssh/ssh_host_ed25519_key" |
     awk 'NR==1{print "config=" $1} NR==2{print "env=" $1} NR==3{print "machine=" $1} NR==4{print "ssh=" $1}'
 python3 - <<'PY'
 from hashlib import sha256
 from pathlib import Path
+import re
 
 lines = Path(".env").read_bytes().splitlines(keepends=True)
-project = [line for line in lines if line.startswith(b"COMPOSE_PROJECT_NAME=")]
+assignment = re.compile(rb"^[ \t]*(?:export[ \t]+)?COMPOSE_PROJECT_NAME(?:[^a-zA-Z0-9_]|$)")
+project = [line for line in lines if assignment.match(line)]
 if len(project) > 1:
     raise SystemExit(1)
-other = [line for line in lines if not line.startswith(b"COMPOSE_PROJECT_NAME=")]
+other = [line for line in lines if not assignment.match(line)]
 print(f"env_project_present={len(project)}")
 print(f"env_project={sha256(b''.join(project)).hexdigest()}")
 print(f"env_other={sha256(b''.join(other)).hexdigest()}")
