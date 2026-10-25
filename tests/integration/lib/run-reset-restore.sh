@@ -30,8 +30,9 @@ run_reset_restore() {
         ' "$scratch/reference.json" >"$scratch/fixture.json" ||
         ! jq -e --slurpfile original "$scratch/original.json" '
             . as $fixture |
-            all($original[0] | paths(scalars) | select(any(.[]; type == "string" and test("wallet|payout|view_key|spend_public_key|donor_id")));
-                . as $path | $fixture | getpath($path) == ($original[0] | getpath($path)))
+            all($original[0] | paths | select(any(.[]; type == "string" and test("wallet|payout|view_key|spend_public_key|donor_id")));
+                . as $path | ($fixture | any(paths; . == $path)) and
+                    (($fixture | getpath($path)) == ($original[0] | getpath($path))))
         ' "$scratch/fixture.json" >/dev/null; then
         it_fail "reset recovery projects a candidate-compatible fixture" "reference unreadable or a wallet/payout field would be lost"
         rc=1

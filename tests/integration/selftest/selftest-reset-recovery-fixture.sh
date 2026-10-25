@@ -33,8 +33,8 @@ case_fixture() (
         jq '.monero += {view_key:"",payout_scan_height:0,payout_wallet:""} | .tari += {view_key:"",spend_public_key:"",payout_scan_birthday:0} | .xvb={donor_id:"auto"}' config.reference.json >next.json
         mv next.json config.reference.json
     fi
-    if [ "$fault" = wallet-loss ]; then
-        jq '.monero.hidden_payout="fixture-payout"' config.json >next.json
+    if [[ "$fault" == wallet-loss* ]]; then
+        jq --arg fault "$fault" '.monero.hidden_payout = (if $fault == "wallet-loss-null" then null elif $fault == "wallet-loss-false" then false else "fixture-payout" end)' config.json >next.json
         mv next.json config.json
         cp config.json "$root/original.json"
     fi
@@ -123,7 +123,7 @@ case_fixture() (
             find "$TMPDIR" -name original.json -exec cmp -s {} "$root/original.json" \; -print | grep -q . || exit 1
             grep -q 'private recovery copy retained' "$root/output" || exit 1
             ;;
-        scratch | snapshot | snapshot-secrets | reference | wallet-loss)
+        scratch | snapshot | snapshot-secrets | reference | wallet-loss*)
             cmp -s config.json "$root/original.json" || exit 1
             [ ! -e "$root/commands" ] || exit 1
             ;;
@@ -140,7 +140,7 @@ case_fixture wallet-fields && it_pass "synthetic recovery preserves both wallets
     it_fail "synthetic recovery preserves both wallets, keys, scan fields and donor identity" "wallet fields changed"
 case_fixture none && it_pass "newer baseline uses a candidate-stamped synthetic archive and returns exact original bytes" ||
     it_fail "newer baseline uses a candidate-stamped synthetic archive and returns exact original bytes" "fixture contract failed"
-for fault in scratch snapshot snapshot-secrets reference wallet-loss partial-copy apply apply-stamp probe cleanup-copy cleanup-final-copy cleanup-down cleanup-apply cleanup-up cleanup-health cleanup-bytes cleanup-secrets; do
+for fault in scratch snapshot snapshot-secrets reference wallet-loss wallet-loss-null wallet-loss-false partial-copy apply apply-stamp probe cleanup-copy cleanup-final-copy cleanup-down cleanup-apply cleanup-up cleanup-health cleanup-bytes cleanup-secrets; do
     case_fixture "$fault" && it_pass "reset fixture handles $fault without accepting unverified cleanup" ||
         it_fail "reset fixture handles $fault without accepting unverified cleanup" "failure control failed"
 done
