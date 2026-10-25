@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-unset FILE_BUDGET_BASE_REF
+unset FILE_BUDGET_BASE_REF GITHUB_BASE_REF
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 export GATE_SCRIPT="$ROOT/scripts/lint/lint-file-budget.sh"
@@ -25,6 +25,8 @@ printf 'budgeted.sh\t450\n' >docs/dev/file-budget.tsv
 git add .
 git commit -qm lowered
 git update-ref refs/remotes/origin/develop HEAD
+git update-ref refs/remotes/origin/develop-v2.0.2 "$FROZEN_COMMIT"
+git update-ref refs/remotes/origin/develop-v2.1.0 "$FROZEN_COMMIT"
 git checkout -q --detach "$FROZEN_COMMIT"
 
 expect() {
@@ -41,6 +43,21 @@ expect() {
 
 expect 1 'PR mode rejects a ceiling above newer develop' bash "$GATE_SCRIPT"
 grep -q "raises budgeted.sh's ceiling from 450 to" "$scratch/output"
+for pr_base in develop-v2.0.2 develop-v2.1.0; do
+    expect 0 "Actions accepts the unchanged budget against $pr_base" env GITHUB_ACTIONS=true GITHUB_BASE_REF="$pr_base" bash "$GATE_SCRIPT"
+done
+expect 1 'Actions rejects a missing PR base instead of falling back' env GITHUB_ACTIONS=true GITHUB_BASE_REF=missing-release-ref bash "$GATE_SCRIPT"
+grep -q 'invalid GITHUB_BASE_REF' "$scratch/output"
+expect 0 'an explicit local base accepts the release branch budget' env FILE_BUDGET_BASE_REF=origin/develop-v2.0.2 bash "$GATE_SCRIPT"
+expect 1 'an explicit base takes precedence over the Actions base' env FILE_BUDGET_BASE_REF=origin/develop GITHUB_BASE_REF=develop-v2.0.2 bash "$GATE_SCRIPT"
+grep -q "raises budgeted.sh's ceiling from 450 to" "$scratch/output"
+expect 1 'an empty explicit base fails in Actions' env GITHUB_ACTIONS=true FILE_BUDGET_BASE_REF= GITHUB_BASE_REF=develop-v2.0.2 bash "$GATE_SCRIPT"
+seq 1 501 >budgeted.sh
+printf 'budgeted.sh\t501\n' >docs/dev/file-budget.tsv
+expect 1 'Actions rejects a real ceiling increase against its PR base' env GITHUB_ACTIONS=true GITHUB_BASE_REF=develop-v2.0.2 bash "$GATE_SCRIPT"
+grep -q "raises budgeted.sh's ceiling from 500 to" "$scratch/output"
+seq 1 500 >budgeted.sh
+printf 'budgeted.sh\t500\n' >docs/dev/file-budget.tsv
 expect 0 'release mode accepts its frozen budget' env FILE_BUDGET_BASE_REF="$FROZEN_COMMIT" bash "$GATE_SCRIPT"
 expect 1 'an invalid override fails instead of falling back' env FILE_BUDGET_BASE_REF=missing-release-ref bash "$GATE_SCRIPT"
 grep -q 'invalid FILE_BUDGET_BASE_REF' "$scratch/output"

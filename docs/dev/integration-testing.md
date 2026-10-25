@@ -369,7 +369,7 @@ via an `EXIT` trap):
    (`checkout -f` + `reset --hard` + `clean -fdx`) — a leftover untracked file from an earlier run
    can't abort the checkout. `clean` keeps the harness's `results/` and the seeded `config.json`/
    `.env`/`data/`/`backups/` (all gitignored). The canonical `/srv/code/pithead` is the baseline and
-   is never git-touched. Because the Compose project name is pinned to `pithead`, the two checkouts
+   is never git-touched. With the same Compose project name (`pithead` by default), the two checkouts
    drive the same containers and the same shared chains. They're two code copies of one stack, run one
    at a time, so borrow→test→restore is a fast code/image swap, never a re-sync.
 2. Seeds the e2e checkout's `config.json`/`.env` from the live release bundle when one exists —
@@ -384,6 +384,13 @@ via an `EXIT` trap):
 3. Safety backup (`pithead backup`) as the rollback anchor.
 4. Borrows a miner (default the configured miner): backs up its xmrig config and repoints it at the
    bench so the matrix has a real worker mining through this stack (1 worker → run with `--workers 1`).
+   Scenarios with a stratum password hand the rendered credential to the borrowed test pool
+   before mining waits. The controller uses its runner-owned recovery hold and exact config backup,
+   then restores the borrowed config before the next scenario. Without that controller transport
+   or recovery hold, the authenticated scenario fails before changing configuration.
+   A failed handoff or restore stops
+   the harness and leaves final recovery to the controller. The rig continues using cleartext on
+   the dual-mode stratum port; the TLS handshake and fingerprint are checked separately.
    With `--no-miner` nothing is borrowed, and the harness runs with `--no-mining-asserts`: the
    workers-online and stratum-hashes assertions skip with a logged notice while every other
    assertion stays binding ([#905](https://github.com/p2pool-starter-stack/pithead/issues/905)).
@@ -578,6 +585,8 @@ first, which can take upward of 20 minutes ([#2455](https://github.com/p2pool-st
 once. `check` is pure reads only. `matrix` is the opt-in full destructive
 config sweep (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
 two rig phases, all under `--safety-backup` auto-rollback) for a pre-release tier-4 gate.
+The harness runs `--subnet` before lifecycle: lifecycle's uninstall removes `wallet_data` by design, so a later
+subnet phase would assert the Monero payout wallet mid-rescan ([#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026)).
 The rig phases are gated on a borrowed miner rather than on the mode: the release runbook mandates
 `targeted`, so keeping the write paths matrix-only left them out of the gate that decides whether a
 release ships ([#1364](https://github.com/p2pool-starter-stack/pithead/issues/1364)). `--keep` leaves it deployed for
@@ -790,9 +799,20 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
-- Stratum TLS is live (`p2pool.stratum_tls=true` row only). A TLS handshake against the published
-  stratum port succeeds, and the served certificate's fingerprint matches the one
-  `announce_stratum_tls` tells rigs to pin ([#261](https://github.com/p2pool-starter-stack/pithead/issues/261)).
+- Stratum password and TLS client controls run in the two `*-stratum-tls` scenarios (#3078).
+  The Connect-a-miner card supplies the password, port and fingerprint. Fixture setup logs in
+  without submitting shares and disconnects, retaining a proxy-owned worker row with numeric
+  zero connections and accepted shares. Wrong and omitted passwords must receive explicit
+  refusals for 120 seconds with no job or active connection and no accepted-counter change.
+  A fingerprint with one nibble changed must fail before login; the correct pin and cleartext
+  must both receive jobs on the same port. On the appliance, the shipped XMRig additionally
+  proves explicit password and fingerprint errors and a new accepted share in each positive
+  arm. Channel selection requires a successful, explicit appliance or DIY result; CLI source,
+  transport and unknown-result failures fail the control before either probe runs.
+  An unconfigured XMRig password defaults to `x`; the raw probe separately omits the
+  password member. Test credentials and miner logs stay in a private temporary directory,
+  using XMRig's `log-file` setting: its console logger emits nothing when stdout is a regular
+  file. The test terminates and reaps its miner before removing that directory.
 - The Tor-egress firewall is enforced, both directions
   ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)/[#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
   Each row dials a real clearnet IP directly from a `mining_net` container, bypassing the app's own
@@ -1422,6 +1442,9 @@ SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on
 so the harness itself is held to the same lint/test standard as the rest of the stack.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
+`selftest-inventory-scenarios.sh` requires the real inventory to exit zero with empty stderr,
+then checks that its scenario count and list include literal-tab rows and exclude plain `t`
+and backslash-`t` decoys. The fixture retains the inventory's other suites and drift gates.
 `selftest-check-lan-guard.sh` checks read-only and deploying dispatch with unrelated
 assertions, including onion targets, explicitly stubbed. It retains the LAN probes,
 timer flush and boot recovery assertions and rejects unexpected missing commands,

@@ -109,8 +109,9 @@ cd pithead
 
 > Leave `config.json` absent for the setup wizard; have a Monero payout address ready, and a
 > Tari payout address only if you enable merge-mining. For manual configuration, copy
-> `config.minimal.json` or `config.reference.json` and edit it before setup; those files inherit
-> reference defaults rather than the wizard's new-install choices. To build from source (a `dev`
+> `config.minimal.json` or `config.reference.json` and edit it before setup. The minimal file uses
+> the shared wizard defaults for a new install, including Tari off; the reference file retains
+> legacy absent-key values to preserve existing configs. To build from source (a `dev`
 > build), e.g. to contribute, see [Install from source](docs/getting-started.md#alternative-build-from-source).
 > Release archives include the generated `pithead` executable and offline operator guides; source
 > clones build the executable with `make`.

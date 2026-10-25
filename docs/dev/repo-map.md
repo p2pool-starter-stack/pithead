@@ -28,6 +28,12 @@ pithead/
 └── .github/              CI, templates, and ownership
 ```
 
+Configuration defaults live in `dashboard/mining_dashboard/config/defaults.json`.
+`scripts/build-config-defaults.py` exports the embedded CLI table in
+`lib/pithead/19a-config-defaults.sh`, the legacy-compatible `config.reference.json`, and
+DIY/appliance starter configs (`config.minimal.json`, `config.minimal.appliance.json`).
+`dashboard/mining_dashboard/config/defaults.py` reads the same table for the dashboard and wizards.
+
 ## Product entry points
 
 | Area | Start here | Change and verify |
@@ -61,6 +67,11 @@ executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
 
+Container restart observation is shared by status and doctor in
+`lib/pithead/04a-container-restarts.sh`; its Docker and Podman fixtures are in
+`tests/os/selftest-container-restarts.sh`, and the appliance Caddy crash-loop proof runs in the
+KVM `stack` phase through `tests/os/container-restart-leg.sh`.
+
 The migration startup regression is `tests/stack/lifecycle/migration-hold.sh`;
 `tests/os/selftest-migration-hold.sh` checks slot ownership and same-version fallback.
 The provision migration fixture is `tests/os/migration-recovery.sh`: it seeds the release through
@@ -88,6 +99,14 @@ Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 `tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
 configuration removal, including suppressed RC4 diagnostics. `tests/os/selftest-reset-config-probe.sh`
 checks that failed or unrecorded stops cannot pass from reset's final exit 0.
+
+The stratum port preflight is `lib/pithead/39a-stratum-port-preflight.sh`; preview and apply
+probe changed ports before committing. `tests/stack/standalone/test_stratum_port.py` checks live
+listener conflicts, and the hardening phase runs `tests/integration/lib/occupied-stratum.py`
+through the dashboard control API against Caddy’s occupied port. It waits for workers and hash
+progress before preview and after refusal, reporting bounded counters when either wait fails.
+The pre-preview wait re-baselines a counter reset from the preceding apply, then requires growth;
+the post-refusal check still requires growth beyond the established baseline.
 
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
@@ -176,6 +195,10 @@ The separate HTTPS backup fixture verifies complete encrypted downloads in Chrom
 `wizard/`. `vendor/` contains third-party browser libraries and their provenance.
 Keep local code out of `vendor/`.
 
+The Tari-off preview regression is `tests/stack/control/test-control-editable-allowlist.sh`;
+`tests/integration/lib/run-tari-off-preview.sh` exercises the combined candidate through
+the deployed CLI during the hardening phase.
+
 ## Shell suites and tools
 
 | Directory | How it runs |
@@ -190,8 +213,9 @@ Keep local code out of `vendor/`.
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. `doctor-tip-time.sh` runs both doctor formats against the live stack with a zero-timestamp RPC response during the check phase. |
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. `fakes/test_masked_config_read.py` exercises raw host config through the CLI renderer and dashboard reader. |
-| `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. `rig-config-meta-wait.sh` waits for refreshed provenance before the rig reboot comparison; `selftest-rig-config-meta-wait.sh` covers stale, absent and invalid feeds without a guest. |
+| `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. `rig-config-meta-wait.sh` waits for refreshed provenance before the rig reboot comparison; `selftest-rig-config-meta-wait.sh` covers stale, absent and invalid feeds without a guest. `rig-share-leg.sh` and `selftest-rig-share.sh` cover address/hostname/return share windows and their failure controls. |
 | `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The installer restore uses `restore-live-state-verdict.sh` for the configured-wallet comparison and bounded P2Pool startup window, with controller restoration and crash cases checked by `selftest-restore-p2pool-startup.sh`. The post-commit fault leg uses `chain-fault-timing.sh` to read the live dashboard debounce and prove the before/after window; `selftest-chain-fault-timing.sh` covers its deadlines and negative controls. The XvB stubbed polling fixtures share `tests/os/xvb-selftest-clock.sh`; `tests/os/selftest-xvb-poll-clock.sh` checks independence from host scheduling. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
+| `tests/os/console-login-probe.py`, `tests/os/headless-install-leg.sh`, `tests/os/media-password-leg.sh` | Guest-only console hash/volatile-overlay checks, installer preseed assertions and USB password recovery. Tier-1 controls are `selftest-console-login.sh`, `selftest-headless-install.sh`, `selftest-installer-preseed.sh` and `selftest-media-password.sh` under `tests/os/`. |
 | `tests/runner/` | The pinned Linux image `make test-container` runs the other tiers inside, so a macOS or Windows host reaches CI's verdict. Built and CVE-scanned by `test-images.yml`; reaches no user. |
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. `pin-watch.sh` compares pins; `pin-watch-issues.sh` reconciles actionable upgrade issues. Its offline cases live in `tests/watch/`, invoked through the watcher’s `--self-test`. |
@@ -240,6 +264,12 @@ Coordinator connection announcements and unchanged-apply miner calls are covered
 `tests/integration/lib/run-connection-announcements.sh` against the deployed DIY CLI.
 Its `tests/integration/tools/connection-setup-pty.py` driver answers the real setup prompts
 and bounds the child process and captured output.
+The stratum authentication and TLS client controls are in
+`tests/integration/rotate-auth-probe.py`, with wire, counter and miner fixtures in
+`tests/integration/selftest/test_rotate_auth_probe.py`. Both TLS scenarios run the controls;
+the KVM stack phase selects `remote-main-stratum-tls` for the appliance's shipped XMRig.
+`tests/os/selftest-stratum-controls.sh` registers its appliance fixture checks.
+
 `tests/integration/lib/run-channel.sh` identifies appliances through the shipped CLI
 and records counted `by-design` skips for the connection, wallet supersession and wallet
 recovery checkout probes; failed identification leaves those probes binding.
@@ -263,6 +293,17 @@ fingerprint instruction over SSH. Its refusal controls are in `tests/os/selftest
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata, failure snapshots and bounded preview transport recovery; its selftest runs through
 `tests/os/provision-browser-submit.sh --self-test`.
+The image-upgrade phase also runs `tests/os/image-upgrade-certificate-leg.sh`: a real
+GUI update and reboot with a nonpersistent guest address present before and after boot.
+`image-upgrade-browser-host.py` uses the host Python runtime to restore that address
+only after observing a new boot,
+its absence and Caddy running. `image-upgrade-browser.mjs` keeps the original browser
+tab, accepts the initial certificate once, and checks the served fingerprint, key and
+canonical SANs plus automatic recovery. The browser runs in a digest-pinned container;
+SSH credentials stay on the host; Node runs only inside the browser container.
+`selftest-image-upgrade-browser.sh` exercises the
+certificate comparison and bounded orchestration controls without Docker or a guest.
+
 The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to prove
 continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
 The provision and setup-defaults phases check firstboot and system journals for bcrypt credentials with
@@ -289,6 +330,13 @@ Bundle staging into the guest is bounded and reports through `staging-failure-ev
 floor-fallback leg stages separately from `os-update` (`selftest-floor-staging.sh`, #3049).
 Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
 described in the [AI workflow](ai-workflow.md).
+
+The lifecycle phase uses `tests/integration/lib/run-lifecycle-tls.sh` to compare Caddy's
+served leaf, canonical SANs, public key and a local digest of its stored private keys
+across stopped-stack restore and dashboard password apply. Its pure failure controls
+are in `tests/integration/selftest/selftest-lifecycle-tls.sh`;
+`tests/os/selftest-tls-continuity.sh` exercises appliance minting with transient address
+loss, canonical reordering, genuinely new SANs and unusable pairs.
 
 The e2e hardening phase runs `tests/integration/lib/access_log_retention.py`
 against real Caddy requests and the deployed access API. It verifies wrong-password

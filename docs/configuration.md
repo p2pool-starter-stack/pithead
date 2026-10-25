@@ -19,33 +19,74 @@ the Configuration view shows that refusal until valid config is rendered again.
 
 ## The minimal config
 
-The two wallet addresses are the only required keys. Every other key is optional and falls back to a
-default: the node runs locally, on the `mini` pool, with a secure dashboard, and the local node's RPC
-credentials are auto-generated. Omit a key to keep its default.
+Only the Monero payout address is required for a new install. Tari merge-mining is off;
+enabling it also requires a Tari payout address. The Monero node runs locally, on the `mini`
+pool, with a secure dashboard and generated internal RPC credentials.
 
-A fresh `config.json` is this (see [`config.minimal.json`](../config.minimal.json)):
+The DIY starter file is [`config.minimal.json`](../config.minimal.json):
 
 ```json
 {
-    "monero": {
-        "wallet_address": "your_monero_wallet_address"
-    },
-    "tari": {
-        "wallet_address": "your_tari_wallet_address"
-    },
-    "p2pool": {
-        "stratum_password": ""
-    }
+  "tari": {
+    "mode": "off",
+    "clearnet_initial_sync": false
+  },
+  "xvb": {
+    "enabled": false
+  },
+  "dashboard": {
+    "tari_required": false,
+    "host": "auto"
+  },
+  "local_miner": {
+    "enabled": false
+  },
+  "monero": {
+    "clearnet_initial_sync": false,
+    "wallet_address": "your_monero_wallet_address"
+  },
+  "p2pool": {
+    "stratum_password": ""
+  }
 }
 ```
+
+The appliance image ships [`config.minimal.appliance.json`](../config.minimal.appliance.json)
+as `config.minimal.json`. It uses the appliance values below. Both starter files explicitly
+pin these new-install choices so legacy absent-key fallbacks cannot change them.
 
 The starter configuration has no [stratum password](workers.md#authentication). Both setup
 wizards ask **Enable stratum password?**, default off. Choose Yes to generate a password;
 set `p2pool.stratum_password` to `"auto"` or a chosen value to enable it later. Upgrades and
 restores keep the current setting and saved generated secret.
 
-For every key and its default, see [`config.reference.json`](../config.reference.json) and copy in
-only the keys you want to override.
+The shared defaults table is
+[`defaults.json`](../dashboard/mining_dashboard/config/defaults.json). It contains every
+reference key, the appliance overlay and the temporary `LEGACY_ABSENT` exceptions. The CLI,
+browser prefill and submit, and no-JavaScript form use this table. Run
+`python3 scripts/build-config-defaults.py` after editing it; `make pithead` checks its
+CLI, reference and minimal-config exports for drift.
+
+| Key | New DIY install | New appliance install |
+| --- | --- | --- |
+| `tari.mode` | `off` | `off` |
+| `xvb.enabled` | `false` | `false` |
+| `dashboard.tari_required` | `false` | `false` |
+| `dashboard.host` | `auto` | `pithead` |
+| `local_miner.enabled` | `false` | `true` |
+
+Existing sparse configs keep their 2.0.0 behavior. `LEGACY_ABSENT` preserves missing
+`tari.mode` as `local`, `xvb.enabled` as `true`, and `dashboard.tari_required` as `true`.
+On appliances it also preserves missing `local_miner.enabled` as `false` and
+`dashboard.host` as `auto`. Explicit values always win. The generated
+[`config.reference.json`](../config.reference.json), which the dashboard editor merges
+under an existing config, retains those legacy values; saving another setting cannot
+start the miner or replace the machine's dashboard identity.
+
+The [2.1.0 key-diet migration](https://github.com/p2pool-starter-stack/pithead/issues/3576)
+must pin existing effective values before retiring these exceptions. Both changes must land
+before release. The reference table below distinguishes new-install choices from legacy
+absent-key behavior.
 
 > The string `"auto"` means "let the stack pick the default": a default path, the machine's
 > hostname, a derived donor id, and so on.
@@ -93,11 +134,11 @@ plain HTTP, edit `config.json` and run `./pithead apply`.
 Monero node mode, whether the machine merge-mines Tari (and the Tari payout address and node if it
 does), the pool tier, and a handful of other high-level questions. Tari merge-mining is an
 opt-in beta, so both wizards answer it off unless you say yes (a data disk that already holds a Tari
-chain keeps it on); a yes also writes `dashboard.tari_required: false`. Both wizards write
+chain keeps it on). Both wizards write `dashboard.tari_required: false` and
 `xvb.enabled: false` without asking and generate a strong dashboard password by default. Fast initial sync is opt-in and applies to every
 locally run chain; it warns that your IP is exposed to the Monero network and, when Tari runs
-locally, the Tari network until initial sync finishes. These are explicit new-install choices:
-reference defaults and absent-key behavior stay unchanged for upgrades and restores. Every other key in
+locally, the Tari network until initial sync finishes. These are explicit new-install choices shared with the starter configs;
+legacy absent-key behavior stays unchanged for upgrades and restores. Every other key in
 [`config.reference.json`](../config.reference.json) is day-2: not asked by either wizard,
 deliberately out of scope for a first run. Set it by editing `config.json` directly (then
 `./pithead apply`) or through the dashboard's config editor once the stack is up. Examples include
@@ -209,14 +250,14 @@ the desired value is not presented as proof of what the still-running services u
 | `p2pool.stratum_tls` | `false` | Serve TLS on the stratum port (#261). Same port, per-connection detection: cleartext rigs keep mining while rigs opt in one at a time (`pools[].tls: true` + pinning the certificate's SHA-256 fingerprint, printed after `apply` and by `status`). The self-signed cert lives under the data root and keeps its fingerprint across upgrades; regenerating it (delete + `apply`) is the rotation. Confidentiality only — pair with `stratum_password` for access control. See [Connecting Miners › Stratum over TLS](workers.md#stratum-over-tls). |
 | `p2pool.clearnet` | `false` | Privacy-relevant, default off (Tor). P2Pool's `--onion-address` only advertises an onion for inbound peers; its outbound sidechain dials need a SOCKS proxy or they go over clearnet, exposing your home IP. Default (`false`) routes those dials through the bundled Tor proxy (`--socks5 <tor>:9050 --socks5-proxy-type tor`) and turns off P2Pool's clearnet seed-node DNS lookups (`--no-dns`). Set `true` to dial peers directly over clearnet with the default firewall still on: only P2Pool gets an IPv4 exception, removed when the flag is turned off and applied. Tor costs about 10 % of P2Pool yield on `mini`; Tor latency raises the stale/uncle-share rate and onion-only shrinks the peer set, both worse on `--mini`/`--nano`, so a high-variance small rig may prefer clearnet (at the cost of IP exposure). Full threat model: [Privacy › P2Pool outbound peers](privacy.md#p2pool-outbound-peers-165---tor-by-default). |
 | `proxy.donate_level` | `0` | xmrig-proxy's built-in dev-fee donation to the xmrig developers, as a percentage of submitted hashrate. Defaults to `0`, no donation (xmrig-proxy's own compiled-in default, which the stack now renders explicitly so it's visible rather than invisible). Set an integer `1`–`99` to donate that share to the xmrig devs if you want to support them. This is not the XvB donation; that's the separate `xvb.*` mechanism the optimizer steers, never this dev fee. |
-| `local_miner.enabled` | `false` | Also mine on the stack host itself with its spare CPU: a RigForge worker co-located on this box, pointed at the stack's own stratum over loopback. `setup` asks about it; `setup`/`up`/`apply` print the pool URL and stratum password, or state that none is set, including an unchanged apply. On the appliance, apply starts or stops the built-in miner in the same invocation without rebooting. On DIY, install and manage RigForge separately. See [Connecting Miners › Mine on the stack host itself](workers.md#mine-on-the-stack-host-itself). |
-| `xvb.enabled` | `true` | **(beta in 2.0.0)** Enable XMRvsBeast bonus-round hashrate switching. Both setup wizards write `false` for a new install without asking; enable it later from the Configuration view. The reference stays `true` for existing configs. |
+| `local_miner.enabled` | DIY `false`; appliance `true` | New installs pin this platform choice; existing appliance configs that omit it keep `false` until the key-diet migration. Also mine on the stack host itself with its spare CPU: a RigForge worker co-located on this box, pointed at the stack's own stratum over loopback. `setup` asks about it; `setup`/`up`/`apply` print the pool URL and stratum password, or state that none is set, including an unchanged apply. On the appliance, apply starts or stops the built-in miner in the same invocation without rebooting. On DIY, install and manage RigForge separately. See [Connecting Miners › Mine on the stack host itself](workers.md#mine-on-the-stack-host-itself). |
+| `xvb.enabled` | `false` (legacy absent: `true`) | **(beta in 2.0.0)** Enable XMRvsBeast bonus-round hashrate switching. Both setup wizards write `false` for a new install without asking; enable it later from the Configuration view. The reference stays `true` for existing configs. |
 | `xvb.url` | `na.xmrvsbeast.com:4247` | XMRvsBeast pool endpoint. |
 | `xvb.donor_id` | `auto` | XvB donor id. `auto` = the first 8 characters of your Monero address. |
 | `xvb.donation_level` | `auto` | Donation tier to target: `auto` (the highest tier your hashrate can sustain) or a specific tier: `donor` (1 kH/s) / `vip` (10 kH/s) / `whale` (100 kH/s) / `mega` (1 MH/s), where the figure is the donation hashrate you must hold on both your 1h and 24h averages. A specific tier is honored even if your hashrate can't hold it; the dashboard shows a warning badge in that case. (The `vip` tier is a donation level, not the dashboard's separate Raffle Eligible status; see [Architecture › Algorithmic switching](architecture.md#algorithmic-switching).) |
 | `xvb.tor` | `true` | Privacy-relevant, default on (Tor). While donating, the proxy connects to `na.xmrvsbeast.com`, which would otherwise expose your home IP to XvB. Default (`true`) routes that connection through the bundled Tor proxy (a per-pool `socks5` on the XvB pool; DNS resolved proxy-side). Set `false` to dial direct over clearnet while XvB is enabled: only xmrig-proxy gets an IPv4 firewall exception, removed when Tor is restored or XvB disabled and applied. The XvB pool sees your home IP. Stratum-over-Tor adds latency that can raise rejected shares (scales with hashrate). Only the XvB pool is affected; your local p2pool stratum is unaffected. Full threat model: [Privacy › XvB donation mining](privacy.md#xvb-donation-mining-166---tor-by-default). |
 | `xvb.standby.source` | `""` (off) | Backup-stack warm standby for a two-host failover pair (same wallet, workers listing both hosts in `pools[]`). Set this on the **backup** to the **primary** dashboard's read-only `/api/xvb-standby` URL (its onion, e.g. `https://<primary-onion>/api/xvb-standby`, or a LAN address like `http://192.168.1.10:8000/api/xvb-standby`). The backup periodically pulls the primary's XvB controller state and holds it as standby, so when your fleet fails over the donation split resumes warm instead of cold-ramping for hours. One-way and inert by default; the backup never donates while it has no workers. The URL may carry the primary's dashboard basic-auth (`https://user:pass@…`), so it is treated as a secret (owner-only `.env`, masked in the config editor). An `.onion` source is fetched over Tor and a LAN source dials direct — neither adds a new clearnet egress. |
-| `dashboard.tari_required` | `true` | Whether Tari is required for mining. Monero is always required: a sustained local or remote Monero outage stops `xmrig-proxy` so workers fail over to their backup pools, and the miner waits for Monero’s initial sync. `true` (default): the first mining release also waits for Tari’s initial sync. Enabling or re-pointing Tari on an already-mining machine preserves its earned release and shows Tari syncing in its card; merge-mining starts when Tari has synced. A transient unavailable sample of the unchanged Monero endpoint does not re-hold mining; a sustained Monero outage uses worker failover. A Monero endpoint change or setup restore re-arms the full hold. Fifteen minutes of unreachable local or remote Tari RPC rejects workers until both required nodes are confirmed healthy. This costs Monero revenue during a Tari-only outage, although p2pool could keep mining Monero. `false`: keep accepting workers through Tari outages, start mining once Monero is synced, and show Tari’s sync progress in the normal dashboard. Live startup, migration and syncing states alert but never reject workers. Tari-down alerts fire regardless of this flag. Tari’s panel reports its health either way. |
+| `dashboard.tari_required` | `false` (legacy absent: `true`) | Whether Tari is required for mining. Monero is always required: a sustained local or remote Monero outage stops `xmrig-proxy` so workers fail over to their backup pools, and the miner waits for Monero’s initial sync. `true`: the first mining release also waits for Tari’s initial sync. Enabling or re-pointing Tari on an already-mining machine preserves its earned release and shows Tari syncing in its card; merge-mining starts when Tari has synced. A transient unavailable sample of the unchanged Monero endpoint does not re-hold mining; a sustained Monero outage uses worker failover. A Monero endpoint change or setup restore re-arms the full hold. Fifteen minutes of unreachable local or remote Tari RPC rejects workers until both required nodes are confirmed healthy. This costs Monero revenue during a Tari-only outage, although p2pool could keep mining Monero. `false`: keep accepting workers through Tari outages, start mining once Monero is synced, and show Tari’s sync progress in the normal dashboard. Live startup, migration and syncing states alert but never reject workers. Tari-down alerts fire regardless of this flag. Tari’s panel reports its health either way. |
 | `dashboard.fail_closed` | `false` _(off)_ | Whether an **unrecoverable** dashboard health failure holds the miner, not just alerts (#490). The dashboard is an observability layer, not the mining datapath (`xmrig-proxy` → `p2pool` → `monerod` runs independently of it), so the default (`false`) is alert-only: a loud Telegram/Healthchecks alert plus a dashboard badge, and mining keeps running. `true` reuses the same hold the sync gate uses (stops `p2pool` and `xmrig-proxy`) the moment one of two narrow conditions hits, and starts them again once it clears — no restart needed: the dashboard's SQLite database failed to self-heal after its own auto-recovery attempt (disk full, permissions — see `db_reset` in [Dashboard › Node status & failover](dashboard.md#node-status--failover)), or the `dashboard` container itself is crash-looping. A transient write blip, a slow query, or a single failed external fetch never trips it — only these two genuinely non-transient failures do. Set it `true` only if a stale dashboard is a bigger risk to you than a held miner; a false positive here idles the fleet. |
 | **Payouts** |  | _Set payout destinations and the read-only wallet data used to confirm payments._ |
 | `monero.wallet_address` | _required_ | Your Monero payout address. Use a dedicated mining wallet because P2Pool payout addresses are public ([P2Pool's guidance](https://github.com/SChernykh/p2pool/releases/tag/v4.18.1)). Must be a primary/standard address (starts with `4`, 95 chars). Subaddresses (`8…`) and integrated addresses are not supported: p2pool pays via coinbase, which can't send to them, and XvB credits by this address. A wrong type mines but is never paid. The address's built-in checksum is verified too — a single mistyped character fails it, and p2pool crashes on such an address instead of mining. `setup`/`apply` reject both, and `doctor` flags them. |
@@ -235,7 +276,7 @@ the desired value is not presented as proof of what the still-running services u
 | `monero.zmq_lan_access` | `false` | `true` publishes the node's ZMQ block-notification feed (`18083`) on the LAN. With `rpc_lan_access`, this is the serving side of `monero.mode: remote` — a remote P2Pool needs both RPC and ZMQ. ZMQ has no authentication: trusted networks only, and only LAN sources can connect (see [LAN-only sources](#lan-only-sources)). In `local` mode the port is published either way — on `127.0.0.1` while this is `false` — so free `18083` on the host if something else holds it, or the container won't start. Ignored in `remote` mode (no bundled node runs). |
 | `monero.remote.host` / `rpc_port` / `zmq_port` | — / `18081` / `18083` | Remote node connection details (used when `mode` is `remote`). These fields and `node_username` / `node_password` are changeable from the dashboard's Configuration view behind a typed `APPLY`. Before committing an endpoint or login change, the host authenticates to the staged endpoint with the staged login ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). On a local node, changing either login field preserves its masked partner and applies the pair together to monerod, P2Pool and the dashboard. Credentials stay masked in previews, and a changed endpoint needs an explicit replacement login. |
 | **Tari node** |  | _Choose the Tari node and how Pithead reaches or exposes it._ |
-| `tari.mode` | `local` | **(beta in 2.0.0)** `local` runs the bundled Tari base node; `remote` merge-mines against an external one (see `tari.remote` and [Remote Tari node](#remote-tari-node)); `off` declines Tari altogether: no Tari container, no `--merge-mine` arguments to P2Pool, and no Tari payout address needed. Both setup wizards ask this outright and write the key explicitly whichever way it is answered ([#1916](https://github.com/p2pool-starter-stack/pithead/issues/1916)); Tari merge-mining is an opt-in beta, so both wizards offer `off` on Enter. The exception is a reinstall that keeps its data: when the data disk already holds a Tari chain (the CLI and the booted appliance wizard measure `./data/tari` against half the Tari budget; the installer treats the data-wipe option on a disk with an existing install as keeping its chains), Enter keeps `local`. A yes in a new-install wizard also writes `dashboard.tari_required: false`. The reference default stays `local`. Changeable from the dashboard's Configuration view behind a typed `APPLY` ([#1929](https://github.com/p2pool-starter-stack/pithead/issues/1929)) — switching to `off` stops the node and the merge-mining but **keeps the chain data on disk**, so switching back resumes instead of re-syncing. On an already-mining machine, enabling or re-pointing Tari keeps Monero mining while Tari syncs; merge-mining starts automatically when it is ready. First install still waits for both required chains. Switching a machine that has no `tari.wallet_address` to `local`/`remote` needs that address too, which is an approval-step change. A config that omits this key still means `local`, so upgrading never silently stops merge-mining. |
+| `tari.mode` | `off` (legacy absent: `local`) | **(beta in 2.0.0)** `local` runs the bundled Tari base node; `remote` merge-mines against an external one (see `tari.remote` and [Remote Tari node](#remote-tari-node)); `off` declines Tari altogether: no Tari container, no `--merge-mine` arguments to P2Pool, and no Tari payout address needed. Both setup wizards ask this outright and write the key explicitly whichever way it is answered ([#1916](https://github.com/p2pool-starter-stack/pithead/issues/1916)); Tari merge-mining is an opt-in beta, so both wizards offer `off` on Enter. The exception is a reinstall that keeps its data: when the data disk already holds a Tari chain (the CLI and the booted appliance wizard measure `./data/tari` against half the Tari budget; the installer treats the data-wipe option on a disk with an existing install as keeping its chains), Enter keeps `local`. Every new-install path writes `dashboard.tari_required: false`. The temporary legacy reference value stays `local`. Changeable from the dashboard's Configuration view behind a typed `APPLY` ([#1929](https://github.com/p2pool-starter-stack/pithead/issues/1929)) — switching to `off` stops the node and the merge-mining but **keeps the chain data on disk**, so switching back resumes instead of re-syncing. On an already-mining machine, enabling or re-pointing Tari keeps Monero mining while Tari syncs; merge-mining starts automatically when it is ready. First install still waits for both required chains. Switching a machine that has no `tari.wallet_address` to `local`/`remote` needs that address too, which is an approval-step change. A config that omits this key still means `local`, so upgrading never silently stops merge-mining. With mode `off`, previews describe endpoint and clearnet-sync changes as inactive; the mode-off confirmation retains existing chain data. Enabling local Tari with a stored clearnet-sync choice shows its exposure warning. |
 | `tari.clearnet_initial_sync` | `false` | Privacy-relevant, default off. Works with the default-on egress firewall: only this node gets a temporary IPv4 sync exception, removed and verified before its Tor restart. `true` makes the Tari base node sync over clearnet instead of Tor: it switches the P2P transport to TCP, re-enables the `seeds.tari.com` DNS seed (the bundled onion `peer_seeds` are unreachable without Tor), and stops advertising its onion. Your node's IP becomes visible to the Tari P2P network while it's on, plus one DNS lookup of `seeds.tari.com`. `pithead` warns loudly (apply/status/doctor/up). After sync, the host closes the exception, Tari restarts on Tor, and the host verifies both live states before the warning clears (#234); you can leave this `true`. Applies to the bundled node only — with `tari.mode: remote` nothing here acts on it, so set it back to `false` before switching. Full threat model: [Privacy › Optional clearnet initial sync](privacy.md#optional-clearnet-initial-sync-off-by-default). |
 | `tari.explorer_url` | `https://textexplore.tari.com/?json` | The public Tari tip the verdict compares against, fetched through Tor once an hour. It is the one reference that is not the node's own opinion, so it is what catches a node on a dead fork. The URL must return the text explorer's JSON (`tipInfo.metadata.best_block_height`). Blank turns the reference off, and a failed fetch contributes nothing, so a missing reference never makes the verdict red. See [Privacy](privacy.md). |
 | `tari.remote.host` / `grpc_port` | — / `18142` | Remote Tari base node connection details (used when `tari.mode` is `remote`). Changeable from the dashboard's Configuration view behind a typed `APPLY`, and only if the host can reach the new endpoint ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). See [Remote Tari node](#remote-tari-node). |
@@ -247,7 +288,7 @@ the desired value is not presented as proof of what the still-running services u
 | `workers.list` | `[]` | Per-worker overrides: `{name, host?, port?, api_token?, token?, watts?, control_port?}`. Only `name` (the stratum worker name) is required. A per-worker field beats the fleet default, which beats the built-in default; unlisted rigs keep fleet defaults. `api_token` is an explicitly read-only worker-API Bearer for this rig, overriding fleet `api_auth`; it requires an operator-set `host` and is bound to that host and API port in `WORKER_API_TOKENS`. `token` is instead the write-capable RigForge control token: it remains host-only and is never sent by the dashboard probe. RigForge can derive a separate read-only Bearer from it when `host` is set and the token meets the 32-character minimum. `control_port` (default `8082`) is the writable control API port; set it with `host` + `token` for [Worker Inspect](dashboard.md#worker-inspect). `watts` is a manual estimate used by the [energy calculator](dashboard.md#energy--profit) only when the enriched feed has no measured watts. Descriptors match by `name`, then by connecting IP against an operator-set `host`; duplicate names → first-declared wins. The dashboard never sends a configured credential to a miner-controlled host ([SSRF guard](workers.md#per-worker-overrides)). The dashboard can append a rig behind typed `APPLY`, but cannot repoint, reorder or remove entries. See [Connecting Miners › Per-worker overrides](workers.md#per-worker-overrides). `dashboard.workers` was a deprecated alias removed in 2.0.0 (#1832): the first command reading an old config migrates it into `workers.list`, deletes the alias, and keeps `config.json.bak-1x`. A restored 1.x backup is migrated while staged and leaves no `.bak-1x`, because the backup archive is the pre-migration copy. Different values in both locations are refused; equal values remove the alias. An empty array never refuses. |
 | **Dashboard & access** |  | _Control dashboard access, login, address, and remote configuration._ |
 | `dashboard.secure` | `true` | `true` serves the dashboard over HTTPS (Caddy `tls internal`); `false` uses plain HTTP. |
-| `dashboard.host` | `auto` | Hostname you use to reach the dashboard. `auto` = this machine's hostname. |
+| `dashboard.host` | DIY `auto`; appliance `pithead` (legacy absent: `auto`) | Hostname you use to reach the dashboard. `auto` = this machine's hostname. |
 | `dashboard.expose_public_ip` | `false` | Appliance only. The appliance serves the dashboard on the addresses it holds, and on a network that passes IPv6 through, one of those is a globally-routable address — which would put the control panel on the open internet, gated only by your router. By default those addresses are left out of the site list _and_ out of Caddy's listener, so the dashboard answers on LAN, ULA and loopback addresses only. Reach it from outside over the onion service instead. Set `true` only if you deliberately want it published on a routable address and have your own protection in front of it. |
 | `dashboard.port` | `auto` | Host port Caddy binds the dashboard on. `auto` = the scheme default (443 with `dashboard.secure: true`, 80 without). Set a number (e.g. `8443`) to move it — for a host already running another reverse proxy on 80/443, so that proxy can front the stack. In HTTPS mode a custom port also drops Caddy's automatic HTTP→HTTPS redirect (which would otherwise hold port 80), so the fronting proxy owns any redirect. See [Co-hosting on a shared server](#co-hosting-on-a-shared-server). |
 | `dashboard.auth.username` | `admin` | Login name for the dashboard when a password is set (see below). Letters, digits, and `. _ @ -`, 1–64 chars. Ignored while `dashboard.auth.password` is empty. |
@@ -476,8 +517,7 @@ How it works and what to keep in mind:
   the password, so the Caddyfile doesn't churn.
 - Keep `dashboard.secure: true`. Basic-auth sends the credentials with every request; over plain HTTP
   (`secure: false`) they'd travel in cleartext. pithead warns if you set a password without HTTPS, but
-  won't stop you. With the default `tls internal`, Caddy serves a locally-trusted certificate; your
-  browser will warn the first time unless you trust Caddy's local CA.
+  won't stop you.
 - A login is access control for the dashboard, not the miner. It gates the web UI only. The stratum
   port miners connect to is a separate surface; gate that with
   [`p2pool.stratum_password`](#configuration-reference) and `p2pool.stratum_bind`.
@@ -485,8 +525,49 @@ How it works and what to keep in mind:
   but for reaching the dashboard from outside the LAN, publish it as a Tor onion service (below)
   rather than forwarding a port. Basic-auth has no rate-limiting or lockout on its own.
 
+On DIY installs, accepting Caddy's current leaf certificate in the browser can warn again after
+an internal renewal (leaves last 12 hours by default). Trust this installation's root CA once
+instead: from the stack directory on a host reached through a trusted console or SSH session, run
+`docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > pithead-dashboard-ca.crt`
+and record its fingerprint with `openssl x509 -in pithead-dashboard-ca.crt -noout -sha256 -fingerprint`. Transfer only
+that public `.crt` over an authenticated channel and compare its fingerprint on your browsing
+device before importing it as a trusted authority. On Windows, use the current user's **Trusted
+Root Certification Authorities** store; on macOS, import through **Keychain Access** and allow
+SSL trust; on Linux, use the browser's local-authority manager. Firefox has its own **Settings →
+Privacy & Security → Certificates → View Certificates → Authorities → Import** dialog: enable
+trust for identifying websites. Restart the browser if needed, reopen the dashboard at its
+configured hostname or address, and verify its valid certificate chain. Never export `root.key`
+or the whole CA directory. Normal leaf renewals retain the root in `caddy_data`; uninstalling
+deletes that volume and requires a new export and trust decision. The appliance uses its own
+certificate; this procedure is for DIY installs.
+
 To remove the login again, clear the password (`"password": ""`) and `apply`. pithead drops the
 `basic_auth` block and the dashboard is open on the LAN as before.
+
+### Compose project identity
+
+The default Compose project is `pithead`, including the `pithead_*` named volumes.
+To select a different project, export `COMPOSE_PROJECT_NAME` before running Docker
+Compose or any `pithead` command:
+
+```bash
+export COMPOSE_PROJECT_NAME=pithead-gate
+./pithead up
+```
+
+The CLI uses that project for container-label queries and wallet-volume cleanup.
+Support bundles redact the project name.
+A single literal `COMPOSE_PROJECT_NAME` assignment in the generated `.env` also
+works, and `apply` preserves it. The CLI refuses duplicate assignments, interpolation,
+and non-literal dotenv syntax for this key. An exported value takes precedence; an explicitly empty value selects
+`pithead`. Names use lowercase letters, digits, underscores and hyphens, starting
+with a letter or digit. Keep the same export for recovery after `config-reset`,
+which removes `.env`. Selecting another project does not migrate the default
+project's containers or data.
+
+Container names, the `mining_net` and `proxy_net` network names, and host ports
+remain fixed. Changing the project name alone does not allow two stacks to run
+side by side on one Docker host.
 
 ### Co-hosting on a shared server
 
