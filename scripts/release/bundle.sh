@@ -11,53 +11,78 @@ append_bundle_sha256() { # <manifest> <bundle>
 }
 
 publish() {
-    stage "7/7  Publish GitHub Release $TAG"
+    require_appliance_draft
+    stage "7/7  Create complete GitHub Release draft $TAG"
     local manifest="$WORKDIR/ingredients-$TAG.md"
-    write_manifest "$manifest"
-    local bundle="$WORKDIR/pithead.tar.gz" # versionless name → stable /releases/latest/download/ URL
-    make_bundle "$bundle"
-    # Bundle checksum into the manifest (#77 phase 1): install.sh verifies its download against
-    # this line before it extracts anything. Appended here because write_manifest runs before the
-    # bundle exists.
-    append_bundle_sha256 "$manifest" "$bundle"
-    local bundle_sig="" # pithead.tar.gz.sig — absent only on a deliberate --unsigned cut (#960)
-    if [ "${COSIGN_ENABLED:-0}" -eq 1 ]; then
-        bundle_sig="$bundle.sig" # the #59 upgrade runner fetches it by name
-        sign_bundle "$bundle" "$bundle_sig"
+    if [ "$DRY_RUN" -eq 0 ]; then
+        [ "${COSIGN_ENABLED:-0}" -eq 1 ] || die "Release draft requires cosign signatures."
+        appliance_assets "$WORKDIR/appliance" "$TAG"
+        [ -s "$WORKDIR/appliance-rigforge.md" ] || die "Missing verified baked RigForge record."
     fi
-
-    confirm "Create git tag $TAG, push it, fast-forward main to it, and publish the GitHub Release?" ||
-        {
-            warn "Publish cancelled. Images are promoted; publish by hand."
-            return 0
-        }
-
+    write_manifest "$manifest"
+    if [ "$DRY_RUN" -eq 0 ]; then cat "$WORKDIR/appliance-rigforge.md" >>"$manifest"; fi
+    local bundle="$WORKDIR/pithead.tar.gz" bundle_sig="$WORKDIR/pithead.tar.gz.sig"
+    make_bundle "$bundle"
+    append_bundle_sha256 "$manifest" "$bundle"
+    sign_bundle "$bundle" "$bundle_sig"
+    if [ "$DRY_RUN" -eq 0 ]; then
+        [ -s "$bundle_sig" ] || die "Install bundle signature is missing."
+        cosign verify-blob --key cosign.pub --signature "$bundle_sig" --insecure-ignore-tlog=true "$bundle" ||
+            die "Install bundle signature verification failed."
+    fi
+    command -v gh >/dev/null 2>&1 || die "gh is required to create the release draft."
+    confirm "Create git tag $TAG, push it, fast-forward main, and create a complete release draft?" || {
+        warn "Draft creation cancelled. Images are promoted; preserve the verified artifacts."
+        return 0
+    }
     run git tag -a "$TAG" -m "Pithead $TAG"
     run git push origin "$TAG"
-
-    # Move main to the released commit (docs/dev/releasing.md § Branch mechanics). A plain push can
-    # only fast-forward, so main gains no object the tag does not already name — which is what makes
-    # the old post-release back-merge unnecessary (#1076). The Main Branch ruleset admits this via
-    # the same admin bypass the protected tag push above already used.
     run git push origin "$GIT_COMMIT:refs/heads/main" ||
-        warn "main was not fast-forwarded — run: git push origin $GIT_COMMIT:refs/heads/main  (the release is unaffected; main lags until this runs)."
-
-    local notes="$WORKDIR/notes.md"
+        warn "main was not fast-forwarded; the owner must reconcile it with the release tag."
+    local notes="$WORKDIR/notes.md" name
     changelog_notes >"$notes"
     cat "$manifest" >>"$notes"
+    local assets=("$bundle" "$bundle_sig" "$manifest")
+    for name in "pithead-os-$TAG.img.xz" "pithead-os-$TAG.raucb"; do
+        assets+=("$WORKDIR/appliance/$name" "$WORKDIR/appliance/$name.sha256")
+    done
+    create_complete_draft "$notes" "${assets[@]}"
+    ok "Complete release draft created. Stop for manual image verification; only the owner publishes."
+}
 
-    if command -v gh >/dev/null 2>&1; then
-        # --draft holds the GitHub Release for review (not visible/announced until published by hand).
-        # The images are already promoted, so the draft's install bundle works the moment it's published.
-        local gh_args=(release create "$TAG" --title "Pithead $TAG" --notes-file "$notes")
-        [ "$DRAFT" -eq 1 ] && gh_args+=(--draft)
-        gh_args+=("$bundle")
-        [ -n "$bundle_sig" ] && gh_args+=("$bundle_sig") # the .sig only exists when signing is on
-        gh_args+=("$manifest")
-        run gh "${gh_args[@]}"
-        ok "GitHub Release $TAG $([ "$DRAFT" -eq 1 ] && echo 'created as a DRAFT (publish it from the Releases page when ready)' || echo published)."
-    else
-        warn "gh CLI not found — tag pushed, but create the release by hand. Notes: $notes  Assets: $bundle $bundle_sig $manifest"
+create_complete_draft() {
+    local notes=$1 release_id asset bytes digest result=0
+    local endpoint=repos/p2pool-starter-stack/pithead/releases
+    shift
+    if [ "$DRY_RUN" -eq 1 ]; then
+        run gh api --method POST "$endpoint" -f "tag_name=$TAG" -f "name=Pithead $TAG" -F draft=true -F "body=@$notes" --jq .id
+        run gh release upload "$TAG" "$@" --repo p2pool-starter-stack/pithead
+        return 0
+    fi
+    : >"$WORKDIR/expected-assets.jsonl"
+    for asset in "$@"; do
+        bytes=$(wc -c <"$asset")
+        digest=$(sha256sum "$asset" | cut -d' ' -f1)
+        jq -n --arg name "${asset##*/}" --argjson size "$bytes" --arg digest "sha256:$digest" \
+            '{name:$name,size:$size,digest:$digest}' >>"$WORKDIR/expected-assets.jsonl"
+    done
+    jq -s . "$WORKDIR/expected-assets.jsonl" >"$WORKDIR/expected-assets.json"
+    release_id=$(gh api --method POST "$endpoint" -f "tag_name=$TAG" -f "name=Pithead $TAG" -F draft=true -F "body=@$notes" --jq .id) ||
+        die "Draft creation failed; the owner must check for an incomplete draft."
+    [[ "$release_id" =~ ^[1-9][0-9]*$ ]] || die "Draft creation returned no usable release id; the owner must reconcile it."
+    gh release upload "$TAG" "$@" --repo p2pool-starter-stack/pithead || result=1
+    if [ "$result" -eq 0 ]; then
+        gh api "$endpoint/$release_id" >"$WORKDIR/uploaded-assets.json" || result=1
+        if [ "$result" -eq 0 ]; then
+            jq -e --slurpfile expected "$WORKDIR/expected-assets.json" \
+                '.draft == true and ([.assets[] | {name,size,digest}] | sort_by(.name)) == ($expected[0] | sort_by(.name))' \
+                "$WORKDIR/uploaded-assets.json" >/dev/null || result=1
+        fi
+    fi
+    if [ "$result" -ne 0 ]; then
+        gh api --method DELETE "$endpoint/$release_id" ||
+            warn "Could not remove the incomplete draft; the owner must remove it before proceeding."
+        die "Release asset upload or remote name/size/digest verification failed; the tag remains spent."
     fi
 }
 
