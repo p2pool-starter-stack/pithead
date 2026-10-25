@@ -28,6 +28,30 @@ The image also carries no installer payload. `pithead-install` rebuilds the layo
 target and copies the running slot, so the artifact never contains a compressed copy of
 itself.
 
+### Rootfs Go binaries
+
+The rootfs Dockerfile builds Docker Compose and Cosign from exact upstream
+commits, checks each commit against its release tag, and asserts the binaries'
+reported versions. The Go builder is pinned by digest at [1.26.10](https://go.dev/doc/devel/release#go1.26.0) to clear
+[CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
+in both binaries' standard library.
+
+`COMPOSE_GO_RAISES` and `COSIGN_GO_RAISES` raise x/mod to v0.41.0, x/net to
+v0.60.0 and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
+for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585).
+Compose already selects compress v1.19.2 from its pinned upstream source.
+The build asserts the compiled Go version of both binaries and Cosign's
+compiled compress version before copying them into the rootfs.
+
+Module raises modify upstream's module graph, including transitive dependencies
+selected by Go's minimum-version selection. Upstream `go.sum` authenticates its
+existing entries; raised modules use Go's module checksum verification.
+Cosign reports a dirty tree because those raises modify its sources.
+Remove a raise when a pinned upstream release makes it redundant. Require the
+rootfs CVE scan to pass without a new ignore or a weaker severity gate, and run
+the KVM `image-upgrade` phase to check signature verification with the built
+Cosign binary, including rejection with the wrong key.
+
 ### Host tuning baked in
 
 An unattended headless box has to heal itself, and two of the guards live below the container
@@ -336,7 +360,7 @@ is the only thing standing between the hand-written boot path and a fleet.
 | `provision` | A config submitted through the wizard's real HTTP flow provisions the stack: validation, cosign-verified image pulls, containers running under podman, the provisioning units finished, dashboard served through caddy. Before the successful submission, an unreachable remote node must be refused by preflight with its safe form values retained; a separate injected post-validation setup fault must return to the setup page with a useful error and the retained values for an ordinary corrected submit (#1955). The submitted config also enables the on-box miner, so the **built-in RigForge worker** must come up on its own, wired to the machine's own stratum, with mining held behind the sync gate cleanly. A local-miner-only apply must stop the unit and remove its derived config when disabled, then start the process and render its pool when enabled again; both directions must leave the rendered environment and boot ID unchanged and restore the original configuration. After provisioning, dashboard control applies a benign setting, refuses a disruptive setting without `APPLY`, accepts it with `APPLY`, returns doctor and log-tail reports, and creates a downloadable encrypted backup; the stack and dashboard must recover after that backup (#1931/#1965). Then a **reboot with no hands on it** must return the stack unaided through `pithead-boot`. M10 cuts that live stack three times and after EVERY cut requires every pre-cut container, image digest, non-regressing monerod height, miner, Caddy, and committed slot to survive. Finally the **commit gate's honesty** (#852) requires the real `cd /data/pithead && ./pithead doctor --json` gate to PASS on the healthy still-syncing stack yet REFUSE once a revenue service is crashed. The provisioned boot also pins hugepages sizing, migration and floor-fallback behavior, and a Tari node that dies after the migrating slot commits: status, doctor and the dashboard must report it, and `./pithead up` must recover it. | Printed by the run |
 | `install` | The image boots as **removable** media (usb bus — the gate keys on it); the inventory offers the internal disk and never the boot medium; the real installer runs; the machine then boots from the target alone with a **complete** copy (`/var/lib/dpkg` — the overlay made an incomplete copy easy and invisible), a fresh machine-id, `/data` sized to the target, and the wizard serving. Then the **reinstall leg** plants a sentinel in `/data`, installs over the same disk, and requires the sentinel afterwards. After Fresh Start returns to removable media, the harness waits up to 180 seconds for the setup page before the remaining wipe and plant writes, so firstboot's read-only target probes finish first. The keep leg reinstalls from a **newer stick** over `/data` that holds the old dashboard image and digest record; the image ID and served page must change (#798). Its setup reports the mount, load, digest, image-lookup, database-cleanup and unmount sub-steps; a failure retains captured stderr privately beside the harness's existing SSH scratch file, without requiring an exported `TMPDIR`, and prints at most 20 source lines plus summary metadata, clipped to 240 columns, with terminal controls removed. Database cleanup and unmount are attempted after a mounted setup fails, and either cleanup failure rejects the plant even if an image ID was found. A 1.x `xmrig_proxy` pre-fill must migrate to `xvb` without carrying the removed key (#1954). The restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk, then proves the created P2Pool container carries its configured wallet, Tor identity, opaque RPC/onion secrets, and both fixture and target chain-data sentinels without a resync; its dashboard password survives with the archived bcrypt and fingerprint kept exactly, and authenticates with them (#2001/#2230/#2579). The startup probe requires the fresh sync-gate hold first. Before its one start, it rejects prior crashes, restarts and OOM kills; a stopped exit 137 is eligible only when bounded logs from that container start show both SIGTERM and stopping. After proving the sync-gate hold, the harness pauses the dashboard, starts the restored P2Pool container once, and samples its identity, running state, exit code and restart count four times over 30 seconds. Every sample must report the same container, running with exit code zero and zero restarts. The harness then stops P2Pool, restores the dashboard and rechecks its hold; failures name the probe checkpoint and include bounded daemon and kernel diagnostics. Prior stop evidence is escaped and limited to 30 lines of 240 columns; the start bound uses the shared Go-time-to-RFC3339 converter. This is startup proof without synced mining. The fixture's removed 1.x keys migrate as [configuration](../configuration.md) documents: `xmrig_proxy.*` moves unchanged to `xvb.*`, the rendered XvB endpoint and donor id use them, `telegram.control` is dropped, and no `config.json.bak-1x` is left on `/data` because the archive is the pre-migration copy. | 38 |
 | `rig` | The removable image installs the RigForge role, which mines from the baked binary with no stack containers and follows the A/B update contract. M13 cuts power while it mines, then requires a new boot, unattended mining, and the committed slot to return. | Printed by the run |
-| `media` | The physical-presence config stick shows the exact diff, applies after its countdown, is consumed, and cancels when removed mid-countdown. | Printed by the run |
+| `media` | Checked host construction must finish before attachment: readiness is bounded to 5 seconds, and formatting, mount or cleanup failure ends the phase before its product assertions. Cleanup verifies loop and mount ownership and retains resources when unmount is unproved. A valid physical-presence config stick shows the exact diff, applies after its countdown, is consumed, and cancels when removed mid-countdown. | Printed by the run |
 | `fault` | three power cuts mid-write; a deliberately corrupted bundle is refused without crashing and without bricking; a power cut inside the commit window; operator rollback after all of it; Fault D cuts an active first-boot baked-image load and requires the wizard and repaired image store afterwards; the box is still updatable afterwards | 15 |
 | `reset` | leg 0, the real `./pithead config-reset -y` off a provisioned machine, instrumented by `tests/os/reset-config-probe.sh`: captures reset output and the actual Compose shutdown exit status before the wipe; a failed, unrecorded or warning-bearing stop fails even if reset exits 0. After the boot-condition checks, a bounded all-state project census must be empty before re-provisioning. It clears the config and re-arms the wizard while preserving the monero chain and Tor onion identity through reconfiguration. Leg 1, the real `cd /data/pithead && ./pithead factory-reset`: it comes back unprovisioned at the wizard, the config is gone, the container store holds no pulled stack images, machine-id and the SSH host key are **fresh** (a handed-over box must not keep the old owner's identity), and the wipe is recorded on the ESP — a wiped machine must be tellable from a brand-new one (#1062). Leg 2, the wedged-`/data` recovery: the ext4 magic corrupted on the real data partition, the box comes back usable with **`/data` repaired, not erased** — a sentinel planted before the corruption must survive (#1087) — and the ESP wipe log must not grow, because a repair recorded as a wipe would cry wolf | Printed by the run |
 
@@ -551,7 +575,7 @@ channels share the final cut commit, one version and one GitHub Release.
    section beside it. Then verify the artifact, pinning the commit you meant to build:
 
    ```bash
-   PITHEAD_EXPECT_COMMIT=$(git rev-parse HEAD) sudo tests/os/verify-image.sh <image>
+   sudo env PITHEAD_EXPECT_COMMIT="$(git rev-parse HEAD)" tests/os/verify-image.sh <image>
    ```
 
    Run `verify-image.sh` **from the repo checkout you built**, because it compares the artifact
@@ -574,7 +598,7 @@ channels share the final cut commit, one version and one GitHub Release.
      TMPDIR=${TMPDIR:-/var/tmp}
      work_dir=$(mktemp -d "${TMPDIR:?}/pithead-keyring.XXXXXX")
      mkdir "$work_dir/mnt" "$work_dir/probe"
-     trap 'sudo umount "$work_dir/mnt" 2>/dev/null || true; if [ -n "${loop:-}" ]; then sudo losetup -d "$loop"; fi; rm -r "$work_dir"' EXIT
+     trap 'sudo umount "$work_dir/mnt" 2>/dev/null || true; if [ -n "${loop:-}" ]; then sudo losetup -d "$loop"; fi; rm -rf "$work_dir"' EXIT
      loop=$(sudo losetup -Pf --show os/rauc/build/system.img)
      source os/rauc/loop-wait.sh
      wait_loop_partitions "$loop"
@@ -613,7 +637,7 @@ channels share the final cut commit, one version and one GitHub Release.
    file. Check the compressed image round trip against the raw image before flashing:
 
    ```bash
-   scripts/release/package-appliance.sh os/rauc/build/system.img os/rauc/build/update.raucb os/rauc/build/release
+   sudo scripts/release/package-appliance.sh os/rauc/build/system.img os/rauc/build/update.raucb os/rauc/build/release
    tag=v$(tr -d '[:space:]' <VERSION)
    cmp os/rauc/build/system.img <(xz -dc "os/rauc/build/release/pithead-os-${tag}.img.xz")
    (cd os/rauc/build/release && sha256sum -c "pithead-os-${tag}.img.xz.sha256" "pithead-os-${tag}.raucb.sha256")

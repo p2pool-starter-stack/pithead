@@ -132,6 +132,7 @@ import importlib.util, json, sys
 from pathlib import Path
 from urllib.parse import parse_qs
 root = Path(sys.argv[1]).parents[1] / "dashboard/mining_dashboard"
+sys.path.insert(0, str(root.parent))
 def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
