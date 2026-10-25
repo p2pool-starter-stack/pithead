@@ -4,7 +4,10 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/boot-gate-deadline.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
-fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+fail() {
+    printf 'FAIL: %s\n' "$*" >&2
+    exit 1
+}
 # shellcheck source=os/overlay/pithead-boot
 source "${BOOT_SOURCE:-$ROOT/os/overlay/pithead-boot}"
 declare -F gate_run >/dev/null || fail 'health probes have no shared deadline wrapper'
@@ -48,7 +51,7 @@ chmod +x "$scratch/stack/pithead"
 )
 awk '/^gate_wait_started=/{capture=1} capture{print}' "$ROOT/os/overlay/pithead-boot" >"$scratch/loop.sh"
 [ -s "$scratch/loop.sh" ] || fail 'the production gate loop was not selected'
-for scenario in unhealthy slow-doctor slow-status slow-render late-success healthy; do
+for scenario in unhealthy slow-dashboard slow-doctor slow-status slow-render late-success commit-failed commit-timeout healthy; do
     result=0
     (
         cd "$scratch/stack"
@@ -60,7 +63,10 @@ for scenario in unhealthy slow-doctor slow-status slow-render late-success healt
         OS_INFLIGHT="$scratch/no-update"
         hold_chain=0
         gate_probe_header() { :; }
-        curl() { printf '200 10'; }
+        curl() {
+            printf '200 10'
+            [ "$scenario" != slow-dashboard ] || return 28
+        }
         sleep() { SECONDS=$((SECONDS + $1)); }
         gate_blocked_only_by_cert() { [ "$scenario" = slow-render ]; }
         gate_cert_advisory_ready() { return 1; }
@@ -75,7 +81,21 @@ for scenario in unhealthy slow-doctor slow-status slow-render late-success healt
             [ "$1" != 1800 ] || return 0
             [ "$1" = --kill-after=2 ] || fail 'probe has no forced-kill grace'
             local budget=$2 operation=$4 duration=0
-            [ "$3" != curl ] || { curl; return; }
+            [ "$3" != curl ] || {
+                curl
+                return
+            }
+            if [ "$3" = rauc ]; then
+                case "$scenario" in
+                commit-failed) return 1 ;;
+                commit-timeout)
+                    SECONDS=$((SECONDS + budget + 2))
+                    return 124
+                    ;;
+                esac
+                rauc status mark-good
+                return
+            fi
             shift 2
             case "$scenario:$operation" in
             slow-doctor:doctor | slow-status:status | slow-render:render) duration=120 ;;
@@ -116,6 +136,38 @@ for scenario in unhealthy slow-doctor slow-status slow-render late-success healt
         [ ! -f "$scratch/committed-$scenario" ] || fail "failed slot committed: $scenario"
     fi
 done
+(
+    gate_target=https://localhost/.pithead-boot-health
+    gate_resolve_args=()
+    gate_probe_header() { :; }
+    timeout() {
+        printf '200 10'
+        return 124
+    }
+    gate_timeout_reason=''
+    gate_probe_dashboard
+    [ "$gate_timeout_reason" = dashboard ] || fail 'dashboard timeout cause was lost in a subshell'
+    [ "$code" = 000 ] && [ "$size" = 0 ] || fail 'partial dashboard timeout output remained healthy'
+    if gate_ready "$code" "$size"; then fail 'a partial timed-out dashboard response committed'; fi
+)
+(
+    cd "$scratch/stack"
+    gate_remint_state=restart-pending
+    PITHEAD_CADDY_RESTART_CMD=false
+    gate_ready 200 10 && fail 'a failed Caddy restart permitted commit'
+    [ "$gate_remint_state" = restart-pending ] || fail 'a failed Caddy restart lost its pending state'
+    PITHEAD_CADDY_RESTART_CMD=true
+    cat >pithead <<'HEALTHY'
+#!/usr/bin/env bash
+case "$1" in
+doctor) printf '{"checks":[]}\n' ;;
+status) printf 'healthy\n' ;;
+esac
+HEALTHY
+    chmod +x pithead
+    gate_ready 200 10 || fail 'a recovered Caddy restart still prevented commit'
+    [ "$gate_remint_state" = reminted ] || fail 'a successful restart did not clear its pending state'
+)
 printf '{"to":"fault"}\n' >"$scratch/inflight.json"
 printf '{"checks":[]}\n' >"$BOOT_DOCTOR_JSON"
 printf '  ⚠ dashboard UNHEALTHY\n' >"$BOOT_STATUS_LOG"
@@ -127,6 +179,7 @@ for failures in 1 2; do
         OS_INFLIGHT="$scratch/inflight.json"
         gate_deadline=$SECONDS
         gate_timeout_reason=doctor
+        gate_remint_state=restart-pending
         PITHEAD_REBOOT_CMD="touch $scratch/rebooted"
         boot_status() { touch "$scratch/extra-status"; }
         fail_boot 'the stack never became healthy (serving + doctor + status)'
@@ -140,7 +193,7 @@ for failures in 1 2; do
         [ ! -e "$scratch/rebooted" ] || fail 'fallback failure rebooted again'
     fi
 done
-jq -e '.blocking | index("Health probe exceeded its time budget: doctor") != null and index("container dashboard: UNHEALTHY") != null' \
+jq -e '.blocking | index("Health probe exceeded its time budget: doctor") != null and index("container dashboard: UNHEALTHY") != null and index("container caddy: certificate restart failed") != null' \
     "$scratch/inflight.json" >/dev/null || fail 'fallback lost its retained cause'
 sed -n "/| awk '/,/^    '; then/p" "$HERE/phases/update-healthgate-leg.sh" | sed '1d;$d' >"$scratch/timing.awk"
 [ -s "$scratch/timing.awk" ] || fail 'the KVM timing verdict was not selected'
@@ -156,4 +209,4 @@ for finish in 970 975 976 9 missing; do
     *) fail "KVM timing verdict accepted or rejected the wrong journal: $finish" ;;
     esac
 done
-printf 'selftest-boot-gate-deadline: stuck probes, expiry, unhealthy status and six production-loop scenarios passed\n'
+printf 'selftest-boot-gate-deadline: probe, commit, restart, recovery and journal controls passed (nine production-loop scenarios)\n'
