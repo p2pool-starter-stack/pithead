@@ -116,12 +116,7 @@ select_marker_dashboard() {
     printf '%s\n' "$image"
 }
 
-# Harness builds only, fault injection (#2383): force the dashboard's OWN healthcheck to fail,
-# reproducing manual battery M9, a container that starts and answers HTTP while its healthcheck
-# stays failed. The fault goes in the shipped compose file, not the image: the dashboard is pinned
-# to its signed registry digest above, so a layer rebuilt onto the baked archive never runs (#2694).
-# Exactly one dashboard healthcheck must be rewritten, or the bundle would hold no fault at all.
-break_dashboard_healthcheck() { # <compose-file>
+break_dashboard_healthcheck() {
     local compose="$1" probe='^[[:space:]]*test: \["CMD", "/app/healthcheck\.sh"\]$'
     [ "$(grep -cE "$probe" "$compose")" = 1 ] || {
         echo "build-image: no single dashboard healthcheck to break in $compose" >&2
@@ -266,14 +261,6 @@ fi
 if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -z "$TEST_REGISTRY" ]; then
     require_pullable_services "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
 fi
-# A synthetic-compose build (PITHEAD_OS_SYNTHETIC_COMPOSE, see stage_compose above) stamps a
-# version no registry ever published on purpose — tests/os/data-floor-fallback-leg.sh relies on
-# `pithead up` failing to pull it at guest runtime, not on the build refusing to produce the
-# bundle. Pinning digests here would turn that into a build-time failure instead.
-# PITHEAD_PIN_TAG: the tag the digests are read from. release.sh builds the rootfs at stage 3, when the
-# five images exist only under the staging tag (vX.Y.Z-rc.N) and vX.Y.Z is created at promotion, by
-# digest, so it passes the staging tag: the same digests, which stage 6b then signs. Every other build
-# reads the version tag, as before.
 MARKER_DASHBOARD_IMAGE=""
 if [ -n "${PITHEAD_TEST_MARKER:-}" ]; then
     [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
@@ -304,24 +291,12 @@ if [ -n "${PITHEAD_WIZARD_IMAGE:-}" ]; then
     docker pull -q "$WIZARD_SOURCE" >/dev/null
     docker tag "$WIZARD_SOURCE" "$WIZARD_IMAGE"
 elif [ "${PITHEAD_WIZARD_FROM_REGISTRY:-0}" = "1" ]; then
-    # Release path: the published image carries the wizard module.
     docker pull -q "$WIZARD_IMAGE" >/dev/null
 else
-    # No mtime cache, EVER. The old test compared the archive against dashboard — the
-    # DIRECTORY, whose mtime only moves when a direct child is added or removed. Editing a file
-    # deep inside it changes nothing, so the cache said "fresh" forever and stale wizards
-    # reached three separate benches. Docker's own layer cache makes the rebuild cheap; a
-    # correctness decision must not hang on directory-mtime semantics.
-    # Development path, and the default until a release ships the wizard: mining_dashboard.wizard
-    # only exists in this working tree, so a pulled image would start and immediately exit with
-    # "No module named mining_dashboard.wizard". Build the image the appliance will actually run.
     docker build -q -t "$WIZARD_IMAGE" dashboard >/dev/null
 fi
 docker save "$WIZARD_IMAGE" | gzip -1 >os/rootfs/images/dashboard.tar.gz
 
-# Stamp the commit into the image. A release build once shipped a dashboard two commits stale
-# because it pulled from an intermediate clone, and nothing in the artifact could reveal it —
-# the image looked correct and behaved like the previous build. verify-image asserts this.
 BUILD_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 BUILD_DIRTY=""
 git diff --quiet 2>/dev/null || BUILD_DIRTY="-dirty"

@@ -242,23 +242,11 @@ stack_up() {
     log "Starting stack..."
     warn_missing_data_dirs
     migrate_compose_project
-    # Install the Tor-only egress firewall BEFORE the containers start (#270). DOCKER-USER is a static
-    # chain whose rules reference the fixed subnet/Tor IP, so they can go in before the network exists;
-    # Docker preserves DOCKER-USER and (re)adds the FORWARD jump when it creates the network. Doing this
-    # first closes the startup window in which a clearnet app (e.g. Tari) could dial out unfenced; the
-    # firewall resets such a flow once it is in (#2672), but the packets sent before that have leaked.
     apply_tor_egress_firewall
-    provision_egress_check_units # #2599: the dashboard reads the firewall's live state
+    provision_egress_check_units
     provision_lan_guard_check_units
-    # #452: a fresh release install's first `up` pulls the 5 first-party images (pull policy
-    # `missing`) — gate that pull on the same cosign check `upgrade` uses, so first install is not
-    # the one unverified pull. Same guard: source checkouts skip, a missing cosign.pub warns and
-    # proceeds (#461 — an install predating the first signed release has no key to verify against),
-    # a present key that fails aborts before anything starts.
     verify_release_images
-    # PITHEAD_HOLD_CHAIN=1 defers chains and LMDB changes until A/B commit (#851); plain `up` starts them afterward.
     if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
-        # Revoke the carried mining latch before dashboard startup; ordinary outages retain it.
         local dashboard_dir
         dashboard_dir=$(env_get DASHBOARD_DATA_DIR)
         [ -n "$dashboard_dir" ] && rearm_sync_gate_marker "$dashboard_dir" 1 || error "Could not reset the mining sync gate for the data migration."

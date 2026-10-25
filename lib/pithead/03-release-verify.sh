@@ -205,15 +205,7 @@ stack_upgrade() {
     provision_console_login
     log "Re-rendered generated config for the current release."
     migrate_compose_project
-    # (Re)assert the Tor-only egress firewall BEFORE compose — same ordering as stack_up (#276), for
-    # the same reason: if the firewall isn't already installed (e.g. `down` then `upgrade`), starting
-    # containers first opens a startup window where a clearnet app (Tari, #271) can dial out unfenced
-    # before the rules go in (#291). In normal operation it's already installed from `up` and this
-    # is a cheap idempotent re-apply. Runs after the .env render above so the toggle/subnet are
-    # current.
-    apply_tor_egress_firewall # Tor-only egress (#270), consistent with up/apply
-    # One-time move of the dashboard data out of the install dir (#455) — after the .env commit
-    # (a failed move is retried on re-run) and before the recreate mounts the new location.
+    apply_tor_egress_firewall
     migrate_dashboard_data
     if is_source_checkout; then
         compose_up_checked -d --build || error "Upgrade failed during 'docker compose up' — see the error above."
@@ -222,13 +214,6 @@ stack_upgrade() {
         verify_release_images
         PITHEAD_PULL=always compose_up_checked -d || error "Upgrade failed during 'docker compose up' — see the error above."
     fi
-    # #356: if the dashboard onion (#343) was just turned on, the recreated tor generated its hostname —
-    # read it back into .env so `status`/`onion-client-key` show the address (mirrors apply's capture at
-    # the end of a change). No-op when the onion is off or already captured. Without this, enabling the
-    # onion via `upgrade` left the address uncaptured (apply's capture only runs when config changed).
-    # #546: and regenerate the Caddyfile + restart caddy, exactly like apply's capture — the render
-    # preamble above ran while the address was still the placeholder, so without this the HTTPS onion
-    # vhost (#360) would never appear (the next apply no-ops on an unchanged config).
     if [ "${DASHBOARD_ONION_ENABLED:-false}" == "true" ] && onion_missing "${DASHBOARD_ONION:-}"; then
         if provision_dashboard_onion && render_env; then
             generate_caddyfile
