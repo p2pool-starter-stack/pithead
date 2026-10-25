@@ -16,7 +16,18 @@ kvm_preflight() { return 0; }
 _provision_remote_node_coordinator() {
     ip=192.0.2.2 dash_user=fixture dash_pass=fixture
 }
-virsh() { printf '%s\n' "$*" >>"$scratch/teardown"; }
+virsh() {
+    printf '%s\n' "$*" >>"$scratch/teardown"
+    if [ "$*" = 'destroy fixture-coord' ]; then
+        touch "$scratch/cut"
+        printf '0\n' >"$scratch/reads"
+    fi
+}
+_boot_id() { printf 'old-boot\n'; }
+_wait_new_boot() {
+    [ "$*" = 'old-boot 300' ] || fail 'missing coordinator new-boot gate'
+    touch "$scratch/new-boot"
+}
 date() {
     local tick
     tick=$(cat "$scratch/time")
@@ -120,6 +131,11 @@ curl() {
         transient-rejected) [ "$reads" != 1 ] || rejected=1 ;;
         esac
     fi
+    if [ -f "$scratch/cut" ]; then
+        [ -f "$scratch/new-boot" ] || fail 'share poll preceded the new boot'
+        accepted=$((arm * 10 + reads))
+        other=$((reads + 1))
+    fi
     jq -n --argjson accepted "$accepted" --argjson rejected "$rejected" --argjson invalid "$invalid" \
         --argjson rate "$rate" --arg online "$online" --argjson other "$other" --arg coordinator "$coordinator" \
         '{workers:[{name:"kvm-rig-share",accepted:$accepted,rejected:$rejected,invalid:$invalid,h60:$rate,status:$online},
@@ -128,17 +144,18 @@ curl() {
     return 0
 }
 run_case() {
-    local scenario="$1" expected="$2" result=0
+    local scenario="$1" expected="$2" result=0 teardown_count=2
     local VM=fixture DISK="$scratch/rig.img" SERIAL="$scratch/rig.log" ip=192.0.2.1
     local RIG_SHARE_WINDOW_SEC=7
-    rm -f "$scratch/hosts.original" "$scratch"/cookie.*
+    rm -f "$scratch/hosts.original" "$scratch"/cookie.* "$scratch/cut" "$scratch/new-boot"
     printf "original hosts\n" >"$scratch/hosts"
     printf "ro\n" >"$scratch/root-mode"
     for file in pass fail teardown pools info; do : >"$scratch/$file"; done
     for file in time arm reads; do printf '0\n' >"$scratch/$file"; done
     rig_share_leg image node 1 2 user pass tari 3 "$ip" 2>"$scratch/stderr" || result=$?
     [ "$result" = "$expected" ] || fail "$scenario returned $result, expected $expected: $(tail -1 "$scratch/fail")"
-    [ "$(wc -l <"$scratch/teardown")" -eq 2 ] || fail "$scenario leaked coordinator"
+    [ "$expected" != 0 ] || teardown_count=4
+    [ "$(wc -l <"$scratch/teardown")" -eq "$teardown_count" ] || fail "$scenario coordinator lifecycle calls differ from $teardown_count"
     [ "$(cat "$scratch/hosts")" = "original hosts" ] || fail "$scenario leaked hosts fixture"
     [ "$(cat "$scratch/root-mode")" = ro ] || fail "$scenario left root writable"
     [ "$VM" = fixture ] && [ "$ip" = 192.0.2.1 ] || fail "$scenario lost rig globals"
@@ -146,6 +163,8 @@ run_case() {
     if [ "$expected" = 0 ]; then
         [ "$(wc -l <"$scratch/fail")" -eq 0 ] || fail "$scenario reported failure"
         [ "$(cat "$scratch/pools")" = $'192.0.2.2:3333\nkvm-share-coordinator.invalid:3333\n192.0.2.2:3333' ] || fail 'retarget order changed'
+        grep -q "the rig's accepted counter advances after" "$scratch/pass" || fail 'missing post-cut rig proof'
+        grep -q "the built-in miner's accepted counter advances after" "$scratch/pass" || fail 'missing post-cut builtin proof'
         [ "$(grep -c 'fresh accepted shares' "$scratch/pass")" -eq 3 ] || fail 'missing strict share windows'
         grep -q 'unresolved hostname fails' "$scratch/pass" || fail 'missing hostname negative control'
         [ "$(grep -c 'baseline=.*final=' "$scratch/info")" -eq 3 ] || fail 'missing final diagnostics'
