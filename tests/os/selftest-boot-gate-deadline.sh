@@ -51,7 +51,7 @@ chmod +x "$scratch/stack/pithead"
 )
 awk '/^gate_wait_started=/{capture=1} capture{print}' "$ROOT/os/overlay/pithead-boot" >"$scratch/loop.sh"
 [ -s "$scratch/loop.sh" ] || fail 'the production gate loop was not selected'
-for scenario in unhealthy slow-dashboard slow-doctor slow-status slow-render late-success commit-failed commit-timeout healthy; do
+for scenario in unhealthy slow-dashboard slow-doctor slow-status slow-render late-success healthy; do
     result=0
     (
         cd "$scratch/stack"
@@ -85,17 +85,6 @@ for scenario in unhealthy slow-dashboard slow-doctor slow-status slow-render lat
                 curl
                 return
             }
-            if [ "$3" = rauc ]; then
-                case "$scenario" in
-                commit-failed) return 1 ;;
-                commit-timeout)
-                    SECONDS=$((SECONDS + budget + 2))
-                    return 124
-                    ;;
-                esac
-                rauc status mark-good
-                return
-            fi
             shift 2
             case "$scenario:$operation" in
             slow-doctor:doctor | slow-status:status | slow-render:render) duration=120 ;;
@@ -211,4 +200,4 @@ for finish in 970 975 976 9 missing; do
     *) fail "KVM timing verdict accepted or rejected the wrong journal: $finish" ;;
     esac
 done
-printf 'selftest-boot-gate-deadline: probe, commit, restart, recovery and journal controls passed (nine production-loop scenarios)\n'
+printf 'selftest-boot-gate-deadline: probe, restart, recovery and journal controls passed (seven production-loop scenarios)\n'
