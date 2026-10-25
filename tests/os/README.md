@@ -321,7 +321,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   `selftest-rig-share-power-cut.sh` exercises recovery polling, worker identity, credential
   transport, cleanup and the real harness’s PASS/FAIL accounting without guests.
   A bench with no reserved remote Monero node counts the share and power-cut checks as `missing` leg skips, using
-  the same inputs as the `stack` phase.
+  the same inputs as the `stack` phase. The final "Set up again" leg submits
+  `role=pithead` to select the coordinator without a local miner, then requires the
+  `pithead` role marker, coordinator config creation and removal of rig data.
+  `selftest-setup-again-coordinator.sh` exercises that POST and rejects a `both`
+  marker with fake transport; the real transition runs in the `rig` phase.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
