@@ -74,6 +74,17 @@ slow-primary and HTTP-error recovery, checksum rejection on both sources, bounde
 HTTPS downgrade refusal and Dockerfile wiring. It needs curl, OpenSSL and sha256sum, without
 Docker or public-network access. The Dockerfile still requires the current-head tier-4 proof below.
 
+The rootfs Compose/Cosign source-fetch regression runs through
+`tests/os/selftest-go-source-fetch.sh` in `make test-integration-selftest`.
+It executes the Dockerfile's fetch command against a local Git HTTP repository:
+interrupted object transfers recover, repeated failures and unavailable commits
+remain failures, and a wrong tag fails without retry. The deadline control uses
+the real timeout command with a shorter fixture deadline. Successful checkouts
+retain the pinned commit and HTTP/1.1 transport setting. A current-head KVM
+`rig` run supplies the image-build and appliance evidence; verify that the
+required mining-recovery rows executed. A build-only failure is never proof
+that those appliance assertions ran.
+
 The fakes are the enabler. The whole control plane is env-configurable (`MONERO_RPC_URL`,
 `TARI_GRPC_ADDRESS`, `DOCKER_CONTROL_URL`, `NODE_DOWN_AFTER_SEC`, `UPDATE_INTERVAL`, …), so the
 real code points at small controllable servers and drives the entire state machine in seconds, in
