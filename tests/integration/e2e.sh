@@ -394,10 +394,11 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
+    RESTORED=1
     if ! capture_restore_unit_states && [ "$MODE" != check ]; then
-        RESTORED=1
         die "Required pre-run unit state is unknown; refusing before backup, wallet capture or deployment."
     fi
+    RESTORED=0
     if BASELINE_IMAGES="$(stack_image_census)" && [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
     else

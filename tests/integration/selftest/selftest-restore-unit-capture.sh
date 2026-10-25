@@ -132,18 +132,27 @@ preflight_case() {
         CANONICAL_DIR=/fixture E2E_DIR=/candidate RESTORE_DIR=/fixture
         BRANCH=fixture MINER_CFG_BACKUP='' SKIP_PREFLIGHT=1
         C_RED='' C_RESET=''
+        capture_parent=$BASHPID interrupt_capture="${2:-0}"
         export CAPTURE_FAIL_UNIT=pithead-lan-hold.service
         log() { :; }
         ok() { :; }
         warn() { :; }
         step() { :; }
         parent_lock_checkpoint() { :; }
+        drain_harness_or_refuse() { echo restore >>"$scratch/mutations"; }
+        parent_lock_miner_restore() { return 1; }
         harness_clear_check_evidence() { :; }
         stack_image_census() { echo fixture; }
         on_bench() {
             printf '%s\n' "$1" >>"$scratch/commands"
             case "$1" in
-            *'systemctl cat '*) PATH="$scratch/bin:$PATH" bash -c "$1" ;;
+            *'systemctl cat '*)
+                if [ "$interrupt_capture" = 1 ]; then
+                    kill -TERM "$capture_parent"
+                    return 143
+                fi
+                PATH="$scratch/bin:$PATH" bash -c "$1"
+                ;;
             esac
         }
         provision() { echo provision >>"$scratch/mutations"; }
@@ -166,6 +175,10 @@ assert_rc "deploying wrapper refuses incomplete capture" "$?" 1
 assert_eq "refusal runs no provisioning, backup, wallet capture, borrow or deploy" "$(cat "$scratch/mutations")" ''
 assert_eq "the EXIT trap sends no restore mutation" "$(grep -c 'sudo\|upgrade\|apply' "$scratch/commands")" 0
 assert_contains "preflight refusal says why" "$(cat "$scratch/preflight")" 'refusing before backup, wallet capture or deployment'
+preflight_case targeted 1 2>"$scratch/interruption"
+assert_rc "interrupted capture retains signal failure" "$?" 143
+assert_eq "interrupted capture never starts restoration or deployment" "$(cat "$scratch/mutations")" ''
+assert_eq "interrupted capture sends no restore mutation" "$(grep -c 'sudo\|upgrade\|apply' "$scratch/commands")" 0
 preflight_case check
 assert_rc "read-only check keeps its prior behavior" "$?" 0
 assert_eq "read-only mode runs only checkout and assessment" "$(cat "$scratch/mutations")" $'provision\nharness'

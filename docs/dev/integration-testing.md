@@ -801,7 +801,8 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   boot unit and timer, both LAN boot units and the LAN timer. Each `systemctl` read has a
   three-second timeout and one-second termination grace. Only a readable unit establishes
   presence; only a successful `LoadState=not-found` read establishes absence. Unknown state
-  refuses deployment without running the restore mutation. Read-only `check` still assesses
+  refuses deployment without running the restore mutation. Restoration stays disarmed during
+  capture, so interruption also leaves the baseline untouched. Read-only `check` still assesses
   the live stack. Fixed diagnostic classes distinguish transport failure, failed systemd reads,
   unsupported load states and unavailable probe output; raw unit text and stderr are discarded.
   The restore proof checks each saved variable against its capture record before any unit
@@ -810,7 +811,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   service as it does the egress units: a unit the run added is removed and checked absent,
   including from the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
   `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads, record loss,
-  diagnostic privacy and the pre-mutation refusal through the wrapper's real functions.
+  diagnostic privacy, interrupted capture and the pre-mutation refusal through the wrapper's real functions.
   Its scratch directory uses `mktemp`'s platform default when `TMPDIR` is unset; a failed
   directory allocation stops the selftest before it writes fixtures.
   Historical unknown state remains unknown; current unit metadata cannot reconstruct it.
