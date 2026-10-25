@@ -308,11 +308,19 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   and bounded initial/final observations: row counts, numeric share counters, hashrate and
   online flags only. Worker names, addresses and unrelated state fields are excluded.
   A failed state request cannot contribute a passing observation, even with a parseable body. The hosts fixture is restored and the
-  rig root verified read-only without remounting it; the coordinator guest is torn down. `selftest-rig-share.sh` exercises the complete leg with
+  rig root verified read-only without remounting it. The leg then cuts the coordinator’s
+  power, waits for a new boot, and requires both the rig and that coordinator’s named
+  built-in miner to advance their accepted counters between post-boot samples (#3077).
+  Counter resets are allowed; stale counts, a different worker or only one miner advancing
+  fail. State reads pass dashboard credentials through curl’s config stdin, keeping them
+  out of process arguments and rejecting credential line breaks. The coordinator guest
+  is torn down on success and failure. `selftest-rig-share.sh` exercises the complete leg with
   fake transport, clocks and worker snapshots, including stale return-arm shares,
   rejected/invalid counters, missing fields, hostname failures, extra pools, coordinator identity/counter types, hosts-file write failures and read-only-root verification. Each fake setup boot
   discards the hosts overlay, matching the appliance boot contract.
-  A bench with no reserved remote Monero node counts it a `missing` leg skip, using
+  `selftest-rig-share-power-cut.sh` exercises recovery polling, worker identity, credential
+  transport, cleanup and the real harness’s PASS/FAIL accounting without guests.
+  A bench with no reserved remote Monero node counts the share and power-cut checks as `missing` leg skips, using
   the same inputs as the `stack` phase.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
