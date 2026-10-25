@@ -39,7 +39,8 @@ run_tari_background_sync() {
     saved_config="$(rx 'cat config.json')" || return 1
     local evidence="$OUT_DIR/tari-enable" current_start current_state continuity_failed=0 continuity_checks=0
     mkdir -p "$evidence" || return 1
-    tari_enable_snapshot before-off >"$evidence/snapshots.log"
+    printf 'height_before=%s\n' "$height_before" >"$evidence/snapshots.log" || return 1
+    tari_enable_snapshot before-off >>"$evidence/snapshots.log"
     if ! push_config "$(render_scenario_config "$saved_config" 'tari.mode=off' 'dashboard.tari_required=true')" ||
         ! pithead apply -y >"$evidence/off.apply.log" 2>&1 || ! wait_stratum_hashes 240; then
         it_fail "Tari-off baseline is mining (#3094)" "apply or worker/hash readiness failed"

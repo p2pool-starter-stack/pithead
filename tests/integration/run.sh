@@ -37,6 +37,7 @@ source "$HERE/lib/fault-rules.sh" || exit $?
 source "$HERE/lib/borrow-rearm.sh" || exit $?
 # shellcheck source=tests/integration/lib/zmq-probe.sh
 source "$HERE/lib/zmq-probe.sh" || exit $?
+source "$HERE/lib/zmq-block.sh" || exit $?
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 source "$HERE/lib/mergemine-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/hugepage-probe.sh
