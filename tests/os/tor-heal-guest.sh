@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Guest-only Tor egress fault; the healer must lift it by restarting Tor.
 set -Eeuo pipefail
 stage=initialization
 sink_started=0
@@ -39,7 +38,6 @@ restore() {
     exit "$rc"
 }
 trap restore EXIT
-# A loopback sink remains reachable from the host-network dashboard during the fault.
 stage=webhook-gateway
 gateway=127.0.0.1
 cat >"$work/sink.py" <<'PYTHON'
@@ -97,7 +95,6 @@ container_start() {
 }
 disable_network() {
     local reply attempt
-    # This unsaved control setting survives NEWNYM and disappears only on a Tor restart.
     for ((attempt = 0; attempt < 30; attempt++)); do
         reply=$(docker exec tor sh -c '
             cookie=$(xxd -p -c 256 /var/lib/tor/control_auth_cookie)
