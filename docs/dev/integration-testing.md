@@ -802,18 +802,25 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
   is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the nodes
   running, `remove_lan_guard` refuses and the rule stays live.
-  A failed open-port probe saves a snapshot immediately, before the next recovery action,
-  under `results/lan-guard/probe-<port>.*` and in the transcript with the
-  `lan-guard diagnostic:` prefix. It records the node's running state, exit code and restart
-  count, listener presence inside its network namespace, live guard verdict, and the LAN check
-  unit's load state, last result, exit code and monotonic start/exit timestamps. Each command
-  has a three-second bound and the complete capture has a 25-second bound and an 8192-byte cap.
-  Only fixed labels, booleans, numbers and unit-state values are retained; raw socket output,
-  logs, identities and command errors are omitted. Unavailable reads and failed artifact
-  writes are explicit. The original single dial, row names and verdicts are unchanged.
-  `selftest-lan-guard-evidence.sh` exercises capture, read/write failures and the closed-port
-  verdict without a stack. Before a deploying run takes a
-  backup, captures wallets or deploys, the wrapper records the pre-run existence of the egress
+  Private-source LAN probes wait for the actual wire-level connection, since `up` and the crash
+  timer start containers before Tari opens gRPC. After an initial closed dial, save a snapshot
+  and poll the same source/port every five seconds with a 240-second deadline, matching the
+  existing onion listener readiness budget. A port that stays closed still fails its original
+  row. Before the boot-rule flush, require the private listener while the guard is still live.
+  Unguarded controls and negative-source isolation probes remain immediate, so readiness
+  cannot race the timer stopping an unguarded node. No failed row becomes a skip.
+  The transcript records readiness elapsed seconds and the final result.
+  Initial and timeout samples are saved before the next recovery action under
+  `results/lan-guard/probe-<port>-<sample>.*` and mirrored with the `lan-guard diagnostic:` prefix.
+  Each records the node's running state, exit code, restart count, network-namespace listener
+  presence, guard verdict and the LAN check unit's load state, last result, exit code and
+  monotonic start/exit timestamps. Each read has a three-second bound; each capture has a
+  25-second bound and an 8192-byte cap, separate from the readiness deadline. Only fixed
+  labels, booleans, numbers and unit-state values are retained; raw socket output, logs,
+  identities and command errors are omitted. Unavailable reads and failed artifact writes
+  are explicit. `selftest-lan-guard-evidence.sh` checks delayed readiness, the closed-port
+  deadline, capture ordering, privacy and failed reads/writes without a stack.
+  Before a deploying run takes a backup, captures wallets or deploys, the wrapper records the pre-run existence of the egress
   boot unit and timer, both LAN boot units and the LAN timer. Each `systemctl` read has a
   three-second timeout and one-second termination grace. Only a readable unit establishes
   presence; only a successful `LoadState=not-found` read establishes absence. Unknown state
