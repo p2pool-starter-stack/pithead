@@ -43,7 +43,7 @@ DIY/appliance starter configs (`config.minimal.json`, `config.minimal.appliance.
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
 | Containers | `build/<daemon>/` | Dockerfiles, entrypoints, healthchecks, and Monero's bounded archive downloader; CI builds the images, and `make test-tools` checks download recovery. |
-| Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. |
+| Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. `os/rootfs/fetch-go-source.sh` bounds pinned Go-source fetches; `tests/os/selftest-go-source-fetch.sh` runs its local Git transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; the start page holds the run sheet, result rules and glossary. |
 
@@ -90,7 +90,9 @@ Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the
 lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure controls in
-`tests/integration/selftest/selftest-reset-restore.sh`. Shared web ownership checks are in
+`tests/integration/selftest/selftest-reset-restore.sh`. Candidate-compatible fixture projection,
+original-byte cleanup and private recovery retention are exercised by
+`tests/integration/selftest/selftest-reset-recovery-fixture.sh`. Shared web ownership checks are in
 `tests/integration/lib/reset-restore-web.sh`; consecutive status censuses are in
 `tests/integration/lib/readiness-churn.sh`.
 
@@ -316,7 +318,9 @@ The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
-to prove saturated-history recovery and the disabled control with production timers.
+to prove No login egress recovery through host NEWNYM and the final healer restart,
+plus auto-heal off and unrelated-request rejection with production timers.
+Saturated recovery guards remain covered by the host recovery fixtures.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
 run by the Tor image build job. It verifies either startup repair of all 1000 abandoned
 observations and an empty persisted history, or the legacy warning and shutdown-write

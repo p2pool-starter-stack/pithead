@@ -18,8 +18,12 @@ for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hash
     CONTINUITY_PASSES=0
     TEMPLATE_FAILURE=""
     printf '0\n' >"$OUT_DIR/polls"
+    printf '0\n' >"$OUT_DIR/baseline-reads"
     env_on_box() { printf local; }
-    push_config() { PHASE=$((PHASE + 1)); }
+    push_config() {
+        grep -qx 'height_before=42' "$OUT_DIR/tari-enable/snapshots.log" || FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        PHASE=$((PHASE + 1))
+    }
     pithead() { printf 'apply-completed\n'; }
     wait_stratum_hashes() { return 0; }
     wait_status_ok() { return 0; }
@@ -65,7 +69,12 @@ for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hash
         esac
     }
     api_state() {
-        local poll=0 sync_state="done" height=42 connected=true
+        local poll=0 sync_state="done" height=44 connected=true reads
+        if [ "$PHASE" = 0 ]; then
+            reads="$(cat "$OUT_DIR/baseline-reads")"
+            [ "$reads" != 0 ] || height=42
+            printf '%s\n' "$((reads + 1))" >"$OUT_DIR/baseline-reads"
+        fi
         if [ "$PHASE" = 2 ]; then
             poll=$(($(cat "$OUT_DIR/polls") + 1))
             printf '%s\n' "$poll" >"$OUT_DIR/polls"
@@ -102,6 +111,9 @@ for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hash
         bad=$((bad + 1))
     fi
     [ "$PHASE" = 3 ] || bad=$((bad + 1))
+    [ "$(head -n 1 "$OUT_DIR/tari-enable/snapshots.log")" = height_before=42 ] || bad=$((bad + 1))
+    [ "$(grep -cx 'height_before=42' "$OUT_DIR/tari-enable/snapshots.log")" = 1 ] || bad=$((bad + 1))
+    jq -e -s 'length == 1 and .[0].tari.height == "44"' <(sed -n '/^phase=before-off$/,/^phase=after-off$/{ /^{$/,/^}$/p; }' "$OUT_DIR/tari-enable/snapshots.log") >/dev/null || bad=$((bad + 1))
     [ -s "$OUT_DIR/tari-enable/off.apply.log" ] && [ -s "$OUT_DIR/tari-enable/on.apply.log" ] || bad=$((bad + 1))
     grep -q 'phase=after-restore' "$OUT_DIR/tari-enable/snapshots.log" || bad=$((bad + 1))
     if grep -q must-not-be-retained "$OUT_DIR/tari-enable/snapshots.log"; then bad=$((bad + 1)); fi
