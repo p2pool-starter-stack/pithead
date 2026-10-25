@@ -3,7 +3,6 @@
 source "${BASH_SOURCE[0]%/*}/egress-probe.sh" || return $?
 source "${BASH_SOURCE[0]%/*}/miner-connection.sh" || return $?
 source "${BASH_SOURCE[0]%/*}/tari-readiness.sh" || return $?
-source "${BASH_SOURCE[0]%/*}/zmq-block.sh" || return $?
 
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== real ZMQ block notification observation =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 - "$HERE/.." <<'PY'
 import json
