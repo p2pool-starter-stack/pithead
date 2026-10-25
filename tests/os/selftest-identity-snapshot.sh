@@ -22,6 +22,25 @@ before=$(_identity_snapshot)
 if output=$(_identity_unchanged fixture ""); then exit 1; fi
 [ "$output" = 'fixture: identity baseline is missing' ]
 _identity_unchanged fixture "$before"
+cp "$work/data/pithead/.env" "$work/env-original"
+printf 'COMPOSE_PROJECT_NAME=fixture-project\n' >>"$work/data/pithead/.env"
+if output=$(_identity_unchanged fixture "$before"); then exit 1; fi
+[ "$output" = 'fixture: identity changed (env); project identity: added; remaining env bytes: equal' ]
+with_project=$(_identity_snapshot)
+sed 's/fixture-project/changed-project/' "$work/data/pithead/.env" >"$work/env-next"
+mv "$work/env-next" "$work/data/pithead/.env"
+if output=$(_identity_unchanged fixture "$with_project"); then exit 1; fi
+[ "$output" = 'fixture: identity changed (env); project identity: changed; remaining env bytes: equal' ]
+cp "$work/env-original" "$work/data/pithead/.env"
+if output=$(_identity_unchanged fixture "$with_project"); then exit 1; fi
+[ "$output" = 'fixture: identity changed (env); project identity: removed; remaining env bytes: equal' ]
+printf 'COMPOSE_PROJECT_NAME=fixture-project\nTOKEN=changed-secret-fixture\n' >>"$work/data/pithead/.env"
+if output=$(_identity_unchanged fixture "$before"); then exit 1; fi
+[ "$output" = 'fixture: identity changed (env); project identity: added; remaining env bytes: changed' ]
+printf 'COMPOSE_PROJECT_NAME=duplicate-fixture\n' >>"$work/data/pithead/.env"
+if _identity_snapshot >/dev/null 2>&1; then exit 1; fi
+cp "$work/env-original" "$work/data/pithead/.env"
+rm "$work/env-original"
 for file in data/pithead/config.json data/pithead/.env data/tor/dashboard/hs_ed25519_secret_key data/tor/p2pool/hs_ed25519_public_key data/tor/p2pool/hostname etc/machine-id data/ssh/ssh_host_ed25519_key; do
     cp "$work/$file" "$work/original"
     case "$file" in
@@ -50,7 +69,9 @@ for file in data/pithead/config.json data/pithead/.env data/tor/dashboard/hs_ed2
         echo "snapshot accepted changed $file" >&2
         exit 1
     fi
-    [ "$output" = "fixture: identity changed ($expected)" ] || {
+    expected_output="fixture: identity changed ($expected)"
+    [ "$expected" != env ] || expected_output+='; project identity: equal; remaining env bytes: changed'
+    [ "$output" = "$expected_output" ] || {
         echo "snapshot did not name changed category $expected" >&2
         exit 1
     }
@@ -77,6 +98,16 @@ _identity_snapshot >/dev/null
 printf '{"monero":{"wallet_address":"monero-fixture"},"tari":{"mode":"local"}}\n' >"$work/data/pithead/config.json"
 if _identity_snapshot >/dev/null 2>&1; then exit 1; fi
 mv "$work/original" "$work/data/pithead/config.json"
+valid_snapshot=$(_identity_snapshot)
+_ssh() { printf '%s\nunexpected-fixture-value\n' "$valid_snapshot"; }
+if output=$(_identity_snapshot); then exit 1; fi
+[ -z "$output" ]
+_ssh() {
+    printf '%s\n' "$valid_snapshot"
+    printf '%s\n' "$valid_snapshot" | grep '^env='
+}
+if output=$(_identity_snapshot); then exit 1; fi
+[ -z "$output" ]
 _ssh() {
     printf 'config=%064d\n' 0
     return 1

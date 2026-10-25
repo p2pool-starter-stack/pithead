@@ -246,9 +246,10 @@ for missing in none candidate commit hold claim stopped startup startup_monerod 
             bash)
                 local field
                 echo snapshot >>"$calls"
-                for field in config env machine ssh wallet tor; do
+                for field in config env machine ssh wallet tor env_project env_other; do
                     printf '%s=%064d\n' "$field" 0
                 done
+                printf 'env_project_present=0\n'
                 ;;
             'cat /opt/pithead/BUILD_COMMIT')
                 if [ "$missing" = candidate ]; then printf '%040d\n' 1; else git rev-parse HEAD; fi

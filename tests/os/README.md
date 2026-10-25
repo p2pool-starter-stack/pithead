@@ -136,6 +136,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   runs the operator rollback and requires the earlier slot to pass `doctor --json` and serve
   authenticated `/api/state` with HTTP 200. Config, `.env`, wallet addresses, Tor identities,
   machine-id and the SSH host key must match their pre-update hashes.
+  An `.env` mismatch reports project-identity presence/equality and equality of the remaining
+  bytes, without printing values or hashes; the full-file assertion remains strict.
 - **install** — stage a chosen token and valid config on the ESP before the first removable-media
   boot, authenticate case and prefix variants, and check prefilled answers with no disk selected.
   Reboot with malformed JSON and require serial rejection with a blank form carrying the reference
