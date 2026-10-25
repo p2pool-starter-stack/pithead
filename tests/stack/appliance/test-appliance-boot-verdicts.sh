@@ -368,21 +368,14 @@ boot_progress_case() (
     unset SECONDS
     SECONDS=600
     gate_doctor_ran=0 gate_advisory="" hold_chain=0 OS_INFLIGHT="$SANDBOX/absent-inflight"
-    gate_target=fixture gate_resolve_args=()
     BOOT_GATE_WAIT_SECONDS=960 code=503 size=1
     probe_seconds="$2"
-    gate_probe_header() { :; }
     gate_probe_dashboard() { :; }
-    gate_run() {
-        shift
-        "$@"
-    }
-    curl() { echo "503 $probe_seconds"; }
+    gate_run() { :; }
     pass_at="$1"
     gate_ready() { ((SECONDS += probe_seconds, gate_attempt == pass_at)); }
     sleep() { SECONDS=$((SECONDS + $1)); }
     boot_gate_passed() { :; }
-    rauc() { :; }
     timeout() { :; }
     gate_loop=$(sed -n '/^gate_wait_started=/,/^done$/p' "$ROOT/os/overlay/pithead-boot")
     gate_loop=${gate_loop//\/dev\/tty1/${3:-$SANDBOX/boot-progress-vga}}

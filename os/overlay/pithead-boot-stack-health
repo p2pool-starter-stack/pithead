@@ -9,7 +9,10 @@ gate_run() {
     shift
     if [ -n "${gate_deadline:-}" ]; then
         remaining=$((gate_deadline - SECONDS - 2))
-        [ "$remaining" -gt 0 ] || { gate_timeout_reason=$probe; return 124; }
+        [ "$remaining" -gt 0 ] || {
+            gate_timeout_reason=$probe
+            return 124
+        }
         [ "$budget" -le "$remaining" ] || budget=$remaining
     fi
     timeout --kill-after=2 "$budget" "$@" || result=$?
@@ -61,13 +64,16 @@ gate_answer_is_dashboard() { # <http_code> <size_download>
 }
 
 gate_ready() {
-    gate_answer_is_dashboard "$1" "$2" || return 1
     if [ "${gate_remint_state:-}" = restart-pending ]; then gate_restart_caddy || return 1; fi
+    gate_answer_is_dashboard "$1" "$2" || return 1
     local doctor_result=0
     gate_doctor_ran=1
     gate_run doctor ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || doctor_result=$?
     case "$doctor_result" in
-    124 | 137) gate_doctor_ran=0; return 1 ;;
+    124 | 137)
+        gate_doctor_ran=0
+        return 1
+        ;;
     esac
     [ "$doctor_result" -eq 0 ] || return 1
     boot_status_ready
