@@ -95,6 +95,10 @@ def main():
         raise RuntimeError("Privacy firewall precondition missing")
     candidate = inspect("p2pool")
     tor = inspect("tor")
+    data_path = candidate["Config"]["WorkingDir"]
+    if not isinstance(data_path, str) or not data_path.startswith("/"):
+        raise RuntimeError("candidate image working directory missing")
+    stats_path = f"{data_path.rstrip('/')}/local/p2p"
     network = next(iter(candidate["NetworkSettings"]["Networks"]))
     address = candidate["NetworkSettings"]["Networks"][network]["IPAddress"]
     if candidate["HostConfig"].get("PortBindings"):
@@ -180,7 +184,7 @@ def main():
             f"{onion}:{port}",
             "--local-api",
             "--data-api",
-            "/home/ubuntu/profile-stats",
+            data_path,
         ]
         if port == 37888:
             args.append("--mini")
@@ -201,7 +205,7 @@ def main():
                         "exec",
                         peer,
                         "cat",
-                        "/home/ubuntu/profile-stats/local/p2p",
+                        stats_path,
                     )
                 )
                 accepted = (
@@ -222,7 +226,7 @@ def main():
             json.dumps(
                 {
                     "candidate": diagnostics("p2pool", "/stats/local/p2p"),
-                    "fixture": diagnostics(peer, "/home/ubuntu/profile-stats/local/p2p"),
+                    "fixture": diagnostics(peer, stats_path),
                 },
                 sort_keys=True,
             ),
