@@ -32,7 +32,7 @@ def test_virtualenv_security_floor():
         lock = tomllib.load(source)
     packages = [package for package in lock["package"] if package["name"] == "virtualenv"]
     assert packages
-    assert all(Version(package["version"]) >= Version("21.14.9") for package in packages)
+    assert all(Version(package["version"]) >= Version("21.14.13") for package in packages)
 
 
 def test_requests_bundle_excludes_compromised_emsign_root():
