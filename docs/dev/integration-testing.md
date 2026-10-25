@@ -811,6 +811,8 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   including from the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
   `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads, record loss,
   diagnostic privacy and the pre-mutation refusal through the wrapper's real functions.
+  Its scratch directory uses `mktemp`'s platform default when `TMPDIR` is unset; a failed
+  directory allocation stops the selftest before it writes fixtures.
   Historical unknown state remains unknown; current unit metadata cannot reconstruct it.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).

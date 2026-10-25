@@ -6,7 +6,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 source "$HERE/../lib/restore-proof.sh"
 E2E_SRC="$HERE/../e2e.sh"
-scratch=$(mktemp -d "${TMPDIR:?}/unit-capture.XXXXXX")
+scratch=$(mktemp -d -t unit-capture.XXXXXX) || exit 1
 trap 'rm -rf "$scratch"' EXIT
 mkdir "$scratch/bin"
 cat >"$scratch/bin/systemctl" <<'STUB'
