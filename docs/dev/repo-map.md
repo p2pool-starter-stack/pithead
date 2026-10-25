@@ -76,6 +76,9 @@ the selected old dashboard writer in `migration-release-snapshot.py`, and measur
 mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
 `selftest-migration-snapshot.sh` check ancestry refusal, persistence and recovery contracts.
 The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
+The shared boot health deadline is in `os/overlay/pithead-boot-stack-health` and
+`os/overlay/pithead-boot`. `tests/os/selftest-boot-gate-deadline.sh` exercises stuck
+probes and the production polling loop; update leg 5 checks the real fallback timing.
 
 Appliance startup and source upgrades share `reconcile_compose_images` in
 `lib/pithead/03-release-verify.sh`. `tests/os/selftest-image-convergence.sh` checks same-tag
