@@ -27,12 +27,20 @@ uv run --project dashboard pre-commit install
 `make test` and `make lint-py` run through uv automatically (no venv to activate); `pre-commit`
 runs `ruff` (plus a few hygiene hooks) on your changed files. If you change dependencies in
 `dashboard/pyproject.toml`, run `uv lock --project dashboard` and commit the updated `uv.lock`.
-For a transitive security fix, update only the affected package with
-`uv lock --project dashboard --upgrade-package certifi==2026.10.19` (substitute the package and
-verified fixed version). Review the lockfile diff, run the dashboard tests, and require the
-built dashboard image's Trivy scan to pass without adding an ignore entry.
-`dashboard/tests/test_dependency_security.py` checks the locked and loaded security floors
-and verifies that Requests' CA bundle excludes the compromised emSign ECC Root CA - G3.
+For a transitive security fix, update the affected package and any parent whose constraint
+rejects the fixed version. For example, the developer tooling's filelock fix needs a compatible
+virtualenv version:
+
+```bash
+uv lock --project dashboard --upgrade-package filelock==4.2.1 --upgrade-package virtualenv==21.10.0
+```
+
+Review the lockfile diff, run the dashboard tests, and require the built dashboard image's
+Trivy scan to pass without adding an ignore entry.
+`dashboard/tests/test_dependency_security.py` checks the locked security floors, loaded runtime
+dependency versions, and that Requests' CA bundle excludes the compromised emSign ECC Root CA - G3.
+Filelock is locked through the `dev` extra's pre-commit/virtualenv chain; its floor is checked
+in the lockfile because the dashboard runtime and `test` extra do not install it.
 
 The root `pithead` executable is generated and git-ignored. Plain `make` builds it from the
 numbered `lib/pithead/*.sh` sources; the test targets also build it when needed. Edit the slices,
