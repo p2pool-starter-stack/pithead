@@ -742,12 +742,16 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   red as before: that combination is the real defect #1497 exists to catch, and an unreadable
   fingerprint (RPC itself unreachable) cannot corroborate anything, so the original verdict passes
   through unchanged rather than being waved through on missing evidence.
-  What remains unproven is
-  narrower than it was — that the frame carried a block notification rather than a transaction or
-  a miner update — and every run counts it as a missing leg, `monero ZMQ published frame is a
-  BLOCK notification`, because a skip announces itself and a false green does not. Closing that
-  needs a new block, a wait of minutes where any published frame arrives in seconds. This is a
-  separate
+  The block-notification row separately subscribes to `json-minimal-chain_main` and waits up to
+  900 seconds for a complete ZMTP message. It validates the exact topic and JSON payload:
+  a nonnegative integer `first_height`, a 64-digit hexadecimal `first_prev_id`, and a nonempty
+  `ids` array of 64-digit hexadecimal block hashes, matching
+  [Monero's publisher](https://github.com/monero-project/monero/blob/v0.18.4.3/src/rpc/zmq_pub.cpp).
+  Short and long frames are bounded to 64 KiB. Partial, multipart, malformed and unrelated
+  messages cannot pass; silence and failed observations fail the row rather than skip it.
+  The 900-second ceiling allows time for a new block; a healthy node can still fail this
+  observation if no block arrives within the window. Each invocation observes the configured
+  endpoint anew and returns as soon as it receives a valid notification. This is a separate
   assertion from "Monero is synced" because the sync check cannot fail for a node that can never
   publish: an `--offline` monerod reports `status: OK` with `target_height: 0`, which satisfies
   both halves of the caught-up predicate. Nothing downstream covered the gap either — p2pool's
@@ -1544,6 +1548,11 @@ artifact's page arithmetic and the row's place in `run.sh`, drives the reduced-t
 against fixture pin files (fitting exactly, missing by one page, unreadable, empty, absent, and
 against the checked-out repo's own `os/overlay/pithead-hugepages`), and reads a live stand-in
 process through the sample snippet so the `/proc` parsing is exercised on the CI host.
+`selftest-zmq-block.sh` exercises the block observer over loopback with complete short and long
+frames, unrelated traffic, silence, malformed JSON, invalid block fields, truncated frames,
+invalid flags and oversized lengths. Failed transport cannot turn valid-looking output into
+positive coverage. The standalone selftest runs through the integration selftest glob in CI.
+
 `selftest-zmq-probe.sh` drives the ZMTP verdicts from captured and hand-built wire fixtures,
 so every failure class — a silent peer, a non-ZMQ listener, a ZMTP peer that is not a publisher, a
 READY frame carrying a decoy `Socket-Type` value — is reachable with no socket and no stack. It
