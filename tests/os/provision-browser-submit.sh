@@ -79,7 +79,6 @@ provision_node_preflight() { # <ip> <jar> <host> <reason> <error-substring> <lab
         return 1
     fi
 }
-# POST a control request and follow its result through dashboard restarts.
 dashboard_curl() {
     local auth="${DASH_USER}:${DASH_PASS}"
     case "$auth" in *$'\n'* | *$'\r'*) return 1 ;; esac
@@ -87,12 +86,10 @@ dashboard_curl() {
     auth=${auth//\"/\\\"}
     curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
-# Poll results omit the id. Reattach the resolved POST id for every verb, including backup,
-# whose POST always returns 202 and whose terminal result arrives only through polling.
-control_result_stamp_id() { # <result-json> <id>
+control_result_stamp_id() {
     printf '%s' "$1" | jq -c --arg id "$2" '. + {id:$id}' 2>/dev/null || printf '%s' "$1"
 }
-dashboard_control_request() { # <route> <json-body> [deadline-seconds]
+dashboard_control_request() {
     local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code crc=0
     out=$(control_request_post "$route" "$body" "$deadline") || crc=$?
     if [ "$crc" -eq 7 ]; then
@@ -103,8 +100,6 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
         response_code=${out##*$'\n'}
         if [[ $response_code =~ ^[0-9]{3}$ ]]; then
             out=${out%$'\n'*}
-            # curl's 000 and a proxy's 5xx can follow an accepted request while the dashboard
-            # restarts. A received 4xx is a definite refusal; the caller id is otherwise pollable.
             case "$response_code" in 000 | 2* | 5*) ;; *)
                 control_request_guest_evidence
                 return 1
@@ -112,7 +107,6 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
             esac
         fi
         if [[ $response_code =~ ^5 ]]; then
-            # A failing proxy can name another request; the fresh preview id in the caller wins.
             out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
         else
             rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
@@ -123,7 +117,6 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     else
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
-    # An explicit server refusal has no id and must stay fast rather than polling a deadline out.
     [ -n "$rid" ] || {
         control_request_guest_evidence
         return 1
@@ -131,8 +124,6 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
-        # The control API can acknowledge a queued request before the root runner starts it.
-        # `accepted` still carries the request id, so it is a polling state, not a verdict.
         pending | accepted | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
             control_result_stamp_id "$out" "$rid"

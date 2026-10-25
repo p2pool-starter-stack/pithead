@@ -22,7 +22,7 @@ control_request_evidence() { # <route> <stage> <curl-rc> <response-with-HTTP-foo
         2>/dev/null | sed 's/^/  control request: /' >&2
 }
 
-control_request_post() { # <route> <body> <deadline>
+control_request_post() {
     local route="$1" body="$2" deadline="$3" out http crc=0 attempts=0 cap=45 remaining
     while :; do
         crc=0
