@@ -796,11 +796,22 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   dial is refused, and doctor names the hold. Then `docker compose start`, `docker compose up
   --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
   is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the nodes
-  running, `remove_lan_guard` refuses and the rule stays live. The restore proof records
-  `pithead-lan-guard.service` and `pithead-lan-hold.service` before the run and restores each one
-  plus `pithead-lan.timer` and its check service
-  as it does the egress units: a unit the run added is removed and checked absent, including from
-  the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
+  running, `remove_lan_guard` refuses and the rule stays live. Before a deploying run takes a
+  backup, captures wallets or deploys, the wrapper records the pre-run existence of the egress
+  boot unit and timer, both LAN boot units and the LAN timer. Each `systemctl` read has a
+  three-second timeout and one-second termination grace. Only a readable unit establishes
+  presence; only a successful `LoadState=not-found` read establishes absence. Unknown state
+  refuses deployment without running the restore mutation. Read-only `check` still assesses
+  the live stack. Fixed diagnostic classes distinguish transport failure, failed systemd reads,
+  unsupported load states and unavailable probe output; raw unit text and stderr are discarded.
+  The restore proof checks each saved variable against its capture record before any unit
+  removal, distinguishing missing capture evidence from state changed after capture. It restores
+  `pithead-lan-guard.service` and `pithead-lan-hold.service` plus `pithead-lan.timer` and its check
+  service as it does the egress units: a unit the run added is removed and checked absent,
+  including from the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
+  `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads, record loss,
+  diagnostic privacy and the pre-mutation refusal through the wrapper's real functions.
+  Historical unknown state remains unknown; current unit metadata cannot reconstruct it.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
 - Stratum password and TLS client controls run in the two `*-stratum-tls` scenarios (#3078).
