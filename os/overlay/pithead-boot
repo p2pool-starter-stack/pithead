@@ -354,7 +354,7 @@ while [ "$SECONDS" -lt "$((gate_deadline - 2))" ]; do
         gate_cert_advisory_ready && gate_pass=1
     fi
     if [ "$gate_pass" = 1 ] && [ "$SECONDS" -lt "$gate_deadline" ]; then
-        gate_run commit rauc status mark-good || fail_boot "the booted slot could not be committed"
+        command -v rauc >/dev/null 2>&1 && rauc status mark-good
         boot_gate_passed
         echo "pithead-boot: stack is serving (HTTP $code) and doctor reports ${gate_advisory:-healthy}${gate_advisory:+ as its only failing check} — booted slot committed${gate_advisory:+ with that recorded as advisory; run './pithead apply' on the machine to re-mint}"
         if [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then

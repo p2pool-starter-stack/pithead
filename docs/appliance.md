@@ -452,8 +452,8 @@ to the screen, serial console and journal, with a 16-minute health-gate deadline
 reminder to leave the machine powered on. The deadline starts after render and stack
 startup; it includes probes, certificate re-minting and pauses. Each diagnostic or
 re-mint command has a 30-second limit and a two-second forced-kill grace, shortened
-to the remaining deadline. The slot-commit command is bounded and checked too;
-a failed commit cannot publish success. A timed-out probe cannot commit a slot,
+to the remaining deadline. The deadline governs the health verdict and repairs,
+not RAUC's subsequent slot commit. A timed-out probe cannot commit a slot,
 and a failed Caddy restart must succeed before the next health verdict can pass.
 The rollback cause retains the probe name or unhealthy container. Console writes are
 best-effort, and a missing console does not stop the journal message or health gate.
