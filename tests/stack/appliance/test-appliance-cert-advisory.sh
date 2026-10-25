@@ -178,15 +178,11 @@ assert_eq "render failing on every round: the state stays failed and the advisor
     "$rf_out" "r1=failed r2=failed r3=failed r4=failed advisory_rc=1"
 
 echo "== unit: the gate loop commits on the advisory and the verdict carries it (#1265, static) =="
-# The loop and the commit block are below the sourcing boundary: asserted by ORDER — the re-mint,
-# then the advisory check, then the single commit condition, then the advisory console line —
-# and by the `updated` verdict's jq naming `advisory`. Mutation run: delete the advisory line ->
-# red; write the verdict without `advisory` -> red.
 BOOTSCRIPT="$ROOT/os/overlay/pithead-boot"
 bl_line() { grep -n -F -- "$1" "$BOOTSCRIPT" | head -1 | cut -d: -f1; }
 l_remint=$(bl_line '        gate_remint_cert || true')
 l_adv=$(bl_line '        gate_cert_advisory_ready && gate_pass=1')
-l_pass=$(bl_line '    if [ "$gate_pass" = 1 ]; then')
+l_pass=$(bl_line '    if [ "$gate_pass" = 1 ] && [ "$SECONDS" -lt "$gate_deadline" ]; then')
 l_say=$(bl_line "with that recorded as advisory; run './pithead apply' on the machine to re-mint")
 l_verdict=$(bl_line 'advisory:(if $a == "" then [] else [$a] end)')
 assert_eq "every anchor is present" \

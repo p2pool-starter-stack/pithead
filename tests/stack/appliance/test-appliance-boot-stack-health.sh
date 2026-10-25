@@ -132,13 +132,12 @@ assert_contains "the refusal names the missing healthcheck" "$_BSH_OUT" "no sing
 assert_contains "build-image applies the fault to the staged compose the slot ships" \
     "$(cat "$ROOT/os/build-image.sh")" "break_dashboard_healthcheck os/build/stage/docker-compose.yml || exit 1"
 echo "== unit: the boot curl pins every vhost to loopback and bypasses proxy environment =="
-_BSH_CURL=$(sed -n '/    read -r code size <<</,/gate_target.*2>\/dev\/null)/p' "$ROOT/os/overlay/pithead-boot")
 for _BSH_HOST in panel.example 192.0.2.5 2001:db8::1; do
     (
         source "$ROOT/os/overlay/pithead-boot-stack-health"
-        # shellcheck disable=SC2034 # read by the extracted production curl below.
+        # shellcheck disable=SC2034
         gate_target=$(gate_target_url https "$_BSH_HOST" 443)
-        # shellcheck disable=SC2034 # read by the extracted production curl below.
+        # shellcheck disable=SC2034
         gate_resolve_args=()
         gate_env_val() { printf fixture-auth-hash; }
         curl() {
@@ -146,7 +145,11 @@ for _BSH_HOST in panel.example 192.0.2.5 2001:db8::1; do
             cat >"$_BSH/curl-header"
             printf '401 0'
         }
-        eval "$_BSH_CURL"
+        timeout() {
+            shift 2
+            "$@"
+        }
+        gate_probe_dashboard
     )
     assert_contains "boot curl connects only to loopback" "$(cat "$_BSH/curl-args")" "::127.0.0.1:"
     assert_contains "boot curl bypasses environment proxies" "$(cat "$_BSH/curl-args")" "--noproxy"

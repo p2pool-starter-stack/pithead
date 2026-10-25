@@ -18,6 +18,25 @@ gate_run() {
     esac
     return "$result"
 }
+gate_probe_dashboard() {
+    local reply result=0
+    # shellcheck disable=SC2154
+    reply=$(gate_probe_header | gate_run dashboard curl --header @- -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
+        --noproxy '*' --connect-to '::127.0.0.1:' "${gate_resolve_args[@]}" "$gate_target" 2>/dev/null) || result=$?
+    read -r code size <<<"$reply"
+    if [ "$result" -ne 0 ]; then code=000 size=0; fi
+    case "$result" in
+    28 | 124 | 137) gate_timeout_reason=dashboard ;;
+    esac
+}
+gate_restart_caddy() {
+    if gate_run caddy-restart ${PITHEAD_CADDY_RESTART_CMD:-docker compose restart caddy} >/dev/null 2>&1; then
+        gate_remint_state=reminted
+    else
+        gate_remint_state=restart-pending
+        return 1
+    fi
+}
 boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason" (sync-held #31/#35 excluded)
     [ -s "$BOOT_STATUS_LOG" ] || return 0
     grep -E '(✗|⚠.*UNHEALTHY)' "$BOOT_STATUS_LOG" 2>/dev/null |
@@ -43,8 +62,8 @@ gate_answer_is_dashboard() { # <http_code> <size_download>
 
 gate_ready() {
     gate_answer_is_dashboard "$1" "$2" || return 1
+    if [ "${gate_remint_state:-}" = restart-pending ]; then gate_restart_caddy || return 1; fi
     local doctor_result=0
-    # shellcheck disable=SC2034 # read by pithead-boot's sourced main loop
     gate_doctor_ran=1
     gate_run doctor ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || doctor_result=$?
     case "$doctor_result" in

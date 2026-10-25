@@ -44,6 +44,9 @@ fail_boot() {
         echo "pithead-boot: health probe exceeded its time budget: $gate_timeout_reason" >&2
     fi
     status_problems=$(boot_status_blocking)
+    if [ "${gate_remint_state:-}" = restart-pending ]; then
+        status_problems="${status_problems}${status_problems:+$'\n'}container caddy: certificate restart failed"
+    fi
     [ -n "$status_problems" ] && printf '%s\n' "$status_problems" | sed 's/^/pithead-boot: held by /' >&2
     if [ -n "${OS_INFLIGHT:-}" ] && [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then
         local doctor_msgs='[]'
@@ -168,9 +171,8 @@ gate_remint_cert() {
         echo "pithead-boot: doctor reports the dashboard certificate does not cover a served name, but render minted no new certificate ($boot_remints/$BOOT_REMINT_MAX) — render and doctor disagree about the names; that is this machine's address list, not the slot, so the gate records it and commits"
         return 1
     fi
-    gate_remint_state=reminted
     echo "pithead-boot: re-minted the dashboard certificate for an address that arrived after render ($boot_remints/$BOOT_REMINT_MAX) — restarting Caddy so it serves it"
-    gate_run caddy-restart ${PITHEAD_CADDY_RESTART_CMD:-docker compose restart caddy} >/dev/null 2>&1 || true
+    gate_restart_caddy
 }
 
 gate_cert_advisory() { # -> 0 and doctor's coverage message in gate_advisory when the hold may commit
@@ -344,8 +346,7 @@ gate_attempt=0
 while [ "$SECONDS" -lt "$((gate_deadline - 2))" ]; do
     gate_attempt=$((gate_attempt + 1))
     gate_doctor_ran=0 gate_pass=0
-    read -r code size <<<"$(gate_probe_header | gate_run dashboard curl --header @- -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
-        --noproxy '*' --connect-to '::127.0.0.1:' "${gate_resolve_args[@]}" "$gate_target" 2>/dev/null)"
+    gate_probe_dashboard
     if gate_ready "${code:-000}" "${size:-0}"; then
         gate_pass=1
     elif [ "$gate_doctor_ran" = 1 ] && gate_blocked_only_by_cert; then
@@ -353,7 +354,7 @@ while [ "$SECONDS" -lt "$((gate_deadline - 2))" ]; do
         gate_cert_advisory_ready && gate_pass=1
     fi
     if [ "$gate_pass" = 1 ] && [ "$SECONDS" -lt "$gate_deadline" ]; then
-        command -v rauc >/dev/null 2>&1 && rauc status mark-good
+        gate_run commit rauc status mark-good || fail_boot "the booted slot could not be committed"
         boot_gate_passed
         echo "pithead-boot: stack is serving (HTTP $code) and doctor reports ${gate_advisory:-healthy}${gate_advisory:+ as its only failing check} — booted slot committed${gate_advisory:+ with that recorded as advisory; run './pithead apply' on the machine to re-mint}"
         if [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then
