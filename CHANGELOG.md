@@ -15,10 +15,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 Pithead 2.0.1 is the first patch release after 2.0.0. It keeps the dashboard certificate you already
 trust across an appliance update, makes `pithead status` and `pithead doctor` report a container
-that keeps restarting, fixes appliance setup, restore and Set up again paths that could leave the
-setup page up, skip a rig's settings or keep a coordinator from returning to service, and clears the
-image-scan findings raised since 2.0.0. It changes no configuration keys and no component version,
-and runs no data migration. Entries below apply to both channels unless they say otherwise.
+that keeps restarting, makes an updated appliance run the images of its new version, fixes
+appliance setup, restore and Set up again paths that could leave the setup page up, skip a rig's
+settings or keep a coordinator from returning to service, and clears the image-scan findings raised
+since 2.0.0. It changes no configuration keys and no component version, and runs no data migration.
+Entries below apply to both channels unless they say otherwise.
 
 ### Changed
 
@@ -28,9 +29,9 @@ and runs no data migration. Entries below apply to both channels unless they say
   first source fails to transfer, tries a second official source. The pinned SHA-256 is still
   checked before the archive is accepted (#3477).
 - Base images and dependencies refreshed: the Ubuntu base digest of the Monero, P2Pool and
-  xmrig-proxy images (#3313), and aiohttp 3.14.5 in the dashboard (#3470). Caddy 2.11.7 is pinned
-  to the rebuild upstream published on 2026-10-21: the same Caddy release on a newer Alpine 3.23
-  base.
+  xmrig-proxy images (#3313), and aiohttp 3.14.5 with yarl 1.25.1 in the dashboard (#3470). Caddy
+  2.11.7 is pinned to the rebuild upstream published on 2026-10-21: the same Caddy release on a
+  newer Alpine 3.23 base.
 
 ### Fixed
 
@@ -40,11 +41,18 @@ and runs no data migration. Entries below apply to both channels unless they say
   could not reconnect. The appliance now keeps the existing certificate and key while they cover
   every current name. A new address or hostname that the certificate does not cover, or a damaged
   or mismatched pair, still gets a new certificate.
+- **An appliance update runs the containers on the images of its new version (#3593).** After an
+  update, the dashboard container could keep running an image other than the one the new version
+  ships, so the update committed and answered healthy while the dashboard's fixes were not applied.
+  Starting the stack on the appliance now compares every container's image with the one its Compose
+  file declares and recreates a container that differs. If the comparison or the recreation fails,
+  the start fails before the new version commits. DIY installs are unchanged.
 - **`pithead status` and `pithead doctor` report a container that keeps restarting as unhealthy
   (#3391).** Podman, which the appliance uses, has no `restarting` state, so a crash-looping
   service could read as running between exits. Both commands now compare two reads taken three
   seconds apart and fail on a restarting state, a rising restart count or a changed start time, on
-  Docker and on Podman. Intentional sync and migration holds are not flagged.
+  Docker and on Podman. Intentional sync and migration holds are not flagged. The appliance's boot
+  health gate does not run this check and keeps its 2.0.0 behavior (#3622).
 - A Configuration change rejected before anything was written (a stale preview, a missing confirmation) is now reported as not applied or saved, not as "saved but is not running" (#3376).
 - The dashboard's Connect a miner card and the Workers Alive hint follow the stratum bind: a
   loopback-only listener is shown as local connections only, and a specific bind address is shown
@@ -83,8 +91,8 @@ and runs no data migration. Entries below apply to both channels unless they say
 
 ### Known issues in 2.0.1
 
-These three ship in 2.0.1 and are planned for 2.0.2. The known issues listed for 2.0.0 still apply,
-except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
+These three ship in 2.0.1. The first two are planned for 2.0.2. The known issues listed for 2.0.0
+still apply, except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
   boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot (#3375).
@@ -94,8 +102,8 @@ except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
   `./pithead apply` once, then `./pithead restart`. A restore from the setup wizard is not affected
   (#3432).
 - The appliance does not boot with Secure Boot on: the firmware refuses its unsigned bootloader.
-  Turn Secure Boot off in the firmware before you boot the stick, as the install guide says. 2.0.0
-  has the same limitation (#2187).
+  Secure Boot is not supported and no signing work is planned. Turn Secure Boot off in the firmware
+  before you boot the stick, as the install guide says. 2.0.0 has the same limitation (#2187).
 
 ## [2.0.0] - 2026-10-13
 
