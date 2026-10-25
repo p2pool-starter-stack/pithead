@@ -48,8 +48,6 @@ phase_update_healthgate_leg() {
         bad "leg 5: expected v3fault booted after install, got '${marker:-none}'"
         return
     }
-    # The gate loops up to 90x10s before rebooting itself once (#1065) — bound generously for that
-    # plus image loading and stack start on the fallback slot.
     fdeadline=$(($(date +%s) + 1800))
     fmarker=""
     while [ "$(date +%s)" -lt "$fdeadline" ]; do
@@ -61,6 +59,21 @@ phase_update_healthgate_leg() {
         ok "leg 5: FALLBACK — the unhealthy dashboard held the gate and the guest fell back to v2"
     else
         bad "leg 5: expected the guest back on v2 after the fault boot's gate refusal, got '${fmarker:-none}' (30 min bound)"
+    fi
+    if _ssh "journalctl -u pithead-boot -b -1 -o short-monotonic --no-pager 2>/dev/null" | awk '
+        /pithead-boot: health gate started; deadline 960 seconds/ {
+            stamp = $0; sub(/^[[] */, "", stamp); sub(/].*/, "", stamp)
+            started = stamp + 0; have_start = 1
+        }
+        /pithead-boot: the stack never became healthy \(serving \+ doctor \+ status\)/ {
+            stamp = $0; sub(/^[[] */, "", stamp); sub(/].*/, "", stamp)
+            finished = stamp + 0; have_finish = 1
+        }
+        END { exit !(have_start && have_finish && finished >= started && finished - started <= 965) }
+    '; then
+        ok "leg 5: the unhealthy gate refused within its 960-second deadline (5-second journal tolerance)"
+    else
+        bad "leg 5: the unhealthy gate missed its 960-second deadline or retained no timing evidence"
     fi
     if tail -c "+$((fserial_mark + 1))" "$SERIAL" | grep -F 'Pithead is still starting (' | grep -F 'of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself.' >/dev/null; then
         ok "leg 5: the fault boot's serial console reports health-gate progress and automatic update fallback"

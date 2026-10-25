@@ -545,6 +545,14 @@ Tor-isolation probe fails on this channel while discarding its own diagnostics, 
 unreadable from here — #2444, which needs the probe to report what it saw before anyone decides what
 the failure means.
 
+The boot health gate has a 960-second elapsed-time deadline after stack startup.
+`tests/os/selftest-boot-gate-deadline.sh`, discovered by `make test-integration-selftest`,
+exercises stuck diagnostics, partial timed-out verdicts, unhealthy status with exit zero,
+certificate-render timeouts, late success and healthy commit through the production loop.
+The KVM `update` phase's leg 5 requires unattended fallback and retained previous-boot
+journal timing within 960 seconds plus five seconds of journal tolerance. The
+`provision` phase also exercises same-version migration and data-floor fallback.
+
 | Situation | Trigger | Tier |
 |---|---|---|
 | Wizard Q&A → `config.json`, spool round-trips, token gate, error re-display | `dashboard/tests/web/test_wizard_*.py` (pytest) + `dashboard/tests/frontend/wizard/wizard*.test.mjs` (node) | 1 ✅ |

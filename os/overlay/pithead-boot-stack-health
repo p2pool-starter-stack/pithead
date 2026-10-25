@@ -1,8 +1,23 @@
 # shellcheck shell=bash
-# pithead-boot's stack-health signal (#2383), split from pithead-boot at its file-budget ceiling,
-# and the URL helpers gate_url builds the dashboard probe with (#1140), split the same way.
-# `status` prints credentials and the remote-access address, so its transient record is 0600.
+# shellcheck disable=SC2034
 BOOT_STATUS_LOG=/run/pithead-boot-status.log
+BOOT_GATE_WAIT_SECONDS=960
+BOOT_GATE_PROBE_SECONDS=30
+gate_timeout_reason=''
+gate_run() {
+    local probe=$1 budget=$BOOT_GATE_PROBE_SECONDS result=0 remaining
+    shift
+    if [ -n "${gate_deadline:-}" ]; then
+        remaining=$((gate_deadline - SECONDS - 2))
+        [ "$remaining" -gt 0 ] || { gate_timeout_reason=$probe; return 124; }
+        [ "$budget" -le "$remaining" ] || budget=$remaining
+    fi
+    timeout --kill-after=2 "$budget" "$@" || result=$?
+    case "$result" in
+    124 | 137) gate_timeout_reason=$probe ;;
+    esac
+    return "$result"
+}
 boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason" (sync-held #31/#35 excluded)
     [ -s "$BOOT_STATUS_LOG" ] || return 0
     grep -E '(✗|⚠.*UNHEALTHY)' "$BOOT_STATUS_LOG" 2>/dev/null |
@@ -10,9 +25,11 @@ boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason"
 }
 boot_status() {
     install -m 600 /dev/null "$BOOT_STATUS_LOG" || return 1
-    ./pithead status >"$BOOT_STATUS_LOG" 2>&1
+    gate_run status ./pithead status >"$BOOT_STATUS_LOG" 2>&1
 }
-boot_status_ready() { boot_status && ! grep -q 'health check pending' "$BOOT_STATUS_LOG"; }
+boot_status_ready() {
+    boot_status && ! grep -q 'health check pending' "$BOOT_STATUS_LOG" && [ -z "$(boot_status_blocking)" ]
+}
 
 # Did that answer come from the DASHBOARD, or from Caddy answering for a Host it has no site for?
 # The default vhost's reply is 200 with a zero-length body. Everything the dashboard vhost produces
@@ -24,12 +41,16 @@ gate_answer_is_dashboard() { # <http_code> <size_download>
     [ "$1" = "401" ] || [ "${2:-0}" -gt 0 ]
 }
 
-# ALL THREE signals, paired in one place (#852, #2383) so a grep-only assertion cannot go stale.
-gate_ready() { # <http_code> <size_download>
+gate_ready() {
     gate_answer_is_dashboard "$1" "$2" || return 1
+    local doctor_result=0
     # shellcheck disable=SC2034 # read by pithead-boot's sourced main loop
     gate_doctor_ran=1
-    ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || return 1
+    gate_run doctor ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || doctor_result=$?
+    case "$doctor_result" in
+    124 | 137) gate_doctor_ran=0; return 1 ;;
+    esac
+    [ "$doctor_result" -eq 0 ] || return 1
     boot_status_ready
 }
 
