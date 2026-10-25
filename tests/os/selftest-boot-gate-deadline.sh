@@ -165,6 +165,8 @@ status) printf 'healthy\n' ;;
 esac
 HEALTHY
     chmod +x pithead
+    if gate_ready 000 0; then fail 'an unavailable dashboard committed after restart'; fi
+    [ "$gate_remint_state" = reminted ] || fail 'an unavailable dashboard prevented Caddy restart recovery'
     gate_ready 200 10 || fail 'a recovered Caddy restart still prevented commit'
     [ "$gate_remint_state" = reminted ] || fail 'a successful restart did not clear its pending state'
 )
