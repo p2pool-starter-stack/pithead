@@ -95,6 +95,13 @@ phase_reset() {
         return
     fi
 
+    if _ssh 'cd /data/pithead && bash -s' <"$SCRIPT_DIR/../integration/lib/restore-dashboard-guest.sh"; then
+        ok "CLI restore refreshes dashboard configuration and running energy cost (#3432)"
+    else
+        bad "CLI restore leaves dashboard configuration or running energy cost stale (#3432)"
+        return
+    fi
+
     # leg 0 (#2347): config-reset must keep chains and the onion address, clear the config, and
     # re-arm the wizard — on the SAME provisioned guest, before leg 1 wipes it.
     if _phase_reset_config; then

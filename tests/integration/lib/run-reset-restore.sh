@@ -1,5 +1,31 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+run_restore_dashboard_probe() {
+    local before_config before_secrets before_tari after_config after_secrets after_tari probe_rc=0
+    if ! before_config=$(rx 'sha256sum config.json') || [ -z "$before_config" ] ||
+        ! before_secrets=$(upgrade_secret_fingerprints) || [ -z "$before_secrets" ] ||
+        ! before_tari=$(env_on_box TARI_MODE) || [ -z "$before_tari" ]; then
+        it_fail "restore probe captures the original Tari baseline (#3432)" "configuration, secrets or Tari mode unreadable"
+        return 1
+    fi
+    if rx 'bash -s' --stdin <"$(dirname "${BASH_SOURCE[0]}")/restore-dashboard-guest.sh" 2>&1 |
+        redact >"$OUT_DIR/restore-dashboard.log"; then
+        it_pass "CLI restore refreshes dashboard configuration and running energy cost (#3432)"
+    else
+        it_fail "CLI restore refreshes dashboard configuration and running energy cost (#3432)" "see restore-dashboard.log"
+        probe_rc=1
+    fi
+    if ! after_config=$(rx 'sha256sum config.json') || [ "$after_config" != "$before_config" ] ||
+        ! after_secrets=$(upgrade_secret_fingerprints) || [ "$after_secrets" != "$before_secrets" ] ||
+        ! after_tari=$(env_on_box TARI_MODE) || [ "$after_tari" != "$before_tari" ] ||
+        ! wait_status_ok 240; then
+        it_fail "restore probe returns the original healthy Tari baseline (#3432)" "configuration, secrets, Tari mode or readiness differs"
+        return 1
+    fi
+    it_pass "restore probe returns the original healthy Tari baseline (#3432)"
+    return "$probe_rc"
+}
+
 # The ordinary CLI recovery door, using real Compose containers and a real encrypted backup.
 # RESET_RESTORE_STACK_INTACT=1 on return marks a failure that changed nothing, so run_lifecycle can
 # go on and the phases after it still run (#3342).
