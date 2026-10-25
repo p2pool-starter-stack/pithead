@@ -371,7 +371,7 @@ boot_progress_case() (
     BOOT_GATE_WAIT_SECONDS=960 code=503 size=1
     probe_seconds="$2"
     gate_probe_dashboard() { :; }
-    gate_run() { :; }
+    rauc() { :; }
     pass_at="$1"
     gate_ready() { ((SECONDS += probe_seconds, gate_attempt == pass_at)); }
     sleep() { SECONDS=$((SECONDS + $1)); }
