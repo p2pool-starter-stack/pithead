@@ -322,6 +322,11 @@ preflight() {
     require_release_toolchain
     apply_signing_defaults
     resolve_signing
+    if [ "${PITHEAD_REHEARSAL:-0}" != 1 ]; then
+        [ "$COSIGN_ENABLED" -eq 1 ] || die "A complete release draft requires cosign signatures."
+        command -v gh >/dev/null 2>&1 || die "gh is required to create a complete release draft."
+        require_appliance_inputs
+    fi
     check_verifier_image
 
     bash "$REPO_ROOT/scripts/release/resolve-pins.sh" ||
