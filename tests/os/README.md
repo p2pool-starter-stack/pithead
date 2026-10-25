@@ -411,7 +411,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   password. Fixture setup authenticates without submissions and disconnects to retain a
   numeric zero accepted counter; refused clients create no worker row. Correct-pin TLS and
   same-port cleartext must each produce a new proxy-owned accepted share within 600 seconds.
-  `selftest-stratum-controls.sh` checks miner lifecycle, counters, pinning and suite dispatch.
+  The scenario uses the appliance's enabled local miner without a borrowed-rig credential
+  transport. The shared gate verifies appliance identity and the enabled miner before apply;
+  a named borrowed rig still requires runner-owned handoff and exact credential restoration.
+  `selftest-stratum-controls.sh` checks miner lifecycle, counters, pinning, suite dispatch and
+  the authenticated appliance scenario boundary with mining assertions enabled.
   The probe reads XMRig's private `log-file`, separate from stdout: the pinned binary disables
   console output when stdout is a regular file. The fixture reproduces that behavior.
   The first live remote-node

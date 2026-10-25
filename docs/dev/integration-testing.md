@@ -807,7 +807,12 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   A fingerprint with one nibble changed must fail before login; the correct pin and cleartext
   must both receive jobs on the same port. On the appliance, the shipped XMRig additionally
   proves explicit password and fingerprint errors and a new accepted share in each positive
-  arm. Channel selection requires a successful, explicit appliance or DIY result; CLI source,
+  arm. Authenticated scenarios require the runner-owned credential handoff and exact restore
+  for borrowed miners. The appliance's own miner needs no borrowed-rig transport: before
+  applying configuration, the harness requires `local_miner.enabled=true`, no borrowed-rig
+  name or host, and successful appliance identification. Mining assertions remain enabled.
+  Missing miner configuration or failed identification retains the credential transport guard.
+  Channel selection requires a successful, explicit appliance or DIY result; CLI source,
   transport and unknown-result failures fail the control before either probe runs.
   An unconfigured XMRig password defaults to `x`; the raw probe separately omits the
   password member. Test credentials and miner logs stay in a private temporary directory,
