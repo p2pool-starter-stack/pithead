@@ -46,7 +46,7 @@ Entries below apply to both channels unless they say otherwise.
   ships, so the update committed and answered healthy while the dashboard's fixes were not applied.
   Starting the stack on the appliance now compares every container's image with the one its Compose
   file declares and recreates a container that differs. If the comparison or the recreation fails,
-  the start fails before the new version commits. DIY installs are unchanged.
+  the start fails. DIY installs are unchanged.
 - **`pithead status` and `pithead doctor` report a container that keeps restarting as unhealthy
   (#3391).** Podman, which the appliance uses, has no `restarting` state, so a crash-looping
   service could read as running between exits. Both commands now compare two reads taken three
