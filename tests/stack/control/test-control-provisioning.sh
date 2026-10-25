@@ -123,7 +123,7 @@ pci_run() { # <owner-dir|-|garbage> <run-dir> [steal-env] [fn-arg] — seed a se
         # Record instead of executing — into a side file, because the install branch redirects
         # `sudo tee`'s stdout to /dev/null, so an echoing stub would be invisible there.
         sudo() { echo "sudo:$*" >>"$PCI/calls"; }
-        PITHEAD_UNIT_DIR="$PCI/units" DASHBOARD_CONTROL_ENABLED=true \
+        PITHEAD_UNIT_DIR="$PCI/units" DASHBOARD_CONTROL_ENABLED="${5:-true}" TOR_AUTO_HEAL="${6:-false}" \
             CONTROL_DIR="$2/data/control" PITHEAD_STEAL_CONTROL_UNITS="${3:-0}" \
             provision_control_runner ${4:+"$4"} 2>&1
         cat "$PCI/calls" 2>/dev/null
@@ -149,6 +149,10 @@ assert_contains "install: own drifted unit -> converged (rewritten in place)" \
     "$(pci_run "$PCI/mine" "$PCI/mine")" "sudo:tee $PCI/units/pithead-control.service"
 assert_contains "install: no units at all -> fresh install unaffected by the guard" \
     "$(pci_run - "$PCI/mine")" "sudo:tee $PCI/units/pithead-control.service"
+assert_contains "install: No login with auto-heal installs the restricted runner" \
+    "$(pci_run - "$PCI/mine" 0 '' false true)" "sudo:tee $PCI/units/pithead-control.service"
+assert_not_contains "install: No login with auto-heal off installs no runner" \
+    "$(pci_run - "$PCI/mine" 0 '' false false)" "sudo:tee"
 unset PCI pci_run out
 
 echo "== unit: the rendered control unit PINS the engine it was provisioned with (#2059) =="
