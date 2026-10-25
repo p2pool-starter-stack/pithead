@@ -13,6 +13,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- Tor auto-heal now works on **No login** appliances through a host-restricted healing channel. General dashboard control remains disabled, and state recovery retains its evidence, onion-identity, lock and six-hour cooldown checks (#3166).
 - XvB sync regression tests now check real stored stats, reward estimates and raffle wins. Failed fetches and unparseable round aggregates must retain the last good readings and freshness timestamps; a local failure-count update remains allowed (#3056).
 - A Configuration change rejected before anything was written (a stale preview, a missing confirmation) is now reported as not applied or saved, not as "saved but is not running" (#3376).
 

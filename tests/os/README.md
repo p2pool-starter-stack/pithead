@@ -35,14 +35,30 @@ no unexpected-abort message or debug advice. `selftest-tor-recovery-refusal.sh` 
 this guest script against the generated CLI and a pre-fix dispatch negative control,
 without a container or guest. The live result requires a KVM job on the PR head.
 
-The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
-It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes
-with it enabled. It requires the first-round diagnosis within 25 minutes, a host recovery
-result, a saturated state backup, cleared new state, unchanged onion keys and healthy Tor.
-The guest discovers its dashboard network's IPv4 gateway through Podman network inspection
-for a guest-local alert sink. It restores its original config and state on exit, copying
-state only after Tor stops. Failures report the current stage, bounded command logs and
-the restoration result separately from the test result; no shared Tor is poisoned.
+The opt-in `tor-heal` phase provisions a local-node guest and disables Tor networking
+through an unsaved control setting. It retains the production timers: 90 minutes with
+auto-heal disabled, then up to 110 minutes with it enabled. Submit this phase with the supported bench-ci
+`--timeout-minutes 240` budget so provisioning and both observation windows fit. The enabled
+window includes the two five-minute recovery-confirmation probes after the final restart;
+the production cadence and cooldown remain unchanged.
+Both legs use **No login**,
+with general dashboard control disabled. The disabled leg requires broken real egress,
+unchanged Tor and Monero start times read directly as Podman epoch seconds, and no
+applied healing actions. The enabled leg
+requires rejection of unrelated requests, two audited host-runner NEWNYM results, and
+the healer's final Tor and Monero restart. Only that restart lifts the enabled fault;
+the test requires restored SOCKS egress, healthy Monero with outgoing peers, a confirmed
+recovery notification, and unchanged onion keys. The loopback alert sink stays reachable
+from the host-network dashboard throughout the outage.
+
+This case proves ordinary egress recovery, not saturated-history recovery. Tor repairs
+the synthetic all-abandoned history before healing observations in the failed KVM jobs
+tracked by bench-ci#2148. Saturation, sustained evidence, locking, onion-key verification
+and the persistent six-hour recovery cooldown remain covered by the host fixtures.
+The guest restores its original config and restarts Tor on exit without rewriting its
+history. A recovery failure captures individual predicate readings, the host Tor-action
+audit and filtered healer logs before cleanup. Failures report the current stage,
+bounded command logs and the restoration result separately from the test result. No shared Tor is faulted.
 
 It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 
@@ -321,7 +337,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   `selftest-rig-share-power-cut.sh` exercises recovery polling, worker identity, credential
   transport, cleanup and the real harness’s PASS/FAIL accounting without guests.
   A bench with no reserved remote Monero node counts the share and power-cut checks as `missing` leg skips, using
-  the same inputs as the `stack` phase.
+  the same inputs as the `stack` phase. The final "Set up again" leg submits
+  `role=pithead` to select the coordinator without a local miner, then requires the
+  `pithead` role marker, coordinator config creation and removal of rig data.
+  `selftest-setup-again-coordinator.sh` exercises that POST and rejects a `both`
+  marker with fake transport; the real transition runs in the `rig` phase.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
@@ -411,7 +431,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   password. Fixture setup authenticates without submissions and disconnects to retain a
   numeric zero accepted counter; refused clients create no worker row. Correct-pin TLS and
   same-port cleartext must each produce a new proxy-owned accepted share within 600 seconds.
-  `selftest-stratum-controls.sh` checks miner lifecycle, counters, pinning and suite dispatch.
+  The scenario uses the appliance's enabled local miner without a borrowed-rig credential
+  transport. The shared gate verifies appliance identity and the enabled miner before apply;
+  a named borrowed rig still requires runner-owned handoff and exact credential restoration.
+  `selftest-stratum-controls.sh` checks miner lifecycle, counters, pinning, suite dispatch and
+  the authenticated appliance scenario boundary with mining assertions enabled.
   The probe reads XMRig's private `log-file`, separate from stdout: the pinned binary disables
   console output when stdout is a regular file. The fixture reproduces that behavior.
   The first live remote-node

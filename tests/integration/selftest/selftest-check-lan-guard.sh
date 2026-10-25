@@ -24,7 +24,6 @@ command_not_found_handle() {
     return 127
 }
 
-# These assertions belong to other selftests. Here only the routing of side effects matters.
 for fn in it_pass it_fail it_log it_skip_leg assert_eq assert_rc assert_contains assert_num_gt \
     assert_num_ge assert_onion_targets assert_pool_type assert_mining_state assert_tari_synced_required \
     assert_zmq_publishes assert_mergemine_roundtrip assert_egress_dial_pair \
@@ -40,6 +39,7 @@ running_services() { :; }
 api_state() { echo '{}'; }
 monero_caught_up() { return 0; }
 zmq_pub_probe() { :; }
+assert_zmq_block() { echo "block $*" >>"$TRACE"; }
 pool_label() { echo Main; }
 secret_fingerprint() { echo state-complete >>"$TRACE"; }
 pithead() {
@@ -66,6 +66,7 @@ for config in \
     : >"$TRACE"
     assert_current_state
     [ "$(cat "$TRACE")" = "pithead status
+block 127.0.0.1 18083
 state-complete" ] || {
         echo 'current-state check reached a LAN probe, destructive exercise or apply' >&2
         cat "$TRACE" >&2
@@ -77,6 +78,7 @@ echo "== deploying scenarios retain every LAN probe and recovery exercise =="
 : >"$TRACE"
 assert_scenario lan "$BASELINE_CONFIG"
 [ "$(cat "$TRACE")" = "pithead status
+block 127.0.0.1 18083
 state-complete
 probe 198.51.100 18081
 probe 10.254.254 18081
@@ -97,6 +99,7 @@ pithead apply -y" ] || {
 : >"$TRACE"
 assert_scenario no-lan '{}'
 [ "$(cat "$TRACE")" = "pithead status
+block 127.0.0.1 18083
 state-complete
 pithead apply -y" ] || {
     echo 'scenario without LAN ports ran LAN guard exercises' >&2
