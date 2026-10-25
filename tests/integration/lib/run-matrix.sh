@@ -165,12 +165,16 @@ run_scenario() {
         return 0
     fi
     if [ "$SKIP_MINING_ASSERTS" != 1 ] && [ -n "$(jq_get "$config" '.p2pool.stratum_password // empty')" ]; then
-        if [ "${CI_RIG_RECOVERY_HOLD:-0}" != 1 ] || [ -z "${IT_BORROW_REARM_REQUEST:-}" ] ||
-            [ -z "${IT_BORROW_REARM_ACK:-}" ] || [ -z "${IT_BORROW_REARM_TOKEN:-}" ]; then
-            it_fail "authenticated scenario has a reserved miner credential transport" "use the e2e controller with its runner-owned recovery hold; no configuration was changed"
-            return 0
+        if [ -n "${RIG_NAME:-}${RIG_HOST:-}" ] ||
+            [ "$(jq_get "$config" '.local_miner.enabled == true')" != true ] ||
+            ! rx 'source ./pithead >/dev/null && is_appliance' >/dev/null 2>&1; then
+            if [ "${CI_RIG_RECOVERY_HOLD:-0}" != 1 ] || [ -z "${IT_BORROW_REARM_REQUEST:-}" ] ||
+                [ -z "${IT_BORROW_REARM_ACK:-}" ] || [ -z "${IT_BORROW_REARM_TOKEN:-}" ]; then
+                it_fail "authenticated scenario has a reserved miner credential transport" "use the e2e controller with its runner-owned recovery hold; no configuration was changed"
+                return 0
+            fi
+            stratum_rearmed=1
         fi
-        stratum_rearmed=1
     fi
     push_config "$config"
 
