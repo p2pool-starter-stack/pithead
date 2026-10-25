@@ -397,7 +397,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   (podman through the docker shim, read-only root, `/data/pithead`, the control runner as a systemd
   unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
   --auth-fail-closed` against the `remote-main-secure-tari` scenario, then
-  `remote-main-stratum-tls`. The latter runs the shipped XMRig against the guest proxy: wrong
+  `remote-main-stratum-tls`. Each invocation receives the wizard handoff password through
+  `IT_DASHBOARD_PASSWORD`, scoped to the harness process. The authenticated `/metrics` probe
+  sends it to curl through stdin configuration; it never enters shell, SSH or curl arguments.
+  Missing input remains a counted `missing` skip; an incorrect login fails the metrics assertion,
+  and a failed harness invocation fails its battery row. `selftest-stack-credentials.sh` exercises
+  the launch boundary, metrics assertion, credential scope and failure propagation.
+  The latter scenario runs the shipped XMRig against the guest proxy: wrong
   and unconfigured passwords and a changed TLS pin must be refused with no job, active
   connection or accepted share for 120 seconds each. A separate raw probe omits the wire
   password. Fixture setup authenticates without submissions and disconnects to retain a
