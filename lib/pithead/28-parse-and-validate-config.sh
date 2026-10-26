@@ -1,6 +1,7 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
     validate_config_document
+    validate_webhook_config
 
     validate_config_control_characters
 
