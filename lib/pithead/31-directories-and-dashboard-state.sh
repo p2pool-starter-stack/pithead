@@ -15,9 +15,6 @@ prepare_control_dirs() {
         os_state_write "$CONTROL_DIR" '{"step":"idle"}'
     fi
     render_masked_config "$CONTROL_DIR"
-    # Caddy access-log dir (#349): root-owned so the capability-stripped caddy container (uid 0,
-    # no CAP_DAC_OVERRIDE) can write it; the dashboard (uid 1000) reads it via a ro mount — the
-    # Caddyfile's `mode 0644` keeps the files readable.
     mkdir -p "$CADDY_LOG_DIR"
     ensure_owner "$CADDY_LOG_DIR" 0 0
 }

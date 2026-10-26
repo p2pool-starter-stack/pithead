@@ -1,4 +1,3 @@
-# Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
 .PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-bridge-awk test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
