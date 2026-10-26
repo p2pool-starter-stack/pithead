@@ -93,9 +93,9 @@ esac
             port = listener.getsockname()[1]
         self.assertEqual(self.probe(port).returncode, 0)
 
-    def test_specific_bind_conflicts_with_wildcard_listener(self):
+    def test_specific_bind_conflicts_with_matching_listener(self):
         with socket.socket() as listener:
-            listener.bind(("0.0.0.0", 0))
+            listener.bind(("127.0.0.1", 0))
             listener.listen()
             result = self.probe(listener.getsockname()[1], bind="127.0.0.1")
             self.assertEqual(result.returncode, 1, result.stderr)
@@ -107,7 +107,7 @@ esac
             port = listener.getsockname()[1]
         self.assertEqual(self.probe(port).returncode, 0)
         with socket.socket() as listener:
-            listener.bind(("0.0.0.0", port))
+            listener.bind(("127.0.0.1", port))
             listener.listen()
             result = self.probe(port, action="commit")
             self.assertEqual(result.returncode, 1, result.stderr)
