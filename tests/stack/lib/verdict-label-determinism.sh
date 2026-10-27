@@ -125,6 +125,7 @@ test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
 test-appliance-reset-slot.sh|rs_case
 test-appliance-rig-config-merge.sh|rcm_invalid
+test-cli.sh|first_run_case
 test-config-document.sh|raw
 test-config-document.sh|verb
 test-config.sh|2
@@ -139,6 +140,7 @@ test-control-core.sh|reowned
 test-control-diagnostics.sh|_c
 test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
+test-control-editable-allowlist.sh|inactive_guidance
 test-control-editable-allowlist.sh|k
 test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT

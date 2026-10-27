@@ -13,9 +13,6 @@ run_cli_wizard_defaults() {
         return 1
     }
     run_cli_wizard_eof "$monero" "$tari" || return 1
-    # The Tari question is answered explicitly (2 = the bundled node): Enter now means off (#3333),
-    # and toggling Tari off then on here is the recreate path behind #3300. Its Tari-on lifecycle
-    # stays as it was.
     out=$(rx "PITHEAD_CONFIG_FILE=\"\$PWD/.itest-wizard-defaults.json\"
         source $(quote_arg "$IT_PITHEAD")
         wizard_tari_disk_default local >/dev/null
@@ -29,18 +26,13 @@ run_cli_wizard_defaults() {
     rc=$?
     assert_rc "fresh CLI wizard writes the explicit Tari yes, no XvB, Tor sync and a generated dashboard password" "$rc" 0
     [ "$rc" = 0 ] || return 1
-    assert_contains "CLI wizard retries a malformed Monero payout" "$out" "Not a valid Monero primary address"
-    assert_contains "CLI wizard retries a malformed Tari payout" "$out" "Not a valid Tari address"
+    assert_eq "CLI wizard retries a malformed Monero payout" "$([[ "$out" == *"Not a valid Monero primary address"* ]] && echo true || echo false)" true
+    assert_eq "CLI wizard retries a malformed Tari payout" "$([[ "$out" == *"Not a valid Tari address"* ]] && echo true || echo false)" true
     cfg=$(rx 'cat .itest-wizard-defaults.json')
     assert_eq "CLI wizard saves the valid Monero payout after retry" "$(jq -r '.monero.wallet_address' <<<"$cfg")" "$monero"
     assert_eq "CLI wizard saves the valid Tari payout after retry" "$(jq -r '.tari.wallet_address' <<<"$cfg")" "$tari"
     assert_eq "fresh CLI Tari answer is the explicit yes" "$(jq -r '.tari.mode' <<<"$cfg")" "local"
     assert_eq "fresh CLI generated password is printed once" "$(grep -Fc "$(jq -r '.dashboard.auth.password' <<<"$cfg")" <<<"$out")" 1
-    # Keep the runner's prepared data locations; the wizard's feature/auth choices stay intact.
-    # A default auto path in this dedicated checkout would start a new chain instead of the fixture.
-    # A node the baseline does not run locally keeps the baseline's section too (#3195): the wizard
-    # defaults to a local node, and setting one up on a remote-node appliance provisions its onion,
-    # which pithead deliberately keeps after the restore, so the secret ledger never matches again.
     cfg=$(jq --argjson baseline "$BASELINE_CONFIG" '
         reduce ["monero", "tari", "p2pool", "dashboard", "tor"][] as $service (.;
             if $baseline[$service].data_dir then .[$service].data_dir = $baseline[$service].data_dir else . end)
@@ -54,8 +46,23 @@ run_cli_wizard_defaults() {
     assert_rc "fresh CLI defaults complete real setup" "$rc" 0
     assert_contains "fresh CLI defaults reach completed preparation" "$out" "Deployment preparation complete"
     rx 'rm -f .itest-wizard-defaults.json'
-    pithead up >/dev/null 2>&1
-    assert_rc "fresh CLI defaults start their rendered services" "$?" 0
+    rx "set -e
+        source ./pithead
+        test ! -e .itest-first-run-done
+        had_marker=false
+        if [ -e \"\$FIRST_RUN_MARKER\" ]; then
+            mv \"\$FIRST_RUN_MARKER\" .itest-first-run-done
+            had_marker=true
+        fi
+        trap 'rm -f \"\$FIRST_RUN_MARKER\"; if [ \"\$had_marker\" = true ]; then mv .itest-first-run-done \"\$FIRST_RUN_MARKER\"; fi' EXIT
+        out=\$($IT_PITHEAD up 2>&1)
+        [ -f \"\$FIRST_RUN_MARKER\" ]
+        chains=Monero
+        if [ \"\$(env_get TARI_REQUIRED)\" != false ]; then chains='Monero and Tari'; fi
+        [[ \"\$out\" == *\"The miner is held until the initial sync finishes for \$chains, then starts automatically.\"* ]]
+        out=\$($IT_PITHEAD restart 2>&1)
+        [[ \"\$out\" != *'What happens next:'* ]]" >/dev/null 2>&1
+    assert_rc "fresh CLI first-start names required chains and restart suppresses the note" "$?" 0
     lifecycle_gate_sample after-wizard-up
     wait_status_ok 300
     assert_rc "fresh CLI defaults report a healthy stack" "$?" 0
