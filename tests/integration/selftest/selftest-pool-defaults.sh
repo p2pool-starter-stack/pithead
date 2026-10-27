@@ -41,7 +41,10 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
                 case "${POOL_SECRET_CASE:-}" in
                 after-fails) return 1 ;;
                 after-empty) return 0 ;;
-                after-changed) printf changed; return 0 ;;
+                after-changed)
+                    printf changed
+                    return 0
+                    ;;
                 esac
             else
                 case "${POOL_SECRET_CASE:-}" in
