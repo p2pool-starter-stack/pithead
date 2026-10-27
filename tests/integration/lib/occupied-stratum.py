@@ -34,14 +34,51 @@ def settled(route, body, exclude):
     return result
 
 
+def diagnostic_counter(value):
+    if type(value) is int:
+        return value
+    if isinstance(value, str) and len(value) <= 64:
+        digits = value.replace(",", "")
+        if digits.isascii() and digits.isdigit():
+            return int(digits)
+    return None
+
+
 def wait_mining(start, timeout, phase, allow_reset=False):
     initial = start.get("stratum", {}).get("total_hashes", 0)
-    deadline = time.monotonic() + timeout
+    began = time.monotonic()
+    deadline = began + timeout
+    next_report = began
     state = start
     while time.monotonic() < deadline:
         state = request("state")
         hashes = state.get("stratum", {}).get("total_hashes", 0)
         workers = state.get("proxy_workers", 0)
+        now = time.monotonic()
+        if now >= next_report:
+            summary = state.get("proxy_summary", {})
+            print(
+                "mining sample "
+                + json.dumps(
+                    {
+                        "phase": phase,
+                        "elapsed_seconds": int(now - began),
+                        "workers": diagnostic_counter(workers),
+                        "hashes": diagnostic_counter(hashes),
+                        "stratum_shares": diagnostic_counter(
+                            state.get("stratum", {}).get("total_shares")
+                        ),
+                        "proxy_accepted": diagnostic_counter(summary.get("accepted")),
+                        "proxy_rejected": diagnostic_counter(summary.get("rejected")),
+                        "proxy_invalid": diagnostic_counter(summary.get("invalid")),
+                        "snapshot_changed": state.get("last_update") != start.get("last_update")
+                        if "last_update" in state and "last_update" in start
+                        else None,
+                    }
+                ),
+                flush=True,
+            )
+            next_report = now + 15
         if allow_reset and hashes < initial:
             print(f"{phase}: counter reset {initial}->{hashes}", flush=True)
             initial = hashes

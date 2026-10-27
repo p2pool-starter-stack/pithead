@@ -109,6 +109,8 @@ through the dashboard control API against Caddy’s occupied port. It waits for 
 progress before preview and after refusal, reporting bounded counters when either wait fails.
 The initial configuration read retries connection refusal for 90 seconds while the dashboard
 starts after the preceding apply; other errors and later request failures stop the probe.
+Mining waits log numeric worker, hash and share counters and snapshot changes at most once
+every 15 seconds; the original progress requirements and deadlines still determine the verdict.
 The pre-preview wait re-baselines a counter reset from the preceding apply, then requires growth;
 the post-refusal check still requires growth beyond the established baseline.
 

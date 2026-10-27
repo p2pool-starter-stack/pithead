@@ -148,9 +148,12 @@ class OccupiedStratumProofTest(unittest.TestCase):
             route = req.full_url.split("/api/")[1]
             if route == "state":
                 index = min(state_reads[0], len(samples) - 1)
-                workers, hashes = samples[index]
                 state_reads[0] += 1
-                value = {"proxy_workers": workers, "stratum": {"total_hashes": hashes}}
+                if isinstance(samples[index], dict):
+                    value = samples[index]
+                else:
+                    workers, hashes = samples[index]
+                    value = {"proxy_workers": workers, "stratum": {"total_hashes": hashes}}
             elif route == "config":
                 error = next(config_errors, None)
                 if error is not None:
@@ -239,6 +242,49 @@ class OccupiedStratumProofTest(unittest.TestCase):
         self.assertIn("after occupied-port refusal", error)
         self.assertIn("workers=1", error)
         self.assertIn("hashes=102", error)
+
+    def test_stall_samples_share_counters_and_snapshot_changes_with_a_bound(self):
+        error, previews, output = self.exercise(
+            [
+                {"proxy_workers": 1, "stratum": {"total_hashes": 100}, "last_update": "before"},
+                {
+                    "proxy_workers": 1,
+                    "stratum": {"total_hashes": 100, "total_shares": 4},
+                    "proxy_summary": {"accepted": "2,000", "rejected": 3, "invalid": 0},
+                    "last_update": "after",
+                },
+            ]
+        )
+        samples = [
+            json.loads(line.removeprefix("mining sample "))
+            for line in output.splitlines()
+            if line.startswith("mining sample ")
+        ]
+        self.assertGreater(len(samples), 1)
+        self.assertLessEqual(len(samples), 12)
+        self.assertTrue(all(sample["snapshot_changed"] for sample in samples))
+        self.assertTrue(all(sample["proxy_accepted"] == 2000 for sample in samples))
+        self.assertTrue(all(sample["stratum_shares"] == 4 for sample in samples))
+        self.assertEqual(previews, [])
+        self.assertIn("before occupied-port preview", error)
+
+    def test_mining_samples_omit_untrusted_counter_text_and_unrelated_fields(self):
+        marker = "untrusted-marker"
+        error, previews, output = self.exercise(
+            [
+                {
+                    "proxy_workers": 1,
+                    "stratum": {"total_hashes": 100, "wallet": marker},
+                    "proxy_summary": {"accepted": marker},
+                    "last_update": marker,
+                }
+            ]
+        )
+        self.assertNotIn(marker, output)
+        self.assertIn('"proxy_accepted": null', output)
+        self.assertIn('"snapshot_changed": false', output)
+        self.assertEqual(previews, [])
+        self.assertIn("before occupied-port preview", error)
 
 
 if __name__ == "__main__":
