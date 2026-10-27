@@ -17,9 +17,9 @@ assert_eq "the extraction is the whole run_harness function" \
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 RUNNER_FILE="$WORK/runner" LAUNCH_FILE="$WORK/launch" STDIN_FILE="$WORK/stdin" PREPARE_FILE="$WORK/prepare" STEP_FILE="$WORK/steps"
-unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY PITHEAD_REQUIRE_COMPLETE
+unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY IT_DASHBOARD_PASSWORD PITHEAD_REQUIRE_COMPLETE
 
-capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globals pass through
+capture_launch() {
     : >"$LAUNCH_FILE"
     : >"$STDIN_FILE"
     : >"$STEP_FILE"
@@ -68,7 +68,7 @@ capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globa
 }
 
 execute_launch() {
-    CAPTURE_FILE="$2" LIB="$HERE/../lib.sh" env -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY PITHEAD_REQUIRE_COMPLETE="${REMOTE_REQUIRE_COMPLETE:-opposite}" bash -c '
+    CAPTURE_FILE="$2" LIB="$HERE/../lib.sh" env -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY -u IT_DASHBOARD_PASSWORD PITHEAD_REQUIRE_COMPLETE="${REMOTE_REQUIRE_COMPLETE:-opposite}" bash -c '
         rm() { :; }; cd() { :; }
         grep() {
             [ "${!#}" != /test/state ] && command grep "$@" || test -s "$CAPTURE_FILE"
@@ -89,10 +89,10 @@ execute_launch() {
     ' _ "$(cat "$LAUNCH_FILE")" <"$1" >/dev/null
 }
 
-echo "== exact nine-record transport, multiline decode, environment, and argv hygiene =="
+echo "== exact ten-record transport, multiline decode, environment, and argv hygiene =="
 ROLLBACK=$'{"pools":[\n{"url":"127.0.0.1:1"}]}' POOLS='[{"url":"probe:1"}]'
 capture_launch "$ROLLBACK" "$POOLS"
-assert_eq "the producer emits exactly nine records" "$(awk 'END {print NR}' "$STDIN_FILE")" 9
+assert_eq "the producer emits exactly ten records" "$(awk 'END {print NR}' "$STDIN_FILE")" 10
 EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\n\n\n\n%s' \
     'eyJwb29scyI6Wwp7InVybCI6IjEyNy4wLjAuMToxIn1dfQ==' 'W3sidXJsIjoicHJvYmU6MSJ9XQ==' \
     '/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3')"
@@ -120,7 +120,7 @@ assert_contains "unset view keys leave the payout-confirm row skipped" "$CAPTURE
 MVK=mvk-0123456789abcdef TVK=tvk-fedcba9876543210 TSPK=tspk-00112233445566778899
 IT_MONERO_VIEW_KEY="$MVK" IT_TARI_VIEW_KEY="$TVK" IT_TARI_SPEND_PUBLIC_KEY="$TSPK" capture_launch "$ROLLBACK" "$POOLS"
 assert_eq "the keys are records six through eight, in order" "$(sed -n '6,8p' "$STDIN_FILE")" "$(printf '%s\n%s\n%s' "$MVK" "$TVK" "$TSPK")"
-assert_eq "the fixture attestation remains the final record" "$(tail -n 1 "$STDIN_FILE")" "/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3"
+assert_eq "the fixture attestation remains record nine" "$(sed -n '9p' "$STDIN_FILE")" "/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3"
 execute_launch "$STDIN_FILE" "$WORK/keys"
 KEYS="$(cat "$WORK/keys")"
 assert_contains "the wrapper's view keys reach the runner environment" "$KEYS" \
@@ -142,7 +142,7 @@ capture_launch "" ""
 execute_launch "$STDIN_FILE" "$WORK/empty"
 assert_contains "empty rollback survives as an environment entry" "$(cat "$WORK/empty")" $'ROLLBACK_BEGIN\n\nROLLBACK_END'
 assert_contains "empty pools survives as an environment entry" "$(cat "$WORK/empty")" $'POOLS_BEGIN\n\nPOOLS_END'
-printf 'tok\nactor\n0123456789abcdef0123456789abcdef\nrb\npb\nmvk\ntvk\ntspk\n' >"$WORK/truncated"
+printf 'tok\nactor\n0123456789abcdef0123456789abcdef\nrb\npb\nmvk\ntvk\ntspk\nof\n' >"$WORK/truncated"
 execute_launch "$WORK/truncated" "$WORK/missing" 2>/dev/null
 assert_eq "a truncated stream refuses to launch" "$?" 1
 base64() { return 9; }
