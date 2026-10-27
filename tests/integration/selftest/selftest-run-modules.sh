@@ -92,7 +92,6 @@ source "$ROOT/lib/run-monero-stranded.sh" || exit $?
 source "$ROOT/lib/run-mergemine-localnet.sh" || exit $?
 for fn in $expected_functions hardening_onion_snapshot hardening_onion_restore assert_xvb_off_no_dwell_churn tari_enable_snapshot run_tari_background_sync; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
-# Execute the wizard harness initialization with the generated CLI: CONFIG_FILE is readonly.
 (
     BASELINE_CONFIG='{"monero":{"wallet_address":"fixture"},"tari":{"wallet_address":"fixture"}}'
     IT_PITHEAD="$ROOT/../../pithead"

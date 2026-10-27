@@ -114,23 +114,16 @@ safety_rollback_if_failed() {
     }
 }
 
-# EXIT trap for the destructive phases: an interrupted run (Ctrl-C, a cancelled Actions job, a
-# SIGTERM from the supervisor) must still put the box back. Chains any EXIT trap already installed
-# — e.g. the rig-key ledger's (#1379) — because `trap … EXIT` replaces rather than appends.
 safety_abort_restore() {
     local original_rc=$? restore_failed=0
     if [ -n "${HARDENING_ONION_SNAPSHOT:-}" ] && ! hardening_onion_restore; then
         restore_failed=1
         it_warn "interrupted hardening could not restore its onion baseline; recovery copies retained"
     fi
-    # config.json/.env backups do not include the onion identity directory.
     if [ "${ROTATE_ONION_RESTORE_ARMED:-0}" = "1" ] && ! rotate_onion_restore; then
         restore_failed=1
         it_warn "interrupted onion rotation could not restore its original identity"
     fi
-    # Defaulted: this runs as an EXIT trap, where an unbound variable would abort the trap itself
-    # and lose the restore entirely. The default is the SAFE direction — "no failure recorded yet",
-    # so the restore is attempted.
     if [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
         it_warn "interrupted destructive run — restoring the safety backup"
         safety_restore_exact || restore_failed=1

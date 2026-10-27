@@ -106,7 +106,13 @@ def save(tor):
     if env.is_symlink() or not env.is_file() or stat.S_IMODE(env.stat().st_mode) != 0o600:
         raise ValueError("unsafe environment file")
     fingerprint = identity(tor / "dashboard")
-    snapshot = Path(tempfile.mkdtemp(prefix=".hardening-onion-", dir=checkout))
+    backups = checkout / "backups"
+    if backups.is_symlink():
+        raise ValueError("unsafe backups directory")
+    backups.mkdir(mode=0o700, exist_ok=True)
+    if not backups.is_dir():
+        raise ValueError("unsafe backups directory")
+    snapshot = Path(tempfile.mkdtemp(prefix=".hardening-onion-", dir=backups))
     unmounted(snapshot)
     shutil.copy2(env, snapshot / "env")
     info = env.stat()
@@ -138,7 +144,7 @@ def load(snapshot):
     canonical(snapshot)
     info = snapshot.stat()
     if (
-        snapshot.parent != Path.cwd()
+        snapshot.parent not in (Path.cwd(), Path.cwd() / "backups")
         or not snapshot.name.startswith(".hardening-onion-")
         or info.st_uid != os.geteuid()
         or stat.S_IMODE(info.st_mode) != 0o700

@@ -107,6 +107,7 @@ def drive(
             (box / ".env").read_bytes() == before_env
             and not (box / "tor/dashboard").exists()
             and not list(box.glob(".hardening-onion-*"))
+            and not list(box.glob("backups/.hardening-onion-*"))
         )
     err = re.search(r"DRIVER-ERROR: .*", out)
     return {

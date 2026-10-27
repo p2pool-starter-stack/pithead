@@ -448,12 +448,6 @@ provision() {
         fi
         git -C '$E2E_DIR' remote set-url origin '$GIT_REMOTE_URL'
         git -C '$E2E_DIR' fetch --quiet origin '$BRANCH'
-        # The e2e checkout is DEDICATED and disposable, so force a pristine tree instead of assuming
-        # one (#454): drop stray untracked files (e.g. a leftover bench script) that would otherwise
-        # abort 'checkout' with \"would be overwritten\". -x clears ignored build cruft too; the -e
-        # excludes keep data/backups and results/, so chains and rollback anchors are never touched.
-        # config.json/.env ARE wiped (gitignored, no -e) — the next step re-seeds them, so don't drop
-        # that seed thinking clean spares them.
         git -C '$E2E_DIR' checkout -q -f -B '$BRANCH' FETCH_HEAD
         git -C '$E2E_DIR' reset -q --hard FETCH_HEAD
         git -C '$E2E_DIR' clean -qfdx -e /results -e /backups -e /data -e '/.hardening-onion-*/' && bash '$E2E_DIR/scripts/build-pithead.sh' >/dev/null

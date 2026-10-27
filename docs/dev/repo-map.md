@@ -342,7 +342,8 @@ described in the [AI workflow](ai-workflow.md).
 
 The hardening onion checks live in `tests/integration/lib/run-hardening.sh` and use
 `run-onion-targets.sh` for independent clients. `hardening-onion-state.sh` and
-`hardening_onion_state.py` protect and restore the environment and hidden-service identity;
+`hardening_onion_state.py` protect recovery copies under `backups/` and restore the environment
+and hidden-service identity;
 the safety EXIT hook also restores an interrupted phase. The Docker-free checker and
 state failure controls run through `selftest-hardening-onion.sh`.
 

@@ -124,10 +124,6 @@ run_hardening() {
                 "expected 'Read-only file system', got: ${probe_out:-<write SUCCEEDED — rootfs is writable>}"
         fi
     done
-    # 3. The #33 control channel end-to-end THROUGH THE REAL SYSTEMD PATH UNIT. Tier-1 runs
-    #    control-run-pending by hand; only here does pithead-control.path actually fire on a spooled
-    #    file. Needs a dashboard password (control refuses to enable without one). Enable control,
-    #    let apply install + enable the unit, then drop requests and let systemd act.
     if ! hardening_onion_snapshot; then
         it_fail "dashboard onion baseline snapshot created (#2603)" "refusing to provision without protected recovery copies"
         return 1

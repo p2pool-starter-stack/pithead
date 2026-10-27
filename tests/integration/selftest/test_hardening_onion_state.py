@@ -69,6 +69,8 @@ class OnionStateTests(unittest.TestCase):
 
     def test_absent_identity_and_entire_env_restore_idempotently(self):
         snapshot = self.save()
+        self.assertEqual(snapshot.parent, self.root / "backups")
+        self.assertEqual(snapshot.stat().st_mode & 0o777, 0o700)
         self.mutate()
         self.restore(snapshot)
         self.restore(snapshot)
@@ -122,6 +124,36 @@ class OnionStateTests(unittest.TestCase):
             state.load(snapshot)
         self.assertTrue(snapshot.exists())
 
+    def test_symlinked_backups_are_refused_on_save_and_load(self):
+        backups = self.root / "backups"
+        backups.symlink_to(self.tor, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "unsafe backups"):
+            self.save()
+        self.assertFalse(list(self.tor.glob(".hardening-onion-*")))
+        backups.unlink()
+        snapshot = self.save()
+        retained = backups.rename(self.root / "retained")
+        backups.symlink_to(retained, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "noncanonical"):
+            state.load(snapshot)
+
+    def test_snapshot_outside_checkout_or_backups_is_refused(self):
+        snapshot = self.save()
+        other = self.root / "other"
+        other.mkdir()
+        relocated = snapshot.rename(other / snapshot.name)
+        with self.assertRaisesRegex(ValueError, "unprotected"):
+            state.load(relocated)
+
+    def test_legacy_checkout_root_snapshot_can_be_cleaned(self):
+        snapshot = self.save()
+        legacy = snapshot.rename(self.root / snapshot.name)
+        metadata, target = state.load(legacy)
+        state.verify(legacy, metadata, target)
+        with patch.object(state.sys, "argv", ["state", "cleanup", str(legacy)]):
+            state.main()
+        self.assertFalse(legacy.exists())
+
     def test_partial_restore_keeps_backup_and_can_resume(self):
         snapshot = self.save()
         self.mutate()
@@ -130,6 +162,7 @@ class OnionStateTests(unittest.TestCase):
                 self.restore(snapshot)
         self.assertEqual((snapshot / "env").read_bytes(), self.original)
         self.assertTrue((snapshot / "quarantine/key").is_file())
+        self.assertEqual(snapshot.parent, self.root / "backups")
         self.restore(snapshot)
         self.assertEqual(self.env.read_bytes(), self.original)
         self.assertFalse((self.tor / "dashboard").exists())
@@ -180,7 +213,10 @@ INTEGRATION_RUN_SUITE=1
 source "$1"
 HARDENING_ONION_SNAPSHOT=protected-copy BASELINE_CONFIG=synthetic
 quote_arg() { printf '%s' "$1"; }
-invoke() { echo "$1" >>"$EVENTS"; [ "$1" != "$FAIL" ]; }
+invoke() {
+    echo "$1" >>"$EVENTS"
+    case " $FAIL " in *" $1 "*) return 1 ;; esac
+}
 rx() {
     case "$*" in
         *' restore '*) invoke restore ;;
@@ -216,21 +252,48 @@ hardening_onion_restore && exit 98
                     check=False,
                 )
                 self.assertEqual(run.returncode, 0, run.stderr)
-                self.assertEqual(events.read_text().splitlines(), stages[: index + 1])
+                expected = stages[: index + 1]
+                if stage in stages[:5]:
+                    expected.append("units")
+                self.assertEqual(events.read_text().splitlines(), expected)
                 self.assertEqual(
                     run.stdout.strip(),
                     f"hardening onion restore failed at {stage}; protected recovery copies retained",
                 )
+        events = self.root / "events"
+        events.unlink(missing_ok=True)
+        run = RUN(  # noqa: S603
+            [
+                "bash",
+                "-c",
+                script,
+                "test",
+                str(SOURCE.with_name("hardening-onion-state.sh")),
+            ],  # noqa: S607
+            env={**os.environ, "FAIL": "apply units", "EVENTS": str(events)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(events.read_text().splitlines(), ["restore", "apply", "units"])
+        self.assertEqual(
+            run.stdout.strip(),
+            "hardening onion restore failed at apply; protected recovery copies retained",
+        )
 
-    def test_checkout_clean_preserves_unreadable_recovery_copies(self):
+    def test_legacy_checkout_clean_preserves_unreadable_recovery_copies(self):
         command = next(
             line.strip().split(" && ")[0]
             for line in SOURCE.parents[1].joinpath("e2e.sh").read_text().splitlines()
             if line.strip().startswith("git -C '$E2E_DIR' clean ")
         )
         args = [str(self.root) if part == "$E2E_DIR" else part for part in shlex.split(command)]
+        exclusion = args.index("/.hardening-onion-*/")
+        del args[exclusion - 1 : exclusion + 1]
         RUN(["git", "init", "-q", str(self.root)], check=True, capture_output=True)  # noqa: S603, S607
-        recovery = self.root / ".hardening-onion-synthetic"
+        recovery = self.root / "backups/.hardening-onion-synthetic"
+        recovery.parent.mkdir()
         recovery.mkdir(mode=0o700)
         (recovery / "env").write_bytes(self.original)
         (recovery / "env").chmod(0o600)
