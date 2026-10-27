@@ -30,6 +30,10 @@ manual_qa_oracle() {
         rc=$?
         assert_rc "$id dry run refuses the broken config" "$rc" 1
         assert_contains "$id dry run reports the guide's refusal" "$out" "$expected"
+        case "$id" in
+        placeholder-password) assert_not_contains "$id refusal hides the placeholder" "$out" 'PASTE_QA_DASHBOARD_PASSWORD' ;;
+        placeholder-telegram) assert_not_contains "$id refusal hides the placeholder" "$out" 'your_bot_token' ;;
+        esac
         cmp -s "$C/config.json" "$C/config.before"
         assert_rc "$id dry run preserves candidate bytes" "$?" 0
         cmp -s "$C/.env" "$C/env.before"

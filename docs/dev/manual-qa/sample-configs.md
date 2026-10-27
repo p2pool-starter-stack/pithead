@@ -196,6 +196,7 @@ For every row:
 - The dry run stops before anything changes.
 - It prints a message that contains the text in the message column.
 - The running stack is untouched.
+- Placeholder refusals name the key without printing the supplied placeholder.
 
 | Case | Change | The message contains |
 |---|---|---|
