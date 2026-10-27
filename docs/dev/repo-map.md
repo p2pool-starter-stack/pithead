@@ -148,6 +148,7 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `service/workers/` | Worker state and control | `tests/service/workers/` |
 | `service/xvb/` | XvB switching, calculations, and outcomes | `tests/service/xvb/` |
 | `web/views/` | HTTP views and response construction | `tests/web/views/` |
+| `web/views/browser_bundle_views.py` | Actor-bound browser support archive routes | `tests/web/views/test_browser_bundle_views.py` |
 | `web/server.py` | HTTP application setup and route registration | `tests/web/` |
 | `wizard/server.py`, `wizard/form.py`, `wizard/defaults.py` | Appliance wizard server, disk-based defaults, form translation, and install handoff | `tests/web/test_wizard*.py` |
 | `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
@@ -201,6 +202,8 @@ The separate HTTPS backup fixture verifies complete encrypted downloads in Chrom
 `wizard/`. `vendor/` contains third-party browser libraries and their provenance.
 Keep local code out of `vendor/`.
 
+`lib/pithead/46b-control-browser-bundle.sh` handles the bounded, redacted browser bundle;
+`tests/stack/standalone/test_browser_bundle.sh` checks the host contract.
 The Tari-off preview regression is `tests/stack/control/test-control-editable-allowlist.sh`;
 `tests/integration/lib/run-tari-off-preview.sh` exercises the combined candidate through
 the deployed CLI during the hardening phase.

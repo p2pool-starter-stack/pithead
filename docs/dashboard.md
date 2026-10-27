@@ -1524,6 +1524,13 @@ daemon, use the support bundle or the console.
 If you pick a service the host will not read logs for, the host refuses and the panel shows its
 reason as-is rather than guessing at one.
 
+The browser support API collects diagnostics through authenticated `POST /api/control/diag-bundle`
+with `X-Pithead-Control: 1`. Its actor-bound result includes only the redacted doctor report and the
+existing nine-service log allowlist, bounded to 200 lines and 65,536 bytes per log. Wallet-service
+logs and the full CLI archive are excluded. After reviewing identifiers, `POST /api/control/bundle-download`
+with `{id, reviewed:true}` returns fixed, private archive members with no-store caching. The
+Maintenance UI for this endpoint follows the lean shell foundation in #2513.
+
 ## Backup view
 
 **Backup** is its own entry in the toggle above the chart, beside Simple, Advanced and
