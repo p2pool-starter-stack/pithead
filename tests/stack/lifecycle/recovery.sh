@@ -383,6 +383,7 @@ apply_noop_steps() {
     ) | grep -xE 'provision|compose' | tr '\n' ','
 }
 : >"$SANDBOX/.env"
+printf '{}\n' >"$SANDBOX/config.json"
 assert_eq "a no-change apply still converges the control units, and recreates nothing" \
     "$(apply_noop_steps)" "provision,"
 unset apply_noop_steps

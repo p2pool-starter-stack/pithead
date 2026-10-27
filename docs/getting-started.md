@@ -210,10 +210,10 @@ https://<your-hostname>
 ```
 
 `<your-hostname>` is the host you set during setup (the script prints the exact URL when it
-starts the stack). Caddy uses a self-signed certificate (`tls internal`), so the first time you
-visit, your browser shows a one-time "your connection is not private" / untrusted-certificate
-warning. Accept it to continue. Prefer plain HTTP on your LAN? Set `dashboard.secure: false` in
-`config.json` and run `./pithead apply`.
+starts the stack). Caddy uses a local certificate authority (`tls internal`).
+[Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
+browser warnings after certificate renewal. Prefer plain HTTP on your LAN? Set
+`dashboard.secure: false` in `config.json` and run `./pithead apply`.
 
 ---
 
