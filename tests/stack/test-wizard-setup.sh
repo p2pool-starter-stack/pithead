@@ -173,15 +173,20 @@ mkdir -p "$RT/build/tari" "$RT/dashboard" "$RT/data/tor" "$RT/data/dashboard"
 cp "$STACK" "$RT/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$RT/build/tari/"
 make_stubs "$RT/bin"
-# make_stubs's sudo is a bare no-op — fine for setup's conditional sudo calls (writable test dirs
-# skip them), but stack_backup shells to `sudo tar`/`sudo du` UNCONDITIONALLY. Same passthrough
-# override the firstboot_consume_restore fixture above uses, for the same reason.
 cat >"$RT/bin/sudo" <<'SUDOEOF'
 #!/usr/bin/env bash
-[ "$1" = "chown" ] && exit 0
-exec "$@"
+[ "$1" != -n ] || shift
+case "$1" in
+    tar | du) exec "$@" ;;
+    tee) cat >/dev/null ;;
+esac
+exit 0
 SUDOEOF
 chmod +x "$RT/bin/sudo"
+"$RT/bin/sudo" touch "$RT/host-command-ran"
+assert_eq "restore fixture never executes unrelated host commands" "$([ -e "$RT/host-command-ran" ] && echo yes || echo no)" "no"
+printf 'unit fixture\n' | "$RT/bin/sudo" tee "$RT/host-unit"
+assert_eq "restore fixture drains unit output without writing host units" "$([ -e "$RT/host-unit" ] && echo yes || echo no)" "no"
 cat >"$RT/.env" <<EOF
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion

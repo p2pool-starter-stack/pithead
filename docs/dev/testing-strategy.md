@@ -39,7 +39,10 @@ only the KVM job establishes boot and browser behavior.
 | **3 — Mini-stack** | `tests/integration/mini-stack/` (real dashboard + docker-control vs fake daemons) | The control plane **end-to-end with real containers**: dashboard requests cross the host-runner spool, and hold/release plus reject/readmit actually stop/start `p2pool`/`xmrig-proxy`, driven deterministically | CI with Docker (`make test-mini-stack`) |
 | **4 — Live matrix** | `tests/integration/run.sh` against a real, synced box — and, for the appliance channel, `tests/os/run.sh`, the KVM battery for the flashed image | What only reality proves: real merge-mining, prune/full DB size, Caddy TLS, Tor onions, HugePages, fault injection for real container health verdicts — and, for the image, built-artifact invariants before EFI boot, A/B commit/rollback, install-to-disk | Every PR that changes what runs on a box, as a bench-ci job on the PR's head (see [What a PR must prove](#what-a-pr-must-prove)); and the release gate — two independent `tier4-kvm` phase groups followed by a `tier4-e2e` aggregate on the exact release commit, required by `release.sh`'s `bench-ci/tier4` preflight (see the [release recipe](releasing.md#which-gates-are-automated-and-which-are-not)) |
 
-Stubs do most of the work. The dashboard unit tests drive the hard runtime states with mocked
+Shell fixtures stub privileged host operations. Restore fixtures pass through only the archive
+commands they exercise; setup must not write host units or invoke host systemd. A fixture that
+disables the runner turns off both dashboard control and Tor auto-heal, since Balance enables
+the healer channel by default. The dashboard unit tests drive hard runtime states with mocked
 clients; more mocks for the same logic would duplicate them. What stubs can't prove is wiring:
 that the real clients parse real daemon output (tier 2), that the dashboard's stop/start moves
 real containers (tier 3), and that real daemons sync/merge-mine and real containers go unhealthy
