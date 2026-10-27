@@ -42,6 +42,7 @@ def make_targets(root):
 def references(root, text, parent):
     for line in text.splitlines():
         line = line.replace("${BASH_SOURCE[0]%/*}/", "$TEST_DIR/")
+        line = line.replace('$(dirname "$0")/', "$TEST_DIR/")
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue

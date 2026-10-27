@@ -181,7 +181,8 @@ accounting, and that the workflow matrix lists every block. Audit parser failure
 tally producer failures and counts that are not nonnegative integers stop the full-run verdict.
 
 `tests/inventory.sh` also runs `tests/registration-audit.py`. It follows workflow
-commands, reachable Make targets, shell selftest globs and the audited stack blocks.
+commands, reachable Make targets, shell selftest globs, executable sibling paths
+relative to their runner and the audited stack blocks.
 A local Make target alone is not CI registration. New standalone tests must be
 executed by a reachable runner; sourcing them does not register them. The reviewed
 existing indirect callers are in `tests/registration-allowlist.tsv`; missing callers,

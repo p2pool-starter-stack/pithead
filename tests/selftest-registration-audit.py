@@ -11,6 +11,28 @@ SPEC.loader.exec_module(AUDIT)
 
 
 class RegistrationAudit(unittest.TestCase):
+    def test_sibling_subprocess_registration(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / ".github/workflows").mkdir(parents=True)
+            (root / "tests/os").mkdir(parents=True)
+            (root / "Makefile").write_text("ci:\n\tbash tests/os/selftest-fetch.sh\n")
+            (root / ".github/workflows/test.yml").write_text("run: make ci\n")
+            child = "tests/os/test_fetch.py"
+            orphan = "tests/os/test_unregistered.py"
+            (root / child).write_text("pass\n")
+            (root / orphan).write_text("pass\n")
+            sibling = '"$(dirname "$0")/test_fetch.py"'
+            for command, expected in (
+                (f"python3 {sibling}\n", {orphan}),
+                (f"source {sibling}\n", {child, orphan}),
+                (f"echo python3 {sibling}\n", {child, orphan}),
+                (f"# python3 {sibling}\n", {child, orphan}),
+            ):
+                with self.subTest(command=command):
+                    (root / "tests/os/selftest-fetch.sh").write_text(command)
+                    self.assertEqual(set(AUDIT.audit(root)), expected)
+
     def test_registration(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
