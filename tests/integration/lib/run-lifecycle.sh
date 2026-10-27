@@ -11,6 +11,7 @@ run_lifecycle() {
     local lifecycle_ok=1 reset_failed=0
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
+    run_p2pool_extra_flags || return 1
     lifecycle_gate_sample before-wizard-defaults
     run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe

@@ -166,8 +166,13 @@ describe_change() {
         [[ "$new" =~ $selector ]] && new_pool="${BASH_REMATCH[2]}"
         if [ "$key" = P2POOL_PORT ] || [ "$old_pool" != "$new_pool" ]; then
             msg="P2Pool sidechain changing ($key: '$old' → '$new') — p2pool re-syncs the new sidechain and your PPLNS window resets."
-        else
+        elif [ "$(p2pool_proxy_options "$old")" != "$(p2pool_proxy_options "$new")" ]; then
             msg="P2Pool peer routing changed — proxy routing, DNS lookups and IP visibility to peers follow the new settings; the $new_pool sidechain stays selected."
+        else
+            msg="P2Pool expert options changed: '$old' → '$new'; p2pool restarts with these options."
+        fi
+        if [ "$key" = P2POOL_FLAGS ] && [ "$(p2pool_network_options "$old")" != "$(p2pool_network_options "$new")" ]; then
+            flag=CONFIRM msg+=" DNS, peer destinations or the advertised external port change; confirm the network settings."
         fi
         ;;
     MONERO_NODE_HOST | MONERO_RPC_PORT | MONERO_ZMQ_PORT | TARI_GRPC_ADDRESS)

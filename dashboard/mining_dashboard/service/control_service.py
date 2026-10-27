@@ -233,11 +233,9 @@ CONFIRM_ENV_KEY_PATHS = {
 
 
 def _confirm_paths(cfg=None):
-    """Every config path the control gate commits behind a type-to-confirm (#719), minus a chain's
-    node endpoint (#1888) while that chain is not on a REMOTE node: a local (or, after #1855, an
-    "off") chain derives its endpoint from the stack, so offering the field would edit nothing."""
     live = {c for c in ("monero", "tari") if (cfg or {}).get(c, {}).get("mode") == "remote"}
     paths = {p for target in CONFIRM_ENV_KEY_PATHS.values() for p in target}
+    paths.add("p2pool.extra_flags")
     return sorted(p for p in paths if ".remote." not in p or p.split(".")[0] in live)
 
 

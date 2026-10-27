@@ -191,7 +191,7 @@ What the running stack sends to the internet, connection by connection.
 | **Dashboard** sync poll to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — a plaintext gRPC dial, and the host-networked dashboard sits outside the Tor-egress firewall | **off** — only exists in remote mode | same as the p2pool leg above: LAN or WireGuard |
 | **P2Pool** inbound peers | reach you via onion | — | ✅ onion hidden service | on | — |
 | **P2Pool** outbound sidechain peers | P2Pool sidechain peers, via Tor | — | ✅ **Tor** (`--socks5`, proxy-type `tor`) by default (#165) | on | opt out with `p2pool.clearnet: true` (exposes your IP for max yield) → [below](#p2pool-outbound-peers-165---tor-by-default) |
-| **P2Pool** DNS seeds (`seeds-mini.p2pool.io`, `mini.p2poolpeers.net`, or the `main`/`nano` equivalents) | DNS resolvers | "this IP runs P2Pool" | ✅ **closed** — `--no-dns` with the Tor default, so peers come from the saved peer list and the onion seed nodes (#2496) | n/a | `p2pool.clearnet: true` re-enables the DNS seeds along with clearnet peering |
+| **P2Pool** DNS seeds (`seeds-mini.p2pool.io`, `mini.p2poolpeers.net`, or the `main`/`nano` equivalents) | DNS resolvers | "this IP runs P2Pool" | ✅ **closed** — `--no-dns` with the Tor default, so peers come from the saved peer list and the onion seed nodes (#2496) | n/a | `p2pool.clearnet: true` re-enables DNS seeds unless `p2pool.extra_flags` contains `--no-dns` |
 | Dashboard **XvB stats** fetch | `xmrvsbeast.com` | your Monero **wallet** (no longer your IP) | ✅ Tor (`socks5h`, #163) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
 | Dashboard **XvB raffle registration** (#263) | `xmrvsbeast.com` | your Monero **wallet** (no longer your IP) | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled; fires once you have a PPLNS share | `XVB_ENABLED=false`, or set `XVB_SUBMIT_URL` to a disable sentinel (`off`), to stop it |
 | Dashboard **XvB winners fetch** (raffle-wins display) | `xmrvsbeast.com` | nothing — the winners file is public and the request carries no wallet | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
@@ -289,8 +289,11 @@ The same default adds `--no-dns` (#2496). The SOCKS proxy does not cover P2Pool'
 without the flag it looks up `seeds-mini.p2pool.io` (or the `main`/`nano` equivalent) in DNS
 on every peer-list load, which tells your ISP or resolver that the address runs P2Pool.
 With it, P2Pool makes no DNS queries and builds its peer list from its saved `p2pool_peers.txt`, its
-built-in onion seed nodes and any `--addpeers`. `p2pool.clearnet: true` drops `--no-dns` along with
-the SOCKS flags, so a clearnet node still bootstraps from the DNS seeds.
+built-in onion seed nodes and any `--addpeers`. `p2pool.clearnet: true` drops the SOCKS flags
+and the derived `--no-dns`, so a clearnet node bootstraps from DNS seeds unless
+`p2pool.extra_flags` explicitly contains `--no-dns`. This exact valueless expert option is
+accepted in either mode, requires confirmation and is emitted once even when Tor already
+supplies it. See [Expert P2Pool options](configuration.md#expert-p2pool-options).
 
 Opt out for maximum yield (lower stale/uncle rate plus a larger peer set, at the cost of exposing
 your IP, worse on `--mini`/`--nano`): set `p2pool.clearnet: true` in `config.json` and re-run

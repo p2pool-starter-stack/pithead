@@ -124,6 +124,8 @@ render_env() {
     p2pool_socks=$(p2pool_outbound_flags "$(jq -r '.p2pool.clearnet // false' "$CONFIG_FILE")" "$NETWORK_PREFIX")
     [ -n "$p2pool_socks" ] && p2pool_flags="${p2pool_flags:+$p2pool_flags }$p2pool_socks"
 
+    p2pool_flags=$(append_p2pool_extra_flags "$p2pool_flags")
+
     local xvb_enabled xvb_url xvb_donor xvb_donation_level xvb_tor
     xvb_enabled=$(config_get .xvb.enabled)
     xvb_tor=$(normalize_bool "$(config_bool '.xvb.tor' true)")

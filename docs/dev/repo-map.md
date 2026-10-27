@@ -52,6 +52,12 @@ Raw config checks live in `lib/pithead/22a-config-document.sh` and
 in `dashboard/mining_dashboard/web/static/config/jsondocument.mjs`.
 Both reject duplicate members before normalization and placeholders before staging or masking.
 
+Expert P2Pool options are validated and appended by
+`lib/pithead/27c-p2pool-extra-flags.sh`. The portable regression is
+`tests/stack/standalone/test_p2pool_extra_flags.py`; control-channel confirmation is
+covered in `tests/stack/control/control-sensitive-preview.sh`. The lifecycle integration
+phase checks the rendered options against the live P2Pool launch line.
+
 Webhook member validation is shared by CLI apply and control previews in
 `lib/pithead/27-defaults-and-config-validation.sh`. Its RC trigger is in
 `tests/stack/control/test-control-secret-and-dial-guards.sh`;

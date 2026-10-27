@@ -114,4 +114,28 @@ assert_not_contains "adding Tor keeps the PPLNS window (#3382)" "$out" "PPLNS"
 out="$(run_sourced "$C" describe_change P2POOL_PORT 37888 37890)"
 assert_contains "pool port change retains the PPLNS reset warning (#3382)" "$out" "PPLNS window resets"
 
+for extra_route in false true; do
+    jq --argjson route "$extra_route" '.p2pool.clearnet=$route | .p2pool.extra_flags=[]' "$C/config.json" >"$C/cand.json"
+    gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'
+    assert_eq "expert flag baseline applies ($extra_route)" "$(jq -r '.status' "$RESULTS/$UUID5.json")" applied
+    jq '.p2pool.extra_flags=["--no-dns"]' "$C/config.json" >"$C/cand.json"
+    preview_only "$C/cand.json"
+    assert_eq "expert no-dns previews confirmed ($extra_route)" \
+        "$(jq -r '.status == "previewed" and .destructive and any(.changes[]; .key == "p2pool.extra_flags" and .flag == "CONFIRM" and (.msg | contains("--no-dns")))' "$RESULTS/$UUID5.json")" true
+    assert_eq "expert no-dns does not reset PPLNS ($extra_route)" "$(preview_without "PPLNS")" true
+    gate_try "$C/cand.json" "" '{"payout_suffixes":{}}'
+    assert_contains "expert no-dns refuses direct commit ($extra_route)" "$(jq -r '.error' "$RESULTS/$UUID5.json")" "type APPLY"
+    assert_eq "unconfirmed expert flag is not persisted ($extra_route)" "$(jq -c '.p2pool.extra_flags' "$C/config.json")" '[]'
+    gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'
+    assert_eq "expert no-dns confirmed commit applies ($extra_route)" "$(jq -r '.status' "$RESULTS/$UUID5.json")" applied
+    assert_eq "expert no-dns is persisted ($extra_route)" "$(jq -c '.p2pool.extra_flags' "$C/config.json")" '["--no-dns"]'
+    jq '.p2pool.extra_flags=["--wallet bad"]' "$C/config.json" >"$C/cand.json"
+    preview_only "$C/cand.json"
+    assert_eq "owned expert flag fails staged validation ($extra_route)" "$(jq -r '.status' "$RESULTS/$UUID5.json")" rejected
+    assert_eq "invalid expert flag leaves live config alone ($extra_route)" "$(jq -c '.p2pool.extra_flags' "$C/config.json")" '["--no-dns"]'
+done
+jq '.p2pool.clearnet=false | .p2pool.extra_flags=[]' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'
+assert_eq "expert flag fixture restored" "$(jq -r '.status' "$RESULTS/$UUID5.json")" applied
+
 unset -f preview_only previewed_with preview_without exposure_previews

@@ -30,6 +30,12 @@ post-reboot state response and the updated verdict in that same tab, without ano
 interaction. Its executable selftests cover certificate replacements and bounded waits;
 only the KVM job establishes boot and browser behavior.
 
+Expert P2Pool option validation, render ordering, DNS deduplication and final entrypoint
+arguments run in `tests/stack/standalone/test_p2pool_extra_flags.py`. The control suite
+requires confirmation even for a deduplicated change. The lifecycle phase applies a benign
+option, polls P2Pool health and its logged launch arguments, then restores the original config.
+Its failure and restoration controls run in `tests/integration/selftest/selftest-run-modules.sh`.
+
 ## The four tiers
 
 | Tier | What it is | Simulates | Where it runs |
