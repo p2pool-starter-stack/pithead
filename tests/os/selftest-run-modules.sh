@@ -419,8 +419,7 @@ grep -qF 'refusal=$(fault_serial_since "$SERIAL" "$serial_before") || break' "$H
 grep -qF "legible='The container image store is damaged|Could not load the baked image archive'" "$HERE/phases/fault.sh" || exit 1
 ! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
 grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
-# Each cut must measure the height before flushing it to disk.
-m10_flush_before_cut() { # <phase file>
+m10_flush_before_cut() {
     sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | awk '
         index($0, "height_before=$(_monerod_height)") && !poll { poll = NR }
         index($0, "_ssh sync || {") && !flush { flush = NR }
@@ -430,17 +429,11 @@ m10_flush_before_cut() { # <phase file>
 m10_flush_before_cut "$HERE/phases/provision-power-cut.sh" || exit 1
 bash "$HERE/selftest-m10-pre-cut.sh" || exit $?
 grep -qF 'verdict=$(m10_height_verdict "$height_before" "$height_after")' "$HERE/phases/provision-power-cut.sh" || exit 1
-# The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
 grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
-# And the recovery call must sit INSIDE the three-cut loop — the property the row claims. Checking
-# the call string anywhere in the file passes just as happily with it hoisted out of the loop,
-# where the invariants would be proven once instead of before every next cut (#2067a).
-m10_call_in_cut_loop() { # <phase file>
+m10_call_in_cut_loop() {
     sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | grep -qF 'm10_recovered "$i" || return 1'
 }
 m10_call_in_cut_loop "$HERE/phases/provision-power-cut.sh" || exit 1
-# Reality check: the same guard must go RED with the call moved past the loop's `done`. The mutant
-# still CONTAINS the call, so a guard that stays green here is asserting a string, not the property.
 m10_mutant="$SERIAL.m10"
 awk 'index($0, "m10_recovered \"$i\" || return 1") { held = $0; next }
      { print }
