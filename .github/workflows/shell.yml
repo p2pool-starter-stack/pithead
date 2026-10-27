@@ -135,9 +135,13 @@ jobs:
       - name: Install real GRUB tooling and a host kernel
         run: |
           sudo apt-get update
-          sudo apt-get install -y grub-common grub-pc-bin linux-image-generic
+          sudo apt-get install -y --no-install-recommends grub-common grub-pc-bin
+          if ! find /boot -maxdepth 1 -type f -name 'vmlinuz-*' -print -quit | grep -q .; then
+            sudo apt-get install -y --no-install-recommends linux-image-virtual
+          fi
           sudo mkdir -p /boot/grub
-          dpkg-query -W grub-common grub-pc-bin linux-image-generic
+          dpkg-query -W grub-common grub-pc-bin
+          find /boot -maxdepth 1 -type f -name 'vmlinuz-*' -printf '%f\n'
       - name: Run real GRUB cloud-default regression
         env:
           TMPDIR: ${{ runner.temp }}
