@@ -183,7 +183,7 @@ What the running stack sends to the internet, connection by connection.
 |---|---|---|---|---|---|
 | **monerod** P2P + tx broadcast | Monero network | — | ✅ Tor (`proxy=` / `tx-proxy=`) | on | Tor by default; **P2P** can opt into clearnet for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) — tx broadcast stays on Tor regardless |
 | **monerod** DNS (checkpoints, blocklist, update check, priority-node hostnames) | DNS resolvers | "this IP runs Monero" | ✅ **closed** — `disable-dns-checkpoints`, `check-updates=disabled`, `enable-dns-blocklist=0`, hostname priority-nodes dropped (#161) | n/a | — |
-| **monerod RPC to a remote node** (only if `monero.mode: remote`) | the node you configured | **your real home IP**, to that node's operator | ❌ clearnet | **off** — the bundled local node is the default and has no remote-RPC egress | use a node you run on your LAN or reachable over WireGuard; a `.onion` remote isn't supported — with Tor on, p2pool's socat bridge moves this leg off the SOCKS5 proxy before it could reach Tor |
+| **Monero RPC/ZMQ to external nodes** (the primary when `monero.mode: remote`, plus any `monero.backup_nodes`) | each configured node | **your real home IP**, to each node's operator | ❌ direct clearnet | **off** — the bundled local node is the default and backup links are absent unless configured | use nodes you run on your LAN or reachable over WireGuard; a `.onion` remote isn't supported — with Tor on, P2Pool's bridge moves these links off the SOCKS5 proxy before they could reach Tor |
 | **Tari** P2P | Tari network | — | ✅ Tor SOCKS (`type = "socks5"`): onion and `/ip4` peers alike are dialled through the `tor` container, and `use_libtor = false` keeps the node's own in-process Tor off ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)) | on | Tor by default; can opt into clearnet (TCP) for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) |
 | **Tari** DNS seeds + Pulse (`seeds.tari.com`, `checkpoints.tari.com`) | DNS resolvers | "this IP runs Tari" | ✅ **closed** — `dns_seeds = []` and onion `peer_seeds` prevent seed lookups; Pulse's advisory lookup fails at the isolated loopback resolver, so no DNS packet leaves the host (#162) | n/a | clearnet sync ([#183](#optional-clearnet-initial-sync-off-by-default)) re-enables the `seeds.tari.com` DNS seed for the sync window |
 | **P2Pool** merge-mine gRPC to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — same posture as monerod's own remote-node RPC above | **off** — the bundled local Tari node is the default and this leg only exists in remote mode | use a node on your LAN or reachable over WireGuard; a `.onion` remote isn't supported yet (see [Configuration › Remote Tari node](configuration.md#remote-tari-node)) |
@@ -210,7 +210,8 @@ What the running stack sends to the internet, connection by connection.
 resolved on the clearnet either. The host-networked dashboard reaches the bridge's Tor SOCKS at
 `172.28.0.25:9050`.
 
-A remote node given as a hostname (`monero.remote.host` or `tari.remote.host`) is the exception:
+A remote node given as a hostname (`monero.remote.host`, a `monero.backup_nodes[].host`, or
+`tari.remote.host`) is the exception:
 p2pool's socat bridge (above) only moves the TCP connection itself off the SOCKS5 proxy, so the
 DNS lookup that turns that hostname into an IP still happens on the clearnet, via the container's
 own resolver — same exposure as any of the closed clearnet DNS lookups above, but this one has no
@@ -241,6 +242,10 @@ their opt-in settings. Check the bind settings and host firewall for the actual 
 **LAN is a statement about exposure, not about encryption.** A remote-node hop is a plaintext
 connection whichever way it draws, so the rows above still apply: anyone who can watch your local
 network can read it. LAN means only that the traffic does not reach the internet.
+
+Backup nodes have the same trust boundary as the primary remote node. RPC and ZMQ connections are
+plaintext, and each configured operator can observe your host's address and node requests. Keep
+`rpc_login` credentials private; Pithead redacts them from outputs.
 
 ---
 

@@ -71,6 +71,13 @@ executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
 
+Monero backup validation and launch arguments live in `lib/pithead/28a-monero-backups.sh`.
+Both runtime renderers pass the encoded argument list to `build/p2pool/entrypoint.sh`;
+`dashboard/mining_dashboard/service/health/monero_backups.py` checks individual nodes for worker admission.
+`tests/stack/standalone/test_monero_backups.py` and `dashboard/tests/service/test_monero_backups.py`
+cover these contracts, and `tests/integration/lib/run-monero-backups.sh` proves primary-down
+failover in the existing fault-injection phase with an approved external node provider.
+
 Container restart observation is shared by status and doctor in
 `lib/pithead/04a-container-restarts.sh`; its Docker and Podman fixtures are in
 `tests/os/selftest-container-restarts.sh`, and the appliance Caddy crash-loop proof runs in the

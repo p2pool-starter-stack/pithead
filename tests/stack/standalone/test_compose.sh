@@ -450,6 +450,14 @@ jq_assert "internal p2pool stratum stays :3333 under a custom port (#172)" \
 jq_assert "proxy upstream (P2POOL_URL) stays the internal :3333 (#172)" \
     '.services["xmrig-proxy"].command | any(. == "172.28.0.28:3333")' "$PORT_JSON"
 
+BACKUP_ARGS=$(printf '%s' '--host' | base64 | tr -d '\n')
+BACKUP_JSON=$(P2POOL_BACKUP_ARGS_B64="$BACKUP_ARGS" MONERO_BACKUP_NODES='[{"host":"backup.example","rpc_port":28081,"zmq_port":28083,"rpc_login":"user:pass with spaces"}]' \
+    docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)
+jq_assert "Compose passes backup tokens intact to the shared entrypoint" \
+    ".services.p2pool.environment.P2POOL_BACKUP_ARGS_B64 == \"$BACKUP_ARGS\"" "$BACKUP_JSON"
+jq_assert "Compose preserves per-backup RPC credentials for monitoring" \
+    '(.services.dashboard.environment.MONERO_BACKUP_NODES | fromjson | .[0]) == {host:"backup.example",rpc_port:28081,zmq_port:28083,rpc_login:"user:pass with spaces"}' "$BACKUP_JSON"
+
 if [ "$fails" -ne 0 ]; then
     echo "  ✗ $fails hardening check(s) failed"
     exit 1

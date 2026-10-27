@@ -94,11 +94,16 @@ zmq_endpoint_is_publisher() { # <host> <port>
     NODE_PROBE_REASON=ok
 }
 
-monero_rpc_speaks() { # <config-file> <host> <port>
+monero_rpc_speaks() {
     local cfg="$1" host="$2" port="$3" user pass url_host auth="" body code rc=0
     local -a auth_args=()
-    user=$(jq -r '.monero.node_username // ""' "$cfg")
-    pass=$(jq -r '.monero.node_password // ""' "$cfg")
+    if [ "$#" -ge 4 ]; then
+        user="${4%%:*}" pass=""
+        case "$4" in *:*) pass="${4#*:}" ;; esac
+    else
+        user=$(jq -r '.monero.node_username // ""' "$cfg")
+        pass=$(jq -r '.monero.node_password // ""' "$cfg")
+    fi
     url_host="$host"
     case "$url_host" in \[*\]) ;; *:*) url_host="[$url_host]" ;; esac
     [ -z "$user" ] || { auth=$(printf '%s:%s' "$user" "$pass" | jq -Rs .) && auth_args=(--digest); }
@@ -122,8 +127,9 @@ monero_rpc_speaks() { # <config-file> <host> <port>
     NODE_PROBE_REASON=ok
 }
 
-remote_node_addresses_allowed() { # <config-file>
+remote_node_addresses_allowed() {
     local cfg="$1" host port
+    monero_backup_addresses_allowed "$cfg" || return
     if [ "$(jq -r '.monero.mode // "local"' "$cfg")" = remote ]; then
         host=$(jq -r '.monero.remote.host // ""' "$cfg")
         port=$(jq -r '.monero.remote.rpc_port // 18081' "$cfg")
@@ -146,9 +152,10 @@ remote_node_addresses_allowed() { # <config-file>
     fi
 }
 
-preflight_remote_nodes() { # <config-file>
+preflight_remote_nodes() {
     local cfg="$1" host address port zmq
     remote_node_addresses_allowed "$cfg" || return
+    preflight_monero_backups "$cfg"
     if [ "$(jq -r '.monero.mode // "local"' "$cfg")" = remote ]; then
         host=$(jq -r '.monero.remote.host // ""' "$cfg")
         port=$(jq -r '.monero.remote.rpc_port // 18081' "$cfg")

@@ -237,15 +237,9 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     monero_sync = await get_monero_sync_status()
                     tari_sync = await tari_client.get_sync_status()
 
-                    # Raw per-node "fully synced" signals for the sync gate (Issue #35),
-                    # captured BEFORE the network-height UI override below. `chain_synced`
-                    # counts only an explicit reachable, not-syncing reading, so an unreachable
-                    # node or an empty result is never mistaken for synced (#31, #2472). Reading
-                    # the raw signal also avoids a deadlock: the height override is fed by
-                    # p2pool's stats file, which reads 0 while p2pool is held — falsely
-                    # "syncing" forever.
                     monero_synced = chain_synced(monero_sync)
                     tari_synced = chain_synced(tari_sync)
+                    worker_monero_down = await self._worker_monero_down(monero_sync, False)
 
                     # Auto-transition a clearnet initial-sync node back to Tor once it's synced
                     # (#234). Reuses the synced signals above; the supervisor writes a persistent
@@ -330,7 +324,10 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         and (tari_synced or not TARI_REQUIRED or self.sync_gate_monero_only)
                     )
                     if self.miner_released:
-                        await self._apply_worker_rejection(monero_down, tari_down)
+                        await self._apply_worker_rejection(
+                            worker_monero_down if self.monero_backups.nodes else monero_down,
+                            tari_down,
+                        )
 
                     # 5. Operator alerts (Issues #121/#45): push debounced node/worker/sync/host
                     # edges to Telegram. Consumes the flags computed above; worker presence is only

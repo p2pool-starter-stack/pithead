@@ -1,5 +1,8 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/integration/lib/run-monero-backups.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-monero-backups.sh" || exit $?
+
 fault_node_down() {
     if wait_for 180 5 "dashboard to observe monerod before failover fault" _pred_failover_armed; then
         it_pass "node-down failover armed from a live monerod observation"
@@ -327,6 +330,7 @@ run_fault_injection() {
     local fails_before="$IT_FAIL"
     fault_rules_clear_all
     fault_node_down
+    fault_monero_backups || return 1
     fault_unhealthy
     fault_missing
     fault_db_readonly
