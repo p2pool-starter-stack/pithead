@@ -283,7 +283,7 @@ dac_run() { # <appliance rc: 0|1> -> the doctor certificate section's output
             *) printf '' ;;
             esac
         }
-        stub_host_addrs '192.168.1.20' rig1
+        hostname() { if [ "${1:-}" = "-I" ]; then printf '192.168.1.20'; else printf 'rig1'; fi; }
         check_appliance_cert 2>&1
     )
 }
@@ -347,9 +347,9 @@ echo "== unit: doctor looks for the control units where apply writes them (#1151
 #
 # The defect was TWO rules, not a wrong constant, so this asserts the rule has exactly one home.
 assert_eq "appliance -> /run/systemd/system (read-only root, #791)" \
-    "$(PITHEAD_UNIT_DIR='' PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" control_unit_dir)" "/run/systemd/system"
+    "$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" control_unit_dir)" "/run/systemd/system"
 assert_eq "DIY host -> /etc/systemd/system" \
-    "$(PITHEAD_UNIT_DIR='' PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" control_unit_dir)" "/etc/systemd/system"
+    "$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" control_unit_dir)" "/etc/systemd/system"
 assert_eq "an explicit PITHEAD_UNIT_DIR wins on the appliance" \
     "$(PITHEAD_APPLIANCE=1 PITHEAD_UNIT_DIR=/tmp/u run_sourced "$SANDBOX" control_unit_dir)" "/tmp/u"
 assert_eq "an explicit PITHEAD_UNIT_DIR wins on a DIY host" \

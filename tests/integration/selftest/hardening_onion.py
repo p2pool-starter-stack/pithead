@@ -134,11 +134,12 @@ def probes(events):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--results", type=Path)
+parser.add_argument("--base-ref", default="origin/develop")
 parser.add_argument("--selftest", action="store_true")
 args = parser.parse_args()
 
 if not args.selftest:
-    base = git("merge-base", "origin/develop", "HEAD").strip()
+    base = git("merge-base", args.base_ref, "HEAD").strip()
     head = git("rev-parse", "HEAD").strip()
     changed = set(git("diff", "--name-only", base).split())
     outside = sorted(

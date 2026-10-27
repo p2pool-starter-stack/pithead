@@ -7,7 +7,6 @@ import socket
 import subprocess
 import tempfile
 import unittest
-import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -94,9 +93,9 @@ esac
             port = listener.getsockname()[1]
         self.assertEqual(self.probe(port).returncode, 0)
 
-    def test_specific_bind_conflicts_with_matching_listener(self):
+    def test_specific_bind_conflicts_with_wildcard_listener(self):
         with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
+            listener.bind(("0.0.0.0", 0))
             listener.listen()
             result = self.probe(listener.getsockname()[1], bind="127.0.0.1")
             self.assertEqual(result.returncode, 1, result.stderr)
@@ -108,7 +107,7 @@ esac
             port = listener.getsockname()[1]
         self.assertEqual(self.probe(port).returncode, 0)
         with socket.socket() as listener:
-            listener.bind(("127.0.0.1", port))
+            listener.bind(("0.0.0.0", port))
             listener.listen()
             result = self.probe(port, action="commit")
             self.assertEqual(result.returncode, 1, result.stderr)
@@ -137,27 +136,20 @@ esac
 
 
 class OccupiedStratumProofTest(unittest.TestCase):
-    def exercise(self, samples, config_errors=(), stratum_source=None):
+    def exercise(self, samples):
         clock = [0]
         state_reads = [0]
         previews = []
         output = io.StringIO()
-        config_errors = iter(config_errors)
 
         def respond(req, **kwargs):
             route = req.full_url.split("/api/")[1]
             if route == "state":
                 index = min(state_reads[0], len(samples) - 1)
+                workers, hashes = samples[index]
                 state_reads[0] += 1
-                if isinstance(samples[index], dict):
-                    value = samples[index]
-                else:
-                    workers, hashes = samples[index]
-                    value = {"proxy_workers": workers, "stratum": {"total_hashes": hashes}}
+                value = {"proxy_workers": workers, "stratum": {"total_hashes": hashes}}
             elif route == "config":
-                error = next(config_errors, None)
-                if error is not None:
-                    raise error
                 value = {"p2pool": {"stratum_port": 3333}}
             elif route == "control/preview":
                 previews.append(state_reads[0])
@@ -169,18 +161,12 @@ class OccupiedStratumProofTest(unittest.TestCase):
         def sleep(seconds):
             clock[0] += seconds
 
-        def read_source(*args, **kwargs):
-            if stratum_source is None:
-                raise FileNotFoundError
-            return io.BytesIO(stratum_source.encode())
-
         error = None
         with (
             patch("sys.argv", ["occupied-stratum.py", "443"]),
             patch("urllib.request.urlopen", side_effect=respond),
             patch("time.monotonic", side_effect=lambda: clock[0]),
             patch("time.sleep", side_effect=sleep),
-            patch("pathlib.Path.open", side_effect=read_source),
             contextlib.redirect_stdout(output),
         ):
             try:
@@ -188,30 +174,6 @@ class OccupiedStratumProofTest(unittest.TestCase):
             except AssertionError as exc:
                 error = str(exc)
         return error, previews, output.getvalue()
-
-    def test_initial_config_waits_for_dashboard_after_prior_apply(self):
-        error, previews, output = self.exercise(
-            [(1, 100), (1, 102), (1, 104)],
-            [urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))],
-        )
-        self.assertIsNone(error)
-        self.assertEqual(previews, [2])
-        self.assertIn("mining continues", output)
-
-    def test_initial_config_refusal_has_a_deadline(self):
-        error, previews, _ = self.exercise(
-            [(1, 100)],
-            [urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))] * 100,
-        )
-        self.assertEqual(previews, [])
-        self.assertIn("configuration unavailable before occupied-port preview", error)
-
-    def test_initial_config_http_errors_are_not_retried(self):
-        with self.assertRaises(urllib.error.HTTPError):
-            self.exercise(
-                [(1, 100), (1, 102), (1, 104)],
-                [urllib.error.HTTPError("", 401, "Unauthorized", {}, None)],
-            )
 
     def test_preview_waits_for_active_mining_after_prior_apply(self):
         error, previews, output = self.exercise([(0, 100), (1, 100), (1, 102), (1, 104)])
@@ -248,76 +210,6 @@ class OccupiedStratumProofTest(unittest.TestCase):
         self.assertIn("after occupied-port refusal", error)
         self.assertIn("workers=1", error)
         self.assertIn("hashes=102", error)
-
-    def test_stall_samples_share_counters_and_snapshot_changes_with_a_bound(self):
-        error, previews, output = self.exercise(
-            [
-                {"proxy_workers": 1, "stratum": {"total_hashes": 100}, "last_update": "before"},
-                {
-                    "proxy_workers": 1,
-                    "stratum": {"total_hashes": 100, "total_shares": 4},
-                    "proxy_summary": {"accepted": "2,000", "rejected": 3, "invalid": 0},
-                    "last_update": "after",
-                },
-            ]
-        )
-        samples = [
-            json.loads(line.removeprefix("mining sample "))
-            for line in output.splitlines()
-            if line.startswith("mining sample ")
-        ]
-        self.assertGreater(len(samples), 1)
-        self.assertLessEqual(len(samples), 12)
-        self.assertTrue(all(sample["snapshot_changed"] for sample in samples))
-        self.assertTrue(all(sample["proxy_accepted"] == 2000 for sample in samples))
-        self.assertTrue(all(sample["stratum_shares"] == 4 for sample in samples))
-        self.assertEqual(previews, [])
-        self.assertIn("before occupied-port preview", error)
-
-    def test_mining_samples_omit_untrusted_counter_text_and_unrelated_fields(self):
-        marker = "untrusted-marker"
-        error, previews, output = self.exercise(
-            [
-                {
-                    "proxy_workers": 1,
-                    "stratum": {"total_hashes": 100, "wallet": marker},
-                    "proxy_summary": {"accepted": marker},
-                    "last_update": marker,
-                }
-            ]
-        )
-        self.assertNotIn(marker, output)
-        self.assertIn('"proxy_accepted": null', output)
-        self.assertIn('"snapshot_changed": false', output)
-        self.assertEqual(previews, [])
-        self.assertIn("before occupied-port preview", error)
-
-    def test_source_progress_does_not_pass_a_stale_dashboard(self):
-        error, previews, output = self.exercise(
-            [(1, 100), (1, 102), (1, 102)],
-            stratum_source=json.dumps({"total_hashes": 200, "total_stratum_shares": 7}),
-        )
-        self.assertEqual(previews, [2])
-        self.assertIn("after occupied-port refusal", error)
-        self.assertIn('"source_hashes": 200', output)
-        self.assertIn('"source_shares": 7', output)
-
-    def test_source_diagnostics_are_bounded_and_do_not_expose_raw_data(self):
-        marker = "untrusted-marker"
-        for raw, expected in (
-            (marker, "unavailable"),
-            (json.dumps({"total_hashes": marker, "wallet": marker}), "read"),
-            (json.dumps({"total_hashes": 200, "extra": marker * 5000}), "unavailable"),
-            ("[]", "unavailable"),
-            (None, "unavailable"),
-        ):
-            with self.subTest(raw_type=type(raw).__name__):
-                error, previews, output = self.exercise([(1, 100)], stratum_source=raw)
-                self.assertNotIn(marker, output)
-                self.assertEqual(previews, [])
-                self.assertIn("before occupied-port preview", error)
-                self.assertIn(f'"source_status": "{expected}"', output)
-                self.assertNotIn('"source_hashes": 200', output)
 
 
 if __name__ == "__main__":

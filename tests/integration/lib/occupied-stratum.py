@@ -1,9 +1,7 @@
 import json
 import sys
 import time
-import urllib.error
 import urllib.request
-from pathlib import Path
 
 port = int(sys.argv[1])
 
@@ -35,68 +33,14 @@ def settled(route, body, exclude):
     return result
 
 
-def diagnostic_counter(value):
-    if type(value) is int:
-        return value
-    if isinstance(value, str) and len(value) <= 64:
-        digits = value.replace(",", "")
-        if digits.isascii() and digits.isdigit():
-            return int(digits)
-    return None
-
-
-def stratum_sample():
-    try:
-        with Path("/app/stats/local/stratum").open("rb") as source:
-            raw = source.read(65537)
-        data = json.loads(raw) if len(raw) <= 65536 else None
-        if not isinstance(data, dict):
-            raise ValueError
-    except (OSError, ValueError):
-        return {"source_status": "unavailable"}
-    return {
-        "source_status": "read",
-        "source_hashes": diagnostic_counter(data.get("total_hashes")),
-        "source_shares": diagnostic_counter(data.get("total_stratum_shares")),
-    }
-
-
 def wait_mining(start, timeout, phase, allow_reset=False):
     initial = start.get("stratum", {}).get("total_hashes", 0)
-    began = time.monotonic()
-    deadline = began + timeout
-    next_report = began
+    deadline = time.monotonic() + timeout
     state = start
     while time.monotonic() < deadline:
         state = request("state")
         hashes = state.get("stratum", {}).get("total_hashes", 0)
         workers = state.get("proxy_workers", 0)
-        now = time.monotonic()
-        if now >= next_report:
-            summary = state.get("proxy_summary", {})
-            print(
-                "mining sample "
-                + json.dumps(
-                    {
-                        **stratum_sample(),
-                        "phase": phase,
-                        "elapsed_seconds": int(now - began),
-                        "workers": diagnostic_counter(workers),
-                        "hashes": diagnostic_counter(hashes),
-                        "stratum_shares": diagnostic_counter(
-                            state.get("stratum", {}).get("total_shares")
-                        ),
-                        "proxy_accepted": diagnostic_counter(summary.get("accepted")),
-                        "proxy_rejected": diagnostic_counter(summary.get("rejected")),
-                        "proxy_invalid": diagnostic_counter(summary.get("invalid")),
-                        "snapshot_changed": state.get("last_update") != start.get("last_update")
-                        if "last_update" in state and "last_update" in start
-                        else None,
-                    }
-                ),
-                flush=True,
-            )
-            next_report = now + 15
         if allow_reset and hashes < initial:
             print(f"{phase}: counter reset {initial}->{hashes}", flush=True)
             initial = hashes
@@ -111,19 +55,7 @@ def wait_mining(start, timeout, phase, allow_reset=False):
     )
 
 
-deadline = time.monotonic() + 90
-while True:
-    try:
-        config = request("config")
-        break
-    except urllib.error.URLError as exc:
-        if not isinstance(exc.reason, ConnectionRefusedError):
-            raise
-        if time.monotonic() >= deadline:
-            raise AssertionError(
-                "dashboard configuration unavailable before occupied-port preview"
-            ) from exc
-        time.sleep(2)
+config = request("config")
 for dotted in config.get("_default_keys", []):
     parts = dotted.split(".")
     node = config

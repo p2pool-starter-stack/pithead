@@ -2,8 +2,10 @@ import importlib.util
 import io
 import json
 import os
+import runpy
 import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -242,6 +244,83 @@ hardening_onion_restore && exit 98
         self.assertEqual((recovery / "env").read_bytes(), self.original)
         self.assertEqual((recovery / "env").stat().st_mode & 0o777, 0o600)
         self.assertFalse((self.root / "cruft").exists())
+
+
+class ScopeStopped(Exception):
+    pass
+
+
+class CheckerScopeTests(unittest.TestCase):
+    def setUp(self):
+        self.work = tempfile.TemporaryDirectory()
+        self.addCleanup(self.work.cleanup)
+        self.cwd = Path.cwd()
+        self.root = Path(self.work.name)
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, self.cwd)
+        self.git("init", "-q")
+        self.write_commit("README.md")
+        self.git("update-ref", "refs/remotes/origin/develop", "HEAD")
+        self.write_commit("lane-runtime.py")
+        self.git("branch", "lane-base")
+        self.write_commit("tests/integration/probe.sh")
+        helper = Path("tests/integration/lib/hardening_onion_state.py")
+        helper.parent.mkdir(parents=True)
+        helper.write_bytes(SOURCE.read_bytes())
+
+    def git(self, *args):
+        return RUN(
+            [
+                "git",
+                "-c",
+                "user.name=scope-test",
+                "-c",
+                "user.email=scope-test",
+                "-c",
+                "commit.gpgsign=false",
+                *args,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    def write_commit(self, name):
+        path = Path(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("fixture\n")
+        self.git("add", name)
+        self.git("commit", "-qm", "scope fixture")
+
+    def check_scope(self, *args):
+        output = io.StringIO()
+
+        def run_git_or_stop(command, **kwargs):
+            if command[0] == "git":
+                return RUN(command, **kwargs)
+            raise ScopeStopped
+
+        script = SOURCE.parents[1] / "selftest/hardening_onion.py"
+        with (
+            patch.object(sys, "argv", [str(script), *args]),
+            patch("subprocess.run", side_effect=run_git_or_stop),
+            redirect_stdout(output),
+            self.assertRaises(ScopeStopped),
+        ):
+            runpy.run_path(str(script), run_name="__main__")
+        return output.getvalue()
+
+    def test_explicit_lane_base_excludes_inherited_lane_changes(self):
+        self.assertIn("PASS  C1", self.check_scope("--base-ref", "lane-base"))
+        self.assertIn("FAIL  C1", self.check_scope())
+
+    def test_lane_base_still_rejects_outside_scope(self):
+        self.write_commit("unrelated.py")
+        self.assertIn("FAIL  C1", self.check_scope("--base-ref", "lane-base"))
+
+    def test_missing_base_ref_fails(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.check_scope("--base-ref", "missing-base")
 
 
 if __name__ == "__main__":

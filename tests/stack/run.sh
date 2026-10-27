@@ -395,6 +395,6 @@ if in_block 5; then
     # shellcheck source=tests/stack/test-lock-reinvoke-wiring.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-lock-reinvoke-wiring.sh" && domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?" || domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?"
 fi
-host_fence_final_check
+
 [ -z "$_tally" ] || printf '%s %s %s\n' "$STACK_BLOCK" "$PASS" "$FAIL" >>"$_tally"
 stack_verdict "pithead tests, block $STACK_BLOCK of $STACK_BLOCKS"

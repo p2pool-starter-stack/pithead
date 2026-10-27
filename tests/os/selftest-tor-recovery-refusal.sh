@@ -2,7 +2,7 @@
 # Pure guest-proof controls against the generated CLI; no containers or SSH.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-export TMPDIR="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?}}"
 work=$(mktemp -d "${TMPDIR:?}/tor-recovery-refusal-selftest.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 echo '== guest healthy Tor recovery refusal controls =='

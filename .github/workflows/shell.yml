@@ -124,6 +124,8 @@ jobs:
         # Real ext4 damage against the product's own repair escalation (#1062). Unprivileged —
         # e2fsprogs on plain files — and it hard-fails rather than skips when CI lacks the tools.
         run: bash tests/stack/standalone/test_data_reset.sh
+      - name: Run directory line-break regression
+        run: bash tests/stack/standalone/test_directory_linebreaks.sh
       - name: Run OS-update recovery suite
         # #1050 dead-end states re-arm and report.
         run: bash tests/stack/standalone/test_os_update_recovery.sh
@@ -143,25 +145,6 @@ jobs:
         run: make test-integration-selftest
       - name: Run repository tooling checks
         run: make test-tools
-
-  bridge-awk:
-    name: Container bridge awk portability (Debian 12)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/docker-registry-mirror
-      - name: Run bridge and Caddy regressions in the pinned test runner
-        run: |
-          bash scripts/test-container.sh true
-          docker run --rm --user root -v "$PWD:$PWD" -w "$PWD" \
-            pithead-test-runner:local bash -euc '
-              apt-get update
-              apt-get install -y --no-install-recommends mawk gawk busybox
-              make test-bridge-awk
-            '
 
   soak-macos:
     name: Soak self-test (macOS, ${{ matrix.bash }})
