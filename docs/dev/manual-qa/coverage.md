@@ -46,6 +46,8 @@ except the final onion-without-login row, which is dry-run only. Each refusal ch
 message, nonzero exit, unchanged rendered `.env` and absence of Compose startup; dry runs
 also preserve the candidate config. Placeholder values must stay out of the output.
 The table's mutations and their order must match the test cases.
+`tests/stack/test_checklist_cases.py`, called by the checklist test, checks table-cell
+whitespace and rejects added rows without matching mutations.
 
 Step [6.5](diy/06-settings-command-line.md) keeps the normal-apply onion-password generation,
 cancellation, login and restoration checks manual.

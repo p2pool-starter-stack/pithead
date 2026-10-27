@@ -37,11 +37,19 @@ expected_changes = [
     'Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case)',
     "Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block",
 ]
-changes = [
-    line.split("|")[1].strip()
-    for line in document.split("## Broken configs", 1)[1].splitlines()
-    if line.startswith("| ")
-][1:]
+table_rows = []
+for line in document.split("## Broken configs", 1)[1].splitlines():
+    if not line.lstrip().startswith("|"):
+        continue
+    cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+    if cells == ["Change", "The message contains"]:
+        continue
+    if all(re.fullmatch(r":?-+:?", cell) for cell in cells):
+        continue
+    if len(cells) != 2:
+        raise ValueError("checklist row needs a change and refusal message")
+    table_rows.append(cells)
+changes = [cells[0] for cells in table_rows]
 if changes != expected_changes:
     raise ValueError("checklist mutations changed; update the matching test cases")
 for key, value in replacements.items():
@@ -72,11 +80,7 @@ mutations = [
     ("telegram.bot_token", "your_bot_token"),
     ("dashboard.onion.enabled", True),
 ]
-rows = [
-    line.split("|")[2].strip()
-    for line in text.split("## Broken configs", 1)[1].splitlines()
-    if line.startswith("| ")
-][1:]
+rows = [cells[1] for cells in table_rows]
 if len(rows) != len(mutations):
     raise ValueError("checklist refusal rows and mutations differ")
 for i, mutation in enumerate(mutations):

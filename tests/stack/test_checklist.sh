@@ -6,6 +6,7 @@ echo "== checklist samples and refusal contracts =="
 source "$HERE/lib.sh" || exit 1
 # shellcheck source=tests/integration/fixtures/payout-pairs.sh
 source "$ROOT/tests/integration/fixtures/payout-pairs.sh" || exit 1
+python3 "$HERE/test_checklist_cases.py" || exit 1
 build_val_sandbox
 cp "$ROOT/docker-compose.yml" "$V/docker-compose.yml" || exit 1
 cases="$SANDBOX/checklist"
