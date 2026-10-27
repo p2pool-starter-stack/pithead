@@ -111,3 +111,20 @@ wap_ok() { # <port>: a boundary value applies and renders verbatim
 }
 wap_ok 1
 wap_ok 65535
+
+wap_null() {
+    seed_env
+    jq -n --arg wallet "$WALLET" --arg tari "$VALID_TARI" '{monero:{mode:"local",wallet_address:$wallet,node_username:"u",node_password:"p"},tari:{wallet_address:$tari},p2pool:{pool:"main"},dashboard:{secure:true,host:"box.lan"},workers:{api_port:null}}' >"$V/config.json"
+    out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+    assert_rc "null workers.api_port applies" "$?" 0
+    assert_eq "null workers.api_port renders default" "$(run_sourced "$V" env_get_file "$V/.env" XMRIG_API_PORT)" 8080
+    jq 'del(.workers.api_port)' "$V/config.json" >"$V/config.absent"
+    mv "$V/config.absent" "$V/config.json"
+    out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+    assert_rc "absent workers.api_port applies" "$?" 0
+    assert_eq "absent workers.api_port renders same default" "$(run_sourced "$V" env_get_file "$V/.env" XMRIG_API_PORT)" 8080
+}
+wap_null
+assert_contains "workers.api_port documentation states null semantics" "$(grep '^| `workers.api_port`' "$ROOT/docs/configuration.md")" null
+assert_contains "worker probe documentation states null semantics" "$(grep '^`workers.api_port` ' "$ROOT/docs/workers.md")" 'omitted or set to `null`'
+assert_contains "worker probe documentation states the default port" "$(grep '^`workers.api_port` ' "$ROOT/docs/workers.md")" 8080

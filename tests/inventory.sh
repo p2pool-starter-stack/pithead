@@ -54,16 +54,9 @@ for f in $NODE_FILES; do n_node=$((n_node + $(node_tests "$f" | count))); done
 # instead of splitting into two nonexistent ones and reporting phantom drift.
 n_stack=0
 while IFS= read -r f; do n_stack=$((n_stack + $(sh_sections "$f" | count))); done < <(find tests/stack -type f -name '*.sh' ! -path '*/fixtures/*' | sort)
-# Every tests/integration/selftest/*.sh, not just selftest.sh. The Makefile globs these and CI
-# runs the target that does (shell.yml since #2048),
-# so all of them are run and linted, while counting the one filename published a third of the
-# sections and hid the rest (#1388). The self-tests grew from one file to five and the singular
-# name never followed. Same enumerate-vs-glob shape the stack aggregate above was fixed for; the
-# tell is a gate line naming paths one by one beside a sibling line that globs. The glob is
-# iterated directly rather than through a word-split string, for the reason given above it.
 n_selftest=0
 for f in tests/integration/selftest/*.sh; do n_selftest=$((n_selftest + $(sh_sections "$f" | count))); done
-n_scen=$(awk -F'\t' 'NF>1{print $1}' <(sed -n '/scenario_matrix() {/,/^EOF/p' tests/integration/scenarios.sh | grep -E '\t') | count)
+n_scen=$(awk -F'\t' 'NF>1{print $1}' <(sed -n '/scenario_matrix() {/,/^EOF/p' tests/integration/scenarios.sh | grep -E $'\t') | count)
 n_axes=$(grep -cE '=' <(sed -n '/axis_coverage() {/,/^EOF/p' tests/integration/scenarios.sh | grep -E '^[a-z].*='))
 n_mini=$(grep -cE 'log "scenario [0-9]' tests/integration/mini-stack/run-mini-stack.sh)
 
@@ -180,14 +173,12 @@ stack_expected=$(
 stack_expected=$(printf '%s\n' "$stack_expected" | sort)
 check_source_set tests/stack/run.sh "$stack_expected" 50
 
-# Support modules are excluded for the skip-accounting.sh reason: run.sh reaches them through
-# their owning phase or shared library, rather than sourcing them directly.
 integration_expected=$(
     printf '%s\n' lib.sh scenarios.sh
     find tests/integration/lib -maxdepth 1 -type f -name '*.sh' \
         ! -name rig-supply.sh ! -name restore-proof.sh ! -name restore-chain-sync.sh ! -name chain-keep.sh ! -name restore-mining-ready.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
-        ! -name harness-args.sh ! -name e2e-env.sh ! -name run-channel.sh ! -name run-lifecycle-wallet-fixture.sh ! -name run-tari-background-sync.sh \
+        ! -name harness-args.sh ! -name e2e-env.sh ! -name run-channel.sh ! -name run-lifecycle-wallet-fixture.sh ! -name run-tari-background-sync.sh ! -name run-lifecycle-tls.sh \
         ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh ! -name worker-detail-diagnostics.sh \
         ! -name remote-endpoints.sh ! -name wallet-fixture.sh ! -name wallet-fixture-recovery.sh \
         ! -name readiness-churn.sh ! -name reset-restore-web.sh ! -name disk-enospc-target.sh \

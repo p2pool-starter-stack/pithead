@@ -211,7 +211,6 @@ fault_clock_drift() {
         "$(printf '%s' "$out" | grep -c 'NOT NTP-synchronized')" "0"
 }
 
-# Keep the fault and its ownership-checked recovery in one target-side process.
 fault_disk_enospc() {
     local ddir script out rc=0 fails_before=$IT_FAIL
     ENOSPC_STORAGE_SAFE=0
@@ -341,7 +340,6 @@ run_fault_injection() {
     fault_tor_probe_egress
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "fault-injection" "$OUT_DIR"
 
-    # Recover the remaining faults only after ENOSPC storage is verified.
     rx "docker compose up -d monerod" >/dev/null 2>&1 || true
     rx "docker compose up -d tor" >/dev/null 2>&1 || true
     fault_rules_clear_all
