@@ -26,7 +26,6 @@ run_lifecycle() {
     assert_rc "status OK after restart" "$?" "0"
     lifecycle_gate_sample after-restart
     run_connection_announcements || return 1
-    # Remove the socket-proxy image and prove up fetches a missing pinned image (#2654).
     if rx 'test -f dashboard/Dockerfile'; then
         local proxy_ref proxy_id proxy_fails="$IT_FAIL"
         proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"
@@ -40,7 +39,6 @@ run_lifecycle() {
             up_rc=$?
             lifecycle_gate_sample after-image-up
             assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
-            # The failing pull or up names its cause; job 1280 lost it to /dev/null (#2755).
             [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
             [ "$up_rc" -eq 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
             rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
@@ -127,7 +125,6 @@ run_lifecycle() {
             elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
                 it_fail "backed-up pool state readable" "dashboard did not report pool.type before restore"
                 lifecycle_ok=0
-            # Diverge from the backed-up state, then restore it back.
             elif push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
                 pithead apply -y >/dev/null 2>&1 &&
                 pithead down >/dev/null 2>&1 &&
@@ -154,8 +151,6 @@ run_lifecycle() {
                         "p2pool still not running 60s after restore+up"
                     lifecycle_ok=0
                 fi
-                # pool.type lags peer reconnect after restore+up — wait + three-way verdict, don't assert
-                # cold on a peer-timing state (#54, #687).
                 local failures_before="$IT_FAIL"
                 assert_pool_switched "restore reverts the pool to the backed-up value" "$backed_pool"
                 if fp_after="$(upgrade_secret_fingerprints)" && [ -n "$fp_after" ]; then
