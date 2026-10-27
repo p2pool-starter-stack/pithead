@@ -1,65 +1,65 @@
 #!/usr/bin/env bash
-#
-# Pithead release pipeline (#44) — run from the private build/test server.
-#
-# Implements the documented stage -> smoke-test -> promote-by-digest flow (docs/dev/releasing.md):
-#
-#   1. Preflight      clean tree, read VERSION, ensure the tag isn't already released, resolve pins
-#   2. Test gate      `make test` (+ the #54 integration matrix, unless skipped) — blocking
-#   3. Build          build the 5 stack images plus the appliance rootfs
-#   4. Stage          push to a staging tag (:vX.Y.Z-rc.N) on GHCR and capture immutable digests
-#   5. Smoke          pull the STAGED images back and verify they resolve to the right version
-#   6. Promote        re-tag the smoke-tested digests to :vX.Y.Z + :latest (no rebuild) and push
-#   6b. Sign          cosign-sign the promoted digests + the install bundle with the box's key (#376)
-#   7. Publish        git tag, GitHub Release from CHANGELOG + assets, fast-forward main to the tag
-#
-# Nothing user-facing is published until every gate is green. Promotion is by digest, so the released
-# bundle is bit-for-bit what was smoke-tested. The script NEVER starts the live stack on this host and
-# never prints a registry token.
-#
-# Usage:
-#   scripts/release/release.sh [options]              (or: make release ARGS="...")
-#
-# Options:
-#   --dry-run            Build the local CLI, run preflight, and print the plan. No image build/push/publish.
-#   --rc N               Staging release-candidate number (default: 1) -> :vX.Y.Z-rc.N.
-#   --skip-tests         Skip `make test` (NOT recommended; the gate is what makes a release trustworthy).
-#   --skip-integration   Skip the #54 live integration matrix (still runs `make test`).
-#   --skip-smoke         Skip the staged-image smoke verification.
-#   --draft              Create the GitHub Release as a DRAFT (held for review; publish it by hand).
-#   --allow-dirty        Permit a dirty tree for --dry-run only.
-#   --unsigned           Publish WITHOUT cosign signatures. One-click upgrades refuse an unsigned
-#                        release once cosign.pub is committed — deliberate, loud, and rarely right.
-#   -y, --yes            Don't prompt before the irreversible steps (push, tag, publish).
-#   -h, --help           Show this help.
-#
-# Environment:
-#   PITHEAD_REGISTRY        Registry namespace (default: ghcr.io/p2pool-starter-stack).
-#   PITHEAD_IMAGE_PREFIX    Image-name prefix (default: pithead-) -> ghcr.io/.../pithead-dashboard.
-#   GHCR_USER / GHCR_TOKEN  ghcr.io login only; falls back to GITHUB_TOKEN, then `gh auth token`.
-#   PITHEAD_REGISTRY_USER / PITHEAD_REGISTRY_TOKEN  Login for other registries (token via stdin).
-#   PITHEAD_REHEARSAL       Set to 1 for a scratch registry; stops after signing, before publish.
-#   PITHEAD_BUILDKITD_CONFIG  Readable buildkitd config; use a separate PITHEAD_BUILDX_BUILDER.
-#   PITHEAD_REGISTRY_READ_RETRIES / PITHEAD_REGISTRY_READ_BACKOFF  Reads: 12 attempts, 10 s delay.
-#   PITHEAD_REGISTRY_WRITE_RETRIES  Total write attempts (1-10, default: 3).
-#   PITHEAD_REGISTRY_WRITE_BACKOFF  First write delay (0-60 s, default: 10); doubles up to 60 s.
-#   BENCH_CI_APP_ID       Numeric id of the installed bench-ci GitHub App (required, no default).
-#   BENCH_CI_APP_SLUG     Slug of that same App: pithead-bench-ci (required, no default).
-#   RELEASE_INTEGRATION_ARGS  Extra args passed to `make test-integration ARGS=...` (the #54 gate).
-#   PITHEAD_RELEASE_ENV    Env file (default: $RELEASE_KEY_DIR/env); explicit missing file is fatal.
-#   RELEASE_TOOL_PATH      Colon-separated absolute tool directories prepended to PATH.
-#   The env file may set BENCH_CI_APP_ID, BENCH_CI_APP_SLUG, RELEASE_INTEGRATION_ARGS,
-#   and RELEASE_TOOL_PATH; values are literal and existing environment settings win.
-#   RELEASE_SMOKE_CMD       Optional command run during the smoke stage for a fuller functional check.
-#   COSIGN_KEY / COSIGN_PASSWORD  Release signing (#376): path to the cosign private key on this box
-#                           and its passphrase. Promoted digests + the bundle get key signatures;
-#                           the committed cosign.pub (repo root, shipped in the bundle) verifies them.
-#                           Required — preflight refuses the cut without them (#960).
-# End help
-#
 set -euo pipefail
 
-# --- Configuration -------------------------------------------------------------------------------
+release_help() {
+    cat <<'RELEASE_HELP'
+
+Pithead release pipeline (#44) — run from the private build/test server.
+
+Implements the documented stage -> smoke-test -> promote-by-digest flow (docs/dev/releasing.md):
+
+  1. Preflight      clean tree, read VERSION, ensure the tag isn't already released, resolve pins
+  2. Test gate      `make test` (+ the #54 integration matrix, unless skipped) — blocking
+  3. Build          build the 5 stack images plus the appliance rootfs
+  4. Stage          push to a staging tag (:vX.Y.Z-rc.N) on GHCR and capture immutable digests
+  5. Smoke          pull the STAGED images back and verify they resolve to the right version
+  6. Promote        re-tag the smoke-tested digests to :vX.Y.Z + :latest (no rebuild) and push
+  6b. Sign          cosign-sign the promoted digests + the install bundle with the box's key (#376)
+  7. Publish        git tag, GitHub Release from CHANGELOG + assets, fast-forward main to the tag
+
+Nothing user-facing is published until every gate is green. Promotion is by digest, so the released
+bundle is bit-for-bit what was smoke-tested. The script NEVER starts the live stack on this host and
+never prints a registry token.
+
+Usage:
+  scripts/release/release.sh [options]              (or: make release ARGS="...")
+
+Options:
+  --dry-run            Build the local CLI, run preflight, and print the plan. No image build/push/publish.
+  --rc N               Staging release-candidate number (default: 1) -> :vX.Y.Z-rc.N.
+  --skip-tests         Skip `make test` (NOT recommended; the gate is what makes a release trustworthy).
+  --skip-integration   Skip the #54 live integration matrix (still runs `make test`).
+  --skip-smoke         Skip the staged-image smoke verification.
+  --draft              Required: create a complete draft; only the owner publishes after image checks.
+  --allow-dirty        Permit a dirty tree for --dry-run only.
+  --unsigned           Rejected for appliance releases: signatures are mandatory.
+  -y, --yes            Don't prompt before the irreversible steps (push, tag, publish).
+  -h, --help           Show this help.
+
+Environment:
+  PITHEAD_REGISTRY        Registry namespace (default: ghcr.io/p2pool-starter-stack).
+  PITHEAD_IMAGE_PREFIX    Image-name prefix (default: pithead-) -> ghcr.io/.../pithead-dashboard.
+  GHCR_USER / GHCR_TOKEN  ghcr.io login only; falls back to GITHUB_TOKEN, then `gh auth token`.
+  PITHEAD_REGISTRY_USER / PITHEAD_REGISTRY_TOKEN  Login for other registries (token via stdin).
+  PITHEAD_REHEARSAL       Set to 1 for a scratch registry; stops after signing, before publish.
+  PITHEAD_BUILDKITD_CONFIG  Readable buildkitd config; use a separate PITHEAD_BUILDX_BUILDER.
+  PITHEAD_REGISTRY_READ_RETRIES / PITHEAD_REGISTRY_READ_BACKOFF  Reads: 12 attempts, 10 s delay.
+  PITHEAD_REGISTRY_WRITE_RETRIES  Total write attempts (1-10, default: 3).
+  PITHEAD_REGISTRY_WRITE_BACKOFF  First write delay (0-60 s, default: 10); doubles up to 60 s.
+  BENCH_CI_APP_ID       Numeric id of the installed bench-ci GitHub App (required, no default).
+  BENCH_CI_APP_SLUG     Slug of that same App: pithead-bench-ci (required, no default).
+  RELEASE_INTEGRATION_ARGS  Extra args passed to `make test-integration ARGS=...` (the #54 gate).
+  PITHEAD_RELEASE_ENV    Env file (default: $RELEASE_KEY_DIR/env); explicit missing file is fatal.
+  RELEASE_TOOL_PATH      Colon-separated absolute tool directories prepended to PATH.
+  The env file may set BENCH_CI_APP_ID, BENCH_CI_APP_SLUG, RELEASE_INTEGRATION_ARGS,
+  and RELEASE_TOOL_PATH; values are literal and existing environment settings win.
+  RELEASE_SMOKE_CMD       Optional command run during the smoke stage for a fuller functional check.
+  COSIGN_KEY / COSIGN_PASSWORD  Release signing (#376): path to the cosign private key on this box
+                          and its passphrase. Promoted digests + the bundle get key signatures;
+                          the committed cosign.pub (repo root, shipped in the bundle) verifies them.
+                          Required — preflight refuses the cut without them (#960).
+RELEASE_HELP
+}
 
 PROD_REGISTRY=ghcr.io/p2pool-starter-stack
 REGISTRY="${PITHEAD_REGISTRY:-$PROD_REGISTRY}"
@@ -149,7 +149,7 @@ while [ $# -gt 0 ]; do
     --unsigned) UNSIGNED=1 ;;
     -y | --yes) ASSUME_YES=1 ;;
     -h | --help)
-        awk 'NR > 1 { if ($0 == "# End help") exit; sub(/^# ?/, ""); print }' "$0"
+        release_help
         exit 0
         ;;
     *) die "Unknown option: $1 (try --help)" ;;
@@ -287,10 +287,11 @@ source "$RELEASE_LIB_DIR/preflight.sh"
 source "$RELEASE_LIB_DIR/images.sh"
 # shellcheck source=scripts/release/bundle.sh
 source "$RELEASE_LIB_DIR/bundle.sh"
-
-# --- Main -----------------------------------------------------------------------------------------
+# shellcheck source=scripts/release/appliance.sh
+source "$RELEASE_LIB_DIR/appliance.sh"
 
 main() {
+    require_appliance_draft
     log "Pithead release pipeline (#44)$([ "$DRY_RUN" -eq 1 ] && echo '  [DRY RUN]')"
     preflight
     require_bench_tier4
@@ -300,11 +301,12 @@ main() {
     stage_push
     smoke_test
     promote
-    sign_images # #376 — signs the digests promote re-tagged
+    sign_images
     if [ "${PITHEAD_REHEARSAL:-0}" = 1 ]; then
         ok "Rehearsal complete: nothing was tagged or published"
         return 0
     fi
+    prepare_appliance
     publish
 
     printf '\n'

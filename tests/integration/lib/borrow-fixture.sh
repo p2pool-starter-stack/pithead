@@ -60,16 +60,20 @@ miner_service_active() {
     on_miner 'sudo -n systemctl is-active --quiet xmrig || systemctl --user is-active --quiet xmrig'
 }
 
-handle_borrow_rearm() { # <request> <ack> <run-id>
+handle_borrow_rearm() {
     local request="$1" ack="$2" run_id="$3" action record owner sequence extra
     record="$(on_bench "cat '$request'")" || return 1
     read -r owner action sequence extra <<<"$record"
     [ "$owner" = "$run_id" ] && [[ "$sequence" =~ ^[0-9]+$ ]] && [ -z "$extra" ] || return 1
     case "$action" in
-    rotate-stratum)
+    rotate-stratum | scenario-stratum)
         step "rotating the reserved miner's temporary stratum credential…"
         MINER_ROTATE_CFG_BACKUP="$MINER_XMRIG_CONFIG.e2e-rotate.$run_id"
         on_bench "sed -n 's/^PROXY_STRATUM_PASSWORD=//p' '$E2E_DIR/.env'" | rotate_borrowed_stratum_password || return 1
+        if [ "$action" = scenario-stratum ]; then
+            printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
+            return
+        fi
         ;;
     restore-stratum)
         step "restoring the reserved miner's temporary stratum credential…"

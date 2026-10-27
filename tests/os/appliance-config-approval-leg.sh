@@ -115,9 +115,7 @@ assert_shipped_config_version_asset() {
     fi
 }
 
-# Commit a dashboard-password change and read its verdict from the host's result spool: the
-# dashboard's own result poll authenticates with the login this very commit replaces (#2367).
-password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current login) by dynamic scope
+password_commit_via_host() {
     local live proposed rid result="" tries=0
     live=$(sensitive_live_config) || {
         bad "dashboard-password repoint NOT exercised: /api/config unreadable before the commit"
@@ -128,8 +126,6 @@ password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current
         bad "dashboard-password repoint NOT exercised: the preview never returned"
         return 1
     }
-    # The owner's #2367 ruling: the operator sees the cost before confirming. Refuse to commit
-    # unless the host preview is envelope-gated and names the lockout and console-login costs.
     if ! dashboard_password_preview_warns_verdict "$APPROVAL_PREVIEW"; then
         bad "dashboard-password preview did not warn before the commit (want previewed, approval_required, lockout + console-login text; got $(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status, approval_required, warns: ([.changes[]?.msg] | any(contains("locks this session out") and contains("console root login")))}' 2>/dev/null || printf 'unparseable preview'))"
         return 1
@@ -270,7 +266,6 @@ _password_commit_via_host_self_test() (
     _ssh() { printf '{"status":"applied"}'; }
     preview=$good committed=0
     password_commit_via_host new && [ "$committed" = 1 ] || exit 1
-    # A preview missing the status, the approval flag or either warning is refused BEFORE commit.
     for bad_preview in "$(jq -c 'del(.status)' <<<"$good")" "$(jq -c '.approval_required=false' <<<"$good")" \
         "$(jq -c '.changes[0].msg|=sub("locks this session out";"")' <<<"$good")" \
         "$(jq -c '.changes[0].msg|=sub("console root login";"")' <<<"$good")"; do

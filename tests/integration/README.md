@@ -21,7 +21,10 @@ mini-stack/     docker overlay running the real dashboard + docker-control again
 
 The live matrix here is tier 4 of the broader plan. See
 [`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md) for all four tiers and the full
-scenario catalog.
+scenario catalog. The Tor fault records bounded numeric mining-witness samples in the
+harness transcript: accepted shares, worker count, worker hashrate and minimum uptime.
+API failures are explicit; worker identities and raw responses are omitted. The five-minute
+mining-continuity assertion remains unchanged.
 
 Quick start:
 

@@ -19,6 +19,12 @@ printf 'TARI_REQUIRED=false\n' >"$SH/env"
 out="$(PITHEAD_ENV_FILE="$SH/env" CURL_BODY="$sh_mixed" PATH="$SH/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "monero syncing still holds" "$out" "held until it completes"
 assert_not_contains "non-required tari row is not listed" "$out" "tari"
+sh_rows="$(awk '$2 == "monero" || $2 == "tari" {print $2}' <<<"$out" | paste -sd , -)"
+assert_eq "non-required Tari leaves only the Monero sync row" "$sh_rows" "monero"
+sh_guide="$(awk '/^### 1\.6 / {section=1; next} section && /^### / {exit} section {print}' "$ROOT/docs/dev/manual-qa/diy/01-fresh-install.md")"
+assert_contains "fresh-install step 1.6 agrees with the non-required Tari fixture" \
+    "$sh_guide" "Sync-hold rows: \`$sh_rows\` in both fresh runs (default and beta opt-in)."
+unset sh_rows sh_guide
 printf 'TARI_REQUIRED=true\n' >"$SH/env"
 out="$(PITHEAD_ENV_FILE="$SH/env" CURL_BODY="$sh_mixed" PATH="$SH/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "required tari row is listed" "$out" "tari"
