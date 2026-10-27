@@ -274,6 +274,9 @@ If this stack saved you time, donations to this XMR wallet are appreciated:
 486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R
 ```
 
+Hashpower donation is unavailable; the baked destination fields ship empty. See
+[Project donations](docs/donation.md) for the destination approval and validation contract.
+
 ## 📄 License
 
 Pithead's own code is provided "as-is" under the [MIT License](./LICENSE). Bundled
