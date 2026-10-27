@@ -83,7 +83,8 @@ Once a destination is published, compare the recipient and project address shown
 release with the shipped destination. Do not substitute the manual-transfer address in
 the [README](../README.md#-donate) for an unpublished hashpower destination.
 
-Use a Monero wallet with the project's public address and a published private view key,
+Use a [Monero view-only wallet](https://www.getmonero.org/resources/user-guides/view_only.html)
+with the project's public address and a published private view key,
 if the project publishes one, to scan the chain for incoming receipts. A public address
 alone does not reveal incoming amounts on Monero's blockchain. No project view key is
 published by this page, so it does not claim public receipt auditing is available.
