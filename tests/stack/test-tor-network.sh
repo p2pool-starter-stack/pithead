@@ -536,8 +536,6 @@ esac
 assert_contains "tari: resolver pointed at dead local sinkhole (#162)" "$TARI_SVC" "127.0.0.1"
 
 echo "== black-box: tor.auto_heal renders to .env (#424) =="
-# The dashboard's healer reads TOR_AUTO_HEAL from .env. Key absent -> off (the stack never
-# restarts its privacy boundary unbidden); explicit true -> on.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"

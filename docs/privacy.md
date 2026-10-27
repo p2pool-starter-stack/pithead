@@ -198,7 +198,7 @@ What the running stack sends to the internet, connection by connection.
 | **Telegram** bot (#121) | `api.telegram.org` | nothing about you | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | **off** | opt-in; both the alert sends and the command poll follow the profile |
 | Dashboard **Healthchecks** ping (#79) | `hc-ping.com` (or self-hosted) | nothing about you | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | opt-in (set `healthchecks.ping_url`; off until set) | profile routing applies; an explicit `notifications.tor` value wins |
 | Dashboard **price feed** (#520) | `api.coingecko.com` | nothing about you | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | **off** | opt-in (`dashboard.energy.price_feed: true`); fetches the XMR + XTM spot prices every 15 min; fails silently, static config prices are the fallback |
-| Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` and `www.cloudflare.com/cdn-cgi/trace` | No account identifier | Tor when auto-heal is enabled | **off** | `performance` disables auto-heal; `balance`/`privacy` govern it. The no-login path remains inactive until [#3166](https://github.com/p2pool-starter-stack/pithead/issues/3166) lands. |
+| Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` and `www.cloudflare.com/cdn-cgi/trace` | No account identifier | Tor when auto-heal is enabled | **on** (Balance) | `performance` disables auto-heal; `balance`/`privacy` enable it. The restricted host healing channel works without dashboard login or general dashboard control. |
 | Dashboard **Tari explorer reference** (#2464) | `textexplore.tari.com` (or `tari.explorer_url`) | nothing about you | profile-controlled outbound request | **on** while Tari is local or remote | once an hour; a blank URL turns it off and a failed fetch contributes nothing to the verdict |
 | **Webhook / ntfy** alert sinks (#380) | your configured URLs | alert texts | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | opt-in (set `notifications.webhooks` / `notifications.ntfy.url`; off until set) | an explicit `notifications.tor` value overrides the profile |
 
@@ -276,7 +276,7 @@ Inbound onion services remain available independently of outbound routing.
 
 Local node sync and ongoing outbound traffic use Tor. P2Pool may reach clearnet peers through
 Tor exits. The egress firewall is on. Rigs need neither a stratum password nor worker API token.
-Tor auto-heal defaults on; without its host control channel it is inactive, which status reports.
+Tor auto-heal defaults on and uses a restricted host healing channel when general dashboard control is disabled. This permits Tor recovery without enabling dashboard configuration or other control actions.
 
 ### Privacy
 

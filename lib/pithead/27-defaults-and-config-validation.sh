@@ -225,3 +225,17 @@ validate_energy_config() {
           else empty end' "$CONFIG_FILE" 2>/dev/null)
     [ -z "$en_err" ] || error "$en_err"
 }
+
+validate_webhook_config() {
+    local hook_error
+    if ! hook_error=$(jq -r '
+        .notifications.webhooks as $hooks
+        | if $hooks == null then empty
+          elif ($hooks | type) != "array" then "notifications.webhooks must be an array of URL strings."
+          else $hooks | to_entries | map(select((.value | type) != "string")) | first
+            | select(. != null) | "notifications.webhooks[\(.key)] must be a URL string; null and other non-string members are not allowed."
+          end' "$CONFIG_FILE" 2>/dev/null); then
+        error "Could not validate notifications.webhooks."
+    fi
+    [ -z "$hook_error" ] || error "$hook_error"
+}

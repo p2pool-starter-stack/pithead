@@ -35,7 +35,7 @@ for profile in performance balance privacy; do
         [ "$MONERO_CLEARNET_SYNC:$TARI_CLEARNET_SYNC:$P2POOL_CLEARNET:$TOR_EGRESS_FIREWALL:$XVB_TOR_ENABLED:$NOTIFY_TOR:$TOR_AUTO_HEAL:$PROXY_STRATUM_TLS:$XMRIG_API_AUTH" = false:false:false:true:true:true:true:false:none ]
         [[ "$P2POOL_FLAGS" == *--socks5* && "$P2POOL_FLAGS" != *--no-clearnet-p2p* ]]
         [ -z "$PROXY_STRATUM_PASSWORD$XMRIG_API_TOKEN" ]
-        [[ "$(profile_status)" == *'auto-heal is inactive'* ]]
+        [ "$(profile_status)" = "Profile: balance" ]
     else
         [ "$MONERO_CLEARNET_SYNC:$TARI_CLEARNET_SYNC:$P2POOL_CLEARNET:$TOR_EGRESS_FIREWALL:$XVB_TOR_ENABLED:$NOTIFY_TOR:$TOR_AUTO_HEAL:$PROXY_STRATUM_TLS:$XMRIG_API_AUTH" = false:false:false:true:true:true:true:true:token ]
         [[ "$P2POOL_FLAGS" == *--socks5* && "$P2POOL_FLAGS" == *--no-clearnet-p2p* ]]
@@ -123,6 +123,15 @@ printf 'PASS: source-restricted peer-port bridge and persistent clearnet operati
     [ ! -e "$(tor_egress_choice_marker)/monero" ] && [ ! -e "$(tor_egress_choice_marker)/tari" ]
 )
 printf 'PASS: explicit firewall override keeps Performance nodes admitted across sync and boot; stale Tor transitions rejected\n'
+
+jq '.profile="unsupported"' "$CONFIG_FILE" >"$WORK/next"
+cp "$WORK/next" "$CONFIG_FILE"
+if (parse_and_validate_config >"$WORK/invalid-profile.log" 2>&1); then
+    printf 'FAIL: unsupported profile was accepted\n'
+    exit 1
+fi
+grep -Fq 'profile must be "performance", "balance" or "privacy".' "$WORK/invalid-profile.log"
+printf 'PASS: unsupported profiles are rejected before rendering\n'
 
 rm -f "$CONFIG_FILE"
 [ "$(profile_status)" = "Profile: unavailable (configuration missing)." ]

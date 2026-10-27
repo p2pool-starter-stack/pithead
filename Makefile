@@ -36,6 +36,7 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh
 	bash tests/stack/standalone/test_appliance_hugepages.sh
+	bash tests/stack/standalone/test_grub_hugepages_real.sh
 	python3 tests/stack/standalone/test_clearnet_attestation.py
 	python3 tests/stack/standalone/test_stratum_port.py
 
@@ -57,10 +58,11 @@ test-integration-selftest: pithead ## Integration harness logic and local transp
 	for t in tests/integration/selftest/*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
 	for t in tests/os/selftest*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
 
-test-tools: ## Build-tool contracts and CI workflow guards (no live services)
+test-tools:
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
+	python3 scripts/lint/test-browser-workflow.py
 	python3 tests/stack/standalone/test_tor_saturated_fixture.py
 	python3 tests/stack/standalone/test_monero_download.py
 	python3 tests/stack/standalone/test_appliance_release_docs.py
@@ -138,9 +140,9 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 			echo "lint-sh: shfmt $${have:-not found} is not the pinned $(SHFMT_VERSION) — its formatting is not this gate's."; \
 			echo "lint-sh: install the pin (see docs/dev/release-server.md) or run the gate in CI."; exit 1; }
 	printf '%s\0' pithead pithead-completion.bash install.sh scripts/*.sh scripts/*/*.sh build/*/*.sh dashboard/*.sh \
-		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/*/*.sh \
+		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/test_setup_build_interrupt.sh tests/stack/*/*.sh \
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
-		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
+		os/installer/pithead-install os/build-image.sh os/rootfs/*.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-serial-port-present \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version \

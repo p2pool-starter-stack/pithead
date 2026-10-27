@@ -42,9 +42,6 @@ profile_status() {
     else
         log "Profile: $name"
     fi
-    if [ "$(config_bool '.tor.auto_heal' false)" = true ] && [ "$(config_bool '.dashboard.control.enabled' false)" != true ]; then
-        log "Tor auto-heal is inactive: dashboard control is disabled."
-    fi
 }
 
 describe_profile_change() {

@@ -8,6 +8,8 @@ INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-matrix.sh
 source "$HERE/../lib/run-matrix.sh"
 
+source "$HERE/../scenarios.sh"
+
 echo "== Authenticated scenarios hand off and restore borrowed miner credentials (#3491) =="
 d="$(mktemp -d)"
 trap 'rm -rf "$d"' EXIT
@@ -20,20 +22,58 @@ run_fixture() {
         SKIP_MINING_ASSERTS=0
         [ "$mode" != no-rig ] || SKIP_MINING_ASSERTS=1
         [ "$mode" != open ] || BASELINE_CONFIG='{"p2pool":{"pool":"mini"},"dashboard":{"tari_required":false}}'
-        [ "$mode" != privacy ] || BASELINE_CONFIG='{"profile":"privacy","p2pool":{"pool":"mini"},"dashboard":{"tari_required":false}}'
         CI_RIG_RECOVERY_HOLD=1
         IT_BORROW_REARM_REQUEST="$d/request" IT_BORROW_REARM_ACK="$d/ack" IT_BORROW_REARM_TOKEN=run-3491
         [ "$mode" != no-controller ] || IT_BORROW_REARM_REQUEST=""
         [ "$mode" != no-hold ] || CI_RIG_RECOVERY_HOLD=0
+        RIG_NAME="" RIG_HOST=""
+        local scenario=fixture overrides=''
+        case "$mode" in
+        appliance*)
+            BASELINE_CONFIG='{"local_miner":{"enabled":true},"p2pool":{"pool":"mini"},"dashboard":{"tari_required":false}}'
+            scenario="remote-main-stratum-tls"
+            if [ "$mode" = appliance-privacy ]; then
+                scenario=profile-privacy
+                BASELINE_CONFIG=$(jq '.profile="privacy"' <<<"$BASELINE_CONFIG")
+            fi
+            overrides=$(scenario_overrides "$scenario")
+            CI_RIG_RECOVERY_HOLD=0
+            IT_BORROW_REARM_REQUEST="" IT_BORROW_REARM_ACK="" IT_BORROW_REARM_TOKEN=""
+            [ "$mode" != appliance-no-miner ] || BASELINE_CONFIG=$(jq 'del(.local_miner)' <<<"$BASELINE_CONFIG")
+            [ "$mode" != appliance-disabled ] || BASELINE_CONFIG=$(jq '.local_miner.enabled=false' <<<"$BASELINE_CONFIG")
+            [ "$mode" != appliance-string ] || BASELINE_CONFIG=$(jq '.local_miner.enabled="true"' <<<"$BASELINE_CONFIG")
+            [ "$mode" != appliance-borrowed-name ] || RIG_NAME=borrowed
+            [ "$mode" != appliance-borrowed-host ] || RIG_HOST=rig.example
+            ;;
+        esac
+        case "$mode" in
+        privacy | privacy-no-controller)
+            scenario=profile-privacy
+            BASELINE_CONFIG='{"profile":"privacy","p2pool":{"pool":"mini"},"dashboard":{"tari_required":false}}'
+            [ "$mode" != privacy-no-controller ] || IT_BORROW_REARM_REQUEST=""
+            ;;
+        esac
         active_password=baseline
-        resolve_overrides() { RESOLVED=""; }
-        render_scenario_config() { printf '%s' "$1"; }
+        resolve_overrides() { RESOLVED="$1"; }
+        rx() {
+            if [ "$1" = 'timeout 1000 python3 tests/integration/profile-peering.py' ]; then
+                printf 'peering\n' >>"$d/events"
+                return 0
+            fi
+            [ "$mode" != privacy ] || return 0
+            [ "$mode" != appliance-transport-fails ] || return 255
+            (cd "$d/target" && bash -c "$1")
+        }
         push_config() {
-            if [ "$mode" = privacy ]; then
+            if [ "$scenario" = profile-privacy ]; then
                 [ "$(jq '.p2pool | has("stratum_password")' <<<"$1")" = false ] && printf 'sparse-profile\n' >>"$d/events"
+                [ "$mode" != appliance-privacy ] || active_password=scenario
+            fi
+            if [ "$scenario" = remote-main-stratum-tls ]; then
+                jq -e '.monero.mode == "remote" and .p2pool.stratum_password == "auto" and .p2pool.stratum_tls == true' <<<"$1" >/dev/null || exit 1
+                active_password=scenario
             fi
         }
-        rx() { return 0; }
         pithead() { printf 'apply\n' >>"$d/events"; }
         wait_borrow_rearm() {
             printf '%s\n' "$1" >>"$d/events"
@@ -71,11 +111,7 @@ run_fixture() {
         restore_firewall_after_clearnet() { :; }
         capture_artifacts() { printf 'capture\n' >>"$d/events"; }
         IT_FAIL=0
-        if [ "$mode" = privacy ]; then
-            run_scenario profile-privacy '' >/dev/null
-        else
-            run_scenario fixture '' >/dev/null
-        fi
+        run_scenario "$scenario" "$overrides" >/dev/null
         printf 'next:%s\n' "$active_password" >>"$d/events"
         [ "$IT_FAIL" = 0 ]
     )
@@ -91,12 +127,29 @@ check_fixture() {
 check_fixture no-controller 1 'next:baseline'
 check_fixture no-hold 1 'next:baseline'
 check_fixture authenticated 0 $'apply\nscenario-stratum\nminer-wait:scenario\nassert:0:scenario\nrestore-stratum\nnext:baseline'
-check_fixture privacy 0 $'sparse-profile\napply\nscenario-stratum\nminer-wait:scenario\nassert:0:scenario\nrestore-stratum\nnext:baseline'
+check_fixture privacy 0 $'sparse-profile\napply\nscenario-stratum\nminer-wait:scenario\nassert:0:scenario\npeering\nrestore-stratum\nnext:baseline'
+check_fixture privacy-no-controller 1 'next:baseline'
 check_fixture no-rig 0 $'apply\nassert:1:baseline\nnext:baseline'
 check_fixture open 0 $'apply\nminer-wait:baseline\nassert:0:baseline\nnext:baseline'
 check_fixture transfer-fails 1 $'apply\nscenario-stratum'
 check_fixture restore-fails 1 $'apply\nscenario-stratum\nminer-wait:scenario\nassert:0:scenario\nrestore-stratum'
 check_fixture assertion-fails 1 $'apply\nscenario-stratum\nminer-wait:scenario\nassert:0:scenario\nrestore-stratum\ncapture\nnext:baseline'
+
+mkdir "$d/target"
+printf 'is_appliance() { return 0; }\n' >"$d/target/pithead"
+check_fixture appliance 0 $'apply\nminer-wait:scenario\nassert:0:scenario\nnext:scenario'
+check_fixture appliance-privacy 0 $'sparse-profile\napply\nminer-wait:scenario\nassert:0:scenario\npeering\nnext:scenario'
+for mode in appliance-no-miner appliance-disabled appliance-string appliance-borrowed-name appliance-borrowed-host appliance-transport-fails; do
+    check_fixture "$mode" 1 'next:baseline'
+done
+printf 'is_appliance() { return 1; }\n' >"$d/target/pithead"
+check_fixture appliance-diy 1 'next:baseline'
+printf 'is_appliance() { return 2; }\n' >"$d/target/pithead"
+check_fixture appliance-detection-fails 1 'next:baseline'
+printf 'return 1\n' >"$d/target/pithead"
+check_fixture appliance-source-fails 1 'next:baseline'
+printf ':\n' >"$d/target/pithead"
+check_fixture appliance-missing-detector 1 'next:baseline'
 
 # shellcheck source=tests/integration/lib/borrow-fixture.sh
 source "$HERE/../lib/borrow-fixture.sh"
