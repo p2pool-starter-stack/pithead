@@ -636,15 +636,29 @@ shell argument or a log line.
 
 ## What each tier needs from its host
 
-Measured on a macOS host driving the container (#2078), not inferred. "Container" means
-`make test-container`, which runs the tier in `tests/runner/Dockerfile` against the host's Docker
-daemon. A tier that needs something the container cannot supply says so.
+"Container" means `make test-container`, using `tests/runner/Dockerfile` against the host's
+Docker daemon. Ordinary CI runs directly on GitHub's Linux runners; it does not use this image.
+The focused **Test runner acceptance** workflow rebuilds the PR head's image and runs C2–C5
+from #3115: an IPv4 interface listing, at least 77 rig-worker assertions with zero failures,
+and at least 6000 stack assertions with all 52 named `ip`-dependent assertions passing.
+The missing-`iproute2` control must fail C3–C5; its expected failure does not waive normal CI.
+The existing missing Go, missing `envsubst`, three Compose-pull assertions and lock-window
+flake remain excluded from C5, which only judges those 52 assertions. No extra tools are added.
+C1 permits exactly `tests/runner/Dockerfile`, `.github/workflows/test-runner-acceptance.yml`,
+`tests/runner/accept-iproute2.py` and `docs/dev/testing-strategy.md`; the Dockerfile must change.
+On the exact PR head, reviewers run `python3 tests/runner/accept-iproute2.py --output "$TMPDIR/fixed"`
+and repeat with `--missing-iproute2 --output "$TMPDIR/control"` on Linux with Docker.
+The default comparison base is `origin/develop-v2.1.0`; use `--base REF` to name another base.
+The workflow retains the commit, C1–C5 output, command exits and redacted container logs as
+`runner-acceptance-<case>-<sha>` artifacts. A confirmed negative control exits zero while its
+C1–C5 verdict remains `NOT ACCEPTED`; the fixed image must print `ACCEPTED: 5/5 checks pass`.
+The parser self-test (`--self-test`) runs without Docker. A tier the container cannot supply says so.
 
 | Tier | Needs on the host | Runs in the container? |
 |---|---|---|
 | 1 — dashboard pytest | `uv` only; it fetches the CPython pinned by `dashboard/.python-version`. `make test-dashboard` uses pytest-xdist (`-n auto`) with the 80% coverage gate; the Docker test stage retains the serial gate. Test fixtures replace only the control-service module’s asyncio reference to yield result polls through scheduled events, disable upgrade refresh attempts in history tests, and shorten probe-mismatch timeouts; production retains a 0.5-second result-poll interval and refreshes up to six times at ten-second intervals. No Docker, any OS. | Yes |
 | 1 — frontend `node --test` | Node 20. No Docker, any OS. | Yes |
-| 1 — shell suite (`tests/stack/`) | **Linux, GNU coreutils, non-root**, and a longer tool list than it looks: `bash`, `jq` **1.7 or newer**, `e2fsprogs`, a system `python3` on PATH, `xxd`, `sudo`, and a **UTF-8 locale**. Refuses on Darwin (#2041); root bypasses the permission-denied fixtures. Missing system Python, xxd, or a UTF-8 locale fails *quietly* — see the note below. | Yes — the container is how a non-Linux host runs this at all |
+| 1 — shell suite (`tests/stack/`) | **Linux, GNU coreutils, non-root**, `iproute2`, and a longer tool list than it looks: `bash`, `jq` **1.7 or newer**, `e2fsprogs`, a system `python3` on PATH, `xxd`, `sudo`, and a **UTF-8 locale**. Refuses on Darwin (#2041); root bypasses the permission-denied fixtures. Missing system Python, xxd, or a UTF-8 locale fails *quietly* — see the note below. | Yes — the container is how a non-Linux host runs this at all |
 | 1 — netwatch selftest | Docker: it builds the pinned harness images and asks each tool for its version. | Yes (host daemon via the socket) |
 | 2 — fakes contract | `uv` only. Docker-free by design. | Yes |
 | 3 — mini-stack | Docker, Compose v2, **and buildx**. Without the buildx plugin Compose falls back to the classic builder, which rejects the `RUN --mount=type=cache` in `dashboard/Dockerfile`, and the tier dies at `docker compose build failed` with nothing naming the cause. The driver must also reach the fakes' host-published ports — from inside a container that is `PITHEAD_TEST_HOST`, not `127.0.0.1`. | Yes |
