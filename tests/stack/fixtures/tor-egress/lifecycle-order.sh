@@ -4,14 +4,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' >"$SANDBOX/lifecycle-bin/systemctl"
 chmod +x "$SANDBOX/lifecycle-bin/systemctl"
 
 echo "== regression: every command installs the Tor-egress firewall BEFORE compose (#291) =="
-# The firewall must go in BEFORE any clearnet-capable container starts, on EVERY path that brings one
-# up (#276 closed the window for stack_up; #291 + this change close it for upgrade/apply/reset). If a
-# container starts first, its clearnet dial goes out unfenced until the rules land.
-# Each case neutralises the command's preamble and records the order of the two load-bearing ops; the
-# firewall sentinel MUST precede the compose sentinel. fw_then_compose() extracts just those two from
-# whatever else the function prints (warnings, banners) so the assert is exact.
 
-# up: the reference path #276 fixed — pin it too so a future reorder of stack_up is caught here.
 up_order=$(
     cd "$SANDBOX" || exit
     export PATH="$SANDBOX/lifecycle-bin:$PATH"
@@ -55,10 +48,6 @@ upg_order=$(
 )
 assert_eq "upgrade applies the firewall before 'compose up' (#291)" "$(fw_then_compose "$upg_order")" "firewall,compose,"
 
-# #355: `upgrade` must run ensure_onion_password BEFORE parse_and_validate_config, so enabling the
-# dashboard onion (#343) with no password auto-generates one (login: admin) instead of failing the
-# "onion needs a 16+ char password" validation. setup/apply already do; upgrade didn't (prod hit it).
-# This exercises the command-flow ORDER — the wiring the unit test of ensure_onion_password can't see.
 upg_onion_order=$(
     cd "$SANDBOX" || exit
     export PATH="$SANDBOX/lifecycle-bin:$PATH"
@@ -86,10 +75,6 @@ upg_onion_order=$(
 assert_eq "upgrade runs ensure_onion_password before config validation (#355)" \
     "$(printf '%s\n' "$upg_onion_order" | grep -xE 'onionpw|validate' | tr '\n' ',')" "onionpw,validate,"
 
-# #376: on a release install, `upgrade` must verify the image signatures BEFORE anything is pulled
-# or recreated. If a refactor drops or reorders the verify_release_images call, "verify" goes
-# missing or lands after "compose" and this fails — the wiring half of the fail-closed guarantee
-# (the decision itself is black-boxed below).
 upg_sig_order=$(
     cd "$SANDBOX" || exit
     export PATH="$SANDBOX/lifecycle-bin:$PATH"
@@ -119,9 +104,6 @@ upg_sig_order=$(
 assert_eq "upgrade verifies release-image signatures before 'compose up' (#376)" \
     "$(printf '%s\n' "$upg_sig_order" | grep -xE 'verify|compose' | tr '\n' ',')" "verify,compose,"
 
-# #452: the FIRST-install `up` must also verify before it pulls — the same wiring guarantee as
-# upgrade. A fresh release install's first `up` is where the 5 images are first fetched; if verify
-# goes missing or lands after "compose", this fails.
 up_sig_order=$(
     cd "$SANDBOX" || exit
     export PATH="$SANDBOX/lifecycle-bin:$PATH"
@@ -143,16 +125,13 @@ up_sig_order=$(
 assert_eq "first-install up verifies release-image signatures before 'compose up' (#452)" \
     "$(printf '%s\n' "$up_sig_order" | grep -xE 'verify|compose' | tr '\n' ',')" "verify,compose,"
 
-# apply had the same after-compose ordering bug as #272's stack_upgrade — fixed alongside #291. Take
-# the no-change-but-incomplete-marker retry path so apply recreates containers without the interactive
-# diff (env_changed_keys returns nothing; a pre-seeded .apply-incomplete marker forces the retry).
 apply_order=$(
     cd "$SANDBOX" || exit
     export PATH="$SANDBOX/lifecycle-bin:$PATH"
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
-    # shellcheck disable=SC2034  # read by the sourced apply()'s "not provisioned" guard, unseen here
+    # shellcheck disable=SC2034
     P2POOL_ONION=onion
     require_env() { :; }
     parse_and_validate_config() { :; }
@@ -172,21 +151,18 @@ apply_order=$(
     docker() { :; }
     apply_tor_egress_firewall() { echo firewall; }
     compose_up_checked() { echo compose; }
-    : >".env.apply-incomplete" # force the retry path
+    : >".env.apply-incomplete"
     apply
 )
 assert_eq "apply applies the firewall before 'compose up' (#291)" "$(fw_then_compose "$apply_order")" "firewall,compose,"
 
-# reset-dashboard recreates p2pool (clearnet-capable); on a `down` stack it must install the firewall
-# first or p2pool comes up with no firewall at all. -y skips the destructive confirm; the docker stub
-# emits the compose sentinel only for the `compose up` it ends on.
 rd_order=$(
     cd "$SANDBOX" || exit
     export PATH="$SANDBOX/lifecycle-bin:$PATH"
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
-    env_get() { echo "/nonexistent/reset-$1"; } # non-existent dirs -> rm skipped
+    env_get() { echo "/nonexistent/reset-$1"; }
     assert_safe_dir() { :; }
     mkdir() { :; }
     sudo() { :; }

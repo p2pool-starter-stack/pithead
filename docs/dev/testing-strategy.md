@@ -145,6 +145,11 @@ checks blocked mutations, child-process failures, and preservation of pre-existi
 unit and firewall fixtures after success, failure and interruption. It also checks
 that the Tari parser fixture renders with its own config and bounded cleanup paths.
 
+`tests/stack/fixtures/tor-egress/lifecycle-order.sh` checks firewall-before-Compose
+ordering for up, upgrade, apply retries and dashboard reset. It also checks onion
+password initialization before validation and release-image verification before
+Compose on release installs.
+
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the
 55 — a domain reporting success having executed nothing, and building its fixtures in the caller's
