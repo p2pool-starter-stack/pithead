@@ -13,17 +13,22 @@ The dashboard at the stack URL remains the legacy default UI. The lean developme
 available at `/ui-preview` only when the dashboard process has `DASHBOARD_UI_PREVIEW=1`; without
 that environment setting the path is not served. The preview has four shell links — **Overview**,
 **Machines**, **Earnings**, and **Settings** — and turns them into a bottom navigation bar on a
-phone-sized viewport.
+phone-sized viewport, with **Advanced** as its fifth item. The 232 px desktop sidebar keeps the
+brand, version and host first, then stack status and profile, the four page links, the update link
+and Advanced at the bottom.
 
 The preview follows the operating system theme by default. **Advanced › Appearance** can set Light,
-Dark, or Auto, using the existing persisted `dashboardTheme` preference. Existing dashboard view
+Dark, or Auto. Dark uses warm charcoal panels and an orange accent; Light uses white panels and
+a darker orange accent. Heavy system-sans headings share the accessible palette. The existing
+persisted `dashboardTheme` preference is retained. Existing dashboard view
 preferences and chart-range query parameters remain readable when moving between the preview's
 pages. A profile reads **Profile not reported** until the profile is emitted by [#3557](https://github.com/p2pool-starter-stack/pithead/issues/3557).
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
 and asks the operator to sign in again when the session expires. Its page bodies and most Settings
 controls are still being built; the preview does not announce a cutover from the legacy UI. The
-implemented preview surfaces are **Advanced › Maintenance** and **Advanced › Inspect**.
+drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
+[#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
 
 ---
 
@@ -1474,12 +1479,6 @@ Two read-only questions you can ask the host, in the same card stack as the conf
 under the same `dashboard.control.enabled` flag. Neither changes anything: they run a check and
 report, which is why neither asks you to confirm.
 
-In the lean preview these checks live in **Advanced › Maintenance**, whose health report stays in
-place when you move to another drawer section and return. Its Server health panel reports optional
-sensors as unknown when the host does not provide them. **Advanced › Inspect** labels configured
-paths and placement separately from observed traffic; its diagram does not measure reachability.
-The preview provides no generic service start or restart control.
-
 **Run health check** runs the host's own `pithead doctor` and shows what it found — the same
 checks the CLI prints, failures first, with the host's summary counts above them. This is the one
 that matters on a [Pithead OS appliance](appliance.md), where there is no shell to run `doctor`
@@ -1547,14 +1546,6 @@ daemon, use the support bundle or the console.
 
 If you pick a service the host will not read logs for, the host refuses and the panel shows its
 reason as-is rather than guessing at one.
-
-The preview's **Prepare support bundle** submits an authenticated `POST /api/control/diag-bundle`
-with `X-Pithead-Control: 1` and polls the existing control result. The host binds the result to the
-signed-in actor, runs the redacted doctor report, and collects only the nine existing service logs,
-limited to 200 lines and 65,536 bytes per log. It does not include wallet-service logs, CLI archive
-contents, wallet logs, configuration, or environment files. Review the identifiers in the returned
-reports before the explicit `POST /api/control/bundle-download` with `{id, reviewed:true}`; the
-download is a private, no-store `tar.gz`. The existing full CLI archive remains unchanged.
 
 ## Backup view
 

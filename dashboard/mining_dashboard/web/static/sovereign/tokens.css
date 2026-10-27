@@ -1,12 +1,12 @@
 :root {
   color-scheme: light;
   --bg: #faf7f0;
-  --card: #fffdf8;
-  --text: #27231e;
+  --card: #ffffff;
+  --text: #1c1915;
   --muted: #655e54;
   --border: #81786a;
-  --accent: #963900;
-  --focus: #963900;
+  --accent: #b9461a;
+  --focus: #b9461a;
   --ok: #246339;
   --warn: #805000;
   --bad: #a02020;
@@ -109,8 +109,10 @@ h3 {
   overflow-wrap: anywhere;
 }
 h1,
-h2 {
-  font-family: Georgia, serif;
+h2,
+h3 {
+  font-family: system-ui, sans-serif;
+  font-weight: 850;
 }
 h1 {
   font-size: clamp(1.8rem, 4vw, 2.6rem);

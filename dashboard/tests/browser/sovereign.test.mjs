@@ -84,6 +84,10 @@ for (const theme of ["light", "dark", "auto"]) {
     await expect(drawer).toBeVisible();
     await drawer.getByRole("link", { name: "Appearance", exact: true }).click();
     await expect(drawer.getByRole("heading", { name: "Appearance", exact: true })).toBeFocused();
+    await expect(drawer.getByRole("heading", { name: "Appearance", exact: true })).toHaveCSS(
+      "font-weight",
+      "850",
+    );
     await expect(drawer.getByRole("combobox", { name: "Theme", exact: true })).toBeVisible();
     await drawer.getByLabel("Theme", { exact: true }).selectOption(theme);
     await page.keyboard.press("Escape");
@@ -93,6 +97,43 @@ for (const theme of ["light", "dark", "auto"]) {
 
     for (const width of [1280, 375]) {
       await page.setViewportSize({ width, height: 900 });
+      const navigation = page.getByRole("navigation", { name: "Main navigation" });
+      const opener = navigation.getByRole("button", { name: "Advanced", exact: true });
+      const sidebar = page.getByRole("complementary", { name: "Stack navigation" });
+      if (width === 1280) {
+        expect((await sidebar.boundingBox()).width).toBe(232);
+        const lastPage = await navigation
+          .getByRole("link", { name: "Settings", exact: true })
+          .boundingBox();
+        const update = await page
+          .getByRole("link", { name: "Update available", exact: true })
+          .boundingBox();
+        expect(update.y).toBeGreaterThan(lastPage.y);
+        expect((await opener.boundingBox()).y).toBeGreaterThan(update.y);
+      } else {
+        const links = await navigation.getByRole("link").all();
+        expect(links).toHaveLength(4);
+        const bar = await navigation.boundingBox();
+        expect(bar.y + bar.height).toBe(900);
+        for (const link of links)
+          expect((await link.boundingBox()).y).toBeCloseTo((await opener.boundingBox()).y, 0);
+      }
+      const palette = await page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement);
+        const heading = getComputedStyle(document.querySelector("h1"));
+        return {
+          background: root.getPropertyValue("--bg").trim(),
+          card: root.getPropertyValue("--card").trim(),
+          accent: root.getPropertyValue("--accent").trim(),
+          font: heading.fontFamily,
+          weight: heading.fontWeight,
+        };
+      });
+      expect(palette.background).toBe(theme === "light" ? "#faf7f0" : "#11100e");
+      expect(palette.card).toBe(theme === "light" ? "#ffffff" : "#1b1916");
+      expect(palette.accent).toBe(theme === "light" ? "#b9461a" : "#ff8c52");
+      expect(palette.font).toContain("system-ui");
+      expect(Number(palette.weight)).toBeGreaterThanOrEqual(800);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -176,63 +217,15 @@ test("polling failure and expired session keep the snapshot and retry recovers",
   await expect(page.getByRole("heading", { name: "Machines", exact: true })).toBeVisible();
 });
 
-test("maintenance retains its report across drawer navigation and reviews before downloading", async ({
-  page,
-  ui,
-}) => {
-  await page.clock.install();
-  ui.state.control_enabled = true;
-  const id = "a1111111-1111-4111-8111-111111111111";
-  const doctor = {
-    summary: { fail: 1, warn: 0, ok: 1 },
-    checks: [{ status: "fail", message: "monerod is not answering" }],
-  };
-  let kind;
-  await page.route("**/api/control/diag-*", (route) => {
-    kind = route.request().url().endsWith("diag-bundle") ? "bundle" : "health";
-    return route.fulfill({ status: 202, json: { id } });
-  });
-  await page.route("**/api/control/result?**", (route) =>
-    route.fulfill({
-      json:
-        kind === "health"
-          ? { status: "applied", doctor, ts: 100 }
-          : {
-              id,
-              status: "applied",
-              kind: "diag-bundle",
-              bundle: { doctor, logs: { tor: "[redacted].onion" } },
-              ts: 200,
-            },
-    }),
-  );
-  let downloads = 0;
-  await page.route("**/api/control/bundle-download", (route) => {
-    downloads++;
-    expect(route.request().headers()["x-pithead-control"]).toBe("1");
-    expect(route.request().postDataJSON()).toEqual({ id, reviewed: true });
-    return route.fulfill({ status: 200, contentType: "application/gzip", body: "fixture archive" });
-  });
+test("shell leaves maintenance actions with their owning page", async ({ page, ui }) => {
   await ui.openPreview("?page=overview&advanced=maintenance");
-  await page.getByRole("button", { name: "Run health check" }).click();
-  await expect(page.getByText(/Waiting for the host/)).toBeVisible();
-  await page.clock.fastForward(2000);
-  await expect(page.getByText("1 failing, 0 warning, 1 ok")).toBeVisible();
-  await page.getByRole("link", { name: "Inspect", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Configured topology" })).toBeVisible();
-  await page.getByRole("link", { name: "Maintenance", exact: true }).click();
-  await expect(page.getByText("1 failing, 0 warning, 1 ok")).toBeVisible();
-  await page.getByRole("button", { name: "Prepare support bundle" }).click();
-  await page.clock.fastForward(2000);
-  const download = page.getByRole("button", { name: "Download reviewed bundle" });
-  await expect(download).toBeDisabled();
-  expect(downloads).toBe(0);
-  await page.getByText("Review collected reports", { exact: true }).click();
-  await expect(page.locator("pre.review")).toContainText("[redacted].onion");
-  await page.getByLabel("I reviewed the identifiers in these reports.").check();
-  await download.click();
-  await expect.poll(() => downloads).toBe(1);
-  await page.setViewportSize({ width: 375, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await expect(page.getByRole("button", { name: /Restart|Reboot|Power off/ })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Advanced", exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "This section is being built for the new interface. Continue using the current dashboard until cutover.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Run health check|Prepare support bundle/ }),
+  ).toHaveCount(0);
 });

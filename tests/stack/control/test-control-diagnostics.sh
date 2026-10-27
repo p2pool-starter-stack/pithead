@@ -283,6 +283,3 @@ assert_contains "a served container is audited applied" \
 unset PITHEAD_SELF DIAG_SELF_LOG DIAG_DOCKER_LOG DIAG_DOCTOR_DOC DIAG_LOG_BODY
 unset -f diag_run diag_req diag_tail
 unset DGC DIAG_ONION did1 did2 did3 did4 did5 lid1 lid2 lid3 lid4 lid5 _c _id _pair _diag_pair _diag_container _diag_id
-
-bash "$ROOT/tests/stack/standalone/test_browser_bundle.sh"
-assert_rc "browser bundle excludes wallet logs and redacts every collected report" "$?" 0

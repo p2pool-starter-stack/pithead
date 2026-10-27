@@ -1,6 +1,4 @@
 import { html, render } from "../app/preact.mjs";
-import { Inspect } from "./inspect.mjs";
-import { Maintenance } from "./maintenance.mjs";
 import { createNavigation, PAGES, readRoute, routeUrl } from "./navigation.mjs";
 import { createPolling } from "./polling.mjs";
 import { Shell } from "./shell.mjs";
@@ -46,15 +44,7 @@ export function initSovereign({
         doc.documentElement.dataset.theme = theme;
         paint();
       }} onNavigate=${(page, section) => navigation.go(page, section)}
-      onRetry=${() => polling.tick()} renderPage=${renderPage} renderSection=${
-        renderSection ||
-        ((section) =>
-          section === "maintenance"
-            ? html`<${Maintenance} state=${data.snapshot} />`
-            : section === "inspect"
-              ? html`<${Inspect} state=${data.snapshot} />`
-              : null)
-      } />`,
+      onRetry=${() => polling.tick()} renderPage=${renderPage} renderSection=${renderSection} />`,
       root,
     );
   };

@@ -97,25 +97,26 @@ export function Shell({
     };
   return html`<a class="skip-link" href="#page-title">Skip to content</a>
     <div class="shell">
-      <aside class="sidebar"><div class="brand"><img src="/static/pithead-mark.svg" alt="" />Pithead</div>
-        <small>MONERO MINING</small>
+      <aside class="sidebar" aria-label="Stack navigation">
+        <div class="brand"><img src="/static/pithead-mark.svg" alt="" />Pithead</div>
+        <span>${state?.version?.text || "Version not reported"}</span>
+        <a href=${link("machines")} onClick=${navigate("machines")}>Server · address hidden</a>
+        <a class=${`status-chip status-${status.level}`} href=${link("overview")} onClick=${navigate("overview")}>${status.text}</a>
+        <span>${profileBadge(state?.profile)}</span>
         <nav aria-label="Main navigation">${Object.entries(PAGES).map(
-          ([key, [label]]) =>
-            html`<a href=${link(key)} aria-current=${route.page === key ? "page" : null}
+          ([
+            key,
+            [label],
+          ]) => html`<a href=${link(key)} aria-current=${route.page === key ? "page" : null}
             onClick=${navigate(key)}>${label}</a>`,
-        )}</nav>
+        )}
+          <button class="advanced-opener" type="button" aria-haspopup="dialog" aria-expanded=${!!route.advanced}
+            onClick=${() => onNavigate(route.page, PAGES[route.page][2])}>Advanced</button>
+        </nav>
+        ${state?.update?.available ? html`<a class="update-link" href=${link("settings", "update-details")} onClick=${navigate("settings", "update-details")}>Update available</a>` : null}
       </aside>
       <div class="workspace">
         <p class="preview-note">Development preview — page content is still being built. <a href="/">Current dashboard</a></p>
-        <header class="status-row" aria-label="Stack status">
-          <span>${state?.version?.text || "Version not reported"}</span>
-          <a class=${`status-chip status-${status.level}`} href=${link("overview")} onClick=${navigate("overview")}>${status.text}</a>
-          <span>${profileBadge(state?.profile)}</span>
-          <a href=${link("machines")} onClick=${navigate("machines")}>Server · address hidden</a>
-          ${state?.update?.available ? html`<a href=${link("settings", "update-details")} onClick=${navigate("settings", "update-details")}>Update available</a>` : null}
-          <button type="button" aria-haspopup="dialog" aria-expanded=${!!route.advanced}
-            onClick=${() => onNavigate(route.page, PAGES[route.page][2])}>Advanced</button>
-        </header>
         <p class="muted" aria-live="polite">Last snapshot: ${state?.last_update || "not received"}${!connected && state ? " · stale" : ""}</p>
         ${
           !connected
@@ -131,7 +132,7 @@ export function Shell({
           <div class="route-announcement" aria-live="polite">${PAGES[route.page][0]}</div>
           ${Object.keys(PAGES).map(
             (page) => html`<div key=${page} hidden=${route.page !== page}>
-            ${renderPage?.(page, state) || html`<p class="panel">This page is being built for the new interface. Maintenance and inspection are available in Advanced.</p>`}
+            ${renderPage?.(page, state) || html`<p class="panel">This page is being built for the new interface. Continue using the current dashboard until cutover.</p>`}
           </div>`,
           )}
         </main>
