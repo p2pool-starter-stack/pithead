@@ -55,6 +55,6 @@ for wiring in 'phases/boot.sh' 'phases/provision-initial.sh'; do
 done
 grep -q 'phase_dashboard_redirect' "$HERE/phases/provision-initial.sh"
 grep -q 'wizard-redirect-leg.sh' "$HERE/run.sh"
-grep -q 'WIZARD_HOST_ADDRESSES="$host_addresses"' "$HERE/../../lib/pithead/12a-wizard-page.sh"
+grep -q 'WIZARD_HOST_ADDRESSES="$host_addresses"' "$HERE/../../lib/pithead/12-firstboot-wizard.sh"
 grep -q 'for arg in $host_addresses' "$HERE/../../lib/pithead/12a-wizard-addresses.sh"
 printf 'selftest-wizard-redirect: PASS\n'

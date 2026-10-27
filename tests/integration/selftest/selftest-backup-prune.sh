@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034 # globals are consumed by the sourced safety function
+# shellcheck disable=SC2034
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,7 +10,7 @@ source "$HERE/../lib/backup-prune.sh"
 
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
-mkbackups() { # <dir> <count>
+mkbackups() {
     local i
     rm -rf "$1" && mkdir -p "$1/.pithead-e2e-safety"
     for i in $(seq 1 "$2"); do
@@ -56,10 +56,25 @@ mkbackups "$T/b" 15
 PITHEAD_E2E_BACKUP_KEEP=3 backup_prune run "$T/b" "$T/b/pithead-backup-20260101-000015.tar.gz" >/dev/null
 assert_eq "KEEP=3 keeps three" "$(count "$T/b")" "5"
 mkbackups "$T/b" 15
+rm "$T/b/.pithead-e2e-safety/pithead-backup-20260101-000015.tar.gz"
 PITHEAD_E2E_BACKUP_KEEP=0 backup_prune run "$T/b" "$T/b/pithead-backup-20260101-000015.tar.gz" >/dev/null
 assert_eq "KEEP=0 disables pruning" "$(count "$T/b")" "17"
+assert_eq "KEEP=0 still records the harness archive" "$(test -f "$T/b/.pithead-e2e-safety/pithead-backup-20260101-000015.tar.gz" && echo y)" "y"
 PITHEAD_E2E_BACKUP_KEEP=abc backup_prune run "$T/b" "$T/b/pithead-backup-20260101-000015.tar.gz" >/dev/null
 assert_eq "a non-number falls back to 10" "$(count "$T/b")" "12"
+
+echo "== cleanup removes provenance and pruning failures are visible =="
+mkbackups "$T/b" 1
+(
+    INTEGRATION_RUN_SUITE=1
+    source "$HERE/../lib/run-safety.sh"
+    SAFETY_ARCHIVE="$T/b/pithead-backup-20260101-000001.tar.gz" SAFETY_RESTORE_FAILED=0 KEEP_STATE=0
+    rx() { bash -c "$1"; }
+    safety_cleanup >/dev/null
+)
+assert_eq "safety cleanup removes the provenance marker" "$(test -e "$T/b/.pithead-e2e-safety/pithead-backup-20260101-000001.tar.gz" && echo y || echo n)" "n"
+failed_prune() { return 1; }
+assert_contains "failed pruning is reported without failing the harness" "$(backup_prune failed_prune "$T/b" "$T/b/pithead-backup-20260101-000001.tar.gz")" "safety backup pruning skipped (not fatal)"
 
 echo "== a failed backup is never pruned =="
 mkbackups "$T/b" 15

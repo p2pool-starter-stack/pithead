@@ -74,7 +74,8 @@ source_image_reconcile_snippet() {
         local rc=$?
         trap - EXIT
         [ "$rc" -eq 0 ] || printf "source-image: diagnostic: failed at %s\n" "$stage" >&2
-        if docker image tag "$backup_ref" "$ref" && reconcile_compose_images &&
+        # Even a failed assertion must put the declaration and live image back before later phases.
+        if docker image tag "$backup_ref" "$ref" && reconcile_source_upgrade_images &&
             [ "$(docker inspect --format '{{.Image}}' "$(docker compose ps -q xmrig-proxy)")" = "$old_id" ]; then
             printf '%s\n' 'source-image: original image restored'
             docker image rm "$backup_ref" >/dev/null || rc=1
@@ -100,8 +101,9 @@ source_image_reconcile_snippet() {
     [ "$(docker inspect --format '{{.Image}}' "$old_cid")" = "$old_id" ]
     [ "$(docker inspect --format '{{.State.Running}}' "$old_cid")" = true ]
     printf '%s\n' 'source-image: live old image differs from built declaration'
+    # Call the same post-build guard as stack_upgrade, without an intervening Compose up.
     stage=reconcile
-    reconcile_compose_images
+    reconcile_source_upgrade_images
     cid=$(docker compose ps -q xmrig-proxy)
     [ -n "$cid" ] && [ "$cid" != "$old_cid" ]
     [ "$(docker inspect --format '{{.Image}}' "$cid")" = "$new_id" ]

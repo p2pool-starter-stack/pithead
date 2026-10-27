@@ -120,7 +120,7 @@ printf 'Backup written to: %s/backups/pithead-backup-20260101-000001.tar.gz\n' "
 FAKE
 if (
     source "$HERE/../lib/backup-prune.sh"
-    # shellcheck disable=SC2034 # consumed by the extracted backup_stack function
+    # shellcheck disable=SC2034
     CANONICAL_DIR="$sandbox"
     log() { :; }
     ok() { :; }

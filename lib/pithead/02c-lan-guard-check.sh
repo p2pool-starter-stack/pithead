@@ -12,16 +12,16 @@ lan_guard_transition_ports() { # <newenv>
     printf '%s\n' "${ports[@]}"
 }
 
-lan_guard_arm_transition() { # <newenv>: before apply commits it
+lan_guard_arm_transition() {
+    local project
+    project=$(compose_project_name) || return 1
     local p rc=0 containers networks ports=()
     for p in $(lan_guard_transition_ports "$1"); do ports+=("$p"); done
     [ "${#ports[@]}" -gt 0 ] || return 0
     apply_lan_guard "${ports[@]}"
     lan_guard_enforced "${ports[@]}" || rc=$?
     if [ "$rc" = 4 ]; then
-        # Only the first network creation can supply a missing FORWARD jump. A stopped
-        # container or an existing network could still start with the port exposed.
-        if containers=$(docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.Names}}' 2>/dev/null) &&
+        if containers=$(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}}' 2>/dev/null) &&
             networks=$(docker network ls --format '{{.Name}}' 2>/dev/null); then
             [ -n "$containers" ] || grep -qxF mining_net <<<"$networks" || return 0
         fi
@@ -45,10 +45,9 @@ lan_guard_holds() {
     [ "${#ports[@]}" -eq 0 ] || { lan_guard_enforced "${ports[@]}" && lan_guard_marker_current; }
 }
 
-# A node that crashed (a non-zero exit other than SIGTERM's 143) stays down under restart "no" (#3290).
-# With the rule and this boot's marker both live, start it again: at most once per timer tick, and
-# never while the rule is missing, which is also when the marker is gone and the entrypoint refuses.
 lan_guard_recover_nodes() {
+    local project
+    project=$(compose_project_name) || return 1
     local p c name code seen=" "
     for p in $(lan_guard_watched_ports); do
         c=$(lan_guard_container "$p")
@@ -63,7 +62,7 @@ lan_guard_recover_nodes() {
             else
                 warn "lan-guard:node-restart-failed — $name exited with code $code and could not be started."
             fi
-        done < <(docker ps -a --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" --filter status=exited --format '{{.Names}}' 2>/dev/null)
+        done < <(docker ps -a --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$c" --filter status=exited --format '{{.Names}}' 2>/dev/null)
     done
 }
 
@@ -87,8 +86,9 @@ lan_guard_check() {
     lan_guard_check_now
 }
 
-# Invalidate the marker first so a concurrent explicit start fails its entrypoint gate.
 lan_guard_check_now() {
+    local project
+    project=$(compose_project_name) || return 1
     local p c name seen=" " names published rc=0
     local ports=() fixed_ports=()
     for p in $(lan_guard_watched_ports); do ports+=("$p"); done
@@ -100,8 +100,9 @@ lan_guard_check_now() {
     }
     for p in "${ports[@]}"; do
         c=$(lan_guard_container "$p")
-        names=$(docker ps --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" --format '{{.Names}}') || {
-            names="$c"
+        names=$(docker ps --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$c" --format '{{.Names}}') || {
+            names=""
+            [ "$project" != pithead ] || names="$c"
             rc=1
         }
         while IFS= read -r name; do
@@ -118,7 +119,7 @@ lan_guard_check_now() {
         done <<<"$names"
     done
     for c in monerod tari; do
-        names=$(docker ps --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" --format '{{.Names}}') || rc=1
+        names=$(docker ps --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$c" --format '{{.Names}}') || rc=1
         for name in $seen; do grep -qxF "$name" <<<"$names" && rc=1; done
     done
     if [ "$rc" -ne 0 ]; then

@@ -2,7 +2,7 @@
 # Bootstrap-stall recovery contract without an engine or a running chain node.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-WORK=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-tor-bootstrap.XXXXXX")
+WORK=$(mktemp -d "${TMPDIR:?}/pithead-tor-bootstrap.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"

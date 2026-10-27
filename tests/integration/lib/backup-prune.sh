@@ -11,6 +11,7 @@ case "$current" in pithead-backup-????????-??????.tar.gz) ;; *) exit 1 ;; esac
 [ -f "$d/$current" ] && [ ! -L "$d/$current" ] || exit 1
 [ ! -L "$markers/$current" ] || exit 1
 : >"$markers/$current" || exit 1
+[ "$keep" -gt 0 ] || exit 0
 n=0; i=0
 for f in $(ls -1 "$d" 2>/dev/null | grep -E "^pithead-backup-[0-9]{8}-[0-9]{6}\.tar\.gz\$" | sort -r); do
     [ -f "$d/$f" ] && [ ! -L "$d/$f" ] || continue
@@ -25,17 +26,16 @@ done
 echo "pruned $n old safety backup(s) from $d (kept the newest $keep)"
 '
 
-backup_prune_cmd() { # <backups dir> <archive path>...
+backup_prune_cmd() {
     local keep="${PITHEAD_E2E_BACKUP_KEEP:-10}" dir="$1" a args=()
     shift
     case "$keep" in '' | *[!0-9]*) keep=10 ;; esac
-    [ "$keep" -gt 0 ] || return 0
     for a in "$@"; do [ -z "$a" ] || args+=("$(basename "$a")"); done
     printf 'bash -c %q _ %q %q' "$BACKUP_PRUNE_SCRIPT" "$dir" "$keep"
     for a in ${args[@]+"${args[@]}"}; do printf ' %q' "$a"; done
 }
 
-backup_prune() { # <exec fn: rx|on_bench> <backups dir> <archive path>...
+backup_prune() {
     local run="$1" cmd
     shift
     cmd="$(backup_prune_cmd "$@")"

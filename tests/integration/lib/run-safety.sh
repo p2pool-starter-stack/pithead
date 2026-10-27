@@ -26,8 +26,6 @@ safety_backup() {
     fi
     it_log "Safety backup: $SAFETY_ARCHIVE"
     backup_prune rx backups "$SAFETY_ARCHIVE"
-    # Exercise backup as an assertion: the archive must list the core files we'd roll back to.
-    # An archive missing either one is not a rollback net, so refuse to run the destructive phases.
     local listing
     listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"
     assert_contains "backup archive contains config.json" "$listing" "config.json"

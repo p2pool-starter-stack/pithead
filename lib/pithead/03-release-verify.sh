@@ -131,29 +131,28 @@ verify_release_images() {
     log "All 5 release images verify against their pinned digest (cosign.pub)."
 }
 
-reconcile_compose_images() {
+# Compose can report a container "Running" after --build even when its tag now points at a
+# different image. Compare immutable IDs, not tags: source checkouts reuse :dev across upgrades.
+reconcile_source_upgrade_images() {
     local config services svc image cid declared running
     config=$(docker compose config --format json) || return 1
     services=$(docker compose config --services) || return 1
     while IFS= read -r svc; do
         [ -n "$svc" ] || continue
+        # The e2e harness deliberately keeps identical chain nodes across checkout changes.
         case " ${PITHEAD_KEEP_RUNNING:-} " in *" $svc "*) continue ;; esac
-        if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
-            case " $REVENUE_CHAIN_CONTAINERS " in *" $svc "*) continue ;; esac
-        fi
         image=$(jq -r --arg svc "$svc" '.services[$svc].image // empty' <<<"$config") || return 1
         [ -n "$image" ] || {
-            warn "No declared image for $svc after startup."
+            warn "No declared image for $svc after upgrade."
             return 1
         }
         cid=$(docker compose ps -a -q "$svc") || return 1
         [ -n "$cid" ] || {
-            warn "No container for $svc after startup."
+            warn "No container for $svc after upgrade."
             return 1
         }
         declared=$(docker image inspect --format '{{.Id}}' "$image") || return 1
         running=$(docker inspect --format '{{.Image}}' "$cid") || return 1
-        [ -n "$declared" ] && [ -n "$running" ] || return 1
         if [ "$running" != "$declared" ]; then
             log "Recreating $svc: its container still uses the previous image."
             compose_up_checked -d --no-deps --force-recreate "$svc" || return 1
@@ -205,15 +204,34 @@ stack_upgrade() {
     provision_console_login
     log "Re-rendered generated config for the current release."
     migrate_compose_project
-    apply_tor_egress_firewall
+    # (Re)assert the Tor-only egress firewall BEFORE compose — same ordering as stack_up (#276), for
+    # the same reason: if the firewall isn't already installed (e.g. `down` then `upgrade`), starting
+    # containers first opens a startup window where a clearnet app (Tari, #271) can dial out unfenced
+    # before the rules go in (#291). In normal operation it's already installed from `up` and this
+    # is a cheap idempotent re-apply. Runs after the .env render above so the toggle/subnet are
+    # current.
+    apply_tor_egress_firewall # Tor-only egress (#270), consistent with up/apply
+    # One-time move of the dashboard data out of the install dir (#455) — after the .env commit
+    # (a failed move is retried on re-run) and before the recreate mounts the new location.
     migrate_dashboard_data
+    # Source checkout: rebuild the images from build/. Release install: pull the new published images
+    # instead — force a re-pull so a moved tag is refreshed (#44).
     if is_source_checkout; then
+        # Source checkouts build the first-party images locally (--build); compose_up_checked pulls
+        # a bumped third-party digest, a missing image, before its `--pull never` up (#2654).
         compose_up_checked -d --build || error "Upgrade failed during 'docker compose up' — see the error above."
-        reconcile_compose_images || error "Upgrade failed to recreate a container on its rebuilt image."
+        reconcile_source_upgrade_images || error "Upgrade failed to recreate a container on its rebuilt image."
     else
-        verify_release_images
+        verify_release_images # #376: fail closed BEFORE the pull when a release key is on disk
         PITHEAD_PULL=always compose_up_checked -d || error "Upgrade failed during 'docker compose up' — see the error above."
     fi
+    # #356: if the dashboard onion (#343) was just turned on, the recreated tor generated its hostname —
+    # read it back into .env so `status`/`onion-client-key` show the address (mirrors apply's capture at
+    # the end of a change). No-op when the onion is off or already captured. Without this, enabling the
+    # onion via `upgrade` left the address uncaptured (apply's capture only runs when config changed).
+    # #546: and regenerate the Caddyfile + restart caddy, exactly like apply's capture — the render
+    # preamble above ran while the address was still the placeholder, so without this the HTTPS onion
+    # vhost (#360) would never appear (the next apply no-ops on an unchanged config).
     if [ "${DASHBOARD_ONION_ENABLED:-false}" == "true" ] && onion_missing "${DASHBOARD_ONION:-}"; then
         if provision_dashboard_onion && render_env; then
             generate_caddyfile

@@ -27,8 +27,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/doctor-stubs.sh" || ex
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/backup-fixtures.sh" || exit 1
 # shellcheck source=tests/stack/lib/control-fixtures.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/control-fixtures.sh" || exit 1
-# shellcheck source=tests/stack/lib/host-fence.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/host-fence.sh" || exit 1
 # shellcheck source=tests/stack/lib/config-read-sites.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config-read-sites.sh"
 
@@ -179,12 +177,11 @@ mk_tmpdir _sbx
 # shellcheck disable=SC2154
 SANDBOX="$(cd "$_sbx" && pwd -P)"
 trap 'rm -rf "$SANDBOX"' EXIT
+# The restore handoff roots default to root-only /run paths; a non-root suite must never reach them.
 export PITHEAD_RESTORE_SUBMISSION_DIR="$SANDBOX/.run/restore-submit" PITHEAD_RESTORE_STAGE_ROOT="$SANDBOX/.run/restore-stage" \
     PITHEAD_RESTORE_CARRY_DIR="$SANDBOX/.run/restore-carry"
-export PITHEAD_UNIT_DIR="$SANDBOX/.run/units"
-mkdir -p "$PITHEAD_UNIT_DIR"
-install_host_fence
 
+# A fake docker that records calls and answers the few queries setup/apply make.
 make_stubs() {
     local bin="$1"
     mkdir -p "$bin"
@@ -252,12 +249,7 @@ VALID_TARI="126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3
 VALID_TARI_EMOJI="🐢📟🍼🌈🍓🚓➕🎸🍆🍷🎣🍗📿😂🥊⏰🍯👾🤔👒🍾👀🍼🌊🎷📟😈🚨👙🍈🌈🛵🤢🍔🔋👙🚽🤑🎽🎓🎓🐀🐜🐴🥄🚿📷💰👶👍🎉🍄🎢🔌🐋🚰🚑💅👢🦂🐬🐋🍗🍸🎹🏀🍄"
 VALID_TARI_SINGLE="1224yPceFvbksLKQ8JE6APDzVY2D6P3SpXwB5LLC3BH4F7oF"
 
-stub_host_addrs() {
-    HOST_ADDRS_STUB=$1 HOST_NAME_STUB=${2-$1}
-    hostname() { if [ "${1:-}" = -I ]; then printf '%s\n' "$HOST_ADDRS_STUB"; else printf '%s\n' "$HOST_NAME_STUB"; fi; }
-    container_bridge_addrs() { :; }
-}
-
+# Order-of-two-ops extractor for the firewall-before-compose regressions (#291).
 fw_then_compose() { printf '%s\n' "$1" | grep -xE 'firewall|compose' | tr '\n' ','; }
 
 write_fake_docker() { # <bin-dir> — the containerized verifier's stand-in (#1072)

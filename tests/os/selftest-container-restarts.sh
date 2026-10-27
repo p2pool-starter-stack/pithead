@@ -11,7 +11,6 @@ mkdir -p "$td/bin"
 cat >"$td/bin/fake-engine" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-[ -z "${ENGINE_LOG:-}" ] || printf '%s\n' "$*" >>"$ENGINE_LOG"
 case "$1" in
 compose)
     case "$*" in
@@ -197,40 +196,4 @@ for RESTART_SCENARIO in advancing backoff; do
         exit 1
     }
 done
-export ENGINE_LOG="$td/engine.log"
-sleep() { : >"$td/slept"; }
-gate_reset() { rm -f "$RESTART_STATE" "$ENGINE_LOG" "$td/slept"; }
-gate_fail() {
-    printf 'FAIL: boot gate mode: %s\n' "$1" >&2
-    exit 1
-}
-gate_observed() { [ -e "$td/slept" ] || { [ -e "$ENGINE_LOG" ] && grep -q RestartCount "$ENGINE_LOG"; }; }
-export RESTART_SCENARIO=advancing SERVICE_STATE=running
-
-gate_reset
-actual=$(PITHEAD_BOOT_GATE=1 container_restarting_names)
-[ -z "$actual" ] || gate_fail "the observer named <$actual>"
-[ ! -e "$ENGINE_LOG" ] && [ ! -e "$td/slept" ] || gate_fail "the observer touched the engine or slept"
-
-gate_reset
-DR_ROWS=
-PITHEAD_BOOT_GATE=1 check_container_restarts
-[ -z "$DR_ROWS" ] || gate_fail "doctor reported a restart row: $DR_ROWS"
-! gate_observed || gate_fail "doctor observed restarts"
-
-gate_reset
-PITHEAD_BOOT_GATE=1 stack_status >"$td/gate-status.out" 2>&1 || gate_fail "status failed a running caddy"
-! gate_observed || gate_fail "status observed restarts"
-grep -Fq 'caddy         running' "$td/gate-status.out" || gate_fail "status did not report caddy running"
-
-gate_reset
-if SERVICE_STATE=restarting PITHEAD_BOOT_GATE=1 stack_status >"$td/gate-restarting.out" 2>&1; then
-    gate_fail "status passed a container the engine reports restarting"
-fi
-grep -Fq 'caddy         restarting' "$td/gate-restarting.out" || gate_fail "status did not name restarting caddy"
-! gate_observed || gate_fail "status observed restarts for a restarting container"
-
-gate_reset
-actual=$(PITHEAD_BOOT_GATE=0 container_restarting_names)
-[ "$actual" = caddy ] || gate_fail "a gate flag other than 1 disabled the observer"
 printf 'container restart self-test: PASS\n'

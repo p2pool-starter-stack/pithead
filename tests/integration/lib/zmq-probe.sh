@@ -21,12 +21,6 @@
 # file also carries tier B: SUBSCRIBE, then wait for the peer to actually send something. That
 # separates the two by construction, and the controlled pair is in selftest-zmq-probe.sh.
 #
-# Tier B asserts the publisher is not SILENT, which is the failure class #1497 is about (an
-# offline or ZMQ-dead node starving p2pool). It deliberately does NOT assert that the message was
-# a BLOCK notification — that needs a new block, whose wait is minutes and unbounded, where any
-# published frame arrives in seconds. The remainder stays a counted skip in run.sh, named for
-# what it is rather than left in a comment.
-#
 # THE BUDGET IS 90s, AND THE SAMPLE COUNT IS PART OF THAT FIGURE. Time-to-first-message against
 # the live node, 8 samples, sorted: 0.3 1.5 1.8 3.3 4.5 5.6 16.0 26.5 (seconds). The first three
 # samples all landed under 6s and a 30s budget looked like 5x headroom; the tail arrived only as
@@ -168,7 +162,7 @@ zmq_ready_socket_type() {
 # attribution at all (#1500). A `timeout`-wrapped throwaway connect in a child shell is the one
 # shape that bounds it without re-quoting the whole snippet: the child cannot hand its fd back, so
 # the cost is a second connect on the reachable path, ~2ms against anything that answers.
-zmq_probe_snippet() { # <host> <port> <timeout_s> [publish_budget_s]
+zmq_probe_snippet() {
     cat <<EOF
 timeout $3 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null
 case \$? in
@@ -199,9 +193,11 @@ elif [ -n "\$hdr" ]; then
 fi
 echo "READY \$hdr\$body"
 EOF
-    # Generated OUTSIDE the heredoc on purpose: an interpolated `$(...)` line leaves a blank line
-    # behind when it expands to nothing, so tier A's snippet text would no longer be what shipped.
-    zmq_subscribe_lines "${4:-}"
+    if [ "${5:-}" = block ]; then
+        zmq_block_subscribe_lines "$4"
+    else
+        zmq_subscribe_lines "${4:-}"
+    fi
     printf 'exec 3<&-\n'
 }
 

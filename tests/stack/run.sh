@@ -279,14 +279,14 @@ if in_block 5; then
 
     # shellcheck source=tests/stack/control/test-control-backup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-backup.sh" && domain_ran test-control-backup.sh "$_d0" "$?" || domain_ran test-control-backup.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/doctor/test-doctor-exposure.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-exposure.sh" && domain_ran test-doctor-exposure.sh "$_d0" "$?" || domain_ran test-doctor-exposure.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-diagnostics.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-diagnostics.sh" && domain_ran test-control-diagnostics.sh "$_d0" "$?" || domain_ran test-control-diagnostics.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-grub-hugepages.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-grub-hugepages.sh" && domain_ran test-grub-hugepages.sh "$_d0" "$?" || domain_ran test-grub-hugepages.sh "$_d0" "$?"
+    bash "$HERE/test_setup_build_interrupt.sh"
+    assert_rc "setup build interruption regression" "$?" 0
     # shellcheck source=tests/stack/test-wizard-setup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-wizard-setup.sh "$_d0" "$?" || domain_ran test-wizard-setup.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-tari.sh disable=SC2015
@@ -395,6 +395,6 @@ if in_block 5; then
     # shellcheck source=tests/stack/test-lock-reinvoke-wiring.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-lock-reinvoke-wiring.sh" && domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?" || domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?"
 fi
-host_fence_final_check
+
 [ -z "$_tally" ] || printf '%s %s %s\n' "$STACK_BLOCK" "$PASS" "$FAIL" >>"$_tally"
 stack_verdict "pithead tests, block $STACK_BLOCK of $STACK_BLOCKS"
