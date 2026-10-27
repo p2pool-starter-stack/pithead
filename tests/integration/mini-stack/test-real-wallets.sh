@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 COMPOSE="$ROOT/docker-compose.yml"
 PROBE="$ROOT/tests/integration/mini-stack/real-wallet-probe.py"
-SCRATCH_BASE="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
+SCRATCH_BASE="${TMPDIR:-${RUNNER_TEMP:?set TMPDIR or RUNNER_TEMP}}"
 SCRATCH="$(mktemp -d "$SCRATCH_BASE/pithead-wallets.XXXXXX")"
 export TARI_WALLET_SECRET_FILE="$SCRATCH/tari-wallet-secret.env"
 export WALLET_RPC_PASSWORD=itest PAYOUT_SCAN_HEIGHT=1 TARI_WALLET_BIRTHDAY=0

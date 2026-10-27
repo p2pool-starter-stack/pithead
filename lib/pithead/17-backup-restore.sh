@@ -370,9 +370,9 @@ stack_restore() {
     resolve_dashboard_host
     DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) render_env
     generate_caddyfile
-    render_masked_config "$CONTROL_DIR"
     log "Fixing Tor data ownership (100:101)..."
     sudo chown -R 100:101 "$TOR_DATA_DIR"
+    # Return restored data to the uid used by its container.
     ensure_owner "$MONERO_DIR" "$APP_UID" "$APP_GID"
     ensure_owner "$TARI_DIR" "$APP_UID" "$APP_GID"
     ensure_owner "$P2POOL_DIR" "$APP_UID" "$APP_GID"

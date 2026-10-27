@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Validate Compose parsing and ${VAR} interpolation against a representative .env.
-# This is client-side (`docker compose config` needs no daemon), so it runs anywhere with docker.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+python3 "$ROOT/tests/stack/standalone/test_compose_project_render.py" || exit 1
 if ! docker compose version >/dev/null 2>&1; then
-    echo "SKIP: docker compose not available"
-    exit 0
+    echo "FAIL: docker compose is required"
+    exit 1
 fi
 bash "$ROOT/tests/stack/standalone/test_dotenv.sh" || exit 1
 ENV_FILE="$(mktemp)"
@@ -147,7 +146,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # leaving the other was green. The two would then run different socket-proxy builds, which is exactly
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
-expect_present "caddy pinned by digest" "caddy:2.11.7@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f999b489"
+expect_present "caddy pinned by digest" "caddy:2.11.7@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772"
 expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.
@@ -179,18 +178,15 @@ jq_assert "both socket proxies publish only to the host loopback" \
 jq_assert "mining services are not on proxy_net" \
     '[.services["monerod"], .services["tari"], .services["p2pool"], .services["xmrig-proxy"]] | all((.networks // {} | keys) | any(. == "proxy_net") | not)'
 jq_assert "p2pool disables its persistent file log (#1989)" '.services.p2pool.command | index("--no-log-file") != null'
-# The Tari probe uses the [m] bracket so grep can't match its own argv (a false-healthy bug).
 jq_assert "tari healthcheck uses the [m]inotari self-match guard" '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
 jq_assert "tari runs under an init that reaps and forwards signals (#2627)" '.services.tari.init == true'
-jq_assert "compose project name is pinned to pithead" '.name == "pithead"'
-# Memory ceilings (#132) OOM-restart a leak in its own cgroup, not monerod via the host OOM-killer.
-# p2pool's holds its 2592 MiB RandomX fallback off short HugePages plus heap: 1g OOM-looped (#2562).
+project_renders=$(bash "$ROOT/tests/stack/standalone/compose-project-render.sh" "$ENV_FILE") || exit 1
+printf '::group::C2/C3 rendered configurations (checkout paths redacted)\n%s\n::endgroup::\n' "$project_renders"
+jq_assert "C2 default project, containers, networks and volumes preserve their identities" \
+    '.[0] | .name == "pithead" and ([.services[].container_name] | unique) == (["tor", "monerod", "wallet-rpc", "tari", "tari-wallet", "p2pool", "xmrig-proxy", "dashboard", "docker-proxy", "docker-control", "caddy"] | unique) and ([.networks[].name] | unique) == ["mining_net", "proxy_net"] and ([.volumes[].name] | unique) == ["pithead_caddy_data", "pithead_tari_wallet_db", "pithead_wallet_data"]' "$project_renders"
+jq_assert "C3 custom project owns exactly its expected volumes" \
+    '.[1] | .name == "pithead-gate" and ([.volumes[].name] | unique) == ["pithead-gate_caddy_data", "pithead-gate_tari_wallet_db", "pithead-gate_wallet_data"]' "$project_renders"
 jq_assert "memory ceiling on every service (#132); p2pool's >= 3 GiB, no swap (#2562)" '([.services[] | select(.mem_limit != null)] | length >= 9) and (.services.p2pool | ((.mem_limit | tonumber) >= 3221225472) and (.memswap_limit == .mem_limit))'
-# Immutable root filesystems (#377): every service runs read_only with exactly its expected tmpfs
-# scratch set, INCLUDING the mount options. An edit that grows a size cap or slips in `exec` —
-# re-creating the executable staging area read_only exists to remove — must fail CI, not evolve
-# silently. Each spec's entries are space-separated (the options carry commas). Removing read_only
-# from any service, or changing any tmpfs entry, fails CI.
 for spec in \
     "tor=/tmp:size=64m,mode=1777" \
     "monerod=/tmp:size=64m,mode=1777" \

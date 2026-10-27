@@ -101,6 +101,7 @@ run_hardening() {
     IT_CURRENT_SCENARIO="hardening"
     echo ""
     it_log "── v1.4 hardening phase (#377/#33/#424) ────────────"
+    run_tari_off_preview
 
     if ! has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         it_skip_phase "hardening" "remote mode: no local containers/systemd to exercise" "by-design"
@@ -162,7 +163,7 @@ run_hardening() {
     #    file. Needs a dashboard password (control refuses to enable without one). Enable control,
     #    let apply install + enable the unit, then drop requests and let systemd act.
     local ctrl_config
-    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.secure=true | .dashboard.auth={username:"admin",password:"a tier4 control passphrase"} | .dashboard.control={enabled:true}')"
+    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.secure=true | .dashboard.auth={username:"admin",password:"a tier4 control passphrase"} | .dashboard.control={enabled:true} | .notifications.webhooks=[] | .dashboard.energy.cost_per_kwh=0')"
     push_config "$ctrl_config"
     it_step "apply with dashboard.control enabled (installs the systemd path unit)…"
     pithead apply -y >/dev/null 2>&1
@@ -239,6 +240,8 @@ run_hardening() {
                 rx 'docker exec dashboard python3 -c "from mining_dashboard.service.control_service import read_config; read_config()"' >/dev/null 2>&1
                 echo $?
             )" 0
+
+        run_webhook_validation "$cdir" "$ctrl_config"
 
         # 3a. A NON-sensitive change (an allowlisted alert toggle) committed via the spool must be
         #     applied BY THE PATH UNIT — not by us calling control-run-pending.

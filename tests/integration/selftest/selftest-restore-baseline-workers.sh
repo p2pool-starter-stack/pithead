@@ -9,7 +9,7 @@ source "$HERE/lib.sh"
 source "$HERE/lib/live-state-support.sh"
 # Extract only rollback so unrelated trust/transport setup cannot affect the fixture.
 eval "$(sed -n '/^restore_upgrade_baseline() {/,/^}/p' "$HERE/lib/live-upgrade-support.sh")"
-td="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/restore-workers.XXXXXX")"
+td="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/restore-workers.XXXXXX")"
 trap 'rm -rf "$td"' EXIT
 
 run_case() (

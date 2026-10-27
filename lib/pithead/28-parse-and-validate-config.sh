@@ -1,6 +1,7 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
     validate_config_document
+    validate_webhook_config
 
     validate_config_control_characters
 
@@ -12,10 +13,7 @@ parse_and_validate_config() {
         *) error "ssh.enabled is true but ssh.authorized_key is not a public key (expected it to start with ssh-, ecdsa- or sk-). Paste the PUBLIC key (e.g. ~/.ssh/id_ed25519.pub)." ;;
         esac
     fi
-    # tari.mode (#103/#1855): monero.mode's local/remote switch plus "off" — no merge-mining at all.
-    # Read BEFORE the required-fields gate below, which depends on it, and ahead of everything else
-    # so a bad value fails first. MISSING-KEY DEFAULT STAYS "local": 1.x never wrote it (#1855).
-    TARI_MODE=$(jq -r '.tari.mode // "local"' "$CONFIG_FILE")
+    TARI_MODE=$(config_get .tari.mode)
     case "$TARI_MODE" in
     local | remote | off) ;;
     *) error "tari.mode must be \"local\", \"remote\" or \"off\" (got \"$TARI_MODE\")." ;;
@@ -300,11 +298,7 @@ parse_and_validate_config() {
         assert_safe_dir "$d"
     done
 
-    # "auto"/empty/DYNAMIC_HOST here means "decide later" (preserved value, prompt, or hostname)
-    DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$CONFIG_FILE")" "")
-    # A non-"auto" host is rendered verbatim into the Caddyfile site address (generate_caddyfile),
-    # so reject anything that isn't a bare hostname/IP — a space, newline, or `{`/`}` would break
-    # the Caddyfile (or inject directives). Mirrors the stratum_bind validation above (#130).
+    DASHBOARD_HOST=$(resolve_default "$(config_get .dashboard.host)" "")
     if [ -n "$DASHBOARD_HOST" ] && ! is_valid_host "$DASHBOARD_HOST"; then
         error "dashboard.host must be a hostname or IP address — only letters, digits, dots, hyphens, and colons (got \"$DASHBOARD_HOST\")."
     fi

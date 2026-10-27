@@ -96,7 +96,6 @@ e2e_exit() {
         warn "inline pregate could not be stopped; refusing baseline restoration"
         exit 1
     }
-    # A restore refusal calls exit. Isolate it so every outcome still reaps our child.
     (restore_all "$rc") || restore_rc=$?
     rig_lock_remote_release || restore_rc=1
     [ "$restore_rc" -eq 0 ] || rc=$restore_rc

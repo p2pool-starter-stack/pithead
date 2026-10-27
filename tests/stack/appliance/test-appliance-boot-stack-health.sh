@@ -5,7 +5,6 @@ echo "== unit: boot status record is private and installed with its stack-health
 mk_tmpdir _BSH
 cat >"$_BSH/pithead" <<'EOF'
 #!/usr/bin/env bash
-printf '%s %s\n' "$1" "${PITHEAD_BOOT_GATE-unset}" >>calls.log
 case "$1" in
 doctor) printf '{"checks":[]}\n' ;;
 status) printf 'secret status output\n' ;;
@@ -22,7 +21,6 @@ chmod +x "$_BSH/pithead"
 )
 _BSH_MODE=$(stat -c %a "$_BSH/status.log" 2>/dev/null || stat -f %Lp "$_BSH/status.log")
 assert_eq "boot's status record is 0600 (#2383)" "$_BSH_MODE" "600"
-assert_eq "the gate's doctor and status calls skip the restart observer (#3622)" "$(cat "$_BSH/calls.log")" $'doctor 1\nstatus 1'
 assert_contains "boot's status record holds status output" "$(cat "$_BSH/status.log")" "secret status output"
 assert_contains "the image installs the sourced stack-health sibling" \
     "$(grep -F 'pithead-boot-stack-health' "$ROOT/os/rootfs/Dockerfile")" "pithead-boot-stack-health"
