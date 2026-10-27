@@ -87,7 +87,6 @@ harness_pregate() { # <workers> <no_mining flags>
         rm -f "$said" "$errf" "$stf"
         return 1
     }
-    # Isolate both pregates from later preflight cleanup and clear prior-job evidence first.
     harness_clear_pregate_evidence || {
         rm -f "$said" "$errf" "$stf"
         return 1
