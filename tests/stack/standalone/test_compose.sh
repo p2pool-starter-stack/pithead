@@ -27,6 +27,8 @@ TARI_MEM_LIMIT=2048m
 MONERO_MEM_LIMIT=3g
 P2POOL_ONION_ADDRESS=c.onion
 P2POOL_FLAGS=
+P2POOL_BACKUP_ARGS_B64=LS1ob3N0
+MONERO_BACKUP_NODES='[{"host":"backup.example","rpc_port":28081,"zmq_port":28083,"rpc_login":"user:pass with spaces"}]'
 P2POOL_PORT=37889
 STRATUM_BIND=0.0.0.0
 XVB_POOL_URL=na.xmrvsbeast.com:4247
@@ -271,6 +273,8 @@ jq_assert "control staged/ dir never enters the container (#33)" \
     '.services.dashboard.volumes | any(.target | contains("staged")) | not'
 jq_assert "control channel defaults off in the dashboard env (#33)" \
     '.services.dashboard.environment["DASHBOARD_CONTROL_ENABLED"] == "false"'
+jq_assert "Compose preserves backup arguments and per-node monitor credentials" \
+    '.services.p2pool.environment.P2POOL_BACKUP_ARGS_B64 == "LS1ob3N0" and (.services.dashboard.environment.MONERO_BACKUP_NODES | fromjson | .[0]) == {host:"backup.example",rpc_port:28081,zmq_port:28083,rpc_login:"user:pass with spaces"}'
 jq_assert "rendered Monero RPC URL reaches the dashboard (#1271)" '.services.dashboard.environment["MONERO_RPC_URL"] == "http://monero.example:28081"'
 jq_assert "Tor receives the same P2Pool port as the daemon (#2936)" \
     '.services.tor.environment.P2POOL_PORT == "37889" and (.services.p2pool.command | tostring | contains("37889"))'
@@ -449,14 +453,6 @@ jq_assert "internal p2pool stratum stays :3333 under a custom port (#172)" \
     '.services["p2pool"].command | any(. == "0.0.0.0:3333")' "$PORT_JSON"
 jq_assert "proxy upstream (P2POOL_URL) stays the internal :3333 (#172)" \
     '.services["xmrig-proxy"].command | any(. == "172.28.0.28:3333")' "$PORT_JSON"
-
-BACKUP_ARGS=$(printf '%s' '--host' | base64 | tr -d '\n')
-BACKUP_JSON=$(P2POOL_BACKUP_ARGS_B64="$BACKUP_ARGS" MONERO_BACKUP_NODES='[{"host":"backup.example","rpc_port":28081,"zmq_port":28083,"rpc_login":"user:pass with spaces"}]' \
-    docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)
-jq_assert "Compose passes backup tokens intact to the shared entrypoint" \
-    ".services.p2pool.environment.P2POOL_BACKUP_ARGS_B64 == \"$BACKUP_ARGS\"" "$BACKUP_JSON"
-jq_assert "Compose preserves per-backup RPC credentials for monitoring" \
-    '(.services.dashboard.environment.MONERO_BACKUP_NODES | fromjson | .[0]) == {host:"backup.example",rpc_port:28081,zmq_port:28083,rpc_login:"user:pass with spaces"}' "$BACKUP_JSON"
 
 if [ "$fails" -ne 0 ]; then
     echo "  ✗ $fails hardening check(s) failed"
