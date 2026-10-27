@@ -2,10 +2,12 @@
 # shellcheck disable=SC2034
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
-STACK=${PITHEAD_ONION_TEST_STACK:-$ROOT/pithead}
+ONION_TEST_STACK=${PITHEAD_ONION_TEST_STACK:-$ROOT/pithead}
+# shellcheck source=tests/stack/lib.sh
+source "$ROOT/tests/stack/lib.sh"
+STACK=$ONION_TEST_STACK
 echo "== unit: dashboard onion runtime refresh =="
-fixture=$(mktemp -d)
-trap 'rm -rf "$fixture"' EXIT
+fixture=$SANDBOX
 
 run_fixture() (
     cd "$fixture/$1"
