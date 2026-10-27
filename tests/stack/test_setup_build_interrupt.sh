@@ -61,9 +61,24 @@ assert_contains "Tor build retry reports completed preparation" "$retry_out" 'De
 assert_contains "Tor build retry records deployment completion" "$(cat "$V/.env")" 'DEPLOYMENT_COMPLETED=true'
 assert_eq "Tor build retry retains configuration bytes" "$(cmp -s "$V/config.before" "$V/config.json" && echo yes)" yes
 assert_eq "Tor build retry retains owner-only configuration" "$(file_mode "$V/config.json")" 600
-if grep -Eq ' (restart|prune|rm)( |$)' "$DOCKER_LOG" ||
+recovery_docker_pattern='^\[docker\] ([[:alnum:]_-]+ )?(restart|rm|prune|down|stop)( |$)'
+for forbidden in 'restart docker' 'rm tor' 'builder prune' 'image rm fixture' 'volume rm fixture' 'network rm fixture' 'compose rm' 'compose down' 'compose stop'; do
+    if printf '[docker] %s\n' "$forbidden" | grep -Eq "$recovery_docker_pattern"; then
+        ok "recovery guard detects $forbidden"
+    else
+        bad "recovery guard detects $forbidden" 'forbidden action was missed'
+    fi
+done
+if printf '%s\n' '[docker] run --rm fixture sh -c rm -f temporary' | grep -Eq "$recovery_docker_pattern"; then
+    bad 'recovery guard permits ordinary container arguments' 'container command confused with Docker recovery'
+else
+    ok 'recovery guard permits ordinary container arguments'
+fi
+if grep -Eq "$recovery_docker_pattern" "$DOCKER_LOG" ||
     grep -Eq '(systemctl (.* )?(restart|stop) (.* )?(docker|containerd)(\.service)?( |$)|service (docker|containerd) (restart|stop))' "$SUDO_LOG"; then
-    bad "Tor build recovery never restarts Docker or deletes containers/cache" 'destructive Docker call'
+    bad "Tor build recovery never restarts Docker or deletes containers/cache" 'top-level Docker recovery command recorded'
+    grep -oE "$recovery_docker_pattern" "$DOCKER_LOG" || true
+    grep -oE '(systemctl (.* )?(restart|stop) (.* )?(docker|containerd)(\.service)?|service (docker|containerd) (restart|stop))' "$SUDO_LOG" || true
 else
     ok "Tor build recovery never restarts Docker or deletes containers/cache"
 fi
