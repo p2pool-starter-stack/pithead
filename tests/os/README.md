@@ -28,6 +28,12 @@ install-to-disk, the rig role, and the update → commit → rollback cycle that
 exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
+`kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_lease_ip`,
+`vm_list_running` and `vm_destroy`. Shared SSH diagnostics, DHCP polling and the
+stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
+failure handling, teardown order and caller routing without a guest; the tier-1
+`make test-integration-selftest` target discovers it. Libvirt remains the only backend;
+the battery still requires the Linux bench and does not run on macOS.
 
 After initial provisioning has settled, `provision` runs `tor-recover check` in the guest
 with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and
