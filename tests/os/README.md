@@ -285,7 +285,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   provisioned stack is live — every earlier power cut in the battery landed on a bare guest
   (`fault`) or was a clean reboot; this is the first that hits a provisioned one. Before each cut,
   poll the monerod height up to 18 times, 10 seconds apart. An empty result fails the row and
-  returns before flushing or cutting power. After EVERY cut, the leg
+  returns before flushing or cutting power. A non-empty result that is not a non-negative
+  integer also fails before flushing or cutting power. After EVERY cut, the leg
   asserts every container returns, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
   monerod stays readable at or above the height read and flushed to disk just before that cut

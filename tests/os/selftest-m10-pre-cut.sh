@@ -23,7 +23,7 @@ _ssh() {
 }
 _boot_id() { echo boot >>"$td/actions"; }
 virsh() { echo power >>"$td/actions"; }
-for height in '' 42; do
+for height in '' invalid 0 42; do
     : >"$td/actions"
     : >"$td/verdict"
     rc=0
@@ -33,6 +33,9 @@ for height in '' 42; do
         [ "$(grep -c '^poll$' "$td/actions")" -eq 18 ] || exit 1
         ! grep -Eq '^(sync|boot|power)$' "$td/actions" || exit 1
         grep -Fxq 'M10.1: empty pre-cut monerod height read' "$td/verdict" || exit 1
+    elif [ "$height" = invalid ]; then
+        [ "$(cat "$td/actions")" = poll ] || exit 1
+        grep -Fxq 'M10.1: invalid pre-cut monerod height read' "$td/verdict" || exit 1
     else
         [ "$(cat "$td/actions")" = $'poll\nsync' ] || exit 1
         grep -Fxq 'M10.1: could not flush the guest before the power cut' "$td/verdict" || exit 1

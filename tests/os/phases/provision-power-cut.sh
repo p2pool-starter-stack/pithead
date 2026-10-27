@@ -117,6 +117,10 @@ _phase_provision_power_cut() {
             bad "M10.$i: empty pre-cut monerod height read"
             return 1
         }
+        [[ "$height_before" =~ ^[0-9]+$ ]] || {
+            bad "M10.$i: invalid pre-cut monerod height read"
+            return 1
+        }
         _ssh sync || {
             bad "M10.$i: could not flush the guest before the power cut"
             return 1
