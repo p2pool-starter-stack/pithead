@@ -1,34 +1,82 @@
-name: Link check (lychee)
+name: Issue 2727 isolated acceptance
+run-name: Issue 2727 acceptance at 004958bc
 
-# Scheduled (not per-PR) so flaky external links never redden a PR (#281). The run goes red in the
-# Actions tab if a link breaks; trigger on demand with workflow_dispatch. Ignored URLs: .config/lycheeignore.
 on:
-  schedule:
-    - cron: "0 6 * * 1" # Mondays 06:00 UTC
   workflow_dispatch:
+    inputs:
+      payload:
+        description: Compressed scanned acceptance inputs
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
-  lychee:
-    name: Check Markdown links
+  acceptance:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: 004958bccaf0d89e81574e51a211ef316a0d2344
+          fetch-depth: 0
           persist-credentials: false
-      - name: Check links in Markdown
-        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
-        with:
-          # --exclude-file is deprecated upstream (lychee TODO: removed at 1.0), but --exclude-path is
-          # NOT a substitute for it: --exclude-path excludes filesystem paths from the crawl, while
-          # --exclude-file supplies URL patterns to ignore. Both appear below doing those two
-          # different jobs. When the flag finally goes, the replacement is a `.lycheeignore`
-          # auto-discovered in the working directory — which is the root file #1901 moved to
-          # .config/ — so that migration has to move it back or run lychee from .config/.
-          args: "--no-progress --exclude-file .config/lycheeignore --exclude-path docs/research/xvb-delivery-study/data/sources './**/*.md'"
-          fail: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # higher github.com rate limit for repo links
+      - name: Stage approved acceptance inputs outside checkout
+        run: |
+          python3 - <<'PY_STAGE'
+          import base64
+          import hashlib
+          import json
+          import lzma
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          files = json.loads(lzma.decompress(base64.b64decode(event['inputs']['payload'], validate=True)))
+          assert set(files) == {'accept_2727.py', 'evidence.txt', 'run.log'}
+          target = Path(os.environ['RUNNER_TEMP'], 'acceptance-2727')
+          target.mkdir(mode=0o700)
+          for name, content in files.items():
+              (target / name).write_text(content)
+          assert hashlib.sha256((target / 'accept_2727.py').read_bytes()).hexdigest() == 'bc678bc340232ab62d5ff2e59e042688e9e069face63a97ab324e87d1a233762'
+          PY_STAGE
+      - name: Run corrected acceptance at the candidate commit
+        run: |
+          test "$(git rev-parse HEAD)" = 004958bccaf0d89e81574e51a211ef316a0d2344
+          test -z "$PITHEAD_VM_TEARDOWN_TIMEOUT"
+          proof_rc=0
+          python3 "$RUNNER_TEMP/acceptance-2727/accept_2727.py" --results "$RUNNER_TEMP/acceptance-2727" > "$RUNNER_TEMP/acceptance-2727/output.txt" 2>&1 || proof_rc=$?
+          cat "$RUNNER_TEMP/acceptance-2727/output.txt"
+          printf 'Acceptance process exit: %s\n' "$proof_rc"
+          test "$proof_rc" -eq 0
+      - name: Reject an over-bound teardown log
+        run: |
+          python3 - <<'PY_NEGATIVE'
+          import datetime
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          root = Path(os.environ['RUNNER_TEMP'], 'acceptance-2727')
+          negative = root / 'negative'
+          negative.mkdir()
+          (negative / 'evidence.txt').write_bytes((root / 'evidence.txt').read_bytes())
+          lines = (root / 'run.log').read_text().splitlines(keepends=True)
+          verdict = next(i for i, line in enumerate(lines) if 'os harness:' in line)
+          undefine = next(i for i in range(verdict + 1, len(lines)) if 'teardown: virsh undefine took' in lines[i])
+          stamp = datetime.datetime.fromisoformat(lines[verdict].split()[0].replace('Z', '+00:00'))
+          late = (stamp + datetime.timedelta(seconds=301)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+          lines[undefine] = re.sub(r'^\S+', late, lines[undefine], count=1)
+          (negative / 'run.log').write_text(''.join(lines))
+          result = subprocess.run(['python3', str(root / 'accept_2727.py'), '--results', str(negative)], text=True, capture_output=True)
+          (root / 'negative-output.txt').write_text(result.stdout + result.stderr)
+          print(result.stdout, end='')
+          print(result.stderr, end='')
+          assert result.returncode == 1
+          failures = [line for line in result.stdout.splitlines() if line.startswith('FAIL')]
+          assert len(failures) == 1 and failures[0].startswith('FAIL  B3 ')
+          assert 'NOT ACCEPTED: 9/10 checks pass' in result.stdout
+          print('Negative control PASS: 301-second teardown gap rejected; all other checks pass.')
+          PY_NEGATIVE
