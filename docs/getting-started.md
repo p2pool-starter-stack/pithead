@@ -1,11 +1,38 @@
 # Getting Started
 
-Install and first-run setup, from a fresh Ubuntu host to a synced, mining stack. The `pithead`
-script drives every step.
+Choose a deployment, connect a worker, and check accepted mining work with the released Pithead stack.
 
-This is the DIY path: your host, your OS. To dedicate a machine and skip the host management
-entirely, write [the appliance image](appliance.md) to a USB stick instead — same stack, same
-dashboard, no Linux to set up.
+## Choose your next action
+
+The **coordinator** runs P2Pool, the proxy and dashboard, with local or remote nodes. A **worker**
+runs XMRig and sends work to that coordinator; it needs no chain storage or payout wallet secrets.
+
+| Starting point | Next action | Supported platform and resources | What changes |
+|---|---|---|---|
+| An existing XMRig worker and a running coordinator | [Connect the miner](#6-connect-your-miners). RigForge is optional. | Keep the miner's supported OS and RandomX resources; allow network access to the coordinator's advertised stratum endpoint. No coordinator-sized disk is needed on the worker. | Change the miner's pool settings; no OS install or disk imaging. |
+| An existing host for the coordinator | Follow [prerequisites](#1-prerequisites) and the DIY setup below. | Ubuntu Server 24.04 LTS, x86-64, 4+ cores, 16 GB+ RAM; AVX2 advised. Plan 600 GB+ SSD with both nodes local, about 370 GB with Tari remote or off; [other node arrangements](hardware.md#running-a-node-elsewhere) have different budgets. | Keep the OS and disks. Setup writes config, offers dependencies and host HugePages tuning, provisions Tor, then offers to start the stack. |
+| A machine to dedicate to the appliance | Follow [the appliance guide](appliance.md#what-you-need), verify the image, then select the role and disk there. | x86-64 UEFI, wired ethernet, a 16 GB+ USB stick and a second computer with a browser. A coordinator needs 16 GB+ RAM and the SSD budget above plus OS partitions; worker-only uses [worker sizing](hardware.md#choose-the-arrangement). | Writing the image erases the selected USB stick. Installing erases the selected target disk. Back up first and verify both selections. |
+
+For a new worker, use [RigForge's supported installation](workers.md#new-to-mining-start-with-rigforge)
+or the appliance's **RigForge** role. Released RigForge supports Ubuntu 22.04+ or Debian 12
+on x86-64 with AVX2; allow about 2.3 GB free RAM for RandomX fast mode plus OS headroom and
+about 2 MB L3 cache per mining thread. Check its
+[worker requirements](https://github.com/p2pool-starter-stack/rigforge/blob/v1.18.0/docs/hardware.md#requirements).
+For a coordinator that also mines, read
+[local-worker setup](workers.md#mine-on-the-stack-host-itself) before enabling it: CPU, RAM,
+cache and memory bandwidth are shared with the nodes and other applications. Coordinator-only
+leaves mining to separate workers. See [role sizing](hardware.md#choose-the-arrangement).
+
+Shared-host resource profiles, pressure-aware stop/resume and measured coexistence guidance are
+planned in [rigforge#577](https://github.com/p2pool-starter-stack/rigforge/issues/577),
+[rigforge#578](https://github.com/p2pool-starter-stack/rigforge/issues/578) and
+[rigforge#579](https://github.com/p2pool-starter-stack/rigforge/issues/579). Current setup does not
+detect idle capacity and schedule mining around other workloads. Use the
+[manual controls](#8-limit-stop-disable-or-remove) below.
+
+The remaining installation steps are for the DIY coordinator. Existing miners can go directly
+to connection and [first-work checks](#7-check-progress-and-first-accepted-work); appliance users
+return to those checks after completing the appliance setup.
 
 > **TL;DR**
 >
@@ -27,7 +54,7 @@ dashboard, no Linux to set up.
 | Operating system | Ubuntu Server 24.04 LTS is the supported platform. Other Linux distributions may work but aren't supported. macOS is deprecated as of 2026-09-10 and is not tested; the installer refuses it. |
 | CPU | A processor with AVX2 support for RandomX performance. |
 | RAM | 16 GB minimum with HugePages enabled (~6 GB is reserved for RandomX); 32 GB for a full node or long uptimes. |
-| Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
+| Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari off (the wizard default) or remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
 | Software | Docker Engine, Docker Compose V2, `jq`, `openssl`, and `python3`. |
 
 > 📐 Sizing guidance for the stack host — minimum vs. recommended specs, plus ways to run leaner —
@@ -65,8 +92,9 @@ cd pithead
 Leave `config.json` absent to use the setup wizard. Have a Monero payout address ready, and a
 Tari payout address if you enable merge-mining (Tari wallets are sometimes labeled Minotari).
 For a manual configuration, copy `config.minimal.json` or `config.reference.json` to `config.json`
-and edit it before setup; these files inherit the reference defaults rather than the wizard's
-new-install choices.
+and edit it before setup. The minimal file uses the shared wizard defaults for a new install,
+including Tari off; the reference file retains legacy absent-key values to preserve existing
+configs.
 
 ### Alternative: build from source
 
@@ -168,30 +196,32 @@ Setup walks through five stages. It's interactive on the first run and safe to r
 
 ## 4. First boot: the node syncs
 
-This section assumes both nodes run here, the default. A chain served from another machine
-(`monero.mode` / `tari.mode: remote`) never syncs on this host — its container isn't started at all.
+A fresh setup leaves Tari off unless you enable it. A local node downloads and verifies its
+chain; a remote node syncs where it runs. Mining waits for Monero, and also for Tari when
+`dashboard.tari_required` is true. The new-install wizard writes that setting false when you
+opt into Tari, so Tari can catch up in the background while Monero mining starts. Manual configs
+inherit different reference defaults; check [the sync gate](configuration.md#configuration-reference).
 
-The first time the stack starts, your Monero and Tari nodes download and verify the blockchain
-from the network. Until both are fully synced, the dashboard shows a dedicated Sync Mode screen
-with live progress for each chain, and no hashrate is routed yet. When the stack first comes up,
-`pithead` prints a short "what happens next" note saying the miner is held until both chains sync,
-then starts automatically — it shows once, not on every restart.
+The first start prints `The miner is held until the initial sync finishes for Monero, then starts
+automatically.` When Tari is required, the note names `Monero and Tari` instead. Later restarts
+do not repeat the note.
 
-This can take anywhere from a few hours to a day or more depending on your hardware, disk, and
-network. Watch progress on the dashboard, with `./pithead status` (it prints each chain's percent
-and blocks remaining while syncing), or in the logs:
+Watch the dashboard's Sync Mode and node cards. `./pithead status` prints required-chain progress
+while mining is held; passive Tari sync is visible on the dashboard and in its node log:
+
+```bash
+./pithead status
+```
+
+Follow only a node this coordinator actually runs:
 
 ```bash
 ./pithead logs monerod
-./pithead logs tari
 ```
 
-Each line applies only to a node this host actually runs — in remote mode that service isn't in the
-stack, so `logs` has nothing to follow.
-
-Once both chains report fully synced, the dashboard switches from Sync Mode to the full
-operational view and the stack begins mining. See [The Dashboard](dashboard.md) for a tour of
-both states.
+For a local Tari node, use `./pithead logs tari`. First sync depends on hardware, disk and network;
+progress is not a payout clock. Once the required nodes are ready, P2Pool and the proxy start.
+[Dashboard sync states](dashboard.md#sync-mode) explain readiness and recovery waits.
 
 > Already have a synced Monero node? You can skip most of the initial sync by pointing the stack
 > at your existing blockchain data, or by connecting to a remote node. See
@@ -217,24 +247,95 @@ https://<your-hostname>
 ```
 
 `<your-hostname>` is the host you set during setup (the script prints the exact URL when it
-starts the stack). Caddy uses a self-signed certificate (`tls internal`), so the first time you
-visit, your browser shows a one-time "your connection is not private" / untrusted-certificate
-warning. Accept it to continue. Prefer plain HTTP on your LAN? Set `dashboard.secure: false` in
-`config.json` and run `./pithead apply`.
+starts the stack). Caddy uses a local certificate authority (`tls internal`).
+[Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
+browser warnings after certificate renewal. Prefer plain HTTP on your LAN? Set
+`dashboard.secure: false` in `config.json` and run `./pithead apply`.
 
 ---
 
 ## 6. Connect your miners
 
-Point your XMRig miners at the stack machine on port `3333`. That's the single endpoint for all
-your rigs. Do not put your wallet address in the miner config; the stack handles payouts
-centrally.
+Use the coordinator's **Connect a miner** card or the connection details printed by `setup`,
+`up` or `apply`. Copy the advertised pool URL, the stratum password if set, and the certificate
+fingerprint when TLS is enabled. Port `3333` is the default; a loopback bind accepts only local
+workers. Follow [Connecting Miners](workers.md#already-have-miners-connect-them) for miner settings,
+[authentication](workers.md#authentication) and LAN/TLS requirements. Keep credentials out of
+screenshots and support posts. Do not place a payout wallet address in the miner configuration.
 
-See [Connecting Miners](workers.md) to point an existing rig at the stack, or use
-[RigForge](https://github.com/p2pool-starter-stack/rigforge) to provision a tuned miner from scratch
-in one command.
+Existing XMRig needs no RigForge installation, management token or descriptor to send work.
+Management is a separate opt-in:
 
----
+- Direct telemetry needs a reachable read API with the matching port and read credential, if
+  configured. A failed API probe does not prevent proxy-derived worker statistics. Restrict both
+  read and control APIs to a trusted isolated LAN or protected tunnel; the read API may be open by
+  default. Configure read authentication before allowing untrusted clients network access;
+  authentication alone does not encrypt HTTP.
+- Managed RigForge changes require the rig's enabled control API, its permitted coordinator,
+  control port and write-capable token, plus Pithead's authenticated dashboard control channel.
+  Keep read probe credentials separate from the control token. Use an isolated trusted LAN or
+  protected tunnel: the RigForge control API uses plaintext HTTP.
+- **Adopt this rig** can append a new descriptor after host-side target validation and typed
+  `APPLY`. It cannot repoint, reorder or remove an existing descriptor. Saving a descriptor is
+  followed by the next successful telemetry poll; it is not proof that work was accepted.
+  See [Worker Inspect](dashboard.md#worker-inspect) and
+  [per-worker prerequisites](workers.md#per-worker-overrides).
+  Broader descriptor editing belongs to [pithead#912](https://github.com/p2pool-starter-stack/pithead/issues/912);
+  the enrollment redesign belongs to [pithead#2533](https://github.com/p2pool-starter-stack/pithead/issues/2533).
+
+## 7. Check progress and first accepted work
+
+| Checkpoint | Where to check | What it proves |
+|---|---|---|
+| Setup and sync | `./pithead status`, Sync Mode and node cards | Required services and chains are becoming ready. Healthy containers alone do not prove mining. |
+| Worker connected | **Workers Alive** and its hashrate | The proxy sees the worker. Connection alone does not prove accepted work or management access. |
+| Accepted miner work | The worker's **Accepted** count and **Proxy totals** advance; inspect rejected/invalid counts too | Work is being accepted on the mining path. These low-difficulty miner shares are distinct from P2Pool sidechain shares. |
+| P2Pool payout eligibility | **Shares in Window** above zero in the selected sidechain | A P2Pool share is in the current PPLNS window. Payment still depends on the pool finding a Monero block while that share is eligible. |
+| Confirmed reward | Your wallet's incoming payouts, or the optional dashboard **Confirmed on-chain** totals | A reward actually arrived. Hashrate and expected earnings are estimates, not confirmation. |
+
+Check successive fresh readings rather than a single screenshot; counters can reset when the proxy
+restarts. If accepted work does not advance, use [worker statistics](dashboard.md#workers-alive)
+and [troubleshooting](operations.md#troubleshooting) before changing tuning.
+
+Choose `p2pool.pool` for your hashrate: `main` for large farms, `mini` for typical home rigs,
+`nano` for a low-power rig. See [pool selection](configuration.md#configuration-reference).
+A smaller sidechain improves share frequency; it promises no payout date. An empty PPLNS window
+is different from a disconnected worker or rejected miner work. P2Pool payouts vary, and optional
+Tari merge-mining is solo and more variable; neither has a first-payout deadline.
+
+Use a [dedicated Monero mining wallet](#3-run-setup), since P2Pool payout addresses are public.
+[Dashboard payout confirmation](dashboard.md#payout-confirmation) is optional, needs the matching
+private view key and a local node, and does not need a spend key or seed. Keep wallet secrets off
+workers. Read [privacy](privacy.md), [proxy fees and XvB donation settings](configuration.md#configuration-reference),
+[the miner donation floor](workers.md#per-worker-overrides) and [encrypted backups](operations.md#backups).
+No hashrate or accepted-share count establishes profit; electricity, fees and actual rewards differ.
+
+## 8. Limit, stop, disable or remove
+
+- **Limit a worker:** use your miner's released thread controls. For RigForge, follow its released
+  [thread ceiling](https://github.com/p2pool-starter-stack/rigforge/blob/v1.18.0/docs/configuration.md#configuration-reference). A thread count is not an enforced CPU percentage or memory budget;
+  leave headroom for RandomX and other workloads. RigForge's dedicated-host tuning can alter
+  HugePages, GRUB, MSR and the governor; review [local-miner ownership](workers.md#mine-on-the-stack-host-itself).
+- **Stop mining:** stop the miner on each worker, including any local worker. Stopping the
+  coordinator alone can send workers to their configured backup pools, where mining continues.
+- **Stop or disable a DIY RigForge worker:** from its installed kit, run `sudo ./rigforge.sh stop`.
+  Run `sudo ./rigforge.sh disable` to prevent boot startup; use both when you want it stopped now
+  and after reboot. `sudo ./rigforge.sh start` starts it again and `sudo ./rigforge.sh enable`
+  restores boot startup. Review the released [service commands and uninstall](https://github.com/p2pool-starter-stack/rigforge/blob/v1.18.0/docs/operations.md#commands)
+  before removing a worker; these commands do not remove the appliance OS.
+- **Stop a DIY coordinator:** run `./pithead down`; run `./pithead up` to start it again.
+  This preserves its configuration and chain data.
+- **Disable the appliance's local miner:** set `local_miner.enabled` false in Configuration and
+  apply. On DIY this switch does not own the RigForge service; stop or disable it through RigForge.
+- **Remove a DIY coordinator:** back up first, then follow
+  [`./pithead uninstall`](operations.md#what-uninstall-removes). It keeps config, chains, Tor data,
+  dashboard history and backups, but removes derived secrets and view-only wallet volumes.
+  Retained config and backups still contain secrets, including view keys and control credentials.
+  Securely copy them to storage you control, then erase retained sensitive files separately before
+  transferring or decommissioning the host. Review retained data and host tuning before deleting
+  anything further.
+  Removing the appliance OS requires a deliberate replacement OS install; do not use the DIY
+  uninstall instructions as an appliance disk-erasure procedure.
 
 ## Next steps
 

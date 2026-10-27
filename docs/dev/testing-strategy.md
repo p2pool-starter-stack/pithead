@@ -9,6 +9,27 @@ rejected → recovered → readmitted; XvB tiers; container health. A healthy, a
 shows one corner of it, so the rest is simulated at the cheapest tier that can prove each
 situation honestly.
 
+Appliance TLS continuity is exercised by `tests/os/selftest-tls-continuity.sh`: a transiently
+smaller canonical SAN set retains a readable matching keypair that still covers every current
+name; a genuinely new SAN or an unusable pair requires replacement. The lifecycle phase
+compares Caddy's served leaf SHA-256 fingerprint, public key, SANs and local private-key digest
+before and after stopped-stack restore and dashboard password apply. HTTP-only configurations count explicit by-design skips. Read failures and any
+identity change on a TLS configuration fail the leg; private keys and their digests are not printed as evidence.
+`tests/integration/selftest/selftest-lifecycle-tls.sh` covers identity divergence and password
+fixture cleanup, and the restore health selftest requires a TLS failure to fail lifecycle. The
+pool-default lifecycle fixture models an HTTP-only box because it exercises pool rendering; the
+dedicated TLS selftests and live lifecycle phase own certificate and password behavior.
+
+The KVM `image-upgrade` certificate leg provisions the actual appliance, adds a genuine
+nonpersistent SAN on its network interface, then drives Check, Download, Install and the
+confirmed reboot from one Chromium tab. A standard-library Python host coordinator drives SSH; Node and Playwright stay inside
+the digest-pinned browser container. Host-side SSH confirms a new boot, the temporarily
+absent address and Caddy running before restoring the address through the real address watcher.
+The test requires equal final canonical SANs, served leaf SHA-256 and key identity, a successful
+post-reboot state response and the updated verdict in that same tab, without another trust
+interaction. Its executable selftests cover certificate replacements and bounded waits;
+only the KVM job establishes boot and browser behavior.
+
 ## The four tiers
 
 | Tier | What it is | Simulates | Where it runs |
@@ -24,6 +45,16 @@ that the real clients parse real daemon output (tier 2), that the dashboard's st
 real containers (tier 3), and that real daemons sync/merge-mine and real containers go unhealthy
 (tier 4). So: stubs for logic, controllable fake daemons for the control-plane wiring, the real
 box for the irreducibly-real. Each situation is tested once, at the lowest tier that is honest.
+
+The appliance boot phase compares the console's SHA-256 fingerprint with the setup certificate
+served on port 443, submits five wrong tokens, and requires a new console token within 120 seconds.
+Requests pin the verified certificate's public key; the restarted certificate is compared with
+the latest console fingerprint before either real token is sent.
+It checks that the previous token is refused and the new token opens authenticated wizard state.
+`tests/os/selftest-wizard-identity.sh` checks the probe's failure paths without a guest;
+`tests/os/selftest-wizard-lockout-loop.sh` drives the host's first-boot loop through a stopped
+wizard container and verifies that the replacement receives and announces a fresh token.
+Both selftests run through `make test-integration-selftest` in CI.
 
 The root `pithead` tested at tiers 1–4 is generated and git-ignored. Each Make test entry point
 that reads it depends on the `pithead` build target, while the live E2E provisioner builds it after
@@ -42,6 +73,17 @@ downloader against local HTTPS fixtures with shorter deadlines. It checks primar
 slow-primary and HTTP-error recovery, checksum rejection on both sources, bounded exhaustion,
 HTTPS downgrade refusal and Dockerfile wiring. It needs curl, OpenSSL and sha256sum, without
 Docker or public-network access. The Dockerfile still requires the current-head tier-4 proof below.
+
+The rootfs Compose/Cosign source-fetch regression runs through
+`tests/os/selftest-go-source-fetch.sh` in `make test-integration-selftest`.
+It executes the Dockerfile's fetch command against a local Git HTTP repository:
+interrupted object transfers recover, repeated failures and unavailable commits
+remain failures, and a wrong tag fails without retry. The deadline control uses
+the real timeout command with a shorter fixture deadline. Successful checkouts
+retain the pinned commit and HTTP/1.1 transport setting. A current-head KVM
+`rig` run supplies the image-build and appliance evidence; verify that the
+required mining-recovery rows executed. A build-only failure is never proof
+that those appliance assertions ran.
 
 The fakes are the enabler. The whole control plane is env-configurable (`MONERO_RPC_URL`,
 `TARI_GRPC_ADDRESS`, `DOCKER_CONTROL_URL`, `NODE_DOWN_AFTER_SEC`, `UPDATE_INTERVAL`, …), so the
@@ -64,6 +106,12 @@ gate for anything that changes what runs on a box. The rows mirror bench-ci's "W
 | `os/`, RAUC, the wizard, first boot, the installer, updates | `tier4-kvm`, one phase at a time; the two [release phase groups](releasing.md#which-gates-are-automated-and-which-are-not) before a release |
 | the RigForge worker to stack contract | rigforge `tier4-e2e` |
 | dashboard logic and its tests, docs, workflows, scripts that never run on a box | tiers 1 to 3 are the proof; the PR body names this row as the reason no bench job ran |
+
+Compose project identity checks run in `tests/stack/standalone/test_compose.sh` through
+GitHub's Compose job. They use the representative environment with every profile enabled,
+check the default and custom project identities, and retain both rendered configurations
+in the job log with checkout paths redacted. Split acceptance combines these CI assertions
+with exact-head targeted bench evidence and the remaining source/evidence assertions.
 
 A tier-1 assertion on a rendered file is required for a config change and never sufficient: it
 proves the render, not that the daemon accepts the file. #2327 added `network = "mainnet"` under
@@ -154,8 +202,8 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | `p2pool.pool` main / mini / nano, with omitted keys selecting mini (sidechain, flags, Tor forwarding to the selected P2P port) | config | 1 ✅ (rendered Tor port and effective pool in sparse wizard configs; invalid P2Pool ports exit before rendering or launching Tor, in `test-tor-port-validation.sh`) · 4 ▶ (Tor-container TCP dial to the selected target, allowing up to 240 seconds for post-restart listener readiness; persistent refusal fails) |
 | `network.subnet` moved off the default /24 (#180/#201): docker bridge, Tor render-at-start IP, monerod proxy IP, SSRF CIDR, onion vhost gateway | config → live (a subnet move needs a down/up) | 1 ✅ (rendered compose) · 4 ▶ (`run.sh --subnet`) |
 | The four endpoint members of `CONTROL_NODE_PREFLIGHT_KEYS` (#1888/#1924) stay fixed local placeholders on a non-remote chain; the two login members preserve their masked partner and the dashboard auth render during standalone local edits. The same preflight set forces endpoint and login changes through the staged authenticated probe in remote mode | config → render/control | 1 ✅ (`tests/stack/control/test-control-editable-allowlist.sh`, `dashboard/tests/service/test_env_key_perimeter.py`) |
-| `tari.mode` local / remote / off (#103/#1855/#1916): tari container/onion present/absent, topology node present for local and remote and absent for off, sync gate against a remote target, an `off` machine that runs no Tari and merge-mines nothing once Monero sync releases its separate hold, the retained Tari directory identified independently of normal chain growth, P2Pool's final pre-exec launch record, and both setup wizards writing the key explicitly — including `./pithead setup` declining Tari and still provisioning | config | 1 ✅ (harness logic, `selftest-tari-mode-off.sh`; appliance verdict instruments, `appliance-tari-mode-leg.sh --self-test`; the CLI wizard's question and its disk-derived default, `tests/stack/test-wizard-tari.sh`) · 4 ▶ (live matrix) |
-| `p2pool.stratum_tls` (#261): a live TLS handshake on the published stratum port, served cert matches the pinned fingerprint | config → live dial | 1 ✅ (render) · 4 ▶ (server-side handshake; a real xmrig client with `pools[].tls:true` stays deferred, see Known gaps) |
+| `tari.mode` local / remote / off (#103/#1855/#1916), including combined mode-off previews that retain the disable confirmation and mark endpoint/clearnet-sync edits inactive (#3383): tari container/onion present/absent, topology node present for local and remote and absent for off, sync gate against a remote target, an `off` machine that runs no Tari and merge-mines nothing once Monero sync releases its separate hold, the retained Tari directory identified independently of normal chain growth, P2Pool's final pre-exec launch record, and both setup wizards writing the key explicitly — including `./pithead setup` declining Tari and still provisioning | config | 1 ✅ (harness logic, `selftest-tari-mode-off.sh`; appliance verdict instruments, `appliance-tari-mode-leg.sh --self-test`; the CLI wizard's question and its disk-derived default, `tests/stack/test-wizard-tari.sh`) · 4 ▶ (live matrix) |
+| `p2pool.stratum_tls` (#261/#3078): reject a pin with one changed nibble before login, accept the Connect-a-miner pin, and accept cleartext on the same port | config → live clients | 1 ✅ (probe and miner controls) · 4 ▶ (DIY raw login jobs; KVM stack phase uses the shipped XMRig and requires new accepted shares) |
 | `pithead test-alert` (#2265): configured Telegram, webhook, and ntfy sinks each get one marked message; a failed endpoint does not hide the other verdicts; output carries only sink kind and failure class; unconfigured sinks and the Healthchecks dead-man-switch exclusion are explicit | operator command | 1 ✅ (real sink objects with mocked HTTP transport, plus CLI dispatch) · 3 ▶ (wire-level delivery is #2263) |
 | `network.tor_egress_firewall=true` (#270/#855/#2059), the **default**: the kernel actually DROPs a direct clearnet dial from a `mining_net` container, on both backends | config → live kernel | 1 ✅ (rendered iptables + nft rulesets) · 4 ▶ (real dial dropped, with a same-container dial through Tor's SOCKS as the within-row control — Docker backend in `run.sh`, netavark backend in the KVM battery) |
 | `network.tor_egress_firewall=false` (#270): the opt-out actually opens a direct clearnet dial, not just that no rule installed | config → live kernel | 1 ✅ (stubbed iptables installs no rule) · 4 ▶ (real dial succeeds) |
@@ -211,7 +259,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Required node **down** / **missing** → exit 1 | stop / `rm` monerod | 1 ✅ (node-down) · 4 ▶ (`--fault-injection`) |
 | Running but **unhealthy** → exit 1 | healthcheck fails (SIGSTOP) | 4 ▶ (`--fault-injection`) |
 | Miner created/exited under sync-hold / failover → exit **0** (intentional) | held / rejected | 1 ✅ · 4 ▶ |
-| Miner **restarting** → exit 1, never treated as a sync hold | crash loop | 1 ✅ · 4 ▶ |
+| Any service explicitly **restarting** in either engine snapshot, or whose restart count/start time advances between them, → exit 1; Docker backoff with stable metadata still fails, while stable running history, first start, running replacements and held miners pass | crash loop visible as Docker/Podman state or between point-in-time reads | 1 ✅ (`selftest-container-restarts.sh`) · 4 ▶ (`stack`: Caddy crash loop, baseline miss, `status` and `doctor` detection, restoration) |
 | A stop reaches the payout wallet (#2657/#2899): `tari-wallet` runs under an init (compose `init: true`; the quadlet renderer's `RunInit=true`) because its wrapper `exec`s `minotari_console_wallet`, which would otherwise be PID 1; the pinned gRPC wallet has no signal-driven shutdown, so Compose and the rendered Quadlet use a 10 s stop timeout and may kill it | `docker stop` / `podman stop` | 1 ✅ (`standalone/test_compose.sh`; `test-render-quadlet.sh` asserts `RunInit=true` and `StopTimeout=10`) · 4 ▶ (`local-pruned-main-payout-confirm`, when the bench supplies a Tari view key; the appliance's `appliance-tari-wallet-leg.sh` checks the pinned image and wallet RPC version, records signal dispositions, requires the default 10 s `podman stop` to finish with the container down in under 25 s, reports the exit code, then checks the same SQLite inode, a nonempty public address compared by fingerprint, wallet state RPC and readable database-integrity logs after restart; the quadlet units are not deployed yet) |
 | Chain service missing/stopped under an active data-migration hold → exit **0**; restarting/unhealthy still exits 1 | migration marker matches running version | 1 ✅ · 4 ▶ |
 | Remote mode ignores monerod | profile off | 1 ✅ · 4 ▶ |
@@ -349,7 +397,7 @@ it — the worker-API **auth model is the #315 none/name/token matrix**, not the
 | Our fake cannot drift from what a real worker emits (#1412): its `rigforge` key set is compared both ways against a vendored copy of RigForge's own `tests/contract/v1/feed.json`, that copy is pinned to the baked `RIGFORGE_REF` so a pin bump without a re-vendor reds here — and because that ref line is hand-edited text, the vendored bytes are separately byte-compared against RigForge's own copy at the baked ref, so editing `PROVENANCE` alone can no longer green a stale fixture, and a producer the check cannot reach fails in CI rather than skipping (#1426) — and every status word in `control-status.json` must be classified terminal or known-non-terminal, on a vocabulary asserted non-empty so an emptied fixture cannot pass having checked nothing | vendored producer fixtures | 2 ✅ (`fakes/contract/v1/` + `test_contract.py` + `test_contract_freshness.py`) |
 | The control-status vocabulary's third site (#1422): `dashboard`'s two Python constants are guarded against each other by name, but the `pithead` script's own `control_worker_apply`/`control_worker_upgrade` poll loops carry the same words as literal `case` arms nowhere cross-checked — a word RigForge adds and neither arm matches falls through to "keep polling" and times out as a normal-looking `accepted`, the rigforge#320 noop/throttled history repeating unseen. The two arms are shell literals, so a grep needs no rig: their union must equal the terminal words in the same vendored `control-status.json` the tier-2 guard above anchors to | `pithead` source | 1 ✅ (`tests/stack/control/test-control-status-vocabulary.sh`) |
 | Dashboard parses proxy `/workers` rows → worker list + hashrate aggregation; offline drop-off window | metrics / `worker_presence` | 1 ✅ |
-| `p2pool.stratum_password` renders `--access-password` (set) / omits it (default-off); the live daemon argv matches the configured mode and rendered password | `pithead` render + proxy entrypoint | 1 ✅ (`tests/stack`, `selftest-miner-connection.sh`: off, auto, literal and rejected mismatches) · 4 ▶ (live PID 1 argv, including flags appended by the entrypoint; miner login accept/reject remains #3078) |
+| `p2pool.stratum_password` renders `--access-password` (set) / omits it (default-off); the live daemon argv matches the configured mode and rendered password | `pithead` render + proxy entrypoint | 1 ✅ (`tests/stack`, `selftest-miner-connection.sh`: off, auto, literal and rejected mismatches) · 4 ▶ (live PID 1 argv, including flags appended by the entrypoint; miner login accept/reject runs in the stratum TLS scenarios (#3078)) |
 | Setup password opt-in, preserved literal/auto credentials, hand-off and Connect a miner identity, explicit absence, TLS fingerprint and no-store responses | Wizard/API/frontend units, host carry self-test and installed-identity verdict controls using real config/env reads (missing reads fail); provision (off), install (auto + TLS), live TLS scenario | 1 ✅ · 4 ▶ (new identity assertions awaiting branch proof) |
 | Proxy restart / node-down → reject → readmit (real containers) | control plane | 3 ▶ (mini-stack) |
 | Real worker mines through the real proxy: appears via its stratum name, hashrate aggregates, backup-pool failover | live rig + proxy | 4 ▶ (`run.sh --workers`) |
@@ -366,7 +414,7 @@ it — the worker-API **auth model is the #315 none/name/token matrix**, not the
 | The release gate both ASKS for the write phase and SUPPLIES it: `--mode targeted` — the run the release runbook mandates — requests `--rigforge-control` (#1364), and `e2e.sh` hands it the rig host and token its legs need, dialling the rig from the bench before reporting it as supplied (#1378). The token read survives a rig that has already been written to: a control-apply leaves `/opt/rigforge/config.json` root-owned, so the read falls back to `sudo -n` and a read that FAILED reports differently from a file with no token in it (#1466) | `e2e.sh` phase composition + `rig_supply` | 1 ✅ (`selftest-e2e-phases.sh` — the exact phase set per mode, the supply defaults, the token reaching the detached runner as an environment entry and never as argv, the fallback firing only on a failed read and only after the unprivileged one, and a mutation kill for each) |
 | The scenario sweep runs on its own (#3484): `--harness-arg --sweep` launches every scenario with the safety backup and no other phase, a pinned scenario beside it is refused before the bench is dialled, and `--mode matrix` and the default targeted launch stay exactly as they were | `e2e.sh` phase composition + `validate_harness_args` | 1 ✅ (`selftest-e2e-sweep.sh` — the exact launch per mode, both refusals, the allowlist advertising `sweep`) · 4 ▶ (`tier4-e2e` with `phases: ["sweep"]`) |
 | Remote-upgrade chain, selected by the dashboard's own release verdict (#1237): where a newer release is offered, the leg drives a real upgrade — `202` with a pollable `id`, which is what says the already-on-this-version shortcut cannot have answered — settles on an `applied` terminal, and reads the new version back off the rig's own summary; the repeat click then converges on a synchronous `noop` carrying no `id`, on a precondition that run established. A rig already on latest reports a classified skip, not a pass | `/api/control/worker-upgrade` + host runner + a real rig | 1 ✅ (`selftest-rigforge-upgrade.sh` — both branches, each skip reason, a mutation kill for each) · 4 ▶ (`run.sh --rigforge-control`; no live gate run has reached it yet) |
-| Stratum auth accept/reject: matching `pass` mines, wrong/missing `pass` rejected, rotation | live proxy `--access-password` | 4 (deferred — a headless xmrig login probe, real proxy binary) |
+| Stratum auth accept/reject (#3078): wrong and missing passwords explicitly refused for 120 seconds, no job or active connection, numeric proxy-owned accepted counter remains zero; matching password receives a job | live proxy `--access-password` | 1 ✅ (`test_rotate_auth_probe.py`, including a removed-guard negative control) · 4 ▶ (`local-pruned-main-stratum-tls`, `remote-main-stratum-tls`; KVM stack also requires shipped-XMRig accepted shares) |
 | Dev-fee independence (#173): proxy `--donate-level` and rig `DONATION` both honored | live proxy + rig | 4 (deferred) |
 
 The deferred tier-4 legs need a real RigForge rig against a real proxy — provisioned via
@@ -397,6 +445,13 @@ image ([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.s
 it: static assertions against the built rootfs (variant stamp, baked units, watchdog config),
 no VM needed, run on every image build.
 
+The `install` phase stages headless files before boot and checks token normalization, prefilled
+answers without a disk choice, malformed-JSON rejection and installed ESP consumption. `provision`
+checks the console root password against the dashboard password in the guest, with `/etc` backed
+by tmpfs under `/run`, including a password change and unaided reboot. `media` proves a USB settings
+stick replaces the dashboard login, conceals the new password on serial and consumes the file.
+Their verdict and failure controls run through the tier-1 appliance selftest glob.
+
 Measured at develop tip `5e98594f` (#2062): the live matrix has ~90 assertion sites across its
 15-scenario config matrix plus `--lifecycle`, `--fault-injection`, `--hardening`,
 `--auth-fail-closed`, `--subnet`, `--rigforge-control`, `--xvb-routing-smoke` and
@@ -421,7 +476,7 @@ than inventing an appliance-side vocabulary next to it.
 | Tor-only egress enforced (steady-state observation) | ✓ | one row, red on first execution (#2059) |
 | Egress-firewall opt-out actually opens clearnet | ✓ (matrix scenario) | ✗ by-design (a scratch guest has no clearnet exposure surface to observe safely) |
 | XvB over Tor, XvB routing | ✓ | ✗ — the `stack` phase drove `--xvb-routing-smoke` once (job 510): the baseline rows and the P2Pool route passed, then the Tor-isolation probe failed and reported only its own static guess, because the probe discards every byte of its output. Not run from the phase until that is readable: #2444 |
-| Shares / hashes flowing end to end | ✓ | ✓ workers online and stratum hashes advancing on the `stack` phase's remote-node guest (#2062); ✓ an ACCEPTED share, from both the coordinator's own built-in miner and a second, rig-role guest pointed at it, on the `rig` phase's own share leg (#2063 — the two-guest proof this table used to carry as a `✗`). Still `missing` on a local-node guest, which never clears the sync gate |
+| Shares / hashes flowing end to end | ✓ | ✓ workers online and stratum hashes advancing on the `stack` phase's remote-node guest (#2062); ✓ accepted shares from the coordinator miner and a second rig guest on the `rig` share leg (#2063, #3425): address → exact guest hostname → address, one configured pool per arm, accepted above each switch baseline, positive online hashrate in two consecutive polls, zero rejected/invalid counters and an unresolved-name negative control. `selftest-rig-share.sh` checks the leg with fake transport at tier 1; the real two-guest proof runs at tier 4. After the return arm, an unclean coordinator power cut must produce a new boot and advancing accepted counters from both miners (#3077); `selftest-rig-share-power-cut.sh` covers failure accounting, credential transport and recovery controls. Still `missing` on a local-node guest, which never clears the sync gate |
 | Config hot-apply matrix (mode, prune, pool, secure, tari, subnet, stratum TLS, payout confirm) | ✓ 15 scenarios | partial — the `stack` phase (#2062) applies the remote-safe subset live (`pithead apply -y` per scenario, pool main→mini, re-apply no-op, secrets preserved). Prune, full-DB and local-node scenarios stay `by-design`: a scratch guest holds no chain |
 | Secret preservation across re-apply | ✓ | partial (hostname approval leaves config byte-identical) |
 | Backup → restore round trip | ✓ | ✓ (provision backup + install-phase restore leg) |
@@ -535,9 +590,9 @@ the failure means.
 | Fresh Start reinstall (#2447): after a keep install commits, `wipe=data` keeps both chains, seeds the target grubenv, boots from that disk, completes the wizard, and commits a primary RAUC slot on its second boot | `tests/os/selftest-install-fresh-start.sh` (leg order, returned-installer readiness and refusal) · battery `--phase install` | 1 (leg order) · 4 (requires a run at the fixing head) |
 | Restore leg: the checked-in encrypted v1.20.0 fixture restores to a keep-preserved target; wallet, Tor identity, opaque RPC/onion secrets, and both fixture and target chain sentinels survive without a resync (#2001/#2230). The dashboard password survives in `config.json`, and its archived bcrypt and fingerprint are kept exactly while the fingerprint matches it (#2579), proven by an authenticated request. The installer applies the restore to the kept target's data before its first boot, replacing its superseded config and role markers while the chain trees remain intact. The fixture's `xmrig_proxy.*` settings migrate to `xvb.*` unchanged, drive the rendered XvB settings, and leave no `config.json.bak-1x`; `telegram.control` is dropped | `tests/stack/appliance/test-appliance-restore.sh` (`install_restore_to_target` on a kept target) · battery `--phase install` | 1 ✅ · 4 ✅ |
 | Wizard's real HTTP flow provisions the STACK (images verified, direct clearnet egress dropped and Tor-routed egress succeeds from the Monero container through its shipped `/usr/bin/curl`, a direct IPv6 dial dropped whenever that container holds a global v6 address, as read from `/proc/net/if_inet6` with the image's `/usr/bin/cat` since the image ships no `ip`, miner up); a direct dial counts as dropped only when it times out, and a probe that cannot run (curl, the v6 guard's cat, or a dial that fails any other way) is a counted unverified failure, never a pass; unaided reboot return; after each of M10's three live-stack power cuts every pre-cut container, stored image digest, a readable monerod height at or above the one flushed before the cut, miner, Caddy, and committed slot return; commit-gate honesty both ways; the migration hold is exercised from the cached image selected by `old_image=true`. Its full BUILD_COMMIT must be an ancestor of the verified develop commit (`origin/develop`, or `refs/heads/develop` in the runner mirror) and outside the PR commits; the resolved base ref and SHA are recorded; baseline and candidate source identities are recorded independently of their shared VERSION. Its own dashboard writer seeds `miner_released=true` in the existing database and an independent reader verifies persistence without changing owner or mode. Local Monero remains configured until the candidate records its slot-owned marker, stopped P2Pool/proxy at the ordinary pre-commit gate, unattended bootloader commit and post-commit local-chain startup. Only then may the reserved remote-node configuration be applied; direct RPC must report synchronized, P2Pool/proxy must be healthy and live stratum hashes must advance. Same-version and floor fallback remain required. The owner's real-chain RC3 appliance upgrade is separate acceptance and does not gate the PR | `tests/os/appliance-egress-leg.sh --self-test` (stubbed guest: missing curl or cat, each direct-dial exit, a failed Tor dial, v6 scope) · battery `--phase provision` | 1 ✅ · 4 ✅ (the changed egress probes, bench-ci#532, passed in the 2026-09-24 provision run); the persisted-release migration regression is written but unverified at tier 4; `selftest-migration-snapshot.sh` checks old-writer persistence and metadata; `selftest-migration-recovery.sh` checks pre-fix ancestry refusal, direct-sync verdicts, the hold-before-remote ordering and advancing-hash polling |
-| Rig role: no containers, mines from the baked binary, takes an A/B update like a coordinator; sister-feed and loopback control-listener readiness each retry up to 12 times, 5 s apart, while the unpinned-source control refusal stays single-shot; after reboot its `pithead-boot` transaction settles active before the rig result is read; M13's power cut reaches a new boot and returns unattended mining with the slot committed | battery `--phase rig` | 1 ✅ (settled-unit wait fixture; `selftest-rig-control-readiness.sh`: delayed/absent listeners and strict unpinned-source refusal) · 4 ▶ (rig phase) |
+| Rig role: no containers, mines from the baked binary, takes an A/B update like a coordinator; sister-feed and loopback control-listener readiness each retry up to 12 times, 5 s apart, while the unpinned-source control refusal stays single-shot; after reboot its `pithead-boot` transaction settles active before the rig result is read; M13's power cut reaches a new boot and returns unattended mining with the slot committed; with reserved remote nodes, a mining coordinator power cut requires both its built-in miner and the attached rig to advance accepted counters on the new boot (#3077) | battery `--phase rig` | 1 ✅ (settled-unit wait fixture; `selftest-rig-control-readiness.sh`: delayed/absent listeners and strict unpinned-source refusal; `selftest-rig-share-power-cut.sh`: advancing/reset counters, stale/error responses, cut/boot failures and cleanup) · 4 ▶ (rig phase) |
 | Physical-presence config channel (#786 sub-issue D): identical-config short-circuit, diff building + secret masking, consumed-marker, the abort/apply state machine (media removed, keypress, countdown timeout, absence of input is not abort), the abort path announces the cancellation on the console/journal (#1061), merge semantics (#965: unnamed settings keep their running values, `null` clears, an unmergeable file passes through to validation, a minimal stick preserves the dashboard login / appliance defaults / node credentials end to end) | `tests/stack/appliance/test-appliance-media.sh` (sourced, stubbed lsblk/mount) | 1 ✅ |
-| Physical-presence config channel: exact diff on the console, countdown applies, the changed setting takes effect, the stick is consumed, pulling the stick mid-countdown cancels and the console confirms the cancellation by the exact expected wording (#1061); a MINIMAL stick (#965) keeps the pre-apply dashboard login working against the served dashboard and preserves appliance defaults + node credentials | battery `--phase media` (opt-in) | 4 (added — not yet run at the release gate) |
+| Physical-presence config channel: exact diff on the console, countdown applies, the changed setting takes effect, the stick is consumed, pulling the stick mid-countdown cancels and the console confirms the cancellation by the exact expected wording (#1061); a MINIMAL stick (#965) keeps the pre-apply dashboard login working against the served dashboard and preserves appliance defaults + node credentials. Checked host stick construction must pass before attachment; readiness, formatting, mount or cleanup failures end the phase without cancellation verdicts from invalid media (bench-ci#2149) | `tests/os/selftest-media-fixture.sh` (bounded readiness, construction failures, owned cleanup and caller guards) · battery `--phase media` (opt-in) | 4 (added — not yet run at the release gate) |
 | Hugepages sizing (#977): tier thresholds over meminfo shapes, the degraded boot shrinks the pool + leaves the plain-words marker + announces the degrade on the console/journal by its exact wording (#1221), doctor WARNs (never FAILs) on it | `tests/stack/appliance/test-appliance-identity-boot.sh` (sourced, fixture meminfo) | 1 ✅ |
 | Serial getty on appliances (#2462): the boot command line keeps `console=ttyS0` for real UARTs, while the unit checks the 8250 type before opening it. A type-0 or absent port skips cleanly; a real port keeps a login prompt across clean exits. The boot phase asserts the guest's UART getty is active, substitutes a type-0 reading in the unit's runtime condition for five minutes, checks no restart or terminal error, then restores the real condition and checks a clean hangup respawns the getty before reboot | `tests/stack/appliance/test-appliance-serial-getty.sh` (type fixtures and shipped-unit wiring), `tests/os/verify-image.sh` (baked files) · battery `--phase boot` (live systemd unit) | 1 ✅ · 4 (run on the candidate head) |
 | Doctor's HugePages verdict (#2610): a pool short of this machine's budget (`hugepages_decision_pages`: 3072, or the appliance's recorded reduced pool; never below P2Pool's 1296 pages of dataset plus two caches) WARNs, never FAILs, naming the pool against that target in pages and the shortfall in MiB; below P2Pool's 1040-page dataset, a zero pool included, it names the up to 2592 MiB of ordinary RAM P2Pool falls back to under its 4 GiB limit, pinned at 1039/1040, with that limit read off the Compose file and the Quadlet renderer; from 1040 up to the budget it names the fallback as conditional on monerod's own RandomX pages leaving P2Pool its 1040, pinned at 1040, 1296 and 3071; the 1296 floor is pinned at 1295/1296 on the released tier and labelled in the message; a non-numeric total reads as could-not-read; the host fix names setup's GRUB drop-in, verification of generated kernel entries and a reboot, rather than boot parameters or `update-grub`; the reduced tier is held to its recorded pool; the appliance wording passes the `_dr_leaks` sweep with a host-wording control; the full budget reads OK; `pithead doctor` itself carries the verdict; the DIY persistent HugePages regression (#3274) covers drop-in precedence, ISO-style defaults, idempotency and failures in a shell fixture; a normal-user hosted test runs real `update-grub`, `grub-mkconfig` and `10_linux` with a cloud override in a private mount namespace, checks every host Linux entry, unchanged user files and rerun, and rejects a removed managed drop-in; the same test must fail on RC2 `f5a5ad0`. The hosted test does not reboot or allocate HugePages. The separate live proof runs setup in an Ubuntu 24.04 cloud guest, generated kernel entries, a real reboot, retained console and HugePages/THP arguments and a nonzero reservation | `tests/stack/doctor/test-doctor-memory.sh` (sourced, fixture meminfo via `PITHEAD_MEMINFO`), `tests/stack/test-grub-hugepages.sh`, `tests/stack/standalone/test_grub_hugepages_real.sh` · `tier4-diy-kvm` with `scenario: hugepages` | 1 ✅ · 4 ✅ (job 161 at `f04c7620`) |
@@ -587,7 +642,7 @@ daemon. A tier that needs something the container cannot supply says so.
 
 | Tier | Needs on the host | Runs in the container? |
 |---|---|---|
-| 1 — dashboard pytest | `uv` only; it fetches the CPython pinned by `dashboard/.python-version`. No Docker, any OS. | Yes |
+| 1 — dashboard pytest | `uv` only; it fetches the CPython pinned by `dashboard/.python-version`. `make test-dashboard` uses pytest-xdist (`-n auto`) with the 80% coverage gate; the Docker test stage retains the serial gate. Test fixtures replace only the control-service module’s asyncio reference to yield result polls through scheduled events, disable upgrade refresh attempts in history tests, and shorten probe-mismatch timeouts; production retains a 0.5-second result-poll interval and refreshes up to six times at ten-second intervals. No Docker, any OS. | Yes |
 | 1 — frontend `node --test` | Node 20. No Docker, any OS. | Yes |
 | 1 — shell suite (`tests/stack/`) | **Linux, GNU coreutils, non-root**, and a longer tool list than it looks: `bash`, `jq` **1.7 or newer**, `e2fsprogs`, a system `python3` on PATH, `xxd`, `sudo`, and a **UTF-8 locale**. Refuses on Darwin (#2041); root bypasses the permission-denied fixtures. Missing system Python, xxd, or a UTF-8 locale fails *quietly* — see the note below. | Yes — the container is how a non-Linux host runs this at all |
 | 1 — netwatch selftest | Docker: it builds the pinned harness images and asks each tool for its version. | Yes (host daemon via the socket) |
@@ -826,11 +881,27 @@ tier 3/4:
 - **Insecure + main matrix row.** ✅ Now a dedicated `local-pruned-main-insecure` row: the two axes
   decouple, so a regression specific to insecure+main (vs. the pre-existing insecure+nano row) has
   somewhere to fail.
-- **A real xmrig client over stratum TLS.** The `p2pool.stratum_tls=true` row proves the server side
-  live (a real TLS handshake on the published port, served cert matches the pinned fingerprint);
-  a real rig actually mining with `pools[].tls:true` set is deferred, the same class of gap as the
-  stratum-password headless-probe row above (a rig-configuration step outside this harness's
-  control, needing a real xmrig binary).
+- **Borrowed rig credentials (#3491).** Password-enabled scenarios hand the rendered credential
+  to the borrowed rig before mining waits and restore its exact borrowed configuration before the
+  next scenario. `selftest-scenario-stratum.sh` checks ordering, no-rig behavior and termination on
+  failed handoff or restoration; `selftest-borrow-rearm.sh` checks credential mutation and exact
+  restoration. The borrowed rig uses cleartext on the dual-mode port; the controls below exercise
+  authenticated and pinned-TLS clients separately.
+- **Stratum authentication and pinned TLS (#3078).** The DIY TLS scenario uses the raw login
+  probe in `tests/integration/rotate-auth-probe.py`. The KVM stack phase adds
+  `remote-main-stratum-tls` and uses the appliance's prebuilt XMRig for wrong-password,
+  unconfigured-password, incorrect-pin and accepted-share controls. XMRig substitutes `x` when
+  its password is unconfigured; a separate raw omitted-password control covers the wire omission.
+  An authenticated login without submissions creates a unique retained worker as fixture setup.
+  After disconnecting, the fixture requires zero active connections and a numeric accepted
+  counter of zero from the proxy's own `/1/workers`. Refused logins create no worker row.
+  Each negative arm polls that retained row for 120 seconds and requires explicit refusal,
+  no job, no active connection and an unchanged zero counter. The positive arms use the
+  Connect-a-miner fingerprint and then cleartext on the same port. DIY requires authenticated
+  mining jobs; appliance XMRig must receive jobs and advance its own proxy accepted counter
+  in each arm. The single-threaded light-mode miner requests the proxy's supported difficulty
+  100; this proves proxy-accepted work, not an upstream sidechain share. The selftest removes the fixture server's authentication guard and verifies that
+  the refusal control fails. Current-head live proof is required separately from that selftest.
 - **`verify_release_images()` against a real signed bundle.** ✅ Now exercised directly (not
   reimplemented) by `scripts/release/release-smoke.sh`: the real function runs in the extracted, published
   bundle dir against the real pinned digests + committed `cosign.pub` (positive, needs a signed
