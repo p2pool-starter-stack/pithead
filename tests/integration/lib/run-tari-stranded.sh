@@ -209,3 +209,44 @@ run_tari_stranded() {
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "tari-stranded" "$OUT_DIR"
     return 0
 }
+
+_TARI_TRANSPORT_FOREIGN_TRAP=""
+
+tari_transport_abort() {
+    local rc=$?
+    fault_rules_clear_all
+    rx "timeout --signal=TERM 45 python3 - cleanup" --stdin <"$HERE/lib/tari-transport-probe.py" >"$OUT_DIR/tari-transport-cleanup.log" 2>&1 ||
+        it_fail "tari-transport: cancellation cleanup completes"
+    [ -z "$_TARI_TRANSPORT_FOREIGN_TRAP" ] || eval "$_TARI_TRANSPORT_FOREIGN_TRAP"
+    return "$rc"
+}
+
+run_tari_transport() {
+    # shellcheck disable=SC2034
+    IT_CURRENT_SCENARIO="tari-transport"
+    local out rc=0 cleanup_rc=0 saved_trap
+    if [ "$(env_on_box TARI_MODE)" != local ] || [ "$SKIP_MINING_ASSERTS" = 1 ]; then
+        it_fail "tari-transport: local Tari and a borrowed miner are required"
+        return 1
+    fi
+    fault_rules_clear_all
+    saved_trap="$(trap -p EXIT)"
+    _TARI_TRANSPORT_FOREIGN_TRAP=""
+    if [ -n "$saved_trap" ]; then
+        local -a parsed
+        eval "parsed=($saved_trap)"
+        _TARI_TRANSPORT_FOREIGN_TRAP="${parsed[2]}"
+    fi
+    trap tari_transport_abort EXIT
+    out=$(rx "timeout --signal=TERM 900 python3 -" --stdin <"$HERE/lib/tari-transport-probe.py") || rc=$?
+    rx "timeout --signal=TERM 45 python3 - cleanup" --stdin <"$HERE/lib/tari-transport-probe.py" >"$OUT_DIR/tari-transport-cleanup.log" 2>&1 || cleanup_rc=$?
+    fault_rules_clear_all
+    trap - EXIT
+    [ -z "$saved_trap" ] || eval "$saved_trap"
+    printf '%s\n' "$out" >"$OUT_DIR/tari-transport.log"
+    _mm_rows tari-transport "$out"
+    assert_rc "tari-transport: bounded live probe completes" "$rc" 0
+    assert_rc "tari-transport: independent cleanup completes" "$cleanup_rc" 0
+    [ "$cleanup_rc" = 0 ] || return "$cleanup_rc"
+    return "$rc"
+}
