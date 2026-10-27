@@ -258,12 +258,12 @@ Per #3099 and #3092:
 **What you do:**
 
 1. On the laptop, open the URL that setup printed, of the form `https://<hostname>`. `<hostname>` stands for the box's name.
-2. Accept the one-time certificate warning.
+2. [Verify and trust the installation's root CA](../../../configuration.md#exposing-the-dashboard-safely), then reload the dashboard.
 3. Log in with the dashboard login you saved in 1.4.
 
 **What you should see:**
 
-- A one-time certificate warning, then the login.
+- A valid HTTPS connection, then the login.
 - Then the **Sync Mode** screen, with a progress line per chain and a held-miner notice.
 - The top bar shows CPU, RAM, HugePages and disk.
 
