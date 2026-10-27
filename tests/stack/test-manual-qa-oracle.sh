@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?source through tests/stack/run.sh}"
 
+echo "== manual-QA documentation oracle =="
+
 manual_qa_oracle() {
     local SANDBOX="$SANDBOX/manual-qa" C CTRL_LOG
     local id edit expected change out rc row count=0
