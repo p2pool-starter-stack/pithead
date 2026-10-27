@@ -86,12 +86,15 @@ updates:
     schedule:
       interval: "weekly"
     groups:
+      tari:
+        patterns: ["tari-project/minotari_node", "tari-project/minotari_console_wallet"]
       compose:
         patterns: ["*"]
+        exclude-patterns: ["tari-project/minotari_node", "tari-project/minotari_console_wallet"]
     ignore:
-      # Same policy as the docker entry: digest + patch within the pinned tag. A Tari or Caddy
-      # major/minor is a deliberate migration (compose flags, config compatibility), not a CVE fix.
-      - dependency-name: "*"
+      - dependency-name: "caddy"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "tecnativa/docker-socket-proxy"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # Test-harness images. POLICY CHANGED (#2059 follow-up): these used to be covered by no entry at

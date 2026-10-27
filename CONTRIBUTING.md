@@ -27,10 +27,20 @@ uv run --project dashboard pre-commit install
 `make test` and `make lint-py` run through uv automatically (no venv to activate); `pre-commit`
 runs `ruff` (plus a few hygiene hooks) on your changed files. If you change dependencies in
 `dashboard/pyproject.toml`, run `uv lock --project dashboard` and commit the updated `uv.lock`.
-For a transitive security fix, update only the affected package with
-`uv lock --project dashboard --upgrade-package urllib3==2.8.0` (substitute the package and
-verified fixed version). Review the lockfile diff, run the dashboard tests, and require the
-built dashboard image's Trivy scan to pass without adding an ignore entry.
+For a transitive security fix, update the affected package and any parent whose constraint
+rejects the fixed version. For example, the developer tooling's filelock fix needs a compatible
+virtualenv version:
+
+```bash
+uv lock --project dashboard --upgrade-package filelock==4.2.1 --upgrade-package virtualenv==21.10.0
+```
+
+Review the lockfile diff, run the dashboard tests, and require the built dashboard image's
+Trivy scan to pass without adding an ignore entry.
+`dashboard/tests/test_dependency_security.py` checks the locked security floors, loaded runtime
+dependency versions, and that Requests' CA bundle excludes the compromised emSign ECC Root CA - G3.
+Filelock is locked through the `dev` extra's pre-commit/virtualenv chain; its floor is checked
+in the lockfile because the dashboard runtime and `test` extra do not install it.
 
 The root `pithead` executable is generated and git-ignored. Plain `make` builds it from the
 numbered `lib/pithead/*.sh` sources; the test targets also build it when needed. Edit the slices,
@@ -111,7 +121,15 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
      non-Python tools run via `npx`/`uvx`/`docker`, so a contributor needs **Node, uv, and Docker**
      on PATH (plus `shfmt`); `pre-commit` runs the same checks on changed files. Link-checking
      (`lychee`) runs on a weekly schedule, not per-PR.
-   - **test-dashboard** — the dashboard `pytest` suite (must stay ≥ the **80% total coverage gate**).
+   - **test-dashboard** — the dashboard `pytest` suite, using pytest-xdist with `-n auto`
+     (must stay ≥ the **80% total coverage gate**). The Docker test stage keeps its serial coverage
+     gate. To run the suite serially on the host with the same gate:
+
+     ```bash
+     cd dashboard && uv run --locked --extra test python -m pytest -n 0 \
+       --cov=mining_dashboard --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+     ```
+
      CI also runs **`make test-patch-coverage`** (`diff-cover`): new/changed lines must be **≥ 90%**
      covered against the PR's own base branch, the ratchet that stops coverage rotting at the margin. The gate
      says so explicitly when a diff has nothing it measures (shell/docs-only PRs pass loudly), and
@@ -168,10 +186,31 @@ the file so the addition fits under a ceiling that stays put or drops — see is
 example, where a security test that outgrew its file moved into its own — and note that two same-wave merges
 can each pass alone and fail together, so re-run `make lint` after merging onto the tip.
 
-The ratchet half is fatal in CI when it cannot run at all: a job that resolves none of the base-ref
-candidates has lost its `fetch-depth: 0`, which is a misconfigured job rather than a clean tree, so the gate
-fails there instead of printing a note into a log nobody reads (issue #1739). A local checkout without those
-refs still gets the note and still passes.
+Actions PR validation compares against the fetched `origin/$GITHUB_BASE_REF`,
+the PR's target branch. A missing target ref fails instead of falling back to
+`develop`. Keep `fetch-depth: 0` on the lint job so that ref is available.
+
+For local validation of a release-branch PR, fetch its base and select it
+explicitly:
+
+```bash
+git fetch origin develop-v2.0.2
+make lint-file-budget FILE_BUDGET_BASE_REF=origin/develop-v2.0.2
+```
+
+`FILE_BUDGET_BASE_REF` takes precedence over `GITHUB_BASE_REF` and must resolve
+to a commit. Without either selection, the gate tries `origin/develop`, then
+local `develop`. If neither resolves, CI fails; a local checkout prints a note
+and skips the ratchet comparison. Enumeration and per-file checks still run.
+
+Release validation uses the frozen release commit as `FILE_BUDGET_BASE_REF` for
+`make test`, so later ceiling reductions on `develop` cannot reject that commit.
+Per-file ceilings and the 800-line hard ceiling remain enforced. On a clean
+release tree, comparing the budget with that same commit makes ceiling raises
+and first appearances inapplicable; PR validation still rejects them.
+`make lint-file-budget` exercises these modes with isolated Git fixtures,
+including divergent integration and release-branch budgets. The self-tests
+clear inherited base selections before creating their fixture refs.
 
 Generated code, vendored files, data/config, and prose docs are exempt by glob — see `is_exempt()` in the
 script. The generated, git-ignored `pithead` is outside the tracked-file budget; the gate governs its
