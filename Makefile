@@ -57,10 +57,11 @@ test-integration-selftest: pithead ## Integration harness logic and local transp
 	for t in tests/integration/selftest/*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
 	for t in tests/os/selftest*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
 
-test-tools: ## Build-tool contracts and CI workflow guards (no live services)
+test-tools:
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
+	python3 scripts/lint/test-browser-workflow.py
 	python3 tests/stack/standalone/test_tor_saturated_fixture.py
 	python3 tests/stack/standalone/test_monero_download.py
 	python3 tests/stack/standalone/test_appliance_release_docs.py
