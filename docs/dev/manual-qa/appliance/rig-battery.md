@@ -59,7 +59,8 @@ hugepages.*
 coordinator power-cut rows in `rig_share_leg`. It uses the existing two guests, enables the
 coordinator control channel, previews and commits an adoption with typed `APPLY`, and polls
 for an adopted worker with a reachable API. Worker descriptors reload on each poll; adoption
-does not require a separate dashboard restart. The leg changes `DONATION`, checks the rig's
+does not require a separate dashboard restart. The leg changes `DONATION`, waits for the
+matching `change_id` in worker history to reach `applied`, checks the rig's
 own config and unchanged pools, restores the original effective value (read from the rig's
 reported config when the raw key is absent), and checks that the unpinned
 bench host still cannot reach the control port. It prints elapsed seconds without the card

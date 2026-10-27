@@ -23,10 +23,32 @@ _rig_adopt_snapshot() {
 }
 
 _rig_adopt_apply() {
-    local value="$1" pools="$2" result snapshot deadline
+    local value="$1" pools="$2" result snapshot deadline change_id status detail
     result=$(dashboard_control_request worker-apply "$(jq -nc --argjson value "$value" \
         '{worker:"kvm-rig-share",changes:{DONATION:$value}}')" 240) || return 1
-    [ "$(printf '%s' "$result" | jq -r '.status // empty')" = applied ] || return 1
+    printf '%s' "$result" | jq -e '.status | IN("accepted", "applied")' >/dev/null || return 1
+    change_id=$(printf '%s' "$result" | jq -er '.change_id | strings | select(test("^[0-9a-f]{16}$"))') || return 1
+    deadline=$(($(date +%s) + 90))
+    status=unavailable
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if detail=$(dashboard_curl -fsSk -m 10 "https://$ip/api/worker?name=kvm-rig-share" 2>/dev/null); then
+            status=$(printf '%s' "$detail" | jq -r --arg id "$change_id" \
+                'first(.history[]? | select(.change_id == $id)) | .status // "unavailable"') || status=unavailable
+        else
+            status=unavailable
+        fi
+        case "$status" in
+        applied | rejected | rolled_back | failed | noop | throttled) break ;;
+        unavailable | pending | accepted | running | started) ;;
+        *)
+            status=unknown
+            break
+            ;;
+        esac
+        sleep 3
+    done
+    printf '  M12 worker result: change_id=%s status=%s\n' "$change_id" "$status" >&2
+    [ "$status" = applied ] || return 1
     deadline=$(($(date +%s) + 60))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         snapshot=$(_rig_adopt_snapshot) || snapshot=""
