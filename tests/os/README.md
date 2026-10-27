@@ -516,11 +516,11 @@ box have covered it?**
   and are proven by `--phase provision` or `--phase all`. Calling them `by-design` would book
   a real, reachable gap as accepted.
 
-Boot-menu version repair belongs to the unconditional `pithead-boot-version.service` and runs
-on unprovisioned guests too. The update phase replaces the initial slot's version metadata with
-the plain version, restarts that service, and requires the build label restored in grubenv. It
-also checks both slot titles in the serial menu after the committed update. This repair is an
-assertion, not a missing skip.
+Boot-menu version repair runs through `pithead-boot-version.service` on provisioned and
+unprovisioned guests, once the ESP is mounted. The update phase replaces the initial slot's
+version metadata with the plain version, restarts that service, and requires the build label
+restored in grubenv. It also checks both slot titles in the serial menu after the committed
+update. This repair is an assertion, not a missing skip.
 
 This is distinct from the remote-node row below, where a missing input stays a counted
 **failure**: the classes are for rows the configuration excludes, never for inputs the bench
