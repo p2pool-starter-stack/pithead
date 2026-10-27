@@ -43,10 +43,18 @@ which:
 
 For each scenario it writes a `config.json`, applies it, then waits on real readiness signals
 (container health, `pithead status`, dashboard sync %, miner-released) with timeouts. Never a
-fixed `sleep`. Pool readiness uses the configured sidechain, defaulting to mini when
+fixed `sleep`. Mining readiness waits for every expected proxy worker and non-zero stratum
+hashes before taking the assertion snapshot. Pool readiness uses the configured sidechain, defaulting to mini when
 `p2pool.pool` is omitted. It then runs the assertion battery below. All reads happen on the box
 (`pithead status`/`doctor` and `curl http://127.0.0.1:8000/api/state`), so SSH and `--local`
 behave identically and never depend on resolving the box's dashboard hostname.
+
+The e2e deploy, preflight and restore sync waits require `done/done` from a live dashboard
+snapshot. They compare `pithead_snapshot_age_seconds` with the current container uptime before
+reading sync state, then recheck container identity and start time. Restored snapshots, missing
+freshness data and a dashboard restart cannot satisfy the wait. Metrics reads are capped at
+64 KiB and state reads at 1 MiB; duplicate readings and unknown sync states are refused.
+The existing timeout still applies.
 
 Before the first scenario it snapshots the box's original `config.json` and a fingerprint of
 its secrets. After the run it restores the original config and re-applies (unless `--keep`).

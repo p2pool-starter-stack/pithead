@@ -16,6 +16,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
+source "$HERE/../e2e-sync-sample.sh"
 
 E2E_SRC="$HERE/../e2e.sh"
 
@@ -24,7 +25,7 @@ E2E_SRC="$HERE/../e2e.sh"
 # as selftest-e2e-phases.sh's run_harness extraction.
 WAIT_SRC="$(sed -n '/^wait_synced() {/,/^}$/p' "$E2E_SRC")"
 assert_eq "wait_synced extraction is the whole function (opens and closes)" \
-    "$(printf '%s\n' "$WAIT_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "wait_synced() { # <timeout_s> } "
+    "$(printf '%s\n' "$WAIT_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "wait_synced() { } "
 
 DEPLOY_SRC="$(sed -n '/^deploy_branch() {$/,/^}$/p' "$E2E_SRC")"
 assert_eq "deploy_branch extraction is the whole function (opens and closes)" \
@@ -50,8 +51,8 @@ run_wait_synced() { # <timeout_s> <first-state> [state-after-one-poll] -> "<rc>"
         NEXT="${3:-}"
         ok() { :; }
         warn() { :; }
-        sleep() { [ -z "$NEXT" ] || STATE="$NEXT"; } # no real waiting
-        on_bench() { printf '%s' "$STATE"; }
+        sleep() { [ -z "$NEXT" ] || STATE="$NEXT"; }
+        on_bench() { printf '%s live' "$STATE"; }
         eval "$WAIT_SRC"
         wait_synced "$1"
         echo "rc=$?"
@@ -76,10 +77,10 @@ run_preflight_sync() { # <initial> <after-one-poll>
         die() { exit 1; }
         sleep() { STATE="$NEXT"; }
         on_bench() {
-            if [[ "$1" == *current* ]]; then
+            if [[ "$1" == *"$E2E_SYNC_SUMMARY_JQ"* ]]; then
                 printf 'loading 0/0 loading 0/0'
             else
-                printf '%s' "$STATE"
+                printf '%s live' "$STATE"
             fi
         }
         eval "$WAIT_SRC"
