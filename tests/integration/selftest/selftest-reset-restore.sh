@@ -133,7 +133,7 @@ drive_reset_restore() (
         if [ "$fault" = secrets ] && [ -e "$OUT_DIR/restored" ]; then printf changed; else printf original; fi
     }
     wait_status_ok() { [ "$fault" != health ]; }
-    run_reset_restore >"$OUT_DIR/output" 2>&1
+    run_reset_restore_fixture >"$OUT_DIR/output" 2>&1
     local rc=$?
     [ ! -e "$OUT_DIR/unhandled" ] || rc=127
     if [ "$fault" = none ]; then cp "$OUT_DIR/probe" "$PROBE_COPY"; fi
