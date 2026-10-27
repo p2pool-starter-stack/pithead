@@ -121,7 +121,7 @@ def self_test():
     check.assertEqual(
         redact("fixture 192.0.2.1 and 2001:db8::1"), "fixture <address> and <address>"
     )
-    check.assertEqual(redact("/home/fixture/log box.internal"), "<home>/log <host>")
+    check.assertEqual(redact("/home/user/log box.internal"), "<home>/log <host>")
     print("accept-iproute2 self-test: passed")
 
 
