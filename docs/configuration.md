@@ -129,17 +129,21 @@ plain HTTP, edit `config.json` and run `./pithead apply`.
 
 ## Setup vs. day-2
 
-`./pithead setup` and the dashboard's first-run web wizard both ask for the fields listed in
-[Getting Started › Run setup](getting-started.md#3-run-setup) — the Monero payout address, the
-Monero node mode, whether the machine merge-mines Tari (and the Tari payout address and node if it
-does), the pool tier, and a handful of other high-level questions. Tari merge-mining is an
-opt-in beta, so both wizards answer it off unless you say yes (a data disk that already holds a Tari
-chain keeps it on). Both wizards write `dashboard.tari_required: false` and
-`xvb.enabled: false` without asking and generate a strong dashboard password by default. Fast initial sync is opt-in and applies to every
-locally run chain; it warns that your IP is exposed to the Monero network and, when Tari runs
-locally, the Tari network until initial sync finishes. These are explicit new-install choices shared with the starter configs;
-legacy absent-key behavior stays unchanged for upgrades and restores. Every other key in
-[`config.reference.json`](../config.reference.json) is day-2: not asked by either wizard,
+`./pithead setup` and the dashboard's first-run web wizard collect the Monero payout address,
+Monero node mode, Tari mode and related Tari details when enabled, plus the other first-run choices
+listed in [Getting Started › Run setup](getting-started.md#3-run-setup). They do not ask for a pool
+tier, dashboard login choice, or hostname. New installs inherit the `mini` pool default, use
+`dashboard.host: auto` to derive the host name from the machine, and generate a random 32-character
+alphanumeric dashboard password shown once in the final handoff. An existing explicit
+`dashboard.host` value remains in effect. To run without dashboard login, explicitly set
+`dashboard.auth.password` to an empty string in **Advanced** or `config.json`; the setup flow does
+not offer a no-login prompt. Tari merge-mining is an opt-in beta, so new installs default it off
+(unless an existing Tari data disk keeps it on). The wizards write `dashboard.tari_required: false`
+and `xvb.enabled: false` without asking. Fast initial sync is opt-in and applies to every locally
+run chain; it warns that your IP is exposed to the Monero network and, when Tari runs locally, the
+Tari network until initial sync finishes. These are explicit new-install choices shared with the
+starter configs; legacy absent-key behavior stays unchanged for upgrades and restores. Every other
+key in [`config.reference.json`](../config.reference.json) is day-2: not asked by either wizard,
 deliberately out of scope for a first run. Set it by editing `config.json` directly (then
 `./pithead apply`) or through the dashboard's config editor once the stack is up. Examples include
 stratum TLS and the stratum password (`p2pool.stratum_tls`, `p2pool.stratum_password`), onion

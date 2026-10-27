@@ -138,11 +138,12 @@ Setup walks through five stages. It's interactive on the first run and safe to r
    fills in the rest and writes a minimal `config.json`, locked down to owner-only (`chmod 600`).
    Use a dedicated Monero mining wallet: P2Pool payout addresses are public
    ([P2Pool's guidance](https://github.com/SChernykh/p2pool/releases/tag/v4.18.1)).
-   - **Required:** your Monero wallet address; whether you're running a local Monero node (the
-     default — the stack runs its own) or connecting to a remote one, with a local node's RPC
-     credentials auto-generated; and your P2Pool pool tier (`main`/`mini`/`nano` — pick low if
-     you're not sure, a high-hashrate default silently starves a small rig of shares). An
-     dashboard login, generated on Enter and printed once; enter `none` to opt out.
+   - **Required:** your Monero wallet address and whether you're running a local Monero node (the
+     default — the stack runs its own) or connecting to a remote one. Local-node RPC credentials
+     are generated automatically. Setup inherits the `mini` P2Pool sidechain default. It generates
+     a random 32-character alphanumeric dashboard password and shows it once in the final handoff.
+     To disable dashboard login, explicitly set `dashboard.auth.password` to an empty string in
+     **Advanced** or `config.json`; there is no no-login prompt.
    - **Merge-mine Tari? (beta)** Three answers: no, run the bundled Tari node here, or use a Tari
      node you already run. Tari runs on pre-release upstream software, so Enter means no. Yes
      downloads and syncs a Tari chain over Tor, which takes days. A yes asks for your Tari payout address, and "a node I already run" asks
@@ -156,8 +157,9 @@ Setup walks through five stages. It's interactive on the first run and safe to r
      install also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero
      mining. Changeable later from the
      dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.
-   - Once the config is written, setup asks one more thing: the hostname you'll use to reach the
-     dashboard in a browser. Enter accepts this machine's hostname.
+   - Setup does not ask for a dashboard hostname. A fresh install uses `dashboard.host: auto`,
+     which derives the name from the machine hostname. An existing explicit `dashboard.host`
+     override remains in effect. Open the dashboard at the address printed during setup.
    - **A few more, Enter for the default:** a faster clearnet initial sync (hours instead of days,
      for every local chain, exposing your IP address to the Monero network and, when Tari runs
      locally, the Tari network until initial sync finishes) instead of
@@ -246,8 +248,10 @@ The dashboard is served over HTTPS by Caddy:
 https://<your-hostname>
 ```
 
-`<your-hostname>` is the host you set during setup (the script prints the exact URL when it
-starts the stack). Caddy uses a local certificate authority (`tls internal`).
+`<your-hostname>` is the address printed by setup. A fresh install derives it from the machine
+hostname through `dashboard.host: auto`; setup does not ask you to name the machine. An existing
+explicit `dashboard.host` override remains in effect. Caddy uses a local certificate authority
+(`tls internal`).
 [Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
 browser warnings after certificate renewal. Prefer plain HTTP on your LAN? Set
 `dashboard.secure: false` in `config.json` and run `./pithead apply`.

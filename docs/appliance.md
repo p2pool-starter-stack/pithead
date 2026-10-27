@@ -300,18 +300,18 @@ Then a handful of choices, all with sensible defaults:
 | Question | Default | When to change it |
 |---|---|---|
 | Merge-mine Tari? (beta) | off | Tari merge-mining is an opt-in beta: Enter means no, because Tari runs on pre-release upstream software and a yes downloads and syncs a Tari chain over Tor, which takes days. The exception is a reinstall that keeps the data disk’s chains, where Enter keeps it on. The bundled node needs the whole stack to fit (528 GiB with local Monero, 208 GiB with remote Monero). A yes also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero mining. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. You can change the mode and payout address later from the Configuration view behind confirmation. |
-| P2Pool sidechain | mini | `nano` for a single low-power rig, `main` only for very large hashrate. Changeable later. |
+| P2Pool sidechain | mini | Setup inherits this default; it does not ask you to choose a pool tier. Change it later in **Advanced** or from the Configuration view. |
 | Telegram bot | — | Optional. Alerts and status commands; needs both the token and the chat id. |
 | Monero node | run it here | Point at a node you already run. It has to be on your own network — a private address (10.x, 172.16–31.x, 192.168.x) or one reached over a VPN — because the machine only lets the mining containers dial private ranges; everything else goes through Tor. |
 | Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
 | First sync | private over Tor | Faster over clearnet: hours instead of days. This opts every local chain into fast sync and exposes your IP address to the Monero network and, if Tari runs locally, the Tari network until initial sync finishes. With the firewall on, only those local nodes are exempted. The host closes and verifies its exception before the Tor restart, then verifies the live daemon and rules before clearing the warning. The firewall and each clearnet option are confirmed settings in the Configuration view. |
 | Enable stratum password? | no | Yes generates a password every miner must send; it then appears on the hand-off card, in the dashboard's **Connect a miner** block and in the CLI output of `setup` and `apply`. With No, miners connect without one. Existing and restored configurations keep their current setting; the form-submit fallback (no JavaScript) follows the same rule. Change it later with `p2pool.stratum_password` ([configuration](configuration.md#configuration-reference)). |
-| Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
+| Dashboard login | generated password | Setup generates a random 32-character alphanumeric password and shows it once in the final handoff. It does not ask you to choose a password or offer a no-login option. To disable login, explicitly set `dashboard.auth.password` to an empty string in **Advanced** or `config.json`. |
 
 XvB is off on a new install and is not asked. Enable it later from the Configuration view.
 If the machine cannot generate or save its dashboard login, first boot stops before handing
-off credentials or provisioning. The explicit "No login" choice still bypasses generation.
+off credentials or provisioning.
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
 with a default that is right for almost every home rig lives one level down, in **Advanced**,
@@ -338,9 +338,9 @@ node must answer the base node's `GetTipInfo` gRPC call. A hostname that passes 
 the exact address the checks reached, so installation cannot resolve it to a different machine.
 Only when everything passes does the page show the things you must save:
 
-- the **dashboard login** (generated, or the one you chose)
-- the **dashboard address** (`https://pithead.local`)
-- where to **point your miners** (`stratum+tcp://pithead.local:3333`)
+- the **dashboard login** (generated and shown once)
+- the **dashboard address** (derived from the machine hostname when `dashboard.host` is `auto`)
+- where to **point your miners** (the advertised Stratum address and port)
 - the **stratum password**, or **No stratum password** when it is off
 - the **TLS fingerprint** when stratum TLS is enabled
 
