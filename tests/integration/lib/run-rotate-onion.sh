@@ -156,8 +156,8 @@ rotate_onion_restore() {
     current_fp="$(rotate_onion_env_fingerprint .env)" || return 1
     [ "$current_fp" = "$ROTATE_ONION_OLD_ENV_FP" ] || return 1
     pithead render >/dev/null 2>&1 &&
-        rx "docker compose restart caddy >/dev/null 2>&1" >/dev/null 2>&1 || return 1
-    wait_status_ok 120 && _onion_reachable_external "$ROTATE_ONION_OLD_ADDRESS" || return 1
+        rx "docker compose up -d --no-deps dashboard >/dev/null 2>&1 && docker compose restart caddy >/dev/null 2>&1" >/dev/null 2>&1 || return 1
+    wait_status_ok 120 && wait_for 60 3 "restored dashboard onion runtime" dashboard_onion_runtime_matches && _onion_reachable_external "$ROTATE_ONION_OLD_ADDRESS" || return 1
     if [ "$has_snapshot" = 1 ]; then
         rx "rm -f $(quote_arg "$ROTATE_ONION_ENV_BACKUP") && test ! -e $(quote_arg "$ROTATE_ONION_ENV_BACKUP") && test ! -L $(quote_arg "$ROTATE_ONION_ENV_BACKUP")" >/dev/null 2>&1 || return 1
     fi
@@ -296,6 +296,11 @@ run_rotate_onion() {
     it_step "rotating the dashboard onion…"
     pithead rotate-dashboard-onion -y >/dev/null 2>&1
     assert_rc "rotate-dashboard-onion completes" "$?" "0"
+    if wait_for 60 3 "rotated dashboard onion runtime" dashboard_onion_runtime_matches; then
+        it_pass "dashboard runtime receives the rotated onion address (#3074)"
+    else
+        it_fail "dashboard runtime receives the rotated onion address (#3074)" "runtime environment differs from rendered address"
+    fi
 
     local new_onion new_client_fp current_mining_fp restored_key_fp
     new_onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
