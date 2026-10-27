@@ -26,7 +26,8 @@ if [ "${1:-}" = --check ]; then
     sudo update-grub
     optimize_kernel
     check_entries() {
-        python3 - /boot/grub/grub.cfg <<'PY'
+        sudo cat /boot/grub/grub.cfg | tee "$scratch/grub.inspect" >/dev/null || return 1
+        python3 - "$scratch/grub.inspect" <<'PY'
 import shlex
 import sys
 
@@ -50,11 +51,11 @@ PY
     check_entries
     cmp "$scratch/grub.before" /etc/default/grub
     cmp "$scratch/cloud.before" /etc/default/grub.d/50-cloudimg-settings.cfg
-    cp /boot/grub/grub.cfg "$scratch/grub.first"
+    cp "$scratch/grub.inspect" "$scratch/grub.first"
     cp /etc/default/grub.d/zz-pithead-hugepages.cfg "$scratch/dropin.first"
     optimize_kernel
     check_entries
-    cmp "$scratch/grub.first" /boot/grub/grub.cfg
+    cmp "$scratch/grub.first" "$scratch/grub.inspect"
     cmp "$scratch/dropin.first" /etc/default/grub.d/zz-pithead-hugepages.cfg
     sudo rm /etc/default/grub.d/zz-pithead-hugepages.cfg
     sudo update-grub
