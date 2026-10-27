@@ -20,9 +20,9 @@ export const PreviewModal = ({
   const suffixesMatch = Object.entries(payoutConfirmations).every(
     ([chain, suffix]) => (payoutSuffixes?.[chain] || "") === suffix,
   );
+  const displayValue = (key, value) =>
+    String(value ?? (key === "workers.api_port" ? "8080 (default)" : "unset"));
   const armed = (!preview.destructive || confirmText === "APPLY") && suffixesMatch;
-  // Applying can't be interrupted (the host is mid-commit) — Cancel is disabled and Escape,
-  // wired to the same onCancel below, is a no-op while busy rather than closing underneath it.
   return html`<${Modal} ref=${modalRef} title="Review changes" onClose=${onClose}
       onCancel=${() => !busy && onCancel()}>
           ${
@@ -38,8 +38,8 @@ export const PreviewModal = ({
           }
           ${(preview.preview_values || []).map(
             (value) => html`<p class="text-xs"><strong>${value.label}:</strong>
-                <code>${String(value.old ?? "unset")}</code> →
-                <code>${String(value.new ?? "unset")}</code></p>`,
+                <code>${displayValue(value.key, value.old)}</code> →
+                <code>${displayValue(value.key, value.new)}</code></p>`,
           )}
           ${
             preview.approval_required

@@ -6,9 +6,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit 
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 # shellcheck source=tests/integration/lib/lifecycle-pool.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lifecycle-pool.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
 run_lifecycle() {
     IT_CURRENT_SCENARIO="lifecycle"
-    local lifecycle_ok=1 reset_failed=0 # reset_failed: 1 changed state, 2 left the stack intact (#3342)
+    local lifecycle_ok=1 reset_failed=0
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
@@ -60,13 +62,16 @@ run_lifecycle() {
     fi
     run_source_image_reconcile || return 1
     run_tari_background_sync || return 1
-    local cur_pool fp_before other pool_apply_ok=1
+    local cur_pool fp_before pool_fp_after other pool_apply_ok=1 restore_tls_before
     cur_pool="$(lifecycle_pool_start)" || {
         it_fail "pool change starting sidechain established" "config or rendered flags unreadable or inconsistent"
         return 1
     }
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
-    fp_before="$(secret_fingerprint)"
+    if ! fp_before="$(upgrade_secret_fingerprints)" || [ -z "$fp_before" ]; then
+        it_fail "pool change starting secrets readable" "cannot fingerprint wallet and credential categories"
+        return 1
+    fi
     local own_dir own_probe=""
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         own_dir="$(env_on_box DASHBOARD_DATA_DIR)"
@@ -78,8 +83,12 @@ run_lifecycle() {
     fi
     it_step "apply pool $cur_pool -> ${other}…"
     lifecycle_pool_apply "$other" || pool_apply_ok=0
-    assert_eq "secrets preserved across pool change" "$(secret_fingerprint)" "$fp_before"
-    # APP_UID is 1000 in pithead; the migrated contents must now be owned by it, not root.
+    if ! pool_fp_after="$(upgrade_secret_fingerprints)" || [ -z "$pool_fp_after" ] || [ "$pool_fp_after" != "$fp_before" ]; then
+        it_fail "secrets preserved across pool change" "wallet or credential categories changed or unreadable"
+        pool_apply_ok=0
+    else
+        it_pass "secrets preserved across pool change"
+    fi
     if [ -n "$own_probe" ]; then
         assert_eq "apply migrates root-owned CONTENTS to the container uid (#255)" \
             "$(rx "stat -c %u $(quote_arg "$own_probe") 2>/dev/null")" "1000"
@@ -87,11 +96,7 @@ run_lifecycle() {
     fi
     [ "$pool_apply_ok" = 1 ] || return 1
     it_pass "effective pool changed ($cur_pool -> $other)"
-    # .pool.type lags a sidechain switch until peers on the new chain connect — wait + three-way
-    # verdict, don't assert cold on a peer-timing state (#54, #687).
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
-    # Node-down failover (#31): stop monerod -> status non-zero (node down), dashboard rejects
-    # workers (xmrig-proxy stopped) -> start monerod -> readmitted -> status 0 again.
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         it_step "stopping monerod to exercise node-down failover…"
         rx "docker compose stop monerod" >/dev/null 2>&1
@@ -106,10 +111,7 @@ run_lifecycle() {
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
-    # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
-    # restore brings them back. We change the pool, restore, and assert the pool reverted and
-    # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check
-    # the rollback net makes (#2579), exercised here on a run that does not fail.
+    restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_step "backup → restore round-trip…"
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then
         local arch
@@ -137,6 +139,7 @@ run_lifecycle() {
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
                     lifecycle_ok=0
                 fi
+                assert_dashboard_tls_continuity "stopped-stack restore" "$restore_tls_before" || lifecycle_ok=0
                 if ! gate_marker_after="$(sync_gate_marker_state)" || [ "$gate_marker_after" != "$gate_marker_before" ]; then
                     it_fail "restore preserves sync-gate policy without a new hold (#2626)" "marker changed or unreadable"
                     lifecycle_ok=0
@@ -219,6 +222,7 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
+    run_password_tls_continuity || lifecycle_ok=0
     run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
     [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
     [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1

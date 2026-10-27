@@ -28,7 +28,6 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         it_step() { :; }
         it_pass() { :; }
         it_skip_leg() { :; }
-        # Treat any unexpected phase failure as a failed driver, not a hidden diagnostic.
         it_fail() { printf 'failure:%s\n' "$1" >>"$TRACE"; }
         pithead() {
             [ "${POOL_APPLY_FAIL:-}:$1" != 1:apply ] || return 1
@@ -37,19 +36,37 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         wait_status_ok() { :; }
         wait_monero_synced() { :; }
         secret_fingerprint() { printf 'test-fingerprint'; }
-        upgrade_secret_fingerprints() { printf 'test-fingerprint'; }
+        upgrade_secret_fingerprints() {
+            if [ -f "$OUT_DIR/pending-config" ]; then
+                case "${POOL_SECRET_CASE:-}" in
+                after-fails) return 1 ;;
+                after-empty) return 0 ;;
+                after-changed) printf changed; return 0 ;;
+                esac
+            else
+                case "${POOL_SECRET_CASE:-}" in
+                before-fails) return 1 ;;
+                before-empty) return 0 ;;
+                esac
+            fi
+            printf test-fingerprint
+        }
         env_on_box() {
-            [ "${POOL_APPLY_FAIL:-}" != 1 ] || printf '%s' "$OUT_DIR/owner"
+            if [ "$1" = DASHBOARD_SECURE ]; then
+                printf false
+            elif [ "${POOL_APPLY_FAIL:-}" = 1 ]; then
+                printf '%s' "$OUT_DIR/owner"
+            fi
         }
         has_compose_profile() { [ "${POOL_APPLY_FAIL:-}" = 1 ]; }
         run_cli_wizard_defaults() { :; }
-        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
+        lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
-        run_tari_background_sync() { :; }           # Its worker evidence has a separate selftest.
-        sync_gate_marker_state() { printf absent; } # Marker reads and restoration are checked separately.
-        run_connection_announcements() { :; }       # Box-output proof is covered by its own selftest.
+        run_tari_background_sync() { :; }
+        sync_gate_marker_state() { printf absent; }
+        run_connection_announcements() { :; }
         tor_recovery_healthy_probe() { :; }
-        run_reset_restore() { :; } # covered by selftest-reset-restore.sh
+        run_reset_restore() { :; }
         run_uninstall_round_trip() { :; }
         assert_scenario() { :; }
         restore_firewall_after_clearnet() { :; }
@@ -116,6 +133,17 @@ assert_eq "lifecycle switches from a sparse Mini scenario rather than its saved 
 assert_eq "a failed pool apply removes the ownership probe before stopping lifecycle" \
     "$(POOL_APPLY_FAIL=1 drive_pool lifecycle '{"p2pool":{"pool":"mini"}}')" \
     "$(printf 'push:main\nfailure:pool change apply returned healthy\nowner-probe-cleaned')"
+
+for failure in before-fails before-empty; do
+    assert_eq "an unreadable starting categorized fingerprint stops before pushing ($failure)" \
+        "$(POOL_SECRET_CASE="$failure" drive_pool lifecycle '{"p2pool":{"pool":"mini"}}')" \
+        'failure:pool change starting secrets readable'
+done
+for failure in after-fails after-empty after-changed; do
+    assert_eq "an unreadable or changed categorized fingerprint stops lifecycle ($failure)" \
+        "$(POOL_SECRET_CASE="$failure" drive_pool lifecycle '{"p2pool":{"pool":"mini"}}')" \
+        "$(printf 'push:main\nfailure:secrets preserved across pool change')"
+done
 
 for pool in main mini nano; do
     assert_eq "scenario override selects $pool from a sparse baseline" \
