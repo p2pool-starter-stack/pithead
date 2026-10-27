@@ -229,8 +229,8 @@ assert_eq "...and no firewall command runs" "$(test -e "$LG_RESTORE" && echo ran
 echo "== the rule survives a DIY host reboot: pithead-lan-guard.service, ahead of docker (#2749) =="
 lg_bu="$(run_sourced "$LGD" render_lan_guard_boot_unit /usr/sbin/iptables /srv/pithead/data/lan-guard/enforced 18081 18142)"
 assert_eq "last, once every rule is in, it records the current boot id as the nodes' marker (#2749)" \
-    "$(tail -n 5 <<<"$lg_bu" | grep '^ExecStartPost=')" \
-    'ExecStartPost=/bin/sh -c "rm -f /srv/pithead/data/lan-guard/enforced && cat /proc/sys/kernel/random/boot_id > /srv/pithead/data/lan-guard/enforced"'
+    "$(grep '^ExecStartPost=/usr/bin/cp ' <<<"$lg_bu")" \
+    'ExecStartPost=/usr/bin/cp -- "/proc/sys/kernel/random/boot_id" "/srv/pithead/data/lan-guard/enforced"'
 assert_contains "runs before Docker and Tor egress, so the egress DROP lands above the LAN jumps" "$lg_bu" \
     "Before=docker.service pithead-egress.service"
 assert_contains "every docker start pulls it in (boot and socket activation)" "$lg_bu" "WantedBy=docker.service"

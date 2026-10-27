@@ -276,25 +276,19 @@ parse_and_validate_config() {
     # location — an operator-pinned dashboard.data_dir is theirs, never touched.
     DASHBOARD_DIR_IS_DEFAULT=1
     [ "$DASHBOARD_DIR" == "$_dash_cfg" ] && DASHBOARD_DIR_IS_DEFAULT=0
-    # Stratum TLS keypair home (#261): joins the shared data root when one exists — the cert's
-    # FINGERPRINT is what every rig pins, so it must survive versioned deploys like the chain
-    # data does, not move with the code. Internal (not config-driven), like CONTROL_DIR.
     PROXY_TLS_DIR="$_data_root/proxy-tls"
-    # Internal shared state dir (#234): the dashboard (rw) drops a per-chain "clearnet sync complete"
-    # marker here and the monerod/tari entrypoints (ro) read it to decide Tor-vs-clearnet. Not a
-    # user-facing data dir, so it's fixed under ./data rather than config-driven.
-    CLEARNET_STATE_DIR="$PWD/data/clearnet-state"
-    # Control-channel spool (#33): requests/ (container rw) + staged/results/audit (host-only /
-    # container ro). Fixed under ./data like CLEARNET_STATE_DIR — not a user-facing data dir.
-    # Deliberately NOT inside DASHBOARD_DIR, which is mounted rw wholesale into the container.
+    local chain_root
+    chain_root=$(dirname "$TARI_DIR")
+    TARI_CONFIG_ROOT="$chain_root/tari-config"
+    CLEARNET_STATE_DIR="$chain_root/clearnet-state"
+    LAN_GUARD_DIR="$chain_root/lan-guard"
     CONTROL_DIR="$PWD/data/control"
     # Caddy access log (#349): Caddy (rw) writes access.log here, the dashboard mounts it
     # read-only. Fixed under ./data like the spool above — internal, not a user-facing data dir.
     CADDY_LOG_DIR="$PWD/data/caddy-logs"
 
-    # Guard every data dir against catastrophic chown -R / rm -rf targets before we touch them.
     local d
-    for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$CLEARNET_STATE_DIR" "$CONTROL_DIR" "$CADDY_LOG_DIR" "$PROXY_TLS_DIR"; do
+    for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$CLEARNET_STATE_DIR" "$CONTROL_DIR" "$CADDY_LOG_DIR" "$PROXY_TLS_DIR" "$TARI_CONFIG_ROOT" "$LAN_GUARD_DIR"; do
         assert_safe_dir "$d"
     done
 

@@ -555,21 +555,18 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "monero clearnet off by default" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_CLEARNET_SYNC)" "false"
 assert_eq "tari clearnet off by default" "$(run_sourced "$V" env_get_file "$V/.env" TARI_CLEARNET_SYNC)" "false"
-assert_contains "tari default: Tor SOCKS transport" "$(cat "$V/build/tari/config.toml")" 'type = "socks5"'
-assert_contains "tari default: DNS seeds empty" "$(cat "$V/build/tari/config.toml")" "dns_seeds = []"
-assert_contains "tari default: advertises onion" "$(cat "$V/build/tari/config.toml")" "/onion3/"
+assert_contains "tari default: Tor SOCKS transport" "$(cat "$(run_sourced "$V" env_get_file "$V/.env" TARI_CONFIG_DIR)/config.toml")" 'type = "socks5"'
+assert_contains "tari default: DNS seeds empty" "$(cat "$(run_sourced "$V" env_get_file "$V/.env" TARI_CONFIG_DIR)/config.toml")" "dns_seeds = []"
+assert_contains "tari default: advertises onion" "$(cat "$(run_sourced "$V" env_get_file "$V/.env" TARI_CONFIG_DIR)/config.toml")" "/onion3/"
 
-# Monero clearnet ON (Tari left off): only the Monero
-# flag flips; Tari stays Tor. The preview must spell out the exposure (CONFIRM, warned ⚠ on the host).
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":true}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "network":{"tor_egress_firewall":false}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "monero clearnet flag propagated true" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_CLEARNET_SYNC)" "true"
 assert_eq "tari clearnet still false" "$(run_sourced "$V" env_get_file "$V/.env" TARI_CLEARNET_SYNC)" "false"
-assert_contains "tari stays Tor when only monero is clearnet" "$(cat "$V/build/tari/config.toml")" 'type = "socks5"'
+assert_contains "tari stays Tor when only monero is clearnet" "$(cat "$(run_sourced "$V" env_get_file "$V/.env" TARI_CONFIG_DIR)/config.toml")" 'type = "socks5"'
 assert_contains "apply preview warns clearnet exposure" "$out" "CLEARNET"
 
-# Tari clearnet ON: pithead always renders the CANONICAL Tor config — the clearnet transform is
 # applied per-start INSIDE the container (marker-gated, #234), so the host-rendered config.toml
 # stays Tor even with the flag on. That's what lets the node return to Tor on its own after sync
 # without pithead re-rendering clearnet over it.
@@ -577,11 +574,10 @@ seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","clearnet_initial_sync":true}, "network":{"tor_egress_firewall":false}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "tari clearnet flag propagated true" "$(run_sourced "$V" env_get_file "$V/.env" TARI_CLEARNET_SYNC)" "true"
-assert_contains "tari host-render stays Tor even with flag on (#234)" "$(cat "$V/build/tari/config.toml")" 'type = "socks5"'
-assert_contains "tari host-render keeps DNS seeds empty (#234)" "$(cat "$V/build/tari/config.toml")" "dns_seeds = []"
-assert_contains "tari host-render still advertises the onion (#234)" "$(cat "$V/build/tari/config.toml")" "/onion3/"
+assert_contains "tari host-render stays Tor even with flag on (#234)" "$(cat "$(run_sourced "$V" env_get_file "$V/.env" TARI_CONFIG_DIR)/config.toml")" 'type = "socks5"'
+assert_contains "tari host-render keeps DNS seeds empty (#234)" "$(cat "$(run_sourced "$V" env_get_file "$V/.env" TARI_CONFIG_DIR)/config.toml")" "dns_seeds = []"
+assert_contains "tari host-render still advertises the onion (#234)" "$(cat "$(run_sourced "$V" env_get_file "$V/.env" TARI_CONFIG_DIR)/config.toml")" "/onion3/"
 
-# Truthy parse consistency (#183): a JSON string "yes" reads as enabled, like normalize_bool/MONERO_PRUNE.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":"yes"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "network":{"tor_egress_firewall":false}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"

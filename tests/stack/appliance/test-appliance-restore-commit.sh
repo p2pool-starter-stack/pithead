@@ -16,7 +16,7 @@ echo "== unit: restore_apply — a failure inside the commit rolls back (#2689) 
 RC="$(cd "$SANDBOX" && pwd -P)/restore-commit"
 mkdir -p "$RC/build/tari" "$RC/bin"
 cp "$STACK" "$RC/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$RC/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$RC/build/tari/"
 cp "$ROOT/docker-compose.yml" "$RC/docker-compose.yml"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$RC/bin/docker"
 chmod +x "$RC/bin/docker"

@@ -177,8 +177,7 @@ mkdir -p "$U/build/tari" "$U/dashboard" "$U/data/monero" "$U/data/tari" "$U/data
 : >"$U/dashboard/Dockerfile"
 cp "$STACK" "$U/pithead"
 make_stubs "$U/bin"
-cp "$ROOT/build/tari/config.toml.template" "$U/build/tari/"
-# Stale .env: secrets present, but STRATUM_BIND (a rendered var) is missing — the upgrade must fill it.
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$U/build/tari/"
 cat >"$U/.env" <<EOF
 MONERO_ONION_ADDRESS=mona.onion
 TARI_ONION_ADDRESS=taria.onion
@@ -212,7 +211,7 @@ A="$SANDBOX/applyfail"
 mkdir -p "$A/build/tari" "$A/dashboard" "$A/bin" "$A/data/monero" "$A/data/tari" "$A/data/p2pool/stats" "$A/data/tor" "$A/data/dashboard"
 : >"$A/dashboard/Dockerfile" # source-checkout marker → pithead builds (--pull never), #44
 cp "$STACK" "$A/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$A/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$A/build/tari/"
 cat >"$A/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 echo "[docker] $*" >> "${DOCKER_LOG:-/dev/null}"
@@ -260,7 +259,7 @@ R2="$SANDBOX/racecompose"
 mkdir -p "$R2/build/tari" "$R2/dashboard" "$R2/bin" "$R2/data/monero" "$R2/data/tari" "$R2/data/p2pool/stats" "$R2/data/tor" "$R2/data/dashboard"
 : >"$R2/dashboard/Dockerfile"
 cp "$STACK" "$R2/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$R2/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$R2/build/tari/"
 cat >"$R2/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 echo "[docker] $*" >> "${DOCKER_LOG:-/dev/null}"

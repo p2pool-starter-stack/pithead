@@ -36,7 +36,7 @@ mkdir -p "$DJ/build/tari" "$DJ/dashboard"
 : >"$DJ/dashboard/Dockerfile"
 cp "$STACK" "$DJ/pithead"
 make_stubs "$DJ/bin"
-cp "$ROOT/build/tari/config.toml.template" "$DJ/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$DJ/build/tari/"
 mkdir -p "$DJ/data/monero" "$DJ/data/tari" "$DJ/data/p2pool" "$DJ/data/tor" "$DJ/data/dashboard" "$DJ/data/p2pool/stats"
 cat >"$DJ/.env" <<EOF
 MONERO_ONION_ADDRESS=mona.onion

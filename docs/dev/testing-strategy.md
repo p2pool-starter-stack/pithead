@@ -107,6 +107,13 @@ gate for anything that changes what runs on a box. The rows mirror bench-ci's "W
 | the RigForge worker to stack contract | rigforge `tier4-e2e` |
 | dashboard logic and its tests, docs, workflows, scripts that never run on a box | tiers 1 to 3 are the proof; the PR body names this row as the reason no bench job ran |
 
+Chain directory-move preservation runs in e2e hardening and KVM provision through
+`tests/integration/chain-directory-move.sh`. It pins the copied configuration to the original
+resolved data paths, runs product render/up without a keep-running override, polls both node
+identities and start times, and restores the original install. The unit test
+`tests/stack/standalone/test_chain_runtime.py` runs in `make test-tools` and covers stable
+configuration identity, changed inputs, missing sources, migration and refusal controls.
+
 Compose project identity checks run in `tests/stack/standalone/test_compose.sh` through
 GitHub's Compose job. They use the representative environment with every profile enabled,
 check the default and custom project identities, and retain both rendered configurations

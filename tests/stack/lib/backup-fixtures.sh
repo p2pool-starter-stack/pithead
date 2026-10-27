@@ -10,7 +10,7 @@ build_backup_sandbox() {
     BK="$(cd "$SANDBOX" && pwd -P)/backup"
     mkdir -p "$BK/build/tari" "$BK/data/tor" "$BK/data/dashboard" "$BK/bin"
     cp "$STACK" "$BK/pithead"
-    cp "$ROOT/build/tari/config.toml.template" "$BK/build/tari/"
+    cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$BK/build/tari/"
     cat >"$BK/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in

@@ -64,6 +64,7 @@ test-tools:
 	python3 scripts/lint/test-ci-uv-install.py
 	python3 scripts/lint/test-browser-workflow.py
 	python3 tests/stack/standalone/test_tor_saturated_fixture.py
+	python3 tests/stack/standalone/test_chain_runtime.py
 	python3 tests/stack/standalone/test_monero_download.py
 	python3 tests/stack/standalone/test_appliance_release_docs.py
 	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'

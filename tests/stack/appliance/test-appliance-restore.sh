@@ -30,7 +30,7 @@ RS="$(cd "$SANDBOX" && pwd -P)/restore-consume"
 mkdir -p "$RS/build/tari" "$RS/data/tor" "$RS/data/dashboard" "$RS/bin" "$RS/volatile" "$RS/stage"
 export PITHEAD_RESTORE_STAGE_ROOT="$RS/stage"
 cp "$STACK" "$RS/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$RS/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$RS/build/tari/"
 cp "$ROOT/docker-compose.yml" "$RS/docker-compose.yml" # caddy_hash_password_b64 reads the pinned image from here
 cat >"$RS/bin/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -292,7 +292,7 @@ OLDROOT="$RS/old-bundle-root"
 mkdir -p "$OLDROOT/build/tari" "$OLDROOT/data/tor" "$OLDROOT/data/dashboard" \
     "$OLDROOT/data/monero" "$OLDROOT/data/tari" "$OLDROOT/data/p2pool" "$OLDROOT/bin"
 cp "$STACK" "$OLDROOT/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$OLDROOT/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$OLDROOT/build/tari/"
 cp "$RS/bin/docker" "$RS/bin/sudo" "$OLDROOT/bin/"
 cat >"$OLDROOT/.env" <<EOF
 MONERO_ONION_ADDRESS=dddddddddddddddddddddddddddddddddddddddddddddddddddddddd.onion

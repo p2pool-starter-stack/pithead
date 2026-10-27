@@ -23,7 +23,7 @@ RUN sh /usr/local/bin/download-monero "${MONERO_HASH}" 300 monero.tar.bz2 \
     && chmod +x /usr/local/bin/monerod /usr/local/bin/monero-wallet-rpc \
     && rm -rf monero*
 
-# Configure the entrypoint script for runtime initialization
+COPY bitmonero.conf.template /home/ubuntu/bitmonero.conf.template
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

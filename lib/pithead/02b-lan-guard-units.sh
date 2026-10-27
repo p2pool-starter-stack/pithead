@@ -116,8 +116,17 @@ EOF
         printf 'ExecStart=-%s -D DOCKER-USER %s\n' "$ipt" "$lg_jump"
         printf 'ExecStart=%s -I DOCKER-USER 1 %s\n' "$ipt" "$lg_jump"
     done
-    # Last, so the nodes' marker is written only once every rule above is in: the current boot id.
-    printf 'ExecStartPost=/bin/sh -c "rm -f %s && cat %s > %s"\n' "$marker" "$BOOT_ID_FILE" "$marker"
+    local marker_arg boot_arg
+    marker_arg=${marker//\\/\\\\}
+    marker_arg=${marker_arg//\"/\\\"}
+    marker_arg=${marker_arg//\$/\$\$}
+    marker_arg=${marker_arg//%/%%}
+    boot_arg=${BOOT_ID_FILE//\\/\\\\}
+    boot_arg=${boot_arg//\"/\\\"}
+    boot_arg=${boot_arg//\$/\$\$}
+    boot_arg=${boot_arg//%/%%}
+    printf 'ExecStartPost=/usr/bin/rm -f -- "%s"\n' "$marker_arg"
+    printf 'ExecStartPost=/usr/bin/cp -- "%s" "%s"\n' "$boot_arg" "$marker_arg"
     cat <<EOF
 
 [Install]
@@ -177,9 +186,8 @@ provision_lan_guard_boot_unit() { # <port>...
         c=$(lan_guard_container "$p")
         [[ " ${containers[*]} " == *" $c "* ]] || containers+=("$c")
     done
-    # The marker path goes into a unit command line: only a plain path, or no unit (loopback).
     [[ "$PWD" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
-    install_lan_guard_unit "$unit_dir" "$LAN_GUARD_BOOT_UNIT" "$(render_lan_guard_boot_unit "$ipt" "$PWD/$LAN_GUARD_MARKER" "$@")" &&
+    install_lan_guard_unit "$unit_dir" "$LAN_GUARD_BOOT_UNIT" "$(render_lan_guard_boot_unit "$ipt" "$(lan_guard_marker_path)" "$@")" &&
         install_lan_guard_unit "$unit_dir" "$LAN_GUARD_HOLD_UNIT" "$(render_lan_guard_hold_unit "$docker" "$ipt" "$@")" ||
         return 1
     for c in "${containers[@]}"; do

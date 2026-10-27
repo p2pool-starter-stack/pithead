@@ -114,6 +114,12 @@ progress before preview and after refusal, reporting bounded counters when eithe
 The pre-preview wait re-baselines a counter reset from the preceding apply, then requires growth;
 the post-refusal check still requires growth beyond the established baseline.
 
+Chain runtime state is prepared in `lib/pithead/29a-chain-runtime-state.sh`:
+Tari configuration is addressed by its inputs, while clearnet and LAN-guard state use
+stable paths beside the resolved Tari data directory. `tests/stack/standalone/test_chain_runtime.py`
+checks migration, conflicts and content identity. `tests/integration/chain-directory-move.sh`
+drives product render/up across install directories through e2e hardening and KVM provision.
+
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;

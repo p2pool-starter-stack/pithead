@@ -46,8 +46,6 @@ prepare_directories() {
     sudo chown root:root "$CLEARNET_STATE_DIR" && sudo chmod 1777 "$CLEARNET_STATE_DIR" ||
         error "Could not secure clearnet transition state directory."
     prepare_control_dirs
-    # #261: setup reaches compose through THIS function (stack_up never runs ensure_directories),
-    # so a hand-written config with stratum_tls:true at first setup must get its keypair here —
-    # otherwise the mount is root-created empty and no fingerprint is ever announced.
+    prepare_chain_runtime_state
     ensure_stratum_tls_cert
 }

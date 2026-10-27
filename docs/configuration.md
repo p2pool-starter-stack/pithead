@@ -391,7 +391,7 @@ does not start those containers: they run with restart policy `no`. If the guard
 they stay stopped rather than listen with no rule, and the hold also checks that the rule is live
 before it starts anything. `docker.service` depends on neither unit, so other containers on the
 host start as usual. A restart policy does not stop a start by hand, so the node containers check
-for themselves: while the rule is live, `pithead` records the host's boot id in `data/lan-guard/`,
+for themselves: while the rule is live, `pithead` records the host's boot id in `<parent of tari.data_dir>/lan-guard/`,
 and a node with a LAN bind exits (code 78) before it listens unless that record matches the
 running boot. That covers `docker start`, `docker compose up` or `start` outside `pithead`, and a
 reboot. `./pithead restart` also refuses while a published port has no live rule, and the

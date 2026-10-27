@@ -23,28 +23,30 @@ LAN_GUARD_TAG="pithead-lan-guard"
 LAN_GUARD_CHAIN="PITHEAD-LAN"
 LAN_GUARD_NFT_TABLE="pithead_lan"
 LAN_GUARD_SOURCES="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10"
-# <.env bind key>:<port>. The ports are fixed on both sides in docker-compose.yml and the quadlet units.
 LAN_GUARD_BINDS="MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:18142"
-# The host's boot id, kept only while the rule is live (#2749). The node entrypoints (./data/lan-guard,
-# read-only) refuse a LAN bind unless it matches the running boot, so a reboot invalidates it. The
-# boot unit's copy is root's; replace it through a sibling temp file so a timer never sees a gap.
 LAN_GUARD_MARKER="data/lan-guard/enforced"
 BOOT_ID_FILE="${PITHEAD_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
 lan_guard_mark() {
-    local tmp
-    mkdir -p "${LAN_GUARD_MARKER%/*}" || return 1
-    tmp=$(mktemp "${LAN_GUARD_MARKER}.XXXXXX") || return 1
-    if ! cat "$BOOT_ID_FILE" >"$tmp" || ! chmod 644 "$tmp" || ! mv -f "$tmp" "$LAN_GUARD_MARKER"; then
+    local tmp marker
+    marker=$(lan_guard_marker_path)
+    mkdir -p "${marker%/*}" || return 1
+    tmp=$(mktemp "${marker}.XXXXXX") || return 1
+    if ! cat "$BOOT_ID_FILE" >"$tmp" || ! chmod 644 "$tmp" || ! mv -f "$tmp" "$marker"; then
         rm -f "$tmp"
         return 1
     fi
 }
-lan_guard_unmark() { rm -f "$LAN_GUARD_MARKER" 2>/dev/null || sudo -n rm -f "$LAN_GUARD_MARKER" 2>/dev/null; } # 1: still there
-# Pipe /proc's boot_id: its reported size is zero even when its contents match the marker.
+lan_guard_unmark() {
+    local marker
+    marker=$(lan_guard_marker_path)
+    rm -f "$marker" 2>/dev/null || sudo -n rm -f "$marker" 2>/dev/null
+}
 lan_guard_marker_current() {
     local -a status
-    [ -s "$LAN_GUARD_MARKER" ] || return 1
-    cat "$BOOT_ID_FILE" 2>/dev/null | cmp -s - "$LAN_GUARD_MARKER"
+    local marker
+    marker=$(lan_guard_marker_path)
+    [ -s "$marker" ] || return 1
+    cat "$BOOT_ID_FILE" 2>/dev/null | cmp -s - "$marker"
     status=("${PIPESTATUS[@]}")
     [ "${status[0]}" -eq 0 ] && [ "${status[1]}" -eq 0 ]
 }
@@ -234,10 +236,10 @@ apply_lan_guard() { # [port]...: explicit ports include stale container publishe
     LAN_GUARD_STAGED=0
     LAN_GUARD_STOPPED_SERVICES=()
     LAN_GUARD_FALLBACK=0
-    # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
-    # bind-mount the marker dir, and podman does not create a missing bind source.
     export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
-    mkdir -p "${LAN_GUARD_MARKER%/*}" 2>/dev/null || true
+    local marker
+    marker=$(lan_guard_marker_path)
+    mkdir -p "${marker%/*}" 2>/dev/null || true
     if [ "$#" -gt 0 ]; then
         watched=$(printf '%s\n' "$@")
     else

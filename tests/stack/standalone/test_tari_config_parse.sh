@@ -42,9 +42,7 @@ source "$ROOT/lib/pithead/19-small-utilities.sh"
 source "$ROOT/lib/pithead/04-status.sh"
 # shellcheck source=lib/pithead/34-inject-service-configs.sh
 source "$ROOT/lib/pithead/34-inject-service-configs.sh"
-# A syntactically valid v3 onion (56-char base32 + .onion, the same fixture value used in
-# tests/stack/control/test-control-diagnostics.sh): minotari_node validates public_addresses as a
-# real multiaddr, so a placeholder that isn't shaped like one fails with its own ConfigError
+source "$ROOT/lib/pithead/29a-chain-runtime-state.sh"
 # ("invalid multiaddr") before the check ever gets to what it's actually testing.
 # shellcheck disable=SC2034  # read by inject_service_configs (34-inject-service-configs.sh), sourced above
 TARI_ONION="abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
@@ -52,7 +50,11 @@ TARI_ONION="abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
 NETWORK_PREFIX="172.28.0"
 
 cd "$ROOT"
-inject_service_configs # renders build/tari/config.toml exactly as `pithead apply`/`setup` would
+TARI_CONFIG_ROOT="$WORK_DIR/tari-config"
+mkdir -p "$TARI_CONFIG_ROOT"
+TARI_CONFIG_DIR=$(chain_runtime_config_dir)
+printf 'TARI_CONFIG_DIR=%s\n' "$TARI_CONFIG_DIR" >>"$WORK_DIR/.env"
+inject_service_configs
 mkdir -p "$WORK_DIR/node"
 
 echo "== config-parse: the pinned minotari_node image accepts the rendered config =="
@@ -66,7 +68,7 @@ echo "  (image: $TARI_IMAGE)"
 docker run -d --network none --name "$CONTAINER" \
     --user root \
     -e WAIT_FOR_TOR=0 \
-    -v "$ROOT/build/tari:/var/tari/config:ro" \
+    -v "$TARI_CONFIG_DIR:/var/tari/config:ro" \
     -v "$WORK_DIR/node:/var/tari/node" \
     --entrypoint /var/tari/config/entrypoint.sh \
     "$TARI_IMAGE" --disable-splash-screen --non-interactive >/dev/null

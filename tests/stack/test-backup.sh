@@ -39,7 +39,7 @@ echo "== unit: stack_backup — one bounded retry on a tar race (#970) =="
 RB="$(cd "$SANDBOX" && pwd -P)/backup-retry"
 mkdir -p "$RB/build/tari" "$RB/data/tor" "$RB/data/dashboard" "$RB/bin"
 cp "$STACK" "$RB/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$RB/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$RB/build/tari/"
 cat >"$RB/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -119,7 +119,7 @@ echo "== unit: stack_backup — an absolute CONFIG_FILE override is archived at 
 CJ="$SANDBOX/backup-cfg-override"
 mkdir -p "$CJ/build/tari" "$CJ/data/tor" "$CJ/data/dashboard" "$CJ/bin"
 cp "$STACK" "$CJ/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$CJ/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$CJ/build/tari/"
 cat >"$CJ/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 exit 0

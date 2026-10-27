@@ -225,7 +225,7 @@ mkdir -p "$STO/build/tari" "$STO/dashboard" "$STO/bin"
 : >"$STO/dashboard/Dockerfile"
 cp "$STACK" "$STO/pithead"
 cp "$ROOT/docker-compose.yml" "$STO/docker-compose.yml"
-cp "$ROOT/build/tari/config.toml.template" "$STO/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$STO/build/tari/"
 make_stubs "$STO/bin"
 cp "$WT/bin/df" "$STO/bin/df"
 printf '%b' "$WALLET\n\n1\n\n\n\n\n\n\n\n" |

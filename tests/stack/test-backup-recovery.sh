@@ -6,7 +6,7 @@ echo "== black-box: backup failures recover a previously running stack (#551, #1
 FB="$SANDBOX/failbackup"
 mkdir -p "$FB/build/tari" "$FB/data/tor" "$FB/data/dashboard" "$FB/bin"
 cp "$STACK" "$FB/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$FB/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$FB/build/tari/"
 cat >"$FB/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 echo "[docker] $*" >>"${DOCKER_LOG:-/dev/null}"

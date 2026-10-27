@@ -79,7 +79,8 @@ ensure_directories() {
     ensure_owner "$TARI_DIR" "$APP_UID" "$APP_GID"
     ensure_owner "$P2POOL_DIR" "$APP_UID" "$APP_GID"
     ensure_owner "$DASHBOARD_DIR" "$APP_UID" "$APP_GID"
-    prepare_control_dirs    # #33: spool dirs exist + requests/ writable by the dashboard uid
+    prepare_control_dirs
+    prepare_chain_runtime_state
     ensure_stratum_tls_cert # #261: keypair exists before compose mounts $PROXY_TLS_DIR
     [ "${#created[@]}" -gt 0 ] && sudo chmod -R 755 "$P2POOL_DIR/stats"
     return 0

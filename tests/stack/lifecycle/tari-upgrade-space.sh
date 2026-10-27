@@ -110,7 +110,7 @@ exec "$U2/stub/docker" "\$@"
 EOF
 cp "$TUS/bin/df" "$U2/stub/sudo" "$U2/bin/"
 chmod +x "$U2/bin/docker"
-cp "$ROOT/build/tari/config.toml.template" "$U2/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$U2/build/tari/"
 truncate -s 100G "$U2/data/tari/mainnet/data/base_node/db/data.mdb"
 cat >"$U2/.env" <<EOF
 MONERO_ONION_ADDRESS=mona.onion

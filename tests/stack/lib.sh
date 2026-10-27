@@ -306,7 +306,7 @@ build_val_sandbox() {
     : >"$V/dashboard/Dockerfile"
     cp "$STACK" "$V/pithead"
     make_stubs "$V/bin"
-    cp "$ROOT/build/tari/config.toml.template" "$V/build/tari/"
+    cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$V/build/tari/"
     mkdir -p "$V/data/monero" "$V/data/tari" "$V/data/p2pool" "$V/data/tor" "$V/data/dashboard" "$V/data/p2pool/stats"
     seed_env() {
         cat >"$V/.env" <<EOF
@@ -342,11 +342,9 @@ build_control_sandbox() {
     : >"$C/dashboard/Dockerfile"
     cp "$STACK" "$C/pithead"
     # The control gate reads config.reference.json (the closed schema) from beside the script; it ships
-    # in the bundle + checkout root, so mirror it into the sandbox.
     cp "$ROOT/config.reference.json" "$C/config.reference.json"
     make_stubs "$C/bin"
-    cp "$ROOT/build/tari/config.toml.template" "$C/build/tari/"
-    # The password hash step reads the pinned Caddy image out of docker-compose.yml (#8).
+    cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$C/build/tari/"
     cp "$ROOT/docker-compose.yml" "$C/docker-compose.yml"
     CTRL_LOG="$C/docker.log"
     seed_control_env() {

@@ -70,11 +70,6 @@ TimeoutStartSec=infinity
 WantedBy=multi-user.target
 EOF
 
-    # Local-node units, emitted only when their profile is active (bench-proven 2026-07-24).
-    # monerod: tor-gated via the same Requires+Notify=healthy edge compose expresses with
-    # depends_on service_healthy; healthy = RPC responding, NOT synced (the stack could never
-    # cold-start otherwise). tari: the upstream digest-pinned image with pithead's wrapper
-    # entrypoint; its config.toml is rendered by inject_service_configs before units start.
     case ",$profiles," in
     *,local_node,*)
         cat >"$outdir/monerod.container" <<EOF
@@ -87,11 +82,11 @@ ContainerName=monerod
 Image=$reg/pithead-monero:$ver
 Network=mining.network
 IP=$prefix.26
-Environment=$(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_ONION_ADDRESS) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq MONERO_PREP_THREADS) $(_qenvq MONERO_OUT_PEERS) NETWORK_PREFIX=$prefix
+Environment=$(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_ONION_ADDRESS) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq MONERO_PREP_THREADS) $(_qenvq MONERO_OUT_PEERS) $(_qenvq MONERO_RPC_BIND) $(_qenvq MONERO_ZMQ_BIND) NETWORK_PREFIX=$prefix
 Volume=$(_qenv MONERO_DATA_DIR):/home/ubuntu/.bitmonero
 Volume=/dev/hugepages:/dev/hugepages
-Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/build/monero/bitmonero.conf.template:/home/ubuntu/bitmonero.conf.template:ro
 Volume=$(_qenv CLEARNET_STATE_DIR):/clearnet-state:ro
+Volume=$(_qenv LAN_GUARD_DIR):/lan-guard:ro
 Tmpfs=/tmp:size=64m,mode=1777
 PublishPort=$(_qenv MONERO_RPC_BIND):18081:18081
 PublishPort=$(_qenv MONERO_ZMQ_BIND):18083:18083
@@ -127,12 +122,13 @@ Network=mining.network
 IP=$prefix.27
 User=1000:1000
 DNS=127.0.0.1
-Environment=WAIT_FOR_TOR=1 $(_qenvq TARI_CLEARNET_SYNC)
+Environment=WAIT_FOR_TOR=1 $(_qenvq TARI_CLEARNET_SYNC) $(_qenvq TARI_GRPC_BIND)
 Entrypoint=/var/tari/config/entrypoint.sh
 Exec=--disable-splash-screen --non-interactive
 Volume=$(_qenv TARI_DATA_DIR):/var/tari/node
-Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/build/tari:/var/tari/config
+Volume=$(_qenv TARI_CONFIG_DIR):/var/tari/config:ro
 Volume=$(_qenv CLEARNET_STATE_DIR):/clearnet-state:ro
+Volume=$(_qenv LAN_GUARD_DIR):/lan-guard:ro
 Tmpfs=/tmp:size=64m,mode=1777
 PublishPort=$(_qenv TARI_GRPC_BIND):18142:18142
 ReadOnly=true
