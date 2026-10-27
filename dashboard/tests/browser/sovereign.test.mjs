@@ -55,7 +55,7 @@ for (const theme of ["light", "dark", "auto"]) {
   }, info) => {
     await page.addInitScript((value) => localStorage.setItem("dashboardTheme", value), theme);
     await page.emulateMedia({ colorScheme: "dark" });
-    ui.state.monero.health.level = "ok";
+    ui.state.monero.health.level = "green";
     ui.state.profile = { name: "Balance" };
     await ui.openPreview("?range=week&tab=kept");
     await expect(page.getByText("Balance: Everything goes through Tor")).toBeVisible();
@@ -229,3 +229,30 @@ test("shell leaves maintenance actions with their owning page", async ({ page, u
     page.getByRole("button", { name: /Run health check|Prepare support bundle/ }),
   ).toHaveCount(0);
 });
+
+for (const [query, pageName, section] of [
+  ["?view=config&range=week&tab=kept", "Settings", "configuration-json"],
+  ["?view=advanced&range=week&tab=kept", "Overview", "inspect"],
+  ["?view=backup&range=week&tab=kept", "Settings", "backup"],
+  ["?advanced=appearance&range=week&tab=kept", "Overview", "appearance"],
+  ["?page=earnings&range=week&tab=kept", "Earnings", null],
+  ["?range=week&tab=kept", "Machines", null],
+]) {
+  test(`saved page respects the explicit route ${query}`, async ({ page, ui }) => {
+    await page.addInitScript(() => localStorage.setItem("pitheadPage", "machines"));
+    await ui.openPreview(query);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("page")).toBe(pageName.toLowerCase());
+    expect(url.searchParams.get("advanced")).toBe(section);
+    expect(url.searchParams.get("view")).toBeNull();
+    expect(url.searchParams.get("range")).toBe("week");
+    expect(url.searchParams.get("tab")).toBe("kept");
+    if (section) {
+      await expect(page.getByRole("dialog", { name: "Advanced", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+    }
+    await expect(
+      page.getByRole("heading", { name: pageName, exact: true, level: 1 }),
+    ).toBeVisible();
+  });
+}

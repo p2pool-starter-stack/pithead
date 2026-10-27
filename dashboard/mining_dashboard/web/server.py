@@ -603,18 +603,11 @@ def create_app(state_manager, latest_data_ref):
                 web.post("/api/control/upgrade", handle_control_upgrade),
                 web.get("/api/control/result", handle_control_result),
                 web.get("/api/audit", handle_audit_log),
-                # Worker Inspect (#185): read a worker's detail + config history, and push a
-                # writable-key change to its rig. Gated with the rest of the control channel.
                 web.get("/api/worker", handle_worker_detail),
                 web.post("/api/control/worker-apply", handle_worker_apply),
-                # One-click rig upgrade (#597): spools name + confirmed version only; the host
-                # re-derives the real target and dials the rig. Same gate as the rest.
                 web.post("/api/control/worker-upgrade", handle_worker_upgrade),
-                # Encrypted backup + one-time emergency kit (#908): trigger, then stream the
-                # archive the host produced for the id it names in its result.
                 web.post("/api/control/backup", handle_control_backup),
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
-                # Appliance OS update: one route, a closed action set, every judgment host-side.
                 web.post("/api/control/os-update", handle_control_os_update),
                 web.post("/api/control/diag-doctor", diagnostics_views.handle_diag_doctor),
                 web.post("/api/control/diag-logs", diagnostics_views.handle_diag_logs),

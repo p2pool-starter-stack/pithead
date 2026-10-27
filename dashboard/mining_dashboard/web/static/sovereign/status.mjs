@@ -12,23 +12,34 @@ export function profileBadge(profile) {
 export function stackStatus(state, connected) {
   if (!connected) return { text: "Disconnected", level: "warn" };
   if (!state) return { text: "Waiting for the first snapshot", level: "unknown" };
-  const problems = (state.badges || []).filter((badge) =>
-    ["bad", "warn"].includes(badge.variant),
-  ).length;
-  const resources = [state.system?.mem, state.system?.disk].filter(
-    (value) => value?.level === "high",
-  ).length;
-  const count = problems + resources + (state.db_healthy === false ? 1 : 0);
-  if (count) return { text: `Needs attention ${count}`, level: "bad" };
+  const health = state.monero?.health?.level;
+  const problems = new Set();
+  for (const { text, variant } of state.badges || []) {
+    if (!["bad", "warn"].includes(variant)) continue;
+    const label = typeof text === "string" ? text.replace(/^⚠️?\s*/u, "") : "Unidentified warning";
+    if (
+      variant === "warn" &&
+      (["Syncing...", "Miner held (sync)"].includes(label) ||
+        /^Tari syncing(?: \d+(?:\.\d+)?%)?$/.test(label))
+    )
+      continue;
+    problems.add(label === "monerod DOWN" ? "Monero chain unhealthy" : label);
+  }
+  if (state.db_healthy === false) problems.add("DB write failing");
+  if (health === "red") problems.add("Monero chain unhealthy");
+  if (problems.size) return { text: `Needs attention ${problems.size}`, level: "bad" };
   if (state.syncing) {
-    const percent = state.sync?.monero?.percent;
+    const pending = Object.values(state.sync || {}).filter((chain) => chain?.state !== "done");
+    const percent =
+      pending.length &&
+      pending.every((chain) => chain?.state !== "loading" && Number.isFinite(chain?.percent))
+        ? Math.min(...pending.map((chain) => chain.percent))
+        : null;
     return {
       text: Number.isFinite(percent) ? `Syncing ${percent}%` : "Syncing — progress unknown",
       level: "warn",
     };
   }
-  if (!state.monero?.health || state.monero.health.level === "unknown")
-    return { text: "Health unknown", level: "unknown" };
-  if (state.monero.health.level !== "ok") return { text: "Needs attention 1", level: "bad" };
+  if (health !== "green") return { text: "Health unknown", level: "unknown" };
   return { text: "Healthy", level: "ok" };
 }

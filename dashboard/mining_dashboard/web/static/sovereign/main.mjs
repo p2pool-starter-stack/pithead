@@ -28,7 +28,10 @@ export function initSovereign({
   };
   let theme = ["light", "dark"].includes(read("dashboardTheme")) ? read("dashboardTheme") : "auto";
   const initial = new URL(win.location.href);
-  if (!initial.searchParams.has("page") && read("pitheadPage"))
+  if (
+    !["page", "view", "advanced"].some((key) => initial.searchParams.has(key)) &&
+    read("pitheadPage")
+  )
     initial.searchParams.set("page", read("pitheadPage"));
   let route = readRoute(initial, read("dashboardView"));
   win.history.replaceState(null, "", routeUrl(initial, route.page, route.advanced));

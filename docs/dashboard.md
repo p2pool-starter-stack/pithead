@@ -20,9 +20,13 @@ and Advanced at the bottom.
 The preview follows the operating system theme by default. **Advanced › Appearance** can set Light,
 Dark, or Auto. Dark uses warm charcoal panels and an orange accent; Light uses white panels and
 a darker orange accent. Heavy system-sans headings share the accessible palette. The existing
-persisted `dashboardTheme` preference is retained. Existing dashboard view
-preferences and chart-range query parameters remain readable when moving between the preview's
-pages. A profile reads **Profile not reported** until the profile is emitted by [#3557](https://github.com/p2pool-starter-stack/pithead/issues/3557).
+persisted `dashboardTheme` preference is retained. Explicit page, Advanced and legacy-view URLs
+take priority over the saved page; a saved page is used only when the URL has no route. Chart-range
+query parameters remain intact when moving between pages. A profile reads **Profile not reported** until the profile is emitted by [#3557](https://github.com/p2pool-starter-stack/pithead/issues/3557).
+
+The status chip separates ordinary synchronization from faults and counts each attention condition
+once. While chains are synchronizing it shows the least complete unfinished chain; progress is
+unknown until every unfinished chain reports a percentage.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
 and asks the operator to sign in again when the session expires. Its page bodies and most Settings

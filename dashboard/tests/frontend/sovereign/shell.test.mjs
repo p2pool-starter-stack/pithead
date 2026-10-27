@@ -9,7 +9,7 @@ import { renderToString } from "../helpers/render.mjs";
 test("all pages and platform fixtures retain shell, profile and fresh or unknown status", () => {
   for (const page of Object.keys(PAGES)) for (const platform of ["appliance", "diy-login", "diy-readonly"]) {
     const state = { version: { text: "2.1" }, control_enabled: platform !== "diy-readonly", os_update: platform === "appliance" ? {} : null,
-      host_ip: "private-host", last_update: "sample time", monero: { health: { level: "ok" } }, profile: { name: "Balance" } };
+      host_ip: "private-host", last_update: "sample time", monero: { health: { level: "green" } }, profile: { name: "Balance" } };
     const out = renderToString(html`<${Shell} route=${{ page, advanced: null }} url="https://example.test/ui-preview" state=${state} connected=${true} />`);
     assert.match(out, /Healthy/);
     assert.match(out, /Balance: Everything goes through Tor/);
