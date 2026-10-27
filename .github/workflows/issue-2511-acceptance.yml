@@ -9,9 +9,9 @@ jobs:
   acceptance:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      TMPDIR: ${{ runner.temp }}
     steps:
+      - name: Place scratch on the runner temporary volume
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: da24be0a65d55a2f22993a0734abd00d9f7901e0
