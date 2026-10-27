@@ -1,8 +1,6 @@
 import hashlib
 import importlib
 import json
-import re
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -12,8 +10,6 @@ from mining_dashboard.config.donation_destination import load_destination
 
 DESTINATION = Path(donation_destination.__file__).with_name("donation.json")
 DESTINATION_SHA256 = "094fff4a8f5c173f52056dec0247f9ee4388da9adb7bd86ca5be3134db49b195"
-ROOT = Path(__file__).resolve().parents[3]
-DOCS = ("README.md", "docs/donation.md", "docs/privacy.md")
 PRIMARY = "48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD"
 
 
@@ -38,14 +34,6 @@ def assert_provenance(content):
     assert hashlib.sha256(content).hexdigest() == DESTINATION_SHA256, (
         "donation.json changes require an owner-approved PR and an updated SHA-256 pin"
     )
-
-
-def assert_no_drift(address, documents):
-    for name, text in documents.items():
-        addresses = re.findall(
-            r"\b[48][1-9A-HJ-NP-Za-km-z]{94}(?:[1-9A-HJ-NP-Za-km-z]{11})?\b", text
-        )
-        assert all(found == address for found in addresses), f"project_address drift in {name}"
 
 
 def test_shipped_destination_is_empty_and_unavailable():
@@ -196,45 +184,3 @@ def test_provenance_pin():
 def test_provenance_rejects_byte_change():
     with pytest.raises(AssertionError, match="owner-approved PR"):
         assert_provenance(DESTINATION.read_bytes() + b"\n")
-
-
-def test_shipped_documentation_drift():
-    address = json.loads(DESTINATION.read_text())["project_address"]
-    if not address:
-        pytest.skip("project_address drift skipped: empty; no documentation checked")
-    assert_no_drift(address, {name: (ROOT / name).read_text() for name in DOCS})
-
-
-@pytest.mark.parametrize("name", DOCS)
-def test_documentation_drift_detects_every_occurrence(name):
-    assert_no_drift(PRIMARY, {name: f"Address: {PRIMARY}\nRepeated: {PRIMARY}"})
-    other = "4" + "a" * 94
-    with pytest.raises(AssertionError, match="project_address drift"):
-        assert_no_drift(PRIMARY, {name: f"Address: {PRIMARY}\nOther: {other}"})
-
-
-def test_only_loader_reads_destination():
-    result = subprocess.run(
-        [
-            "/usr/bin/git",
-            "grep",
-            "-l",
-            "-F",
-            "donation.json",
-            "--",
-            ".",
-            ":(exclude)tests/**",
-            ":(exclude)**/tests/**",
-            ":(exclude)docs/**",
-            ":(exclude)*.md",
-            ":(exclude)**/*.md",
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=10,
-    )
-    assert result.stdout.splitlines() == [
-        "dashboard/mining_dashboard/config/donation_destination.py"
-    ]

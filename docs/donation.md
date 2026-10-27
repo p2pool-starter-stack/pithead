@@ -22,6 +22,8 @@ The Python loader checks address shape; the stack test uses the existing
 Changing the destination requires an owner-approved PR. Update the SHA-256 pin in
 `dashboard/tests/config/test_donation_destination.py` in that PR and align every
 project address in the README, this guide and [privacy guide](privacy.md).
-The provenance test checks every byte of the file. While the shipped address is
+The dashboard provenance test checks every byte of the file. The repository-wide
+reader and documentation checks run with the checksum test through `make test-tools`,
+where the complete source checkout is available. While the shipped address is
 empty, the checksum and documentation drift checks explicitly report that they
 skip it; the checksum fixture still runs.
