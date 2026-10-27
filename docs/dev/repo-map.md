@@ -112,6 +112,20 @@ checks that failed or unrecorded stops cannot pass from reset's final exit 0.
 Coordinator setup-again runs before those resets in `tests/os/coordinator-setup-again-leg.sh`;
 `tests/os/selftest-coordinator-setup-again.sh` drives safe-prefill and preservation failure controls.
 `tests/os/selftest-confirmed-setup.sh` exercises installed browser resubmission and the direct setup guard.
+The stratum port preflight is `lib/pithead/39a-stratum-port-preflight.sh`; preview and apply
+probe changed ports before committing. `tests/stack/standalone/test_stratum_port.py` checks live
+listener conflicts, and the hardening phase runs `tests/integration/lib/occupied-stratum.py`
+through the dashboard control API against Caddy’s occupied port. It waits for workers and hash
+progress before preview and after refusal, reporting bounded counters when either wait fails.
+The initial configuration read retries connection refusal for 90 seconds while the dashboard
+starts after the preceding apply; other errors and later request failures stop the probe.
+Mining waits log numeric worker, hash and share counters and snapshot changes at most once
+every 15 seconds, plus independent counters from the mounted P2Pool stratum file (reads capped
+at 64 KiB). Missing or malformed source data reports unavailable without printing its contents.
+Source counters help distinguish stale dashboard samples from a mining stall; the dashboard
+progress requirements and deadlines still determine the verdict.
+The pre-preview wait re-baselines a counter reset from the preceding apply, then requires growth;
+the post-refusal check still requires growth beyond the established baseline.
 
 The apply sync-gate marker helper is `lib/pithead/40a-sync-gate-reset.sh`; it remains
 part of the generated CLI and is loaded before main dispatch.

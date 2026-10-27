@@ -34,6 +34,7 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_firstboot_journal.sh
 	bash tests/stack/standalone/test_appliance_hugepages.sh
 	python3 tests/stack/standalone/test_clearnet_attestation.py
+	python3 tests/stack/standalone/test_stratum_port.py
 
 test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-tool coverage guard (no bench, no network)
 	@# Tier 1 on purpose. The capture needs a bench; the JUDGEMENT does not, and the judgement is
