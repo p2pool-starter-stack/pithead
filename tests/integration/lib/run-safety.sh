@@ -163,7 +163,7 @@ safety_cleanup() {
     elif [ "$KEEP_STATE" = "1" ]; then
         it_warn "--keep: leaving the safety backup at $SAFETY_ARCHIVE"
     else
-        rx "rm -f $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1 || true
+        rx "rm -f $(quote_arg "$SAFETY_ARCHIVE") $(quote_arg "$(dirname "$SAFETY_ARCHIVE")/.pithead-e2e-safety/$(basename "$SAFETY_ARCHIVE")")" >/dev/null 2>&1 || true
         it_step "removed the safety backup archive"
     fi
 }

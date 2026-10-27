@@ -42,5 +42,5 @@ backup_prune() { # <exec fn: rx|on_bench> <backups dir> <archive path>...
     local run="$1" cmd
     shift
     cmd="$(backup_prune_cmd "$@")"
-    [ -z "$cmd" ] || "$run" "$cmd" || true
+    [ -z "$cmd" ] || "$run" "$cmd" || echo "safety backup pruning skipped (not fatal)"
 }
