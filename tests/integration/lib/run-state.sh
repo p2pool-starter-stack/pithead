@@ -112,21 +112,6 @@ assert_running_state() {
 
     wait_for 150 5 "monerod caught up (RPC)" monero_caught_up || true
     if monero_caught_up; then it_pass "monerod reports synced (RPC)"; elif [ $? = 1 ]; then it_fail "monerod reports synced (RPC)" "get_info answered: not synchronized"; else it_fail "monerod reports synced (RPC)" "get_info could not be asked — unreachable, refused, timed out or rejected"; fi
-    # 4b. The node's ZMQ endpoint is a live ZMTP PUBLISHER (#1497) — strictly less than "publishes
-    #     block notifications", and this row is named for what it proves, not for what the issue
-    #     wants. Step 4 is satisfied by a node that can never publish one: an --offline monerod
-    #     reports status OK with target_height 0, so both disjuncts of monero_caught_up pass.
-    #     Nothing downstream covers the gap either — p2pool's healthcheck is a TCP connect to its
-    #     OWN stratum port — and neither does the installer preflight, whose dial is a bare TCP
-    #     connect and so passes against a docker-published port with nothing behind it. A
-    #     protocol-level ZMTP handshake, which an accept() cannot satisfy, closes THAT case, and
-    #     only that case. MEASURED, four targets on one host: a permanently-silent XPUB and a live
-    #     monerod on a MOVING tip are INDISTINGUISHABLE to the handshake — both "ok ... XPUB".
-    # 4c. So tier B SUBSCRIBES and waits for the peer to actually send something, which separates
-    #     those two by construction (measured both ways: live node passes in ~2s, silent XPUB reds
-    #     at the budget). What remains uncovered is narrower than it was — that the published frame
-    #     was a BLOCK notification rather than txpool or miner_data — and stays a COUNTED SKIP
-    #     below: a skip announces itself, a false green does not.
     local zmq_host zmq_port zv
     if [ "$mode" = "remote" ]; then
         zmq_host="$REMOTE_MONERO_HOST"
@@ -137,7 +122,7 @@ assert_running_state() {
     fi
     if zv=$(zmq_pub_probe "$zmq_host" "$zmq_port" 8); then it_pass "monero ZMQ endpoint is a live ZMTP publisher (#1497)"; else it_fail "monero ZMQ endpoint is a live ZMTP publisher (#1497)" "$zv"; fi
     assert_zmq_publishes "$zmq_host" "$zmq_port"
-    it_skip_leg "monero ZMQ published frame is a BLOCK notification" "tier C (#1497): the row above proves the publisher is not silent, which is the starving-p2pool failure; proving the frame was chain_main rather than txpool_add needs a new block, a wait of minutes against seconds" missing
+    assert_zmq_block "$zmq_host" "$zmq_port"
     [ "$tmode" != "off" ] && assert_mergemine_roundtrip || it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" "tari.mode=off (#1855) — p2pool renders no merge-mine args, so no client is ever built (#2323)" by-design
     # The dashboard's sync panel must also read "done" for a synced node — not stay stuck at
     # "loading". A synced monerod reports target_height 0, so the panel has to trust the caught-up

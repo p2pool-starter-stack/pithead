@@ -37,6 +37,7 @@ source "$HERE/lib/fault-rules.sh" || exit $?
 source "$HERE/lib/borrow-rearm.sh" || exit $?
 # shellcheck source=tests/integration/lib/zmq-probe.sh
 source "$HERE/lib/zmq-probe.sh" || exit $?
+source "$HERE/lib/zmq-block.sh" || exit $?
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 source "$HERE/lib/mergemine-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/hugepage-probe.sh
@@ -134,6 +135,8 @@ source "$HERE/lib/run-pool-sync-fault.sh" || exit $?
 source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-egress-status.sh
 source "$HERE/lib/run-egress-status.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-webhook-validation.sh
+source "$HERE/lib/run-webhook-validation.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
 source "$HERE/lib/run-tari-off-preview.sh" || exit $?
