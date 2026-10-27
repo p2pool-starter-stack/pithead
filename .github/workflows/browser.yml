@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   native-dialog:
-    name: Browser user journeys
+    name: Cross-browser user journeys
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
@@ -46,6 +46,21 @@ jobs:
             dashboard/tests/browser/playwright-report/
           retention-days: 7
           if-no-files-found: ignore
+  chrome-backup:
+    name: Google Chrome HTTPS backup downloads
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        timeout-minutes: 2
+        with:
+          node-version: "20"
+      - name: Install locked Chrome test dependencies
+        timeout-minutes: 2
+        run: npm ci --prefix dashboard/tests/browser --ignore-scripts
       - name: Install pinned Google Chrome for Testing
         timeout-minutes: 2
         env: {TMPDIR: "${{ runner.temp }}"}
@@ -55,7 +70,22 @@ jobs:
             --output "$TMPDIR/pithead-backup-chrome.zip"
           unzip -q "$TMPDIR/pithead-backup-chrome.zip" -d "$TMPDIR/pithead-backup-chrome"
       - name: Assert complete Google Chrome HTTPS backup downloads
-        env: {HOME: /root, TMPDIR: "${{ runner.temp }}"}
+        env: {TMPDIR: "${{ runner.temp }}"}
         run: |
           PITHEAD_BACKUP_BROWSER_EXECUTABLE="$TMPDIR/pithead-backup-chrome/chrome-linux64/chrome" \
             node --test dashboard/tests/browser/backup-download.test.mjs
+
+  browser:
+    name: Browser user journeys
+    needs: [native-dialog, chrome-backup]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require both browser proofs
+        env:
+          JOURNEYS_RESULT: ${{ needs.native-dialog.result }}
+          CHROME_RESULT: ${{ needs.chrome-backup.result }}
+        run: |
+          test "$JOURNEYS_RESULT" = success
+          test "$CHROME_RESULT" = success

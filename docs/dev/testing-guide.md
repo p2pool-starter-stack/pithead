@@ -202,14 +202,18 @@ On Linux, add `--with-deps` to the local install command. The separate `browser.
 runs Chromium, Firefox, WebKit and mobile Chromium in the digest-pinned Playwright 1.64.0
 Noble image, matching the npm lockfile. The image supplies browsers and their system libraries;
 CI installs only Make, unzip and the locked npm packages before running `make test-browser`.
-It uses the image's Node 24. Both browser steps set `HOME` to the container's root-owned home,
-so each browser uses the container user's profile state rather than GitHub's mounted user home.
-Each provisioning step has a two-minute limit within the unchanged
-15-minute job budget. The pinned Chrome download also has a 20-second connection limit and a
-90-second transfer limit. A provisioning failure fails the job; a skipped assertion never
-counts as passing browser proof. Missing dependencies fail the suite.
-`make test-tools` checks image/lock compatibility, provisioning bounds, required assertions and
-the PR trigger for both integration branches. Pure frontend tests remain dependency-free.
+This job uses the image's Node 24 and a root-owned `HOME` so Firefox can launch as the container user.
+Its existing 15-minute budget remains unchanged.
+
+Pinned Google Chrome runs the same HTTPS fixture in a separate `ubuntu-latest` host job with
+Node 20 and a seven-minute budget, preserving its host execution environment.
+Both jobs must succeed for the required `Browser user journeys` status; a failed, cancelled or
+skipped job fails that status. Each provisioning step has a two-minute limit. The Chrome download
+also has a 20-second connection limit and a 90-second transfer limit. A provisioning failure fails
+the job; a skipped assertion never counts as passing browser proof. Missing dependencies fail.
+`make test-tools` checks image/lock compatibility, both browser environments, provisioning bounds,
+required assertions, status aggregation and the PR trigger for both integration branches.
+Pure frontend tests remain dependency-free.
 See [browser testing](browser-testing.md) for focused runs, failure artifacts and coverage limits.
 The backup regression serves the production backup component over
 self-signed HTTPS, accepts the browser's certificate interstitial, and records the exact Chromium

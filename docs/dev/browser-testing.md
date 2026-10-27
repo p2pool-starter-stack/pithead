@@ -39,7 +39,9 @@ The Playwright journeys run in Chromium, Firefox, WebKit and a mobile Chromium v
 that fixture with pinned Google Chrome for Testing. Both retain certificate interstitial acceptance,
 22 MiB encrypted download integrity, decryption/member checks and transfer-failure retries.
 CI uses a [prebuilt Playwright environment](https://playwright.dev/docs/docker) whose version matches
-the locked runner, avoiding the full browser/system-library download during each job.
+the locked runner for its supplied browsers, avoiding the full browser/system-library download.
+The pinned Google Chrome HTTPS fixture runs separately on the Ubuntu host with Node 20;
+the required browser status needs both jobs to succeed.
 See [the testing guide](testing-guide.md#native-browser-regressions) for provisioning limits,
 prerequisites and failure behavior. Mobile emulation checks the same actions at a narrow viewport;
 it is not physical-device acceptance or a visual screenshot comparison. Native chart rendering runs,
@@ -69,8 +71,6 @@ Keep a confirmed product failure's reproduction and issue separate from passing 
 weaken an assertion or mark it expected-failure to claim coverage. Use copied assets through
 `PITHEAD_BROWSER_STATIC` for targeted negative controls, and retain the failure at the intended assertion.
 
-The HTTPS fixture prints at most 1000 characters of the local certificate page when its
-acceptance controls are missing; the diagnostic read has a one-second limit and the test still fails.
 Playwright failure screenshots, traces and the HTML report are written to ignored `test-results/` and
 `playwright-report/` directories. CI retains them for seven days. Inspect a local failure with:
 

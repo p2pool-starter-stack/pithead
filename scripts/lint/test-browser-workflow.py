@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -8,10 +9,18 @@ class BrowserWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.workflow = Path(".github/workflows/browser.yml").read_text()
+        cls.jobs = {
+            match[1]: match[2]
+            for match in re.finditer(
+                r"^  ([a-z][\w-]*):\n(.*?)(?=^  [a-z][\w-]*:|\Z)",
+                cls.workflow,
+                re.MULTILINE | re.DOTALL,
+            )
+        }
         cls.steps = {
             match[1]: match[2]
             for match in re.finditer(
-                r"^      - name: ([^\n]+)\n(.*?)(?=^      - |\Z)",
+                r"^      - name: ([^\n]+)\n(.*?)(?=^      - |^  [a-z][\w-]*:|\Z)",
                 cls.workflow,
                 re.MULTILINE | re.DOTALL,
             )
@@ -37,6 +46,7 @@ class BrowserWorkflowTests(unittest.TestCase):
         for name in (
             "Install browser fixture tools",
             "Install locked browser test dependencies",
+            "Install locked Chrome test dependencies",
             "Install pinned Google Chrome for Testing",
         ):
             step = self.steps[name]
@@ -55,12 +65,34 @@ class BrowserWorkflowTests(unittest.TestCase):
         self.assertIn("/141.0.7390.37/linux64/chrome-linux64.zip", chrome)
         self.assertIn("unzip -q", chrome)
 
-    def test_browsers_have_the_container_users_home(self):
-        for name in (
-            "Run cross-browser user journeys and HTTPS backup fixtures",
-            "Assert complete Google Chrome HTTPS backup downloads",
-        ):
-            self.assertIn("HOME: /root", self.steps[name], name)
+    def test_browser_environments(self):
+        journeys = self.steps["Run cross-browser user journeys and HTTPS backup fixtures"]
+        self.assertIn("HOME: /root", journeys)
+        chrome = self.jobs["chrome-backup"]
+        self.assertIn("runs-on: ubuntu-latest", chrome)
+        self.assertNotIn("container:", chrome)
+        self.assertNotIn("HOME:", chrome)
+        self.assertIn('node-version: "20"', chrome)
+
+    def test_required_status_rejects_any_non_success(self):
+        status = self.jobs["browser"]
+        self.assertIn("name: Browser user journeys", status)
+        self.assertIn("needs: [native-dialog, chrome-backup]", status)
+        self.assertIn("if: always()", status)
+        self.assertIn("JOURNEYS_RESULT: ${{ needs.native-dialog.result }}", status)
+        self.assertIn("CHROME_RESULT: ${{ needs.chrome-backup.result }}", status)
+        script = status.split("        run: |\n", 1)[1]
+        for journeys in ("success", "failure", "cancelled", "skipped"):
+            for chrome in ("success", "failure", "cancelled", "skipped"):
+                result = subprocess.run(  # noqa: S603
+                    ["/bin/bash", "-e", "-c", script],
+                    env={"JOURNEYS_RESULT": journeys, "CHROME_RESULT": chrome},
+                )
+                self.assertEqual(
+                    result.returncode == 0,
+                    journeys == chrome == "success",
+                    (journeys, chrome),
+                )
 
     def test_all_assertions_remain_required_on_release_prs(self):
         self.assertRegex(
