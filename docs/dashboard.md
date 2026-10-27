@@ -246,8 +246,61 @@ The database also keeps three smaller series: pool block-found events, hourly mo
 host-disk-usage samples, and XvB-credited scalar samples taken roughly every 5 minutes. `/api/state`
 serves them as `blocks`, `disk_growth`, and `xvb_history`, range-filtered the same way as
 `share_stats`. The [mine cart train](#mine-cart-train) reads `blocks` and the chart's donation
-overlay reads `xvb_history`; only `disk_growth` is persistence and API exposure alone, no
-renderer yet.
+overlay reads `xvb_history`. The existing `disk_growth` history also supplies the host capacity
+outlook described below; it has no chart renderer.
+
+### Host resources for Maintenance
+
+The new Maintenance section consumes `/api/state.host_resources`. This is a data contract;
+this change adds no screen to the current dashboard. It describes the dashboard host, separately
+from workers and services. It contains current values and a capacity estimate, with no new
+resource-history table or series.
+
+Each resource has `state` (`available` or `unavailable`), `reason`, `sampled_at` (Unix seconds),
+`age_seconds`, `value`, `unit` and `source`. The existing collector reads supply the sample
+metadata at collection time, not at request time. The API computes age on every request. A
+missing or failed read has no value; a sample older than the greater of 60 seconds or three
+collection intervals is unavailable with reason `stale`. A timestamp ahead of the request
+clock is unavailable with reason `clock_changed` and has no age. Snapshots saved before this
+metadata existed are unavailable until collection succeeds. Zero is a valid measured value;
+it is never substituted for a missing reading in this payload. The legacy `system` section
+keeps its existing presentation contract for the current UI.
+
+| Resource | Units and source | Unavailable cases |
+|---|---|---|
+| `cpu` | Percent busy between two aggregate `/proc/stat` reads; idle includes I/O wait and guest time is not counted twice. | First read, read failure, nonpositive elapsed counters or inconsistent/reset counters. |
+| `load` | Runnable or uninterruptible-wait tasks averaged over 1, 5 and 15 minutes, in that order, from `os.getloadavg()`. This is not CPU percent. | Failed or invalid read. |
+| `memory` | `total`, `used` and `available` bytes from `/proc/meminfo`; used is total minus available. Kernel kB values are multiplied by 1024. | Missing fields, invalid units or inconsistent values. |
+| `filesystem` | `total` and `used` bytes from `shutil.disk_usage()` on the configured data filesystem. This is filesystem capacity, not the Monero database size. | Inaccessible filesystem or invalid capacity. |
+| `hugepages` | `total`, `used` and `free` page counts from `/proc/meminfo`. Zero allocated pages is a valid measurement. | Missing or inconsistent counts or failed read. |
+| `swap`, `temperature`, `smart`, `io_latency`, `containers` | No collector in this increment; `source` and `value` are null. | Always `unavailable`, reason `unsupported`. |
+
+The existing `disk_growth` series records Unix seconds, `monero_db_bytes` in bytes and
+`disk_used_gb` / `disk_total_gb` in GiB (1024³ bytes, despite their historical names). Its
+source is the Monero sync response and the same data-filesystem reading above. It is sampled
+at most hourly and kept permanently, about 24 rows/day, with no retention prune or total row
+bound. Failed historical filesystem reads may have zero capacity; the outlook discards them
+rather than treating them as measured zero growth. History timestamps describe historical
+samples, not a live host reading; the outlook reports the newest usable sample as `to`.
+
+`capacity_outlook` examines at most the newest 169 existing rows in a seven-day window, reusing
+the disk-history query already needed by `/api/state`. Its basis is explicit: `window_seconds`,
+`sample_count`, `minimum_samples`, `from` and `to`. It needs 24 valid samples spanning at least
+23 hours on the current capacity. A capacity change, decreasing used space, invalid sample,
+duplicate timestamp or gap longer than three hours starts a new segment. Shorter gaps use
+actual elapsed time, not invented zero-growth samples. A future-dated sample invalidates the
+estimate, and the newest historical sample must be at most three hours old. A fresh current
+filesystem reading must agree with the historical capacity and must not show a usage reset.
+A same-size replacement with no observed usage decrease cannot be distinguished by this
+existing series; the estimate does not assert disk identity.
+
+The result is `estimated` only when those conditions hold and measured growth is positive.
+`growth_bytes_per_day` is the segment's used-space increase divided by its actual duration;
+`days_remaining` divides current free space by that rate. This is an uncertain estimate based
+on recent behavior, never a guaranteed disk-full countdown. Other states are
+`insufficient_history`, `no_growth` and `unavailable`; they have no rate or countdown. Current
+values are refreshed at the existing collection cadence, and no additional host reads or
+storage writes are introduced.
 
 A sustained outage of a required node stops `xmrig-proxy` so workers fail over to their
 configured backup pools. A `Workers rejected` badge shows; confirmed recovery restarts the

@@ -27,6 +27,7 @@ from mining_dashboard.helper.utils import (
     format_time_abs,
 )
 from mining_dashboard.service.health.update_checker import parse_semver
+from mining_dashboard.service.host_resources import build_host_resources
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.network.topology import topology_from_config
@@ -310,8 +311,9 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     badges = build_badges(
         data, metrics, mode_tok, db_healthy, wallet_change=recent_wallet_change(state_mgr)
     )
-    badges.append(_egress_badge(egress["summary"]))  # glanceable Tor-only / leak header badge
+    badges.append(_egress_badge(egress["summary"]))
 
+    disk_growth = state_mgr.get_disk_growth()
     return {
         "syncing": metrics.global_syncing,
         "page_title": "Pithead Dashboard - Syncing"
@@ -346,6 +348,9 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "db_healthy": db_healthy,
         "hashrate": build_hashrate(metrics, mode_tok, p2p_tok, xvb_tok),
         "system": build_system(data),
+        "host_resources": build_host_resources(
+            data.get("system", {}).get("host_resources", {}), disk_growth
+        ),
         "sync": build_sync(metrics, pool_net["monero"]["db_size"]),
         "stratum": pool_net["stratum"],
         "pool": pool_net["pool"],
@@ -373,19 +378,11 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         # with live feed prices (#520) when dashboard.energy.price_feed is on.
         "energy": build_energy(data.get("workers", []), data.get("prices")),
         "proxy_summary": build_proxy_summary(data),
-        # Persisted per-poll share-health deltas + trailing 24h reject rate (#116). Kept out of
-        # proxy_summary so its (cumulative) shape stays unchanged for existing clients.
         "share_stats": build_share_stats(share_stats, range_arg, window),
         "reject_pct_24h": _window_reject_pct(share_stats, 24 * 3600),
-        # #196 Tier-1 telemetry backbone exposure: block-found events, hourly disk-growth
-        # samples, and ~5-min XvB-credited samples. No chart renders these yet — that's the
-        # deliberate next slice — the payload just carries the persisted series.
         "blocks": build_blocks(state_mgr.get_blocks(), range_arg, window),
-        # Confirmed payouts per chain as timeline points ({x: ms, amount: atomic}), same
-        # range/window bounds as blocks. Feeds the mine cart train's Tari marker; empty lists
-        # while payout confirmation is off.
         "payouts": build_payouts(state_mgr, range_arg, window),
-        "disk_growth": build_disk_growth(state_mgr.get_disk_growth(), range_arg, window),
+        "disk_growth": build_disk_growth(disk_growth, range_arg, window),
         "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),
         "egress": egress,
         "topology": topology,

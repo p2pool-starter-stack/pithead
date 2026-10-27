@@ -1,12 +1,14 @@
 import os
 import shutil
+import time
 
 from mining_dashboard.config.config import DISK_PATH
 
 BYTES_IN_GB = 1024**3
 
 _last_cpu_times = None
-_avx2_supported = None  # cached: the CPU flag can't change while the process runs
+_avx2_supported = None
+_resource_samples = {}
 
 
 def get_cpu_avx2():
@@ -28,17 +30,21 @@ def get_cpu_avx2():
     return None  # unknown — don't cache, and callers treat None as "can't judge" (no badge/alert)
 
 
-def get_disk_usage():
-    """
-    Calculates storage utilization for the configured data directory.
+def _record_resource(name, value, reason=None):
+    _resource_samples[name] = {"sampled_at": time.time(), "value": value, "reason": reason}
 
-    Returns:
-        dict: A dictionary containing total/used GB and percentage strings
-              formatted for dashboard visualization.
-    """
+
+def get_host_resource_samples():
+    return _resource_samples.copy()
+
+
+def get_disk_usage():
     try:
         usage = shutil.disk_usage(DISK_PATH)
+        if usage.total <= 0 or not 0 <= usage.used <= usage.total:
+            raise ValueError
         percent = (usage.used / usage.total) * 100
+        _record_resource("filesystem", {"total": usage.total, "used": usage.used})
         return {
             "total_gb": usage.total / BYTES_IN_GB,
             "used_gb": usage.used / BYTES_IN_GB,
@@ -46,132 +52,106 @@ def get_disk_usage():
             "percent_str": f"{percent:.1f}%",
         }
     except Exception:
-        # Return zeroed metrics if the path is inaccessible
+        _record_resource("filesystem", None, "read_failed")
         return {"total_gb": 0, "used_gb": 0, "percent": 0, "percent_str": "0%"}
 
 
 def get_memory_usage():
-    """
-    Calculates system memory usage using /proc/meminfo.
-    Returns dict with total_gb, used_gb, percent, percent_str.
-    """
-    try:
-        mem_total = 0
-        mem_available = 0
-        with open("/proc/meminfo") as f:
-            for line in f:
-                if line.startswith("MemTotal:"):
-                    mem_total = int(line.split()[1]) * 1024  # kB to bytes
-                elif line.startswith("MemAvailable:"):
-                    mem_available = int(line.split()[1]) * 1024  # kB to bytes
-
-        if mem_total > 0:
-            used = mem_total - mem_available
-            available_gb = mem_available / BYTES_IN_GB
-            percent = (used / mem_total) * 100
-            return {
-                "available_gb": available_gb,
-                "total_gb": mem_total / BYTES_IN_GB,
-                "used_gb": used / BYTES_IN_GB,
-                "percent": percent,
-                "percent_str": f"{percent:.1f}%",
-            }
-    except Exception:  # noqa: S110 — best-effort memory stat; any failure falls through to the zeroed default below
-        pass
-    return {"total_gb": 0, "used_gb": 0, "percent": 0, "percent_str": "0%"}
-
-
-def get_load_average():
-    """
-    Returns system load average (1m, 5m, 15m) as a string.
-    """
-    try:
-        load = os.getloadavg()
-        return f"{load[0]:.2f} {load[1]:.2f} {load[2]:.2f}"
-    except Exception:
-        return "0.00 0.00 0.00"
-
-
-def get_cpu_usage():
-    """
-    Calculates CPU usage percentage using /proc/stat.
-    Returns string "XX.X%".
-    """
-    global _last_cpu_times
-    try:
-        with open("/proc/stat") as f:
-            line = f.readline()
-
-        parts = line.split()
-        # cpu user nice system idle iowait irq softirq steal
-        if len(parts) < 5:
-            return "0.0%"
-
-        # Sum all fields for total time
-        values = [int(x) for x in parts[1:]]
-        total = sum(values)
-        # Idle is idle + iowait
-        idle = values[3] + (values[4] if len(values) > 4 else 0)
-
-        usage = 0.0
-        if _last_cpu_times:
-            prev_total, prev_idle = _last_cpu_times
-            delta_total = total - prev_total
-            delta_idle = idle - prev_idle
-            if delta_total > 0:
-                usage = ((delta_total - delta_idle) / delta_total) * 100
-
-        _last_cpu_times = (total, idle)
-        return f"{usage:.1f}%"
-    except Exception:
-        return "0.0%"
-
-
-def get_hugepages_status():
-    """
-    Analyzes system memory configuration to determine HugePage availability.
-
-    Parses /proc/meminfo to check if HugePages are allocated and actively used
-    by the mining process (RandomX optimization).
-
-    Returns:
-        tuple: (Status Label, CSS Class, Usage String "Used / Total")
-    """
     try:
         mem_stats = {}
         with open("/proc/meminfo") as f:
             for line in f:
-                if line.startswith("HugePages_Total"):
+                key, _, rest = line.partition(":")
+                if key in ("MemTotal", "MemAvailable"):
+                    parts = rest.split()
+                    if len(parts) != 2 or parts[1] != "kB":
+                        raise ValueError
+                    mem_stats[key] = int(parts[0]) * 1024
+        mem_total = mem_stats["MemTotal"]
+        mem_available = mem_stats["MemAvailable"]
+        if mem_total <= 0 or not 0 <= mem_available <= mem_total:
+            raise ValueError
+        used = mem_total - mem_available
+        percent = (used / mem_total) * 100
+        _record_resource("memory", {"total": mem_total, "used": used, "available": mem_available})
+        return {
+            "available_gb": mem_available / BYTES_IN_GB,
+            "total_gb": mem_total / BYTES_IN_GB,
+            "used_gb": used / BYTES_IN_GB,
+            "percent": percent,
+            "percent_str": f"{percent:.1f}%",
+        }
+    except Exception:
+        _record_resource("memory", None, "read_failed")
+    return {"total_gb": 0, "used_gb": 0, "percent": 0, "percent_str": "0%"}
+
+
+def get_load_average():
+    try:
+        load = os.getloadavg()
+        _record_resource("load", list(load))
+        return f"{load[0]:.2f} {load[1]:.2f} {load[2]:.2f}"
+    except Exception:
+        _record_resource("load", None, "read_failed")
+        return "0.00 0.00 0.00"
+
+
+def get_cpu_usage():
+    global _last_cpu_times
+    try:
+        with open("/proc/stat") as f:
+            parts = f.readline().split()
+        if len(parts) < 5 or parts[0] != "cpu":
+            raise ValueError
+        values = [int(x) for x in parts[1:9]]
+        if any(value < 0 for value in values):
+            raise ValueError
+        total = sum(values)
+        idle = values[3] + (values[4] if len(values) > 4 else 0)
+        previous = _last_cpu_times
+        _last_cpu_times = values
+        if previous is None:
+            _record_resource("cpu", None, "warming_up")
+            return "0.0%"
+        previous_idle = previous[3] + (previous[4] if len(previous) > 4 else 0)
+        delta_total, delta_idle = total - sum(previous), idle - previous_idle
+        if (
+            len(values) != len(previous)
+            or any(value < old for value, old in zip(values, previous, strict=False))
+            or delta_total <= 0
+            or not 0 <= delta_idle <= delta_total
+        ):
+            _record_resource("cpu", None, "counter_reset")
+            return "0.0%"
+        usage = ((delta_total - delta_idle) / delta_total) * 100
+        _record_resource("cpu", usage)
+        return f"{usage:.1f}%"
+    except Exception:
+        _last_cpu_times = None
+        _record_resource("cpu", None, "read_failed")
+        return "0.0%"
+
+
+def get_hugepages_status():
+    try:
+        mem_stats = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("HugePages_Total:"):
                     mem_stats["total"] = int(line.split()[1])
-                elif line.startswith("HugePages_Free"):
+                elif line.startswith("HugePages_Free:"):
                     mem_stats["free"] = int(line.split()[1])
-
-        # Ensure we found the necessary keys
-        if "total" in mem_stats and "free" in mem_stats:
-            hp_total = mem_stats["total"]
-            hp_free = mem_stats["free"]
-            hp_used = hp_total - hp_free
-
-            val_str = f"{hp_used} / {hp_total}"
-
-            # Status Logic:
-            # 1. Total == 0: Feature not enabled in kernel/GRUB.
-            if hp_total == 0:
-                return "Disabled", "status-bad", val_str
-
-            # 2. Used > 0: Feature enabled and actively utilized by miner.
-            elif hp_used > 0:
-                return "Enabled", "status-ok", val_str
-
-            # 3. Total > 0 but Used == 0: reserved but the miner isn't consuming them yet — the
-            # normal startup / sync-hold state, NOT an error, so render it green (#175). Keep the
-            # "Allocated" label (distinct from actively-"Enabled") but with the ok class. (The
-            # genuinely-bad case is hp_total == 0 / "Disabled"; "Unknown" below stays warn.)
-            else:
-                return "Allocated", "status-ok", val_str
-
-    except (FileNotFoundError, ValueError, IndexError):
-        # Gracefully handle non-Linux systems or parsing errors
-        pass
-
+        hp_total, hp_free = mem_stats["total"], mem_stats["free"]
+        if not 0 <= hp_free <= hp_total:
+            raise ValueError
+        hp_used = hp_total - hp_free
+        _record_resource("hugepages", {"total": hp_total, "used": hp_used, "free": hp_free})
+        val_str = f"{hp_used} / {hp_total}"
+        if hp_total == 0:
+            return "Disabled", "status-bad", val_str
+        if hp_used > 0:
+            return "Enabled", "status-ok", val_str
+        return "Allocated", "status-ok", val_str
+    except (OSError, ValueError, IndexError, KeyError):
+        _record_resource("hugepages", None, "read_failed")
     return "Unknown", "status-warn", "0/0"
