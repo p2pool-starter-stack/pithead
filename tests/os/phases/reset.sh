@@ -109,6 +109,13 @@ phase_reset() {
         return
     fi
 
+    if _ssh 'cd /data/pithead && bash -s' <"$SCRIPT_DIR/../integration/lib/restore-dashboard-guest.sh"; then
+        ok "CLI restore refreshes dashboard configuration and running energy cost (#3432)"
+    else
+        bad "CLI restore leaves dashboard configuration or running energy cost stale (#3432)"
+        return
+    fi
+
     phase_coordinator_setup_again "$reset_user" "$reset_pass" || return
 
     if _phase_reset_config; then

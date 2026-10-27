@@ -166,18 +166,18 @@ sbv() {
 assert_eq "guest defined + reaches userspace under SB: passes" \
     "$(sbv 1 1 2.0.0)" \
     "0 the image reaches userspace with Secure Boot ON — signing works (or SB was not actually enforced; cross-check the guest's own SecureBoot EFI variable before trusting this as a pass)"
-for v in 2.0.0 2.0.1; do
-    assert_eq "$v: guest defined but never reaches userspace under SB: records the deferred state" \
-        "$(sbv 1 0 "$v")" \
-        "0 the image does NOT reach userspace with Secure Boot ON (pithead#2187: the firmware refuses the unsigned GRUB at EFI/BOOT/BOOTX64.EFI, and no signed shim is on the ESP) — measured, deferred through 2.0.1"
-done
-for v in 2.0.2 2.0.10 2.1.0; do
-    assert_eq "$v: guest defined but never reaches userspace after signing is required: fails" \
-        "$(sbv 1 0 "$v")" \
-        "1 the image does NOT reach userspace with Secure Boot ON — signing is required, so this is a regression"
-done
+assert_eq "2.0.0: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.0.0)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
+assert_eq "2.0.1: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.0.1)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
+assert_eq "2.0.2: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.0.2)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
+assert_eq "2.1.0: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.1.0)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
+assert_eq "2.0.10: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.0.10)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
 assert_eq "virt-install could not even define the guest: fails, names it unmeasured (a possible bench firmware gap)" \
-    "$(sbv 0 0 2.0.0)" \
+    "$(sbv 0 0 2.0.2)" \
     "1 could not even DEFINE a Secure-Boot-enabled guest (no matching OVMF secure-boot firmware on this host?) — Secure Boot is UNMEASURED here, not proven either way; check for a bench firmware gap before reading this as a product defect"
 unset -f sbv
 

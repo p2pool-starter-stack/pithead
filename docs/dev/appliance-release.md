@@ -377,8 +377,9 @@ Hardware: one x86-64 machine with UEFI, ≥ 16 GiB RAM, an internal SSD/NVMe, wi
 ethernet, and a USB stick. A second disk makes M4 and M5 meaningful.
 
 **M1 — flash and boot.** Write the image to the USB stick. Disable Secure Boot in firmware,
-then boot the target from it. Expected: reaches userspace. Secure Boot support is deferred through
-2.0.1 and planned for 2.0.2 (#2187); the KVM boot row records the current failure.
+then boot the target from it. Expected: reaches userspace. Secure Boot is unsupported by design
+(#2187); follow the [install guide's firmware instructions](../appliance.md#2-boot-the-machine-from-the-stick).
+The KVM boot row records a measured non-boot as the expected state for every image version.
 
 **M2 — discovery.** Read the token from the console, then find the box from another machine
 at `http://pithead.local` and at the IP it printed. Expected: both load the token gate, and
