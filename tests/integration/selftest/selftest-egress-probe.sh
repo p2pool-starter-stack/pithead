@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tor SOCKS control probe: the original request stays first and recorded, retries are recorded and
-# never substituted, and a pass after a retry names the attempt (#812, #2619).
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
@@ -33,7 +31,7 @@ rx() {
     esac
 }
 
-reset_probe() { # <rc>...: the SOCKS exit status each successive request returns
+reset_probe() {
     PROBE_RCS=("$@")
     SOCKS_CALLS=0
     # shellcheck disable=SC2034 # read by the probe under test
@@ -42,7 +40,6 @@ reset_probe() { # <rc>...: the SOCKS exit status each successive request returns
     rm -rf "$OUT_DIR"
 }
 
-# Runs the pair, leaving its transcript in $TD/pair.log and its added failures in $pair_failed.
 run_pair() {
     local before=$IT_FAIL
     assert_egress_dial_pair >"$TD/pair.log" 2>&1

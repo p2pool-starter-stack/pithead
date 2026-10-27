@@ -2,8 +2,7 @@
 # shellcheck source=tests/integration/lib/tor-control-dial.sh
 source "${BASH_SOURCE[0]%/*}/tor-control-dial.sh" || return $?
 
-# A retry gets its own record and sequence, never replacing the failure before it.
-_egress_socks_attempt() { # <socks host:port> <attempt>; sets EGRESS_PROBE_CLASS
+_egress_socks_attempt() {
     local tor_socks="$1" attempt="$2" started=$SECONDS probe_rc=0 elapsed sequence exit_class record label
     EGRESS_PROBE_SEQUENCE=$((${EGRESS_PROBE_SEQUENCE:-0} + 1))
     sequence=$EGRESS_PROBE_SEQUENCE
@@ -26,8 +25,6 @@ _egress_socks_attempt() { # <socks host:port> <attempt>; sets EGRESS_PROBE_CLASS
     255) exit_class=target-or-ssh-failed ;;
     *) exit_class=unclassified ;;
     esac
-    # Only harness-generated numbers and fixed vocabulary leave this function.
-    # No endpoint, raw stderr, HTTP payload, cookie or later probe is retained.
     label=original-socks-probe
     [ "$attempt" -eq 1 ] || label=retry-socks-probe
     record="$label sequence=$sequence exit=$probe_rc elapsed_s=$elapsed class=$exit_class stage=unknown"
@@ -43,8 +40,7 @@ _egress_socks_attempt() { # <socks host:port> <attempt>; sets EGRESS_PROBE_CLASS
     return "$probe_rc"
 }
 
-# Passes on the first attempt that connects, and EGRESS_PROBE_SUMMARY names the failed attempts.
-run_egress_socks_probe() { # <socks host:port>
+run_egress_socks_probe() {
     local attempt=1 probe_rc=0 failed=""
     # shellcheck disable=SC2034 # read by assert_egress_dial_pair
     EGRESS_PROBE_SUMMARY=""

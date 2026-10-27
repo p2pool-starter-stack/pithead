@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# The shared Tor control dial builder both harnesses use (#2619): attempt 1 is the original request,
-# each retry names its own SOCKS user, and the appliance leg loads the same builder.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

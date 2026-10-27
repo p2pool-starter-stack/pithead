@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Runs after unrelated provision failures so Tor-only egress enforcement is never silently skipped.
 
 # shellcheck source=tests/integration/lib/tor-control-dial.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../integration/lib" && pwd)/tor-control-dial.sh"
 
-# Distinguishes absent rules from ineffective rules, starting with the engine that selects the backend.
-egress_diag_probes() { # -> "<label>\t<remote command>" per line
+egress_diag_probes() {
     printf '%s\t%s\n' \
         'engine' 'grep -h "^PITHEAD_ENGINE=" /etc/environment 2>/dev/null; cd /data/pithead 2>/dev/null && bash -c "source ./pithead && container_engine" 2>/dev/null' \
         'nft-table' 'nft list table inet pithead_egress 2>&1' \
@@ -21,11 +19,9 @@ egress_has_global_v6() { # <if_inet6 contents>
     awk '$4 == "00" { found = 1 } END { exit !found }' <<<"$1"
 }
 
-# Bounds excerpts because the harness forbids raw dumps in model context.
 _egress_capture_diagnostics() {
     local label cmd out ran=0
     info "  egress diagnostics (#2059) — is the table ABSENT, or PRESENT but ineffective?"
-    # Redirects stdin so SSH cannot consume the remaining probe list.
     while IFS=$'\t' read -r label cmd; do
         [ -n "$label" ] || continue
         out=$(_ssh "$cmd" </dev/null 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
@@ -40,8 +36,7 @@ _egress_capture_diagnostics() {
         info "    (INCOMPLETE: $ran of $want probes ran — treat the above as partial evidence)"
 }
 
-# An unexercised backstop fails an otherwise-green phase so missing enforcement cannot pass.
-phase_provision_egress_backstop() { # <phase-rc>
+phase_provision_egress_backstop() {
     local phase_rc="${1:-0}"
     local unexercised=bad
     [ "$phase_rc" -eq 0 ] || unexercised=info
@@ -96,10 +91,6 @@ phase_provision_egress_backstop() { # <phase-rc>
     28) ok "direct clearnet dial from a mining container is dropped — Tor-only egress is enforced" ;;
     *) bad "the direct clearnet dial from monerod failed without timing out (rc=$rc) — the Tor-only egress drop is unverified" ;;
     esac
-    # POSITIVE — the SAME container still reaches clearnet THROUGH Tor's SOCKS, proving the drop
-    # spares Tor and intra-subnet traffic (real mining keeps working) AND that the negative above
-    # failed because of the firewall rather than because the guest has no route to the internet at
-    # all. Tor's default SOCKS is 172.28.0.25:9050 on the appliance's mining_net.
     local attempt=1 tried=""
     while [ "$attempt" -le "$TOR_CONTROL_DIAL_ATTEMPTS" ]; do
         rc=0
@@ -114,12 +105,6 @@ phase_provision_egress_backstop() { # <phase-rc>
         bad "the mining container can no longer reach clearnet even through Tor (all $TOR_CONTROL_DIAL_ATTEMPTS attempts failed; $tried) — the firewall is too tight, or the guest has no route out (which would also void the drop above)"
         _egress_capture_diagnostics
     fi
-    # IPv6 backstop (#858): mining_net is IPv4-only by design, so monerod has no global v6 and this
-    # leg self-skips on the stock appliance. If mining_net ever gains a v6 subnet, the container CAN
-    # originate v6 clearnet — assert that dial is DROPPED too (the fail-open the v4-only rules left
-    # behind). Guarded on the container actually holding a global v6 address. The guard reads the
-    # kernel's own table with the image's cat: the image ships no `ip`, and a guard that cannot run
-    # must fail rather than report the IPv4-only pass below (bench-ci#532).
     local inet6
     rc=0
     inet6=$(_ssh "podman exec monerod /usr/bin/cat /proc/net/if_inet6" 2>/dev/null) || rc=$?
@@ -158,14 +143,7 @@ phase_provision_egress_backstop() { # <phase-rc>
     return 0
 }
 
-# Drive the leg against a stubbed guest in a subshell, so the stubs and counters never leak into the
-# caller. Prints one line per guest command (`call ...`) and per reported row (`ok ...`/`bad ...`).
-# <guest>: unreachable | no-curl (curl exits 127) | no-cat (cat exits 127) | v4-only | global-v6 |
-# dial-lost (both direct dials die in podman, 125) | dial-refused (both are refused, curl 7) |
-# fail-open (both connect) | tor-down (SOCKS dials fail, curl 7) | tor-flaky (two SOCKS dials fail, curl 52) | no-status (no #2599 timer or file).
-# All but v4-only hold a global v6 address. Otherwise well behaved: direct dials time out (28), the
-# Tor SOCKS dial succeeds, the timer is active and the status file reads enforced.
-_egress_drive() { # <phase-rc> <guest>
+_egress_drive() {
     (
         guest=$2 EGRESS_STATUS_TIMEOUT=0 socks_calls=0
         ok() { printf 'ok %s\n' "$1"; }
@@ -320,7 +298,6 @@ _egress_self_test() {
         printf 'a dead Tor path did not name all three attempts: %s\n' "$out" >&2
         f=$((f + 1))
     }
-    # One bad exit is a flake (#2619): retries carry their own SOCKS user and a success stops the loop.
     out=$(_egress_drive 0 tor-flaky)
     grep -q "^ok egress through Tor's SOCKS still works.*passed on attempt 3 of 3; attempt 1 exit=52; attempt 2 exit=52" <<<"$out" &&
         ! grep -q '^bad ' <<<"$out" &&
