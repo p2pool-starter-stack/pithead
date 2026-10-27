@@ -57,8 +57,8 @@ source "$HERE/phases/rigmedia.sh" || exit $?
 source "$HERE/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$HERE/phases/reset.sh" || exit $?
-# shellcheck source=tests/os/phases/image-upgrade.sh
 source "$HERE/phases/image-upgrade.sh" || exit $?
+image_upgrade_certificate_continuity_leg() { :; }
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$HERE/phases/crossupdate.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh

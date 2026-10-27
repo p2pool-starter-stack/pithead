@@ -132,7 +132,7 @@ stack_uninstall() {
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
     # stderr kept: the drain's timeout warning is the message for a request still in flight.
-    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false provision_control_runner || true
+    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false TOR_AUTO_HEAL=false provision_control_runner || true
     # The view-key secret goes first: nothing after it may leave a 0600 key behind.
     rm -f "$secret_file"
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done
@@ -325,8 +325,8 @@ machine_role() { # echoes pithead|both|rig
     case "$r" in rig | both | pithead) printf '%s' "$r" ;; *) printf 'pithead' ;; esac
 }
 
-machine_role_from_config() { # <config-file>
-    if [ "$(jq -r '.local_miner.enabled // false' "$1" 2>/dev/null)" = "true" ]; then
+machine_role_from_config() {
+    if [ "$(config_get .local_miner.enabled "$1" 2>/dev/null)" = "true" ]; then
         printf 'both'
     else
         printf 'pithead'

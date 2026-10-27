@@ -43,7 +43,13 @@ _rig_share_resolves() {
 }
 
 _rig_share_state() {
-    curl -fsSk -u "$coord_user:$coord_pass" -m 10 "https://$coord_ip/api/state"
+    local auth="${coord_user}:${coord_pass}"
+    case "$auth" in *$'\n'* | *$'\r'*) return 1 ;; esac
+    auth=${auth//\\/\\\\}
+    auth=${auth//\"/\\\"}
+    curl --config - -fsSk -m 10 "https://$coord_ip/api/state" <<EOF
+user = "$auth"
+EOF
 }
 
 _rig_share_counters() {
@@ -168,6 +174,53 @@ _rig_share_arm() {
     _rig_share_window "$arm" "$baseline"
 }
 
+_rig_share_power_cut() {
+    local VM="$coord_vm" DISK="$coord_disk" SERIAL="$coord_serial" ip="$coord_ip"
+    local before deadline st counts rig_count own_count rig_base="" own_base=""
+    before=$(_boot_id) && [ -n "$before" ] || {
+        bad "M10 mining: cannot read the coordinator boot id before cutting power"
+        return 1
+    }
+    virsh destroy "$VM" >/dev/null 2>&1 || {
+        bad "M10 mining: could not cut power to the mining coordinator"
+        return 1
+    }
+    sleep 3
+    virsh start "$VM" >/dev/null 2>&1 || {
+        bad "M10 mining: could not restore power to the mining coordinator"
+        return 1
+    }
+    _wait_new_boot "$before" 300 || {
+        bad "M10 mining: the coordinator did not reach a new boot after the power cut"
+        return 1
+    }
+    ok "M10 mining: the coordinator reached a new boot after an unclean power cut"
+    deadline=$(($(date +%s) + RIG_SHARE_WINDOW_SEC))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        st=$(_rig_share_state 2>/dev/null) || st=""
+        counts=$(printf '%s' "$st" | jq -er --arg coordinator "$coord_worker" '
+            [.workers[]? | select(.name == "kvm-rig-share") | .accepted] as $rig |
+            [.workers[]? | select(.name != "kvm-rig-share")] as $own |
+            select(($rig | length) == 1 and ($own | length) == 1 and $own[0].name == $coordinator) |
+            ($rig + [$own[0].accepted]) as $counts |
+            select(all($counts[]; type == "number" and . >= 0 and . == floor)) |
+            $counts | @tsv' 2>/dev/null) || counts=""
+        if [ -n "$counts" ]; then
+            read -r rig_count own_count <<<"$counts"
+            if [ -z "$rig_base" ] || [ "$rig_count" -lt "$rig_base" ]; then rig_base="$rig_count"; fi
+            if [ -z "$own_base" ] || [ "$own_count" -lt "$own_base" ]; then own_base="$own_count"; fi
+            if [ "$rig_count" -gt "$rig_base" ] && [ "$own_count" -gt "$own_base" ]; then
+                ok "M10 mining: the rig's accepted counter advances after the coordinator power cut ($rig_base -> $rig_count)"
+                ok "M10 mining: the built-in miner's accepted counter advances after the coordinator power cut ($own_base -> $own_count)"
+                return 0
+            fi
+        fi
+        sleep 15
+    done
+    bad "M10 mining: both accepted counters did not advance within ${RIG_SHARE_WINDOW_SEC}s after the coordinator power cut"
+    return 1
+}
+
 rig_share_leg() {
     local img="$1" mh="$2" rpc="$3" zmq="$4" mu="$5" mp="$6" th="$7" grpc="$8" rig_ip="$9"
     local rig_vm="$VM" rig_disk="$DISK" rig_serial="$SERIAL"
@@ -204,5 +257,6 @@ rig_share_leg() {
     _rig_share_arm return "$coord_ip:3333" || _rig_share_abort "share leg: return arm failed (#3425)" || return 1
     _rig_share_hosts_restore || _rig_share_abort "share leg: hosts fixture restoration failed (#3425)" || return 1
     ok "share leg: rig hosts restored and root verified read-only (#3425)"
+    _rig_share_power_cut || _rig_share_abort || return 1
     _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
 }

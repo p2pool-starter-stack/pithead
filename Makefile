@@ -3,6 +3,7 @@
 .PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
+	python3 scripts/build-config-defaults.py --check
 	bash scripts/build-pithead.sh
 
 test: lint test-dashboard test-frontend test-stack test-netwatch test-compose test-integration-selftest test-tools test-fakes ## Local checks (Docker required; no live test host)
@@ -48,10 +49,8 @@ test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness logic and local transport fixtures (no live host needed)
-	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
-	# any self-test added later, and a check that never runs reads exactly like one that passed.
-	for t in tests/integration/selftest/*.sh; do bash "$$t" || exit 1; done
-	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
+	for t in tests/integration/selftest/*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
+	for t in tests/os/selftest*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
 
 test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	bash scripts/test-container.sh --self-test
@@ -60,6 +59,7 @@ test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
+	python3 scripts/lint/test-browser-workflow.py
 	python3 tests/stack/standalone/test_tor_saturated_fixture.py
 	python3 tests/stack/standalone/test_monero_download.py
 	python3 tests/stack/standalone/test_appliance_release_docs.py
@@ -139,7 +139,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 	printf '%s\0' pithead pithead-completion.bash install.sh scripts/*.sh scripts/*/*.sh build/*/*.sh dashboard/*.sh \
 		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/*/*.sh \
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
-		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
+		os/installer/pithead-install os/build-image.sh os/rootfs/*.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-serial-port-present \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version \
