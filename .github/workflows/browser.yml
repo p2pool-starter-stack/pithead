@@ -34,7 +34,7 @@ jobs:
         timeout-minutes: 2
         run: npm ci --prefix dashboard/tests/browser --ignore-scripts
       - name: Run cross-browser user journeys and HTTPS backup fixtures
-        env: {TMPDIR: "${{ runner.temp }}"}
+        env: {HOME: /root, TMPDIR: "${{ runner.temp }}"}
         run: make test-browser
       - name: Retain browser failure evidence
         if: failure()
