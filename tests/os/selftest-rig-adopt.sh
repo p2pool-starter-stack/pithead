@@ -90,8 +90,8 @@ dashboard_curl() {
             esac
         fi
         jq -nc --argjson value "$value" --arg id "$id" --arg row "$row" \
-            '{rig_config:{DONATION:$value},history:[{change_id:"eeeeeeeeeeeeeeee",status:"applied"}] +
-                (if $id == "" then [] else [{change_id:$id,status:$row}] end)}'
+            '{rig_config:{DONATION:$value},history: ([{change_id:"eeeeeeeeeeeeeeee",status:"applied"}] +
+                (if $id == "" then [] else [{change_id:$id,status:$row}] end))}'
         ;;
     '-fsSk -m 10 https://192.0.2.2/api/config') printf '{"workers":{"list":[{"name":"existing","token":{"__secret__":true}}]}}' ;;
     *) fail 'unexpected dashboard URL' ;;
