@@ -191,7 +191,8 @@ directly, so they carry no marker check and must not gain one.
 ### A. Configuration permutations
 
 Shell block 5 runs `tests/stack/test-manual-qa-oracle.sh` as its own domain. Its section header
-keeps it in the generated test inventory. It compares every
+keeps it in the generated test inventory. Its PASS-label case IDs come from the committed TSV
+and are registered in `tests/stack/lib/verdict-label-determinism.sh`. It compares every
 broken-config guide row with `docs/dev/manual-qa/broken-configs.tsv`, replays each edit through
 `apply --dry-run`, and requires exit 1, the documented message, byte-identical candidate and
 rendered environment, and no stack-container changes. Only disposable Caddy password-hash
