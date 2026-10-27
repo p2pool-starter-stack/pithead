@@ -28,9 +28,9 @@ from mining_dashboard.helper.utils import (
 )
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics
-from mining_dashboard.service.pool_tier import suggest_pool_tier
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.network.topology import topology_from_config
+from mining_dashboard.service.pool_tier import suggest_pool_tier
 from mining_dashboard.version import resolve_version
 
 # The chart/window hub lives in web/views/charts.py (#1105). views.py stays the facade: the last two

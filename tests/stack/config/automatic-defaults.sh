@@ -7,6 +7,12 @@ AD="$SANDBOX/automatic-defaults"
 mkdir -p "$AD"
 printf '{"monero":{"wallet_address":"%s","node_username":"u","node_password":"p"},"tari":{"mode":"off"},"dashboard":{"secure":false},"local_miner":{"enabled":false}}\n' "$VALID_PRIMARY" >"$AD/base.json"
 cp "$AD/base.json" "$AD/config.json"
+for value in false null 1 '[]' '"invalid"'; do
+    jq --argjson value "$value" '.donation=$value' "$AD/base.json" >"$AD/config.json"
+    out=$(run_sourced "$AD" validate_donation_config 2>&1)
+    assert_rc "donation block $value is refused" "$?" 1
+    assert_contains "invalid donation block names the object" "$out" "donation must be an object"
+done
 for value in 0 11 '"5"' 2.5 true null; do
     jq --argjson value "$value" '.donation.percent = $value' "$AD/base.json" >"$AD/config.json"
     out=$(run_sourced "$AD" validate_donation_config 2>&1)

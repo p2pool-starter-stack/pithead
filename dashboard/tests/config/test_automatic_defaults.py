@@ -9,7 +9,9 @@ from mining_dashboard.config.defaults import TABLE
 @pytest.mark.parametrize("enabled,percent,tor", [(None, None, None), ("true", "10", "false")])
 def test_donation_runtime_defaults_and_overrides(monkeypatch, enabled, percent, tor):
     for key, value in zip(
-        ("DONATION_ENABLED", "DONATION_PERCENT", "DONATION_TOR_ENABLED"), (enabled, percent, tor)
+        ("DONATION_ENABLED", "DONATION_PERCENT", "DONATION_TOR_ENABLED"),
+        (enabled, percent, tor),
+        strict=True,
     ):
         if value is None:
             monkeypatch.delenv(key, raising=False)
