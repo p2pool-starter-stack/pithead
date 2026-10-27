@@ -32,7 +32,6 @@ from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.network.topology import topology_from_config
 from mining_dashboard.service.pool_tier import suggest_pool_tier
 from mining_dashboard.version import resolve_version
-
 from mining_dashboard.web.miner_connection import stratum_state
 from mining_dashboard.web.views.charts import (
     _filter_events,  # noqa: F401 — re-export for worker_detail.py
