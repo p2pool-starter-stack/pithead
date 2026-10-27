@@ -305,7 +305,6 @@ else
 fi
 
 echo "== #2000: the SSH fault token gets our own BENCH_HOST appended as its dest, and only it does =="
-# Only the wrapper knows the bench alias for the bare phase token.
 OFF="$(phase_list_of "$(launch_of " --fault-injection")")"
 ON="$(phase_list_of "$(launch_of " --fault-injection-ssh")")"
 assert_eq "the plain fault phase gets no destination" "$(has_phase "$OFF" --fault-ssh-dest)" "no"

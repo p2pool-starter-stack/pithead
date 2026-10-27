@@ -362,26 +362,12 @@ run_fault_injection() {
     wait_status_ok 240 || true
 }
 
-# Keep the parent rig lock and other phases on their original transport.
 run_fault_injection_maybe() {
     if [ "$FAULT_SSH" != "1" ]; then
         run_fault_injection
         return
     fi
-    # shellcheck disable=SC2034 # rx() reads these dynamically scoped transport variables.
+    # shellcheck disable=SC2034
     local IT_MODE="ssh" IT_SSH_DEST="$FAULT_SSH_DEST"
     run_fault_injection
 }
-
-# --- Fail-closed auth phase (--auth-fail-closed) ----------------------------
-# Live counterpart to the tier-1 compose-config assertion (tests/stack/standalone/test_compose.sh): prove the
-# DEPLOY path — not just `docker compose config` — refuses to start an unauthenticated xmrig-proxy
-# control API when PROXY_AUTH_TOKEN is empty (#153/#203). We empty the token in .env and run
-# `pithead up`, which does NOT re-render .env (only setup/apply do — and apply would self-heal by
-# regenerating the token), so the compose `:?` guard fires and the stack refuses to start. The
-# `:?` error aborts `docker compose up` before it touches any container, so a running stack is left
-# intact. We then restore the EXACT original token (a fresh one would break the run's end-of-run
-# secret-fingerprint check) and bring the stack back healthy. DESTRUCTIVE-then-restored.
-
-# Rewrite PROXY_AUTH_TOKEN in .env in place, preserving line order. quote_arg makes the value safe
-# for the remote shell; awk leaves every other line untouched.
