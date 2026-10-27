@@ -132,7 +132,13 @@ host already holds `3333`. Set the port with [`p2pool.stratum_port`](configurati
 ```
 
 After `pithead apply`, point every rig at the new port (`YOUR_STACK_IP:4444`) — a rig still on the
-old port can't connect. `apply` flags a port change as destructive for exactly this reason, and the
+old port can't connect. Configuration preview, `pithead apply --dry-run` and `pithead apply`
+check a changed stratum port on the configured bind address and refuse it if the host already
+holds it. The control runner repeats this check before committing the configuration. The
+current port remains usable for unrelated configuration changes. The check does not reserve
+the port; a service that binds it afterwards can still make apply fail.
+
+`apply` requires confirmation for a port change because it disconnects the rigs. The
 firewall rules above must allow the new port instead of `3333`. On [RigForge](https://github.com/p2pool-starter-stack/rigforge),
 set the matching `pool.port` and run `rigforge apply`.
 

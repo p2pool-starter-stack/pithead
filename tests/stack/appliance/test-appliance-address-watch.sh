@@ -203,7 +203,7 @@ awd_run() { # <hostname -I output>
         appliance_tls_dir() { printf '%s' "$AWD/tls"; }
         appliance_bridge_gateway() { printf '172.19.0.1'; }
         env_get() { [ "$1" = HOST_IP ] && printf '%s' "${AWD_BASE:-rig1.local}"; }
-        hostname() { if [ "${1:-}" = "-I" ]; then printf '%s' "$AWD_ADDRS"; else printf 'rig1'; fi; }
+        stub_host_addrs "$AWD_ADDRS" rig1
         check_appliance_cert 2>&1
     )
 }
