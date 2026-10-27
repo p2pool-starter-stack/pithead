@@ -130,7 +130,7 @@ drive() { # <case> -> round-trip-rc|failures
         esac
         [ "$1" != active-wallet-profile ] || sed -i 's/COMPOSE_PROFILES=local_node,local_tari/COMPOSE_PROFILES=local_node,local_tari,tari_payout_confirm/' "$B/.env"
         # shellcheck disable=SC2034 # read by rx and the extracted functions
-        IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0
+        IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0 OUT_DIR="$B/results"
         export FAKE_CASE="$1"
         it_step() { :; }
         it_skip_leg() { printf '%s|%s|%s' "$1" "$2" "$3" >"$B/skip"; }
@@ -189,8 +189,14 @@ assert_contains "a long failed setup redacts the password announcement (#3345)" 
 assert_contains "a long failed setup redacts the rig instructions (#3345)" "$(cat "$T/box-setup-long-fails/run.log")" "connect with pass <redacted>"
 assert_eq "a long failed setup never prints credentials (#3345)" "$(grep -c fixture-secret "$T/box-setup-long-fails/run.log" || true)" "0"
 
+for expected in "No such image" "final setup diagnostic" "PROXY_AUTH_TOKEN=<redacted>" "Stratum password: <redacted>" "connect with pass <redacted>"; do
+    assert_contains "setup artifact retains $expected (#3345)" "$(cat "$T/box-setup-long-fails/results/lifecycle-setup/setup.log")" "$expected"
+done
+assert_eq "setup artifact never saves credentials (#3345)" "$(grep -c fixture-secret "$T/box-setup-long-fails/results/lifecycle-setup/setup.log" || true)" "0"
+
 assert_eq "a failed setup and web check both fail the round trip (#3345)" "$(drive setup-long-web-fails)" "1|2"
 assert_contains "a failed web check keeps the setup cause (#3345)" "$(cat "$T/box-setup-long-web-fails/run.log")" "No such image"
+assert_contains "a failed web check retains the setup artifact (#3345)" "$(cat "$T/box-setup-long-web-fails/results/lifecycle-setup/setup.log")" "No such image"
 
 assert_eq "setup refuses a failed web ownership check" "$(drive web-fails)" "1|1"
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
