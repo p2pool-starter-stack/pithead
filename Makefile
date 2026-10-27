@@ -24,6 +24,7 @@ test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% 
 	bash scripts/lint/patch-coverage.sh
 
 test-stack: pithead ## pithead shell test suite
+	bash tests/stack/standalone/test_onion_runtime.sh
 	bash tests/stack/run.sh
 	bash tests/stack/standalone/test_tor_recovery.sh
 	bash tests/stack/standalone/test_tor_recovery_info.sh

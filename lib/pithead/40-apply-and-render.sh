@@ -383,6 +383,7 @@ apply() {
         if provision_dashboard_onion && render_env; then
             generate_caddyfile
             docker compose restart caddy
+            refresh_dashboard_onion_runtime
         fi
     fi
     rm -f "$apply_marker" "$caddy_marker"
