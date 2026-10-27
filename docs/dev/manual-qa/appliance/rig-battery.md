@@ -55,8 +55,15 @@ hugepages.*
 - The change reaches `applied`.
 - No pool credential was touched.
 
-*Replaced by: a dashboard-driven adopt/config push check, not yet written — a rig serves no
-dashboard of its own, so nothing in the KVM `rig` phase exercises this today.*
+*Automated by `rig_adopt_leg` in `tests/os/rig-adopt-leg.sh`, called after the share and
+coordinator power-cut rows in `rig_share_leg`. It uses the existing two guests, enables the
+coordinator control channel, previews and commits an adoption with typed `APPLY`, and polls
+for an adopted worker with a reachable API. Worker descriptors reload on each poll; adoption
+does not require a separate dashboard restart. The leg changes `DONATION`, checks the rig's
+own config and unchanged pools, restores the original effective value (read from the rig's
+reported config when the raw key is absent), and checks that the unpinned
+bench host still cannot reach the control port. It prints elapsed seconds without the card
+token. The form and inspector clicks remain manual.*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
