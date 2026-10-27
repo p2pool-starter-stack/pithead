@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034 # globals are consumed by the sourced safety function
-#
-# Self-test for #3445: the harness keeps the newest PITHEAD_E2E_BACKUP_KEEP plaintext safety
-# backups, always keeps the archive just written, and never touches foreign names.
-#
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
