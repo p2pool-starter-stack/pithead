@@ -164,20 +164,6 @@ DONATION_TOR_ENABLED = (
 )
 XVB_TOR_SOCKS5 = TOR_SOCKS_PROXY.split("://", 1)[-1]
 
-# XvB raffle-registration endpoint (#263). Mining to the XvB pool isn't enough to enter the raffle —
-# a wallet is only entered once it's registered against this endpoint (and only if it already has a
-# share in the P2Pool PPLNS window). Same host as the XvB stats fetch above. The operator asked us
-# not to *advertise* this API ("to mitigate abuse"), so don't surface the bare URL in user-facing
-# docs/README — but it ships here as the working default. Override with XVB_SUBMIT_URL (e.g. a test
-# server); set it to a disable sentinel (off/none/false/disabled/0) to turn auto-registration off
-# while keeping XvB on. The call ALWAYS rides Tor (TOR_SOCKS_PROXY) like the stats fetch (#163) since it
-# carries the full wallet — it is NOT subject to the xvb.tor donation opt-out.
-#
-# Contract — GET ?address=<full wallet>, verified live 2026-06-28:
-#   2xx                                              => freshly registered
-#   422 "ERROR: Wallet Address Already Registered"   => already in (idempotent success)
-#   422 "ERROR: Invalid Wallet Address"              => bad wallet (permanent — stop retrying)
-#   no-share / 5xx / other                           => transient, retry on the next poll
 _XVB_SUBMIT_DEFAULT = "https://xmrvsbeast.com/cgi-bin/p2pool_bonus_submit_api.cgi"
 _XVB_SUBMIT_DISABLE_SENTINELS = {"off", "none", "false", "disabled", "0"}
 _xvb_submit_env = os.environ.get("XVB_SUBMIT_URL", "").strip()

@@ -95,8 +95,8 @@ class TestStateApi:
         assert resp.status == 500
         body = await resp.json()
         assert "error" in body
-        assert "SECRET internal detail" not in str(body)  # no leak
-        assert "X-Frame-Options" in resp.headers  # headers still applied
+        assert "SECRET internal detail" not in str(body)
+        assert "X-Frame-Options" in resp.headers
 
 
 async def test_state_exposes_pool_suggestion_without_changing_tier(aiohttp_client):

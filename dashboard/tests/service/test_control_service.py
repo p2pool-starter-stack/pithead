@@ -311,7 +311,6 @@ class TestEditableKeys:
         cfg = control_service.read_config()
         assert "p2pool.pool" in cfg["_editable_keys"]
         assert "xvb.donation_level" in cfg["_editable_keys"]
-        # 2026-08 audit reclassification: same risk class as their already-editable siblings.
         assert "telegram.events.raffle_win" in cfg["_editable_keys"]
         assert "monero.out_peers" in cfg["_confirm_keys"]
         assert "monero.out_peers" not in cfg["_editable_keys"]
@@ -320,7 +319,7 @@ class TestEditableKeys:
             assert key in cfg["_confirm_keys"]
             assert key not in cfg["_editable_keys"]
         assert "telegram.commands.enabled" not in cfg["_editable_keys"]
-        assert cfg["_editable_keys"] == sorted(cfg["_editable_keys"])  # stable, deterministic order
+        assert cfg["_editable_keys"] == sorted(cfg["_editable_keys"])
 
     def test_config_only_ordinary_paths_are_editable(self, spool):
         cfg = control_service.read_config()
@@ -367,7 +366,7 @@ class TestConfirmKeys:
             "monero.out_peers",
         ):
             assert path in cfg["_confirm_keys"], path
-        assert cfg["_confirm_keys"] == sorted(cfg["_confirm_keys"])  # stable, deterministic order
+        assert cfg["_confirm_keys"] == sorted(cfg["_confirm_keys"])
 
     def test_perimeter_joins_confirm_while_physical_and_free_paths_do_not(self, spool, monkeypatch):
         reference = {

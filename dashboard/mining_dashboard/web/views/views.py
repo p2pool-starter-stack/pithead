@@ -33,8 +33,6 @@ from mining_dashboard.service.network.topology import topology_from_config
 from mining_dashboard.service.pool_tier import suggest_pool_tier
 from mining_dashboard.version import resolve_version
 
-# The chart/window hub lives in web/views/charts.py (#1105). views.py stays the facade: the last two
-# are re-exported unused so `server.py`'s existing `from ...web.views import` keeps resolving.
 from mining_dashboard.web.miner_connection import stratum_state
 from mining_dashboard.web.views.charts import (
     _filter_events,  # noqa: F401 — re-export for worker_detail.py
@@ -243,7 +241,7 @@ def read_os_update_state() -> dict | None:
 def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASHRATE_WINDOW):
     data = data or {}
     history = state_mgr.get_history()
-    share_stats = state_mgr.get_share_stats()  # per-poll share-health deltas (#116)
+    share_stats = state_mgr.get_share_stats()
     raffle_wins = state_mgr.get_raffle_wins()  # rounds this wallet won, from XvB's winners file
     # Confirmed on-chain payouts (#381): fetched once when the view-only wallet feature is on (else
     # None), fed to both the earnings totals and the chart markers. config read at call time so
