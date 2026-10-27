@@ -377,8 +377,8 @@ Hardware: one x86-64 machine with UEFI, ≥ 16 GiB RAM, an internal SSD/NVMe, wi
 ethernet, and a USB stick. A second disk makes M4 and M5 meaningful.
 
 **M1 — flash and boot.** Write the image to the USB stick. Disable Secure Boot in firmware,
-then boot the target from it. Expected: reaches userspace. Secure Boot support is deferred past
-2.0.0 to `v2.x - post-GA` (#2187); the KVM boot row records the current failure.
+then boot the target from it. Expected: reaches userspace. Secure Boot support is deferred through
+2.0.1 and planned for 2.0.2 (#2187); the KVM boot row records the current failure.
 
 **M2 — discovery.** Read the token from the console, then find the box from another machine
 at `http://pithead.local` and at the IP it printed. Expected: both load the token gate, and
@@ -536,12 +536,12 @@ channels share the final cut commit, one version and one GitHub Release.
    operator-visible change included since prep and set its heading to the current UTC date.
    `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
    cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
-   submit two independent bench-ci `tier4-kvm` jobs on this exact SHA, with
-   `timeout_minutes=240` each: `boot,update,install,provision` and
-   `rig,rigmedia,media,fault,reset,image-upgrade,stack`. Record both job IDs in the release issue.
-   Follow [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not)
-   for wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel
-   either KVM group. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
+   submit the four bench-ci `tier4-kvm` jobs on this exact SHA from
+   [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not):
+   the boot and rig groups, the provision job against the seeded baseline and the crossupdate job
+   from the previous release. Record every job ID in the release issue. Follow the same section for
+   wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel any KVM
+   job. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
    refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
    A distro build reports different findings over the same files, so a skew reds the cut for

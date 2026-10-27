@@ -235,7 +235,10 @@ its Keep it / Set up again screen exactly when `saved-role.json` exists (`saved_
 | `saved-role.json` | host | present only on a set-up-again boot: `{role, pool, worker}` for a rig, `{role}` for a coordinator, never a secret |
 | `keep-role` | page | Keep it: the host ends the session with nothing on `/data` touched, the unit exits, pithead-boot runs the normal boot |
 
-Set up again is the ordinary submit. A rig accepted with the same worker name keeps its
+Set up again is the ordinary submit. On an installed coordinator, an accepted browser
+submission calls the confirmed setup worker after the credential handoff. It can re-provision
+the saved deployment without a terminal prompt; direct headless `pithead setup` still refuses
+an existing deployment, even with `PITHEAD_SETUP_AGAIN=1`. A rig accepted with the same worker name keeps its
 `access_token` (`firstboot_consume_rig` carries it over); any other change mints a new one on the
 next render. `record_machine_role` removes `rig.json` when the accepted role is not `rig`, so a
 role's data goes with the role. A coordinator's `config.json` is NOT removed by a change to `rig`:
@@ -453,15 +456,18 @@ Five steps, each answering a hardware-validated failure:
    exactly that on hardware: new slot, RC-old dashboard, every shipped fix absent). Keyed on
    the archive's digest, recorded beside the store it describes; a normal boot pays one
    sha256 per archive. The first-boot wizard runs the same loader before it serves, so both
-   boot owners converge the same way.
+   boot owners converge the same way. Harness marker variants are signed before Compose
+   digest pinning; the archive and runtime declaration select that same final image.
 2. **`pithead render`** — regenerate every *derived* file (`.env`, Caddyfile, service configs,
    host units) from `config.json` plus the program that is actually running. Derived files are
    never inspected or repaired, only rebuilt: an A/B update swaps the whole program, and a
    bench machine once served a days-old Caddyfile whose site list predated the code around it.
    On the read-only root, host units render into `/run/systemd/system` (`--runtime`
    enablement) and are recreated here each boot.
-3. **`pithead up`** — compose owns the containers' lifecycle, and recreates containers when
-   an image behind a constant tag changed identity. After each compose pass it renames a
+3. **`pithead up`** — start the selected services, compare each container's immutable image
+   ID with its Compose image declaration, and force recreation of mismatches. Verify the
+   replacement ID before reporting success; a failed comparison or recreation fails boot
+   before slot commit. Services held for data migration stay deferred until commit. After each compose pass it renames a
    container that an interrupted recreate left under its temporary `<id>_<service>` name,
    once the old container no longer holds the name. Its predecessor, `podman-restart`,
    started the stack into its own oneshot cgroup, and systemd SIGKILLed the containers it

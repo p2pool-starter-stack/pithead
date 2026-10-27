@@ -32,7 +32,15 @@ def test_virtualenv_security_floor():
         lock = tomllib.load(source)
     packages = [package for package in lock["package"] if package["name"] == "virtualenv"]
     assert packages
-    assert all(Version(package["version"]) >= Version("21.14.9") for package in packages)
+    assert all(Version(package["version"]) >= Version("21.14.13") for package in packages)
+
+
+def test_filelock_security_floor():
+    with (Path(__file__).resolve().parents[1] / "uv.lock").open("rb") as source:
+        lock = tomllib.load(source)
+    packages = [package for package in lock["package"] if package["name"] == "filelock"]
+    assert packages
+    assert all(Version(package["version"]) >= Version("4.2.1") for package in packages)
 
 
 def test_requests_bundle_excludes_compromised_emsign_root():

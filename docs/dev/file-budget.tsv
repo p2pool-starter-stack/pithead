@@ -58,7 +58,6 @@ tests/os/appliance-node-runtime-leg.sh	448
 tests/os/failure-evidence.sh	567
 tests/os/phases/install-restore.sh	414
 tests/os/phases/update.sh	413
-tests/os/provision-browser-submit.sh	407
 tests/os/selftest-run-modules.sh	462
 tests/stack/appliance/test-appliance-boot-remint.sh	445
 tests/stack/appliance/test-appliance-boot.sh	639
