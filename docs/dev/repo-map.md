@@ -98,7 +98,9 @@ Configless shutdown and the local reset destination record are in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the
 lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure controls in
 `tests/integration/selftest/selftest-reset-restore.sh`. Shared web ownership checks are in
-`tests/integration/lib/reset-restore-web.sh`. The startup-window restore fixture is
+`tests/integration/lib/reset-restore-web.sh`. Host-miner startup and worker-return checks are in
+`tests/integration/lib/reset-restore-miner.sh`, with lifecycle logic covered by
+`tests/os/selftest-local-miner-up.sh`. The startup-window restore fixture is
 `tests/integration/lib/reset-restore-startup.sh`, with the guest-only pause in
 `tests/os/wizard-startup-guest.sh` and pure controls in `tests/os/selftest-wizard-startup.sh`.
 Consecutive status censuses are in
