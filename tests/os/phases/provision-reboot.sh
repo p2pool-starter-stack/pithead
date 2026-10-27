@@ -62,6 +62,7 @@ _phase_provision_reboot() {
         bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
         return 1
     fi
+    assert_console_login "provision reboot" || return 1
     tries=0
     local answered=0
     while [ "$tries" -lt 36 ]; do

@@ -103,9 +103,7 @@ _stack_run_integration() { # <label> <extra args...>
             sed 's/\x1b\[[0-9;]*m//g' "$f" | head -n 60
         done
     fi
-    # The merge-mining round-trip's row rides along on a pass too: it is the one row whose verdict
-    # (a chain_id read from the Tari node, #1397/#2326) is this channel's evidence on its own.
-    grep -a -e 'of which:' -e '(#1397)' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
+    grep -a -e 'of which:' -e '(#1397)' -e '(#3078)' -e 'stratum control' -e 'stratum fixture' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         info "  [$label] ${line#*ITEST] }"
     done
     rm -f "$out"
@@ -241,6 +239,22 @@ _provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user
     fi
 }
 
+_stack_container_restart_leg() {
+    local payload out rc=0
+    payload=$(base64 <"$SCRIPT_DIR/container-restart-leg.sh" | tr -d '\n')
+    out=$(mktemp)
+    SSH_TIMEOUT=480 _ssh "printf %s '$payload' | base64 -d | bash" >"$out" 2>&1 || rc=$?
+    if [ "$rc" -eq 0 ] && grep -Fq 'restart detection leg: PASS' "$out"; then
+        ok "status and doctor detect an observed Caddy crash loop and recover after restoration (#3391)"
+    else
+        [ "$rc" -ne 0 ] || rc=1
+        bad "status and doctor did not prove Caddy crash-loop detection and recovery (#3391, exit $rc)"
+        sed 's/\x1b\[[0-9;]*m//g' "$out" | tail -n 20
+    fi
+    rm -f "$out"
+    return "$rc"
+}
+
 phase_stack() {
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
@@ -257,28 +271,16 @@ phase_stack() {
         return 1
     }
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
+    _stack_container_restart_leg || return 1
 
-    # The DIY gate itself: a non-destructive read, then the destructive phases the appliance
-    # channel has never run — its first live coverage of each (#2062). The two parity rows this
-    # guest cannot satisfy are named, with their own issues, after the invocations below.
-    #
-    # Every invocation below names --scenario (or, for --check, returns before the matrix is
-    # even reached). Without one, tests/integration/run.sh's own default is to iterate its FULL
-    # 15-scenario matrix first — almost all of it monero.mode=local, which this remote-node-only
-    # guest can only run by starting a local monerod from scratch each time. That cost over two
-    # hours and starved xvb-routing-smoke of its own budget the first time this ran for real
-    # (#2062); the local matrix is the DIY gate's own job on its own bench, not this phase's.
     local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
-    # --check needs the remote endpoints too, not just the scenario runs: run-state.sh reads
-    # $REMOTE_MONERO_HOST with no fallback for the ZMQ probe, so without them it dials an empty
-    # host and reports connect-refused against a node that is in fact publishing. Job 397 proved
-    # it both ways in one run — the same two ZMQ rows passed in the scenario leg, which carries
-    # these flags, and failed in this one, which did not.
     _stack_run_integration "check (non-destructive live-state assertion)" --check "${remote_extra[@]}"
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \
         --lifecycle --fault-injection --hardening --auth-fail-closed
+    _stack_run_integration "stratum password and TLS clients" \
+        --scenario remote-main-stratum-tls "${remote_extra[@]}"
     # Two more parity rows from #2062's table are deliberately NOT driven here, because this guest
     # cannot satisfy their inputs and a row that cannot pass proves nothing where it sits:
     #   * remote-tari-main-secure sets monero.mode=local (tests/integration/scenarios.sh), so it
