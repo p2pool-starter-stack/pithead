@@ -1,6 +1,13 @@
-# Describe a changed env key for the apply preview. Prints "FLAG\tmessage"; always returns 0.
 describe_change() {
     local key="$1" old="$2" new="$3" flag="INFO" msg
+    if [ "${TARI_MODE:-}" = off ]; then
+        case "$key" in
+        TARI_GRPC_ADDRESS | TARI_CLEARNET_SYNC)
+            printf 'INFO\t%s' "Tari setting $key is inactive while merge-mining is off; Tari will not run."
+            return
+            ;;
+        esac
+    fi
     if describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
         printf '%s\t%s' "$flag" "$msg"
         return
@@ -37,12 +44,17 @@ describe_change() {
         fi
         ;;
     TARI_MODE)
-        # The Tari half of the row above, where the MODE is legible (#1929). CONFIRM not DEST on
-        # #1888's reasoning: the container stops, its chain data is KEPT, the same route reverses it.
         flag=CONFIRM
         case "$new" in
         off) msg="Tari merge-mining OFF ($old → off) — p2pool stops merge-mining and any local tari container is stopped and removed. Its chain data on disk is KEPT, so turning Tari back on resumes instead of re-syncing." ;;
-        local) msg="Tari merge-mining ON, local node ($old → local) — the tari container starts and SYNCs the chain (large download / disk use) unless its data dir already holds one." ;;
+        local)
+            msg="Tari merge-mining ON, local node ($old → local) — the tari container starts and SYNCs the chain (large download / disk use) unless its data dir already holds one."
+            if [ "$(config_bool '.tari.clearnet_initial_sync' false 2>/dev/null)" = true ]; then
+                local sync_line
+                sync_line=$(describe_change TARI_CLEARNET_SYNC false true)
+                msg+=" ${sync_line#*$'\t'}"
+            fi
+            ;;
         *) msg="Tari merge-mining ON, external node ($old → remote) — p2pool merge-mines against the node at tari.remote; no tari container runs on this host." ;;
         esac
         [ "$new" == off ] || msg+=" Monero mining continues; merge-mining starts when Tari has synced (on an already-mining machine)."
@@ -149,7 +161,14 @@ describe_change() {
         msg="$key: $old → $new — the service will use the new (empty) directory and re-sync; old data is left in place."
         ;;
     P2POOL_FLAGS | P2POOL_PORT)
-        msg="P2Pool sidechain changing ($key: '$old' → '$new') — p2pool re-syncs the new sidechain and your PPLNS window resets."
+        local selector='(^|[[:space:]])--(mini|nano)([[:space:]]|$)' old_pool=main new_pool=main
+        [[ "$old" =~ $selector ]] && old_pool="${BASH_REMATCH[2]}"
+        [[ "$new" =~ $selector ]] && new_pool="${BASH_REMATCH[2]}"
+        if [ "$key" = P2POOL_PORT ] || [ "$old_pool" != "$new_pool" ]; then
+            msg="P2Pool sidechain changing ($key: '$old' → '$new') — p2pool re-syncs the new sidechain and your PPLNS window resets."
+        else
+            msg="P2Pool peer routing changed — proxy routing, DNS lookups and IP visibility to peers follow the new settings; the $new_pool sidechain stays selected."
+        fi
         ;;
     MONERO_NODE_HOST | MONERO_RPC_PORT | MONERO_ZMQ_PORT | TARI_GRPC_ADDRESS)
         flag=CONFIRM msg="${key%%_*} node endpoint ($key): ${old:-unset} → $new — the stack points its RPC client THERE and trusts the chain data, block templates and share heights that address returns. Confirm-gated, not free-commit, because it moves TRUST rather than disk; the host probes the new endpoint before accepting it, and putting the old address back reverses it."
