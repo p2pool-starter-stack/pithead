@@ -341,8 +341,7 @@ ensure_appliance_dashboard_password() {
     user=$(jq -r '.dashboard.auth.username // "admin"' "$config")
     tmp=$(mktemp) || return 1
     if jq --arg u "$user" --arg p "$gen" '.dashboard.auth = {username: $u, password: $p}' "$config" >"$tmp" && mv "$tmp" "$config"; then
-        _console "" "Dashboard login for this machine:" "    user: $user" "    password: $gen" \
-            "Write this down — it is also in config.json on the machine."
+        _console "Generated dashboard login is ready in the authenticated setup page."
         return 0
     fi
     rm -f "$tmp"
