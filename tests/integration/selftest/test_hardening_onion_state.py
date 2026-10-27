@@ -263,7 +263,7 @@ class CheckerScopeTests(unittest.TestCase):
         self.git("update-ref", "refs/remotes/origin/develop", "HEAD")
         self.write_commit("lane-runtime.py")
         self.git("branch", "lane-base")
-        self.write_commit("tests/integration/probe.sh")
+        self.write_commit("tests/integration/run.sh")
         helper = Path("tests/integration/lib/hardening_onion_state.py")
         helper.parent.mkdir(parents=True)
         helper.write_bytes(SOURCE.read_bytes())
