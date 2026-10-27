@@ -3,6 +3,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 port = int(sys.argv[1])
 
@@ -44,6 +45,22 @@ def diagnostic_counter(value):
     return None
 
 
+def stratum_sample():
+    try:
+        with Path("/app/stats/local/stratum").open("rb") as source:
+            raw = source.read(65537)
+        data = json.loads(raw) if len(raw) <= 65536 else None
+        if not isinstance(data, dict):
+            raise ValueError
+    except (OSError, ValueError):
+        return {"source_status": "unavailable"}
+    return {
+        "source_status": "read",
+        "source_hashes": diagnostic_counter(data.get("total_hashes")),
+        "source_shares": diagnostic_counter(data.get("total_shares")),
+    }
+
+
 def wait_mining(start, timeout, phase, allow_reset=False):
     initial = start.get("stratum", {}).get("total_hashes", 0)
     began = time.monotonic()
@@ -61,6 +78,7 @@ def wait_mining(start, timeout, phase, allow_reset=False):
                 "mining sample "
                 + json.dumps(
                     {
+                        **stratum_sample(),
                         "phase": phase,
                         "elapsed_seconds": int(now - began),
                         "workers": diagnostic_counter(workers),

@@ -137,7 +137,7 @@ esac
 
 
 class OccupiedStratumProofTest(unittest.TestCase):
-    def exercise(self, samples, config_errors=()):
+    def exercise(self, samples, config_errors=(), stratum_source=None):
         clock = [0]
         state_reads = [0]
         previews = []
@@ -169,12 +169,18 @@ class OccupiedStratumProofTest(unittest.TestCase):
         def sleep(seconds):
             clock[0] += seconds
 
+        def read_source(*args, **kwargs):
+            if stratum_source is None:
+                raise FileNotFoundError
+            return io.BytesIO(stratum_source.encode())
+
         error = None
         with (
             patch("sys.argv", ["occupied-stratum.py", "443"]),
             patch("urllib.request.urlopen", side_effect=respond),
             patch("time.monotonic", side_effect=lambda: clock[0]),
             patch("time.sleep", side_effect=sleep),
+            patch("pathlib.Path.open", side_effect=read_source),
             contextlib.redirect_stdout(output),
         ):
             try:
@@ -285,6 +291,33 @@ class OccupiedStratumProofTest(unittest.TestCase):
         self.assertIn('"snapshot_changed": false', output)
         self.assertEqual(previews, [])
         self.assertIn("before occupied-port preview", error)
+
+    def test_source_progress_does_not_pass_a_stale_dashboard(self):
+        error, previews, output = self.exercise(
+            [(1, 100), (1, 102), (1, 102)],
+            stratum_source=json.dumps({"total_hashes": 200, "total_shares": 7}),
+        )
+        self.assertEqual(previews, [2])
+        self.assertIn("after occupied-port refusal", error)
+        self.assertIn('"source_hashes": 200', output)
+        self.assertIn('"source_shares": 7', output)
+
+    def test_source_diagnostics_are_bounded_and_do_not_expose_raw_data(self):
+        marker = "untrusted-marker"
+        for raw, expected in (
+            (marker, "unavailable"),
+            (json.dumps({"total_hashes": marker, "wallet": marker}), "read"),
+            (json.dumps({"total_hashes": 200, "extra": marker * 5000}), "unavailable"),
+            ("[]", "unavailable"),
+            (None, "unavailable"),
+        ):
+            with self.subTest(raw_type=type(raw).__name__):
+                error, previews, output = self.exercise([(1, 100)], stratum_source=raw)
+                self.assertNotIn(marker, output)
+                self.assertEqual(previews, [])
+                self.assertIn("before occupied-port preview", error)
+                self.assertIn(f'"source_status": "{expected}"', output)
+                self.assertNotIn('"source_hashes": 200', output)
 
 
 if __name__ == "__main__":
