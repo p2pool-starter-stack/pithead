@@ -47,18 +47,6 @@ for key in monero.view_key dashboard.energy.cost_per_kwh workers.list docs/confi
 done
 
 echo "== black-box: 'pithead setup' completes end-to-end from a wizard-produced config (#502) =="
-# Everything above drives the wizard sub-functions directly (sourced). Nothing drives the actual
-# command an operator runs — this is the gap. ensure_config_exists refuses a piped, non-interactive
-# run OUTRIGHT when config.json is missing ([ ! -t 0 ] -> error, pithead ~L2118) — that gate is
-# deliberate (don't silently generate a config from a script with no human reading the prompts), and
-# it's exactly why the wizard functions were split out for testing (the comment above
-# ensure_config_exists says so) rather than something to fake a tty around here. So: produce
-# config.json the same piped-stdin way the wizard tests above do (proving the Q&A -> config path,
-# same as W1), THEN hand it to the real `setup` command, which skips straight past that gate
-# ([-f "$CONFIG_FILE"] short-circuit) and drives its own two remaining prompts (dashboard hostname,
-# "start now?") from stdin like any other `read -r -p`. Same docker/sudo-stubbed sandbox as the apply
-# black-box tests above; --skip-deps/--skip-optimize keep it host-safe (no apt/GRUB/sysctl edits);
-# declining "start now?" stops short of actually bringing containers up.
 SU="$SANDBOX/setup-e2e"
 mkdir -p "$SU/build/tari" "$SU/dashboard"
 : >"$SU/dashboard/Dockerfile"

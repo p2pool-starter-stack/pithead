@@ -120,9 +120,6 @@ render_env() {
         p2pool_flags="${p2pool_flags:+$p2pool_flags }--light-mode"
     fi
 
-    # Route outbound sidechain P2P through Tor by default (#165); p2pool.clearnet opts out for yield.
-    # See p2pool_outbound_flags + docs/privacy.md. Uses the configured subnet so a custom NETWORK_PREFIX
-    # (#180) still points at the Tor container (.25).
     local p2pool_socks
     p2pool_socks=$(p2pool_outbound_flags "$(jq -r '.p2pool.clearnet // false' "$CONFIG_FILE")" "$NETWORK_PREFIX")
     [ -n "$p2pool_socks" ] && p2pool_flags="${p2pool_flags:+$p2pool_flags }$p2pool_socks"

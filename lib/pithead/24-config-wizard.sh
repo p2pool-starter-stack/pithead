@@ -34,11 +34,6 @@ ensure_config_exists() {
     log "$CONFIG_FILE created successfully."
 }
 
-# Stage 1 (required — only the operator can answer these): the Monero payout address, local/remote
-# node (+ remote details), the Tari merge-mining question (delegated to wizard_ask_tari), pool tier,
-# and a generated dashboard login (with an explicit opt-out). Sets globals consumed by wizard_write_config: IN_MONERO_WALLET,
-# MONERO_MODE_WIZ, REMOTE_HOST, REMOTE_RPC, REMOTE_ZMQ, IN_MONERO_USER, IN_MONERO_PASS, POOL_TIER,
-# IN_DASH_USER, IN_DASH_PASS — plus wizard_ask_tari's own.
 wizard_ask_core() {
     while :; do
         read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || break
@@ -92,10 +87,6 @@ wizard_ask_core() {
 
 }
 
-# A port answer, or the default when the answer is blank or is not a port. Every port prompt here
-# feeds `jq --argjson`, which aborts the whole wizard on anything that is not a number — after the
-# operator has already answered every other question. Same shape as the browser wizard's own
-# build_config port() helper, and used by all three prompts, not just the new one.
 wizard_port() {
     is_valid_port "$1" && printf '%s' "$1" || printf '%s' "$2"
 }

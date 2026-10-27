@@ -292,6 +292,8 @@ rm -f "$ADSB/spool/auth-mode"
 printf '{"monero":{"wallet_address":"x"},"dashboard":{"auth":{"username":"admin"}}}' >"$ADSB/config.json"
 PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" ensure_appliance_dashboard_password "$ADSB/spool" >/dev/null 2>&1
 PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" apply_appliance_defaults >/dev/null 2>&1
+assert_eq "generated browser login uses admin" "$(jq -r .dashboard.auth.username "$ADSB/config.json")" admin
+assert_eq "generated browser password has 32 characters" "$(jq -r '.dashboard.auth.password | length' "$ADSB/config.json")" 32
 assert_eq "a generated login leaves the machine configurable" "$(jq -r '.dashboard.control.enabled' "$ADSB/config.json")" "true"
 rm -rf "$ADSB"
 unset ADSB

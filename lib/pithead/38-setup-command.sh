@@ -54,8 +54,6 @@ setup() {
     update_current_symlink    # #455: versioned deploy dir -> maintain the `current ->` pointer
 
     log "Deployment preparation complete!"
-    # Provisioning is done. Everything below is either a message or an interactive "start now?",
-    # so the hold ends here; the stack_up it may call takes its own.
     mutation_lock_release
     announce_dashboard_url
     [ -z "${IN_DASH_PASS:-}" ] || wizard_print_pointer

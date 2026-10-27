@@ -100,8 +100,6 @@ assert_contains "remote Monero: Monero's chain drops out of the budget" \
     "$(wt_run note-remote "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\nn\nnode.example.com\n\n\nn\n1\n\n\n\n\n\n\n")" "needs ~208 GiB"
 
 echo "== unit: an explicit answer beats the disk-derived default, both ways (#1916) =="
-# The probe picks the DEFAULT, never the answer. An operator with a big disk who does not want Tari
-# and one with a small disk who has an external drive in mind must both be able to say so.
 c="$(
     wt_run roomy-declined "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n1\n\n\n\n\n\n\n\n" >/dev/null
     wt_cfg roomy-declined

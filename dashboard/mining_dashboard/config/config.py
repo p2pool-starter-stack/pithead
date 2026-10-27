@@ -154,12 +154,6 @@ ENABLE_XVB = (
 
 TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "socks5h://172.28.0.25:9050")
 
-# Route XvB DONATION MINING through Tor by default too (#166), not just the stats fetch (#163): while
-# donating, the proxy connects to na.xmrvsbeast.com, which would otherwise expose the host IP. The
-# algo controller sets this host:port as the XvB pool's per-pool `socks5` field (xmrig-proxy resolves
-# that pool's DNS proxy-side). `xvb.tor: false` opts out (direct, for max yield). The host:port is
-# derived from TOR_SOCKS_PROXY (so a custom subnet, #180, carries through) with the scheme stripped —
-# xmrig wants a bare host:port.
 XVB_TOR_ENABLED = os.environ.get("XVB_TOR_ENABLED", "true").lower() == "true"
 DONATION_ENABLED = (
     os.environ.get("DONATION_ENABLED", str(default_of("donation.enabled"))).lower() == "true"

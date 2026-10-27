@@ -327,27 +327,20 @@ wizard_mint_cert() { # <spool-dir>  -> prints the fingerprint
     printf '%s' "$fp"
 }
 
-# An appliance gets a dashboard login whether or not the onion is on.
-#
-# ensure_onion_password only fires for the onion, so a LAN appliance shipped an UNAUTHENTICATED
-# dashboard — and the setup page told the operator a login had been generated. Both setup
-# wizards now generate a login by default; the appliance honors its explicit opt-out. The credential is
-# generated on the machine and printed to its console and the authenticated handoff page.
-ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_FILE]
+ensure_appliance_dashboard_password() {
     local config="${2:-$CONFIG_FILE}"
     [ -f "$config" ] || return 0
     [ -z "$(jq -r '.dashboard.auth.password // ""' "$config")" ] || return 0
-    # The operator's explicit "no login" is honoured — an empty password is also what "not
-    # chosen" looks like, so the choice cannot live in the config and rides beside it.
     if [ -n "${1:-}" ] && [ "$(wizard_spool_read "$1" auth-mode 2>/dev/null)" = "none" ]; then
         warn "Dashboard login disabled at the operator's request — anyone on this network can open it."
         return 0
     fi
     local gen tmp user
-    gen=$(generate_node_password) || return 1 # 32 alnum: clears the >=16 floor, no quotes, no weak pattern
+    gen=$(generate_node_password) || return 1
+    [[ "$gen" =~ ^[A-Za-z0-9]{32}$ ]] || return 1
     user=$(jq -r '.dashboard.auth.username // "admin"' "$config")
     tmp=$(mktemp) || return 1
-    if jq --arg p "$gen" '.dashboard.auth.password = $p' "$config" >"$tmp" && mv "$tmp" "$config"; then
+    if jq --arg u "$user" --arg p "$gen" '.dashboard.auth = {username: $u, password: $p}' "$config" >"$tmp" && mv "$tmp" "$config"; then
         _console "" "Dashboard login for this machine:" "    user: $user" "    password: $gen" \
             "Write this down — it is also in config.json on the machine."
         return 0

@@ -44,6 +44,9 @@ def explicit_wizard_config(cfg: dict, ref: dict) -> dict:
         block, key = path.split(".")
         if isinstance(cfg.get(block), dict) and key in cfg[block]:
             written.setdefault(block, {})[key] = cfg[block][key]
+    auth = cfg.get("dashboard", {}).get("auth")
+    if isinstance(auth, dict) and auth.get("password") == "":
+        written.setdefault("dashboard", {}).setdefault("auth", {})["password"] = ""
     return written
 
 

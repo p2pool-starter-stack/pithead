@@ -68,5 +68,33 @@ for row in "remote off false 3" "local off false 8" "local local false 14" "loca
     jq --arg monero "$monero" --arg tari "$tari" --argjson miner "$miner" '.monero.mode=$monero | .tari.mode=$tari | .local_miner.enabled=$miner' "$AD/base.json" >"$AD/config.json"
     assert_eq "mode-aware memory floor $row" "$(run_sourced "$AD" low_ram_floor_gb)" "$expected"
 done
+build_val_sandbox
+seed_env
+dashboard_pass="$(run_sourced "$V" generate_node_password)"
+assert_eq "diagnostic fixture uses a generated password" "$(printf %s "$dashboard_pass" | wc -c | tr -d ' ')" 32
+jq --arg p "$dashboard_pass" '.dashboard.auth={username:"admin",password:$p}' "$AD/base.json" >"$V/config.json"
+(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y >"$V/apply.log" 2>&1)
+assert_rc "password-bearing diagnostics fixture applies" "$?" 0
+status_out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead status 2>&1 || true)"
+assert_contains "status reached service diagnostics" "$status_out" "Service health check"
+assert_not_contains "status never prints dashboard password" "$status_out" "$dashboard_pass"
+doctor_out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead doctor 2>&1 || true)"
+assert_contains "doctor reached diagnostics summary" "$doctor_out" "Diagnostics summary"
+assert_not_contains "doctor never prints dashboard password" "$doctor_out" "$dashboard_pass"
+(cd "$V" && PATH="$V/bin:$PATH" ./pithead doctor --json >"$V/doctor.json" 2>"$V/doctor.err") || true
+assert_eq "doctor JSON contains checks" "$(jq -r 'has("checks")' "$V/doctor.json")" true
+assert_not_contains "doctor JSON never prints dashboard password" "$(cat "$V/doctor.json" "$V/doctor.err")" "$dashboard_pass"
+(cd "$V" && PATH="$V/bin:$PATH" ./pithead support-bundle >"$V/bundle.log" 2>&1)
+assert_rc "support bundle succeeds" "$?" 0
+bundle_tar=$(find "$V" -maxdepth 1 -name 'support-bundle-*.tar.gz' | head -1)
+assert_contains "support bundle exists" "$bundle_tar" "support-bundle-"
+mkdir -p "$V/extracted"
+tar -xzf "$bundle_tar" -C "$V/extracted"
+assert_rc "support bundle extracts" "$?" 0
+if grep -r -F -q -- "$dashboard_pass" "$V/extracted"; then
+    bad "support bundle never contains dashboard password" "generated password found"
+else
+    assert_rc "support bundle never contains dashboard password" "$?" 1
+fi
 printf 'automatic defaults: %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

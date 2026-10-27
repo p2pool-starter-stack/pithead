@@ -302,8 +302,6 @@ class TestCoreKeys:
 
 
 class TestEditableKeys:
-    """Policy metadata lets the Configuration view disable paths the host would refuse (#613)."""
-
     def test_editable_keys_served_on_read_config(self, spool, tmp_path, monkeypatch):
         from mining_dashboard.config.defaults import effective_defaults
 
