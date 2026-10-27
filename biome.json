@@ -5,6 +5,7 @@
     "includes": [
       "dashboard/mining_dashboard/web/static/**/*.{js,mjs,css}",
       "dashboard/tests/browser/*.mjs",
+      "tests/os/*.mjs",
       "!dashboard/mining_dashboard/web/static/vendor"
     ]
   },
