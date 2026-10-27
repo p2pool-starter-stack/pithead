@@ -1,14 +1,5 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Doctor domain, appliance half (#1105 Phase 1, module 7): engine-aware checks (container_engine /
-# docker_boot_enabled), `doctor --json` + support-bundle, the wipe-note surfaced through doctor,
-# and the appliance-only control-unit-location and certificate SAN/expiry checks. Sourced by
-# tests/stack/run.sh after lib.sh. (Two check_appliance_cert sections — "excludes proxy_net's
-# gateway live" and "WARNs when the engine can't be asked" — stay in run.sh: they sit inside, and
-# share fixtures with, the appliance certificate MINT/render block (appliance_mint_cert,
-# generate_caddyfile's SAN agreement, the re-mint-on-change guard) that isn't otherwise splitting,
-# and extracting only the doctor-facing half of that block would fragment it. The map's
-# "certificate SAN/expiry" item is still fully covered by the SAN-coverage/expiry section below.)
 
 echo "== unit: engine-aware doctor checks (#77 phase 2) =="
 # Same check names and verdict semantics on both engines; PITHEAD_ENGINE pins the appliance.
