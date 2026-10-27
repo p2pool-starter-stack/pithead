@@ -22,7 +22,6 @@ def build_config(
         }
     )
     cfg["p2pool"] = {
-        "pool": s_("pool") or default_of("p2pool.pool", platform),
         "stratum_password": secrets.token_hex(12)
         if form.get("stratum_password") == "true"
         else default_of("p2pool.stratum_password", platform),

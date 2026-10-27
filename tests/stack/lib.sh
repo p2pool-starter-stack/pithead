@@ -378,4 +378,5 @@ run_wizard() {
     wizard_ask_core
     wizard_ask_shape
     wizard_write_config
+    wizard_print_pointer
 }

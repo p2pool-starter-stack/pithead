@@ -36,7 +36,7 @@ setup() {
     preflight_resources          # WARN-only: low disk/RAM heads-up before committing to a sync (#87)
     check_stratum_exposure setup # WARN-only: public-IP host => unauthenticated stratum :3333 exposed (#113)
     load_preserved_state
-    resolve_dashboard_host "interactive"
+    resolve_dashboard_host
     reconcile_appliance_hostname
     prepare_directories
     render_env    # bootstrap .env so Tor (and compose var substitution) have what they need
@@ -58,6 +58,7 @@ setup() {
     # so the hold ends here; the stack_up it may call takes its own.
     mutation_lock_release
     announce_dashboard_url
+    [ -z "${IN_DASH_PASS:-}" ] || wizard_print_pointer
     if [ "$REBOOT_REQUIRED" = true ]; then
         echo -e "\n${C_YELLOW}[!] ATTENTION: System optimization requires a reboot.${C_RESET}"
         echo "Please run: 'sudo reboot' now."

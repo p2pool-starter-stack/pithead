@@ -115,3 +115,17 @@ out="$(run_sourced "$C" describe_change P2POOL_PORT 37888 37890)"
 assert_contains "pool port change retains the PPLNS reset warning (#3382)" "$out" "PPLNS window resets"
 
 unset -f preview_only previewed_with preview_without exposure_previews
+
+exposure_previews "donation enabling names project routing" '.donation.enabled=true' "Project donation set to true"
+exposure_previews "donation percentage change names the percentage" '.donation.percent=5' "5 percent"
+exposure_previews "donation off Tor names IP exposure" '.donation.tor=false' "project endpoint sees this host's IP"
+jq '.donation.enabled=true' "$C/config.json" >"$C/cand.json"
+preview_only "$C/cand.json"
+printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
+run_pending >/dev/null
+assert_contains "donation commit needs typed APPLY" "$(jq -r .error "$RESULTS/$UUID5.json")" "type APPLY"
+gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'
+assert_eq "donation enabling commits with typed APPLY" "$(jq -r .status "$RESULTS/$UUID5.json")" applied
+assert_eq "donation change was saved" "$(jq -r .donation.enabled "$C/config.json")" true
+jq 'del(.donation)' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'

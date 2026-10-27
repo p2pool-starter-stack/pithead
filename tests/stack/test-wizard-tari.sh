@@ -103,7 +103,7 @@ echo "== unit: an explicit answer beats the disk-derived default, both ways (#19
 # The probe picks the DEFAULT, never the answer. An operator with a big disk who does not want Tari
 # and one with a small disk who has an external drive in mind must both be able to say so.
 c="$(
-    wt_run roomy-declined "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n1\nnano\n\n\n\n\n\n\n" >/dev/null
+    wt_run roomy-declined "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n1\n\n\n\n\n\n\n\n" >/dev/null
     wt_cfg roomy-declined
 )"
 assert_eq "answering 1 on a roomy host still declines" "$(jq -r '.tari.mode' <<<"$c")" "off"
@@ -147,9 +147,9 @@ assert_contains "and the refusal names the answer that avoids it" "$out" "Answer
     bad "a refused Tari answer writes no config.json" "a file was written at $WT/yes-no-address/config.json"
 
 echo "== unit: wizard fast sync warns for local chains and excludes remote chains =="
-out="$(wt_run fast "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n2\n$VALID_TARI\n\n\n\ny\n\n\n\n")"
+out="$(wt_run fast "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n2\n$VALID_TARI\ny\n\n\n\n")"
 assert_contains "fast sync warns about both networks" "$out" "exposes your IP address to the Monero network and the Tari network until the initial sync finishes"
-out="$(wt_run private "$WT_SMALL_KB" "$WT_SMALL_H" "$WALLET\n\n1\n\n\nnone\n\n\n\n\n")"
+out="$(wt_run private "$WT_SMALL_KB" "$WT_SMALL_H" "$WALLET\n\n1\n\n\n\n\n\n")"
 c="$(wt_cfg private)"
 assert_eq "explicit no-login choice remains available" "$(jq -r '.dashboard | has("auth")' <<<"$c")" "false"
 assert_eq "new install writes private keys for both chains" "$(jq -rc '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$c")" '[false,false]'

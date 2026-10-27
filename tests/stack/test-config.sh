@@ -656,6 +656,11 @@ if bash "$ROOT/tests/stack/standalone/test_config_defaults.sh"; then
 else
     bad "shared defaults and v2.0.0 compatibility contracts" "See the failed standalone assertions above."
 fi
+if bash "$ROOT/tests/stack/config/automatic-defaults.sh"; then
+    ok "automatic defaults and donation validation"
+else
+    bad "automatic defaults and donation validation" "See standalone assertions above."
+fi
 echo "== unit: config.core-keys.json — valid JSON, stays inside config.reference.json (#502/#529) =="
 CORE_KEYS="$(jq -r '.[]' "$ROOT/config.core-keys.json" 2>/dev/null)"
 if [ -z "$CORE_KEYS" ]; then

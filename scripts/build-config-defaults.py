@@ -29,7 +29,7 @@ def artifacts() -> dict[Path, str]:
             },
         )
         result[ROOT / filename] = json.dumps(config, indent=2) + "\n"
-    runtime = {key: TABLE[key] for key in ("values", "appliance", "materialize")}
+    runtime = {key: TABLE[key] for key in ("values", "appliance", "materialize", "runtime")}
     runtime["LEGACY_ABSENT"] = [
         {key: value for key, value in entry.items() if key != "retired_by"}
         for entry in TABLE["LEGACY_ABSENT"]

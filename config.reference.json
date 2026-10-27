@@ -26,6 +26,11 @@
       "source": ""
     }
   },
+  "donation": {
+    "enabled": false,
+    "percent": 2,
+    "tor": true
+  },
   "monero": {
     "wallet_address": "your_monero_wallet_address",
     "view_key": "",

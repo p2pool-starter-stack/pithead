@@ -97,3 +97,24 @@ class TestStateApi:
         assert "error" in body
         assert "SECRET internal detail" not in str(body)  # no leak
         assert "X-Frame-Options" in resp.headers  # headers still applied
+
+
+async def test_state_exposes_pool_suggestion_without_changing_tier(aiohttp_client):
+    import time
+
+    sm = StateManager(db_path=":memory:")
+    now = time.time()
+    sm.state["hashrate_history"] = [
+        {"timestamp": now - 86401, "v": 5000},
+        {"timestamp": now, "v": 5000},
+    ]
+    data = {"p2pool": {"type": "Main"}}
+    cli = await aiohttp_client(create_app(sm, data))
+    body = await (await cli.get("/api/state")).json()
+    assert body["pool_tier_suggestion"] == {
+        "tier": "nano",
+        "hashrate_24h": 5000,
+        "provisional": True,
+    }
+    assert data["p2pool"]["type"] == "Main"
+    sm.close()

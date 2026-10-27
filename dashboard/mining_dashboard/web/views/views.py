@@ -28,6 +28,7 @@ from mining_dashboard.helper.utils import (
 )
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics
+from mining_dashboard.service.pool_tier import suggest_pool_tier
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.network.topology import topology_from_config
 from mining_dashboard.version import resolve_version
@@ -240,13 +241,6 @@ def read_os_update_state() -> dict | None:
 
 
 def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASHRATE_WINDOW):
-    """Assemble the full ``/api/state`` payload — the contract the client renders against.
-
-    ``window`` is an optional ``(from, to)`` epoch-second manual-zoom window (Issue #47) that
-    overrides ``range_arg`` for the chart. ``avg_window`` (#168) picks which hashrate-averaging
-    window the chart plots. Computes domain values once (``build_metrics``), then
-    formats each section. Every value is a JSON-serializable primitive, list or dict. May raise
-    (e.g. ``state_mgr.get_history`` failing); the caller turns that into a sanitized 500."""
     data = data or {}
     history = state_mgr.get_history()
     share_stats = state_mgr.get_share_stats()  # per-poll share-health deltas (#116)
@@ -349,6 +343,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "sync": build_sync(metrics, pool_net["monero"]["db_size"]),
         "stratum": pool_net["stratum"],
         "pool": pool_net["pool"],
+        "pool_tier_suggestion": suggest_pool_tier(history, metrics.pool_type),
         "network": pool_net["network"],
         "monero": pool_net["monero"],
         "shares_window": pool_net["shares_window"],

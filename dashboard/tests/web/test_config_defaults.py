@@ -131,3 +131,18 @@ async def test_sparse_browser_submit_materializes_defaults_without_replacing_ans
         if explicit == "legacy" and path == "xvb.enabled":
             expected = True
         assert written[block][key] == expected
+
+
+@pytest.mark.parametrize("platform", ["diy", "appliance"])
+def test_donation_is_dark_on_all_new_install_paths(platform):
+    for cfg in (
+        new_install_defaults(platform),
+        build_config({}, platform=platform),
+        new_machine_answers({}, [], platform),
+    ):
+        effective = effective_defaults(platform)
+        effective.update(cfg)
+        assert effective["donation"] == {"enabled": False, "percent": 2, "tor": True}
+    reference = effective_defaults(platform)
+    assert "pool" not in build_config({}, platform=platform)["p2pool"]
+    assert reference["workers"]["api_port"] == 8080

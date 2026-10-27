@@ -31,8 +31,8 @@ async def hostname_client(tmp_path, monkeypatch):
 async def test_new_machine_serves_named_default_and_form_fallback_maps_it(hostname_client):
     client, _spool = hostname_client
     state = await (await client.get("/api/wizard-state")).json()
-    assert state["config"]["dashboard"]["host"] == "pithead"
-    assert build_config({})["dashboard"]["host"] == "pithead"
+    assert state["config"]["dashboard"]["host"] == "auto"
+    assert build_config({})["dashboard"]["host"] == "auto"
     assert build_config({"machine_name": "garden-box"})["dashboard"]["host"] == "garden-box"
 
 
