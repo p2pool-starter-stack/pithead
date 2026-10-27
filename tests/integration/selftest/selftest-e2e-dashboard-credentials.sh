@@ -111,6 +111,7 @@ run_case() {
     [ "$IT_DASHBOARD_PASSWORD" = ambient-fixture-value ] || fail 'dashboard credential escaped invocation scope'
     return "$rc"
 }
+echo "== e2e dashboard credential forwarding and failure handling =="
 for mode in targeted check; do
     run_case "$mode" "$FIXTURE_EXPECTED" 0 || fail "$mode lost the dashboard credential"
     grep -Fq '/metrics serves pithead_ samples through Caddy' "$scratch/results/e2e-harness.log" || fail 'authenticated metrics did not execute'
