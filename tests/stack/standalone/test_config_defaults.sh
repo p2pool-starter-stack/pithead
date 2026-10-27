@@ -2,6 +2,7 @@
 set -euo pipefail
 # shellcheck source=tests/stack/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib.sh"
+bash "$ROOT/tests/stack/config/automatic-defaults.sh" || exit 1
 echo "== unit: shared defaults exports, setup parity and v2.0.0 compatibility =="
 if python3 "$ROOT/scripts/build-config-defaults.py" --check; then
     ok "defaults exports match the canonical table"

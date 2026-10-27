@@ -102,5 +102,63 @@ if grep -r -F -q -- "$dashboard_pass" "$V/extracted"; then
 else
     assert_rc "support bundle never contains dashboard password" "$?" 1
 fi
+parity_generate_password() { printf AbcD1234efGH5678ijKL9012mnOP3456; }
+parity_wizard() {
+    generate_node_password() { parity_generate_password; }
+    default_node_username() { printf fixture-node; }
+    run_wizard
+}
+parity_finalize() {
+    _console() { :; }
+    generate_node_password() { parity_generate_password; }
+    default_node_username() { printf fixture-node; }
+    ensure_appliance_dashboard_password
+    parse_and_validate_config
+}
+for parity_platform in diy appliance; do
+    parity_flag=0
+    [ "$parity_platform" != appliance ] || parity_flag=1
+    parity_dir="$SANDBOX/parity-$parity_platform"
+    mkdir -p "$parity_dir/cli" "$parity_dir/browser" "$parity_dir/form"
+    printf '%s\\n\\n\\n\\n\\n\\n\\n' "$VALID_PRIMARY" |
+        PITHEAD_APPLIANCE="$parity_flag" run_sourced "$parity_dir/cli" parity_wizard >"$parity_dir/cli.log" 2>&1
+    assert_rc "$parity_platform CLI defaults generate" "$?" 0
+    for parity_kind in browser form; do
+        python3 - "$ROOT/dashboard" "$parity_platform" "$parity_kind" "$VALID_PRIMARY" >"$parity_dir/$parity_kind/config.json" <<'PYTHON'
+import json
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from mining_dashboard.config.defaults import effective_defaults, merge
+from mining_dashboard.wizard.defaults import explicit_wizard_config, new_machine_answers
+from mining_dashboard.wizard.form import build_config
+from mining_dashboard.wizard_config import prepare_config
+
+platform, kind, wallet = sys.argv[2:]
+reference = effective_defaults(platform, legacy=True)
+for chain in ("monero", "tari"):
+    reference[chain]["wallet_address"] = ""
+if kind == "browser":
+    cfg = merge(reference, new_machine_answers({}, [], platform))
+    cfg["monero"]["wallet_address"] = wallet
+else:
+    cfg = build_config({"monero_wallet": wallet}, platform=platform)
+cfg, _ = prepare_config(cfg, reference, reject_legacy_conflicts=True)
+print(json.dumps(explicit_wizard_config(cfg, reference)))
+PYTHON
+        assert_rc "$parity_platform $parity_kind defaults generate" "$?" 0
+    done
+    for parity_kind in cli browser form; do
+        make_stubs "$parity_dir/$parity_kind/bin"
+        PATH="$parity_dir/$parity_kind/bin:$PATH" PITHEAD_APPLIANCE="$parity_flag" run_sourced "$parity_dir/$parity_kind" parity_finalize >"$parity_dir/$parity_kind.finalize.log" 2>&1
+        assert_rc "$parity_platform $parity_kind defaults validate" "$?" 0
+        parity_defaults=$(PITHEAD_APPLIANCE="$parity_flag" run_sourced "$parity_dir/$parity_kind" config_defaults legacy)
+        jq -S --argjson defaults "$parity_defaults" '$defaults * .' "$parity_dir/$parity_kind/config.json" >"$parity_dir/$parity_kind.effective.json"
+        assert_rc "$parity_platform $parity_kind effective config is complete" "$?" 0
+    done
+    for parity_kind in browser form; do
+        assert_eq "$parity_platform $parity_kind complete config matches CLI" "$(cat "$parity_dir/$parity_kind.effective.json")" "$(cat "$parity_dir/cli.effective.json")"
+    done
+done
 printf 'automatic defaults: %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

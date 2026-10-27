@@ -4,7 +4,7 @@ This runbook describes an operator-hosted P2Pool mini endpoint for XMRig donatio
 
 ## Operating boundary
 
-Use a dedicated public project payout address for the endpoint. Keep it separate from personal payout addresses, and do not co-host personal addresses on the endpoint. Run the endpoint outside the home network. Expose the P2Pool mini Stratum endpoint through a Tor onion service only; do not publish a clearnet Stratum address.
+Follow the operating policy in [issue #3699](https://github.com/p2pool-starter-stack/pithead/issues/3699). Use a dedicated public project payout address for the endpoint; P2Pool payouts and wallet addresses are public ([pinned README](https://github.com/SChernykh/p2pool/blob/v4.18.1/README.md#general-considerations)). Keep it separate from personal payout addresses, and do not co-host personal addresses on the endpoint. Run the endpoint outside the home network. Expose the P2Pool mini Stratum endpoint through a Tor onion service only; do not publish a clearnet Stratum address.
 
 Per-pool SOCKS and onion behavior has not been measured in a deployed endpoint; verify routing and reachability from the running host before accepting traffic. The pinned P2Pool release is v4.18.1 ([build pin](../../build/p2pool/Dockerfile), [command-line reference](https://github.com/SChernykh/p2pool/blob/v4.18.1/docs/COMMAND_LINE.MD)). `--mini` selects the mini sidechain, `--wallet` selects the Monero payout address, `--stratum` sets the Stratum listener, `--socks5` routes outgoing connections through SOCKS5, and `--onion-address` advertises the node's onion address. Confirm the deployed release and rendered arguments before changing these settings.
 
