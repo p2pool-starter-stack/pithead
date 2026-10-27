@@ -247,7 +247,10 @@ rootfs, and `tests/os/build-label-boot-leg.sh` checks first-menu serial titles.
 
 The mini-stack's `test-boot-health-proxy.sh` renders Caddy against the real dashboard;
 `boot-health-proxy.py` verifies boot-probe accounting and network forgery controls,
-including the loopback upstream supplied by `boot-health-front-proxy.py`.
+including the loopback upstream supplied by `boot-health-front-proxy.py`. A fresh log
+volume and `caddy-auth-upstream.py` then isolate the login contract: missing/wrong/correct
+credentials, the authenticated actor replacing a spoofed header, and the real audit
+parser reading Caddy timestamps, methods, URIs, usernames and exactly two failures.
 The provision reboot leg streams `tests/os/boot-probe-evidence.py` into the deployed
 dashboard using the same retained-log reader as the summary to check the current boot
 marker, header redaction and zero failures, then

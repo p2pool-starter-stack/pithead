@@ -108,6 +108,10 @@ A [rig](../README.md#glossary) is a machine that only mines.
 - Both changes are in the change history, with the right user and outcome.
 - Mining continues throughout.
 
+**Automated boundary:** `tests/integration/mini-stack/test-boot-health-proxy.sh` proves
+that Caddy forwards the authenticated name and overwrites a spoofed actor header.
+The complete change-history outcome and mining-continuity scenario remains manual.
+
 **Record:** PASS, FAIL or N/A in the results sheet.
 
 ### S7 — Remote check-in
