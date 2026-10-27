@@ -480,8 +480,8 @@ The final summary carries the same missing/by-design/covered skip vocabulary as 
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than
 re-implemented so the two tier-4 summaries read the same way (#2064). It prints the three buckets
 separately — scenarios, phases, legs — and the class breakdown under them in the integration
-summary's own wording, so the two can be compared line for line. A green `--phase all` ends with
-its four skip rows accounted like this:
+summary's own wording, so the two can be compared line for line. For a run with no other skips,
+the rig and update phases contribute four skip rows:
 
 ```
 os harness: <N> passed, 0 failed
@@ -489,13 +489,17 @@ skipped: 0 scenarios, 0 phases, 4 legs
   of which: 2 missing (an input would have run it), 1 by-design (this run's mode excludes it), 1 covered elsewhere
 ```
 
-The pass total is the part that tracks the run; the four skip rows are what `--phase all`
-enumerates — the rig phase's one by-design row, the update phase's two missing rows, and leg 4's
-covered row. Narrower invocations print a subset: `--phase update` drops the rig phase's
-by-design row (`3 legs`, `2 missing, 0 by-design, 1 covered`), and `--phase rig` prints that row
-alone. These totals assume update leg 4 reaches its commit verdict; otherwise its covered row
-becomes missing. The provision phase's reserved-node row is a mandatory assertion, including
-when the node requires an RPC login; missing required inputs fail rather than add a skip.
+These four rows are the rig phase's one by-design row, the update phase's two missing rows,
+and leg 4's covered row. `--phase update` contributes three rows (`2 missing, 0 by-design,
+1 covered`), and `--phase rig` contributes the by-design row. These counts assume update leg 4
+reaches its commit verdict; otherwise its covered row becomes missing.
+
+Conditional skips add to these counts. Without Node.js on the harness host, the rig phase adds
+one missing leg for the card's rendered text. Without reserved Monero-node inputs, it adds two
+missing legs for coordinator mining and recovery after a coordinator power cut. Other phases
+also count their unavailable-fixture skips. The provision phase's reserved-node row is a
+mandatory assertion, including when the node requires an RPC login; missing required inputs
+fail rather than add a skip.
 
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer
