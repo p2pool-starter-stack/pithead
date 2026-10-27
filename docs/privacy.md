@@ -196,6 +196,7 @@ What the running stack sends to the internet, connection by connection.
 | Dashboard **XvB raffle registration** (#263) | `xmrvsbeast.com` | your Monero **wallet** (no longer your IP) | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled; fires once you have a PPLNS share | `XVB_ENABLED=false`, or set `XVB_SUBMIT_URL` to a disable sentinel (`off`), to stop it |
 | Dashboard **XvB winners fetch** (raffle-wins display) | `xmrvsbeast.com` | nothing — the winners file is public and the request carries no wallet | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
 | **XvB donation mining** (only while donating) | `na.xmrvsbeast.com:4247` via Tor | — | ✅ **Tor** (per-pool `socks5`, DNS proxy-side) by default (#166) | on while donating | opt out with `xvb.tor: false` (exposes IP for max yield); `xvb.enabled: false` stops it entirely |
+| **Project donation mining** (only while donating) | Project stratum endpoint; destination pending publication | Connection timing, shares and hashrate; public IP only when direct clearnet routing is chosen; no donor payout address, worker names or per-donor label | Tor by default; onion uses no exit, clearnet uses an exit | **off**, hidden while destination constants are empty | `donation.enabled: false` stops slices within one 10-minute cycle; `donation.tor: false` chooses direct routing for clearnet only → [disclosure](#project-donation-mining) |
 | Dashboard **XvB warm-standby pull** (#249) | the primary stack you named | nothing about you — the primary sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) for an onion or any source not provably private; only a private, loopback or link-local IP *literal* dials direct as a LAN hop (a hostname can't be proven private without DNS, so it rides Tor) | opt-in (`xvb.standby.source`; off until set) | unset `xvb.standby.source` to stop it |
 | Dashboard **update check** (#224, plus the per-worker RigForge badge #596) | `api.github.com` | nothing about you — GitHub sees a **Tor exit**, not your IP; the RigForge check sends no rig versions, it only reads the latest release | ✅ Tor (`socks5h`) | **on** | `dashboard.check_for_updates: false` opts out of both; cached, fails silently offline |
 | **Caddy** TLS (dashboard HTTPS) | local only | — | n/a — `tls internal`, **no ACME / no external CA** | on | clean (no egress) |
@@ -321,6 +322,24 @@ stops the (already Tor-routed, #163) stats fetch.
 > NOTE: the xmrig-proxy dev-fee `--donate-level` is pinned to `0` by default (`proxy.donate_level`,
 > rendered explicitly per #173) and does not ride the XvB pool's `socks5`, so if you set it above 0,
 > that dev-fee traffic goes clearnet. Keep it at `0` for a fully Tor runtime.
+
+### Project donation mining
+
+The [optional project donation](donation.md) is off by default. It ships with empty
+destination constants; the setting and runtime egress row remain hidden until a release
+publishes a destination. Recipient, project address and endpoint kind: **pending publication**.
+This documents supported routing, not a live project endpoint.
+
+An onion endpoint requires Tor and uses no exit relay. `donation.tor: false` cannot make
+an onion directly reachable. A clearnet endpoint uses Tor by default, so its operator sees
+a Tor exit address; choosing direct routing with `donation.tor: false` exposes your public
+IP. Both endpoint kinds are supported; the proposed project deployment is onion-only.
+
+The connection sends no donor payout address, worker names or per-donor label. The endpoint
+can see connection timing, submitted shares and implied hashrate. Set `donation.enabled`
+to `false` and apply to stop project slices within one 10-minute cycle. If the endpoint is
+down, the slice ends and rigs return to P2Pool. See [cost](donation.md#cost), [receipt verification](donation.md#verify-receipts)
+and the [FAQ](faq.md#is-the-project-donation-mandatory); miner fees and XvB remain separate.
 
 ---
 

@@ -108,6 +108,14 @@ earns nothing extra. See
 [Architecture › Algorithmic switching](architecture.md#algorithmic-switching) and the `xvb.*`
 keys in [Configuration](configuration.md#configuration-reference).
 
+### Is the project donation mandatory?
+
+No. It is off by default and hidden until a release publishes the project destination.
+It sends a chosen time slice of hashrate to the project, reducing the time earning your
+own P2Pool payouts. It is separate from XvB, XMRig's developer fee and `proxy.donate_level`.
+See [Project donation](donation.md) for cost estimates, receipt verification and how to stop
+it, and [Privacy](privacy.md#project-donation-mining) for the route disclosure.
+
 ### Do I have to sign up for the XvB raffle?
 
 No, there's no manual signup. With `xvb.enabled: true`, the stack auto-registers your wallet in
