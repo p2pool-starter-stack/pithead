@@ -28,6 +28,9 @@ pithead/
 └── .github/              CI, templates, and ownership
 ```
 
+The [project donation planner](project-donation-planner.md) defines the pure
+cycle planner, simulator and provisional policy for the dark feature.
+
 Configuration defaults live in `dashboard/mining_dashboard/config/defaults.json`.
 `scripts/build-config-defaults.py` exports the embedded CLI table in
 `lib/pithead/19a-config-defaults.sh`, the legacy-compatible `config.reference.json`, and
