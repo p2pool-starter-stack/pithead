@@ -26,6 +26,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }
         it_log() { :; }
         it_step() { :; }
+        backup_prune() { :; }
         it_pass() { :; }
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
@@ -36,6 +37,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }
         pithead() {
             [ "$RESTORE_CASE:$1:$PUSH_COUNT" != carry-apply-fails:down:3 ] || trace_lifecycle carry-cleanup-down
+            [ "$RESTORE_CASE:$1" = archive-missing:backup ] || [ "$1" != backup ] || printf '[pithead] Backup written to: backups/pithead-backup-test.tar.gz\n'
             case "$RESTORE_CASE:$1" in
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
                 echo 'carry apply failed before health wait'
