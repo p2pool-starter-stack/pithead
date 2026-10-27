@@ -45,11 +45,8 @@ class OnionStateTests(unittest.TestCase):
 
     def docker(self, args, **_kwargs):
         self.commands.append(args)
-        if args[1] == "ps":
-            return SimpleNamespace(stdout="synthetic\n")
-        if args[1] == "inspect":
-            return SimpleNamespace(stdout=json.dumps([{"Mounts": self.mounts}]))
-        return SimpleNamespace(stdout="")
+        outputs = {"ps": "synthetic\n", "inspect": json.dumps([{"Mounts": self.mounts}])}
+        return SimpleNamespace(stdout=outputs.get(args[1], ""))
 
     def save(self):
         with redirect_stdout(io.StringIO()) as output:
@@ -83,8 +80,7 @@ class OnionStateTests(unittest.TestCase):
         self.assertFalse(snapshot.exists())
 
     def test_historical_disabled_identity_is_restored_with_metadata(self):
-        target = self.tor / "dashboard"
-        target.mkdir(mode=0o700)
+        (target := self.tor / "dashboard").mkdir(mode=0o700)
         (target / "key").write_text("original identity\n")
         (target / "key").chmod(0o600)
         original = state.identity(target)
@@ -104,14 +100,12 @@ class OnionStateTests(unittest.TestCase):
         self.assertEqual(self.env.read_bytes(), self.original)
 
     def test_tmpfs_has_no_host_source_and_does_not_expose_snapshot(self):
-        mounted = self.root / "mounted"
-        mounted.mkdir()
+        (mounted := self.root / "mounted").mkdir()
         self.mounts = [
             {"Type": "tmpfs", "Source": "", "Destination": "/tmp"},  # noqa: S108
             {"Type": "bind", "Source": str(mounted)},
         ]
-        snapshot = self.save()
-        self.assertTrue(snapshot.is_dir())
+        self.assertTrue(self.save().is_dir())
 
     def test_symlink_identity_and_damaged_snapshot_are_refused(self):
         (self.tor / "dashboard").symlink_to(self.root, target_is_directory=True)
@@ -136,6 +130,13 @@ class OnionStateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsafe recovery"):
             state.load(snapshot)
         backups.chmod(0o700)
+        preserved = backups.rename(self.root / "preserved-backups")
+        backups.symlink_to(preserved, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "noncanonical"):
+            state.load(snapshot)
+        self.assertTrue((preserved / snapshot.name).is_dir())
+        backups.unlink()
+        preserved.rename(backups)
         config, info = state.configuration(self.root)
         wrong = SimpleNamespace(st_uid=info.st_uid + 1, st_gid=info.st_gid)
         with patch.object(state, "configuration", return_value=(config, wrong)):
@@ -155,8 +156,7 @@ class OnionStateTests(unittest.TestCase):
             state.load(relocated)
 
     def test_legacy_checkout_root_snapshot_can_be_cleaned(self):
-        snapshot = self.save()
-        legacy = snapshot.rename(self.root / snapshot.name)
+        legacy = (snapshot := self.save()).rename(self.root / snapshot.name)
         metadata, target = state.load(legacy)
         state.verify(legacy, metadata, target)
         with patch.object(state.sys, "argv", ["state", "cleanup", str(legacy)]):
@@ -336,9 +336,10 @@ class CheckerScopeTests(unittest.TestCase):
         self.write_commit("lane-runtime.py")
         self.git("branch", "lane-base")
         self.write_commit("tests/integration/run.sh")
-        helper = Path("tests/integration/lib/hardening_onion_state.py")
-        helper.parent.mkdir(parents=True)
-        helper.write_bytes(SOURCE.read_bytes())
+        for source in [SOURCE, *SOURCE.parents[3].glob("lib/pithead/[15]0-[ic]*.sh")]:
+            target = Path(source.relative_to(SOURCE.parents[3]))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
 
     def git(self, *args):
         return RUN(

@@ -71,6 +71,11 @@ def drive(
         helper = box / "tests/integration/lib/hardening_onion_state.py"
         helper.parent.mkdir(parents=True)
         helper.write_text(Path("tests/integration/lib/hardening_onion_state.py").read_text())
+        for name in ("10-installer-preseed.sh", "50-control-runner-provisioning.sh"):
+            source = Path("lib/pithead") / name
+            target = box / source
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
         before_env = (box / ".env").read_bytes()
         for path, body in (
             (box / "pithead", PITHEAD),

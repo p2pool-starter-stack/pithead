@@ -51,12 +51,13 @@ _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
 }
 
 _remove_control_units() {
-    local cdir unit_dir snippet
+    local cdir snippet
     cdir="$(env_on_box CONTROL_DIR 2>/dev/null)" || cdir=""
-    unit_dir="${PITHEAD_UNIT_DIR:-/etc/systemd/system}"
     snippet='
         command -v systemctl >/dev/null 2>&1 || exit 0
-        ud=$HARDENING_EXPECTED_UNITS
+        source lib/pithead/10-installer-preseed.sh || exit 1
+        source lib/pithead/50-control-runner-provisioning.sh || exit 1
+        ud=$(control_unit_dir) || exit 1
         cdir=$HARDENING_EXPECTED_CONTROL
         service=$ud/pithead-control.service
         path=$ud/pithead-control.path
@@ -77,7 +78,7 @@ _remove_control_units() {
         fi
         [ ! -e "$path" ] && [ ! -e "$service" ]
     '
-    rx "HARDENING_EXPECTED_CONTROL=$(quote_arg "$cdir") HARDENING_EXPECTED_UNITS=$(quote_arg "$unit_dir") bash -c $(quote_arg "$snippet")"
+    rx "HARDENING_EXPECTED_CONTROL=$(quote_arg "$cdir") bash -c $(quote_arg "$snippet")"
 }
 
 # Tier-4 hardening phase (#377/#33/#424): the v1.4 host-mutation + hardening surfaces that ONLY a
