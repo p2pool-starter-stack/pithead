@@ -114,38 +114,23 @@ Add a scenario to `tests/integration/mini-stack/run-mini-stack.sh`: drive the fa
 
 ### Visual check (frontend, pre-PR)
 
-The `node --test` frontend suite renders components as strings, so it cannot see a layout bug —
-an overflowing table, a wrapped stat, a broken breakpoint. Before a PR that touches the
-dashboard's look, render the real frontend in a real browser against a canned `/api/state`
-payload — no docker, no stack. The fixture half lives in the repo:
-`tests/frontend/fixtures/_gen_state.py` writes `state.json`, a real `build_state()` payload (the
-exact contract the client renders). Regenerate it whenever the payload contract changes — a
-drift guard in `tests/web/views/test_views.py` reruns the generator and fails on any structural
-difference from the checked-in fixture, down to nested keys. Then serve the real app around it:
+The `node --test` frontend suite renders components as strings and cannot see CSS layout.
+Use the [viewport screenshot command](browser-testing.md#viewport-screenshots) to capture
+both themes at a phone or desktop width, then inspect the PNGs for overflowing tables,
+wrapped stats and broken breakpoints. Capture checks run in the browser suite; geometric
+regressions still need assertions for the affected element rather than image existence alone.
+
+The browser fixture serves production assets with `tests/frontend/fixtures/state.json`, a
+real `build_state()` payload. Regenerate it when the payload contract changes:
 
 ```bash
 cd dashboard
 uv run --extra test python tests/frontend/fixtures/_gen_state.py
-python3 - <<'EOF'
-import http.server, mimetypes
-from pathlib import Path
-mimetypes.add_type("text/javascript", ".mjs")
-web, fix = Path("mining_dashboard/web"), Path("tests/frontend/fixtures/state.json")
-class H(http.server.SimpleHTTPRequestHandler):
-    def translate_path(self, path):
-        p = path.split("?")[0]
-        if p.startswith("/api/state"): return str(fix)
-        if p.startswith("/static/"): return str(web / p.lstrip("/"))
-        return str(web / "templates/index.html")
-http.server.ThreadingHTTPServer(("127.0.0.1", 8000), H).serve_forever()
-EOF
 ```
 
-Open `http://127.0.0.1:8000` and eyeball the page at a desktop and a phone width (the browser's
-device toolbar is enough). Only `/api/state` is served — every other API call fails, which the
-page tolerates; the main view is the point. This is a manual pre-PR step, not a test tier: it has
-caught real bugs (a "≈ 0.0 blocks" display, a WebKit table overflow) that the string-render tests
-structurally cannot.
+The drift guard in `tests/web/views/test_views.py` compares the generated payload structure
+with the checked-in fixture, including nested keys. See [browser testing](browser-testing.md)
+for the shared fixture's API and live-acceptance limits.
 
 ## Conventions
 
@@ -198,9 +183,22 @@ dashboard/tests/browser/node_modules/.bin/playwright install chromium firefox we
 make test-browser
 ```
 
-On Linux, add `--with-deps` to the install command. The separate `browser.yml` workflow
-installs these dependencies and runs Chromium, Firefox, WebKit and mobile Chromium.
-Missing dependencies fail the suite. Pure frontend tests remain dependency-free.
+On Linux, add `--with-deps` to the local install command. The separate `browser.yml` workflow
+runs Chromium, Firefox, WebKit and mobile Chromium in the digest-pinned Playwright 1.64.0
+Noble image, matching the npm lockfile. The image supplies browsers and their system libraries;
+CI installs only Make, unzip and the locked npm packages before running `make test-browser`.
+This job uses the image's Node 24 and a root-owned `HOME` so Firefox can launch as the container user.
+Its existing 15-minute budget remains unchanged.
+
+Pinned Google Chrome runs the same HTTPS fixture in a separate `ubuntu-latest` host job with
+Node 20 and a seven-minute budget, preserving its host execution environment.
+Both jobs must succeed for the required `Browser user journeys` status; a failed, cancelled or
+skipped job fails that status. Each provisioning step has a two-minute limit. The Chrome download
+also has a 20-second connection limit and a 90-second transfer limit. A provisioning failure fails
+the job; a skipped assertion never counts as passing browser proof. Missing dependencies fail.
+`make test-tools` checks image/lock compatibility, both browser environments, provisioning bounds,
+required assertions, status aggregation and the PR trigger for both integration branches.
+Pure frontend tests remain dependency-free.
 See [browser testing](browser-testing.md) for focused runs, failure artifacts and coverage limits.
 The backup regression serves the production backup component over
 self-signed HTTPS, accepts the browser's certificate interstitial, and records the exact Chromium

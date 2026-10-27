@@ -13,6 +13,7 @@ source "$ROOT/lib/pithead/22a-config-document.sh"
 source "$ROOT/lib/pithead/49-control-request-loop.sh"
 # shellcheck source=lib/pithead/48b-control-tor-recover.sh
 source "$ROOT/lib/pithead/48b-control-tor-recover.sh"
+export CONTROL_HEAL_ONLY=true
 bundle_redact_log() { cat; }
 echo "== tor-recover accepts a sustained heal outage on a synchronized Monero =="
 mkdir -p "$WORK/tor/p2pool" "$WORK/control/audit" "$WORK/control/results" "$WORK/bin"
@@ -36,6 +37,7 @@ control_write_result() {
 tor_recovery_mount() { printf '%s\n' "$WORK/tor"; }
 env_get() {
     case "$1" in
+    DASHBOARD_CONTROL_ENABLED) printf 'false\n' ;;
     CONTROL_DIR) printf '%s\n' "$WORK/control" ;;
     TOR_AUTO_HEAL) printf 'true\n' ;;
     NETWORK_PREFIX) printf '172.28.0\n' ;;
@@ -132,6 +134,7 @@ control_process_request "$WORK/request.json" "$WORK/control"
 AUTO_HEAL_OFF=1
 env_get() {
     case "$1" in
+    DASHBOARD_CONTROL_ENABLED) printf '%s\n' "${GENERAL_CONTROL:-false}" ;;
     CONTROL_DIR) printf '%s\n' "$WORK/control" ;;
     TOR_AUTO_HEAL) if [ "${AUTO_HEAL_OFF:-0}" = 1 ]; then printf 'false\n'; else printf 'true\n'; fi ;;
     NETWORK_PREFIX) printf '172.28.0\n' ;;
@@ -140,6 +143,46 @@ env_get() {
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 AUTO_HEAL_OFF=0
+echo "== the actual No login drain derives restricted policy from host settings =="
+mkdir -p "$WORK/control/requests" "$WORK/control/staged"
+render_masked_config() { :; }
+control_redact_stale_kits() { :; }
+error() {
+    printf '%s\n' "$*" >&2
+    exit 1
+}
+drain_id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+reject_id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+jq --arg id "$drain_id" '.id=$id' "$WORK/request.json" >"$WORK/control/requests/1.json"
+jq -n --arg id "$reject_id" '{id:$id,action:"backup",actor:"tor-heal"}' >"$WORK/control/requests/2.json"
+CONTROL_HEAL_ONLY=false control_run_pending
+[ "$(jq -r .status "$WORK/control/results/$drain_id.json")" = applied ]
+jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/control/results/$reject_id.json" >/dev/null
+if (AUTO_HEAL_OFF=1 control_run_pending); then exit 1; fi
+echo "== disabling general control during a drain restricts the next request =="
+control_commit() {
+    GENERAL_CONTROL=false
+    control_write_result "$3/results" "$1" '{"status":"applied"}'
+}
+jq -n --arg id "$drain_id" '{id:$id,action:"commit",actor:"admin"}' >"$WORK/control/requests/1.json"
+jq -n --arg id "$reject_id" '{id:$id,action:"backup",actor:"tor-heal"}' >"$WORK/control/requests/2.json"
+GENERAL_CONTROL=true CONTROL_HEAL_ONLY=true control_run_pending
+[ "$(jq -r .status "$WORK/control/results/$drain_id.json")" = applied ]
+jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/control/results/$reject_id.json" >/dev/null
+echo "== No login rejects every unrelated action and non-healer actor =="
+for action in preview commit upgrade worker-apply worker-upgrade restart apply backup os-check os-download os-verify os-install os-reboot diag-doctor diag-logs onion-client-key egress-sync unknown; do
+    jq -n --arg id "$id" --arg action "$action" '{id:$id,action:$action,actor:"tor-heal"}' >"$WORK/unrelated.json"
+    control_process_request "$WORK/unrelated.json" "$WORK/control"
+    jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/result" >/dev/null
+done
+for action in tor-history tor-newnym tor-recover; do
+    jq -n --arg id "$id" --arg action "$action" '{id:$id,action:$action,actor:"operator"}' >"$WORK/unrelated.json"
+    control_process_request "$WORK/unrelated.json" "$WORK/control"
+    jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/result" >/dev/null
+    jq -n --arg id "$id" --arg action "$action" '{id:$id,action:$action,actor:"tor-heal"}' >"$WORK/off.json"
+    AUTO_HEAL_OFF=1 control_process_request "$WORK/off.json" "$WORK/control"
+    [ "$(jq -r .status "$WORK/result")" = rejected ]
+done
 jq '.extra="x"' "$WORK/request.json" >"$WORK/extra.json"
 control_process_request "$WORK/extra.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]

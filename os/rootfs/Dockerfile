@@ -1,92 +1,22 @@
-# pithead-os rootfs (#77 phase 2) — the appliance operating system as a container build,
-# exported to a tarball by os/build-image.sh (the Umbrel pattern) and turned into a bootable
-# image or an update bundle by os/rauc/mkimage.sh / os/rauc/mkbundle.sh.
-# Debian 13 + systemd + rootful Podman; pithead is the provisioning brain, Quadlet the runtime.
-# Deliberately updater-agnostic: the updater sits on top and is selected by PITHEAD_UPDATER
-# below, so swapping it does not touch this file (docs/dev/dual-distribution-plan.md
-# § appliance architecture).
-#
-# This file is named Dockerfile, not Containerfile, so Dependabot's docker ecosystem tracks the
-# base digest below (it only reads Dockerfile-named files — dependabot-core#6067); nothing else
-# cares about the name, build-image.sh passes the path with -f.
-# Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
-# bump is how base-distro CVE fixes reach the appliance (#833): there is no apt on the running
-# box — every Debian package here is frozen until the next bake.
-# ---------------------------------------------------------------------------------------------
-# Builder: docker-compose and cosign, compiled here rather than downloaded as upstream binaries.
-#
-# Both projects publish release binaries built on whatever Go toolchain they happened to use, and
-# that toolchain's stdlib CVEs become ours — baked into a read-only appliance image that cannot be
-# patched in place. In August 2026 that was nine fixable HIGH findings the scan gated on, and no
-# pin bump could clear them: cosign v3.1.3 (the newest release) ships built with go1.26.4, the same
-# toolchain as v3.1.2, and docker-compose v5.4.0 (the pin then) shipped go1.26.5 — both below the
-# go1.26.6 that carries the fixes. Verified by reading the build stamps out of the published
-# binaries, not from release notes. Waiting for upstream to rebuild is not a schedule we control,
-# so we compile them ourselves on a patched toolchain and the findings go away at the source.
-#
-# Provenance is not weakened by this, it moves: the old pin was a sha256 of a downloaded binary,
-# this one is an exact upstream COMMIT (never a tag — a tag can be re-pointed, the same reason
-# RIGFORGE_REF below pins a commit) plus Go module integrity from each project's own go.sum, EXCEPT
-# where GO_RAISES below lifts a module — read that block for what a raise actually costs, which is
-# wider than the modules it names. The build flags mirror each project's Makefile, so
-# `docker-compose version` reports the release it was built from; `cosign version` reports it with a
-# `+dirty` suffix, because raising a module edits go.mod and Go stamps that truthfully. It is also
-# why the tree state below says dirty: this binary IS built from a modified tree, and a build that
-# claimed otherwise would be lying about the provenance this paragraph exists to describe.
-FROM golang:1.26.9-trixie@sha256:f89535b7caea67fa9ff0ba009894bff8f3be915e49cb635477c8ce04e045db5d AS gobuild
+FROM golang:1.26.10-trixie@sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4 AS gobuild
 
 ARG COMPOSE_VERSION=v5.5.1
 ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
 ARG COSIGN_VERSION=v3.1.3
 ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
-# Security floors for each project's resolved Go module graph; upstream has not cut a
-# cosign release carrying these fixes and the CVE gate is not optional (#1153). Same reasoning as the patched
-# toolchain above, one level down: we compile from source, so the module graph is ours, and raising
-# the module beats muting the scanner. Per-binary because the findings differ, and EXACT versions
-# because `go get` will happily DOWNGRADE a module that is already newer.
-#
-#   golang.org/x/mod       v0.41.0   CVE-2026-56864 / CVE-2026-56865; indirect: cosign pins v0.37.0,
-#                                    compose v0.40.0; x/net v0.60.0 needs v0.41.0 in both.
-#   golang.org/x/net       v0.60.0   CVE-2026-78669 (HIGH), both: each selects v0.58.0. #3319.
-#   google.golang.org/grpc v1.83.2   CVE-2026-84445 (HIGH), both binaries. Third trip down this
-#                                    ladder: #1153's v1.82.1 (GHSA-hrxh-6v49-42gf) aged into
-#                                    CVE-2026-84304, whose v1.83.1 aged into this. #1655.
-#
-# WHAT A RAISE ACTUALLY MOVES: `go get X@v Y@v` upgrades the whole closure minimum-version selection
-# needs to satisfy X and Y. Compose already selects x/crypto v0.56.0; its former v0.55.0 would downgrade it.
-#
-# Every entry here is debt, not a feature: drop it the moment an upstream release makes it a no-op,
-# and delete its .config/trivyignore mute in the SAME change — a mute left over a finding you have just
-# fixed means the scan can no longer tell "fixed" from "hidden", which is how two obsolete mutes
-# survived in that file until #1153. Verify by re-running the scan against the built binaries with
-# NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
-# left two other HIGH findings standing.
 ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
+ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7"
 ENV CGO_ENABLED=0
 
-# Blobless clone then detach to the commit: the tag is only a convenience for the version string.
-#
-# The `describe --exact-match` line is what makes the pin a PAIR rather than two values that happen
-# to sit next to each other. `${COMPOSE_VERSION}` is only an ldflag, `${COMPOSE_COMMIT}` is what is
-# actually built, so bumping the version alone rebuilds the OLD code and stamps the NEW version on
-# it — and every downstream check agrees it worked: the build succeeds, `docker-compose version`
-# prints the new number, and scripts/watch/pin-watch.sh reads the VERSION ARG and reports the component
-# current for ever. Nothing else in the tree reads `${COMPOSE_COMMIT}` at all. The clone is blobless
-# but not shallow, so the tag objects are present and this costs nothing.
-RUN git clone --filter=blob:none --no-checkout https://github.com/docker/compose /src/compose \
-    && git -C /src/compose checkout --detach "${COMPOSE_COMMIT}" \
-    && { [ "$(git -C /src/compose describe --tags --exact-match "${COMPOSE_COMMIT}")" = "${COMPOSE_VERSION}" ] \
-        || { echo "COMPOSE_COMMIT ${COMPOSE_COMMIT} is not tag ${COMPOSE_VERSION} — a compose bump is TWO ARGs; resolve the pair with: gh api repos/docker/compose/commits/${COMPOSE_VERSION} --jq .sha" >&2; exit 1; }; } \
+COPY os/rootfs/fetch-go-source.sh /usr/local/bin/fetch-go-source
+
+RUN sh /usr/local/bin/fetch-go-source https://github.com/docker/compose /src/compose "${COMPOSE_COMMIT}" "${COMPOSE_VERSION}" \
     && go -C /src/compose get ${COMPOSE_GO_RAISES} \
     && go build -C /src/compose -trimpath -tags e2e \
         -ldflags "-w -X github.com/docker/compose/v5/internal.Version=${COMPOSE_VERSION}" \
         -o /out/docker-compose ./cmd
 
-RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosign /src/cosign \
-    && git -C /src/cosign checkout --detach "${COSIGN_COMMIT}" \
-    && { [ "$(git -C /src/cosign describe --tags --exact-match "${COSIGN_COMMIT}")" = "${COSIGN_VERSION}" ] \
-        || { echo "COSIGN_COMMIT ${COSIGN_COMMIT} is not tag ${COSIGN_VERSION} — a cosign bump is TWO ARGs; resolve the pair with: gh api repos/sigstore/cosign/commits/${COSIGN_VERSION} --jq .sha" >&2; exit 1; }; } \
+RUN sh /usr/local/bin/fetch-go-source https://github.com/sigstore/cosign /src/cosign "${COSIGN_COMMIT}" "${COSIGN_VERSION}" \
     && go -C /src/cosign get ${COSIGN_GO_RAISES} \
     && go build -C /src/cosign -trimpath \
         -ldflags "-buildid= -X sigs.k8s.io/release-utils/version.gitVersion=${COSIGN_VERSION} \
@@ -94,19 +24,12 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosig
             -X sigs.k8s.io/release-utils/version.gitTreeState=dirty" \
         -o /out/cosign ./cmd/cosign
 
-# Fail the build here rather than shipping a binary that cannot run: a wrong build path produces a
-# file that exists and does nothing useful, which every later stage would happily copy.
-#
-# The version has to be ASSERTED, not merely printed. `go build -ldflags "-X pkg.Var=value"` for a
-# symbol that no longer exists is silently ignored by the linker — no warning, no non-zero exit — so
-# if upstream renames the variable or the module path gains a /v6, the binary builds, reports its
-# built-in default (`dev`), and passes a bare `version` call. Measured on a mimic module built with
-# these exact flags: renaming the symbol changed the output to `dev` and left the exit code 0. That
-# string is a provenance guarantee this file makes further up, so a run that prints it is not the
-# same as a run that checks it. Printed first so the build log still shows the real output.
 RUN /out/docker-compose version && /out/cosign version \
     && /out/docker-compose version | grep -qF "${COMPOSE_VERSION}" \
-    && /out/cosign version | grep -qF "${COSIGN_VERSION}"
+    && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
+    && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.26.10" \
+    && go version /out/cosign | grep -qxF "/out/cosign: go1.26.10" \
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]'
 
 # ---------------------------------------------------------------------------------------------
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
@@ -150,19 +73,10 @@ RUN set -e; \
         git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
         linux-cpupower msr-tools $updater_packages; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
-# All appliance packages are installed and apt's temporary files removed in one layer. Marker
-# changes reuse this layer; a cold or evicted cache does not retain the apt lists in its snapshot.
 
-# The stack, at the image's exact release state: pithead + schemas + the build/ mount sources
-# services bind-mount. Context = repo root. BUILD_COMMIT: the commit built from — the artifact's own
-# answer to "did my change ship?". os/build/stage/: the compose file + its COMPOSE_SOURCE stamp — the
-# STACK_VERSION tag's copy when that tag exists, else the tree's (#1215, staged by build-image.sh).
 COPY os/rootfs/BUILD_COMMIT os/build/stage/docker-compose.yml os/build/stage/COMPOSE_SOURCE /opt/pithead/
-COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json config.minimal.json cosign.pub /opt/pithead/
-# ONLY the build/ paths services bind-mount at runtime (config templates and wrapper entrypoints).
-# dashboard/Dockerfile isn't among them (moved out of build/, #1106; see
-# KNOWN-ISSUES.md) — is_source_checkout() keys off its presence here, so shipping one by accident
-# would make the appliance think it's a dev checkout, tag :dev, never pull, and SKIP cosign.
+COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json cosign.pub /opt/pithead/
+COPY config.minimal.appliance.json /opt/pithead/config.minimal.json
 COPY build/monero/bitmonero.conf.template /opt/pithead/build/monero/bitmonero.conf.template
 COPY build/tari/ /opt/pithead/build/tari/
 COPY build/tari-wallet/ /opt/pithead/build/tari-wallet/
