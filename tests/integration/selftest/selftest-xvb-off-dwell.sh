@@ -141,6 +141,7 @@ fixture failed-evidence FAIL
 # Exercise both callers, so an unhooked assertion cannot silently pass CI.
 assert_running_state() { :; }
 assert_lan_guard_live() { :; }
+assert_lan_guard_marker_startup() { :; }
 pithead() { echo 'No configuration changes detected'; }
 assert_xvb_off_no_dwell_churn() { echo called >>"$td/calls"; }
 assert_egress_posture() { :; }
