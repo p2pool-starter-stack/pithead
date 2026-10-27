@@ -48,6 +48,27 @@ window.preview = initSovereign({ hasUnsavedChanges: () => dirty,
   ).toBe(true);
 });
 
+for (const required of [false, true]) {
+  test(`loading Tari ${required ? "gates" : "does not hide"} Monero sync progress`, async ({
+    page,
+    ui,
+  }) => {
+    ui.state.syncing = true;
+    ui.state.tari_gates_sync = required;
+    ui.state.db_healthy = true;
+    ui.state.monero.health.level = "unknown";
+    ui.state.badges = [{ text: "Syncing...", variant: "warn" }];
+    ui.state.sync = {
+      monero: { state: "syncing", percent: 42, current: 42, target: 100, remaining: 58 },
+      tari: { state: "loading", percent: 0, current: 0, target: 0, remaining: 0 },
+    };
+    await ui.openPreview();
+    await expect(
+      page.getByText(required ? "Syncing — progress unknown" : "Syncing 42%", { exact: true }),
+    ).toBeVisible();
+  });
+}
+
 for (const theme of ["light", "dark", "auto"]) {
   test(`lean shell navigation, native drawer and contrast in ${theme}`, async ({
     page,

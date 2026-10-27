@@ -25,8 +25,10 @@ take priority over the saved page; a saved page is used only when the URL has no
 query parameters remain intact when moving between pages. A profile reads **Profile not reported** until the profile is emitted by [#3557](https://github.com/p2pool-starter-stack/pithead/issues/3557).
 
 The status chip separates ordinary synchronization from faults and counts each attention condition
-once. While chains are synchronizing it shows the least complete unfinished chain; progress is
-unknown until every unfinished chain reports a percentage.
+once. While synchronizing it shows the least complete unfinished chain that gates mining: Monero,
+and Tari only when required without a Monero-only bypass. A loading optional or off Tari node does
+not hide known Monero progress. Progress is unknown when an unfinished gating chain has no reading.
+The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
 and asks the operator to sign in again when the session expires. Its page bodies and most Settings

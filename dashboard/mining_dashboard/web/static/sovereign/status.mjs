@@ -29,7 +29,9 @@ export function stackStatus(state, connected) {
   if (health === "red") problems.add("Monero chain unhealthy");
   if (problems.size) return { text: `Needs attention ${problems.size}`, level: "bad" };
   if (state.syncing) {
-    const pending = Object.values(state.sync || {}).filter((chain) => chain?.state !== "done");
+    const gating = [state.sync?.monero];
+    if (state.tari_gates_sync) gating.push(state.sync?.tari);
+    const pending = gating.filter((chain) => chain?.state !== "done");
     const percent =
       pending.length &&
       pending.every((chain) => chain?.state !== "loading" && Number.isFinite(chain?.percent))

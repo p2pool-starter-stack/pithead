@@ -58,11 +58,23 @@ test("nonblocking Tari sync is informational while Monero mining is healthy", ()
     assert.equal(stackStatus({ ...healthy, badges: [{ text, variant: "warn" }] }, true).text, "Healthy");
 });
 
-test("sync progress follows unfinished chains and does not invent a loading percentage", () => {
-  const state = { ...healthy, syncing: true, badges: [{ text: "Syncing...", variant: "warn" }] };
+test("sync progress follows only unfinished chains that gate mining", () => {
+  const state = { ...healthy, syncing: true, tari_gates_sync: true, badges: [{ text: "Syncing...", variant: "warn" }] };
   assert.equal(stackStatus({ ...state, sync: { monero: { state: "done", percent: 100 }, tari: { state: "syncing", percent: 42 } } }, true).text, "Syncing 42%");
   assert.equal(stackStatus({ ...state, sync: { monero: { state: "syncing", percent: 58 }, tari: { state: "syncing", percent: 42 } } }, true).text, "Syncing 42%");
   assert.equal(stackStatus({ ...state, sync: { monero: { state: "syncing", percent: 58 }, tari: { state: "loading", percent: 0 } } }, true).text, "Syncing — progress unknown");
+  assert.equal(stackStatus({ ...state, sync: { monero: { state: "syncing", percent: 58 } } }, true).text, "Syncing — progress unknown");
+});
+
+test("Tari off, optional or bypassed does not hide known Monero progress", () => {
+  for (const tari of [{ state: "loading", percent: 0, current: 0, target: 0, remaining: 0 }, { state: "syncing", percent: 12 }]) {
+    const state = { ...healthy, syncing: true, tari_gates_sync: false,
+      monero: { health: { level: "unknown" } },
+      sync: { monero: { state: "syncing", percent: 42, current: 42, target: 100, remaining: 58 }, tari } };
+    assert.equal(stackStatus(state, true).text, "Syncing 42%");
+    assert.equal(stackStatus({ ...state, sync: { ...state.sync, monero: { state: "syncing", percent: 0 } } }, true).text, "Syncing 0%");
+    assert.equal(stackStatus({ ...state, sync: { ...state.sync, monero: { state: "loading", percent: 0 } } }, true).text, "Syncing — progress unknown");
+  }
 });
 
 test("a malformed warning label still reports attention rather than breaking rendering", () => {
