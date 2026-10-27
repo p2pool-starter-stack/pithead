@@ -43,7 +43,7 @@ dockerfile="$ROOT/os/rootfs/Dockerfile"
 assert_eq "Compose release pin" "$(sed -n 's/^ARG COMPOSE_VERSION=//p' "$dockerfile")" "v5.5.1"
 assert_eq "Compose commit pin" "$(sed -n 's/^ARG COMPOSE_COMMIT=//p' "$dockerfile")" "5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de"
 assert_eq "Compose keeps only the x/mod, x/net and grpc floors" "$(sed -n 's/^ARG COMPOSE_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"'
-assert_eq "Cosign keeps the x/mod, x/net and grpc floors" "$(sed -n 's/^ARG COSIGN_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"'
+assert_eq "Cosign keeps the x/mod, x/net, grpc and compress floors" "$(sed -n 's/^ARG COSIGN_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7"'
 assert_eq "only the two live Trivy exceptions remain" \
     "$(grep -E '^CVE-' "$ROOT/.config/trivyignore")" \
     $'CVE-2026-23949\nCVE-2026-24049'
@@ -74,6 +74,8 @@ echo "== unit: verify-healthcheck-scripts against the real tree (#1098) =="
 bash "$ROOT/scripts/lint/verify-healthcheck-scripts.sh" >/dev/null 2>&1
 assert_rc "every real healthcheck script exists where its own Dockerfile promises (#1098)" "$?" "0"
 
+echo "== unit: image builds retry apt update (#1802) =="
+for image in monero p2pool xmrig-proxy; do assert_contains "image build retries apt update with delayed, bounded backoff (#1802)" "$(cat "$ROOT/build/$image/Dockerfile")" 'for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done'; done
 echo "== unit: patch-coverage overlap self-test (#1000) =="
 # diff-cover exits 0 on "No lines with coverage information" — a vacuous pass. The wrapper's
 # overlap check is what turns that into a loud not-applicable pass or a real failure; its

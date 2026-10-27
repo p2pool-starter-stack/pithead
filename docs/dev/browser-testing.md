@@ -36,12 +36,33 @@ cd dashboard/tests/browser
 
 The Playwright journeys run in Chromium, Firefox, WebKit and a mobile Chromium viewport.
 `make test-browser` also runs the separate Node HTTPS backup fixture in Chromium; CI repeats
-that fixture with pinned Google Chrome for Testing. It retains certificate interstitial acceptance,
+that fixture with pinned Google Chrome for Testing. Both retain certificate interstitial acceptance,
 22 MiB encrypted download integrity, decryption/member checks and transfer-failure retries.
-See [the testing guide](testing-guide.md#native-browser-regressions) for its prerequisites and limits. Mobile emulation
-checks the same actions at a narrow viewport; it is not physical-device acceptance or a visual
-screenshot comparison. Native chart rendering runs, but numerical chart contracts remain in the
-frontend tests. See [testing strategy](testing-strategy.md) for the CLI, KVM and e2e tiers.
+CI uses a [prebuilt Playwright environment](https://playwright.dev/docs/docker) whose version matches
+the locked runner for its supplied browsers, avoiding the full browser/system-library download.
+The pinned Google Chrome HTTPS fixture runs separately on the Ubuntu host with Node 20;
+the required browser status needs both jobs to succeed.
+See [the testing guide](testing-guide.md#native-browser-regressions) for provisioning limits,
+prerequisites and failure behavior. Mobile emulation checks the same actions at a narrow viewport;
+it is not physical-device acceptance or a visual screenshot comparison. Native chart rendering runs,
+but numerical chart contracts remain in the frontend tests.
+See [testing strategy](testing-strategy.md) for the CLI, KVM and e2e tiers.
+
+## Viewport screenshots
+
+Capture the dashboard fixture at a chosen width in CSS pixels:
+
+```bash
+cd dashboard/tests/browser
+PITHEAD_SCREENSHOT_WIDTH=390 ./node_modules/.bin/playwright test viewport.test.mjs --project=chromium
+```
+
+The command writes `dashboard-390-dark.png` and `dashboard-390-light.png` under the test's
+`test-results/` directories and attaches them to the HTML report. Change the positive integer
+width to inspect another breakpoint. Captures show the first 900 CSS pixels of the production
+dashboard with synthetic telemetry; they never contact a live stack. The default width is 390.
+The test checks the rendered theme, loaded worker and PNG dimensions. It runs in the existing
+browser suite, but does not compare screenshots or assert that every element fits its column.
 
 ## Fixtures and failures
 
@@ -80,4 +101,4 @@ credentials into traces. `PITHEAD_BROWSER_STATIC=/absolute/path/to/static` serve
 production assets for negative controls, such as the old OS-update Close implementation.
 A passing fixture suite does not replace manual GUI acceptance on an appliance and a disposable
 sandbox. Keep remaining acceptance linked to its product issue; #3068 tracks wider release-test
-automation debt, #3245 the appliance browser runner and #2402 viewport screenshots.
+automation debt and #3245 the appliance browser runner.

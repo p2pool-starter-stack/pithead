@@ -165,7 +165,8 @@ Maintenance:
                             intent and run 'apply --dry-run' (preview), 'apply -y' (commit),
                             or a release upgrade (target verified against the GitHub
                             release API host-side). Normally fired by the pithead-control
-                            systemd path unit when dashboard.control.enabled is true.
+                            systemd path unit when dashboard control or tor.auto_heal is
+                            enabled; with general control off, only Tor healing is allowed.
 
   egress-run-pending        Close completed clearnet-sync firewall exemptions when dashboard
                             control is off. Normally fired by pithead-egress-sync.path.
