@@ -155,11 +155,22 @@ async function setup(t, disableExtensions) {
   context.setDefaultTimeout(10000);
   const page = await context.newPage();
   const origin = `https://localhost:${server.address().port}`;
-  // Accept the self-signed certificate in the browser itself, without ignoreHTTPSerrors
-  // or a certificate-error launch switch (neither proves the operator's acceptance flow).
   await assert.rejects(page.goto(origin), /ERR_CERT_AUTHORITY_INVALID/);
-  await page.locator("#details-button").click();
-  await page.locator("#proceed-link").click();
+  try {
+    await page.locator("#details-button").click();
+    await page.locator("#proceed-link").click();
+  } catch (error) {
+    console.error(
+      "Certificate interstitial failure:",
+      (
+        await page
+          .locator("body")
+          .innerText({ timeout: 1000 })
+          .catch(() => "unavailable")
+      ).slice(0, 1000),
+    );
+    throw error;
+  }
   await page.getByRole("button", { name: "Back up now", exact: true }).click();
   await page.getByRole("button", { name: "Create backup", exact: true }).click();
   await page.getByRole("heading", { name: "Backup created", exact: true }).waitFor();

@@ -55,9 +55,12 @@ class BrowserWorkflowTests(unittest.TestCase):
         self.assertIn("/141.0.7390.37/linux64/chrome-linux64.zip", chrome)
         self.assertIn("unzip -q", chrome)
 
-    def test_firefox_has_the_container_users_home(self):
-        journeys = self.steps["Run cross-browser user journeys and HTTPS backup fixtures"]
-        self.assertIn("HOME: /root", journeys)
+    def test_browsers_have_the_container_users_home(self):
+        for name in (
+            "Run cross-browser user journeys and HTTPS backup fixtures",
+            "Assert complete Google Chrome HTTPS backup downloads",
+        ):
+            self.assertIn("HOME: /root", self.steps[name], name)
 
     def test_all_assertions_remain_required_on_release_prs(self):
         self.assertRegex(

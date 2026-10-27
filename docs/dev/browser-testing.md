@@ -69,6 +69,8 @@ Keep a confirmed product failure's reproduction and issue separate from passing 
 weaken an assertion or mark it expected-failure to claim coverage. Use copied assets through
 `PITHEAD_BROWSER_STATIC` for targeted negative controls, and retain the failure at the intended assertion.
 
+The HTTPS fixture prints at most 1000 characters of the local certificate page when its
+acceptance controls are missing; the diagnostic read has a one-second limit and the test still fails.
 Playwright failure screenshots, traces and the HTML report are written to ignored `test-results/` and
 `playwright-report/` directories. CI retains them for seven days. Inspect a local failure with:
 

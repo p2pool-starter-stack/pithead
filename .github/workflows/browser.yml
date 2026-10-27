@@ -55,7 +55,7 @@ jobs:
             --output "$TMPDIR/pithead-backup-chrome.zip"
           unzip -q "$TMPDIR/pithead-backup-chrome.zip" -d "$TMPDIR/pithead-backup-chrome"
       - name: Assert complete Google Chrome HTTPS backup downloads
-        env: {TMPDIR: "${{ runner.temp }}"}
+        env: {HOME: /root, TMPDIR: "${{ runner.temp }}"}
         run: |
           PITHEAD_BACKUP_BROWSER_EXECUTABLE="$TMPDIR/pithead-backup-chrome/chrome-linux64/chrome" \
             node --test dashboard/tests/browser/backup-download.test.mjs

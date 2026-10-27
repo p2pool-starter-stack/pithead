@@ -202,8 +202,8 @@ On Linux, add `--with-deps` to the local install command. The separate `browser.
 runs Chromium, Firefox, WebKit and mobile Chromium in the digest-pinned Playwright 1.64.0
 Noble image, matching the npm lockfile. The image supplies browsers and their system libraries;
 CI installs only Make, unzip and the locked npm packages before running `make test-browser`.
-It uses the image's Node 24. The browser step sets `HOME` to the container's root-owned home
-so Firefox can launch as the container user, rather than inheriting GitHub's mounted user home.
+It uses the image's Node 24. Both browser steps set `HOME` to the container's root-owned home,
+so each browser uses the container user's profile state rather than GitHub's mounted user home.
 Each provisioning step has a two-minute limit within the unchanged
 15-minute job budget. The pinned Chrome download also has a 20-second connection limit and a
 90-second transfer limit. A provisioning failure fails the job; a skipped assertion never
