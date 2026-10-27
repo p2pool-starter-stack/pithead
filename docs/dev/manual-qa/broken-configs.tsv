@@ -1,0 +1,18 @@
+id	jq_edit	expected	change
+malformed-json	tojson | .[0:-1]	not valid JSON	Delete one closing `}`
+monero-subaddress	.monero.wallet_address=$subaddress | tojson	is a SUBADDRESS (starts with 8)	Set `monero.wallet_address` to the QA **subaddress** (starts with `8`)
+monero-checksum	.monero.wallet_address |= (.[0:20] + .[21:22] + .[20:21] + .[22:]) | tojson	fails its checksum	Swap two different neighbouring characters in the middle of `monero.wallet_address`
+tari-checksum	.tari.wallet_address |= (.[0:20] + .[21:22] + .[20:21] + .[22:]) | tojson	tari.wallet_address fails its checksum	Swap two different neighbouring characters in the middle of `tari.wallet_address`
+pool	.p2pool.pool="large" | tojson	p2pool.pool must be "main", "mini", or "nano"	Set `p2pool.pool` to `"large"`
+tari-mode	.tari.mode="maybe" | tojson	tari.mode must be "local", "remote" or "off"	Set `tari.mode` to `"maybe"`
+monero-mode	.monero.mode="cloud" | tojson	monero.mode must be "local" or "remote"	Set `monero.mode` to `"cloud"`
+stratum-password	.p2pool.stratum_password="has space" | tojson	p2pool.stratum_password must be "auto", empty, or 1–128 chars	Set `p2pool.stratum_password` to `"has space"`
+proxy-donation	.proxy.donate_level=150 | tojson	proxy.donate_level must be an integer 0–99	Add `"proxy": { "donate_level": 150 }`
+short-password	.dashboard.auth.password="short" | tojson	dashboard.auth.password must be 8–128 printable characters	Set `dashboard.auth.password` to `"short"`
+onion-short-password	.dashboard.onion.enabled=true | .dashboard.auth.password="fifteen-chars-x" | tojson	must be at least 16 characters when dashboard.onion.enabled is true	Set `dashboard.onion.enabled` to `true` and the password to `"fifteen-chars-x"` (15 characters)
+onion-weak-password	.dashboard.onion.enabled=true | .dashboard.auth.password="changeme-but-longer" | tojson	contains a well-known weak pattern	Set `dashboard.onion.enabled` to `true` and the password to `"changeme-but-longer"`
+duplicate-pool	tojson | sub("^\\{"; "{\"p2pool\":{\"pool\":\"nano\"},")	duplicate key "p2pool" at the top level	Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }`
+duplicate-wallet	tojson | sub("\"monero\":\\{"; "\"monero\":{\"wallet_address\":\"duplicate\",")	duplicate key "wallet_address" at monero	Add a second `"wallet_address"` line inside the `monero` block
+placeholder-password	.dashboard.auth.password="PASTE_QA_DASHBOARD_PASSWORD" | tojson	placeholder value at dashboard.auth.password	Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"`
+placeholder-telegram	.telegram.bot_token="your_bot_token" | .telegram.enabled=true | tojson	placeholder value at telegram.bot_token	Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case)
+onion-missing-password	del(.dashboard.auth) | .dashboard.onion.enabled=true | tojson	dashboard.onion.enabled is true but dashboard.auth.password is empty	Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block

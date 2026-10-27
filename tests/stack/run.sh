@@ -262,11 +262,9 @@ if in_block 4; then
     *LEAK-*) bad "masked copy holds no notification secret" "a notification secret leaked into $MASKED" ;;
     *) ok "masked copy holds no notification secret" ;;
     esac
-
     # shellcheck source=tests/stack/test-spool-audit.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 fi
-
 if in_block 5; then
     # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
@@ -289,6 +287,8 @@ if in_block 5; then
     assert_rc "setup build interruption regression" "$?" 0
     # shellcheck source=tests/stack/test-wizard-setup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-wizard-setup.sh "$_d0" "$?" || domain_ran test-wizard-setup.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-manual-qa-oracle.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-manual-qa-oracle.sh" && domain_ran test-manual-qa-oracle.sh "$_d0" "$?" || domain_ran test-manual-qa-oracle.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-tari.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-tari.sh" && domain_ran test-wizard-tari.sh "$_d0" "$?" || domain_ran test-wizard-tari.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-provisioning.sh disable=SC2015

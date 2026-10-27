@@ -190,6 +190,15 @@ directly, so they carry no marker check and must not gain one.
 
 ### A. Configuration permutations
 
+Shell block 5 runs `tests/stack/test-manual-qa-oracle.sh` as its own domain. It compares every
+broken-config guide row with `docs/dev/manual-qa/broken-configs.tsv`, replays each edit through
+`apply --dry-run`, and requires exit 1, the documented message, byte-identical candidate and
+rendered environment, and no stack-container changes. Only disposable Caddy password-hash
+helper calls are allowed. The same domain guards the RigForge quick-start
+release pin. `test-wizard-tari.sh` compares the fresh-install guide with the wizard-generated
+Enter-through configuration. These documentation oracles run in tier 1; they make no live-stack
+health assertion.
+
 The deploy-time axes — each changes a real runtime path. Full table and assertions in
 [Integration Testing › The config matrix](integration-testing.md#the-config-matrix).
 
