@@ -5,9 +5,10 @@ echo "== unit: coordinator hostname follows saved config only at mutation bounda
 HN="$SANDBOX/hostname"
 mkdir -p "$HN"
 
-hn_run() { # engine-kind, configured host, operation, optional apply state
+hn_run() {
     (
         cd "$HN" || exit 1
+        printf '{}\n' >config.json
         # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
         source "$STACK"
         set -e
