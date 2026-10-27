@@ -66,22 +66,16 @@ lan_guard_scoped_up() {
     return 1
 }
 
-# A failed first up has not completed its requested work, but may have stopped a prior node.
-# Retry just those nodes with the loopback binds still exported; report the original failure.
 lan_guard_restore_stopped() {
     [ "${#LAN_GUARD_STOPPED_SERVICES[@]}" -gt 0 ] || return 0
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up -d "${LAN_GUARD_STOPPED_SERVICES[@]}" ||
+    lan_guard_engine_up -d "${LAN_GUARD_STOPPED_SERVICES[@]}" ||
         warn "lan-guard:recreate-failed — could not restore the loopback-bound nodes after compose failed."
 }
 
-# Recreate stopped LAN nodes even when the caller names only another service.
-lan_guard_compose_up() { # <compose up arguments>
+lan_guard_compose_up() {
     local rc=0 up_args=("$@")
     if lan_guard_scoped_up "$@"; then up_args+=("${LAN_GUARD_STOPPED_SERVICES[@]}" "${LAN_GUARD_REBOUND_SERVICES[@]}"); fi
-    # The dashboard bind-mounts this exact lock inode across versioned installs.
-    tor_rotation_receipt up requested || true
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}" || rc=$?
-    tor_rotation_receipt up "$rc" || true
+    lan_guard_engine_up "${up_args[@]}" || rc=$?
     if [ "$rc" = 0 ]; then
         finish_lan_guard_after_up "${up_args[@]}" || rc=1
     else
@@ -110,7 +104,7 @@ finish_lan_guard_after_up() { # <original compose up arguments>
     for ((i = 0; i + 1 < ${#up_args[@]}; i++)); do
         [ "${up_args[$i]}" = --pull ] && up_args[$((i + 1))]=never
     done
-    if PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}"; then
+    if lan_guard_engine_up "${up_args[@]}"; then
         log "LAN-only sources enforced on port(s) ${ports[*]} after Docker created its network."
         return 0
     fi
@@ -120,6 +114,14 @@ finish_lan_guard_after_up() { # <original compose up arguments>
     }
     lan_guard_stop_published || return 1
     for kp in $(lan_guard_published); do export "${kp%%:*}=127.0.0.1"; done
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "$@" || warn "lan-guard:recreate-failed — could not restore the loopback-bound nodes."
+    lan_guard_engine_up "$@" || warn "lan-guard:recreate-failed — could not restore the loopback-bound nodes."
     return 1
+}
+
+lan_guard_engine_up() {
+    local rc=0
+    tor_rotation_receipt up requested || true
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "$@" || rc=$?
+    tor_rotation_receipt up "$rc" || true
+    return "$rc"
 }

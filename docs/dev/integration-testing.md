@@ -1256,7 +1256,8 @@ stack `VERSION`, git revision, and `docker compose images`. A run is reproducibl
 The onion-rotation phase retains `results/tor-lifecycle/rotation.jsonl` and
 `results/tor-lifecycle/healer.jsonl` on successful and failed calls. Each receipt contains
 only a UTC timestamp, caller, operation ID, opaque engine container ID (or `unavailable`),
-requested action and result. Rotation records the command exit status; the healer records
+requested action and result. Rotation records each Compose stop/up exit status, including
+staged LAN-bind retries and restoration calls; the healer records
 `confirmed` or `unconfirmed`, since a lost engine response does not prove the action failed.
 `requested` records precede the call. Receipt collection keeps at most 128 records per
 command, accepts only the fixed schema and consumes lines in 1025-byte chunks. It discards

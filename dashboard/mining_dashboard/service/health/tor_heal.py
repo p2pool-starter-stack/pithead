@@ -56,8 +56,6 @@ TOR_SETTLE_POLL_SEC = 5
 
 
 class TorEgressHealer(TorHistoryMixin, TorLifecycleMixin):
-    """Probe and recover Tor egress under a fixed cadence, cooldown and attempt cap."""
-
     HISTORY_TIMEOUT_SEC = PROBE_INTERVAL_SEC
     CONTAINER = "tor"
     MONEROD = "monerod"

@@ -225,7 +225,6 @@ rotate_dashboard_onion() {
     docker compose stop tor >/dev/null 2>&1 || tor_stop_rc=$?
     tor_lifecycle_receipt "$TOR_ROTATION_OPERATION" stop "$tor_stop_rc" || true
     sudo rm -rf "$hs_dir" 2>/dev/null || rm -rf "$hs_dir" 2>/dev/null || true
-    # Force fresh keys + address on the next provision.
     DASHBOARD_ONION="placeholder"
     DASHBOARD_ONION_CLIENT_PUBKEY="placeholder"
     DASHBOARD_ONION_CLIENT_PRIVKEY="placeholder"

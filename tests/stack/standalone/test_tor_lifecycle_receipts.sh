@@ -9,7 +9,8 @@ if [ "${1:-}" = fixture ]; then
     TOR_DATA_DIR="$2/tor"
     DASHBOARD_ONION_ENABLED=true DASHBOARD_ONION_CLIENT_AUTH=false
     MONERO_MODE=remote TARI_MODE=remote
-    stop_rc="$3" up_rc="$4"
+    stop_rc="$3" up_rc="$4" up_calls=0
+    receipt_mode="${5:-}"
     require_env() { :; }
     parse_and_validate_config() { :; }
     load_preserved_state() { :; }
@@ -35,11 +36,26 @@ if [ "${1:-}" = fixture ]; then
             printf '%s\n' private-engine-error >&2
             return "$stop_rc"
         elif [ "$1 $2 $3" = 'compose up --pull' ]; then
+            up_calls=$((up_calls + 1))
+            if [ "$receipt_mode" = staged ]; then
+                [ "$up_calls" != 2 ] || return 7
+                return 0
+            fi
             return "$up_rc"
         fi
     }
     lan_guard_scoped_up() { return 1; }
-    finish_lan_guard_after_up() { return 0; }
+    if [ "$receipt_mode" = staged ]; then
+        LAN_GUARD_STAGED=1
+        lan_guard_watched_ports() { :; }
+        lan_guard_enforced() { return 0; }
+        lan_guard_mark() { :; }
+        lan_guard_published() { :; }
+        lan_guard_unmark() { :; }
+        lan_guard_stop_published() { :; }
+    else
+        finish_lan_guard_after_up() { return 0; }
+    fi
     lan_guard_restore_stopped() { :; }
     mutation_lock_path() { echo ignored; }
     compose_up() { lan_guard_compose_up "$@"; }
@@ -80,4 +96,22 @@ PY
         }
     done
 done
-echo 'Tor rotation receipts: success, failure and broken-recorder controls PASS'
+rc=0
+bash "$0" fixture "$work" 0 0 staged >"$work/stdout" 2>"$work/receipts" || rc=$?
+[ "$rc" = 1 ] || {
+    echo 'FAIL: staged up failure was lost'
+    exit 1
+}
+python3 - "$work/receipts" <<'PYTEST'
+import json
+import sys
+rows = [json.loads(line.removeprefix('pithead-tor-lifecycle ')) for line in open(sys.argv[1])
+        if line.startswith('pithead-tor-lifecycle ')]
+assert [(r['action'], r['result']) for r in rows] == [
+    ('stop', 'requested'), ('stop', '0'),
+    ('up', 'requested'), ('up', '0'),
+    ('up', 'requested'), ('up', '7'),
+    ('up', 'requested'), ('up', '0')]
+assert len({r['operation'] for r in rows}) == 1
+PYTEST
+echo 'Tor rotation receipts: success, failure, staged up and broken-recorder controls PASS'
