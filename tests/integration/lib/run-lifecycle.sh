@@ -67,7 +67,6 @@ run_lifecycle() {
     }
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
     fp_before="$(secret_fingerprint)"
-    # The pool apply must migrate root-owned contents left by older containers.
     local own_dir own_probe=""
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         own_dir="$(env_on_box DASHBOARD_DATA_DIR)"
