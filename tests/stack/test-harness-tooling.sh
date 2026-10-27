@@ -34,9 +34,85 @@ echo "== unit: pin-watch self-test (#1128) =="
 # Drives the real pin spellings and failed lookups: unreachable must never read as current.
 bash "$ROOT/scripts/watch/pin-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "pin-watch self-test passes" "$?" "0"
-# Drives active, transitive no-op and downgrade raises through a synthetic Go module graph.
-bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test >/dev/null 2>&1
+go_watch_out=$(bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
 assert_rc "Go module raise watch self-test passes" "$?" "0"
+assert_contains "Go module raise watch self-test prints its OK verdict" "$go_watch_out" "go-raise-watch self-test OK"
+mkdir -p "$SANDBOX/no-go-bin" "$SANDBOX/old-go-bin"
+ln -sf "$(command -v dirname)" "$SANDBOX/no-go-bin/dirname"
+ln -sf "$(command -v dirname)" "$SANDBOX/old-go-bin/dirname"
+printf '#!/bin/sh\necho "go version go1.19.8 linux/amd64"\n' >"$SANDBOX/old-go-bin/go"
+chmod +x "$SANDBOX/old-go-bin/go"
+go_watch_out=$(PATH="$SANDBOX/no-go-bin" "$BASH" "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
+assert_rc "Go module raise watch self-test fails without go" "$?" "1"
+assert_contains "Go module raise watch self-test names the missing go tool" "$go_watch_out" "needs go 1.21 or newer"
+go_watch_out=$(PATH="$SANDBOX/old-go-bin" "$BASH" "$ROOT/scripts/watch/go-raise-watch.sh" --self-test 2>&1)
+assert_rc "Go module raise watch self-test fails on a Go older than 1.21" "$?" "1"
+assert_contains "Go module raise watch self-test reports the old Go version" "$go_watch_out" "found: go version go1.19.8"
+
+echo "== unit: the sudo fence no-ops host firewall and systemd verbs (#3442) =="
+FENCE="$SANDBOX/sudo-fence"
+mkdir -p "$FENCE"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$FENCE_LOG"\n' >"$FENCE/real-sudo"
+chmod +x "$FENCE/real-sudo"
+make_host_sudo_fence "$FENCE/bin" "$FENCE/real-sudo"
+export FENCE_LOG="$FENCE/log"
+: >"$FENCE_LOG"
+fence_rc=0
+printf 'a\n' | "$FENCE/bin/sudo" -n iptables-restore -w --noflush || fence_rc=$?
+for fence_cmd in "iptables -N DOCKER-USER" "iptables-save -t filter" "ip6tables -S" "nft delete table inet pithead_egress" "systemctl enable pithead-tor-egress.service"; do
+    # shellcheck disable=SC2086
+    "$FENCE/bin/sudo" -n $fence_cmd </dev/null || fence_rc=$?
+done
+assert_rc "firewall and systemctl verbs succeed through the fence" "$fence_rc" "0"
+assert_eq "none of them reaches the real sudo" "$(cat "$FENCE_LOG")" ""
+"$FENCE/bin/sudo" -n tee /etc/pithead-fixture </dev/null
+"$FENCE/bin/sudo" rm -f /etc/pithead-fixture
+assert_eq "any other command reaches the real sudo with its arguments" "$(cat "$FENCE_LOG")" $'-n tee /etc/pithead-fixture\nrm -f /etc/pithead-fixture'
+unset FENCE_LOG
+
+echo "== unit: the PATH stubs hold on every route a fixture takes to a firewall or systemd tool (#3442) =="
+STUBS="$SANDBOX/tool-stubs"
+assert_eq "the fence covers the iptables family, nft and systemctl" "$HOST_FENCED_TOOLS" \
+    "iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore nft systemctl"
+# shellcheck disable=SC2086
+make_host_tool_stubs "$STUBS" "$STUBS.log" $HOST_FENCED_TOOLS
+mkdir -p "$STUBS-shim"
+printf '#!/usr/bin/env bash\nexec "$@"\n' >"$STUBS-shim/sudo"
+chmod +x "$STUBS-shim/sudo"
+for stub_tool in $HOST_FENCED_TOOLS; do
+    (
+        PATH="$STUBS:$PATH"
+        hash -r
+        "$stub_tool" --route-bare </dev/null
+    )
+    (
+        PATH="$STUBS-shim:$STUBS:$PATH"
+        hash -r
+        sudo "$stub_tool" --route-shim </dev/null
+    )
+    if sudo -n true 2>/dev/null; then
+        sudo -n env PATH="$STUBS-shim:$STUBS:$PATH" "$stub_tool" --route-real-sudo </dev/null
+    fi
+done
+stub_count=$(printf '%s\n' $HOST_FENCED_TOOLS | wc -l | tr -d ' ')
+assert_eq "every tool answers a bare PATH lookup from its stub" "$(grep -c -e '--route-bare' "$STUBS.log")" "$stub_count"
+assert_eq "every tool answers a fixture's pass-through sudo from its stub" "$(grep -c -e '--route-shim' "$STUBS.log")" "$stub_count"
+if sudo -n true 2>/dev/null; then
+    assert_eq "every tool answers the real sudo's env PATH from its stub" "$(grep -c -e '--route-real-sudo' "$STUBS.log")" "$stub_count"
+else
+    echo "  SKIP: passwordless sudo is unavailable, so the real-sudo route did not run"
+fi
+printf '#!/bin/sh\nexit 0\n' >"$STUBS-shim/iptables"
+chmod +x "$STUBS-shim/iptables"
+assert_eq "a stub ahead of the host's tools leaks nothing" \
+    "$(HOST_FENCE_DIR="$STUBS" PATH="$STUBS:$STUBS-shim:$PATH" host_fence_leaks)" ""
+assert_eq "a host tool ahead of its stub is named" \
+    "$(HOST_FENCE_DIR="$STUBS" PATH="$STUBS-shim:$STUBS:$PATH" host_fence_leaks)" "iptables"
+unset STUBS stub_tool stub_count
+
+echo "== unit: no test or script requires a GitHub-only variable (#3442) =="
+assert_eq "no test or script needs RUNNER_* or GITHUB_* to be set" \
+    "$(grep -rnE 'RUNNER_[A-Z_]+:[?]|GITHUB_[A-Z_]+:[?]' --include='*.sh' --include='*.py' "$ROOT/tests" "$ROOT/scripts")" ""
 
 echo "== unit: #2879 rootfs dependency refresh =="
 dockerfile="$ROOT/os/rootfs/Dockerfile"
@@ -122,19 +198,19 @@ echo "== unit: #1676 version-aging helper self-test =="
 bash "$ROOT/tests/os/aged-version.sh" --self-test >/dev/null 2>&1
 assert_rc "#1676 aged-version self-test passes" "$?" "0"
 echo "== unit: #1936 wizard-state-poll self-test =="
-# The RC1 battery reddened twice on one word — `no-served-config`, `served wallet: none` — where a
-# timeout, a refusal and a non-JSON page all print alike (#1932, #1936). The shared /api/state
-# poll now names the status, curl's rc, the read count and the body head; its --self-test drives
-# the four shapes under a curl shim and asserts each reason on the exact string the log will
-# carry. Lives in tests/os/ (appliance lane); driven here because tier 1 is the lowest tier that
-# proves it and it needs no KVM.
 bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-control-admission.sh" >/dev/null 2>&1
+assert_rc "control POST admission distinguishes connection refusal from a lost reply" "$?" "0"
 bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null
 assert_rc "the OS runner module and control lifecycle guard self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-install-rig.sh" >/dev/null
+assert_rc "internal-disk rig lifecycle and verdict self-test passes" "$?" "0"
+bash "$ROOT/tests/os/selftest-install-rig-dispatch.sh" >/dev/null
+assert_rc "rig install dispatch preserves card-before-erase and bare keep" "$?" "0"
 bash "$ROOT/tests/os/selftest-restore-p2pool-startup.sh" >/dev/null 2>&1
 assert_rc "restore startup rejects P2Pool crashes across its bounded window" "$?" "0"
-bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null
+env -u TMPDIR -u RUNNER_TEMP bash "$ROOT/tests/os/selftest-tor-heal.sh" >/dev/null
 assert_rc "Tor heal guest and offline-image harness controls pass" "$?" "0"
 bash "$ROOT/tests/os/appliance-hostname-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#1966 appliance hostname verdict self-test passes" "$?" "0"

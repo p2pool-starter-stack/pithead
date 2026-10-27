@@ -30,6 +30,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         trace_lifecycle() { [ -z "${LIFECYCLE_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$LIFECYCLE_TRACE_OUT"; }
+        trace_restore_order() { [ -z "${RESTORE_ORDER_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$RESTORE_ORDER_TRACE_OUT"; }
         capture_artifacts() {
             printf 'CAPTURE:%s\n' "$1"
             trace_lifecycle "capture:$1"
@@ -61,13 +62,26 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
+        run_restore_dashboard_probe() {
+            trace_restore_order dashboard-probe
+            [ "$RESTORE_CASE" != dashboard-probe-fails ] || {
+                it_fail
+                return 1
+            }
+        }
+        run_tari_background_sync() {
+            trace_restore_order tari
+            [ "$RESTORE_CASE" != tari-fails ] || {
+                it_fail
+                return 1
+            }
+        }
         dashboard_tls_identity() { printf identity; }
         assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {
             it_fail
             return 1
         }; }
         run_password_tls_continuity() { :; }
-        run_tari_background_sync() { :; }
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;
@@ -75,12 +89,13 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             *) printf absent ;;
             esac
         }
-        prove_wallet_supersession() { :; }    # Identity proof has its own selftest.
-        prove_wallet_recovery() { :; }        # Recovery proof has its own selftest.
-        tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
-        run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
+        prove_wallet_supersession() { :; }
+        prove_wallet_recovery() { :; }
+        tor_recovery_healthy_probe() { :; }
+        run_connection_announcements() { :; }
         # shellcheck disable=SC2034 # RESET_RESTORE_STACK_INTACT is read by the extracted lifecycle function
-        run_reset_restore() { # the leg is driven by selftest-reset-restore.sh
+        run_reset_restore() {
+            trace_restore_order reset-restore
             case "$RESTORE_CASE" in
             reset-refused-intact)
                 RESET_RESTORE_STACK_INTACT=1
@@ -135,6 +150,20 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
     )
 }
+
+ORDER_TRACE=$(mktemp) || exit 1
+assert_eq "the dashboard probe runs before a failing Tari trial" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes tari-fails)" "1|1"
+assert_eq "Tari failure stops the later reset recovery" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari'
+: >"$ORDER_TRACE"
+assert_eq "a dashboard probe failure prevents the Tari trial" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes dashboard-probe-fails)" "1|1"
+assert_eq "a failed dashboard probe stops before Tari and reset" "$(cat "$ORDER_TRACE")" dashboard-probe
+: >"$ORDER_TRACE"
+assert_eq "healthy dashboard and Tari probes still reach reset recovery" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes)" "0|0"
+assert_eq "healthy probes keep the full recovery order" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari\nreset-restore'
+rm -f "$ORDER_TRACE"
 
 assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
 assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"

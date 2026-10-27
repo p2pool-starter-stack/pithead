@@ -31,8 +31,10 @@ For a transitive security fix, update only the affected package with
 `uv lock --project dashboard --upgrade-package certifi==2026.10.19` (substitute the package and
 verified fixed version). Review the lockfile diff, run the dashboard tests, and require the
 built dashboard image's Trivy scan to pass without adding an ignore entry.
-`dashboard/tests/test_dependency_security.py` checks the locked and loaded security floors
-and verifies that Requests' CA bundle excludes the compromised emSign ECC Root CA - G3.
+`dashboard/tests/test_dependency_security.py` checks the locked and loaded runtime security
+floors, requires locked virtualenv 21.14.13 and filelock 4.2.1 or newer for pre-commit's
+dev-only environments, and verifies that Requests' CA bundle excludes the compromised
+emSign ECC Root CA - G3.
 
 The root `pithead` executable is generated and git-ignored. Plain `make` builds it from the
 numbered `lib/pithead/*.sh` sources; the test targets also build it when needed. Edit the slices,
@@ -170,10 +172,25 @@ the file so the addition fits under a ceiling that stays put or drops — see is
 example, where a security test that outgrew its file moved into its own — and note that two same-wave merges
 can each pass alone and fail together, so re-run `make lint` after merging onto the tip.
 
-The ratchet half is fatal in CI when it cannot run at all: a job that resolves none of the base-ref
-candidates has lost its `fetch-depth: 0`, which is a misconfigured job rather than a clean tree, so the gate
-fails there instead of printing a note into a log nobody reads (issue #1739). A local checkout without those
-refs still gets the note and still passes.
+Actions PR validation compares against the fetched `origin/$GITHUB_BASE_REF`,
+the PR's target branch. A missing target ref fails instead of falling back to
+`develop`. Keep `fetch-depth: 0` on the lint job so that ref is available.
+
+For local validation of a release-branch PR, fetch its base and select it
+explicitly:
+
+```bash
+git fetch origin develop-v2.0.2
+make lint-file-budget FILE_BUDGET_BASE_REF=origin/develop-v2.0.2
+```
+
+`FILE_BUDGET_BASE_REF` takes precedence over `GITHUB_BASE_REF` and must resolve
+to a commit. Without either selection, the gate tries `origin/develop`, then
+local `develop`. If neither resolves, CI fails; a local checkout prints a note
+and skips the ratchet comparison. Enumeration and per-file checks still run.
+`make lint-file-budget` exercises these modes with isolated Git fixtures,
+including divergent integration and release-branch budgets. The self-tests
+clear inherited base selections before creating their fixture refs.
 
 Generated code, vendored files, data/config, and prose docs are exempt by glob — see `is_exempt()` in the
 script. The generated, git-ignored `pithead` is outside the tracked-file budget; the gate governs its

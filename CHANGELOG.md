@@ -11,11 +11,101 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-25
+
+Pithead 2.0.1 is the first patch release after 2.0.0. It keeps the dashboard certificate you already
+trust across an appliance update, makes `pithead status` and `pithead doctor` report a container
+that keeps restarting, makes an updated appliance run the images of its new version, fixes
+appliance setup, restore and Set up again paths that could leave the setup page up, skip a rig's
+settings or keep a coordinator from returning to service, and clears the image-scan findings raised
+since 2.0.0. It changes no configuration keys and no component version, and runs no data migration.
+Entries below apply to both channels unless they say otherwise.
+
+### Changed
+
+- The egress panel and the network topology list the dashboard's Tari explorer fetch. It shows as a
+  Tor route when the explorer URL is set and Tari is not off, and as inactive otherwise (#2606).
+- Building the Monero image bounds each download of the Monero archive at 300 seconds and, if the
+  first source fails to transfer, tries a second official source. The pinned SHA-256 is still
+  checked before the archive is accepted (#3477).
+- Base images and dependencies refreshed: the Ubuntu base digest of the Monero, P2Pool and
+  xmrig-proxy images (#3313), and aiohttp 3.14.5 with yarl 1.25.1 in the dashboard (#3470). Caddy
+  2.11.7 is pinned to the rebuild upstream published on 2026-10-21: the same Caddy release on a
+  newer Alpine 3.23 base.
+
 ### Fixed
 
+- **An appliance update keeps the dashboard certificate you already trust (#3414).** An address
+  that was briefly missing at boot could make the appliance replace its self-signed certificate
+  with a new one for the same addresses, so the browser asked for trust again and the open tab
+  could not reconnect. The appliance now keeps the existing certificate and key while they cover
+  every current name. A new address or hostname that the certificate does not cover, or a damaged
+  or mismatched pair, still gets a new certificate.
+- **An appliance update runs the containers on the images of its new version (#3593).** After an
+  update, the dashboard container could keep running an image other than the one the new version
+  ships, so the update committed and answered healthy while the dashboard's fixes were not applied.
+  Starting the stack on the appliance now compares every container's image with the one its Compose
+  file declares and recreates a container that differs. If the comparison or the recreation fails,
+  the start fails. DIY installs are unchanged.
+- **`pithead status` and `pithead doctor` report a container that keeps restarting as unhealthy
+  (#3391).** Podman, which the appliance uses, has no `restarting` state, so a crash-looping
+  service could read as running between exits. Both commands now compare two reads taken three
+  seconds apart and fail on a restarting state, a rising restart count or a changed start time, on
+  Docker and on Podman. Intentional sync and migration holds are not flagged. The appliance's boot
+  health gate does not run this check and keeps its 2.0.0 behavior (#3622).
 - A Configuration change rejected before anything was written (a stale preview, a missing confirmation) is now reported as not applied or saved, not as "saved but is not running" (#3376).
+- The dashboard's Connect a miner card and the Workers Alive hint follow the stratum bind: a
+  loopback-only listener is shown as local connections only, and a specific bind address is shown
+  instead of the LAN address (#3384).
+- DIY: the guides explain how to verify and trust Caddy's local root CA once, instead of accepting
+  the dashboard certificate, whose warning returns after each renewal of Caddy's 12-hour
+  certificates (#3435).
+- **A command-line restore that lands while the appliance setup page is starting now brings the
+  dashboard back (#3390).** First boot could read the restored `config.json` as configuration it
+  had kept, hold on to the setup page's web ports and stay on the setup page. The setup page now
+  closes when a restore lands during startup.
+- **Installing a RigForge rig to an internal disk from the installer applies the rig's settings
+  (#3076).** With the default keep policy, the install could take the plain reinstall path and
+  finish without applying the submitted rig settings or publishing the rig card the coordinator
+  uses to add it.
+- **Finishing "Set up again" on an appliance coordinator returns it to service (#3075).**
+  Submitting the setup form after choosing Set up again in the boot menu ran the headless setup
+  path, which refused the existing deployment, so the coordinator did not come back. Submitting
+  the form now applies the answers and starts the stack again, keeping the chains, the onion
+  address and the machine identity. Keep it still restores the machine unchanged.
 
-## [2.0.0] - 2026-10-03
+### Security
+
+- The dashboard image carries certifi 2026.10.19, which no longer bundles the emSign ECC Root CA -
+  G3 root named in GHSA-6q48-6c7w-9gw2 (#3554).
+- The appliance rootfs builds Cosign and Docker Compose with Go 1.26.10 and raises Cosign's
+  klauspost/compress to 1.18.7. This clears CVE-2026-63209 in Cosign and CVE-2026-111943 in the Go
+  standard library of both binaries (#3585).
+- The dashboard's development lock raises virtualenv, which pre-commit pulls in, to 21.14.9 and
+  clears its Dependabot alerts. virtualenv is development tooling only and is not in the dashboard
+  image (#3014).
+- The dashboard and CLI warning for a clearnet sync that has not yet moved back to Tor clears only
+  when the transition marker is also a regular file owned by root with no group or other write
+  permission. A process that could write to the dashboard's state could previously replay the
+  host's marker text in place and clear the warning (#3440).
+
+### Known issues in 2.0.1
+
+These three ship in 2.0.1. The first two are planned for 2.0.2. The known issues listed for 2.0.0
+still apply, except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
+
+- On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
+  boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot (#3375).
+- After a command-line restore over an existing install (`down`, `restore`, `up`), the dashboard
+  keeps serving the pre-restore configuration, including in the earnings calculator. The first save
+  from Configuration can then re-propose the old values and undo part of the restore. Run
+  `./pithead apply` once, then `./pithead restart`. A restore from the setup wizard is not affected
+  (#3432).
+- The appliance does not boot with Secure Boot on: the firmware refuses its unsigned bootloader.
+  Secure Boot is not supported and no signing work is planned. Turn Secure Boot off in the firmware
+  before you boot the stick, as the install guide says. 2.0.0 has the same limitation (#2187).
+
+## [2.0.0] - 2026-10-13
 
 ### Upgrading from 1.20.x
 
@@ -94,7 +184,7 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 Beta means the feature is optional and off unless you turn it on, and a defect seen only with it
 enabled may ship as a known issue. These are beta in 2.0.0; the label lives in the docs, this
-changelog and the wizard text only, and dashboard badges come in 2.0.1.
+changelog and the wizard text only.
 
 - **Tari merge-mining:** off by default in the setup wizards (beta); upgrades and configs that omit
   `tari.mode` keep the bundled node. A yes in a new-install wizard also writes
@@ -128,8 +218,8 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
   behaviour has had no soak time yet.
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
-  boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot. Fixed in
-  2.0.1 ([#3375](https://github.com/p2pool-starter-stack/pithead/issues/3375)).
+  boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot. Planned for
+  2.0.2 ([#3375](https://github.com/p2pool-starter-stack/pithead/issues/3375)).
 - After a dashboard update, the appliance can mint a new self-signed certificate for the same
   addresses, so the browser asks you to trust it again. Fixed in 2.0.1
   ([#3414](https://github.com/p2pool-starter-stack/pithead/issues/3414)).
@@ -138,18 +228,22 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
   2.0.1 ([#3390](https://github.com/p2pool-starter-stack/pithead/issues/3390)).
 - Setting the stratum port in Configuration to a port another service already uses is not caught
   by the preview. Apply then fails part-way with the proxy stopped; Configuration's recovery
-  restores it ([#3417](https://github.com/p2pool-starter-stack/pithead/issues/3417)).
-- After a rejected stale Configuration change, the message can say it was saved
+  restores it. Planned for 2.1.0
+  ([#3417](https://github.com/p2pool-starter-stack/pithead/issues/3417)).
+- After a rejected stale Configuration change, the message can say it was saved. Fixed in 2.0.1
   ([#3376](https://github.com/p2pool-starter-stack/pithead/issues/3376)).
 - The Configuration preview can warn about a sidechain/PPLNS reset for a routing-only change
-  ([#3382](https://github.com/p2pool-starter-stack/pithead/issues/3382)), or about Tari sync
-  settings that are off ([#3383](https://github.com/p2pool-starter-stack/pithead/issues/3383)).
-- The dashboard can show a LAN stratum URL for a loopback-only listener
+  ([#3382](https://github.com/p2pool-starter-stack/pithead/issues/3382), planned for 2.1.0), or about
+  Tari sync settings that are off ([#3383](https://github.com/p2pool-starter-stack/pithead/issues/3383)).
+- The dashboard can show a LAN stratum URL for a loopback-only listener. Fixed in 2.0.1
   ([#3384](https://github.com/p2pool-starter-stack/pithead/issues/3384)).
 - An Advanced JSON edit that slips in a null webhook entry saves it without the preview listing
-  it. Nothing is sent. Fixed in 2.0.1
+  it. Nothing is sent. Planned for 2.1.0
   ([#3388](https://github.com/p2pool-starter-stack/pithead/issues/3388)).
-- The preview shows a null worker API port as "unset"; the effective port is 8080
+- A saved `workers.api_port: null` means the default port, 8080, but the preview shows it as
+  "unset". It also stops the dashboard from attaching worker API read tokens for workers that use
+  the fleet port, so their authenticated worker API reads fail. Omit `workers.api_port`, or set it
+  to `8080`. Planned for 2.1.0
   ([#3377](https://github.com/p2pool-starter-stack/pithead/issues/3377)).
 - Dark mode can make text in dialogs
   ([#3378](https://github.com/p2pool-starter-stack/pithead/issues/3378)), password placeholders
@@ -161,6 +255,29 @@ changelog and the wizard text only, and dashboard badges come in 2.0.1.
   ([#3357](https://github.com/p2pool-starter-stack/pithead/issues/3357)).
 - Recovery after an interrupted image build during DIY source setup is undocumented
   ([#3348](https://github.com/p2pool-starter-stack/pithead/issues/3348)).
+- After an update from System update, reopening System update in the same tab can still offer the
+  version you just installed, with Download. Reload the page before using System update again.
+  Planned for 2.1.0. During an update the page runs the code of the release you are updating from,
+  so the fix applies to updates started from 2.1.0 onward: reload after an update from any earlier
+  release too ([#3430](https://github.com/p2pool-starter-stack/pithead/issues/3430)).
+- After a command-line restore over an existing install (`down`, `restore`, `up`), the dashboard
+  keeps serving the pre-restore configuration, including in the earnings calculator. The first save
+  from Configuration can then re-propose the old values and undo part of the restore. Run
+  `./pithead apply` once, then `./pithead restart`. A restore from the setup wizard is not
+  affected. Planned for 2.0.2
+  ([#3432](https://github.com/p2pool-starter-stack/pithead/issues/3432)).
+- On DIY, the dashboard's HTTPS certificate comes from Caddy's internal CA, which issues 12-hour
+  certificates and renews them before they expire. If you accepted the certificate itself in the
+  browser, the warning comes back after each renewal. Trust Caddy's local root CA once instead:
+  `docker cp caddy:/data/caddy/pki/authorities/local/root.crt caddy-local-root.crt` copies it out
+  (use `sudo` if your user cannot run Docker); add it to your system or browser trust store. Fixed
+  in 2.0.1 ([#3435](https://github.com/p2pool-starter-stack/pithead/issues/3435)).
+- RigForge 1.18.0 does not apply the `threads` setting or its tuned thread count. XMRig 6.26.0
+  ignores the value as RigForge writes it and runs its own automatic, cache-sized profile instead,
+  which can use every core. A `threads` cap cannot keep cores free; leave `threads` empty. The
+  appliance's built-in miner sets no cap and is unaffected. The fix is tracked in
+  [rigforge#588](https://github.com/p2pool-starter-stack/rigforge/issues/588), which has no
+  release yet; 2.0.1 still pins RigForge 1.18.0.
 
 ### Added
 

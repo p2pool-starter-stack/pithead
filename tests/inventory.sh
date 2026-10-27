@@ -186,9 +186,9 @@ integration_expected=$(
         ! -name rig-supply.sh ! -name restore-proof.sh ! -name restore-chain-sync.sh ! -name chain-keep.sh ! -name restore-mining-ready.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
         ! -name harness-args.sh ! -name e2e-env.sh ! -name run-channel.sh ! -name run-lifecycle-wallet-fixture.sh ! -name run-tari-background-sync.sh ! -name run-lifecycle-tls.sh \
-        ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh ! -name worker-detail-diagnostics.sh \
+        ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh ! -name tor-control-dial.sh ! -name worker-detail-diagnostics.sh \
         ! -name remote-endpoints.sh ! -name wallet-fixture.sh ! -name wallet-fixture-recovery.sh \
-        ! -name readiness-churn.sh ! -name reset-restore-web.sh \
+        ! -name readiness-churn.sh ! -name restore-dashboard-guest.sh ! -name reset-restore-web.sh ! -name reset-restore-startup.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh \
         ! -name miner-connection.sh ! -name tari-readiness.sh ! -name xvb-off-dwell.sh -print |
         sed 's|^tests/integration/||'
