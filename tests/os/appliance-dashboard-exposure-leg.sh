@@ -154,8 +154,17 @@ dashboard_onion_key_verdict() {
         .torrc_line == (($onion | sub("\\.onion$"; "")) + ":descriptor:x25519:" + .client_key)' >/dev/null 2>&1
 }
 
+dashboard_onion_state_evidence() {
+    printf '%s' "$1" | jq -Rsc --arg http "$2" --argjson curl "$3" --arg onion "$4" '
+        (try fromjson catch null) as $d |
+        {http:$http, curl:$curl, json:($d | type == "object"),
+         onion_present:(try ($d.dashboard_onion | type == "object") catch false),
+         url_matches:(try ($d.dashboard_onion.url == ("http://" + $onion)) catch false),
+         client_auth:(try ($d.dashboard_onion.client_auth == true) catch false)}' 2>/dev/null
+}
+
 phase_provision_dashboard_onion_control() {
-    local onion state result rid n
+    local onion state result rid n response http=none crc=0
     n=0
     while [ "$n" -lt 20 ]; do
         onion=$(_ssh 'set -eu
@@ -175,13 +184,29 @@ printf "%s" "$onion"' 2>/dev/null) || onion=""
     ok "dashboard onion address matches Tor hostname and rendered environment (#3074)"
     n=0
     while [ "$n" -lt 20 ]; do
-        state=$(dashboard_curl -fsSk -m 8 "https://$ip/api/state" 2>/dev/null) || state=""
-        dashboard_onion_state_verdict "$state" "$onion" && break
+        crc=0
+        response=$(dashboard_curl -sSk -m 8 -w '\n%{http_code}' "https://$ip/api/state" 2>/dev/null) || crc=$?
+        http=${response##*$'\n'}
+        if [[ $http =~ ^[0-9]{3}$ ]]; then
+            state=${response%$'\n'*}
+        else
+            http=none state=""
+        fi
+        if [ "$crc" -eq 0 ] && [ "$http" = 200 ] && dashboard_onion_state_verdict "$state" "$onion"; then
+            break
+        fi
         n=$((n + 1))
         sleep 3
     done
     if [ "$n" -eq 20 ]; then
         bad "dashboard header state did not publish the provisioned client-authorized onion (#3074)"
+        dashboard_onion_state_evidence "$state" "$http" "$crc" "$onion"
+        _ssh "set -euo pipefail
+podman inspect dashboard --format '{{json .Config.Env}}' | jq -ce --arg onion '$onion' '
+            {runtime_enabled:(index(\"DASHBOARD_ONION_ENABLED=true\") != null),
+             runtime_address_matches:(index(\"DASHBOARD_ONION_ADDRESS=\" + \$onion) != null),
+             runtime_client_auth:(index(\"DASHBOARD_ONION_CLIENT_AUTH=true\") != null)}'" 2>/dev/null ||
+            printf '%s\n' 'dashboard onion runtime evidence unavailable'
         return 1
     fi
     ok "dashboard header state publishes the provisioned client-authorized onion (#3074)"
