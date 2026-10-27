@@ -36,6 +36,7 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh
 	bash tests/stack/standalone/test_appliance_hugepages.sh
+	bash tests/stack/standalone/test_grub_hugepages_real.sh
 	python3 tests/stack/standalone/test_clearnet_attestation.py
 	python3 tests/stack/standalone/test_stratum_port.py
 
@@ -137,7 +138,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 			echo "lint-sh: shfmt $${have:-not found} is not the pinned $(SHFMT_VERSION) — its formatting is not this gate's."; \
 			echo "lint-sh: install the pin (see docs/dev/release-server.md) or run the gate in CI."; exit 1; }
 	printf '%s\0' pithead pithead-completion.bash install.sh scripts/*.sh scripts/*/*.sh build/*/*.sh dashboard/*.sh \
-		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/*/*.sh \
+		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/test_setup_build_interrupt.sh tests/stack/*/*.sh \
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
 		os/installer/pithead-install os/build-image.sh os/rootfs/*.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
