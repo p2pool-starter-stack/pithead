@@ -84,6 +84,12 @@ mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
 `selftest-migration-snapshot.sh` check ancestry refusal, persistence and recovery contracts.
 The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
 
+The xmrig-proxy Quadlet healthcheck is rendered in `lib/pithead/36-quadlet-units.sh`.
+`tests/stack/test-render-quadlet.sh` checks Compose parity through
+`tests/stack/standalone/test_quadlet_health.py`; `tests/os/appliance-proxy-health-leg.sh`
+starts its disposable native unit during KVM provision. `tests/os/selftest-proxy-health.sh`
+checks evidence refusal, resource isolation and cleanup failures.
+
 Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture controls live in
 `tests/stack/appliance/test-appliance-reset-slot.sh` and
 `tests/stack/appliance/test-appliance-reset-slot-boot.sh`.

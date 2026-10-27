@@ -38,11 +38,9 @@ for f in mining.network proxy.network tor.container p2pool.container xmrig-proxy
     caddy.container docker-proxy.container docker-control.container dashboard.container; do
     assert_eq "quadlet parity: $f" "$(diff -u "$ROOT/os/quadlet/$f" "$QOUT/$f" 2>&1 | head -c 300)" ""
 done
+python3 "$ROOT/tests/stack/standalone/test_quadlet_health.py" "$QOUT/xmrig-proxy.container" "$ROOT/docker-compose.yml"
+assert_rc "quadlet proxy healthcheck matches Compose and preserves degradation (#1217)" "$?" "0"
 assert_eq "quadlet p2pool disables its persistent file log (#1989)" "$(grep -c '^Exec=--no-log-file ' "$QOUT/p2pool.container")" "1"
-# The appliance must run the Caddy the Compose stack was proven with (#2630): a tag-only Image=
-# lets podman pull whatever the tag points at that day. Compare the rendered ref, less podman's
-# docker.io/library/ qualifier, with compose's pin; the parity loops carry it to all three
-# fixture sets. The first row is the parse's control: an empty parse must not pass vacuously.
 compose_caddy=$(awk '/^  caddy:/{f=1;next} f&&/^  [a-z]/{f=0} f&&/^    image:/{print $2; exit}' "$ROOT/docker-compose.yml")
 assert_eq "compose parse finds a digest-pinned caddy image (control)" \
     "$(printf '%s\n' "$compose_caddy" | grep -cE '^caddy:[0-9.]+@sha256:[0-9a-f]{64}$')" "1"

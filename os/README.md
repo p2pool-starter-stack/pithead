@@ -12,10 +12,16 @@ the fixes the spike forced (`TimeoutStartSec=infinity`, tmpfs `mode=` instead of
 pool (#2562). The Tor unit now receives the selected P2Pool P2P port; the entrypoint
 uses it for the onion target (#2936).
 
+The xmrig-proxy unit uses the same degrading shell healthcheck as Compose: an absent or
+nonexecutable script reports healthy; an executable probe keeps its own exit status.
+`Notify=healthy` waits for that verdict with `TimeoutStartSec=infinity`.
+
 These files are fixtures, not deployable configuration. They are consumed only as the
 parity test's expected output (`tests/stack/run.sh`, `render_quadlet_units()` diffed
 byte-for-byte against `quadlet/`, `quadlet/local/` and `quadlet/payout/`) — never
-deployed directly; the appliance always renders its own units from `config.json`. The
+deployed directly. Appliance boot remains Compose-managed through Podman. The KVM provision
+phase renders a disposable native xmrig-proxy unit, starts it without networking or published
+ports, checks healthy notification and the real API probe, and verifies cleanup. The
 translation rules the spike established, with evidence, live in
 [`docs/dev/dual-distribution-plan.md`](../docs/dev/dual-distribution-plan.md)
 (Runtime architecture) and on issue #78.

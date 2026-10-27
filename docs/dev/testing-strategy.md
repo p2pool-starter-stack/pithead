@@ -363,7 +363,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
 | `config-reset` | covered | KVM (appliance-only verb, `--phase reset` leg 0) |
 | `support-bundle` | missing | #2342 — the verb itself never runs live (`diag-logs`/`diag-doctor` exercise the log redactor, not `support-bundle`); its `.env` redactor was a denylist with real gaps until #1631's survivor-allowlist inversion |
-| `render-quadlet` | missing | #1217 — the podman/quadlet render has no live run anywhere |
+| `render-quadlet` | KVM provision | Rendered xmrig-proxy unit: Compose healthcheck parity and four degrading-guard cases at tier 1; native Podman/systemd startup, healthy notification, real API probe and cleanup in `appliance-proxy-health-leg.sh`. Other rendered units retain their existing coverage gaps; targeted E2E remains required for shared renderer changes. |
 | `test-alert` | by-design | deliberately deferred — real notification sinks; wire-level coverage is #2263 |
 | `logs` | by-design | a passthrough verb; tier 1 is the honest ceiling |
 | `version` | by-design | pure-output verb; tier 1 is the honest ceiling |
