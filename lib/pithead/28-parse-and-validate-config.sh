@@ -1,19 +1,9 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
     validate_config_document
+    validate_webhook_config
 
-    # Central .env line-injection guard (#33 hardening). No config string value may carry a
-    # control character (newline, CR, tab, …). A raw newline in a value that renders into .env
-    # unquoted — e.g. monero.node_password, telegram.bot_token, workers.api_token — would inject
-    # a SECOND KEY=value line such as PITHEAD_REGISTRY=evil.tld/attacker; every compose image: is
-    # ${PITHEAD_REGISTRY:-…}, so the root `apply -y` would then pull attacker images for the whole
-    # stack (RCE). Now that the dashboard control channel lets a full config cross the trust
-    # boundary, these fields are attacker-influenceable. Check EVERY string leaf here — the shared
-    # chokepoint both `apply --dry-run` (preview) and `apply -y` (commit) run — so no current or
-    # future field is missed. No legitimate config value contains a control character.
-    if jq -e 'any(.. | strings; test("[[:cntrl:]]"))' "$CONFIG_FILE" >/dev/null 2>&1; then
-        error "$CONFIG_FILE has a config value containing a control character or newline. That is not allowed — it could inject an extra line into the stack's .env. Remove the newline/control character (check secrets like node_password, bot_token, api_token)."
-    fi
+    validate_config_control_characters
 
     if is_appliance && [ "$(appliance_variant)" = release ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
         [ "${PITHEAD_CONFIG_SET:-0}" != 1 ] || [ "${PITHEAD_CONFIG_CARRIED_SSH:-0}" = 1 ] || error "ssh.enabled is unavailable on a release image; build a debug image for SSH."
@@ -23,10 +13,7 @@ parse_and_validate_config() {
         *) error "ssh.enabled is true but ssh.authorized_key is not a public key (expected it to start with ssh-, ecdsa- or sk-). Paste the PUBLIC key (e.g. ~/.ssh/id_ed25519.pub)." ;;
         esac
     fi
-    # tari.mode (#103/#1855): monero.mode's local/remote switch plus "off" — no merge-mining at all.
-    # Read BEFORE the required-fields gate below, which depends on it, and ahead of everything else
-    # so a bad value fails first. MISSING-KEY DEFAULT STAYS "local": 1.x never wrote it (#1855).
-    TARI_MODE=$(jq -r '.tari.mode // "local"' "$CONFIG_FILE")
+    TARI_MODE=$(config_get .tari.mode)
     case "$TARI_MODE" in
     local | remote | off) ;;
     *) error "tari.mode must be \"local\", \"remote\" or \"off\" (got \"$TARI_MODE\")." ;;
@@ -195,23 +182,7 @@ parse_and_validate_config() {
     *) error "p2pool.pool must be \"main\", \"mini\", or \"nano\" (got \"$POOL_TYPE\")." ;;
     esac
 
-    # Host interface the stratum port (:3333) publishes on. Default 0.0.0.0 so LAN rigs can
-    # reach it out of the box; narrow it (e.g. a specific LAN IP, or 127.0.0.1 to disable LAN
-    # access) on a public-IP host. Validate it's an IPv4 literal so a typo can't produce an
-    # unparseable compose port binding. Rendered to STRATUM_BIND in .env.
-    STRATUM_BIND=$(jq -r '.p2pool.stratum_bind // "0.0.0.0"' "$CONFIG_FILE")
-    if ! is_ipv4 "$STRATUM_BIND"; then
-        error "p2pool.stratum_bind must be an IPv4 address like \"0.0.0.0\", \"127.0.0.1\", or your LAN IP (got \"$STRATUM_BIND\")."
-    fi
-
-    # Operator-facing stratum port (#172), default 3333 — the host port xmrig-proxy binds and
-    # publishes, i.e. what every rig dials. Rendered to STRATUM_PORT in .env; RigForge rigs must
-    # point at the same port (rigforge pool.port). p2pool's container-INTERNAL stratum stays fixed
-    # at :3333 (only xmrig-proxy dials it on the bridge), so P2POOL_URL is untouched by this knob.
-    STRATUM_PORT=$(jq -r '.p2pool.stratum_port // 3333' "$CONFIG_FILE")
-    if ! printf '%s' "$STRATUM_PORT" | grep -qE '^[0-9]{1,5}$' || [ "$STRATUM_PORT" -lt 1 ] || [ "$STRATUM_PORT" -gt 65535 ]; then
-        error "p2pool.stratum_port must be an integer between 1 and 65535 (got \"$STRATUM_PORT\")."
-    fi
+    parse_stratum_endpoint
 
     migrate_legacy_workers
     migrate_removed_telegram_control
@@ -327,11 +298,7 @@ parse_and_validate_config() {
         assert_safe_dir "$d"
     done
 
-    # "auto"/empty/DYNAMIC_HOST here means "decide later" (preserved value, prompt, or hostname)
-    DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$CONFIG_FILE")" "")
-    # A non-"auto" host is rendered verbatim into the Caddyfile site address (generate_caddyfile),
-    # so reject anything that isn't a bare hostname/IP — a space, newline, or `{`/`}` would break
-    # the Caddyfile (or inject directives). Mirrors the stratum_bind validation above (#130).
+    DASHBOARD_HOST=$(resolve_default "$(config_get .dashboard.host)" "")
     if [ -n "$DASHBOARD_HOST" ] && ! is_valid_host "$DASHBOARD_HOST"; then
         error "dashboard.host must be a hostname or IP address — only letters, digits, dots, hyphens, and colons (got \"$DASHBOARD_HOST\")."
     fi

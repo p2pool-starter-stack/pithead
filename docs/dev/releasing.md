@@ -3,7 +3,7 @@
 How Pithead is versioned and released
 ([#44](https://github.com/p2pool-starter-stack/pithead/issues/44)). The pipeline is
 implemented as [`scripts/release/release.sh`](../../scripts/release/release.sh). Run it from the build/test
-server with `make release` (preview a run with `make release ARGS="--dry-run"`).
+server with `make release` (preview a run with `make release ARGS="--draft --dry-run"`).
 
 ## One product, one version
 
@@ -53,11 +53,28 @@ Noticing that a bump is available is a separate job from making one, and nothing
 against the component's latest stable upstream release by numeric version and prerelease precedence,
 lists newer Tari prereleases separately for review without treating them as approved upgrades, checks
 whether each exact Go module raise still changes its pinned upstream graph, compares the vendored
-Tari gRPC schema with the pinned node's upstream tag, and keeps one tracking issue up to date. It
-reports and never bumps: a Tari or
-`monerod` minor can carry a one-time data migration, which is work to schedule rather than a pull
-request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
-bumps on the component pins for the same reason.
+Tari gRPC schema with the pinned node's upstream tag, and keeps one tracking issue up to date. Stale component rows also create an
+`Upgrade <component> to <version>` issue with `dependencies` and component labels, an upstream
+release-notes link, and the required runtime proof. An existing open issue with the same title is
+left intact; incorporated targets are closed. Lookup failures never close an issue or imply currency.
+New issues use the oldest open milestone whose title is exactly `vX.Y.Z`, discovered on each run.
+If none exists, the issue stays unmilestoned and says so. Maintenance and backlog milestones are
+never substitutes for a release milestone.
+
+The watcher never changes a pin or opens a PR. Run `bash scripts/watch/pin-watch.sh --dry-run`
+to print proposed GitHub writes without applying them; upstream and issue lookups still run.
+Run `bash scripts/watch/pin-watch.sh --self-test` for the offline comparison and issue-action cases.
+A pinned prerelease ahead of the latest stable is never a downgrade candidate. Newer Tari
+prereleases stay in the report for a separate usability decision. Commit-pinned RigForge upgrades
+require upstream ancestry to prove that the target advances the pin.
+
+Dependabot groups Tari's node and console-wallet images together, allowing major and minor
+updates for both. Its dependency names are `tari-project/minotari_node` and
+`tari-project/minotari_console_wallet`; the registry is separate metadata, so group patterns omit it.
+Caddy and docker-socket-proxy remain limited to patch and digest updates.
+The dependency automation proof workflow runs the Dependabot CLI against the PR head without
+publishing PRs and requires a paired Tari update. Runtime bump PRs still need the tier-4 proof
+for the paths they change; Tari requires the gRPC contract check and merge-mining leg.
 
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
@@ -124,7 +141,7 @@ Releases are cut on a private build/test server that runs the full Monero and fu
 `make release` (or `pithead release`), runs the pipeline. Nothing is promoted or published until
 every gate is green.
 
-Use `--allow-dirty` with `--dry-run` to rehearse uncommitted changes.
+Use `--allow-dirty` with `--draft --dry-run` to rehearse uncommitted changes.
 Every real release path requires a clean worktree so the approved commit is
 the bytes that are built and published. Before bundling, it rebuilds `pithead`
 from its slices and refuses a different generated artifact.
@@ -179,7 +196,13 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 2. Test gate (blocking): run the existing tests (`make test`: lint + dashboard pytest ≥ 80% +
    the `pithead` shell suite + compose validation) and the
    [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration matrix against
-   the real nodes. Abort the release on any failure. See [Pre-release gate](#pre-release-gate-54).
+   the real nodes. The test command sets `FILE_BUDGET_BASE_REF` to the frozen release
+   commit: file-budget ceilings are checked against that commit rather than a later
+   `develop`. Per-file limits remain enforced. A clean release tree has no budget
+   changes against itself, so ceiling raises and first appearances are PR checks;
+   PR validation keeps its normal base. A dry run prints this command without
+   executing the tests and does not prove the test gate passes.
+   Abort the release on any failure. See [Pre-release gate](#pre-release-gate-54).
 3. Build: build the five stack images with the pinned upstream versions baked in and OCI labels
    stamped (`org.opencontainers.image.version` = the `VERSION` value, source revision, etc.). The
    dashboard already reads `PITHEAD_VERSION` / git build-args for its header badge
@@ -212,29 +235,35 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 7. Sign ([#376](https://github.com/p2pool-starter-stack/pithead/issues/376)): cosign-sign all six
    promoted digests and the install bundle with the key on the release server. See
    [Signed releases](#signed-releases).
-8. Publish GitHub Release: create the git tag `vX.Y.Z`, fast-forward `main` to the tagged commit
-   (see [Branch mechanics](#branch-mechanics)), write the release notes from the `CHANGELOG.md`
-   entry matching the tag (including its Known issues section, excluding Unreleased and other
-   versions). If the tag has no entry, warn on stderr and use the first non-Unreleased section;
-   if the changelog is absent, use `Pithead <TAG>`. Attach release assets: a pinned
-   `docker-compose.yml` / config bundle referencing
-   `${STACK_VERSION}=vX.Y.Z`, its detached signature (`pithead.tar.gz.sig`), plus the ingredients
-   manifest (exact component versions + promoted image digests). The install bundle includes the
-   generated CLI and top-level operator guides, but no source slices, appliance code, tests,
-   developer docs, research, or image assets.
+8. Build and verify the appliance from the guarded rootfs tar exported in step 3. The pipeline
+   requires explicit `PITHEAD_RAUC_KEYRING`, `PITHEAD_RAUC_CERT`, `PITHEAD_RAUC_KEY`,
+   `PITHEAD_DATA_MIGRATION` and `PITHEAD_MIN_OS_VERSION` inputs. It runs the production image and
+   bundle builders without `--dev`, pins `verify-image.sh` to the release commit, compares the
+   complete baked keyring with the declared root, and verifies the bundle signature against that
+   baked keyring. Image and bundle version, variant and compatibility must match; the bundle's
+   migration declaration must match the release inputs. The baked RigForge record must match the
+   immutable Dockerfile pin and baked version, and both are recorded in the ingredients manifest.
+   The existing packager produces `pithead-os-vX.Y.Z.img.xz`, `pithead-os-vX.Y.Z.raucb` and
+   their two `.sha256` files. Size limits, exact names, checksums and compression round trip are
+   checked before any git tag or GitHub draft is created. The rootfs is never rebuilt here.
+9. Create a complete GitHub Release **draft**. `--draft` is required and `--unsigned` is refused.
+   The pipeline verifies the install bundle's cosign signature, creates the git tag, fast-forwards
+   `main`, and uploads all seven assets to the new draft: `pithead.tar.gz`,
+   `pithead.tar.gz.sig`, `ingredients-vX.Y.Z.md`, the compressed image, the RAUC bundle and
+   the two appliance checksums. Missing inputs or failed verification stop draft creation.
+   Release notes come from the matching `CHANGELOG.md` entry. If it is absent, the existing
+   fallback selects the first non-Unreleased section, or `Pithead <TAG>` if no changelog exists.
+   The install bundle contains the generated CLI and operator guides, without source slices,
+   appliance code, tests or developer assets.
 
-   **When the version ships the appliance channel too, pass `--draft`.** Published release
-   assets are immutable — v1.18.0 shipped an asset that could not be amended and the whole
-   version had to be withdrawn — and the appliance's `.img.xz`, `.raucb`, and checksum files are built,
-   battery-tested and attached by hand *after* this stage (see
-   [appliance-release.md](appliance-release.md#cutting-a-release)). Publishing before they
-   are attached burns the tag. Draft first, attach both channels' artifacts, publish once.
-
-   One nuance: the git tag itself is pushed at this stage, and the `v*` ruleset blocks
-   re-pointing it — the draft protects the assets and the publish moment, not the version
-   number. A hardware-battery failure after the DIY cut still spends the version, so do not
-   start this stage until the appliance tree is believed final.
-9. Post-publish smoke ([#459](https://github.com/p2pool-starter-stack/pithead/issues/459)): run
+   **Stop at the draft for manual image verification.** Run the required hardware battery and
+   soak against the exact packaged image attached to this draft, following
+   [appliance-release.md](appliance-release.md#cutting-a-release). Automated verification does
+   not replace these checks. Only the owner publishes the complete draft after accepting their
+   results. There is no publication-resume command. Published assets are immutable, and the git
+   tag is already spent even if manual verification fails; do not repoint it or rebuild assets
+   under that version.
+10. Post-publish smoke ([#459](https://github.com/p2pool-starter-stack/pithead/issues/459)): run
    `make release-smoke` once against the just-published tag. It downloads the published bundle +
    images and verifies them for real, and — on the previous-release bench box — drives the real #59
    upgrade. See [Post-publish smoke test](#post-publish-smoke-test-459). This is the only step gated
@@ -450,7 +479,7 @@ committed it ships in every bundle, so every install from that release on refuse
 — it produces one every one-click upgrade in the field rejects, and GitHub release assets are
 immutable, so the signature can never be attached afterwards. That is how v1.18.0 shipped unsigned
 and had to be withdrawn and re-cut. Preflight now aborts the cut instead, naming what is missing;
-`--unsigned` is the explicit, loud way to publish one anyway. The check runs on `--dry-run` too and
+`--unsigned` is refused for appliance releases; a complete draft requires signatures. The check runs on `--dry-run` too and
 only the signing itself is skipped, so a rehearsal reports the decision the real cut will make —
 it used to sit inside the dry-run guard and could only ever print "signing OFF".
 
@@ -580,12 +609,9 @@ It runs two phases:
   `:vX.Y.Z` images and verifies them against the committed `cosign.pub`. A good signature must pass;
   a byte-changed bundle must be refused (this is what proves the check is real, not the pre-merge
   fake); the bundle's own `VERSION` must equal the tag (the #376 rollback guard); and an unrelated
-  key must be refused. If the release is **unsigned** — every release before v1.18.1 predates the
-  committed key, and a deliberate `--unsigned` cut ships without a signature (an unconfigured box
-  aborts the cut instead; see
-  [Release / Validation Server › The release signing key](release-server.md#the-release-signing-key))
-  — that is reported plainly and the phase is skipped. It never reports a signed pass for an
-  unsigned release. This phase needs only
+  key must be refused. Historical unsigned releases, including versions before v1.18.1, are
+  reported plainly and skip this phase. It never reports a signed pass for an unsigned release.
+  The current appliance pipeline refuses unsigned cuts. This phase needs only
   `gh` auth and network; run it anywhere.
 - **Real #59 upgrade** (`--upgrade DIR`). On a box still running the *previous* release, it enqueues
   the exact upgrade intent the dashboard writes into the #33 control spool, runs the host control
@@ -657,7 +683,7 @@ What exists today:
   promote-by-digest to `:vX.Y.Z` + `:latest` → publish the GitHub Release. It generates the
   ingredients manifest (promoted digests + upstream pins) and a pinned install bundle as release
   assets, never starts the live stack on the build host, and never prints the registry token.
-  Preview any run with `make release ARGS="--dry-run"`.
+  Preview any run with `make release ARGS="--draft --dry-run"`.
 
 - ✅ Signed releases ([#376](https://github.com/p2pool-starter-stack/pithead/issues/376)): the
   pipeline cosign-signs the promoted digests + the bundle, `pithead upgrade` and the dashboard

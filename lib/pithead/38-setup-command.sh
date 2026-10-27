@@ -46,6 +46,7 @@ setup() {
     inject_service_configs
     optimize_kernel
     generate_caddyfile
+    provision_console_login
     provision_control_runner     # #33: install/remove the dashboard-control systemd trigger
     provision_egress_check_units # #2599: the dashboard's egress firewall status
     provision_lan_guard_check_units

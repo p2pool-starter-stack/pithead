@@ -59,9 +59,15 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
-        lifecycle_gate_sample() { :; } # Read-only diagnostics have their own selftest.
+        lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
-        run_tari_background_sync() { :; } # driven by its own runtime leg and selftest
+        dashboard_tls_identity() { printf identity; }
+        assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {
+            it_fail
+            return 1
+        }; }
+        run_password_tls_continuity() { :; }
+        run_tari_background_sync() { :; }
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;
@@ -130,6 +136,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
     )
 }
 
+assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
 assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"
 assert_eq "restore rejects a newly introduced marker" "$(drive_restore yes marker-introduced)" "1|1"
 assert_eq "restore rejects a changed marker" "$(drive_restore yes marker-changed)" "1|1"
@@ -224,11 +231,12 @@ fi
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1 _gated$/,/^    fi # fault-injection gate$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"
 
-drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
+drive_gate() {
     (
         # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
         RUN_LIFECYCLE=1 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
-            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1" preview_rc="${3:-0}"
+        run_p2pool_preview() { return "$preview_rc"; }
         run_lifecycle() {
             LIFECYCLE_STACK_INTACT="${intact:-0}"
             return "$lifecycle_rc"
@@ -242,6 +250,7 @@ drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
 }
 
 assert_eq "fault injection runs after a healthy lifecycle" "$(drive_gate 0)" "yes"
+assert_eq "fault injection is reported skipped after a failed P2Pool preview (#3382)" "$(drive_gate 0 1 1)" "skipped:fault-injection "
 assert_eq "fault injection is reported skipped after a failed lifecycle (#2755)" "$(drive_gate 1)" "skipped:fault-injection "
 assert_eq "fault injection runs after a lifecycle row failed with the stack intact (#3342)" "$(intact=1 drive_gate 1)" "yes"
 assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection "
