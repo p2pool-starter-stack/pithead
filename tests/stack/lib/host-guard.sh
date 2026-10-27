@@ -15,6 +15,21 @@ stack_host_guard_init() {
         cat >"$guard_dir/$tool" <<'GUARD'
 #!/usr/bin/env bash
 tool=${0##*/}
+if [ "$tool" = sudo ]; then
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+        -n | -H | -E) shift ;;
+        --) shift; break ;;
+        *) break ;;
+        esac
+    done
+    case "${1:-}" in
+    systemctl | iptables | iptables-save | ip6tables | ip6tables-save | nft)
+        tool=$1
+        shift
+        ;;
+    esac
+fi
 case "$tool:$*" in
 systemctl:is-active*|systemctl:is-enabled*|systemctl:is-failed*|systemctl:is-system-running*|systemctl:show\ *|systemctl:status\ *|iptables-save:*|ip6tables-save:*|iptables:-S*|ip6tables:-S*|nft:list\ *|nft:-j\ list\ *)
     exit 1

@@ -182,7 +182,8 @@ tally producer failures and counts that are not nonnegative integers stop the fu
 
 The shared shell harness redirects `PITHEAD_UNIT_DIR` into its sandbox and places
 host-command guards after each test's explicit fixture tools on `PATH`. Unmocked
-service and firewall probes report unavailable. Unmocked mutations are blocked and
+service and firewall probes, including supported `sudo` calls, report unavailable.
+Unmocked mutations are blocked and
 make the process fail at exit, even if the caller ignores the command's error.
 Provide fixture `sudo`, `systemctl` and firewall tools for tests that exercise those
 operations; keep all writes inside the fixture. The two real-UID ownership fixtures

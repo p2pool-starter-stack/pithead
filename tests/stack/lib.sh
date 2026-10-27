@@ -163,12 +163,6 @@ mk_tmpdir() {
     printf -v "$1" '%s' "$_mk_d"
 }
 
-# A throwaway sandbox dir, cleaned on exit. Physical path (#695): pithead canonicalizes its
-# own directory with pwd -P, so a sandbox spelled through a symlink (macOS /var -> /private/var)
-# would render .env paths that no longer string-match the $SANDBOX-based assertions.
-# The refusal is mk_tmpdir's. #1661 built it inline here, against the one-liner that collapsed to
-# `cd "" && pwd -P` and armed the trap below on the working tree; #1705 made it the single
-# constructor so that recipe cannot drift between this file and the domain files.
 mk_tmpdir _sbx
 # shellcheck disable=SC2154
 SANDBOX="$(cd "$_sbx" && pwd -P)"

@@ -117,6 +117,8 @@ class HostIsolation(unittest.TestCase):
             "iptables-restore </dev/null",
             "ip6tables -F",
             "nft -f - </dev/null",
+            "sudo -n nft -f - </dev/null",
+            "sudo -- systemctl daemon-reload",
         ):
             with self.subTest(command=command):
                 result = self.run_guard(command + " >/dev/null 2>&1 || true; exit 0")
@@ -126,12 +128,16 @@ class HostIsolation(unittest.TestCase):
                 self.sandbox.mkdir()
 
     def test_read_probes_are_unavailable_without_reading_the_host(self):
-        result = self.run_guard(
-            "systemctl is-active pithead-egress.timer && exit 9; "
-            "iptables-save && exit 9; nft -j list tables && exit 9; exit 0"
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assert_host_preserved()
+        for prefix in ("", "sudo ", "sudo -n ", "sudo -H -E -- "):
+            with self.subTest(prefix=prefix):
+                self.sandbox.mkdir(exist_ok=True)
+                result = self.run_guard(
+                    f"{prefix}systemctl is-active pithead-egress.timer && exit 9; "
+                    f"{prefix}iptables-save && exit 9; "
+                    f"{prefix}nft -j list tables && exit 9; exit 0"
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assert_host_preserved()
 
     def test_child_process_cannot_hide_a_blocked_mutation(self):
         result = self.run_guard('bash -c "systemctl daemon-reload" >/dev/null 2>&1 || true; exit 0')
