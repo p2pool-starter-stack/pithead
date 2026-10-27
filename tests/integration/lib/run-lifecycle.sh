@@ -6,6 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit 
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
+source "$(dirname "${BASH_SOURCE[0]}")/run-support-bundle.sh" || exit $?
 run_lifecycle() {
     IT_CURRENT_SCENARIO="lifecycle"
     local lifecycle_ok=1 reset_failed=0
@@ -13,6 +14,7 @@ run_lifecycle() {
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
     run_cli_wizard_defaults || return 1
+    run_support_bundle || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
     prove_wallet_recovery || return 1
