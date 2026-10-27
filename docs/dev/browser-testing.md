@@ -36,12 +36,15 @@ cd dashboard/tests/browser
 
 The Playwright journeys run in Chromium, Firefox, WebKit and a mobile Chromium viewport.
 `make test-browser` also runs the separate Node HTTPS backup fixture in Chromium; CI repeats
-that fixture with pinned Google Chrome for Testing. It retains certificate interstitial acceptance,
+that fixture with pinned Google Chrome for Testing. Both retain certificate interstitial acceptance,
 22 MiB encrypted download integrity, decryption/member checks and transfer-failure retries.
-See [the testing guide](testing-guide.md#native-browser-regressions) for its prerequisites and limits. Mobile emulation
-checks the same actions at a narrow viewport; it is not physical-device acceptance or a visual
-screenshot comparison. Native chart rendering runs, but numerical chart contracts remain in the
-frontend tests. See [testing strategy](testing-strategy.md) for the CLI, KVM and e2e tiers.
+CI uses a [prebuilt Playwright environment](https://playwright.dev/docs/docker) whose version matches
+the locked runner, avoiding the full browser/system-library download during each job.
+See [the testing guide](testing-guide.md#native-browser-regressions) for provisioning limits,
+prerequisites and failure behavior. Mobile emulation checks the same actions at a narrow viewport;
+it is not physical-device acceptance or a visual screenshot comparison. Native chart rendering runs,
+but numerical chart contracts remain in the frontend tests.
+See [testing strategy](testing-strategy.md) for the CLI, KVM and e2e tiers.
 
 ## Fixtures and failures
 

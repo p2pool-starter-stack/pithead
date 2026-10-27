@@ -198,9 +198,16 @@ dashboard/tests/browser/node_modules/.bin/playwright install chromium firefox we
 make test-browser
 ```
 
-On Linux, add `--with-deps` to the install command. The separate `browser.yml` workflow
-installs these dependencies and runs Chromium, Firefox, WebKit and mobile Chromium.
-Missing dependencies fail the suite. Pure frontend tests remain dependency-free.
+On Linux, add `--with-deps` to the local install command. The separate `browser.yml` workflow
+runs Chromium, Firefox, WebKit and mobile Chromium in the digest-pinned Playwright 1.64.0
+Noble image, matching the npm lockfile. The image supplies browsers and their system libraries;
+CI installs only Make, unzip and the locked npm packages before running `make test-browser`.
+It uses the image's Node 24. Each provisioning step has a two-minute limit within the unchanged
+15-minute job budget. The pinned Chrome download also has a 20-second connection limit and a
+90-second transfer limit. A provisioning failure fails the job; a skipped assertion never
+counts as passing browser proof. Missing dependencies fail the suite.
+`make test-tools` checks image/lock compatibility, provisioning bounds, required assertions and
+the PR trigger for both integration branches. Pure frontend tests remain dependency-free.
 See [browser testing](browser-testing.md) for focused runs, failure artifacts and coverage limits.
 The backup regression serves the production backup component over
 self-signed HTTPS, accepts the browser's certificate interstitial, and records the exact Chromium
