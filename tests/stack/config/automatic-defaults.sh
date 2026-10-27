@@ -120,7 +120,7 @@ for parity_platform in diy appliance; do
     [ "$parity_platform" != appliance ] || parity_flag=1
     parity_dir="$SANDBOX/parity-$parity_platform"
     mkdir -p "$parity_dir/cli" "$parity_dir/browser" "$parity_dir/form"
-    printf '%s\\n\\n\\n\\n\\n\\n\\n' "$VALID_PRIMARY" |
+    printf '%s\n\n\n\n\n\n\n' "$VALID_PRIMARY" |
         PITHEAD_APPLIANCE="$parity_flag" run_sourced "$parity_dir/cli" parity_wizard >"$parity_dir/cli.log" 2>&1
     assert_rc "$parity_platform CLI defaults generate" "$?" 0
     for parity_kind in browser form; do
