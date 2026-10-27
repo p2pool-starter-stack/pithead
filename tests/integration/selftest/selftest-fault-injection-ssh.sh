@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Observe the real rx() SSH branch without a live server.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +23,7 @@ SSH
 chmod +x "$WORK/bin/ssh"
 export PATH="$WORK/bin:$PATH"
 
+echo "== SSH fault phase transport, quoting and argument refusals =="
 MODE=targeted HARNESS_ARGS=(--fault-injection-ssh)
 validate_harness_args
 assert_eq "the SSH selector is forwarded unchanged" "$HARNESS_PHASE_ARGS" " --fault-injection-ssh"
@@ -48,13 +48,13 @@ assert_eq "rx() invoked SSH with options and the selected destination" \
     "$(sed '$d' "$SSH_CALL_LOG" 2>/dev/null)" "$(printf '%s\n' -n -o BatchMode=yes runner@bench)"
 assert_eq "the process transport is restored after the phase" "$IT_MODE|$IT_SSH_DEST" "local|original"
 
-out="$(bash "$HERE/../run.sh" --local --dir /tmp --fault-injection-ssh 2>&1)"
+out="$(bash "$HERE/../run.sh" --local --dir "$WORK" --fault-injection-ssh 2>&1)"
 assert_rc "a bare selector without its destination is refused" "$?" 2
 assert_contains "the error refuses to run locally" "$out" "refusing to run the phase locally"
-out="$(bash "$HERE/../run.sh" --local --dir /tmp --fault-injection-ssh --fault-ssh-dest --hardening 2>&1)"
+out="$(bash "$HERE/../run.sh" --local --dir "$WORK" --fault-injection-ssh --fault-ssh-dest --hardening 2>&1)"
 assert_rc "an option cannot become an SSH destination" "$?" 2
 assert_contains "the error identifies the invalid destination" "$out" "got the flag '--hardening'"
-out="$(bash "$HERE/../run.sh" --local --dir /tmp --fault-ssh-dest 2>&1)"
+out="$(bash "$HERE/../run.sh" --local --dir "$WORK" --fault-ssh-dest 2>&1)"
 assert_rc "a destination flag without a value is refused" "$?" 2
 assert_contains "the error names the required destination" "$out" "requires an SSH destination"
 
