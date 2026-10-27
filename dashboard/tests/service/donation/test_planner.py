@@ -87,6 +87,7 @@ def test_custom_cycle_trigger_and_dwell():
         ({"debt_ms": -1}, "debt_ms"),
         ({"debt_ms": float("inf")}, "debt_ms"),
         ({"percent": 0}, "percent"),
+        ({"percent": 0.099}, "percent"),
         ({"percent": 11}, "percent"),
         ({"percent": float("nan")}, "percent"),
         ({"max_fraction": -0.1}, "max_fraction"),
@@ -126,3 +127,12 @@ def test_simulator_schedule_switches_and_carried_debt():
 def test_empty_simulation():
     assert simulate([], 1, 0.85).project_share == 0
     assert simulate([], 1, 0.85).switches_per_hour == 0
+
+
+def test_tenth_percent_over_a_week_stays_within_one_slice():
+    cycles = 7 * 144
+    result = simulate([120_000] * cycles, 0.1, 0.85)
+    target_ms = cycles * 600_000 * 0.1 / 100
+    assert 0 <= target_ms - result.project_ms < 60_000
+    assert result.project_ms == 600_000
+    assert result.debt_ms == pytest.approx(target_ms - result.project_ms)

@@ -29,7 +29,7 @@ def plan_cycle(
             raise ValueError(f"{name} must be an integer >= {minimum}")
     for name, value, minimum, maximum in (
         ("debt_ms", debt_ms, 0, math.inf),
-        ("percent", percent, 1, 10),
+        ("percent", percent, 0.1, 10),
         ("max_fraction", max_fraction, 0, 1),
     ):
         if not math.isfinite(value) or not minimum <= value <= maximum:

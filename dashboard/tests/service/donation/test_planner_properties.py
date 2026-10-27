@@ -12,7 +12,7 @@ _xvb = st.one_of(st.just(0), st.integers(15_000, 570_000), st.just(600_000))
 @given(
     xvb_ms=_xvb,
     debt_ms=st.integers(0, 3_600_000),
-    percent=st.floats(1, 10, allow_nan=False, allow_infinity=False),
+    percent=st.floats(0.1, 10, allow_nan=False, allow_infinity=False),
     max_fraction=st.floats(0, 0.85, allow_nan=False, allow_infinity=False),
 )
 def test_cycle_invariants(xvb_ms, debt_ms, percent, max_fraction):
@@ -43,3 +43,16 @@ def test_cycle_invariants(xvb_ms, debt_ms, percent, max_fraction):
 def test_daily_share_with_room(percent, xvb_ms):
     result = simulate([xvb_ms] * 144, percent, 0.85)
     assert result.project_share == pytest.approx(percent / 100, rel=0.05)
+
+
+@settings(max_examples=50, deadline=None)
+@given(
+    percent=st.floats(0.1, 10, allow_nan=False, allow_infinity=False),
+    xvb_ms=st.one_of(st.just(0), st.integers(15_000, 300_000)),
+)
+def test_weekly_share_with_room_stays_within_one_slice(percent, xvb_ms):
+    cycles = 7 * 144
+    result = simulate([xvb_ms] * cycles, percent, 0.85)
+    target_ms = cycles * 600_000 * percent / 100
+    assert 0 <= target_ms - result.project_ms < 60_000
+    assert result.debt_ms == pytest.approx(target_ms - result.project_ms)

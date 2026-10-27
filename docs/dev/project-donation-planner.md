@@ -29,7 +29,7 @@ min_slice_ms=60000, min_dwell_ms=15000, overhead_ms=5000)` returns
 `(segments, debt_ms)`. Segments appear in XvB, P2Pool, project order;
 zero-length segments are omitted. Durations and timing parameters are integer
 milliseconds. Debt may contain fractional milliseconds; percentages are finite
-numbers from 1 through 10, and `max_fraction` is a finite fraction from 0 through 1.
+numbers from 0.1 through 10, and `max_fraction` is a finite fraction from 0 through 1.
 Debt and overhead must be nonnegative; cycle, trigger and dwell must be positive.
 The cycle must fit the P2Pool minimum remainder.
 
@@ -42,6 +42,9 @@ when XvB alone exceeds it, no project time is allocated. Keep at least 30 second
 A full-cycle XvB decision has no P2Pool or project segment.
 Unspent debt is capped at three cycles after spending. A sustained reserve
 constraint can therefore prevent the requested percentage from being delivered.
+Callers must retain returned debt across restarts and config reloads; the
+[ledger/API child](https://github.com/p2pool-starter-stack/pithead/issues/3697)
+owns persistence.
 
 `sim/project_slice_model.py` exposes `simulate(xvb_schedule, percent,
 max_fraction)`. One schedule entry is one cycle. Its result reports total project
@@ -50,6 +53,10 @@ Switches include cycle boundaries and exclude the initial connection.
 For 144 ten-minute cycles with room to spare and zero starting debt, the planner
 delivers 14, 28 and 72 minutes at 1, 2 and 5 percent respectively. Unspent debt
 accounts for the difference from 14.4 and 28.8 minutes; longer runs converge.
+At 0.1 percent, 100 cycles (16 hours 40 minutes) accrue the first 60-second slice.
+Over a week of 1008 cycles, the planner delivers 600 seconds against a
+604.8-second target and carries the remaining 4.8 seconds of debt. The shortfall
+is below one 60-second slice.
 
 Run the examples and property tests with the locked test extra:
 
