@@ -1,0 +1,74 @@
+name: Readiness acceptance proof
+on:
+  push:
+    branches: [agent/2511-ubuntu-acceptance]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TMPDIR: ${{ runner.temp }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: da24be0a65d55a2f22993a0734abd00d9f7901e0
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run pinned issue acceptance on the candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/readiness-proof"
+          python3 - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import urlopen
+          with urlopen('https://api.github.com/repos/p2pool-starter-stack/pithead/issues/2652', timeout=30) as response:
+              issue = json.load(response)
+          script = issue['body'].split('```python\n', 1)[1].split('\n```', 1)[0] + '\n'
+          script = script.replace('"origin", "develop"', '"origin", "develop-v2.1.0"').replace('"origin/develop", "HEAD"', '"origin/develop-v2.1.0", "HEAD"')
+          assert hashlib.sha256(script.encode()).hexdigest() == 'be3a648f841df1c91168c23951be632c758c5a0551656dc3e1e93bec3ca69cfc'
+          Path(os.environ['RUNNER_TEMP'], 'readiness-proof', 'accept_2652.py').write_text(script)
+          PYTHON
+          git rev-parse HEAD | tee "$RUNNER_TEMP/readiness-proof/head.txt"
+          python3 "$RUNNER_TEMP/readiness-proof/accept_2652.py" | tee "$RUNNER_TEMP/readiness-proof/acceptance.log"
+      - name: Worker wait regression and negative control
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/integration/selftest/selftest-stratum-wait.sh | tee "$RUNNER_TEMP/readiness-proof/worker-green.log"
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path('tests/integration/lib.sh')
+          text = p.read_text()
+          predicate = ' && [ "${w:-0}" -ge "${EXPECTED_WORKERS:-1}" ] 2>/dev/null'
+          assert text.count(predicate) == 1
+          p.write_text(text.replace(predicate, ''))
+          PYTHON
+          set +e
+          bash tests/integration/selftest/selftest-stratum-wait.sh > "$RUNNER_TEMP/readiness-proof/worker-red.log" 2>&1
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/readiness-proof/worker-red.log"
+          test "$rc" -eq 1
+          grep -F '✗ one returning worker cannot finish the wait before its sibling' "$RUNNER_TEMP/readiness-proof/worker-red.log"
+          grep -F '✗ a missing sibling exhausts the bounded wait' "$RUNNER_TEMP/readiness-proof/worker-red.log"
+          git restore tests/integration/lib.sh
+      - name: Environment regression and metadata gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/integration/selftest/selftest-e2e-env.sh | tee "$RUNNER_TEMP/readiness-proof/environment.log"
+          make lint-file-budget lint-pithead-build FILE_BUDGET_BASE_REF=origin/develop-v2.1.0 | tee "$RUNNER_TEMP/readiness-proof/metadata.log"
+          git diff --exit-code
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: readiness-acceptance-da24be0a6
+          path: ${{ runner.temp }}/readiness-proof
+          if-no-files-found: error
