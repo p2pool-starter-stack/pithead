@@ -53,6 +53,7 @@ ONLY_SCENARIO=""
 CHECK_ONLY=0
 READINESS=0
 RUN_LIFECYCLE=0
+RUN_RESET_DASHBOARD=0
 RUN_FAULTS=0
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
@@ -76,6 +77,8 @@ RIGFORGE_BOOTSTRAP_VERSION=""
 RIG_CONTROL_PORT="8082"
 SAFETY_BACKUP=0
 SAFETY_ARCHIVE=""
+RESET_DASHBOARD_DECOY_DASHBOARD=""
+RESET_DASHBOARD_DECOY_P2POOL=""
 SAFETY_RESTORE_FAILED=0
 SAFETY_RESTORE_FAIL_REASON=""
 _SAFETY_RESTORE_ARMED=0
@@ -96,6 +99,8 @@ BASELINE_SECRET_FP=""
 BASELINE_EXACT_SECRET_FP=""
 
 INTEGRATION_RUN_SUITE=1
+# shellcheck source=tests/integration/lib/run-usage.sh
+source "$HERE/lib/run-usage.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-cli.sh
 source "$HERE/lib/run-cli.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-matrix.sh
@@ -122,6 +127,8 @@ source "$HERE/lib/run-connection-announcements.sh" || exit $?
 source "$HERE/lib/run-reset-restore.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-reset-dashboard.sh
+source "$HERE/lib/run-reset-dashboard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-secrets.sh
 source "$HERE/lib/run-rotate-secrets.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
@@ -265,7 +272,7 @@ main() {
     # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
     # name every requested one in the summary instead of dropping it silently (#2755).
     if [ "$rig_control_ok" != 1 ]; then
-        for _gated in LIFECYCLE:lifecycle ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
+        for _gated in LIFECYCLE:lifecycle RESET_DASHBOARD:reset-dashboard ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
             XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
             MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
             local _flag="RUN_${_gated%%:*}"
@@ -285,6 +292,7 @@ main() {
             it_skip_phase "fault-injection" "the lifecycle phase failed, so there is no healthy stack to inject faults into (#2501)"
         fi
     fi # fault-injection gate
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_RESET_DASHBOARD" = "1" ] && run_reset_dashboard
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_SECRETS" = "1" ] && run_rotate_secrets
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
