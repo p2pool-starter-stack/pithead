@@ -242,10 +242,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     data = data or {}
     history = state_mgr.get_history()
     share_stats = state_mgr.get_share_stats()
-    raffle_wins = state_mgr.get_raffle_wins()  # rounds this wallet won, from XvB's winners file
-    # Confirmed on-chain payouts (#381): fetched once when the view-only wallet feature is on (else
-    # None), fed to both the earnings totals and the chart markers. config read at call time so
-    # tests can flip the flag per-app.
+    raffle_wins = state_mgr.get_raffle_wins()
     monero_payouts = state_mgr.get_payouts("monero") if config.PAYOUT_CONFIRM_ENABLED else None
     metrics = build_metrics(data, state_mgr, history)
     db_healthy = state_mgr.is_db_healthy()
