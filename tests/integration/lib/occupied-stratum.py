@@ -1,6 +1,7 @@
 import json
 import sys
 import time
+import urllib.error
 import urllib.request
 
 port = int(sys.argv[1])
@@ -55,7 +56,19 @@ def wait_mining(start, timeout, phase, allow_reset=False):
     )
 
 
-config = request("config")
+deadline = time.monotonic() + 90
+while True:
+    try:
+        config = request("config")
+        break
+    except urllib.error.URLError as exc:
+        if not isinstance(exc.reason, ConnectionRefusedError):
+            raise
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                "dashboard configuration unavailable before occupied-port preview"
+            ) from exc
+        time.sleep(2)
 for dotted in config.get("_default_keys", []):
     parts = dotted.split(".")
     node = config

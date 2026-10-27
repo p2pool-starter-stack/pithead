@@ -7,6 +7,7 @@ import socket
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -136,11 +137,12 @@ esac
 
 
 class OccupiedStratumProofTest(unittest.TestCase):
-    def exercise(self, samples):
+    def exercise(self, samples, config_errors=()):
         clock = [0]
         state_reads = [0]
         previews = []
         output = io.StringIO()
+        config_errors = iter(config_errors)
 
         def respond(req, **kwargs):
             route = req.full_url.split("/api/")[1]
@@ -150,6 +152,9 @@ class OccupiedStratumProofTest(unittest.TestCase):
                 state_reads[0] += 1
                 value = {"proxy_workers": workers, "stratum": {"total_hashes": hashes}}
             elif route == "config":
+                error = next(config_errors, None)
+                if error is not None:
+                    raise error
                 value = {"p2pool": {"stratum_port": 3333}}
             elif route == "control/preview":
                 previews.append(state_reads[0])
@@ -174,6 +179,30 @@ class OccupiedStratumProofTest(unittest.TestCase):
             except AssertionError as exc:
                 error = str(exc)
         return error, previews, output.getvalue()
+
+    def test_initial_config_waits_for_dashboard_after_prior_apply(self):
+        error, previews, output = self.exercise(
+            [(1, 100), (1, 102), (1, 104)],
+            [urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))],
+        )
+        self.assertIsNone(error)
+        self.assertEqual(previews, [2])
+        self.assertIn("mining continues", output)
+
+    def test_initial_config_refusal_has_a_deadline(self):
+        error, previews, _ = self.exercise(
+            [(1, 100)],
+            [urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))] * 100,
+        )
+        self.assertEqual(previews, [])
+        self.assertIn("configuration unavailable before occupied-port preview", error)
+
+    def test_initial_config_http_errors_are_not_retried(self):
+        with self.assertRaises(urllib.error.HTTPError):
+            self.exercise(
+                [(1, 100), (1, 102), (1, 104)],
+                [urllib.error.HTTPError("", 401, "Unauthorized", {}, None)],
+            )
 
     def test_preview_waits_for_active_mining_after_prior_apply(self):
         error, previews, output = self.exercise([(0, 100), (1, 100), (1, 102), (1, 104)])

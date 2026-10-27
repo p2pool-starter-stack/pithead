@@ -107,6 +107,8 @@ probe changed ports before committing. `tests/stack/standalone/test_stratum_port
 listener conflicts, and the hardening phase runs `tests/integration/lib/occupied-stratum.py`
 through the dashboard control API against Caddy’s occupied port. It waits for workers and hash
 progress before preview and after refusal, reporting bounded counters when either wait fails.
+The initial configuration read retries connection refusal for 90 seconds while the dashboard
+starts after the preceding apply; other errors and later request failures stop the probe.
 The pre-preview wait re-baselines a counter reset from the preceding apply, then requires growth;
 the post-refusal check still requires growth beyond the established baseline.
 
