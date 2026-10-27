@@ -38,8 +38,6 @@ test = [
   # hypothesis (#284): property-based tests asserting invariants on the money/numeric logic.
   "hypothesis>=6.165.9",
 ]
-# Developer tooling (Wave 7, #280). Pinned so local, pre-commit, and CI all run the SAME ruff
-# — lint output is version-sensitive, so a floor would let CI and a contributor disagree.
 dev = ["ruff==0.17.2", "pre-commit>=4.6.2"]
 
 [tool.setuptools.packages.find]
