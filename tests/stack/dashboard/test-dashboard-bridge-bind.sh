@@ -58,17 +58,16 @@ for gateway_host in "" dashboard.example; do
                 generate_caddyfile >/dev/null 2>&1
             cat Caddyfile
         )"
-        gateway_label="host=${gateway_host:-auto}, onion=$gateway_onion"
         gateway_lan_binds=$(printf '%s\n' "$caddy_gateway" | awk '/^    bind / && $0 != "    bind 10.77.42.1"' | sort -u)
-        assert_eq "$gateway_label: LAN binds exclude the configured gateway without bridge discovery" \
+        assert_eq "LAN binds exclude the configured gateway without bridge discovery" \
             "$gateway_lan_binds" "    bind 192.168.1.10 fd00::1 127.0.0.1 ::1"
-        assert_not_contains "$gateway_label: LAN sites exclude the configured gateway" \
+        assert_not_contains "LAN sites exclude the configured gateway" \
             "$(printf '%s\n' "$caddy_gateway" | grep '^https://')" "https://10.77.42.1"
         if [ "$gateway_onion" = true ]; then
-            assert_eq "$gateway_label: both onion vhosts retain their gateway bind" \
+            assert_eq "both onion vhosts retain their gateway bind" \
                 "$(printf '%s\n' "$caddy_gateway" | grep -c '^    bind 10.77.42.1$')" 2
         else
-            assert_not_contains "$gateway_label: onion-disabled render never names the gateway" \
+            assert_not_contains "onion-disabled render never names the gateway" \
                 "$caddy_gateway" "10.77.42.1"
         fi
     done
