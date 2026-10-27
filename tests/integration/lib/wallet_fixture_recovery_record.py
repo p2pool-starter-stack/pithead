@@ -88,7 +88,6 @@ def seal(fixture, directory, baseline, job, receipt, stage, ready_from_not_prove
 
 
 def fingerprints(fixture, state):
-    """The verdict's archive and keys digests, from a snapshot that names exactly one prepared pair."""
     keys = state["contents"][fixture.wallet_keys(state["contents"])]
     result = (state["archive_sha256"], keys[2] if len(keys) > 2 else None)
     if any(not isinstance(value, str) or not HEX64.fullmatch(value) for value in result):
