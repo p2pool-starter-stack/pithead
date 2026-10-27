@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import io
 import json
 import re
 import shutil
@@ -7,7 +8,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 RIG_MIN = 77
 
@@ -122,16 +125,62 @@ def self_test():
         redact("fixture 192.0.2.1 and 2001:db8::1"), "fixture <address> and <address>"
     )
     check.assertEqual(redact("/home/user/log box.internal"), "<home>/log <host>")
+
+    def fake_git(command, **_):
+        if command[1:] == ["rev-parse", "HEAD"]:
+            return "a" * 40 + "\n"
+        if command[1:3] == ["merge-base", "--"]:
+            return "b" * 40 + "\n"
+        if command[1:3] == ["diff", "--name-only"]:
+            return "\n".join(_changed) + "\n"
+        raise AssertionError(command)
+
+    def fake_container(command, stdout, **_):
+        args = command[2:]
+        rc = 0
+        if args == ["--build", "true"]:
+            text = ""
+        elif args == ["ip", "-o", "-4", "addr", "show"]:
+            text = "1: lo inet <address>/8\n"
+        elif args == ["bash", "-c", RIG_RUNNER]:
+            text = "TALLY PASS=77 FAIL=0\n"
+        elif args == ["make", "test-stack"]:
+            text = out
+            rc = 2
+        else:
+            raise AssertionError(command)
+        stdout.write(text)
+        return subprocess.CompletedProcess(command, rc)
+
+    with tempfile.TemporaryDirectory(prefix="accept-iproute2-selftest-") as work:
+        for _changed in (
+            ["docs/dev/testing-strategy.md"],
+            [str(DOCKERFILE), "scripts/test-container.sh"],
+        ):
+            for scope_only in (False, True):
+                args = ["--output", work] + (["--scope-only"] if scope_only else [])
+                with (
+                    patch.object(subprocess, "check_output", side_effect=fake_git),
+                    patch.object(subprocess, "run", side_effect=fake_container) as container_run,
+                    redirect_stdout(io.StringIO()),
+                ):
+                    rc = main(args)
+                record = json.loads(Path(work, "result.json").read_text())
+                check.assertEqual(rc, 1 if scope_only else 0)
+                check.assertEqual(record["results"], [False] if scope_only else [True] * 4)
+                check.assertEqual(container_run.call_count, 0 if scope_only else 4)
     print("accept-iproute2 self-test: passed")
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="origin/develop-v2.1.0")
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--missing-iproute2", action="store_true")
-    parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args()
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--missing-iproute2", action="store_true")
+    mode.add_argument("--scope-only", action="store_true")
+    mode.add_argument("--self-test", action="store_true")
+    args = parser.parse_args(argv)
     if args.self_test:
         self_test()
         return 0
@@ -146,8 +195,6 @@ def main():
         return subprocess.check_output([git_bin, *command], text=True).strip()  # noqa: S603
 
     head = git("rev-parse", "HEAD")
-    base = git("merge-base", "--", args.base, "HEAD")
-    changed = set(git("diff", "--name-only", base, "--").splitlines())
     results = []
     transcript = []
     commands = []
@@ -177,13 +224,20 @@ def main():
         return rc, out
 
     emit(f"Commit: {head}")
-    emit(f"Merge base: {base}")
+    if args.scope_only:
+        base = git("merge-base", "--", args.base, "HEAD")
+        changed = set(git("diff", "--name-only", base, "--").splitlines())
+        emit(f"Merge base: {base}")
+        report(
+            "C1 tests/runner/Dockerfile changes, and only the four allowed paths differ",
+            str(DOCKERFILE) in changed and changed <= ALLOWED,
+            f"changed: {sorted(changed)}",
+        )
+        emit(f"{'ACCEPTED: 1/1' if all(results) else 'NOT ACCEPTED: 0/1'} checks pass")
+        record = {"commit": head, "base": base, "results": results, "commands": commands}
+        (output / "result.json").write_text(json.dumps(record, indent=2) + "\n")
+        return 0 if all(results) else 1
     emit("Image: missing-iproute2 control" if args.missing_iproute2 else "Image: PR head")
-    report(
-        "C1 tests/runner/Dockerfile changes, and only the four allowed paths differ",
-        str(DOCKERFILE) in changed and changed <= ALLOWED,
-        f"changed: {sorted(changed)}",
-    )
     original = DOCKERFILE.read_text()
     if args.missing_iproute2:
         if original.count(" iproute2 ") != 1:
@@ -226,7 +280,7 @@ def main():
     )
     control_ok = (
         args.missing_iproute2
-        and results == [True, True, False, False, False]
+        and results == [True, False, False, False]
         and commands[-1]["exit"] != 124
         and ran >= STACK_MIN_RUN
         and bool(still_failing)
@@ -237,7 +291,6 @@ def main():
         "commit": head,
         "dockerfile_sha256": dockerfile_sha,
         "acceptance_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "base": base,
         "missing_iproute2": args.missing_iproute2,
         "results": results,
         "commands": commands,

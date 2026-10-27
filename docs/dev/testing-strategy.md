@@ -644,15 +644,20 @@ and at least 6000 stack assertions with all 52 named `ip`-dependent assertions p
 The missing-`iproute2` control must fail C3–C5; its expected failure does not waive normal CI.
 The existing missing Go, missing `envsubst`, three Compose-pull assertions and lock-window
 flake remain excluded from C5, which only judges those 52 assertions. No extra tools are added.
-C1 permits exactly `tests/runner/Dockerfile`, `.github/workflows/test-runner-acceptance.yml`,
-`tests/runner/accept-iproute2.py` and `docs/dev/testing-strategy.md`; the Dockerfile must change.
-On the exact PR head, reviewers run `python3 tests/runner/accept-iproute2.py --output "$TMPDIR/fixed"`
-and repeat with `--missing-iproute2 --output "$TMPDIR/control"` on Linux with Docker.
-The default comparison base is `origin/develop-v2.1.0`; use `--base REF` to name another base.
-The workflow retains the commit, C1–C5 output, command exits and redacted container logs as
+C1 is an issue-specific scope proof: run `python3 tests/runner/accept-iproute2.py --scope-only`
+on #3115's exact PR head. It permits exactly `tests/runner/Dockerfile`,
+`.github/workflows/test-runner-acceptance.yml`, `tests/runner/accept-iproute2.py` and
+`docs/dev/testing-strategy.md`, and requires the Dockerfile to change. The comparison base defaults
+to `origin/develop-v2.1.0`; use `--base REF` for another base. C1 runs without Docker and must print
+`ACCEPTED: 1/1 checks pass`. It is separate from the permanent workflow, which runs C2–C5 for
+later docs-only PRs and runner changes involving other files without imposing #3115's scope.
+Reviewers run `python3 tests/runner/accept-iproute2.py --output "$TMPDIR/fixed"` on Linux with
+Docker, then repeat with `--missing-iproute2 --output "$TMPDIR/control"` for the control.
+The workflow retains the commit, C2–C5 output, command exits and redacted container logs as
 `runner-acceptance-<case>-<sha>` artifacts. A confirmed negative control exits zero while its
-C1–C5 verdict remains `NOT ACCEPTED`; the fixed image must print `ACCEPTED: 5/5 checks pass`.
-The parser self-test (`--self-test`) runs without Docker. A tier the container cannot supply says so.
+C2–C5 verdict remains `NOT ACCEPTED`; the fixed image must print `ACCEPTED: 4/4 checks pass`.
+The Docker-free `--self-test` verifies parsing and later PRs: C2–C5 accept docs-only and broader
+runner changes, while the explicit C1 command refuses both. A tier the container cannot supply says so.
 
 | Tier | Needs on the host | Runs in the container? |
 |---|---|---|

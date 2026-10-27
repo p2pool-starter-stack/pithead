@@ -33,10 +33,9 @@ jobs:
       - uses: ./.github/actions/docker-registry-mirror
       - name: Check acceptance parser
         run: python3 tests/runner/accept-iproute2.py --self-test
-      - name: Rebuild image and run C1-C5
+      - name: Rebuild image and run C2-C5
         env:
           IMAGE_CASE: ${{ matrix.image }}
-          BASE_REF: ${{ github.base_ref || 'develop-v2.1.0' }}
           PROOF_DIR: ${{ runner.temp }}/runner-acceptance
           TMPDIR: ${{ runner.temp }}
         run: |
@@ -45,7 +44,7 @@ jobs:
             args+=(--missing-iproute2)
           fi
           python3 tests/runner/accept-iproute2.py \
-            --base "origin/$BASE_REF" --output "$PROOF_DIR" "${args[@]}"
+            --output "$PROOF_DIR" "${args[@]}"
       - name: Retain exact-head acceptance output
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
