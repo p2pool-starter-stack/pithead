@@ -24,10 +24,9 @@ source "$ROOT/lib/run-hardening.sh"
 quote_arg() { printf '%q' "$1"; }
 env_on_box() { printf '%s' "$control"; }
 rx() { (cd "$checkout" && env -u PITHEAD_UNIT_DIR PITHEAD_APPLIANCE="$target_appliance" PITHEAD_UNIT_DIR="$target_units" PATH="$fakebin:$PATH" bash -c "$1"); }
-unit_dir() { (cd "$checkout" && env -u PITHEAD_UNIT_DIR PITHEAD_APPLIANCE="$1" bash -c 'source lib/pithead/10-installer-preseed.sh; source lib/pithead/50-control-runner-provisioning.sh; control_unit_dir'); }
 export PITHEAD_UNIT_DIR="$td/runner-units"
 target_appliance=1
-target_units="$units"
+target_units=""
 service="$units/pithead-control.service"
 path="$units/pithead-control.path"
 write_service() { printf '[Service]\nExecStart=%s/pithead control-run-pending\n' "$1" >"$service"; }
@@ -36,13 +35,17 @@ clear_units() { rm -f "$service" "$path" "$td/unit-link"; }
 removed() { _remove_control_units && [ ! -e "$service" ] && [ ! -e "$path" ]; }
 retained() { _remove_control_units && [ -e "$service" ] && [ -e "$path" ]; }
 
-[ "$(unit_dir 1)" = /run/systemd/system ]
-[ "$(unit_dir 0)" = /etc/systemd/system ]
+[ "$(_control_unit_dir_on_box)" = /run/systemd/system ]
+target_appliance=0
+[ "$(_control_unit_dir_on_box)" = /etc/systemd/system ]
+target_appliance=1
+target_units="$units"
 write_service "$checkout"
 write_path "$control"
+[ "$(_control_service_exec_start)" = "ExecStart=$checkout/pithead control-run-pending" ]
 removed
 target_appliance=0
-checks=3
+checks=4
 write_path "$control"
 removed
 checks=$((checks + 1))

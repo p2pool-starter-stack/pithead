@@ -50,14 +50,27 @@ _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
     return 1
 }
 
-_remove_control_units() {
-    local cdir snippet
-    cdir="$(env_on_box CONTROL_DIR 2>/dev/null)" || cdir=""
-    snippet='
-        command -v systemctl >/dev/null 2>&1 || exit 0
+_control_unit_dir_on_box() {
+    rx '
         source lib/pithead/10-installer-preseed.sh || exit 1
         source lib/pithead/50-control-runner-provisioning.sh || exit 1
-        ud=$(control_unit_dir) || exit 1
+        control_unit_dir
+    '
+}
+
+_control_service_exec_start() {
+    local unit_dir
+    unit_dir="$(_control_unit_dir_on_box)" || return 1
+    rx "grep -m1 '^ExecStart=' $(quote_arg "$unit_dir/pithead-control.service") 2>/dev/null"
+}
+
+_remove_control_units() {
+    local cdir unit_dir snippet
+    cdir="$(env_on_box CONTROL_DIR 2>/dev/null)" || cdir=""
+    unit_dir="$(_control_unit_dir_on_box)" || return 1
+    snippet='
+        command -v systemctl >/dev/null 2>&1 || exit 0
+        ud=$HARDENING_EXPECTED_UNITS
         cdir=$HARDENING_EXPECTED_CONTROL
         service=$ud/pithead-control.service
         path=$ud/pithead-control.path
@@ -78,7 +91,7 @@ _remove_control_units() {
         fi
         [ ! -e "$path" ] && [ ! -e "$service" ]
     '
-    rx "HARDENING_EXPECTED_CONTROL=$(quote_arg "$cdir") bash -c $(quote_arg "$snippet")"
+    rx "HARDENING_EXPECTED_CONTROL=$(quote_arg "$cdir") HARDENING_EXPECTED_UNITS=$(quote_arg "$unit_dir") bash -c $(quote_arg "$snippet")"
 }
 
 # Tier-4 hardening phase (#377/#33/#424): the v1.4 host-mutation + hardening surfaces that ONLY a
@@ -130,14 +143,8 @@ run_hardening() {
     else
         it_fail "pithead-control.path installed + enabled by apply (#33)" "unit not enabled"
     fi
-    # The unit names are box-global, so on a bench that also hosts a live stack the assertion above
-    # was already true before this phase ran — the LIVE install's units satisfy it, and it stays
-    # green even if our apply installed nothing at all. That is why #1085 went unnoticed for two
-    # releases. Bind it to the ExecStart instead: after our apply the units must name THIS checkout,
-    # in the exact line provision_control_runner writes. Physical path on both sides (pithead cd -P's
-    # to SCRIPT_DIR, rx runs in the checkout), so `current` vs a versioned dir cannot cry wolf.
     assert_contains "the enabled control units name THIS checkout, not another install (#1085)" \
-        "$(rx "grep -m1 '^ExecStart=' /etc/systemd/system/pithead-control.service 2>/dev/null" || true)" \
+        "$(_control_service_exec_start || true)" \
         "ExecStart=$(rx 'pwd -P')/pithead control-run-pending"
 
     local pre_onion=0 onion_rc
