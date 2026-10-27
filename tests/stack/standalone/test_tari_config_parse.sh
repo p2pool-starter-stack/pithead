@@ -110,10 +110,9 @@ echo "  ✓ minotari_node started no in-process Tor (no <base_path>/<network>/li
 
 # Calibration: the same image on the pre-#2653 transport (`tor`, use_libtor left at its default)
 # must create <base_path>/<network>/libtor, or the absence above proves nothing. If a future image
-# drops the libtor feature this fails, and use_libtor = false can go with it.
 mkdir -p "$WORK_DIR/calibration-config" "$WORK_DIR/calibration-node"
 cp -p "$ROOT/build/tari/entrypoint.sh" "$WORK_DIR/calibration-config/"
-sed -e 's/^type = "socks5"/type = "tor"/' -e '/^use_libtor = /d' "$ROOT/build/tari/config.toml" \
+sed -e 's/^type = "socks5"/type = "tor"/' -e '/^use_libtor = /d' "$TARI_CONFIG_DIR/config.toml" \
     >"$WORK_DIR/calibration-config/config.toml"
 docker run -d --network none --name "$CALIBRATION" --user root -e WAIT_FOR_TOR=0 \
     -v "$WORK_DIR/calibration-config:/var/tari/config:ro" \

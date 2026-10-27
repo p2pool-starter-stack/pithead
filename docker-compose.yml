@@ -114,8 +114,8 @@ services:
     volumes:
       - ${MONERO_DATA_DIR}:/home/ubuntu/.bitmonero
       - /dev/hugepages:/dev/hugepages
-      - ${CLEARNET_STATE_DIR}:/clearnet-state:ro
-      - ${LAN_GUARD_DIR}:/lan-guard:ro
+      - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
+      - ${LAN_GUARD_DIR:-./data/lan-guard}:/lan-guard:ro
     ports:
       # to publish on the LAN (0.0.0.0) for wallets on other machines.
       - "${MONERO_RPC_BIND:-127.0.0.1}:18081:18081"
@@ -275,9 +275,9 @@ services:
       - /tmp:size=64m,mode=1777
     volumes:
       - ${TARI_DATA_DIR}:/var/tari/node
-      - ${TARI_CONFIG_DIR}:/var/tari/config:ro
-      - ${LAN_GUARD_DIR}:/lan-guard:ro
-      - ${CLEARNET_STATE_DIR}:/clearnet-state:ro
+      - ${TARI_CONFIG_DIR:-./build/tari}:/var/tari/config:ro
+      - ${LAN_GUARD_DIR:-./data/lan-guard}:/lan-guard:ro
+      - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
     entrypoint:
       - /var/tari/config/entrypoint.sh
     command:
@@ -639,7 +639,7 @@ services:
     volumes:
       - ${P2POOL_DATA_DIR}/stats:/app/stats:ro
       - ${DASHBOARD_DATA_DIR}:/data
-      - ${CLEARNET_STATE_DIR}:/clearnet-state
+      - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state
       # container can only ask; it cannot forge a result, rewrite the audit log, or alter a staged
       # intent between preview and commit.
       - ${CONTROL_DIR:-./data/control}/requests:/control/requests

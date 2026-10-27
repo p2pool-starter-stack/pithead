@@ -435,10 +435,11 @@ via an `EXIT` trap):
    collection and restoration. Standalone e2e callers may set `IT_SCRATCH_DIR`
    to an existing target directory; it is a target path, not the caller's temp path.
    The deploy leaves monerod and tari running when the branch leaves them unchanged
-   ([#2639](https://github.com/p2pool-starter-stack/pithead/issues/2639)). Both bind-mount paths
-   inside the checkout (`build/monero/bitmonero.conf.template`, `build/tari`,
-   `data/clearnet-state`), and Compose hashes the resolved absolute paths into each service's config.
-   A plain `up` from the e2e checkout would therefore recreate both nodes on every run. The upgrade
+   ([#2639](https://github.com/p2pool-starter-stack/pithead/issues/2639)). Runtime mounts now use the resolved
+   chain-data roots, and Monero's template is baked
+   into its image. The hardening phase separately proves a directory move through product render/up,
+   without a keep-running override. The harness retains its compatibility comparison for older
+   baseline installs whose mounts still live under the checkout. The upgrade
    runs with `PITHEAD_KEEP_RUNNING` set, a harness-only knob that names every other service in the
    `up` with `--no-deps`. `tests/integration/lib/chain-keep.sh` then compares each node between the
    two checkouts. If the LAN guard has to stop a named node for safety, the scoped `up` fails instead
@@ -459,8 +460,8 @@ via an `EXIT` trap):
    - A source-checkout baseline keeps a node only when the branch leaves it, and tor, identical:
      the same pins and build files, and chain and tor data dirs that `config.json` sets to shared
      absolute paths rather than defaults under each checkout.
-   - A clearnet-sync marker in the baseline's `data/clearnet-state` that the e2e checkout lacks
-     also counts as a difference.
+   - For a legacy baseline, a checkout-local clearnet marker absent from the candidate
+     counts as a difference. Current installs share the stable marker directory instead.
    - Harness phases that run `pithead` from the e2e checkout recreate or restart the nodes on
      purpose. That covers `--lifecycle`'s restart, pool-flip `apply` and backup round trip,
      `--subnet`, and a scenario's `apply`. Both deploying modes, `targeted` and `matrix`, run

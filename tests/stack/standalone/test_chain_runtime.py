@@ -112,6 +112,16 @@ prepare_chain_runtime_state
         self.assertIn("compose stop dashboard", (self.base / "one/docker-calls").read_text())
         self.assertEqual((self.shared / "clearnet-state").stat().st_mode & 0o7777, 0o1777)
 
+    def test_runtime_paths_stay_out_of_operator_change_messages(self):
+        for key in ("TARI_CONFIG_DIR", "LAN_GUARD_DIR"):
+            result = self.run_shell(
+                'source "$1/lib/pithead/39-describe-change.sh"; '
+                "describe_notification_change() { return 1; }; "
+                "describe_exposure_change() { return 1; }; "
+                f"describe_change {key} /old /new"
+            )
+            self.assertEqual(result, "INFO")
+
     def test_lan_marker_unit_passes_paths_as_literal_arguments(self):
         output = self.run_shell(r"""
 source "$1/lib/pithead/02b-lan-guard.sh"
