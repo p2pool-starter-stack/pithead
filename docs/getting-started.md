@@ -54,7 +54,7 @@ return to those checks after completing the appliance setup.
 | Operating system | Ubuntu Server 24.04 LTS is the supported platform. Other Linux distributions may work but aren't supported. macOS is deprecated as of 2026-09-10 and is not tested; the installer refuses it. |
 | CPU | A processor with AVX2 support for RandomX performance. |
 | RAM | 16 GB minimum with HugePages enabled (~6 GB is reserved for RandomX); 32 GB for a full node or long uptimes. |
-| Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
+| Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari off (the wizard default) or remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
 | Software | Docker Engine, Docker Compose V2, `jq`, `openssl`, and `python3`. |
 
 > 📐 Sizing guidance for the stack host — minimum vs. recommended specs, plus ways to run leaner —
@@ -92,8 +92,9 @@ cd pithead
 Leave `config.json` absent to use the setup wizard. Have a Monero payout address ready, and a
 Tari payout address if you enable merge-mining (Tari wallets are sometimes labeled Minotari).
 For a manual configuration, copy `config.minimal.json` or `config.reference.json` to `config.json`
-and edit it before setup; these files inherit the reference defaults rather than the wizard's
-new-install choices.
+and edit it before setup. The minimal file uses the shared wizard defaults for a new install,
+including Tari off; the reference file retains legacy absent-key values to preserve existing
+configs.
 
 ### Alternative: build from source
 
@@ -108,6 +109,13 @@ cd pithead && make
 
 Release archives already include the generated `pithead` executable. Git clones keep only its
 numbered sources, so `make` builds the executable before the first `./pithead` command.
+
+If setup is interrupted while building Tor, it returns a nonzero status and retains `config.json`.
+The next `./pithead setup` uses that configuration. A build or startup failure names the Tor phase
+and preserves Docker's error output. If Docker reports `failed to stat active key`, inspect its
+build state and daemon logs before retrying. Pithead does not restart Docker or prune its cache.
+A daemon restart affects other containers on the host; any operator recovery is separate from a
+successful unattended retry. Keep destructive recovery experiments on a disposable host.
 
 > Changed your mind later? You can convert a clone to the published images in place. See
 > [Switching a source checkout to release images](operations.md#switching-a-source-checkout-to-release-images).
@@ -194,7 +202,12 @@ chain; a remote node syncs where it runs. Mining waits for Monero, and also for 
 opt into Tari, so Tari can catch up in the background while Monero mining starts. Manual configs
 inherit different reference defaults; check [the sync gate](configuration.md#configuration-reference).
 
-Watch the dashboard's Sync Mode and node cards, or run:
+The first start prints `The miner is held until the initial sync finishes for Monero, then starts
+automatically.` When Tari is required, the note names `Monero and Tari` instead. Later restarts
+do not repeat the note.
+
+Watch the dashboard's Sync Mode and node cards. `./pithead status` prints required-chain progress
+while mining is held; passive Tari sync is visible on the dashboard and in its node log:
 
 ```bash
 ./pithead status
@@ -234,10 +247,10 @@ https://<your-hostname>
 ```
 
 `<your-hostname>` is the host you set during setup (the script prints the exact URL when it
-starts the stack). Caddy uses a self-signed certificate (`tls internal`), so the first time you
-visit, your browser shows a one-time "your connection is not private" / untrusted-certificate
-warning. Accept it to continue. Prefer plain HTTP on your LAN? Set `dashboard.secure: false` in
-`config.json` and run `./pithead apply`.
+starts the stack). Caddy uses a local certificate authority (`tls internal`).
+[Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
+browser warnings after certificate renewal. Prefer plain HTTP on your LAN? Set
+`dashboard.secure: false` in `config.json` and run `./pithead apply`.
 
 ---
 
