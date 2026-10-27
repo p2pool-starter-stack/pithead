@@ -40,7 +40,7 @@ class TorLifecycleMixin:
         self._tor_receipt(operation, identity, "recover", result)
 
     @staticmethod
-    def _tor_receipt(operation, identity, action, result):
+    def _tor_receipt(operation, identity, action, result) -> None:
         try:
             logger.info(
                 "pithead-tor-lifecycle %s",

@@ -64,6 +64,8 @@ if [ "${1:-}" = fixture ]; then
     exit 0
 fi
 
+echo "== Tor lifecycle caller receipts =="
+
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 for stop_rc in 0 9; do
