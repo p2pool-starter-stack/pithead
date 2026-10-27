@@ -54,10 +54,11 @@ assert_contains "Tor build interruption identifies setup's failed phase" "$inter
 assert_eq "Tor build interruption retains configuration bytes" "$(cmp -s "$V/config.before" "$V/config.json" && echo yes)" yes
 assert_eq "Tor build interruption retains owner-only configuration" "$(file_mode "$V/config.json")" 600
 assert_not_contains "Tor build interruption never claims provisioning completed" "$interrupt_out" 'Deployment preparation complete!'
-retry_out=$(cd "$V" && printf '\nn\n' | PATH="$V/bin:$PATH" bash ./pithead setup --skip-deps --skip-optimize 2>&1)
+retry_out=$(cd "$V" && printf 'n\n' | PATH="$V/bin:$PATH" bash ./pithead setup --skip-deps --skip-optimize 2>&1)
 retry_rc=$?
 assert_rc "Tor build retry provisions successfully" "$retry_rc" 0
 assert_contains "Tor build retry reports completed preparation" "$retry_out" 'Deployment preparation complete!'
+assert_contains "Tor build retry deliberately declines full-stack startup" "$retry_out" 'You can start the stack later with:'
 assert_contains "Tor build retry records deployment completion" "$(cat "$V/.env")" 'DEPLOYMENT_COMPLETED=true'
 assert_eq "Tor build retry retains configuration bytes" "$(cmp -s "$V/config.before" "$V/config.json" && echo yes)" yes
 assert_eq "Tor build retry retains owner-only configuration" "$(file_mode "$V/config.json")" 600
