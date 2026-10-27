@@ -24,7 +24,7 @@ The suite lives under [`tests/integration/`](../../tests/integration/):
 | `run.sh` | Entry point. Connects to the box (SSH or `--local`), iterates the config matrix, asserts, captures artifacts, restores. |
 | `scenarios.sh` | The declarative config matrix. Adding a case is a one-line data edit. |
 | `lib.sh` | Shared helpers: target I/O (SSH/local), assertions, readiness waiters, config rendering, secret redaction. |
-| `selftest.sh` | Pure-logic self-test (no server). Runs in CI on every PR. |
+| `selftest/` | Harness logic and bounded local fixtures, run by `make test-integration-selftest` in CI on every PR. The abort-trap controls signal a process group after its foreground child reports READY, keeping the victim alive until the signal. Missing readiness fails the trial and kills and reaps the group. |
 
 ---
 
@@ -239,7 +239,7 @@ Useful flags (full list in `run.sh --help`):
 | `--remote-monero-host <h>` | Bare host or IP for the external Monero node used by the `remote` scenario. Pair it with `--remote-monero-rpc-port` or `--remote-monero-zmq-port` when the node does not use ports 18081 and 18083. `e2e.sh` accepts the same flags and carries them through its read-only pregate and detached harness run. |
 | `--remote-tari-host <h>` | Bare host or IPv4 address for the external Tari node used by the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)). Pithead renders `tari.remote.grpc_port` separately; `e2e.sh` accepts and forwards the host. |
 | `--pruned-data-dir` / `--full-data-dir` | Synced alt DB to enable the opposite prune mode. |
-| `--lifecycle` | Also run the lifecycle phase (restart, setup/up/apply connection announcements including an unchanged apply, apply secret-preservation, backup→restore, which must keep every wallet, proxy, dashboard, RPC, and onion secret category exact (the onion key reads need passwordless sudo), then uninstall→setup). Same-box restore must preserve the prior sync-gate marker state (absent or durable Tari-only policy) and leave P2Pool running; introduced, changed or unreadable marker state fails. The Tari off→local trial requires proxy continuity, advancing proxy hash counts across the Tari-enable window regardless of Tari state (at least 120 seconds, with no 120-second hash stall), and later merge-mining templates; it retains allowlisted per-poll observation timestamps, worker/hash counts, sync progress and template state in `tari-enable/samples.jsonl`. The announcement probe confirms the supported setup rerun through a terminal with `tests/integration/tools/connection-setup-pty.py`, answers each prompt when it appears, skips host tuning, and declines startup; it compares credentials on the target and retains only assertion results, the exit code, and fixed failure-stage labels in `connection-announcements.log`; raw CLI output and credentials are not retained. The confirmed dashboard data-dir carry saves redacted apply output to `dashboard-carry.apply.log`. Restore command, health, unreadable verification input, or failed restored pool/secrets assertion prevents later fault injection, which the summary then lists under "did NOT run"; peer-timing pool warnings remain non-fatal. |
+| `--lifecycle` | Also run the lifecycle phase (restart, setup/up/apply connection announcements including an unchanged apply, apply secret-preservation, backup→restore, which must keep every wallet, proxy, dashboard, RPC, and onion secret category exact (the onion key reads need passwordless sudo), then uninstall→setup). Before the Tari trial, the independent dashboard restore probe builds a separate candidate-schema configuration from supported baseline keys, preserving every wallet/payout field and saving the original baseline unchanged. Missing keys stay absent, using runtime defaults rather than inserting illustrative reference values. It takes a new backup, changes the energy cost, runs down → restore → up, and requires both dashboard APIs to return the archived value before any cleanup apply or restart. The retained probe output includes guest stderr and fixed failure-stage labels. Cleanup restores the original bytes and waits up to 240 seconds for consecutive healthy status reads; unverified cleanup retains its private recovery copy. Lifecycle verifies the original configuration hash, secret fingerprints and Tari mode even if the probe fails. The newer-backup refusal guard is unchanged. Same-box restore must preserve the prior sync-gate marker state (absent or durable Tari-only policy) and leave P2Pool running; introduced, changed or unreadable marker state fails. The Tari off→local trial requires proxy continuity, advancing proxy hash counts across the Tari-enable window regardless of Tari state (at least 120 seconds, with no 120-second hash stall), and later merge-mining templates; it retains allowlisted per-poll observation timestamps, worker/hash counts, sync progress and template state in `tari-enable/samples.jsonl`. The announcement probe confirms the supported setup rerun through a terminal with `tests/integration/tools/connection-setup-pty.py`, answers each prompt when it appears, skips host tuning, and declines startup; it compares credentials on the target and retains only assertion results, the exit code, and fixed failure-stage labels in `connection-announcements.log`; raw CLI output and credentials are not retained. The confirmed dashboard data-dir carry saves redacted apply output to `dashboard-carry.apply.log`. Restore command, health, unreadable verification input, or failed restored pool/secrets assertion prevents later fault injection, which the summary then lists under "did NOT run"; peer-timing pool warnings remain non-fatal. |
 | `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
 | `--hardening` | Also exercise the host control spool through its systemd path unit. The wallet preview candidate clears the baseline view key so address/key validation does not reject it before the confirmation gate. The candidate is never applied. A wallet change must preview with typed confirmation required; a commit carrying the correct payout suffix but no `APPLY` must be refused by the host, leaving `config.json` and `.env` unchanged. With the temporary authenticated dashboard, three real wrong-password requests must remain in `/api/access` after authenticated padding moves them beyond 256 KiB, then after native Caddy rotation into a compressed generation. The assertion changes no rotation settings and never rewrites or truncates the security logs; padding and requests are bounded. Restores the original configuration and removes the test-owned control units. Local mode only. |
 | `--image-upgrade <old-sha> <new-sha>` | Run the supported `pithead upgrade` path and prove old/new image identities, exact persistent mount sources, Monero/Tari captured-prefix anchors and non-regressing heights, durable dashboard table continuity, categorized secrets, returning workers, and resumed hashes. Remote-node installs omit the absent local daemon from the running-image comparison and candidate verification. Prefix continuity does not claim that no same-chain bytes were re-downloaded. Requires exact lowercase 40-hex commits, `--candidate-bundle`, `--safety-backup`, every data dir outside the running version dir (the same precondition `pithead upgrade` has for a fresh version dir; otherwise it refuses before stopping the stack), and a successful private snapshot of every enumerated persistent mount (a `cp --reflink=always` clone of each data-dir bind mount, a copy of each named volume) while writers are stopped; no upgrade starts if any trust, backup, derived-state fingerprint, or snapshot check fails. |
@@ -800,7 +800,9 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   SOCKS config, and asserts the outcome its config calls for. With the firewall **on** (the default)
   the dial must be DROPPED, and the same container must still reach clearnet *through* Tor's SOCKS —
   that second dial is the within-row control, without which a DROP and a bench with no route to the
-  internet are the same observation. On the `network.tor_egress_firewall=false` row the dial must
+  internet are the same observation. The control gets up to three attempts, with retries isolated by SOCKS username,
+  because one stream through a random exit fails now and then; the DROP dial stays single-shot,
+  because a timeout is its expected result ([#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)). On the `network.tor_egress_firewall=false` row the dial must
   SUCCEED and no `pithead-tor-egress`-tagged rule may be installed. Every other firewall leg here
   checks state, not effect: `assert_egress_posture` samples the public connections the apps *chose*
   to make, excluding the firewall's four accepted non-public ranges. A failure retains each remote
@@ -846,7 +848,15 @@ For one representative config:
   including failures before the cleanup trap can be armed. The real image mutation, guarded
   recreation, immutable image/Compose-owner assertions and cleanup remain binding.
   The restore must also return every wallet, proxy, dashboard, RPC, and onion secret category
-  exactly, the same per-category comparison a safety rollback makes.
+  exactly, the same per-category comparison a safety rollback makes. The existing-install
+  restore fixture backs up energy cost 0.123, applies 0.789, then runs `down`, `restore`,
+  and `up`. Both `/api/config` and `/api/state` must return 0.123 within 120 seconds,
+  without a post-restore `apply` or restart. The fixture runs before the Tari enable trial,
+  restores its original configuration on exit, and also runs in the KVM reset phase.
+  Before Tari can run, the lifecycle wrapper checks the original config hash, secret
+  fingerprints and Tari mode, then requires the stack to become healthy within 240 seconds.
+  A failed probe or restoration stops lifecycle; Tari retains its own fail-fast return.
+  The later config-reset recovery sequence runs unchanged after a successful Tari trial.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
   secrets; the dashboard reflects the new pool; then it's reverted. An omitted
   `p2pool.pool` means mini, so the alternate is main. Explicit main and nano baselines
@@ -1114,6 +1124,10 @@ loaner SSH child. This also runs after post-deploy readiness refusal, restore fa
 command before closing the lease pipe prevents inherited writers from keeping the child alive;
 cleanup neither removes a remote holder nor signals another borrower's process. Parent-owned
 reservations remain the parent's responsibility. The original run or restore failure stays nonzero.
+The local `selftest-loaner-exit.sh` fixture waits for each unrelated borrower to acknowledge
+its kernel reservation before exercising the wrapper exit. Each trial uses separate lock files
+and reaps its borrower after the assertions. A retained previous reservation makes accidental
+reuse fail deterministically instead of depending on cleanup scheduling.
 
 `rig-key-ledger.sh` closes that window. A key goes on a ledger when its write is sent — before, not
 after, so the apply itself is covered — and comes off only when its revert is **confirmed applied**
@@ -1246,12 +1260,20 @@ version records `version_withheld_as_stale`; unavailable staleness stays unknown
 projection omits names, addresses, credentials, configs and free text, stays below 2048 bytes,
 and has a five-second computation bound. Invalid JSON and capture failures are explicit.
 No request, retry or wait is added; the original assertion and failure count are unchanged.
-The shared Tor-egress control also records each original SOCKS
-request in `results/tor-egress-probes/probe-<sequence>.txt` and the harness transcript,
-before the caller reports its verdict or restores the stack. Each record contains the
-per-run sequence, original target/SSH exit status, harness-observed elapsed seconds and
-an exit-code class. The curl command, 30-second limit and pass/fail row are unchanged;
-no second request supplies its evidence. Silent curl exposes no error text or request
+The shared Tor-egress control also records each SOCKS request in
+`results/tor-egress-probes/probe-<sequence>.txt` and the harness transcript, before the
+caller reports its verdict or restores the stack. Each record contains the per-run
+sequence, target/SSH exit status, harness-observed elapsed seconds and an exit-code class.
+Attempt 1 is the original request: the same curl command and 30-second limit, recorded as
+`original-socks-probe`. One stream through a random exit fails now and then
+([#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)), so only after a
+non-zero exit does the control make up to two more attempts (`TOR_CONTROL_DIAL_ATTEMPTS`
+in `tests/integration/lib/tor-control-dial.sh`, shared with the appliance leg). Each retry
+uses `-m 45` and its own `--proxy-user`, so Tor builds a fresh circuit, and is recorded
+as `retry-socks-probe` with its own sequence and `attempt=`. The row passes if any attempt
+connects. A pass after a retry names the attempt that connected and the failures before
+it; a final failure names all three. A later success never replaces an earlier failure's
+record. Silent curl exposes no error text or request
 stage, so a timeout remains `timeout-stage-unknown`; exit 255 remains ambiguous between
 target and SSH failure. Healthy Tor or a later successful request does not diagnose the
 failed request. Records contain only numbers and fixed labels, without endpoints, raw
@@ -1337,7 +1359,7 @@ the traps and `main`. One classification, one place to change it. The masked doc
 through the redactor as before, so the shape, position and IP rules keep their reach over
 everything the path list does not name — the pass is additive and cannot narrow coverage. It
 renders from the LIVE config at capture time rather than copying the box's pre-rendered
-`$CONTROL_DIR/masked/config.json`, which is refreshed only on setup/apply/upgrade and is documented
+`$CONTROL_DIR/masked/config.json`, which is refreshed on setup/apply/upgrade/CLI restore and is documented
 as degrading to a stale copy on a render hiccup: an artifact presenting stale state as the state
 under test is the failure this harness exists to catch. If the program cannot be sourced the
 capture writes no config rather than falling back to the raw file, and says so in the artifact.
@@ -1431,6 +1453,10 @@ SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on
 so the harness itself is held to the same lint/test standard as the rest of the stack.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
+`selftest-e2e-forwarded-env.sh` waits for the fake detached writer's completion marker
+after its payout-confirm record, using the launcher's bounded readiness loop. A delayed
+writer must finish before assertions read the capture; an incomplete writer must fail
+within the launch deadline.
 `selftest-check-lan-guard.sh` checks read-only and deploying dispatch with unrelated
 assertions, including onion targets, explicitly stubbed. It retains the LAN probes,
 timer flush and boot recovery assertions and rejects unexpected missing commands,

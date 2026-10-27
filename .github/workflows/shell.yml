@@ -135,19 +135,33 @@ jobs:
         run: bash tests/stack/standalone/test_appliance_hugepages.sh
       - name: Run clearnet marker attestation contract
         run: python3 tests/stack/standalone/test_clearnet_attestation.py
+      - name: Run stratum port preflight contract
+        run: python3 tests/stack/standalone/test_stratum_port.py
       - name: Test-inventory drift check
-        # The inventory generator is grep-based; it exits non-zero when any suite it
-        # enumerates counts zero — i.e. a suite moved or changed shape and the inventory
-        # would silently under-count (#981). Output discarded: the generated file is
-        # git-ignored and read on demand via `make test-inventory`.
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test
-        # Pure logic and bounded local transport fixtures for the tests/integration/
-        # harness (config rendering, matrix coverage, redaction, Digest connection reuse). The LIVE matrix (tests/integration/run.sh) needs a real test
-        # server and runs as a gated/manual release gate (#54), not on every PR.
         run: make test-integration-selftest
       - name: Run repository tooling checks
         run: make test-tools
+
+  bridge-awk:
+    name: Container bridge awk portability (Debian 12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
+      - name: Run bridge and Caddy regressions in the pinned test runner
+        run: |
+          bash scripts/test-container.sh true
+          docker run --rm --user root -v "$PWD:$PWD" -w "$PWD" \
+            pithead-test-runner:local bash -euc '
+              apt-get update
+              apt-get install -y --no-install-recommends mawk gawk busybox
+              make test-bridge-awk
+            '
 
   soak-macos:
     name: Soak self-test (macOS, ${{ matrix.bash }})
