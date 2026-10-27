@@ -34,6 +34,10 @@ remote_node_address() { # <config-file> <host>; rc 2 = unresolvable, rc 1 = addr
     resolved=$(_resolve_host_ips "$host") || return 2
     [ -n "$resolved" ] || return 2
     while IFS= read -r ip; do
+        if [ "$firewall" != false ] && _is_ipv6_literal "$ip"; then
+            _ipv6_is_sensitive "$ip" && return 1
+            continue
+        fi
         remote_node_ip_allowed "$ip" "$firewall" || return 1
         [ -n "$first" ] || first="$ip"
     done <<<"$resolved"

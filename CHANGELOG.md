@@ -11,6 +11,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- With the Tor egress firewall on, a remote Monero or Tari node entered by a dual-stack LAN name is now accepted on its private IPv4 answer, in the first-boot wizard and in a day-two configuration commit, instead of being refused with the egress-firewall message (#2351).
+
 ## [2.0.1] - 2026-10-25
 
 Pithead 2.0.1 is the first patch release after 2.0.0. It keeps the dashboard certificate you already
