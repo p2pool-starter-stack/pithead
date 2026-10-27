@@ -1,43 +1,4 @@
 #!/usr/bin/env bash
-#
-# Self-test for the harness's ABORT TRAPS (#1401): WALKS every `*.sh` under tests/integration/ and
-# permits EXIT cleanup or the wrapper's two immediately terminating signal handlers. It checked two hardcoded (file,
-# handler) pairs until #1515, and the walk is the fix: measured, the two-site version stayed green
-# against all three shapes that reintroduce the defect — a signal added to a file the change never
-# touched, a brand-new selftest, and a second handler beside the guarded one inside e2e.sh itself.
-# The scan is `*.sh` only; verified at the time of writing that no shell file under this directory
-# lacks that extension, so nothing is currently out of reach, but one added later would be.
-# The scan finds the population; a CLASSIFIER then reads each hit, and #1567 was two faults in
-# that half — a handler strip that could not span the `'\''` idiom, and a `trap …` literal held
-# as test data being asserted against as though this tree installed it. Both are fixed below, at
-# `trap_line_signals` and `trap_hit_is_data`, which carry the rules rather than have them
-# restated here — a recipe written in two places is one that drifts apart.
-# Standalone (not sourced by selftest.sh) so it never touches that file's budget ceiling — the
-# #1258/#1301 "moved into its own file" precedent. Run directly, or via
-# `make test-integration-selftest`. No server needed.
-#
-# WHAT THIS EXISTS TO STOP, and why a comment alone would not have. `trap handler EXIT INT TERM` is
-# the common idiom and it READS as more careful than bare `EXIT`, so it gets re-added by anyone who
-# has not measured it. Measured here rather than assumed: a bare EXIT trap already runs when the
-# shell dies of SIGINT or SIGTERM, so naming the signals adds no coverage — what it adds is that
-# **a bash INT/TERM handler that RETURNS does not die.** The shell resumes at the next command.
-#
-# For e2e.sh that was a FALSE GREEN, not a redundant teardown: on a Ctrl-C or a cancelled CI job,
-# restore_all ran the full unwind (miner pool restored, baseline stack redeployed), set its RESTORED
-# guard, returned — and the run CARRIED ON, measuring the restored baseline stack instead of the
-# branch under test, then exited 0. The guard is what made the second firing a no-op, so nothing
-# unwound the continuation either. An aborted release-gate run reporting success is this harness's
-# founding defect class, which is why the guard is a behavioural test and not a comment.
-#
-# THE CONTROLS ARE THE POINT. "Did the signal kill it" is unmeasurable without a row whose only
-# correct answer is death: two plausible harnesses each reported a confident, wrong "it survived"
-# before this one. An async job inherits SIGINT **ignored** and `trap - INT` cannot undo it (a signal
-# ignored at shell entry stays ignored), and a bash waiting on a foreground child **swallows** a
-# SIGINT the child never received — so signalling the shell's pid alone does not model a Ctrl-C.
-# `set -m` fixes both: it puts each background job in its own process group AND leaves its signal
-# dispositions at default, so the trial can signal the GROUP, as a terminal does. If the no-trap
-# rows below ever stop dying, the instrument is broken and nothing under it means anything.
-#
 set -m -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -185,7 +146,6 @@ no|lib/parent-lock.sh|    trap cleanup INT TERM
 CASES
 
 echo "== CONTROLS: with no trap at all, the signal MUST kill the victim (#1401) =="
-# Without these two rows a "survived" reading cannot be told from a signal that never landed.
 for sig in INT TERM; do
     abort_trial "" "$sig" 2>/dev/null
     if [ "$TRIAL_CONTINUED" = "0" ] && [ "$TRIAL_FIRED" = "0" ]; then
@@ -269,19 +229,11 @@ assert_data() { # <description> <line number> <expected yes|no>
     assert_eq "$1" "$got" "$3"
 }
 assert_data "a trap line under the marker is classified DATA, so the walk leaves it alone" 2 yes
-# The negative control. Byte-identical text one line further down with no marker above it: were this
-# also DATA the exemption would be blanket, and the walk would be asserting over nothing at all.
 assert_data "control: the SAME line with no marker above it is NOT data" 3 no
-# And the control for a SUBSTRING match, which is what a marker check reaches for first. Line 4 only
-# mentions the marker — the shape this file's own header and assignment already have — so a
-# substring match would exempt line 5 and the walk would stop looking wherever it was documented.
 assert_data "control: a line that only MENTIONS the marker does not exempt the next line" 5 no
-# Indentation is allowed: a marker inside an indented heredoc is the ordinary case, not an exception.
 assert_data "an indented marker still declares the line under it data" 7 yes
-# A hit on line 1 has no line above it to read; without the guard this is `sed -n 0p`, which errors.
 assert_data "control: a trap on line 1 is not data, and asking does not error" 1 no
 
-# The marked noncompliant fixture proves the walk consults its data classifier.
 noncompliant_literal="$(
     cat <<'LITERAL'
 # selftest-abort-traps: data
@@ -292,15 +244,8 @@ assert_eq "the literal below is genuinely non-compliant — an exemption over no
     "$(trap_line_signals "${noncompliant_literal##*$'\n'}")" "EXIT INT TERM"
 
 echo "== every trap uses EXIT cleanup or immediately terminates the wrapper =="
-# Signal cleanup handlers still fail; only the wrapper's immediate exits are permitted.
-#
-# The scan reads the WORKING TREE, not `git ls-files`, so a file not yet `git add`ed is still swept;
-# #1486 is this same kind of check made blind in exactly that way.
 trap_scan="$(grep -rnE '^[[:space:]]*trap[[:space:]]' --include='*.sh' "$HERE/..")"
 
-# Fed by a heredoc rather than a pipe on purpose: `grep ... | while` runs the loop body in a
-# SUBSHELL, so every it_pass/it_fail it recorded would be discarded when the pipeline ended and the
-# summary below would count zero of them while printing green.
 TRAP_DATA_HITS=0
 while IFS= read -r hit; do
     [ -n "$hit" ] || continue
@@ -321,14 +266,9 @@ done <<EOF
 $trap_scan
 EOF
 
-# Pin both intentional data fixtures so new exemptions fail the guard.
 assert_eq "exactly two lines are declared data: the classifier fixture and the uncooperative callback" \
     "$TRAP_DATA_HITS" "2"
 
-# The walk alone is silently green over a tree whose traps were all DELETED, and green is the wrong
-# answer there: restore_all is the borrowed rig's only unwind, and probe.sh's kill is what stops a
-# leaked tor. So require the two load-bearing sites to still be present, read out of the same scan
-# rather than re-derived by a second mechanism that could drift from it.
 assert_num_ge "the walk found trap statements at all — a 0 here is a broken scan, not a clean tree" \
     "$(printf '%s\n' "$trap_scan" | grep -c .)" "2"
 assert_contains "e2e.sh's restore and child-release trap is still installed" \

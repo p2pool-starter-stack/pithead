@@ -14,7 +14,6 @@ rig_lock_remote_release() {
 e2e_exit() {
     local rc=$? restore_rc=0
     trap : INT TERM
-    # A restore refusal calls exit. Isolate it so every outcome still reaps our child.
     (
         trap : INT TERM
         restore_all "$rc"

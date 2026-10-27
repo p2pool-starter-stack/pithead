@@ -181,22 +181,13 @@ SAFETY_ARCHIVE=""
 MINER_CFG_BACKUP=""
 RESTORED=0
 RESTORE_PROOF_FAILED=0
-# Separate from RESTORE_PROOF_FAILED on purpose (#1085). That flag's message is the #971
-# credential-bake incident's, and its remediation — "re-bake from disk: docker compose up -d" —
-# does nothing whatsoever for a systemd unit. A control-channel fault needs its own words.
 CONTROL_PROOF_FAILED=0
-# Record the control target before restoration can repair it.
 CONTROL_VERDICT_BEFORE=""
-# Where the LIVE stack actually runs from — resolved in preflight (#454). Defaults to CANONICAL_DIR
-# so the EXIT trap always has a target even if it fires before preflight refines it.
 RESTORE_DIR="$CANONICAL_DIR"
-# --- Restore: cleanup runs only on EXIT --------------------------------------
 restore_all() {
     local rc=${1:-$?} hook="${IT_E2E_PRE_RESTORE_HOOK:-}"
     [ "$RESTORED" = "1" ] && return
     RESTORED=1
-    # --check deploys nothing, borrows nothing and takes no backup, so there is nothing to put
-    # back — and an outer restore would mutate a bench this mode promised only to read.
     [ "$MODE" = "check" ] && return
     if [ "$KEEP" = "1" ]; then
         warn "--keep set: leaving the branch deployed on $BENCH_HOST and the miner repointed."
@@ -321,8 +312,7 @@ restore_all() {
 trap e2e_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-# --- Small waiters / helpers ------------------------------------------------
-wait_bench_healthy() { # <timeout_s>
+wait_bench_healthy() {
     local deadline=$(($(date +%s) + ${1:-300}))
     while :; do
         on_bench "cd '$RESTORE_DIR' && ./pithead status >/dev/null 2>&1" && return 0
