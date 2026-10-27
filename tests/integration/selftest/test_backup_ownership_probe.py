@@ -1,5 +1,3 @@
-"""Local contracts for live backup decryption and preservation of existing archives."""
-
 import importlib.util
 import json
 import os

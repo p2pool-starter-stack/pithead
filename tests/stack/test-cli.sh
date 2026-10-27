@@ -385,9 +385,6 @@ assert_rc "apply without .env fails" "$rc" "1"
 assert_contains "apply needs setup" "$out" "No .env found. Run './pithead setup' first."
 
 echo "== black-box: version subcommand (#386) =="
-# The version identity must print offline and exit 0 before any setup, on both a release bundle
-# (VERSION present, no Dockerfile) and a source checkout (Dockerfile marker), and read the value
-# export_build_provenance computed — no VERSION file falls back to `unknown`, still exit 0.
 VER="$SANDBOX/version"
 mkdir -p "$VER"
 cp "$STACK" "$VER/pithead"

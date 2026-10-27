@@ -107,7 +107,6 @@ run_lifecycle() {
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
-    # Restore must preserve every secret category and the sync-gate policy.
     run_backup_ownership || return 1
     it_step "backup → restore round-trip…"
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then

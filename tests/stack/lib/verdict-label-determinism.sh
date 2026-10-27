@@ -103,10 +103,6 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # usb/internal/absent/unknown), expected usb/internal values, named fixtures, and
 # title rows 1..4; no measured value enters a PASS label.
 # #3278's rcf_status labels range over running/restarting/paused, a fixed status list.
-# #3204's rcm_invalid labels range over four fixed JSON fixtures, never measured input.
-# GRUB labels use only the three literal parameter names and ten literal fixture modes.
-# Reset-slot labels use fixed pending/bad/gate and slot/source/stopped/revoked/rauc cases.
-# RAM labels use the four literal KiB fixture values.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1

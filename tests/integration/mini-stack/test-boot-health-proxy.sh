@@ -36,7 +36,6 @@ docker run -d --name "$name-caddy" --network "$name" \
     -v "$scratch/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$name-logs:/var/log/caddy" "$image" >/dev/null
 docker run -d --name "$name-dashboard" --network "container:$name-caddy" \
     -v "$name-logs:/access-log:ro" -e UPDATE_INTERVAL=2 pithead-dashboard:itest >/dev/null
-# The driver runs once on the loopback side, once across the bridge as an untrusted client.
 run_driver() {
     docker run --rm -i --network "$1" -v "$name-logs:/access-log:ro" -e DASHBOARD_AUTH_HASH_B64 --entrypoint python pithead-dashboard:itest - "$2" "$3" <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"
 }
@@ -64,7 +63,6 @@ docker exec "$name-caddy" caddy reload --config /etc/caddy/Caddyfile >/dev/null
 run_driver "container:$name-caddy" unlocked 127.0.0.1
 echo '  ✓ rendered Caddy boot marker survives auth and cannot suppress network login failures'
 
-# Use a fresh log to bind the audit count to exactly two controlled login failures.
 docker rm -f "$name-dashboard" "$name-caddy" >/dev/null
 docker volume rm "$name-logs" >/dev/null
 docker volume create "$name-logs" >/dev/null

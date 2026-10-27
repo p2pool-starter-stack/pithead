@@ -1,5 +1,3 @@
-"""Echo the identity received from the rendered authentication proxy."""
-
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 

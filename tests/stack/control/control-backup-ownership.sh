@@ -1,15 +1,10 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Privileged GUI and operator CLI backups must coexist in either order without broadening access.
 
 : "${SANDBOX:?}"
 : "${STACK:?}"
 
 echo "== control channel: backup verb leaves backups/ to the config owner (#3363) =="
-# The root child's own `mkdir -p backups` made the directory root:root 755, so the operator's next
-# `./pithead backup` could not write. The glue now creates it first and chowns ONLY it to the
-# config.json owner. A chown shim records the call (this suite is not root); the stub child records
-# whether backups/ already existed when it started.
 own_d="$SANDBOX/own3363"
 mkdir -p "$own_d/bin" "$own_d/ctl/staged" "$own_d/ctl/results" "$own_d/ctl/audit"
 printf '{}\n' >"$own_d/config.json"
@@ -95,7 +90,6 @@ EOS
             if [ "$xb_surface" = gui ]; then
                 printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$xb_id" >"$XB/req.json"
                 sudo -n rm -f "$XB/ctl/staged/.backup-stamp"
-                # Capture the one-time kit before redaction without changing the backup child.
                 # shellcheck disable=SC2024
                 sudo -n env PATH="$XB/bin:$PATH" PITHEAD_SELF="$XB/pithead" CONTROL_BACKUP_KIT_TTL_S=0 \
                     bash -Eeuo pipefail -c 'cd "$1"; umask 022; source ./pithead; control_kit_redact() { :; }; if [ "$2" = 1 ]; then control_prepare_backups_dir() { :; }; fi; control_process_request "$1/req.json" "$1/ctl"' _ "$XB" "$xb_unfixed" >"$XB/gui.out" 2>&1

@@ -1,5 +1,3 @@
-"""Fake alert receiver and queued Telegram API for the mini-stack."""
-
 import argparse
 import json
 import threading

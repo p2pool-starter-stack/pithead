@@ -1,5 +1,3 @@
-"""Queue acknowledgement and recorder contracts for the Telegram fixture."""
-
 import importlib.util
 import json
 import threading

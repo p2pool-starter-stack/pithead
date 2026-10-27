@@ -1,5 +1,3 @@
-"""Exercise the running dashboard's command bot through the queued Telegram API."""
-
 import json
 import time
 from urllib.parse import parse_qs, urlsplit
@@ -81,7 +79,6 @@ require(f"Hashrate: {state['hashrate']['total']} (10m avg)" in sent[0]["text"])
 require(f"PPLNS shares: {state['shares_window']['count']} in window" in sent[0]["text"])
 require("Monero node: 🟢 synced" in sent[0]["text"])
 
-# Retain the same update id so a regressed offset replays the command.
 prior_polls = sum(p.get("offset") == ["203"] for p in polls(rows))
 request(SINK + "/control", {"updates": [update(202, "itest-chat")]})
 rows = poll(lambda: acknowledged(203, prior_polls + 3), "bot did not keep polling past replay")

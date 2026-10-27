@@ -1,5 +1,3 @@
-"""Exercise dashboard and non-root CLI backups on the deployed test checkout."""
-
 import http.client
 import json
 import os

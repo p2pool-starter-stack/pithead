@@ -161,9 +161,6 @@ unset CJ CJALT out rc cjarchive cjlist
 echo "== black-box: backup -> restore round-trip (#140) =="
 build_backup_sandbox
 
-# 1) Backup creates a timestamped archive. --no-encrypt keeps this #140 round-trip on the plaintext
-# path (encryption is exercised in the #374 block below); an unattended run without a passphrase
-# now refuses rather than downgrading, so the flag is required here.
 out="$(cd "$BK" && umask 022 && PATH="$BK/bin:$PATH" ./pithead backup -y --no-encrypt 2>&1)"
 rc=$?
 assert_rc "backup exits 0" "$rc" "0"
@@ -171,7 +168,6 @@ archive="$(ls "$BK"/backups/pithead-backup-*.tar.gz 2>/dev/null | head -1)"
 assert_eq "archive: backup archive is private" "$(file_mode "$archive")" "600"
 { [ -n "$archive" ] && [ -f "$archive" ]; } && ok "backup archive created" || bad "backup archive created" "no archive under backups/"
 
-# 2) Archive layout: the irreplaceable bits are in it; blockchains are NOT (no --with-chains).
 listing="$(tar -tzf "$archive" 2>/dev/null)"
 assert_contains "archive has config.json" "$listing" "config.json"
 assert_contains "archive has .env" "$listing" ".env"
@@ -236,7 +232,6 @@ rc=$?
 [ "$rc" -ne 0 ] && ok "unattended backup without passphrase exits non-zero" || bad "unattended backup without passphrase exits non-zero" "rc=0"
 assert_contains "refusal names the missing passphrase" "$out" "PITHEAD_BACKUP_PASSPHRASE"
 assert_eq "refused unattended backup writes no archive" "$(ls "$BK"/backups/pithead-backup-* 2>/dev/null | head -1)" ""
-# 1b) --no-encrypt is the explicit plaintext opt-out (loud warning, exits 0, writes a plain archive).
 out="$(cd "$BK" && umask 022 && PATH="$BK/bin:$PATH" ./pithead backup -y --no-encrypt 2>&1)"
 rc=$?
 assert_rc "explicit --no-encrypt backup exits 0" "$rc" "0"
@@ -245,7 +240,6 @@ assert_eq "plain_optout: backup archive is private" "$(file_mode "$plain_optout"
 { [ -n "$plain_optout" ] && [ -f "$plain_optout" ]; } && ok "--no-encrypt writes a plaintext archive" || bad "--no-encrypt writes a plaintext archive" "no plain archive"
 rm -f "$BK"/backups/pithead-backup-*
 
-# 2) Env-var passphrase: a .enc archive with the openssl Salted__ header, no plaintext twin.
 out="$(cd "$BK" && umask 022 && PATH="$BK/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y 2>&1)"
 rc=$?
 assert_rc "encrypted backup exits 0" "$rc" "0"
