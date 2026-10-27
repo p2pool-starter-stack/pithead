@@ -57,7 +57,7 @@ def stratum_sample():
     return {
         "source_status": "read",
         "source_hashes": diagnostic_counter(data.get("total_hashes")),
-        "source_shares": diagnostic_counter(data.get("total_shares")),
+        "source_shares": diagnostic_counter(data.get("total_stratum_shares")),
     }
 
 

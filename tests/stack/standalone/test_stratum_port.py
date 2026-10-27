@@ -295,7 +295,7 @@ class OccupiedStratumProofTest(unittest.TestCase):
     def test_source_progress_does_not_pass_a_stale_dashboard(self):
         error, previews, output = self.exercise(
             [(1, 100), (1, 102), (1, 102)],
-            stratum_source=json.dumps({"total_hashes": 200, "total_shares": 7}),
+            stratum_source=json.dumps({"total_hashes": 200, "total_stratum_shares": 7}),
         )
         self.assertEqual(previews, [2])
         self.assertIn("after occupied-port refusal", error)
