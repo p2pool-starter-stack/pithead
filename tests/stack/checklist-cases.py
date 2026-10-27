@@ -5,7 +5,8 @@ from pathlib import Path
 
 source, dest, monero, tari, subaddress, view_key = sys.argv[1:]
 dest = Path(dest)
-text = Path(source).read_text()
+document = Path(source).read_text()
+text = document
 replacements = {
     "PASTE_QA_MONERO_PRIMARY_ADDRESS": monero,
     "PASTE_QA_TARI_ADDRESS": tari,
@@ -17,6 +18,32 @@ replacements = {
     "PASTE_QA_CHAT_ID": "123456",
     "PASTE_FROM_NODE_MACHINE": "checklist-node-42",
 }
+expected_changes = [
+    "Delete one closing `}`",
+    "Set `monero.wallet_address` to the QA **subaddress** (starts with `8`)",
+    "Swap two different neighbouring characters in the middle of `monero.wallet_address`",
+    "Swap two different neighbouring characters in the middle of `tari.wallet_address`",
+    'Set `p2pool.pool` to `"large"`',
+    'Set `tari.mode` to `"maybe"`',
+    'Set `monero.mode` to `"cloud"`',
+    'Set `p2pool.stratum_password` to `"has space"`',
+    'Add `"proxy": { "donate_level": 150 }`',
+    'Set `dashboard.auth.password` to `"short"`',
+    'Set `dashboard.onion.enabled` to `true` and the password to `"fifteen-chars-x"` (15 characters)',
+    'Set `dashboard.onion.enabled` to `true` and the password to `"changeme-but-longer"`',
+    'Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }`',
+    'Add a second `"wallet_address"` line inside the `monero` block',
+    'Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"`',
+    'Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case)',
+    "Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block",
+]
+changes = [
+    line.split("|")[1].strip()
+    for line in document.split("## Broken configs", 1)[1].splitlines()
+    if line.startswith("| ")
+][1:]
+if changes != expected_changes:
+    raise ValueError("checklist mutations changed; update the matching test cases")
 for key, value in replacements.items():
     text = text.replace(key, value)
 samples = re.findall(r"```json\n(.*?)\n```", text, re.S)
