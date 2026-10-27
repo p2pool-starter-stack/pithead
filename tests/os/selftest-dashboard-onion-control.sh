@@ -10,6 +10,8 @@ fixture_onion="$(printf 'a%.0s' {1..56}).onion"
 key="$(printf 'A%.0s' {1..52})"
 fixture_id=11111111-1111-4111-8111-111111111111
 ip="fixture-address"
+jq -nc --arg o "$fixture_onion" --arg k "$key" '["DASHBOARD_ONION_ENABLED=true", "DASHBOARD_ONION_ADDRESS="+$o,
+    "DASHBOARD_ONION_CLIENT_AUTH=true", "UNRELATED_SECRET="+$k]' >"$fixture/runtime.json"
 ok() { printf 'ok: %s\n' "$1"; }
 bad() {
     FAIL=$((FAIL + 1))
@@ -20,12 +22,17 @@ dashboard_curl() {
     [ "$shape" != state-unreadable ] || return 1
     if [ "$shape" = state-delay ] && [ ! -e "$fixture/read" ]; then
         touch "$fixture/read"
-        printf '{"dashboard_onion":null}'
+        printf '{"dashboard_onion":null}\n200'
+        return
+    fi
+    if [ "$shape" = state-malformed ]; then
+        printf '%s\n200' "$key"
         return
     fi
     jq -nc --arg onion "$fixture_onion" --arg shape "$shape" '
         {dashboard_onion:{url:(if $shape == "state-mismatch" then "http://wrong.onion" else "http://" + $onion end),
                           client_auth:($shape != "state-noauth")}}'
+    if [ "$shape" = state-unauthorized ]; then printf '\n401'; else printf '\n200'; fi
 }
 dashboard_control_request() {
     [ "$1" = onion-client-key ] && [ "$2" = '{}' ] || return 1
@@ -44,13 +51,15 @@ dashboard_control_request() {
 _ssh() {
     local cmd="$1"
     cmd=${cmd//\/data\/pithead/$fixture}
-    FIXTURE_ONION="$fixture_onion" bash -euo pipefail -c '
-        podman() { printf "%s" "$FIXTURE_ONION"; }
+    FIXTURE_ONION="$fixture_onion" FIXTURE_RUNTIME="$fixture/runtime.json" bash -euo pipefail -c '
+        podman() {
+            if [ "$1" = inspect ]; then cat "$FIXTURE_RUNTIME"; else printf "%s" "$FIXTURE_ONION"; fi
+        }
         eval "$1"
     ' fixture "$cmd"
 }
 
-for shape in good state-delay hostname-mismatch state-mismatch state-noauth state-unreadable \
+for shape in good state-delay hostname-mismatch state-mismatch state-noauth state-unreadable state-unauthorized state-malformed \
     request-failed key-mismatch key-missing key-empty id-hostile rejected audit-missing audit-other \
     retained-key retained-line result-missing redaction-fields-missing; do
     mkdir -p "$fixture/data/control/audit" "$fixture/data/control/results"
@@ -86,6 +95,11 @@ for shape in good state-delay hostname-mismatch state-mismatch state-noauth stat
         printf 'credential or onion leaked: %s\n' "$shape"
         exit 1
     fi
+    case "$shape" in
+    state-mismatch | state-noauth | state-unreadable | state-unauthorized | state-malformed)
+        grep -Fq '"runtime_enabled":true,"runtime_address_matches":true,"runtime_client_auth":true' "$fixture/output" || exit 1
+        ;;
+    esac
     printf 'PASS %s\n' "$shape"
 done
 
@@ -114,3 +128,11 @@ done
     exit 1
 }
 printf 'PASS restore after control failure\n'
+
+for raw in "$key" "<html>$key</html>" \
+    "$(jq -nc --arg k "$key" '{dashboard_onion:{url:$k,client_auth:$k},error:$k}')"; do
+    diagnostic=$(dashboard_onion_state_evidence "$raw" 401 22 "$fixture_onion")
+    printf '%s' "$diagnostic" | jq -e '.http == "401" and .curl == 22 and .url_matches == false and .client_auth == false' >/dev/null
+    if grep -Fq "$key" <<<"$diagnostic"; then exit 1; fi
+done
+printf 'PASS bounded state diagnostics never expose payload values\n'

@@ -168,6 +168,7 @@ the configured test registry fail before the image build. Release builds do not 
   served, generated login authenticating, the onion header state matching Tor and the rendered
   environment, both client-key forms returned through control with an applied audit row and timed
   host-result redaction, firstboot and system journals free of bcrypt credentials,
+  state-failure diagnostics limited to HTTP/curl status and agreement booleans,
   built-in miner up. Journal reads must succeed and contain entries; the check never prints matched hashes. The Tor-only egress enforcement backstop — a real clearnet dial from a
   mining container, which must be DROPPED while the same container still reaches clearnet through
   Tor's SOCKS (up to three attempts, with retries isolated by SOCKS username, [#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)) — runs on EVERY path through this phase, including the aborting ones, and reports RED
