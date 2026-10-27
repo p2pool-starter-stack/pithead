@@ -101,12 +101,12 @@ assert_contains "remote Monero: Monero's chain drops out of the budget" \
 
 echo "== unit: an explicit answer beats the disk-derived default, both ways (#1916) =="
 c="$(
-    wt_run roomy-declined "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n1\n\n\n\n\n\n\n\n" >/dev/null
+    wt_run roomy-declined "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n1\ny\n\n\n\n" >/dev/null
     wt_cfg roomy-declined
 )"
 assert_eq "answering 1 on a roomy host still declines" "$(jq -r '.tari.mode' <<<"$c")" "off"
-assert_eq "the answer after the decline lands on the pool tier — no address prompt stands between them" \
-    "$(jq -r '.p2pool.pool' <<<"$c")" "nano"
+assert_eq "declining Tari keeps the pool tier automatic" "$(jq -r '.p2pool | has("pool")' <<<"$c")" false
+assert_eq "the next answer selects fast sync without an address prompt" "$(jq -r .monero.clearnet_initial_sync <<<"$c")" true
 c="$(
     wt_run small-accepted "$WT_SMALL_KB" "$WT_SMALL_H" "$WALLET\n\n2\n$VALID_TARI\n\n\n\n\n\n\n\n" >/dev/null
     wt_cfg small-accepted
@@ -149,7 +149,7 @@ out="$(wt_run fast "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n2\n$VALID_TARI\ny\n\
 assert_contains "fast sync warns about both networks" "$out" "exposes your IP address to the Monero network and the Tari network until the initial sync finishes"
 out="$(wt_run private "$WT_SMALL_KB" "$WT_SMALL_H" "$WALLET\n\n1\n\n\n\n\n\n")"
 c="$(wt_cfg private)"
-assert_eq "explicit no-login choice remains available" "$(jq -r '.dashboard | has("auth")' <<<"$c")" "false"
+assert_eq "private setup generates its admin login" "$(jq -r '.dashboard.auth | .username == "admin" and (.password | test("^[A-Za-z0-9]{32}$"))' <<<"$c")" true
 assert_eq "new install writes private keys for both chains" "$(jq -rc '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$c")" '[false,false]'
 assert_not_contains "private sync has no exposure warning" "$out" "Fast sync exposes"
 budget=$(PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$SANDBOX" wizard_disk_budget)

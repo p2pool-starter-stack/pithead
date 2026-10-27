@@ -37,7 +37,7 @@ test("keep the blockchains still asks the node questions — kept chains only an
   assert.match(out, /Merge-mine Tari\?/);
   assert.match(out, /First sync/);
   assert.match(out, /Payout address/);
-  assert.match(out, /Dashboard login/);
+  assert.doesNotMatch(out, /Dashboard login/);
 });
 
 test("wipe everything (or an empty disk): the full form asks everything", async () => {
@@ -65,9 +65,8 @@ test("chain size, healthchecks and time zone sit under Advanced, not the first-r
     assert.ok(at > -1, `${label} should still render (day-2 need is real)`);
     assert.ok(at > advancedAt, `${label} should render inside the Advanced pane, not the main form`);
   }
-  // The primary form's own headings stay above Advanced, unmoved.
-  for (const label of ["Payout address", "Dashboard login", "Alerts"]) {
-    assert.ok(all.indexOf(label) < advancedAt, `${label} should stay in the primary form`);
+  for (const label of ["Payout address", "Alerts"]) {
+    assert.ok(all.indexOf(label) >= 0 && all.indexOf(label) < advancedAt, `${label} should stay in the primary form`);
   }
 });
 
