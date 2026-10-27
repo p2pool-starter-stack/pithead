@@ -124,18 +124,27 @@ class OnionStateTests(unittest.TestCase):
             state.load(snapshot)
         self.assertTrue(snapshot.exists())
 
-    def test_symlinked_backups_are_refused_on_save_and_load(self):
-        backups = self.root / "backups"
-        backups.symlink_to(self.tor, target_is_directory=True)
-        with self.assertRaisesRegex(ValueError, "unsafe backups"):
-            self.save()
-        self.assertFalse(list(self.tor.glob(".hardening-onion-*")))
-        backups.unlink()
+    def test_unsafe_backups_are_refused_on_save_and_load(self):
+        (backups := self.root / "backups").mkdir(mode=0o700)
+        for mode in (0o777, 0o775):
+            backups.chmod(mode)
+            with self.assertRaisesRegex(ValueError, "unsafe recovery"):
+                self.save()
+        backups.chmod(0o755)
         snapshot = self.save()
-        retained = backups.rename(self.root / "retained")
-        backups.symlink_to(retained, target_is_directory=True)
-        with self.assertRaisesRegex(ValueError, "noncanonical"):
+        backups.chmod(0o777)
+        with self.assertRaisesRegex(ValueError, "unsafe recovery"):
             state.load(snapshot)
+        backups.chmod(0o700)
+        config, info = state.configuration(self.root)
+        wrong = SimpleNamespace(st_uid=info.st_uid + 1, st_gid=info.st_gid)
+        with patch.object(state, "configuration", return_value=(config, wrong)):
+            with self.assertRaisesRegex(ValueError, "unsafe recovery"):
+                self.save()
+        state.shutil.rmtree(backups)
+        backups.symlink_to(self.tor, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "unsafe recovery"):
+            self.save()
 
     def test_snapshot_outside_checkout_or_backups_is_refused(self):
         snapshot = self.save()

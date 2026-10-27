@@ -343,9 +343,9 @@ described in the [AI workflow](ai-workflow.md).
 The hardening onion checks live in `tests/integration/lib/run-hardening.sh` and use
 `run-onion-targets.sh` for independent clients. `hardening-onion-state.sh` and
 `hardening_onion_state.py` protect recovery copies under `backups/` and restore the environment
-and hidden-service identity;
-the safety EXIT hook also restores an interrupted phase. The Docker-free checker and
-state failure controls run through `selftest-hardening-onion.sh`.
+and hidden-service identity. The safety EXIT hook also restores an interrupted phase.
+`selftest-hardening-onion.sh` runs the Docker-free checker, state failure controls and
+`selftest-hardening-control-units.sh` for isolated control-unit ownership checks.
 
 The lifecycle phase uses `tests/integration/lib/run-lifecycle-tls.sh` to compare Caddy's
 served leaf, canonical SANs, public key and a local digest of its stored private keys

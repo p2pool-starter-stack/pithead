@@ -99,29 +99,43 @@ def unmounted(snapshot):
                 raise ValueError("snapshot overlaps a mount")
 
 
+def configuration(checkout):
+    config = checkout / "config.json"
+    if config.is_symlink() or not config.is_file():
+        raise ValueError("unsafe configuration file")
+    return config, config.stat()
+
+
+def protected_directory(path, owner):
+    info = path.lstat()
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or path.resolve(strict=True) != path
+        or info.st_uid != owner
+        or stat.S_IMODE(info.st_mode) & 0o022
+    ):
+        raise ValueError("unsafe recovery directory")
+
+
 def save(tor):
     tor = canonical(Path(tor))
     checkout = canonical(Path.cwd())
+    config, config_info = configuration(checkout)
     env = checkout / ".env"
     if env.is_symlink() or not env.is_file() or stat.S_IMODE(env.stat().st_mode) != 0o600:
         raise ValueError("unsafe environment file")
     fingerprint = identity(tor / "dashboard")
     backups = checkout / "backups"
-    if backups.is_symlink():
-        raise ValueError("unsafe backups directory")
-    backups.mkdir(mode=0o700, exist_ok=True)
-    if not backups.is_dir():
-        raise ValueError("unsafe backups directory")
+    if not backups.exists() and not backups.is_symlink():
+        backups.mkdir(mode=0o700)
+        os.chown(backups, config_info.st_uid, config_info.st_gid)
+    protected_directory(backups, config_info.st_uid)
     snapshot = Path(tempfile.mkdtemp(prefix=".hardening-onion-", dir=backups))
     unmounted(snapshot)
     shutil.copy2(env, snapshot / "env")
     info = env.stat()
     os.chown(snapshot / "env", info.st_uid, info.st_gid)
-    config = checkout / "config.json"
-    if config.is_symlink() or not config.is_file():
-        raise ValueError("unsafe configuration file")
     shutil.copy2(config, snapshot / "config")
-    config_info = config.stat()
     os.chown(snapshot / "config", config_info.st_uid, config_info.st_gid)
     (snapshot / "config").chmod(0o600)
     if fingerprint is not None:
@@ -142,14 +156,18 @@ def save(tor):
 
 def load(snapshot):
     canonical(snapshot)
+    checkout = canonical(Path.cwd())
+    _, config_info = configuration(checkout)
     info = snapshot.stat()
+    allowed = (checkout, checkout / "backups")
     if (
-        snapshot.parent not in (Path.cwd(), Path.cwd() / "backups")
+        snapshot.parent not in allowed
         or not snapshot.name.startswith(".hardening-onion-")
         or info.st_uid != os.geteuid()
         or stat.S_IMODE(info.st_mode) != 0o700
     ):
         raise ValueError("unprotected snapshot")
+    protected_directory(snapshot.parent, config_info.st_uid)
     for name in ("env", "config", "state.json"):
         item = snapshot / name
         if item.is_symlink() or not item.is_file():
