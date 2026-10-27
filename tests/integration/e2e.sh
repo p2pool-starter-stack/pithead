@@ -173,8 +173,6 @@ if [ "$MODE" = check ] || [ "$BORROW_MINER" != 1 ]; then
 else
     [[ "$WORKERS" =~ ^[1-9][0-9]*$ ]] || die "--workers must be a positive integer (got '$WORKERS')."
 fi
-# --- SSH helpers ------------------------------------------------------------
-# Keepalives so a quiet (but live) connection isn't dropped; BatchMode so we never hang on a prompt.
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)
 # NOTE (testbench README): avoid literal shell parens '()' in remote command strings — they break the
 # non-interactive remote shell. jq filters (quoted) are fine; shell subshells are not.
