@@ -12,7 +12,8 @@ lookups they used to leak), P2Pool's outbound sidechain peers (#165), and XvB do
 are all Tor-routed by default, each with a documented opt-out for operators who trade privacy for
 yield. What's left is inherent: the one-time install/build reveals your IP to the download host, and
 remote-node mode (`monero.mode: remote` and `tari.mode: remote`, both off by default) talks to the
-node you choose. Both are called out below.
+node you choose. Both are called out below. The optional [project donation](donation.md) also
+defaults to Tor when available; it ships off and hidden until a destination is published.
 
 One opt-in deliberately moves a node onto clearnet: an
 [optional clearnet initial sync](#optional-clearnet-initial-sync-off-by-default) that lets Monero
@@ -28,7 +29,9 @@ stack enforces, not one it merely hopes each daemon is configured for. At `up`/`
 installs a fail-closed rule set on the mining subnet: the mining bridge (monerod, p2pool, tari,
 xmrig-proxy) may reach the LAN, the other containers, and the Tor SOCKS, but any direct dial to the
 public internet is DROPPED unless its address has an explicit clearnet choice: temporary node
-sync, P2Pool sidechain peers, or enabled XvB donation. Otherwise only the `tor` container reaches
+sync, P2Pool sidechain peers, or enabled XvB donation. When a project destination is published,
+enabled project donation with a clearnet endpoint and `donation.tor: false` also permits
+xmrig-proxy direct egress. Otherwise only the `tor` container reaches
 the internet. So if a daemon is
 misconfigured, buggy, or learns a clearnet peer address (as Tari's comms layer does), the connection
 fails closed instead of leaking your IP.
@@ -267,8 +270,9 @@ risk is the one-time IP disclosure, not tampering.
 
 As of v1.1 both former clearnet yield paths, P2Pool outbound peers (#165) and XvB donation mining
 (#166), route over Tor by default. Each has an opt-out for operators who'd trade the IP exposure for
-maximum yield (Tor latency can raise stale/uncle shares and rejects). The two sections below document
-the routing and how to opt out.
+maximum yield (Tor latency can raise stale/uncle shares and rejects). The optional project
+donation also uses Tor by default once a destination is published; its direct-routing choice
+applies only to clearnet endpoints. The sections below document these routes and opt-outs.
 
 What Tor costs you (measured): a 5-day interleaved benchmark on `mini` (#256, full
 [methodology + data](benchmarks/tor-vs-clearnet.md)) puts the price of routing P2Pool over Tor at
@@ -399,6 +403,8 @@ be explicitly opted into.
 The [fail-closed egress firewall](#enforced-fail-closed-not-just-configured-270) admits direct IPv4
 egress from the selected node's own container during first sync, from P2Pool when
 `p2pool.clearnet` is true, and from xmrig-proxy when XvB is enabled with `xvb.tor` false.
+Once a project destination is published, enabled project donation to a clearnet endpoint
+with `donation.tor: false` also permits xmrig-proxy direct egress; onion endpoints require Tor.
 Every other container stays restricted, and the IPv6 backstop remains in place.
 The host checks that the node's live `ACCEPT` is scoped to its address and precedes the subnet's
 blocking `DROP`; a broad or later exception does not count as active. The chosen node gets

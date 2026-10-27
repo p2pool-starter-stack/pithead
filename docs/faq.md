@@ -74,13 +74,16 @@ nodes it runs itself, so inbound connections need no port forwarding and do not 
 node set to `remote` publishes no onion here — it accepts its own peers where it runs. Monero and Tari route P2P and transaction
 traffic over Tor, and their old clearnet DNS lookups are closed.
 
-The two former clearnet yield paths are Tor-by-default as of v1.1, each with a yield-vs-privacy opt-out:
+P2Pool and XvB yield paths are Tor-by-default as of v1.1, each with a yield-vs-privacy opt-out:
 
 - P2Pool's outbound sidechain peers (#165) are Tor-routed by default. You may opt into clearnet
   (`p2pool.clearnet: true`) for ~10 % more yield on `mini`, at the cost of exposing your IP; see the
   [Tor-vs-clearnet benchmark](benchmarks/tor-vs-clearnet.md).
 - XvB donation mining (#166), only if XvB is enabled: the donation connection to `xmrvsbeast.com`
   is Tor-routed by default (opt out with `xvb.tor: false`). The XvB *stats* fetch is Tor-routed too.
+- The [project donation](donation.md#route-and-privacy), once a release publishes its destination,
+  also defaults to Tor. Direct routing (`donation.tor: false`) exposes your IP for a clearnet
+  endpoint; an onion endpoint still requires Tor. The feature ships off and hidden.
 
 What still touches clearnet, and so can reveal your IP:
 
