@@ -220,7 +220,7 @@ rig_setup_again_coordinator_leg() {
     *) bad "the setup entry did not follow the default to slot B — cmdline: $(printf '%s' "$cmd" | cut -c1-160)" ;;
     esac
     _setup_again_session || return
-    scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
+    scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini&role=pithead" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "coordinator submit on the set-up-again page returned ${scode:-none}, want 200"
         rm -f "$jar"

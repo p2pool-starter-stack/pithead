@@ -4,7 +4,7 @@ on:
   push:
     branches-ignore: [main]
   pull_request:
-    branches: [develop]
+    branches: [develop, develop-v2.1.0]
 
 permissions:
   contents: read
@@ -15,26 +15,30 @@ concurrency:
 
 jobs:
   native-dialog:
-    name: Browser user journeys
+    name: Cross-browser user journeys
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+      options: --ipc=host
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "20"
+      - name: Install browser fixture tools
+        timeout-minutes: 2
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends make unzip
       - name: Install locked browser test dependencies
+        timeout-minutes: 2
         run: npm ci --prefix dashboard/tests/browser --ignore-scripts
-      - name: Install pinned browsers and system libraries
-        run: dashboard/tests/browser/node_modules/.bin/playwright install --with-deps chromium firefox webkit
       - name: Run cross-browser user journeys and HTTPS backup fixtures
-        env: {TMPDIR: "${{ runner.temp }}"}
+        env: {HOME: /root, TMPDIR: "${{ runner.temp }}"}
         run: make test-browser
       - name: Retain browser failure evidence
         if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: browser-failure-evidence
           path: |
@@ -52,10 +56,26 @@ jobs:
             dashboard/tests/browser/test-results/sovereign-*/drawer-*.png
           retention-days: 7
           if-no-files-found: error
+  chrome-backup:
+    name: Google Chrome HTTPS backup downloads
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        timeout-minutes: 2
+        with:
+          node-version: "20"
+      - name: Install locked Chrome test dependencies
+        timeout-minutes: 2
+        run: npm ci --prefix dashboard/tests/browser --ignore-scripts
       - name: Install pinned Google Chrome for Testing
+        timeout-minutes: 2
         env: {TMPDIR: "${{ runner.temp }}"}
         run: |
-          curl --fail --silent --show-error --location \
+          curl --fail --silent --show-error --location --connect-timeout 20 --max-time 90 \
             https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.37/linux64/chrome-linux64.zip \
             --output "$TMPDIR/pithead-backup-chrome.zip"
           unzip -q "$TMPDIR/pithead-backup-chrome.zip" -d "$TMPDIR/pithead-backup-chrome"
@@ -64,3 +84,18 @@ jobs:
         run: |
           PITHEAD_BACKUP_BROWSER_EXECUTABLE="$TMPDIR/pithead-backup-chrome/chrome-linux64/chrome" \
             node --test dashboard/tests/browser/backup-download.test.mjs
+
+  browser:
+    name: Browser user journeys
+    needs: [native-dialog, chrome-backup]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require both browser proofs
+        env:
+          JOURNEYS_RESULT: ${{ needs.native-dialog.result }}
+          CHROME_RESULT: ${{ needs.chrome-backup.result }}
+        run: |
+          test "$JOURNEYS_RESULT" = success
+          test "$CHROME_RESULT" = success

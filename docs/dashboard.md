@@ -1711,10 +1711,11 @@ of an update.
 
 ## Tips
 
-- **First visit certificate warning.** With `dashboard.secure: true` (the default), Caddy uses a
-  self-signed certificate, so your browser shows a one-time "connection is not private" warning.
-  Accept it to proceed. To use plain HTTP instead, set `dashboard.secure: false` and run
-  `./pithead apply`.
+- **First visit certificate warning.** With `dashboard.secure: true` (the default), DIY installs
+  use Caddy's local certificate authority.
+  [Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
+  warnings after certificate renewal. To use plain HTTP instead, set `dashboard.secure: false`
+  and run `./pithead apply`.
 - **Reaching it from another machine.** Use the stack server's hostname/IP. If the hostname doesn't
   resolve on your LAN, set `dashboard.host` in `config.json` to an address that does.
 - **Adding a login.** The dashboard has no password by default, fine for a private LAN appliance. If
