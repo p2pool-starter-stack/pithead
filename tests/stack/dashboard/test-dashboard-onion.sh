@@ -241,6 +241,7 @@ esac
 echo "== black-box: apply captures + renders the HTTPS onion vhost in the SAME run (#546) =="
 AOC="$SANDBOX/apply-onion-capture"
 mkdir -p "$AOC"
+printf '{}\n' >"$AOC/config.json"
 printf 'DEPLOYMENT_COMPLETED=true\n' >"$AOC/.env"
 caddy_apply_capture=$(
     cd "$AOC" || exit
