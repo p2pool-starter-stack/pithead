@@ -335,17 +335,6 @@ rm -rf "$DAC"
 unset DAC out
 
 echo "== unit: doctor looks for the control units where apply writes them (#1151) =="
-# The appliance renders host units into /run/systemd/system — its root is read-only, so /etc cannot
-# take the write (#791). `provision_control_runner` knew that; `check_control_units` and
-# `control_units_owner_dir` did not, and hard-coded /etc. On a PROVISIONED appliance doctor
-# therefore reported "no runner units are installed" about units that were installed and running.
-# That is the doctor half of the boot health gate: it never passed, the slot never committed, the
-# dashboard sat on "reboot pending" for ever. Legs 1-3 of the KVM battery cannot see it: they never
-# provision the guest, so pithead-boot.service is condition-skipped and the gate never runs at all
-# (those legs commit with the harness's own `rauc status mark-good`). Leg 4 is the only leg that
-# provisions AND lets the boot gate do the committing.
-#
-# The defect was TWO rules, not a wrong constant, so this asserts the rule has exactly one home.
 assert_eq "appliance -> /run/systemd/system (read-only root, #791)" \
     "$(PITHEAD_APPLIANCE=1 PITHEAD_UNIT_DIR="" run_sourced "$SANDBOX" control_unit_dir)" "/run/systemd/system"
 assert_eq "DIY host -> /etc/systemd/system" \

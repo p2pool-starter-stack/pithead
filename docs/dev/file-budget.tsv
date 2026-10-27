@@ -63,7 +63,7 @@ tests/os/selftest-run-modules.sh	462
 tests/stack/appliance/test-appliance-boot-remint.sh	445
 tests/stack/appliance/test-appliance-boot.sh	639
 tests/stack/appliance/test-appliance-identity-boot.sh	465
-tests/stack/appliance/test-appliance-identity.sh	483
+tests/stack/appliance/test-appliance-identity.sh	482
 tests/stack/appliance/test-appliance-install.sh	449
 tests/stack/appliance/test-appliance-media.sh	407
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454

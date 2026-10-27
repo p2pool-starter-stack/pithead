@@ -12,7 +12,6 @@ KRBIN="$KR/bin"
 mkdir -p "$KRBIN"
 make_host_tool_stubs "$KRBIN" systemctl
 printf 'COMPOSE_PROFILES=local_node,local_tari,payout_confirm,tari_payout_confirm\n' >"$KR/.env"
-# RUNNING_STUB lists the containers `docker ps` reports running; the service list is the stack's.
 cat >"$KRBIN/docker" <<'EOF'
 #!/usr/bin/env bash
 echo "[docker] $*" >> "${DOCKER_LOG:-/dev/null}"
@@ -35,7 +34,7 @@ kr_compose_up() {
     compose_up_checked "$@"
 }
 
-kr_up() { # <keep> <running> <compose_up_checked args...> -> rc; the up line lands in $KRLOG
+kr_up() {
     local keep="$1" running="$2"
     shift 2
     : >"$KRLOG"
@@ -43,7 +42,7 @@ kr_up() { # <keep> <running> <compose_up_checked args...> -> rc; the up line lan
         run_sourced "$KR" kr_compose_up "$@" >"$KR/out" 2>&1
 }
 kr_line() { grep 'compose up' "$KRLOG" | tail -1; }
-kr_names() { kr_line | tr ' ' '\n'; } # one word per line, so 'tari' never matches 'tari-wallet'
+kr_names() { kr_line | tr ' ' '\n'; }
 
 kr_up "monerod tari" "monerod tari" -d
 assert_rc "a scoped up succeeds when every kept service is running" "$?" "0"

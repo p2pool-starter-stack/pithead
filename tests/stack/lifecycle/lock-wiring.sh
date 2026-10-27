@@ -7,8 +7,6 @@ LKW="$SANDBOX/lockwiring"
 mkdir -p "$LKW/bin"
 make_stubs "$LKW/bin"
 make_host_tool_stubs "$LKW/bin" systemctl
-# A second CLI process used to unlink the first one's apply/preview staging files on EXIT,
-# including while the first was waiting for the mutation lock (#2943).
 stage_paths=$(PITHEAD_ENV_FILE="$LKW/staged.env" bash -c 'source "$1"; printf "%s\n%s\n" "${PITHEAD_ENV_STAGE:-${ENV_FILE}.new}" "${PITHEAD_ENV_DRYRUN:-${ENV_FILE}.dryrun}"' _ "$STACK")
 apply_stage=${stage_paths%%$'\n'*}
 preview_stage=${stage_paths#*$'\n'}

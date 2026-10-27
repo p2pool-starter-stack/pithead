@@ -170,17 +170,12 @@ mk_tmpdir() {
 # `cd "" && pwd -P` and armed the trap below on the working tree; #1705 made it the single
 # constructor so that recipe cannot drift between this file and the domain files.
 mk_tmpdir _sbx
-# mk_tmpdir assigns through `printf -v`, which shellcheck cannot follow, so it reads _sbx as
-# never assigned. The 38 call sites in the domain files are not flagged only because their names
-# are uppercase and shellcheck assumes those may come from the environment — so this directive
-# is narrower than it looks, and a lowercase name added later will need its own.
 # shellcheck disable=SC2154
 SANDBOX="$(cd "$_sbx" && pwd -P)"
 # shellcheck source=tests/stack/lib/host-guard.sh
 source "$ROOT/tests/stack/lib/host-guard.sh" || exit 1
 stack_host_guard_init "$SANDBOX"
 trap stack_sandbox_cleanup EXIT
-# The restore handoff roots default to root-only /run paths; a non-root suite must never reach them.
 export PITHEAD_RESTORE_SUBMISSION_DIR="$SANDBOX/.run/restore-submit" PITHEAD_RESTORE_STAGE_ROOT="$SANDBOX/.run/restore-stage" \
     PITHEAD_RESTORE_CARRY_DIR="$SANDBOX/.run/restore-carry"
 

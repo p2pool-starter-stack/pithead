@@ -97,8 +97,7 @@ EOS
     xb_id="a0a0a0a0-0000-4000-8000-0000000033b3"
     printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$xb_id" >"$XB/req.json"
 
-    # The GUI half, as the privileged control user: the real CLI is the child control_backup starts.
-    # shellcheck disable=SC2024  # the redirect is deliberately the caller's: only the command is privileged
+    # shellcheck disable=SC2024
     "$STACK_FIXTURE_SUDO" -n env PATH="$XB/bin:$PATH" PITHEAD_SELF="$XB/pithead" APP_GID="$(id -g)" CONTROL_BACKUP_KIT_TTL_S=0 \
         bash -Eeuo pipefail -c 'cd "$1"; source ./pithead; shift; "$@"' _ "$XB" \
         control_process_request "$XB/req.json" "$XB/ctl" >"$XB/gui.out" 2>&1
