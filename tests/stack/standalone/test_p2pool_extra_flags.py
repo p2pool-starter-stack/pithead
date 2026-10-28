@@ -23,7 +23,7 @@ class ExtraFlagsTest(unittest.TestCase):
 
     def shell(self, action, **extra):
         return subprocess.run(  # noqa: S603
-            [BASH, "-c", 'source "$ROOT/pithead"; ' + action],
+            [BASH, "-c", 'source "$ROOT/pithead"; ' + action, str(self.directory / "pithead")],
             cwd=self.directory,
             env={
                 **os.environ,
@@ -74,6 +74,7 @@ PITHEAD_DRY_RUN=1
 parse_and_validate_config
 load_preserved_state
 resolve_dashboard_host
+DEPLOYMENT_COMPLETED=true
 render_env "$PITHEAD_ENV_DRYRUN" >&2
 env_get_file "$PITHEAD_ENV_DRYRUN" P2POOL_FLAGS
 """)
@@ -266,6 +267,57 @@ env_get_file "$PITHEAD_ENV_DRYRUN" P2POOL_FLAGS
             'describe_change P2POOL_FLAGS "--mini --no-dns" "--mini --no-dns --loglevel 3"'
         )
         self.assertTrue(result.stdout.startswith("INFO\t"), result.stdout)
+
+    def test_config_read_extractor_and_host_confirm_path(self):
+        result = self.shell("""
+STACK="$ROOT/pithead"
+source "$ROOT/tests/stack/lib/config-read-sites.sh"
+bad() { printf '%s\n' "$*" >&2; exit 1; }
+set +e
+config_read_sites
+[ "$DRIFT_BAD" = 0 ] &&
+    grep -qxF p2pool.extra_flags <<<"$DRIFT_FOUND" &&
+    grep -qxF p2pool.extra_flags <<<"$CONTROL_DASHBOARD_CONFIRM_PATHS"
+""")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_real_control_gate_in_both_modes(self):
+        shutil.copyfile(ROOT / "pithead", self.directory / "pithead")
+        (self.directory / "pithead").chmod(0o755)
+        shutil.copyfile(ROOT / "config.reference.json", self.directory / "config.reference.json")
+        staged = self.directory / "staged.json"
+        binaries = self.directory / "bin"
+        binaries.mkdir()
+        if gnu_realpath := shutil.which("grealpath"):
+            (binaries / "realpath").symlink_to(gnu_realpath)
+        for clearnet in (False, True):
+            (self.directory / ".env").write_text(
+                "DEPLOYMENT_COMPLETED=true\nP2POOL_ONION_ADDRESS=fixture.onion\n"
+            )
+            self.write_flags([], clearnet)
+            self.render()
+            rendered = max(
+                self.directory.glob(".env.dryrun.*"), key=lambda item: item.stat().st_mtime_ns
+            )
+            shutil.copyfile(rendered, self.directory / ".env")
+            document = json.loads(self.config.read_text())
+            document["p2pool"]["extra_flags"] = ["--no-dns"]
+            staged.write_text(json.dumps(document))
+            for token, expected in (("", 1), ("APPLY", 0)):
+                with self.subTest(clearnet=clearnet, token=token):
+                    result = self.shell(
+                        'if control_approval_gate "$STAGED" "$TOKEN" fixture admin null "$CONTROL"; then exit 0; else exit "$?"; fi',
+                        STAGED=str(staged),
+                        TOKEN=token,
+                        CONTROL=str(self.directory / "control"),
+                        PATH=str(binaries) + os.pathsep + os.environ["PATH"],
+                    )
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                    if not token:
+                        self.assertIn("type APPLY", result.stdout)
+                    self.assertEqual(
+                        json.loads(self.config.read_text())["p2pool"]["extra_flags"], []
+                    )
 
     def test_clearnet_preview_honors_no_dns(self):
         self.write_flags(["--no-dns"], clearnet=True)

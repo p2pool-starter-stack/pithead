@@ -51,7 +51,7 @@ append_p2pool_extra_flags() {
             case " $flags " in *' --no-dns '*) continue ;; esac
         fi
         flags="${flags:+$flags }$extra"
-    done < <(jq -r '.p2pool.extra_flags // [] | .[]' "$CONFIG_FILE")
+    done < <(jq -r '(.p2pool.extra_flags // [])[]' "$CONFIG_FILE")
     printf '%s' "$flags"
 }
 
