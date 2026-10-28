@@ -57,7 +57,58 @@ def probe(container, address, port):
     return count == "1"
 
 
-def diagnostics(name, stats_path):
+def onion_probe(proxy_ip, onion, port):
+    ipaddress.IPv4Address(proxy_ip)
+    if not re.fullmatch(r"[a-z2-7]{56}\.onion", onion) or port not in (37888, 37889, 37890):
+        raise ValueError("invalid onion probe target")
+    result = {"stage": "connect"}
+    deadline = time.monotonic() + 15
+    try:
+        with socket.create_connection((proxy_ip, 9050), timeout=5) as connection:
+
+            def receive(size):
+                data = b""
+                while len(data) < size:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError
+                    connection.settimeout(min(5, remaining))
+                    chunk = connection.recv(size - len(data))
+                    if not chunk:
+                        raise OSError
+                    data += chunk
+                return data
+
+            result["stage"] = "greeting"
+            connection.sendall(bytes((5, 1, 0)))
+            if receive(2) != bytes((5, 0)):
+                return result
+            result["stage"] = "reply"
+            host = onion.encode("ascii")
+            connection.sendall(bytes((5, 1, 0, 3, len(host))) + host + port.to_bytes(2, "big"))
+            header = receive(4)
+            if header[0] != 5 or header[1] > 8 or header[2] != 0:
+                return result
+            result["socks_reply"] = header[1]
+            if header[1]:
+                return result
+            if header[3] == 1:
+                receive(4)
+            elif header[3] == 4:
+                receive(16)
+            elif header[3] == 3:
+                receive(receive(1)[0])
+            else:
+                return result
+            receive(2)
+            result["stage"] = "challenge"
+            result["challenge_received"] = bool(receive(1))
+    except OSError:
+        pass
+    return result
+
+
+def diagnostics(name, stats_path, target=None):
     result = {}
     try:
         state = inspect(name)["State"]
@@ -70,6 +121,7 @@ def diagnostics(name, stats_path):
             stats_available=True,
             inbound=sum(isinstance(p, str) and p.startswith("I,") for p in peers),
             outbound_onion=outgoing_onion(peers),
+            outbound_target=outgoing_onion(peers, target) if target else None,
         )
     except (RuntimeError, ValueError, KeyError, TypeError):
         result["stats_available"] = False
@@ -226,7 +278,8 @@ def main():
             json.dumps(
                 {
                     "candidate": diagnostics("p2pool", "/stats/local/p2p"),
-                    "fixture": diagnostics(peer, stats_path),
+                    "fixture": diagnostics(peer, stats_path, onion),
+                    "onion_probe": onion_probe(proxy_ip, onion, port),
                 },
                 sort_keys=True,
             ),
