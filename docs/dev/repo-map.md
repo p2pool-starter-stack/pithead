@@ -347,6 +347,7 @@ The hardening onion checks live in `tests/integration/lib/run-hardening.sh` and 
 and hidden-service identity. The safety EXIT hook also restores an interrupted phase.
 `selftest-hardening-onion.sh` runs the Docker-free checker, state failure controls and
 `selftest-hardening-control-units.sh` for isolated control-unit ownership checks.
+`selftest-onion-probe-stage.sh` covers categorical external-probe diagnostics and stage reset.
 
 The lifecycle phase uses `tests/integration/lib/run-lifecycle-tls.sh` to compare Caddy's
 served leaf, canonical SANs, public key and a local digest of its stored private keys

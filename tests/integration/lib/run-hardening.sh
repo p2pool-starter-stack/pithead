@@ -188,7 +188,8 @@ run_hardening() {
             if _onion_reachable_external "" "" required; then
                 it_pass "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)"
             else
-                it_fail "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)" "external client could not reach the onion within the probe window"
+                onion_rc=$?
+                it_fail "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)" "external client probe failed (stage ${ONION_EXTERNAL_PROBE_STAGE:-client-error}; exit $onion_rc)"
             fi
         fi
     fi

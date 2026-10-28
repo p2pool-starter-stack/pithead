@@ -47,6 +47,8 @@ def drive(
     fail_on="",
     client_fail="",
     client_empty="",
+    bootstrap_on="",
+    error_on="",
     keyless="",
     apply_fail="0",
     interrupt="0",
@@ -91,6 +93,8 @@ def drive(
             "PROBE_FAIL_ON": fail_on,
             "CLIENT_FAIL_ON": client_fail,
             "CLIENT_EMPTY_ON": client_empty,
+            "PROBE_BOOTSTRAP_ON": bootstrap_on,
+            "PROBE_ERROR_ON": error_on,
             "KEYLESS_RESULT": keyless,
             "APPLY_FAIL": apply_fail,
             "INTERRUPT_PROBE": interrupt,
@@ -265,7 +269,6 @@ for label, kwargs, row in (
     ("keyless bootstrap fails", {"keyless": "bootstrap"}, KEYLESS),
     ("keyless infrastructure fails", {"keyless": "error"}, KEYLESS),
     ("authorized control after keyless probe fails", {"fail_on": "3"}, KEYLESS),
-    ("post-restart authorized access fails", {"fail_on": "4"}, RECOVER),
 ):
     run = drive(**kwargs)
     report(
@@ -278,6 +281,24 @@ for label, kwargs, row in (
             or "authorized control failed after the keyless probe (exit 1; keyless exit 1)"
             in run["out"]
         ),
+    )
+
+for label, kwargs, stage, code in (
+    ("HTTP unreachable", {"fail_on": "4"}, "http-unreachable", 1),
+    ("bootstrap", {"bootstrap_on": "4"}, "bootstrap", 2),
+    ("client error", {"error_on": "4"}, "client-error", 3),
+    ("credentials", {"client_fail": "3"}, "credentials", 4),
+):
+    run = drive(**kwargs)
+    diagnostic = f"external client probe failed (stage {stage}; exit {code})"
+    report(
+        f"C10 post-restart {label} failure is categorical and restores baseline",
+        verdicts(run, RECOVER) == ["fail"]
+        and diagnostic in run["out"]
+        and "PROBE-SECRET-SENTINEL" not in run["out"]
+        and "CLIENT-CREDENTIAL-SECRET-SENTINEL" not in run["out"]
+        and run["final"] == BASELINE
+        and run["restored_state"],
     )
 
 run = drive(apply_fail="1")

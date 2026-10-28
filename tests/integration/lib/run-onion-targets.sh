@@ -44,21 +44,38 @@ assert_onion_targets() { # <monero mode> <pool name>
     fi
 }
 
+# shellcheck disable=SC2034
 _onion_reachable_external() {
     local onion="${1:-}" saved_env="${2:-}" auth="${3:-auto}" out rc snippet
+    ONION_EXTERNAL_PROBE_STAGE=client-error
     [ -n "$onion" ] || onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
-    [ -n "$onion" ] && [ "$onion" != "placeholder" ] || return 2
-    printf '%s\n' "$onion" | grep -Eq '^[a-z2-7]{56}\.onion$' || return 3
-    rx "docker build -q -t pithead-tor-client-test tests/integration/tor-client/ >/dev/null 2>&1" || return 3
+    if [ -z "$onion" ] || [ "$onion" = "placeholder" ]; then
+        ONION_EXTERNAL_PROBE_STAGE=address-not-ready
+        return 2
+    fi
+    if ! printf '%s\n' "$onion" | grep -Eq '^[a-z2-7]{56}\.onion$'; then
+        ONION_EXTERNAL_PROBE_STAGE=invalid
+        return 3
+    fi
+    if ! rx "docker build -q -t pithead-tor-client-test tests/integration/tor-client/ >/dev/null 2>&1"; then
+        ONION_EXTERNAL_PROBE_STAGE=image-build
+        return 3
+    fi
     case "$auth" in
     required)
-        [ -z "$saved_env" ] || return 3
+        if [ -n "$saved_env" ]; then
+            ONION_EXTERNAL_PROBE_STAGE=invalid
+            return 3
+        fi
         snippet="credential=\$(./pithead onion-client-key 2>/dev/null) || exit 4;"
         snippet="$snippet line=\$(printf '%s\\n' \"\$credential\" | grep -E '^[[:space:]]*$(quote_arg "${onion%.onion}"):descriptor:x25519:[A-Z2-7]+$' | sed 's/^[[:space:]]*//' | head -1);"
         snippet="$snippet [ -n \"\$line\" ] || exit 4;"
         ;;
     none)
-        [ -z "$saved_env" ] || return 3
+        if [ -n "$saved_env" ]; then
+            ONION_EXTERNAL_PROBE_STAGE=invalid
+            return 3
+        fi
         snippet="line='';"
         ;;
     auto)
@@ -69,7 +86,10 @@ _onion_reachable_external() {
             snippet="line=\$(./pithead onion-client-key 2>/dev/null | grep -E 'descriptor:x25519:' | head -1 || true);"
         fi
         ;;
-    *) return 3 ;;
+    *)
+        ONION_EXTERNAL_PROBE_STAGE=invalid
+        return 3
+        ;;
     esac
     snippet="$snippet if [ -n \"\$line\" ]; then printf '%s\n' \"\$line\" | docker run -i --rm -e ONION_ADDR=$(quote_arg "$onion") -e AUTH_STDIN=1 pithead-tor-client-test;"
     snippet="$snippet else docker run --rm -e ONION_ADDR=$(quote_arg "$onion") pithead-tor-client-test; fi"
@@ -79,11 +99,24 @@ _onion_reachable_external() {
         rc=$?
     fi
     case "$rc:$out" in
-    0:*PROBE-OK:*) return 0 ;;
-    1:*PROBE-FAIL:*"HTTP 000"*) return 1 ;;
-    2:*PROBE-FAIL:*) return 2 ;;
+    0:*PROBE-OK:*)
+        ONION_EXTERNAL_PROBE_STAGE=reachable
+        return 0
+        ;;
+    1:*PROBE-FAIL:*"HTTP 000"*)
+        ONION_EXTERNAL_PROBE_STAGE=http-unreachable
+        return 1
+        ;;
+    2:*PROBE-FAIL:*)
+        ONION_EXTERNAL_PROBE_STAGE=bootstrap
+        return 2
+        ;;
     4:*)
-        [ "$auth" = required ] && return 4
+        if [ "$auth" = required ]; then
+            ONION_EXTERNAL_PROBE_STAGE=credentials
+            return 4
+        fi
+        ONION_EXTERNAL_PROBE_STAGE=client-error
         return 3
         ;;
     *) return 3 ;;

@@ -47,6 +47,7 @@ onion-client-key)
         fi
         if [ "$n" = "${CLIENT_FAIL_ON:-}" ]; then
             echo "client-key refused" >>"$STUB/events.log"
+            echo "CLIENT-CREDENTIAL-SECRET-SENTINEL" >&2
         else
             echo "client-key ok" >>"$STUB/events.log"
         fi
@@ -101,8 +102,14 @@ run)
         error) echo "probe $n keyed=no clean=$clean" >>"$STUB/events.log"; echo "unexpected failure"; exit 3 ;;
         esac
     fi
+    case ",${PROBE_BOOTSTRAP_ON:-}," in
+    *",$n,"*) echo "probe $n clean=$clean onion=provisioned keyed=$keyed ok=0" >>"$STUB/events.log"; echo "PROBE-FAIL: tor did not bootstrap PROBE-SECRET-SENTINEL"; exit 2 ;;
+    esac
+    case ",${PROBE_ERROR_ON:-}," in
+    *",$n,"*) echo "probe $n clean=$clean onion=provisioned keyed=$keyed ok=0" >>"$STUB/events.log"; echo "PROBE-SECRET-SENTINEL"; exit 3 ;;
+    esac
     echo "probe $n clean=$clean onion=$([ "$addr" = "$want" ] && echo provisioned || echo other) keyed=$keyed ok=$ok" >>"$STUB/events.log"
-    if [ "$ok" = 1 ]; then echo "PROBE-OK: reachable"; exit 0; else echo "PROBE-FAIL: HTTP 000"; exit 1; fi ;;
+    if [ "$ok" = 1 ]; then echo "PROBE-OK: reachable"; exit 0; else echo "PROBE-FAIL: HTTP 000 PROBE-SECRET-SENTINEL"; exit 1; fi ;;
 esac
 exit 0
 """
