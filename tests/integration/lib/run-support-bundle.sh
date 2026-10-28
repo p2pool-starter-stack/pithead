@@ -36,7 +36,7 @@ run_support_bundle() {
     fi
     if rx "cp -p $(quote_arg "$snapshot")/config.json config.json && cp -p $(quote_arg "$snapshot")/env .env" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 240; then
         after=$(upgrade_secret_fingerprints) || after=""
-        if [ "$before" != "$after" ] || ! rx "cmp -s config.json $(quote_arg "$snapshot")/config.json"; then
+        if [ "$before" != "$after" ] || ! rx "cmp -s config.json $(quote_arg "$snapshot")/config.json && cmp -s .env $(quote_arg "$snapshot")/env"; then
             it_fail "support-bundle restores its starting configuration and stack health" "configuration or secret fingerprints changed"
             restoration_ok=0
         else

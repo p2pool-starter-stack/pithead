@@ -2,12 +2,13 @@
 # shellcheck disable=SC2034
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "== support-bundle archive and recovery failure controls =="
 python3 "$HERE/test_support_bundle.py"
 source "$HERE/../lib.sh"
 INTEGRATION_RUN_SUITE=1
 source "$HERE/../lib/run-support-bundle.sh"
 
-for fault in none fixture apply health inspect collect restore drift; do
+for fault in none fixture apply health inspect collect restore drift telegram-drift; do
     (
         IT_FAIL=0 IT_PASS=0 IT_PITHEAD=./pithead
         calls=0 applied=0 waited=0 inspected=0 restored=0
@@ -68,7 +69,7 @@ STUB
             fi
             (cd "$IT_REMOTE_DIR" && bash -c "$1")
         }
-        upgrade_secret_fingerprints() { openssl dgst -sha256 "$IT_REMOTE_DIR/.env"; }
+        upgrade_secret_fingerprints() { grep '^PROXY_STRATUM_PASSWORD=' "$IT_REMOTE_DIR/.env" | openssl dgst -sha256; }
         push_config() {
             calls=$((calls + 1))
             printf '%s\n' "$1" >"$IT_REMOTE_DIR/config.json"
@@ -84,6 +85,7 @@ STUB
                 [ "$fault" != apply ]
             else
                 [ "$fault" != drift ] || printf 'drift\n' >>"$IT_REMOTE_DIR/.env"
+                [ "$fault" != telegram-drift ] || printf 'TELEGRAM_BOT_TOKEN=fixture-telegram-drift\n' >>"$IT_REMOTE_DIR/.env"
                 [ "$fault" != restore ]
             fi
         }

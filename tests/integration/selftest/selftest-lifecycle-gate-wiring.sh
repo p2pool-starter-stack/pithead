@@ -58,6 +58,7 @@ prove_wallet_recovery() {
     return "$recovery_proof_rc"
 }
 run_connection_announcements() { :; }
+run_support_bundle() { :; }
 run_cli_wizard_defaults() { :; }
 run_restore_dashboard_probe() { :; }
 run_tari_background_sync() { :; }

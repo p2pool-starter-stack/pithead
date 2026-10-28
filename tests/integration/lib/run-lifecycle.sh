@@ -6,7 +6,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit 
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
-source "$(dirname "${BASH_SOURCE[0]}")/run-support-bundle.sh" || exit $?
 run_lifecycle() {
     IT_CURRENT_SCENARIO="lifecycle"
     local lifecycle_ok=1 reset_failed=0

@@ -61,6 +61,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             return 1
         }; }
         lifecycle_gate_sample() { :; }
+        run_support_bundle() { :; }
         run_source_image_reconcile() { :; }
         run_image_permissions() { :; }
         run_restore_dashboard_probe() {
