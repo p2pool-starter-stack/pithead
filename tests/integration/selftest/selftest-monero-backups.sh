@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== unit: Monero backup failover evidence and restoration =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib.sh
@@ -8,19 +9,36 @@ source "$HERE/../lib.sh"
 source "$HERE/../lib/run-monero-backups.sh"
 set -euo pipefail
 
-backup_fault_since=100 backup_zmq=28083 backup_height=10 backup_proxy_started=original
-height=11 badge=healthy proxy_started=original connected=true
+backup_zmq=28083 backup_height=10 backup_proxy_started=original
+height=11 badge=healthy proxy_started=original connected=true primary_state=exited
+tcp_endpoint=0200007F:6DB3 tcp_state=01
 rx() {
     case "$*" in
-    *'docker logs'*) [ "$connected" = true ] ;;
+    *'/proc/net/tcp'*) if [ "$connected" = true ]; then printf '0: 0100007F:1234 %s %s\n' "$tcp_endpoint" "$tcp_state"; fi ;;
     *'docker inspect'*) printf '%s' "$proxy_started" ;;
     *) return 1 ;;
     esac
 }
 api_state() { printf '{"network":{"height":%s},"badges":[{"text":"%s"}]}' "$height" "$badge"; }
-service_state() { echo running; }
+service_state() { if [ "$1" = monerod ]; then echo "$primary_state"; else echo running; fi; }
 svc_state_of() { echo "$1"; }
 _backup_node_serving
+primary_state=running
+if _backup_node_serving; then
+    echo 'FAIL: running primary accepted as a failover witness'
+    exit 1
+fi
+primary_state=exited tcp_endpoint=0100007F:6DB3
+if _backup_node_serving; then
+    echo 'FAIL: primary socket accepted as backup'
+    exit 1
+fi
+tcp_endpoint=0200007F:6DB3 tcp_state=02
+if _backup_node_serving; then
+    echo 'FAIL: unestablished backup socket accepted'
+    exit 1
+fi
+tcp_state=01
 height=10
 if _backup_node_serving; then
     echo 'FAIL: stale data accepted'

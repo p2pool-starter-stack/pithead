@@ -197,8 +197,18 @@ preflight_monero_backups "$CONFIG_FILE"'''
             (ROOT / "os/quadlet/fixture.env").read_text() + f'\nP2POOL_BACKUP_ARGS_B64="{args}"\n'
         )
         out = self.root / "quadlet"
-        result = self.shell(f'render_quadlet_units "{env_file}" "{out}"')
+        out.mkdir(mode=0o755)
+        out.chmod(0o755)
+        for name in ("p2pool.container", "dashboard.container"):
+            (out / name).touch(mode=0o644)
+            (out / name).chmod(0o644)
+        result = self.shell(
+            f'umask 022; render_quadlet_units "{env_file}" "{out}" && test "$(umask)" = 0022'
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(out.stat().st_mode & 0o777, 0o700)
+        for unit in out.iterdir():
+            self.assertEqual(unit.stat().st_mode & 0o777, 0o600)
         self.assertIn(f'"P2POOL_BACKUP_ARGS_B64={args}"', (out / "p2pool.container").read_text())
 
     def test_unchanged_endpoint_restores_the_live_credential_at_preview(self):

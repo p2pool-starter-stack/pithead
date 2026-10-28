@@ -127,6 +127,8 @@ source "$HERE/lib/run-pool-preview.sh" || exit $?
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-secrets.sh
 source "$HERE/lib/run-rotate-secrets.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-monero-backups.sh
+source "$HERE/lib/run-monero-backups.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$HERE/lib/run-faults.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-pool-sync-fault.sh

@@ -1,21 +1,11 @@
-# Appliance unit rendering (#77 phase 1). Emits Podman Quadlet units from a rendered .env — the
-# second render target beside docker-compose (docs/dev/dual-distribution-plan.md § Runtime
-# architecture). The os/quadlet/ fixtures pin the #78 spike's live unit set byte-for-byte at tier 1;
-# drift needs a bench re-proof. Spike-proven rules baked in: Notify=healthy services carry
-# TimeoutStartSec=infinity (a finite timeout KILLS a not-yet-healthy service — compose's
-# start_period never does); plain depends_on maps to After=+Wants= (Requires= would stop-couple);
-# tmpfs options use mode= (podman rejects uid=/gid=).
-render_quadlet_units() {
+render_quadlet_units() (
     local envf="$1" outdir="$2"
     [ -f "$envf" ] || error "render-quadlet: env file not found: $envf"
+    umask 077
     mkdir -p "$outdir"
+    chmod 0700 "$outdir"
+    find "$outdir" -maxdepth 1 -type f \( -name '*.container' -o -name '*.network' \) -exec chmod 0600 {} +
     _qenv() { env_get_file "$envf" "$1"; }
-    # systemd.exec space-splits Environment=, so a value holding a space silently loses its tail
-    # (#2040). Every .env value goes through here, not a per-key "looks token-shaped" list, which
-    # rots. Quotes wrap the WHOLE assignment (Environment="A=1 2" B=3); \ and " are escaped, and
-    # % is DOUBLED because systemd expands specifiers in unit files — a password holding %H would
-    # otherwise become the hostname. `$` is deliberately NOT escaped: ${VAR} expands in ExecStart,
-    # never in an Environment value. $2 is the .env key when it differs (TZ <- DASHBOARD_TZ).
     _qenvq() {
         local v
         v=$(env_get_file "$envf" "${2:-$1}")
@@ -44,7 +34,6 @@ EOF
 [Network]
 NetworkName=proxy_net
 EOF
-
     cat >"$outdir/tor.container" <<EOF
 [Unit]
 Description=pithead tor
@@ -243,7 +232,8 @@ ContainerName=p2pool
 Image=$reg/pithead-p2pool:$ver
 Network=mining.network
 IP=$prefix.28
-Environment=$(_qenvq P2POOL_FLAGS) $(_qenvq P2POOL_BACKUP_ARGS_B64)
+Environment=$(_qenvq P2POOL_FLAGS)
+Environment=$(_qenvq P2POOL_BACKUP_ARGS_B64)
 Exec=--no-log-file --host $(_qenv MONERO_NODE_HOST) --rpc-port $(_qenv MONERO_RPC_PORT)$([ -z "$(_qenv MONERO_NODE_USERNAME)" ] || printf ' --rpc-login %s' "$(quadlet_quote_exec_arg "$(_qenv MONERO_NODE_USERNAME):$(_qenv MONERO_NODE_PASSWORD)")") --zmq-port $(_qenv MONERO_ZMQ_PORT) --wallet $(_qenv MONERO_WALLET_ADDRESS) --merge-mine tari://$(_qenv TARI_GRPC_ADDRESS) $(_qenv TARI_WALLET_ADDRESS) --onion-address $(_qenv P2POOL_ONION_ADDRESS) --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:$(_qenv P2POOL_PORT) --data-api /stats
 Volume=$(_qenv P2POOL_DATA_DIR):/home/ubuntu
 Volume=$(_qenv P2POOL_DATA_DIR)/stats:/stats
@@ -403,4 +393,4 @@ WantedBy=multi-user.target
 EOF
 
     log "Rendered Quadlet units to $outdir ($(find "$outdir" -maxdepth 1 \( -name '*.container' -o -name '*.network' \) | wc -l | tr -d ' ') files)."
-}
+)

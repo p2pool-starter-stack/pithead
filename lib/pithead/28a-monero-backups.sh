@@ -29,7 +29,7 @@ validate_monero_backups() {
         host=$(jq -r .host <<<"$entry")
         is_valid_host "$host" || error "monero.backup_nodes[$index].host must be a hostname or IP literal."
         index=$((index + 1))
-    done < <(jq -c '.monero.backup_nodes // [] | .[]' "$CONFIG_FILE")
+    done < <(jq -c '(.monero.backup_nodes // [])[]' "$CONFIG_FILE")
     reason=$(monero_backup_addresses_allowed "$CONFIG_FILE") || error "$reason"
     [ "${PITHEAD_DRY_RUN:-0}" = 1 ] || preflight_monero_backups "$CONFIG_FILE"
 }
@@ -56,7 +56,7 @@ monero_backup_addresses_allowed() {
             return 1
         fi
         index=$((index + 1))
-    done < <(jq -c '.monero.backup_nodes // [] | .[]' "$cfg")
+    done < <(jq -c '(.monero.backup_nodes // [])[]' "$cfg")
 }
 
 preflight_monero_backups() {
@@ -76,6 +76,6 @@ preflight_monero_backups() {
         fi
         [ -z "$reason" ] || warn "monero.backup_nodes[$index] is unavailable ($reason); continuing with the other nodes."
         index=$((index + 1))
-    done < <(jq -c '.monero.backup_nodes // [] | .[]' "$cfg")
+    done < <(jq -c '(.monero.backup_nodes // [])[]' "$cfg")
     return 0
 }

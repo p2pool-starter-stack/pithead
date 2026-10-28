@@ -8,7 +8,7 @@ from mining_dashboard.client.monero.monero_client import MoneroClient
 from mining_dashboard.config.config import MONERO_NODE_HOST
 
 
-def zmq_publisher(host, port, timeout=5):
+def zmq_publisher(host, port, timeout=5) -> bool:
     deadline = time.monotonic() + timeout
     try:
         with socket.create_connection((host, port), timeout=timeout) as connection:

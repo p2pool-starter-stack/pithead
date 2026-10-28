@@ -2,18 +2,26 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
 _backup_node_serving() {
-    local state
-    rx "timeout 15 docker logs --tail 1000 --since $(quote_arg "$backup_fault_since") p2pool 2>&1 | grep -Fq 'connected to tcp://127.0.0.2:$backup_zmq'" || return 1
+    local state connections endpoint
+    backup_failure="primary did not remain stopped"
+    [ "$(svc_state_of "$(service_state monerod)")" = exited ] || return 1
+    backup_failure="backup ZMQ socket not established"
+    connections=$(rx 'timeout 15 docker exec p2pool cat /proc/net/tcp') || return 1
+    printf -v endpoint '0200007F:%04X' "$backup_zmq"
+    awk -v endpoint="$endpoint" '$3 == endpoint && $4 == "01" { found=1 } END { exit !found }' <<<"$connections" || return 1
+    backup_failure="dashboard state unavailable"
     state=$(api_state) || return 1
+    backup_failure="chain height did not advance or workers were held"
     printf '%s' "$state" | jq -e --argjson height "$backup_height" '
         .network.height > $height and
         ([.badges[]?.text | select(test("^(Workers rejected|Miner held)"))] | length == 0)' >/dev/null || return 1
+    backup_failure="worker listener stopped or restarted"
     [ "$(svc_state_of "$(service_state xmrig-proxy)")" = running ] &&
         [ "$(rx "docker inspect -f '{{.State.StartedAt}}' xmrig-proxy")" = "$backup_proxy_started" ]
 }
 
 fault_monero_backups() {
-    local original candidate backup_zmq backup_height backup_fault_since backup_proxy_started failures="$IT_FAIL"
+    local original candidate backup_zmq backup_height backup_proxy_started backup_failure="not probed" failures="$IT_FAIL"
     if [ -z "${REMOTE_MONERO_HOST:-}" ]; then
         it_skip_leg "Monero backup primary-down failover" "no approved external Monero provider was supplied" missing
         return
@@ -37,9 +45,7 @@ fault_monero_backups() {
         assert_eq "Monero backup proof keeps Tor routing on" "$(env_on_box P2POOL_CLEARNET)" false
         backup_height=$(jq_get "$(api_state)" '.network.height')
         backup_proxy_started=$(rx "docker inspect -f '{{.State.StartedAt}}' xmrig-proxy")
-        backup_fault_since=$(rx 'date -u +%Y-%m-%dT%H:%M:%SZ')
         if [ -n "$backup_height" ] && [ -n "$backup_proxy_started" ] &&
-            [ -n "$backup_fault_since" ] &&
             rx "timeout 15 docker logs --tail 1000 p2pool 2>&1 | grep 'connected to tcp://' | tail -n 1 | grep -Fq 'connected to tcp://127.0.0.1:'" && rx 'docker compose stop monerod' >/dev/null 2>&1; then
             if wait_for 600 5 "backup supplies new chain data with primary stopped" _backup_node_serving; then
                 it_pass "P2Pool serves new chain data from its backup with primary down"
@@ -53,7 +59,7 @@ fault_monero_backups() {
                 done
                 assert_eq "worker listener stays admitted throughout backup failover" "$admitted" true
             else
-                it_fail "P2Pool serves new chain data from its backup with primary down" "no backup connection, height progress or unchanged worker listener within 600s"
+                it_fail "P2Pool serves new chain data from its backup with primary down" "$backup_failure within 600s"
             fi
         else
             it_fail "Monero backup fault armed" "missing baseline witness or primary stop failed"
