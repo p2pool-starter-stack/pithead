@@ -25,6 +25,35 @@ done
 echo 'PASS: proxy health leg rejects empty, partial and failed guest evidence'
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
+ssh_source=$(awk '/^_ssh\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit }' "$SCRIPT_DIR/lib/core.sh")
+(
+    original_dir="$SCRIPT_DIR"
+    SCRIPT_DIR="$fixture/transport/tests/os"
+    mkdir -p "$SCRIPT_DIR" "$fixture/transport/scripts"
+    ln -s "$original_dir/../../scripts/sanitize-test-log.sh" "$fixture/transport/scripts/sanitize-test-log.sh"
+    : >"$SCRIPT_DIR/proxy-quadlet-unit.awk"
+    printf 'printf "FAIL: fixture guest stderr retained\\n" >&2\nexit 1\n' >"$SCRIPT_DIR/proxy-quadlet-proof.sh"
+    export SSH_ERR="$fixture/ssh.err" KEY="fixture-key" ip="fixture"
+    eval "$ssh_source"
+    timeout() {
+        shift
+        "$@"
+    }
+    ssh() { bash -c "${!#}"; }
+    failed=0
+    phase_provision_proxy_health >"$fixture/guest-capture.log"
+    [ "$failed" -eq 1 ]
+    grep -qF 'FAIL: fixture guest stderr retained' "$fixture/guest-capture.log"
+    ssh() {
+        echo 'FAIL: fixture transport stderr retained' >&2
+        return 255
+    }
+    failed=0
+    phase_provision_proxy_health >"$fixture/transport-capture.log"
+    [ "$failed" -eq 1 ]
+    grep -qF 'FAIL: fixture transport stderr retained' "$fixture/transport-capture.log"
+)
+echo 'PASS: proxy leg retains guest and transport stderr through the real SSH helper'
 preflight_source=$(awk '/^proof_stage=preflight$/ { copy=1 } /^cleanup\(\) \{/ { exit } copy { print }' "$SCRIPT_DIR/proxy-quadlet-proof.sh")
 proof_name="fixture-name"
 for lookup_rc in 0 1 125; do

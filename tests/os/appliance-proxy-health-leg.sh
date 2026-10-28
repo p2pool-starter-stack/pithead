@@ -6,7 +6,11 @@ phase_provision_proxy_health() {
         cat "$SCRIPT_DIR/proxy-quadlet-proof.sh"
     } | base64 | tr -d '\n')
     out=$(mktemp)
-    SSH_TIMEOUT=300 _ssh "printf %s '$payload' | base64 -d | bash" >"$out" 2>&1 || rc=$?
+    SSH_TIMEOUT=300 _ssh "printf %s '$payload' | base64 -d | bash 2>&1" >"$out" 2>&1 || rc=$?
+    if [ "$rc" -ne 0 ] && [ -s "${SSH_ERR:-/dev/null}" ]; then
+        printf '\nSSH transport diagnostics:\n' >>"$out"
+        head -c 4096 "$SSH_ERR" >>"$out"
+    fi
     while IFS= read -r line; do
         case "$line" in PASS:*) ok "${line#PASS: } (#1217)" ;; esac
     done <"$out"
