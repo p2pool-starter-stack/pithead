@@ -1,9 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# Exercise the real CLI wizard and setup against the candidate stack. Wallets come from
-# the baseline; the runner owns restoration of the deployment after this lifecycle phase.
 run_cli_wizard_defaults() {
-    local monero tari cfg out rc
+    local monero tari entry_config trial_rc=0 restore_rc=0 failures_before
     monero=$(jq -er '.monero.wallet_address | select(type == "string" and length > 0)' <<<"${BASELINE_CONFIG:-null}") || {
         it_fail "CLI defaults fixture supplies a Monero wallet"
         return 1
@@ -12,9 +10,33 @@ run_cli_wizard_defaults() {
         it_fail "CLI defaults fixture has a readable Tari section"
         return 1
     }
-    # The Tari question is answered explicitly (2 = the bundled node): Enter now means off (#3333),
-    # and toggling Tari off then on here is the recreate path behind #3300. Its Tari-on lifecycle
-    # stays as it was.
+    if ! entry_config=$(rx 'cat config.json') || ! jq -e 'type == "object"' <<<"$entry_config" >/dev/null 2>&1; then
+        it_fail "CLI defaults entry configuration readable" "cannot save the configuration active before the trial"
+        return 1
+    fi
+    failures_before=$IT_FAIL
+    cli_wizard_defaults_trial "$monero" "$tari" || trial_rc=$?
+    if [ "$trial_rc" -ne 0 ] && [ "$IT_FAIL" -eq "$failures_before" ]; then
+        it_fail "CLI defaults trial completed" "fixture preparation or deployment failed"
+    fi
+    if ! rx 'rm -f .itest-wizard-defaults.json'; then
+        it_fail "CLI defaults removes its temporary configuration" "fixture cleanup failed"
+        trial_rc=1
+    fi
+    lifecycle_gate_sample before-wizard-restore
+    push_config "$entry_config" && pithead apply -y >/dev/null 2>&1
+    restore_rc=$?
+    lifecycle_gate_sample after-wizard-restore-apply
+    if [ "$restore_rc" -eq 0 ]; then
+        wait_status_ok 300
+        restore_rc=$?
+    fi
+    assert_rc "CLI defaults proof restores its entry config for lifecycle" "$restore_rc" 0
+    [ "$trial_rc" -eq 0 ] && [ "$restore_rc" -eq 0 ] && [ "$IT_FAIL" -eq "$failures_before" ]
+}
+
+cli_wizard_defaults_trial() {
+    local monero="$1" tari="$2" cfg out rc
     out=$(rx "PITHEAD_CONFIG_FILE=\"\$PWD/.itest-wizard-defaults.json\"
         source $(quote_arg "$IT_PITHEAD")
         wizard_tari_disk_default local >/dev/null
@@ -28,14 +50,9 @@ run_cli_wizard_defaults() {
     rc=$?
     assert_rc "fresh CLI wizard writes the explicit Tari yes, no XvB, Tor sync and a generated dashboard password" "$rc" 0
     [ "$rc" = 0 ] || return 1
-    cfg=$(rx 'cat .itest-wizard-defaults.json')
+    cfg=$(rx 'cat .itest-wizard-defaults.json') || return 1
     assert_eq "fresh CLI Tari answer is the explicit yes" "$(jq -r '.tari.mode' <<<"$cfg")" "local"
     assert_eq "fresh CLI generated password is printed once" "$(grep -Fc "$(jq -r '.dashboard.auth.password' <<<"$cfg")" <<<"$out")" 1
-    # Keep the runner's prepared data locations; the wizard's feature/auth choices stay intact.
-    # A default auto path in this dedicated checkout would start a new chain instead of the fixture.
-    # A node the baseline does not run locally keeps the baseline's section too (#3195): the wizard
-    # defaults to a local node, and setting one up on a remote-node appliance provisions its onion,
-    # which pithead deliberately keeps after the restore, so the secret ledger never matches again.
     cfg=$(jq --argjson baseline "$BASELINE_CONFIG" '
         reduce ["monero", "tari", "p2pool", "dashboard", "tor"][] as $service (.;
             if $baseline[$service].data_dir then .[$service].data_dir = $baseline[$service].data_dir else . end)
@@ -47,8 +64,8 @@ run_cli_wizard_defaults() {
     out=$(rx "printf '\\nn\\n' | $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)
     rc=$?
     assert_rc "fresh CLI defaults complete real setup" "$rc" 0
+    [ "$rc" = 0 ] || return "$rc"
     assert_contains "fresh CLI defaults reach completed preparation" "$out" "Deployment preparation complete"
-    rx 'rm -f .itest-wizard-defaults.json'
     rx "set -e
         source ./pithead
         test ! -e .itest-first-run-done
@@ -65,18 +82,12 @@ run_cli_wizard_defaults() {
         [[ \"\$out\" == *\"The miner is held until the initial sync finishes for \$chains, then starts automatically.\"* ]]
         out=\$($IT_PITHEAD restart 2>&1)
         [[ \"\$out\" != *'What happens next:'* ]]" >/dev/null 2>&1
-    assert_rc "fresh CLI first-start names required chains and restart suppresses the note" "$?" 0
+    rc=$?
+    assert_rc "fresh CLI first-start names required chains and restart suppresses the note" "$rc" 0
+    [ "$rc" = 0 ] || return "$rc"
     lifecycle_gate_sample after-wizard-up
     wait_status_ok 300
-    assert_rc "fresh CLI defaults report a healthy stack" "$?" 0
-    # Keep the general lifecycle's secret-preservation tests on their original fixture.
-    lifecycle_gate_sample before-wizard-restore
-    push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1
     rc=$?
-    lifecycle_gate_sample after-wizard-restore-apply
-    if [ "$rc" -eq 0 ]; then
-        wait_status_ok 300
-        rc=$?
-    fi
-    assert_rc "CLI defaults proof restores the baseline config for lifecycle" "$rc" 0
+    assert_rc "fresh CLI defaults report a healthy stack" "$rc" 0
+    return "$rc"
 }

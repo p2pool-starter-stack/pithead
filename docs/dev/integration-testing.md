@@ -853,6 +853,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
+- The wizard-defaults probe saves the configuration active on entry and restores it after both successful and failed trials. Restore push, apply, or health failure fails the probe. This preserves the preceding scenario's selected pool for the sidechain-change assertion. The outer lifecycle still restores and verifies the original pre-run baseline and secrets exactly.
 - Encrypted reset recovery saves the original configuration bytes in owner-only scratch storage before making a separate candidate-schema fixture. It copies only supported keys already present in the baseline, leaves missing keys absent, and refuses to drop any wallet or payout field, including a field set to null or false. Candidate apply stamps the synthetic configuration before its new encrypted backup is created; no original backup is relabelled. Interruptions continue through the existing destructive-phase safety backup and runner restoration. Every normal return, including a failed recovery, applies the saved baseline, reinstalls its exact bytes after apply has stamped any legacy configuration, then starts the stack and requires matching bytes and secret fingerprints plus consecutive healthy status reads within 240 seconds. Unverified cleanup fails the row and retains the private recovery copy outside artifacts. `reset-restore.fixture.json` records validated numeric candidate and applied fixture version stamps, plus the original baseline stamp or null when it is absent or invalid, and refuses an unstamped fixture before backup. Fixture apply and cleanup output are retained in `reset-restore.fixture-apply.log` and `reset-restore.cleanup.log`; restore and startup keep their separate logs. The newer-backup refusal remains covered by `tests/stack/config/version.sh` and the retained failing lifecycle job 2889.
 - Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
@@ -865,7 +866,7 @@ For one representative config:
   auth. Appliances always require 401. A setup page or failed request fails the row; failures
   print listener state and the last 40 Caddy log lines.
   `lifecycle-gate.log` samples the reset marker, persisted `miner_released` boolean and running
-  mining services before the wizard-defaults workload, after its startup and around its baseline
+  mining services before the wizard-defaults workload, after its startup and around its entry-config
   restore apply, before/after restart, around setup/up/apply connection probes, around the
   missing-image down/up and before the source-image fixture. Each target command has a
   10-second TERM deadline plus a 2-second forced-kill grace; unreadable state is explicitly
@@ -904,7 +905,7 @@ A source checkout first reuses `assert_mining_probe_ready`: both P2Pool and xmri
 must be running for two consecutive samples, five seconds apart, with a 1500-second
 readiness deadline. Each Docker probe has a 10-second TERM deadline and two-second
 forced-kill grace.
-The wizard-defaults baseline apply can legitimately reset the gate when it changes the
+The wizard-defaults entry-config restore apply can legitimately reset the gate when it changes the
 required Tari mode; healthy status alone does not establish mining-service readiness.
 A failed prerequisite records a binding failure and still executes every image assertion.
 The fixture retains the original image under a temporary tag, builds a label-only
