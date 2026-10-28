@@ -440,7 +440,8 @@ via an `EXIT` trap):
    into its image. Hardening with `--safety-backup` exercises a full verified archive
    restore even when the earlier rows pass. Safety rollback retains the last 64 KiB of the redacted restore
    command output in `safety-restore.log`; diagnostic failures preserve the restore verdict.
-   The hardening phase separately proves a directory move through product render/up,
+   The pure preservation and rollback selftests use `TMPDIR`, falling back to GitHub
+   Actions' `RUNNER_TEMP`. The hardening phase separately proves a directory move through product render/up,
    without a keep-running override. The harness retains its compatibility comparison for older
    baseline installs whose mounts still live under the checkout. The upgrade
    runs with `PITHEAD_KEEP_RUNNING` set, a harness-only knob that names every other service in the

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?}}"
 echo "== chain directory move preservation controls =="
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 work=$(mktemp -d "${TMPDIR:?}/chain-move-selftest.XXXXXX")

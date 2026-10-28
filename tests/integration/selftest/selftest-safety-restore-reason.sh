@@ -15,6 +15,7 @@
 #
 # Run: tests/integration/selftest/selftest-safety-restore-reason.sh
 set -uo pipefail
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?}}"
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The modules resolve their own siblings off $HERE, which is the harness root, not selftest/.
