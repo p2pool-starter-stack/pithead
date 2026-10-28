@@ -58,8 +58,9 @@ prove_wallet_recovery() {
     return "$recovery_proof_rc"
 }
 run_connection_announcements() { :; }
+run_support_bundle() { :; }
 run_cli_wizard_defaults() { :; }
-run_tari_background_sync() { :; } # its own runtime leg and selftest cover it
+run_tari_background_sync() { :; }
 assert_mining_probe_ready() { [ "$1" = "source image fixture (bench-ci#1276)" ]; }
 service_state() { echo 'running none'; }
 svc_state_of() { printf '%s' "${1%% *}"; }

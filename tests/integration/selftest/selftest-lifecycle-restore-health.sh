@@ -60,6 +60,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             return 1
         }; }
         lifecycle_gate_sample() { :; }
+        run_support_bundle() { :; }
         run_source_image_reconcile() { :; }
         dashboard_tls_identity() { printf identity; }
         assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {

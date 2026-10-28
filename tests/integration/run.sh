@@ -123,6 +123,8 @@ source "$HERE/lib/run-connection-announcements.sh" || exit $?
 source "$HERE/lib/run-reset-restore.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-pool-preview.sh
 source "$HERE/lib/run-pool-preview.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-support-bundle.sh
+source "$HERE/lib/run-support-bundle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-secrets.sh

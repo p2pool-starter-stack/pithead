@@ -7,6 +7,8 @@ from pathlib import Path, PurePosixPath
 
 def check_bundle(archive, config_path, env_path):
     config = json.loads(Path(config_path).read_text())
+    if config["telegram"].get("enabled") is not False:
+        raise ValueError("Telegram fixture delivery is not disabled")
     secrets = [
         config["dashboard"]["auth"]["password"],
         config["p2pool"]["stratum_password"],
