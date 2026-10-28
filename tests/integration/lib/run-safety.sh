@@ -71,10 +71,25 @@ safety_secret_drift_categories() { # <baseline category=hash lines> <actual cate
 }
 
 safety_restore_exact() {
-    local restored_secrets
+    local restored_secrets restore_log diagnostic_log restore_rc=0
     pithead down >/dev/null 2>&1 || true
     SAFETY_RESTORE_FAIL_REASON=""
-    if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
+    restore_log=$(mktemp "${TMPDIR:-.}/pithead-safety-restore.XXXXXX" 2>/dev/null) || restore_log=/dev/null
+    pithead restore -y "$SAFETY_ARCHIVE" >"$restore_log" 2>&1 || restore_rc=$?
+    if [ "$restore_log" != /dev/null ]; then
+        if [ -n "${OUT_DIR:-}" ] && mkdir -p "$OUT_DIR" 2>/dev/null &&
+            diagnostic_log=$(mktemp "$OUT_DIR/.safety-restore.XXXXXX" 2>/dev/null); then
+            if (
+                set -o pipefail
+                redact <"$restore_log" | tail -c 65536 >"$diagnostic_log"
+            ); then
+                mv -f -- "$diagnostic_log" "$OUT_DIR/safety-restore.log" || true
+            fi
+            rm -f -- "$diagnostic_log" || true
+        fi
+        rm -f -- "$restore_log" || true
+    fi
+    if [ "$restore_rc" -ne 0 ]; then
         SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
     elif ! baseline_up >/dev/null 2>&1; then
         SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
@@ -103,15 +118,15 @@ safety_restore_exact() {
     _SAFETY_RESTORE_ARMED=0
 }
 
-# On a failed run, roll the box back to the pre-test safety backup.
 safety_rollback_if_failed() {
     [ "$SAFETY_BACKUP" = "1" ] && [ -n "$SAFETY_ARCHIVE" ] || return 0
-    [ "$IT_FAIL" -gt 0 ] || return 0
-    it_warn "failures detected — rolling back to the safety backup ($SAFETY_ARCHIVE)…"
+    [ "$IT_FAIL" -gt 0 ] || [ "${RUN_HARDENING:-0}" = 1 ] || return 0
+    it_warn "verifying the safety archive through a full restore ($SAFETY_ARCHIVE)…"
     safety_restore_exact || {
         it_fail "safety rollback restored the exact healthy baseline" "$SAFETY_RESTORE_FAIL_REASON; archive retained at $SAFETY_ARCHIVE"
         return 1
     }
+    it_pass "safety rollback restored the exact healthy baseline"
 }
 
 # EXIT trap for the destructive phases: an interrupted run (Ctrl-C, a cancelled Actions job, a

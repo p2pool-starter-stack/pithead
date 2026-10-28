@@ -151,5 +151,76 @@ else
     it_fail "safety-backup recovery diagnostics are failure-only, redacted, and best-effort"
 fi
 
+echo "== safety restore retains bounded redacted diagnostics without changing its verdict =="
+(
+    td=$(mktemp -d "${TMPDIR:?}/restore-diagnostics.XXXXXX")
+    trap 'find "$td" -depth -delete' EXIT
+    OUT_DIR="$td/results" SAFETY_ARCHIVE="$td/archive" SAFETY_RESTORE_FAILED=0
+    mkdir -p "$OUT_DIR"
+    : >"$OUT_DIR/safety-restore.log"
+    chmod 644 "$OUT_DIR/safety-restore.log"
+    printf -v IT_DASHBOARD_PASSWORD '%s' fixture-restore-secret
+    printf -v BASELINE_CONFIG '%s' baseline
+    BASELINE_EXACT_SECRET_FP="$BASELINE_CONFIG"
+    pithead() {
+        if [ "$1" = restore ]; then
+            awk 'BEGIN { for (i=0; i<5000; i++) print "restore filler line" }'
+            printf '\nrestore diagnostic: %s\n' "$IT_DASHBOARD_PASSWORD" >&2
+            return "$fixture_restore_rc"
+        fi
+    }
+    baseline_up() { :; }
+    wait_status_ok() { :; }
+    rx() { printf baseline; }
+    upgrade_secret_fingerprints() { printf baseline; }
+    it_log() { :; }
+    for fixture_restore_rc in 0 17; do
+        SAFETY_RESTORE_FAILED=0
+        actual_rc=0
+        safety_restore_exact || actual_rc=$?
+        [ "$actual_rc" = "$((fixture_restore_rc != 0))" ] || exit 1
+        [ -s "$OUT_DIR/safety-restore.log" ] || exit 1
+        [ "$(wc -c <"$OUT_DIR/safety-restore.log")" -eq 65536 ] || exit 1
+        [ "$(stat -c %a "$OUT_DIR/safety-restore.log" 2>/dev/null || stat -f %Lp "$OUT_DIR/safety-restore.log")" = 600 ] || exit 1
+        grep -Fq 'restore diagnostic: <redacted>' "$OUT_DIR/safety-restore.log" || exit 1
+        if grep -Fq "$IT_DASHBOARD_PASSWORD" "$OUT_DIR/safety-restore.log"; then exit 1; fi
+    done
+    for diagnostic_case in path-fail redact-fail temp-fail; do
+        (
+            OUT_DIR="$td/$diagnostic_case"
+            case "$diagnostic_case" in
+            path-fail) : >"$OUT_DIR" ;;
+            redact-fail) redact() { return 1; } ;;
+            temp-fail) mktemp() { return 1; } ;;
+            esac
+            for fixture_restore_rc in 0 17; do
+                actual_rc=0
+                safety_restore_exact || actual_rc=$?
+                [ "$actual_rc" = "$((fixture_restore_rc != 0))" ] || exit 1
+            done
+        ) || exit 1
+    done
+) && it_pass "restore diagnostics retain the error, redact credentials, bound output and preserve verdicts" ||
+    it_fail "restore diagnostics retain the error, redact credentials, bound output and preserve verdicts"
+
+echo "== hardening exercises a verified safety restore even when its earlier rows passed =="
+(
+    SAFETY_BACKUP=1 SAFETY_ARCHIVE=fixture
+    for RUN_HARDENING in 0 1; do
+        for initial_fails in 0 1; do
+            (
+                IT_FAIL="$initial_fails" called=0 passed=0
+                it_warn() { :; }
+                it_pass() { passed=$((passed + 1)); }
+                safety_restore_exact() { called=$((called + 1)); }
+                safety_rollback_if_failed || exit 1
+                expected=$((RUN_HARDENING || initial_fails))
+                [ "$called" = "$expected" ] && [ "$passed" = "$expected" ] || exit 1
+            ) || exit 1
+        done
+    done
+) && it_pass "hardening and failed runs prove the safety archive restore" ||
+    it_fail "hardening and failed runs prove the safety archive restore"
+
 echo "selftest-safety-restore-reason: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

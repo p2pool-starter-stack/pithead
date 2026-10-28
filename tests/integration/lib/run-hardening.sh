@@ -109,8 +109,9 @@ run_hardening() {
     fi
     local move_script move_output
     move_script=$(cat "$HERE/chain-directory-move.sh")
-    if move_output=$(rx 'TMPDIR="${TMPDIR:-$PWD}" bash -s' <<<"$move_script" 2>&1); then
-        it_ok "chain directory move preserves both container IDs and start times"
+    if move_output=$(rx 'TMPDIR="${TMPDIR:-$PWD}" bash -s' --stdin <<<"$move_script" 2>&1) &&
+        grep -Fq 'chain directory move: both container IDs and start times preserved' <<<"$move_output"; then
+        it_pass "chain directory move preserves both container IDs and start times"
     else
         it_fail "chain directory move failed: $move_output"
     fi

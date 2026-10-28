@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== chain directory move preservation controls =="
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 work=$(mktemp -d "${TMPDIR:?}/chain-move-selftest.XXXXXX")
 trap 'find "$work" -depth -delete' EXIT
@@ -49,3 +50,37 @@ if (cd "$work/install" && FAIL_RESTORE=1 bash "$root/tests/integration/chain-dir
 fi
 grep -Fq 'restoration failed' "$work/restore.log"
 printf '%s\n' 'chain directory move selftest: PASS (preservation, changed identity, failed restoration)'
+echo "== hardening streams the move proof and requires its completion sentinel =="
+source "$root/tests/integration/lib.sh"
+source "$root/tests/integration/scenarios.sh"
+# shellcheck disable=SC2034
+INTEGRATION_RUN_SUITE=1 HERE="$root/tests/integration"
+source "$HERE/lib/run-hardening.sh"
+eval "$(sed -n '/^run_hardening() {/,/^    local svc probe_out/p' "$HERE/lib/run-hardening.sh" | sed '$d')
+}"
+IT_MODE=ssh IT_REMOTE_DIR="$work/install" IT_SSH_DEST=fixture
+IT_SSH_OPTS=()
+run_tari_off_preview() { :; }
+env_on_box() { printf local_node; }
+ssh() {
+    local arg last="" discard=0
+    for arg in "$@"; do
+        [ "$arg" != -n ] || discard=1
+        last="$arg"
+    done
+    if [ "$discard" = 1 ]; then bash -c "$last" </dev/null; else bash -c "$last"; fi
+}
+rm -f "$work/count"
+run_hardening >"$work/remote.log" 2>&1 || {
+    cat "$work/remote.log"
+    exit 1
+}
+if [ "$IT_PASS" != 1 ] || [ "$IT_FAIL" != 0 ] || [ "$(cat "$work/count" 2>/dev/null || echo 0)" -lt 8 ]; then
+    cat "$work/remote.log"
+    exit 1
+fi
+ssh() { cat >/dev/null; }
+IT_PASS=0 IT_FAIL=0
+run_hardening >"$work/empty.log" 2>&1
+[ "$IT_PASS" = 0 ] && [ "$IT_FAIL" = 1 ]
+printf '%s\n' 'hardening move transport selftest: PASS'
