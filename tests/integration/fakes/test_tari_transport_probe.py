@@ -1,6 +1,8 @@
 import importlib.util
+import io
 import json
 import socket
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -10,6 +12,35 @@ PROBE = Path(__file__).resolve().parents[3] / "tests/integration/lib/tari-transp
 spec = importlib.util.spec_from_file_location("tari_transport_probe", PROBE)
 probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
+
+
+@pytest.mark.parametrize(("workers", "xvb"), [(1, False), (2, False), (1, True)])
+def test_proxy_summary_executes_against_dashboard_exports(monkeypatch, workers, xvb):
+    monkeypatch.syspath_prepend(str(PROBE.parents[3] / "dashboard"))
+    from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient
+    from mining_dashboard.config import config
+
+    monkeypatch.setattr(config, "ENABLE_XVB", xvb)
+    monkeypatch.setattr(
+        XMRigProxyClient,
+        "get_summary",
+        lambda self: {"miners": {"now": workers}, "results": {"accepted": 12, "hashes_total": 34}},
+    )
+
+    def execute(*args):
+        assert args[:5] == ("docker", "exec", "dashboard", "python3", "-c")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exec(args[5], {})  # noqa: S102
+        return output.getvalue()
+
+    monkeypatch.setattr(probe, "command", execute)
+    live = object.__new__(probe.Probe)
+    if workers == 1 and not xvb:
+        assert live.mining() == {"workers": 1, "xvb": False, "accepted": 12, "hashes": 34}
+    else:
+        with pytest.raises(RuntimeError, match="exactly one borrowed miner with XvB disabled"):
+            live.mining()
 
 
 @pytest.fixture

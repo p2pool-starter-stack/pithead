@@ -208,9 +208,9 @@ class Probe:
             "python3",
             "-c",
             "import json; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; "
-            "from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN,XVB_ENABLED; "
+            "from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN,ENABLE_XVB; "
             "s=XMRigProxyClient(PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN).get_summary(); "
-            "print(json.dumps({'workers':s['miners']['now'],'xvb':XVB_ENABLED,"
+            "print(json.dumps({'workers':s['miners']['now'],'xvb':ENABLE_XVB,"
             "'accepted':s['results']['accepted'],'hashes':s['results']['hashes_total']}))",
         )
         sample = json.loads(result)
