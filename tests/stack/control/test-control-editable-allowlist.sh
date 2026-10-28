@@ -287,7 +287,7 @@ assert_eq "inactive endpoint edits retain typed confirmation (#3383)" "$(jq -r '
 assert_eq "Tari-off preview gives no active guidance for inactive settings (#3383)" \
     "$(jq -r '[.changes[] | select(.key == "TARI_GRPC_ADDRESS" or .key == "TARI_CLEARNET_SYNC" or .key == "tari.remote.host" or .key == "tari.remote.grpc_port")] | all(.msg | test("inactive|stored|no effect|will not run"; "i"))' "$RESULTS/$UUID4.json")" "true"
 jq '.tari.clearnet_initial_sync=true' "$C/config.json" >"$C/config.off" && mv "$C/config.off" "$C/config.json"
-run_sourced "$C" eval 'PITHEAD_DRY_RUN=1; parse_and_validate_config && load_preserved_state && resolve_dashboard_host && DEPLOYMENT_COMPLETED=true && render_env "$ENV_FILE"' >/dev/null 2>&1
+PATH="$C/bin:$PATH" run_sourced "$C" eval 'PITHEAD_DRY_RUN=1; parse_and_validate_config && load_preserved_state && resolve_dashboard_host && DEPLOYMENT_COMPLETED=true && render_env "$ENV_FILE"' >/dev/null 2>&1
 assert_rc "stored clearnet preview baseline renders (#3383)" "$?" "0"
 assert_eq "stored clearnet preview baseline keeps its flag (#3383)" "$(run_sourced "$C" env_get_file "$C/.env" TARI_CLEARNET_SYNC)" "true"
 jq '.tari.mode="local"' "$C/config.json" >"$C/config.candidate"
