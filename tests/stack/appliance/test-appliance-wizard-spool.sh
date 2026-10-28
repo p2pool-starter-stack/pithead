@@ -347,8 +347,8 @@ echo "== unit: a restore onto a machine with no data/ yet (#2051) =="
 FR="$(cd "$SANDBOX" && pwd -P)/restore-fresh-machine"
 mkdir -p "$FR/data/tor"
 cp "$STACK" "$FR/pithead"
-# Self-contained: this domain builds its own config rather than borrowing another's sandbox, so a
-# standalone run of it proves the same thing the suite run does.
+mkdir -p "$FR/build/tari"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$FR/build/tari/"
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$FR/config.json"
 printf 'DEPLOYMENT_COMPLETED=true\nDASHBOARD_SECURE=true\nHOST_IP=box.lan\n' >"$FR/.env"
 printf 'CADDY-ORIG\n' >"$FR/Caddyfile"

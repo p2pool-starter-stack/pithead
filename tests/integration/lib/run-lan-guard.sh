@@ -27,9 +27,12 @@ _lan_flush_rules() {
             while read -r r; do sudo iptables $r; done
         sudo iptables -F PITHEAD-LAN 2>/dev/null; sudo iptables -X PITHEAD-LAN 2>/dev/null' >/dev/null 2>&1 || true
 }
+_lan_marker_present() {
+    rx "bash -c 'source ./pithead && test $1 \"\$(lan_guard_marker_path)\" && echo present'"
+}
 _lan_strip() {
     _lan_flush_rules
-    rx 'rm -f data/lan-guard/enforced' >/dev/null 2>&1 || true
+    rx 'bash -c '\''source ./pithead && rm -f -- "$(lan_guard_marker_path)"'\''' >/dev/null 2>&1 || true
 }
 
 assert_lan_guard_live() { # <config>
@@ -67,10 +70,8 @@ assert_lan_guard_timer_flush() { # <port>...
     assert_eq "LAN check timer is active (#2846)" "$(rx 'systemctl is-active pithead-lan.timer 2>/dev/null')" active
     assert_eq "LAN timer targets the check service (#2846)" \
         "$(rx 'systemctl show -p Triggers --value pithead-lan.timer')" pithead-lan-check.service
-    assert_eq "marker exists before an external flush (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
+    assert_eq "marker exists before an external flush (#2846)" "$(_lan_marker_present -s)" present
     rx 'sudo systemctl stop pithead-lan.timer' >/dev/null 2>&1 || true
-    # A oneshot check without RemainAfterExit reports activating while it runs: only inactive or
-    # failed proves it finished. Never flush into a check that is still running or unreadable.
     idle=0
     for _ in $(seq 30); do
         case "$(rx 'systemctl is-active pithead-lan-check.service 2>/dev/null')" in
@@ -87,15 +88,15 @@ assert_lan_guard_timer_flush() { # <port>...
         return 0
     fi
     assert_eq "LAN check timer is stopped for the flush (#3034)" "$(rx 'systemctl is-active pithead-lan.timer 2>/dev/null')" inactive
-    assert_eq "marker survives the check finishing (#3034)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
+    assert_eq "marker survives the check finishing (#3034)" "$(_lan_marker_present -s)" present
     _lan_flush_rules
-    assert_eq "flush left the boot marker intact (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
+    assert_eq "flush left the boot marker intact (#2846)" "$(_lan_marker_present -s)" present
     assert_eq "control: a non-private source reaches the unguarded port (#2846)" "$(_lan_probe 198.51.100 "$1")" open
     rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
     since=$(date +%s)
     deadline=$((since + 150))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        if [ "$(rx 'test -e data/lan-guard/enforced && echo present')" != present ]; then
+        if [ "$(_lan_marker_present -e)" != present ]; then
             closed=1
             for p in "$@"; do
                 [ "$(_lan_probe 198.51.100 "$p")" = closed ] || {
@@ -194,11 +195,11 @@ assert_lan_guard_crash_restart() { # <port>...
     since=$(date +%s)
     deadline=$((since + 150))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        [ "$(rx 'test -e data/lan-guard/enforced && echo present')" != present ] && break
+        [ "$(_lan_marker_present -e)" != present ] && break
         sleep 5
     done
     assert_eq "the timer ran with the rule missing and removed the marker (#3290)" \
-        "$(rx 'test -e data/lan-guard/enforced && echo present')" ""
+        "$(_lan_marker_present -e)" ""
     sleep 10
     assert_eq "$c stays down while the rule is missing (#3290)" "$(rx "docker inspect -f '{{.State.Running}}' $c")" false
     rx './pithead up' >/dev/null 2>&1 || rc=$?

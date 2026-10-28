@@ -7,7 +7,7 @@ mkdir "$moved"
 restore() {
     local rc=$?
     trap - EXIT
-    if ! (cd "$original" && ./pithead render && PITHEAD_PULL=never ./pithead up); then
+    if ! (cd "$original" && PITHEAD_STEAL_CONTROL_UNITS=1 ./pithead render && PITHEAD_PULL=never ./pithead up); then
         printf '%s\n' 'chain directory move: restoration failed' >&2
         exit 1
     fi
@@ -44,7 +44,7 @@ done
     printf '%s\n' 'chain directory move: both nodes did not become running' >&2
     exit 1
 }
-(cd "$moved" && ./pithead render)
+(cd "$moved" && PITHEAD_STEAL_CONTROL_UNITS=1 ./pithead render)
 for service in monerod tari; do
     docker compose --project-directory "$moved" config --format json |
         jq -e --arg d "$moved/" --arg s "$service" \
@@ -58,7 +58,7 @@ for _ in $(seq 1 6); do
     }
     sleep 2
 done
-(cd "$original" && ./pithead render && PITHEAD_PULL=never ./pithead up)
+(cd "$original" && PITHEAD_STEAL_CONTROL_UNITS=1 ./pithead render && PITHEAD_PULL=never ./pithead up)
 [ "$(identity)" = "$before" ] || {
     printf '%s\n' 'chain directory move: restoration changed node identity' >&2
     exit 1

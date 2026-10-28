@@ -18,7 +18,6 @@ phase_provision() {
     # shellcheck disable=SC2034 # provision_browser_config reads both through dynamic scope.
     local PROVISION_DASHBOARD_HOST=fixture-box
     _phase_provision_initial || return
-    _provision_chain_directory_move || return
     _phase_provision_reboot || return
     _phase_provision_power_cut || return
     _phase_provision_migration

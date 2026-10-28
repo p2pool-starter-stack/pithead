@@ -108,7 +108,9 @@ gate for anything that changes what runs on a box. The rows mirror bench-ci's "W
 | dashboard logic and its tests, docs, workflows, scripts that never run on a box | tiers 1 to 3 are the proof; the PR body names this row as the reason no bench job ran |
 
 Chain directory-move preservation runs in e2e hardening and KVM provision through
-`tests/integration/chain-directory-move.sh`. It pins the copied configuration to the original
+`tests/integration/chain-directory-move.sh`. Its renders explicitly transfer control and firewall
+unit ownership to the moved checkout and back before scratch cleanup. The appliance runs this
+proof after provisioning settles and before day-two mutation legs. It pins the copied configuration to the original
 resolved data paths, runs product render/up without a keep-running override, polls both node
 identities and start times, and restores the original install. The unit test
 `tests/stack/standalone/test_chain_runtime.py` runs in `make test-tools` and covers stable

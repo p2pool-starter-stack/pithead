@@ -29,10 +29,14 @@ for defaults_platform in diy appliance; do
     if (cd "$defaults_dir/golden" && bash "$ROOT/tests/stack/fixtures/config-2.0.0/render.sh" \
         "$STACK" "$ROOT/tests/stack/fixtures/config-2.0.0/absent.json" "$defaults_flag") >"$defaults_dir/golden.log" 2>&1; then
         ok "$defaults_platform sparse v2 config parses and renders"
-        sed "s|$defaults_dir/golden|@ROOT@|g" "$defaults_dir/golden/.env" >"$defaults_dir/normalized.env"
+        sed "/^TARI_CONFIG_DIR=/d; /^LAN_GUARD_DIR=/d; s|$defaults_dir/golden|@ROOT@|g" "$defaults_dir/golden/.env" >"$defaults_dir/normalized.env"
         assert_eq "$defaults_platform full env matches v2.0.0 golden" \
             "$(cat "$defaults_dir/normalized.env")" \
             "$(awk '/^COMPOSE_PROFILES=/ { print "COMPOSE_PROJECT_NAME=pithead" } { print }' "$ROOT/tests/stack/fixtures/config-2.0.0/$defaults_platform.env")"
+        assert_eq "$defaults_platform Tari config lives beside unchanged chain data" \
+            "$(dirname "$(run_sourced "$defaults_dir/golden" env_get TARI_CONFIG_DIR)")" "$defaults_dir/golden/data/tari-config"
+        assert_eq "$defaults_platform LAN marker lives beside unchanged chain data" \
+            "$(run_sourced "$defaults_dir/golden" env_get LAN_GUARD_DIR)" "$defaults_dir/golden/data/lan-guard"
         assert_eq "$defaults_platform absent local_miner.enabled matches v2.0.0" \
             "$(cat "$defaults_dir/golden/local-miner.txt")" "$(cat "$ROOT/tests/stack/fixtures/config-2.0.0/$defaults_platform.local-miner")"
         assert_eq "$defaults_platform absent dashboard.host matches v2.0.0" \

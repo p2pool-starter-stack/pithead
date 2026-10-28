@@ -12,6 +12,7 @@ cat >"$work/install/pithead" <<'CLI'
 #!/usr/bin/env bash
 env_get() { printf '%s/%s' "$FIXTURE_ROOT/data" "$1"; }
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then return; fi
+if [ "${1:-}" = render ] && [ "${PITHEAD_STEAL_CONTROL_UNITS:-0}" != 1 ]; then exit 8; fi
 if [ "${1:-}" = render ] && [ "${FAIL_RESTORE:-0}" = 1 ] && [ "$PWD" = "$(cd "$FIXTURE_ROOT/install" && pwd -P)" ]; then exit 9; fi
 CLI
 chmod +x "$work/install/pithead"

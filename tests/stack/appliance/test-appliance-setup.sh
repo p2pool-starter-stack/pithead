@@ -209,9 +209,9 @@ assert_eq "inactive Compose model excludes the wallet volume" \
     "$(cd "$V" && PATH="$V/bin:$PATH" docker compose config --volumes)" ""
 (cd "$V" && PATH="$V/bin:$PATH" docker volume create pithead_itest_unrelated >/dev/null)
 
-# With -y: the three columns print, all named volumes go, every derived path is removed,
-# and every kept path survives byte-identical.
 mkdir -p "$V/data/tari-config/active" "$V/data/lan-guard"
+sed -i.bak '/^TARI_CONFIG_DIR=/d; /^LAN_GUARD_DIR=/d' "$V/.env"
+rm -f "$V/.env.bak"
 printf 'TARI_CONFIG_DIR=%s\nLAN_GUARD_DIR=%s\n' "$V/data/tari-config/active" "$V/data/lan-guard" >>"$V/.env"
 : >"$DOCKER_LOG"
 out=$(cd "$V" && TOR_AUTO_HEAL=true DOCKER_LOG="$DOCKER_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
