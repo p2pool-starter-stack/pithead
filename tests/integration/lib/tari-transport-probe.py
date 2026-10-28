@@ -14,10 +14,58 @@ TAG = "pithead-e2e-fault-tari-transport"
 TIMEOUT = 240
 
 
+def operation_name(args):
+    if args[:2] == ("docker", "inspect"):
+        return "inspect-" + (
+            args[2] if args[2] in {"p2pool", "tari", "xmrig-proxy"} else "container"
+        )
+    if args[:2] == ("docker", "logs"):
+        return "p2pool-log-read"
+    if args[:3] == ("docker", "exec", "-i"):
+        return "p2pool-console-write"
+    if args[:3] == ("docker", "exec", "dashboard"):
+        return "proxy-summary"
+    if args[:3] == ("sudo", "-n", "nsenter") and args[6:7] == ("iptables",):
+        return {"-S": "fault-rule-list", "-I": "fault-rule-insert", "-D": "fault-rule-remove"}.get(
+            args[7], "fault-rule-operation"
+        )
+    return "probe-subprocess"
+
+
+def failure_class(stderr):
+    for field in ("miners", "now", "results", "accepted", "hashes_total"):
+        if re.search(r"(?:^|\n)KeyError: ['\"]" + field + r"['\"](?:\n|$)", stderr):
+            return "KeyError:" + field
+    for name in (
+        "KeyError",
+        "ImportError",
+        "ModuleNotFoundError",
+        "SyntaxError",
+        "PermissionError",
+    ):
+        if re.search(r"(?:^|\n)" + name + r":", stderr):
+            return name
+    for fragment, name in (
+        ("permission denied", "permission-denied"),
+        ("operation not permitted", "operation-not-permitted"),
+        ("no such container", "container-missing"),
+        ("connection refused", "connection-refused"),
+    ):
+        if fragment in stderr.lower():
+            return name
+    return "unclassified-stderr" if stderr else "no-stderr"
+
+
 def command(*args, data=None):
-    result = subprocess.run(args, input=data, capture_output=True, text=True, timeout=20)  # noqa: S603
+    operation = operation_name(args)
+    try:
+        result = subprocess.run(args, input=data, capture_output=True, text=True, timeout=20)  # noqa: S603
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{operation} timed out after 20 seconds") from None
     if result.returncode:
-        raise RuntimeError("probe command failed")
+        raise RuntimeError(
+            f"{operation} failed: exit {result.returncode}; {failure_class(result.stderr)}"
+        )
     return result.stdout + result.stderr if args[:2] == ("docker", "logs") else result.stdout
 
 

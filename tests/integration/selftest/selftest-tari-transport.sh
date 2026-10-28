@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+echo "== Tari transport cancellation cleanup =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/lib.sh"

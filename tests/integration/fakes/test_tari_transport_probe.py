@@ -229,3 +229,74 @@ def test_missing_opposite_aux_baseline_is_not_a_transition():
     live.aux_state = 0
     with pytest.raises(RuntimeError, match="opposite live aux-template baseline"):
         live.transition(True, 0)
+
+
+@pytest.mark.parametrize(
+    ("args", "stderr", "expected"),
+    [
+        (
+            ("docker", "exec", "dashboard", "python3"),
+            "KeyError: 'private-field'",
+            "proxy-summary failed: exit 1; KeyError",
+        ),
+        (
+            ("docker", "exec", "dashboard", "python3"),
+            "Traceback with private context\nKeyError: 'hashes_total'\n",
+            "proxy-summary failed: exit 1; KeyError:hashes_total",
+        ),
+        (
+            ("docker", "inspect", "tari"),
+            "No such container: private-container",
+            "inspect-tari failed: exit 1; container-missing",
+        ),
+        (
+            ("sudo", "-n", "nsenter", "-t", "42", "-n", "iptables", "-I"),
+            "Operation not permitted",
+            "fault-rule-insert failed: exit 1; operation-not-permitted",
+        ),
+        (
+            ("docker", "exec", "-i", "p2pool"),
+            "connect: Connection refused",
+            "p2pool-console-write failed: exit 1; connection-refused",
+        ),
+        (
+            ("docker", "logs", "p2pool"),
+            "arbitrary private diagnostic",
+            "p2pool-log-read failed: exit 1; unclassified-stderr",
+        ),
+    ],
+)
+def test_failed_commands_identify_operation_without_printing_remote_output(
+    monkeypatch, args, stderr, expected
+):
+    result = Mock(returncode=1, stdout="private stdout payload", stderr=stderr)
+    monkeypatch.setattr(probe.subprocess, "run", Mock(return_value=result))
+    with pytest.raises(RuntimeError) as caught:
+        probe.command(*args, data="private stdin payload")
+    assert str(caught.value) == expected
+    assert stderr not in str(caught.value)
+    assert "private" not in str(caught.value)
+
+
+def test_timed_out_command_preserves_operation_without_command_or_output(monkeypatch):
+    error = probe.subprocess.TimeoutExpired(
+        cmd=["private executable"], timeout=20, output="private stdout", stderr="private stderr"
+    )
+    monkeypatch.setattr(probe.subprocess, "run", Mock(side_effect=error))
+    with pytest.raises(RuntimeError, match="proxy-summary timed out after 20 seconds") as caught:
+        probe.command("docker", "exec", "dashboard", "python3", data="private stdin")
+    assert "private" not in str(caught.value)
+
+
+def test_failure_diagnostic_survives_the_real_entry_point(monkeypatch, capsys):
+    result = Mock(
+        returncode=13, stdout="private stdout", stderr="Permission denied: private target"
+    )
+    monkeypatch.setattr(probe.subprocess, "run", Mock(return_value=result))
+    assert probe.main([]) == 1
+    output = capsys.readouterr().out
+    assert (
+        output
+        == "ROW FAIL Tari transport probe: inspect-p2pool failed: exit 13; permission-denied\n"
+    )
+    assert "private" not in output
