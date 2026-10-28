@@ -18,6 +18,7 @@ cat >"$WORK/bin/ssh" <<'SSH'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >"$SSH_CALL_LOG"
 for arg; do remote="$arg"; done
+unset TMPDIR IT_SCRATCH_DIR
 bash -c "$remote"
 SSH
 chmod +x "$WORK/bin/ssh"
@@ -47,6 +48,19 @@ assert_eq "the quoted snippet reached the stack directory" "$(cat "$IT_REMOTE_DI
 assert_eq "rx() invoked SSH with options and the selected destination" \
     "$(sed '$d' "$SSH_CALL_LOG" 2>/dev/null)" "$(printf '%s\n' -n -o BatchMode=yes runner@bench)"
 assert_eq "the process transport is restored after the phase" "$IT_MODE|$IT_SSH_DEST" "local|original"
+
+echo "== SSH fault phase keeps runner scratch in a fresh target shell =="
+export IT_SCRATCH_DIR="$WORK/scratch quote's \$cash"
+mkdir -p "$IT_SCRATCH_DIR"
+run_fault_injection() {
+    printf '%s\n' 'test "${TMPDIR:?runner scratch required}" = "${IT_SCRATCH_DIR:?runner scratch required}" &&
+        f=$(mktemp "$TMPDIR/fault-scratch.XXXXXX") && test -f "$f" && printf "%s" "$f" >scratch-probe' |
+        rx 'bash -s' --stdin
+}
+run_fault_injection_maybe
+assert_rc "fresh SSH shell receives usable runner scratch" "$?" 0
+assert_contains "the target creates its temporary file inside the quoted scratch directory" \
+    "$(cat "$IT_REMOTE_DIR/scratch-probe" 2>/dev/null)" "$IT_SCRATCH_DIR/fault-scratch."
 
 out="$(bash "$HERE/../run.sh" --local --dir "$WORK" --fault-injection-ssh 2>&1)"
 assert_rc "a bare selector without its destination is refused" "$?" 2
