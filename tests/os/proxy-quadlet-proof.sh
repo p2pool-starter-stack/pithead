@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
+proof_stage=initialization
+proof_rc=0
+trap 'proof_rc=$?; printf "FAIL: native Quadlet proxy stage %s exited %s\n" "$proof_stage" "$proof_rc" >&2; exit "$proof_rc"' ERR
 cd /data/pithead
 proof_dir=$(mktemp -d "${TMPDIR:-/run}/pithead-proxy-health.XXXXXX")
 proof_name="proxy-health-proof-${proof_dir##*.}"
 unit="/run/containers/systemd/$proof_name.container"
+proof_stage=preflight
 collision_rc=0
-podman container exists "$proof_name" >/dev/null 2>&1 || collision_rc=$?
-if [ -e "$unit" ] || [ "$collision_rc" -ne 1 ]; then
+podman container exists "$proof_name" >"$proof_dir/lookup.log" 2>&1 || collision_rc=$?
+if [ -e "$unit" ]; then
+    echo 'FAIL: native Quadlet proxy fixture unit already exists' >&2
+    rm -f "$proof_dir/lookup.log"
+    rmdir "$proof_dir"
+    exit 1
+fi
+if [ "$collision_rc" -ne 1 ]; then
+    printf 'FAIL: native Quadlet proxy initial container lookup expected absent (1), got %s\n' "$collision_rc" >&2
+    head -c 2048 "$proof_dir/lookup.log" >&2
+    rm -f "$proof_dir/lookup.log"
     rmdir "$proof_dir"
     exit 1
 fi
@@ -39,33 +52,41 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+proof_stage=render
 chmod 700 "$proof_dir"
 grep -vE '^(QUADLET_HOST_CONFIG_DIR|QUADLET_CADDYFILE|QUADLET_ENGINE_SOCK|PROXY_STRATUM_TLS|PROXY_STRATUM_PASSWORD)=' .env >"$proof_dir/env"
 printf '\nQUADLET_HOST_CONFIG_DIR=/data/pithead\nQUADLET_CADDYFILE=/data/pithead/Caddyfile\nQUADLET_ENGINE_SOCK=/run/podman/podman.sock\nPROXY_STRATUM_TLS=false\nPROXY_STRATUM_PASSWORD=\n' >>"$proof_dir/env"
 ./pithead render-quadlet --env "$proof_dir/env" --out "$proof_dir/units" >/dev/null
+proof_stage="image-lookup"
 image_ref=$(sed -n 's/^Image=//p' "$proof_dir/units/xmrig-proxy.container")
 image=$(podman image inspect "$image_ref" --format '{{.Id}}')
 [ -n "$image" ]
+proof_stage="unit-rewrite"
 printf %s "$UNIT_FILTER_B64" | base64 -d >"$proof_dir/unit.awk"
 mkdir -p /run/containers/systemd
 awk -v image="$image" -v name="$proof_name" -f "$proof_dir/unit.awk" \
     "$proof_dir/units/xmrig-proxy.container" >"$unit"
 chmod 600 "$unit"
+proof_stage="native-startup"
 systemctl daemon-reload
 timeout 180 systemctl start "$proof_name.service"
+proof_stage="notification-settings"
 systemctl show "$proof_name.service" -p FragmentPath --value | grep -q '/generator'
 [ "$(systemctl show "$proof_name.service" -p Type --value)" = notify ]
 [ "$(systemctl show "$proof_name.service" -p TimeoutStartUSec --value)" = infinity ]
 echo 'PASS: native Quadlet proxy uses healthy notification with unlimited startup'
+proof_stage=isolation
 [ "$(podman inspect "$proof_name" --format '{{.HostConfig.NetworkMode}}')" = none ]
 [ -z "$(podman port "$proof_name")" ]
 echo 'PASS: native Quadlet proxy has no network access or published ports'
+proof_stage="api-health"
 podman exec "$proof_name" test -x /usr/local/bin/xmrig-proxy-healthcheck.sh
 podman healthcheck run "$proof_name"
 health=$(podman inspect "$proof_name" --format '{{.State.Health.Status}}')
 [ "$health" = healthy ]
 systemctl is-active --quiet "$proof_name.service"
 echo 'PASS: native Quadlet proxy runs its real API health probe and reports healthy'
+proof_stage=cleanup
 cleanup
 trap - EXIT
 echo 'PASS: native Quadlet proxy health proof complete'

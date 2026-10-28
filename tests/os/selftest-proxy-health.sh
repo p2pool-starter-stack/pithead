@@ -25,6 +25,43 @@ done
 echo 'PASS: proxy health leg rejects empty, partial and failed guest evidence'
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
+preflight_source=$(awk '/^proof_stage=preflight$/ { copy=1 } /^cleanup\(\) \{/ { exit } copy { print }' "$SCRIPT_DIR/proxy-quadlet-proof.sh")
+proof_name="fixture-name"
+for lookup_rc in 0 1 125; do
+    proof_dir="$fixture/preflight"
+    mkdir "$proof_dir"
+    unit="$fixture/unit-not-present"
+    podman() {
+        echo "fixture lookup status $lookup_rc" >&2
+        return "$lookup_rc"
+    }
+    rc=0
+    (eval "$preflight_source") >"$fixture/preflight.log" 2>&1 || rc=$?
+    if [ "$lookup_rc" -eq 1 ]; then
+        [ "$rc" -eq 0 ]
+        rm -f "$proof_dir/lookup.log"
+        rmdir "$proof_dir"
+    else
+        [ "$rc" -ne 0 ]
+        grep -qF "expected absent (1), got $lookup_rc" "$fixture/preflight.log"
+        grep -qF "fixture lookup status $lookup_rc" "$fixture/preflight.log"
+    fi
+done
+mkdir "$proof_dir"
+touch "$unit"
+rc=0
+(eval "$preflight_source") >"$fixture/preflight.log" 2>&1 || rc=$?
+[ "$rc" -ne 0 ]
+grep -qF 'fixture unit already exists' "$fixture/preflight.log"
+rm -f "$unit"
+trap_source=$(awk '/^proof_stage=initialization$/ { copy=1 } /^cd / { exit } copy { print }' "$SCRIPT_DIR/proxy-quadlet-proof.sh")
+rc=0
+bash -euc "$trap_source
+proof_stage=fixture-stage
+false" >"$fixture/stage.log" 2>&1 || rc=$?
+[ "$rc" -ne 0 ]
+grep -qF 'native Quadlet proxy stage fixture-stage exited 1' "$fixture/stage.log"
+echo 'PASS: proxy preflight and stage failures retain bounded diagnostics'
 unit="$SCRIPT_DIR/../../os/quadlet/xmrig-proxy.container"
 rewrite() {
     awk -v image=fixture-image -v name=fixture-name -f "$SCRIPT_DIR/proxy-quadlet-unit.awk" "$1"
