@@ -20,8 +20,9 @@ These files are fixtures, not deployable configuration. They are consumed only a
 parity test's expected output (`tests/stack/run.sh`, `render_quadlet_units()` diffed
 byte-for-byte against `quadlet/`, `quadlet/local/` and `quadlet/payout/`) — never
 deployed directly. Appliance boot remains Compose-managed through Podman. The KVM provision
-phase renders a disposable native xmrig-proxy unit, starts it without networking or published
-ports, checks healthy notification and the real API probe, and verifies cleanup. The
+phase renders a disposable native xmrig-proxy unit using the appliance proxy container's
+immutable image ID, starts it without networking or published ports, checks healthy notification
+and the real API probe, and verifies cleanup. The
 translation rules the spike established, with evidence, live in
 [`docs/dev/dual-distribution-plan.md`](../docs/dev/dual-distribution-plan.md)
 (Runtime architecture) and on issue #78.

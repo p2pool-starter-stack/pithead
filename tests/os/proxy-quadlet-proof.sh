@@ -58,8 +58,7 @@ grep -vE '^(QUADLET_HOST_CONFIG_DIR|QUADLET_CADDYFILE|QUADLET_ENGINE_SOCK|PROXY_
 printf '\nQUADLET_HOST_CONFIG_DIR=/data/pithead\nQUADLET_CADDYFILE=/data/pithead/Caddyfile\nQUADLET_ENGINE_SOCK=/run/podman/podman.sock\nPROXY_STRATUM_TLS=false\nPROXY_STRATUM_PASSWORD=\n' >>"$proof_dir/env"
 ./pithead render-quadlet --env "$proof_dir/env" --out "$proof_dir/units" >/dev/null
 proof_stage="image-lookup"
-image_ref=$(sed -n 's/^Image=//p' "$proof_dir/units/xmrig-proxy.container")
-image=$(podman image inspect "$image_ref" --format '{{.Id}}')
+image=$(podman inspect --format '{{.Image}}' xmrig-proxy)
 [ -n "$image" ]
 proof_stage="unit-rewrite"
 printf %s "$UNIT_FILTER_B64" | base64 -d >"$proof_dir/unit.awk"

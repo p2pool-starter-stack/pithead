@@ -91,6 +91,20 @@ false" >"$fixture/stage.log" 2>&1 || rc=$?
 [ "$rc" -ne 0 ]
 grep -qF 'native Quadlet proxy stage fixture-stage exited 1' "$fixture/stage.log"
 echo 'PASS: proxy preflight and stage failures retain bounded diagnostics'
+image_source=$(awk '/^proof_stage="image-lookup"$/ { copy=1 } /^proof_stage="unit-rewrite"$/ { exit } copy { print }' "$SCRIPT_DIR/proxy-quadlet-proof.sh")
+(
+    proof_dir="$fixture/image-source"
+    mkdir -p "$proof_dir/units"
+    printf 'Image=/pithead-xmrig-proxy:\n' >"$proof_dir/units/xmrig-proxy.container"
+    podman() {
+        [ "$*" = 'inspect --format {{.Image}} xmrig-proxy' ] || return 125
+        printf '%s\n' 'sha256:fixture-candidate-image'
+    }
+    image=""
+    eval "$image_source"
+    [ "$image" = 'sha256:fixture-candidate-image' ]
+)
+echo 'PASS: proxy proof selects the actual candidate image without file build provenance'
 unit="$SCRIPT_DIR/../../os/quadlet/xmrig-proxy.container"
 rewrite() {
     awk -v image=fixture-image -v name=fixture-name -f "$SCRIPT_DIR/proxy-quadlet-unit.awk" "$1"
