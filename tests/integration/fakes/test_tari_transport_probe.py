@@ -14,6 +14,65 @@ probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
 
 
+def test_transition_timeout_retains_only_last_observed_aux_count(monkeypatch, capsys):
+    live = object.__new__(probe.Probe)
+    live.armed, live.aux_state = False, 1
+    live.rule, live.sample = Mock(), Mock()
+    live.channel = Mock(return_value="READY")
+    live.stratum = Mock(logged_in=True, jobs=7)
+    log = "update_aux_data: n_aux_chains = 0\n" * 2000
+    monkeypatch.setattr(probe, "command", Mock(return_value=log))
+    clock = iter(range(0, 10000, 60))
+    monkeypatch.setattr(probe.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(probe.time, "sleep", Mock())
+    with pytest.raises(RuntimeError, match="transport-transition"):
+        live.transition(True, 0)
+    output = capsys.readouterr().out
+    assert output.count("\n") == 1
+    assert json.loads(output.split(": ", 1)[1]) == {
+        "channel": "READY",
+        "logged_in": True,
+        "jobs": 7,
+        "aux": 0,
+    }
+    assert "aux_transitions" not in output
+    assert live.aux_state == 0
+
+
+@pytest.mark.parametrize("state", ["READY", "TRANSIENT_FAILURE", "private-channel-payload"])
+def test_channel_observation_retains_only_known_states(tmp_path, state):
+    live = object.__new__(probe.Probe)
+    live.stats = tmp_path
+    (tmp_path / "merge_mining").write_text(json.dumps({"chains": [{"channel_state": state}]}))
+    assert live.channel() == ("unknown" if state == "private-channel-payload" else state)
+
+
+@pytest.mark.parametrize(
+    ("logged_in", "stage"), [(False, "initial-ready"), (True, "baseline-aux-1")]
+)
+def test_initial_wait_failure_identifies_stage_and_observations(
+    monkeypatch, capsys, logged_in, stage
+):
+    live = object.__new__(probe.Probe)
+    live.pid, live.pool_ip, live.armed, live.aux_state = "42", "fixture", False, None
+    live.original_loglevel = 3
+    live.mining, live.loglevel, live.rule, live.sample = Mock(), Mock(), Mock(), Mock()
+    live.channel = Mock(return_value="READY")
+    stream = Mock(logged_in=logged_in, jobs=7)
+    monkeypatch.setattr(probe, "Stratum", Mock(return_value=stream))
+    monkeypatch.setattr(probe, "command", Mock(return_value=""))
+    clock = iter(range(0, 10000, 60))
+    monkeypatch.setattr(probe.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(probe.time, "sleep", Mock())
+    with pytest.raises(RuntimeError, match=stage):
+        live.run()
+    observed = json.loads(capsys.readouterr().out.split(": ", 1)[1])
+    assert observed == {"channel": "READY", "logged_in": logged_in, "jobs": 7, "aux": None}
+    live.rule.assert_not_called()
+    stream.close.assert_called_once()
+    assert live.loglevel.call_args.args == (3,)
+
+
 @pytest.mark.parametrize(("workers", "xvb"), [(1, False), (2, False), (1, True)])
 def test_proxy_summary_executes_against_dashboard_exports(monkeypatch, workers, xvb):
     monkeypatch.syspath_prepend(str(PROBE.parents[3] / "dashboard"))
@@ -164,7 +223,7 @@ def test_probe_failure_removes_only_its_fault_and_restores_log_level(monkeypatch
     stream.logged_in = True
     monkeypatch.setattr(probe, "Stratum", Mock(return_value=stream))
     monkeypatch.setattr(probe, "command", Mock(return_value=""))
-    live.wait = lambda predicate: predicate()
+    live.wait = lambda predicate, **kwargs: predicate()
 
     def fail(*args):
         live.armed = True
@@ -190,7 +249,7 @@ def test_cleanup_failure_still_closes_stratum_and_restores_log_level(monkeypatch
     stream.logged_in = True
     monkeypatch.setattr(probe, "Stratum", Mock(return_value=stream))
     monkeypatch.setattr(probe, "command", Mock(return_value=""))
-    live.wait = lambda predicate: predicate()
+    live.wait = lambda predicate, **kwargs: predicate()
 
     def fail(*args):
         live.armed = True

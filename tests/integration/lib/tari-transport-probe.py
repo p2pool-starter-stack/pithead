@@ -16,9 +16,8 @@ TIMEOUT = 240
 
 def operation_name(args):
     if args[:2] == ("docker", "inspect"):
-        return "inspect-" + (
-            args[2] if args[2] in {"p2pool", "tari", "xmrig-proxy"} else "container"
-        )
+        name = args[2]
+        return "inspect-" + (name if name in {"p2pool", "tari", "xmrig-proxy"} else "container")
     if args[:2] == ("docker", "logs"):
         return "p2pool-log-read"
     if args[:3] == ("docker", "exec", "-i"):
@@ -36,15 +35,11 @@ def failure_class(stderr):
     for field in ("miners", "now", "results", "accepted", "hashes_total"):
         if re.search(r"(?:^|\n)KeyError: ['\"]" + field + r"['\"](?:\n|$)", stderr):
             return "KeyError:" + field
-    for name in (
-        "KeyError",
-        "ImportError",
-        "ModuleNotFoundError",
-        "SyntaxError",
-        "PermissionError",
-    ):
-        if re.search(r"(?:^|\n)" + name + r":", stderr):
-            return name
+    error = re.search(
+        r"(?:^|\n)(KeyError|ImportError|ModuleNotFoundError|SyntaxError|PermissionError):", stderr
+    )
+    if error:
+        return error[1]
     for fragment, name in (
         ("permission denied", "permission-denied"),
         ("operation not permitted", "operation-not-permitted"),
@@ -226,18 +221,27 @@ class Probe:
         self.stratum.sample()
         self.sample_count += 1
 
-    def wait(self, predicate, timeout=TIMEOUT):
+    def wait(self, predicate, timeout=TIMEOUT, stage="transport-transition"):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             self.sample()
             if predicate():
                 return
             time.sleep(2)
-        raise RuntimeError("transport transition did not converge within its bound")
+        state = {
+            "channel": self.channel(),
+            "logged_in": self.stratum.logged_in,
+            "jobs": self.stratum.jobs,
+            "aux": self.aux_state,
+        }
+        print(f"INFO unresolved {stage}: {json.dumps(state)}", flush=True)
+        raise RuntimeError(f"{stage} did not converge within its bound")
 
     def channel(self):
         chain = json.loads((self.stats / "merge_mining").read_text())["chains"][0]
-        return chain["channel_state"]
+        state = chain["channel_state"]
+        known = {"IDLE", "CONNECTING", "READY", "TRANSIENT_FAILURE", "SHUTDOWN"}
+        return state if state in known else "unknown"
 
     def transition(self, blocked, expected_aux):
         if self.aux_state != 1 - expected_aux:
@@ -250,25 +254,19 @@ class Probe:
         else:
             self.rule("-D")
             self.armed = False
-        last = {"channel": None, "aux_transitions": []}
 
         def completed():
             log = command("docker", "logs", "--since", since, "--tail", "2000", "p2pool")
             transitions = aux_transitions(log)
             channel = self.channel()
-            last.update(channel=channel, aux_transitions=transitions)
+            self.aux_state = transitions[-1] if transitions else None
             channel_ok = channel != "READY" if blocked else channel == "READY"
             if not channel_ok or not transitions or transitions[-1] != expected_aux:
                 return False
             return True
 
-        try:
-            self.wait(completed)
-        except RuntimeError:
-            print(f"INFO unresolved transport transition: {json.dumps(last)}", flush=True)
-            raise
+        self.wait(completed)
         changed_after = time.monotonic() - start
-        self.aux_state = expected_aux
         before = self.mining()
         window_start = time.monotonic()
         observed = []
@@ -337,17 +335,19 @@ class Probe:
         self.mining()
         self.stratum = Stratum(self.pool_ip)
         try:
-            self.wait(lambda: self.stratum.logged_in and self.channel() == "READY")
+            self.wait(
+                lambda: self.stratum.logged_in and self.channel() == "READY", stage="initial-ready"
+            )
             self.loglevel(5)
             since = datetime.datetime.now(datetime.UTC).isoformat()
 
             def baseline():
                 log = command("docker", "logs", "--since", since, "--tail", "2000", "p2pool")
                 states = aux_transitions(log)
+                self.aux_state = states[-1] if states else None
                 return bool(states and states[-1] == 1 and self.channel() == "READY")
 
-            self.wait(baseline)
-            self.aux_state = 1
+            self.wait(baseline, stage="baseline-aux-1")
             self.transition(True, 0)
             self.transition(False, 1)
             print(
