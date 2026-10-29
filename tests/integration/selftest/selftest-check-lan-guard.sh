@@ -155,7 +155,7 @@ done
     mkdir -p "$MARKER_FIXTURE"
     printf 'boot-id\n' >"$MARKER_FIXTURE/enforced"
     printf 'env_get() { printf '\''%%s'\'' "$MARKER_FIXTURE"; }\n' >"$fixture/pithead"
-    printf 'source %q\n' "$HERE/../../../lib/pithead/29a-chain-runtime-state.sh" >>"$fixture/pithead"
+    printf 'source %q\n' "$(cd "$HERE/../lib" && pwd -P)/../../../lib/pithead/29a-chain-runtime-state.sh" >>"$fixture/pithead"
     rx() { (cd "$fixture" && bash -c "$1"); }
     _lan_flush_rules() { :; }
     [ "$(_lan_marker_present -s)" = present ] || exit 1

@@ -14,6 +14,14 @@ cat >"$work/install/pithead" <<'CLI'
 #!/usr/bin/env bash
 env_get() { printf '%s/%s' "$FIXTURE_ROOT/data" "$1"; }
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then return; fi
+if [ "${1:-}" = up ]; then
+    if [ -f "$FIXTURE_ROOT/install/dashboard/Dockerfile" ]; then
+        cmp "$FIXTURE_ROOT/install/dashboard/Dockerfile" dashboard/Dockerfile || exit 10
+        cmp "$FIXTURE_ROOT/install/dashboard/source-input" dashboard/source-input || exit 11
+    elif [ -f dashboard/Dockerfile ]; then
+        exit 12
+    fi
+fi
 if [ "${1:-}" = render ] && [ "${PITHEAD_STEAL_CONTROL_UNITS:-0}" != 1 ]; then exit 8; fi
 if [ "${1:-}" = render ] && [ "${FAIL_RESTORE:-0}" = 1 ] && [ "$PWD" = "$(cd "$FIXTURE_ROOT/install" && pwd -P)" ]; then exit 9; fi
 CLI
@@ -39,6 +47,16 @@ export FIXTURE_ROOT="$work" PATH="$work/bin:$PATH" TMPDIR="$work"
 (cd "$work/install" && bash "$root/tests/integration/chain-directory-move.sh") >"$work/pass.log" 2>&1
 [ "$(cat "$work/count")" -ge 8 ]
 rm "$work/count"
+mkdir "$work/install/dashboard"
+printf 'FROM scratch\n' >"$work/install/dashboard/Dockerfile"
+printf 'source context\n' >"$work/install/dashboard/source-input"
+(cd "$work/install" && bash "$root/tests/integration/chain-directory-move.sh") >"$work/source.log" 2>&1 || {
+    cat "$work/source.log"
+    exit 1
+}
+[ "$(cat "$work/count")" -ge 8 ]
+rm -r "$work/install/dashboard"
+rm "$work/count"
 if (cd "$work/install" && CHANGE_ID=1 bash "$root/tests/integration/chain-directory-move.sh") >"$work/change.log" 2>&1; then
     printf '%s\n' 'FAIL: changed identity passed'
     exit 1
@@ -50,7 +68,7 @@ if (cd "$work/install" && FAIL_RESTORE=1 bash "$root/tests/integration/chain-dir
     exit 1
 fi
 grep -Fq 'restoration failed' "$work/restore.log"
-printf '%s\n' 'chain directory move selftest: PASS (preservation, changed identity, failed restoration)'
+printf '%s\n' 'chain directory move selftest: PASS (source and release preservation, changed identity, failed restoration)'
 echo "== hardening streams the move proof and requires its completion sentinel =="
 source "$root/tests/integration/lib.sh"
 source "$root/tests/integration/scenarios.sh"

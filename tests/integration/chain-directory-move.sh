@@ -19,6 +19,9 @@ for file in pithead docker-compose.yml config.json .env config.reference.json co
     cp -p "$original/$file" "$moved/$file"
 done
 cp -a "$original/build" "$moved/build"
+if [ -f "$original/dashboard/Dockerfile" ]; then
+    cp -a "$original/dashboard" "$moved/dashboard"
+fi
 mapfile -t data_dirs < <(
     source "$original/pithead"
     for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do

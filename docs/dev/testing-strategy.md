@@ -111,8 +111,11 @@ Chain directory-move preservation runs in e2e hardening and KVM provision throug
 `tests/integration/chain-directory-move.sh`. Its renders explicitly transfer control and firewall
 unit ownership to the moved checkout and back before scratch cleanup. The appliance runs this
 proof after provisioning settles and before day-two mutation legs. It pins the copied configuration to the original
-resolved data paths, runs product render/up without a keep-running override, polls both node
-identities and start times, and restores the original install. The unit test
+resolved data paths and retains the dashboard build context when the original is a source checkout,
+so moving it preserves source or release mode. It runs product render/up without a keep-running
+override, polls both node identities and start times, and restores the original install.
+The move selftest exercises both installation modes and refuses changed node identity or failed
+restoration. The LAN guard driver also runs from a copied sandbox, with missing-command controls. The unit test
 `tests/stack/standalone/test_chain_runtime.py` runs in `make test-tools` and covers stable
 configuration identity, changed inputs, missing sources, migration and refusal controls.
 
