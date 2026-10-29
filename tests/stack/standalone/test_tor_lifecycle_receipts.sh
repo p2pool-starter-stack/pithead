@@ -66,7 +66,7 @@ fi
 
 echo "== Tor lifecycle caller receipts =="
 
-work=$(mktemp -d)
+work=$(mktemp -d "${TMPDIR:?}/pithead-tor-lifecycle.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 for stop_rc in 0 9; do
     for up_rc in 0 7; do
