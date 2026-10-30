@@ -66,7 +66,7 @@ test("first sync, regression, recovery and resumed mining switch only Overview, 
   assert.equal(needsSync(state), false);
   assert.match(admission(state), /Mining admitted/);
   assert.equal(overviewContent({ page: "overview", state, renderPage: () => "operational" }), "operational");
-  state.sync_status.chains.monero.health = { level: "red", reason: "No peers" };
+  state.sync_status.chains.monero.health = { level: "red", reasons: ["No peers"] };
   assert.equal(needsSync(state), true);
   assert.equal(overviewContent({ page: "settings", state, renderPage: () => "settings" }), "settings");
 });
@@ -116,4 +116,41 @@ test("remote Tari startup and migration remain reported states", () => {
     const out = renderToString(html`<${SyncView} state=${state} connected=${true} now=${100} />`);
     assert.match(out, new RegExp(`Reported state: ${initializing}`));
   }
+});
+
+
+test("a reachable synced node with the real amber health contract explains peer regression", () => {
+  const state = reading(100);
+  state.syncing = false;
+  state.sync_status.mining = { released: true, held: false, workers_rejected: false };
+  state.sync_status.chains.monero = { reachable: true, synced: true, healthy: true, health: { level: "amber", reasons: ["0 peer connections for 10 min"] } };
+  assert.equal(needsSync(state), true);
+  const out = renderToString(html`<${SyncView} state=${state} connected=${true} now=${100} />`);
+  assert.match(out, /Degraded · 0 peer connections for 10 min/);
+  assert.match(out, /Stable reachability/);
+});
+
+
+test("an old done gauge cannot override the node's explicit unsynced verdict", () => {
+  const state = reading(100);
+  state.sync_status.chains.monero.synced = false;
+  for (const target of [0, 2000]) {
+    state.sync.monero = { state: "done", percent: 100, current: target, target };
+    const out = renderToString(html`<${SyncView} state=${state} history=${{ eta: () => 0 }} connected=${true} now=${100} />`);
+    assert.match(out, /Progress unknown · Estimate unavailable/);
+    assert.match(out, /Not synced/);
+    assert.doesNotMatch(out, /Sync complete/);
+  }
+});
+
+
+test("synced required nodes with a host hold wait for services rather than another sync", () => {
+  const state = reading(100);
+  state.sync_status.chains.monero.synced = true;
+  assert.match(admission(state), /Required nodes are synced.*start required services/);
+  state.tari_gates_sync = true;
+  state.sync_status.chains.tari = { reachable: true, synced: false };
+  assert.match(admission(state), /Monero and required Tari to sync/);
+  state.sync_status.chains.tari.synced = true;
+  assert.match(admission(state), /Required nodes are synced.*admit mining/);
 });

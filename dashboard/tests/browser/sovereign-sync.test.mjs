@@ -49,6 +49,7 @@ for (const platform of ["appliance", "diy-login", "diy-readonly"]) {
       });
       ui.state.sync_status.sampled_at += 30;
       await page.clock.fastForward(30000);
+      await expect(view.getByText(new RegExp(`^${current / 20}% ·`))).toBeVisible();
     }
     await expect(view.getByText(/Roughly 4 min left/)).toBeVisible();
     ui.state.syncing = false;
@@ -71,7 +72,7 @@ for (const platform of ["appliance", "diy-login", "diy-readonly"]) {
         )
         .first(),
     ).toBeVisible();
-    ui.state.sync_status.chains.monero.health = { level: "red", reason: "No peers" };
+    ui.state.sync_status.chains.monero.health = { level: "red", reasons: ["No peers"] };
     ui.state.sync_status.mining.workers_rejected = true;
     ui.state.sync_status.chains.monero.recovery_remaining = 45;
     ui.state.sync_status.sampled_at += 30;

@@ -169,10 +169,28 @@ nav a[aria-current="page"] {
   }
 }
 
-.sync-nodes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 1rem; }
-.sync-node { min-width: 0; }
-.sync-node progress { width: 100%; accent-color: var(--accent); }
-.sync-node dd { margin: 0 0 0.5rem; }
-.sync-node dt { color: var(--muted); }
-.sync-headline { font-size: 1.35rem; font-weight: 800; }
-.sync-address { overflow-wrap: anywhere; }
+.sync-nodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 1rem;
+}
+.sync-node {
+  min-width: 0;
+}
+.sync-node progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.sync-node dd {
+  margin: 0 0 0.5rem;
+}
+.sync-node dt {
+  color: var(--muted);
+}
+.sync-headline {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+.sync-address {
+  overflow-wrap: anywhere;
+}

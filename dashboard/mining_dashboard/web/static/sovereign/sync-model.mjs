@@ -34,7 +34,7 @@ export function needsSync(state) {
         chain?.synced === false ||
         chain?.reachable === false ||
         chain?.down === true ||
-        chain?.health?.level === "red",
+        ["red", "amber"].includes(chain?.health?.level),
     ) ||
     mining?.held === true ||
     mining?.workers_rejected === true ||
@@ -49,12 +49,17 @@ export function admission(state) {
   if (mining.fail_closed) return "Mining held by the host's fail-closed health policy";
   if (mining.workers_rejected)
     return "Workers waiting for required nodes to stay healthy through the recovery window, then worker re-admission";
-  if (mining.held || !mining.released)
+  if (mining.held || !mining.released) {
+    const chains = state.sync_status?.chains;
+    const ready = (name) => chains?.[name]?.reachable === true && chains?.[name]?.synced === true;
+    if (ready("monero") && (!state.tari_gates_sync || ready("tari")))
+      return "Required nodes are synced; waiting for the host to start required services and admit mining";
     return state.tari_gates_sync
       ? "Mining waiting for Monero and required Tari to sync; the host then starts the required services"
       : state.sync_status?.chains?.tari
         ? "Mining waiting for Monero to sync; optional Tari does not hold the first release"
         : "Mining waiting for Monero to sync; the host then starts the required services";
+  }
   return "Mining admitted by the host; this is not proof of accepted mining work";
 }
 

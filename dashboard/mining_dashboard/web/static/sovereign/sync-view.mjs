@@ -20,20 +20,31 @@ export function SyncView({ state, history, connected, now = Date.now() / 1000 })
       .map((name) => {
         const node = status?.chains?.[name] || {};
         const chain = state.sync?.[name];
-        const eta = stale || node.reachable !== true ? null : (history?.eta(name, chain) ?? null);
+        const measured = history?.eta(name, chain) ?? null;
+        const eta =
+          stale || node.reachable !== true
+            ? null
+            : node.synced === true
+              ? 0
+              : measured === 0
+                ? null
+                : measured;
         const progress =
-          chain?.state !== "loading" &&
-          typeof chain?.percent === "number" &&
-          Number.isFinite(chain.percent)
-            ? Math.max(0, Math.min(100, chain.percent))
-            : null;
+          node.synced === true
+            ? 100
+            : chain?.target > 0 &&
+                chain?.state === "syncing" &&
+                typeof chain?.percent === "number" &&
+                Number.isFinite(chain.percent)
+              ? Math.max(0, Math.min(100, chain.percent))
+              : null;
         return html`<article class="panel sync-node" aria-label=${name === "monero" ? "Monero sync" : "Tari sync"}>
         <h3>${name === "monero" ? "Monero" : "Tari"} · ${node.local === true ? "Local node" : node.local === false ? "Remote node" : "Node location unknown"}</h3>
         <p class="sync-headline">${progress === null ? "Progress unknown" : `${progress}%`} · ${eta === 0 ? "Sync complete" : eta === null ? "Estimate unavailable" : `Roughly ${duration(eta)} left`}</p>
         <progress max="100" value=${progress ?? undefined} aria-label=${`${name} sync progress`}></progress>
         <dl><dt>Reachability</dt><dd>${verdict(node.reachable, "Reachable", "Unreachable")}</dd>
           <dt>Synchronization</dt><dd>${verdict(node.synced, "Synced", "Not synced")}</dd>
-          <dt>Chain health</dt><dd>${node.health?.level === "green" ? "Healthy" : node.health?.level === "red" ? "Unhealthy" : "Unknown"}${node.health?.reason ? ` · ${node.health.reason}` : ""}</dd>
+          <dt>Chain health</dt><dd>${node.health?.level === "green" ? "Healthy" : node.health?.level === "red" ? "Unhealthy" : node.health?.level === "amber" ? "Degraded" : "Unknown"}${Array.isArray(node.health?.reasons) && node.health.reasons.length ? ` · ${node.health.reasons.join("; ")}` : ""}</dd>
           <dt>Recovery readiness</dt><dd>${verdict(node.healthy, "Stable reachability", "Waiting for stable reachability")}</dd>
           <dt>Blocks</dt><dd>${count(chain?.current)} / ${count(chain?.target)} · ${count(chain?.remaining)} remaining</dd>
           <dt>Database / mode</dt><dd>${chain?.db_size || "Unknown"} / ${chain?.mode || "Unknown"}</dd>
