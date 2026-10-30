@@ -218,6 +218,7 @@ summary() {
         it_err "Artifacts for failed scenarios are under $OUT_DIR/"
         return 1
     fi
+    it_required_coverage_ok || return 1
     it_log "failed:  0"
     it_log "All assertions passed. Artifacts/manifest under $OUT_DIR/"
     return 0

@@ -1,0 +1,5 @@
+scripts/build-pithead-selftest.sh	scripts/build-pithead.sh	Existing exec target resolved through nested readlink/dirname in the wired --self-test entry point.
+scripts/lint/lint-file-budget-selftest.sh	scripts/lint/lint-file-budget.sh	Existing exec target resolved through nested readlink/dirname in the wired --self-test entry point.
+scripts/watch/shipped-image-sweep-report-selftest.sh	scripts/watch/shipped-image-sweep-report.sh	Existing sourced assertion fragment of the wired --self-test entry point.
+tests/watch/test-pin-watch.sh	scripts/watch/pin-watch.sh	Existing sourced assertion fragment of the wired --self-test entry point.
+tests/watch/test-pin-watch-issues.sh	tests/watch/test-pin-watch.sh	Existing sourced assertion fragment of the pin-watch selftest.

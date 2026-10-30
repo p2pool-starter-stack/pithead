@@ -14,10 +14,11 @@ assert_rc "the real inventory exits zero" "$?" 0
 assert_eq "the real inventory leaves stderr empty" "$(wc -c <"$TMP/clean.err" | tr -d '[:space:]')" 0
 
 echo "== inventory counts and lists literal-tab scenarios only =="
-mkdir -p "$TMP/tree/tests"
-cp "$ROOT/tests/inventory.sh" "$TMP/tree/tests/inventory.sh"
-ln -s "$ROOT/dashboard" "$TMP/tree/dashboard"
-cp -R "$ROOT/tests/stack" "$ROOT/tests/integration" "$TMP/tree/tests/"
+mkdir -p "$TMP/tree/.github"
+cp -R "$ROOT/tests" "$TMP/tree/"
+cp "$ROOT/Makefile" "$TMP/tree/"
+cp -R "$ROOT/.github/workflows" "$TMP/tree/.github/"
+for tree in dashboard scripts os build; do ln -s "$ROOT/$tree" "$TMP/tree/$tree"; done
 {
     printf "scenario_matrix() {\n    cat <<'EOF'\n"
     for n in {1..8}; do printf 'aaa-%s\tfoo=bar\n' "$n"; done

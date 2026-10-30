@@ -61,21 +61,7 @@ _stack_run_integration() { # <label> <extra args...>
     shift
     out=$(mktemp)
     # shellcheck disable=SC2154  # shared through the assembled runner scope
-    # The DIY gate's own SSH defaults to ssh-agent/default identities (tests/integration/run.sh's
-    # IT_SSH_OPTS carries no -i); the KVM guest only trusts the os battery's test key ($KEY,
-    # baked in via PITHEAD_TEST_SSH_PUBKEY), so it must be named explicitly with --identity.
-    # run.sh's own IT_SSH_OPTS default (StrictHostKeyChecking=accept-new) is right for its other
-    # caller, a real bench/rig with a stable host key — wrong here, where $ip is a DHCP lease this
-    # same guest recycles across boots, presenting a different host key each time (#2716). OpenSSH
-    # keeps the FIRST value given for a repeated -o keyword, not the last (verified: `ssh -o
-    # StrictHostKeyChecking=accept-new -o StrictHostKeyChecking=no -G host` still reports
-    # accept-new) — so a --ssh-opt appended after IT_SSH_OPTS cannot itself override
-    # StrictHostKeyChecking, and one is not passed here. Instead, --ssh-opt UserKnownHostsFile=/dev/null
-    # has no earlier default to lose to, so it does apply, and with no known_hosts entry ever
-    # recorded there is no stored key for accept-new to detect a change against — every boot's key
-    # reads as unseen, exactly like the untrusted-by-design os-battery SSH calls this mirrors
-    # (lib/core.sh's _ssh, soak-probe.sh, install-restore.sh), which set the same option.
-    "$SCRIPT_DIR/../integration/run.sh" --host "root@$ip" --identity "$KEY" \
+    IT_DASHBOARD_PASSWORD="${dash_pass:-}" "$SCRIPT_DIR/../integration/run.sh" --host "root@$ip" --identity "$KEY" \
         --ssh-opt UserKnownHostsFile=/dev/null \
         --dir /data/pithead --workers 1 "$@" >"$out" 2>&1
     rc=$?
@@ -240,19 +226,7 @@ _provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user
 }
 
 _stack_container_restart_leg() {
-    local payload out rc=0
-    payload=$(base64 <"$SCRIPT_DIR/container-restart-leg.sh" | tr -d '\n')
-    out=$(mktemp)
-    SSH_TIMEOUT=480 _ssh "printf %s '$payload' | base64 -d | bash" >"$out" 2>&1 || rc=$?
-    if [ "$rc" -eq 0 ] && grep -Fq 'restart detection leg: PASS' "$out"; then
-        ok "status and doctor detect an observed Caddy crash loop and recover after restoration (#3391)"
-    else
-        [ "$rc" -ne 0 ] || rc=1
-        bad "status and doctor did not prove Caddy crash-loop detection and recovery (#3391, exit $rc)"
-        sed 's/\x1b\[[0-9;]*m//g' "$out" | tail -n 20
-    fi
-    rm -f "$out"
-    return "$rc"
+    appliance_engine_contract_leg
 }
 
 phase_stack() {

@@ -304,6 +304,7 @@ _phase_install_initial() {
     fi
     if provisioning_settled 900 && ! provisioning_setup_failed; then
         phase_miner_connection_installed "$install_handoff"
+        appliance_engine_contract_leg
     else
         bad "installed connection identity cannot be checked before provisioning succeeds (#3092)"
     fi

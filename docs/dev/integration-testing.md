@@ -231,7 +231,7 @@ Useful flags (full list in `run.sh --help`):
 | `--host <user@host>` / `--local` | Drive the box over SSH, or a stack on this machine. |
 | `--dir <path>` | The Pithead stack directory on the box, relative to the SSH login dir or absolute (default `pithead`). Avoid a literal `~`; your local shell expands it before the box sees it. |
 | `--pithead <cmd>` | How to invoke pithead there (e.g. `"sudo ./pithead"`). |
-| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. LAN guard namespace probes, rule flushes, boot-failure injection and node restarts run only in deploying scenarios. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion. With XvB off, both this check and deploying scenarios observe 95 seconds of dashboard logs after at least 60 seconds of uptime: no early P2Pool dwell exit and at most one P2POOL switch. The shipped dwell must exceed the observation window. An unstarted algorithm or rejected workers skip by design; unreadable probes or a dashboard restart fail. It also runs `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. `/metrics` through Caddy needs `IT_DASHBOARD_PASSWORD` (env; never a flag — the box's real dashboard login plaintext, only the bcrypt hash of which the box itself can produce) when the box has a dashboard login set; without it the leg is a counted `missing` skip ([#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058)). This is a bench operator input, not a dev-checkout default: on the bench-ci-run boxes it is supplied via the runner's own per-tier knob, `[tiers."pithead/tier4-e2e"] env = { IT_DASHBOARD_PASSWORD = "…" }` in bench-ci's config, the same mechanism RigForge's `tier4-e2e` already uses for `stratum_pass`/`dash_auth` — never through this repo or a request body. |
+| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. LAN guard namespace probes, rule flushes, boot-failure injection and node restarts run only in deploying scenarios. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion. With XvB off, both this check and deploying scenarios observe 95 seconds of dashboard logs after at least 60 seconds of uptime: no early P2Pool dwell exit and at most one P2POOL switch. The shipped dwell must exceed the observation window. An unstarted algorithm or rejected workers skip by design; unreadable probes or a dashboard restart fail. It also runs `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. `/metrics` through Caddy needs `IT_DASHBOARD_PASSWORD` (env; never a flag — the box's real dashboard login plaintext, only the bcrypt hash of which the box itself can produce) when the box has a dashboard login set; without it the leg is a counted `missing` skip ([#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058)). The appliance `stack` phase supplies its own wizard handoff password to each harness invocation through this environment input. `e2e.sh` forwards the caller-supplied value to both inline pregates and the detached harness through stdin records, then scopes it to each target process environment. Newlines are refused; empty input retains the missing skip and incorrect input fails the metrics assertion. The value is not written into the generated runner or command arguments. For a persistent DIY stack, this is a bench operator input, not a dev-checkout default: on the bench-ci-run boxes it is supplied via the runner's own per-tier knob, `[tiers."pithead/tier4-e2e"] env = { IT_DASHBOARD_PASSWORD = "…" }` in bench-ci's config, the same mechanism RigForge's `tier4-e2e` already uses for `stratum_pass`/`dash_auth` — never through this repo or a request body. |
 | `--readiness` | Non-destructive: assess whether the box is fit to be a release/validation server (Monero caught up within 240 s, Tari dashboard sync `done` within 240 s, `pithead status` healthy within 240 s, snapshot-capable FS, disk headroom, secrets owner-only, dashboard localhost-only). A Tari-only timeout tells bench-ci to restore and retry as an environment wait. See [Release Server](release-server.md). |
 | `--scenario <name>` | Run just one scenario. |
 | `--workers <n>` | Miners expected online while mining (default `2`). |
@@ -828,7 +828,9 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   SOCKS config, and asserts the outcome its config calls for. With the firewall **on** (the default)
   the dial must be DROPPED, and the same container must still reach clearnet *through* Tor's SOCKS —
   that second dial is the within-row control, without which a DROP and a bench with no route to the
-  internet are the same observation. On the `network.tor_egress_firewall=false` row the dial must
+  internet are the same observation. The control gets up to three attempts, with retries isolated by SOCKS username,
+  because one stream through a random exit fails now and then; the DROP dial stays single-shot,
+  because a timeout is its expected result ([#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)). On the `network.tor_egress_firewall=false` row the dial must
   SUCCEED and no `pithead-tor-egress`-tagged rule may be installed. Every other firewall leg here
   checks state, not effect: `assert_egress_posture` samples the public connections the apps *chose*
   to make, excluding the firewall's four accepted non-public ranges. A failure retains each remote
@@ -1279,12 +1281,20 @@ version records `version_withheld_as_stale`; unavailable staleness stays unknown
 projection omits names, addresses, credentials, configs and free text, stays below 2048 bytes,
 and has a five-second computation bound. Invalid JSON and capture failures are explicit.
 No request, retry or wait is added; the original assertion and failure count are unchanged.
-The shared Tor-egress control also records each original SOCKS
-request in `results/tor-egress-probes/probe-<sequence>.txt` and the harness transcript,
-before the caller reports its verdict or restores the stack. Each record contains the
-per-run sequence, original target/SSH exit status, harness-observed elapsed seconds and
-an exit-code class. The curl command, 30-second limit and pass/fail row are unchanged;
-no second request supplies its evidence. Silent curl exposes no error text or request
+The shared Tor-egress control also records each SOCKS request in
+`results/tor-egress-probes/probe-<sequence>.txt` and the harness transcript, before the
+caller reports its verdict or restores the stack. Each record contains the per-run
+sequence, target/SSH exit status, harness-observed elapsed seconds and an exit-code class.
+Attempt 1 is the original request: the same curl command and 30-second limit, recorded as
+`original-socks-probe`. One stream through a random exit fails now and then
+([#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)), so only after a
+non-zero exit does the control make up to two more attempts (`TOR_CONTROL_DIAL_ATTEMPTS`
+in `tests/integration/lib/tor-control-dial.sh`, shared with the appliance leg). Each retry
+uses `-m 45` and its own `--proxy-user`, so Tor builds a fresh circuit, and is recorded
+as `retry-socks-probe` with its own sequence and `attempt=`. The row passes if any attempt
+connects. A pass after a retry names the attempt that connected and the failures before
+it; a final failure names all three. A later success never replaces an earlier failure's
+record. Silent curl exposes no error text or request
 stage, so a timeout remains `timeout-stage-unknown`; exit 255 remains ambiguous between
 target and SSH failure. Healthy Tor or a later successful request does not diagnose the
 failed request. Records contain only numbers and fixed labels, without endpoints, raw

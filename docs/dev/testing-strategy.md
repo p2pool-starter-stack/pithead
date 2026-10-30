@@ -34,7 +34,7 @@ only the KVM job establishes boot and browser behavior.
 
 | Tier | What it is | Simulates | Where it runs |
 |---|---|---|---|
-| **1 — Unit** | `dashboard/tests/` (pytest, mocked clients) and `tests/stack/` (shell, `docker`/`sudo` stubbed) | Decision logic & field mapping: sync-gate, failover, node-health debounce, XvB engine, `/api/state` shapes, `pithead` config/status logic | Every PR (`make test`) |
+| **1 — Unit** | `dashboard/tests/` (pytest, mocked clients) and `tests/stack/` (shell, `docker`/`sudo` stubbed) | Decision logic & field mapping: sync-gate, failover, node-health debounce, XvB engine, `/api/state` shapes, `pithead` config/status logic | Every PR (dedicated CI jobs) |
 | **2 — Contract** | `tests/integration/fakes/test_contract.py` | The real Monero/Tari clients parsing real daemon wire formats, and `requests` completing a capped HTTP request through a fake SOCKS5 CONNECT proxy | Every PR (docker-free) |
 | **3 — Mini-stack** | `tests/integration/mini-stack/` (real dashboard + docker-control vs fake daemons) | The control plane **end-to-end with real containers**: dashboard requests cross the host-runner spool, and hold/release plus reject/readmit actually stop/start `p2pool`/`xmrig-proxy`, driven deterministically | CI with Docker (`make test-mini-stack`) |
 | **4 — Live matrix** | `tests/integration/run.sh` against a real, synced box — and, for the appliance channel, `tests/os/run.sh`, the KVM battery for the flashed image | What only reality proves: real merge-mining, prune/full DB size, Caddy TLS, Tor onions, HugePages, fault injection for real container health verdicts — and, for the image, built-artifact invariants before EFI boot, A/B commit/rollback, install-to-disk | Every PR that changes what runs on a box, as a bench-ci job on the PR's head (see [What a PR must prove](#what-a-pr-must-prove)); and the release gate — two independent `tier4-kvm` phase groups followed by a `tier4-e2e` aggregate on the exact release commit, required by `release.sh`'s `bench-ci/tier4` preflight (see the [release recipe](releasing.md#which-gates-are-automated-and-which-are-not)) |
@@ -179,6 +179,50 @@ the split gives both expensive control groups separate budgets. Before any block
 `run.sh` checks that every suite file sits in exactly one block, that sourced fragments have domain
 accounting, and that the workflow matrix lists every block. Audit parser failures stop execution;
 tally producer failures and counts that are not nonnegative integers stop the full-run verdict.
+
+`tests/inventory.sh` also runs `tests/registration-audit.py`. It follows workflow
+commands, reachable Make targets, shell selftest globs, executable sibling paths
+relative to their runner and the audited stack blocks.
+A local Make target alone is not CI registration. New standalone tests must be
+executed by a reachable runner; sourcing them does not register them. The reviewed
+existing indirect callers are in `tests/registration-allowlist.tsv`; missing callers,
+removed files and unnecessary exceptions fail the audit. The Tor recovery-info and
+netwatch selftests run in the standalone Shell job. The scenario inventory selftest
+retains the complete registration-audit inputs in its sandbox and changes only the
+scenario table, so its enumeration checks also run the real registration guard.
+
+The appliance install and stack phases run `appliance-engine-contract-leg.sh`.
+`engine-contract.py` extracts the CLI's ps filters, inspect templates and Compose ps
+forms, expands status loops and the configless wrapper callers, maps configured
+project filters to the isolated fixture, and refuses unknown variable arguments or
+output contracts. The guest exercises running and stopped
+isolated Compose fixtures, requires RC3's restarting census to fail with Podman's
+exit 125, then requires status and the actual integration predicate to reject a
+Caddy crash loop. An independent 30-second restart/start-time observation establishes
+churn; its timestamp and count come from one tab-delimited inspect response, so
+spaces in Podman timestamps remain part of the identity. Both samples must be
+readable, and the second is taken at least 30 seconds after the first. Caddy
+restoration and predicate recovery must pass. The guest passes the
+staged helper directory as `ENGINE_CONTRACT_WORK`; the predicate sources its copied
+churn helper and extracted status predicate from that directory. The extraction selftest
+runs through the OS selftest glob in CI. Failed engine legs print bounded guest
+stderr and SSH transport diagnostics; the transport selftest checks both channels
+and rejects a pass marker from a command that failed. That transport unit uses the
+checked-out commit as its Git staging fixture so shallow CI needs no historical
+objects; the appliance run still requires the real RC3 baseline. StartedAt output
+contracts accept Docker RFC3339 and Podman's spaced timestamp with numeric offset
+and zone, both alone and inside the container identity. Malformed identities still
+fail; diagnostics report character and field counts without exposing output values.
+
+Strict coverage is opt-in: `PITHEAD_REQUIRE_COMPLETE=1` makes both the integration
+summary and appliance exit gate fail on every missing skip. The appliance runner
+also accepts `--require-complete`. By-design and covered skips retain their meaning;
+an invalid mode fails. `selftest-required-coverage.sh` drives the actual verdicts and
+stack/rig missing-input branches. Managed jobs use the boolean
+`options.require_complete` for KVM and e2e. The e2e wrapper validates the environment
+flag before remote work and pins it in the SSH launch, inline pregates and generated
+detached runner. Its forwarding selftest executes the installed runner against the
+real missing-skip verdict, including controls that remove SSH or runner forwarding.
 
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the
@@ -472,7 +516,7 @@ than inventing an appliance-side vocabulary next to it.
 | Behaviour | DIY gate (`tests/integration`) | Appliance gate (`tests/os`) |
 |---|---|---|
 | Containers up, `pithead status` verdicts | ✓ | ✓ |
-| Dashboard through Caddy, basic_auth | ✓ (`/metrics` leg still missing, #2058) | ✓ |
+| Dashboard through Caddy, basic_auth | ✓ (`/metrics` leg still missing, #2058) | ✓ (`stack` forwards its wizard handoff password to the authenticated `/metrics` probe) |
 | Tor-only egress enforced (steady-state observation) | ✓ | one row, red on first execution (#2059) |
 | Egress-firewall opt-out actually opens clearnet | ✓ (matrix scenario) | ✗ by-design (a scratch guest has no clearnet exposure surface to observe safely) |
 | XvB over Tor, XvB routing | ✓ | ✗ — the `stack` phase drove `--xvb-routing-smoke` once (job 510): the baseline rows and the P2Pool route passed, then the Tor-isolation probe failed and reported only its own static guess, because the probe discards every byte of its output. Not run from the phase until that is readable: #2444 |

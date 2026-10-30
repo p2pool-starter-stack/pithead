@@ -28,6 +28,17 @@ install-to-disk, the rig role, and the update → commit → rollback cycle that
 exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
+Install and stack also run `appliance-engine-contract-leg.sh`: current CLI engine
+forms must work against running and stopped Podman fixtures, RC3's restarting
+filter must fail, and status plus the integration predicate must reject observed
+churn and recover after restoration. `selftest-engine-contract.sh` checks literal,
+loop and unresolved extraction cases in tier 1.
+
+Pass `--require-complete` or set `PITHEAD_REQUIRE_COMPLETE=1` to fail the final
+verdict whenever a skip is classified missing. By-design and covered skips remain
+accepted. The same environment flag applies to the integration summary. Managed
+KVM and e2e jobs accept the boolean `options.require_complete`; set it to true to
+request strict coverage through the managed launch.
 
 After initial provisioning has settled, `provision` runs `tor-recover check` in the guest
 with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and
@@ -179,7 +190,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   served, generated login authenticating, firstboot and system journals free of bcrypt credentials,
   built-in miner up. Journal reads must succeed and contain entries; the check never prints matched hashes. The Tor-only egress enforcement backstop — a real clearnet dial from a
   mining container, which must be DROPPED while the same container still reaches clearnet through
-  Tor's SOCKS — runs on EVERY path through this phase, including the aborting ones, and reports RED
+  Tor's SOCKS (up to three attempts, with retries isolated by SOCKS username, [#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)) — runs on EVERY path through this phase, including the aborting ones, and reports RED
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
   ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
@@ -425,7 +436,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   (podman through the docker shim, read-only root, `/data/pithead`, the control runner as a systemd
   unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
   --auth-fail-closed` against the `remote-main-secure-tari` scenario, then
-  `remote-main-stratum-tls`. The latter runs the shipped XMRig against the guest proxy: wrong
+  `remote-main-stratum-tls`. Each invocation receives the wizard handoff password through
+  `IT_DASHBOARD_PASSWORD`, scoped to the harness process. The authenticated `/metrics` probe
+  sends it to curl through stdin configuration; it never enters shell, SSH or curl arguments.
+  Missing input remains a counted `missing` skip; an incorrect login fails the metrics assertion,
+  and a failed harness invocation fails its battery row. `selftest-stack-credentials.sh` exercises
+  the launch boundary, metrics assertion, credential scope and failure propagation.
+  The latter scenario runs the shipped XMRig against the guest proxy: wrong
   and unconfigured passwords and a changed TLS pin must be refused with no job, active
   connection or accepted share for 120 seconds each. A separate raw probe omits the wire
   password. Fixture setup authenticates without submissions and disconnects to retain a

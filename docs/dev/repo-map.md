@@ -394,3 +394,8 @@ Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugep
 `lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
+
+The appliance engine compatibility contract is in `tests/os/engine-contract.py`
+and `tests/os/appliance-engine-contract-leg.sh`, called by install and stack.
+CI registration is audited by `tests/registration-audit.py` through the inventory
+step. RC-found proof references are checked by `scripts/lint/rc-regression-proof.py`.
