@@ -381,7 +381,12 @@ via an `EXIT` trap):
    drift is loud instead of a stale config being deployed silently. Either way the seed carries
    the same wallet, secrets, onion keys, and shared `monero/tari/p2pool` data dirs — only the
    branch's code differs.
-3. Safety backup (`pithead backup`) as the rollback anchor.
+3. Checks both the seeded and canonical configurations' `config_version` against the candidate `VERSION`, then
+   takes a safety backup (`pithead backup`) as the rollback anchor. A newer configuration,
+   unreadable input or invalid version refuses before backup, wallet capture, miner borrowing
+   or candidate deployment; this refusal does not run the wrapper's restore. Use a candidate
+   at least as new as the configuration, or a compatible isolated baseline through the queue.
+   Never lower a baseline stamp or bypass the product's newer-backup restore guard.
 4. Borrows a miner (default the configured miner): backs up its xmrig config and repoints it at the
    bench so the matrix has a real worker mining through this stack (1 worker → run with `--workers 1`).
    Scenarios with a stratum password hand the rendered credential to the borrowed test pool
@@ -585,6 +590,10 @@ first, which can take upward of 20 minutes ([#2455](https://github.com/p2pool-st
 once. `check` is pure reads only. `matrix` is the opt-in full destructive
 config sweep (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
 two rig phases, all under `--safety-backup` auto-rollback) for a pre-release tier-4 gate.
+The harness checks restore-version compatibility again before its own post-deployment safety
+backup. This also protects standalone `run.sh --safety-backup` runs before destructive scenarios.
+The wrapper owns baseline/candidate admission; the product restore guard remains the final
+promotion boundary. Exact configuration and secret recovery assertions remain binding.
 The harness runs `--subnet` before lifecycle: lifecycle's uninstall removes `wallet_data` by design, so a later
 subnet phase would assert the Monero payout wallet mid-rescan ([#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026)).
 The rig phases are gated on a borrowed miner rather than on the mode: the release runbook mandates

@@ -794,8 +794,13 @@ Not yet covered. The road to full production confidence.
   conns, prune display); the fake Tari binding gRPC to loopback; and the mini-stack's
   container-name/port isolation. Still pending: the full destructive config matrix run on the box
   (its read path is already proven via `--check`).
-- Destructive-matrix safety. ✅ `run.sh --safety-backup` takes a real `pithead backup` before the
-  destructive scenarios and automatically rolls the box back (down → restore → up) if anything
+- Destructive-matrix safety. ✅ The e2e wrapper rejects a seeded or canonical configuration newer than the
+  candidate before backup or deployment. `run.sh --safety-backup` repeats the compatibility
+  check before taking a real `pithead backup` and running destructive scenarios. Both checks
+  fail closed on unreadable inputs or invalid versions; an absent stamp means `2.0.0`.
+  `selftest-restore-version-admission.sh` exercises compatible admission and incompatible-pair
+  refusal without backup, borrowing, deployment or restoration. The harness
+  automatically rolls the box back (down → restore → up) if anything
   fails; the archive is removed on success. So the matrix can run on a precious box with a
   one-command config/secret/dashboard rollback net. The image-upgrade gate separately requires
   CoW snapshots for chain and all other writable-mount recovery.
