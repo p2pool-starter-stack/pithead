@@ -1,5 +1,5 @@
 name: Issue 2727 isolated acceptance
-run-name: Issue 2727 acceptance at 004958bc
+run-name: Issue 2727 acceptance at 9ccf2d1b
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 004958bccaf0d89e81574e51a211ef316a0d2344
+          ref: 9ccf2d1ba23f4ec942ef2999c27d424de9ba97a3
           fetch-depth: 0
           persist-credentials: false
       - name: Stage approved acceptance inputs outside checkout
@@ -43,7 +43,7 @@ jobs:
           PY_STAGE
       - name: Run corrected acceptance at the candidate commit
         run: |
-          test "$(git rev-parse HEAD)" = 004958bccaf0d89e81574e51a211ef316a0d2344
+          test "$(git rev-parse HEAD)" = 9ccf2d1ba23f4ec942ef2999c27d424de9ba97a3
           test -z "$PITHEAD_VM_TEARDOWN_TIMEOUT"
           proof_rc=0
           python3 "$RUNNER_TEMP/acceptance-2727/accept_2727.py" --results "$RUNNER_TEMP/acceptance-2727" > "$RUNNER_TEMP/acceptance-2727/output.txt" 2>&1 || proof_rc=$?
