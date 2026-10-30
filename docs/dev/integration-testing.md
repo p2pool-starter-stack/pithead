@@ -320,6 +320,10 @@ tests/integration/e2e.sh claude/my-feature --mode matrix   # full config sweep (
 `--mode check` is the exception to that mutation workflow: it provisions only the disposable branch
 checkout so its harness code is available, then runs those reads against the currently active install
 directory. It does not take a stack backup, borrow a miner, deploy the branch, or run a restore.
+`--workers` defaults to `1` and accepts `0` in check mode or with `--no-miner`.
+Deploying modes that borrow a miner require a positive integer; other runs accept nonnegative integers.
+`selftest-e2e-boundary.sh` checks these worker-count rules before SSH, including
+zero-worker runs and malformed counts.
 
 Pre-flight, before anything is locked or borrowed: the wrapper waits up to 120 seconds for both
 chains to read `done` on the bench dashboard's sync panels. This allows a brief `loading` state
@@ -1322,11 +1326,12 @@ asserted invocation. Before each doctor assertion, the check phase emits its exa
 These prefixes keep doctor diagnostics separate from harness verdict rows. The wrapper retains
 this transcript across phase cleanup. The same invocation is also saved under
 `results/check/doctor-asserted.*/output.txt` with `exit-code.txt`, in a separate directory per
-invocation. The e2e wrapper sends the check pregate to its collected
-`results/pregate-check/` directory, separate from the destructive harness's results.
-Its `check/doctor-asserted.*/output.txt` and `exit-code.txt` survive the destructive
-preflight. The wrapper clears prior check results at preflight in every mode and again before
-readiness, so a refused job or a read-only check cannot collect prior doctor evidence.
+invocation. The e2e wrapper sends readiness and check pregates to collected
+`results/pregate-readiness/` and `results/pregate-check/` directories, separate from the
+destructive harness's results. Both manifests and all pregate captures, including
+`check/doctor-asserted.*/output.txt` and `exit-code.txt`, survive subsequent preflights.
+The wrapper clears both pregate directories at preflight in every mode and again before
+readiness, so a refused job or a read-only check cannot collect prior-job evidence.
 Later diagnostic snapshots cannot replace an asserted invocation. Capture
 failures add a failed evidence row; the original doctor exit code is still asserted. This adds
 no retry or readiness wait and does not establish the cause of a transient failure. The pure regressions are
