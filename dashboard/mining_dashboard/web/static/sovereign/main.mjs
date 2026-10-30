@@ -1,4 +1,5 @@
 import { html, render } from "../app/preact.mjs";
+import { EarningsPage } from "./earnings.mjs";
 import { createNavigation, PAGES, readRoute, routeUrl } from "./navigation.mjs";
 import { createPolling } from "./polling.mjs";
 import { Shell } from "./shell.mjs";
@@ -36,6 +37,16 @@ export function initSovereign({
   let route = readRoute(initial, read("dashboardView"));
   win.history.replaceState(null, "", routeUrl(initial, route.page, route.advanced));
   let data = { snapshot: null, connected: true, sessionExpired: false };
+  const dirtyEarnings = new Set();
+  const pageRenderer = (page, state) =>
+    renderPage?.(page, state) ||
+    (page === "earnings"
+      ? html`<${EarningsPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
+        url=${win.location.href} onDirtyChange=${(key, dirty) => {
+          if (dirty) dirtyEarnings.add(key);
+          else dirtyEarnings.delete(key);
+        }} />`
+      : null);
   const paint = () => {
     doc.title = `Pithead — ${PAGES[route.page][0]}`;
     render(
@@ -47,14 +58,14 @@ export function initSovereign({
         doc.documentElement.dataset.theme = theme;
         paint();
       }} onNavigate=${(page, section) => navigation.go(page, section)}
-      onRetry=${() => polling.tick()} renderPage=${renderPage} renderSection=${renderSection} />`,
+      onRetry=${() => polling.tick()} renderPage=${pageRenderer} renderSection=${renderSection} />`,
       root,
     );
   };
   const navigation = createNavigation({
     win,
     preference: read("dashboardView"),
-    dirty: hasUnsavedChanges,
+    dirty: () => hasUnsavedChanges() || dirtyEarnings.size > 0,
     onChange: (next) => {
       const pageChanged = route.page !== next.page;
       route = next;

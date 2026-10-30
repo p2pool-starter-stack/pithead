@@ -31,10 +31,35 @@ not hide known Monero progress. Progress is unknown when an unfinished gating ch
 The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
-and asks the operator to sign in again when the session expires. Its page bodies and most Settings
-controls are still being built; the preview does not announce a cutover from the legacy UI. The
+and asks the operator to sign in again when the session expires. Earnings shows recorded payouts;
+the other page bodies and most Settings controls are still being built. The preview does not
+announce a cutover from the legacy UI. The
 drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
 [#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
+
+### Earnings in the lean preview
+
+Earnings lists confirmed Monero payouts newest first, with amounts and dates. Tari payouts and
+the full Tari block reward appear only while Tari runs. The history range is stated beside the
+list. Missing history is not zero income: disabled tracking, an unreachable wallet, an address
+mismatch and partial history carry an incomplete-tracking notice. **Advanced › Payout tracking**
+links to the Payout section; its editor belongs to the Settings implementation.
+
+Return estimates, the expected share interval and the expected-versus-recorded comparison remain
+unavailable pending [dynamic PPLNS window support](https://github.com/p2pool-starter-stack/pithead/issues/2479).
+The page does not use the legacy calculator or a fixed window. Tari interval and long-run average
+figures remain unavailable because their input freshness is not reported. A long-run average is
+not a daily payment. The assumptions sentence names the network and price sources and reports
+the price-feed age when supplied; no fiat return or net-after-power figure is calculated.
+
+The XvB line reports on/off and the latest recorded routed donation percentage with its date;
+missing or disconnected observations remain unavailable. **Join the XvB bonus** and
+**Electricity price** are the two page controls when the host settings editor is enabled.
+Each opens the host's current value, preserves masked secrets and unrelated settings, and uses
+the existing preview, typed confirmations and apply-result contract. Electricity is priced per
+kWh in the configured currency; zero leaves power cost unset. Read-only hosts and disconnected
+sessions show neither control. Tier and expert Earnings settings remain in Advanced under the
+Settings work. The preview adds no hashrate scenario, coin tabs or assumptions toggle.
 
 ---
 
