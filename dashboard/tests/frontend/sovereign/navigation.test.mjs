@@ -74,3 +74,23 @@ test("navigation, back/forward and reload guard unsaved drafts without duplicate
   navigation.close();
   assert.equal(handlers.size, 0);
 });
+
+test("chart query updates remain in navigation history and keep deep-link targets", () => {
+  const win = { location: { href: "https://example.test/ui-preview?page=overview&range=1w&tab=kept" },
+    history: { state: null, replaceState(_state, _title, url) { win.location.href = String(url); }, pushState(_state, _title, url) { win.location.href = String(url); } },
+    addEventListener() {}, removeEventListener() {}, confirm: () => true };
+  const navigation = createNavigation({ win, onChange() {} });
+  navigation.query({ from: 100, to: 200 });
+  navigation.go("machines", "pool-and-rigs", { worker: "rig-alpha" });
+  let query = new URL(win.location.href).searchParams;
+  assert.equal(query.get("worker"), "rig-alpha");
+  assert.equal(query.get("range"), "1w");
+  assert.equal(query.get("from"), "100");
+  assert.equal(query.get("tab"), "kept");
+  navigation.query({ range: "24h", from: null, to: null });
+  navigation.go("overview");
+  query = new URL(win.location.href).searchParams;
+  assert.equal(query.has("from"), false);
+  assert.equal(query.get("range"), "24h");
+  navigation.close();
+});

@@ -41,9 +41,6 @@ from mining_dashboard.web.views.charts import (
     canonical_window,  # noqa: F401 — re-export for server.py
     parse_window,  # noqa: F401 — re-export for server.py
 )
-
-# The header's address block lives in web/views/header.py (#1853): the hostname/IP line and the
-# .onion URL under it are ways IN to the machine, not readings off it.
 from mining_dashboard.web.views.header import dashboard_onion, host_display_addr
 from mining_dashboard.web.views.infra_views import (
     _rigforge_display,  # noqa: F401 — re-export for worker_detail.py
@@ -56,15 +53,8 @@ from mining_dashboard.web.views.infra_views import (
     build_workers,
     rigforge_update_for,  # noqa: F401 — re-export for worker_detail.py
 )
-
-# The host/rig/node status sections live in web/views/infra_views.py (#1105). views.py stays the
-# facade: build_state assembles these sections, build_pool_network uses the address elider, and
-# the last two are re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
 from mining_dashboard.web.views.monero_view import build_monero
-
-# The time-series sections live in web/views/series_views.py (#1105). views.py stays the facade:
-# build_state assembles these sections and reads the palette and the window reject rate, and
-# _gauge_series is re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
+from mining_dashboard.web.views.overview_views import build_mining_activity, build_overview
 from mining_dashboard.web.views.series_views import (
     _gauge_series,  # noqa: F401 — re-export for worker_detail.py
     _mode_palette,
@@ -312,6 +302,14 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     )
     badges.append(_egress_badge(egress["summary"]))
     return {
+        "overview": build_overview(data, metrics, monero_payouts, history),
+        "overview_activity": build_mining_activity(
+            data.get("shares", []),
+            state_mgr.get_events(),
+            state_mgr.get_blocks(),
+            monero_payouts,
+            raffle_wins,
+        ),
         "syncing": metrics.global_syncing,
         "tari_gates_sync": bool(config.TARI_REQUIRED and not data.get("sync_gate_monero_only")),
         "page_title": "Pithead Dashboard - Syncing"

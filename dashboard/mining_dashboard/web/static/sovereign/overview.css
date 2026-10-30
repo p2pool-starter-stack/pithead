@@ -1,0 +1,94 @@
+.overview-page {
+  min-width: 0;
+}
+.overview-hero {
+  border-top: 2px solid var(--accent);
+}
+.overview-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+.overview-tiles article {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.overview-tiles strong {
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-variant-numeric: tabular-nums;
+}
+.overview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+}
+.overview-row h2 {
+  margin: 0;
+}
+.overview-canvas {
+  position: relative;
+  height: 300px;
+  min-width: 0;
+}
+.overview-canvas canvas {
+  max-width: 100%;
+}
+.destination-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0;
+  list-style: none;
+}
+.destination-dot {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.5em;
+}
+.destination-p2pool {
+  background: var(--accent);
+}
+.destination-xvb {
+  background: var(--ok);
+}
+.destination-project {
+  background: var(--warn);
+}
+.destination-xmrig {
+  background: var(--bad);
+}
+.activity-list {
+  padding-left: 1.25rem;
+}
+.activity-list li {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.activity-list time {
+  display: block;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.overview-page a,
+.payout-marker-link {
+  overflow-wrap: anywhere;
+}
+.payout-marker-link {
+  display: block;
+  padding-block: 0.5rem;
+}
+.overview-chart fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+@media (max-width: 900px) {
+  .overview-tiles {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

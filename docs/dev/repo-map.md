@@ -421,3 +421,9 @@ The e2e wrapper captures required pre-run systemd unit states through
 `tests/integration/lib/restore-unit-state.sh`. Restoration checks their capture records before
 unit removal; `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads
 and state lost between preflight and restoration.
+
+The lean Overview lives in `dashboard/mining_dashboard/web/static/sovereign/overview.mjs`,
+with its chart and pure model alongside it. `dashboard/mining_dashboard/web/views/overview_views.py` supplies raw
+readings through the dashboard state. Frontend regressions are under
+`dashboard/tests/frontend/sovereign/`; `dashboard/tests/browser/overview.test.mjs` retains
+phone, tablet and desktop screenshots in the `sovereign-visual-proof` CI artifact.

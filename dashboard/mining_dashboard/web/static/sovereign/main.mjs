@@ -1,5 +1,7 @@
 import { html, render } from "../app/preact.mjs";
 import { createNavigation, PAGES, readRoute, routeUrl } from "./navigation.mjs";
+import { Overview, OverviewAdvanced } from "./overview.mjs";
+import { RANGES } from "./overview-model.mjs";
 import { createPolling } from "./polling.mjs";
 import { Shell } from "./shell.mjs";
 
@@ -33,9 +35,33 @@ export function initSovereign({
     read("pitheadPage")
   )
     initial.searchParams.set("page", read("pitheadPage"));
+  if (!initial.searchParams.has("range")) initial.searchParams.set("range", "24h");
   let route = readRoute(initial, read("dashboardView"));
   win.history.replaceState(null, "", routeUrl(initial, route.page, route.advanced));
   let data = { snapshot: null, connected: true, sessionExpired: false };
+  let lastQuery = win.location.search;
+  let pendingChart = false;
+  const refresh = () => {
+    pendingChart = true;
+    void polling.tick();
+  };
+  const chartProps = () => ({
+    state: data.snapshot,
+    connected: data.connected,
+    fetchFn,
+    range: Object.hasOwn(RANGES, new URL(win.location.href).searchParams.get("range"))
+      ? new URL(win.location.href).searchParams.get("range")
+      : "24h",
+    window: data.snapshot?.window,
+    onRange: (range) => {
+      navigation.query({ range, from: null, to: null });
+      refresh();
+    },
+    onWindow: (window) => {
+      navigation.query({ from: window?.from, to: window?.to });
+      refresh();
+    },
+  });
   const paint = () => {
     doc.title = `Pithead — ${PAGES[route.page][0]}`;
     render(
@@ -47,7 +73,8 @@ export function initSovereign({
         doc.documentElement.dataset.theme = theme;
         paint();
       }} onNavigate=${(page, section) => navigation.go(page, section)}
-      onRetry=${() => polling.tick()} renderPage=${renderPage} renderSection=${renderSection} />`,
+      onRetry=${() => polling.tick()} renderPage=${renderPage || ((page) => (page === "overview" ? html`<${Overview} ...${chartProps()} />` : null))}
+      renderSection=${renderSection || ((section) => html`<${OverviewAdvanced} section=${section} ...${chartProps()} />`)} />`,
       root,
     );
   };
@@ -61,6 +88,10 @@ export function initSovereign({
       save("pitheadPage", route.page);
       paint();
       if (pageChanged) doc.getElementById("page-title")?.focus();
+      if (lastQuery !== win.location.search) {
+        lastQuery = win.location.search;
+        refresh();
+      }
     },
   });
   const polling = createPolling({
@@ -69,11 +100,18 @@ export function initSovereign({
       const query = new URLSearchParams();
       for (const key of ["range", "from", "to", "avg"])
         if (params.has(key)) query.set(key, params.get(key));
+      if (!Object.hasOwn(RANGES, query.get("range"))) query.set("range", "24h");
       return fetchFn(`/api/state?${query}`, { signal, cache: "no-store" });
     },
     publish: (next) => {
       data = next;
       paint();
+      if (pendingChart) {
+        pendingChart = false;
+        setTimeout(() => {
+          void polling.tick();
+        }, 0);
+      }
     },
   });
   doc.documentElement.dataset.theme = theme;
@@ -98,7 +136,7 @@ export function initSovereign({
       return;
     event.preventDefault();
     const target = readRoute(url);
-    navigation.go(target.page, target.advanced);
+    navigation.go(target.page, target.advanced, Object.fromEntries(url.searchParams));
   };
   root.addEventListener("click", click);
   paint();
