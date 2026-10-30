@@ -32,9 +32,31 @@ The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
 and asks the operator to sign in again when the session expires. Its page bodies and most Settings
-controls are still being built; the preview does not announce a cutover from the legacy UI. The
-drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
-[#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
+controls are still being built; the preview does not announce a cutover from the legacy UI.
+
+**Advanced › Maintenance** runs the existing read-only health check and groups its report by service,
+workers and machine checks, with the report timestamp. Waiting means the request may be queued or
+running; the 80-second browser wait limit does not prove host failure. Failed requests and missing
+reports show their reason, and the last successful report stays mounted across drawer navigation.
+The server-health card shows the current CPU/load, RAM, disk, HugePages, database and version
+readings. Missing swap, uptime, history and forecast readings remain unavailable; a server without
+a local miner is not treated as unhealthy for that reason. Mining help links to Machines, Earnings
+and node settings and separates observations from possible explanations.
+
+**Prepare support bundle** collects the browser-safe reports described under
+[Service diagnostics](#service-diagnostics). Review the collected identifiers, then check the
+review confirmation before **Download reviewed bundle** becomes available. A new collection clears
+the earlier review. The preview replaces individual service-log buttons with this reviewed export;
+it does not offer generic service restart controls or expose wallet-service logs. Host actions are
+disabled when the control channel is off; collecting and downloading a bundle also requires a
+signed-in identity.
+
+**Advanced › Inspect** lists configured topology nodes and transport-labeled connections, with an
+optional internal mesh and a service inspector linking to node settings. Configuration is separate
+from observed node health: the diagram does not measure traffic or RPC/ZMQ/gRPC reachability.
+Monero, active Tari, network and pool statistics use the current snapshot and its timestamp; missing
+readings remain unavailable. The internal-mesh preference persists between visits when browser storage
+is available; a refused read or save shows a notice and inspection still works for the current visit.
 
 ---
 
@@ -1552,6 +1574,13 @@ daemon, use the support bundle or the console.
 
 If you pick a service the host will not read logs for, the host refuses and the panel shows its
 reason as-is rather than guessing at one.
+
+The browser support API collects diagnostics through authenticated `POST /api/control/diag-bundle`
+with `X-Pithead-Control: 1`. Its actor-bound result includes only the redacted doctor report and the
+existing nine-service log allowlist, bounded to 200 lines and 65,536 bytes per log. Wallet-service
+logs and the full CLI archive are excluded. After reviewing identifiers, `POST /api/control/bundle-download`
+with `{id, reviewed:true}` returns fixed, private archive members with no-store caching. These routes
+back **Advanced › Maintenance** in the opt-in lean preview. The full CLI archive remains host-only.
 
 ## Backup view
 

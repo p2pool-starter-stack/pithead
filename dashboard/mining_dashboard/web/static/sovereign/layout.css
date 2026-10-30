@@ -121,6 +121,46 @@ nav a[aria-current="page"] {
 .drawer-search input {
   width: 100%;
 }
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 0.5rem;
+}
+.facts div {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem;
+  overflow-wrap: anywhere;
+}
+.facts dt {
+  color: var(--muted);
+}
+.facts dd {
+  margin: 0;
+}
+.review {
+  max-height: 40vh;
+  overflow: auto;
+}
+.topology-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 0.7rem;
+  list-style: none;
+  padding: 0;
+}
+.topology-map li {
+  display: grid;
+  gap: 0.25rem;
+}
+.review-label {
+  display: flex;
+  align-items: start;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.review-label input {
+  margin-top: 0.4rem;
+}
 .route-announcement {
   position: absolute;
   width: 1px;

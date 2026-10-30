@@ -16,7 +16,12 @@ from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
 from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
-from mining_dashboard.web.views import diagnostics_views, download_views, sovereign_views
+from mining_dashboard.web.views import (
+    browser_bundle_views,
+    diagnostics_views,
+    download_views,
+    sovereign_views,
+)
 from mining_dashboard.web.views.charts import canonical_window, parse_window
 from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
 from mining_dashboard.web.views.prometheus import render_prometheus
@@ -441,7 +446,7 @@ async def handle_control_result(request):
         raise web.HTTPBadRequest(text="'id' must be a UUID.") from None
     if res is None:
         return web.json_response({"status": "pending"}, status=202)
-    return web.json_response(res)
+    return browser_bundle_views.result_response(request, res)
 
 
 # --- Security logs (#349) ---------------------------------------------------------------------
@@ -614,6 +619,7 @@ def create_app(state_manager, latest_data_ref):
                 web.post("/api/control/onion-client-key", diagnostics_views.handle_onion_key),
             ]
         )
+    browser_bundle_views.register_routes(app)
     app.router.add_get("/ui-preview", sovereign_views.handle_preview)
     static_path = os.path.join(os.path.dirname(__file__), "static")
     app.router.add_static("/static", static_path)
