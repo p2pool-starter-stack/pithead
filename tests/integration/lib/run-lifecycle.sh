@@ -6,6 +6,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit 
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-uninstall-systemd.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-uninstall-systemd.sh" || exit $?
 run_lifecycle() {
     IT_CURRENT_SCENARIO="lifecycle"
     local lifecycle_ok=1 reset_failed=0
@@ -290,9 +292,11 @@ run_uninstall_round_trip() {
         wait_status_ok 240 || true
         return 1
     fi
+    arm_uninstall_systemd_state || return 1
     out="$(pithead uninstall -y 2>&1)"
     rc=$?
     assert_rc "pithead uninstall -y succeeded" "$rc" "0"
+    verify_uninstall_systemd_state
     assert_contains "uninstall states the removed column" "$out" "Removed:"
     assert_contains "uninstall states the kept column" "$out" "Kept (yours):"
     assert_contains "uninstall states the left-behind column" "$out" "Left behind"

@@ -110,10 +110,6 @@ provision_egress_check_units() { # [steal]
     fi
 }
 
-# Only this checkout's pair, as with the control runner's removal. Every step is attempted even when
-# an earlier one fails, each failure is named, and the return is non-zero if any step failed, so a
-# caller cannot report the pair gone while a unit file or a live timer remains.
-# EGRESS_CHECK_REMOVED=1 on return means this call removed a pair (0: there was none of ours).
 remove_egress_check_units() {
     local unit_dir rc=0
     EGRESS_CHECK_REMOVED=0
@@ -128,6 +124,15 @@ remove_egress_check_units() {
         warn "egress-check:disable-failed — could not stop and disable $EGRESS_CHECK_TIMER; it may still run. Run: sudo systemctl disable --now $EGRESS_CHECK_TIMER"
         rc=1
     fi
+    local unit
+    for unit in "$EGRESS_CHECK_TIMER" "$EGRESS_CHECK_SERVICE"; do
+        [ -e "$unit_dir/$unit" ] || continue
+        if ! stop_systemd_unit_state "$unit"; then
+            warn "egress-check:stop-failed — could not stop and clear $unit."
+            rc=1
+        fi
+    done
+    [ "$rc" = 0 ] || return "$rc"
     if ! sudo rm -f "$unit_dir/$EGRESS_CHECK_TIMER" "$unit_dir/$EGRESS_CHECK_SERVICE" ||
         [ -e "$unit_dir/$EGRESS_CHECK_TIMER" ] || [ -e "$unit_dir/$EGRESS_CHECK_SERVICE" ]; then
         warn "egress-check:delete-failed — could not delete $unit_dir/$EGRESS_CHECK_TIMER and $unit_dir/$EGRESS_CHECK_SERVICE. Delete them with sudo rm -f, then run: sudo systemctl daemon-reload"
@@ -135,6 +140,10 @@ remove_egress_check_units() {
     fi
     if ! sudo systemctl daemon-reload >/dev/null 2>&1; then
         warn "egress-check:reload-failed — systemd did not reload after the removal. Run: sudo systemctl daemon-reload"
+        rc=1
+    fi
+    if ! removed_systemd_units_absent "$EGRESS_CHECK_TIMER" "$EGRESS_CHECK_SERVICE"; then
+        warn "egress-check:state-remains — systemd removal could not be verified."
         rc=1
     fi
     [ "$rc" -ne 0 ] || EGRESS_CHECK_REMOVED=1

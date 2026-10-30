@@ -53,6 +53,8 @@ source "$ROOT/lib/run-reset-restore.sh" || exit $?
 source "$ROOT/lib/run-pool-preview.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$ROOT/lib/run-lifecycle.sh" || exit $?
+declare -F arm_uninstall_systemd_state >/dev/null || exit 1
+declare -F verify_uninstall_systemd_state >/dev/null || exit 1
 # shellcheck source=tests/integration/lib/run-rotate-secrets.sh
 source "$ROOT/lib/run-rotate-secrets.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
