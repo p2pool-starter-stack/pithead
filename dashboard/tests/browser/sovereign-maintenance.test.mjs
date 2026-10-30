@@ -80,13 +80,20 @@ for (const theme of ["light", "dark"]) {
         path: info.outputPath(`drawer-maintenance-${theme}-${width}.png`),
         fullPage: true,
       });
+      await page.getByRole("heading", { name: "Server health", exact: true }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath(`drawer-server-health-${theme}-${width}.png`), fullPage: true });
       await page.getByRole("link", { name: "Inspect", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Configured topology" })).toBeVisible();
       await page.getByLabel("Show the internal mesh").check();
+      expect(await page.evaluate(() => localStorage.getItem("dashboardTopoMesh"))).toBe("1");
+      await page.getByRole("button", { name: "monerod", exact: true }).click();
+      await expect(page.getByRole("region", { name: "Service inspector" }).getByRole("link", { name: "Node and network settings" })).toHaveAttribute("href", "?page=settings&advanced=node-and-network");
       await page.screenshot({
         path: info.outputPath(`drawer-inspect-${theme}-${width}.png`),
         fullPage: true,
       });
+      await page.getByText("Network reward", { exact: true }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath(`drawer-statistics-${theme}-${width}.png`), fullPage: true });
       await page.getByRole("link", { name: "Maintenance", exact: true }).click();
     }
     await expect(page.getByRole("button", { name: /Restart|Reboot|Power off/ })).toHaveCount(0);
