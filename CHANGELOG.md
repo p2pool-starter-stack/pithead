@@ -23,12 +23,23 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   keeping the running proxy and mining intact (#3417).
 - The appliance release gate accepts a measured Secure Boot non-boot for every version as
   unsupported by design. An unmeasured guest still fails; Secure Boot must remain off (#3678).
+- Image builds retry a failed apt index update up to three times with a pause, so a brief mirror
+  outage no longer fails the build (#2160).
+- First-start guidance names the chains your setup actually has to sync before mining starts
+  (#3608).
+- Destructive reset commands refuse a target path that contains a carriage return or line feed
+  (#3509).
 
 ### Security
 
 - The dashboard development lock raises filelock to 4.2.4 and virtualenv to 21.14.13 to clear their
   dependency advisories. Both are development tooling only and are absent from the dashboard image
   (#3662, #3014).
+
+### Known issues in 2.0.2
+
+The known issues listed for 2.0.1 still apply. The fix for the built-in miner staying at 0 H/s
+after a backup or recovery boot (#3375) moved to 2.0.3.
 
 ## [2.0.1] - 2026-10-25
 
@@ -110,7 +121,7 @@ Entries below apply to both channels unless they say otherwise.
 
 ### Known issues in 2.0.1
 
-These three ship in 2.0.1. #3375 is planned for 2.0.2; #3432 is fixed in 2.0.2. The known issues
+These three ship in 2.0.1. #3375 is planned for 2.0.3; #3432 is fixed in 2.0.2. The known issues
 listed for 2.0.0 still apply, except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
@@ -238,7 +249,7 @@ changelog and the wizard text only.
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
   boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot. Planned for
-  2.0.2 ([#3375](https://github.com/p2pool-starter-stack/pithead/issues/3375)).
+  2.0.3 ([#3375](https://github.com/p2pool-starter-stack/pithead/issues/3375)).
 - After a dashboard update, the appliance can mint a new self-signed certificate for the same
   addresses, so the browser asks you to trust it again. Fixed in 2.0.1
   ([#3414](https://github.com/p2pool-starter-stack/pithead/issues/3414)).
