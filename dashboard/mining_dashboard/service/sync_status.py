@@ -7,7 +7,7 @@ from mining_dashboard.config import config
 logger = logging.getLogger("SyncStatus")
 
 
-def node_address(address):
+def node_address(address: str) -> str | None:
     try:
         parsed = urlsplit(address if "://" in address else "//" + address)
         host = parsed.hostname

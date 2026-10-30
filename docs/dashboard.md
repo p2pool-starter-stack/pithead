@@ -297,7 +297,7 @@ the mining datapath (`xmrig-proxy` → `p2pool` → `monerod`) runs independentl
 instead, but only for genuinely **unrecoverable** failures: the DB self-heal above failing on its
 own rebuild attempt (not an ordinary write blip, which stays alert-only), or the `dashboard`
 container itself crash-looping. A red `Miner held (fail-closed)` badge shows while held, next to
-`p2pool` and `xmrig-proxy`, stopped the same way the [Sync Mode hold](#sync-mode) does; unlike that
+`p2pool` and `xmrig-proxy`, stopped the same way the [Sync Mode hold](#legacy-sync-mode) does; unlike that
 one-way sync gate, both containers start again on their own once the condition clears — no restart
 needed.
 The database also keeps three smaller series: pool block-found events, hourly monerod-DB-size and
