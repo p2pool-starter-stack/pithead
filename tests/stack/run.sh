@@ -62,6 +62,8 @@ fi
 STACK_BLOCK="$1"
 in_block() { [ "$1" = "$STACK_BLOCK" ]; }
 if in_block 1; then
+    bash "$HERE/test_checklist.sh"
+    assert_rc "manual checklist refusal contracts" "$?" 0
     bash "$HERE/test_control_audit_order.sh"
     assert_rc "control audit precedes result" "$?" "0"
     # shellcheck source=tests/stack/test-harness-tooling.sh disable=SC2015
@@ -153,7 +155,6 @@ if in_block 1; then
     # shellcheck source=tests/stack/test-install-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-install-verify.sh" && domain_ran test-install-verify.sh "$_d0" "$?" || domain_ran test-install-verify.sh "$_d0" "$?"
 fi
-
 if in_block 2; then
     # shellcheck source=tests/stack/secrets/test-secrets.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets.sh" && domain_ran test-secrets.sh "$_d0" "$?" || domain_ran test-secrets.sh "$_d0" "$?"
@@ -220,7 +221,6 @@ if in_block 2; then
     # shellcheck source=tests/stack/test-data-management.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran test-data-management.sh "$_d0" "$?" || domain_ran test-data-management.sh "$_d0" "$?"
 fi
-
 if in_block 3; then
     # Approval gate (#33), add-only (#893), SSRF floor (#122, #2671); own sandbox (#1105 R13). POSITION-LOCKED: the next three read gate_try()/$UUID5.
     # shellcheck source=tests/stack/control/test-control-add-only-ssrf.sh disable=SC2015

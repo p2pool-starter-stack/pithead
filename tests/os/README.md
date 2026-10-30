@@ -28,6 +28,12 @@ install-to-disk, the rig role, and the update → commit → rollback cycle that
 exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
+`kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_lease_ip`,
+`vm_list_running` and `vm_destroy`. Shared SSH diagnostics, DHCP polling and the
+stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
+failure handling, teardown order and caller routing without a guest; the tier-1
+`make test-integration-selftest` target discovers it. Libvirt remains the only backend;
+the battery still requires the Linux bench and does not run on macOS.
 
 After initial provisioning has settled, `provision` runs `tor-recover check` in the guest
 with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and
@@ -173,7 +179,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   deterministic public keys from a public throwaway seed. The Docker-free selftest
   requires Python 3 and libsodium; it checks repeated output, both checksums, all four
   curve points and the complete CLI address verdicts. Never fund these addresses.
-- **setup-defaults** — a fresh 40 GiB guest accepts the wizard defaults without a Tari override; proves Tor sync, XvB off, persisted choices, a generated working dashboard login, and firstboot/system journals free of bcrypt credentials.
+- **setup-defaults** — a fresh 40 GiB guest accepts the wizard defaults without a Tari override; waits up to 900 seconds for provisioning to settle without failed setup before checking persisted choices and login; proves Tor sync, XvB off, persisted choices, a generated working dashboard login, and firstboot/system journals free of bcrypt credentials.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
   served, generated login authenticating, firstboot and system journals free of bcrypt credentials,
@@ -284,7 +290,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   failed-update premise. The power-cut leg (M10, #2067) then cuts power three times WHILE the
   provisioned stack is live — every earlier power cut in the battery landed on a bare guest
   (`fault`) or was a clean reboot; this is the first that hits a provisioned one. After EVERY cut,
-  asserts every container returns, the image store stays runnable (the #1029 class — present, digest-matched
+  asserts every container returns and provisioning settles within 900 seconds without failed setup
+  before recovery checks or the next cut, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
   monerod stays readable at or above the height read and flushed to disk just before that cut
   (its default db-sync-mode does not fsync each block (batched flushes), so an unflushed height

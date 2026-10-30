@@ -170,7 +170,11 @@ On the second machine, use this complete file:
 ## Broken configs
 
 Step 6.5 works through every row of this table; 10.7 and 13.24 point back at it. The last row
-is the onion-without-login refusal that 10.7 names.
+is the onion-without-login refusal that 10.7 names. Tier 1 reads this table and the four
+samples directly: it validates the samples with fixture credentials and checks each refusal,
+unchanged `.env`, and absence of `compose up`. The final onion-without-login row is
+dry-run only; every other row also runs through `apply -y`. Dry runs preserve the candidate
+config, and placeholder refusals must not print the placeholder value.
 
 **What you do:**
 
@@ -200,7 +204,7 @@ For every row:
 
 | Case | Change | The message contains |
 |---|---|---|
-| `malformed-json` | Delete one closing `}` | `not valid JSON` |
+| `malformed-json` | Delete one closing `}` | `Invalid configuration: not valid JSON.` |
 | `monero-subaddress` | Set `monero.wallet_address` to the QA **subaddress** (starts with `8`) | `is a SUBADDRESS (starts with 8)` |
 | `monero-checksum` | Swap two different neighbouring characters in the middle of `monero.wallet_address` | `fails its checksum` |
 | `tari-checksum` | Swap two different neighbouring characters in the middle of `tari.wallet_address` | `tari.wallet_address fails its checksum` |
@@ -212,8 +216,8 @@ For every row:
 | `short-password` | Set `dashboard.auth.password` to `"short"` | `dashboard.auth.password must be 8–128 printable characters` |
 | `onion-short-password` | Set `dashboard.onion.enabled` to `true` and the password to `"fifteen-chars-x"` (15 characters) | `must be at least 16 characters when dashboard.onion.enabled is true` |
 | `onion-weak-password` | Set `dashboard.onion.enabled` to `true` and the password to `"changeme-but-longer"` | `contains a well-known weak pattern` |
-| `duplicate-pool` | Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | `duplicate key "p2pool" at the top level` |
-| `duplicate-wallet` | Add a second `"wallet_address"` line inside the `monero` block | `duplicate key "wallet_address" at monero` |
+| `duplicate-pool` | Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | `duplicate key "p2pool" at the top level (path p2pool)` |
+| `duplicate-wallet` | Add a second `"wallet_address"` line inside the `monero` block | `duplicate key "wallet_address" at monero (path monero.wallet_address)` |
 | `placeholder-password` | Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"` | `placeholder value at dashboard.auth.password` |
 | `placeholder-telegram` | Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case) | `placeholder value at telegram.bot_token` |
 | `onion-missing-password` | Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block | `dashboard.onion.enabled is true but dashboard.auth.password is empty` |
