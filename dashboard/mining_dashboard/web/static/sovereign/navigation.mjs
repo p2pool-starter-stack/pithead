@@ -88,9 +88,22 @@ export function createNavigation({ win, preference, dirty = () => false, onChang
   win.addEventListener("beforeunload", unload);
   return {
     route,
-    go(page, advanced = null) {
+    go(page, advanced = null, query = {}) {
       if (!permitted()) return false;
       const next = routeUrl(current, page, advanced);
+      for (const [key, value] of Object.entries(query)) next.searchParams.set(key, value);
+      index++;
+      win.history.pushState({ pitheadIndex: index }, "", next);
+      accept(next);
+      return true;
+    },
+    query(values) {
+      if (!permitted()) return false;
+      const next = new URL(current);
+      for (const [key, value] of Object.entries(values)) {
+        if (value == null) next.searchParams.delete(key);
+        else next.searchParams.set(key, value);
+      }
       index++;
       win.history.pushState({ pitheadIndex: index }, "", next);
       accept(next);

@@ -36,6 +36,48 @@ controls are still being built; the preview does not announce a cutover from the
 drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
 [#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
 
+## Overview in the lean preview
+
+Overview shows the last reported hashrate, its 24-hour average, P2Pool shares found since
+that process started, and the most recent confirmed Monero payout. No earnings estimate
+appears until the dynamic PPLNS-window correction is available. Missing readings say
+Unavailable; disconnected or old snapshots remain labelled as last recorded data.
+
+The single Chart range control selects Day, Week or Month. Drag or pinch to zoom,
+Shift-drag or the arrow keys to pan, and use + or − to zoom from the keyboard. Double tap,
+double click or Home resets the zoom. Ordinary scrolling still scrolls the page.
+Real timestamps and missing-data gaps are retained. Confirmed payout links open Activity.
+When donation readings exist, the strip below the chart uses the same time axis and the
+legend distinguishes sampled routed shares from configured shares with estimated timing.
+Unavailable project or XMRig readings are disclosed rather than inferred as Off.
+
+Attention conditions use the approved display order: offline rigs, unsynced nodes, Tor
+under Balance or Privacy, disk, update, backup, wallet change, configuration, failed shares
+and pool-tier advice. This is display order, not a severity ranking. Duplicate rig names
+are ordered by their connection identity. Pool advice consumes the backend field owned by the automatic-defaults implementation:
+24 hours of measured hashrate, with provisional bands below 10 kH/s for nano, 10 to below
+100 kH/s for mini, and 100 kH/s or above for main. Insufficient history or an already
+suitable tier produces no suggestion. Overview never calculates a second policy or switches
+the tier. An absent or malformed field is unavailable.
+
+Backup evidence belongs to Settings. The proposed durable contract is
+`backup_status.state` with `success` plus `last_success_at` in epoch seconds, or `unknown`
+with a null timestamp. Only the host-confirmed successful backup flow may establish success;
+queued, accepted or running work does not. Missing, unreadable or unmigrated records remain
+unknown, with a link to Backup. Missing or rotated audit logs never mean no backup exists.
+This consumer contract is awaiting the Settings producer and integration proof. Configuration
+warnings remain explicitly unavailable until their producer reports them.
+
+Activity combines up to 1,000 retained mining events, independently of chart zoom, with separately fetched settings
+and access records. Only timestamps, source categories and fixed outcome descriptions
+appear; actor names, request paths, configuration values and secrets do not. Authenticated
+dashboard visits are access records, not distinct session sign-ins. Unavailable or rotated
+sources have an empty-state explanation. Advanced › Activity has Day, Week, Month and All
+retained presets. Advanced › Inspect holds extra chart series, node detail, pool-wide
+statistics, network readings, the XvB tier when enabled and configured topology.
+
+The legacy dashboard remains available until cutover; its documentation below applies to it.
+
 ---
 
 ## Connect a miner
