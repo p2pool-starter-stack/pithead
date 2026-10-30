@@ -161,14 +161,17 @@ Setup walks through five stages. It's interactive on the first run and safe to r
 
 ## 4. First boot: the node syncs
 
-This section assumes both nodes run here, the default. A chain served from another machine
-(`monero.mode` / `tari.mode: remote`) never syncs on this host — its container isn't started at all.
+Setup defaults to a local Monero node with Tari off. If you enable Tari during setup, it is
+non-required by default and does not hold Monero mining while it syncs. A chain served from
+another machine (`monero.mode` / `tari.mode: remote`) never syncs on this host — its container
+isn't started at all.
 
-The first time the stack starts, your Monero and Tari nodes download and verify the blockchain
-from the network. Until both are fully synced, the dashboard shows a dedicated Sync Mode screen
-with live progress for each chain, and no hashrate is routed yet. When the stack first comes up,
-`pithead` prints a short "what happens next" note saying the miner is held until both chains sync,
-then starts automatically — it shows once, not on every restart.
+The first time the stack starts, each enabled local node downloads and verifies its blockchain
+from the network. Until all required chains are fully synced, the dashboard shows a dedicated
+Sync Mode screen with live chain progress, and no hashrate is routed yet. Monero is always
+required; Tari also gates mining when `dashboard.tari_required` is true. The first start prints
+`The miner is held until the initial sync finishes for Monero, then starts automatically.` When
+Tari is required, the note names `Monero and Tari` instead. Later restarts do not repeat the note.
 
 This can take anywhere from a few hours to a day or more depending on your hardware, disk, and
 network. Watch progress on the dashboard, with `./pithead status` (it prints each chain's percent
