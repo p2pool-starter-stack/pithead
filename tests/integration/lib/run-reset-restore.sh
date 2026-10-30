@@ -165,10 +165,11 @@ run_reset_restore_fixture() {
         it_fail "config-reset reports no failed shutdown before recovery" "failed-shutdown warning or unreadable reset log; see reset-restore.reset.log"
         return 1
     fi
-    if reset_restore_wait_empty 60; then
+    local residue
+    if residue=$(reset_restore_wait_empty 60); then
         it_pass "config-reset leaves no pithead-project containers in any state"
     else
-        it_fail "config-reset leaves no pithead-project containers in any state" "project residue or engine read failure before configless down"
+        it_fail "config-reset leaves no pithead-project containers in any state" "project residue or engine read failure before configless down: ${residue:-unreadable}"
         return 1
     fi
     if pithead down 2>&1 | redact >"$OUT_DIR/reset-restore.down.log"; then
@@ -244,7 +245,7 @@ reset_restore_shutdown_clean() { # <reset log>
     [ "$scan_rc" -eq 1 ] # only a successful no-match is clean
 }
 
-reset_restore_wait_empty() { # <timeout seconds>; Docker also invokes Podman on the appliance
+reset_restore_wait_empty() {
     local deadline=$(($(date +%s) + $1)) residue
     while [ "$(date +%s)" -lt "$deadline" ]; do
         if residue=$(rx "docker ps --all --quiet --filter label=com.docker.compose.project=pithead" 2>/dev/null) && [ -z "$residue" ]; then
@@ -252,5 +253,6 @@ reset_restore_wait_empty() { # <timeout seconds>; Docker also invokes Podman on 
         fi
         sleep 2
     done
+    printf '%s\n' "${residue:-unreadable}"
     return 1
 }
