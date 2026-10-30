@@ -57,10 +57,9 @@ harness_finished() {
     HARNESS_DONE=1
 }
 
-# Called at wrapper preflight (all modes) and before inline pregates.
-harness_clear_check_evidence() {
-    on_bench "rm -rf $(quote_arg "$E2E_DIR/results/pregate-check")" || {
-        warn "could not clear prior check evidence"
+harness_clear_pregate_evidence() {
+    on_bench "rm -rf $(quote_arg "$E2E_DIR/results/pregate-check") $(quote_arg "$E2E_DIR/results/pregate-readiness")" || {
+        warn "could not clear prior pregate evidence"
         return 1
     }
 }
@@ -82,15 +81,12 @@ harness_pregate() {
         rm -f "$said" "$errf" "$stf"
         return 1
     }
-    # Keep the asserted check invocation outside the destructive harness's results cleanup.
-    # Clear it before readiness too: a refused job must not collect an earlier job's check.
-    harness_clear_check_evidence || {
+    harness_clear_pregate_evidence || {
         rm -f "$said" "$errf" "$stf"
         return 1
     }
     for phase in readiness check; do
-        out_arg=""
-        [ "$phase" != check ] || out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-check")"
+        out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-$phase")"
         (
             pregate_on_bench "$phase" "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
             printf '%s %s\n' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}" >"$stf"
