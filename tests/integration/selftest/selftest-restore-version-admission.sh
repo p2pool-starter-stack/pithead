@@ -3,6 +3,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$HERE/lib.sh"
+echo "== restore-version admission before backup and deployment =="
 sandbox=$(mktemp -d) || exit 1
 trap 'rm -rf "$sandbox"' EXIT
 main_src=$(sed -n '/^main() {$/,/^}$/p' "$HERE/e2e.sh")
