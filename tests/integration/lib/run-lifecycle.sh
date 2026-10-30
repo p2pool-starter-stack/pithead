@@ -38,7 +38,6 @@ run_lifecycle() {
             up_rc=$?
             lifecycle_gate_sample after-image-up
             assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
-            # The failing pull or up names its cause; job 1280 lost it to /dev/null (#2755).
             if [ "$up_rc" -ne 0 ]; then
                 mkdir -p "$OUT_DIR/lifecycle-up"
                 printf '%s\n' "$up_out" | redact | tee "$OUT_DIR/lifecycle-up/up.log" | sed 's/^/        /'
@@ -326,7 +325,6 @@ run_uninstall_round_trip() {
     # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
     # wallet volume created under a new password would not open under the restored old one.
     rx "grep -v '^DEPLOYMENT_COMPLETED=' .env.itest-round-trip >.env && rm -f .env.itest-round-trip"
-    # Uninstall removes pinned images, so setup must pull them again.
     it_step "pithead setup re-provisions from the kept config…"
     out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
     rc=$?
