@@ -231,6 +231,8 @@ parse_and_validate_config() {
         error "proxy.donate_level must be an integer 0–99 (percent); default 0 (got \"$DONATE_LEVEL\")."
     fi
 
+    validate_donation_config
+
     MONERO_USER=$(jq -r '.monero.node_username // empty' "$CONFIG_FILE")
     MONERO_PASS=$(jq -r '.monero.node_password // empty' "$CONFIG_FILE")
 

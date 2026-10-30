@@ -1,134 +1,52 @@
 # shellcheck shell=bash
-: "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Wizard + setup domain (#1105 Phase 1): the interactive wizard flows, the setup e2e paths, and the
-# setup-time kernel/GRUB tuning (optimize_kernel runs inside cmd_setup). Sourceable standalone (#1387).
-WALLET="${WALLET:-$VALID_PRIMARY}" # exactly build_val_sandbox's own default; a no-op under run.sh
-echo "== unit: wizard prompt count is pinned (#502 — a silently-added prompt fails this loud) =="
-# Structural, not behavioral: every Enter-through default answer looks the same ("blank"), so a
-# NEW prompt slipped into either function wouldn't visibly break a happy-path run — it would just
-# eat one more blank line unnoticed. Pinning the count is what actually catches wizard scope creep.
+: "${STACK_SUITE:?source through tests/stack/run.sh}"
+WALLET="${WALLET:-$VALID_PRIMARY}"
 core_reads=$(awk '/^wizard_ask_core\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
 shape_reads=$(awk '/^wizard_ask_shape\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
-assert_eq "wizard_ask_core has exactly 11 read prompts (Monero wallet, node config, pool tier, dashboard login — the Tari prompts are wizard_ask_tari's, pinned in test-wizard-tari.sh)" "$core_reads" "11"
-assert_eq "wizard_ask_shape has exactly 6 read prompts (clearnet-sync, remote-access, alerts cluster, local-miner opt-in; stratum is delegated)" "$shape_reads" "6"
-
-echo "== unit: wizard — Enter-through defaults skip everything but the core answers (#502) =="
+assert_eq "core prompts cover only wallet and node configuration" "$core_reads" "8"
+assert_eq "shape prompts are unchanged" "$shape_reads" "6"
 W1="$SANDBOX/wizard-defaults"
 mkdir -p "$W1"
-printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >"$W1/output" 2>&1
-if [ -f "$W1/config.json" ]; then
-    ok "wizard (defaults path) writes config.json"
-else
-    bad "wizard (defaults path) writes config.json" "no file at $W1/config.json"
-fi
-w1_cfg="$(cat "$W1/config.json" 2>/dev/null)"
-assert_eq "defaults path: monero.wallet_address" "$(jq -r '.monero.wallet_address' <<<"$w1_cfg")" "$WALLET"
-assert_eq "defaults path: tari.wallet_address" "$(jq -r '.tari.wallet_address' <<<"$w1_cfg")" "$VALID_TARI"
-assert_eq "defaults path: monero.mode local (Enter-through)" "$(jq -r '.monero.mode' <<<"$w1_cfg")" "local"
-assert_eq "defaults path: p2pool.pool Enter-through is mini (the global default)" "$(jq -r '.p2pool.pool' <<<"$w1_cfg")" "mini"
-assert_eq "defaults path: local node RPC creds auto-generated (non-empty)" \
-    "$([ -n "$(jq -r '.monero.node_username' <<<"$w1_cfg")" ] && [ -n "$(jq -r '.monero.node_password' <<<"$w1_cfg")" ] && echo yes)" "yes"
-assert_eq "defaults path: top-level keys are exactly monero/tari/p2pool/dashboard, nothing else" \
-    "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","local_miner","monero","p2pool","tari","xvb"]'
-assert_eq "defaults path: dashboard has secure, a generated login and — the Tari yes of this fixture — tari_required false (#3333)" \
-    "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["auth","host","secure","tari_required"]'
-assert_eq "defaults path: no telegram block written" "$(jq -r 'has("telegram")' <<<"$w1_cfg")" "false"
-assert_eq "defaults path: private sync written explicitly" \
-    "$(jq -r '.monero.clearnet_initial_sync' <<<"$w1_cfg")" "false"
-assert_eq "defaults path: DIY local miner is explicitly off" \
-    "$(jq -r '.local_miner.enabled' <<<"$w1_cfg")" "false"
-
-assert_eq "defaults path: XvB explicitly off" "$(jq -r '.xvb.enabled' <<<"$w1_cfg")" "false"
+printf '%s\n\n2\n%s\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >"$W1/output" 2>&1
+w1_cfg="$(cat "$W1/config.json")"
+assert_eq "wallet answer survives" "$(jq -r '.monero.wallet_address' <<<"$w1_cfg")" "$WALLET"
+assert_eq "Tari answer survives" "$(jq -r '.tari.wallet_address' <<<"$w1_cfg")" "$VALID_TARI"
+assert_eq "pool tier inherits mini" "$(jq -r '.p2pool | has("pool")' <<<"$w1_cfg")" false
+assert_eq "username is admin" "$(jq -r '.dashboard.auth.username' <<<"$w1_cfg")" admin
+assert_eq "new install XvB is off" "$(jq -r '.xvb.enabled' <<<"$w1_cfg")" false
+assert_eq "DIY miner is off" "$(jq -r '.local_miner.enabled' <<<"$w1_cfg")" false
 w1_pass=$(jq -r '.dashboard.auth.password' <<<"$w1_cfg")
-assert_eq "defaults path: dashboard password has 32 characters" "${#w1_pass}" "32"
-assert_eq "defaults path: password printed once" "$(grep -Fc "$w1_pass" "$W1/output")" "1"
-assert_contains "defaults path: no raffle question" "$(cat "$W1/output")" "Dashboard login"
-if grep -q 'Join the XMRvsBeast raffle?' "$W1/output"; then bad "wizard does not ask XvB"; else ok "wizard does not ask XvB"; fi
-
-# Opt-in to the local miner (#593): answering 'y' to the final shape prompt writes
-# local_miner.enabled=true; every other answer left blank so only that key appears.
+assert_eq "generated password has 32 characters" "${#w1_pass}" 32
+assert_eq "password is alphanumeric" "$(printf %s "$w1_pass" | tr -d 'A-Za-z0-9')" ""
+assert_eq "password is shown once" "$(grep -Fc "$w1_pass" "$W1/output")" 1
+for removed in "Pool tier [" "Dashboard username [" "Dashboard password (" "Enter Hostname [" "Join the XMRvsBeast raffle?"; do
+    assert_not_contains "setup does not ask $removed" "$(cat "$W1/output")" "$removed"
+done
 WLM="$SANDBOX/wizard-local-miner"
 mkdir -p "$WLM"
-printf '%s\n\n2\n%s\n\n\n\n\n\n\ny\n' "$WALLET" "$VALID_TARI" | run_sourced "$WLM" run_wizard >/dev/null 2>&1
-wlm_cfg="$(cat "$WLM/config.json" 2>/dev/null)"
-assert_eq "opt-in path: local_miner.enabled written true (#593)" "$(jq -r '.local_miner.enabled' <<<"$wlm_cfg")" "true"
-unset wlm_cfg
-
-echo "== unit: wizard — remote node branch is unchanged by the ask/write split (#502) =="
-# The remote-node prompts (host/RPC/ZMQ/auth) were only moved into wizard_ask_core, not touched —
-# this catches the refactor breaking the variable handoff to wizard_write_config.
+printf '%s\n\n2\n%s\n\n\n\ny\n' "$WALLET" "$VALID_TARI" | run_sourced "$WLM" run_wizard >/dev/null 2>&1
+assert_eq "local miner remains opt-in" "$(jq -r '.local_miner.enabled' "$WLM/config.json")" true
 W3="$SANDBOX/wizard-remote"
 mkdir -p "$W3"
-printf '%s\nn\nnode.example.com\n\n\ny\nremoteuser\nremotepass\n2\n%s\n\n\n\n\n\n\n\n' \
-    "$WALLET" "$VALID_TARI" | run_sourced "$W3" run_wizard >/dev/null 2>&1
-w3_cfg="$(cat "$W3/config.json" 2>/dev/null)"
-assert_eq "remote path: monero.mode remote" "$(jq -r '.monero.mode' <<<"$w3_cfg")" "remote"
-assert_eq "remote path: remote host set" "$(jq -r '.monero.remote.host' <<<"$w3_cfg")" "node.example.com"
-assert_eq "remote path: RPC/ZMQ ports default 18081/18083" \
-    "$(jq -rc '[.monero.remote.rpc_port, .monero.remote.zmq_port]' <<<"$w3_cfg")" "[18081,18083]"
-assert_eq "remote path: auth creds carried through" \
-    "$(jq -rc '[.monero.node_username, .monero.node_password]' <<<"$w3_cfg")" '["remoteuser","remotepass"]'
-unset w3_cfg
-
-echo "== unit: wizard — remote node WITHOUT auth + an explicit nano pool tier (#502) =="
-# Two case arms neither W1 (defaults -> mini) nor W2/W3 (main / auth'd remote) reach: REMOTE_AUTH
-# answered "n" (the un-auth'd remote branch skips both credential prompts, leaving them "") and
-# the pool-tier case's "nano" arm. Same run_wizard helper, non-default answers on both axes.
-W4="$SANDBOX/wizard-remote-noauth-nano"
+printf '%s\nn\nnode.example.com\n\n\ny\nremoteuser\nremotepass\n2\n%s\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W3" run_wizard >/dev/null 2>&1
+assert_eq "remote node parameters survive" "$(jq -c '[.monero.mode,.monero.remote.host,.monero.remote.rpc_port,.monero.remote.zmq_port,.monero.node_username,.monero.node_password]' "$W3/config.json")" '["remote","node.example.com",18081,18083,"remoteuser","remotepass"]'
+W4="$SANDBOX/wizard-remote-noauth"
 mkdir -p "$W4"
-printf '%s\nn\nremote2.example.com\n\n\nn\n2\n%s\nnano\n\n\n\n\n\n\n' \
-    "$WALLET" "$VALID_TARI" | run_sourced "$W4" run_wizard >/dev/null 2>&1
-w4_cfg="$(cat "$W4/config.json" 2>/dev/null)"
-assert_eq "remote-noauth path: monero.mode remote" "$(jq -r '.monero.mode' <<<"$w4_cfg")" "remote"
-assert_eq "remote-noauth path: remote host set" "$(jq -r '.monero.remote.host' <<<"$w4_cfg")" "remote2.example.com"
-assert_eq "remote-noauth path: declining auth leaves creds empty, not auto-generated" \
-    "$(jq -rc '[.monero.node_username, .monero.node_password]' <<<"$w4_cfg")" '["",""]'
-assert_eq "remote-noauth path: pool tier nano" "$(jq -r '.p2pool.pool' <<<"$w4_cfg")" "nano"
-unset w4_cfg
-
-echo "== unit: wizard — shape-question and dashboard-login answers flow into config.json (#502) =="
-# The inverse of the defaults test: every optional prompt answered, proving the new logic (pool
-# tier mapping, the dashboard-login cluster, and each Stage-2 cluster) actually wires through.
+printf '%s\nn\nremote2.example.com\n\n\nn\n2\n%s\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W4" run_wizard >/dev/null 2>&1
+assert_eq "remote auth can remain empty" "$(jq -c '[.monero.node_username,.monero.node_password]' "$W4/config.json")" '["",""]'
 W2="$SANDBOX/wizard-full"
 mkdir -p "$W2"
-printf '%s\n\n2\n%s\nmain\nopuser\nsuperSecret1\ny\ny\ny\nmybottoken123\n987654321\n' \
-    "$WALLET" "$VALID_TARI" | run_sourced "$W2" run_wizard >/dev/null 2>&1
-w2_cfg="$(cat "$W2/config.json" 2>/dev/null)"
-assert_eq "full path: monero.mode local (Enter-through)" "$(jq -r '.monero.mode' <<<"$w2_cfg")" "local"
-assert_eq "full path: p2pool.pool honors an explicit main" "$(jq -r '.p2pool.pool' <<<"$w2_cfg")" "main"
-assert_eq "full path: stratum password remains off without opt-in" "$(jq -r '.p2pool.stratum_password' <<<"$w2_cfg")" ""
-# The other new-install path — `cp config.minimal.json config.json` (the bundle quick-start,
-# which bypasses the wizard) — must carry the same default, or only wizard users get auth.
-assert_eq "config.minimal.json ships no stratum password" "$(jq -r '.p2pool.stratum_password' "$ROOT/config.minimal.json")" ""
-assert_eq "full path: dashboard.auth.username set" "$(jq -r '.dashboard.auth.username' <<<"$w2_cfg")" "opuser"
-assert_eq "full path: dashboard.auth.password set" "$(jq -r '.dashboard.auth.password' <<<"$w2_cfg")" "superSecret1"
-assert_eq "full path: clearnet-sync cluster sets BOTH chains together" \
-    "$(jq -rc '[.monero.clearnet_initial_sync, .tari.clearnet_initial_sync]' <<<"$w2_cfg")" '[true,true]'
-assert_eq "full path: remote-access sets dashboard.onion.enabled" "$(jq -r '.dashboard.onion.enabled' <<<"$w2_cfg")" "true"
-assert_eq "full path: telegram cluster sets enabled+token+chat_id together" \
-    "$(jq -rc '[.telegram.enabled, .telegram.bot_token, .telegram.chat_id]' <<<"$w2_cfg")" '[true,"mybottoken123","987654321"]'
-
-echo "== unit: wizard_print_pointer — closing pointer names what it deliberately didn't ask (#502) =="
+printf '%s\n\n2\n%s\ny\ny\ny\nmybottoken123\n987654321\n' "$WALLET" "$VALID_TARI" | run_sourced "$W2" run_wizard >/dev/null 2>&1
+w2_cfg="$(cat "$W2/config.json")"
+assert_eq "fast sync applies to both local chains" "$(jq -c '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$w2_cfg")" '[true,true]'
+assert_eq "remote access enables onion" "$(jq -r '.dashboard.onion.enabled' <<<"$w2_cfg")" true
+assert_eq "Telegram answers survive" "$(jq -c '[.telegram.enabled,.telegram.bot_token,.telegram.chat_id]' <<<"$w2_cfg")" '[true,"mybottoken123","987654321"]'
 pointer_out="$(run_sourced "$SANDBOX" wizard_print_pointer 2>&1)"
-assert_contains "pointer mentions monero.view_key (on-chain payout confirmation)" "$pointer_out" "monero.view_key"
-assert_contains "pointer mentions dashboard.energy.cost_per_kwh (#504)" "$pointer_out" "dashboard.energy.cost_per_kwh"
-assert_contains "pointer mentions workers.list (per-worker overrides, #506)" "$pointer_out" "workers.list"
-assert_contains "pointer points at docs/configuration.md" "$pointer_out" "docs/configuration.md"
-assert_contains "pointer mentions the dashboard's config editor" "$pointer_out" "dashboard's config editor"
+for key in monero.view_key dashboard.energy.cost_per_kwh workers.list docs/configuration.md; do
+    assert_contains "closing pointer names $key" "$pointer_out" "$key"
+done
 
 echo "== black-box: 'pithead setup' completes end-to-end from a wizard-produced config (#502) =="
-# Everything above drives the wizard sub-functions directly (sourced). Nothing drives the actual
-# command an operator runs — this is the gap. ensure_config_exists refuses a piped, non-interactive
-# run OUTRIGHT when config.json is missing ([ ! -t 0 ] -> error, pithead ~L2118) — that gate is
-# deliberate (don't silently generate a config from a script with no human reading the prompts), and
-# it's exactly why the wizard functions were split out for testing (the comment above
-# ensure_config_exists says so) rather than something to fake a tty around here. So: produce
-# config.json the same piped-stdin way the wizard tests above do (proving the Q&A -> config path,
-# same as W1), THEN hand it to the real `setup` command, which skips straight past that gate
-# ([-f "$CONFIG_FILE"] short-circuit) and drives its own two remaining prompts (dashboard hostname,
-# "start now?") from stdin like any other `read -r -p`. Same docker/sudo-stubbed sandbox as the apply
-# black-box tests above; --skip-deps/--skip-optimize keep it host-safe (no apt/GRUB/sysctl edits);
-# declining "start now?" stops short of actually bringing containers up.
 SU="$SANDBOX/setup-e2e"
 mkdir -p "$SU/build/tari" "$SU/dashboard"
 : >"$SU/dashboard/Dockerfile"

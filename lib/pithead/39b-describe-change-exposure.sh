@@ -41,6 +41,22 @@ describe_exposure_change() { # <key> <old> <new>; sets caller's flag/msg
             msg="XvB donation mining back on Tor — the XvB pool sees a Tor exit, not this host's IP."
         fi
         ;;
+    DONATION_ENABLED)
+        flag=CONFIRM
+        msg="Project donation set to $new; enabling routes the configured percentage of mining work to the project when the donation feature is available."
+        ;;
+    DONATION_PERCENT)
+        flag=CONFIRM
+        msg="Project donation percentage set to $new percent; this applies when donation mining is enabled and available."
+        ;;
+    DONATION_TOR_ENABLED)
+        flag=CONFIRM
+        if [ "$new" = false ]; then
+            msg="Project donation set off Tor; when donation mining is enabled and available, the project endpoint sees this host's IP."
+        else
+            msg="Project donation set to use Tor when donation mining is enabled and available."
+        fi
+        ;;
     DASHBOARD_EXPOSE_PUBLIC_IP)
         if [ "$new" == "true" ]; then
             flag=CONFIRM

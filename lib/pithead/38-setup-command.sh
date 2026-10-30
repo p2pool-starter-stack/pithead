@@ -31,33 +31,32 @@ setup() {
 
     check_prerequisites
     ensure_config_exists
-    ensure_onion_password # #343: auto-generate a dashboard password if the onion is on without one
+    ensure_onion_password
     PITHEAD_CONFIG_SET=1 parse_and_validate_config
-    preflight_resources          # WARN-only: low disk/RAM heads-up before committing to a sync (#87)
-    check_stratum_exposure setup # WARN-only: public-IP host => unauthenticated stratum :3333 exposed (#113)
+    preflight_resources
+    check_stratum_exposure setup
     load_preserved_state
-    resolve_dashboard_host "interactive"
+    resolve_dashboard_host
     reconcile_appliance_hostname
     prepare_directories
-    render_env    # bootstrap .env so Tor (and compose var substitution) have what they need
-    provision_tor # populates the real onion addresses
+    render_env
+    provision_tor
     DEPLOYMENT_COMPLETED=true
-    render_env # finalize with real onions + completion flag
+    render_env
     inject_service_configs
     optimize_kernel
     generate_caddyfile
     provision_console_login
-    provision_control_runner     # #33: install/remove the dashboard-control systemd trigger
-    provision_egress_check_units # #2599: the dashboard's egress firewall status
+    provision_control_runner
+    provision_egress_check_units
     provision_lan_guard_check_units
-    render_local_miner_config # #796: the appliance's built-in RigForge worker reads a derived config
-    update_current_symlink    # #455: versioned deploy dir -> maintain the `current ->` pointer
+    render_local_miner_config
+    update_current_symlink
 
     log "Deployment preparation complete!"
-    # Provisioning is done. Everything below is either a message or an interactive "start now?",
-    # so the hold ends here; the stack_up it may call takes its own.
     mutation_lock_release
     announce_dashboard_url
+    [ -z "${IN_DASH_PASS:-}" ] || wizard_print_pointer
     if [ "$REBOOT_REQUIRED" = true ]; then
         echo -e "\n${C_YELLOW}[!] ATTENTION: System optimization requires a reboot.${C_RESET}"
         echo "Please run: 'sudo reboot' now."

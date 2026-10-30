@@ -26,9 +26,16 @@ def fast_sync_warning(cfg: dict) -> str:
     return f"Fast sync exposes your IP address to {' and '.join(networks)} until the initial sync finishes."
 
 
+def automatic_setup_defaults(platform: str = "appliance") -> dict:
+    return merge(
+        new_install_defaults(platform),
+        {"dashboard": {"auth": {"username": "admin", "password": None}}},
+    )
+
+
 def new_machine_answers(budget: dict, disks: list[dict], platform: str = "appliance") -> dict:
     return merge(
-        new_install_defaults(platform), {"tari": {"mode": tari_disk_default(budget, disks, "")}}
+        automatic_setup_defaults(platform), {"tari": {"mode": tari_disk_default(budget, disks, "")}}
     )
 
 
@@ -44,6 +51,9 @@ def explicit_wizard_config(cfg: dict, ref: dict) -> dict:
         block, key = path.split(".")
         if isinstance(cfg.get(block), dict) and key in cfg[block]:
             written.setdefault(block, {})[key] = cfg[block][key]
+    auth = cfg.get("dashboard", {}).get("auth")
+    if isinstance(auth, dict) and auth.get("password") == "":
+        written.setdefault("dashboard", {}).setdefault("auth", {})["password"] = ""
     return written
 
 

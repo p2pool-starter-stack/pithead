@@ -4,7 +4,6 @@ import { NodeProbeProgress, NodeProbeReport } from "../network/nodeprobe.mjs";
 import { InstallSection } from "./stages.mjs";
 import { StratumPasswordChoice } from "./stratumpassword.mjs";
 import * as failure from "./wizardfailure.mjs";
-import { MachineName } from "./wizardhostname.mjs";
 import { fastSyncWarning, TariSection, tariAnswer } from "./wizardmining.mjs";
 import { Err, Field, Note, RadioField } from "./wizardparts.mjs";
 
@@ -21,14 +20,12 @@ const FIELDS = {
   tariMode: { path: "tari.mode" },
   tariRemoteHost: { path: "tari.remote.host" },
   tariRemoteGrpc: { path: "tari.remote.grpc_port" },
-  pool: { path: "p2pool.pool" },
   localMiner: { path: "local_miner.enabled" },
   clearnetSync: { path: "monero.clearnet_initial_sync" },
   healthchecks: { path: "healthchecks.ping_url" },
   telegramToken: { path: "telegram.bot_token" },
   telegramChat: { path: "telegram.chat_id" },
   timezone: { path: "dashboard.timezone" },
-  dashPassword: { path: "dashboard.auth.password" },
 };
 
 const TIMEZONES = [
@@ -133,7 +130,6 @@ export function renderSetup(app) {
                 onWipe=${app.changeWipe} />`
             }
             ${diskPicked && !keepEverything && rig && app.renderRigFields()}
-            ${diskPicked && !keepEverything && !rig && html`<${MachineName} cfg=${cfg} edit=${app.edit} />`}
             ${
               diskPicked &&
               !keepEverything &&
@@ -187,15 +183,6 @@ export function renderSetup(app) {
 
 
             <h2>Mining</h2>
-            <${RadioField} label="P2Pool sidechain" name="pool" value=${v("pool") || "mini"}
-                onChange=${on("pool")} options=${[
-                  ["mini", "mini", "Right for almost every home rig (default)."],
-                  ["nano", "nano", "For a single low-power rig."],
-                  ["main", "main", "Only for very large hashrate."],
-                ]} />
-            <${Note}>The sidechains are sized by hashrate so miners find shares at a similar
-            cadence. Too large a tier means waiting days between shares; it costs nothing to
-            change later.<//>
             <${RadioField} label="Mine on this machine too?" name="local-miner"
                 value=${String(v("localMiner") ?? false)} onChange=${on("localMiner")} options=${[
                   ["false", "No", "This machine only coordinates the miners."],
@@ -232,30 +219,6 @@ export function renderSetup(app) {
 
 
             ${fastSyncWarning(cfg) && html`<p class="c-bad">${fastSyncWarning(cfg)}</p>`}
-
-            <h2>Dashboard login</h2>
-            <${RadioField} label="How should the dashboard be protected?" name="auth-mode"
-                value=${app.state.authMode} onChange=${(e) => app.setState({ authMode: e.target.value })}
-                options=${[
-                  ["auto", "Generate a password", "Use a strong generated password (recommended)."],
-                  ["set", "Choose a password", "Enter it below."],
-                  ["none", "No login", "Anyone on this network can open the dashboard."],
-                ]} />
-            ${
-              app.state.authMode === "set"
-                ? html`<div class="wizard-when">
-                    <${Field} label="Password (8+ characters)">
-                        <input type="password" value=${v("dashPassword") || ""}
-                            onInput=${on("dashPassword")} autocomplete="new-password" minlength="8" />
-                    <//>
-                <//>`
-                : app.state.authMode === "none"
-                  ? html`<p class="c-bad">Anyone on this network will be able to open the
-                    dashboard — it shows your payout addresses and hashrate. Only choose this on a
-                    network you fully control, and never with the Tor onion enabled.</p>`
-                  : html`<${Note}>A 32-character password is generated on the machine and shown
-                    to you on the next screen.<//>`
-            }
 
             <h2>Alerts <span class="text-muted">(optional — skip if you are not sure)</span></h2>
             <${Field} label="Telegram bot token">

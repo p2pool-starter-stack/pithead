@@ -307,15 +307,12 @@ preflight_resources() {
     check_disk_grouped preflight "$prune" \
         "$pre_mono_dir" "$pre_tari_dir" "${P2POOL_DIR:-}" "${DASHBOARD_DIR:-}" "${TOR_DATA_DIR:-}"
 
-    # --- RAM: total memory (Linux only — /proc/meminfo isn't available on macOS dev hosts) ---
-    if [ "$OS_TYPE" == "Linux" ]; then
-        local mem_total_kb
-        mem_total_kb=$(awk '/^MemTotal/{print $2}' /proc/meminfo 2>/dev/null)
-        # 16 GiB in KiB.
-        if [ -n "$mem_total_kb" ] && [ "$mem_total_kb" -lt 16777216 ] 2>/dev/null; then
-            local mem_total_gb
-            mem_total_gb=$((mem_total_kb / 1048576))
-            warn "Low total RAM: ${mem_total_gb} GB detected, below the recommended ~16 GB. The stack (Tari especially) may be memory-starved during sync."
+    if [ "$OS_TYPE" == Linux ]; then
+        local mem_total_kb floor_gb
+        mem_total_kb=$(host_memtotal_kb)
+        floor_gb=$(low_ram_floor_gb)
+        if [[ "$mem_total_kb" =~ ^[0-9]+$ ]] && [ "$mem_total_kb" -lt "$((floor_gb * 1048576))" ]; then
+            warn "Low total RAM: $((mem_total_kb / 1048576)) GiB detected, below this workload's ${floor_gb} GiB floor. P2Pool uses light mode; sync may still be memory-starved."
         fi
     fi
 

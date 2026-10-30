@@ -424,11 +424,9 @@ async def _submit_locked(request: web.Request) -> web.Response:
     except ValueError as exc:
         return web.json_response({"error": f"Invalid configuration: {exc}"}, status=400)
     clear_submission_sidecars()
-    mode = str(form.get("auth_mode", "")).strip()
-    if mode in ("auto", "set", "none"):
-        _spool_write_text("auth-mode", mode)
-    # On the installation medium, config and disk arrive TOGETHER — one page, one submission,
-    # validated without side effects; the trigger is published only after the candidate.
+    auth = cfg.get("dashboard", {}).get("auth", {})
+    mode = "none" if raw and isinstance(auth, dict) and auth.get("password") == "" else "auto"
+    _spool_write_text("auth-mode", mode)
     install = None
     if installer_mode():
         try:

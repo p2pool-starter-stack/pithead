@@ -2,6 +2,7 @@
 set -euo pipefail
 # shellcheck source=tests/stack/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib.sh"
+bash "$ROOT/tests/stack/config/automatic-defaults.sh" || exit 1
 echo "== unit: shared defaults exports, setup parity and v2.0.0 compatibility =="
 if python3 "$ROOT/scripts/build-config-defaults.py" --check; then
     ok "defaults exports match the canonical table"
@@ -87,7 +88,7 @@ for defaults_platform in diy appliance; do
     done
     assert_eq "$defaults_platform every non-required table default agrees with absent-key rendering" \
         "$(cat "$defaults_dir/full.env")" "$(cat "$defaults_dir/absent.env")"
-    for defaults_row in 'TARI_MODE off' 'XVB_ENABLED false' 'TARI_REQUIRED false'; do
+    for defaults_row in 'TARI_MODE off' 'XVB_ENABLED false' 'TARI_REQUIRED false' 'DONATION_ENABLED false'; do
         read -r defaults_key defaults_value <<<"$defaults_row"
         assert_eq "$defaults_platform parsed minimal $defaults_key" \
             "$(grep "^$defaults_key=" "$defaults_dir/minimal.env" | cut -d= -f2-)" "$defaults_value"

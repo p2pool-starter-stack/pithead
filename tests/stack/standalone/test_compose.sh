@@ -271,6 +271,8 @@ jq_assert "control staged/ dir never enters the container (#33)" \
     '.services.dashboard.volumes | any(.target | contains("staged")) | not'
 jq_assert "control channel defaults off in the dashboard env (#33)" \
     '.services.dashboard.environment["DASHBOARD_CONTROL_ENABLED"] == "false"'
+jq_assert "donation defaults reach the dashboard" \
+    '.services.dashboard.environment | .DONATION_ENABLED == "false" and .DONATION_PERCENT == "2" and .DONATION_TOR_ENABLED == "true"'
 jq_assert "rendered Monero RPC URL reaches the dashboard (#1271)" '.services.dashboard.environment["MONERO_RPC_URL"] == "http://monero.example:28081"'
 jq_assert "Tor receives the same P2Pool port as the daemon (#2936)" \
     '.services.tor.environment.P2POOL_PORT == "37889" and (.services.p2pool.command | tostring | contains("37889"))'

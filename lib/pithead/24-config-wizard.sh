@@ -32,14 +32,8 @@ ensure_config_exists() {
     wizard_write_config
     chmod 600 "$CONFIG_FILE"
     log "$CONFIG_FILE created successfully."
-    wizard_print_pointer
 }
 
-# Stage 1 (required — only the operator can answer these): the Monero payout address, local/remote
-# node (+ remote details), the Tari merge-mining question (delegated to wizard_ask_tari), pool tier,
-# and a generated dashboard login (with an explicit opt-out). Sets globals consumed by wizard_write_config: IN_MONERO_WALLET,
-# MONERO_MODE_WIZ, REMOTE_HOST, REMOTE_RPC, REMOTE_ZMQ, IN_MONERO_USER, IN_MONERO_PASS, POOL_TIER,
-# IN_DASH_USER, IN_DASH_PASS — plus wizard_ask_tari's own.
 wizard_ask_core() {
     while :; do
         read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || break
@@ -87,54 +81,12 @@ wizard_ask_core() {
 
     wizard_ask_tari
 
-    # Pool tier (#502's highest-value gap): p2pool's three sidechains are sized by hashrate, so
-    # picking the wrong one is silently suboptimal (a small miner on "main" waits days between
-    # shares). The old wizard hardcoded "main" and never asked; now it asks, and "mini" is the
-    # global default — the reference, the code fallback (`.p2pool.pool // "mini"`), and this
-    # Enter-through all agree — because a typical home rig is the common case for this stack.
-    echo ""
-    echo "--- Pool Tier ---"
-    echo "p2pool has three sidechains sized by hashrate, so miners find shares at a similar cadence:"
-    echo "  main — high hashrate (large farms); mini — typical home rig; nano — a single low-power rig"
-    read -r -p "Pool tier [mini]: " IN_POOL_TIER || true
-    case "$(printf '%s' "$IN_POOL_TIER" | tr 'A-Z' 'a-z')" in
-    main) POOL_TIER="main" ;;
-    nano) POOL_TIER="nano" ;;
-    "" | mini) POOL_TIER="mini" ;;
-    *)
-        echo "  Not main/mini/nano — defaulting to mini (the default for a typical rig)." >&2
-        POOL_TIER="mini"
-        ;;
-    esac
+    IN_DASH_USER="admin"
+    IN_DASH_PASS=$(generate_node_password) || error "Could not generate a dashboard password. Setup aborted."
+    [[ "$IN_DASH_PASS" =~ ^[A-Za-z0-9]{32}$ ]] || error "Could not generate a dashboard password. Setup aborted."
 
-    echo ""
-    echo "--- Dashboard Login ---"
-    read -r -p "Dashboard username [admin]: " IN_DASH_USER || true
-    IN_DASH_USER="${IN_DASH_USER:-admin}"
-    while :; do
-        read -r -s -p "Dashboard password (8+ chars, Enter to generate, 'none' for no login): " IN_DASH_PASS || true
-        echo ""
-        [ "$IN_DASH_PASS" == "none" ] && {
-            IN_DASH_PASS=""
-            break
-        }
-        if [ -z "$IN_DASH_PASS" ]; then
-            IN_DASH_PASS=$(generate_node_password) || error "Could not generate a dashboard password. Setup aborted."
-            [[ "$IN_DASH_PASS" =~ ^[A-Za-z0-9]{32}$ ]] || error "Could not generate a dashboard password. Setup aborted."
-            echo "Dashboard login: $IN_DASH_USER"
-            echo "Generated dashboard password: $IN_DASH_PASS"
-            echo "Save it now — it is also stored in your owner-only config.json."
-            break
-        fi
-        [ "${#IN_DASH_PASS}" -ge 8 ] && break
-        echo "  ✗ Must be at least 8 characters. Try again." >&2
-    done
 }
 
-# A port answer, or the default when the answer is blank or is not a port. Every port prompt here
-# feeds `jq --argjson`, which aborts the whole wizard on anything that is not a number — after the
-# operator has already answered every other question. Same shape as the browser wizard's own
-# build_config port() helper, and used by all three prompts, not just the new one.
 wizard_port() {
     is_valid_port "$1" && printf '%s' "$1" || printf '%s' "$2"
 }
@@ -308,11 +260,10 @@ wizard_write_config() {
         --arg mu "$IN_MONERO_USER" \
         --arg mp "$IN_MONERO_PASS" \
         --arg tmode "$TARI_MODE_WIZ" \
-        --arg pool "$POOL_TIER" \
         --arg stratum_password "${WIZ_STRATUM_PASSWORD:-}" \
         '$defaults * {monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: $mp},
           tari: {mode: $tmode},
-          p2pool: {pool: $pool, stratum_password: $stratum_password},
+          p2pool: {stratum_password: $stratum_password},
           dashboard: {secure: true}}')
 
     if [ "$TARI_MODE_WIZ" != "off" ]; then
@@ -356,10 +307,13 @@ wizard_write_config() {
     )
 }
 
-# Closing pointer (#502): names what the wizard deliberately didn't ask, so an operator who wants
-# it knows where to look instead of hunting config.reference.json cold.
 wizard_print_pointer() {
     echo ""
+    if [ -n "${IN_DASH_PASS:-}" ]; then
+        echo "Dashboard login: $IN_DASH_USER"
+        echo "Generated dashboard password: $IN_DASH_PASS"
+        echo "Save it now — it is also stored in your owner-only config.json."
+    fi
     echo "That's the core config — everything else (ports, XvB, alerts, energy pricing, per-worker"
     echo "overrides, ...) keeps its default. Want on-chain payout confirmation, a per-kWh cost, or"
     echo "per-worker overrides? Set monero.view_key / dashboard.energy.cost_per_kwh / workers.list in"
