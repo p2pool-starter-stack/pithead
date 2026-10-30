@@ -347,7 +347,12 @@ only copy. The five keys:
 A refusal by the pregate's current-state check phase adds no `readiness` line, because that phase
 reads the deployed branch. A dashboard that does not answer the post-deploy wait or the Tari timeout prints no Tari key, because the branch may have broken it.
 The pregate records both of each phase's output streams and classifies only what it recorded. If a
-recording or a read of it fails, the pregate refuses the destructive phases and prints no line.
+recording or a read of it fails, the pregate refuses the destructive phases and adds no marker.
+A phase marker already forwarded to stdout may remain; a failed recording does not guarantee
+that its output reached stdout. The selftest injects capture failures that either discard or
+forward the stream before returning nonzero, independently of file-size limits and `tee` write
+ordering. Each forwarding control fails one capture stream while the other records normally.
+It checks refusal in both cases and preserves a Tari marker only when it was forwarded.
 Any `--check` run can print `workers-offline`, the pregate's check phase included; bench-ci accepts
 it only in its `check` mode. Within one process only the first line prints, and the pregate prints
 `readiness` only when its readiness phase printed no line itself. [`tests/integration/lib/e2e-env.sh`](../../tests/integration/lib/e2e-env.sh) holds the
