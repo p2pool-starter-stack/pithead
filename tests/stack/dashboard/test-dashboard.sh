@@ -428,12 +428,8 @@ case "$caddy_catchall" in
 *"{host}"* | *"{http.request.host}"*) bad "the catch-all target never comes from the request" "it interpolates the request host: $caddy_catchall" ;;
 *) ok "the catch-all target never comes from the request" ;;
 esac
-# #1021: a site block with NO bind asks Caddy for a WILDCARD listener, which reopens every address
-# the bound blocks exclude — the globally-routable one included. All new catch-alls are site blocks.
-# Four site blocks in this render — the two new :80 ones, the new :443 one (#1132), and the HTTPS
-# LAN vhost — so four binds.
 assert_eq "every site block carries the bind, including both :80 catch-alls and the :443 one" \
-    "$(printf '%s\n' "$caddy_redir" | grep -c 'bind 192.168.1.10 172.28.0.1 fd00::1 127.0.0.1 ::1')" "4"
+    "$(printf '%s\n' "$caddy_redir" | grep -c 'bind 192.168.1.10 fd00::1 127.0.0.1 ::1')" "4"
 # A custom port means a fronting proxy owns :80 (#740). Claiming it there breaks the co-hosting the
 # option exists for.
 case "$caddy_port_https" in

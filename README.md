@@ -32,8 +32,9 @@ mining, and the **Compose stack** you run on a host you manage.
 ## What it does
 
 - ⛏️ **P2Pool payouts, Tari merge-mined.** Mines Monero on [P2Pool](https://p2pool.io/): no pool
-  operator, no fee, rewards paid to your own wallet. Every hash can merge-mine Tari on the same
-  work — the appliance's setup wizard asks, and a machine that declines mines Monero alone.
+  operator, no pool fee, rewards paid to your own wallet; the optional project donation is off
+  by default. Every hash can merge-mine Tari on the same work — the appliance's setup wizard
+  asks, and a machine that declines mines Monero alone.
   P2Pool's PPLNS payouts are lumpy, and Tari's solo merge-mining payouts are lumpier still;
   see [payout expectations](docs/dashboard.md#earnings--expected-vs-actual).
 - 🧠 **XvB switching engine.** Watches the XMRvsBeast raffle and shifts hashrate to hold your tier,
@@ -268,7 +269,8 @@ Full reference: **[Operations & Maintenance](docs/operations.md)**.
 
 ## 🤝 Donate
 
-If this stack saved you time, donations to this XMR wallet are appreciated:
+The [optional hashpower donation](docs/donation.md) is off by default and appears only in releases
+that publish a project endpoint; for a manual transfer, use this XMR wallet:
 
 ```
 486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R

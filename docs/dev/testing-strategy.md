@@ -282,6 +282,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 |---|---|---|
 | Disabled / zero shares / `fail_count ≥ 3` / no sustainable tier → P2POOL | guards | 1 ✅ |
 | Closed-loop ramp/back-off, cold-start seed, VIP-reserve anti-overshoot (#70) | controller | 1 ✅ |
+| Published reward fallback matches the archived per-player rows | archive parity | 1 ✅ (`dashboard/tests/web/views/test_xvb_views_xvb_calc.py` uses the live reward parser; `test_xvb_archive.py` requires the archive and an active parity guard in a repository checkout. The dashboard image test stage omits the repository docs and skips archive parity.) |
 | Actuated run-loop duty: split remainder dwell honored, steady state at tier + cushion (#423) | wall-clock sim | 1 ✅ |
 | P2POOL / XVB / SPLIT modes, tiers, smart-sleep early exit when enabled; full P2Pool dwell with XvB disabled and no credited average | decision | 1 ✅ · 4 ▶ (`assert_xvb_off_no_dwell_churn`: after 60 seconds of dashboard uptime, observe 95 seconds of live logs, longer than two old 30-second churn periods and shorter than the shipped `XVB_TIME_ALGO_MS`; zero early-dwell exits and at most one P2POOL switch. XvB enabled, an unstarted algorithm or rejected workers skip by design; unreadable probes and restarts fail. Fake-transport controls in `selftest-xvb-off-dwell.sh` reject the old churn log and exercise both harness callers) |
 | Real XvB endpoint reachable / failing | network | 4 (real endpoint) |
@@ -493,7 +494,7 @@ than inventing an appliance-side vocabulary next to it.
 | Backup → restore round trip | ✓ | ✓ (provision backup + install-phase restore leg) |
 | Node down → reject workers → readmit | ✓ (fault injection) | ✗ by-design — measured, not predicted: the DIY gate skips fault injection and the node-down failover leg in remote mode ("no local monerod to break/stop"), so the `stack` phase's remote-node topology cannot reach them. Closing this needs a local-node guest with a chain, not a flag |
 | Tor / dashboard fault recovery | ✓ | partial (backup restart). The DIY gate's `--hardening` phase is `by-design` on the `stack` phase's guest too ("remote mode: no local containers/systemd to exercise") |
-| RigForge worker apply / upgrade | ✓ (borrowed physical rig) | ✗ by-design — the `rig` phase's share leg (#2063) proves the rig mines and its shares are accepted, not that the dashboard's Worker Inspect can push a config change to it; that still needs a borrowed physical rig |
+| RigForge worker apply / upgrade | ✓ (borrowed physical rig) | Apply: `rig_adopt_leg` after the `rig` share leg previews and commits adoption through the coordinator control routes, waits for adopted/API-reachable state, sends a reversible `DONATION` change, waits for its exact `change_id` in worker history to reach `applied`, and checks the rig's config, unchanged pools and host control-port isolation (#3069). `selftest-rig-adopt.sh` covers async acknowledgment, refusal, stale state, failed writes and restoration without KVM. Upgrade still needs the borrowed physical rig. |
 | OS update through the dashboard, A/B commit, migration hold | n/a | ✓ |
 | Boot, install, media channel, power-cut faults, factory reset | n/a | ✓ |
 | Remote-node mode, live | ✗ (zero routine coverage, #1446) | ✓ — the `stack` phase (#2062) provisions `monero.mode=remote` at a reserved node from the first wizard submit, clears the sync gate and mines. The first live remote-node coverage on either channel |
@@ -647,15 +648,34 @@ shell argument or a log line.
 
 ## What each tier needs from its host
 
-Measured on a macOS host driving the container (#2078), not inferred. "Container" means
-`make test-container`, which runs the tier in `tests/runner/Dockerfile` against the host's Docker
-daemon. A tier that needs something the container cannot supply says so.
+"Container" means `make test-container`, using `tests/runner/Dockerfile` against the host's
+Docker daemon. Ordinary CI runs directly on GitHub's Linux runners; it does not use this image.
+The focused **Test runner acceptance** workflow rebuilds the PR head's image and runs C2–C5
+from #3115: an IPv4 interface listing, at least 77 rig-worker assertions with zero failures,
+and at least 6000 stack assertions with all 52 named `ip`-dependent assertions passing.
+The missing-`iproute2` control must fail C3–C5; its expected failure does not waive normal CI.
+The existing missing Go, missing `envsubst`, three Compose-pull assertions and lock-window
+flake remain excluded from C5, which only judges those 52 assertions. No extra tools are added.
+C1 is an issue-specific scope proof: run `python3 tests/runner/accept-iproute2.py --scope-only`
+on #3115's exact PR head. It permits exactly `tests/runner/Dockerfile`,
+`.github/workflows/test-runner-acceptance.yml`, `tests/runner/accept-iproute2.py` and
+`docs/dev/testing-strategy.md`, and requires the Dockerfile to change. The comparison base defaults
+to `origin/develop-v2.1.0`; use `--base REF` for another base. C1 runs without Docker and must print
+`ACCEPTED: 1/1 checks pass`. It is separate from the permanent workflow, which runs C2–C5 for
+later docs-only PRs and runner changes involving other files without imposing #3115's scope.
+Reviewers run `python3 tests/runner/accept-iproute2.py --output "$TMPDIR/fixed"` on Linux with
+Docker, then repeat with `--missing-iproute2 --output "$TMPDIR/control"` for the control.
+The workflow retains the commit, C2–C5 output, command exits and redacted container logs as
+`runner-acceptance-<case>-<sha>` artifacts. A confirmed negative control exits zero while its
+C2–C5 verdict remains `NOT ACCEPTED`; the fixed image must print `ACCEPTED: 4/4 checks pass`.
+The Docker-free `--self-test` verifies parsing and later PRs: C2–C5 accept docs-only and broader
+runner changes, while the explicit C1 command refuses both. A tier the container cannot supply says so.
 
 | Tier | Needs on the host | Runs in the container? |
 |---|---|---|
 | 1 — dashboard pytest | `uv` only; it fetches the CPython pinned by `dashboard/.python-version`. `make test-dashboard` uses pytest-xdist (`-n auto`) with the 80% coverage gate; the Docker test stage retains the serial gate. Test fixtures replace only the control-service module’s asyncio reference to yield result polls through scheduled events, disable upgrade refresh attempts in history tests, and shorten probe-mismatch timeouts; production retains a 0.5-second result-poll interval and refreshes up to six times at ten-second intervals. No Docker, any OS. | Yes |
 | 1 — frontend `node --test` | Node 20. No Docker, any OS. | Yes |
-| 1 — shell suite (`tests/stack/`) | **Linux, GNU coreutils, non-root**, and a longer tool list than it looks: `bash`, `jq` **1.7 or newer**, `e2fsprogs`, a system `python3` on PATH, `xxd`, `sudo`, and a **UTF-8 locale**. Refuses on Darwin (#2041); root bypasses the permission-denied fixtures. Missing system Python, xxd, or a UTF-8 locale fails *quietly* — see the note below. | Yes — the container is how a non-Linux host runs this at all |
+| 1 — shell suite (`tests/stack/`) | **Linux, GNU coreutils, non-root**, `iproute2`, and a longer tool list than it looks: `bash`, `jq` **1.7 or newer**, `e2fsprogs`, a system `python3` on PATH, `xxd`, `sudo`, and a **UTF-8 locale**. Refuses on Darwin (#2041); root bypasses the permission-denied fixtures. Missing system Python, xxd, or a UTF-8 locale fails *quietly* — see the note below. | Yes — the container is how a non-Linux host runs this at all |
 | 1 — netwatch selftest | Docker: it builds the pinned harness images and asks each tool for its version. | Yes (host daemon via the socket) |
 | 2 — fakes contract | `uv` only. Docker-free by design. | Yes |
 | 3 — mini-stack | Docker, Compose v2, **and buildx**. Without the buildx plugin Compose falls back to the classic builder, which rejects the `RUN --mount=type=cache` in `dashboard/Dockerfile`, and the tier dies at `docker compose build failed` with nothing naming the cause. The driver must also reach the fakes' host-published ports — from inside a container that is `PITHEAD_TEST_HOST`, not `127.0.0.1`. | Yes |
