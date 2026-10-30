@@ -16,9 +16,13 @@ wait_for_onion() {
 
 provision_tor() {
     log "Initializing Tor service to generate onion addresses..."
-    # Client-auth keys must be in place before tor starts, since it reads authorized_clients then (#343).
     provision_onion_client_auth
-    compose_up --pull "$(resolve_pull_policy)" -d tor
+    compose_up --pull "$(resolve_pull_policy)" -d tor || {
+        local rc=$?
+        warn "Tor image build or startup failed (exit $rc). Configuration was retained; check Docker's error above before retrying setup."
+        warn "Docker dependency failure during Tor provisioning. See $DOCS_URL/docs/getting-started.md#interrupted-source-build."
+        exit "$rc"
+    }
     log "Waiting for Tor hidden services to be generated..."
     P2POOL_ONION=$(wait_for_onion p2pool) ||
         error "Timed out waiting for the P2Pool Tor hidden-service hostname."
