@@ -2,6 +2,8 @@ import { expect, test } from "./fixtures.mjs";
 
 function healthy(ui) {
   const now = Date.now();
+  ui.state.backup_status = { state: "success", last_success_at: now / 1000 };
+  ui.state.pool_tier_suggestion = null;
   ui.state.monero.health.level = "green";
   ui.state.badges = [];
   ui.state.db_healthy = true;
@@ -40,6 +42,15 @@ for (const theme of ["light", "dark", "auto"]) {
     ui,
   }, info) => {
     healthy(ui);
+    await page.route("**/api/state**", async (route) => {
+      const query = new URL(route.request().url()).searchParams;
+      const snapshot = structuredClone(ui.state);
+      snapshot.window =
+        query.has("from") && query.has("to")
+          ? { from: Number(query.get("from")), to: Number(query.get("to")) }
+          : null;
+      await route.fulfill({ json: snapshot });
+    });
     await page.addInitScript((value) => localStorage.setItem("dashboardTheme", value), theme);
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
     await ui.openPreview();
@@ -61,6 +72,18 @@ for (const theme of ["light", "dark", "auto"]) {
     await expect.poll(() => new URL(page.url()).searchParams.has("from")).toBe(true);
     await page.keyboard.press("Home");
     await expect.poll(() => new URL(page.url()).searchParams.has("from")).toBe(false);
+    expect(
+      await canvas.evaluate((node) => {
+        const instance = Chart.getChart(node);
+        instance.zoom(1.5, "none");
+        return instance.isZoomedOrPanned();
+      }),
+    ).toBe(true);
+    await canvas.focus();
+    await page.keyboard.press("Home");
+    await expect
+      .poll(() => canvas.evaluate((node) => Chart.getChart(node).isZoomedOrPanned()))
+      .toBe(false);
     for (const width of [375, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -90,4 +113,49 @@ test("stale partial fleet and off destinations do not look healthy", async ({ pa
   ).toBeVisible();
   await expect(page.getByRole("list", { name: "Where the hashrate went" })).toHaveCount(0);
   await expect(page.getByText("Everything is running normally", { exact: true })).toHaveCount(0);
+});
+
+test("pending producer evidence stays unavailable while real pool suggestions and backup links route", async ({
+  page,
+  ui,
+}) => {
+  healthy(ui);
+  delete ui.state.backup_status;
+  delete ui.state.pool_tier_suggestion;
+  await ui.openPreview();
+  const attention = page.getByRole("region", { name: "Attention", exact: true });
+  await expect(
+    attention.getByRole("link", {
+      name: "Backup history is unavailable. Review or create a recovery backup.",
+    }),
+  ).toBeVisible();
+  await expect(
+    attention.getByText("Pool-tier advice is unavailable.", { exact: false }),
+  ).toBeVisible();
+  await expect(attention.getByText(/No backup|No successful backup|never backed up/)).toHaveCount(
+    0,
+  );
+  await attention.getByRole("link", { name: "Review pool and rig settings" }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("advanced")).toBe("pool-and-rigs");
+  await expect(
+    page
+      .getByRole("dialog", { name: "Advanced", exact: true })
+      .getByRole("heading", { name: "Pool and rigs", exact: true }),
+  ).toBeVisible();
+});
+
+test("producer-backed provisional pool advice is a deep link and never changes the pool", async ({
+  page,
+  ui,
+}) => {
+  healthy(ui);
+  ui.state.pool_tier_suggestion = { tier: "nano", hashrate_24h: 5000, provisional: true };
+  const configured = ui.state.pool.type;
+  await ui.openPreview();
+  await expect(
+    page.getByRole("link", { name: /Provisional suggestion: review nano/ }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: /Provisional suggestion: review nano/ }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("advanced")).toBe("pool-and-rigs");
+  expect(ui.state.pool.type).toBe(configured);
 });

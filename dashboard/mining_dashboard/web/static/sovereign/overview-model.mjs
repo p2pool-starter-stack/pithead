@@ -1,3 +1,4 @@
+import { fmtHashrate } from "../app/logic.mjs";
 import { stackStatus } from "./status.mjs";
 
 export const UNAVAILABLE = "Unavailable";
@@ -8,6 +9,37 @@ export const link = (page, section, extra = {}) => {
   if (section) query.set("advanced", section);
   return `?${query}`;
 };
+
+export function poolAdvice(state) {
+  if (!state || !Object.hasOwn(state, "pool_tier_suggestion"))
+    return { available: false, suggestion: null };
+  const suggestion = state.pool_tier_suggestion;
+  if (suggestion === null) return { available: true, suggestion: null };
+  if (
+    !suggestion ||
+    !["nano", "mini", "main"].includes(suggestion.tier) ||
+    !number(suggestion.hashrate_24h) ||
+    typeof suggestion.provisional !== "boolean"
+  )
+    return { available: false, suggestion: null };
+  return { available: true, suggestion };
+}
+
+export function backupEvidence(state, now = Date.now()) {
+  const evidence = state?.backup_status;
+  return evidence?.state === "success" &&
+    number(evidence.last_success_at) &&
+    evidence.last_success_at > 0 &&
+    evidence.last_success_at * 1000 <= now
+    ? evidence
+    : { state: "unknown", last_success_at: null };
+}
+
+export function snapshotFresh(state, connected, now = Date.now()) {
+  const timestamp = state?.overview?.snapshot_ts;
+  const age = now - timestamp * 1000;
+  return connected && number(timestamp) && age >= 0 && age <= 120000;
+}
 
 export function attention(state) {
   if (!state) return [];
@@ -33,7 +65,10 @@ export function attention(state) {
         "node-and-network",
       );
   }
-  if (["Balance", "Privacy"].includes(state.profile?.name) && state.egress?.summary?.level !== "ok")
+  if (
+    ["Balance", "Privacy"].includes(state.profile?.name) &&
+    state.overview?.tor_health === "unhealthy"
+  )
     add(
       "tor",
       "Tor health needs checking for this profile. Review the network connection.",
@@ -49,10 +84,10 @@ export function attention(state) {
       "settings",
       "update-details",
     );
-  if (state.overview?.backup_recorded === false)
+  if (backupEvidence(state).state === "unknown")
     add(
       "backup",
-      "No successful backup is recorded. Create a recovery backup.",
+      "Backup history is unavailable. Review or create a recovery backup.",
       "settings",
       "backup",
     );
@@ -72,10 +107,11 @@ export function attention(state) {
       "overview",
       "inspect",
     );
-  if (state.overview?.pool_tier_suggestion)
+  const suggestion = poolAdvice(state).suggestion;
+  if (suggestion)
     add(
       "pool",
-      `Review the pool-tier suggestion for the measured hashrate; the tier will not change automatically.`,
+      `${suggestion.provisional ? "Provisional suggestion" : "Suggestion"}: review ${suggestion.tier} for the measured 24-hour hashrate (${fmtHashrate(suggestion.hashrate_24h)}); the tier will not change automatically.`,
       "machines",
       "pool-and-rigs",
     );
@@ -86,8 +122,7 @@ export function overviewStatus(state, connected, now = Date.now()) {
   if (!connected)
     return "Disconnected. These are the last recorded readings; reconnect before relying on them.";
   if (!state) return "Waiting for the first snapshot. Check the dashboard connection.";
-  const ts = state.overview?.snapshot_ts;
-  if (!number(ts) || now - ts * 1000 > 120000)
+  if (!snapshotFresh(state, connected, now))
     return "Snapshot freshness is unavailable or stale. Check the dashboard connection.";
   if (state.syncing)
     return "Nodes are synchronizing. Mining waits for the required nodes to be ready.";
@@ -107,18 +142,45 @@ export function combinedRate(chart = {}) {
   }));
 }
 
+export function donationReadings(state) {
+  const project = state?.donation;
+  const projectPercent =
+    project?.available === true
+      ? project.enabled === false
+        ? 0
+        : project.status === "reduced"
+          ? project.reduced_percent
+          : project.percent
+      : null;
+  const developer = state?.xmrig_donation;
+  const valid = (value) => number(value) && value <= 100;
+  return {
+    project: valid(projectPercent) ? projectPercent : null,
+    xmrig: developer?.available === true && valid(developer.percent) ? developer.percent : null,
+  };
+}
+
 export function destinations(state) {
   const output = [];
   const points = state?.chart?.p2pool || [];
-  const xvb = state?.chart?.xvb || [];
-  const p = points.filter((point) => number(point.y)).reduce((sum, point) => sum + point.y, 0);
-  const x = xvb.filter((point) => number(point.y)).reduce((sum, point) => sum + point.y, 0);
+  const xvb = new Map((state?.chart?.xvb || []).map((point) => [point.x, point.y]));
+  let p = 0,
+    x = 0;
+  for (let index = 0; index < points.length - 1; index++) {
+    const point = points[index],
+      next = points[index + 1];
+    if (![point.y, next.y, xvb.get(point.x), xvb.get(next.x)].every(number)) continue;
+    const duration = next.x - point.x;
+    if (!number(duration) || duration <= 0) continue;
+    p += ((point.y + next.y) / 2) * duration;
+    if (state.overview?.xvb_enabled) x += ((xvb.get(point.x) + xvb.get(next.x)) / 2) * duration;
+  }
   const total = p + x;
   if (total <= 0) return output;
-  const project = state.overview?.donations?.project;
-  const developer = state.overview?.donations?.xmrig;
-  const configured = [project, developer].filter(number).reduce((sum, value) => sum + value, 0);
-  const remaining = Math.max(0, 100 - configured);
+  const { project, xmrig } = donationReadings(state);
+  const configured = [project, xmrig].filter(number).reduce((sum, value) => sum + value, 0);
+  if (configured > 100) return output;
+  const remaining = 100 - configured;
   if (p > 0)
     output.push({
       key: "p2pool",
@@ -126,12 +188,12 @@ export function destinations(state) {
       percent: (p / total) * remaining,
       estimated: false,
     });
-  if (state.overview?.xvb_enabled && x > 0)
+  if (x > 0)
     output.push({ key: "xvb", label: "XvB", percent: (x / total) * remaining, estimated: false });
-  if (number(project) && project > 0)
+  if (project > 0)
     output.push({ key: "project", label: "Pithead project", percent: project, estimated: true });
-  if (number(developer) && developer > 0)
-    output.push({ key: "xmrig", label: "XMRig developers", percent: developer, estimated: true });
+  if (xmrig > 0)
+    output.push({ key: "xmrig", label: "XMRig developers", percent: xmrig, estimated: true });
   return output;
 }
 
@@ -139,7 +201,8 @@ export function activityEntries(state, audit, access) {
   const rows = [];
   const add = (ts, source, text) => {
     const seconds = typeof ts === "number" ? ts : Date.parse(ts) / 1000;
-    if (number(seconds) && seconds > 0) rows.push({ ts: seconds, source, text });
+    if (number(seconds) && seconds > 0 && Number.isFinite(new Date(seconds * 1000).getTime()))
+      rows.push({ ts: seconds, source, text });
   };
   if (Array.isArray(state?.overview_activity?.entries)) {
     for (const entry of state.overview_activity.entries) add(entry.ts, "Mining", entry.text);

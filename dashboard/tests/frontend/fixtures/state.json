@@ -324,6 +324,40 @@
     "ts": "Never"
   },
   "os_update": null,
+  "overview": {
+    "effort": null,
+    "hashrate_24h": "10.35 kH/s",
+    "hashrate_now": "10.00 kH/s",
+    "history_window": {
+      "from": 1735689000,
+      "to": 1735689300
+    },
+    "hugepages_available": false,
+    "last_payout": null,
+    "shares_failed": null,
+    "shares_found": null,
+    "snapshot_ts": null,
+    "system_available": false,
+    "system_fields": [],
+    "tari_enabled": true,
+    "tor_health": null,
+    "xvb_enabled": true
+  },
+  "overview_activity": {
+    "entries": [
+      {
+        "source": "Mining",
+        "text": "P2Pool share recorded; a share does not promise a payout",
+        "ts": 1735689480
+      },
+      {
+        "source": "Mining",
+        "text": "XvB raffle win recorded",
+        "ts": 1735689000
+      }
+    ],
+    "truncated": false
+  },
   "page_title": "Pithead Dashboard",
   "payouts": {
     "monero": [],

@@ -1,3 +1,4 @@
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -11,7 +12,7 @@ def build(data, payouts=None):
         data,
         SimpleNamespace(p2pool_24h=100, xvb_routed_24h=20),
         payouts,
-        [{"timestamp": 1}] if data.get("timestamp") else [],
+        [{"timestamp": time.time(), "v_p2pool": 100, "v_xvb": 20}] if data.get("timestamp") else [],
     )
 
 
@@ -103,3 +104,50 @@ def test_state_exposes_raw_readings_and_range_independent_activity(_data, _state
     assert result["overview"]["effort"] == 42
     assert [entry["ts"] for entry in result["overview_activity"]["entries"]] == [20, 10]
     assert "private detail" not in str(result["overview_activity"])
+
+
+@pytest.mark.parametrize(
+    "tor, expected",
+    [
+        ({"running": True, "health": "healthy"}, "healthy"),
+        ({"running": False}, "unhealthy"),
+        ({"running": True, "health": "unhealthy"}, "unhealthy"),
+        ({"running": True, "restarting": True}, "unhealthy"),
+        ({"running": True, "health": None}, None),
+        ({}, None),
+    ],
+)
+def test_tor_health_requires_an_observed_verdict(tor, expected):
+    assert build({"tor_health": tor})["tor_health"] == expected
+
+
+def test_epoch_zero_and_unrepresentable_payouts_are_unavailable():
+    for ts in [0, -1, 1e100]:
+        assert build({}, [{"ts": ts, "amount_atomic": 30}])["last_payout"] is None
+
+
+def test_chart_bounds_report_retained_history_independently_of_zoom():
+    metrics = SimpleNamespace(p2pool_24h=0, xvb_routed_24h=0)
+    result = build_overview(
+        {},
+        metrics,
+        None,
+        [{"timestamp": 20}, {"timestamp": 10}, {"timestamp": 0}, {"timestamp": 1e100}],
+    )
+    assert result["history_window"] == {"from": 10, "to": 20}
+    assert build({}, None)["history_window"] is None
+
+
+def test_24h_hashrate_needs_recent_valid_timestamped_readings():
+    metrics = SimpleNamespace(p2pool_24h=100, xvb_routed_24h=20)
+    for history in [
+        [{"timestamp": 0, "v": 100}],
+        [{"timestamp": 1e100, "v": 100}],
+        [{"timestamp": 1, "v": 100}],
+        [{"timestamp": time.time()}],
+    ]:
+        assert build_overview({}, metrics, None, history)["hashrate_24h"] is None
+    assert (
+        build_overview({}, metrics, None, [{"timestamp": time.time(), "v": 0}])["hashrate_24h"]
+        == "120.00 H/s"
+    )

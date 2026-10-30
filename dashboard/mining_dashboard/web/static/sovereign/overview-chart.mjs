@@ -1,12 +1,30 @@
 import { fmtHashrate } from "../app/logic.mjs";
 import { Component, html } from "../app/preact.mjs";
-import { combinedRate, destinations, link, number, RANGES } from "./overview-model.mjs";
+import {
+  combinedRate,
+  destinations,
+  donationReadings,
+  link,
+  number,
+  RANGES,
+} from "./overview-model.mjs";
 
-export function zoomWindow(min, max, factor = 0.5, shift = 0) {
-  if (!number(min) || !number(max) || max <= min) return null;
-  const span = Math.max(60000, (max - min) * factor);
+export function zoomWindow(min, max, factor = 0.5, shift = 0, bounds = { min, max }) {
+  if (
+    ![min, max, factor, bounds?.min, bounds?.max].every(number) ||
+    !Number.isFinite(shift) ||
+    factor <= 0 ||
+    max <= min ||
+    bounds.max <= bounds.min
+  )
+    return null;
+  const lower = Math.max(1, bounds.min),
+    upper = bounds.max;
+  const span = Math.min(upper - lower, Math.max(60000, (max - min) * factor));
+  if (span <= 0) return null;
   const center = (min + max) / 2 + (max - min) * shift;
-  return { from: Math.max(1, center - span / 2) / 1000, to: (center + span / 2) / 1000 };
+  const from = Math.max(lower, Math.min(upper - span, center - span / 2));
+  return { from: from / 1000, to: (from + span) / 1000 };
 }
 
 export class OverviewChart extends Component {
@@ -19,18 +37,43 @@ export class OverviewChart extends Component {
   componentDidMount() {
     this.sync();
   }
-  componentDidUpdate() {
+  componentDidUpdate(previous) {
+    if ((previous.window && !this.props.window) || previous.range !== this.props.range)
+      this.resetPlot();
     this.sync();
   }
   componentWillUnmount() {
     this.chart?.destroy();
     clearTimeout(this.debounce);
   }
+  bounds() {
+    const history = this.props.state?.overview?.history_window;
+    if (number(history?.from) && number(history?.to) && history.to > history.from)
+      return { min: history.from * 1000, max: history.to * 1000 };
+    const times = combinedRate(this.props.state?.chart)
+      .map((point) => point.x)
+      .filter(number);
+    return times.length > 1 ? { min: Math.min(...times), max: Math.max(...times) } : null;
+  }
+  resetPlot() {
+    clearTimeout(this.debounce);
+    this.resetting = true;
+    try {
+      this.chart?.resetZoom?.("none");
+    } finally {
+      this.resetting = false;
+    }
+  }
+  resetView() {
+    this.resetPlot();
+    this.props.onWindow(null);
+  }
   gesture() {
+    if (this.resetting) return;
     clearTimeout(this.debounce);
     this.debounce = setTimeout(() => {
       const axis = this.chart?.scales.x;
-      const window = axis && zoomWindow(axis.min, axis.max, 1);
+      const window = axis && zoomWindow(axis.min, axis.max, 1, 0, this.bounds());
       if (window) this.props.onWindow(window);
     }, 300);
   }
@@ -46,12 +89,13 @@ export class OverviewChart extends Component {
     };
     if (event.key === "Home" || event.key === "0") {
       event.preventDefault();
-      this.props.onWindow(null);
+      this.resetView();
       return;
     }
     if (actions[event.key]) {
       event.preventDefault();
-      this.props.onWindow(zoomWindow(axis.min, axis.max, ...actions[event.key]));
+      const window = zoomWindow(axis.min, axis.max, ...actions[event.key], this.bounds());
+      if (window) this.props.onWindow(window);
     }
   }
   strip(chart) {
@@ -65,10 +109,10 @@ export class OverviewChart extends Component {
     for (let i = 0; i < points.length - 1; i++) {
       const point = points[i],
         next = points[i + 1];
-      if (!number(point.y) || !number(next.y) || !number(other.get(point.x))) continue;
+      if (![point.y, next.y, other.get(point.x), other.get(next.x)].every(number)) continue;
       const lo = Math.max(area.left, chart.scales.x.getPixelForValue(point.x));
       const hi = Math.min(area.right, chart.scales.x.getPixelForValue(next.x));
-      const total = point.y + other.get(point.x);
+      const total = point.y + (state?.overview?.xvb_enabled ? other.get(point.x) : 0);
       if (hi <= lo || total <= 0) continue;
       const fixed = shares
         .filter((part) => part.estimated)
@@ -156,7 +200,7 @@ export class OverviewChart extends Component {
       plugins: {
         legend: { display: false },
         zoom: {
-          limits: { x: { minRange: 60000 } },
+          limits: { x: { minRange: 60000, ...(this.bounds() || {}) } },
           pan: {
             enabled: true,
             mode: "x",
@@ -194,8 +238,8 @@ export class OverviewChart extends Component {
           grid: { color: colors.border },
           ticks: { color: colors.text, callback: fmtHashrate },
         },
-        markers: { display: false, min: 0, max: 1 },
-        percent: { display: false, min: 0, max: 100 },
+        markers: { axis: "y", display: false, min: 0, max: 1 },
+        percent: { axis: "y", display: false, min: 0, max: 100 },
       },
     };
     if (!this.chart) {
@@ -214,10 +258,16 @@ export class OverviewChart extends Component {
   }
   render({ state, range, onRange, advanced }) {
     const parts = destinations(state);
+    const donations = donationReadings(state);
     const hasStrip = parts.some((part) => part.key !== "p2pool");
     const points = combinedRate(state?.chart);
     return html`<section class="panel overview-chart" aria-label="Hashrate history">
-      <div class="overview-row"><h2>Hashrate</h2><label>Chart range <select aria-label="Chart range" value=${range} onChange=${(event) => onRange(event.target.value)}>
+      <div class="overview-row"><h2>Hashrate</h2><label>Chart range <select aria-label="Chart range" value=${range} onChange=${(
+        event,
+      ) => {
+        this.resetPlot();
+        onRange(event.target.value);
+      }}>
         ${Object.entries(RANGES).map(([value, label]) => html`<option value=${value}>${label}</option>`)}
       </select></label></div>
       <p id=${advanced ? "advanced-chart-keys" : "chart-keys"} class="muted">Drag or pinch to zoom. Shift-drag or arrow keys to pan. + and − zoom; Home or double tap resets. Ordinary scrolling scrolls the page.</p>
@@ -226,13 +276,13 @@ export class OverviewChart extends Component {
         ref=${(node) => {
           this.canvas = node;
         }} onKeyDown=${(event) => this.key(event)}
-        onDblClick=${() => this.props.onWindow(null)} onTouchEnd=${() => {
+        onDblClick=${() => this.resetView()} onTouchEnd=${() => {
           const now = Date.now();
-          if (now - this.lastTap < 300) this.props.onWindow(null);
+          if (now - this.lastTap < 300) this.resetView();
           this.lastTap = now;
         }}>Hashrate history is available through the readings and activity below.</canvas></div>
       ${hasStrip ? html`<ul class="destination-legend" aria-label="Where the hashrate went">${parts.map((part) => html`<li><span class=${`destination-dot destination-${part.key}`}></span>${part.label}: ${part.percent.toFixed(1)}%${part.estimated ? " (configured share, estimated timing)" : " (sampled routed share)"}</li>`)}</ul>` : null}
-      <p class="muted">Project and XMRig donation readings: ${state?.overview?.donations ? "reported configured shares; exact timing is not observable" : "unavailable until the donation producers report them"}.</p>
+      <p class="muted">Pithead project donation: ${donations.project === null ? "unavailable" : `${donations.project}% configured`}. XMRig developer donation: ${donations.xmrig === null ? "unavailable" : `${donations.xmrig}% reported fleet share`}. Configured shares have estimated timing.</p>
       ${(state?.chart?.payouts || []).map((p) => html`<a class="payout-marker-link" href=${link("overview", "activity")}>Confirmed payout · ${new Date(p.x).toLocaleString()}</a>`)}
       ${
         advanced

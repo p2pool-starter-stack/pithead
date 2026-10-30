@@ -54,8 +54,19 @@ Unavailable project or XMRig readings are disclosed rather than inferred as Off.
 Attention conditions use the approved display order: offline rigs, unsynced nodes, Tor
 under Balance or Privacy, disk, update, backup, wallet change, configuration, failed shares
 and pool-tier advice. This is display order, not a severity ranking. Duplicate rig names
-are ordered by their connection identity. Missing host evidence for backup history,
-configuration warnings or pool-tier advice is explicitly unavailable.
+are ordered by their connection identity. Pool advice consumes the backend field owned by the automatic-defaults implementation:
+24 hours of measured hashrate, with provisional bands below 10 kH/s for nano, 10 to below
+100 kH/s for mini, and 100 kH/s or above for main. Insufficient history or an already
+suitable tier produces no suggestion. Overview never calculates a second policy or switches
+the tier. An absent or malformed field is unavailable.
+
+Backup evidence belongs to Settings. The proposed durable contract is
+`backup_status.state` with `success` plus `last_success_at` in epoch seconds, or `unknown`
+with a null timestamp. Only the host-confirmed successful backup flow may establish success;
+queued, accepted or running work does not. Missing, unreadable or unmigrated records remain
+unknown, with a link to Backup. Missing or rotated audit logs never mean no backup exists.
+This consumer contract is awaiting the Settings producer and integration proof. Configuration
+warnings remain explicitly unavailable until their producer reports them.
 
 Activity combines up to 1,000 retained mining events, independently of chart zoom, with separately fetched settings
 and access records. Only timestamps, source categories and fixed outcome descriptions

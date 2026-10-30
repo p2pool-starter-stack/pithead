@@ -7,6 +7,8 @@ import {
   link,
   number,
   overviewStatus,
+  poolAdvice,
+  snapshotFresh,
   UNAVAILABLE,
 } from "./overview-model.mjs";
 
@@ -87,12 +89,11 @@ export function Overview({ state, connected, range, window, onRange, onWindow, f
   ).length;
   const last = state?.overview?.last_payout;
   const issues = attention(state);
-  const fresh =
-    connected &&
-    number(readings?.snapshot_ts) &&
-    Date.now() - readings.snapshot_ts * 1000 <= 120000;
+  const fresh = snapshotFresh(state, connected);
+  const status = overviewStatus(state, connected);
+  const advice = poolAdvice(state);
   return html`<div class="overview-page"><section class="overview-hero" aria-label="Mining status">
-    <p class=${fresh && !issues.length ? "status-ok" : "status-warn"} role="status">${overviewStatus(state, connected)}</p>
+    <p class=${fresh && status === "Everything is running normally" ? "status-ok" : "status-warn"} role="status">${status}</p>
     <div class="overview-tiles">
       <article class="panel"><h2>Hashrate</h2><strong>${value(readings?.hashrate_now)}</strong><p>Now · ${value(state?.hashrate?.mode_name)}</p><p>24 h: ${value(readings?.hashrate_24h)}${fresh ? "" : " · last recorded"}</p></article>
       <article class="panel"><h2>Shares found</h2><strong>${value(readings?.shares_found)}</strong><p>Current P2Pool process counter; not a promised payout.</p></article>
@@ -106,7 +107,9 @@ export function Overview({ state, connected, range, window, onRange, onWindow, f
   </section>
   <section class="panel" aria-label="Attention"><h2>Attention</h2>${!fresh ? html`<p>These conditions describe the last snapshot. Reconnect before acting.</p>` : null}
     ${issues.length ? html`<ul>${issues.map((item) => html`<li data-condition=${item.kind}><a href=${item.href}>${item.text}</a></li>`)}</ul>` : html`<p>No attention conditions reported in the available readings.</p>`}
-    <p class="muted">Backup history, pool-tier advice and configuration warnings: ${readings?.attention_available ? "reported by the host" : "not reported by the host; unavailable"}.</p>
+    ${!advice.available ? html`<p class="muted">Pool-tier advice is unavailable. <a href=${link("machines", "pool-and-rigs")}>Review pool and rig settings</a>.</p>` : null}
+    ${readings?.config_warnings === undefined ? html`<p class="muted">Configuration warnings are not reported by the host. <a href=${link("settings", "configuration-json")}>Review configuration</a>.</p>` : null}
+    ${["Balance", "Privacy"].includes(state?.profile?.name) && !readings?.tor_health ? html`<p class="muted">Tor health is unavailable. <a href=${link("settings", "node-and-network")}>Review node and network readings</a>.</p>` : null}
   </section>
   <${OverviewChart} state=${state} range=${range} window=${window} onRange=${onRange} onWindow=${onWindow} />
   <${Activity} state=${state} fetchFn=${fetchFn} />
