@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2034
+# shellcheck source=tests/os/rig-adopt-leg.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/rig-adopt-leg.sh"
 
 RIG_SHARE_WINDOW_SEC="${PITHEAD_OS_RIG_SHARE_WINDOW_SEC:-600}"
 
@@ -149,15 +151,16 @@ _rig_share_arm() {
         bad "share leg $arm: accepted baseline unavailable (#3425)"
         return 1
     }
-    new_card=$(_setup_again_rig_submit kvm-rig-share "$pool") || {
+    new_card=$(_setup_again_rig_submit kvm-rig-share "$pool" .) || {
         rm -f "$jar"
         return 1
     }
     rm -f "$jar"
-    [ -n "${new_card%% *}" ] || {
+    printf '%s' "$new_card" | jq -e '.token | type == "string" and length > 0' >/dev/null || {
         bad "share leg $arm: no card token returned"
         return 1
     }
+    rig_card="$new_card"
     _rig_mining_up 36 || {
         bad "share leg $arm: rig never resumed mining"
         return 1
@@ -224,6 +227,7 @@ _rig_share_power_cut() {
 rig_share_leg() {
     local img="$1" mh="$2" rpc="$3" zmq="$4" mu="$5" mp="$6" th="$7" grpc="$8" rig_ip="$9"
     local rig_vm="$VM" rig_disk="$DISK" rig_serial="$SERIAL"
+    local rig_card=""
     local coord_vm="${rig_vm}-coord" coord_disk="${rig_disk%.img}-coord.img" coord_serial="${rig_serial%.log}-coord.log"
 
     info "share leg (#2063) — the rig mines against a coordinator this battery itself boots, not its own sshd"
@@ -258,5 +262,6 @@ rig_share_leg() {
     _rig_share_hosts_restore || _rig_share_abort "share leg: hosts fixture restoration failed (#3425)" || return 1
     ok "share leg: rig hosts restored and root verified read-only (#3425)"
     _rig_share_power_cut || _rig_share_abort || return 1
+    rig_adopt_leg || _rig_share_abort "M12: dashboard adoption/config push did not complete (#3069)" || return 1
     _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
 }

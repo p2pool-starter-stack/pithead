@@ -316,6 +316,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     disk_growth = state_mgr.get_disk_growth()
     return {
         "syncing": metrics.global_syncing,
+        "tari_gates_sync": bool(config.TARI_REQUIRED and not data.get("sync_gate_monero_only")),
         "page_title": "Pithead Dashboard - Syncing"
         if metrics.global_syncing
         else "Pithead Dashboard",
