@@ -46,7 +46,7 @@ DIY/appliance starter configs (`config.minimal.json`, `config.minimal.appliance.
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
 | Containers | `build/<daemon>/` | Dockerfiles, entrypoints, healthchecks, and Monero's bounded archive downloader; CI builds the images, and `make test-tools` checks download recovery. |
-| Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. `os/rootfs/fetch-go-source.sh` bounds pinned Go-source fetches; `tests/os/selftest-go-source-fetch.sh` runs its local Git transport regression. |
+| Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. Quadlet golden units share `os/quadlet/common/`; `tests/stack/test-render-quadlet.sh` checks complete profile inventories and byte parity. `os/rootfs/fetch-go-source.sh` bounds pinned Go-source fetches; `tests/os/selftest-go-source-fetch.sh` runs its local Git transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; the start page holds the run sheet, result rules and glossary. |
 
@@ -151,6 +151,7 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `service/workers/` | Worker state and control | `tests/service/workers/` |
 | `service/xvb/` | XvB switching, calculations, and outcomes | `tests/service/xvb/` |
 | `web/views/` | HTTP views and response construction | `tests/web/views/` |
+| `web/views/sovereign_views.py` | Opt-in lean UI route | `tests/web/views/test_sovereign_views.py` |
 | `web/server.py` | HTTP application setup and route registration | `tests/web/` |
 | `wizard/server.py`, `wizard/form.py`, `wizard/defaults.py` | Appliance wizard server, disk-based defaults, form translation, and install handoff | `tests/web/test_wizard*.py` |
 | `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
@@ -186,7 +187,11 @@ its fake-transport cases run through `selftest-wizard-redirect.sh`.
 `python -m mining_dashboard.wizard` remains the appliance's wizard launch command;
 the package's `__main__.py` delegates to its server.
 
-Browser assets live in `web/static/`. JavaScript feature folders are `app/`,
+Browser assets live in `web/static/`. The opt-in lean preview is in `web/static/sovereign/`,
+with its template at `web/templates/sovereign.html`; its frontend tests are in
+`tests/frontend/sovereign/` and its browser journey is `dashboard/tests/browser/sovereign.test.mjs`.
+The browser workflow retains its sanitized shell and drawer screenshots as `sovereign-visual-proof`, including passing runs.
+JavaScript feature folders are `app/`,
 `config/`, `network/`, `system/`, `workers/`, `xvb/`, and `wizard/`.
 `tests/frontend/` mirrors those folders. Its `harness.mjs`, `helpers/`, and
 `fixtures/` provide shared test inputs and rendering support. Node discovers the
@@ -225,6 +230,7 @@ the deployed CLI during the hardening phase.
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. `mini-stack/telegram-command-wire.py` checks Telegram command replies, chat restriction, offsets and replay through the real dashboard loop; `mini-stack/telegram-network-stats.json` seeds its synced P2Pool state. `fakes/test_fake_sink.py` checks the HTTP queue and stats fixture. `fakes/test_masked_config_read.py` exercises raw host config through the CLI renderer and dashboard reader. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. `rig-config-meta-wait.sh` waits for refreshed provenance before the rig reboot comparison; `selftest-rig-config-meta-wait.sh` covers stale, absent and invalid feeds without a guest. `rig-share-leg.sh` and `selftest-rig-share.sh` cover address/hostname/return share windows and their failure controls. |
 | `tests/os/rig-share-leg.sh` | Coordinator power-cut recovery after the address/hostname/return share windows; `selftest-rig-share-power-cut.sh` checks counter resets, worker identity, stale/error responses, real PASS/FAIL accounting, credential transport, cleanup and guest isolation without KVM. |
+| `tests/os/rig-adopt-leg.sh` | Dashboard control-route adoption and reversible rig config push after the share leg; `selftest-rig-adopt.sh` checks adoption, API reachability, refusal, unchanged pools, restoration and token non-disclosure without guests. |
 | `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Monero RPC visibility uses `monero-quadlet-proof.sh` during provision, with isolated fixture resource rewrites in `monero-quadlet-unit.awk` and wrapper regressions in `selftest-monero-rpc.sh`. The installer restore uses `restore-live-state-verdict.sh` for the configured-wallet comparison and bounded P2Pool startup window, with controller restoration and crash cases checked by `selftest-restore-p2pool-startup.sh`. The post-commit fault leg uses `chain-fault-timing.sh` to read the live dashboard debounce and prove the before/after window; `selftest-chain-fault-timing.sh` covers its deadlines and negative controls. The XvB stubbed polling fixtures share `tests/os/xvb-selftest-clock.sh`; `tests/os/selftest-xvb-poll-clock.sh` checks independence from host scheduling. Other legs carry a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
 | `tests/os/console-login-probe.py`, `tests/os/headless-install-leg.sh`, `tests/os/media-password-leg.sh` | Guest-only console hash/volatile-overlay checks, installer preseed assertions and USB password recovery. Tier-1 controls are `selftest-console-login.sh`, `selftest-headless-install.sh`, `selftest-installer-preseed.sh` and `selftest-media-password.sh` under `tests/os/`. |
 | `tests/runner/` | The pinned Linux image `make test-container` runs the other tiers inside, so a macOS or Windows host reaches CI's verdict. Built and CVE-scanned by `test-images.yml`; reaches no user. |
@@ -408,6 +414,11 @@ Privacy profiles are resolved from `dashboard/mining_dashboard/config/defaults.j
 checks the Privacy relay and real onion peers in the `profile-privacy` matrix scenario.
 The independent peer writes its data API below the image working directory, which already exists;
 P2Pool requires that parent directory before startup.
-On a handshake deadline it retains container exit state, peer counts and fixed error categories
-without addresses or credentials. Safety rollback retains the final 64 KiB of redacted restore
+On a handshake deadline it retains container exit state, peer counts, target-match booleans and
+bounded SOCKS protocol classifications without addresses or credentials. Safety rollback retains the final 64 KiB of redacted restore
 output in `safety-restore.log`, preserving the command verdict independently of diagnostic I/O.
+
+The e2e wrapper captures required pre-run systemd unit states through
+`tests/integration/lib/restore-unit-state.sh`. Restoration checks their capture records before
+unit removal; `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads
+and state lost between preflight and restoration.
