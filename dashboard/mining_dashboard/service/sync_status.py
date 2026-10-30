@@ -86,7 +86,7 @@ class SyncStatus:
                     name,
                     reachable,
                     synced,
-                    chain["base_node_state"] or chain["sync_state"] or chain["initializing"],
+                    chain["initializing"] or chain["base_node_state"] or chain["sync_state"],
                     chain["initial_sync_achieved"],
                     chain["error"],
                 )

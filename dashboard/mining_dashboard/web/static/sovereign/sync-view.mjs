@@ -38,7 +38,7 @@ export function SyncView({ state, history, connected, now = Date.now() / 1000 })
           <dt>Blocks</dt><dd>${count(chain?.current)} / ${count(chain?.target)} · ${count(chain?.remaining)} remaining</dd>
           <dt>Database / mode</dt><dd>${chain?.db_size || "Unknown"} / ${chain?.mode || "Unknown"}</dd>
           <dt>Required-service recreation</dt><dd>${verdict(node.service_recreated, "Recreated", "Not recreated")}</dd></dl>
-        ${node.local === false ? html`<p>Remote ${name === "monero" ? "Monero" : "Tari"} node: <span class="sync-address">${node.node || "Unknown"}</span>. Reported state: ${node.base_node_state || node.sync_state || node.initializing || verdict(node.synced, "SYNCED", "SYNCING")}. Initial sync: ${name === "monero" && node.initial_sync_achieved == null ? "Unknown — not reported by Monero" : verdict(node.initial_sync_achieved, "achieved", "not yet achieved")}. Waiting: ${duration(node.wait_seconds)}.</p>` : null}
+        ${node.local === false ? html`<p>Remote ${name === "monero" ? "Monero" : "Tari"} node: <span class="sync-address">${node.node || "Unknown"}</span>. Reported state: ${node.initializing || node.base_node_state || node.sync_state || verdict(node.synced, "SYNCED", "SYNCING")}. Initial sync: ${name === "monero" && node.initial_sync_achieved == null ? "Unknown — not reported by Monero" : verdict(node.initial_sync_achieved, "achieved", "not yet achieved")}. Waiting: ${duration(node.wait_seconds)}.</p>` : null}
         ${node.error ? html`<p role="status">Last probe error: ${node.error}</p>` : null}
         ${node.recovery_remaining > 0 ? html`<p>Recovery window: ${duration(node.recovery_remaining)} remaining with continuous reachability.</p>` : null}
       </article>`;
