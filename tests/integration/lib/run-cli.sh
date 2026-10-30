@@ -87,12 +87,11 @@ MATRIX:
                          (tests/integration/mergemine, built at the pinned Tari tag) judges each
                          submission and its legacy/mutated controls at 349,999/350,000/350,001
                          under mainnet rules. Leaves the live stack alone; needs local Monero.
-  --tari-stranded        also run the stranded-Tari leg (#2464): a DROP rule in tari's own network
-                         namespace (comment pithead-e2e-fault-tari-stranded) cuts it off from tor;
-                         asserts amber from the first 0-peer reading, red + doctor non-zero + alert, no
-                         automatic restart, then green without a restart once the rule is removed (the
-                         dashboard detects and alerts only; remediation is #2827). About an hour; opt-in only.
-                         DESTRUCTIVE-then-restored.
+  --tari-transport       prove Tari-only connection suppression/resumption while Monero shares advance.
+                         One miner, XvB off; no P2Pool/proxy restart. Restores fault and log level.
+  --tari-stranded        peer-disconnection leg (#2464): amber/red, doctor/status, alerts and recovery,
+                         with no Tari/P2Pool restarts. Detection only; remediation is #2827.
+                         Tagged namespace DROP rule, removed on exit. About an hour; opt-in only.
   --monero-stranded      also run the stranded-Monero leg (#2499): a DROP rule in monerod's network
                          namespace cuts it off from tor; every layer must read red, then green. Opt-in.
   --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's
@@ -138,7 +137,6 @@ Scenarios whose prerequisites are missing (a full/pruned alt data dir, or a remo
 are reported SKIPPED — never silently dropped, never mutating the canonical synced chain.
 EOF
 }
-# --- Arg parsing ------------------------------------------------------------
 # shellcheck disable=SC2034  # the data-dir / remote-host globals are consumed by lib.sh:resolve_overrides
 parse_args() {
     while [ $# -gt 0 ]; do
@@ -284,6 +282,10 @@ parse_args() {
             RUN_MERGEMINE_SUBMIT=1
             shift
             ;;
+        --tari-transport)
+            RUN_TARI_TRANSPORT=1
+            shift
+            ;;
         --tari-stranded)
             RUN_TARI_STRANDED=1
             shift
@@ -401,10 +403,8 @@ parse_args() {
         exit 2
     fi
     validate_live_gate_args
-    # Both gates read mining as their success signal, so silencing those assertions would leave
-    # them asserting nothing that matters.
-    if [ "$SKIP_MINING_ASSERTS" = "1" ] && { [ "$RUN_IMAGE_UPGRADE" = "1" ] || [ "$RUN_XVB_ROUTING" = "1" ]; }; then
-        it_err "--image-upgrade and --xvb-routing-smoke require binding mining assertions; remove --no-mining-asserts."
+    if [ "$SKIP_MINING_ASSERTS" = "1" ] && { [ "$RUN_IMAGE_UPGRADE" = "1" ] || [ "$RUN_XVB_ROUTING" = "1" ] || [ "${RUN_TARI_TRANSPORT:-0}" = "1" ]; }; then
+        it_err "--image-upgrade, --xvb-routing-smoke and --tari-transport require binding mining assertions; remove --no-mining-asserts."
         exit 2
     fi
 }

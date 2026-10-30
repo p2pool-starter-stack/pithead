@@ -84,6 +84,8 @@ harness_phase_args_of() ( # <args...> -> HARNESS_PHASE_ARGS, or the refusal
 )
 assert_eq "--tari-stranded is on the allowlist and forwarded unchanged (#2464)" \
     "$(harness_phase_args_of --tari-stranded)" " --tari-stranded|"
+assert_eq "--tari-transport is on the allowlist and forwarded unchanged (#2827)" \
+    "$(harness_phase_args_of --tari-transport)" " --tari-transport|"
 assert_eq "--monero-stranded is on the allowlist and forwarded unchanged (#2499)" \
     "$(harness_phase_args_of --monero-stranded)" " --monero-stranded|"
 assert_eq "--scenario alone is a modifier, not a hand-picked phase" \
