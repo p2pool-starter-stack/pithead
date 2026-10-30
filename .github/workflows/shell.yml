@@ -101,7 +101,7 @@ jobs:
 
   shell-standalone:
     name: Shell tests (standalone suites + tooling)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15 # ~110 s of the old `shell` job, the first-boot journal suite being 60 s of it (#2048)
     # Each suite is named outright rather than globbed: standalone/ also holds test_compose.sh,
     # which belongs to the `compose` job and which sources test_dotenv.sh itself, so a glob would
