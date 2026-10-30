@@ -74,6 +74,13 @@ slow-primary and HTTP-error recovery, checksum rejection on both sources, bounde
 HTTPS downgrade refusal and Dockerfile wiring. It needs curl, OpenSSL and sha256sum, without
 Docker or public-network access. The Dockerfile still requires the current-head tier-4 proof below.
 
+The standalone [Monero LMDB tools](lmdb-tools.md) workflow compiles the pinned
+Monero LMDB copy/stat utilities and verifies ordinary and compact copies against
+a separate reader while a disposable writer advances. It retains source/build
+provenance, digests and the generation observations in the CI archive. Builder
+input and extraction tests run in `make test-tools`; no active chain or service
+is used, and this workflow does not establish real-chain capture acceptance.
+
 The rootfs Compose/Cosign source-fetch regression runs through
 `tests/os/selftest-go-source-fetch.sh` in `make test-integration-selftest`.
 It executes the Dockerfile's fetch command against a local Git HTTP repository:

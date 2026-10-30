@@ -50,6 +50,12 @@ DIY/appliance starter configs (`config.minimal.json`, `config.minimal.appliance.
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; the start page holds the run sheet, result rules and glossary. |
 
+The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
+`scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
+`tests/tools/test_lmdb_build.py` checks extraction and provenance inputs;
+`tests/tools/prove-lmdb.py` and `tests/tools/lmdb-fixture.c` prove disposable
+concurrent-writer copies in CI. These tools do not change the runtime image.
+
 Raw config checks live in `lib/pithead/22a-config-document.sh` and
 `dashboard/mining_dashboard/config/documents.py`; the browser JSON editor checks duplicates
 in `dashboard/mining_dashboard/web/static/config/jsondocument.mjs`.
