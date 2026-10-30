@@ -167,35 +167,27 @@ resolve_overrides() {
         out="$out monero.data_dir=$FULL_DATA_DIR"
     fi
 
-    # Remote mode needs an external endpoint; the host must be BARE, never host:port (#1491).
     if [ "$mode" = "remote" ]; then
         [ -n "${REMOTE_MONERO_HOST:-}" ] || {
             SKIP_REASON="needs --remote-monero-host"
             return 1
         }
-        out="$out monero.remote.host=$REMOTE_MONERO_HOST"
+        out="$out monero.remote.host=$REMOTE_MONERO_HOST monero.view_key="
         out="$out${REMOTE_MONERO_RPC_PORT:+ monero.remote.rpc_port=$REMOTE_MONERO_RPC_PORT}${REMOTE_MONERO_ZMQ_PORT:+ monero.remote.zmq_port=$REMOTE_MONERO_ZMQ_PORT}"
     fi
 
-    # tari.mode remote (#103/#942) needs its own endpoint — same shape, its own global.
     if [ "$tari_mode" = "remote" ]; then
         [ -n "${REMOTE_TARI_HOST:-}" ] || {
             SKIP_REASON="needs --remote-tari-host"
             return 1
         }
-        out="$out tari.remote.host=$REMOTE_TARI_HOST"
+        out="$out tari.remote.host=$REMOTE_TARI_HOST tari.view_key= tari.spend_public_key="
     fi
 
-    # Payout confirmation (#381/#462, #942): monero.view_key / tari.view_key are real wallet-scanning
-    # secrets for the box's OWN wallet — never hardcoded in the matrix. The scenario instead carries
-    # the marker "payout_confirm=env" (not a real config path, always stripped below); an
-    # operator-supplied key gates the row, the same shape as remote mode needing an endpoint: either
-    # IT_MONERO_VIEW_KEY, or Tari's pair (IT_TARI_VIEW_KEY + IT_TARI_SPEND_PUBLIC_KEY, BOTH set), which
-    # also carries the bench wallet's first payout day as the birthday (#2731). Each folds in if set.
     if printf '%s' "$overrides" | tr ' ' '\n' | grep -qx 'payout_confirm=env'; then
         out="$(printf '%s' "$out" | tr ' ' '\n' | grep -vx 'payout_confirm=env' | tr '\n' ' ')"
-        out="${out% }" # strip the trailing space left by removing the marker token
-        out="${out# }" # ...and a leading one, when the marker was the only/first token
+        out="${out% }"
+        out="${out# }"
         local tari_pair=""
         [ -n "${IT_TARI_VIEW_KEY:-}" ] && [ -n "${IT_TARI_SPEND_PUBLIC_KEY:-}" ] && tari_pair=1
         [ -n "${IT_MONERO_VIEW_KEY:-}$tari_pair" ] || {

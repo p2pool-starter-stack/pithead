@@ -86,7 +86,7 @@ OPTIONS:
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
   --harness-arg <f> run this run.sh phase instead of the mode's (repeatable; incl. --fault-injection-ssh; --sweep = every scenario)
-  --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
+  --workers <n>     workers expected mining (default: 1; zero allowed with check or --no-miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
   --no-miner        do not borrow a miner; skip its two mining assertions
@@ -168,9 +168,11 @@ case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targe
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
-[[ "$WORKERS" =~ ^[1-9][0-9]*$ ]] || die "--workers must be a positive integer (got '$WORKERS')."
-# --- SSH helpers ------------------------------------------------------------
-# Keepalives so a quiet (but live) connection isn't dropped; BatchMode so we never hang on a prompt.
+if [ "$MODE" = check ] || [ "$BORROW_MINER" != 1 ]; then
+    [[ "$WORKERS" =~ ^[0-9]+$ ]] || die "--workers must be a nonnegative integer (got '$WORKERS')."
+else
+    [[ "$WORKERS" =~ ^[1-9][0-9]*$ ]] || die "--workers must be a positive integer (got '$WORKERS')."
+fi
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)
 # NOTE (testbench README): avoid literal shell parens '()' in remote command strings — they break the
 # non-interactive remote shell. jq filters (quoted) are fine; shell subshells are not.
@@ -373,7 +375,7 @@ preflight() {
     parent_lock_checkpoint "the first bench touch" || die "Parent-held bench lock is not continuous."
     on_bench 'echo ok >/dev/null' || die "Cannot SSH to test-bench host '$BENCH_HOST'."
     ok "SSH to $BENCH_HOST"
-    harness_clear_check_evidence || die "Cannot clear prior doctor check evidence."
+    harness_clear_pregate_evidence || die "Cannot clear prior pregate evidence."
     on_bench "test -x '$CANONICAL_DIR/pithead'" || die "No pithead at $CANONICAL_DIR on $BENCH_HOST."
     on_bench "cd '$CANONICAL_DIR' && ./pithead status >/dev/null 2>&1" &&
         ok "canonical stack is currently healthy" ||
@@ -394,12 +396,11 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # The images the baseline is on (and whether it has the #2460/#2599 egress units), captured before
-    # deploy_branch rebuilds the first-party images — on a source-checkout box under the very tag the
-    # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
-    # record is taken here or not at all. Read by verify_restore_proof.
-    EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)" EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"
-    LAN_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-guard.service)" HOLD_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-hold.service)" LAN_CHECK_BEFORE="$(egress_boot_unit_state pithead-lan.timer)"
+    RESTORED=1
+    if ! capture_restore_unit_states && [ "$MODE" != check ]; then
+        die "Required pre-run unit state is unknown; refusing before backup, wallet capture or deployment."
+    fi
+    RESTORED=0
     if BASELINE_IMAGES="$(stack_image_census)" && [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
     else
