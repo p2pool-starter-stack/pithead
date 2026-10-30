@@ -253,8 +253,8 @@ run_image_upgrade() {
     assert_eq "Monero data path reused across image versions" "$(env_on_box MONERO_DATA_DIR)" "$before_monero_dir"
     assert_eq "Tari data path reused across image versions" "$(env_on_box TARI_DATA_DIR)" "$before_tari_dir"
     assert_eq "persistent mounts stayed stable or moved to the candidate's copied internal state" \
-        "$(normalized_stateful_mounts "$UPGRADE_CANDIDATE_DIR" "$(stateful_mounts)")" \
-        "$(normalized_stateful_mounts "$UPGRADE_BASELINE_DIR" "$before_mounts")"
+        "$(normalized_stateful_mounts "$UPGRADE_CANDIDATE_DIR" "$(stateful_mounts)" "$(dirname "$before_tari_dir")")" \
+        "$(normalized_stateful_mounts "$UPGRADE_BASELINE_DIR" "$before_mounts" "$(dirname "$before_tari_dir")")"
     assert_eq "captured Monero chain prefix survived the upgrade" "$(monero_block_identity "$((before_monero - 1))")" "$before_monero_id"
     assert_eq "Tari chain identity survived the upgrade" "$(tari_block_identity "$before_tari")" "$before_tari_id"
     if chain_tip_valid "$after_monero_tip" && height_continues "$before_monero" "$after_monero"; then

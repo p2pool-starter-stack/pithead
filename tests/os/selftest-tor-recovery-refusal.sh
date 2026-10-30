@@ -70,7 +70,6 @@ done
 rm "$work/stack/tor/state"
 if bash "$work/guest.sh" >"$work/missing-state" 2>&1; then exit 1; fi
 
-# Execute the real provisioning prefix with fake transport; later legs cannot suppress this row.
 eval "$(sed -n '/^_phase_provision_initial_body() {/,/    # The fresh-chain sync gate/p' "$ROOT/tests/os/phases/provision-initial.sh" | sed '$d')
 }"
 # shellcheck disable=SC2034 # The extracted provisioning function reads these globals.
@@ -92,6 +91,11 @@ wizard_miner_connection_card_valid() { :; }
 provisioning_settled() { printf 'settled\n' >"$work/settled"; }
 provisioning_setup_failed() { return 1; }
 provisioning_state() { echo settled; }
+_provision_chain_directory_move() {
+    [ -s "$work/settled" ] || return 91
+    printf 'moved\n' >"$work/moved"
+    return "${move_rc:-0}"
+}
 curl() {
     case "$*" in
     *'/auth'*) printf 'wizard_session\n' >"$jar" ;;
@@ -104,14 +108,14 @@ _ssh() {
     case "$*" in
     *'podman ps'*) echo 'dashboard caddy' ;;
     'timeout 40 bash -s')
-        [ "$SSH_TIMEOUT" = 45 ] && [ -s "$work/settled" ] || return 91
+        [ "$SSH_TIMEOUT" = 45 ] && [ -s "$work/settled" ] && [ -s "$work/moved" ] || return 91
         cat >"$work/streamed-script"
         return "$guest_rc"
         ;;
     esac
 }
 for guest_rc in 0 17; do
-    rm -f "$work/rows" "$work/failed-rows" "$work/settled" "$work/streamed-script"
+    rm -f "$work/rows" "$work/failed-rows" "$work/settled" "$work/streamed-script" "$work/moved"
     _phase_provision_initial_body
     cmp "$ROOT/tests/os/tor-recovery-refusal-guest.sh" "$work/streamed-script"
     if [ "$guest_rc" = 0 ]; then
@@ -122,4 +126,8 @@ for guest_rc in 0 17; do
         if grep -Fq 'guest healthy Tor recovery refusal exits 1' "$work/rows"; then exit 1; fi
     fi
 done
+move_rc=1
+rm -f "$work/streamed-script" "$work/moved"
+if _phase_provision_initial_body; then exit 1; fi
+[ -s "$work/moved" ] && [ ! -e "$work/streamed-script" ]
 echo 'guest healthy Tor recovery refusal selftest PASS'

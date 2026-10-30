@@ -107,9 +107,14 @@ run_hardening() {
         it_skip_phase "hardening" "remote mode: no local containers/systemd to exercise" "by-design"
         return 0
     fi
-    # 1. Read-only rootfs is LIVE at runtime (#377), not just declared in compose. We must assert
-    #    the failure is specifically EROFS ("Read-only file system"), NOT just any error: the
-    #    containers run non-root (#255), so `touch /` on a WRITABLE rootfs already fails with EACCES
+    local move_script move_output
+    move_script=$(cat "$HERE/chain-directory-move.sh")
+    if move_output=$(rx 'TMPDIR="${TMPDIR:-$PWD}" bash -s' --stdin <<<"$move_script" 2>&1) &&
+        grep -Fq 'chain directory move: both container IDs and start times preserved' <<<"$move_output"; then
+        it_pass "chain directory move preserves both container IDs and start times"
+    else
+        it_fail "chain directory move failed: $move_output"
+    fi
     #    ("Permission denied") — treating any failure as a pass would green-light a service that
     #    silently lost read_only. Only a read-only mount returns EROFS (verified: a writable
     #    non-root container gives Permission denied; a read-only one gives Read-only file system).

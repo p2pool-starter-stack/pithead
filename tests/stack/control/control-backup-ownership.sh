@@ -68,7 +68,7 @@ else
     mkdir -p "$XB/build/tari" "$XB/data/tor" "$XB/data/dashboard" "$XB/bin" \
         "$XB/ctl/staged" "$XB/ctl/results" "$XB/ctl/audit"
     cp "$STACK" "$XB/pithead"
-    cp "$ROOT/build/tari/config.toml.template" "$XB/build/tari/"
+    cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$XB/build/tari/"
     XB_DOCKER_LOG="$XB/docker.log"
     : >"$XB_DOCKER_LOG"
     cat >"$XB/bin/docker" <<EOS

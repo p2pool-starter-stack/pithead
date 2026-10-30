@@ -9,12 +9,13 @@ Network=mining.network
 IP=172.28.0.27
 User=1000:1000
 DNS=127.0.0.1
-Environment=WAIT_FOR_TOR=1 "TARI_CLEARNET_SYNC=false"
+Environment=WAIT_FOR_TOR=1 "TARI_CLEARNET_SYNC=false" "TARI_GRPC_BIND=127.0.0.1"
 Entrypoint=/var/tari/config/entrypoint.sh
 Exec=--disable-splash-screen --non-interactive
 Volume=/opt/pithead/data/tari:/var/tari/node
-Volume=/home/pithead/build/tari:/var/tari/config
+Volume=/opt/pithead/data/tari-config/rendered:/var/tari/config:ro
 Volume=/opt/pithead/data/clearnet-state:/clearnet-state:ro
+Volume=/opt/pithead/data/lan-guard:/lan-guard:ro
 Tmpfs=/tmp:size=64m,mode=1777
 PublishPort=127.0.0.1:18142:18142
 ReadOnly=true

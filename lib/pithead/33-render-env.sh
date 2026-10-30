@@ -2,6 +2,8 @@ render_env() {
     local target="${1:-$ENV_FILE}" project
     project=$(compose_project_name) || return 1
     log "Rendering environment configuration ($target)..."
+    local tari_config_dir
+    tari_config_dir=$(chain_runtime_config_dir) || return 1
 
     local mono_host rpc_port zmq_port mono_rpc_url profiles
     if [ "$MONERO_MODE" == "local" ]; then
@@ -320,13 +322,13 @@ render_env() {
             error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
     fi
 
-    # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion
-    # before the heredoc so embedded line breaks become quoted escapes, not dotenv assignments.
     (
         umask 077
         cat <<EOF >"$target"
 MONERO_DATA_DIR=$(dotenv_render_value "$MONERO_DIR")
 TARI_DATA_DIR=$(dotenv_render_value "$TARI_DIR")
+TARI_CONFIG_DIR=$(dotenv_render_value "$tari_config_dir")
+LAN_GUARD_DIR=$(dotenv_render_value "$LAN_GUARD_DIR")
 P2POOL_DATA_DIR=$(dotenv_render_value "$P2POOL_DIR")
 DASHBOARD_DATA_DIR=$(dotenv_render_value "$DASHBOARD_DIR")
 TOR_DATA_DIR=$(dotenv_render_value "$TOR_DATA_DIR")

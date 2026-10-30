@@ -134,7 +134,7 @@ mkdir -p "$SU/build/tari" "$SU/dashboard"
 : >"$SU/dashboard/Dockerfile"
 cp "$STACK" "$SU/pithead"
 cp "$ROOT/docker-compose.yml" "$SU/docker-compose.yml"
-cp "$ROOT/build/tari/config.toml.template" "$SU/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$SU/build/tari/"
 make_stubs "$SU/bin"
 printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$SU" run_wizard >/dev/null 2>&1
 if [ -f "$SU/config.json" ]; then ok "setup e2e: wizard stage produces config.json"; else bad "setup e2e: wizard stage produces config.json" "no file at $SU/config.json"; fi
@@ -173,10 +173,8 @@ RT="$SANDBOX/restore-stranding"
 mkdir -p "$RT/build/tari" "$RT/dashboard" "$RT/data/tor" "$RT/data/dashboard"
 : >"$RT/dashboard/Dockerfile"
 cp "$STACK" "$RT/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$RT/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$RT/build/tari/"
 make_stubs "$RT/bin"
-# make_stubs's sudo is a bare no-op — fine for setup's conditional sudo calls (writable test dirs
-# skip them), but stack_backup shells to `sudo tar`/`sudo du` UNCONDITIONALLY. Same passthrough
 # override the firstboot_consume_restore fixture above uses, for the same reason.
 cat >"$RT/bin/sudo" <<'SUDOEOF'
 #!/usr/bin/env bash
@@ -239,7 +237,7 @@ SUT="$SANDBOX/setup-tls"
 mkdir -p "$SUT/build/tari" "$SUT/dashboard"
 : >"$SUT/dashboard/Dockerfile"
 cp "$STACK" "$SUT/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$SUT/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$SUT/build/tari/"
 make_stubs "$SUT/bin"
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini","stratum_tls":true}, "dashboard":{"secure":false} }\n' "$WALLET" >"$SUT/config.json"
 sut_out="$(cd "$SUT" && printf '\nn\n' | DOCKER_LOG=/dev/null PATH="$SUT/bin:$PATH" ./pithead setup --skip-deps --skip-optimize 2>&1)"

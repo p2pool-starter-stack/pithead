@@ -22,3 +22,18 @@ phase_provision() {
     _phase_provision_power_cut || return
     _phase_provision_migration
 }
+
+_provision_chain_directory_move() {
+    local out rc=0
+    out=$(mktemp)
+    SSH_TIMEOUT=600 _ssh 'cd /data/pithead && TMPDIR=/data bash -s' <"$SCRIPT_DIR/../integration/chain-directory-move.sh" >"$out" 2>&1 || rc=$?
+    if [ "$rc" = 0 ] && grep -Fq 'chain directory move: both container IDs and start times preserved' "$out"; then
+        ok "chain directory move preserves both container IDs and start times"
+    else
+        bad "chain directory move did not preserve node identity (exit $rc)"
+        tail -n 25 "$out"
+        rm -f "$out"
+        return 1
+    fi
+    rm -f "$out"
+}

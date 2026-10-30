@@ -331,6 +331,18 @@ run_all() {
 }
 run_all
 
+checkout "$A"
+checkout "$B"
+for dir in "$A" "$B"; do
+    edit_json "$dir" '.services.monerod.volumes |= map(select(.target != "/home/ubuntu/bitmonero.conf.template")) |
+      .services.monerod.volumes |= map(if .target == "/clearnet-state" then .source="/chains/clearnet-state" else . end) |
+      .services.tari.volumes |= map(if .target == "/clearnet-state" then .source="/chains/clearnet-state"
+        elif .target == "/var/tari/config" then .source="/chains/tari-config/content-one" | .read_only=true else . end)'
+done
+assert_eq "stable chain runtime mounts retain their fingerprint across checkouts" "$(fp "$A" tari)" "$(fp "$B" tari)"
+edit_json "$B" '.services.tari.volumes |= map(if .target == "/var/tari/config" then .source="/chains/tari-config/content-two" else . end)'
+assert_ne "changed Tari content identity changes the rendered fingerprint" "$(cfg_of "$A" tari)" "$(cfg_of "$B" tari)"
+
 echo "== e2e.sh wiring =="
 DEPLOY_SRC="$(sed -n '/^deploy_branch() {$/,/^}$/p' "$E2E_SRC")"
 assert_contains "deploy_branch deploys through deploy_keeping_chain" "$DEPLOY_SRC" "deploy_keeping_chain || die"

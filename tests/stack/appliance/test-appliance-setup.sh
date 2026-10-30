@@ -209,8 +209,10 @@ assert_eq "inactive Compose model excludes the wallet volume" \
     "$(cd "$V" && PATH="$V/bin:$PATH" docker compose config --volumes)" ""
 (cd "$V" && PATH="$V/bin:$PATH" docker volume create pithead_itest_unrelated >/dev/null)
 
-# With -y: the three columns print, all named volumes go, every derived path is removed,
-# and every kept path survives byte-identical.
+mkdir -p "$V/data/tari-config/active" "$V/data/lan-guard"
+sed -i.bak '/^TARI_CONFIG_DIR=/d; /^LAN_GUARD_DIR=/d' "$V/.env"
+rm -f "$V/.env.bak"
+printf 'TARI_CONFIG_DIR=%s\nLAN_GUARD_DIR=%s\n' "$V/data/tari-config/active" "$V/data/lan-guard" >>"$V/.env"
 : >"$DOCKER_LOG"
 out=$(cd "$V" && TOR_AUTO_HEAL=true DOCKER_LOG="$DOCKER_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
 assert_contains "uninstall states the removed column" "$out" "Removed:"
@@ -231,6 +233,8 @@ assert_eq "uninstall removes only the exact Tari wallet volume" \
     "$(grep -F '[docker] volume rm ' "$DOCKER_LOG")" "[docker] volume rm pithead-gate_tari_wallet_db"
 assert_eq "uninstall removes .env" "$([ -f "$V/.env" ] || echo gone)" "gone"
 assert_eq "uninstall removes Caddyfile" "$([ -f "$V/Caddyfile" ] || echo gone)" "gone"
+assert_contains "uninstall inventories retained Tari runtime config" "$out" "$V/data/tari-config/active"
+assert_contains "uninstall inventories retained LAN guard state" "$out" "$V/data/lan-guard"
 assert_eq "uninstall removes the rendered Tari config" "$([ -f "$V/build/tari/config.toml" ] || echo gone)" "gone"
 assert_eq "uninstall removes the control spool" "$([ -d "$V/data/control" ] || echo gone)" "gone"
 assert_eq "uninstall removes the clearnet-state dir" "$([ -d "$V/data/clearnet-state" ] || echo gone)" "gone"

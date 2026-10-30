@@ -243,8 +243,7 @@ describe_change() {
             msg="Dashboard configuration editing disabled — the control runner units are removed; the dashboard container is recreated."
         fi
         ;;
-    CLEARNET_STATE_DIR | CONTROL_DIR | CADDY_LOG_DIR)
-        # Fixed paths under ./data — internal, change only when the checkout moves (#695).
+    CLEARNET_STATE_DIR | CONTROL_DIR | CADDY_LOG_DIR | TARI_CONFIG_DIR | LAN_GUARD_DIR)
         msg=""
         ;;
     DASHBOARD_ONION_ENABLED)

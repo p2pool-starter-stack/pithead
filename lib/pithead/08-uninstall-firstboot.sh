@@ -56,12 +56,6 @@ stack_uninstall() {
         d=$(env_get_file .env "$dkey")
         [ -n "$d" ] && kept_dirs+=("$d")
     done
-    # #2379 §3: four more directories setup creates (hardcoded under data/, or under the shared
-    # data root for PROXY_TLS_DIR) that the old keep-list never named or removed. None is operator
-    # data — the control spool + audit trail, the clearnet-sync marker, Caddy's access log, and the
-    # stratum TLS keypair — so they are removed individually, by exact path, never `rm -rf data/`.
-    # Where setup puts each one (28-parse-and-validate-config.sh): three fixed under ./data, and
-    # proxy-tls in the shared data root when the four chain/Tor dirs share a parent.
     local data_root want mon tar p2p tor
     mon=$(env_get_file .env MONERO_DATA_DIR)
     tar=$(env_get_file .env TARI_DATA_DIR)
@@ -70,6 +64,10 @@ stack_uninstall() {
     data_root=$(dirname "${mon:-$checkout_dir/data/monero}")
     { [ "$(dirname "${tar:-/}")" = "$data_root" ] && [ "$(dirname "${p2p:-/}")" = "$data_root" ] &&
         [ "$(dirname "${tor:-/}")" = "$data_root" ]; } || data_root="$checkout_dir/data"
+    for dkey in TARI_CONFIG_DIR LAN_GUARD_DIR CLEARNET_STATE_DIR; do
+        d=$(env_get_file .env "$dkey")
+        [ -n "$d" ] && [ "$d" != "$checkout_dir/data/clearnet-state" ] && kept_dirs+=("$d")
+    done
     for dkey in CONTROL_DIR:"$checkout_dir/data/control" CLEARNET_STATE_DIR:"$checkout_dir/data/clearnet-state" \
         CADDY_LOG_DIR:"$checkout_dir/data/caddy-logs" PROXY_TLS_DIR:"$data_root/proxy-tls"; do
         want=${dkey#*:}
@@ -96,7 +94,7 @@ stack_uninstall() {
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
 
     warn "DESTRUCTIVE: stops the stack and removes everything pithead put on this host. Deletes no data."
-    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_db volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit and pithead-egress.timer check; the LAN-only source rule, its pithead-lan-guard.service boot unit, pithead-lan-hold.service and pithead-lan.timer check; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
+    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_db volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit and pithead-egress.timer check; the LAN-only source rule, its pithead-lan-guard.service boot unit, pithead-lan-hold.service and pithead-lan.timer check; .env, Caddyfile and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
     log "Kept (yours): $checkout_dir/config.json, $checkout_dir/backups/, and the data dirs: ${kept_list:-none recorded}"
     log "Left behind (shared with the machine, not pithead's alone to remove): the apt packages setup installed (jq, openssl, docker.io, docker-compose-v2); the GRUB HugePages cmdline; the runtime HugePages pool."
     if [ "$yes" -ne 1 ]; then

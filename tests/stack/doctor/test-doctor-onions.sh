@@ -9,7 +9,7 @@ DOC="$SANDBOX/doctor-onion"
 mkdir -p "$DOC/build/tari" "$DOC/dashboard"
 : >"$DOC/dashboard/Dockerfile"
 cp "$STACK" "$DOC/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$DOC/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$DOC/build/tari/"
 make_stubs "$DOC/bin"
 printf '{"monero":{"mode":"remote","wallet_address":"%s","remote":{"host":"10.0.0.8"}},"tari":{"mode":"remote","wallet_address":"'"$VALID_TARI"'","remote":{"host":"10.0.0.9"}}}\n' "$VALID_PRIMARY" >"$DOC/config.json"
 doctor_onions() { # <COMPOSE_PROFILES> -> doctor's "Tor onion addresses" section

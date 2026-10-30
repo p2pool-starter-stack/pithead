@@ -179,7 +179,7 @@ _phase_provision_initial_body() {
         info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
         return 1
     fi
-    # Healthy read-only refusal, before unrelated day-two legs can abort this guest (#3262).
+    _provision_chain_directory_move || return 1
     if SSH_TIMEOUT=45 _ssh 'timeout 40 bash -s' <"$SCRIPT_DIR/tor-recovery-refusal-guest.sh"; then
         ok "guest healthy Tor recovery refusal exits 1 without unexpected-abort advice (#3262)"
     else

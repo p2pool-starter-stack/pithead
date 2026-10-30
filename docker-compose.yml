@@ -114,15 +114,9 @@ services:
     volumes:
       - ${MONERO_DATA_DIR}:/home/ubuntu/.bitmonero
       - /dev/hugepages:/dev/hugepages
-      - ./build/monero/bitmonero.conf.template:/home/ubuntu/bitmonero.conf.template:ro
-      # Read-only view of the shared clearnet-state dir (#234): the entrypoint reads the
-      # dashboard-written "sync complete" marker to decide clearnet-vs-Tor at startup.
       - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
-      # pithead's "LAN-only source rule is live" marker (#2749): without it a LAN bind never starts.
-      - ./data/lan-guard:/lan-guard:ro
+      - ${LAN_GUARD_DIR:-./data/lan-guard}:/lan-guard:ro
     ports:
-      # Default 127.0.0.1 = host-local only (no LAN exposure); p2pool reaches monerod over
-      # the internal Docker network regardless. Set monero.rpc_lan_access:true in config.json
       # to publish on the LAN (0.0.0.0) for wallets on other machines.
       - "${MONERO_RPC_BIND:-127.0.0.1}:18081:18081"
       # ZMQ block-notification feed (#760): loopback by default; set monero.zmq_lan_access:true to
@@ -281,15 +275,9 @@ services:
       - /tmp:size=64m,mode=1777
     volumes:
       - ${TARI_DATA_DIR}:/var/tari/node
-      - ./build/tari:/var/tari/config
-      # pithead's "LAN-only source rule is live" marker (#2749), as for monerod.
-      - ./data/lan-guard:/lan-guard:ro
-      # Read-only view of the shared clearnet-state dir (#234): the wrapper entrypoint reads the
-      # dashboard-written "sync complete" marker to decide clearnet-vs-Tor at startup.
+      - ${TARI_CONFIG_DIR:-./build/tari}:/var/tari/config:ro
+      - ${LAN_GUARD_DIR:-./data/lan-guard}:/lan-guard:ro
       - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
-    # Pithead wrapper (#183/#234): renders the runtime config (clearnet-vs-Tor, marker-gated) from
-    # pithead's canonical Tor config, then runs and supervises minotari_node, rewinding a database
-    # left on the dead 5.3.1 branch past the 350,000 fork first (#2618).
     entrypoint:
       - /var/tari/config/entrypoint.sh
     command:
@@ -651,13 +639,7 @@ services:
     volumes:
       - ${P2POOL_DATA_DIR}/stats:/app/stats:ro
       - ${DASHBOARD_DATA_DIR}:/data
-      # Read-WRITE: the supervisor drops the per-chain "clearnet sync complete" marker here once a
-      # node finishes a clearnet initial sync, then restarts it onto Tor (#234). monerod/tari mount
-      # the same dir read-only. Holds only non-secret state markers.
       - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state
-      # Control-channel spool (#33). requests/ is the container's ONLY writable leg — the dashboard
-      # drops typed JSON intents there; the host-side runner answers via the read-only results/ and
-      # audit/ mounts. staged/ is never mounted at all. This rw/ro split is the trust boundary: the
       # container can only ask; it cannot forge a result, rewrite the audit log, or alter a staged
       # intent between preview and commit.
       - ${CONTROL_DIR:-./data/control}/requests:/control/requests

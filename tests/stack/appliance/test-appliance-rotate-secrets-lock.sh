@@ -48,7 +48,7 @@ mkdir -p "$RS/build/tari" "$RS/dashboard" "$RS/data/monero" "$RS/data/tari" "$RS
 : >"$RS/dashboard/Dockerfile"
 cp "$STACK" "$RS/pithead"
 make_stubs "$RS/bin"
-cp "$ROOT/build/tari/config.toml.template" "$RS/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$RS/build/tari/"
 
 RSFREE="$SANDBOX/rotate-lock-free.lock" # never held: the seeding applies and the positive controls run through it
 RSHELD="$SANDBOX/rotate-lock-held.lock" # held by rs_hold for the contended cases

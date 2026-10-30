@@ -127,7 +127,7 @@ timer_flush_trace() {
                 [ -z "$tail" ] || echo "$tail" >"$states"
                 ;;
             *'container_engine'*) echo docker ;;
-            *'test -e data'*) ;; # marker gone: the timer ran
+            *'test -e '*) ;;
             *) echo present ;;
             esac
         }
@@ -147,6 +147,21 @@ for case_ in "inactive|timer-stop flush timer-start " \
         exit 1
     }
 done
+(
+    source "$HERE/../lib/run-lan-guard.sh"
+    fixture=$(mktemp -d "${TMPDIR:?}/lan-marker-selftest.XXXXXX")
+    trap 'find "$fixture" -depth -delete' EXIT
+    export MARKER_FIXTURE="$fixture/state ' \$literal"
+    mkdir -p "$MARKER_FIXTURE"
+    printf 'boot-id\n' >"$MARKER_FIXTURE/enforced"
+    printf 'env_get() { printf '\''%%s'\'' "$MARKER_FIXTURE"; }\n' >"$fixture/pithead"
+    printf 'source %q\n' "$(cd "$HERE/../lib" && pwd -P)/../../../lib/pithead/29a-chain-runtime-state.sh" >>"$fixture/pithead"
+    rx() { (cd "$fixture" && bash -c "$1"); }
+    _lan_flush_rules() { :; }
+    [ "$(_lan_marker_present -s)" = present ] || exit 1
+    _lan_strip
+    [ ! -e "$MARKER_FIXTURE/enforced" ] || exit 1
+) || exit 1
 if [ -s "$MISSING_COMMANDS" ]; then
     echo 'selftest-check-lan-guard: FAIL (unexpected missing commands)' >&2
     exit 1

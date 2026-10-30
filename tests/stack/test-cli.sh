@@ -376,7 +376,7 @@ echo "== black-box: guards =="
 G="$SANDBOX/guard"
 mkdir -p "$G/build/tari"
 cp "$STACK" "$G/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$G/build/tari/" 2>/dev/null || true
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$G/build/tari/" 2>/dev/null || true
 make_stubs "$G/bin"
 out="$(cd "$G" && PATH="$G/bin:$PATH" ./pithead apply 2>&1)"
 rc=$?

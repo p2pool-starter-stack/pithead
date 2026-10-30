@@ -90,7 +90,7 @@ mkdir -p "$L/build/tari" "$L/dashboard"
 : >"$L/dashboard/Dockerfile"
 cp "$STACK" "$L/pithead"
 make_stubs "$L/bin"
-cp "$ROOT/build/tari/config.toml.template" "$L/build/tari/"
+cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$L/build/tari/"
 SHARED="$SANDBOX/boxroot/data"
 seed_L() {
     cat >"$L/.env" <<EOF
@@ -119,6 +119,10 @@ printf 'proddb' >"$L/data/dashboard/mining_data.db"
 assert_rc "apply with a shared data root succeeds" "$?" "0"
 assert_eq "DASHBOARD_DATA_DIR joins the shared data root" \
     "$(run_sourced "$L" env_get_file "$L/.env" DASHBOARD_DATA_DIR)" "$SHARED/dashboard"
+assert_eq "clearnet state uses the stable chain root" \
+    "$(run_sourced "$L" env_get_file "$L/.env" CLEARNET_STATE_DIR)" "$SHARED/clearnet-state"
+assert_eq "LAN guard uses the stable chain root" \
+    "$(run_sourced "$L" env_get_file "$L/.env" LAN_GUARD_DIR)" "$SHARED/lan-guard"
 assert_eq "apply moved the dashboard DB to the shared root" \
     "$(cat "$SHARED/dashboard/mining_data.db" 2>/dev/null)" "proddb"
 if [ -e "$L/data/dashboard" ]; then bad "apply: old in-version-dir data gone" "still exists"; else ok "apply: old in-version-dir data gone"; fi

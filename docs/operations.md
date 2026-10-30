@@ -563,12 +563,13 @@ want it gone.
 | named volumes | `caddy_data`, `wallet_data`, `tari_wallet_db` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues. On startup, `tari-wallet` repairs a root-owned volume before running as uid 1000. Uninstall removes the Tari wallet volume even when its payout profile is disabled, after checking its Compose ownership labels. If Docker cannot list, inspect, or remove that volume, uninstall stops before deleting `.env` so the operator can retry. |
 | systemd units | `pithead-control.path` / `.service`, this checkout's only |
 | firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit; the LAN-only source rule, its `pithead-lan-guard.service` boot unit, `pithead-lan-hold.service`, and `pithead-lan.timer` check |
-| rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
+| rendered files | `.env`, `Caddyfile`, `.pithead-first-run-done` |
 | derived state dirs | `data/control/` (control spool + audit trail), `data/clearnet-state/`, `data/caddy-logs/`, `data/proxy-tls/` (the stratum TLS keypair), and `data/tari-wallet-secret.env` (the Tari view-key secret) — each removed individually by path, never `rm -rf data/` |
 | version symlink | `<parent>/current`, only when it points at this checkout |
 
 **Kept — yours, never touched:** the Monero, Tari, P2Pool, Tor, and dashboard data dirs;
-`config.json`; `backups/`.
+`config.json`; `backups/`; stable Tari runtime configurations, LAN-guard directories and external
+clearnet-state directories, all listed in the retained-path inventory.
 
 A derived directory is removed only at the path setup gives it. If `.env` names it anywhere else,
 or at, above or inside a kept path, `uninstall` leaves it in place with a warning. After
@@ -628,6 +629,17 @@ data root:
   database arrived. That automatic migration leaves an explicit `dashboard.data_dir` alone. When
   you confirm a change to that setting, `apply` instead copies and verifies the live database at
   the new path; a non-empty target refuses rather than guessing which database is live.
+- **Chain runtime mounts** — rendered Tari configuration and its wrapper live in
+  `<parent of tari.data_dir>/tari-config/<content identity>/`. The clearnet transition markers
+  and LAN-only start marker live beside that directory. The first render carries existing
+  clearnet markers from the previous `.env` location, retaining the old copy for rollback;
+  conflicting nonempty destinations refuse. Copied Tor attestations are reverified by the host.
+  Blockchain directories are left in place. Monero's config template is part of its image.
+  A directory move with the same resolved chain-data paths, images and service configuration
+  preserves both chain containers and their start times. Uninstall inventories the stable
+  runtime directories as retained paths; it does not recursively delete shared roots.
+  Moving checkout-local chain data is
+  outside that guarantee. Source builds retain their checkout-local build context.
 - **Config archives** — `./pithead backup` writes under `backups/` inside the dir that ran it.
   Before deleting an old version dir, keep any `backups/` archives you still want.
 

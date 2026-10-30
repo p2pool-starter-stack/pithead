@@ -29,7 +29,7 @@ for lg_ep in build/monero/entrypoint.sh build/tari/entrypoint.sh; do
         "$(grep -nE '^lan_guard_gate |^exec monerod|^run_node ' "$ROOT/$lg_ep" | head -n 1 | cut -d: -f2 | cut -c1-14)" "lan_guard_gate"
 done
 assert_eq "compose hands each node its binds and the marker dir, read-only" \
-    "$(grep -cE '^      - (MONERO_RPC_BIND=\$\{MONERO_RPC_BIND:-127\.0\.0\.1\}|MONERO_ZMQ_BIND=\$\{MONERO_ZMQ_BIND:-127\.0\.0\.1\}|TARI_GRPC_BIND=\$\{TARI_GRPC_BIND:-127\.0\.0\.1\}|\./data/lan-guard:/lan-guard:ro)$' "$ROOT/docker-compose.yml")" "5"
+    "$(grep -cE '^      - (MONERO_RPC_BIND=\$\{MONERO_RPC_BIND:-127\.0\.0\.1\}|MONERO_ZMQ_BIND=\$\{MONERO_ZMQ_BIND:-127\.0\.0\.1\}|TARI_GRPC_BIND=\$\{TARI_GRPC_BIND:-127\.0\.0\.1\}|\$\{LAN_GUARD_DIR:-\./data/lan-guard\}:/lan-guard:ro)$' "$ROOT/docker-compose.yml")" "5"
 
 echo "== every publish of 18081, 18083 and 18142 is an explicit IPv4 bind (#2616) =="
 # The rule is IPv4 only. `[::]:P:P` or a bare `P:P` would also listen on IPv6, where nothing limits

@@ -7,6 +7,8 @@ fixture="$2"
 platform="$3"
 cp "$fixture" config.json
 cp "$(dirname "$script")/VERSION" VERSION
+mkdir -p build/tari
+cp "$(dirname "$script")/build/tari/config.toml.template" "$(dirname "$script")/build/tari/entrypoint.sh" build/tari/
 # shellcheck source=/dev/null
 source "$script"
 hostname() { printf legacy-machine; }

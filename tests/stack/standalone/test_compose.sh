@@ -14,6 +14,9 @@ trap 'rm -f "$ENV_FILE" "$EMPTY_TOKEN_ENV"' EXIT
 cat >"$ENV_FILE" <<'EOF'
 MONERO_DATA_DIR=/srv/data/monero
 TARI_DATA_DIR=/srv/data/tari
+TARI_CONFIG_DIR=/srv/data/tari-config/rendered
+CLEARNET_STATE_DIR=/srv/data/clearnet-state
+LAN_GUARD_DIR=/srv/data/lan-guard
 P2POOL_DATA_DIR=/srv/data/p2pool
 DASHBOARD_DATA_DIR=/srv/data/dashboard
 TOR_DATA_DIR=/srv/data/tor
@@ -60,20 +63,19 @@ else
     exit 1
 fi
 
-# --- Hardening assertions (#90) ----------------------------------------------
-# Render the resolved config once and assert the defense-in-depth directives survived. These are
-# structural checks on the rendered YAML (counts/substrings), so an accidental removal of a
-# cap_drop / read_only / the credential-free healthcheck fails CI rather than silently regressing.
 echo "Checking hardening directives (#90) ..."
 RENDERED="$(docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config)"
 fails=0
-# An empty render would let every expect_absent pass for the reassuring reason, so refuse it here.
+sed '/^TARI_CONFIG_DIR=/d; /^LAN_GUARD_DIR=/d' "$ENV_FILE" >"$EMPTY_TOKEN_ENV"
+docker compose --env-file "$EMPTY_TOKEN_ENV" -f "$ROOT/docker-compose.yml" config -q || exit 1
+for chain in monerod tari; do
+    if ! docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config --format json |
+        jq -e --arg root "$ROOT/" --arg chain "$chain" '[.services[$chain].volumes[] | select(.type == "bind") | .source | startswith($root)] | all(. == false)' >/dev/null; then
+        echo "FAIL: $chain has a checkout-local runtime mount"
+        fails=$((fails + 1))
+    fi
+done
 [ -n "$RENDERED" ] || { echo "  ✗ compose rendered nothing to assert against" && exit 1; }
-# The helpers read their haystack with a here-string, NEVER a pipe: `grep -q` exits at its first
-# match, so under the pipefail this file sets, the writer's EPIPE became the pipeline's status and
-# the match was discarded (#1370) — a present directive read as missing and, in the direction
-# nobody sees, a forbidden pattern that IS present read as absent, i.e. a hardening regression
-# wearing a green tick. grep exiting >= 2 is "could not check", counted as a failure, never a verdict.
 expect_min() { # <label> <pattern> <min-count> [haystack, default $RENDERED]
     local n rc=0
     n=$(grep -c -- "$2" <<<"${4-$RENDERED}") || rc=$?

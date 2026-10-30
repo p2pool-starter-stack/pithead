@@ -25,15 +25,9 @@ cat >"$LKW/bin/sudo" <<'SUDOEOF'
 exec "$@"
 SUDOEOF
 chmod +x "$LKW/bin/sudo"
-# A provisioned install, rebuildable — every verb driven below WRITES to it, and a used fixture
-# stops being a fixture. The hand-written .env is deliberately not what a render produces, so
-# `apply` sees a change and takes its committing branch rather than returning early — but that
-# holds only on a directory no verb has run in yet. The free half of each pair below re-renders
-# this .env, so by the time `apply` is probed on the shared fixture there is nothing left to
-# change. That is why the committing branch is driven on its own fixture, here and in
-# lock_wiring_balance.
-lock_wiring_fixture() { # <dir>
-    mkdir -p "$1/data/tor" "$1/data/dashboard"
+lock_wiring_fixture() {
+    mkdir -p "$1/data/tor" "$1/data/dashboard" "$1/build/tari"
+    cp "$ROOT/build/tari/config.toml.template" "$ROOT/build/tari/entrypoint.sh" "$1/build/tari/"
     cat >"$1/.env" <<'ENVEOF'
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion

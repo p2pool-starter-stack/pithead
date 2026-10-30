@@ -136,10 +136,6 @@ assert_contains "appliance cut verifies a leaf-signed probe against the baked ke
 CHECKLIST_DOC="$(cat "$ROOT/docs/dev/manual-qa/release/cutting-and-after.md")"
 assert_contains "cut checklist requires the root's offline backup (#2825)" "$CHECKLIST_DOC" \
     'root private key has an offline backup'
-# Bundle completeness: the pull-based bundle must ship every ./build/* path the compose MOUNTS at
-# runtime. A pull install builds nothing and the images don't bake these in, so a missing one mounts an
-# empty dir and breaks the container — the v1.0.0 bundle shipped without monerod's bitmonero.conf.template
-# exactly this way. compose_build_mounts derives the list make_bundle copies.
 # shellcheck disable=SC1090
 BUILD_MOUNTS="$(
     cd "$ROOT" || exit
@@ -148,7 +144,8 @@ BUILD_MOUNTS="$(
     set +eu
     compose_build_mounts docker-compose.yml
 )"
-assert_contains "bundle ships monerod's config template" "$BUILD_MOUNTS" "./build/monero/bitmonero.conf.template"
+assert_not_contains "Monero runtime uses its baked config template" "$BUILD_MOUNTS" "./build/monero/bitmonero.conf.template"
+assert_contains "Monero image ships its config template" "$(cat "$ROOT/build/monero/Dockerfile")" "COPY bitmonero.conf.template /home/ubuntu/bitmonero.conf.template"
 assert_contains "bundle ships the tari config dir" "$BUILD_MOUNTS" "./build/tari"
 # shellcheck disable=SC1090
 bundle_copy_fail="$(
