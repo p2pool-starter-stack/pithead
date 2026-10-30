@@ -75,6 +75,7 @@ export function initSovereign({
     },
   });
   const polling = createPolling({
+    initialSnapshot: syncHistory.snapshot,
     fetchFn: (signal) => {
       const params = new URL(win.location.href).searchParams;
       const query = new URLSearchParams();

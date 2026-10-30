@@ -70,7 +70,9 @@ The dashboard logs remote-state transitions once per change, without endpoints o
 
 Polling failure preserves the last successful snapshot and labels it disconnected with its age.
 A tab-scoped sync-only snapshot and its bounded sample history survive reload; unrelated dashboard
-data and secrets are not saved by this cache. Unknown, zero and stale readings remain distinct.
+data and secrets are not saved by this cache. If the browser blocks tab storage, only the in-memory
+snapshot survives polling failures; reload retention is unavailable. Unknown, zero and stale readings
+remain distinct.
 When an active profile is reported, a Settings link notes that Performance syncs faster; the view
 does not wait for the profile model.
 
